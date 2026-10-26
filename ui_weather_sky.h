@@ -871,12 +871,16 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   const bool storm_sky_flash = is_storm && (storm_phase_ms < 95U || (storm_phase_ms >= 155U && storm_phase_ms < 255U));
   const bool storm_bolt_vis  = is_storm && (storm_phase_ms < 285U);
 
-  // LAYER 0: ATMOSPHERIC SKY CANVAS (Zero-overdraw O(1) CIRCLE_HW scanline fill, ~14ms faster than Bresenham filled_circle)
+  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Full rectangle fill on Portrait Watch 410x502)
   auto fill_sky_disc = [&](esphome::Color bg_c) {
+#if POCKET_UI_ROUND_DISPLAY
     for (int y = 5; y <= 460; y++) {
       int hw = static_cast<int>(CIRCLE_HW[y]) - 5;
       if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
     }
+#else
+    it.filled_rectangle(0, 0, SCREEN_W, SCREEN_H, bg_c);
+#endif
   };
   if (storm_sky_flash) {
     fill_sky_disc(is_night ? esphome::Color(38, 54, 82) : esphome::Color(64, 90, 126));

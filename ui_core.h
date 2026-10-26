@@ -127,21 +127,8 @@ inline int circle_half_span(int c, int inset = 5) {
   int span = static_cast<int>(CIRCLE_HW[c]) - inset;
   return (span > 0) ? span : 0;
 #else
-  if (c < inset || c >= SCREEN_H - inset) return 0;
+  if (c < 0 || c >= SCREEN_H) return 0;
   int half_w = (SCREEN_W / 2) - inset;
-  static constexpr int CORNER_R = 38;
-  int dy_edge = -1;
-  if (c < inset + CORNER_R) {
-    dy_edge = (inset + CORNER_R) - c;
-  } else if (c >= SCREEN_H - inset - CORNER_R) {
-    dy_edge = c - (SCREEN_H - 1 - inset - CORNER_R);
-  }
-  if (dy_edge > 0) {
-    if (dy_edge >= CORNER_R) return 0;
-    int dx_c = static_cast<int>(std::sqrt(static_cast<float>(CORNER_R * CORNER_R - dy_edge * dy_edge)));
-    int span = half_w - (CORNER_R - dx_c);
-    return (span > 0) ? span : 0;
-  }
   return (half_w > 0) ? half_w : 0;
 #endif
 }
