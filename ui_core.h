@@ -140,6 +140,17 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 #endif
 }
 
+// Board-Agnostic PMU Crown IRQ / Button Sense Helper:
+//   - Waveshare 1.75C (default): GPIO3 active-LOW hardware IRQ from AXP2101
+//   - Waveshare 2.06 (POCKET_UI_BOARD_206=1): GPIO10 active-HIGH SYS_OUT
+inline bool hal_pmu_irq_asserted() {
+#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+  return (gpio_get_level(GPIO_NUM_10) == 1);
+#else
+  return (gpio_get_level(GPIO_NUM_3) == 0);
+#endif
+}
+
 // Fast interpolated sine/cosine backed by .rodata DIAL_SIN[60] (0 hardware FPU trig stalls)
 inline float fast_sin(float rad) {
   float idx_f = rad * (60.0f / (2.0f * PI_F));

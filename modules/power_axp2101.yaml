@@ -548,7 +548,7 @@ interval:
           // Only queries I2C register 0x49 when GPIO3 (PMU IRQ, active-low) is asserted or once per second
           // (on a non-draw tick so I2C and QSPI never stack in the same 50ms callback).
           static uint8_t fallback_div = 0;
-          const bool irq_pin_low = (gpio_get_level(GPIO_NUM_3) == 0);
+          const bool irq_pin_low = pocket_ui::hal_pmu_irq_asserted();
           if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 20U && !id(va_active) && !id(va_tts_received))) {
             if (!irq_pin_low) fallback_div = 0;
             uint8_t irq_reg = 0x49;
