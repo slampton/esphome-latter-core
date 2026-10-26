@@ -117,16 +117,32 @@ static constexpr int16_t CIRCLE_HW[466] = {
 #define POCKET_UI_ROUND_DISPLAY 1
 #endif
 
-// O(1) Bezel Half-Span Lookup (returns half-chord width/height at row/col `c`)
+// O(1) Bezel Half-Span Lookup:
+//   - Round Display (POCKET_UI_ROUND_DISPLAY=1, 466x466): O(1) .rodata CIRCLE_HW[c] chord lookup
+//   - Portrait Rectangle Watch (POCKET_UI_ROUND_DISPLAY=0, 410x502): Full horizontal half-width (SCREEN_W/2)
+//     across y in [0..SCREEN_H-1] with smooth r=38px rounded watch corners at top and bottom!
 inline int circle_half_span(int c, int inset = 5) {
 #if POCKET_UI_ROUND_DISPLAY
   if (c < 0 || c >= SCREEN_W) return 0;
   int span = static_cast<int>(CIRCLE_HW[c]) - inset;
   return (span > 0) ? span : 0;
 #else
-  if (c < inset || c >= SCREEN_W - inset) return 0;
-  int span = (SCREEN_H / 2) - inset;
-  return (span > 0) ? span : 0;
+  if (c < inset || c >= SCREEN_H - inset) return 0;
+  int half_w = (SCREEN_W / 2) - inset;
+  static constexpr int CORNER_R = 38;
+  int dy_edge = -1;
+  if (c < inset + CORNER_R) {
+    dy_edge = (inset + CORNER_R) - c;
+  } else if (c >= SCREEN_H - inset - CORNER_R) {
+    dy_edge = c - (SCREEN_H - 1 - inset - CORNER_R);
+  }
+  if (dy_edge > 0) {
+    if (dy_edge >= CORNER_R) return 0;
+    int dx_c = static_cast<int>(std::sqrt(static_cast<float>(CORNER_R * CORNER_R - dy_edge * dy_edge)));
+    int span = half_w - (CORNER_R - dx_c);
+    return (span > 0) ? span : 0;
+  }
+  return (half_w > 0) ? half_w : 0;
 #endif
 }
 
@@ -469,9 +485,16 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
                                       esphome::Color col_inactive) {
   (void)col_inactive;
   if (!show_up && !show_down) return;
-  it.filled_rectangle(395, 140, 71, 160, col_bg);
-  if (show_up) render_scroll_chevron(it, 415, 162, true, col_active, esphome::Color(0, 0, 0), false);
-  if (show_down) render_scroll_chevron(it, 415, 278, false, col_active, esphome::Color(0, 0, 0), false);
+#if POCKET_UI_ROUND_DISPLAY
+  const int mask_x = 395;
+  const int chev_x = 415;
+#else
+  const int mask_x = SCREEN_W - 44;
+  const int chev_x = SCREEN_W - 22;
+#endif
+  it.filled_rectangle(mask_x, 140, SCREEN_W - mask_x, 160, col_bg);
+  if (show_up) render_scroll_chevron(it, chev_x, 162, true, col_active, esphome::Color(0, 0, 0), false);
+  if (show_down) render_scroll_chevron(it, chev_x, 278, false, col_active, esphome::Color(0, 0, 0), false);
 }
 
 // Universal Low-Profile Back Label or Swipe-Up Home Indicator Bar
@@ -479,14 +502,20 @@ template<typename DisplayT, typename FontT>
 inline void render_back_button(DisplayT &it, int cx, FontT *font,
                                int y_pos = 426, const char *label = "< Back",
                                esphome::Color text_col = esphome::Color(158, 158, 158)) {
+#if !POCKET_UI_ROUND_DISPLAY
+  const int y_shift = (SCREEN_H > 466) ? (SCREEN_H - 466) : 0;
+#else
+  const int y_shift = 0;
+#endif
   if (label != nullptr && std::strcmp(label, "Home") == 0) {
-    render_home_indicator_bar(it, cx, 434);
+    render_home_indicator_bar(it, cx, 434 + y_shift);
     return;
   }
+  const int eff_y = (y_pos >= 400) ? (y_pos + y_shift) : y_pos;
   const char *eff_label = (label != nullptr && std::strcmp(label, "< BACK") == 0) ? "< Back" : label;
-  it.print(cx + 1, y_pos + 1, font, esphome::Color(0, 0, 0),
+  it.print(cx + 1, eff_y + 1, font, esphome::Color(0, 0, 0),
            esphome::display::TextAlign::CENTER, eff_label);
-  it.print(cx, y_pos, font, text_col,
+  it.print(cx, eff_y, font, text_col,
            esphome::display::TextAlign::CENTER, eff_label);
 }
 
@@ -932,13 +961,20 @@ inline uint32_t &last_screen_wake_ms() {
 
 template<typename TouchT>
 inline bool is_back_button(const TouchT &t) {
-  // Generous Chin Hit-Zone (y = 404..466, x = 116..350) centered around "< Back" / "Exit" at (233, 426)
+#if POCKET_UI_ROUND_DISPLAY
   return (t.y >= 404 && t.y <= 466 && t.x >= 116 && t.x <= 350);
+#else
+  return (t.y >= (SCREEN_H - 64) && t.y <= SCREEN_H && t.x >= (SCREEN_CX - 120) && t.x <= (SCREEN_CX + 120));
+#endif
 }
 
 template<typename TouchT>
 inline bool is_right_chevron_zone(const TouchT &t) {
+#if POCKET_UI_ROUND_DISPLAY
   return (t.x >= 376 && t.y >= 70 && t.y <= 395);
+#else
+  return (t.x >= (SCREEN_W - 68) && t.y >= 70 && t.y <= (SCREEN_H - 70));
+#endif
 }
 
 template<typename TouchT>

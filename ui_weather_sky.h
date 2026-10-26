@@ -1478,7 +1478,7 @@ template<typename DisplayT>
 inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
   // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)
-  static constexpr int ICON_XS[4] = {112, 193, 274, 355};
+  static constexpr int ICON_XS[4] = {SCREEN_CX - 121, SCREEN_CX - 40, SCREEN_CX + 41, SCREEN_CX + 122};
   static constexpr int ICON_Y = 359;
 
   auto draw_icon_glyph = [&](int idx, int bx, int by, esphome::Color c) {

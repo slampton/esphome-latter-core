@@ -661,6 +661,19 @@ inline uint32_t &last_page2_draw_ms() {
 // a 1px dark inner contrast edge (r = 219), a rounded 12 o'clock start cap, and a glowing playhead tip.
 template<typename DisplayT>
 inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, esphome::Color col) {
+#if !POCKET_UI_ROUND_DISPLAY
+  if (prog <= 0.001f) return;
+  if (prog > 1.0f) prog = 1.0f;
+  (void)cx; (void)cy;
+  const int bar_x0 = 36;
+  const int bar_w  = SCREEN_W - 72;
+  const int fill_w = static_cast<int>(prog * static_cast<float>(bar_w));
+  it.filled_rectangle(bar_x0, 6, bar_w, 4, esphome::Color(28, 34, 44));
+  if (fill_w > 0) {
+    it.filled_rectangle(bar_x0, 6, fill_w, 4, col);
+  }
+  return;
+#endif
   if (prog <= 0.003f) return;
   if (prog > 1.0f) prog = 1.0f;
 
