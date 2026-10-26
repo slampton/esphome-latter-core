@@ -1,0 +1,7 @@
+# ==============================================================================
+# Latter Core Profile: Headless Sensor / Button Companion (profiles/headless_companion.yaml)
+# ==============================================================================
+
+packages:
+  latter_base: !include ../modules/base.yaml
+  latter_diag: !include ../mixins/diagnostics.yaml

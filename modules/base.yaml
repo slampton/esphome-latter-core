@@ -1,0 +1,25 @@
+# ==============================================================================
+# Latter Core Module: Base Identity, Time Sync & Contract Handshake (modules/base.yaml)
+# ==============================================================================
+
+substitutions:
+  name: "latter-device"
+  friendly_name: "Latter Device"
+  version: "2.1.0"
+  screen_w: "466"
+  screen_h: "466"
+  active_media_sensor: "sensor.latter_device_active_media"
+  weather_forecast_sensor: "sensor.latter_device_weather_forecast"
+  room_context_sensor: "sensor.latter_device_room_context"
+  calendar_agenda_sensor: "sensor.latter_device_calendar_agenda"
+  remote_config_sensor: "sensor.latter_device_remote_config"
+
+api:
+  actions:
+    - action: latter_ping
+      then:
+        - logger.log: "Latter companion connected"
+
+time:
+  - platform: homeassistant
+    id: ha_time

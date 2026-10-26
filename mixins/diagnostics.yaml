@@ -1,0 +1,28 @@
+# ==============================================================================
+# Latter Core Mixin: Studio Discovery & Diagnostics (mixins/diagnostics.yaml)
+# Usage:
+#   packages:
+#     latter.diag: github://slampton/esphome-latter-core/mixins/diagnostics.yaml@main
+# ==============================================================================
+
+api:
+  actions:
+    - action: latter_ping
+      then:
+        - logger.log: "Latter Core Diagnostics Mixin active"
+
+button:
+  - platform: restart
+    name: "Actions: Restart Device"
+    icon: "mdi:restart"
+    entity_category: diagnostic
+
+sensor:
+  - platform: uptime
+    name: "System: Uptime"
+    entity_category: diagnostic
+
+  - platform: wifi_signal
+    name: "System: Wi-Fi Signal"
+    update_interval: 60s
+    entity_category: diagnostic

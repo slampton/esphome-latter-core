@@ -1,0 +1,14 @@
+# ==============================================================================
+# Latter Core Profile: Stationary Display Panel (profiles/display_panel.yaml)
+# For mains-powered wall/desk panels without battery PMIC
+# ==============================================================================
+
+esphome:
+  includes:
+    - ui_core.h
+    - ui_weather_sky.h
+
+packages:
+  latter_base: !include ../modules/base.yaml
+  latter_room: !include ../modules/room_control.yaml
+  latter_ble_proxy: !include ../mixins/ble_proxy.yaml

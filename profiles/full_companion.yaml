@@ -1,0 +1,16 @@
+# ==============================================================================
+# Latter Core Profile: Full Companion Bundle (profiles/full_companion.yaml)
+# Includes all core headers & subsystems for flagship smart displays (Pocket Assistant, Wrist Assist)
+# ==============================================================================
+
+esphome:
+  includes:
+    - va_cancel_helper.h
+    - ui_core.h
+    - ui_ambient_va.h
+    - ui_weather_sky.h
+    - ui_games.h
+
+packages:
+  latter_audio_voice: !include ../modules/audio_voice.yaml
+  latter_power_pmu:   !include ../modules/power_axp2101.yaml
