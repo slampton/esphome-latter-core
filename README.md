@@ -1,13 +1,37 @@
 # ESPHome Latter Core (`esphome-latter-core`)
 
-[![Release](https://img.shields.io/badge/version-2.2.1-blue.svg)](https://github.com/slampton/esphome-latter-core)
-[![ESPHome](https://img.shields.io/badge/ESPHome-2026.10.0%2B-000000.svg)](https://esphome.io/)
+[![Version](https://img.shields.io/badge/Version-v2.2.1-blue)](https://github.com/slampton/esphome-latter-core)
+[![Latter Ecosystem](https://img.shields.io/badge/Latter-v2.2%2B-03a9f4)](https://github.com/slampton/ha-latter)
+[![ESPHome](https://img.shields.io/badge/ESPHome-2026.10.0%2B-blue?logo=esphome&logoColor=white)](https://esphome.io)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io)
+[![Music Assistant](https://img.shields.io/badge/Music%20Assistant-2.10.8%2B-purple)](https://music-assistant.io)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/slampton)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slampton)
 
 **`esphome-latter-core`** is the shared C++20 operating system, resolution-adaptive UI engine, and 1-line YAML mixin SDK for **[Latter](https://github.com/slampton/ha-latter)** companion devices in Home Assistant.
 
 It serves two purposes:
 1. **1-Line Drop-In Mixins (`mixins/*.yaml`)**: Upgrade any existing 3rd-party ESPHome device with roaming BLE room presence, stationary BLE proxy scanning, WireGuard roaming VPN, or Studio diagnostics—with **zero substitutions required**.
-2. **Full Companion Display OS (`components/latter_core`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared by flagship devices like **[Pocket Assistant](https://github.com/slampton/esphome-pocket-assistant)** (`466x466` round AMOLED) and **[Wrist Assist](https://github.com/slampton/esphome-wrist-assist)** (`410x502` rectangular watch), and ready for upcoming **ESP32-P4** square/round MIPI-DSI panels.
+2. **Full Companion Display OS (`components/latter_core`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared by flagship devices like **[Pocket Assistant](https://github.com/slampton/esphome-pocket-assistant)** (`466×466` round AMOLED) and **[Wrist Assist](https://github.com/slampton/esphome-wrist-assist)** (`410×502` rectangular watch), and ready for upcoming **ESP32-P4** square/round MIPI-DSI panels.
+
+---
+
+## Part of the Latter Ecosystem
+
+| Repository | Role in the Ecosystem |
+| :--- | :--- |
+| **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** | **Home Assistant Middleware & Web Studio** — Zero-YAML entity mapping, BLE room presence radar, Music Assistant browser, Baseline-JPEG transcoder, and backup vault. |
+| 👉 **[Latter Core (`esphome-latter-core`)](https://github.com/slampton/esphome-latter-core)** | **Shared ESPHome OS & 1-Line Mixin SDK (You Are Here)** — Modular C++20 UI engine, audio/voice pipeline, 3-tier power state machine, and 1-line drop-in mixins for any ESPHome device. |
+| **[Pocket Assistant (`esphome-pocket-assistant`)](https://github.com/slampton/esphome-pocket-assistant)** | **Flagship Round Handheld (`466×466`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-1.75C pocket companion. |
+| **[Wrist Assist (`esphome-wrist-assist`)](https://github.com/slampton/esphome-wrist-assist)** | **Flagship Smartwatch (`410×502`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-2.06 wearable companion. |
+
+---
+
+## Developer Documentation & Specifications
+
+- 🔌 **[Latter Wire & API Contract (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)** — Complete specification of the 5 `sensor.<slug>_*` push sensors, ESPHome API actions (`set_browse_slots`, `set_room_slots`, `show_notification`, `set_timer`, `cancel_timer`, `latter_ping`), and outbound `latter.*` services for building custom clients.
+- 🖥️ **[Porting & New Hardware Guide (`docs/PORTING_NEW_HARDWARE.md`)](docs/PORTING_NEW_HARDWARE.md)** — How to bring up a new screen size/shape (`ui_layout.h`), power backend (`power_axp2101.yaml` vs. `power_generic.yaml`), or **ESP32-P4** board in 15 minutes.
 
 ---
 
@@ -85,36 +109,21 @@ esphome-latter-core/
 
 ---
 
-## 3. Building a New Companion Display (ESP32-S3 or ESP32-P4)
+## Support the Project
 
-Because `components/latter_core` and `modules/display_ui.yaml` live in `esphome-latter-core`, creating a new device repository requires **zero duplicated UI YAML or `.h` files**:
+If you enjoy using **Latter**, **Pocket Assistant**, or **Wrist Assist**, consider supporting ongoing hardware bring-up and open-source development:
 
-1. Create a board HAL file (`boards/my_board.yaml`) defining your display, touchscreen, I2S audio pins, and compile-time geometry flags:
-   ```yaml
-   esphome:
-     build_flags:
-       - "-DPOCKET_UI_SCREEN_W=480"
-       - "-DPOCKET_UI_SCREEN_H=480"
-       - "-DPOCKET_UI_ROUND_DISPLAY=0"
-   ```
-2. In your top-level device manifest, set `screen_w`, `screen_h`, `art_resize`, and import `esphome-latter-core`:
-   ```yaml
-   external_components:
-     - source:
-         type: git
-         url: https://github.com/slampton/esphome-latter-core
-         ref: main
-       components: [latter_core]
+- ☕ **[Buy Me a Coffee](https://www.buymeacoffee.com/slampton)**
+- ❤️ **[Sponsor on GitHub](https://github.com/sponsors/slampton)**
 
-   latter_core:
+---
 
-   packages:
-     hal: !include boards/my_board.yaml
-     latter_core:
-       url: https://github.com/slampton/esphome-latter-core
-       ref: main
-       files:
-         - modules/audio_voice.yaml
-         - modules/power_generic.yaml
-         - modules/display_ui.yaml
-   ```
+## Development & AI Disclosure
+
+This project is architected, hardware-validated, and maintained by **Sean Lampton** ([Lampton Labs](https://github.com/slampton)), a Senior Systems Engineer. AI coding assistants are used as a pair-programming accelerator for C++20 shader math, Python boilerplate, and documentation—while all system architecture, ESP32-S3 hardware/PMIC/I2S bus engineering, power-state validation, and real-world Home Assistant testing are human-directed and verified on physical hardware.
+
+---
+
+## License
+
+Licensed under the **[Apache License 2.0](LICENSE)**.
