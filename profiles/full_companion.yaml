@@ -3,22 +3,17 @@
 # Includes all core headers & subsystems for flagship smart displays (Pocket Assistant, Wrist Assist)
 # ==============================================================================
 
-esphome:
-  includes:
-    - va_cancel_helper.h
-    - ui_core.h
-    - ui_layout.h
-    - ui_ambient_va.h
-    - ui_weather_sky.h
-    - ui_games.h
-    - ui_tools.h
-    - ui_music.h
-    - ui_clock_home.h
-    - ui_room_home_hub.h
-    - ui_remote.h
-    - ui_system.h
-    - ui_tools_apps.h
+external_components:
+  - source:
+      type: git
+      url: https://github.com/slampton/esphome-latter-core
+      ref: main
+    components: [latter_core]
+    refresh: 0s
+
+latter_core:
 
 packages:
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power_pmu:   !include ../modules/power_axp2101.yaml
+  latter_display_ui:  !include ../modules/display_ui.yaml
