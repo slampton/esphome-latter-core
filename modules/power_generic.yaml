@@ -1,0 +1,216 @@
+# ==============================================================================
+# Latter Core Module: Generic Power & Screen-Timeout State Machine (modules/power_generic.yaml)
+# For USB/Mains-Powered or Non-AXP2101 Smart Displays (Desk Panels, Wall Panels, ESP32-P4)
+# ==============================================================================
+
+globals:
+  - id: sleep_start_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: is_hibernating
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: hibernate_countdown_val
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: display_power_state
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = ACTIVE, 1 = SCREENSAVER, 2 = SCREEN_OFF
+  - id: sleep_menu_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+
+binary_sensor:
+  - platform: template
+    name: "USB Power Connected"
+    id: usb_connected
+    device_class: power
+    entity_category: diagnostic
+    lambda: 'return true;'
+
+  - platform: template
+    name: "Battery Charging"
+    id: batt_charging
+    device_class: battery_charging
+    entity_category: diagnostic
+    lambda: 'return false;'
+
+  - platform: template
+    name: "Pickup Detected"
+    id: pickup_detected
+    device_class: motion
+    lambda: 'return false;'
+
+sensor:
+  - platform: template
+    name: "Battery Level"
+    id: batt_level
+    unit_of_measurement: "%"
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return 100.0f;'
+
+  - platform: template
+    name: "Battery Voltage"
+    id: batt_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 2
+    update_interval: 120s
+    lambda: 'return 5.00f;'
+
+button:
+  - platform: template
+    name: "Actions: Screensaver Now"
+    id: trigger_screensaver_btn
+    icon: "mdi:weather-night"
+    entity_category: config
+    on_press:
+      - script.execute: trigger_screensaver_now
+
+switch:
+  - platform: template
+    name: "Sleep & Wake: Hold Crown Power Off"
+    id: instant_crown_hibernate_switch
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Sleep & Wake: Docked Screensaver"
+    id: docked_screensaver_switch
+    icon: "mdi:power-sleep"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Sleep & Wake: Stay Awake"
+    id: prevent_deep_sleep_switch
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+select:
+  - platform: template
+    name: "Sleep & Wake: Battery Screen Timeout"
+    id: display_off_timeout
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "1 min"
+    options: ["10s", "15s", "30s", "1 min", "2 min", "Never"]
+
+  - platform: template
+    name: "Sleep & Wake: Docked Idle Timeout"
+    id: screensaver_docked_timeout
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "5 min"
+    options: ["10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"]
+
+  - platform: template
+    name: "Sleep & Wake: Battery Hibernate Timeout"
+    id: hibernate_timeout_mode
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Disabled"
+    options: ["5 min", "10 min", "15 min", "30 min", "Disabled"]
+
+  - platform: template
+    name: "Sleep & Wake: Pickup to Wake"
+    id: pickup_wake_mode
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Disabled"
+    options: ["Always On", "Docked Only", "Disabled"]
+
+  - platform: template
+    name: "Sleep & Wake: Tap to Wake"
+    id: tap_wake_mode
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Always On"
+    options: ["Always On", "Docked Only", "Disabled"]
+
+script:
+  - id: trigger_screensaver_now
+    mode: restart
+    then:
+      - lambda: |-
+          auto s_style = id(screensaver_style_select).current_option();
+          if (s_style == "Screen Off") {
+            id(turn_screen_off).execute();
+            return;
+          }
+          pocket_ui::screen_is_off_standby() = false;
+          id(disp1).start_poller();
+          id(display_power_state) = 1;
+          id(display_brightness).turn_on().set_brightness(0.60f).perform();
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  - id: turn_screen_off
+    mode: restart
+    then:
+      - lambda: |-
+          id(display_power_state) = 2;
+          id(disp1).update();
+          pocket_ui::screen_is_off_standby() = true;
+          id(disp1).stop_poller();
+          id(display_brightness).turn_off().perform();
+
+  - id: enter_standby_state
+    mode: restart
+    then:
+      - lambda: |-
+          if (id(docked_screensaver_switch).state) {
+            id(trigger_screensaver_now).execute();
+          } else {
+            id(turn_screen_off).execute();
+          }
+
+  - id: wake_to_active_state
+    mode: restart
+    then:
+      - lambda: |-
+          pocket_ui::hal_set_wifi_power_save(0);
+          pocket_ui::screen_is_off_standby() = false;
+          pocket_ui::last_screen_wake_ms() = millis();
+          id(display_power_state) = 0;
+          id(disp1).start_poller();
+      - script.execute: sync_display_brightness
+      - script.execute: screen_sleep_timer
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: start_hibernation_countdown
+    mode: restart
+    then:
+      - script.execute: turn_screen_off
+
+  - id: enter_deep_sleep
+    mode: restart
+    then:
+      - script.execute: turn_screen_off
+
+  - id: screen_sleep_timer
+    mode: restart
+    then:
+      - delay: 300s
+      - if:
+          condition:
+            lambda: |-
+              return (id(screensaver_docked_timeout).current_option() != "Never") &&
+                     !id(prevent_deep_sleep_switch).state &&
+                     !id(ota_in_progress) && !id(va_active) && (id(active_game) == 0);
+          then:
+            - script.execute: enter_standby_state

@@ -197,8 +197,7 @@ voice_assistant:
   on_listening:
     then:
       - lambda: |-
-          extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-          esp_wifi_set_ps(0); // Ensure full-performance Wi-Fi during voice streaming
+          pocket_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
           if (!id(va_active)) {
             id(return_page) = id(gui_page);
             id(va_active) = true;
@@ -335,8 +334,7 @@ voice_assistant:
           id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
               id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-            esp_wifi_set_ps(1);
+            pocket_ui::hal_set_wifi_power_save(1);
           }
           ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
       - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
@@ -464,8 +462,7 @@ script:
           id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
               id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-            esp_wifi_set_ps(1);
+            pocket_ui::hal_set_wifi_power_save(1);
           }
       - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
@@ -564,8 +561,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-          esp_wifi_set_ps(0);
+          pocket_ui::hal_set_wifi_power_save(0);
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
             if (id(va_wake_screen_switch).state) {
               id(wake_to_active_state).execute();

@@ -42,6 +42,14 @@ inline constexpr UiLayout layout() {
   return UiLayout{};
 }
 
+inline constexpr bool is_wrist_watch_board() {
+#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+  return true;
+#else
+  return false;
+#endif
+}
+
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
   if (tx < cx - 180 || tx > cx + 180) return -1;

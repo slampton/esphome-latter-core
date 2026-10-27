@@ -726,8 +726,7 @@ script:
           }
           // On battery power, enable deep Wi-Fi modem sleep (WIFI_PS_MAX_MODEM=2) while screen is off & audio idle
           if (!id(usb_connected).state && !local_audio_playing) {
-            extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-            esp_wifi_set_ps(2); // 2: WIFI_PS_MAX_MODEM
+            pocket_ui::hal_set_wifi_power_save(2); // 2: WIFI_PS_MAX_MODEM
           }
 
   - id: enter_standby_state
@@ -757,8 +756,7 @@ script:
     then:
       - lambda: |-
           // Instantly boost Wi-Fi radio to full performance (zero sleep latency)
-          extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-          esp_wifi_set_ps(0); // 0: WIFI_PS_NONE
+          pocket_ui::hal_set_wifi_power_save(0); // 0: WIFI_PS_NONE
 
           pocket_ui::screen_is_off_standby() = false;
           pocket_ui::last_screen_wake_ms() = millis();
