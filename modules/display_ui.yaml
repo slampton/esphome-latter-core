@@ -2482,12 +2482,6 @@ sensor:
             id(music_pos_sync_time) = millis();
 
   - platform: homeassistant
-    id: ha_target_supported_features
-    entity_id: ${active_media_sensor}
-    attribute: supported_features
-    internal: true
-
-  - platform: homeassistant
     id: ha_target_volume
     entity_id: ${active_media_sensor}
     attribute: volume
@@ -3036,16 +3030,6 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 3600s
     lambda: 'return std::string("${version}");'
-  - platform: homeassistant
-    id: ha_firmware_update_status
-    entity_id: ${firmware_update_entity}
-    internal: true
-    on_value:
-      then:
-        - lambda: |-
-            if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
-              pocket_ui::schedule_disp_update(&id(disp1));
-            }
   - platform: homeassistant
     id: ha_firmware_latest_version
     entity_id: ${firmware_update_entity}
