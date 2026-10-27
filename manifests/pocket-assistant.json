@@ -1,0 +1,22 @@
+{
+  "name": "Latter — Pocket Assistant (1.75C)",
+  "version": "2.2.0",
+  "home_assistant_domain": "esphome",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "ota": {
+        "path": "../firmware/pocket-assistant.ota.bin",
+        "md5": "00000000000000000000000000000000",
+        "summary": "Latter OS v2.2.0 for Latter — Pocket Assistant (1.75C)"
+      },
+      "parts": [
+        {
+          "path": "../firmware/pocket-assistant.factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

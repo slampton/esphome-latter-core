@@ -14,7 +14,7 @@
 
 It serves two purposes:
 1. **1-Line Drop-In Mixins (`mixins/*.yaml`)**: Upgrade any existing 3rd-party ESPHome device with roaming BLE room presence, stationary BLE proxy scanning, WireGuard roaming VPN, or Studio diagnostics—with **zero substitutions required**.
-2. **Full Companion Display OS (`components/latter_core`, `boards/*.yaml`, `devices/*.yaml`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, voice assistant pipeline, Music Assistant player, and power state machine powering Latter's lineup of turnkey smart displays:
+2. **Full Companion Display OS (`components/latter_core`, `boards/*.yaml`, `devices/*.yaml`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, voice assistant pipeline, Music Assistant player, and power state machine powering Latter's lineup of turnkey smart displays (flashable in 1 click via the **[Unified Latter Web Installer](https://slampton.github.io/esphome-latter-core/)** or via ESPHome Device Builder):
 
 | Device | Form Factor | Screen | Best For | Waveshare Hardware |
 | :--- | :--- | :--- | :--- | :--- |

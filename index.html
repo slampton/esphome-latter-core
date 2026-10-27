@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Latter — Web Firmware Installer</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root, [data-theme="dark"] {
+    --bg: #111111;
+    --sidebar: #1c1c1c;
+    --card: #1c1c1c;
+    --card-hover: rgba(3, 169, 244, 0.08);
+    --border: rgba(225, 225, 225, 0.12);
+    --input-bg: #141414;
+    --text: #e1e1e1;
+    --text-strong: #e1e1e1;
+    --muted: #9b9b9b;
+    --accent: #03a9f4;
+    --accent-subtle: rgba(3, 169, 244, 0.15);
+    --success: #4caf50;
+  }
+  [data-theme="light"] {
+    --bg: #fafafa;
+    --sidebar: #f0f0f0;
+    --card: #ffffff;
+    --card-hover: rgba(3, 169, 244, 0.08);
+    --border: rgba(0, 0, 0, 0.12);
+    --input-bg: #f5f5f5;
+    --text: #212121;
+    --text-strong: #212121;
+    --muted: #727272;
+    --accent: #03a9f4;
+    --accent-subtle: rgba(3, 169, 244, 0.12);
+    --success: #4caf50;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  header.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--accent-subtle);
+    border: 1px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+  .brand-logo svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+  .nav-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .theme-icon-group {
+    display: grid;
+    grid-template-columns: repeat(3, 32px);
+    gap: 4px;
+    background: var(--input-bg);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .theme-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme-icon-btn.active {
+    background: var(--text-strong);
+    color: var(--bg);
+  }
+  .theme-icon-btn svg {
+    width: 15px;
+    height: 15px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .container {
+    max-width: 1040px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+  }
+  .hero {
+    margin-bottom: 22px;
+  }
+  .hero h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+  .hero p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+  .dev-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dev-card:hover {
+    background: var(--card-hover);
+  }
+  .dev-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-subtle);
+  }
+  .dev-card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dev-card-hdr strong {
+    font-size: 15.5px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+  .chip-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .dev-sub {
+    font-size: 12.5px;
+    color: var(--text-strong);
+    font-weight: 500;
+  }
+  .dev-hw {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: auto;
+    padding-top: 6px;
+  }
+  .installer-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .installer-meta h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 500;
+  }
+  .installer-meta p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .btn-install {
+    background: var(--accent);
+    color: #ffffff;
+    border: none;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(3, 169, 244, 0.3);
+  }
+  .btn-install:hover {
+    filter: brightness(1.08);
+  }
+  .steps-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 22px;
+  }
+  .steps-card h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .steps-card ol {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+  .steps-card li {
+    margin-bottom: 6px;
+  }
+  .steps-card a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .steps-card a:hover {
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body data-theme="dark">
+<header class="topbar">
+  <div class="brand-row">
+    <div class="brand-logo">
+      <svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h1A1.5 1.5 0 0 1 8 5.5v13A1.5 1.5 0 0 1 6.5 20h-1A1.5 1.5 0 0 1 4 18.5v-13ZM16 5.5A1.5 1.5 0 0 1 17.5 4h1A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 16 18.5v-13ZM4 16.5h16v2A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-2ZM8 5.25h8v2.5H8v-2.5ZM8 10.75h8v2.5H8v-2.5Z"/></svg>
+    </div>
+    <strong style="font-size:18px;font-weight:500;">Latter Web Installer</strong>
+    <span class="nav-badge">v2.2.0</span>
+  </div>
+  <div class="theme-icon-group" role="group" aria-label="Color Theme">
+    <button type="button" class="theme-icon-btn" data-theme-btn="light" title="Light Theme" onclick="setTheme('light')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+    <button type="button" class="theme-icon-btn" data-theme-btn="dark" title="Dark Theme" onclick="setTheme('dark')">
+      <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <button type="button" class="theme-icon-btn" data-theme-btn="auto" title="Auto (System)" onclick="setTheme('auto')">
+      <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="hero">
+    <h1>Select Your Hardware</h1>
+    <p>Choose your Waveshare display below and connect it via USB-C to flash Latter OS directly from Chrome or Edge.</p>
+  </div>
+
+  <div class="device-grid" id="device-grid"></div>
+
+  <div class="installer-panel">
+    <div class="installer-meta">
+      <h2 id="sel-title">Pocket Assistant (1.75" Round AMOLED)</h2>
+      <p id="sel-desc">Target: Waveshare ESP32-S3-Touch-AMOLED-1.75C &bull; 466&times;466 Circular QSPI AMOLED</p>
+    </div>
+    <esp-web-install-button id="install-btn" manifest="manifests/pocket-assistant.json">
+      <button slot="activate" class="btn-install" id="install-btn-label">Connect &amp; Install Pocket Assistant</button>
+    </esp-web-install-button>
+  </div>
+
+  <div class="steps-card">
+    <h3>Onboarding Steps</h3>
+    <ol>
+      <li>Click <strong>Connect &amp; Install</strong> above and select your board's USB serial port in Chrome or Edge.</li>
+      <li>Once flashing completes, configure Wi-Fi directly in the browser dialog (or connect via Improv BLE).</li>
+      <li>Install <a href="https://github.com/slampton/ha-latter" target="_blank" rel="noopener">Latter (<code>ha-latter</code>)</a> via HACS in Home Assistant and accept the auto-discovered device.</li>
+      <li>Prefer compiling in <strong>ESPHome Device Builder</strong>? Browse the turnkey YAML configs in <a href="https://github.com/slampton/esphome-latter-core/tree/main/devices" target="_blank" rel="noopener"><code>esphome-latter-core/devices/</code></a>.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+const DEVICES = [
+  {
+    slug: "pocket-assistant",
+    title: "Pocket Assistant",
+    chip: "ESP32-S3",
+    subtitle: "1.75\" Round AMOLED Handheld (466×466)",
+    hardware: "Waveshare ESP32-S3-Touch-AMOLED-1.75C",
+    manifest: "manifests/pocket-assistant.json"
+  },
+  {
+    slug: "mobile-assistant",
+    title: "Mobile Assistant",
+    chip: "ESP32-S3",
+    subtitle: "2.16\" Square AMOLED Handheld (480×480)",
+    hardware: "Waveshare ESP32-S3-Touch-AMOLED-2.16 (SKU 33969)",
+    manifest: "manifests/mobile-assistant.json"
+  },
+  {
+    slug: "wrist-assist",
+    title: "Wrist Assist",
+    chip: "ESP32-S3",
+    subtitle: "2.06\" Rectangular Smartwatch (410×502)",
+    hardware: "Waveshare ESP32-S3-Touch-AMOLED-2.06",
+    manifest: "manifests/wrist-assist.json"
+  },
+  {
+    slug: "remote-assistant",
+    title: "Remote Assistant",
+    chip: "ESP32-P4 + C6",
+    subtitle: "3.5\" Widescreen Handheld + Camera (320×480)",
+    hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (SKU 33360)",
+    manifest: "manifests/remote-assistant.json"
+  },
+  {
+    slug: "desk-assistant",
+    title: "Desk Assistant",
+    chip: "ESP32-P4 + C6",
+    subtitle: "4.0\" Stationary HD Panel (720×720)",
+    hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-4B (SKU 31416)",
+    manifest: "manifests/desk-assistant.json"
+  }
+];
+
+let SELECTED_SLUG = "pocket-assistant";
+let THEME_PREF = localStorage.getItem("latter_installer_theme") || "auto";
+const sysDark = window.matchMedia("(prefers-color-scheme: dark)");
+sysDark.addEventListener("change", () => { if (THEME_PREF === "auto") setTheme("auto"); });
+
+function setTheme(pref) {
+  THEME_PREF = pref || "auto";
+  localStorage.setItem("latter_installer_theme", THEME_PREF);
+  const eff = THEME_PREF === "auto" ? (sysDark.matches ? "dark" : "light") : THEME_PREF;
+  document.body.setAttribute("data-theme", eff);
+  document.querySelectorAll("[data-theme-btn]").forEach(b => {
+    b.classList.toggle("active", b.getAttribute("data-theme-btn") === THEME_PREF);
+  });
+}
+
+function selectDevice(slug) {
+  const dev = DEVICES.find(d => d.slug === slug) || DEVICES[0];
+  SELECTED_SLUG = dev.slug;
+  document.getElementById("sel-title").textContent = `${dev.title} — ${dev.subtitle}`;
+  document.getElementById("sel-desc").textContent = `Target: ${dev.hardware}`;
+  document.getElementById("install-btn").setAttribute("manifest", dev.manifest);
+  document.getElementById("install-btn-label").textContent = `Connect & Install ${dev.title}`;
+  renderCards();
+}
+
+function renderCards() {
+  const grid = document.getElementById("device-grid");
+  grid.innerHTML = DEVICES.map(d => `
+    <div class="dev-card ${d.slug === SELECTED_SLUG ? 'selected' : ''}" onclick="selectDevice('${d.slug}')">
+      <div class="dev-card-hdr">
+        <strong>${d.title}</strong>
+        <span class="chip-tag">${d.chip}</span>
+      </div>
+      <div class="dev-sub">${d.subtitle}</div>
+      <div class="dev-hw">${d.hardware}</div>
+    </div>
+  `).join("");
+}
+
+setTheme(THEME_PREF);
+selectDevice(SELECTED_SLUG);
+</script>
+</body>
+</html>

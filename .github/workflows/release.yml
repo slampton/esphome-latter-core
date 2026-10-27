@@ -1,0 +1,116 @@
+name: Build & Publish 5-Device Web Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build_device:
+    name: Build ${{ matrix.device.slug }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device:
+          - slug: pocket-assistant
+            name: "Latter — Pocket Assistant (1.75C)"
+            chip: "ESP32-S3"
+          - slug: mobile-assistant
+            name: "Latter — Mobile Assistant (2.16)"
+            chip: "ESP32-S3"
+          - slug: wrist-assist
+            name: "Latter — Wrist Assist (2.06)"
+            chip: "ESP32-S3"
+          - slug: remote-assistant
+            name: "Latter — Remote Assistant (P4 3.5)"
+            chip: "ESP32-P4"
+          - slug: desk-assistant
+            name: "Latter — Desk Assistant (P4 4B)"
+            chip: "ESP32-P4"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile ${{ matrix.device.slug }} with ESPHome
+        uses: docker://ghcr.io/esphome/esphome:2026.10.1
+        with:
+          args: compile devices/${{ matrix.device.slug }}.yaml
+
+      - name: Stage Factory, OTA Binaries & Manifest
+        shell: bash
+        run: |
+          mkdir -p dist/firmware dist/manifests
+          BUILD_DIR=".esphome/build/${{ matrix.device.slug }}/.pioenvs/${{ matrix.device.slug }}"
+          cp "${BUILD_DIR}/firmware.factory.bin" "dist/firmware/${{ matrix.device.slug }}.factory.bin"
+          cp "${BUILD_DIR}/firmware.ota.bin" "dist/firmware/${{ matrix.device.slug }}.ota.bin"
+          MD5_SUM=$(md5sum "dist/firmware/${{ matrix.device.slug }}.ota.bin" | awk '{print $1}')
+          cat <<EOF > "dist/manifests/${{ matrix.device.slug }}.json"
+          {
+            "name": "${{ matrix.device.name }}",
+            "version": "2.2.0",
+            "home_assistant_domain": "esphome",
+            "new_install_prompt_erase": true,
+            "builds": [
+              {
+                "chipFamily": "${{ matrix.device.chip }}",
+                "ota": {
+                  "path": "../firmware/${{ matrix.device.slug }}.ota.bin",
+                  "md5": "${MD5_SUM}",
+                  "summary": "Latter OS v2.2.0 for ${{ matrix.device.name }}"
+                },
+                "parts": [
+                  {
+                    "path": "../firmware/${{ matrix.device.slug }}.factory.bin",
+                    "offset": 0
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+
+      - name: Upload artifact for ${{ matrix.device.slug }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.device.slug }}
+          path: dist/
+
+  deploy_pages:
+    name: Deploy Unified Web Installer to GitHub Pages
+    needs: build_device
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all device build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: _site
+          merge-multiple: true
+
+      - name: Copy Web Installer UI
+        run: cp index.html _site/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

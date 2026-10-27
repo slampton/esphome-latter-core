@@ -1,0 +1,22 @@
+{
+  "name": "Latter — Remote Assistant (P4 3.5)",
+  "version": "2.2.0",
+  "home_assistant_domain": "esphome",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "ota": {
+        "path": "../firmware/remote-assistant.ota.bin",
+        "md5": "00000000000000000000000000000000",
+        "summary": "Latter OS v2.2.0 for Latter — Remote Assistant (P4 3.5)"
+      },
+      "parts": [
+        {
+          "path": "../firmware/remote-assistant.factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

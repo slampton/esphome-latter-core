@@ -1,0 +1,22 @@
+{
+  "name": "Latter — Wrist Assist (2.06)",
+  "version": "2.2.0",
+  "home_assistant_domain": "esphome",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "ota": {
+        "path": "../firmware/wrist-assist.ota.bin",
+        "md5": "00000000000000000000000000000000",
+        "summary": "Latter OS v2.2.0 for Latter — Wrist Assist (2.06)"
+      },
+      "parts": [
+        {
+          "path": "../firmware/wrist-assist.factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

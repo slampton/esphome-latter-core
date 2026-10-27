@@ -1,0 +1,22 @@
+{
+  "name": "Latter — Desk Assistant (P4 4B)",
+  "version": "2.2.0",
+  "home_assistant_domain": "esphome",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-P4",
+      "ota": {
+        "path": "../firmware/desk-assistant.ota.bin",
+        "md5": "00000000000000000000000000000000",
+        "summary": "Latter OS v2.2.0 for Latter — Desk Assistant (P4 4B)"
+      },
+      "parts": [
+        {
+          "path": "../firmware/desk-assistant.factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
