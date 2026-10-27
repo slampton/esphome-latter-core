@@ -1,0 +1,30 @@
+name: Validate SDK & Examples
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate ESPHome SDK Modules & Examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome
+        run: pip install --upgrade pip esphome
+
+      - name: Validate Example 1 (Minimal Headless / Mixin Companion)
+        run: esphome config examples/minimal_headless_companion.yaml
+
+      - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)
+        run: esphome config examples/custom_display_template.yaml

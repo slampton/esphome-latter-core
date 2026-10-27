@@ -1,0 +1,242 @@
+# ==============================================================================
+# Latter Core Example 2: Custom Display Porting Template (480x480 Square Panel)
+# Target: Generic ESP32-S3 (or ESP32-P4) with Octal PSRAM, QSPI/SPI Display,
+#         I2C Touch, and I2S Audio
+# Purpose:
+#   1. Copy-paste starter template for porting the full Latter C++20 UI OS
+#      (Watch faces, 20 FPS Weather, Assist, Music Assistant, Room Control,
+#      Whole-Home Hub, 4-Slot Remote, 4 Games, 12 Tools) to a new screen.
+#   2. Automated CI target verifying that all 13 C++20 headers in include/
+#      and modules/{audio_voice,power_generic,display_ui}.yaml validate cleanly.
+# ==============================================================================
+
+substitutions:
+  name: "latter-panel-demo"
+  friendly_name: "Latter Panel Demo"
+  version: "2.2.1"
+  screen_w: "480"
+  screen_h: "480"
+  art_resize: "480x480"
+  art_shape: "square"
+  firmware_update_entity: "update.latter_panel_demo_project_firmware"
+  default_start_app: "Home"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+
+  # Latter Companion Integration Entities (Auto-discovered by ha-latter)
+  active_media_sensor: "sensor.latter_panel_demo_active_media"
+  weather_forecast_sensor: "sensor.latter_panel_demo_weather_forecast"
+  room_context_sensor: "sensor.latter_panel_demo_room_context"
+  calendar_agenda_sensor: "sensor.latter_panel_demo_calendar_agenda"
+  remote_config_sensor: "sensor.latter_panel_demo_remote_config"
+
+  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
+  local_player_id: "media_player.latter_panel_demo"
+  weather_entity: "weather.forecast_home"
+  sun_entity: "sun.sun"
+  moon_entity: "sensor.moon_phase"
+  tv_remote_entity: "remote.none"
+  tv_remote_entity_2: "remote.none"
+  tv_remote_entity_3: "remote.none"
+  tv_remote_entity_4: "remote.none"
+
+# Load the Latter Core C++20 header staging component (use github://slampton/esphome-latter-core@main in external repos)
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [latter_core]
+
+latter_core:
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.10.0
+  build_flags:
+    - "-DPOCKET_UI_SCREEN_W=480"
+    - "-DPOCKET_UI_SCREEN_H=480"
+    - "-DPOCKET_UI_ROUND_DISPLAY=0"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+  ignore_not_found: false
+
+logger:
+  level: INFO
+
+wifi:
+  id: wifi_ctrl
+  ssid: "MyHomeWiFi"
+  password: "MyWiFiPassword"
+
+esp32_ble:
+  id: ble_ctrl
+  enable_on_boot: true
+
+update:
+  - platform: http_request
+    id: update_pocket_assistant
+    name: "Project Firmware"
+    source: "https://example.com/manifest.json"
+    update_interval: never
+
+safe_mode:
+  boot_is_good_after: 5s
+
+# ==============================================================================
+# REFERENCE BOARD HARDWARE ABSTRACTION LAYER (HAL)
+# Replace pins & driver models below with your board's schematic
+# ==============================================================================
+i2c:
+  - id: bus_internal
+    sda: GPIO15
+    scl: GPIO14
+    frequency: 400kHz
+
+spi:
+  - id: display_qspi
+    type: quad
+    clk_pin: GPIO38
+    data_pins: [GPIO4, GPIO5, GPIO6, GPIO7]
+
+i2s_audio:
+  - id: i2s_input_bus
+    i2s_lrclk_pin: { number: GPIO45, allow_other_uses: true, ignore_strapping_warning: true }
+    i2s_bclk_pin:  { number: GPIO9,  allow_other_uses: true }
+    i2s_mclk_pin:  { number: GPIO16, allow_other_uses: true }
+  - id: i2s_output_bus
+    i2s_lrclk_pin: { number: GPIO45, allow_other_uses: true, ignore_strapping_warning: true }
+    i2s_bclk_pin:  { number: GPIO9,  allow_other_uses: true }
+    i2s_mclk_pin:  { number: GPIO16, allow_other_uses: true }
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    i2c_id: bus_internal
+    address: 0x40
+    bits_per_sample: 16bit
+    sample_rate: 16000
+
+microphone:
+  - platform: i2s_audio
+    id: pocket_mic
+    adc_type: external
+    i2s_audio_id: i2s_input_bus
+    i2s_din_pin: GPIO10
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+
+audio_dac:
+  - platform: es8311
+    id: es8311_dac
+    i2c_id: bus_internal
+    address: 0x18
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    use_mclk: true
+
+speaker:
+  - platform: i2s_audio
+    id: physical_speaker
+    i2s_audio_id: i2s_output_bus
+    i2s_dout_pin: GPIO8
+    dac_type: external
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+    buffer_duration: 250ms
+
+motion:
+  - platform: qmi8658
+    id: imu
+    address: 0x6B
+    update_interval: 100ms
+
+switch:
+  - platform: gpio
+    name: "Speaker Enable"
+    id: speaker_enable
+    pin: { number: GPIO46, ignore_strapping_warning: true }
+
+binary_sensor:
+  - platform: gpio
+    id: boot_button
+    name: "Boot Button"
+    pin: { number: GPIO0, mode: INPUT_PULLUP, inverted: true, ignore_strapping_warning: true }
+
+display:
+  - platform: mipi_spi
+    id: disp1
+    model: CO5300
+    spi_id: display_qspi
+    bus_mode: quad
+    data_rate: 80MHz
+    reset_pin: GPIO1
+    cs_pin: GPIO12
+    dimensions:
+      width: 480
+      height: 480
+    update_interval: 1s
+
+touchscreen:
+  - platform: ft5x06
+    id: touch_screen
+    display: disp1
+    i2c_id: bus_internal
+    address: 0x38
+    interrupt_pin: { number: GPIO11, mode: INPUT_PULLUP }
+
+# Standard HAL Hook Scripts (No-op or customize for your board's power/mux lines)
+script:
+  - id: hal_route_i2s_to_spk
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_route_i2s_to_mic
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_release_deep_sleep_holds
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_init_pmu_irq
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_enter_hardware_hibernate
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_set_imu_power_mode
+    mode: restart
+    parameters:
+      ctrl7_val: int
+    then:
+      - lambda: '(void)ctrl7_val;'
+  - id: hal_set_audio_codecs_standby
+    mode: restart
+    parameters:
+      standby: bool
+    then:
+      - lambda: '(void)standby;'
+
+# ==============================================================================
+# SHARED LATTER CORE OS MODULES
+# ==============================================================================
+packages:
+  latter_audio_voice: !include ../modules/audio_voice.yaml
+  latter_power_gen:   !include ../modules/power_generic.yaml
+  latter_display_ui:  !include ../modules/display_ui.yaml
