@@ -202,16 +202,13 @@ sensor:
     unit_of_measurement: "V"
     device_class: voltage
     state_class: measurement
-    accuracy_decimals: 3
-    update_interval: 5s
+    accuracy_decimals: 2
+    update_interval: 60s
     filters:
-      - or:
-          - throttle: 60s
-          - delta: 0.025
+      - throttle: 120s
     lambda: |-
       static float last_v = NAN;
-      if (id(va_active) || id(va_tts_received)) {
-        if (!std::isnan(last_v)) return last_v;
+      if (id(va_active) || id(va_tts_received) || (id(display_power_state) == 2 && !id(usb_connected).state && !std::isnan(last_v))) {
         return {};
       }
       uint8_t reg = 0x34;
@@ -727,10 +724,10 @@ script:
           if (!pickup_wake_active) {
             id(imu).stop_poller();
           }
-          // On battery power, enable Wi-Fi modem sleep while screen is off only when local audio is not playing
+          // On battery power, enable deep Wi-Fi modem sleep (WIFI_PS_MAX_MODEM=2) while screen is off & audio idle
           if (!id(usb_connected).state && !local_audio_playing) {
             extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-            esp_wifi_set_ps(1); // 1: WIFI_PS_MIN_MODEM
+            esp_wifi_set_ps(2); // 2: WIFI_PS_MAX_MODEM
           }
 
   - id: enter_standby_state
