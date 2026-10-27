@@ -6826,50 +6826,27 @@ touchscreen:
               };
 
               if (id(remote_subpage) == 1) {
-                if (touch.x >= 90 && touch.x <= 376 && touch.y >= 84 && touch.y < 146) {
-                  if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
-                    last_remote_btn_tap = now_rem;
-                    id(remote_send_key).execute(9, -1);
-                    pocket_ui::schedule_disp_update(&id(disp1));
-                  }
-                  return;
-                }
-
-                int valid_slots[4] = {0, 0, 0, 0};
-                int valid_count = pocket_ui::collect_configured_remote_slots(rem_ents, valid_slots);
-                for (int row = 0; row < valid_count; row++) {
-                  int y_mid = 173 + row * 63;
-                  if (touch.y >= y_mid - 26 && touch.y <= y_mid + 36) {
-                    int s_idx = valid_slots[row];
-                    int max_sel_x = (row == 0) ? 376 : 326;
-                    if (touch.x >= 90 && touch.x <= max_sel_x) {
-                      if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
-                        last_remote_btn_tap = now_rem;
-                        id(active_remote_slot) = s_idx;
-                        id(remote_action_feedback) = "";
-                        id(remote_subpage) = 0;
-                        id(remote_select_slot_latter).execute(s_idx + 1);
-                        pocket_ui::schedule_disp_update(&id(disp1));
-                      }
-                      return;
-                    }
-                    if (row > 0 && touch.x >= 330 && touch.x <= 384) {
-                      if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
-                        last_remote_btn_tap = now_rem;
-                        id(remote_send_key).execute(9, s_idx);
-                        pocket_ui::schedule_disp_update(&id(disp1));
-                      }
-                      return;
-                    }
-                  }
-                }
-
                 if (is_back_button(touch) || touch.y <= 72) {
                   if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_remote_btn_tap = now_rem;
                     id(remote_action_feedback) = "";
                     id(remote_subpage) = 0;
                     pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+                  return;
+                }
+                int valid_slots[pocket_ui::MAX_REMOTE_SLOTS] = {0};
+                int valid_count = pocket_ui::collect_configured_remote_slots(rem_ents, valid_slots);
+                int total_pages = std::max(1, (valid_count + 3) / 4);
+                if (total_pages > 1 && is_right_chevron_zone(touch)) {
+                  if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
+                    int delta = (touch.y < 220) ? -1 : 1;
+                    int next_pg = std::max(0, std::min(total_pages - 1, pocket_ui::remote_control_page() + delta));
+                    if (next_pg != pocket_ui::remote_control_page()) {
+                      last_remote_btn_tap = now_rem;
+                      pocket_ui::remote_control_page() = next_pg;
+                      pocket_ui::schedule_disp_update(&id(disp1));
+                    }
                   }
                   return;
                 }
@@ -7555,17 +7532,22 @@ touchscreen:
                   }
                   return;
                 }
-                int slot_idx = get_5slot_index(touch, 88, 378);
-                if (slot_idx >= 0 && slot_idx <= 4 && (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON)) {
-                  last_stuff_tap = now_stuff;
-                  std::string slots[5], names[5], acts[5];
-                  pocket_ui::parse_custom_bindings_summary(id(ha_latter_custom_bindings_summary).state, slots, names, acts);
-                  id(macro_target_slot) = slots[slot_idx];
-                  id(macro_feedback_str) = std::string("Triggered: ") + names[slot_idx];
-                  id(macro_feedback_ms) = now_stuff;
-                  id(trigger_latter_macro).execute();
-                  pocket_ui::schedule_disp_update(&id(disp1));
+                std::string m_slots[pocket_ui::MAX_MACRO_ITEMS], m_names[pocket_ui::MAX_MACRO_ITEMS], m_acts[pocket_ui::MAX_MACRO_ITEMS];
+                int m_total = pocket_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
+                int m_pages = std::max(1, (m_total + 4) / 5);
+                if (m_pages > 1 && is_right_chevron_zone(touch)) {
+                  if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_RAPID) {
+                    int delta = (touch.y < 220) ? -1 : 1;
+                    int next_pg = std::max(0, std::min(m_pages - 1, pocket_ui::macro_browse_page() + delta));
+                    if (next_pg != pocket_ui::macro_browse_page()) {
+                      last_stuff_tap = now_stuff;
+                      pocket_ui::macro_browse_page() = next_pg;
+                      pocket_ui::schedule_disp_update(&id(disp1));
+                    }
+                  }
+                  return;
                 }
+                return;
               } else if (id(stuff_subpage) == 12) {
                 if (is_back_button(touch)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
@@ -7850,7 +7832,31 @@ touchscreen:
               }
             }
 
-            // 8. TOOLS SUITE (PAGE 8) LAUNCHER (subpage 0) & CALENDAR (subpage 9) VERTICAL SWIPE
+            // 7B. REMOTE CONTROL (PAGE 7, SUBPAGE 1) VERTICAL LIST SWIPE (UP TO 10 REMOTES)
+            if (id(gui_page) == 7 && id(remote_subpage) == 1 && gest.start_y > 140 && gest.start_y < 404) {
+              if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+                const std::string rem_ents_u[4] = {
+                  id(remote_slot_0_ent), id(remote_slot_1_ent),
+                  id(remote_slot_2_ent), id(remote_slot_3_ent)
+                };
+                int valid_slots_u[pocket_ui::MAX_REMOTE_SLOTS] = {0};
+                int valid_cnt_u = pocket_ui::collect_configured_remote_slots(rem_ents_u, valid_slots_u);
+                int total_pg_u = std::max(1, (valid_cnt_u + 3) / 4);
+                if (total_pg_u > 1) {
+                  gest.swipe_committed = true;
+                  gest.last_swipe_ms = now_u;
+                  int delta = (dy < 0) ? 1 : -1;
+                  int next_pg = std::max(0, std::min(total_pg_u - 1, pocket_ui::remote_control_page() + delta));
+                  if (next_pg != pocket_ui::remote_control_page()) {
+                    pocket_ui::remote_control_page() = next_pg;
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+                }
+                return;
+              }
+            }
+
+            // 8. TOOLS SUITE (PAGE 8) LAUNCHER (subpage 0), CALENDAR (subpage 9) & MACROS (subpage 11) VERTICAL SWIPE
             if (id(gui_page) == 8 && !id(menu_scroll_active) && gest.start_y < 404) {
               if (id(stuff_subpage) == 0 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
@@ -7874,6 +7880,21 @@ touchscreen:
                   id(cal_browse_page) = next_pg;
                   id(fetch_calendar_browse).execute();
                   pocket_ui::schedule_disp_update(&id(disp1));
+                }
+                return;
+              } else if (id(stuff_subpage) == 11 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+                std::string m_slots[pocket_ui::MAX_MACRO_ITEMS], m_names[pocket_ui::MAX_MACRO_ITEMS], m_acts[pocket_ui::MAX_MACRO_ITEMS];
+                int m_total = pocket_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
+                int m_pages = std::max(1, (m_total + 4) / 5);
+                if (m_pages > 1) {
+                  gest.swipe_committed = true;
+                  gest.last_swipe_ms = now_u;
+                  int delta = (dy < 0) ? 1 : -1;
+                  int next_pg = std::max(0, std::min(m_pages - 1, pocket_ui::macro_browse_page() + delta));
+                  if (next_pg != pocket_ui::macro_browse_page()) {
+                    pocket_ui::macro_browse_page() = next_pg;
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
                 }
                 return;
               }
@@ -8649,6 +8670,8 @@ touchscreen:
                           pocket_ui::cal_quick_add_open() = false;
                           id(cal_browse_page) = 1;
                           id(fetch_calendar_browse).execute();
+                        } else if (id(stuff_subpage) == 11) {
+                          pocket_ui::macro_browse_page() = 0;
                         } else if (id(stuff_subpage) == 12) {
                           id(fetch_on_demand_camera).execute();
                         }
@@ -8700,6 +8723,55 @@ touchscreen:
                       pocket_ui::cal_map_pan_y() = 0;
                       id(fetch_calendar_map_snapshot).execute();
                     }
+                  }
+                }
+              } else if (!gest.swipe_committed && id(gui_page) == 7 && id(remote_subpage) == 1 &&
+                         gest.max_travel < 24 && gest.last_y >= 84 && gest.last_y < 404) {
+                if (tp.x >= pocket_ui::SCREEN_CX - 143 && tp.x <= pocket_ui::SCREEN_CX + 143 && tp.y >= 84 && tp.y < 146) {
+                  id(remote_send_key).execute(9, -1);
+                  pocket_ui::schedule_disp_update(&id(disp1));
+                } else {
+                  const std::string rem_ents_r[4] = {
+                    id(remote_slot_0_ent), id(remote_slot_1_ent),
+                    id(remote_slot_2_ent), id(remote_slot_3_ent)
+                  };
+                  int valid_slots_r[pocket_ui::MAX_REMOTE_SLOTS] = {0};
+                  int valid_cnt_r = pocket_ui::collect_configured_remote_slots(rem_ents_r, valid_slots_r);
+                  int start_idx_r = pocket_ui::remote_control_page() * 4;
+                  int vis_cnt_r = std::min(4, std::max(0, valid_cnt_r - start_idx_r));
+                  for (int row = 0; row < vis_cnt_r; row++) {
+                    int y_mid = 173 + row * 63;
+                    if (tp.y >= y_mid - 26 && tp.y <= y_mid + 36) {
+                      int s_idx = valid_slots_r[start_idx_r + row];
+                      bool is_prim = (s_idx == valid_slots_r[0]);
+                      int max_sel_x = is_prim ? (pocket_ui::SCREEN_CX + 143) : (pocket_ui::SCREEN_CX + 93);
+                      if (tp.x >= pocket_ui::SCREEN_CX - 143 && tp.x <= max_sel_x) {
+                        id(active_remote_slot) = s_idx;
+                        id(remote_action_feedback) = "";
+                        id(remote_subpage) = 0;
+                        id(remote_select_slot_latter).execute(s_idx + 1);
+                        pocket_ui::schedule_disp_update(&id(disp1));
+                      } else if (!is_prim && tp.x >= pocket_ui::SCREEN_CX + 97 && tp.x <= pocket_ui::SCREEN_CX + 151) {
+                        id(remote_send_key).execute(9, s_idx);
+                        pocket_ui::schedule_disp_update(&id(disp1));
+                      }
+                      break;
+                    }
+                  }
+                }
+              } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 11 &&
+                         gest.max_travel < 24 && gest.last_y >= 80 && gest.last_y < 404) {
+                int slot_idx = get_5slot_index(tp, pocket_ui::SCREEN_CX - 145, pocket_ui::SCREEN_CX + 145);
+                if (slot_idx >= 0 && slot_idx <= 4) {
+                  std::string m_slots[pocket_ui::MAX_MACRO_ITEMS], m_names[pocket_ui::MAX_MACRO_ITEMS], m_acts[pocket_ui::MAX_MACRO_ITEMS];
+                  int m_total = pocket_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
+                  int item_idx = pocket_ui::macro_browse_page() * 5 + slot_idx;
+                  if (item_idx >= 0 && item_idx < m_total) {
+                    id(macro_target_slot) = m_slots[item_idx];
+                    id(macro_feedback_str) = std::string("Triggered: ") + m_names[item_idx];
+                    id(macro_feedback_ms) = now_rel;
+                    id(trigger_latter_macro).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 9 &&
