@@ -14,6 +14,7 @@ esphome:
     - "-DPOCKET_UI_SCREEN_H=480"
     - "-DPOCKET_UI_ROUND_DISPLAY=0"
     - "-DPOCKET_UI_NO_PMU_IRQ_PIN=1"
+    - "-DPOCKET_UI_BACKLIGHT_PIN=28"
 
 esp32:
   variant: esp32p4
@@ -22,6 +23,7 @@ esp32:
     type: esp-idf
     advanced:
       enable_idf_experimental_features: true
+      flash_chip: generic
 
 psram:
   speed: 200MHz
@@ -118,7 +120,9 @@ display:
     id: disp1
     model: ST7796
     spi_id: display_spi
-    data_rate: 40MHz
+    data_rate: 80MHz
+    color_order: BGR
+    invert_colors: true
     cs_pin: GPIO23
     dc_pin: GPIO26
     reset_pin: GPIO27
@@ -133,6 +137,10 @@ touchscreen:
     display: disp1
     i2c_id: bus_internal
     address: 0x38
+    interrupt_pin:
+      number: GPIO50
+      mode: INPUT_PULLUP
+    reset_pin: GPIO29
     touch_timeout: 120ms
 
 script:
@@ -147,7 +155,14 @@ script:
   - id: hal_release_deep_sleep_holds
     mode: restart
     then:
-      - lambda: 'return;'
+      - lambda: |-
+          // Pulse FT6336 Touch Reset (GPIO29) and enable LCD Backlight (GPIO28) immediately on boot
+          gpio_set_direction(GPIO_NUM_29, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_29, 0);
+          esp_rom_delay_us(10000);
+          gpio_set_level(GPIO_NUM_29, 1);
+          esp_rom_delay_us(30000);
+          pocket_ui::hal_set_display_brightness(&id(disp1), 230);
   - id: hal_init_pmu_irq
     mode: restart
     then:

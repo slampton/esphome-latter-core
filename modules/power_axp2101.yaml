@@ -467,7 +467,7 @@ interval:
           uint32_t now_1s_ms = millis();
           if (id(display_power_state) == 0 && !id(is_hibernating) && !id(ota_in_progress)) {
             const bool want_ble = id(ble_room_beacon_switch).state || (!id(wifi_ctrl).is_connected() && now_1s_ms > 15000U);
-            if (want_ble && !id(ble_ctrl).is_active()) {
+            if (want_ble && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
               ESP_LOGI("ble", "Enabling BLE radio (Room Presence Beacon / Improv)");
               id(ble_ctrl).enable();
             } else if (!want_ble && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
@@ -764,7 +764,7 @@ script:
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
           id(imu).start_poller();
-          if (id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active()) {
+          if (id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }
           id(hal_set_audio_codecs_standby).execute(false);

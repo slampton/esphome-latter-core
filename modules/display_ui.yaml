@@ -2168,7 +2168,7 @@ switch:
     turn_on_action:
       - lambda: |-
           id(ble_room_beacon_switch).publish_state(true);
-          if (id(display_power_state) == 0 && !id(ble_ctrl).is_active()) {
+          if (id(display_power_state) == 0 && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }
           if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
@@ -3650,7 +3650,7 @@ script:
                 then:
                   - lambda: |-
                       id(va_was_cancelled) = false;
-                      if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active()) {
+                      if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
                         id(ble_ctrl).enable();
                       }
                   - homeassistant.action:
@@ -3695,7 +3695,7 @@ script:
           else:
             - lambda: |-
                 id(va_was_cancelled) = false;
-                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active()) {
+                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
                   id(ble_ctrl).enable();
                 }
             - audio_dac.mute_on: es8311_dac
@@ -4567,7 +4567,7 @@ script:
             - script.execute: route_i2s_to_mic
             - script.execute: sync_wake_word_state
             - lambda: |-
-                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active()) {
+                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
                   ESP_LOGI("ble", "Local audio idle: re-enabling BLE Presence Beacon");
                   id(ble_ctrl).enable();
                 }
