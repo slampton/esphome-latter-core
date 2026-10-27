@@ -1,138 +1,227 @@
-# ESPHome Latter Core (`esphome-latter-core`)
+<div align="center">
 
-[![Validate SDK](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml/badge.svg)](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml)
-[![Version](https://img.shields.io/badge/Version-v2.2.0-blue)](https://github.com/slampton/esphome-latter-core)
-[![Latter Ecosystem](https://img.shields.io/badge/Latter-v2.2%2B-03a9f4)](https://github.com/slampton/ha-latter)
-[![ESPHome](https://img.shields.io/badge/ESPHome-2026.10.0%2B-blue?logo=esphome&logoColor=white)](https://esphome.io)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io)
-[![Music Assistant](https://img.shields.io/badge/Music%20Assistant-2.10.8%2B-purple)](https://music-assistant.io)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/slampton)
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slampton)
+# Latter Core (`esphome-latter-core`)
 
-**`esphome-latter-core`** is the shared C++20 operating system, resolution-adaptive UI engine, and 1-line YAML mixin SDK for **[Latter](https://github.com/slampton/ha-latter)** companion devices in Home Assistant.
+**Universal ESPHome C++20 UI Engine, Turnkey Hardware Catalog & 1-Line Drop-In Mixins for Home Assistant**
 
-It serves two purposes:
-1. **1-Line Drop-In Mixins (`mixins/*.yaml`)**: Upgrade any existing 3rd-party ESPHome device with roaming BLE room presence, stationary BLE proxy scanning, WireGuard roaming VPN, or Studio diagnostics—with **zero substitutions required**.
-2. **Full Companion Display OS (`components/latter_core`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared by flagship devices like **[Pocket Assistant](https://github.com/slampton/esphome-pocket-assistant)** (`466×466` round AMOLED) and **[Wrist Assist](https://github.com/slampton/esphome-wrist-assist)** (`410×502` rectangular watch), and ready for upcoming **ESP32-P4** square/round MIPI-DSI panels.
+[![Release](https://img.shields.io/badge/release-v2.2.0-03a9f4?style=for-the-badge&logo=github)](https://github.com/slampton/esphome-latter-core/releases)
+[![ESPHome](https://img.shields.io/badge/ESPHome-2026.10%2B-000000?style=for-the-badge&logo=esphome&logoColor=white)](https://esphome.io)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white)](https://github.com/slampton/ha-latter)
+[![ESP32-S3 & P4](https://img.shields.io/badge/ESP32--S3%20%7C%20ESP32--P4-Supported-E7352C?style=for-the-badge&logo=espressif&logoColor=white)](https://github.com/slampton/esphome-latter-core)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](https://github.com/slampton/esphome-latter-core/tree/main/include)
+[![Validate CI](https://img.shields.io/github/actions/workflow/status/slampton/esphome-latter-core/validate.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=ESPHome%20CI)](https://github.com/slampton/esphome-latter-core/actions)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg?style=for-the-badge)](https://github.com/slampton/esphome-latter-core/graphs/commit-activity)
+[![Sponsor](https://img.shields.io/badge/Sponsor-Lampton%20Labs-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slampton)
 
----
-
-## Part of the Latter Ecosystem
-
-| Repository | Role in the Ecosystem |
-| :--- | :--- |
-| **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** | **Home Assistant Middleware & Web Studio** — Zero-YAML entity mapping, BLE room presence radar, Music Assistant browser, Baseline-JPEG transcoder, and backup vault. |
-| 👉 **[Latter Core (`esphome-latter-core`)](https://github.com/slampton/esphome-latter-core)** | **Shared ESPHome OS & 1-Line Mixin SDK (You Are Here)** — Modular C++20 UI engine, audio/voice pipeline, 3-tier power state machine, and 1-line drop-in mixins for any ESPHome device. |
-| **[Pocket Assistant (`esphome-pocket-assistant`)](https://github.com/slampton/esphome-pocket-assistant)** | **Flagship Round Handheld (`466×466`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-1.75C pocket companion. |
-| **[Wrist Assist (`esphome-wrist-assist`)](https://github.com/slampton/esphome-wrist-assist)** | **Flagship Smartwatch (`410×502`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-2.06 wearable companion. |
+</div>
 
 ---
 
-## Developer Documentation & Compilable Examples
+## Overview
 
-- 🧪 **[Example 1: Minimal Headless / Mixin Node (`examples/minimal_headless_companion.yaml`)](examples/minimal_headless_companion.yaml)** — Compiles on any bare $5 ESP32-S3 DevKit with zero external peripherals; demonstrates `modules/base.yaml`, `modules/room_control.yaml`, and `mixins/ble_beacon.yaml`.
-- 🖥️ **[Example 2: Custom 480×480 Display Porting Template (`examples/custom_display_template.yaml`)](examples/custom_display_template.yaml)** — Complete, CI-validated reference HAL & manifest for porting the full Latter C++20 UI OS (`components/latter_core`, `include/*.h`, `modules/audio_voice.yaml`, `modules/power_generic.yaml`, `modules/display_ui.yaml`) to a new screen.
-- 🔌 **[Latter Wire & API Contract (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)** — Complete specification of the 5 `sensor.<slug>_*` push sensors, ESPHome API actions (`set_browse_slots`, `set_room_slots`, `show_notification`, `set_timer`, `cancel_timer`, `latter_ping`), and outbound `latter.*` services for building custom clients.
-- 🛠️ **[Porting & New Hardware Guide (`docs/PORTING_NEW_HARDWARE.md`)](docs/PORTING_NEW_HARDWARE.md)** — How to bring up a new screen size/shape (`ui_layout.h`), power backend (`power_axp2101.yaml` vs. `power_generic.yaml`), or **ESP32-P4** board in 15 minutes.
+**`esphome-latter-core`** is the shared operating system, hardware abstraction layer (HAL), and 1-line mixin library for the **Latter** ecosystem:
+
+1. **[`slampton/ha-latter`](https://github.com/slampton/ha-latter)** — Universal Home Assistant Companion Middleware & Web Studio (`custom_components/latter/`).
+2. **`slampton/esphome-latter-core` (This Repo)** — Shared C++20 UI engine (`include/*.h`), core ESPHome modules (`modules/*.yaml`), board HAL packages (`boards/*.yaml`), turnkey device configs (`devices/*.yaml`), and 1-line drop-in mixins (`mixins/*.yaml`).
+3. **[`slampton/esphome-pocket-assistant`](https://github.com/slampton/esphome-pocket-assistant)** — Dedicated flagship repository for the 1.75" Round AMOLED **Pocket Assistant**.
 
 ---
 
-## 1. One-Line Drop-In Mixins for Any ESPHome Device
+## Supported Turnkey Hardware (`devices/` & `boards/`)
 
-Paste any of these single-line packages into an existing ESPHome device's YAML to unlock Latter capabilities immediately:
+All five flagship displays run the unified **Latter C++20 UI OS** (Watch Faces, 20 FPS Weather Sky, On-Device Wake Word + Assist, Music Assistant Sendspin Player, Area-Aware Room Control, Whole-Home Hub, 10-Slot Scrollable TV Remote, 4 Arcade Games, and 12 Utilities) and auto-discover in **[`ha-latter`](https://github.com/slampton/ha-latter)** with zero YAML edits:
 
-### A. Roaming BLE Room Presence Beacon (`mixins/ble_beacon.yaml`)
-Broadcasts a calibrated iBeacon (`504F434B-4554-4153-5354-000000000210`) + exposes a `"Room: BLE Presence Beacon"` switch so Latter tracks which room the device is in:
+| Product Name | Form Factor | Waveshare Hardware Target | Display & Touch | Audio & Power | Turnkey Device Config |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Pocket Assistant** | *1.75" Round Handheld* | `ESP32-S3-Touch-AMOLED-1.75C` | `466×466` Round QSPI `CO5300` + `CST9220` | `ES8311` + `ES7210`, `AXP2101`, `QMI8658` | `devices/pocket-assistant.yaml` |
+| **Mobile Assistant** | *2.16" Square Handheld* | `ESP32-S3-Touch-AMOLED-2.16` *(SKU 33969)* | `480×480` Square QSPI `CO5300` + `CST9220` | `ES8311` + `ES7210`, `AXP2101`, `QMI8658` | `devices/mobile-assistant.yaml` |
+| **Wrist Assist** | *2.06" Smartwatch* | `ESP32-S3-Touch-AMOLED-2.06` | `410×502` Rect QSPI `CO5300` + `FT3168` | `ES8311` + `ES7210`, `AXP2101`, `QMI8658` | `devices/wrist-assist.yaml` |
+| **Remote Assistant** | *3.5" P4 Widescreen Handheld* | `ESP32-P4-WIFI6-Touch-LCD-3.5` *(SKU 33360)* | `320×480` SPI `ST7796` + `FT6336` + 5MP Cam | `ES8311`, `AXP2101`, ESP32-C6 Wi-Fi 6/BLE | `devices/remote-assistant.yaml` |
+| **Desk Assistant** | *4.0" P4 Stationary Display* | `ESP32-P4-WIFI6-Touch-LCD-4B` *(SKU 31416)* | `720×720` MIPI-DSI `ST7703` + `GT911` | `ES8311` + `ES7210`, Mains/5V (`power_generic`) | `devices/desk-assistant.yaml` |
+
+---
+
+## Quick Start: ESPHome Device Builder Configs
+
+Paste the snippet for your hardware into **ESPHome Device Builder** in Home Assistant:
+
+### 1. Pocket Assistant (`1.75"` Round AMOLED — ESP32-S3)
+```yaml
+substitutions:
+  name: "pocket-assistant"
+  friendly_name: "Pocket Assistant"
+
+packages:
+  device:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files:
+      - devices/pocket-assistant.yaml
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+### 2. Mobile Assistant (`2.16"` Square AMOLED — ESP32-S3)
+```yaml
+substitutions:
+  name: "mobile-assistant"
+  friendly_name: "Mobile Assistant"
+
+packages:
+  device:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files:
+      - devices/mobile-assistant.yaml
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+### 3. Wrist Assist (`2.06"` Smartwatch — ESP32-S3)
+```yaml
+substitutions:
+  name: "wrist-assist"
+  friendly_name: "Wrist Assist"
+
+packages:
+  device:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files:
+      - devices/wrist-assist.yaml
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+### 4. Remote Assistant (`3.5"` Widescreen Handheld — ESP32-P4)
+```yaml
+substitutions:
+  name: "remote-assistant"
+  friendly_name: "Remote Assistant"
+
+packages:
+  device:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files:
+      - devices/remote-assistant.yaml
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+### 5. Desk Assistant (`4.0"` 720×720 Stationary Display — ESP32-P4)
+```yaml
+substitutions:
+  name: "desk-assistant"
+  friendly_name: "Desk Assistant"
+
+packages:
+  device:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files:
+      - devices/desk-assistant.yaml
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+---
+
+## 1-Line Drop-In Mixins for Any 3rd-Party ESPHome Device
+
+Add any of these 1-line packages to an existing ESPHome node to integrate it with [`ha-latter`](https://github.com/slampton/ha-latter):
+
 ```yaml
 packages:
+  # 1. Roaming BLE iBeacon (tracks portable ESP32 devices room-to-room)
   latter.ble: github://slampton/esphome-latter-core/mixins/ble_beacon.yaml@main
-```
 
-### B. Stationary Room BLE Scanner Proxy (`mixins/ble_proxy.yaml`)
-Turns any mains-powered ESP32 node into an active room Bluetooth scanner for Latter's Room Calibration radar:
-```yaml
-packages:
+  # 2. Stationary Room Bluetooth Scanner Proxy (feeds Latter's BLE room radar)
   latter.proxy: github://slampton/esphome-latter-core/mixins/ble_proxy.yaml@main
-```
 
-### C. Roaming WireGuard VPN Tunnel (`mixins/roaming_vpn.yaml`)
-Keeps a portable ESPHome device connected to Home Assistant over phone hotspots with live VPN diagnostic sensors:
-```yaml
-packages:
+  # 3. Roaming WireGuard VPN Tunnel (remote access over phone hotspots)
   latter.vpn: github://slampton/esphome-latter-core/mixins/roaming_vpn.yaml@main
-```
 
-### D. Core Studio Discovery & Diagnostics (`mixins/diagnostics.yaml`)
-Adds Uptime, Wi-Fi Signal, Restart button, and automatic Latter discovery:
-```yaml
-packages:
+  # 4. Studio Auto-Discovery & Diagnostics (Uptime, Wi-Fi RSSI, Restart button)
   latter.diag: github://slampton/esphome-latter-core/mixins/diagnostics.yaml@main
 ```
 
 ---
 
-## 2. Repository Architecture (`v2.2+`)
+## Repository Structure
 
 ```text
 esphome-latter-core/
 ├── components/
 │   └── latter_core/
-│       └── __init__.py          # External component: stages all C++20 headers from include/ into build src/
-├── include/                     # Modular C++20 UI, Shader, Physics & Audio Headers
-│   ├── va_cancel_helper.h       # Voice Assistant session lifecycle, NVS wake word persistence & mono downmixer
-│   ├── ui_core.h                # Display traits, .rodata trig LUTs, 3D math, UTF-8 sanitizer & scanline blitter
-│   ├── ui_layout.h              # Resolution/shape-adaptive UiLayout metrics & ESP32-S3 / ESP32-P4 HAL helpers
-│   ├── ui_ambient_va.h          # 20 FPS Aurora, Starfield, Matrix & Fireworks screensavers + 5 VA profiles
-│   ├── ui_weather_sky.h         # 20 FPS Weather motion shaders, 5-day forecast, sun & synodic moon engine
-│   ├── ui_games.h               # 4 IMU/Touch arcade games (Marbles, Archery, Breakout, Chomp)
-│   ├── ui_tools.h               # 12-Tool Suite (Timers, Alarms, Chrono, Level, Calc, Calendar+Map, Intercom, Cam)
-│   ├── ui_music.h               # Now Playing HUD, Track Inspector, Lyrics/Bio Reader & MA Library Browser
-│   ├── ui_clock_home.h          # Analog/Digital Watch Faces, Live Activity Stack, Wake Greeting & Sliding Dock
-│   ├── ui_room_home_hub.h       # Area Room Control (3-card fill-sliders + RGB/Kelvin) & Whole-Home Hub
-│   ├── ui_remote.h              # Universal 4-Slot TV & AVR Remote
-│   ├── ui_system.h              # System Settings, 5-Ring HSV Color Wheel & Diagnostics
-│   └── ui_tools_apps.h          # Umbrella header exporting pocket_ui
+│       └── __init__.py                  # Auto-copies include/*.h into ESPHome build src/
+├── include/
+│   ├── va_cancel_helper.h               # Voice Assistant session, NVS wake word & Sendspin downmixer
+│   ├── ui_core.h                        # Display traits, .rodata LUTs, 3D projection, UTF-8 & blitter
+│   ├── ui_layout.h                      # Adaptive layout metrics, LEDC backlight PWM & RTC/Wi-Fi HAL
+│   ├── ui_ambient_va.h                  # 4 Docked Screensavers & 5 Voice Assistant visual profiles
+│   ├── ui_weather_sky.h                 # 20 FPS Weather Sky shaders, lunar disc & 5-day forecast
+│   ├── ui_games.h                       # 4 Arcade Games (Marbles, Archery, Breakout, Chomp)
+│   ├── ui_tools.h                       # 12 Utilities (Timers, Alarms, Chrono, Calc, Map, Camera, Macros)
+│   ├── ui_music.h                       # Music Assistant Now Playing, Scrubber, Lyrics & Bio reader
+│   ├── ui_clock_home.h                  # Analog/Digital Watch Faces, Live Activity Stack & App Dock
+│   ├── ui_room_home_hub.h               # Area Room Control (sliders + HSV wheel) & Whole-Home Hub
+│   ├── ui_remote.h                      # 10-Slot Scrollable Multi-Protocol TV & Media Remote
+│   ├── ui_system.h                      # On-device Settings, Diagnostics & 332px HSV Color Wheel
+│   └── ui_tools_apps.h                  # Umbrella header
+├── boards/
+│   ├── waveshare_s3_175c.yaml           # Pocket Assistant HAL (1.75" 466x466 Round AMOLED, S3)
+│   ├── waveshare_s3_206.yaml            # Wrist Assist HAL     (2.06" 410x502 Watch AMOLED, S3)
+│   ├── waveshare_s3_216.yaml           # Mobile Assistant HAL (2.16" 480x480 Square AMOLED, S3)
+│   ├── waveshare_p4_35.yaml             # Remote Assistant HAL (3.5" 320x480 IPS LCD + Camera, P4)
+│   └── waveshare_p4_4b.yaml             # Desk Assistant HAL   (4.0" 720x720 MIPI-DSI Panel, P4)
+├── devices/
+│   ├── pocket-assistant.yaml            # Turnkey Pocket Assistant config
+│   ├── wrist-assist.yaml                # Turnkey Wrist Assist config
+│   ├── mobile-assistant.yaml            # Turnkey Mobile Assistant config
+│   ├── remote-assistant.yaml            # Turnkey Remote Assistant config
+│   └── desk-assistant.yaml              # Turnkey Desk Assistant config
 ├── modules/
-│   ├── base.yaml                # Base identity, time sync & latter_ping
-│   ├── audio_voice.yaml         # Sendspin 48kHz FLAC player, PSRAM mixer, MicroWakeWord & Assist pipeline
-│   ├── power_axp2101.yaml       # AXP2101 PMU 3-tier power state machine (Active, Standby, <40uA Hibernate)
-│   ├── power_generic.yaml       # Generic power & screen-timeout state machine for non-AXP2101 / ESP32-P4 panels
-│   ├── display_ui.yaml          # Unified lifecycle, Latter API contract actions, display renderer & touch router
-│   └── room_control.yaml        # Standalone headless/custom room control client module
+│   ├── base.yaml                        # Minimal identity & contract handshake
+│   ├── room_control.yaml                # Standalone Area-Aware Room Control client
+│   ├── audio_voice.yaml                 # Sendspin FLAC media pipeline, mixer & micro_wake_word
+│   ├── power_axp2101.yaml               # 3-Tier battery/docked/hibernate state machine (AXP2101)
+│   ├── power_generic.yaml               # Mains/USB screen-timeout state machine (Non-AXP2101 / P4)
+│   └── display_ui.yaml                  # Unified Latter API actions, display renderer & touch router
 ├── mixins/
-│   ├── ble_beacon.yaml
-│   ├── ble_proxy.yaml
-│   ├── roaming_vpn.yaml
-│   └── diagnostics.yaml
+│   ├── ble_beacon.yaml                  # 1-line Roaming BLE iBeacon
+│   ├── ble_proxy.yaml                   # 1-line Stationary Bluetooth Scanner Proxy
+│   ├── roaming_vpn.yaml                 # 1-line Roaming WireGuard VPN
+│   └── diagnostics.yaml                 # 1-line Studio Discovery & Diagnostics
 ├── profiles/
-│   ├── full_companion.yaml      # Bundle for AXP2101 battery handhelds/watches (audio_voice + power_axp2101 + display_ui)
-│   └── panel_companion.yaml     # Bundle for non-AXP2101 / ESP32-P4 panels (audio_voice + power_generic + display_ui)
+│   ├── full_companion.yaml              # Profile bundle for AXP2101 battery displays
+│   └── panel_companion.yaml             # Profile bundle for mains/generic panels
 ├── examples/
-│   ├── minimal_headless_companion.yaml # Zero-peripheral ESP32-S3 demo (base + room_control + ble_beacon)
-│   └── custom_display_template.yaml    # 480x480 square display porting template & CI target
+│   ├── minimal_headless_companion.yaml  # CI-validated headless companion example
+│   └── custom_display_template.yaml     # CI-validated custom display porting template
 └── docs/
-    ├── API_CONTRACT.md          # Complete Latter wire & service contract specification
-    └── PORTING_NEW_HARDWARE.md  # Step-by-step ESP32-S3 / ESP32-P4 board HAL porting guide
+    ├── API_CONTRACT.md                  # Sensor, service & callback wire specification
+    └── PORTING_NEW_HARDWARE.md          # Step-by-step hardware porting guide
 ```
-
----
-
-## Support the Project
-
-If you enjoy using **Latter**, **Pocket Assistant**, or **Wrist Assist**, consider supporting ongoing hardware bring-up and open-source development:
-
-- ☕ **[Buy Me a Coffee](https://www.buymeacoffee.com/slampton)**
-- ❤️ **[Sponsor on GitHub](https://github.com/sponsors/slampton)**
-
----
-
-## Development & AI Disclosure
-
-This project is architected, hardware-validated, and maintained by **Sean Lampton** ([Lampton Labs](https://github.com/slampton)), a Senior Systems Engineer. AI coding assistants are used as a pair-programming accelerator for C++20 shader math, Python boilerplate, and documentation—while all system architecture, ESP32-S3 hardware/PMIC/I2S bus engineering, power-state validation, and real-world Home Assistant testing are human-directed and verified on physical hardware.
 
 ---
 
 ## License
 
-Licensed under the **[Apache License 2.0](LICENSE)**.
+Licensed under the [Apache License 2.0](LICENSE). Copyright © Lampton Labs.
