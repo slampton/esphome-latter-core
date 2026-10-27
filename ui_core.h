@@ -158,6 +158,23 @@ inline bool hal_pmu_irq_asserted() {
 #endif
 }
 
+inline float get_pickup_motion_threshold(bool screen_is_active) {
+#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+  return screen_is_active ? 0.22f : 0.38f;
+#else
+  return screen_is_active ? 0.068f : 0.15f;
+#endif
+}
+
+inline bool should_in_hand_block_sleep(bool on_battery_and_picked_up) {
+#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+  (void)on_battery_and_picked_up;
+  return false;
+#else
+  return on_battery_and_picked_up;
+#endif
+}
+
 // Fast interpolated sine/cosine backed by .rodata DIAL_SIN[60] (0 hardware FPU trig stalls)
 inline float fast_sin(float rad) {
   float idx_f = rad * (60.0f / (2.0f * PI_F));
