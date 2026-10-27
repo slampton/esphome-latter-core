@@ -153,6 +153,8 @@ inline bool hal_pmu_irq_asserted() {
   bool rising_edge = (cur_g10 == 1 && prev_g10 == 0);
   prev_g10 = cur_g10;
   return rising_edge;
+#elif (defined(POCKET_UI_NO_PMU_IRQ_PIN) && POCKET_UI_NO_PMU_IRQ_PIN) || defined(CONFIG_IDF_TARGET_ESP32P4)
+  return false;
 #else
   return (gpio_get_level(GPIO_NUM_3) == 0);
 #endif
@@ -987,7 +989,9 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 
 template<typename TouchT>
 inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
-  if (t.x < x_min || t.x > x_max) return -1;
+  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(12, SCREEN_CX - 150);
+  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, SCREEN_CX + 150);
+  if (t.x < eff_min || t.x > eff_max) return -1;
   // Continuous 5-slot hit zones (cards at y_mid = 110, 173, 236, 299, 362; h = 44) with zero dead space
   if (t.y >= 78  && t.y < 146) return 0;
   if (t.y >= 146 && t.y < 209) return 1;

@@ -1,0 +1,165 @@
+# ==============================================================================
+# Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-WIFI6-Touch-LCD-4B ("Desk Assistant")
+# SKU:     31416
+# SoC:     ESP32-P4NRW32 (32MB PSRAM, 32MB Flash) + ESP32-C6 Wi-Fi 6 / BLE 5 over SDIO
+# Display: 4.0" 720x720 Square IPS (ST7703 over 2-Lane MIPI-DSI, RST: GPIO27, BL: GPIO26)
+# Touch:   GT911 @ 0x5D (I2C SDA: GPIO7, SCL: GPIO8, RST: GPIO23)
+# Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO9) + ES7210 ADC @ 0x40 (DIN: GPIO11), PA: GPIO53
+# Clocks:  MCLK: GPIO13, BCLK: GPIO12, LRCLK/WS: GPIO10
+# ==============================================================================
+
+esphome:
+  build_flags:
+    - "-DPOCKET_UI_SCREEN_W=720"
+    - "-DPOCKET_UI_SCREEN_H=720"
+    - "-DPOCKET_UI_ROUND_DISPLAY=0"
+    - "-DPOCKET_UI_NO_PMU_IRQ_PIN=1"
+
+esp32:
+  board: esp32-p4-evboard
+  variant: esp32p4
+  flash_size: 32MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: hex
+  speed: 200MHz
+  ignore_not_found: false
+
+esp32_hosted:
+  variant: esp32c6
+  active_high: true
+  clk_pin: GPIO18
+  cmd_pin: GPIO19
+  d0_pin: GPIO14
+  d1_pin: GPIO15
+  d2_pin: GPIO16
+  d3_pin: GPIO17
+  reset_pin: GPIO54
+
+i2c:
+  - id: bus_internal
+    sda: GPIO7
+    scl: GPIO8
+    frequency: 400kHz
+    scan: false
+
+i2s_audio:
+  - id: i2s_shared_bus
+    i2s_lrclk_pin: GPIO10
+    i2s_bclk_pin: GPIO12
+    i2s_mclk_pin: GPIO13
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    i2c_id: bus_internal
+    address: 0x40
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    mic_gain: 37.5dB
+
+microphone:
+  - platform: i2s_audio
+    id: pocket_mic
+    adc_type: external
+    i2s_audio_id: i2s_shared_bus
+    i2s_din_pin: GPIO11
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+
+audio_dac:
+  - platform: es8311
+    id: es8311_dac
+    i2c_id: bus_internal
+    address: 0x18
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    use_mclk: true
+
+speaker:
+  - platform: i2s_audio
+    id: physical_speaker
+    i2s_audio_id: i2s_shared_bus
+    i2s_dout_pin: GPIO9
+    dac_type: external
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+    buffer_duration: 250ms
+    timeout: 10s
+
+motion:
+  - platform: qmi8658
+    id: imu
+    address: 0x6B
+    update_interval: 100ms
+
+switch:
+  - platform: gpio
+    name: "Speaker Enable"
+    id: speaker_enable
+    pin: GPIO53
+    restore_mode: ALWAYS_ON
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO35
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Boot Button"
+    id: boot_button
+
+display:
+  - platform: mipi_dsi
+    id: disp1
+    model: WAVESHARE-ESP32-P4-WIFI6-TOUCH-LCD-4B
+    reset_pin: GPIO27
+    dimensions:
+      width: 720
+      height: 720
+    update_interval: 1s
+
+touchscreen:
+  - platform: gt911
+    id: touch_screen
+    display: disp1
+    i2c_id: bus_internal
+    reset_pin: GPIO23
+
+script:
+  - id: hal_route_i2s_to_spk
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_route_i2s_to_mic
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_release_deep_sleep_holds
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_init_pmu_irq
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_enter_hardware_hibernate
+    mode: restart
+    then:
+      - lambda: 'return;'
+  - id: hal_set_imu_power_mode
+    mode: restart
+    parameters:
+      ctrl7_val: int
+    then:
+      - lambda: '(void)ctrl7_val;'
+  - id: hal_set_audio_codecs_standby
+    mode: restart
+    parameters:
+      standby: bool
+    then:
+      - lambda: '(void)standby;'

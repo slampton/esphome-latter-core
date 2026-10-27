@@ -1,0 +1,90 @@
+# Build-Stamp: 2026-10-27 03:29:05
+# ==============================================================================
+# Desk Assistant (v2.2 Modular Architecture)
+# Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-4B (720x720 Square Display, SKU 31416)
+# Framework: ESPHome 2026.10.0+ (ESP-IDF 5.5+)
+# Repository: https://github.com/slampton/esphome-latter-core
+# ==============================================================================
+
+substitutions:
+  name: "desk-assistant"
+  friendly_name: "Desk Assistant"
+  version: "2.2.0"
+  screen_w: "720"
+  screen_h: "720"
+  art_resize: "720x720"
+  art_shape: "square"
+  firmware_update_entity: "update.desk_assistant_project_firmware"
+  default_start_app: "Home"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+
+  active_media_sensor: "sensor.desk_assistant_active_media"
+  weather_forecast_sensor: "sensor.desk_assistant_weather_forecast"
+  room_context_sensor: "sensor.desk_assistant_room_context"
+  calendar_agenda_sensor: "sensor.desk_assistant_calendar_agenda"
+  remote_config_sensor: "sensor.desk_assistant_remote_config"
+
+  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
+  local_player_id: "media_player.desk_assistant"
+  weather_entity: "weather.forecast_home"
+  sun_entity: "sun.sun"
+  moon_entity: "sensor.moon_phase"
+
+  tv_remote_entity: "remote.none"
+  tv_remote_entity_2: "remote.none"
+  tv_remote_entity_3: "remote.none"
+  tv_remote_entity_4: "remote.none"
+
+dashboard_import:
+  package_import_url: github://slampton/esphome-latter-core/devices/desk-assistant.yaml@main
+  import_full_config: false
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/slampton/esphome-latter-core
+      ref: main
+    components: [latter_core]
+    refresh: 0s
+
+latter_core:
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.10.0
+  project:
+    name: "slampton.desk-assistant-p4-4b"
+    version: "${version}"
+
+logger:
+  level: INFO
+
+update:
+  - platform: http_request
+    id: update_pocket_assistant
+    name: "Project Firmware"
+    icon: "mdi:cellphone-arrow-down"
+    source: "https://slampton.github.io/esphome-latter-core/manifests/desk-assistant.json"
+    update_interval: never
+
+wifi:
+  id: wifi_ctrl
+  fast_connect: true
+
+esp32_ble:
+  id: ble_ctrl
+  enable_on_boot: false
+
+safe_mode:
+  boot_is_good_after: 5s
+
+packages:
+  hal: !include ../boards/waveshare_p4_4b.yaml
+  latter_audio_voice: !include ../modules/audio_voice.yaml
+  latter_power_gen:   !include ../modules/power_generic.yaml
+  latter_display_ui:  !include ../modules/display_ui.yaml

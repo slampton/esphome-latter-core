@@ -787,10 +787,11 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
     out_xs[2] = 274;
     out_xs[3] = 355;
 #else
-    out_xs[0] = cx - 147;
-    out_xs[1] = cx - 49;
-    out_xs[2] = cx + 49;
-    out_xs[3] = cx + 147;
+    const int stride = (SCREEN_W < 380) ? 74 : 98;
+    out_xs[0] = cx - (stride * 3) / 2;
+    out_xs[1] = cx - (stride / 2);
+    out_xs[2] = cx + (stride / 2);
+    out_xs[3] = cx + (stride * 3) / 2;
 #endif
   }
 }

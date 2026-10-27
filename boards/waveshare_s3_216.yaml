@@ -1,0 +1,301 @@
+# ==============================================================================
+# Hardware Abstraction Layer (HAL): Waveshare ESP32-S3-Touch-AMOLED-2.16 ("Mobile Assistant")
+# SKU:     33969
+# Display: 2.16" 480x480 Square AMOLED (CO5300 over 80MHz Quad-SPI, RST: GPIO39, CS: GPIO12)
+# Touch:   CST9220 @ 0x5A (INT: GPIO11, RST: GPIO40)
+# Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO8) + ES7210 ADC @ 0x40 (DIN: GPIO10), PA: GPIO46
+# Clocks:  MCLK: GPIO16, BCLK: GPIO9, LRCLK/WS: GPIO45
+# PMU/IMU: AXP2101 @ 0x34 (IRQ: GPIO3), QMI8658 @ 0x6B, PCF85063 RTC @ 0x51
+# ==============================================================================
+
+esphome:
+  build_flags:
+    - "-DPOCKET_UI_SCREEN_W=480"
+    - "-DPOCKET_UI_SCREEN_H=480"
+    - "-DPOCKET_UI_ROUND_DISPLAY=0"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
+      CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM: "64"
+      CONFIG_LWIP_TCP_WND_DEFAULT: "65535"
+      CONFIG_LWIP_TCP_RECVMBOX_SIZE: "64"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+      CONFIG_SPIRAM_RODATA: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
+      CONFIG_SPIRAM_USE_CAPS_ALLOC: "n"
+      CONFIG_SPIRAM_USE_MALLOC: "y"
+      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "2048"
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "0"
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
+      CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
+      CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
+    advanced:
+      enable_idf_experimental_features: true
+      nvs_cache_in_psram: true
+
+psram:
+  mode: octal
+  speed: 80MHz
+  ignore_not_found: false
+
+i2c:
+  - id: bus_internal
+    sda: GPIO15
+    scl: GPIO14
+    frequency: 400kHz
+    scan: false
+
+spi:
+  - id: display_qspi
+    type: quad
+    clk_pin: GPIO38
+    data_pins:
+      - GPIO4
+      - GPIO5
+      - GPIO6
+      - GPIO7
+
+i2s_audio:
+  - id: i2s_input_bus
+    i2s_lrclk_pin:
+      number: GPIO45
+      allow_other_uses: true
+      ignore_strapping_warning: true
+    i2s_bclk_pin:
+      number: GPIO9
+      allow_other_uses: true
+    i2s_mclk_pin:
+      number: GPIO16
+      allow_other_uses: true
+
+  - id: i2s_output_bus
+    i2s_lrclk_pin:
+      number: GPIO45
+      allow_other_uses: true
+      ignore_strapping_warning: true
+    i2s_bclk_pin:
+      number: GPIO9
+      allow_other_uses: true
+    i2s_mclk_pin:
+      number: GPIO16
+      allow_other_uses: true
+
+audio_adc:
+  - platform: es7210
+    id: es7210_adc
+    i2c_id: bus_internal
+    address: 0x40
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    mic_gain: 37.5dB
+
+microphone:
+  - platform: i2s_audio
+    id: pocket_mic
+    adc_type: external
+    i2s_audio_id: i2s_input_bus
+    i2s_din_pin: GPIO10
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+    pdm: false
+
+audio_dac:
+  - platform: es8311
+    id: es8311_dac
+    i2c_id: bus_internal
+    address: 0x18
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    use_mclk: true
+
+speaker:
+  - platform: i2s_audio
+    id: physical_speaker
+    i2s_audio_id: i2s_output_bus
+    i2s_dout_pin: GPIO8
+    dac_type: external
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left
+    buffer_duration: 250ms
+    timeout: 10s
+
+motion:
+  - platform: qmi8658
+    id: imu
+    address: 0x6B
+    accelerometer_range: 4G
+    gyroscope_range: 2048DPS
+    update_interval: 100ms
+
+switch:
+  - platform: gpio
+    name: "Speaker Enable"
+    id: speaker_enable
+    pin:
+      number: GPIO46
+      ignore_strapping_warning: true
+    restore_mode: ALWAYS_ON
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+      ignore_strapping_warning: true
+    name: "Boot Button"
+    id: boot_button
+
+display:
+  - platform: mipi_spi
+    id: disp1
+    model: CO5300
+    spi_id: display_qspi
+    bus_mode: quad
+    data_rate: 80MHz
+    reset_pin: GPIO39
+    cs_pin: GPIO12
+    dimensions:
+      height: 480
+      width: 480
+      offset_width: 0
+      offset_height: 0
+    brightness: 200
+    update_interval: 1s
+
+touchscreen:
+  - platform: cst9220
+    id: touch_screen
+    display: disp1
+    i2c_id: bus_internal
+    address: 0x5A
+    interrupt_pin:
+      number: GPIO11
+      mode: INPUT_PULLUP
+    reset_pin: GPIO40
+    touch_timeout: 120ms
+    update_interval: 16ms
+
+script:
+  - id: hal_route_i2s_to_spk
+    mode: restart
+    then:
+      - lambda: |-
+          esp_rom_gpio_connect_out_signal(9, 28, false, false);
+          esp_rom_gpio_connect_out_signal(45, 29, false, false);
+          esp_rom_gpio_connect_out_signal(16, 21, false, false);
+
+  - id: hal_route_i2s_to_mic
+    mode: restart
+    then:
+      - lambda: |-
+          esp_rom_gpio_connect_out_signal(9, 26, false, false);
+          esp_rom_gpio_connect_out_signal(45, 27, false, false);
+          esp_rom_gpio_connect_out_signal(16, 23, false, false);
+
+  - id: hal_release_deep_sleep_holds
+    mode: restart
+    then:
+      - lambda: |-
+          gpio_deep_sleep_hold_dis();
+          gpio_hold_dis(GPIO_NUM_39);
+          gpio_hold_dis(GPIO_NUM_40);
+          gpio_hold_dis(GPIO_NUM_46);
+          gpio_hold_dis(GPIO_NUM_12);
+
+  - id: hal_init_pmu_irq
+    mode: restart
+    then:
+      - lambda: |-
+          gpio_config_t io_conf = {};
+          io_conf.pin_bit_mask = (1ULL << GPIO_NUM_3);
+          io_conf.mode = GPIO_MODE_INPUT;
+          io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+          io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+          io_conf.intr_type = GPIO_INTR_DISABLE;
+          gpio_config(&io_conf);
+
+          uint8_t irq_en[2] = {0x41, 0x0C};
+          id(bus_internal).write(0x34, irq_en, 2);
+
+          uint8_t clr_all[2] = {0x48, 0xFF};
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x49;
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x4A;
+          id(bus_internal).write(0x34, clr_all, 2);
+
+  - id: hal_enter_hardware_hibernate
+    mode: restart
+    then:
+      - lambda: |-
+          uint8_t qmi_pwr_down[2] = {0x08, 0x00};
+          id(bus_internal).write(0x6B, qmi_pwr_down, 2);
+
+          uint8_t dac_sleep1[2] = {0x0D, 0xFF};
+          uint8_t dac_sleep2[2] = {0x00, 0x80};
+          id(bus_internal).write(0x18, dac_sleep1, 2);
+          id(bus_internal).write(0x18, dac_sleep2, 2);
+
+          uint8_t es7210_pwr[2] = {0x00, 0xFF};
+          id(bus_internal).write(0x40, es7210_pwr, 2);
+
+          gpio_set_direction(GPIO_NUM_46, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_46, 0);
+          gpio_hold_en(GPIO_NUM_46);
+
+          gpio_set_direction(GPIO_NUM_12, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_12, 1);
+          gpio_hold_en(GPIO_NUM_12);
+
+          gpio_set_direction(GPIO_NUM_39, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_39, 0);
+          gpio_hold_en(GPIO_NUM_39);
+
+          gpio_set_direction(GPIO_NUM_40, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_40, 0);
+          gpio_hold_en(GPIO_NUM_40);
+
+          gpio_deep_sleep_hold_en();
+          global_preferences->sync();
+
+          uint8_t axp_pwr_off[2] = {0x10, 0x01};
+          id(bus_internal).write(0x34, axp_pwr_off, 2);
+
+          delay(100);
+          esp_deep_sleep_start();
+
+  - id: hal_set_imu_power_mode
+    mode: restart
+    parameters:
+      ctrl7_val: int
+    then:
+      - lambda: |-
+          uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(ctrl7_val)};
+          id(bus_internal).write(0x6B, qmi_ctrl7, 2);
+
+  - id: hal_set_audio_codecs_standby
+    mode: restart
+    parameters:
+      standby: bool
+    then:
+      - lambda: |-
+          if (standby) {
+            uint8_t dac_lp[2] = {0x0D, 0xFC};
+            id(bus_internal).write(0x18, dac_lp, 2);
+          } else {
+            uint8_t dac_wake[2] = {0x0D, 0x01};
+            id(bus_internal).write(0x18, dac_wake, 2);
+          }
