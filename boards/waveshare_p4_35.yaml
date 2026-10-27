@@ -18,6 +18,7 @@ esphome:
 
 esp32:
   variant: esp32p4
+  cpu_frequency: 360MHz
   flash_size: 16MB
   framework:
     type: esp-idf
@@ -112,6 +113,7 @@ binary_sensor:
       number: GPIO35
       mode: INPUT_PULLUP
       inverted: true
+      ignore_strapping_warning: true
     name: "Boot Button"
     id: boot_button
 
@@ -140,7 +142,6 @@ touchscreen:
     interrupt_pin:
       number: GPIO50
       mode: INPUT_PULLUP
-    reset_pin: GPIO29
     touch_timeout: 120ms
 
 script:

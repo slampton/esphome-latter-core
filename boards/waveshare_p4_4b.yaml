@@ -19,6 +19,7 @@ esphome:
 
 esp32:
   variant: esp32p4
+  cpu_frequency: 360MHz
   flash_size: 32MB
   framework:
     type: esp-idf
@@ -117,6 +118,7 @@ binary_sensor:
       number: GPIO35
       mode: INPUT_PULLUP
       inverted: true
+      ignore_strapping_warning: true
     name: "Boot Button"
     id: boot_button
 
