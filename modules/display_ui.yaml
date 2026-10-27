@@ -290,7 +290,7 @@ ota:
             id(display_power_state) = 0;
             id(disp1).start_poller();
             id(hal_release_deep_sleep_holds).execute();
-            id(disp1).set_brightness(230);
+            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
         - light.turn_on:
             id: display_brightness
             brightness: 90%
@@ -323,7 +323,7 @@ ota:
             id(display_power_state) = 0;
             id(disp1).start_poller();
             id(hal_release_deep_sleep_holds).execute();
-            id(disp1).set_brightness(230);
+            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
         - light.turn_on:
             id: display_brightness
             brightness: 90%
@@ -1490,13 +1490,13 @@ output:
     write_action:
       - lambda: |-
           if (state <= 0.01f) {
-            id(disp1).set_brightness(0);
+            pocket_ui::hal_set_display_brightness(&id(disp1), 0);
           } else {
             // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
             float clamped = std::max(0.0f, std::min(1.0f, state));
             float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
             uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
-            id(disp1).set_brightness(bri_byte);
+            pocket_ui::hal_set_display_brightness(&id(disp1), bri_byte);
           }
 
 

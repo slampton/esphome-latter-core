@@ -88,4 +88,14 @@ inline void hal_set_wifi_power_save(int mode) {
 #endif
 }
 
+template <typename DispT>
+inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
+  if constexpr (requires(DispT *d, uint8_t b) { d->set_brightness(b); }) {
+    if (disp != nullptr) disp->set_brightness(bri_byte);
+  } else {
+    (void)disp;
+    (void)bri_byte;
+  }
+}
+
 }  // namespace pocket_ui
