@@ -1,0 +1,114 @@
+# Build-Stamp: 2026-10-27 13:17:38
+# ==============================================================================
+# Pocket Assistant (v2.2 Modular Architecture)
+# Target: Waveshare ESP32-S3-Touch-AMOLED-1.75C (466x466 Circular AMOLED)
+# Framework: ESPHome 2026.10.0+ (ESP-IDF 5.5+)
+# Repository: https://github.com/slampton/esphome-latter-core
+# ==============================================================================
+
+substitutions:
+  name: "pocket-assistant"
+  friendly_name: "Pocket Assistant"
+  version: "2.2.0"
+  screen_w: "466"
+  screen_h: "466"
+  art_resize: "466x466"
+  art_shape: "circle"
+  firmware_update_entity: "update.pocket_assistant_project_firmware"
+  default_start_app: "Home"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+
+  active_media_sensor: "sensor.pocket_assistant_active_media"
+  weather_forecast_sensor: "sensor.pocket_assistant_weather_forecast"
+  room_context_sensor: "sensor.pocket_assistant_room_context"
+  calendar_agenda_sensor: "sensor.pocket_assistant_calendar_agenda"
+  remote_config_sensor: "sensor.pocket_assistant_remote_config"
+
+  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
+  local_player_id: "media_player.pocket_assistant"
+  weather_entity: "weather.forecast_home"
+  sun_entity: "sun.sun"
+  moon_entity: "sensor.moon_phase"
+
+  tv_remote_entity: "remote.none"
+  tv_remote_entity_2: "remote.none"
+  tv_remote_entity_3: "remote.none"
+  tv_remote_entity_4: "remote.none"
+
+dashboard_import:
+  package_import_url: github://slampton/esphome-latter-core/devices/pocket-assistant.yaml@main
+  import_full_config: false
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/slampton/esphome-latter-core
+      ref: main
+    components: [latter_core]
+    refresh: 0s
+
+latter_core:
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.10.0
+  project:
+    name: "slampton.pocket-assistant-175c"
+    version: "${version}"
+
+logger:
+  level: INFO
+
+update:
+  - platform: http_request
+    id: update_pocket_assistant
+    name: "Project Firmware"
+    icon: "mdi:cellphone-arrow-down"
+    source: "https://slampton.github.io/esphome-pocket-assistant/manifest.json"
+    update_interval: never
+
+wifi:
+  id: wifi_ctrl
+  fast_connect: true
+  power_save_mode: LIGHT
+  on_connect:
+    then:
+      - delay: 5s
+      - if:
+          condition:
+            lambda: 'return id(ble_ctrl).is_active() && !id(ble_room_beacon_switch).state;'
+          then:
+            - ble.disable:
+
+esp32_ble:
+  id: ble_ctrl
+  enable_on_boot: true
+  use_psram: true
+  max_connections: 1
+
+esp32_ble_beacon:
+  type: iBeacon
+  uuid: "504F434B-4554-4153-5354-000000000210"
+  major: 1
+  minor: 1
+  measured_power: -59
+  min_interval: 500ms
+  max_interval: 1000ms
+
+improv_ble:
+  authorizer: none
+  wifi_timeout: 5s
+
+safe_mode:
+  boot_is_good_after: 5s
+
+packages:
+  hal: !include ../boards/waveshare_s3_175c.yaml
+  latter_audio_voice: !include ../modules/audio_voice.yaml
+  latter_power_pmu:   !include ../modules/power_axp2101.yaml
+  latter_display_ui:  !include ../modules/display_ui.yaml
