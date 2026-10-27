@@ -14,7 +14,7 @@
 
 It serves two purposes:
 1. **1-Line Drop-In Mixins (`mixins/*.yaml`)**: Upgrade any existing 3rd-party ESPHome device with roaming BLE room presence, stationary BLE proxy scanning, WireGuard roaming VPN, or Studio diagnostics—with **zero substitutions required**.
-2. **Full Companion Display OS (`components/latter_core`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared by flagship devices like **[Pocket Assistant](https://github.com/slampton/esphome-pocket-assistant)** (`466×466` round AMOLED) and **[Wrist Assist](https://github.com/slampton/esphome-wrist-assist)** (`410×502` rectangular watch), and ready for upcoming **ESP32-P4** square/round MIPI-DSI panels.
+2. **Full Companion Display OS (`components/latter_core`, `boards/*.yaml`, `devices/*.yaml`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared across **[Pocket Assistant](devices/pocket-assistant.yaml)** (`466×466` round AMOLED), **[Mobile Assistant](devices/mobile-assistant.yaml)** (`480×480` square AMOLED), **[Wrist Assist](devices/wrist-assist.yaml)** (`410×502` rectangular watch), **[Remote Assistant](devices/remote-assistant.yaml)** (`320×480` ESP32-P4 handheld), and **[Desk Assistant](devices/desk-assistant.yaml)** (`720×720` ESP32-P4 stationary panel).
 
 ---
 
@@ -23,9 +23,8 @@ It serves two purposes:
 | Repository | Role in the Ecosystem |
 | :--- | :--- |
 | **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** | **Home Assistant Middleware & Web Studio** — Zero-YAML entity mapping, BLE room presence radar, Music Assistant browser, Baseline-JPEG transcoder, and backup vault. |
-| 👉 **[Latter Core (`esphome-latter-core`)](https://github.com/slampton/esphome-latter-core)** | **Shared ESPHome OS & 1-Line Mixin SDK (You Are Here)** — Modular C++20 UI engine, audio/voice pipeline, 3-tier power state machine, and 1-line drop-in mixins for any ESPHome device. |
-| **[Pocket Assistant (`esphome-pocket-assistant`)](https://github.com/slampton/esphome-pocket-assistant)** | **Flagship Round Handheld (`466×466`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-1.75C pocket companion. |
-| **[Wrist Assist (`esphome-wrist-assist`)](https://github.com/slampton/esphome-wrist-assist)** | **Flagship Smartwatch (`410×502`)** — Turnkey firmware & 1-click web installer for the Waveshare ESP32-S3-Touch-AMOLED-2.06 wearable companion. |
+| 👉 **[Latter Core (`esphome-latter-core`)](https://github.com/slampton/esphome-latter-core)** | **Shared ESPHome OS, Device Catalog & 1-Line Mixin SDK (You Are Here)** — Modular C++20 UI engine, board HALs (`boards/`), turnkey device configs (`devices/` for **Pocket Assistant**, **Mobile Assistant**, **Wrist Assist**, **Remote Assistant**, and **Desk Assistant**), and 1-line drop-in mixins. |
+| **[Pocket Assistant (`esphome-pocket-assistant`)](https://github.com/slampton/esphome-pocket-assistant)** | **Flagship Round Handheld (`466×466`)** — Dedicated firmware & 1-click web installer repository for the Waveshare ESP32-S3-Touch-AMOLED-1.75C pocket companion. |
 
 ---
 
@@ -93,6 +92,18 @@ esphome-latter-core/
 │   ├── ui_remote.h              # Universal 4-Slot TV & AVR Remote
 │   ├── ui_system.h              # System Settings, 5-Ring HSV Color Wheel & Diagnostics
 │   └── ui_tools_apps.h          # Umbrella header exporting pocket_ui
+├── boards/
+│   ├── waveshare_s3_175c.yaml   # Pocket Assistant HAL (1.75" 466x466 Round AMOLED, S3)
+│   ├── waveshare_s3_206.yaml    # Wrist Assist HAL     (2.06" 410x502 Watch AMOLED, S3)
+│   ├── waveshare_s3_216.yaml    # Mobile Assistant HAL (2.16" 480x480 Square AMOLED, S3)
+│   ├── waveshare_p4_35.yaml     # Remote Assistant HAL (3.5" 320x480 IPS LCD + Camera, P4)
+│   └── waveshare_p4_4b.yaml     # Desk Assistant HAL   (4.0" 720x720 MIPI-DSI Panel, P4)
+├── devices/
+│   ├── pocket-assistant.yaml    # Turnkey Pocket Assistant config
+│   ├── wrist-assist.yaml        # Turnkey Wrist Assist config
+│   ├── mobile-assistant.yaml    # Turnkey Mobile Assistant config
+│   ├── remote-assistant.yaml    # Turnkey Remote Assistant config
+│   └── desk-assistant.yaml      # Turnkey Desk Assistant config
 ├── modules/
 │   ├── base.yaml                # Base identity, time sync & latter_ping
 │   ├── audio_voice.yaml         # Sendspin 48kHz FLAC player, PSRAM mixer, MicroWakeWord & Assist pipeline
