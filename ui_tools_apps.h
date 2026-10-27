@@ -12,3 +12,5 @@
 #include "ui_room_home_hub.h"
 #include "ui_remote.h"
 #include "ui_system.h"
+
+using namespace pocket_ui;
