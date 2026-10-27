@@ -148,7 +148,11 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 //   - Waveshare 2.06 (POCKET_UI_BOARD_206=1): GPIO10 active-HIGH SYS_OUT
 inline bool hal_pmu_irq_asserted() {
 #if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
-  return (gpio_get_level(GPIO_NUM_10) == 1);
+  static int prev_g10 = 1;
+  int cur_g10 = gpio_get_level(GPIO_NUM_10);
+  bool rising_edge = (cur_g10 == 1 && prev_g10 == 0);
+  prev_g10 = cur_g10;
+  return rising_edge;
 #else
   return (gpio_get_level(GPIO_NUM_3) == 0);
 #endif

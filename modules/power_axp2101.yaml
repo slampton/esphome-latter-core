@@ -67,7 +67,12 @@ binary_sensor:
       // Dual-Threshold In-Hand Detection:
       // While screen is active, 0.068g maintains active hold in your hand without false-triggering on desk/USB noise.
       // While screen is sleeping/standby, 0.15g requires a deliberate pickup motion to wake.
+      #if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+      // On a wrist-worn watch, require a deliberate 0.38g wrist flick to wake and 0.22g to register motion
+      float thresh = (id(display_power_state) == 0) ? 0.22f : 0.38f;
+#else
       float thresh = (id(display_power_state) == 0) ? 0.068f : 0.15f;
+#endif
       const uint32_t active_ms = (id(display_power_state) == 0) ? 3000 : 2000;
       uint32_t now_ms = millis();
 
@@ -938,7 +943,12 @@ script:
               // Keep display awake while Flashlight (subpage 5) or Bubble Level (subpage 7) is actively in use
               const bool active_tool_awake =
                   (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7));
+              #if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+              // Never block screen sleep on a wrist-worn watch due to continuous arm micro-movement!
+              const bool in_hand_hold = false;
+#else
               const bool in_hand_hold = !id(usb_connected).state && id(pickup_detected).state;
+#endif
               return !id(ota_in_progress) &&
                      !id(va_active) &&
                      !id(va).is_running() &&
