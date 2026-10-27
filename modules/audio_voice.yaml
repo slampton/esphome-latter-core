@@ -137,7 +137,7 @@ media_player:
                   pocket_ui::screen_is_off_standby() = false;
                   id(display_power_state) = 0;
                   id(disp1).start_poller();
-                  id(imu).start_poller();
+                  id(hal_set_imu_power_mode).execute(0x03);
               - light.turn_on: display_brightness
               - script.execute: throttled_disp_update
     on_pause:
@@ -223,7 +223,7 @@ voice_assistant:
             pocket_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
             id(disp1).start_poller();
-            id(imu).start_poller();
+            id(hal_set_imu_power_mode).execute(0x03);
             id(sync_display_brightness).execute();
           }
           id(va_was_cancelled) = false;

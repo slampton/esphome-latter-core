@@ -1,0 +1,4779 @@
+# Core Subsystem: Display Engine, Lifecycle, Latter API Contract & UI Router
+
+esphome:
+  on_boot:
+    - priority: 800
+      then:
+        - lambda: |-
+            uint32_t cal_val = pocket_ui::hal_calibrate_rtc();
+            ESP_LOGI("rtc_cal", "Hardware RTC slow clock calibrated: %lu (Q19.12)", (unsigned long)cal_val);
+            id(hal_release_deep_sleep_holds).execute();
+            id(sleep_start_time) = millis();
+            id(is_hibernating) = false;
+            id(display_power_state) = 0; // ACTIVE
+            esphome::voice_assistant::ensure_wake_words_restored(id(va));
+
+    - priority: -100
+      then:
+        - safe_mode.mark_successful:
+        - script.execute: hal_init_pmu_irq
+        - lambda: 'esphome::voice_assistant::install_sendspin_mono_downmixer(id(sendspin_source));'
+        - media_player.pause: pocket_music_player
+        - online_image.release: remote_album_art
+        - online_image.release: home_wallpaper_art
+        - online_image.release: camera_snapshot_art
+        - lambda: |-
+            id(current_loaded_art_url) = "";
+            id(current_loaded_wallpaper_url) = "";
+            id(current_loaded_camera_url) = "";
+        - audio_dac.set_volume:
+            id: es8311_dac
+            volume: 90%
+        - audio_dac.mute_on: es8311_dac
+        - script.execute: route_i2s_to_mic
+        - switch.turn_off: speaker_enable
+        - script.execute: apply_default_start_page
+        - script.execute: apply_theme_preset
+        - lambda: |-
+            id(clock_face_digital) = (id(clock_face_style).current_option() == "Modern Digital (Bold)");
+            id(is_24h_format) = (id(time_format_select).current_option() == "24-Hour");
+            if (id(ha_latter_remote_slots_summary).state.empty()) {
+              id(remote_slot_0_ent) = "${tv_remote_entity}";
+              id(remote_slot_1_ent) = "${tv_remote_entity_2}";
+              id(remote_slot_2_ent) = "${tv_remote_entity_3}";
+              id(remote_slot_3_ent) = "${tv_remote_entity_4}";
+              id(remote_slot_0_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_0_ent));
+              id(remote_slot_1_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_1_ent));
+              id(remote_slot_2_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_2_ent));
+              id(remote_slot_3_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_3_ent));
+            }
+            if (id(remote_slot_0_name).empty()) id(remote_slot_0_name) = "TV Remote";
+            uint8_t reg0 = 0x00, stat0 = 0, reg1 = 0x01, stat1 = 0;
+            bool vbus = false;
+            if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
+              vbus = (stat0 & 0x20) != 0;
+              id(usb_connected).publish_state(vbus);
+            }
+            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) == esphome::i2c::ERROR_OK) {
+              bool is_chg = vbus && (((stat1 >> 5) & 0x03) == 1) && ((stat1 & 0x07) < 4);
+              id(batt_charging).publish_state(is_chg);
+            }
+        - component.update: batt_level
+        - lambda: |-
+            if (!id(ble_room_beacon_switch).state) {
+              id(ble_room_beacon_switch).publish_state(true);
+            }
+            esphome::voice_assistant::ensure_wake_words_restored(id(va), true);
+            id(va_active_wake_word).publish_state(
+                esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
+            auto cur_vp = id(va_visual_profile).current_option();
+            if (cur_vp == "Google" || cur_vp == "Original") {
+              id(va_visual_profile).publish_state(cur_vp == "Google" ? "Gemini" : "Nebula");
+            }
+            if (pocket_ui::is_wrist_watch_board()) {
+              static bool watch_pwr_seeded = false;
+              if (!watch_pwr_seeded) {
+                watch_pwr_seeded = true;
+                if (id(pickup_wake_mode).current_option() == "Always On") {
+                  id(pickup_wake_mode).publish_state("Docked Only");
+                }
+                if (id(display_off_timeout).current_option() == "30s") {
+                  id(display_off_timeout).publish_state("15s");
+                }
+                if (id(hibernate_timeout_mode).current_option() == "15 min") {
+                  id(hibernate_timeout_mode).publish_state("5 min");
+                }
+              }
+            }
+        - script.execute: apply_wake_word_sensitivities
+        - script.execute: sync_display_brightness
+        - script.execute: screen_sleep_timer
+
+api:
+  encryption:
+  outgoing_connection:
+  on_client_connected:
+    then:
+      - lambda: |-
+          esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
+  actions:
+    - action: set_browse_slots
+      variables:
+        mode: string
+        page: int
+        total_pages: int
+        has_prev: bool
+        has_next: bool
+        s1_name: string
+        s1_id: string
+        s1_type: string
+        s1_active: bool
+        s2_name: string
+        s2_id: string
+        s2_type: string
+        s2_active: bool
+        s3_name: string
+        s3_id: string
+        s3_type: string
+        s3_active: bool
+        s4_name: string
+        s4_id: string
+        s4_type: string
+        s4_active: bool
+        s5_name: string
+        s5_id: string
+        s5_type: string
+        s5_active: bool
+      then:
+        - lambda: |-
+            (void)has_prev; (void)has_next;
+            if (mode == "room_areas" || mode == "areas") {
+              id(room_area_page) = page;
+              id(room_area_total_pages) = total_pages;
+              id(room_area_1_name) = s1_name; id(room_area_1_id) = s1_id; id(room_area_1_active) = s1_active;
+              id(room_area_2_name) = s2_name; id(room_area_2_id) = s2_id; id(room_area_2_active) = s2_active;
+              id(room_area_3_name) = s3_name; id(room_area_3_id) = s3_id; id(room_area_3_active) = s3_active;
+              id(room_area_4_name) = s4_name; id(room_area_4_id) = s4_id; id(room_area_4_active) = s4_active;
+              id(room_area_5_name) = s5_name; id(room_area_5_id) = s5_id; id(room_area_5_active) = s5_active;
+            } else if (mode == "calendar_agenda") {
+              id(cal_browse_page) = page;
+              id(cal_browse_total_pages) = total_pages;
+              id(cal_slot_1_name) = s1_name; id(cal_slot_1_id) = s1_id; id(cal_slot_1_active) = s1_active;
+              id(cal_slot_2_name) = s2_name; id(cal_slot_2_id) = s2_id; id(cal_slot_2_active) = s2_active;
+              id(cal_slot_3_name) = s3_name; id(cal_slot_3_id) = s3_id; id(cal_slot_3_active) = s3_active;
+              id(cal_slot_4_name) = s4_name; id(cal_slot_4_id) = s4_id; id(cal_slot_4_active) = s4_active;
+              id(cal_slot_5_name) = s5_name; id(cal_slot_5_id) = s5_id; id(cal_slot_5_active) = s5_active;
+            } else if (mode == "entities" || mode == "home") {
+              id(room_browse_mode) = "entities";
+              id(room_browse_page) = page;
+              id(room_browse_total_pages) = total_pages;
+              id(room_slot_1_name) = s1_name; id(room_slot_1_id) = s1_id; id(room_slot_1_type) = s1_type; id(room_slot_1_active) = s1_active; id(room_slot_1_level) = -1;
+              id(room_slot_2_name) = s2_name; id(room_slot_2_id) = s2_id; id(room_slot_2_type) = s2_type; id(room_slot_2_active) = s2_active; id(room_slot_2_level) = -1;
+              id(room_slot_3_name) = s3_name; id(room_slot_3_id) = s3_id; id(room_slot_3_type) = s3_type; id(room_slot_3_active) = s3_active; id(room_slot_3_level) = -1;
+              id(room_slot_4_name) = s4_name; id(room_slot_4_id) = s4_id; id(room_slot_4_type) = s4_type; id(room_slot_4_active) = s4_active; id(room_slot_4_level) = -1;
+              id(room_slot_5_name) = s5_name; id(room_slot_5_id) = s5_id; id(room_slot_5_type) = s5_type; id(room_slot_5_active) = s5_active; id(room_slot_5_level) = -1;
+            } else {
+              if (millis() - pocket_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
+                id(music_browse_page) = page;
+              }
+              id(music_browse_total_pages) = total_pages;
+              id(slot_1_name) = s1_name; id(slot_1_id) = s1_id; id(slot_1_type) = s1_type; id(slot_1_active) = s1_active;
+              id(slot_2_name) = s2_name; id(slot_2_id) = s2_id; id(slot_2_type) = s2_type; id(slot_2_active) = s2_active;
+              id(slot_3_name) = s3_name; id(slot_3_id) = s3_id; id(slot_3_type) = s3_type; id(slot_3_active) = s3_active;
+              id(slot_4_name) = s4_name; id(slot_4_id) = s4_id; id(slot_4_type) = s4_type; id(slot_4_active) = s4_active;
+              id(slot_5_name) = s5_name; id(slot_5_id) = s5_id; id(slot_5_type) = s5_type; id(slot_5_active) = s5_active;
+            }
+            pocket_ui::schedule_disp_update(&id(disp1));
+
+    - action: set_room_slots
+      variables:
+        mode: string
+        page: int
+        total_pages: int
+        has_prev: bool
+        has_next: bool
+        s1_name: string
+        s1_id: string
+        s1_type: string
+        s1_active: bool
+        s1_level: int
+        s2_name: string
+        s2_id: string
+        s2_type: string
+        s2_active: bool
+        s2_level: int
+        s3_name: string
+        s3_id: string
+        s3_type: string
+        s3_active: bool
+        s3_level: int
+        s4_name: string
+        s4_id: string
+        s4_type: string
+        s4_active: bool
+        s4_level: int
+        s5_name: string
+        s5_id: string
+        s5_type: string
+        s5_active: bool
+        s5_level: int
+      then:
+        - lambda: |-
+            (void)has_prev; (void)has_next;
+            id(room_browse_mode) = mode;
+            id(room_browse_page) = page;
+            id(room_browse_total_pages) = total_pages;
+            id(room_slot_1_name) = s1_name; id(room_slot_1_id) = s1_id; id(room_slot_1_type) = s1_type; id(room_slot_1_active) = s1_active; id(room_slot_1_level) = s1_level;
+            id(room_slot_2_name) = s2_name; id(room_slot_2_id) = s2_id; id(room_slot_2_type) = s2_type; id(room_slot_2_active) = s2_active; id(room_slot_2_level) = s2_level;
+            id(room_slot_3_name) = s3_name; id(room_slot_3_id) = s3_id; id(room_slot_3_type) = s3_type; id(room_slot_3_active) = s3_active; id(room_slot_3_level) = s3_level;
+            id(room_slot_4_name) = s4_name; id(room_slot_4_id) = s4_id; id(room_slot_4_type) = s4_type; id(room_slot_4_active) = s4_active; id(room_slot_4_level) = s4_level;
+            id(room_slot_5_name) = s5_name; id(room_slot_5_id) = s5_id; id(room_slot_5_type) = s5_type; id(room_slot_5_active) = s5_active; id(room_slot_5_level) = s5_level;
+            pocket_ui::schedule_disp_update(&id(disp1));
+
+    - action: set_timer
+      variables:
+        seconds: int
+      then:
+        - lambda: |-
+            if (seconds > 0) {
+              uint32_t now_t = millis();
+              int slot = pocket_ui::upsert_voice_timer_slot("ha_action", "", seconds, seconds, true, now_t);
+              pocket_ui::timer_view_slot() = slot + 1;
+              pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+              id(timer_ringing) = false;
+              id(gui_page) = 8;
+              id(stuff_subpage) = 1;
+              id(wake_to_active_state).execute();
+              pocket_ui::schedule_disp_update(&id(disp1));
+              ESP_LOGI("timer", "Voice/HA Timer started for %d seconds in slot %d", (int)seconds, slot + 1);
+            }
+
+    - action: cancel_timer
+      then:
+        - lambda: |-
+            auto *slots = pocket_ui::timer_slots();
+            for (int i = 0; i < 3; i++) {
+              slots[i].running = false;
+              slots[i].paused = false;
+              slots[i].remaining_sec = slots[i].duration_sec;
+            }
+            pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+            id(timer_ringing) = false;
+            id(stop_alarm_sound).execute();
+            pocket_ui::schedule_disp_update(&id(disp1));
+            ESP_LOGI("timer", "Voice/HA Timers cancelled");
+
+    - action: show_notification
+      variables:
+        title: string
+        message: string
+        priority: string
+        duration: int
+        chime: bool
+        camera_url: string
+      then:
+        - lambda: |-
+            id(notif_title) = std::string(title).empty() ? "Notification" : std::string(title);
+            id(notif_message) = std::string(message);
+            id(notif_priority) = std::string(priority).empty() ? "normal" : std::string(priority);
+            int dur_s = (duration > 0) ? duration : 10;
+            if (dur_s < 3) dur_s = 3;
+            if (dur_s > 60) dur_s = 60;
+            id(notif_duration_ms) = static_cast<uint32_t>(dur_s) * 1000U;
+            id(notif_start_ms) = millis();
+            id(notif_camera_url) = std::string(camera_url);
+            id(notif_active) = true;
+            id(wake_to_active_state).execute();
+            if (chime && !id(va_active) && !id(va_tts_received)) {
+              int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
+              id(play_game_sfx).execute(sfx);
+            }
+            if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
+                id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+              id(fetch_camera_snapshot).execute();
+            } else {
+              id(current_loaded_camera_url) = "";
+              id(camera_snapshot_art).release();
+            }
+            pocket_ui::schedule_disp_update(&id(disp1));
+
+ota:
+  - platform: esphome
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        - lambda: |-
+            id(ota_in_progress) = true;
+            id(ota_progress_pct) = 0;
+            id(sleep_start_time) = 0;
+            pocket_ui::screen_is_off_standby() = false;
+            id(display_power_state) = 0;
+            id(disp1).start_poller();
+            id(hal_release_deep_sleep_holds).execute();
+            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
+        - light.turn_on:
+            id: display_brightness
+            brightness: 90%
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: |-
+            int pct = static_cast<int>(x);
+            if (pct != id(ota_progress_pct) && (pct == 100 || pct - id(ota_progress_pct) >= 2 || pct < id(ota_progress_pct))) {
+              id(ota_progress_pct) = pct;
+              id(disp1).update();
+            }
+    on_end:
+      then:
+        - lambda: |-
+            id(ota_progress_pct) = 100;
+            id(disp1).update();
+            id(ota_in_progress) = false;
+
+  - platform: http_request
+    id: ota_http
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        - lambda: |-
+            id(ota_in_progress) = true;
+            id(ota_progress_pct) = 0;
+            id(sleep_start_time) = 0;
+            pocket_ui::screen_is_off_standby() = false;
+            id(display_power_state) = 0;
+            id(disp1).start_poller();
+            id(hal_release_deep_sleep_holds).execute();
+            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
+        - light.turn_on:
+            id: display_brightness
+            brightness: 90%
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: |-
+            int pct = static_cast<int>(x);
+            if (pct != id(ota_progress_pct) && (pct == 100 || pct - id(ota_progress_pct) >= 2 || pct < id(ota_progress_pct))) {
+              id(ota_progress_pct) = pct;
+              id(disp1).update();
+            }
+    on_end:
+      then:
+        - lambda: |-
+            id(ota_progress_pct) = 100;
+            id(disp1).update();
+            id(ota_in_progress) = false;
+
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              pocket_ui::record_ambient_frame_ms(0);
+            }
+
+
+globals:
+  - id: hud_wake_finger_released
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  - id: drilldown_artist_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_album_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_parent_mode
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_artist_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: drilldown_album_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: active_playback_media_type
+    type: std::string
+    restore_value: no
+    initial_value: '"music"'
+  - id: music_overlay_mode
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Player, 1 = Speakers, 2 = Library Categories, 3 = Item Browser, 4 = Speaker Action Sheet, 5 = Music Hub
+  - id: music_direct_nav
+    type: bool
+    restore_value: no
+    initial_value: 'false' # true when entered Speakers (1) or Library (2) via overlay shortcuts
+  - id: music_hud_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: music_hud_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: display_menu_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: system_dashboard_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: music_category_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: selected_category_mode
+    type: std::string
+    restore_value: no
+    initial_value: '"speakers"'
+  - id: selected_category_title
+    type: std::string
+    restore_value: no
+    initial_value: '"SPEAKERS"'
+  - id: music_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: music_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: active_speaker_entity
+    type: std::string
+    restore_value: no
+    initial_value: '"${local_player_id}"'
+  - id: active_speaker_name
+    type: std::string
+    restore_value: no
+    initial_value: '"${friendly_name}"'
+  - id: last_speaker_entity
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: target_speaker_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: target_speaker_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '"${friendly_name}"'
+  - id: slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '"${local_player_id}"'
+  - id: slot_1_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_2_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_3_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_4_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_5_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_subpage
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Room Entities (3-Card Sliders), 1 = Room Switcher, 2 = Light Color & Kelvin Inspector
+  - id: room_browse_mode
+    type: std::string
+    restore_value: no
+    initial_value: '"entities"'
+  - id: room_domain_filter
+    type: std::string
+    restore_value: no
+    initial_value: '"all"'
+  - id: room_alarm_entity
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_alarm_state
+    type: std::string
+    restore_value: no
+    initial_value: '"disarmed"'
+  - id: room_alarm_service
+    type: std::string
+    restore_value: no
+    initial_value: '"alarm_control_panel.alarm_disarm"'
+  - id: room_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: room_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: room_area_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: room_area_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: room_area_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_area_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_area_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_area_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_area_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_area_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: active_room_area_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: active_room_area_name
+    type: std::string
+    restore_value: no
+    initial_value: '"Room Control"'
+  - id: room_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: room_target_entity_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_target_action
+    type: std::string
+    restore_value: no
+    initial_value: '"toggle"'
+  - id: room_target_level
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: room_target_code
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '"Tap Header for Rooms"'
+  - id: room_slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_1_type
+    type: std::string
+    restore_value: no
+    initial_value: '"text"'
+  - id: room_slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_slot_1_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: room_slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_2_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_slot_2_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: room_slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_3_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_slot_3_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: room_slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_4_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_slot_4_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: room_slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_5_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: room_slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: room_slot_5_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: current_loaded_art_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: current_loaded_wallpaper_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: cal_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: cal_slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_quick_summary
+    type: std::string
+    restore_value: no
+    initial_value: '"Reminder"'
+  - id: cal_quick_in_minutes
+    type: int
+    restore_value: no
+    initial_value: '15'
+  - id: cal_quick_duration_minutes
+    type: int
+    restore_value: no
+    initial_value: '30'
+  - id: intercom_message_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: intercom_feedback_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: intercom_feedback_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: macro_target_slot
+    type: std::string
+    restore_value: no
+    initial_value: '"macro_1"'
+  - id: macro_feedback_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: macro_feedback_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: notif_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: notif_title
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_message
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_priority
+    type: std::string
+    restore_value: no
+    initial_value: '"normal"'
+  - id: notif_camera_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: current_loaded_camera_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: notif_duration_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '10000'
+  - id: last_seen_alert_id
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: music_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: music_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: system_menu_mode
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: ota_in_progress
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ota_progress_pct
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: update_check_state
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Idle, 1 = Checking..., 2 = Checked
+  - id: update_check_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: music_pos_base
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: music_pos_sync_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: music_skip_burst_count
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: music_skip_last_tap_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: marble_touch_x
+    type: float
+    restore_value: no
+    initial_value: '-1.0'
+  - id: marble_touch_y
+    type: float
+    restore_value: no
+    initial_value: '-1.0'
+  - id: game_carousel_idx
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: active_game
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: high_score_marbles
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_archery
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_breakout
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_chomp
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: clock_face_digital
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: custom_theme_rgb
+    type: uint32_t
+    restore_value: yes
+    initial_value: '0x3898FF'
+  - id: is_24h_format
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: game_btn_pressed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: gui_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: home_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: home_activity_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  
+  - id: sky_weather_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: remote_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: stuff_subpage
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Launcher, 1 = Timer, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip
+  - id: stuff_menu_page
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Page 1 (4 icons), 1 = Page 2 (4 icons)
+  - id: coin_side
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Heads, 1 = Tails
+  - id: coin_anim_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: coin_anim_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dice_val_d6
+    type: int
+    restore_value: no
+    initial_value: '1' # 1..6
+  - id: dice_val_d6_2
+    type: int
+    restore_value: no
+    initial_value: '6' # 1..6
+  - id: dice_anim_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: calc_entry
+    type: std::string
+    restore_value: no
+    initial_value: '"0"'
+  - id: calc_history
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: calc_prev_val
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: calc_op
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = none, 1 = +, 2 = -, 3 = *, 4 = /
+  - id: calc_new_entry
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  - id: dice_anim_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: remote_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: active_remote_slot
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: remote_slot_0_ent
+    type: std::string
+    restore_value: no
+    initial_value: '"remote.none"'
+  - id: remote_slot_1_ent
+    type: std::string
+    restore_value: no
+    initial_value: '"remote.none"'
+  - id: remote_slot_2_ent
+    type: std::string
+    restore_value: no
+    initial_value: '"remote.none"'
+  - id: remote_slot_3_ent
+    type: std::string
+    restore_value: no
+    initial_value: '"remote.none"'
+  - id: remote_latter_cmd
+    type: std::string
+    restore_value: no
+    initial_value: '"select"'
+  - id: remote_latter_act
+    type: std::string
+    restore_value: no
+    initial_value: '"command"'
+  - id: remote_latter_slot_num
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: remote_slot_0_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_target_ent
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_target_prof
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_target_cmd
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: audio_menu_parent_page
+    type: int
+    restore_value: no
+    initial_value: '4'
+  - id: timer_duration_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+  - id: timer_remaining_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+  - id: timer_target_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: timer_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: timer_paused
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: timer_ringing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_timer_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: last_detected_wake_word
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: find_my_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: find_my_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: alarm1_hour
+    type: int
+    restore_value: yes
+    initial_value: '7'
+  - id: alarm1_minute
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: alarm1_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm1_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '1'
+  - id: alarm2_hour
+    type: int
+    restore_value: yes
+    initial_value: '8'
+  - id: alarm2_minute
+    type: int
+    restore_value: yes
+    initial_value: '30'
+  - id: alarm2_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm2_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '2'
+  - id: alarm3_hour
+    type: int
+    restore_value: yes
+    initial_value: '9'
+  - id: alarm3_minute
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: alarm3_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm3_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '2'
+  - id: alarm_edit_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_ringing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: alarm_ringing_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_snooze_until
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_last_fired_min
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: return_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: va_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_status_text
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: va_tts_received
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_vad_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: stopwatch_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: stopwatch_start_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: stopwatch_elapsed_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: stopwatch_lap_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: va_resume_music_after
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_was_cancelled
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+
+  - id: menu_scroll_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: menu_scroll_dir
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 = down (content slides up), -1 = up (content slides down)
+  - id: menu_scroll_target_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: menu_scroll_step
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_chrono_time
+    size: 38
+    glyphs:
+      - '0123456789:.- sAMP'
+  - file: "gfonts://Roboto"
+    id: font_micro
+    size: 14
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto"
+    id: font_time
+    size: 77
+    glyphs:
+      - '0123456789:.- %'
+  - file: "gfonts://Roboto"
+    id: font_date
+    size: 27
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 21
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto@700"
+    id: font_btn_bold
+    size: 26
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+
+
+  - file: "gfonts://Orbitron@700"
+    id: font_games_title
+    size: 38
+    glyphs:
+      - ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-•!'
+
+color:
+  - id: theme_primary
+    hex: "6B8E9E"  # Default Soft Steel Ice Blue (Steel & Silver Palette)
+  - id: theme_secondary
+    hex: "C0C0C0"  # Default Brushed Silver (Steel & Silver Palette)
+  - id: col_silver
+    hex: "C0C0C0"  # Vintage Swiss brushed silver / steel
+  - id: col_bg
+    hex: "000000"
+  - id: col_black
+    hex: "000000"
+  - id: col_gold
+    hex: "C59B27"  # Muted vintage chronograph mustard gold
+  - id: col_warm_gold
+    hex: "A88424"  # Calibrated muted brass gold (anti-glare, crisp non-blooming on AMOLED)
+  - id: col_white
+    hex: "FFFFFF"
+  - id: col_slate
+    hex: "9E9E9E"
+  - id: col_cyan
+    hex: "456E8A"  # Distinctly muted vintage steel/slate blue (was electric cyan 00E5FF)
+  - id: col_light_blue
+    hex: "6B8E9E"  # Muted soft steel blue
+  - id: col_green
+    hex: "427453"  # Distinctly muted heritage sage/moss green (was neon 00E676)
+  - id: col_orange
+    hex: "B85C24"  # Muted earthy terracotta orange
+  - id: col_red
+    hex: "A84338"  # Vibrant antique vermilion crimson (rich, clearly red, calibrated antique tone)
+  - id: col_purple
+    hex: "6D4B7D"  # Muted vintage plum amethyst
+  - id: col_magenta
+    hex: "8E4A7D"  # Muted antique mauve
+  - id: col_gray
+    hex: "616161"
+  - id: col_dark_gray
+    hex: "212121"
+  - id: col_solaris_gold
+    hex: "FFDC1E"  # Kinetic plasma gold / sunburst
+  - id: col_accent_cyan
+    hex: "1EC8E6"  # Electric cyan / high-energy accent
+
+
+http_request:
+  id: http_client
+  verify_ssl: false
+  timeout: 15s
+
+image:
+  - platform: sendspin
+    id: album_slot
+    format: JPEG
+    type: RGB565
+    resize: ${art_resize}
+    source: album
+    current_image:
+      id: album_art
+    on_image_display:
+      - script.execute: throttled_disp_update
+
+  - platform: online_image
+    id: remote_album_art
+    format: JPEG
+    buffer_size: 16384
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+      - script.execute: throttled_disp_update
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'id(current_loaded_art_url) = "";'
+      - script.execute: sync_wake_word_state
+
+  - platform: online_image
+    id: home_wallpaper_art
+    format: JPEG
+    buffer_size: 16384
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: |-
+          id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;
+          if (id(display_power_state) == 0 && id(gui_page) == 1) {
+            pocket_ui::schedule_disp_update(&id(disp1));
+          }
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'id(current_loaded_wallpaper_url) = "";'
+      - script.execute: sync_wake_word_state
+
+  - platform: online_image
+    id: camera_snapshot_art
+    format: JPEG
+    buffer_size: 16384
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: |-
+          id(current_loaded_camera_url) = id(notif_camera_url);
+          if (id(display_power_state) == 0 && id(notif_active)) {
+            pocket_ui::schedule_disp_update(&id(disp1));
+          }
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'id(current_loaded_camera_url) = "";'
+      - script.execute: sync_wake_word_state
+
+
+output:
+  - platform: template
+    id: backlight_brightness
+    type: float
+    write_action:
+      - lambda: |-
+          if (state <= 0.01f) {
+            pocket_ui::hal_set_display_brightness(&id(disp1), 0);
+          } else {
+            // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
+            float clamped = std::max(0.0f, std::min(1.0f, state));
+            float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
+            uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
+            pocket_ui::hal_set_display_brightness(&id(disp1), bri_byte);
+          }
+
+
+light:
+  - platform: monochromatic
+    id: display_brightness
+    name: "Display"
+    output: backlight_brightness
+    default_transition_length: 0s
+    initial_state:
+      brightness: 90%
+    restore_mode: ALWAYS_ON
+
+
+select:
+  - platform: template
+    name: "Remote: Slot 1 Profile"
+    id: tv_remote_profile
+    icon: "mdi:television-box"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Auto-Detect"
+    options:
+      - "Auto-Detect"
+      - "Android TV / Fire TV / Bravia"
+      - "Denon / Marantz AVR"
+      - "LG webOS"
+      - "Apple TV"
+      - "Roku"
+      - "Samsung TV"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(tv_remote_profile).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Remote: Slot 2 Profile"
+    id: tv_remote_profile_2
+    icon: "mdi:television-box"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Auto-Detect"
+    options:
+      - "Auto-Detect"
+      - "Android TV / Fire TV / Bravia"
+      - "Denon / Marantz AVR"
+      - "LG webOS"
+      - "Apple TV"
+      - "Roku"
+      - "Samsung TV"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(tv_remote_profile_2).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Remote: Slot 3 Profile"
+    id: tv_remote_profile_3
+    icon: "mdi:television-box"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Auto-Detect"
+    options:
+      - "Auto-Detect"
+      - "Android TV / Fire TV / Bravia"
+      - "Denon / Marantz AVR"
+      - "LG webOS"
+      - "Apple TV"
+      - "Roku"
+      - "Samsung TV"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(tv_remote_profile_3).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Remote: Slot 4 Profile"
+    id: tv_remote_profile_4
+    icon: "mdi:television-box"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Auto-Detect"
+    options:
+      - "Auto-Detect"
+      - "Android TV / Fire TV / Bravia"
+      - "Denon / Marantz AVR"
+      - "LG webOS"
+      - "Apple TV"
+      - "Roku"
+      - "Samsung TV"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(tv_remote_profile_4).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Voice: Wake Word Mode"
+    id: va_wake_word_mode
+    icon: "mdi:account-tie-voice"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Docked Only"
+    options:
+      - "Docked Only"
+      - "Always On"
+      - "Disabled"
+    set_action:
+      - lambda: |-
+          id(va_wake_word_mode).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: sync_wake_word_state
+
+  - platform: template
+    name: "Voice: Active Wake Word"
+    id: va_active_wake_word
+    icon: "mdi:account-voice"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Okay Nabu"
+    options:
+      - "Okay Nabu"
+      - "Hey Luna"
+      - "Hey Jarvis"
+      - "Hey Mycroft"
+      - "Alexa"
+    set_action:
+      - lambda: |-
+          id(va_active_wake_word).publish_state(x);
+          esphome::voice_assistant::set_primary_wake_word_by_label(id(va), x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+      - script.execute: sync_wake_word_state
+
+  - platform: template
+    name: "Voice: Sensitivity (Okay Nabu)"
+    id: ww_sens_okay_nabu
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_okay_nabu).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Luna)"
+    id: ww_sens_hey_luna
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_luna).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Jarvis)"
+    id: ww_sens_hey_jarvis
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_jarvis).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Mycroft)"
+    id: ww_sens_hey_mycroft
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_mycroft).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Alexa)"
+    id: ww_sens_alexa
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_alexa).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Visual Profile"
+    id: va_visual_profile
+    icon: "mdi:palette-swatch-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Nebula"
+    options:
+      - "Nebula"
+      - "Solaris"
+      - "Jarvis"
+      - "Alexa"
+      - "Gemini"
+    set_action:
+      - lambda: |-
+          id(va_visual_profile).publish_state(x);
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Weather: Condition Simulation"
+    id: weather_sim_condition
+    icon: "mdi:weather-partly-cloudy"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Live (Home Assistant)"
+    options:
+      - "Live (Home Assistant)"
+      - "Clear Night"
+      - "Sunny / Clear Day"
+      - "Partly Cloudy (Day)"
+      - "Partly Cloudy (Night)"
+      - "Cloudy / Overcast (Day)"
+      - "Cloudy / Overcast (Night)"
+      - "Fog / Mist (Day)"
+      - "Fog / Mist (Night)"
+      - "Rainy (Day)"
+      - "Rainy (Night)"
+      - "Pouring / Heavy Rain"
+      - "Snow (Day)"
+      - "Snow (Night)"
+      - "Thunderstorm (Day)"
+      - "Thunderstorm (Night)"
+      - "Windy"
+    set_action:
+      - lambda: |-
+          id(weather_sim_condition).publish_state(x);
+          if (x != "Live (Home Assistant)" && !id(home_weather_bg_switch).state) {
+            id(home_weather_bg_switch).turn_on();
+          }
+          pocket_ui::clear_day_epoch_initialized() = false;
+          pocket_ui::night_meteor_epoch_initialized() = false;
+          pocket_ui::weather_sim_dirty() = true;
+          pocket_ui::record_ambient_frame_ms(0);
+          pocket_ui::schedule_disp_update(&id(disp1));
+  - platform: template
+    name: "Sleep & Wake: Screensaver Style"
+    id: screensaver_style_select
+    icon: "mdi:weather-night"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_screensaver_style}
+    options:
+      - "Ambient Clock"
+      - "Aurora Borealis"
+      - "Starfield"
+      - "Matrix Rain"
+      - "Fireworks"
+    set_action:
+      - lambda: |-
+          if (id(display_power_state) == 1) {
+            pocket_ui::schedule_disp_update(&id(disp1));
+          }
+
+  - platform: template
+    name: "Music: Album Art Style"
+    id: music_fullscreen_art_mode
+    icon: "mdi:image-size-select-actual"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_art_mode}
+    options:
+      - "Full Screen"
+      - "Letterbox"
+      - "Standard"
+    set_action:
+      - lambda: |-
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Music: Album Sort Order"
+    id: music_album_sort_order
+    icon: "mdi:sort-alphabetical-variant"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_album_sort}
+    options:
+      - "Alphabetical"
+      - "Newest on Top"
+      - "Oldest on Top"
+    set_action:
+      - lambda: |-
+          id(music_album_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Artist Album Sort Order"
+    id: music_artist_album_sort_order
+    icon: "mdi:sort-calendar-ascending"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_artist_album_sort}
+    options:
+      - "Oldest on Top"
+      - "Newest on Top"
+      - "Alphabetical"
+    set_action:
+      - lambda: |-
+          id(music_artist_album_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Podcast Sort Order"
+    id: music_podcast_sort_order
+    icon: "mdi:sort-clock-descending-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_podcast_sort}
+    options:
+      - "Newest on Top"
+      - "Oldest on Top"
+    set_action:
+      - lambda: |-
+          id(music_podcast_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Overlay Style"
+    id: music_overlay_style
+    icon: "mdi:television-guide"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Art + Metadata"
+    options:
+      - "Art Only"
+      - "Art + Metadata"
+      - "Always Visible"
+    set_action:
+      - lambda: |-
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  
+  - platform: template
+    name: "Display: Color Profile"
+    id: theme_palette_select
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Steel Blue"
+    options:
+      - "Steel Blue"
+      - "Pink"
+      - "Blue"
+      - "Green"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(theme_palette_select).publish_state(x);
+      - script.execute: apply_theme_preset
+  - platform: template
+    name: "Display: Auto Brightness Mode"
+    id: auto_brightness_mode
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Sun Synchronized"
+    options:
+      - "Disabled"
+      - "Sun Synchronized"
+      - "Time Schedule"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Day Brightness"
+    id: day_brightness_preset
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "90%"
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Night Brightness"
+    id: night_brightness_preset
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "70%"
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Manual Brightness"
+    id: display_brightness_preset
+    entity_category: config
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    initial_option: "90%"
+    restore_value: true
+    optimistic: true
+    set_action:
+      - script.execute: sync_display_brightness
+  # --------------------------------------------------------------------------
+  # ⚙️ Application Preferences & Power Management Selectors
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Display: Clock Face"
+    id: clock_face_style
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Modern Roman (Analog)"
+    options:
+      - "Modern Roman (Analog)"
+      - "Modern Digital (Bold)"
+    set_action:
+      - lambda: |-
+          id(clock_face_digital) = (x == "Modern Digital (Bold)");
+          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Display: Time Format"
+    id: time_format_select
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "12-Hour (AM/PM)"
+    options:
+      - "12-Hour (AM/PM)"
+      - "24-Hour"
+    set_action:
+      - lambda: |-
+          id(is_24h_format) = (x == "24-Hour");
+          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Display: Start Screen"
+    id: default_start_app
+    icon: "mdi:home-clock-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_start_app}
+    options:
+      - "Home"
+      - "Clock"
+    set_action:
+      - lambda: |-
+          id(default_start_app).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Room: Default Category"
+    id: room_default_category_select
+    icon: "mdi:Sofa-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Scenes"
+    options:
+      - "Scenes"
+      - "Lights"
+      - "Blinds & Curtains"
+      - "Fans"
+      - "Switches"
+      - "Media"
+      - "All Devices"
+    set_action:
+      - lambda: |-
+          id(room_default_category_select).publish_state(x);
+          if (id(display_power_state) == 0 && id(gui_page) == 6 && millis() > 3000) {
+            id(room_domain_filter) = pocket_ui::resolve_preferred_room_category(
+                x, id(room_show_all_category_switch).state);
+            id(room_browse_page) = 1;
+            id(fetch_room_browse).execute();
+            pocket_ui::schedule_disp_update(&id(disp1));
+          }
+
+button:
+  - platform: restart
+    name: "Internal Restart"
+    id: internal_restart
+    internal: true
+
+  - platform: template
+    name: "Actions: Restart Device"
+    id: restart_button
+    entity_category: diagnostic
+    on_press:
+      - light.turn_off: display_brightness
+      - component.update: disp1
+      - delay: 100ms
+      - button.press: internal_restart
+
+
+
+  - platform: template
+    name: "Actions: Trigger Voice Assistant"
+    id: trigger_va_button
+    on_press:
+      - script.execute: toggle_voice_assistant
+
+  - platform: template
+    name: "Actions: Find My Device"
+    id: find_my_button
+    icon: "mdi:radar"
+    on_press:
+      - lambda: |-
+          if (!id(find_my_active)) {
+            if (id(va_active) || !id(va_status_text).empty()) {
+              id(cancel_voice_assistant).execute();
+            }
+            id(find_my_active) = true;
+            id(find_my_start_ms) = millis();
+            id(wake_to_active_state).execute();
+            id(play_alarm_sound).execute();
+            pocket_ui::schedule_disp_update(&id(disp1));
+          } else {
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            pocket_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+          }
+
+
+switch:
+  # --------------------------------------------------------------------------
+  # �� Active App Deck Switches (Dynamic Skip-Routing)
+  # --------------------------------------------------------------------------
+  
+
+  - platform: template
+    name: "Home: Weather Background"
+    id: home_weather_bg_switch
+    icon: "mdi:weather-partly-cloudy"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Wake Greeting"
+    id: home_wake_greeting_switch
+    icon: "mdi:hand-wave-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Room"
+    id: home_dock_room_switch
+    icon: "mdi:home-lightning-bolt-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Room: Area Media Handoff"
+    id: room_handoff_media_switch
+    icon: "mdi:cast-audio"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Room: Show All Category"
+    id: room_show_all_category_switch
+    icon: "mdi:view-grid-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Room: BLE Presence Beacon"
+    id: ble_room_beacon_switch
+    icon: "mdi:bluetooth-audio"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - lambda: |-
+          id(ble_room_beacon_switch).publish_state(true);
+          if (id(display_power_state) == 0 && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+            id(ble_ctrl).enable();
+          }
+          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+    turn_off_action:
+      - lambda: |-
+          id(ble_room_beacon_switch).publish_state(false);
+          if (id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
+            id(ble_ctrl).disable();
+          }
+          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+
+
+  - platform: template
+    name: "Home: Shortcut Music"
+    id: home_dock_music_switch
+    icon: "mdi:music"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Remote"
+    id: home_dock_remote_switch
+    icon: "mdi:remote-tv"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Tools"
+    id: home_dock_tools_switch
+    icon: "mdi:toolbox-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Games"
+    id: home_dock_games_switch
+    icon: "mdi:gamepad-variant-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Alarm"
+    id: home_dock_alarm_switch
+    icon: "mdi:shield-home"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  
+
+  - platform: template
+    name: "Sound: Game Sound Effects"
+    id: game_sound_switch
+    icon: "mdi:gamepad-variant-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Voice: Wake Screen on Assist"
+    id: va_wake_screen_switch
+    icon: "mdi:television-ambient-light"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Music: Show Speaker Shortcut"
+    id: music_show_speaker_shortcut
+    icon: "mdi:speaker"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+    on_turn_off:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Music: Show Library Shortcut"
+    id: music_show_library_shortcut
+    icon: "mdi:bookshelf"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+    on_turn_off:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+
+
+number:
+  
+  - platform: template
+    name: "Display: Day Start Hour"
+    id: day_start_hour
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 7
+    min_value: 0
+    max_value: 23
+    step: 1
+    unit_of_measurement: "h"
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Night Start Hour"
+    id: night_start_hour
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 23
+    step: 1
+    unit_of_measurement: "h"
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+
+
+
+interval:
+  - interval: 5min
+    then:
+      - script.execute: sync_display_brightness
+  - interval: 60min
+    then:
+      - lambda: |-
+          // Priority 1: Periodic thermal drift compensation for RTC slow clock
+          uint32_t cal_val = pocket_ui::hal_calibrate_rtc();
+          ESP_LOGD("rtc_cal", "Periodic RTC slow clock calibration: %lu", (unsigned long)cal_val);
+
+  - interval: 50ms
+    then:
+      - lambda: |-
+          // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
+          // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms() (>= 42ms gap)
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 8 && !id(va_active) && id(va_status_text).empty()) {
+            if ((id(stuff_subpage) == 3 && id(stopwatch_running)) ||
+                (id(stuff_subpage) == 4 && id(dice_anim_active)) ||
+                (id(stuff_subpage) == 7) ||
+                (id(stuff_subpage) == 8 && id(coin_anim_active))) {
+              if (millis() - pocket_ui::last_ambient_anim_ms() >= 42U) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+                pocket_ui::record_ambient_frame_ms(millis());
+              }
+            }
+          }
+
+          // 20 FPS high-refresh physics loop exclusively for active games (coalesced against 1s timer)
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 3 && id(active_game) > 0 && !id(va_active) && id(va_status_text).empty()) {
+            if (millis() - pocket_ui::last_ambient_anim_ms() >= 42U) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+              pocket_ui::record_ambient_frame_ms(millis());
+            }
+          }
+
+          // 20 FPS Audio-Aware Fluid Voice Assistant Loop (All 5 Profiles):
+          // - Listening & Thinking: Full 20 FPS (42ms cadence, coalesced with 50ms timer)
+          // - Speaking (TTS FLAC playback): 75ms (~13.3 FPS, matching should_step_ambient_anim audio cadence)
+          if (id(va_active) || !id(va_status_text).empty()) {
+            static uint32_t last_va_anim_time = 0;
+            static bool prev_tts_active = false;
+            uint32_t now_va_ms = millis();
+
+            const bool tts_audio_active =
+                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                id(announcement_mixing_input).is_running();
+            if (id(va_active) && id(va_tts_received) && tts_audio_active) {
+              esphome::voice_assistant::disarm_va_speaker_timeout(id(va));
+            }
+
+            // Smooth state transition: reserve 1 quiet tick when speech starts so DAC unmutes cleanly
+            if (id(va_tts_received) != prev_tts_active) {
+              prev_tts_active = id(va_tts_received);
+              last_va_anim_time = now_va_ms;
+              return;
+            }
+
+            if (now_va_ms - last_va_anim_time >= 42U) {
+              last_va_anim_time = now_va_ms;
+              pocket_ui::schedule_disp_update(&id(disp1));
+              pocket_ui::record_ambient_frame_ms(millis());
+            }
+          }
+
+          // Dynamic Atmospheric Motion Wallpaper with Universal Audio-Aware Cadence
+          // - Unlocks full 20 FPS (50ms) when local music is idle for rain, snow, lightning, and night starfield
+          // - Paces smoothly at ~13.3 FPS (75ms) when local Sendspin music is playing
+          // - Static daytime weather conditions run on the default 1s display refresh with near-zero CPU load
+          const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && (id(gui_page) == 1 && id(home_subpage) == 0 && (id(home_weather_bg_switch).state || weather_sim_active || pocket_ui::is_wake_greeting_fading(millis(), id(home_wake_greeting_switch).state) || pocket_ui::is_home_activity_carousel_animating(millis()))) && !id(va_active) && id(va_status_text).empty()) {
+            static uint32_t last_cond_eval_time = 0;
+            static bool cached_has_motion = false;
+            uint32_t now_w_ms = millis();
+            const bool sim_just_changed = pocket_ui::weather_sim_dirty() ||
+                                          (pocket_ui::last_ambient_anim_ms() == 0U) ||
+                                          pocket_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
+                                          pocket_ui::is_home_activity_carousel_animating(now_w_ms);
+
+            if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
+              pocket_ui::weather_sim_dirty() = false;
+              last_cond_eval_time = now_w_ms;
+              std::string c_cond = id(ha_weather_condition).state;
+              if ((c_cond.empty() || c_cond == "unknown" || c_cond == "unavailable") &&
+                  !id(ha_weather_condition_fallback).state.empty()) {
+                c_cond = id(ha_weather_condition_fallback).state;
+              }
+              std::string s_sun = id(ha_sun_state).state;
+              bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
+              apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
+              cached_has_motion = pocket_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
+            }
+
+            const bool touch_busy = pocket_ui::touch_gesture().active ||
+                                    (now_w_ms - pocket_ui::touch_gesture().last_touch_ms < 220U);
+            if (!touch_busy && (sim_just_changed || cached_has_motion)) {
+              const bool local_music_playing =
+                  (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              if (sim_just_changed || pocket_ui::should_step_ambient_anim(now_w_ms, local_music_playing,
+                                                      id(va_active) || !id(va_status_text).empty(),
+                                                      id(alarm_ringing) || id(timer_ringing))) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+                pocket_ui::record_ambient_frame_ms(millis());
+              }
+            }
+          }
+
+  - interval: 250ms
+    then:
+      - lambda: |-
+          // ------------------------------------------------------------------
+          // 3-SLOT COUNTDOWN TIMER TICK & ALERT TRIGGER
+          // ------------------------------------------------------------------
+          if (id(timer_running)) {
+            uint32_t now_ms = millis();
+            auto *slots = pocket_ui::timer_slots();
+            bool any_expired = false;
+            std::string exp_name = "";
+            bool sec_changed = false;
+
+            for (int i = 0; i < 3; i++) {
+              if (!slots[i].running) continue;
+              if (now_ms >= slots[i].target_ms) {
+                slots[i].running = false;
+                slots[i].paused = false;
+                slots[i].remaining_sec = slots[i].duration_sec; // Preserve duration for 1-tap reuse!
+                exp_name = slots[i].name;
+                any_expired = true;
+              } else {
+                int rem = static_cast<int>((slots[i].target_ms - now_ms + 999U) / 1000U);
+                if (rem != slots[i].remaining_sec) {
+                  slots[i].remaining_sec = rem;
+                  sec_changed = true;
+                }
+              }
+            }
+
+            pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+
+            if (any_expired) {
+              if (id(va_active) || !id(va_status_text).empty()) {
+                id(cancel_voice_assistant).execute();
+              }
+              if (id(home_subpage) == 2) {
+                id(home_subpage) = 0;
+              }
+              id(va_timer_name) = exp_name;
+              id(timer_ringing) = true;
+              id(wake_to_active_state).execute();
+              id(play_alarm_sound).execute();
+              ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
+            } else if (sec_changed) {
+              if (!id(va_active) && id(va_status_text).empty()) {
+                if (((id(gui_page) == 8 && id(stuff_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
+                  pocket_ui::schedule_disp_update(&id(disp1));
+                }
+              }
+            }
+          }
+
+          // 60-second safety auto-stop for Find My Pocket Assistant beacon
+          if (id(find_my_active) && (millis() - id(find_my_start_ms) >= 60000U)) {
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            pocket_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+          }
+
+          // Auto-timeout & critical pulse refresh for active Latter push notifications / camera popups
+          if (id(notif_active)) {
+            if (millis() - id(notif_start_ms) >= id(notif_duration_ms)) {
+              id(dismiss_notification).execute();
+            } else if (id(notif_priority) == "critical" && id(display_power_state) == 0 &&
+                       !id(va_active) && id(va_status_text).empty()) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Periodic display refresh during active alarm, timer, or Find My Device ringing
+          if ((id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) && id(display_power_state) == 0) {
+            if (!id(va_active) && id(va_status_text).empty()) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Active Update Check state transition refresh (Page 4, Mode 5)
+          if (id(gui_page) == 4 && id(system_menu_mode) == 5 && id(update_check_state) > 0 && !id(va_active) && id(va_status_text).empty()) {
+            uint32_t dt_upd = millis() - id(update_check_timer);
+            if ((id(update_check_state) == 1 && dt_upd > 1500U) || (id(update_check_state) == 2 && dt_upd > 3500U)) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Music Overlay HUD Auto-Dismissal (5.0s timeout in Full Screen / Letterbox)
+          if (id(gui_page) == 2 && id(music_overlay_mode) == 0 && id(music_hud_active)) {
+            if (millis() - id(music_hud_timer) >= 5000U) {
+              id(music_hud_active) = false;
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+
+  - interval: 1s
+    then:
+      - lambda: |-
+          // ------------------------------------------------------------------
+          // ALARM ENGINE: SCHEDULE EVALUATION & SNOOZE CHECK
+          // ------------------------------------------------------------------
+          auto now = id(ha_time).now();
+          if (now.is_valid()) {
+            uint32_t now_epoch = now.timestamp;
+
+            // 1. Snooze expiration check
+            if (id(alarm_snooze_until) > 0 && now_epoch >= id(alarm_snooze_until)) {
+              id(alarm_snooze_until) = 0;
+              id(alarm_ringing) = true;
+              id(wake_to_active_state).execute();
+              id(play_alarm_sound).execute();
+              pocket_ui::schedule_disp_update(&id(disp1));
+              ESP_LOGI("alarm", "Snoozed alarm firing now!");
+              return;
+            }
+
+            // 2. Regular scheduled alarms check (on second == 0)
+            if (now.second == 0 && now.minute != id(alarm_last_fired_min)) {
+              auto check_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec, int a_num) -> bool {
+                if (!a_en) return false;
+                if (now.hour != a_hr || now.minute != a_min) return false;
+                // Recurrence: 0=Daily, 1=Weekdays, 2=Weekends, 3=Once
+                // ESPHome ESPTime::day_of_week: 1=SUN, 2=MON, ..., 6=FRI, 7=SAT
+                if (a_rec == 1) { // Weekdays
+                  if (now.day_of_week < 2 || now.day_of_week > 6) return false;
+                } else if (a_rec == 2) { // Weekends
+                  if (now.day_of_week != 1 && now.day_of_week != 7) return false;
+                }
+                return true;
+              };
+
+              bool triggered = false;
+              int trig_idx = 0;
+              if (check_alarm(id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence), 1)) {
+                triggered = true;
+                trig_idx = 1;
+                if (id(alarm1_recurrence) == 3) id(alarm1_enabled) = false; // Once: auto-disable
+              } else if (check_alarm(id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence), 2)) {
+                triggered = true;
+                trig_idx = 2;
+                if (id(alarm2_recurrence) == 3) id(alarm2_enabled) = false; // Once: auto-disable
+              } else if (check_alarm(id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence), 3)) {
+                triggered = true;
+                trig_idx = 3;
+                if (id(alarm3_recurrence) == 3) id(alarm3_enabled) = false; // Once: auto-disable
+              }
+
+              if (triggered) {
+                if (id(va_active) || !id(va_status_text).empty()) {
+                  id(cancel_voice_assistant).execute();
+                }
+                id(alarm_last_fired_min) = now.minute;
+                id(alarm_ringing) = true;
+                id(alarm_ringing_idx) = trig_idx;
+                id(wake_to_active_state).execute();
+                id(play_alarm_sound).execute();
+                pocket_ui::schedule_disp_update(&id(disp1));
+                ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", trig_idx);
+              }
+            }
+          }
+
+
+
+sensor:
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Timer Remaining"
+    id: timer_remaining_sensor
+    update_interval: 30s
+    filters:
+      - delta: 1.0
+    lambda: |-
+      if (!id(timer_running) && !id(timer_paused)) return {};
+      return (float)id(timer_remaining_sec);
+    unit_of_measurement: "s"
+    entity_category: diagnostic
+    icon: "mdi:timer-outline"
+
+  # ��️ Sky & Weather Suite Sensors
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_sun_elevation
+    entity_id: ${sun_entity}
+    attribute: elevation
+    internal: true
+
+  - platform: homeassistant
+    id: ha_sun_azimuth
+    entity_id: ${sun_entity}
+    attribute: azimuth
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_temperature
+    entity_id: ${weather_entity}
+    attribute: temperature
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              pocket_ui::record_ambient_frame_ms(0);
+            }
+
+  - platform: homeassistant
+    id: ha_weather_humidity
+    entity_id: ${weather_entity}
+    attribute: humidity
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_speed
+    entity_id: ${weather_entity}
+    attribute: wind_speed
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_bearing
+    entity_id: ${weather_entity}
+    attribute: wind_bearing
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_high
+    entity_id: ${weather_forecast_sensor}
+    attribute: high
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_low
+    entity_id: ${weather_forecast_sensor}
+    attribute: low
+    internal: true
+
+  - platform: homeassistant
+    id: ha_room_temperature
+    entity_id: ${room_context_sensor}
+    attribute: room_temp
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 6) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_room_humidity
+    entity_id: ${room_context_sensor}
+    attribute: room_humidity
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 6) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_wh_thermostat_temp
+    entity_id: ${room_context_sensor}
+    attribute: thermostat_temp
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 40.0f && x <= 100.0f) {
+              pocket_ui::sim_thermostat_target_f() = static_cast<int>(std::round(x));
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_alert_duration
+    entity_id: ${room_context_sensor}
+    attribute: alert_duration
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_id
+    entity_id: ${room_context_sensor}
+    attribute: alert_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (std::isnan(x)) return;
+            int aid = static_cast<int>(std::round(x));
+            if (id(last_seen_alert_id) < 0) {
+              // Seed initial alert_id at boot without re-firing old historical alert
+              id(last_seen_alert_id) = aid;
+              return;
+            }
+            if (aid > id(last_seen_alert_id)) {
+              id(last_seen_alert_id) = aid;
+              // If show_notification API action already triggered within the last 1500ms, skip duplicate state trigger
+              if (id(notif_active) && (millis() - id(notif_start_ms) < 1500U)) return;
+              id(notif_title) = id(ha_latter_alert_title).state.empty() ? "Notification" : id(ha_latter_alert_title).state;
+              id(notif_message) = id(ha_latter_alert_message).state;
+              id(notif_priority) = id(ha_latter_alert_priority).state.empty() ? "normal" : id(ha_latter_alert_priority).state;
+              float dur_f = id(ha_latter_alert_duration).state;
+              int dur_s = (!std::isnan(dur_f) && dur_f > 0.0f) ? static_cast<int>(dur_f) : 10;
+              if (dur_s < 3) dur_s = 3;
+              if (dur_s > 60) dur_s = 60;
+              id(notif_duration_ms) = static_cast<uint32_t>(dur_s) * 1000U;
+              id(notif_start_ms) = millis();
+              id(notif_camera_url) = id(ha_latter_alert_camera_url).state;
+              id(notif_active) = true;
+              id(wake_to_active_state).execute();
+              std::string chime_st = id(ha_latter_alert_chime).state;
+              bool play_chime = (chime_st.empty() || chime_st == "True" || chime_st == "true" || chime_st == "1");
+              if (play_chime && !id(va_active) && !id(va_tts_received)) {
+                int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
+                id(play_game_sfx).execute(sfx);
+              }
+              if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
+                  id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+                id(fetch_camera_snapshot).execute();
+              } else {
+                id(current_loaded_camera_url) = "";
+                id(camera_snapshot_art).release();
+              }
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_active_remote_slot
+    entity_id: ${remote_config_sensor}
+    attribute: active_slot
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 1.0f && x <= 4.0f) {
+              id(active_remote_slot) = static_cast<int>(x) - 1;
+              if (id(display_power_state) == 0 && id(gui_page) == 7) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_weather_temp_fallback
+    entity_id: ${weather_forecast_sensor}
+    attribute: temperature
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_humidity_fallback
+    entity_id: ${weather_forecast_sensor}
+    attribute: humidity
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_speed_fallback
+    entity_id: ${weather_forecast_sensor}
+    attribute: wind_speed
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_bearing_fallback
+    entity_id: ${weather_forecast_sensor}
+    attribute: wind_bearing
+    internal: true
+
+
+  - platform: homeassistant
+    id: ha_media_duration
+    entity_id: ${active_media_sensor}
+    attribute: duration
+
+  - platform: homeassistant
+    id: ha_media_position
+    entity_id: ${active_media_sensor}
+    attribute: position
+    on_value:
+      then:
+        - lambda: |-
+            id(music_pos_base) = x;
+            id(music_pos_sync_time) = millis();
+
+  - platform: homeassistant
+    id: ha_target_volume
+    entity_id: ${active_media_sensor}
+    attribute: volume
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 0.0f && x <= 1.0f) {
+              if (millis() - pocket_ui::last_local_vol_tap_ms() > 3000U) {
+                pocket_ui::remote_vol_pct() = (int)std::round(x * 100.0f);
+                if (id(active_speaker_entity) == "${local_player_id}") {
+                  id(pocket_music_player).volume = x;
+                }
+              }
+            }
+
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    id: pocket_wifi_signal
+    update_interval: 60s
+
+
+
+
+binary_sensor:
+  - platform: template
+    name: "Timer Active"
+    id: timer_active_binary_sensor
+    lambda: 'return id(timer_running);'
+    entity_category: diagnostic
+    icon: "mdi:timer-sand"
+
+  - platform: template
+    name: "Alarm Ringing"
+    id: alarm_ringing_binary_sensor
+    lambda: 'return id(alarm_ringing) || id(timer_ringing);'
+    entity_category: diagnostic
+    icon: "mdi:alarm-bell"
+  - id: !extend boot_button
+    on_press:
+      then:
+        - lambda: |-
+            static uint32_t last_btn_press = 0;
+            uint32_t now = millis();
+            if (now - last_btn_press < 150) return;
+            last_btn_press = now;
+        - if:
+            condition:
+              lambda: 'return id(find_my_active) || id(timer_ringing) || id(alarm_ringing) || id(notif_active);'
+            then:
+              - lambda: |-
+                  if (id(notif_active)) {
+                    id(dismiss_notification).execute();
+                    return;
+                  }
+                  id(find_my_active) = false;
+                  id(timer_ringing) = false;
+                  id(alarm_ringing) = false;
+                  id(stop_alarm_sound).execute();
+                  id(sync_display_brightness).execute();
+                  pocket_ui::schedule_disp_update(&id(disp1));
+                  id(screen_sleep_timer).execute();
+            else:
+              - if:
+                  condition:
+                    lambda: 'return id(active_game) > 0;'
+                  then:
+                    - lambda: 'id(game_btn_pressed) = true;'
+                  else:
+                    - script.execute: toggle_voice_assistant
+
+text_sensor:
+  # --------------------------------------------------------------------------
+  # ��️ Sky & Weather Suite Text Sensors
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_sun_next_rising
+    entity_id: ${sun_entity}
+    attribute: next_rising
+    internal: true
+
+  - platform: homeassistant
+    id: ha_sun_next_setting
+    entity_id: ${sun_entity}
+    attribute: next_setting
+    internal: true
+
+  - platform: homeassistant
+    id: ha_moon_phase
+    entity_id: ${moon_entity}
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_condition
+    entity_id: ${weather_entity}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              pocket_ui::record_ambient_frame_ms(0);
+            }
+
+  - platform: homeassistant
+    id: ha_room_context_name
+    entity_id: ${room_context_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_room_area_name) = x;
+              pocket_ui::latter_room_label() = x;
+              if (id(display_power_state) == 0 && (id(gui_page) == 6 || (id(gui_page) == 4 && id(system_menu_mode) == 8))) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_room_context_area_id
+    entity_id: ${room_context_sensor}
+    attribute: area_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != id(active_room_area_id)) {
+              id(active_room_area_id) = x;
+              id(room_browse_page) = 1;
+              pocket_ui::room_cat_dock_page() = 0;
+              if (id(display_power_state) == 0 && id(gui_page) == 6) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_room_available_domains
+    entity_id: ${room_context_sensor}
+    attribute: available_domains
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              bool changed = (x != pocket_ui::room_available_domains_csv());
+              pocket_ui::room_available_domains_csv() = x;
+              std::string valid_cat = pocket_ui::resolve_preferred_room_category(
+                  std::string(id(room_default_category_select).current_option()),
+                  id(room_show_all_category_switch).state);
+              std::string cats[7];
+              int cnt = pocket_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
+              bool cur_ok = false;
+              for (int i = 0; i < cnt; i++) {
+                if (cats[i] == id(room_domain_filter)) { cur_ok = true; break; }
+              }
+              if (!cur_ok && !valid_cat.empty()) {
+                id(room_domain_filter) = valid_cat;
+                if (id(gui_page) == 6 && id(room_subpage) == 0) {
+                  id(room_browse_page) = 1;
+                  id(fetch_room_browse).execute();
+                }
+              }
+              if (changed && id(display_power_state) == 0 && id(gui_page) == 6) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_dock_apps
+    entity_id: ${room_context_sensor}
+    attribute: dock_apps
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              pocket_ui::latter_dock_order_csv() = x;
+              pocket_ui::home_dock_page() = 0;
+              if (id(display_power_state) == 0 && id(gui_page) == 1) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_room_alarm_entity
+    entity_id: ${room_context_sensor}
+    attribute: alarm_entity
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != "none") {
+              id(room_alarm_entity) = x;
+            }
+
+  - platform: homeassistant
+    id: ha_room_alarm_state
+    entity_id: ${room_context_sensor}
+    attribute: alarm_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(room_alarm_state) = x;
+              if (id(display_power_state) == 0 && (id(gui_page) == 6 || id(gui_page) == 9 || id(gui_page) == 1)) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_wh_thermostat_state
+    entity_id: ${room_context_sensor}
+    attribute: thermostat_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              pocket_ui::sim_thermostat_mode() = x;
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_wh_lock_state
+    entity_id: ${room_context_sensor}
+    attribute: lock_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              pocket_ui::sim_front_door_locked() = (x == "locked");
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_wh_garage_state
+    entity_id: ${room_context_sensor}
+    attribute: garage_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              pocket_ui::sim_garage_open() = (x == "open" || x == "opening");
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_wh_vacuum_state
+    entity_id: ${room_context_sensor}
+    attribute: vacuum_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              if (x == "cleaning") pocket_ui::sim_vacuum_state() = "Cleaning";
+              else if (x == "paused") pocket_ui::sim_vacuum_state() = "Paused";
+              else if (x == "returning") pocket_ui::sim_vacuum_state() = "Returning";
+              else pocket_ui::sim_vacuum_state() = "Docked";
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                pocket_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_alert_title
+    entity_id: ${room_context_sensor}
+    attribute: alert_title
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_message
+    entity_id: ${room_context_sensor}
+    attribute: alert_message
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_priority
+    entity_id: ${room_context_sensor}
+    attribute: alert_priority
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_chime
+    entity_id: ${room_context_sensor}
+    attribute: alert_chime
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_camera_url
+    entity_id: ${room_context_sensor}
+    attribute: alert_camera_url
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_site_id
+    entity_id: ${room_context_sensor}
+    attribute: site_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              pocket_ui::latter_site_id() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_vpn_enabled
+    entity_id: ${room_context_sensor}
+    attribute: vpn_enabled
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            pocket_ui::latter_vpn_enabled() = (x == "True" || x == "true" || x == "1");
+
+  - platform: homeassistant
+    id: ha_latter_vpn_client_ip
+    entity_id: ${room_context_sensor}
+    attribute: vpn_client_ip
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              pocket_ui::latter_vpn_client_ip() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_ble_closest_proxy
+    entity_id: ${room_context_sensor}
+    attribute: ble_closest_proxy
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              pocket_ui::latter_ble_proxy() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_theme_color_hex
+    entity_id: ${room_context_sensor}
+    attribute: theme_color_hex
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x.size() == 7 && x[0] == '#') {
+              uint32_t new_rgb = pocket_ui::parse_hex_rgb(x, id(custom_theme_rgb));
+              if (new_rgb != id(custom_theme_rgb)) {
+                id(custom_theme_rgb) = new_rgb;
+                if (id(theme_palette_select).current_option() == "Custom") {
+                  id(apply_theme_preset).execute();
+                }
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_camera_snapshot_url
+    entity_id: ${room_context_sensor}
+    attribute: camera_snapshot_url
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_custom_bindings_summary
+    entity_id: ${room_context_sensor}
+    attribute: custom_bindings_summary
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_wallpaper_url
+    entity_id: ${room_context_sensor}
+    attribute: wallpaper_url
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x.empty() || x == "none" || x == "unknown" || x == "unavailable");'
+            then:
+              - script.stop: fetch_wallpaper_debounced
+              - lambda: 'id(current_loaded_wallpaper_url) = "";'
+              - online_image.release: home_wallpaper_art
+              - lambda: |-
+                  if (id(display_power_state) == 0 && id(gui_page) == 1) {
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+            else:
+              - if:
+                  condition:
+                    lambda: 'return x != id(current_loaded_wallpaper_url);'
+                  then:
+                    - script.execute: fetch_wallpaper_debounced
+
+  - platform: homeassistant
+    id: ha_calendar_agenda_raw
+    entity_id: ${calendar_agenda_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(stuff_subpage) == 9))) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_weather_forecast_5d
+    entity_id: ${weather_forecast_sensor}
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_condition_fallback
+    entity_id: ${weather_forecast_sensor}
+    attribute: condition
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              pocket_ui::weather_sim_dirty() = true;
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_sun_state
+    entity_id: sun.sun
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: pocket_ip_address
+  - platform: template
+    name: "Firmware Version"
+    id: pocket_assistant_firmware_version
+    icon: "mdi:tag-outline"
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: 'return std::string("${version}");'
+  - platform: homeassistant
+    id: ha_firmware_latest_version
+    entity_id: ${firmware_update_entity}
+    attribute: latest_version
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+  - platform: homeassistant
+    id: ha_firmware_release_summary
+    entity_id: ${firmware_update_entity}
+    attribute: release_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+  # �� Universal Remote Control Slots Summary (Dynamic from Latter v1.0.3+)
+  - platform: homeassistant
+    id: ha_latter_remote_slots_summary
+    entity_id: ${remote_config_sensor}
+    attribute: slots_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            pocket_ui::parse_latter_remote_slots_summary(
+                x,
+                id(remote_slot_0_ent), id(remote_slot_0_name),
+                id(remote_slot_1_ent), id(remote_slot_1_name),
+                id(remote_slot_2_ent), id(remote_slot_2_name),
+                id(remote_slot_3_ent), id(remote_slot_3_name));
+            const std::string rem_ents[4] = {
+              id(remote_slot_0_ent), id(remote_slot_1_ent),
+              id(remote_slot_2_ent), id(remote_slot_3_ent)
+            };
+            id(active_remote_slot) = pocket_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
+            if (id(display_power_state) == 0 && id(gui_page) == 7 && millis() > 3000) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_active_speaker_sync
+    entity_id: ${active_media_sensor}
+    attribute: active_speaker
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              if (x.rfind("media_player.", 0) == 0) {
+                id(active_speaker_entity) = x;
+                if (x == "${local_player_id}") {
+                  id(active_speaker_name) = "${friendly_name}";
+                } else {
+                  std::string s = x;
+                  size_t dot = s.find('.');
+                  if (dot != std::string::npos) s = s.substr(dot + 1);
+                  bool cap = true;
+                  for (size_t i = 0; i < s.length(); i++) {
+                    if (s[i] == '_') { s[i] = ' '; cap = true; }
+                    else if (cap) { s[i] = toupper(s[i]); cap = false; }
+                  }
+                  id(active_speaker_name) = s;
+                }
+              } else {
+                ESP_LOGW("ui", "Rejecting non-media_player speaker '%s', defaulting to local player", x.c_str());
+                id(active_speaker_entity) = "${local_player_id}";
+                id(active_speaker_name) = "${friendly_name}";
+              }
+              if (id(display_power_state) == 0 && id(gui_page) == 2) {
+                id(throttled_disp_update).execute();
+              }
+            }
+        - if:
+            condition:
+              lambda: |-
+                return (x != "${local_player_id}") &&
+                       !id(ha_target_art_url).state.empty() &&
+                       (id(ha_target_art_url).state != "none") &&
+                       (id(ha_target_art_url).state != id(current_loaded_art_url));
+            then:
+              - script.execute: fetch_remote_art_debounced
+
+  - platform: homeassistant
+    id: ha_target_state
+    entity_id: ${active_media_sensor}
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_state = "";
+            if (x != prev_state) {
+              prev_state = x;
+              if (id(active_speaker_entity) != "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_track_title
+    entity_id: ${active_media_sensor}
+    attribute: title
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_title = "";
+            id(music_action_feedback) = "";
+            if (x != prev_title) {
+              prev_title = x;
+              if (!x.empty() && x != "Idle" && x != "None" && x != "unknown" && x != "unavailable") {
+                pocket_ui::music_queue_cleared() = false;
+              }
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_track_artist
+    entity_id: ${active_media_sensor}
+    attribute: artist
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_artist = "";
+            if (x != prev_artist) {
+              prev_artist = x;
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_track_album
+    entity_id: ${active_media_sensor}
+    attribute: album
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_album = "";
+            if (x != prev_album) {
+              prev_album = x;
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_target_media_type
+    entity_id: ${active_media_sensor}
+    attribute: media_type
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_playback_media_type) = x;
+            }
+        - script.execute: throttled_disp_update
+
+  - platform: homeassistant
+    id: ha_target_art_url
+    entity_id: ${active_media_sensor}
+    attribute: art_url
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x.empty() || x == "none" || x == "unknown" || x == "unavailable");'
+            then:
+              - script.stop: fetch_remote_art_debounced
+              - lambda: 'id(current_loaded_art_url) = "";'
+              - online_image.release: remote_album_art
+              - script.execute: throttled_disp_update
+            else:
+              - if:
+                  condition:
+                    lambda: 'return (id(active_speaker_entity) != "${local_player_id}");'
+                  then:
+                    - script.execute: fetch_remote_art_debounced
+
+  - platform: sendspin
+    type: artist
+    name: "Now Playing Artist"
+    id: track_artist
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_artist = "";
+            if (x != prev_s_artist) {
+              prev_s_artist = x;
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+  - platform: sendspin
+    type: title
+    name: "Now Playing Title"
+    id: track_title
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_title = "";
+            if (x != prev_s_title) {
+              prev_s_title = x;
+              if (!x.empty() && x != "Idle" && x != "None") {
+                pocket_ui::music_queue_cleared() = false;
+              }
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+  - platform: sendspin
+    type: album
+    name: "Now Playing Album"
+    id: track_album
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_album = "";
+            if (x != prev_s_album) {
+              prev_s_album = x;
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+
+script:
+  - id: pause_all_music
+    mode: restart
+    then:
+      - lambda: |-
+          bool local_active = (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          bool remote_active = (!id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}") && (id(ha_target_state).state == "playing"));
+          if (local_active || remote_active) {
+            id(va_resume_music_after) = true;
+          }
+          ESP_LOGI("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d", local_active, remote_active, id(va_resume_music_after));
+      - if:
+          condition:
+            lambda: 'return id(va_resume_music_after);'
+          then:
+            - media_player.pause: pocket_music_player
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: 50
+                duration: 0.1s
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "pause"
+
+  - id: resume_music_after_va
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(va_resume_music_after);'
+          then:
+            - script.execute: mp_idle_debounce
+            - lambda: |-
+                id(va_resume_music_after) = false;
+                ESP_LOGI("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)", id(active_speaker_entity).c_str(), id(va_was_cancelled));
+            - if:
+                condition:
+                  lambda: 'return !id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}");'
+                then:
+                  - lambda: |-
+                      id(va_was_cancelled) = false;
+                      if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                        id(ble_ctrl).enable();
+                      }
+                  - homeassistant.action:
+                      action: latter.media_command
+                      data:
+                        target_device: "${name}"
+                        command: "play"
+                  - audio_dac.mute_on: es8311_dac
+                  - script.execute: route_i2s_to_mic
+                  - script.execute: sync_wake_word_state
+                else:
+                  - script.execute: route_i2s_to_spk
+                  - switch.turn_on: speaker_enable
+                  - if:
+                      condition:
+                        lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
+                      then:
+                        - mixer_speaker.apply_ducking:
+                            id: media_mixing_input
+                            decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                            duration: 0.5s
+                        - mixer_speaker.apply_ducking:
+                            id: announcement_mixing_input
+                            decibel_reduction: 50
+                            duration: 0.1s
+                  # Dispatch play via latter.media_command so it never double-triggers with the media_play interceptor
+                  - homeassistant.action:
+                      action: latter.media_command
+                      data:
+                        target_device: "${name}"
+                        command: "play"
+                  # If VA was terminated early, keep es8311_dac muted for 700ms while Sendspin
+                  # handshakes so any residual TTS audio inside physical_speaker's 1000ms buffer
+                  # drains completely silently instead of playing a 0.4s burst before music starts
+                  - if:
+                      condition:
+                        lambda: 'return id(va_was_cancelled);'
+                      then:
+                        - lambda: 'id(va_was_cancelled) = false;'
+                        - delay: 700ms
+                  - audio_dac.mute_off: es8311_dac
+          else:
+            - lambda: |-
+                id(va_was_cancelled) = false;
+                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                  id(ble_ctrl).enable();
+                }
+            - audio_dac.mute_on: es8311_dac
+            - script.execute: route_i2s_to_mic
+            - script.execute: sync_wake_word_state
+  - id: fetch_remote_art_debounced
+    mode: restart
+    then:
+      - delay: 650ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(active_speaker_entity) != "${local_player_id}") &&
+                     (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          then:
+            - wait_until:
+                condition:
+                  lambda: 'return id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING;'
+                timeout: 2500ms
+            - delay: 250ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(gui_page) == 2) &&
+                     (id(display_power_state) == 0) &&
+                     !id(va_active) && id(va_status_text).empty() &&
+                     (id(active_speaker_entity) != "${local_player_id}") &&
+                     !id(ha_target_art_url).state.empty() &&
+                     (id(ha_target_art_url).state != "none") &&
+                     (id(ha_target_art_url).state != "unknown") &&
+                     (id(ha_target_art_url).state != "unavailable") &&
+                     (id(ha_target_art_url).state != id(current_loaded_art_url));
+          then:
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+            - online_image.set_url:
+                id: remote_album_art
+                url: !lambda 'return id(ha_target_art_url).state;'
+
+  - id: fetch_wallpaper_debounced
+    mode: restart
+    then:
+      - delay: 500ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(display_power_state) == 0) &&
+                     !id(va_active) && id(va_status_text).empty() &&
+                     (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     !id(ha_latter_wallpaper_url).state.empty() &&
+                     (id(ha_latter_wallpaper_url).state != "none") &&
+                     (id(ha_latter_wallpaper_url).state != "unknown") &&
+                     (id(ha_latter_wallpaper_url).state != "unavailable") &&
+                     (id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url));
+          then:
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - lambda: 'id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;'
+            - online_image.set_url:
+                id: home_wallpaper_art
+                url: !lambda 'return id(ha_latter_wallpaper_url).state;'
+
+  - id: fetch_calendar_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.calendar_fetch
+          data:
+            target_device: "${name}"
+            days: "30"
+            page: !lambda 'return to_string(id(cal_browse_page));'
+            page_size: "5"
+
+  - id: create_calendar_quick_event
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.calendar_create_event
+          data:
+            target_device: "${name}"
+            summary: !lambda 'return id(cal_quick_summary).c_str();'
+            in_minutes: !lambda 'return to_string(id(cal_quick_in_minutes));'
+            duration_minutes: !lambda 'return to_string(id(cal_quick_duration_minutes));'
+      - delay: 650ms
+      - script.execute: fetch_calendar_browse
+
+  - id: fetch_calendar_map_snapshot
+    mode: restart
+    then:
+      - delay: 40ms
+      - if:
+          condition:
+            lambda: 'return !pocket_ui::cal_detail_location().empty();'
+          then:
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - lambda: |-
+                std::string base_map_u = pocket_ui::cal_detail_map_url();
+                if (base_map_u.empty()) {
+                  const std::string &w_url = id(ha_latter_wallpaper_url).state;
+                  const std::string &c_url = id(ha_latter_camera_snapshot_url).state;
+                  const std::string &a_url = id(ha_target_art_url).state;
+                  auto extract_origin = [](const std::string &u) -> std::string {
+                    if (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0) {
+                      size_t p = u.find('/', 8);
+                      if (p != std::string::npos) return u.substr(0, p);
+                    }
+                    return "";
+                  };
+                  std::string orig = extract_origin(c_url);
+                  if (orig.empty()) orig = extract_origin(w_url);
+                  if (orig.empty()) orig = extract_origin(a_url);
+                  base_map_u = orig + "/api/latter/map/${name}?w=${screen_w}&h=${screen_h}&shape=${art_shape}&q=" +
+                               pocket_ui::url_encode_query(pocket_ui::cal_detail_location());
+                }
+                id(notif_camera_url) = base_map_u +
+                                       "&z=" + to_string(pocket_ui::cal_map_zoom()) +
+                                       "&pan_x=" + to_string(pocket_ui::cal_map_pan_x()) +
+                                       "&pan_y=" + to_string(pocket_ui::cal_map_pan_y());
+                ESP_LOGI("cal_map", "Fetching Calendar Map Snapshot: %s", id(notif_camera_url).c_str());
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: send_intercom_broadcast
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.intercom_broadcast
+          data:
+            target_device: "${name}"
+            message: !lambda 'return id(intercom_message_str).c_str();'
+
+  - id: trigger_latter_macro
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.trigger_binding
+          data:
+            target_device: "${name}"
+            slot: !lambda 'return id(macro_target_slot).c_str();'
+
+  - id: fetch_on_demand_camera
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return !id(ha_latter_camera_snapshot_url).state.empty() &&
+                     id(ha_latter_camera_snapshot_url).state != "none" &&
+                     id(ha_latter_camera_snapshot_url).state != "unknown" &&
+                     id(ha_latter_camera_snapshot_url).state != "unavailable";
+          then:
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda |-
+                  std::string u = id(ha_latter_camera_snapshot_url).state;
+                  size_t vpos = u.find("&v=");
+                  if (vpos != std::string::npos) {
+                    u = u.substr(0, vpos);
+                  }
+                  return u + "&v=" + to_string(millis());
+
+  - id: fetch_camera_snapshot
+    mode: restart
+    then:
+      - delay: 80ms
+      - if:
+          condition:
+            lambda: |-
+              return id(notif_active) &&
+                     !id(notif_camera_url).empty() &&
+                     (id(notif_camera_url) != "none") &&
+                     (id(notif_camera_url) != "unknown") &&
+                     (id(notif_camera_url) != "unavailable");
+          then:
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: dismiss_notification
+    mode: restart
+    then:
+      - script.stop: fetch_camera_snapshot
+      - lambda: |-
+          id(notif_active) = false;
+          id(notif_camera_url) = "";
+          id(current_loaded_camera_url) = "";
+      - online_image.release: camera_snapshot_art
+      - script.execute: mp_idle_debounce
+      - script.execute: sync_wake_word_state
+      - script.execute: screen_sleep_timer
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: throttled_disp_update
+    mode: restart
+    then:
+      - delay: 120ms
+      - if:
+          condition:
+            lambda: |-
+              static uint32_t last_throttled_draw = 0;
+              uint32_t now = millis();
+              if (now - last_throttled_draw < 200) return false;
+              if (now - pocket_ui::last_page2_draw_ms() < 250) return false;
+              if (id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active)) {
+                last_throttled_draw = now;
+                return true;
+              }
+              return false;
+          then:
+            - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: apply_theme_preset
+    mode: restart
+    then:
+      - lambda: |-
+          std::string p = std::string(id(theme_palette_select).current_option());
+          // Permanent secondary color: Brushed Silver / Gray #C0C0C0 across all profiles
+          id(theme_secondary) = Color(192, 192, 192);
+          if (p == "Custom") {
+            pocket_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
+          } else if (p == "Pink" || p == "Pink & Gray") {
+            id(theme_primary) = Color(168, 120, 132);  // Muted Ash Pink #A87884
+          } else if (p == "Green" || p == "Green & Gold") {
+            id(theme_primary) = Color(66, 116, 83);    // Heritage Sage Green #427453
+          } else if (p == "Blue" || p == "Blue & Gold" || p == "Default Classic") {
+            id(theme_primary) = Color(69, 110, 138);   // Deep Steel Blue #456E8A
+          } else {
+            // Steel Blue (Default): Soft Steel Ice Blue #6B8E9E
+            id(theme_primary) = Color(107, 142, 158);
+          }
+          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+
+  - id: save_custom_color_to_latter
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.save_custom_color
+          data:
+            target_device: "${name}"
+            hex_color: !lambda |-
+              char buf[12];
+              snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(id(custom_theme_rgb) & 0xFFFFFFUL));
+              return std::string(buf);
+
+  - id: sync_display_brightness
+    mode: restart
+    then:
+      - lambda: |-
+          auto parse_bri = [](const std::string& opt) -> float {
+            if (opt == "60%") return 0.60f;
+            if (opt == "70%") return 0.70f;
+            if (opt == "80%") return 0.80f;
+            if (opt == "90%") return 0.90f;
+            if (opt == "100%") return 1.00f;
+            return 0.90f;
+          };
+
+          float b_target = 0.90f;
+          std::string mode = id(auto_brightness_mode).current_option();
+
+          if (mode == "Sun Synchronized") {
+            std::string sun = id(ha_sun_state).state;
+            bool is_night = (sun == "below_horizon");
+            std::string opt = is_night ? id(night_brightness_preset).current_option()
+                                       : id(day_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          } else if (mode == "Time Schedule") {
+            auto now = id(ha_time).now();
+            int day_h = (int)id(day_start_hour).state;
+            int night_h = (int)id(night_start_hour).state;
+            bool is_day = true;
+            if (now.is_valid()) {
+              if (day_h < night_h) {
+                is_day = (now.hour >= day_h && now.hour < night_h);
+              } else {
+                is_day = (now.hour >= day_h || now.hour < night_h);
+              }
+            }
+            std::string opt = is_day ? id(day_brightness_preset).current_option()
+                                     : id(night_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          } else {
+            std::string opt = id(display_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          }
+
+          if ((id(gui_page) == 8 && id(stuff_subpage) == 5) || id(find_my_active)) {
+            b_target = 1.00f;
+          }
+
+          if (id(display_power_state) == 0) {
+            id(display_brightness).turn_on().set_brightness(b_target).perform();
+          } else if (id(display_power_state) == 1) {
+            id(display_brightness).turn_on().set_brightness(0.60f).perform();
+          }
+
+  - id: apply_default_start_page
+    then:
+      - lambda: |-
+          auto def_app = id(default_start_app).current_option();
+          id(gui_page) = (def_app == "Clock") ? 0 : 1;
+  - id: music_vol_up
+    mode: restart
+    then:
+      - delay: 0ms
+      - if:
+          condition:
+            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+          then:
+            - lambda: |-
+                float step = id(volume_step_size).state / 100.0f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                pocket_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(pocket_music_player).volume;
+                if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
+                float new_vol = std::min(1.00f, cur + step);
+                id(pocket_music_player).make_call().set_volume(new_vol).perform();
+          else:
+            - homeassistant.action:
+                action: latter.media_volume
+                data:
+                  target_device: "${name}"
+                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+                  action: "up"
+
+  - id: music_vol_down
+    mode: restart
+    then:
+      - delay: 0ms
+      - if:
+          condition:
+            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+          then:
+            - lambda: |-
+                float step = id(volume_step_size).state / 100.0f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                pocket_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(pocket_music_player).volume;
+                if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
+                float new_vol = std::max(0.10f, cur - step);
+                id(pocket_music_player).make_call().set_volume(new_vol).perform();
+          else:
+            - homeassistant.action:
+                action: latter.media_volume
+                data:
+                  target_device: "${name}"
+                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+                  action: "down"
+  - id: toggle_ha_music
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
+              bool local_playing = (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              return pocket_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, millis());
+          then:
+            - lambda: 'pocket_ui::set_remote_play_override(false, millis());'
+            - if:
+                condition:
+                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                then:
+                  - media_player.pause: pocket_music_player
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "pause"
+          else:
+            - lambda: 'pocket_ui::set_remote_play_override(true, millis());'
+            - if:
+                condition:
+                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                then:
+                  - script.stop: mp_idle_debounce
+                  - script.execute: route_i2s_to_spk
+                  - switch.turn_on: speaker_enable
+                  - audio_dac.mute_off: es8311_dac
+                  - mixer_speaker.apply_ducking:
+                      id: media_mixing_input
+                      decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                      duration: 0.2s
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "play"
+
+  - id: stop_ha_music
+    mode: restart
+    then:
+      - lambda: |-
+          pocket_ui::set_remote_play_override(false, millis());
+          id(music_action_feedback) = "Playback Stopped";
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - media_player.pause: pocket_music_player
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "pause"
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: clear_ha_music_queue
+    mode: restart
+    then:
+      - lambda: |-
+          pocket_ui::set_remote_play_override(false, millis());
+          pocket_ui::music_queue_cleared() = true;
+          id(track_title).publish_state("");
+          id(track_artist).publish_state("");
+          id(track_album).publish_state("");
+          id(ha_track_title).publish_state("Idle");
+          id(ha_track_artist).publish_state("None");
+          id(ha_track_album).publish_state("None");
+          id(music_pos_base) = 0.0f;
+          id(music_pos_sync_time) = 0;
+          id(current_loaded_art_url) = "";
+          id(music_action_feedback) = "Queue Cleared";
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - media_player.stop: pocket_music_player
+      - online_image.release: remote_album_art
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "clear_queue"
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: music_next_track
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Next Track >>";
+          id(music_feedback_timer) = millis();
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "next"
+
+  - id: music_prev_track
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "<< Prev Track";
+          id(music_feedback_timer) = millis();
+          id(music_pos_base) = 0.0f;
+          id(music_pos_sync_time) = millis();
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "previous"
+
+  - id: music_seek_relative
+    mode: restart
+    parameters:
+      dir: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          uint32_t now_ms = millis();
+          if (now_ms - id(music_skip_last_tap_ms) < 1000) {
+            id(music_skip_burst_count)++;
+          } else {
+            id(music_skip_burst_count) = 1;
+          }
+          id(music_skip_last_tap_ms) = now_ms;
+
+          float step_sec = 10.0f;
+          const char *label = "-10s Replay";
+          if (dir < 0) {
+            switch (id(music_skip_burst_count)) {
+              case 1: step_sec = 10.0f; label = "-10s Replay"; break;
+              case 2: step_sec = 30.0f; label = "-30s Replay"; break;
+              case 3: step_sec = 60.0f; label = "-1m Replay"; break;
+              case 4: step_sec = 120.0f; label = "-2m Replay"; break;
+              default: step_sec = 300.0f; label = "-5m Replay"; break;
+            }
+          } else {
+            switch (id(music_skip_burst_count)) {
+              case 1: step_sec = 30.0f; label = "+30s Skip"; break;
+              case 2: step_sec = 60.0f; label = "+1m Skip"; break;
+              case 3: step_sec = 120.0f; label = "+2m Skip"; break;
+              case 4: step_sec = 300.0f; label = "+5m Skip"; break;
+              default: step_sec = 600.0f; label = "+10m Skip"; break;
+            }
+          }
+
+          id(music_action_feedback) = label;
+          id(music_feedback_timer) = now_ms;
+
+          float cur_pos = id(music_pos_base);
+          if (id(music_pos_sync_time) > 0) {
+            cur_pos += (float)(now_ms - id(music_pos_sync_time)) / 1000.0f;
+          }
+          float new_pos = 0.0f;
+          if (dir < 0) {
+            new_pos = std::max(0.0f, cur_pos - step_sec);
+          } else {
+            float dur = id(ha_media_duration).state;
+            new_pos = (!std::isnan(dur) && dur > 0.0f) ? std::min(dur, cur_pos + step_sec) : (cur_pos + step_sec);
+          }
+          id(music_pos_base) = new_pos;
+          id(music_pos_sync_time) = now_ms;
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "seek"
+            seek_position: !lambda |-
+              float cur_pos = id(music_pos_base);
+              return to_string((int)std::max(0.0f, cur_pos));
+
+  - id: music_seek_absolute
+    mode: restart
+    then:
+      - delay: 0ms
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "seek"
+            seek_position: !lambda |-
+              float cur_pos = id(music_pos_base);
+              return to_string((int)std::max(0.0f, cur_pos));
+  - id: fetch_music_browse
+    mode: restart
+    then:
+      - lambda: 'pocket_ui::last_music_page_req_ms() = millis();'
+      - delay: 55ms
+      - homeassistant.action:
+          action: latter.music_browse
+          data:
+            target_device: "${name}"
+            mode: !lambda 'return id(selected_category_mode).c_str();'
+            page: !lambda 'return to_string(id(music_browse_page));'
+            page_size: "5"
+            search: !lambda |-
+              if (id(selected_category_mode) == "artist_albums") {
+                return id(drilldown_artist_name).c_str();
+              } else if (id(selected_category_mode) == "current_album_tracks" || id(selected_category_mode) == "album_tracks" ||
+                         id(selected_category_mode) == "podcast_episodes" || id(selected_category_mode) == "lyrics" ||
+                         id(selected_category_mode) == "bio") {
+                return id(drilldown_album_id).c_str();
+              }
+              return "";
+            speaker: !lambda 'return id(active_speaker_entity).c_str();'
+            last_speaker: !lambda 'return id(last_speaker_entity).c_str();'
+            album_sort: !lambda |-
+              auto sort = id(music_album_sort_order).current_option();
+              if (sort == "Newest on Top") return "year_desc";
+              if (sort == "Oldest on Top") return "year";
+              return "name";
+            artist_album_sort: !lambda |-
+              auto sort = id(music_artist_album_sort_order).current_option();
+              if (sort == "Alphabetical") return "name";
+              if (sort == "Newest on Top") return "year_desc";
+              return "year";
+            podcast_sort: !lambda |-
+              auto sort = id(music_podcast_sort_order).current_option();
+              if (sort == "Oldest on Top") return "oldest";
+              return "newest";
+
+  - id: fetch_room_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.room_browse
+          data:
+            target_device: "${name}"
+            mode: "entities"
+            area_id: !lambda 'return id(active_room_area_id).c_str();'
+            domain_filter: !lambda 'return id(room_domain_filter).c_str();'
+            page: !lambda 'return to_string(id(room_browse_page));'
+            page_size: "3"
+            handoff_media: !lambda 'return id(room_handoff_media_switch).state ? "true" : "false";'
+
+  - id: fetch_room_areas_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.room_browse
+          data:
+            target_device: "${name}"
+            mode: "areas"
+            area_id: !lambda 'return id(active_room_area_id).c_str();'
+            page: !lambda 'return to_string(id(room_area_page));'
+            page_size: "5"
+            handoff_media: "false"
+
+  - id: select_active_room_latter
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.set_active_area
+          data:
+            target_device: "${name}"
+            area: !lambda 'return id(active_room_area_id).c_str();'
+            handoff_media: !lambda 'return id(room_handoff_media_switch).state ? "true" : "false";'
+      - script.execute: fetch_room_browse
+
+  - id: execute_alarm_action
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.room_action
+          data:
+            target_device: "${name}"
+            action: !lambda 'return id(room_alarm_service).c_str();'
+
+  - id: execute_room_action
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.room_action
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(room_target_entity_id).c_str();'
+            action: !lambda 'return id(room_target_action).c_str();'
+            level: !lambda 'return to_string(id(room_target_level));'
+            area_id: !lambda 'return id(active_room_area_id).c_str();'
+            code: !lambda 'return id(room_target_code).c_str();'
+
+  - id: activate_selected_speaker
+    mode: restart
+    parameters:
+      prefix: string
+      transfer_queue: string
+    then:
+      - lambda: |-
+          if (id(target_speaker_id).rfind("media_player.", 0) == 0) {
+            if (id(active_speaker_entity) != id(target_speaker_id) && !id(active_speaker_entity).empty()) {
+              id(last_speaker_entity) = id(active_speaker_entity);
+            }
+            id(active_speaker_entity) = id(target_speaker_id);
+            id(active_speaker_name) = id(target_speaker_name);
+            id(music_action_feedback) = prefix + id(target_speaker_name);
+          } else {
+            ESP_LOGW("ui", "Rejecting non-media_player target: %s", id(target_speaker_id).c_str());
+            id(music_action_feedback) = "Invalid Speaker";
+          }
+          id(music_feedback_timer) = millis();
+          if (id(active_speaker_entity) == "${local_player_id}") {
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+          id(music_direct_nav) = false;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - homeassistant.action:
+          action: latter.set_active_speaker
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            transfer_queue: !lambda 'return transfer_queue;'
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) != "${local_player_id}");'
+          then:
+            - audio_dac.mute_on: es8311_dac
+            - switch.turn_off: speaker_enable
+            - script.execute: fetch_remote_art_debounced
+          else:
+            - online_image.release: remote_album_art
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: speaker_transfer_to_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - script.execute:
+          id: activate_selected_speaker
+          prefix: "Transferring -> "
+          transfer_queue: "true"
+
+  - id: speaker_control_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - script.execute:
+          id: activate_selected_speaker
+          prefix: "Controlling: "
+          transfer_queue: "false"
+
+  - id: speaker_join_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Joining -> " + id(target_speaker_name);
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - homeassistant.action:
+          action: media_player.join
+          data:
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            group_members: !lambda 'return id(target_speaker_id).c_str();'
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: speaker_unjoin_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Unjoining -> " + id(target_speaker_name);
+          id(music_feedback_timer) = millis();
+      - homeassistant.action:
+          action: media_player.unjoin
+          data:
+            entity_id: !lambda 'return id(target_speaker_id).c_str();'
+      - lambda: |-
+          if (id(target_speaker_id) == id(active_speaker_entity) || id(target_speaker_id) == "${local_player_id}") {
+            id(active_speaker_entity) = "${local_player_id}";
+            id(active_speaker_name) = "${friendly_name}";
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+      - homeassistant.action:
+          action: latter.set_active_speaker
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            transfer_queue: "false"
+      - online_image.release: remote_album_art
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+  - id: play_music_slot
+    mode: restart
+    parameters:
+      slot: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          if (slot == 1) {
+            id(selected_slot_name) = id(slot_1_name);
+            id(selected_slot_id)   = id(slot_1_id);
+            id(selected_slot_type) = id(slot_1_type);
+          } else if (slot == 2) {
+            id(selected_slot_name) = id(slot_2_name);
+            id(selected_slot_id)   = id(slot_2_id);
+            id(selected_slot_type) = id(slot_2_type);
+          } else if (slot == 3) {
+            id(selected_slot_name) = id(slot_3_name);
+            id(selected_slot_id)   = id(slot_3_id);
+            id(selected_slot_type) = id(slot_3_type);
+          } else if (slot == 4) {
+            id(selected_slot_name) = id(slot_4_name);
+            id(selected_slot_id)   = id(slot_4_id);
+            id(selected_slot_type) = id(slot_4_type);
+          } else {
+            id(selected_slot_name) = id(slot_5_name);
+            id(selected_slot_id)   = id(slot_5_id);
+            id(selected_slot_type) = id(slot_5_type);
+          }
+          if (id(active_speaker_entity).empty() || id(active_speaker_entity) == "None") {
+            id(active_speaker_entity) = "${local_player_id}";
+          }
+          if (id(selected_category_mode) == "artist") {
+            id(selected_slot_type) = "artist";
+          } else if (id(selected_category_mode) == "album" || id(selected_category_mode) == "artist_albums") {
+            id(selected_slot_type) = "album";
+          } else if (id(selected_category_mode) == "podcast_episodes") {
+            id(selected_slot_type) = "podcast_episode";
+          } else if (id(selected_slot_type).empty()) {
+            id(selected_slot_type) = "music";
+          }
+          id(music_action_feedback) = "Playing: " + id(selected_slot_name);
+          id(music_feedback_timer) = millis();
+          pocket_ui::set_remote_play_override(true, millis());
+          if (id(selected_category_mode) == "podcast_episodes") {
+            id(active_playback_media_type) = "podcast";
+          } else if (id(selected_category_mode) == "audiobook") {
+            id(active_playback_media_type) = "audiobook";
+          } else {
+            id(active_playback_media_type) = "music";
+          }
+          if (!id(active_speaker_entity).empty()) {
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - script.stop: mp_idle_debounce
+            - script.execute: route_i2s_to_spk
+            - switch.turn_on: speaker_enable
+            - audio_dac.mute_off: es8311_dac
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                duration: 0.2s
+      - homeassistant.action:
+          action: music_assistant.play_media
+          data:
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            media_id: !lambda 'return id(selected_slot_id).c_str();'
+            media_type: !lambda 'return id(selected_slot_type).c_str();'
+            enqueue: "replace"
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+
+  - id: mp_idle_debounce
+    mode: restart
+    then:
+      - delay: 3s
+      - if:
+          condition:
+            lambda: |-
+              return (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_IDLE) && 
+                     !id(va).is_running() && 
+                     !id(va_tts_received) && 
+                     !id(announcement_mixing_input).is_running() &&
+                     !id(alarm_ringing) &&
+                     !id(timer_ringing) &&
+                     !id(find_my_active) &&
+                     (id(active_game) == 0);
+          then:
+            - audio_dac.mute_on: es8311_dac
+            - switch.turn_off: speaker_enable
+            - script.execute: route_i2s_to_mic
+            - script.execute: sync_wake_word_state
+            - lambda: |-
+                if (id(display_power_state) == 0 && id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                  ESP_LOGI("ble", "Local audio idle: re-enabling BLE Presence Beacon");
+                  id(ble_ctrl).enable();
+                }
+                if (id(display_power_state) == 2) {
+                  auto ww_mode = id(va_wake_word_mode).current_option();
+                  bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
+                  if (!ww_act) {
+                    id(hal_set_audio_codecs_standby).execute(true);
+                  }
+                  if (!id(usb_connected).state) {
+                    if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
+                    pocket_ui::hal_set_wifi_power_save(1);
+                  }
+                }
+
+  - id: toggle_voice_assistant
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(va_active) || !id(va_status_text).empty();'
+          then:
+            - script.execute: cancel_voice_assistant
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(va).get_api_connection() == nullptr;'
+                then:
+                  - logger.log:
+                      level: WARN
+                      format: "Assist pipeline not connected to Home Assistant yet; ignoring PTT press"
+                  - script.stop: toggle_voice_assistant
+            - lambda: |-
+                // If waking from screen-off or standby, honor Assist Screen Wake preference
+                if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
+                  if (id(va_wake_screen_switch).state) {
+                    id(wake_to_active_state).execute();
+                  }
+                } else {
+                  id(screen_sleep_timer).execute();
+                }
+                if (!id(va_active)) {
+                  id(return_page) = id(gui_page);
+                  id(va_active) = true;
+                }
+                id(va_tts_received) = false;
+            - if:
+                condition:
+                  lambda: |-
+                    return !id(va_resume_music_after) &&
+                           ((id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                            (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
+                then:
+                  - script.execute: pause_all_music
+                  - delay: 180ms
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - script.execute: route_i2s_to_mic
+            - voice_assistant.start:
+
+  - id: cancel_voice_assistant
+    mode: restart
+    then:
+      - script.stop: va_tts_drain_and_finish
+      - script.stop: mp_idle_debounce
+      - audio_dac.mute_on: es8311_dac
+      - mixer_speaker.apply_ducking:
+          id: announcement_mixing_input
+          decibel_reduction: 50
+          duration: 0.05s
+      - if:
+          condition:
+            lambda: |-
+              return (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          then:
+            - media_player.stop:
+                id: pocket_music_player
+                announcement: true
+      - speaker.stop: announcement_mixing_input
+      - voice_assistant.stop:
+      - wait_until:
+          condition:
+            lambda: 'return id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_IDLE;'
+          timeout: 450ms
+      - script.stop: mp_idle_debounce
+      - lambda: |-
+          esphome::voice_assistant::abort_voice_assistant(id(va));
+          id(va_was_cancelled) = true;
+          id(va_status_text) = "";
+          id(va_tts_received) = false;
+          id(va_vad_active) = false;
+          id(va_active) = false;
+          id(gui_page) = id(return_page);
+          if (id(display_power_state) == 2 && !id(usb_connected).state &&
+              id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
+            pocket_ui::hal_set_wifi_power_save(1);
+          }
+      - delay: 25ms
+      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - delay: 160ms
+      - script.execute: resume_music_after_va
+      - if:
+          condition:
+            binary_sensor.is_off: pickup_detected
+          then:
+            - script.execute: screen_sleep_timer
+  - id: trigger_firmware_update
+    mode: restart
+    then:
+      - update.perform:
+          id: update_pocket_assistant
+      - lambda: |-
+          id(system_menu_mode) = 5;
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  - id: check_firmware_update
+    mode: restart
+    then:
+      - update.check:
+          id: update_pocket_assistant
+
+
+  - id: menu_scroll_transition
+    mode: restart
+    then:
+      - lambda: |-
+          // Frame 1: Render 35% eased frame (SHARED_SCROLL_EASE_*[2])
+          id(menu_scroll_step) = 2;
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - delay: 16ms
+      - lambda: |-
+          // Frame 2: Render 85% eased frame (SHARED_SCROLL_EASE_*[3])
+          id(menu_scroll_step) = 3;
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - delay: 16ms
+      - lambda: |-
+          // Frame 3: Commit target page, release scroll lock, and render settled frame
+          id(menu_scroll_active) = false;
+          if (id(gui_page) == 4 && id(system_menu_mode) == 1) {
+            id(sleep_menu_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 4 && id(system_menu_mode) == 2) {
+            id(display_menu_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 4 && id(system_menu_mode) == 0) {
+            id(system_dashboard_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 2 && id(music_overlay_mode) == 2) {
+            id(music_category_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 3 && id(active_game) == 0) {
+            id(game_carousel_idx) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 8 && id(stuff_subpage) == 0) {
+            id(stuff_menu_page) = id(menu_scroll_target_page);
+          }
+          id(menu_scroll_step) = 0;
+          pocket_ui::schedule_disp_update(&id(disp1));
+
+  # ==============================================================================
+  # �� UNIVERSAL TV & MEDIA REMOTE COMMAND SCRIPTS (MULTI-DEVICE & MULTI-PROTOCOL)
+  # ==============================================================================
+  - id: remote_select_slot_latter
+    mode: restart
+    parameters:
+      slot_num: int
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(ha_latter_remote_slots_summary).state.empty();'
+          then:
+            - homeassistant.action:
+                action: latter.remote_action
+                data:
+                  target_device: "${name}"
+                  slot: !lambda 'return to_string(slot_num);'
+                  action: "select_slot"
+
+  - id: remote_send_key
+    mode: restart
+    parameters:
+      key_idx: int
+      target_slot: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          const std::string ents[4] = {
+            id(remote_slot_0_ent), id(remote_slot_1_ent),
+            id(remote_slot_2_ent), id(remote_slot_3_ent)
+          };
+          const std::string names[4] = {
+            id(remote_slot_0_name), id(remote_slot_1_name),
+            id(remote_slot_2_name), id(remote_slot_3_name)
+          };
+          const pocket_ui::RemoteCustomCmds custom_cmds = {
+            "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT",
+            "DPAD_CENTER", "BACK", "HOME",
+            "VOLUME_UP", "VOLUME_DOWN", "POWER"
+          };
+          const std::string profs[4] = {
+            std::string(id(tv_remote_profile).current_option()),
+            std::string(id(tv_remote_profile_2).current_option()),
+            std::string(id(tv_remote_profile_3).current_option()),
+            std::string(id(tv_remote_profile_4).current_option())
+          };
+          int res_slot = (target_slot == -1) ? pocket_ui::resolve_active_remote_slot(0, ents)
+                                             : pocket_ui::resolve_active_remote_slot(target_slot, ents);
+          id(remote_latter_slot_num) = res_slot + 1;
+
+          int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
+          id(remote_latter_act) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
+
+          pocket_ui::resolve_remote_dispatch(
+              k, target_slot, profs,
+              ents, names, custom_cmds,
+              id(remote_target_ent), id(remote_target_prof),
+              id(remote_target_cmd), id(remote_action_feedback));
+          id(remote_latter_cmd) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : id(remote_target_cmd)));
+          id(remote_feedback_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return key_idx >= 0 && key_idx <= 6;'
+          then:
+            # Direct On-Device C++ Protocol Dispatch for D-Pad, OK, Back & Home (0ms hop, 100% v2.0 compatibility)
+            - if:
+                condition:
+                  lambda: 'return id(remote_target_prof) == "Denon / Marantz AVR";'
+                then:
+                  - homeassistant.action:
+                      action: denonavr.get_command
+                      data:
+                        entity_id: !lambda 'return id(remote_target_ent);'
+                        command: !lambda 'return id(remote_target_cmd);'
+                else:
+                  - if:
+                      condition:
+                        lambda: 'return id(remote_target_prof) == "LG webOS";'
+                      then:
+                        - homeassistant.action:
+                            action: webostv.button
+                            data:
+                              entity_id: !lambda 'return id(remote_target_ent);'
+                              button: !lambda 'return id(remote_target_cmd);'
+                      else:
+                        - homeassistant.action:
+                            action: remote.send_command
+                            data:
+                              entity_id: !lambda 'return id(remote_target_ent);'
+                              command: !lambda 'return id(remote_target_cmd);'
+          else:
+            # Keys 7..9 (Vol+, Vol-, Power): Use Latter when configured (supports paired AVR volume override),
+            # otherwise fall back to direct native media_player / remote services when standalone!
+            - if:
+                condition:
+                  lambda: 'return !id(ha_latter_remote_slots_summary).state.empty();'
+                then:
+                  - homeassistant.action:
+                      action: latter.remote_action
+                      data:
+                        target_device: "${name}"
+                        slot: !lambda 'return to_string(id(remote_latter_slot_num));'
+                        action: !lambda 'return id(remote_latter_act);'
+                        command: !lambda 'return id(remote_latter_cmd);'
+                else:
+                  - if:
+                      condition:
+                        lambda: 'return id(remote_target_ent).rfind("media_player.", 0) == 0;'
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return key_idx == 7;'
+                            then:
+                              - homeassistant.action:
+                                  action: media_player.volume_up
+                                  data:
+                                    entity_id: !lambda 'return id(remote_target_ent);'
+                        - if:
+                            condition:
+                              lambda: 'return key_idx == 8;'
+                            then:
+                              - homeassistant.action:
+                                  action: media_player.volume_down
+                                  data:
+                                    entity_id: !lambda 'return id(remote_target_ent);'
+                        - if:
+                            condition:
+                              lambda: 'return key_idx == 9;'
+                            then:
+                              - homeassistant.action:
+                                  action: media_player.toggle
+                                  data:
+                                    entity_id: !lambda 'return id(remote_target_ent);'
+                      else:
+                        - if:
+                            condition:
+                              lambda: 'return key_idx == 9 && id(remote_target_prof) != "Custom";'
+                            then:
+                              - homeassistant.action:
+                                  action: remote.toggle
+                                  data:
+                                    entity_id: !lambda 'return id(remote_target_ent);'
+                            else:
+                              - homeassistant.action:
+                                  action: remote.send_command
+                                  data:
+                                    entity_id: !lambda 'return id(remote_target_ent);'
+                                    command: !lambda 'return id(remote_target_cmd);'

@@ -136,13 +136,8 @@ speaker:
     timeout: 10s
 
 
-motion:
-  - platform: qmi8658
-    id: imu
-    address: 0x6B
-    accelerometer_range: 4G
-    gyroscope_range: 2048DPS
-    update_interval: 100ms
+packages:
+  latter_imu: !include ../modules/imu_qmi8658.yaml
 
 
 # On-Board Speaker Power Amplifier Enable (PA_EN: GPIO46)
@@ -315,6 +310,8 @@ script:
       ctrl7_val: int
     then:
       - lambda: |-
+          if (ctrl7_val > 0) id(imu).start_poller();
+          else id(imu).stop_poller();
           // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only Pickup Wake, 0x00 = Power-Down
           uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(ctrl7_val)};
           id(bus_internal).write(0x6B, qmi_ctrl7, 2);

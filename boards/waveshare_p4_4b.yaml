@@ -99,11 +99,8 @@ speaker:
     buffer_duration: 250ms
     timeout: 10s
 
-motion:
-  - platform: qmi8658
-    id: imu
-    address: 0x6B
-    update_interval: 100ms
+packages:
+  latter_imu: !include ../modules/imu_none.yaml
 
 switch:
   - platform: gpio

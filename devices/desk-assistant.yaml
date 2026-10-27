@@ -87,4 +87,5 @@ packages:
   hal: !include ../boards/waveshare_p4_4b.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power_gen:   !include ../modules/power_generic.yaml
-  latter_display_ui:  !include ../modules/display_ui.yaml
+  latter_client:      !include ../modules/latter_client.yaml
+  latter_gui:         !include ../guis/pocket_watch/gui.yaml

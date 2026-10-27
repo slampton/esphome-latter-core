@@ -351,8 +351,6 @@ select:
           if (id(display_power_state) == 2) {
             bool pw_act = (x == "Always On") || (x == "Docked Only" && id(usb_connected).state);
             id(hal_set_imu_power_mode).execute(pw_act ? 0x01 : 0x00);
-            if (pw_act) id(imu).start_poller();
-            else id(imu).stop_poller();
           }
           if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
 
@@ -398,8 +396,6 @@ interval:
                   auto pw_mode = id(pickup_wake_mode).current_option();
                   bool pw_active = (pw_mode == "Always On") || (pw_mode == "Docked Only" && vbus);
                   id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
-                  if (pw_active) id(imu).start_poller();
-                  else id(imu).stop_poller();
                   id(sync_wake_word_state).execute();
                 }
               }
@@ -721,9 +717,6 @@ script:
           const bool pickup_wake_active = (pw_mode == "Always On") ||
                                           (pw_mode == "Docked Only" && id(usb_connected).state);
           id(hal_set_imu_power_mode).execute(pickup_wake_active ? 0x01 : 0x00);
-          if (!pickup_wake_active) {
-            id(imu).stop_poller();
-          }
           // On battery power, enable deep Wi-Fi modem sleep (WIFI_PS_MAX_MODEM=2) while screen is off & audio idle
           if (!id(usb_connected).state && !local_audio_playing) {
             pocket_ui::hal_set_wifi_power_save(2); // 2: WIFI_PS_MAX_MODEM
@@ -763,7 +756,6 @@ script:
           id(sleep_start_time) = 0;
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
-          id(imu).start_poller();
           if (id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }

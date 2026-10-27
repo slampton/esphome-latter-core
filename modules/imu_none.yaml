@@ -1,0 +1,41 @@
+# ==============================================================================
+# Latter Core Module: No-IMU Stub Sensors (modules/imu_none.yaml)
+# Included by boards without a physical QMI8658 IMU (Remote Assistant P4-3.5, Desk Assistant P4-4B)
+# ==============================================================================
+
+sensor:
+  - platform: template
+    id: accel_x
+    internal: true
+    update_interval: never
+    lambda: 'return 0.0f;'
+  - platform: template
+    id: accel_y
+    internal: true
+    update_interval: never
+    lambda: 'return 0.0f;'
+  - platform: template
+    id: accel_z
+    internal: true
+    update_interval: never
+    lambda: 'return 1.0f;'
+  - platform: template
+    id: imu_roll
+    internal: true
+    update_interval: never
+    lambda: 'return 0.0f;'
+  - platform: template
+    id: imu_pitch
+    internal: true
+    update_interval: never
+    lambda: 'return 0.0f;'
+  - platform: template
+    id: imu_temp
+    internal: true
+    update_interval: never
+    lambda: 'return 30.0f;'
+  - platform: template
+    id: motion_mag
+    internal: true
+    update_interval: never
+    lambda: 'return 0.0f;'

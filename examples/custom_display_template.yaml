@@ -158,11 +158,7 @@ speaker:
     channel: left
     buffer_duration: 250ms
 
-motion:
-  - platform: qmi8658
-    id: imu
-    address: 0x6B
-    update_interval: 100ms
+# IMU sensors included via modules/imu_qmi8658.yaml in packages below
 
 switch:
   - platform: gpio
@@ -237,6 +233,7 @@ script:
 # SHARED LATTER CORE OS MODULES
 # ==============================================================================
 packages:
+  latter_imu:         !include ../modules/imu_qmi8658.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power_gen:   !include ../modules/power_generic.yaml
   latter_display_ui:  !include ../modules/display_ui.yaml
