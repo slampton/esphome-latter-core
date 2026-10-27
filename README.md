@@ -105,9 +105,15 @@ esphome-latter-core/
 │   ├── ble_proxy.yaml
 │   ├── roaming_vpn.yaml
 │   └── diagnostics.yaml
-└── profiles/
-    ├── full_companion.yaml      # Bundle for AXP2101 battery handhelds/watches (audio_voice + power_axp2101 + display_ui)
-    └── panel_companion.yaml     # Bundle for non-AXP2101 / ESP32-P4 panels (audio_voice + power_generic + display_ui)
+├── profiles/
+│   ├── full_companion.yaml      # Bundle for AXP2101 battery handhelds/watches (audio_voice + power_axp2101 + display_ui)
+│   └── panel_companion.yaml     # Bundle for non-AXP2101 / ESP32-P4 panels (audio_voice + power_generic + display_ui)
+├── examples/
+│   ├── minimal_headless_companion.yaml # Zero-peripheral ESP32-S3 demo (base + room_control + ble_beacon)
+│   └── custom_display_template.yaml    # 480x480 square display porting template & CI target
+└── docs/
+    ├── API_CONTRACT.md          # Complete Latter wire & service contract specification
+    └── PORTING_NEW_HARDWARE.md  # Step-by-step ESP32-S3 / ESP32-P4 board HAL porting guide
 ```
 
 ---
