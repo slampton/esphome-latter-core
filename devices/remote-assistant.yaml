@@ -86,7 +86,6 @@ esp32_ble_beacon:
   major: 1
   minor: 1
   measured_power: -59
-  tx_power: 3dBm
   min_interval: 500ms
   max_interval: 1000ms
 

@@ -27,6 +27,10 @@ psram:
   speed: 200MHz
   ignore_not_found: false
 
+esp_ldo:
+  - channel: 3
+    voltage: 2.5V
+
 esp32_hosted:
   variant: esp32c6
   active_high: true
@@ -116,11 +120,7 @@ binary_sensor:
 display:
   - platform: mipi_dsi
     id: disp1
-    model: WAVESHARE-ESP32-P4-WIFI6-TOUCH-LCD-4B
-    reset_pin: GPIO27
-    dimensions:
-      width: 720
-      height: 720
+    model: WAVESHARE-P4-86-PANEL
     update_interval: 1s
 
 touchscreen:
