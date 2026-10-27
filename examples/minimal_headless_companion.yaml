@@ -8,7 +8,7 @@
 substitutions:
   name: "latter-headless-demo"
   friendly_name: "Latter Headless Demo"
-  version: "2.2.1"
+  version: "2.2.0"
   active_media_sensor: "sensor.latter_headless_demo_active_media"
   weather_forecast_sensor: "sensor.latter_headless_demo_weather_forecast"
   room_context_sensor: "sensor.latter_headless_demo_room_context"

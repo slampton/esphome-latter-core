@@ -1,7 +1,7 @@
 # ESPHome Latter Core (`esphome-latter-core`)
 
 [![Validate SDK](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml/badge.svg)](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml)
-[![Version](https://img.shields.io/badge/Version-v2.2.1-blue)](https://github.com/slampton/esphome-latter-core)
+[![Version](https://img.shields.io/badge/Version-v2.2.0-blue)](https://github.com/slampton/esphome-latter-core)
 [![Latter Ecosystem](https://img.shields.io/badge/Latter-v2.2%2B-03a9f4)](https://github.com/slampton/ha-latter)
 [![ESPHome](https://img.shields.io/badge/ESPHome-2026.10.0%2B-blue?logo=esphome&logoColor=white)](https://esphome.io)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.10%2B-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io)

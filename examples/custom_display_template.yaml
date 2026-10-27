@@ -13,7 +13,7 @@
 substitutions:
   name: "latter-panel-demo"
   friendly_name: "Latter Panel Demo"
-  version: "2.2.1"
+  version: "2.2.0"
   screen_w: "480"
   screen_h: "480"
   art_resize: "480x480"

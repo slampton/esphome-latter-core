@@ -5,7 +5,7 @@
 substitutions:
   name: "latter-device"
   friendly_name: "Latter Device"
-  version: "2.1.0"
+  version: "2.2.0"
   screen_w: "466"
   screen_h: "466"
   active_media_sensor: "sensor.latter_device_active_media"
