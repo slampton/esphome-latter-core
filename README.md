@@ -32,7 +32,6 @@ It serves two purposes:
 | :--- | :--- |
 | **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** | **Home Assistant Middleware & Web Studio** — Zero-YAML entity mapping, BLE room presence radar, Music Assistant browser, Baseline-JPEG transcoder, and backup vault. |
 | 👉 **[Latter Core (`esphome-latter-core`)](https://github.com/slampton/esphome-latter-core)** | **Shared ESPHome OS, Device Catalog & 1-Line Mixin SDK (You Are Here)** — Modular C++20 UI engine, board HALs (`boards/`), turnkey device configs (`devices/` for **Pocket Assistant**, **Mobile Assistant**, **Wrist Assist**, **Remote Assistant**, and **Desk Assistant**), and 1-line drop-in mixins. |
-| **[Pocket Assistant (`esphome-pocket-assistant`)](https://github.com/slampton/esphome-pocket-assistant)** | **Flagship Round Handheld (`466×466`)** — Dedicated firmware & 1-click web installer repository for the Waveshare ESP32-S3-Touch-AMOLED-1.75C pocket companion. |
 
 ---
 
