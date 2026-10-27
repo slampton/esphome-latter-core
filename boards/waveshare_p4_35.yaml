@@ -16,16 +16,20 @@ esphome:
     - "-DPOCKET_UI_NO_PMU_IRQ_PIN=1"
 
 esp32:
-  board: esp32-p4-evboard
   variant: esp32p4
   flash_size: 16MB
   framework:
     type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
 
 psram:
-  mode: hex
   speed: 200MHz
   ignore_not_found: false
+
+esp_ldo:
+  - channel: 3
+    voltage: 2.5V
 
 esp32_hosted:
   variant: esp32c6
@@ -114,7 +118,7 @@ display:
     id: disp1
     model: ST7796
     spi_id: display_spi
-    data_rate: 80MHz
+    data_rate: 40MHz
     cs_pin: GPIO23
     dc_pin: GPIO26
     reset_pin: GPIO27

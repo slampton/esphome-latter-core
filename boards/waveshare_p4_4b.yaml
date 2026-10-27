@@ -16,14 +16,14 @@ esphome:
     - "-DPOCKET_UI_NO_PMU_IRQ_PIN=1"
 
 esp32:
-  board: esp32-p4-evboard
   variant: esp32p4
   flash_size: 32MB
   framework:
     type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
 
 psram:
-  mode: hex
   speed: 200MHz
   ignore_not_found: false
 
