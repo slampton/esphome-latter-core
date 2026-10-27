@@ -14,7 +14,15 @@
 
 It serves two purposes:
 1. **1-Line Drop-In Mixins (`mixins/*.yaml`)**: Upgrade any existing 3rd-party ESPHome device with roaming BLE room presence, stationary BLE proxy scanning, WireGuard roaming VPN, or Studio diagnostics—with **zero substitutions required**.
-2. **Full Companion Display OS (`components/latter_core`, `boards/*.yaml`, `devices/*.yaml`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, audio/voice pipeline, and 3-tier power state machine shared across **[Pocket Assistant](devices/pocket-assistant.yaml)** (`466×466` round AMOLED), **[Mobile Assistant](devices/mobile-assistant.yaml)** (`480×480` square AMOLED), **[Wrist Assist](devices/wrist-assist.yaml)** (`410×502` rectangular watch), **[Remote Assistant](devices/remote-assistant.yaml)** (`320×480` ESP32-P4 handheld), and **[Desk Assistant](devices/desk-assistant.yaml)** (`720×720` ESP32-P4 stationary panel).
+2. **Full Companion Display OS (`components/latter_core`, `boards/*.yaml`, `devices/*.yaml`, `modules/*.yaml`, `include/*.h`)**: The single-source-of-truth C++20 UI, voice assistant pipeline, Music Assistant player, and power state machine powering Latter's lineup of turnkey smart displays:
+
+| Device | Form Factor | Screen | Best For | Waveshare Hardware |
+| :--- | :--- | :--- | :--- | :--- |
+| **[Pocket Assistant](devices/pocket-assistant.yaml)** | Compact Round Handheld | 1.75" Round AMOLED (`466×466`) | Everyday pocket carry, watch-style home hub, voice & music control | [ESP32-S3-Touch-AMOLED-1.75C](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm) |
+| **[Mobile Assistant](devices/mobile-assistant.yaml)** | Square Handheld | 2.16" Square AMOLED (`480×480`) | Edge-to-edge square UI, room sliders & album artwork in your hand | [ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm) |
+| **[Wrist Assist](devices/wrist-assist.yaml)** | Smartwatch | 2.06" Rectangular AMOLED (`410×502`) | Hands-free wearable voice assistant, timers, alarms & quick room control | [ESP32-S3-Touch-AMOLED-2.06](https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm) |
+| **[Remote Assistant](devices/remote-assistant.yaml)** | Widescreen Handheld | 3.5" Portrait Touch LCD (`320×480`) | Couch TV/media remote, multi-room controller & camera handheld | [ESP32-P4-WIFI6-Touch-LCD-3.5](https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-3.5.htm) |
+| **[Desk Assistant](devices/desk-assistant.yaml)** | Stationary Display | 4.0" Square HD IPS (`720×720`) | Always-on desk stand or wall-mounted room & whole-home control panel | [ESP32-P4-WIFI6-Touch-LCD-4B](https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-4b.htm) |
 
 ---
 
