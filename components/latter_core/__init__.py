@@ -12,7 +12,13 @@ from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
 
-CONFIG_SCHEMA = cv.Schema({})
+CONF_GUI = "gui"
+
+CONFIG_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_GUI, default="pocket_watch"): cv.string,
+    }
+)
 
 CORE_HEADERS: tuple[str, ...] = (
     "va_cancel_helper.h",

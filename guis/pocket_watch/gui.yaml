@@ -1,6 +1,87 @@
 # ==============================================================================
 # Latter Pluggable GUI Shell: Pocket & Watch UI (guis/pocket_watch/gui.yaml)
 # ==============================================================================
+font:
+  - file: "gfonts://Roboto"
+    id: font_chrono_time
+    size: 38
+    glyphs:
+      - '0123456789:.- sAMP'
+  - file: "gfonts://Roboto"
+    id: font_micro
+    size: 14
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto"
+    id: font_time
+    size: 77
+    glyphs:
+      - '0123456789:.- %'
+  - file: "gfonts://Roboto"
+    id: font_date
+    size: 27
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 21
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+  - file: "gfonts://Roboto@700"
+    id: font_btn_bold
+    size: 26
+    glyphs:
+      - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
+
+
+  - file: "gfonts://Orbitron@700"
+    id: font_games_title
+    size: 38
+    glyphs:
+      - ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-•!'
+
+color:
+  - id: theme_primary
+    hex: "6B8E9E"  # Default Soft Steel Ice Blue (Steel & Silver Palette)
+  - id: theme_secondary
+    hex: "C0C0C0"  # Default Brushed Silver (Steel & Silver Palette)
+  - id: col_silver
+    hex: "C0C0C0"  # Vintage Swiss brushed silver / steel
+  - id: col_bg
+    hex: "000000"
+  - id: col_black
+    hex: "000000"
+  - id: col_gold
+    hex: "C59B27"  # Muted vintage chronograph mustard gold
+  - id: col_warm_gold
+    hex: "A88424"  # Calibrated muted brass gold (anti-glare, crisp non-blooming on AMOLED)
+  - id: col_white
+    hex: "FFFFFF"
+  - id: col_slate
+    hex: "9E9E9E"
+  - id: col_cyan
+    hex: "456E8A"  # Distinctly muted vintage steel/slate blue (was electric cyan 00E5FF)
+  - id: col_light_blue
+    hex: "6B8E9E"  # Muted soft steel blue
+  - id: col_green
+    hex: "427453"  # Distinctly muted heritage sage/moss green (was neon 00E676)
+  - id: col_orange
+    hex: "B85C24"  # Muted earthy terracotta orange
+  - id: col_red
+    hex: "A84338"  # Vibrant antique vermilion crimson (rich, clearly red, calibrated antique tone)
+  - id: col_purple
+    hex: "6D4B7D"  # Muted vintage plum amethyst
+  - id: col_magenta
+    hex: "8E4A7D"  # Muted antique mauve
+  - id: col_gray
+    hex: "616161"
+  - id: col_dark_gray
+    hex: "212121"
+  - id: col_solaris_gold
+    hex: "FFDC1E"  # Kinetic plasma gold / sunburst
+  - id: col_accent_cyan
+    hex: "1EC8E6"  # Electric cyan / high-energy accent
+
 display:
   - id: !extend disp1
     lambda: |-
