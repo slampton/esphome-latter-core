@@ -59,7 +59,7 @@ esphome:
   build_flags:
     - "-DPOCKET_UI_SCREEN_W=480"
     - "-DPOCKET_UI_SCREEN_H=480"
-    - "-DPOCKET_UI_ROUND_DISPLAY=0"
+    - "-DLATTER_ROUND_DISPLAY=0"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -86,7 +86,7 @@ esp32_ble:
 
 update:
   - platform: http_request
-    id: update_pocket_assistant
+    id: latter_firmware_update
     name: "Project Firmware"
     source: "https://example.com/manifest.json"
     update_interval: never
@@ -130,7 +130,7 @@ audio_adc:
 
 microphone:
   - platform: i2s_audio
-    id: pocket_mic
+    id: latter_mic
     adc_type: external
     i2s_audio_id: i2s_input_bus
     i2s_din_pin: GPIO10
