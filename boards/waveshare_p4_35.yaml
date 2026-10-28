@@ -174,7 +174,9 @@ display:
       width: 320
       height: 480
     transform:
+      swap_xy: false
       mirror_x: true
+      mirror_y: false
     init_sequence:
       - [0xF0, 0xC3]
       - [0xF0, 0x96]
