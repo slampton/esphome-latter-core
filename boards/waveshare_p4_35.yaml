@@ -68,24 +68,19 @@ update:
     update_interval: never
 
 interval:
-  - interval: 15s
+  - interval: 20s
     then:
       - lambda: |-
-          static int c6_step = 0;
-          if (c6_step == 0 && id(wifi_ctrl).is_connected()) {
-            c6_step = 1;
-            // Re-run setup() now that Wi-Fi has initialized SDIO so current_version is populated
-            id(update_c6_coprocessor).setup();
-            ESP_LOGI("c6_fw", "Queried C6 Co-Processor Firmware over active SDIO: %s",
-                     id(update_c6_coprocessor).update_info.current_version.c_str());
+          static bool c6_checked_once = false;
+          if (!c6_checked_once && id(wifi_ctrl).is_connected()) {
+            c6_checked_once = true;
+            if (id(update_c6_coprocessor).update_info.current_version.empty() ||
+                id(update_c6_coprocessor).update_info.current_version == "unknown") {
+              id(update_c6_coprocessor).setup();
+            }
             id(update_c6_coprocessor).check();
-          } else if (c6_step == 1) {
-            c6_step = 2;
-            id(update_c6_coprocessor).setup();
-            id(update_c6_coprocessor).publish_state();
-            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
-                     id(update_c6_coprocessor).update_info.current_version.c_str(),
-                     id(update_c6_coprocessor).update_info.latest_version.c_str());
+            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s",
+                     id(update_c6_coprocessor).update_info.current_version.c_str());
           }
 
 i2c:
