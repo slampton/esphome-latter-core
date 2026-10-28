@@ -506,7 +506,42 @@ interval:
             id(check_firmware_update).execute();
           }
 
-          // Priority 4: Configurable Inactivity Auto-Descent to Deep Sleep
+          // Invariant 1: Sync display_power_state if Display light was turned off externally via HA
+          if (id(display_power_state) == 0 && !id(display_brightness).current_values.is_on() &&
+              !id(is_hibernating) && !id(ota_in_progress) && (now_1s_ms > 10000U)) {
+            id(turn_screen_off).execute();
+          }
+
+          // Invariant 2: Auto-exit forgotten Games (>3m untouched) or Battery Flashlight/Level/Camera (>5m untouched)
+          uint32_t last_user_act_ms = std::max(latter_ui::last_screen_wake_ms(),
+                                               latter_ui::touch_gesture().last_touch_ms);
+          if (id(display_power_state) == 0 && (now_1s_ms > last_user_act_ms)) {
+            uint32_t touch_idle_ms = now_1s_ms - last_user_act_ms;
+            if (id(active_game) > 0 && touch_idle_ms >= 180000U) {
+              ESP_LOGI("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
+              id(active_game) = 0;
+              id(stop_alarm_sound).execute();
+              id(screen_sleep_timer).execute();
+            }
+            if (!id(usb_connected).state && id(gui_page) == 8 &&
+                (id(stuff_subpage) == 5 || id(stuff_subpage) == 7) && touch_idle_ms >= 300000U) {
+              ESP_LOGI("power", "Tool untouched on battery for 5 min: exiting to launcher");
+              id(stuff_subpage) = 0;
+              id(sync_display_brightness).execute();
+              id(screen_sleep_timer).execute();
+            }
+          }
+
+          // Invariant 3: Guarantee screen_sleep_timer is always armed whenever screen is active
+          const bool timeout_never = id(usb_connected).state
+              ? (id(screensaver_docked_timeout).current_option() == "Never")
+              : (id(display_off_timeout).current_option() == "Never");
+          if (id(display_power_state) == 0 && !timeout_never &&
+              !id(screen_sleep_timer).is_running() && !id(is_hibernating) && !id(ota_in_progress)) {
+            id(screen_sleep_timer).execute();
+          }
+
+          // Priority 4: Self-Healing Inactivity Auto-Descent to Hardware Hibernate
           uint32_t hibernate_timeout_ms = 900000; // default 15 min
           auto st_opt = id(hibernate_timeout_mode).current_option();
           bool auto_sleep_enabled = true;
@@ -516,27 +551,37 @@ interval:
           else if (st_opt == "30 min") hibernate_timeout_ms = 1800000;
           else if (st_opt == "Disabled") auto_sleep_enabled = false;
 
-          if (auto_sleep_enabled &&
-              !id(is_hibernating) &&
-              !id(prevent_deep_sleep_switch).state &&
-              !id(display_brightness).current_values.is_on() &&
-              !id(usb_connected).state &&
-              !id(ota_in_progress) &&
-              (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-              !id(stopwatch_running) &&
-              !id(timer_running) &&
-              !id(timer_ringing) &&
-              !id(alarm_ringing) &&
-              !id(find_my_active) &&
-              !id(va).is_running() &&
-              !id(va_tts_received) &&
-              !id(announcement_mixing_input).is_running() &&
-              (id(active_game) == 0) &&
-              id(sleep_start_time) > 0 &&
-              (millis() - id(sleep_start_time) >= hibernate_timeout_ms)) {
-            ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown", st_opt.c_str());
+          const bool hibernate_blockers_active =
+              id(is_hibernating) ||
+              id(prevent_deep_sleep_switch).state ||
+              id(usb_connected).state ||
+              id(ota_in_progress) ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              id(stopwatch_running) ||
+              id(timer_running) ||
+              id(timer_ringing) ||
+              id(alarm_ringing) ||
+              id(find_my_active) ||
+              id(va_active) ||
+              id(va).is_running() ||
+              id(va_tts_received) ||
+              id(announcement_mixing_input).is_running() ||
+              latter_ui::cam_call_active() ||
+              latter_ui::cam_listen_active() ||
+              (id(active_game) > 0);
+
+          const bool screen_is_off = (id(display_power_state) == 2) || !id(display_brightness).current_values.is_on();
+          if (screen_is_off && !hibernate_blockers_active) {
+            if (id(sleep_start_time) == 0) {
+              id(sleep_start_time) = now_1s_ms;
+            } else if (auto_sleep_enabled && (now_1s_ms - id(sleep_start_time) >= hibernate_timeout_ms)) {
+              ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown", st_opt.c_str());
+              id(sleep_start_time) = 0;
+              id(start_hibernation_countdown).execute();
+            }
+          } else {
+            // Reset timer while screen is on or any blocker (music, timer, USB, VA) is active
             id(sleep_start_time) = 0;
-            id(start_hibernation_countdown).execute();
           }
 
   - interval: 50ms
@@ -958,7 +1003,10 @@ script:
               const bool active_tool_awake =
                   (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 ||
                                          (id(stuff_subpage) == 12 && (latter_ui::cam_call_active() || latter_ui::cam_listen_active()))));
-              const bool in_hand_hold = latter_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
+              const uint32_t since_touch_ms = millis() - std::max(latter_ui::last_screen_wake_ms(),
+                                                                  latter_ui::touch_gesture().last_touch_ms);
+              const bool in_hand_hold = (since_touch_ms < 90000U) &&
+                  latter_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
               return !id(ota_in_progress) &&
                      !id(va_active) &&
                      !id(va).is_running() &&

@@ -245,6 +245,12 @@ interval:
             }
           }
 
+          if (id(display_power_state) == 0 &&
+              id(screensaver_docked_timeout).current_option() != "Never" &&
+              !id(screen_sleep_timer).is_running() && !id(is_hibernating) && !id(ota_in_progress)) {
+            id(screen_sleep_timer).execute();
+          }
+
           if ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
               !id(speaker_enable).state && !id(va_active) && !id(va_tts_received) &&
               !id(va_resume_music_after) && !id(boot_button).state && (millis() > 5000U)) {

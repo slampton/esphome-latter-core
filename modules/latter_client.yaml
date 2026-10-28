@@ -78,7 +78,9 @@ esphome:
             #elif !LATTER_HAS_IMU
             // Self-heal battery-powered non-IMU boards (Remote Assistant) if a previous boot seeded "Disabled"
             if (id(hibernate_timeout_mode).current_option() == "Disabled") {
-              id(hibernate_timeout_mode).publish_state("15 min");
+              auto call = id(hibernate_timeout_mode).make_call();
+              call.set_option("15 min");
+              call.perform();
             }
             #endif
             if (latter_ui::is_wearable_form_factor()) {
@@ -4696,11 +4698,7 @@ script:
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
       - script.execute: resume_music_after_va
-      - if:
-          condition:
-            binary_sensor.is_off: pickup_detected
-          then:
-            - script.execute: screen_sleep_timer
+      - script.execute: screen_sleep_timer
   - id: trigger_firmware_update
     mode: restart
     then:

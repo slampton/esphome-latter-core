@@ -117,7 +117,6 @@ media_player:
                   id(sleep_start_time) = 0;
                   id(active_game) = 0;
               - script.stop: mp_idle_debounce
-              - script.stop: screen_sleep_timer
               - if:
                   condition:
                     lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
@@ -139,6 +138,7 @@ media_player:
                   id(disp1).start_poller();
                   id(hal_set_imu_power_mode).execute(0x03);
               - light.turn_on: display_brightness
+              - script.execute: screen_sleep_timer
               - script.execute: throttled_disp_update
     on_pause:
       then:
@@ -151,6 +151,7 @@ media_player:
         - script.execute: mp_idle_debounce
     on_idle:
       then:
+        - script.execute: screen_sleep_timer
         - script.execute: mp_idle_debounce
 
 micro_wake_word:
@@ -379,11 +380,7 @@ voice_assistant:
       - script.execute: resume_music_after_va
       - script.execute: mp_idle_debounce
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
-      - if:
-          condition:
-            binary_sensor.is_off: pickup_detected
-          then:
-            - script.execute: screen_sleep_timer
+      - script.execute: screen_sleep_timer
   on_timer_started:
     then:
       - lambda: |-
@@ -509,11 +506,7 @@ script:
       - delay: 160ms
       # 4. Now smoothly restore music playback or mute & route I2S back to mic
       - script.execute: resume_music_after_va
-      - if:
-          condition:
-            binary_sensor.is_off: pickup_detected
-          then:
-            - script.execute: screen_sleep_timer
+      - script.execute: screen_sleep_timer
   - id: route_i2s_to_spk
     mode: restart
     then:
