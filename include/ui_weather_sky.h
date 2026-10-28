@@ -1490,7 +1490,7 @@ template<typename DisplayT>
 inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
   // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)
-  const int stride = (SCREEN_W < 380) ? 74 : 81;
+  const int stride = LATTER_ROUND_DISPLAY ? 81 : ((SCREEN_W < 380) ? 74 : 98);
   const int ICON_XS[4] = {
       SCREEN_CX - (stride * 3) / 2,
       SCREEN_CX - (stride / 2),
@@ -1628,7 +1628,7 @@ inline void render_weather_page(
     apply_weather_sim_override(weather_sim_opt, cond, is_night);
 
     // 1. Standard Top Header ("CURRENT" at y = 48 + divider at y = 62, matching FORECAST)
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
 
     // 2. Hero Temperature at y = 120 (top at y = 92) & Condition at y = 182 (unchanged)
     char temp_num[16];
@@ -1801,7 +1801,7 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     // SUBPAGE 1: FORECAST (5-DAY FORECAST: CENTERED FULL-WIDTH COLUMNS)
     // ----------------------------------------------------------------------
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
 
     struct DayForecast {
       std::string day;
@@ -1906,7 +1906,7 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     // SUBPAGE 2: SUN (EXPANDED ELLIPTICAL SOLAR ARC & LOWERED SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "SUN");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
 
     // Elliptical Solar Arc (arc_cy = 213, rx = 132px wide, ry = 118px tall):
     //   - Apex of arc sits at y = 95; when Sun is at 90° noon, its 13px top ray sits at y = 82 (24px below title!)
@@ -1980,7 +1980,7 @@ inline void render_weather_page(
     compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                moon_phase_raw, cycle, &illum_pct, &mp_label);
 
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "MOON");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
 
     // Enlarged r = 76 (152px diameter) Lunar Disc at cy = 158:
     //   - Top of Moon sits at y = 82 (24px below title, 20px below y = 62 divider!)

@@ -48,7 +48,7 @@ template<typename DisplayT, typename FontHeaderT>
 inline void render_menu_header(DisplayT &it, int cx, int y_pos, const std::string &title,
                                FontHeaderT *font_hdr, esphome::Color theme_primary) {
   if (title.empty() || font_hdr == nullptr) return;
-  int eff_y = (y_pos == 50 || y_pos == 46) ? 48 : y_pos;
+  int eff_y = (y_pos >= 44 && y_pos <= 52) ? layout().hdr_y : y_pos;
   std::string disp_title = fit_text_to_width_font(title, 280, font_hdr);
   it.print(cx, eff_y, font_hdr, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
 }
@@ -325,7 +325,7 @@ inline void render_music_menus(
 
   if (music_overlay_mode == 5) {
     // SUBPAGE 5: MUSIC MENU (SPEAKERS, LIBRARY, CLEAR QUEUE, SETTINGS)
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "MUSIC");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "MUSIC");
     std::string spk_sub = fit_text_to_width_font(active_speaker_name, 260, font_small);
     it.print(cx, 76, font_small, col_white, esphome::display::TextAlign::CENTER, spk_sub.c_str());
 
@@ -528,7 +528,7 @@ inline void render_music_menus(
   } else if (music_overlay_mode == 6) {
     // LEVEL 6: NOW PLAYING TRACK & ALBUM INSPECTOR
     std::string disp_t = cur_title.empty() ? "NOW PLAYING" : fit_text_to_width_font(cur_title, 280, font_small);
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_t.c_str());
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_t.c_str());
 
     std::string sub_meta = cur_artist;
     if (!cur_album.empty() && cur_album != "None") {

@@ -476,8 +476,8 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
                                esphome::Color bg_c, esphome::Color border_c,
                                const char *label, esphome::Color text_c, FontT *font) {
   if (std::abs(cx_card - SCREEN_CX) <= 4) {
-    if (SCREEN_W < 380 && w >= 256 && w <= 330) {
-      w = SCREEN_W - 68; // Leave 34px right margin on 320px screens so scroll chevrons never overlap cards!
+    if (SCREEN_W < 380 && h <= 48 && w >= 240 && w <= 330) {
+      w = SCREEN_W - 88; // 232px on 320px screen: leaves a clean 26px gap before right-flank scroll arrows!
     } else if (w > SCREEN_W - 20) {
       w = SCREEN_W - 20;
     }

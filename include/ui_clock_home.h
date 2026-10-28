@@ -480,15 +480,15 @@ inline void draw_home_activity_row_contents(
   //   - Icon at gx = 113, Text at txt_x = 128 (max_w = 186), Divider at 320, Action Circle at act_bx = 346 (r = 13)
   const int cx_ref     = SCREEN_CX;
   const int list_w     = layout().list_card_w;
-  const int main_w     = std::min(380, SCREEN_W - 24);
+  const int main_w     = std::min(380, SCREEN_W - 32);
   const int card_w     = is_list_row ? list_w : main_w;
   const int card_left  = cx_ref - (card_w / 2);
   const int card_right = cx_ref + (card_w / 2);
-  const int gx         = is_list_row ? (card_left + 18) : (card_left + 24);
-  const int txt_x      = is_list_row ? (card_left + 33) : (card_left + 44);
-  const int div1_x     = is_list_row ? (card_right - 46) : (has_dropdown_ext ? (card_right - 106) : (card_right - 54));
-  const int act_bx     = is_list_row ? (card_right - 23) : (has_dropdown_ext ? (card_right - 78)  : (card_right - 27));
-  const int max_txt    = std::max(72, div1_x - txt_x - 8);
+  const int gx         = is_list_row ? (card_left + 18) : (card_left + 28);
+  const int txt_x      = is_list_row ? (card_left + 33) : (card_left + 48);
+  const int div1_x     = is_list_row ? (card_right - 44) : (has_dropdown_ext ? (card_right - 108) : (card_right - 56));
+  const int act_bx     = is_list_row ? (card_right - 22) : (has_dropdown_ext ? (card_right - 80)  : (card_right - 28));
+  const int max_txt    = std::max(64, div1_x - txt_x - 8);
   const int btn_r      = is_list_row ? 13 : ((SCREEN_W < 380) ? 16 : 19);
 
   int gy = row_y;
@@ -629,14 +629,14 @@ inline void render_home_activity_card_row(
     esphome::Color card_bg = esphome::Color(22, 27, 36),
     esphome::Color card_brd = esphome::Color(52, 62, 78),
     esphome::Color btn_bg = esphome::Color(32, 39, 52)) {
-  const int card_w     = is_list_row ? layout().list_card_w : std::min(380, SCREEN_W - 24);
+  const int card_w     = is_list_row ? layout().list_card_w : std::min(380, SCREEN_W - 32);
   const int card_h     = is_list_row ?  44 : 68;
   const int card_r     = is_list_row ?  12 : 16;
   const int card_right = cx + (card_w / 2);
-  const int div1_x     = is_list_row ? (card_right - 46) : (has_dropdown_ext ? (card_right - 106) : (card_right - 54));
+  const int div1_x     = is_list_row ? (card_right - 44) : (has_dropdown_ext ? (card_right - 108) : (card_right - 56));
   const int div_h      = is_list_row ?  14 : 23;
-  const int div2_x     = card_right - 50;
-  const int drop_bx    = card_right - 25;
+  const int div2_x     = card_right - 52;
+  const int drop_bx    = card_right - 26;
 
   render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
                      nullptr, col_white, font_small);
@@ -1048,7 +1048,7 @@ inline void render_home_page(
       static constexpr float  OUT_ALPHA[4] = {0.0f, 0.65f, 0.25f, 0.0f};
       static constexpr float  IN_ALPHA[4]  = {1.0f, 0.42f, 0.76f, 0.94f};
 
-      const int act_w = std::min(380, SCREEN_W - 24);
+      const int act_w = std::min(380, SCREEN_W - 32);
       const int act_x0 = cx - act_w / 2;
       const int act_right = cx + act_w / 2;
       render_modern_card(it, cx, pill_y, act_w, 68, 16, card_bg, card_brd, nullptr, col_white, font_small);
@@ -1065,9 +1065,9 @@ inline void render_home_page(
       // Re-stamp top & bottom card border lines, dividers, and stationary '▼' dropdown chevron
       it.horizontal_line(act_x0 + 16, pill_y - 34, act_w - 32, card_brd);
       it.horizontal_line(act_x0 + 16, pill_y + 33, act_w - 32, card_brd);
-      it.line(act_right - 106, pill_y - 23, act_right - 106, pill_y + 23, card_brd);
-      it.line(act_right - 50,  pill_y - 23, act_right - 50,  pill_y + 23, card_brd);
-      const int d_bx = act_right - 25;
+      it.line(act_right - 108, pill_y - 23, act_right - 108, pill_y + 23, card_brd);
+      it.line(act_right - 52,  pill_y - 23, act_right - 52,  pill_y + 23, card_brd);
+      const int d_bx = act_right - 26;
       for (int w = -1; w <= 1; w++) {
         it.line(d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
         it.line(d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);

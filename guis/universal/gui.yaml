@@ -2113,12 +2113,20 @@ touchscreen:
                 return;
               }
 
+              const int rem_cy     = LATTER_ROUND_DISPLAY ? latter_ui::SCREEN_CY : (latter_ui::SCREEN_CY + 8);
+              const int rem_l_fx   = LATTER_ROUND_DISPLAY ? 64 : ((latter_ui::SCREEN_W < 380) ? 34 : ((latter_ui::SCREEN_W >= 480) ? 44 : 48));
+              const int rem_r_fx   = latter_ui::SCREEN_W - rem_l_fx;
+              const int rem_dy     = LATTER_ROUND_DISPLAY ? 99 : ((latter_ui::SCREEN_W < 380) ? 128 : ((latter_ui::SCREEN_W >= 480) ? 148 : 116));
+              const int rem_top_fy = rem_cy - rem_dy;
+              const int rem_btm_fy = rem_cy + rem_dy;
+              const int ok_hit_r   = (latter_ui::SCREEN_W < 380) ? 46 : ((!LATTER_ROUND_DISPLAY && latter_ui::SCREEN_W >= 480) ? 60 : 52);
+
               int dx = touch.x - latter_ui::SCREEN_CX;
-              int dy = touch.y - latter_ui::SCREEN_CY;
+              int dy = touch.y - rem_cy;
               int dist_sq = dx * dx + dy * dy;
 
-              // 1. Center OK Button (r <= 52px, dist_sq <= 2704)
-              if (dist_sq <= 2704) {
+              // 1. Center OK Button
+              if (dist_sq <= (ok_hit_r * ok_hit_r)) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_remote_btn_tap = now_rem;
                   id(remote_send_key).execute(4, act_slot);
@@ -2127,13 +2135,7 @@ touchscreen:
                 return;
               }
 
-              // 2. Priority Corner Flank Buttons (strictly symmetric around SCREEN_CY & adaptive to SCREEN_W)
-              const int rem_l_fx   = LATTER_ROUND_DISPLAY ? 64 : ((latter_ui::SCREEN_W < 380) ? 38 : 48);
-              const int rem_r_fx   = latter_ui::SCREEN_W - rem_l_fx;
-              const int rem_dy     = LATTER_ROUND_DISPLAY ? 99 : ((latter_ui::SCREEN_W < 380) ? 108 : ((latter_ui::SCREEN_W >= 480) ? 128 : 114));
-              const int rem_top_fy = latter_ui::SCREEN_CY - rem_dy;
-              const int rem_btm_fy = latter_ui::SCREEN_CY + rem_dy;
-
+              // 2. Priority Corner Flank Buttons (strictly symmetric around rem_cy & adaptive to SCREEN_W)
               int d_tl = (touch.x - rem_l_fx) * (touch.x - rem_l_fx) + (touch.y - rem_top_fy) * (touch.y - rem_top_fy);
               if (d_tl <= 1369) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
@@ -2174,9 +2176,9 @@ touchscreen:
                 return;
               }
 
-              // 3. Adaptive Directional D-Pad Ring
-              const int max_dpad_r = (latter_ui::SCREEN_W < 380) ? 118 : ((!LATTER_ROUND_DISPLAY && latter_ui::SCREEN_W >= 480) ? 172 : 158);
-              if (dist_sq > 1800 && dist_sq <= (max_dpad_r * max_dpad_r)) {
+              // 3. Adaptive Directional D-Pad Ring (128px on 320x480, 144px on 410/466, 180px on 480x480+)
+              const int max_dpad_r = (latter_ui::SCREEN_W < 380) ? 138 : ((!LATTER_ROUND_DISPLAY && latter_ui::SCREEN_W >= 480) ? 192 : 158);
+              if (dist_sq > (ok_hit_r * ok_hit_r) && dist_sq <= (max_dpad_r * max_dpad_r)) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
                   last_remote_btn_tap = now_rem;
                   int k_dir = (abs(dy) >= abs(dx)) ? ((dy < 0) ? 0 : 1) : ((dx < 0) ? 2 : 3);
@@ -2960,7 +2962,8 @@ touchscreen:
 
             // 2. HOME SCREEN (PAGE 1) 4-ICON APP DOCK HORIZONTAL SWIPE (y >= 320)
             if (id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= 320) {
-              if (std::abs(dx) >= 22 && std::abs(dx) >= std::abs(dy)) {
+              const int dock_swipe_min = (latter_ui::SCREEN_W < 380) ? 14 : 22;
+              if (std::abs(dx) >= dock_swipe_min && std::abs(dx) >= std::abs(dy)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
                 int dock_count = latter_ui::collect_home_dock_apps(
                     id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
@@ -3278,16 +3281,18 @@ touchscreen:
                     dock_apps, id(home_dock_room_switch).state, id(home_dock_alarm_switch).state);
                 int total_pages = (dock_count + 3) / 4;
 
-                if (std::abs(dx) >= 18 && std::abs(dx) >= std::abs(dy) && total_pages > 1) {
+                const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 12 : 18;
+                const int dock_tap_max   = (latter_ui::SCREEN_W < 380) ? 11 : 22;
+                if (std::abs(dx) >= dock_rel_swipe && std::abs(dx) >= std::abs(dy) && total_pages > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   latter_ui::home_dock_page() = (dx < 0)
                       ? ((latter_ui::home_dock_page() + 1) % total_pages)
                       : ((latter_ui::home_dock_page() + total_pages - 1) % total_pages);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 24 && dock_count > 0) {
-                  const int dock_cy = LATTER_ROUND_DISPLAY ? 359 : (latter_ui::SCREEN_H - 52);
-                  if (gest.last_y >= (dock_cy - 38) && gest.last_y <= (dock_cy + 44)) {
+                } else if (gest.max_travel <= dock_tap_max && std::abs(dx) < 10 && dock_count > 0) {
+                  const int dock_cy = latter_ui::layout().dock_y;
+                  if (gest.last_y >= (dock_cy - 38) && gest.last_y <= (dock_cy + 38)) {
                     int win_xs[4] = {0, 0, 0, 0};
                     bool dummy_l = false, dummy_r = false;
                     latter_ui::get_home_dock_window_xs(dock_count, latter_ui::home_dock_page(), latter_ui::SCREEN_CX, win_xs, dummy_l, dummy_r);

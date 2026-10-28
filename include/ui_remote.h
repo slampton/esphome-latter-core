@@ -438,20 +438,21 @@ inline void render_tv_remote_page(
   // ---------------------------------------------------------------------------
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(remote_action_feedback, 280, font_small);
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
   } else {
     std::string disp_title = fit_text_to_width_font(rem_name, 280, font_small);
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
   }
 
-  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 38 : 48);
+  const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + 8);
+  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 34 : ((SCREEN_W >= 480) ? 44 : 48));
   const int right_fx = SCREEN_W - left_fx;
-  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 108 : ((SCREEN_W >= 480) ? 128 : 114));
-  const int top_fy   = cy - flank_dy;
-  const int btm_fy   = cy + flank_dy;
+  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 128 : ((SCREEN_W >= 480) ? 148 : 116));
+  const int top_fy   = dpad_cy - flank_dy;
+  const int btm_fy   = dpad_cy + flank_dy;
   const int f_r      = 19;
 
-  // 1. HOME: Top-Left (strictly symmetric with Bottom-Left BACK around cy!)
+  // 1. HOME: Top-Left (strictly symmetric with Bottom-Left BACK around dpad_cy!)
   it.filled_circle(left_fx, top_fy, f_r, col_dark_gray);
   it.circle(left_fx, top_fy, f_r, col_gray);
   it.filled_triangle(left_fx, top_fy - 8, left_fx - 9, top_fy - 1, left_fx + 9, top_fy - 1, col_white);
@@ -478,31 +479,31 @@ inline void render_tv_remote_page(
   it.filled_rectangle(right_fx - 7, btm_fy - 1, 15, 3, col_white);
 
   // Adaptive Concentric D-Pad:
-  //   - 320x480 Remote Assistant: r_out = 108, r_in = 42 (zero overlap with corner buttons!)
+  //   - 320x480 Remote Assistant: r_out = 128, r_in = 46 (256px diameter tactile ring!)
   //   - 410x502 Wrist Assist & 466x466 Pocket Assistant: r_out = 144, r_in = 50
-  //   - 480x480 Mobile Assistant & 720x720 Desk Assistant: r_out = 160, r_in = 54 (expanded control ring!)
-  const int dpad_r_out = (SCREEN_W < 380) ? 108 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 160 : 144);
-  const int dpad_r_in  = (SCREEN_W < 380) ?  42 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  54 :  50);
+  //   - 480x480 Mobile Assistant & 720x720 Desk Assistant: r_out = 180, r_in = 60 (360px diameter tactile ring!)
+  const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144);
+  const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50);
   const int ok_r       = dpad_r_in - 8;
-  it.circle(cx, cy, dpad_r_out, col_gray);
-  it.circle(cx, cy, dpad_r_in, col_gray);
+  it.circle(cx, dpad_cy, dpad_r_out, col_gray);
+  it.circle(cx, dpad_cy, dpad_r_in, col_gray);
 
   const int d_in  = (dpad_r_in * 707) / 1000;
   const int d_out = (dpad_r_out * 707) / 1000;
-  it.line(cx + d_in, cy + d_in, cx + d_out, cy + d_out, col_gray);
-  it.line(cx - d_in, cy + d_in, cx - d_out, cy + d_out, col_gray);
-  it.line(cx + d_in, cy - d_in, cx + d_out, cy - d_out, col_gray);
-  it.line(cx - d_in, cy - d_in, cx - d_out, cy - d_out, col_gray);
+  it.line(cx + d_in, dpad_cy + d_in, cx + d_out, dpad_cy + d_out, col_gray);
+  it.line(cx - d_in, dpad_cy + d_in, cx - d_out, dpad_cy + d_out, col_gray);
+  it.line(cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, col_gray);
+  it.line(cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, col_gray);
 
   const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
-  it.filled_triangle(cx, cy - arr_mid - 8, cx - 10, cy - arr_mid + 8, cx + 10, cy - arr_mid + 8, col_white);
-  it.filled_triangle(cx, cy + arr_mid + 8, cx - 10, cy + arr_mid - 8, cx + 10, cy + arr_mid - 8, col_white);
-  it.filled_triangle(cx - arr_mid - 8, cy, cx - arr_mid + 8, cy - 10, cx - arr_mid + 8, cy + 10, col_white);
-  it.filled_triangle(cx + arr_mid + 8, cy, cx + arr_mid - 8, cy - 10, cx + arr_mid - 8, cy + 10, col_white);
+  it.filled_triangle(cx, dpad_cy - arr_mid - 8, cx - 10, dpad_cy - arr_mid + 8, cx + 10, dpad_cy - arr_mid + 8, col_white);
+  it.filled_triangle(cx, dpad_cy + arr_mid + 8, cx - 10, dpad_cy + arr_mid - 8, cx + 10, dpad_cy + arr_mid - 8, col_white);
+  it.filled_triangle(cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
+  it.filled_triangle(cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
 
-  it.filled_circle(cx, cy, ok_r, col_dark_gray);
-  it.circle(cx, cy, ok_r, theme_primary);
-  it.print(cx, cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
+  it.filled_circle(cx, dpad_cy, ok_r, col_dark_gray);
+  it.circle(cx, dpad_cy, ok_r, theme_primary);
+  it.print(cx, dpad_cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 
 }  // namespace latter_ui

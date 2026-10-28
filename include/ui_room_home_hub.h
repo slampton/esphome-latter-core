@@ -318,7 +318,7 @@ inline void render_room_control_page(
   // SUBPAGE 1 / AREAS MODE: 5-SLOT ROOM SWITCHER
   // ===========================================================================
   if (room_subpage == 1 || room_browse_mode == "areas" || room_browse_mode == "room_areas") {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "SELECT ROOM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT ROOM");
 
     auto draw_area_row = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
       if (name.empty() && id_str.empty()) return;
@@ -351,7 +351,7 @@ inline void render_room_control_page(
   std::string hdr = active_area_name.empty() ? "ROOM CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, 250, font_small);
-  it.print(cx, 44, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
+  it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
 
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(room_action_feedback, 280, font_small);
@@ -632,7 +632,7 @@ inline void render_security_alarm_page(
 
   if (tab == 0) {
     // TAB 0: HOME SECURITY ALARM
-    it.print(cx, 44, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
 
     std::string st_lbl = "Status: Ready (Demo)";
     Color st_col = col_green;
@@ -671,7 +671,7 @@ inline void render_security_alarm_page(
 
   } else if (tab == 1) {
     // TAB 1: WHOLE-HOME THERMOSTAT / CLIMATE
-    it.print(cx, 44, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
     char sub_t[48];
     const std::string &m = sim_thermostat_mode();
     const char *m_lbl = (m == "heat") ? "Heating" : ((m == "cool") ? "Cooling" : ((m == "off") ? "System Off" : "Auto Climate"));
@@ -715,7 +715,7 @@ inline void render_security_alarm_page(
 
   } else if (tab == 2) {
     // TAB 2: GARAGE DOOR & ENTRY LOCKS
-    it.print(cx, 44, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
     it.print(cx, 74, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : "Tap Card to Toggle");
 
@@ -735,7 +735,7 @@ inline void render_security_alarm_page(
 
   } else {
     // TAB 3: ROBOT VACUUM
-    it.print(cx, 44, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
     std::string v_st = "Status: " + sim_vacuum_state();
     it.print(cx, 74, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : v_st.c_str());

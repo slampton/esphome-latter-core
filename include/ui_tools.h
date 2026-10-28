@@ -280,7 +280,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
     it.filled_rectangle(0, 0, 466, 82, col_bg);
     it.filled_rectangle(0, 388, 466, 78, col_bg);
   }
-  it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
+  it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
   int active_page = menu_scroll_active ? menu_scroll_target_page : stuff_menu_page;
   render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, esphome::Color(95, 112, 134));
 }
@@ -1408,7 +1408,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
     // -------------------------------------------------------------------------
     // TIMERS LANDING PAGE (3 Modern Rounded Timer Cards at y = 122, 222, 322)
     // -------------------------------------------------------------------------
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
 
     static constexpr int CARD_YS[3] = {122, 222, 322};
     for (int i = 0; i < 3; i++) {
@@ -1477,7 +1477,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
 
   // 2. Dynamic Uppercase Timer Title ("CHICKEN", "PASTA", or "TIMER 1") in 21pt font_small at y = 48
   std::string hdr = fit_text_to_width_font(format_timer_header_upper(s_idx), 280, font_small);
-  it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr.c_str());
+  it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr.c_str());
 
   int disp_sec = (s.running || s.paused) ? s.remaining_sec : s.duration_sec;
   char t_str[16];
@@ -1536,7 +1536,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     // -------------------------------------------------------------------------
     // ALARMS LANDING PAGE (3 Modern Rounded Alarm Cards at y = 122, 210, 298)
     // -------------------------------------------------------------------------
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "ALARMS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "ALARMS");
 
     static constexpr const char *REC_LABELS[4] = {"Daily", "Weekdays", "Weekends", "Once"};
 
@@ -1593,7 +1593,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     draw_modern_alarm_card(222, alarm2_hour, alarm2_minute, alarm2_enabled, alarm2_recurrence, 2);
     draw_modern_alarm_card(322, alarm3_hour, alarm3_minute, alarm3_enabled, alarm3_recurrence, 3);
   } else {
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
 
     int cur_h = (alarm_edit_idx == 3) ? alarm3_hour : ((alarm_edit_idx == 2) ? alarm2_hour : alarm1_hour);
     int cur_m = (alarm_edit_idx == 3) ? alarm3_minute : ((alarm_edit_idx == 2) ? alarm2_minute : alarm1_minute);
@@ -1927,7 +1927,7 @@ inline void render_tool_calendar(
       // 4. Bottom Translucent Back Scrim
       it.filled_rectangle(148, 406, 170, 38, Color(10, 14, 20));
     } else {
-      it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
+      it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
       render_modern_card(it, cx, 222, 304, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
                          "Loading OpenStreetMap...", theme_secondary, font_small);
     }
@@ -1937,7 +1937,7 @@ inline void render_tool_calendar(
 
   if (cal_detail_mode() == 1) {
     // MODE 1: EVENT DETAIL INSPECTOR (Wrapped Multi-Line Title + Time + Wrapped Location + View Map Button)
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "EVENT DETAILS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT DETAILS");
 
     // Time Badge Pill at y = 92
     std::string fit_tm = fit_text_to_width_font(cal_detail_time(), 260, font_small);
@@ -1981,7 +1981,7 @@ inline void render_tool_calendar(
   }
 
   if (cal_quick_add_open()) {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
     static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
     static constexpr const char *kQuickLabels[5] = {
       "In 15m: Quick Reminder",
@@ -2008,9 +2008,9 @@ inline void render_tool_calendar(
   } else if (cal_total_pages > 1) {
     char c_hdr[36];
     snprintf(c_hdr, sizeof(c_hdr), "CALENDAR %d/%d (+)", cal_page, cal_total_pages);
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, c_hdr);
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, c_hdr);
   } else {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "CALENDAR  (+)");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CALENDAR  (+)");
   }
 
   std::string names[5] = {s1_name, s2_name, s3_name, s4_name, s5_name};
@@ -2222,9 +2222,9 @@ inline void render_tool_macros(
   } else if (total_pages > 1) {
     char hdr_buf[32];
     snprintf(hdr_buf, sizeof(hdr_buf), "MACROS  %d/%d", cur_page + 1, total_pages);
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
   } else {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "MACROS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MACROS");
   }
 
   const Color card_bg(22, 27, 36);
@@ -2416,7 +2416,7 @@ inline void render_tool_camera(
   const int anc_idx = std::max(0, std::min(2, cam_anc_mode_idx()));
 
   if (cam_quick_reply_open()) {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
     const Color card_bg(22, 27, 36);
     const Color card_brd(52, 62, 78);
     render_modern_card(it, cx, 110, 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
