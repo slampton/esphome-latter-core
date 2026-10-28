@@ -29,7 +29,7 @@ esp32_ble_beacon:
 
 switch:
   - platform: template
-    name: "Room: BLE Presence Beacon"
+    name: "Area: BLE Presence Beacon"
     id: latter_ble_beacon_switch
     icon: "mdi:bluetooth-audio"
     entity_category: config

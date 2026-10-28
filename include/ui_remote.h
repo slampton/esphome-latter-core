@@ -36,9 +36,22 @@ inline int &remote_control_page() {
   return pg;
 }
 
+inline bool &remote_summary_received_from_ha() {
+  static bool rec = false;
+  return rec;
+}
+
 inline bool is_configured_remote_slot(const std::string &ent) {
   if (ent.empty()) return false;
-  return ent != "none" && ent != "remote.none" && ent != "media_player.none";
+  return ent != "none" && ent != "NONE" && ent != "remote.none" && ent != "media_player.none";
+}
+
+inline bool has_any_configured_remote() {
+  const std::string *t_ents = remote_slots_ent();
+  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+    if (is_configured_remote_slot(t_ents[i])) return true;
+  }
+  return false;
 }
 
 inline std::string format_remote_entity_fallback(const std::string &ent) {
@@ -116,7 +129,7 @@ inline void sync_legacy_remote_slots_into_table(const std::string legacy_ents[4]
       break;
     }
   }
-  if (!any_table && legacy_ents != nullptr) {
+  if (!any_table && !remote_summary_received_from_ha() && legacy_ents != nullptr) {
     for (int i = 0; i < 4; i++) {
       t_ents[i] = legacy_ents[i];
       if (legacy_names != nullptr) t_names[i] = legacy_names[i];
@@ -132,6 +145,7 @@ inline void parse_latter_remote_slots_summary(
     std::string &s1_ent, std::string &s1_name,
     std::string &s2_ent, std::string &s2_name,
     std::string &s3_ent, std::string &s3_name) {
+  remote_summary_received_from_ha() = true;
   std::string *t_ents = remote_slots_ent();
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();

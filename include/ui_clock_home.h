@@ -7,6 +7,7 @@
 #include "ui_layout.h"
 #include "ui_tools.h"
 #include "ui_weather_sky.h"
+#include "ui_remote.h"
 
 namespace latter_ui {
 
@@ -755,7 +756,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
     if (n >= 8 || app_id < 0 || app_id > 14 || added[app_id]) return;
     bool en = (app_id == 2 && show_music) ||
               (app_id == 6 && show_room) ||
-              (app_id == 7 && show_remote) ||
+              (app_id == 7 && show_remote && has_any_configured_remote()) ||
               (app_id == 3 && show_games && (LATTER_HAS_IMU != 0)) ||
               (app_id == 8 && show_tools) ||
               (app_id == 9 && show_alarm) ||
@@ -906,7 +907,7 @@ inline void render_home_page(
     snprintf(buf, sizeof(buf), "Music Icon: %s", dock_music ? "Shown" : "Hidden");
     draw_setting_card(110, buf, dock_music);
 
-    snprintf(buf, sizeof(buf), "Room Icon: %s", dock_room ? "Shown" : "Hidden");
+    snprintf(buf, sizeof(buf), "Area Icon: %s", dock_room ? "Shown" : "Hidden");
     draw_setting_card(173, buf, dock_room);
 
     snprintf(buf, sizeof(buf), "Remote Icon: %s", dock_remote ? "Shown" : "Hidden");

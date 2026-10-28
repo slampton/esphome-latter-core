@@ -414,7 +414,7 @@ inline void render_system_page(
       room_str += " (" + latter_ble_proxy() + ")";
     }
     room_str = fit_text_to_width_font(room_str, 220, font_small);
-    print_info_row(244, "Room:", room_str.c_str(), col_slate);
+    print_info_row(244, "Area:", room_str.c_str(), col_slate);
 
     snprintf(buf, sizeof(buf), "%.0f%% (%.2fV)%s",
              std::isnan(batt) ? 100.0f : batt,

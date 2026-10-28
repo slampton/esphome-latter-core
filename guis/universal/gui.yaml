@@ -2055,7 +2055,7 @@ touchscreen:
                     id(room_subpage) = 1;
                     id(room_area_page) = 1;
                     if (id(room_area_1_name).empty()) {
-                      id(room_area_1_name) = "Loading rooms...";
+                      id(room_area_1_name) = "Loading areas...";
                       id(room_area_1_id) = "";
                     }
                     id(fetch_room_areas_browse).execute();
@@ -3833,7 +3833,7 @@ touchscreen:
                         id(room_subpage) = 0;
                         id(room_browse_mode) = "entities";
                         id(room_browse_page) = 1;
-                        id(room_action_feedback) = "Room: " + id(active_room_area_name);
+                        id(room_action_feedback) = "Area: " + id(active_room_area_name);
                         id(room_feedback_timer) = now_rel;
                         id(select_active_room_latter).execute();
                         latter_ui::schedule_disp_update(&id(disp1));

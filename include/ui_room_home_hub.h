@@ -318,7 +318,7 @@ inline void render_room_control_page(
   // SUBPAGE 1 / AREAS MODE: 5-SLOT ROOM SWITCHER
   // ===========================================================================
   if (room_subpage == 1 || room_browse_mode == "areas" || room_browse_mode == "room_areas") {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT ROOM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT AREA");
 
     auto draw_area_row = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
       if (name.empty() && id_str.empty()) return;
@@ -348,7 +348,7 @@ inline void render_room_control_page(
   // SUBPAGE 0: MAIN ROOM CONTROL (HEADER + CLIMATE + 3 TALL SLIDER CARDS + DOCK)
   // ===========================================================================
   // 1. Top Room Title (y = 44) & Live Room Climate Line (y = 74)
-  std::string hdr = active_area_name.empty() ? "ROOM CONTROL" : active_area_name;
+  std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, 250, font_small);
   it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
@@ -420,7 +420,7 @@ inline void render_room_control_page(
                         : (room_domain_filter == "cover") ? "Blinds & Curtains"
                         : (room_domain_filter == "fan")   ? "Fans"
                         : (room_domain_filter == "switch") ? "Switches & Outlets"
-                        : "Tap Header to Switch Room";
+                        : "Tap Header to Switch Area";
     it.print(cx, 74, font_small, col_slate, TextAlign::CENTER, sub_lbl);
   }
 

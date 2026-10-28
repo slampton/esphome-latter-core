@@ -660,7 +660,7 @@ globals:
   - id: active_room_area_name
     type: std::string
     restore_value: no
-    initial_value: '"Room Control"'
+    initial_value: '"Area Control"'
   - id: room_action_feedback
     type: std::string
     restore_value: no
@@ -688,7 +688,7 @@ globals:
   - id: room_slot_1_name
     type: std::string
     restore_value: no
-    initial_value: '"Tap Header for Rooms"'
+    initial_value: '"Tap Header for Areas"'
   - id: room_slot_1_id
     type: std::string
     restore_value: no
@@ -1962,7 +1962,7 @@ select:
           if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
-    name: "Room: Default Category"
+    name: "Area: Default Category"
     id: room_default_category_select
     icon: "mdi:Sofa-outline"
     entity_category: config
@@ -2071,7 +2071,7 @@ switch:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
-    name: "Home: Shortcut Room"
+    name: "Home: Shortcut Area"
     id: home_dock_room_switch
     icon: "mdi:home-lightning-bolt-outline"
     entity_category: config
@@ -2085,7 +2085,7 @@ switch:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
-    name: "Room: Area Media Handoff"
+    name: "Area: Media Handoff"
     id: room_handoff_media_switch
     icon: "mdi:cast-audio"
     entity_category: config
@@ -2093,7 +2093,7 @@ switch:
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "Room: Show All Category"
+    name: "Area: Show All Category"
     id: room_show_all_category_switch
     icon: "mdi:view-grid-outline"
     entity_category: config
@@ -2107,7 +2107,7 @@ switch:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
-    name: "Room: BLE Presence Beacon"
+    name: "Area: BLE Presence Beacon"
     id: ble_room_beacon_switch
     icon: "mdi:bluetooth-audio"
     entity_category: config
@@ -3336,7 +3336,12 @@ text_sensor:
               id(remote_slot_2_ent), id(remote_slot_3_ent)
             };
             id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
-            if (id(display_power_state) == 0 && id(gui_page) == 7 && millis() > 3000) {
+            latter_ui::home_dock_page() = 0;
+            if (!latter_ui::has_any_configured_remote() && id(gui_page) == 7) {
+              id(gui_page) = 1;
+              id(remote_subpage) = 0;
+            }
+            if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 7) && millis() > 3000) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
 
