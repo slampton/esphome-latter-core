@@ -3963,6 +3963,13 @@ script:
           const bool is_ips_lcd = false;
           #endif
           id(theme_secondary) = is_ips_lcd ? Color(224, 232, 242) : Color(192, 192, 192);
+          if (is_ips_lcd) {
+            id(col_gold) = Color(255, 188, 20);
+            id(col_warm_gold) = Color(255, 160, 16);
+            id(col_orange) = Color(255, 112, 20);
+            id(col_red) = Color(242, 60, 50);
+            id(col_green) = Color(56, 206, 110);
+          }
           if (p == "Custom") {
             latter_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
           } else if (p == "Pink" || p == "Pink & Gray") {

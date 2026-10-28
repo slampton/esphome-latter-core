@@ -479,6 +479,11 @@ display:
                                   id(ha_weather_condition).state != "unavailable")
                                      ? id(ha_weather_condition).state
                                      : id(ha_weather_condition_fallback).state;
+        #if defined(LATTER_BACKLIGHT_PIN)
+        const Color eff_warm_gold(255, 178, 28);
+        #else
+        const Color eff_warm_gold = id(col_warm_gold);
+        #endif
         render_weather_page(
             it, cx, cy, millis(), id(sky_weather_subpage), now, id(is_24h_format),
             std::string(id(weather_sim_condition).current_option()),
@@ -491,7 +496,8 @@ display:
             id(font_time), id(font_date), id(font_btn_bold), id(font_small), id(font_micro),
             id(theme_primary), id(theme_secondary),
             id(col_bg), id(col_black), id(col_white), id(col_slate),
-            id(col_gray), id(col_dark_gray), id(col_warm_gold), id(accel_x).state, id(accel_y).state);
+            id(col_gray), id(col_dark_gray), eff_warm_gold, id(accel_x).state, id(accel_y).state,
+            id(font_chrono_time));
 
       // ==========================================
       // PAGE 6: AREA-AWARE ROOM CONTROL (LATTER)
@@ -3092,7 +3098,7 @@ touchscreen:
             }
 
             // 7. ROOM CONTROL (PAGE 6) HORIZONTAL CATEGORY SWIPE (Just like Sky & Weather!) & VERTICAL LIST SWIPE
-            if (id(gui_page) == 6 && id(room_subpage) == 0 && gest.start_y > 88 && gest.start_y < 408) {
+            if (id(gui_page) == 6 && id(room_subpage) == 0 && gest.start_y > 88 && gest.start_y < (latter_ui::SCREEN_H - 20)) {
               if (std::abs(dx) >= 30 && std::abs(dx) > std::abs(dy)) {
                 std::string cats[7];
                 int cat_cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
@@ -3763,7 +3769,7 @@ touchscreen:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > 88 && gest.last_y < 404) {
+              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > 88 && gest.last_y < (latter_ui::SCREEN_H - 20)) {
                 if (gest.max_travel < 30) {
                   if (is_right_chevron_zone(tp) && id(room_subpage) != 2 && ((id(room_subpage) == 1 && id(room_area_total_pages) > 1) || (id(room_subpage) == 0 && id(room_browse_total_pages) > 1))) {
                     int delta = (tp.y < 215) ? -1 : 1;
