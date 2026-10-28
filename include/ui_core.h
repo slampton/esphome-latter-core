@@ -1068,7 +1068,8 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 #if POCKET_UI_ROUND_DISPLAY
   return (t.x >= 376 && t.y >= 70 && t.y <= 395);
 #else
-  return (t.x >= (SCREEN_W - 68) && t.y >= 70 && t.y <= (SCREEN_H - 70));
+  const int chev_min_x = (SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 48);
+  return (t.x >= chev_min_x && t.y >= 70 && t.y <= (SCREEN_H - 70));
 #endif
 }
 

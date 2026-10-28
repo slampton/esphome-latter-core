@@ -17,18 +17,31 @@ namespace latter_ui {
 template <typename DisplayT, typename FontT>
 inline void render_battery_indicator(
     DisplayT &it, int cx, int by, float batt, bool is_charging,
-    FontT *font_small, const esphome::Color &theme_primary,
+    FontT *font_batt, const esphome::Color &theme_primary,
     const esphome::Color &col_gold, const esphome::Color &col_green) {
   if (std::isnan(batt)) return;
   char batt_str[16];
   snprintf(batt_str, sizeof(batt_str), "%.0f%%", batt);
-  int text_x = cx + 8;
-  it.print(text_x,     by, font_small, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
-  it.print(text_x + 1, by, font_small, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
-  int bx = text_x - (batt >= 100.0f ? 36 : 28);
+  const bool compact = (SCREEN_W < 380);
+  int text_x = cx + (compact ? 6 : 8);
+  it.print(text_x, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
+  if (!compact) {
+    it.print(text_x + 1, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
+  }
+  int bx = text_x - (compact ? (batt >= 100.0f ? 24 : 20) : (batt >= 100.0f ? 36 : 28));
   if (is_charging) {
-    it.filled_triangle(bx + 3, by - 9, bx - 3, by, bx + 1, by, col_gold);
-    it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 9, col_gold);
+    if (compact) {
+      it.filled_triangle(bx + 2, by - 6, bx - 2, by, bx + 1, by, col_gold);
+      it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 6, col_gold);
+    } else {
+      it.filled_triangle(bx + 3, by - 9, bx - 3, by, bx + 1, by, col_gold);
+      it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 9, col_gold);
+    }
+  } else if (compact) {
+    it.filled_rectangle(bx - 1, by - 6, 3, 1, col_green);
+    it.rectangle(bx - 4, by - 5, 8, 11, col_green);
+    int fill_h = static_cast<int>(std::max(1.0f, std::min(7.0f, (batt / 100.0f) * 7.0f)));
+    it.filled_rectangle(bx - 2, (by + 4) - fill_h, 4, fill_h, col_green);
   } else {
     it.filled_rectangle(bx - 2, by - 9, 4, 2, col_green);
     it.rectangle(bx - 5, by - 7, 10, 16, col_green);
@@ -835,7 +848,7 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
   }
 }
 
-template <typename DisplayT, typename TimeT, typename StrT, typename FontTimeT, typename FontDateT, typename FontSmallT, typename WallImgT = void>
+template <typename DisplayT, typename TimeT, typename StrT, typename FontTimeT, typename FontDateT, typename FontSmallT, typename WallImgT = void, typename FontMicroT = FontSmallT>
 inline void render_home_page(
     DisplayT &it, int cx, int cy, uint32_t now_ms, int home_subpage,
     int &home_activity_idx,
@@ -863,7 +876,8 @@ inline void render_home_page(
     const std::string &loaded_wallpaper_url = "",
     const std::string &calendar_agenda_raw = "",
     bool dock_alarm = true,
-    const std::string &home_alarm_state = "") {
+    const std::string &home_alarm_state = "",
+    FontMicroT *font_micro = nullptr) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -1387,8 +1401,13 @@ inline void render_home_page(
   }
 
 #if LATTER_HAS_BATTERY
-  render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
-                           is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+  if (SCREEN_W < 380 && font_micro != nullptr) {
+    render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_micro,
+                             is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+  } else {
+    render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
+                             is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+  }
 #endif
 
   // ---------------------------------------------------------------------------

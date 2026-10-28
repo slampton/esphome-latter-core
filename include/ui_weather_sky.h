@@ -1794,12 +1794,9 @@ inline void render_weather_page(
     }
     it.print(w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
 
-    const int div_hw = std::min(153, (SCREEN_W / 2) - 24);
-    it.line(cx - div_hw, 310, cx + div_hw, 310, col_dark_gray);
-
   } else if (sky_weather_subpage == 1) {
     // ----------------------------------------------------------------------
-    // SUBPAGE 1: FORECAST (5-DAY FORECAST: CENTERED FULL-WIDTH COLUMNS)
+    // SUBPAGE 1: FORECAST (5-DAY FORECAST: PROPORTIONAL & SCALED ACROSS ALL SCREENS)
     // ----------------------------------------------------------------------
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
 
@@ -1875,51 +1872,54 @@ inline void render_weather_page(
       apply_weather_sim_override(weather_sim_opt, fc_days[0].cond, dummy_night);
     }
 
-    // 5 rows spanning y = 84..294 (centered across x = 77..389, symmetric around cx = 233!)
-    const int row_ys[5] = {96, 143, 190, 237, 284};
+    // Proportional 4-column layout centered on cx & scaled vertically between hdr_y and app_dock_y
+    const int fc_top_y  = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 48 : 54);
+    const int fc_bot_y  = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 82 : 66);
+    const int fc_step_y = (fc_bot_y - fc_top_y) / 4;
+    const int row_hw    = LATTER_ROUND_DISPLAY ? 158 : std::min(196, (SCREEN_W / 2) - ((SCREEN_W < 380) ? 14 : 26));
+    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 30 : 36);
+    const int x_glyph   = cx - (row_hw / 3) + ((SCREEN_W < 380) ? 4 : 8);
+    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : 22);
+    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 32 : 36);
+
     for (int i = 0; i < fc_count && i < 5; i++) {
-      int ry = row_ys[i];
+      int ry = fc_top_y + i * fc_step_y;
       const auto &d = fc_days[i];
 
-      it.print(102, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
+      it.print(x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
 
       int ry_data = ry + 1;
-      render_forecast_glyph(it, 166, ry_data, d.cond);
+      render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
-      std::string c_txt = format_forecast_short_name(d.cond);
-      it.print(190, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+      std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 44) - x_cond, font_small);
+      it.print(x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
 
-      // High / Low column shifted +32px right so temperatures have generous breathing room
       std::string hi_str = d.high + "°";
       std::string lo_str = d.low + "°";
-      it.print(347, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
-      it.print(357, ry_data, font_micro, col_dark_gray, TextAlign::CENTER, "/");
-      it.print(367, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
-
-      if (i < 4) {
-        it.line(68, ry + 23, 398, ry + 23, col_dark_gray);
-      }
+      it.print(x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
+      it.print(x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
+      it.print(x_slash + 8, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
     }
-    it.line(80, 310, 386, 310, col_dark_gray);
 
   } else if (sky_weather_subpage == 2) {
     // ----------------------------------------------------------------------
-    // SUBPAGE 2: SUN (EXPANDED ELLIPTICAL SOLAR ARC & LOWERED SUNRISE/SUNSET)
+    // SUBPAGE 2: SUN (CENTERED & SCALED ELLIPTICAL SOLAR ARC + SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
 
-    // Elliptical Solar Arc (arc_cy = 213, rx = 132px wide, ry = 118px tall):
-    //   - Apex of arc sits at y = 95; when Sun is at 90° noon, its 13px top ray sits at y = 82 (24px below title!)
-    //   - Spans 264px wide (x = 101..365) with E/W labels at x = 86 / 380
-    const int arc_cy = 213;
-    const int arc_rx = 132;
-    const int arc_ry = 118;
+    const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 44 : 46);
+    const int sun_bot_y = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 76 : 62);
+    const int avail_h   = sun_bot_y - sun_top_y;
 
-    for (int hx = 100; hx <= 366; hx += 8) {
+    const int arc_rx = LATTER_ROUND_DISPLAY ? 132 : std::min(168, (SCREEN_W / 2) - ((SCREEN_W < 380) ? 34 : 44));
+    const int arc_ry = LATTER_ROUND_DISPLAY ? 118 : std::min(arc_rx - 6, (avail_h * 56) / 100);
+    const int arc_cy = sun_top_y + arc_ry;
+
+    for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
       it.line(hx, arc_cy, hx + 4, arc_cy, col_gray);
     }
-    it.print(86,  arc_cy, font_micro, col_slate, TextAlign::CENTER, "E");
-    it.print(380, arc_cy, font_micro, col_slate, TextAlign::CENTER, "W");
+    it.print(cx - arc_rx - 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "E");
+    it.print(cx + arc_rx + 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "W");
 
     for (int a = 0; a <= 180; a += 2) {
       float rad = static_cast<float>(a) * (PI_F / 180.0f);
@@ -1931,7 +1931,7 @@ inline void render_weather_page(
 
     if (!std::isnan(sun_elevation)) {
       const char *sol_st = (sun_elevation > 0.0f) ? "Above Horizon" : "Below Horizon";
-      it.print(cx, 227, font_micro, sun_elevation > 0.0f ? col_warm_gold : col_slate, TextAlign::CENTER, sol_st);
+      it.print(cx, arc_cy + 16, font_micro, sun_elevation > 0.0f ? col_warm_gold : col_slate, TextAlign::CENTER, sol_st);
     }
 
     if (!std::isnan(sun_elevation) && sun_elevation >= 0.0f) {
@@ -1954,25 +1954,22 @@ inline void render_weather_page(
       it.line(sx, sy - 13, sx, sy + 13, Color(255, 200, 50));
     }
 
-    it.line(80, 239, 386, 239, col_dark_gray);
-
-    // Sunrise / Sunset moved down +10px (labels at y = 256, times at y = 284 -> bottom at y = 297 above y = 310 divider)
     std::string s_rise = format_iso_time(sun_next_rising, is_24h_format);
     std::string s_set = format_iso_time(sun_next_setting, is_24h_format);
 
-    it.print(154, 256, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
-    it.print(154, 284, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
+    const int col_dx = (arc_rx * 60) / 100;
+    const int lbl_y  = sun_bot_y - 30;
+    const int val_y  = sun_bot_y;
 
-    it.line(cx, 246, cx, 298, col_dark_gray);
+    it.print(cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
+    it.print(cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
 
-    it.print(312, 256, font_small, col_slate, TextAlign::CENTER, "SUNSET");
-    it.print(312, 284, font_date,  col_warm_gold, TextAlign::CENTER, s_set.c_str());
-
-    it.line(80, 310, 386, 310, col_dark_gray);
+    it.print(cx + col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNSET");
+    it.print(cx + col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_set.c_str());
 
   } else if (sky_weather_subpage == 3) {
     // ----------------------------------------------------------------------
-    // SUBPAGE 3: MOON (ENLARGED r=76 / 152px LUNAR DISC & PHASE TELEMETRY)
+    // SUBPAGE 3: MOON (DYNAMICALLY SCALED LUNAR DISC & PHASE TELEMETRY)
     // ----------------------------------------------------------------------
     double cycle = 0.5;
     int illum_pct = 50;
@@ -1982,20 +1979,19 @@ inline void render_weather_page(
 
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
 
-    // Enlarged r = 76 (152px diameter) Lunar Disc at cy = 158:
-    //   - Top of Moon sits at y = 82 (24px below title, 20px below y = 62 divider!)
-    //   - Bottom of Moon sits at y = 234 (10px above y = 244 divider)
-    render_lunar_disc(it, cx, 158, 76, cycle, true);
+    const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : 36);
+    const int moon_bot_y = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 70 : 58);
+    const int disc_span  = (moon_bot_y - 58) - moon_top_y;
+    const int moon_r     = LATTER_ROUND_DISPLAY ? 78 : std::min(104, std::min((SCREEN_W / 2) - 44, disc_span / 2));
+    const int moon_cy    = moon_top_y + moon_r;
 
-    it.line(110, 244, 356, 244, col_dark_gray);
+    render_lunar_disc(it, cx, moon_cy, moon_r, cycle, true);
 
-    it.print(cx, 263, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
+    it.print(cx, moon_cy + moon_r + 28, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
 
     char illum_buf[32];
     snprintf(illum_buf, sizeof(illum_buf), "%d%% Illumination", illum_pct);
-    it.print(cx, 289, font_small, col_white, TextAlign::CENTER, illum_buf);
-
-    it.line(80, 310, 386, 310, col_dark_gray);
+    it.print(cx, moon_cy + moon_r + 56, font_small, col_white, TextAlign::CENTER, illum_buf);
   }
 
   render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);

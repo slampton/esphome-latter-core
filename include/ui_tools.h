@@ -26,8 +26,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
                                       esphome::Color col_white) {
   esphome::Color card_bg(22, 27, 36);
   esphome::Color card_border(48, 56, 70);
-  // Sized for 2x3 (6-card) grid: w = 122, h = 86, r = 14 (19px vertical gap across y = 88..384!)
-  render_modern_card(it, cx_card, cy_card, 122, 86, 14, card_bg, card_border, nullptr, col_white, font_small);
+  const int card_w = (SCREEN_W < 380) ? 110 : 122;
+  render_modern_card(it, cx_card, cy_card, card_w, 86, 14, card_bg, card_border, nullptr, col_white, font_small);
 
   int ix = cx_card;
   int iy = cy_card - 13;
@@ -223,8 +223,9 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
   //   - Row 0: y_mid = 131 (y = 88..174, 30px below title at y=58)
   //   - Row 1: y_mid = 236 (y = 193..279, 19px vertical gap)
   //   - Row 2: y_mid = 341 (y = 298..384, 19px vertical gap, 31px above < Back at y=415)
-  const int col_left_x  = cx - 68;
-  const int col_right_x = cx + 68;
+  const int col_off     = (SCREEN_W < 380) ? 61 : 68;
+  const int col_left_x  = cx - col_off;
+  const int col_right_x = cx + col_off;
   const int row_0_y = 131;
   const int row_1_y = 236;
   const int row_2_y = 341;
@@ -2046,12 +2047,13 @@ inline void render_tool_calendar(
       int y_mid = ROW_YS[i];
       Color brd_c = acts[i] ? theme_primary : card_brd;
       Color txt_c = acts[i] ? col_white : col_slate;
-      render_modern_card(it, cx, y_mid, 296, 44, 12, card_bg, brd_c, nullptr, txt_c, font_small);
+      const int c_left = layout().list_card_left;
+      render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, brd_c, nullptr, txt_c, font_small);
       if (acts[i]) {
-        it.filled_rectangle(94, y_mid - 12, 3, 24, theme_primary);
+        it.filled_rectangle(c_left + 8, y_mid - 12, 3, 24, theme_primary);
       }
-      std::string fit_ev = fit_text_to_width_font(names[i], 256, font_small);
-      it.print(106, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
+      std::string fit_ev = fit_text_to_width_font(names[i], layout().list_card_w - 32, font_small);
+      it.print(c_left + 18, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
     }
   }
 
@@ -2240,11 +2242,12 @@ inline void render_tool_macros(
     for (int i = 0; i < vis_count; i++) {
       int y_mid = ROW_YS[i];
       int item_idx = start_idx + i;
-      render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_triangle(cx - 125, y_mid - 7, cx - 132, y_mid + 1, cx - 126, y_mid + 1, theme_primary);
-      it.filled_triangle(cx - 128, y_mid - 1, cx - 121, y_mid - 1, cx - 129, y_mid + 7, theme_secondary);
-      std::string fit_lbl = fit_text_to_width_font(names[item_idx], 230, font_small);
-      it.print(cx - 109, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_lbl.c_str());
+      const int m_left = layout().list_card_left;
+      render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
+      it.filled_triangle(m_left + 16, y_mid - 7, m_left + 9, y_mid + 1, m_left + 15, y_mid + 1, theme_primary);
+      it.filled_triangle(m_left + 13, y_mid - 1, m_left + 20, y_mid - 1, m_left + 12, y_mid + 7, theme_secondary);
+      std::string fit_lbl = fit_text_to_width_font(names[item_idx], layout().list_card_w - 46, font_small);
+      it.print(m_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_lbl.c_str());
     }
     if (total_pages > 1) {
       render_vertical_page_pips(it, cur_page > 0, cur_page + 1 < total_pages,

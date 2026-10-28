@@ -50,8 +50,8 @@ struct UiLayout {
   int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : 78);
 
   // Corner-Safe Battery Indicator Coordinates for Non-Round Displays
-  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 86) : ((SCREEN_W < 380) ? (SCREEN_W - 48) : (SCREEN_W - 58)));
-  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 38 : 28);
+  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 86) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 58)));
+  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 38 : ((SCREEN_W < 380) ? 24 : 28));
 
   // Standard Menu Card Width & Left Text Margin (232px on 320x480 leaves 26px gap before scroll arrows)
   int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : 276;

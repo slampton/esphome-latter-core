@@ -230,7 +230,7 @@ display:
         render_clock_page(
             it, cx, cy, now, id(clock_face_digital), id(is_24h_format),
             batt, id(batt_charging).state,
-            id(font_time), id(font_date), id(font_small),
+            id(font_time), id(font_date), (latter_ui::SCREEN_W < 380) ? id(font_micro) : id(font_small),
             id(theme_primary), id(theme_secondary),
             id(col_white), id(col_slate), id(col_gray), id(col_dark_gray),
             id(col_red), id(col_gold), id(col_green));
@@ -279,7 +279,7 @@ display:
             id(home_wake_greeting_switch).state, id(home_dock_room_switch).state,
             id(home_wallpaper_art), id(ha_latter_wallpaper_url).state,
             id(current_loaded_wallpaper_url), id(ha_calendar_agenda_raw).state,
-            id(home_dock_alarm_switch).state, id(room_alarm_state));
+            id(home_dock_alarm_switch).state, id(room_alarm_state), id(font_micro));
 
       // ==========================================
       // PAGE 2: MUSIC PLAYER & LIBRARY BROWSER
@@ -3281,18 +3281,17 @@ touchscreen:
                     dock_apps, id(home_dock_room_switch).state, id(home_dock_alarm_switch).state);
                 int total_pages = (dock_count + 3) / 4;
 
-                const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 12 : 18;
-                const int dock_tap_max   = (latter_ui::SCREEN_W < 380) ? 11 : 22;
-                if (std::abs(dx) >= dock_rel_swipe && std::abs(dx) >= std::abs(dy) && total_pages > 1) {
+                const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 18 : 20;
+                if (std::abs(dx) >= dock_rel_swipe && std::abs(dx) > (std::abs(dy) * 3) / 2 && total_pages > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   latter_ui::home_dock_page() = (dx < 0)
                       ? ((latter_ui::home_dock_page() + 1) % total_pages)
                       : ((latter_ui::home_dock_page() + total_pages - 1) % total_pages);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel <= dock_tap_max && std::abs(dx) < 10 && dock_count > 0) {
+                } else if (gest.max_travel < 30 && dock_count > 0) {
                   const int dock_cy = latter_ui::layout().dock_y;
-                  if (gest.last_y >= (dock_cy - 38) && gest.last_y <= (dock_cy + 38)) {
+                  if (gest.last_y >= (dock_cy - 40) && gest.last_y <= (dock_cy + 42)) {
                     int win_xs[4] = {0, 0, 0, 0};
                     bool dummy_l = false, dummy_r = false;
                     latter_ui::get_home_dock_window_xs(dock_count, latter_ui::home_dock_page(), latter_ui::SCREEN_CX, win_xs, dummy_l, dummy_r);
@@ -3395,7 +3394,7 @@ touchscreen:
                     id(menu_scroll_transition).execute();
                     id(fetch_music_browse).execute();
                   }
-                } else if (!id(menu_scroll_active) && gest.max_travel < 20 && gest.last_y < 404 &&
+                } else if (!id(menu_scroll_active) && gest.max_travel < 28 && gest.last_y < 404 &&
                            ((now_rel - gest.last_swipe_ms >= 550U && now_rel >= latter_ui::music_scroll_tap_lockout_until_ms()) ||
                             is_right_chevron_zone(tp))) {
                   if (is_right_chevron_zone(tp)) {
@@ -3518,7 +3517,7 @@ touchscreen:
                   id(menu_scroll_target_page) = step_wrap(id(game_carousel_idx), dir, 4);
                   id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
-                } else if (gest.max_travel < 24) {
+                } else if (gest.max_travel < 30) {
                   const int g_btn_y = latter_ui::layout().app_dock_y;
                   if (gest.last_x >= latter_ui::SCREEN_CX - 125 && gest.last_x <= latter_ui::SCREEN_CX - 55 &&
                       gest.last_y >= g_btn_y - 34 && gest.last_y <= g_btn_y + 34) {
@@ -3552,7 +3551,7 @@ touchscreen:
                     id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   }
-                } else if (gest.max_travel < 24 && gest.last_y < 404) {
+                } else if (gest.max_travel < 30 && gest.last_y < 404) {
                   if (is_right_chevron_zone(tp)) {
                     int target_pg = (cur_pg == 1) ? 2 : 1;
                     id(menu_scroll_active) = true;
@@ -3707,7 +3706,7 @@ touchscreen:
                       ? ((id(sky_weather_subpage) + 1) % 4)
                       : ((id(sky_weather_subpage) + 3) % 4);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 24 &&
+                } else if (gest.max_travel < 30 &&
                            gest.last_y >= latter_ui::layout().app_dock_y - 35 &&
                            gest.last_y <= latter_ui::layout().app_dock_y + 38) {
                   int target = 0;
@@ -3723,7 +3722,7 @@ touchscreen:
                 }
               } else if (id(gui_page) == 6 && id(room_subpage) == 2 && gest.last_y < 404) {
                 // Commit Light Color Wheel or White Kelvin / Brightness Inspector Action on Release!
-                if (gest.max_travel < 24 && tp.y <= 68 && tp.x >= 110 && tp.x <= 356) {
+                if (gest.max_travel < 30 && tp.y <= 68 && tp.x >= 110 && tp.x <= 356) {
                   latter_ui::light_insp_mode() = (latter_ui::light_insp_mode() == 0) ? 1 : 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                 } else if (latter_ui::light_insp_mode() == 0) {
@@ -3765,7 +3764,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > 88 && gest.last_y < 404) {
-                if (gest.max_travel < 24) {
+                if (gest.max_travel < 30) {
                   if (is_right_chevron_zone(tp) && id(room_subpage) != 2 && ((id(room_subpage) == 1 && id(room_area_total_pages) > 1) || (id(room_subpage) == 0 && id(room_browse_total_pages) > 1))) {
                     int delta = (tp.y < 215) ? -1 : 1;
                     if (id(room_subpage) == 1 && id(room_area_total_pages) > 1) {
@@ -3899,7 +3898,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < (latter_ui::SCREEN_H - 36)) {
-                if (gest.max_travel < 24) {
+                if (gest.max_travel < 30) {
                   if (tp.y >= latter_ui::layout().app_dock_y - 35 &&
                       tp.y <= latter_ui::layout().app_dock_y + 38 &&
                       tp.x >= latter_ui::SCREEN_CX - 165 && tp.x <= latter_ui::SCREEN_CX + 165) {
@@ -3974,7 +3973,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 0 && !id(menu_scroll_active) && gest.last_y < 408) {
-                if (gest.max_travel < 24) {
+                if (gest.max_travel < 30) {
                   if (is_right_chevron_zone(tp)) {
                     int target_pg = (id(stuff_menu_page) == 0) ? 1 : 0;
                     id(menu_scroll_active) = true;
@@ -4044,7 +4043,7 @@ touchscreen:
                         latter_ui::cal_map_pan_y() + ((dy < 0) ? step_y : -step_y)));
                   }
                   id(fetch_calendar_map_snapshot).execute();
-                } else if (gest.max_travel < 24) {
+                } else if (gest.max_travel < 30) {
                   if (tp.y >= 188 && tp.y <= 278 && tp.x <= 86) {
                     // Left (-) Zoom Out Button
                     if (latter_ui::cal_map_zoom() > 10) {
@@ -4073,7 +4072,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 7 && id(remote_subpage) == 1 &&
-                         gest.max_travel < 24 && gest.last_y >= 84 && gest.last_y < 404) {
+                         gest.max_travel < 30 && gest.last_y >= 84 && gest.last_y < 404) {
                 if (tp.x >= latter_ui::SCREEN_CX - 143 && tp.x <= latter_ui::SCREEN_CX + 143 && tp.y >= 84 && tp.y < 146) {
                   id(remote_send_key).execute(9, -1);
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -4107,7 +4106,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 12 &&
-                         gest.max_travel < 24 && gest.last_y < 404) {
+                         gest.max_travel < 30 && gest.last_y < 404) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
                 int c_total = latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, c_ids, c_names);
                 if (latter_ui::cam_quick_reply_open()) {
@@ -4196,7 +4195,7 @@ touchscreen:
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 11 &&
-                         gest.max_travel < 24 && gest.last_y >= 80 && gest.last_y < 404) {
+                         gest.max_travel < 30 && gest.last_y >= 80 && gest.last_y < 404) {
                 int slot_idx = get_5slot_index(tp, latter_ui::SCREEN_CX - 145, latter_ui::SCREEN_CX + 145);
                 if (slot_idx >= 0 && slot_idx <= 4) {
                   std::string m_slots[latter_ui::MAX_MACRO_ITEMS], m_names[latter_ui::MAX_MACRO_ITEMS], m_acts[latter_ui::MAX_MACRO_ITEMS];
@@ -4212,7 +4211,7 @@ touchscreen:
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 9 &&
                          latter_ui::cal_detail_mode() == 0 && !latter_ui::cal_quick_add_open() &&
-                         gest.max_travel < 24 && gest.last_y >= 80 && gest.last_y < 404) {
+                         gest.max_travel < 30 && gest.last_y >= 80 && gest.last_y < 404) {
                 int slot_idx = get_5slot_index(tp, 75, 385);
                 if (slot_idx >= 0) {
                   std::string s_name = (slot_idx == 0) ? id(cal_slot_1_name) : (slot_idx == 1) ? id(cal_slot_2_name) : (slot_idx == 2) ? id(cal_slot_3_name) : (slot_idx == 3) ? id(cal_slot_4_name) : id(cal_slot_5_name);
