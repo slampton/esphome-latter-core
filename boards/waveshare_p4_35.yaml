@@ -25,6 +25,9 @@ esp32:
     type: esp-idf
     sdkconfig_options:
       CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "60"
+      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0: "n"
+      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1: "n"
       CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
       CONFIG_SPIRAM_USE_CAPS_ALLOC: "n"
       CONFIG_SPIRAM_USE_MALLOC: "y"
@@ -62,7 +65,25 @@ update:
     entity_category: config
     type: http
     source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
-    update_interval: 6h
+    update_interval: never
+
+interval:
+  - interval: 20s
+    then:
+      - lambda: |-
+          static bool c6_checked_once = false;
+          if (!c6_checked_once && id(wifi_ctrl).is_connected()) {
+            c6_checked_once = true;
+            id(update_c6_coprocessor).check();
+          } else if (c6_checked_once) {
+            static bool c6_logged_once = false;
+            if (!c6_logged_once && !id(update_c6_coprocessor).update_info.current_version.empty()) {
+              c6_logged_once = true;
+              ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
+                       id(update_c6_coprocessor).update_info.current_version.c_str(),
+                       id(update_c6_coprocessor).update_info.latest_version.c_str());
+            }
+          }
 
 i2c:
   - id: bus_internal
