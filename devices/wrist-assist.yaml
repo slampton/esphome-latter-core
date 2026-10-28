@@ -95,7 +95,7 @@ esp32_ble_beacon:
   type: iBeacon
   uuid: "504F434B-4554-4153-5354-000000000210"
   major: 1
-  minor: 1
+  minor: 2
   measured_power: -59
   min_interval: 500ms
   max_interval: 1000ms

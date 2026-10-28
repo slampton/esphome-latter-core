@@ -466,7 +466,12 @@ interval:
           // BLE Presence Beacon & Improv Supervisor while display is awake:
           uint32_t now_1s_ms = millis();
           if (id(display_power_state) == 0 && !id(is_hibernating) && !id(ota_in_progress)) {
+            #if defined(CONFIG_IDF_TARGET_ESP32P4)
+            const bool sdio_ready = id(wifi_ctrl).is_connected() && (now_1s_ms > 8000U);
+            const bool want_ble = id(ble_room_beacon_switch).state && sdio_ready;
+            #else
             const bool want_ble = id(ble_room_beacon_switch).state || (!id(wifi_ctrl).is_connected() && now_1s_ms > 15000U);
+            #endif
             if (want_ble && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
               ESP_LOGI("ble", "Enabling BLE radio (Room Presence Beacon / Improv)");
               id(ble_ctrl).enable();
