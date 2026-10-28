@@ -50,9 +50,13 @@ esphome:
             if (id(remote_slot_0_name).empty()) id(remote_slot_0_name) = "TV Remote";
         - component.update: batt_level
         - lambda: |-
+            #if !defined(CONFIG_IDF_TARGET_ESP32P4)
             if (!id(ble_room_beacon_switch).state) {
               id(ble_room_beacon_switch).publish_state(true);
             }
+            #else
+            id(ble_room_beacon_switch).publish_state(false);
+            #endif
             esphome::voice_assistant::ensure_wake_words_restored(id(va), true);
             id(va_active_wake_word).publish_state(
                 esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
@@ -1349,7 +1353,7 @@ globals:
 http_request:
   id: http_client
   verify_ssl: false
-  timeout: 15s
+  timeout: 60s
 
 image:
   - platform: sendspin

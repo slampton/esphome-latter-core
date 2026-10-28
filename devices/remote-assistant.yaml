@@ -78,16 +78,7 @@ wifi:
 
 esp32_ble:
   id: ble_ctrl
-  enable_on_boot: true
-
-esp32_ble_beacon:
-  type: iBeacon
-  uuid: "504F434B-4554-4153-5354-000000000210"
-  major: 1
-  minor: 1
-  measured_power: -59
-  min_interval: 500ms
-  max_interval: 1000ms
+  enable_on_boot: false
 
 safe_mode:
   boot_is_good_after: 5s
