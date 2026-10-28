@@ -445,7 +445,21 @@ interval:
             }
           }
 
-          // Local Speaker Hardware Hardware-Mute Guard:
+          // Voice Assistant Stuck-Open Watchdog (auto-recovers mic/speaker if HA drops mid-session >35s):
+          static uint32_t va_stuck_since_ms = 0;
+          if (id(va_active) || !id(va_status_text).empty()) {
+            if (va_stuck_since_ms == 0) va_stuck_since_ms = millis();
+            else if ((millis() - va_stuck_since_ms > 35000U) &&
+                     !id(va).is_running() && !id(announcement_mixing_input).is_running()) {
+              ESP_LOGW("va", "Voice Assistant watchdog triggered (>35s idle): resetting session & mic");
+              va_stuck_since_ms = 0;
+              id(cancel_voice_assistant).execute();
+            }
+          } else {
+            va_stuck_since_ms = 0;
+          }
+
+          // Local Speaker Hardware-Mute Guard:
           // If Sendspin is actively streaming (MEDIA_PLAYER_STATE_PLAYING) to the local player
           // but speaker_enable is OFF (e.g. first stream after boot or pre-warmed Sendspin stream
           // where on_play did not re-fire), immediately route I2S to speaker and unmute ES8311 DAC.
@@ -551,7 +565,7 @@ interval:
           // (on a non-draw tick so I2C and QSPI never stack in the same 50ms callback).
           static uint8_t fallback_div = 0;
           const bool irq_pin_low = pocket_ui::hal_pmu_irq_asserted();
-          if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 20U && !id(va_active) && !id(va_tts_received))) {
+          if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 4U && !id(va_active) && !id(va_tts_received))) {
             if (!irq_pin_low) fallback_div = 0;
             uint8_t irq_reg = 0x49;
             uint8_t irq_val = 0;
@@ -699,9 +713,13 @@ script:
       - lambda: |-
           id(display_power_state) = 2; // SCREEN_OFF
           id(sleep_start_time) = millis();
+          id(active_game) = 0;
+          if (pocket_ui::cam_call_active() || pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_listen_active()) {
+            id(stop_doorbell_call).execute();
+          }
           id(disp1).update(); // Flush single all-black frame before cutting panel brightness
           pocket_ui::screen_is_off_standby() = true;
-          id(disp1).stop_poller(); // Stop 1Hz 434KB QSPI framebuffer transfers while screen is off!
+          id(disp1).stop_poller(); // Stop 1Hz QSPI/SPI framebuffer transfers while screen is off!
           id(display_brightness).turn_off().perform();
 
           // Disable BLE advertising if it was left on so 2.4GHz BLE never drains battery in Standby
@@ -713,9 +731,14 @@ script:
           auto ww_mode = id(va_wake_word_mode).current_option();
           const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
 
-          // Power down speaker amp & ES8311 DAC analog bias when local music is not playing
+          // Synchronize wake word state immediately (stops micro_wake_word if Docked Only while on battery)
+          id(sync_wake_word_state).execute();
+
+          // Power down speaker amp, mute ES8311 DAC, and gate ES8311/ES7210 analog bias when audio & wake word are idle
           if (!local_audio_playing) {
+            id(es8311_dac).set_mute_on();
             id(speaker_enable).turn_off();
+            id(route_i2s_to_mic).execute();
             if (!ww_active) {
               id(hal_set_audio_codecs_standby).execute(true);
             }
@@ -931,9 +954,10 @@ script:
               } else {
                 if (id(display_off_timeout).current_option() == "Never") return false;
               }
-              // Keep display awake while Flashlight (subpage 5) or Bubble Level (subpage 7) is actively in use
+              // Keep display awake while Flashlight (subpage 5), Bubble Level (subpage 7), or 2-Way Camera Call is active
               const bool active_tool_awake =
-                  (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7));
+                  (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 ||
+                                         (id(stuff_subpage) == 12 && (pocket_ui::cam_call_active() || pocket_ui::cam_listen_active()))));
               const bool in_hand_hold = pocket_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
               return !id(ota_in_progress) &&
                      !id(va_active) &&

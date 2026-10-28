@@ -333,11 +333,17 @@ script:
     then:
       - lambda: |-
           if (standby) {
-            // Put ES8311 DAC (0x18) and ES7210 Mic ADC (0x40) into low-power standby when idle in Tier 2 Standby
             uint8_t dac_lp[2] = {0x0D, 0xFC};
             id(bus_internal).write(0x18, dac_lp, 2);
+            uint8_t adc_lp1[2] = {0x06, 0x7F};
+            uint8_t adc_lp2[2] = {0x40, 0xFF};
+            id(bus_internal).write(0x40, adc_lp1, 2);
+            id(bus_internal).write(0x40, adc_lp2, 2);
           } else {
-            // Restore ES8311 DAC analog bias on wake
             uint8_t dac_wake[2] = {0x0D, 0x01};
             id(bus_internal).write(0x18, dac_wake, 2);
+            uint8_t adc_wake1[2] = {0x40, 0x43};
+            uint8_t adc_wake2[2] = {0x06, 0x00};
+            id(bus_internal).write(0x40, adc_wake1, 2);
+            id(bus_internal).write(0x40, adc_wake2, 2);
           }

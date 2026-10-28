@@ -217,6 +217,12 @@ script:
     mode: restart
     then:
       - lambda: |-
+          gpio_deep_sleep_hold_dis();
+          gpio_hold_dis(GPIO_NUM_23);
+          gpio_hold_dis(GPIO_NUM_27);
+          gpio_hold_dis(GPIO_NUM_28);
+          gpio_hold_dis(GPIO_NUM_29);
+          gpio_hold_dis(GPIO_NUM_53);
           // Pulse FT6336 Touch Reset (GPIO29) and enable LCD Backlight (GPIO28) immediately on boot
           gpio_set_direction(GPIO_NUM_29, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_29, 0);
@@ -230,13 +236,54 @@ script:
       - lambda: |-
           uint8_t irq_en[2] = {0x41, 0x0C};
           id(bus_internal).write(0x34, irq_en, 2);
+          uint8_t clr_all[2] = {0x48, 0xFF};
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x49;
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x4A;
+          id(bus_internal).write(0x34, clr_all, 2);
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
       - lambda: |-
+          // 1. Put ES8311 Audio Codec (0x18) into Standby/Power-Down Mode
+          uint8_t dac_sleep1[2] = {0x0D, 0xFF};
+          uint8_t dac_sleep2[2] = {0x00, 0x80};
+          id(bus_internal).write(0x18, dac_sleep1, 2);
+          id(bus_internal).write(0x18, dac_sleep2, 2);
+
+          // 2. Force Speaker Power Amplifier (GPIO53) and Backlight (GPIO28) LOW and hold
+          pocket_ui::hal_set_display_brightness(&id(disp1), 0);
+          gpio_set_direction(GPIO_NUM_53, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_53, 0);
+          gpio_hold_en(GPIO_NUM_53);
+
+          gpio_set_direction(GPIO_NUM_28, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_28, 0);
+          gpio_hold_en(GPIO_NUM_28);
+
+          // 3. Deselect Display CS (GPIO23 HIGH) and hold Display/Touch in Reset (GPIO27/29 LOW)
+          gpio_set_direction(GPIO_NUM_23, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_23, 1);
+          gpio_hold_en(GPIO_NUM_23);
+
+          gpio_set_direction(GPIO_NUM_27, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_27, 0);
+          gpio_hold_en(GPIO_NUM_27);
+
+          gpio_set_direction(GPIO_NUM_29, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_29, 0);
+          gpio_hold_en(GPIO_NUM_29);
+
+          gpio_deep_sleep_hold_en();
           global_preferences->sync();
+
+          // 4. Command AXP2101 PMIC to cut system voltage rails (<40uA Hibernate)
           uint8_t axp_pwr_off[2] = {0x10, 0x01};
           id(bus_internal).write(0x34, axp_pwr_off, 2);
+
+          delay(100);
+          esp_deep_sleep_start();
   - id: hal_set_imu_power_mode
     mode: restart
     parameters:
@@ -248,4 +295,11 @@ script:
     parameters:
       standby: bool
     then:
-      - lambda: '(void)standby;'
+      - lambda: |-
+          if (standby) {
+            uint8_t dac_lp[2] = {0x0D, 0xFC};
+            id(bus_internal).write(0x18, dac_lp, 2);
+          } else {
+            uint8_t dac_wake[2] = {0x0D, 0x01};
+            id(bus_internal).write(0x18, dac_wake, 2);
+          }

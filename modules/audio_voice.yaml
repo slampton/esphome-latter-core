@@ -363,18 +363,21 @@ voice_assistant:
   on_error:
     then:
       - script.stop: va_tts_drain_and_finish
-      - script.execute: resume_music_after_va
       - lambda: |-
+          esphome::voice_assistant::abort_voice_assistant(id(va));
+          pocket_ui::cam_intercom_ptt_active() = false;
           id(va_vad_active) = false;
           id(va_tts_received) = false;
           id(va_active) = false;
           id(va_status_text) = "";
-          id(gui_page) = id(return_page);
+          if (id(return_page) >= 0) id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
               id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            pocket_ui::hal_set_wifi_power_save(1);
+            pocket_ui::hal_set_wifi_power_save(2);
           }
           ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
+      - script.execute: resume_music_after_va
+      - script.execute: mp_idle_debounce
       - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
       - if:
           condition:
@@ -742,9 +745,11 @@ script:
                   lambda: |-
                     return !id(va_active) && !id(va_tts_received) &&
                            !id(va).is_running() && !id(announcement_mixing_input).is_running() &&
+                           !pocket_ui::cam_call_active() && !pocket_ui::cam_listen_active() &&
                            (id(active_game) == 0);
                 then:
                   - audio_dac.mute_on: es8311_dac
+                  - switch.turn_off: speaker_enable
                   - script.execute: route_i2s_to_mic
                   - script.execute: sync_wake_word_state
 

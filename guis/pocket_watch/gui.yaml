@@ -2940,6 +2940,9 @@ touchscreen:
               gest.swipe_committed = true;
               gest.last_swipe_ms = now_u;
               if (id(active_game) > 0) id(stop_alarm_sound).execute();
+              if (pocket_ui::cam_call_active() || pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_listen_active()) {
+                id(stop_doorbell_call).execute();
+              }
               pocket_ui::tools_direct_home() = false;
               pocket_ui::timer_view_slot() = 0;
               id(alarm_edit_idx) = 0;
@@ -3253,6 +3256,9 @@ touchscreen:
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_rel;
                 if (id(active_game) > 0) id(stop_alarm_sound).execute();
+                if (pocket_ui::cam_call_active() || pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_listen_active()) {
+                  id(stop_doorbell_call).execute();
+                }
                 pocket_ui::tools_direct_home() = false;
                 pocket_ui::timer_view_slot() = 0;
                 id(alarm_edit_idx) = 0;
