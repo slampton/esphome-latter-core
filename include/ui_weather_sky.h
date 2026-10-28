@@ -1894,46 +1894,51 @@ inline void render_weather_page(
       apply_weather_sim_override(weather_sim_opt, fc_days[0].cond, dummy_night);
     }
 
-    // Cohesive 4-column layout centered on cx with comfortable row spacing & generous bottom dock buffer
+    // Cohesive 4-column Forecast layout (27pt font_date on wide square screens >=460px; 21pt font_small elsewhere)
+    const bool large_fc = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 460);
     const int fc_top_y  = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 48 : 54);
-    const int fc_step_y = LATTER_ROUND_DISPLAY ? 47 : ((SCREEN_W < 380) ? 43 : ((SCREEN_H >= 500) ? 48 : 46));
-    const int row_hw    = (SCREEN_W < 380) ? 132 : 148;
-    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 28 : 32);
-    const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : 88);
-    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : 22);
-    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : 34);
+    const int fc_step_y = LATTER_ROUND_DISPLAY ? 47 : ((SCREEN_W < 380) ? 46 : ((SCREEN_H >= 500) ? 55 : 52));
+    const int row_hw    = (SCREEN_W < 380) ? 132 : (large_fc ? 190 : 154);
+    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 28 : (large_fc ? 42 : 34));
+    const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : (large_fc ? 114 : 92));
+    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : (large_fc ? 26 : 22));
+    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : (large_fc ? 44 : 34));
 
     for (int i = 0; i < fc_count && i < 5; i++) {
       int ry = fc_top_y + i * fc_step_y;
       const auto &d = fc_days[i];
-
-      it.print(x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
-
       int ry_data = ry + 1;
-      render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
-      std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 42) - x_cond, font_small);
-      it.print(x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+      render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
       std::string hi_str = d.high + "°";
       std::string lo_str = d.low + "°";
-      it.print(x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
-      it.print(x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
-      it.print(x_slash + 8, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
+      if (large_fc) {
+        it.print(x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
+        std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 56) - x_cond, font_date);
+        it.print(x_cond, ry_data, font_date, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+        it.print(x_slash - 10, ry_data, font_date,  col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
+        it.print(x_slash,      ry_data, font_small, col_slate, TextAlign::CENTER, "/");
+        it.print(x_slash + 10, ry_data, font_date,  col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
+      } else {
+        it.print(x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
+        std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 42) - x_cond, font_small);
+        it.print(x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+        it.print(x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
+        it.print(x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
+        it.print(x_slash + 8, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
+      }
     }
 
   } else if (sky_weather_subpage == 2) {
     // ----------------------------------------------------------------------
-    // SUBPAGE 2: SUN (CENTERED SOLAR ARC + SUNRISE/SUNSET ANCHORED BELOW ARC)
+    // SUBPAGE 2: SUN (TRUE 1:1 HALF-CIRCLE SOLAR ARC + BALANCED SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
 
-    const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 44 : 46);
-    const int sun_bot_y = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 76 : 62);
-    const int avail_h   = sun_bot_y - sun_top_y;
-
-    const int arc_rx = LATTER_ROUND_DISPLAY ? 132 : std::min(168, (SCREEN_W / 2) - ((SCREEN_W < 380) ? 34 : 44));
-    const int arc_ry = LATTER_ROUND_DISPLAY ? 118 : std::min(arc_rx - 6, (avail_h * 52) / 100);
+    const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : 44);
+    const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H >= 500) ? 138 : 134));
+    const int arc_ry = arc_rx; // True 1:1 geometric half-circle across all devices!
     const int arc_cy = sun_top_y + arc_ry;
 
     for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
@@ -1978,9 +1983,9 @@ inline void render_weather_page(
     std::string s_rise = format_iso_time(sun_next_rising, is_24h_format);
     std::string s_set = format_iso_time(sun_next_setting, is_24h_format);
 
-    const int col_dx = (arc_rx * 58) / 100;
-    const int lbl_y  = arc_cy + 42;
-    const int val_y  = arc_cy + 70;
+    const int col_dx = (arc_rx * 60) / 100;
+    const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + 78);
+    const int val_y  = lbl_y + 30;
 
     it.print(cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
     it.print(cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
@@ -1990,7 +1995,7 @@ inline void render_weather_page(
 
   } else if (sky_weather_subpage == 3) {
     // ----------------------------------------------------------------------
-    // SUBPAGE 3: MOON (ENLARGED LUNAR DISC + LOWERED PHASE TELEMETRY)
+    // SUBPAGE 3: MOON (ENLARGED LUNAR DISC + BALANCED PHASE TELEMETRY)
     // ----------------------------------------------------------------------
     double cycle = 0.5;
     int illum_pct = 50;
@@ -2000,20 +2005,26 @@ inline void render_weather_page(
 
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
 
-    const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : 36);
-    const int illum_y    = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 82 : 68);
-    const int phase_y    = illum_y - 28;
-    const int disc_span  = (phase_y - 22) - moon_top_y;
-    const int moon_r     = LATTER_ROUND_DISPLAY ? 78 : std::min(120, std::min((SCREEN_W / 2) - 42, disc_span / 2));
+    const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
+    const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : 36);
+    const int illum_y    = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 64 : (large_moon_txt ? 64 : 68));
+    const int phase_y    = illum_y - (large_moon_txt ? 32 : 28);
+    const int text_gap   = LATTER_ROUND_DISPLAY ? 28 : (large_moon_txt ? 34 : 22);
+    const int disc_span  = (phase_y - text_gap) - moon_top_y;
+    const int moon_r     = LATTER_ROUND_DISPLAY ? 86 : std::min(120, std::min((SCREEN_W / 2) - 42, disc_span / 2));
     const int moon_cy    = moon_top_y + moon_r;
 
     render_lunar_disc(it, cx, moon_cy, moon_r, cycle, true);
 
-    it.print(cx, phase_y, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
-
     char illum_buf[32];
     snprintf(illum_buf, sizeof(illum_buf), "%d%% Illumination", illum_pct);
-    it.print(cx, illum_y, font_small, col_white, TextAlign::CENTER, illum_buf);
+    if (large_moon_txt) {
+      it.print(cx, phase_y, font_date, col_slate, TextAlign::CENTER, mp_label.c_str());
+      it.print(cx, illum_y, font_date, col_white, TextAlign::CENTER, illum_buf);
+    } else {
+      it.print(cx, phase_y, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
+      it.print(cx, illum_y, font_small,    col_white, TextAlign::CENTER, illum_buf);
+    }
   }
 
   render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);

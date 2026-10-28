@@ -6,7 +6,7 @@ font:
     id: font_chrono_time
     size: 38
     glyphs:
-      - '0123456789:.- sAMP'
+      - '0123456789:.- sAMP°%'
   - file: "gfonts://Roboto"
     id: font_micro
     size: 14
@@ -16,7 +16,7 @@ font:
     id: font_time
     size: 77
     glyphs:
-      - '0123456789:.- %'
+      - '0123456789:.- °%'
   - file: "gfonts://Roboto"
     id: font_date
     size: 27
