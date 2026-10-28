@@ -2446,6 +2446,23 @@ interval:
               pocket_ui::cam_intercom_status() = "";
               pocket_ui::schedule_disp_update(&id(disp1));
             }
+            #if !POCKET_UI_ROUND_DISPLAY
+            if (pocket_ui::SCREEN_W != pocket_ui::SCREEN_H) {
+              float ax = id(accel_x).state;
+              float ay = id(accel_y).state;
+              if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
+                bool want_land = (std::abs(ax) > 0.68f && std::abs(ay) < 0.42f);
+                bool want_port = (std::abs(ay) > 0.68f && std::abs(ax) < 0.42f);
+                if ((want_land && !pocket_ui::cam_landscape_mode()) ||
+                    (want_port && pocket_ui::cam_landscape_mode())) {
+                  pocket_ui::cam_landscape_mode() = want_land;
+                  id(camera_snapshot_art).release();
+                  id(fetch_on_demand_camera).execute();
+                  pocket_ui::schedule_disp_update(&id(disp1));
+                }
+              }
+            }
+            #endif
             if (now_cam_ms - pocket_ui::last_cam_live_fetch_ms() >= 2200U) {
               pocket_ui::last_cam_live_fetch_ms() = now_cam_ms;
               id(fetch_on_demand_camera).execute();

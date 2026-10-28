@@ -2412,13 +2412,24 @@ inline void render_tool_camera(
   cur_cam_title = fit_text_to_width_font(cur_cam_title, 210, font_small);
 
   Color hdr_brd = cam_call_active() ? Color(66, 188, 106) : (cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary);
-  render_modern_card(it, cx, 40, 256, 34, 10, Color(10, 14, 22), hdr_brd,
+  const int hdr_w = (!POCKET_UI_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? 216 : 256;
+  const int hdr_cx = (!POCKET_UI_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? (cx - 24) : cx;
+  render_modern_card(it, hdr_cx, 40, hdr_w, 34, 10, Color(10, 14, 22), hdr_brd,
                      cur_cam_title.c_str(), col_white, font_small);
   if (cam_count > 1 && cam_intercom_status().empty()) {
-    it.print(cx - 116, 40, font_small, theme_secondary, TextAlign::CENTER, "<");
-    it.print(cx + 116, 40, font_small, theme_secondary, TextAlign::CENTER, ">");
+    it.print(hdr_cx - (hdr_w / 2) + 12, 40, font_small, theme_secondary, TextAlign::CENTER, "<");
+    it.print(hdr_cx + (hdr_w / 2) - 12, 40, font_small, theme_secondary, TextAlign::CENTER, ">");
     render_dock_page_pips(it, cx, 66, cam_count, cam_carousel_idx(), col_white, col_slate);
   }
+  #if !POCKET_UI_ROUND_DISPLAY
+  if (SCREEN_W != SCREEN_H) {
+    // Direct 1-Tap [90°] Widescreen Toggle Badge on Rectangular Screens (e.g. 320x480 P4 Remote Assistant & 410x502 Wrist Assist)
+    render_modern_card(it, SCREEN_W - 34, 40, 48, 34, 9,
+                       cam_landscape_mode() ? Color(20, 42, 62) : Color(12, 16, 24),
+                       cam_landscape_mode() ? theme_primary : Color(58, 68, 84),
+                       "90°", cam_landscape_mode() ? col_white : theme_secondary, font_small);
+  }
+  #endif
 
   // 2. Bottom Translucent Two-Way Doorbell Intercom Control Deck (y = 368)
   if (has_url) {

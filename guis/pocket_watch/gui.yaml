@@ -4097,7 +4097,16 @@ touchscreen:
                     pocket_ui::schedule_disp_update(&id(disp1));
                   }
                 } else if (tp.y <= 68) {
-                  if (c_total > 1 && tp.x < pocket_ui::SCREEN_CX - 55) {
+                  if (!POCKET_UI_ROUND_DISPLAY && (pocket_ui::SCREEN_W != pocket_ui::SCREEN_H) &&
+                      tp.x >= (pocket_ui::SCREEN_W - 64)) {
+                    // Direct 1-Tap [90°] Widescreen Toggle on Rectangular Displays
+                    pocket_ui::cam_landscape_mode() = !pocket_ui::cam_landscape_mode();
+                    pocket_ui::cam_intercom_status() = pocket_ui::cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
+                    id(cam_intercom_status_ms) = now_rel;
+                    id(camera_snapshot_art).release();
+                    id(fetch_on_demand_camera).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  } else if (c_total > 1 && tp.x < pocket_ui::SCREEN_CX - 55) {
                     pocket_ui::cam_carousel_idx() = step_wrap(pocket_ui::cam_carousel_idx(), -1, c_total);
                     id(camera_snapshot_art).release();
                     id(fetch_on_demand_camera).execute();
