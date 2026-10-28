@@ -63,15 +63,22 @@ esphome:
             if (cur_vp == "Google" || cur_vp == "Original") {
               id(va_visual_profile).publish_state(cur_vp == "Google" ? "Gemini" : "Nebula");
             }
-            #if defined(CONFIG_IDF_TARGET_ESP32P4) || (defined(LATTER_NO_PMU_IRQ_PIN) && LATTER_NO_PMU_IRQ_PIN)
+            #if !LATTER_HAS_IMU
             if (id(tap_wake_mode).current_option() == "Docked Only") {
               id(tap_wake_mode).publish_state("Always On");
             }
             if (id(pickup_wake_mode).current_option() != "Disabled") {
               id(pickup_wake_mode).publish_state("Disabled");
             }
+            #endif
+            #if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
             if (id(hibernate_timeout_mode).current_option() == "15 min") {
               id(hibernate_timeout_mode).publish_state("Disabled");
+            }
+            #elif !LATTER_HAS_IMU
+            // Self-heal battery-powered non-IMU boards (Remote Assistant) if a previous boot seeded "Disabled"
+            if (id(hibernate_timeout_mode).current_option() == "Disabled") {
+              id(hibernate_timeout_mode).publish_state("15 min");
             }
             #endif
             if (latter_ui::is_wearable_form_factor()) {
