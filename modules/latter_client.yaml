@@ -71,6 +71,9 @@ esphome:
             if (id(pickup_wake_mode).current_option() != "Disabled") {
               id(pickup_wake_mode).publish_state("Disabled");
             }
+            if (id(hibernate_timeout_mode).current_option() == "15 min") {
+              id(hibernate_timeout_mode).publish_state("Disabled");
+            }
             #endif
             if (pocket_ui::is_wrist_watch_board()) {
               static bool watch_pwr_seeded = false;

@@ -78,10 +78,13 @@ interval:
             if (id(update_c6_coprocessor).update_info.current_version.empty() ||
                 id(update_c6_coprocessor).update_info.current_version == "unknown") {
               id(update_c6_coprocessor).setup();
+              id(update_c6_coprocessor).check();
+            } else if (id(update_c6_coprocessor).update_info.latest_version.empty()) {
+              id(update_c6_coprocessor).check();
             }
-            id(update_c6_coprocessor).check();
-            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s",
-                     id(update_c6_coprocessor).update_info.current_version.c_str());
+            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
+                     id(update_c6_coprocessor).update_info.current_version.c_str(),
+                     id(update_c6_coprocessor).update_info.latest_version.c_str());
           }
 
 i2c:
