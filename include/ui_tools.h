@@ -2011,6 +2011,11 @@ inline void render_tool_calendar(
   render_back_button(it, cx, font_small, 426, "< Back");
 }
 
+inline bool &intercom_live_call_mode() {
+  static bool live_mode = true;
+  return live_mode;
+}
+
 inline int parse_intercom_targets_list(
     const std::string &raw,
     std::string out_ids[5],
@@ -2239,11 +2244,6 @@ inline bool &cam_landscape_mode() {
 inline bool &cam_quick_reply_open() {
   static bool open = false;
   return open;
-}
-
-inline bool &intercom_live_call_mode() {
-  static bool live_mode = true;
-  return live_mode;
 }
 
 inline uint32_t &last_cam_live_fetch_ms() {
