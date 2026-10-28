@@ -3172,6 +3172,12 @@ text_sensor:
             }
 
   - platform: homeassistant
+    id: ha_latter_intercom_targets_summary
+    entity_id: ${room_context_sensor}
+    attribute: intercom_targets_summary
+    internal: true
+
+  - platform: homeassistant
     id: ha_latter_custom_bindings_summary
     entity_id: ${room_context_sensor}
     attribute: custom_bindings_summary

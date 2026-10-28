@@ -2011,46 +2011,94 @@ inline void render_tool_calendar(
   render_back_button(it, cx, font_small, 426, "< Back");
 }
 
+inline int parse_intercom_targets_list(
+    const std::string &raw,
+    std::string out_ids[5],
+    std::string out_labels[5]) {
+  out_ids[0] = "all";
+  out_labels[0] = "Call All Rooms (2-Way)";
+  int idx = 1;
+  if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
+    return idx;
+  }
+  size_t pos = 0;
+  idx = 0;
+  while (pos < raw.size() && idx < 5) {
+    size_t semi = raw.find(';', pos);
+    std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
+    pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
+    if (tok.empty()) continue;
+    size_t bar = tok.find('|');
+    std::string tid = (bar == std::string::npos) ? tok : tok.substr(0, bar);
+    std::string tlb = (bar == std::string::npos) ? tok : tok.substr(bar + 1);
+    if (!tid.empty()) {
+      out_ids[idx] = tid;
+      out_labels[idx] = tlb.empty() ? tid : tlb;
+      idx++;
+    }
+  }
+  return idx > 0 ? idx : 1;
+}
+
 template<typename DisplayT, typename FontSmallT>
 inline void render_tool_intercom(
     DisplayT &it, int cx, uint32_t now_ms,
     const std::string &feedback_str, uint32_t feedback_ms,
     FontSmallT *font_small,
     esphome::Color theme_primary, esphome::Color theme_secondary,
-    esphome::Color col_white, esphome::Color col_slate) {
+    esphome::Color col_white, esphome::Color col_slate,
+    const std::string &intercom_targets_summary = "") {
   using esphome::Color;
   using esphome::display::TextAlign;
-  (void)col_slate;
 
   const bool show_fb = (!feedback_str.empty() && (now_ms - feedback_ms < 2200U));
   if (show_fb) {
     std::string fit_fb = fit_text_to_width_font(feedback_str, 280, font_small);
     it.print(cx, 48, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "INTERCOM");
+    render_modern_card(it, cx, 44, 232, 34, 10, Color(18, 24, 34), theme_primary,
+                       intercom_live_call_mode() ? "Mode: 2-Way / SIP >" : "Mode: Broadcast >",
+                       col_white, font_small);
   }
 
   const Color card_bg(22, 27, 36);
   const Color card_brd(52, 62, 78);
   static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
-  static constexpr const char *kPresets[5] = {
-    "Dinner is ready!",
-    "Time to head out!",
-    "Kids, come downstairs!",
-    "Need a hand in here!",
-    "Movie time in Living Room!"
-  };
 
-  for (int i = 0; i < 5; i++) {
-    int y_mid = ROW_YS[i];
-    render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-    // Broadcast wave icon on left
-    it.filled_triangle(104, y_mid - 4, 104, y_mid + 4, 111, y_mid, theme_primary);
-    it.line(114, y_mid - 5, 116, y_mid, theme_secondary);
-    it.line(116, y_mid, 114, y_mid + 5, theme_secondary);
-    it.print(124, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
+  if (intercom_live_call_mode()) {
+    std::string t_ids[5], t_lbls[5];
+    int cnt = parse_intercom_targets_list(intercom_targets_summary, t_ids, t_lbls);
+    for (int i = 0; i < cnt; i++) {
+      int y_mid = ROW_YS[i];
+      bool is_sip = (t_ids[i].rfind("sip:", 0) == 0);
+      Color brd_c = is_sip ? theme_secondary : Color(66, 188, 106);
+      render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, col_white, font_small);
+      it.filled_circle(cx - 124, y_mid, 6, brd_c);
+      std::string fit_l = fit_text_to_width_font(t_lbls[i], 230, font_small);
+      it.print(cx - 108, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
+    }
+    if (cnt < 5) {
+      render_modern_card(it, cx, ROW_YS[4], 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
+                         "Unlock Gate / Door (DTMF)", col_white, font_small);
+    }
+  } else {
+    static constexpr const char *kPresets[5] = {
+      "Dinner is ready!",
+      "Time to head out!",
+      "Kids, come downstairs!",
+      "Need a hand in here!",
+      "Movie time in Living Room!"
+    };
+    for (int i = 0; i < 5; i++) {
+      int y_mid = ROW_YS[i];
+      render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
+      it.filled_triangle(cx - 129, y_mid - 4, cx - 129, y_mid + 4, cx - 122, y_mid, theme_primary);
+      it.line(cx - 119, y_mid - 5, cx - 117, y_mid, theme_secondary);
+      it.line(cx - 117, y_mid, cx - 119, y_mid + 5, theme_secondary);
+      it.print(cx - 109, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
+    }
   }
-
+  (void)col_slate;
   render_back_button(it, cx, font_small, 426, "< Back");
 }
 
@@ -2183,9 +2231,19 @@ inline int &cam_anc_mode_idx() {
   return m;
 }
 
+inline bool &cam_landscape_mode() {
+  static bool landscape = false;
+  return landscape;
+}
+
 inline bool &cam_quick_reply_open() {
   static bool open = false;
   return open;
+}
+
+inline bool &intercom_live_call_mode() {
+  static bool live_mode = true;
+  return live_mode;
 }
 
 inline uint32_t &last_cam_live_fetch_ms() {
@@ -2273,11 +2331,13 @@ inline std::string build_carousel_camera_url(
   for (char &c : slug) {
     if (c == '-') c = '_';
   }
+  std::string rot_q = cam_landscape_mode() ? "&rot=90" : "";
   return orig + "/api/latter/camera/" + slug +
          "?entity_id=" + target_ent +
          "&w=" + (screen_w ? screen_w : "466") +
          "&h=" + (screen_h ? screen_h : "466") +
          "&shape=" + (art_shape ? art_shape : "circle") +
+         rot_q +
          "&v=" + std::to_string(now_ms);
 }
 
@@ -2305,19 +2365,22 @@ inline void render_tool_camera(
   const int anc_idx = std::max(0, std::min(2, cam_anc_mode_idx()));
 
   if (cam_quick_reply_open()) {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "DOORBELL INTERCOM");
+    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
     const Color card_bg(22, 27, 36);
     const Color card_brd(52, 62, 78);
-    render_modern_card(it, cx, 112, 296, 44, 12, card_bg, theme_primary,
+    render_modern_card(it, cx, 110, 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
+                       "Unlock Door / Gate (DTMF)", col_white, font_small);
+    render_modern_card(it, cx, 173, 296, 44, 12, card_bg, theme_primary,
                        "Leave package at door", col_white, font_small);
-    render_modern_card(it, cx, 175, 296, 44, 12, card_bg, theme_primary,
+    render_modern_card(it, cx, 236, 296, 44, 12, card_bg, theme_primary,
                        "We'll be right there!", col_white, font_small);
-    render_modern_card(it, cx, 238, 296, 44, 12, card_bg, card_brd,
+    render_modern_card(it, cx, 299, 296, 44, 12, card_bg, card_brd,
                        "No soliciting, thank you", col_white, font_small);
-    char anc_lbl[48];
-    snprintf(anc_lbl, sizeof(anc_lbl), "DSP Mode: %s >", kAncNames[anc_idx]);
-    render_modern_card(it, cx, 301, 296, 44, 12, Color(18, 28, 40), theme_secondary,
-                       anc_lbl, col_white, font_small);
+    char view_lbl[56];
+    snprintf(view_lbl, sizeof(view_lbl), "View: %s  •  %s",
+             cam_landscape_mode() ? "90° Landscape" : "Portrait", kAncNames[anc_idx]);
+    render_modern_card(it, cx, 362, 296, 44, 12, Color(18, 28, 40), theme_secondary,
+                       view_lbl, col_white, font_small);
     render_back_button(it, cx, font_small, 426, "< Back", col_white);
     return;
   }

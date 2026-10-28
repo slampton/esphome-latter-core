@@ -1,0 +1,22 @@
+# ==============================================================================
+# Latter Core Mixin: ESP32-P4 MIPI-CSI 5MP OV5647 Onboard Camera (mixins/p4_camera.yaml)
+# Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 ("Remote Assistant") & 4B ("Desk Assistant")
+# Exposes a live Home Assistant camera entity that automatically joins the Latter Camera Carousel!
+# Usage:
+#   packages:
+#     latter.p4_cam: github://slampton/esphome-latter-core/mixins/p4_camera.yaml@main
+# ==============================================================================
+
+esp_ldo:
+  - channel: 3
+    voltage: 2.5V
+
+mipi_csi_cam:
+  id: p4_onboard_camera
+  name: "Onboard Camera"
+  sensor: ov5647
+  i2c_id: bus_internal
+  resolution: 640x480
+  pixel_format: RGB565
+  jpeg_quality: 12
+  framerate: 10fps
