@@ -3760,6 +3760,55 @@ script:
             message: !lambda 'return id(cam_intercom_message).c_str();'
             anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
 
+  - id: start_doorbell_call
+    mode: restart
+    then:
+      - lambda: |-
+          pocket_ui::cam_call_active() = true;
+          pocket_ui::cam_listen_active() = true;
+          pocket_ui::cam_intercom_status() = "2-WAY CALL (ANC)";
+          id(cam_intercom_status_ms) = millis();
+          id(cam_intercom_action) = "listen_start";
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: send_doorbell_intercom_cmd
+      - delay: 350ms
+      - if:
+          condition:
+            lambda: 'return pocket_ui::cam_call_active() && id(va).get_api_connection() != nullptr;'
+          then:
+            - script.execute: start_doorbell_ptt
+
+  - id: stop_doorbell_call
+    mode: restart
+    then:
+      - script.stop: rearm_doorbell_duplex_mic
+      - script.stop: start_doorbell_ptt
+      - lambda: |-
+          pocket_ui::cam_call_active() = false;
+          pocket_ui::cam_intercom_ptt_active() = false;
+          pocket_ui::cam_listen_active() = false;
+          pocket_ui::cam_intercom_status() = "CALL ENDED";
+          id(cam_intercom_status_ms) = millis();
+          id(cam_intercom_action) = "listen_stop";
+          esphome::voice_assistant::abort_voice_assistant(id(va));
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: send_doorbell_intercom_cmd
+      - media_player.stop: pocket_music_player
+      - script.execute: mp_idle_debounce
+
+  - id: rearm_doorbell_duplex_mic
+    mode: restart
+    then:
+      - delay: 2800ms
+      - if:
+          condition:
+            lambda: |-
+              return pocket_ui::cam_call_active() &&
+                     (id(gui_page) == 8 && id(stuff_subpage) == 12) &&
+                     (id(display_power_state) == 0);
+          then:
+            - script.execute: start_doorbell_ptt
+
   - id: start_doorbell_ptt
     mode: restart
     then:
@@ -3768,18 +3817,26 @@ script:
             lambda: 'return id(va).get_api_connection() == nullptr;'
           then:
             - lambda: |-
-                pocket_ui::cam_quick_reply_open() = true;
+                if (!pocket_ui::cam_call_active()) {
+                  pocket_ui::cam_quick_reply_open() = true;
+                }
                 pocket_ui::schedule_disp_update(&id(disp1));
             - script.stop: start_doorbell_ptt
       - if:
           condition:
-            lambda: 'return pocket_ui::cam_listen_active();'
+            lambda: |-
+              #if defined(CONFIG_IDF_TARGET_ESP32P4)
+              // On ESP32-P4, full-duplex I2S allows keeping the inbound camera audio stream running!
+              return false;
+              #else
+              return pocket_ui::cam_listen_active() && !pocket_ui::cam_call_active();
+              #endif
           then:
             - lambda: |-
                 pocket_ui::cam_listen_active() = false;
                 id(cam_intercom_action) = "listen_stop";
             - script.execute: send_doorbell_intercom_cmd
-      - media_player.stop: pocket_music_player
+            - media_player.stop: pocket_music_player
       - if:
           condition:
             micro_wake_word.is_running:
@@ -3788,7 +3845,7 @@ script:
             - delay: 20ms
       - lambda: |-
           pocket_ui::cam_intercom_ptt_active() = true;
-          pocket_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
+          pocket_ui::cam_intercom_status() = pocket_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
           id(cam_intercom_status_ms) = millis();
           pocket_ui::schedule_disp_update(&id(disp1));
       - script.execute: route_i2s_to_mic

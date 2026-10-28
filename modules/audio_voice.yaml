@@ -276,7 +276,7 @@ voice_assistant:
       - script.execute: route_i2s_to_spk
       - lambda: |-
           id(va_vad_active) = false;
-          if (pocket_ui::cam_intercom_ptt_active()) {
+          if (pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_call_active()) {
             pocket_ui::cam_intercom_ptt_active() = false;
             id(va_active) = false;
             id(va_status_text) = "";
@@ -288,7 +288,10 @@ voice_assistant:
               id(cam_intercom_status_ms) = millis();
               id(send_doorbell_intercom_cmd).execute();
             } else {
-              pocket_ui::cam_intercom_status() = "";
+              pocket_ui::cam_intercom_status() = pocket_ui::cam_call_active() ? "2-WAY CALL ACTIVE" : "";
+            }
+            if (pocket_ui::cam_call_active()) {
+              id(rearm_doorbell_duplex_mic).execute();
             }
             pocket_ui::schedule_disp_update(&id(disp1));
             return;
@@ -523,9 +526,19 @@ script:
   - id: route_i2s_to_mic
     mode: restart
     then:
-      - audio_dac.mute_on: es8311_dac
-      - script.execute: hal_route_i2s_to_mic
-      - switch.turn_off: speaker_enable
+      - if:
+          condition:
+            lambda: |-
+              #if defined(CONFIG_IDF_TARGET_ESP32P4)
+              // ESP32-P4 has a true hardware full-duplex I2S bus (DOUT: GPIO9 + DIN: GPIO11 on shared clocks).
+              // During an active 2-Way Doorbell Call, keep speaker_enable ON and es8311_dac UNMUTED!
+              if (pocket_ui::cam_call_active()) return false;
+              #endif
+              return true;
+          then:
+            - audio_dac.mute_on: es8311_dac
+            - script.execute: hal_route_i2s_to_mic
+            - switch.turn_off: speaker_enable
 
   - id: apply_wake_word_sensitivities
     mode: restart

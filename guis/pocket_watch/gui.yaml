@@ -716,13 +716,14 @@ touchscreen:
               bool has_notif_cam = (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
                                     id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable");
               if (has_notif_cam && ((touch.y >= 390 && touch.x < pocket_ui::SCREEN_CX) || touch.y < 380)) {
-                // Tap 'Intercom' button (or camera image) -> Jump straight into live Camera Carousel & Two-Way Intercom!
+                // 1-Tap 'Answer' button (or camera image) -> Open live Camera view AND immediately start 2-Way Call with ANC!
                 id(notif_active) = false;
                 pocket_ui::tools_direct_home() = true;
                 pocket_ui::cam_quick_reply_open() = false;
                 id(gui_page) = 8;
                 id(stuff_subpage) = 12;
                 id(fetch_on_demand_camera).execute();
+                id(start_doorbell_call).execute();
                 pocket_ui::schedule_disp_update(&id(disp1));
                 return;
               }
@@ -2786,14 +2787,8 @@ touchscreen:
                       pocket_ui::schedule_disp_update(&id(disp1));
                       return;
                     }
-                    if (pocket_ui::cam_intercom_ptt_active()) {
-                      pocket_ui::cam_intercom_ptt_active() = false;
-                      id(cancel_voice_assistant).execute();
-                    }
-                    if (pocket_ui::cam_listen_active()) {
-                      pocket_ui::cam_listen_active() = false;
-                      id(cam_intercom_action) = "listen_stop";
-                      id(send_doorbell_intercom_cmd).execute();
+                    if (pocket_ui::cam_call_active() || pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_listen_active()) {
+                      id(stop_doorbell_call).execute();
                     }
                     if (pocket_ui::tools_direct_home()) {
                       pocket_ui::tools_direct_home() = false;
@@ -4086,11 +4081,11 @@ touchscreen:
                     id(send_doorbell_intercom_cmd).execute();
                     pocket_ui::schedule_disp_update(&id(disp1));
                   } else if (tp.x <= pocket_ui::SCREEN_CX + 48) {
-                    // Center Hero Pill: Push-to-Talk (Start / Send)
-                    if (!pocket_ui::cam_intercom_ptt_active()) {
-                      id(start_doorbell_ptt).execute();
+                    // Center Hero Pill: 1-Tap Hands-Free 2-Way Call (Start Call / End Call)
+                    if (!pocket_ui::cam_call_active() && !pocket_ui::cam_intercom_ptt_active()) {
+                      id(start_doorbell_call).execute();
                     } else {
-                      id(va).request_stop();
+                      id(stop_doorbell_call).execute();
                     }
                   } else {
                     // Right Pill: Open Doorbell Quick Reply & ANC Sheet

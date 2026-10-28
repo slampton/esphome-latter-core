@@ -1157,8 +1157,8 @@ inline void render_notification_overlay(
       it.print(cx + 1, 369, font_small, col_black, TextAlign::CENTER, line2.c_str());
       it.print(cx,     368, font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
     }
-    render_modern_card(it, cx - 72, 412, 132, 36, 10, Color(22, 34, 48), theme_primary,
-                       "Intercom", col_white, font_small);
+    render_modern_card(it, cx - 72, 412, 132, 36, 10, Color(18, 44, 28), Color(66, 188, 106),
+                       "Answer", col_white, font_small);
     render_modern_card(it, cx + 72, 412, 132, 36, 10, Color(22, 27, 36), accent_c,
                        "Dismiss", col_white, font_small);
   } else {
@@ -2158,6 +2158,11 @@ inline int &cam_carousel_idx() {
   return idx;
 }
 
+inline bool &cam_call_active() {
+  static bool active = false;
+  return active;
+}
+
 inline bool &cam_listen_active() {
   static bool active = false;
   return active;
@@ -2338,10 +2343,12 @@ inline void render_tool_camera(
   }
   if (!cam_intercom_status().empty()) {
     cur_cam_title = cam_intercom_status();
+  } else if (cam_call_active()) {
+    cur_cam_title = "2-WAY CALL ACTIVE";
   }
   cur_cam_title = fit_text_to_width_font(cur_cam_title, 210, font_small);
 
-  Color hdr_brd = cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary;
+  Color hdr_brd = cam_call_active() ? Color(66, 188, 106) : (cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary);
   render_modern_card(it, cx, 40, 256, 34, 10, Color(10, 14, 22), hdr_brd,
                      cur_cam_title.c_str(), col_white, font_small);
   if (cam_count > 1 && cam_intercom_status().empty()) {
@@ -2353,29 +2360,28 @@ inline void render_tool_camera(
   // 2. Bottom Translucent Two-Way Doorbell Intercom Control Deck (y = 368)
   if (has_url) {
     const bool is_listening = cam_listen_active() || (doorbell_talk_state == "listening");
-    const bool is_talking   = cam_intercom_ptt_active() || (doorbell_talk_state == "talking");
-    const bool pulse = ((now_ms / 250U) % 2U) != 0;
+    const bool in_call      = cam_call_active() || cam_intercom_ptt_active() || (doorbell_talk_state == "talking");
+    const bool pulse        = ((now_ms / 300U) % 2U) != 0;
 
-    // Left Pill: Listen (De-Noised RTSP Audio Stream)
-    render_modern_card(it, cx - 96, 368, 86, 38, 11,
+    // Left Pill: Audio / Mute Toggle
+    render_modern_card(it, cx - 98, 368, 82, 38, 11,
                        is_listening ? Color(20, 42, 62) : Color(12, 16, 24),
                        is_listening ? theme_primary : Color(58, 68, 84),
-                       is_listening ? "Mute" : "Listen",
+                       is_listening ? "Mute" : "Audio",
                        is_listening ? col_white : theme_secondary, font_small);
 
-    // Center Hero Pill: Push-to-Talk (Voice Capture -> UniFi / Doorbell Speaker)
-    Color talk_bg  = is_talking ? (pulse ? Color(145, 28, 32) : Color(88, 18, 22)) : Color(18, 24, 34);
-    Color talk_brd = is_talking ? Color(245, 72, 72) : theme_primary;
-    render_modern_card(it, cx, 368, 94, 40, 12,
-                       talk_bg, talk_brd,
-                       cam_intercom_ptt_active() ? "Send" : (is_talking ? "Talking" : "Talk"),
+    // Center Hero Pill: 1-Tap Hands-Free 2-Way Call (Start Call / End Call)
+    Color call_bg  = in_call ? (pulse ? Color(145, 28, 32) : Color(92, 18, 22)) : Color(18, 44, 28);
+    Color call_brd = in_call ? Color(245, 72, 72) : Color(66, 188, 106);
+    render_modern_card(it, cx, 368, 102, 40, 12,
+                       call_bg, call_brd,
+                       in_call ? "End Call" : "Start Call",
                        col_white, font_small);
 
-    // Right Pill: Quick Replies & ANC Mode Sheet
-    const char *anc_short = (anc_idx == 0) ? "ANC+" : ((anc_idx == 1) ? "ANC" : "Reply");
-    render_modern_card(it, cx + 96, 368, 86, 38, 11,
+    // Right Pill: Quick Replies & DSP Options
+    render_modern_card(it, cx + 98, 368, 82, 38, 11,
                        Color(12, 16, 24), Color(58, 68, 84),
-                       anc_short, theme_secondary, font_small);
+                       "Reply", theme_secondary, font_small);
   }
 
   it.filled_rectangle(cx - 85, 406, 170, 38, Color(10, 14, 20));
