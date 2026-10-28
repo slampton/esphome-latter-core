@@ -549,17 +549,17 @@ script:
             if (opt == "Very sensitive") return high_c;
             return med_c;
           };
-          // Calibrated for Waveshare 1.75C ES7210 MEMS mic (Low ~84%, Med ~72%, High ~60%)
+          // Calibrated TFLite 50Hz streaming cutoffs (Slightly=247/~97%, Moderately=237/~93%, Very=224/~88%)
           id(okay_nabu).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_okay_nabu).current_option(), 215, 176, 143));
+              apply_cutoffs(id(ww_sens_okay_nabu).current_option(), 247, 237, 224));
           id(hey_luna).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_luna).current_option(), 218, 188, 158));
+              apply_cutoffs(id(ww_sens_hey_luna).current_option(), 248, 239, 226));
           id(hey_jarvis).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_jarvis).current_option(), 215, 184, 153));
+              apply_cutoffs(id(ww_sens_hey_jarvis).current_option(), 247, 237, 224));
           id(hey_mycroft).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_mycroft).current_option(), 218, 188, 158));
+              apply_cutoffs(id(ww_sens_hey_mycroft).current_option(), 248, 239, 226));
           id(alexa).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_alexa).current_option(), 215, 184, 153));
+              apply_cutoffs(id(ww_sens_alexa).current_option(), 247, 237, 224));
 
   - id: sync_wake_word_state
     mode: restart
