@@ -7,7 +7,7 @@
 #include "ui_layout.h"
 #include "ui_music.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // =============================================================================
 // SECTION 18: SYSTEM SETTINGS & DIAGNOSTICS ENGINE (PAGE 4)
@@ -548,4 +548,4 @@ inline void render_system_page(
 
 // ==============================================================================
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

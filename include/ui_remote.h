@@ -6,7 +6,7 @@
 
 #include "ui_layout.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // =============================================================================
 // SECTION 17: UNIVERSAL TV & MEDIA REMOTE ENGINE (UP TO 10 SCROLLABLE SLOTS)
@@ -444,9 +444,9 @@ inline void render_tv_remote_page(
     it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
   }
 
-  const int left_fx  = POCKET_UI_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 38 : 48);
+  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 38 : 48);
   const int right_fx = SCREEN_W - left_fx;
-  const int flank_dy = POCKET_UI_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 108 : ((SCREEN_W >= 480) ? 128 : 114));
+  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 108 : ((SCREEN_W >= 480) ? 128 : 114));
   const int top_fy   = cy - flank_dy;
   const int btm_fy   = cy + flank_dy;
   const int f_r      = 19;
@@ -481,8 +481,8 @@ inline void render_tv_remote_page(
   //   - 320x480 Remote Assistant: r_out = 108, r_in = 42 (zero overlap with corner buttons!)
   //   - 410x502 Wrist Assist & 466x466 Pocket Assistant: r_out = 144, r_in = 50
   //   - 480x480 Mobile Assistant & 720x720 Desk Assistant: r_out = 160, r_in = 54 (expanded control ring!)
-  const int dpad_r_out = (SCREEN_W < 380) ? 108 : ((!POCKET_UI_ROUND_DISPLAY && SCREEN_W >= 480) ? 160 : 144);
-  const int dpad_r_in  = (SCREEN_W < 380) ?  42 : ((!POCKET_UI_ROUND_DISPLAY && SCREEN_W >= 480) ?  54 :  50);
+  const int dpad_r_out = (SCREEN_W < 380) ? 108 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 160 : 144);
+  const int dpad_r_in  = (SCREEN_W < 380) ?  42 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  54 :  50);
   const int ok_r       = dpad_r_in - 8;
   it.circle(cx, cy, dpad_r_out, col_gray);
   it.circle(cx, cy, dpad_r_in, col_gray);
@@ -505,4 +505,4 @@ inline void render_tv_remote_page(
   it.print(cx, cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

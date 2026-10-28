@@ -6,7 +6,7 @@
 
 #include "ui_core.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // Photorealistic Lunar Surface Albedo Maps (derived from telescopic Full Moon photography,
 // stored in .rodata Octal Flash: 19,321 B for r=69 Subpage 3 Moon + 2,025 B for r=22 Corner Moon, 0 B SRAM)
@@ -873,7 +873,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
   // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Full rectangle fill on Portrait Watch 410x502)
   auto fill_sky_disc = [&](esphome::Color bg_c) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
     for (int y = 5; y <= 460; y++) {
       int hw = static_cast<int>(CIRCLE_HW[y]) - 5;
       if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
@@ -2002,4 +2002,4 @@ inline void render_weather_page(
 }
 
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

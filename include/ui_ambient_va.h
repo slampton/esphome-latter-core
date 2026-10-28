@@ -6,7 +6,7 @@
 
 #include "ui_core.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // ------------------------------------------------------------------------------
 // 5. Docked Screensaver & Voice Assistant Spectral Engines
@@ -662,7 +662,7 @@ inline uint32_t &last_page2_draw_ms() {
 // a 1px dark inner contrast edge (r = 219), a rounded 12 o'clock start cap, and a glowing playhead tip.
 template<typename DisplayT>
 inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, esphome::Color col) {
-#if !POCKET_UI_ROUND_DISPLAY
+#if !LATTER_ROUND_DISPLAY
   if (prog <= 0.001f) return;
   if (prog > 1.0f) prog = 1.0f;
   (void)cx; (void)cy;
@@ -1670,4 +1670,4 @@ inline void render_voice_assistant_overlay(
   it.filled_circle(cx, cy, core_r - 3, c_gold);
   it.circle(cx, cy, core_r - 5, c_warm_white);
 }
-}  // namespace pocket_ui
+}  // namespace latter_ui

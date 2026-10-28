@@ -67,7 +67,7 @@ binary_sensor:
       // Dual-Threshold In-Hand Detection:
       // While screen is active, 0.068g maintains active hold in your hand without false-triggering on desk/USB noise.
       // While screen is sleeping/standby, 0.15g requires a deliberate pickup motion to wake.
-      float thresh = pocket_ui::get_pickup_motion_threshold(id(display_power_state) == 0);
+      float thresh = latter_ui::get_pickup_motion_threshold(id(display_power_state) == 0);
       const uint32_t active_ms = (id(display_power_state) == 0) ? 3000 : 2000;
       uint32_t now_ms = millis();
 
@@ -296,7 +296,7 @@ select:
     set_action:
       - lambda: |-
           id(screen_sleep_timer).execute();
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Docked Idle Timeout"
@@ -316,7 +316,7 @@ select:
     set_action:
       - lambda: |-
           id(screen_sleep_timer).execute();
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Battery Hibernate Timeout"
@@ -333,7 +333,7 @@ select:
       - "Disabled"
     set_action:
       - lambda: |-
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Pickup to Wake"
@@ -352,7 +352,7 @@ select:
             bool pw_act = (x == "Always On") || (x == "Docked Only" && id(usb_connected).state);
             id(hal_set_imu_power_mode).execute(pw_act ? 0x01 : 0x00);
           }
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Tap to Wake"
@@ -367,7 +367,7 @@ select:
       - "Disabled"
     set_action:
       - lambda: |-
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
 interval:
   - interval: 1s
@@ -434,7 +434,7 @@ interval:
             const bool ww_busy = id(va).is_running() || !id(va_status_text).empty() ||
                                  id(announcement_mixing_input).is_running() ||
                                  id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                 (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                  id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                  (id(active_game) > 0) || id(is_hibernating) || id(ota_in_progress) ||
                                  !id(wifi_ctrl).is_connected();
@@ -463,7 +463,7 @@ interval:
           // If Sendspin is actively streaming (MEDIA_PLAYER_STATE_PLAYING) to the local player
           // but speaker_enable is OFF (e.g. first stream after boot or pre-warmed Sendspin stream
           // where on_play did not re-fire), immediately route I2S to speaker and unmute ES8311 DAC.
-          if ((id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+          if ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
               !id(speaker_enable).state && !id(va_active) && !id(va_tts_received) &&
               !id(va_resume_music_after) && !id(boot_button).state &&
               !id(is_hibernating) && (millis() > 5000U)) {
@@ -472,7 +472,7 @@ interval:
             id(route_i2s_to_spk).execute();
             id(speaker_enable).turn_on();
             id(es8311_dac).set_mute_off();
-            float v = id(pocket_music_player).volume;
+            float v = id(latter_media_player).volume;
             float db = (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));
             id(media_mixing_input).apply_ducking(db, 100);
           }
@@ -500,7 +500,7 @@ interval:
           if (now_1s_ms > 180000U && id(usb_connected).state && id(wifi_ctrl).is_connected() &&
               (id(display_power_state) != 0) &&
               !id(va_active) && !id(va_tts_received) && !id(ota_in_progress) &&
-              (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+              (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
               (last_fw_check_ms == 0 || (now_1s_ms - last_fw_check_ms >= 21600000U))) {
             last_fw_check_ms = now_1s_ms;
             id(check_firmware_update).execute();
@@ -522,7 +522,7 @@ interval:
               !id(display_brightness).current_values.is_on() &&
               !id(usb_connected).state &&
               !id(ota_in_progress) &&
-              (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+              (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
               !id(stopwatch_running) &&
               !id(timer_running) &&
               !id(timer_ringing) &&
@@ -549,12 +549,12 @@ interval:
             auto s_style = id(screensaver_style_select).current_option();
             if (s_style != "Ambient Clock" && s_style != "Screen Off") {
               const bool local_music_playing =
-                  (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              if (pocket_ui::should_step_ambient_anim(millis(), local_music_playing,
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              if (latter_ui::should_step_ambient_anim(millis(), local_music_playing,
                                                       id(va_active) || !id(va_status_text).empty(),
                                                       id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
-                pocket_ui::schedule_disp_update(&id(disp1));
-                pocket_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+                latter_ui::record_ambient_frame_ms(millis());
                 did_ss_draw = true;
               }
             }
@@ -564,7 +564,7 @@ interval:
           // Only queries I2C register 0x49 when GPIO3 (PMU IRQ, active-low) is asserted or once per second
           // (on a non-draw tick so I2C and QSPI never stack in the same 50ms callback).
           static uint8_t fallback_div = 0;
-          const bool irq_pin_low = pocket_ui::hal_pmu_irq_asserted();
+          const bool irq_pin_low = latter_ui::hal_pmu_irq_asserted();
           if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 4U && !id(va_active) && !id(va_tts_received))) {
             if (!irq_pin_low) fallback_div = 0;
             uint8_t irq_reg = 0x49;
@@ -639,7 +639,7 @@ script:
                 }
                 id(alarm_ringing) = false;
                 id(stop_alarm_sound).execute();
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
                 id(screen_sleep_timer).execute();
                 return;
               }
@@ -653,7 +653,7 @@ script:
                 id(find_my_active) = false;
                 id(stop_alarm_sound).execute();
                 id(sync_display_brightness).execute();
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
                 id(screen_sleep_timer).execute();
                 return;
               }
@@ -681,7 +681,7 @@ script:
                   id(stopwatch_running) = false;
                   id(stopwatch_elapsed_ms) = millis() - id(stopwatch_start_time);
                 }
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
                 return;
               }
 
@@ -700,12 +700,12 @@ script:
             id(turn_screen_off).execute();
             return;
           }
-          pocket_ui::screen_is_off_standby() = false;
+          latter_ui::screen_is_off_standby() = false;
           id(disp1).start_poller();
           id(display_power_state) = 1; // SCREENSAVER
           id(sleep_start_time) = 0; // Inhibit deep sleep countdown while screensaver active
           id(display_brightness).turn_on().set_brightness(0.60f).perform(); // Screensaver locked at 60%
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
     mode: restart
@@ -714,11 +714,11 @@ script:
           id(display_power_state) = 2; // SCREEN_OFF
           id(sleep_start_time) = millis();
           id(active_game) = 0;
-          if (pocket_ui::cam_call_active() || pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_listen_active()) {
+          if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
             id(stop_doorbell_call).execute();
           }
           id(disp1).update(); // Flush single all-black frame before cutting panel brightness
-          pocket_ui::screen_is_off_standby() = true;
+          latter_ui::screen_is_off_standby() = true;
           id(disp1).stop_poller(); // Stop 1Hz QSPI/SPI framebuffer transfers while screen is off!
           id(display_brightness).turn_off().perform();
 
@@ -727,7 +727,7 @@ script:
             id(ble_ctrl).disable();
           }
 
-          const bool local_audio_playing = (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           auto ww_mode = id(va_wake_word_mode).current_option();
           const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
 
@@ -751,7 +751,7 @@ script:
           id(hal_set_imu_power_mode).execute(pickup_wake_active ? 0x01 : 0x00);
           // On battery power, enable deep Wi-Fi modem sleep (WIFI_PS_MAX_MODEM=2) while screen is off & audio idle
           if (!id(usb_connected).state && !local_audio_playing) {
-            pocket_ui::hal_set_wifi_power_save(2); // 2: WIFI_PS_MAX_MODEM
+            latter_ui::hal_set_wifi_power_save(2); // 2: WIFI_PS_MAX_MODEM
           }
 
   - id: enter_standby_state
@@ -763,14 +763,14 @@ script:
                                      id(docked_screensaver_switch).state && 
                                      (s_style != "Screen Off");
           if (screensaver_allowed) {
-            pocket_ui::screen_is_off_standby() = false;
+            latter_ui::screen_is_off_standby() = false;
             id(disp1).start_poller();
             id(display_power_state) = 1; // SCREENSAVER
             id(sleep_start_time) = 0; // Inhibit deep sleep countdown while screensaver active
-            pocket_ui::record_ambient_frame_ms(millis());
+            latter_ui::record_ambient_frame_ms(millis());
             id(display_brightness).turn_on().set_brightness(0.60f).perform(); // Screensaver locked at 60%
             if (s_style == "Ambient Clock") {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           } else {
             id(turn_screen_off).execute();
@@ -781,10 +781,10 @@ script:
     then:
       - lambda: |-
           // Instantly boost Wi-Fi radio to full performance (zero sleep latency)
-          pocket_ui::hal_set_wifi_power_save(0); // 0: WIFI_PS_NONE
+          latter_ui::hal_set_wifi_power_save(0); // 0: WIFI_PS_NONE
 
-          pocket_ui::screen_is_off_standby() = false;
-          pocket_ui::last_screen_wake_ms() = millis();
+          latter_ui::screen_is_off_standby() = false;
+          latter_ui::last_screen_wake_ms() = millis();
           id(sleep_start_time) = 0;
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
@@ -792,20 +792,20 @@ script:
             id(ble_ctrl).enable();
           }
           id(hal_set_audio_codecs_standby).execute(false);
-          if (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
+          if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
             id(speaker_enable).turn_on();
           }
           // Restore full QMI8658 6-Axis mode (Accelerometer + Gyroscope active) via HAL
           id(hal_set_imu_power_mode).execute(0x03);
       - script.execute: sync_display_brightness
       - script.execute: screen_sleep_timer
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: start_instant_hibernation
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::screen_is_off_standby() = false;
+          latter_ui::screen_is_off_standby() = false;
           id(disp1).start_poller();
           id(sleep_start_time) = 0;
           id(hibernate_countdown_val) = 0;
@@ -814,7 +814,7 @@ script:
           id(display_power_state) = 0; // Force ACTIVE so confirmation displays when screen was sleeping
       - micro_wake_word.stop:
       - voice_assistant.stop:
-      - media_player.pause: pocket_music_player
+      - media_player.pause: latter_media_player
       - audio_dac.mute_on: es8311_dac
       - switch.turn_off: speaker_enable
       - script.stop: screen_sleep_timer
@@ -828,7 +828,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::screen_is_off_standby() = false;
+          latter_ui::screen_is_off_standby() = false;
           id(disp1).start_poller();
           id(sleep_start_time) = 0;
           id(hibernate_countdown_val) = 5;
@@ -837,7 +837,7 @@ script:
           id(display_power_state) = 0; // Force ACTIVE so countdown displays when screen was sleeping
       - micro_wake_word.stop:
       - voice_assistant.stop:
-      - media_player.pause: pocket_music_player
+      - media_player.pause: latter_media_player
       - audio_dac.mute_on: es8311_dac
       - switch.turn_off: speaker_enable
       - script.stop: screen_sleep_timer
@@ -855,7 +855,7 @@ script:
                   - lambda: |-
                       if (id(hibernate_countdown_val) > 1) {
                         id(hibernate_countdown_val)--;
-                        pocket_ui::schedule_disp_update(&id(disp1));
+                        latter_ui::schedule_disp_update(&id(disp1));
                       }
             - if:
                 condition:
@@ -880,7 +880,7 @@ script:
           id(display_power_state) = 0; // Force ACTIVE so confirmation displays when screen was sleeping
       - micro_wake_word.stop:
       - voice_assistant.stop:
-      - media_player.pause: pocket_music_player
+      - media_player.pause: latter_media_player
       - audio_dac.mute_on: es8311_dac
       - switch.turn_off: speaker_enable
       - script.stop: screen_sleep_timer
@@ -957,8 +957,8 @@ script:
               // Keep display awake while Flashlight (subpage 5), Bubble Level (subpage 7), or 2-Way Camera Call is active
               const bool active_tool_awake =
                   (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 ||
-                                         (id(stuff_subpage) == 12 && (pocket_ui::cam_call_active() || pocket_ui::cam_listen_active()))));
-              const bool in_hand_hold = pocket_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
+                                         (id(stuff_subpage) == 12 && (latter_ui::cam_call_active() || latter_ui::cam_listen_active()))));
+              const bool in_hand_hold = latter_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
               return !id(ota_in_progress) &&
                      !id(va_active) &&
                      !id(va).is_running() &&

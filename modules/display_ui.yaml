@@ -5,4 +5,4 @@
 
 packages:
   latter_client: !include latter_client.yaml
-  latter_gui:    !include ../guis/pocket_watch/gui.yaml
+  latter_gui:    !include ../guis/universal/gui.yaml

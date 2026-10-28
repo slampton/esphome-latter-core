@@ -112,7 +112,7 @@ audio_adc:
 
 microphone:
   - platform: i2s_audio
-    id: pocket_mic
+    id: latter_mic
     adc_type: external
     i2s_audio_id: i2s_input_bus
     i2s_din_pin: GPIO10

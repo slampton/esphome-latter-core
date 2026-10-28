@@ -13,4 +13,5 @@
 #include "ui_remote.h"
 #include "ui_system.h"
 
-using namespace pocket_ui;
+using namespace latter_ui;
+namespace pocket_ui = latter_ui;

@@ -61,7 +61,7 @@ media_player:
     id: sendspin_group_media_player
 
   - platform: speaker_source
-    id: pocket_music_player
+    id: latter_media_player
     name: "Music"
     announcement_pipeline:
       format: FLAC
@@ -124,7 +124,7 @@ media_player:
                   then:
                     - mixer_speaker.apply_ducking:
                         id: media_mixing_input
-                        decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                        decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                         duration: 0.4s
                     - mixer_speaker.apply_ducking:
                         id: announcement_mixing_input
@@ -134,7 +134,7 @@ media_player:
               - switch.turn_on: speaker_enable
               - audio_dac.mute_off: es8311_dac
               - lambda: |-
-                  pocket_ui::screen_is_off_standby() = false;
+                  latter_ui::screen_is_off_standby() = false;
                   id(display_power_state) = 0;
                   id(disp1).start_poller();
                   id(hal_set_imu_power_mode).execute(0x03);
@@ -156,7 +156,7 @@ media_player:
 micro_wake_word:
   id: mww
   microphone:
-    microphone: pocket_mic
+    microphone: latter_mic
     channels: 0
     gain_factor: 2
   task_stack_in_psram: true
@@ -182,10 +182,10 @@ micro_wake_word:
 
 voice_assistant:
   id: va
-  microphone: pocket_mic
+  microphone: latter_mic
   micro_wake_word: mww
   use_wake_word: false
-  media_player: pocket_music_player
+  media_player: latter_media_player
   noise_suppression_level: 2
   auto_gain: 31dBFS
   on_client_connected:
@@ -197,10 +197,10 @@ voice_assistant:
   on_listening:
     then:
       - lambda: |-
-          pocket_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
-          if (pocket_ui::cam_intercom_ptt_active()) {
-            pocket_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
-            pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
+          if (latter_ui::cam_intercom_ptt_active()) {
+            latter_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
+            latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
           if (!id(va_active)) {
@@ -211,7 +211,7 @@ voice_assistant:
           condition:
             lambda: |-
               return !id(va_resume_music_after) &&
-                     ((id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                     ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                       (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
           then:
             - script.execute: pause_all_music
@@ -225,7 +225,7 @@ voice_assistant:
           duration: 0.1s
       - lambda: |-
           if (id(display_power_state) != 0 && id(va_wake_screen_switch).state) {
-            pocket_ui::screen_is_off_standby() = false;
+            latter_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
             id(disp1).start_poller();
             id(hal_set_imu_power_mode).execute(0x03);
@@ -235,65 +235,65 @@ voice_assistant:
           id(va_vad_active) = false;
           id(va_tts_received) = false;
           esphome::voice_assistant::reset_va_session_state(id(va));
-          if (pocket_ui::cam_intercom_ptt_active()) {
+          if (latter_ui::cam_intercom_ptt_active()) {
             id(va_status_text) = "";
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
           id(va_status_text) = "Listening...";
           ESP_LOGI("va", "Status: Listening...");
           if (id(display_power_state) == 0 || id(va_wake_screen_switch).state) {
             id(display_brightness).turn_on().perform();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           }
   on_stt_vad_start:
     then:
       - script.stop: screen_sleep_timer
       - lambda: |-
           id(va_vad_active) = true;
-          if (pocket_ui::cam_intercom_ptt_active()) {
-            pocket_ui::cam_intercom_status() = "CAPTURING VOICE...";
+          if (latter_ui::cam_intercom_ptt_active()) {
+            latter_ui::cam_intercom_status() = "CAPTURING VOICE...";
           } else {
             id(va_status_text) = "Listening...";
           }
           ESP_LOGI("va", "Status: Listening (VAD active)...");
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_vad_end:
     then:
       - script.stop: screen_sleep_timer
       - lambda: |-
           id(va_vad_active) = false;
-          if (pocket_ui::cam_intercom_ptt_active()) {
-            pocket_ui::cam_intercom_status() = "PROCESSING AUDIO...";
+          if (latter_ui::cam_intercom_ptt_active()) {
+            latter_ui::cam_intercom_status() = "PROCESSING AUDIO...";
           } else {
             id(va_status_text) = "Thinking...";
           }
           ESP_LOGI("va", "Status: Thinking...");
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_end:
     then:
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
       - lambda: |-
           id(va_vad_active) = false;
-          if (pocket_ui::cam_intercom_ptt_active() || pocket_ui::cam_call_active()) {
-            pocket_ui::cam_intercom_ptt_active() = false;
+          if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
+            latter_ui::cam_intercom_ptt_active() = false;
             id(va_active) = false;
             id(va_status_text) = "";
             esphome::voice_assistant::abort_voice_assistant(id(va));
             if (!x.empty()) {
               id(cam_intercom_action) = "talk_message";
               id(cam_intercom_message) = x;
-              pocket_ui::cam_intercom_status() = "SENT TO DOORBELL";
+              latter_ui::cam_intercom_status() = "SENT TO DOORBELL";
               id(cam_intercom_status_ms) = millis();
               id(send_doorbell_intercom_cmd).execute();
             } else {
-              pocket_ui::cam_intercom_status() = pocket_ui::cam_call_active() ? "2-WAY CALL ACTIVE" : "";
+              latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL ACTIVE" : "";
             }
-            if (pocket_ui::cam_call_active()) {
+            if (latter_ui::cam_call_active()) {
               id(rearm_doorbell_duplex_mic).execute();
             }
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
           id(va_status_text) = "Thinking...";
@@ -329,7 +329,7 @@ voice_assistant:
                 id(va_tts_received) = true;
                 id(va_status_text) = "Responding...";
                 ESP_LOGI("va", "Status: Responding (Streaming TTS)...");
-            - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
     then:
       - mixer_speaker.apply_ducking:
@@ -348,7 +348,7 @@ voice_assistant:
           id(va_tts_received) = true;
           id(va_status_text) = "Responding...";
           ESP_LOGI("va", "Status: Responding (TTS)...");
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_end:
     then:
       - script.stop: screen_sleep_timer
@@ -359,26 +359,26 @@ voice_assistant:
           id(va_tts_received) = true;
           id(va_status_text) = "Responding...";
           ESP_LOGI("va", "TTS URL ready: %s", x.c_str());
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_error:
     then:
       - script.stop: va_tts_drain_and_finish
       - lambda: |-
           esphome::voice_assistant::abort_voice_assistant(id(va));
-          pocket_ui::cam_intercom_ptt_active() = false;
+          latter_ui::cam_intercom_ptt_active() = false;
           id(va_vad_active) = false;
           id(va_tts_received) = false;
           id(va_active) = false;
           id(va_status_text) = "";
           if (id(return_page) >= 0) id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            pocket_ui::hal_set_wifi_power_save(2);
+              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
+            latter_ui::hal_set_wifi_power_save(2);
           }
           ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
       - script.execute: resume_music_after_va
       - script.execute: mp_idle_debounce
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - if:
           condition:
             binary_sensor.is_off: pickup_detected
@@ -389,13 +389,13 @@ voice_assistant:
       - lambda: |-
           ESP_LOGI("va_timer", "Timer started via Assist: %s (%lu sec)", timer.name.c_str(), (unsigned long)timer.total_seconds);
           uint32_t now_t = millis();
-          pocket_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
+          latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
           id(va_timer_name) = timer.name;
-          pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           id(timer_ringing) = false;
           if (!id(va_active) && id(va_status_text).empty()) {
             if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
   on_timer_updated:
@@ -403,18 +403,18 @@ voice_assistant:
       - lambda: |-
           ESP_LOGI("va_timer", "Timer updated via Assist: %s (left: %lu sec, active: %d)", timer.name.c_str(), (unsigned long)timer.seconds_left, timer.is_active);
           uint32_t now_t = millis();
-          pocket_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
-          pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
+          latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           if (!id(va_active) && id(va_status_text).empty()) {
             if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
   on_timer_cancelled:
     then:
       - lambda: |-
           ESP_LOGI("va_timer", "Timer cancelled via Assist: %s", timer.name.c_str());
-          auto *slots = pocket_ui::timer_slots();
+          auto *slots = latter_ui::timer_slots();
           for (int i = 0; i < 3; i++) {
             if ((!timer.id.empty() && slots[i].id == timer.id) || (!timer.name.empty() && slots[i].name == timer.name)) {
               slots[i].running = false;
@@ -422,7 +422,7 @@ voice_assistant:
               slots[i].remaining_sec = slots[i].duration_sec;
             }
           }
-          pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           const bool was_ringing = id(timer_ringing);
           id(timer_ringing) = false;
           if (was_ringing) {
@@ -430,14 +430,14 @@ voice_assistant:
           }
           if (!id(va_active) && id(va_status_text).empty()) {
             if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
   on_timer_finished:
     then:
       - lambda: |-
           ESP_LOGI("va_timer", "Timer finished via Assist: %s", timer.name.c_str());
-          auto *slots = pocket_ui::timer_slots();
+          auto *slots = latter_ui::timer_slots();
           std::string fired_name = timer.name;
           for (int i = 0; i < 3; i++) {
             if ((!timer.id.empty() && slots[i].id == timer.id) || (!timer.name.empty() && slots[i].name == timer.name)) {
@@ -447,7 +447,7 @@ voice_assistant:
               slots[i].remaining_sec = slots[i].duration_sec; // Keep duration & name saved as a reusable preset!
             }
           }
-          pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           if (!id(timer_ringing)) {
             id(va_timer_name) = fired_name;
             id(timer_ringing) = true;
@@ -476,13 +476,13 @@ script:
       - if:
           condition:
             lambda: |-
-              return (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                      id(announcement_mixing_input).is_running();
           then:
             - wait_until:
                 condition:
                   lambda: |-
-                    return ((id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
+                    return ((id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
                             !id(announcement_mixing_input).is_running()) ||
                            !id(va_active);
                 timeout: 15s
@@ -502,10 +502,10 @@ script:
           id(va_active) = false;
           id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            pocket_ui::hal_set_wifi_power_save(1);
+              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
+            latter_ui::hal_set_wifi_power_save(1);
           }
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
       # 4. Now smoothly restore music playback or mute & route I2S back to mic
       - script.execute: resume_music_after_va
@@ -535,7 +535,7 @@ script:
               #if defined(CONFIG_IDF_TARGET_ESP32P4)
               // ESP32-P4 has a true hardware full-duplex I2S bus (DOUT: GPIO9 + DIN: GPIO11 on shared clocks).
               // During an active 2-Way Doorbell Call, keep speaker_enable ON and es8311_dac UNMUTED!
-              if (pocket_ui::cam_call_active()) return false;
+              if (latter_ui::cam_call_active()) return false;
               #endif
               return true;
           then:
@@ -576,8 +576,8 @@ script:
               const bool busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                 id(va_tts_received) || id(announcement_mixing_input).is_running() ||
                                 id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                                 id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                 (id(active_game) > 0) || id(is_hibernating) || id(ota_in_progress) ||
                                 !id(wifi_ctrl).is_connected() || (millis() < 12000U);
@@ -612,7 +612,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::hal_set_wifi_power_save(0);
+          latter_ui::hal_set_wifi_power_save(0);
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
             if (id(va_wake_screen_switch).state) {
               id(wake_to_active_state).execute();
@@ -643,7 +643,7 @@ script:
           duration: 0.05s
       - if:
           condition:
-            media_player.is_playing: pocket_music_player
+            media_player.is_playing: latter_media_player
           then:
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
@@ -733,11 +733,11 @@ script:
           duration: 0.05s
       - if:
           condition:
-            media_player.is_playing: pocket_music_player
+            media_player.is_playing: latter_media_player
           then:
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
-                decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                 duration: 0.4s
           else:
             - if:
@@ -745,7 +745,7 @@ script:
                   lambda: |-
                     return !id(va_active) && !id(va_tts_received) &&
                            !id(va).is_running() && !id(announcement_mixing_input).is_running() &&
-                           !pocket_ui::cam_call_active() && !pocket_ui::cam_listen_active() &&
+                           !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
                            (id(active_game) == 0);
                 then:
                   - audio_dac.mute_on: es8311_dac

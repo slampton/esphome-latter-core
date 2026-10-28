@@ -6,7 +6,7 @@
 
 #include "ui_core.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // ============================================================================
 // SECTION 8: REUSABLE 3D GLASS MARBLE PRIMITIVE & ARCADE MARBLES ENGINE
@@ -2362,4 +2362,4 @@ inline void render_games_launcher(
     it.line(spk_x - 11, spk_y - 9,  spk_x + 10, spk_y + 12, col_red);
   }
 }
-}  // namespace pocket_ui
+}  // namespace latter_ui

@@ -66,7 +66,7 @@ logger:
 
 update:
   - platform: http_request
-    id: update_pocket_assistant
+    id: latter_firmware_update
     name: "Project Firmware"
     icon: "mdi:cellphone-arrow-down"
     source: "https://slampton.github.io/esphome-latter-core/manifests/pocket-assistant.json"
@@ -112,4 +112,4 @@ packages:
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power_pmu:   !include ../modules/power_axp2101.yaml
   latter_client:      !include ../modules/latter_client.yaml
-  latter_gui:         !include ../guis/pocket_watch/gui.yaml
+  latter_gui:         !include ../guis/universal/gui.yaml

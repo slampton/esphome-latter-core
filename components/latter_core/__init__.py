@@ -16,7 +16,7 @@ CONF_GUI = "gui"
 
 CONFIG_SCHEMA = cv.Schema(
     {
-        cv.Optional(CONF_GUI, default="pocket_watch"): cv.string,
+        cv.Optional(CONF_GUI, default="universal"): cv.string,
     }
 )
 

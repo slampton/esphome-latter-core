@@ -7,7 +7,7 @@
 #include "ui_layout.h"
 #include "ui_clock_home.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // =============================================================================
 // SECTION 16C: AREA-AWARE ROOM CONTROL ENGINE (PAGE 6 — HORIZONTAL FILL-SLIDERS)
@@ -807,4 +807,4 @@ inline void render_security_alarm_page(
 
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

@@ -5,7 +5,7 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
-            uint32_t cal_val = pocket_ui::hal_calibrate_rtc();
+            uint32_t cal_val = latter_ui::hal_calibrate_rtc();
             ESP_LOGI("rtc_cal", "Hardware RTC slow clock calibrated: %lu (Q19.12)", (unsigned long)cal_val);
             id(hal_release_deep_sleep_holds).execute();
             id(sleep_start_time) = millis();
@@ -18,7 +18,7 @@ esphome:
         - safe_mode.mark_successful:
         - script.execute: hal_init_pmu_irq
         - lambda: 'esphome::voice_assistant::install_sendspin_mono_downmixer(id(sendspin_source));'
-        - media_player.pause: pocket_music_player
+        - media_player.pause: latter_media_player
         - online_image.release: remote_album_art
         - online_image.release: home_wallpaper_art
         - online_image.release: camera_snapshot_art
@@ -42,10 +42,10 @@ esphome:
               id(remote_slot_1_ent) = "${tv_remote_entity_2}";
               id(remote_slot_2_ent) = "${tv_remote_entity_3}";
               id(remote_slot_3_ent) = "${tv_remote_entity_4}";
-              id(remote_slot_0_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_0_ent));
-              id(remote_slot_1_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_1_ent));
-              id(remote_slot_2_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_2_ent));
-              id(remote_slot_3_name) = pocket_ui::format_remote_entity_fallback(id(remote_slot_3_ent));
+              id(remote_slot_0_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_0_ent));
+              id(remote_slot_1_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_1_ent));
+              id(remote_slot_2_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_2_ent));
+              id(remote_slot_3_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_3_ent));
             }
             if (id(remote_slot_0_name).empty()) id(remote_slot_0_name) = "TV Remote";
         - component.update: batt_level
@@ -63,7 +63,7 @@ esphome:
             if (cur_vp == "Google" || cur_vp == "Original") {
               id(va_visual_profile).publish_state(cur_vp == "Google" ? "Gemini" : "Nebula");
             }
-            #if defined(CONFIG_IDF_TARGET_ESP32P4) || (defined(POCKET_UI_NO_PMU_IRQ_PIN) && POCKET_UI_NO_PMU_IRQ_PIN)
+            #if defined(CONFIG_IDF_TARGET_ESP32P4) || (defined(LATTER_NO_PMU_IRQ_PIN) && LATTER_NO_PMU_IRQ_PIN)
             if (id(tap_wake_mode).current_option() == "Docked Only") {
               id(tap_wake_mode).publish_state("Always On");
             }
@@ -74,7 +74,7 @@ esphome:
               id(hibernate_timeout_mode).publish_state("Disabled");
             }
             #endif
-            if (pocket_ui::is_wrist_watch_board()) {
+            if (latter_ui::is_wearable_form_factor()) {
               static bool watch_pwr_seeded = false;
               if (!watch_pwr_seeded) {
                 watch_pwr_seeded = true;
@@ -157,7 +157,7 @@ api:
               id(room_slot_4_name) = s4_name; id(room_slot_4_id) = s4_id; id(room_slot_4_type) = s4_type; id(room_slot_4_active) = s4_active; id(room_slot_4_level) = -1;
               id(room_slot_5_name) = s5_name; id(room_slot_5_id) = s5_id; id(room_slot_5_type) = s5_type; id(room_slot_5_active) = s5_active; id(room_slot_5_level) = -1;
             } else {
-              if (millis() - pocket_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
+              if (millis() - latter_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
                 id(music_browse_page) = page;
               }
               id(music_browse_total_pages) = total_pages;
@@ -167,7 +167,7 @@ api:
               id(slot_4_name) = s4_name; id(slot_4_id) = s4_id; id(slot_4_type) = s4_type; id(slot_4_active) = s4_active;
               id(slot_5_name) = s5_name; id(slot_5_id) = s5_id; id(slot_5_type) = s5_type; id(slot_5_active) = s5_active;
             }
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
 
     - action: set_room_slots
       variables:
@@ -212,7 +212,7 @@ api:
             id(room_slot_3_name) = s3_name; id(room_slot_3_id) = s3_id; id(room_slot_3_type) = s3_type; id(room_slot_3_active) = s3_active; id(room_slot_3_level) = s3_level;
             id(room_slot_4_name) = s4_name; id(room_slot_4_id) = s4_id; id(room_slot_4_type) = s4_type; id(room_slot_4_active) = s4_active; id(room_slot_4_level) = s4_level;
             id(room_slot_5_name) = s5_name; id(room_slot_5_id) = s5_id; id(room_slot_5_type) = s5_type; id(room_slot_5_active) = s5_active; id(room_slot_5_level) = s5_level;
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
 
     - action: set_timer
       variables:
@@ -221,30 +221,30 @@ api:
         - lambda: |-
             if (seconds > 0) {
               uint32_t now_t = millis();
-              int slot = pocket_ui::upsert_voice_timer_slot("ha_action", "", seconds, seconds, true, now_t);
-              pocket_ui::timer_view_slot() = slot + 1;
-              pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+              int slot = latter_ui::upsert_voice_timer_slot("ha_action", "", seconds, seconds, true, now_t);
+              latter_ui::timer_view_slot() = slot + 1;
+              latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
               id(timer_ringing) = false;
               id(gui_page) = 8;
               id(stuff_subpage) = 1;
               id(wake_to_active_state).execute();
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("timer", "Voice/HA Timer started for %d seconds in slot %d", (int)seconds, slot + 1);
             }
 
     - action: cancel_timer
       then:
         - lambda: |-
-            auto *slots = pocket_ui::timer_slots();
+            auto *slots = latter_ui::timer_slots();
             for (int i = 0; i < 3; i++) {
               slots[i].running = false;
               slots[i].paused = false;
               slots[i].remaining_sec = slots[i].duration_sec;
             }
-            pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+            latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
             id(timer_ringing) = false;
             id(stop_alarm_sound).execute();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
             ESP_LOGI("timer", "Voice/HA Timers cancelled");
 
     - action: show_notification
@@ -279,7 +279,7 @@ api:
               id(current_loaded_camera_url) = "";
               id(camera_snapshot_art).release();
             }
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
 
 ota:
   - platform: esphome
@@ -290,11 +290,11 @@ ota:
             id(ota_in_progress) = true;
             id(ota_progress_pct) = 0;
             id(sleep_start_time) = 0;
-            pocket_ui::screen_is_off_standby() = false;
+            latter_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
             id(disp1).start_poller();
             id(hal_release_deep_sleep_holds).execute();
-            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
+            latter_ui::hal_set_display_brightness(&id(disp1), 230);
         - light.turn_on:
             id: display_brightness
             brightness: 90%
@@ -323,11 +323,11 @@ ota:
             id(ota_in_progress) = true;
             id(ota_progress_pct) = 0;
             id(sleep_start_time) = 0;
-            pocket_ui::screen_is_off_standby() = false;
+            latter_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
             id(disp1).start_poller();
             id(hal_release_deep_sleep_holds).execute();
-            pocket_ui::hal_set_display_brightness(&id(disp1), 230);
+            latter_ui::hal_set_display_brightness(&id(disp1), 230);
         - light.turn_on:
             id: display_brightness
             brightness: 90%
@@ -354,7 +354,7 @@ time:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && !id(is_hibernating)) {
-              pocket_ui::record_ambient_frame_ms(0);
+              latter_ui::record_ambient_frame_ms(0);
             }
 
 
@@ -1395,7 +1395,7 @@ image:
       - lambda: |-
           id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;
           if (id(display_power_state) == 0 && id(gui_page) == 1) {
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: sync_wake_word_state
     on_error:
@@ -1413,7 +1413,7 @@ image:
       - lambda: |-
           id(current_loaded_camera_url) = id(notif_camera_url);
           if (id(display_power_state) == 0 && id(notif_active)) {
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: sync_wake_word_state
     on_error:
@@ -1428,13 +1428,13 @@ output:
     write_action:
       - lambda: |-
           if (state <= 0.01f) {
-            pocket_ui::hal_set_display_brightness(&id(disp1), 0);
+            latter_ui::hal_set_display_brightness(&id(disp1), 0);
           } else {
             // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
             float clamped = std::max(0.0f, std::min(1.0f, state));
             float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
             uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
-            pocket_ui::hal_set_display_brightness(&id(disp1), bri_byte);
+            latter_ui::hal_set_display_brightness(&id(disp1), bri_byte);
           }
 
 
@@ -1470,7 +1470,7 @@ select:
     set_action:
       - lambda: |-
           id(tv_remote_profile).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Remote: Slot 2 Profile"
@@ -1492,7 +1492,7 @@ select:
     set_action:
       - lambda: |-
           id(tv_remote_profile_2).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Remote: Slot 3 Profile"
@@ -1514,7 +1514,7 @@ select:
     set_action:
       - lambda: |-
           id(tv_remote_profile_3).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Remote: Slot 4 Profile"
@@ -1536,7 +1536,7 @@ select:
     set_action:
       - lambda: |-
           id(tv_remote_profile_4).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Voice: Wake Word Mode"
@@ -1553,7 +1553,7 @@ select:
     set_action:
       - lambda: |-
           id(va_wake_word_mode).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: sync_wake_word_state
 
   - platform: template
@@ -1574,7 +1574,7 @@ select:
       - lambda: |-
           id(va_active_wake_word).publish_state(x);
           esphome::voice_assistant::set_primary_wake_word_by_label(id(va), x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
       - script.execute: sync_wake_word_state
 
@@ -1593,7 +1593,7 @@ select:
     set_action:
       - lambda: |-
           id(ww_sens_okay_nabu).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
 
   - platform: template
@@ -1611,7 +1611,7 @@ select:
     set_action:
       - lambda: |-
           id(ww_sens_hey_luna).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
 
   - platform: template
@@ -1629,7 +1629,7 @@ select:
     set_action:
       - lambda: |-
           id(ww_sens_hey_jarvis).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
 
   - platform: template
@@ -1647,7 +1647,7 @@ select:
     set_action:
       - lambda: |-
           id(ww_sens_hey_mycroft).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
 
   - platform: template
@@ -1665,7 +1665,7 @@ select:
     set_action:
       - lambda: |-
           id(ww_sens_alexa).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
 
   - platform: template
@@ -1685,7 +1685,7 @@ select:
     set_action:
       - lambda: |-
           id(va_visual_profile).publish_state(x);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Weather: Condition Simulation"
@@ -1719,11 +1719,11 @@ select:
           if (x != "Live (Home Assistant)" && !id(home_weather_bg_switch).state) {
             id(home_weather_bg_switch).turn_on();
           }
-          pocket_ui::clear_day_epoch_initialized() = false;
-          pocket_ui::night_meteor_epoch_initialized() = false;
-          pocket_ui::weather_sim_dirty() = true;
-          pocket_ui::record_ambient_frame_ms(0);
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::clear_day_epoch_initialized() = false;
+          latter_ui::night_meteor_epoch_initialized() = false;
+          latter_ui::weather_sim_dirty() = true;
+          latter_ui::record_ambient_frame_ms(0);
+          latter_ui::schedule_disp_update(&id(disp1));
   - platform: template
     name: "Sleep & Wake: Screensaver Style"
     id: screensaver_style_select
@@ -1741,7 +1741,7 @@ select:
     set_action:
       - lambda: |-
           if (id(display_power_state) == 1) {
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           }
 
   - platform: template
@@ -1758,7 +1758,7 @@ select:
       - "Standard"
     set_action:
       - lambda: |-
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Music: Album Sort Order"
@@ -1821,7 +1821,7 @@ select:
       - "Always Visible"
     set_action:
       - lambda: |-
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   
   - platform: template
@@ -1918,7 +1918,7 @@ select:
     set_action:
       - lambda: |-
           id(clock_face_digital) = (x == "Modern Digital (Bold)");
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Display: Time Format"
@@ -1933,7 +1933,7 @@ select:
     set_action:
       - lambda: |-
           id(is_24h_format) = (x == "24-Hour");
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Display: Start Screen"
@@ -1949,7 +1949,7 @@ select:
     set_action:
       - lambda: |-
           id(default_start_app).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Room: Default Category"
@@ -1971,11 +1971,11 @@ select:
       - lambda: |-
           id(room_default_category_select).publish_state(x);
           if (id(display_power_state) == 0 && id(gui_page) == 6 && millis() > 3000) {
-            id(room_domain_filter) = pocket_ui::resolve_preferred_room_category(
+            id(room_domain_filter) = latter_ui::resolve_preferred_room_category(
                 x, id(room_show_all_category_switch).state);
             id(room_browse_page) = 1;
             id(fetch_room_browse).execute();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           }
 
 button:
@@ -2016,12 +2016,12 @@ button:
             id(find_my_start_ms) = millis();
             id(wake_to_active_state).execute();
             id(play_alarm_sound).execute();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
           } else {
             id(find_my_active) = false;
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
             id(screen_sleep_timer).execute();
           }
 
@@ -2041,10 +2041,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Wake Greeting"
@@ -2055,10 +2055,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Shortcut Room"
@@ -2069,10 +2069,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Room: Area Media Handoff"
@@ -2091,10 +2091,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Room: BLE Presence Beacon"
@@ -2109,14 +2109,14 @@ switch:
           if (id(display_power_state) == 0 && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
     turn_off_action:
       - lambda: |-
           id(ble_room_beacon_switch).publish_state(false);
           if (id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
             id(ble_ctrl).disable();
           }
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
 
   - platform: template
@@ -2128,10 +2128,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Shortcut Remote"
@@ -2142,10 +2142,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Shortcut Tools"
@@ -2156,10 +2156,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Shortcut Games"
@@ -2170,10 +2170,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Home: Shortcut Alarm"
@@ -2184,10 +2184,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   
 
@@ -2200,10 +2200,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
     on_turn_off:
       then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));'
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
     name: "Voice: Wake Screen on Assist"
@@ -2223,11 +2223,11 @@ switch:
     on_turn_on:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
     on_turn_off:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Music: Show Library Shortcut"
@@ -2239,11 +2239,11 @@ switch:
     on_turn_on:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
     on_turn_off:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && millis() > 3000) pocket_ui::schedule_disp_update(&id(disp1));
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
 
 number:
@@ -2288,7 +2288,7 @@ interval:
     then:
       - lambda: |-
           // Priority 1: Periodic thermal drift compensation for RTC slow clock
-          uint32_t cal_val = pocket_ui::hal_calibrate_rtc();
+          uint32_t cal_val = latter_ui::hal_calibrate_rtc();
           ESP_LOGD("rtc_cal", "Periodic RTC slow clock calibration: %lu", (unsigned long)cal_val);
 
   - interval: 50ms
@@ -2301,18 +2301,18 @@ interval:
                 (id(stuff_subpage) == 4 && id(dice_anim_active)) ||
                 (id(stuff_subpage) == 7) ||
                 (id(stuff_subpage) == 8 && id(coin_anim_active))) {
-              if (millis() - pocket_ui::last_ambient_anim_ms() >= 42U) {
-                pocket_ui::schedule_disp_update(&id(disp1));
-                pocket_ui::record_ambient_frame_ms(millis());
+              if (millis() - latter_ui::last_ambient_anim_ms() >= 42U) {
+                latter_ui::schedule_disp_update(&id(disp1));
+                latter_ui::record_ambient_frame_ms(millis());
               }
             }
           }
 
           // 20 FPS high-refresh physics loop exclusively for active games (coalesced against 1s timer)
           if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 3 && id(active_game) > 0 && !id(va_active) && id(va_status_text).empty()) {
-            if (millis() - pocket_ui::last_ambient_anim_ms() >= 42U) {
-              pocket_ui::schedule_disp_update(&id(disp1));
-              pocket_ui::record_ambient_frame_ms(millis());
+            if (millis() - latter_ui::last_ambient_anim_ms() >= 42U) {
+              latter_ui::schedule_disp_update(&id(disp1));
+              latter_ui::record_ambient_frame_ms(millis());
             }
           }
 
@@ -2325,8 +2325,8 @@ interval:
             uint32_t now_va_ms = millis();
 
             const bool tts_audio_active =
-                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                 id(announcement_mixing_input).is_running();
             if (id(va_active) && id(va_tts_received) && tts_audio_active) {
               esphome::voice_assistant::disarm_va_speaker_timeout(id(va));
@@ -2341,8 +2341,8 @@ interval:
 
             if (now_va_ms - last_va_anim_time >= 42U) {
               last_va_anim_time = now_va_ms;
-              pocket_ui::schedule_disp_update(&id(disp1));
-              pocket_ui::record_ambient_frame_ms(millis());
+              latter_ui::schedule_disp_update(&id(disp1));
+              latter_ui::record_ambient_frame_ms(millis());
             }
           }
 
@@ -2351,17 +2351,17 @@ interval:
           // - Paces smoothly at ~13.3 FPS (75ms) when local Sendspin music is playing
           // - Static daytime weather conditions run on the default 1s display refresh with near-zero CPU load
           const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
-          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && (id(gui_page) == 1 && id(home_subpage) == 0 && (id(home_weather_bg_switch).state || weather_sim_active || pocket_ui::is_wake_greeting_fading(millis(), id(home_wake_greeting_switch).state) || pocket_ui::is_home_activity_carousel_animating(millis()))) && !id(va_active) && id(va_status_text).empty()) {
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && (id(gui_page) == 1 && id(home_subpage) == 0 && (id(home_weather_bg_switch).state || weather_sim_active || latter_ui::is_wake_greeting_fading(millis(), id(home_wake_greeting_switch).state) || latter_ui::is_home_activity_carousel_animating(millis()))) && !id(va_active) && id(va_status_text).empty()) {
             static uint32_t last_cond_eval_time = 0;
             static bool cached_has_motion = false;
             uint32_t now_w_ms = millis();
-            const bool sim_just_changed = pocket_ui::weather_sim_dirty() ||
-                                          (pocket_ui::last_ambient_anim_ms() == 0U) ||
-                                          pocket_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
-                                          pocket_ui::is_home_activity_carousel_animating(now_w_ms);
+            const bool sim_just_changed = latter_ui::weather_sim_dirty() ||
+                                          (latter_ui::last_ambient_anim_ms() == 0U) ||
+                                          latter_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
+                                          latter_ui::is_home_activity_carousel_animating(now_w_ms);
 
             if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
-              pocket_ui::weather_sim_dirty() = false;
+              latter_ui::weather_sim_dirty() = false;
               last_cond_eval_time = now_w_ms;
               std::string c_cond = id(ha_weather_condition).state;
               if ((c_cond.empty() || c_cond == "unknown" || c_cond == "unavailable") &&
@@ -2371,19 +2371,19 @@ interval:
               std::string s_sun = id(ha_sun_state).state;
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
               apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
-              cached_has_motion = pocket_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
+              cached_has_motion = latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
             }
 
-            const bool touch_busy = pocket_ui::touch_gesture().active ||
-                                    (now_w_ms - pocket_ui::touch_gesture().last_touch_ms < 220U);
+            const bool touch_busy = latter_ui::touch_gesture().active ||
+                                    (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
             if (!touch_busy && (sim_just_changed || cached_has_motion)) {
               const bool local_music_playing =
-                  (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              if (sim_just_changed || pocket_ui::should_step_ambient_anim(now_w_ms, local_music_playing,
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              if (sim_just_changed || latter_ui::should_step_ambient_anim(now_w_ms, local_music_playing,
                                                       id(va_active) || !id(va_status_text).empty(),
                                                       id(alarm_ringing) || id(timer_ringing))) {
-                pocket_ui::schedule_disp_update(&id(disp1));
-                pocket_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+                latter_ui::record_ambient_frame_ms(millis());
               }
             }
           }
@@ -2396,7 +2396,7 @@ interval:
           // ------------------------------------------------------------------
           if (id(timer_running)) {
             uint32_t now_ms = millis();
-            auto *slots = pocket_ui::timer_slots();
+            auto *slots = latter_ui::timer_slots();
             bool any_expired = false;
             std::string exp_name = "";
             bool sec_changed = false;
@@ -2418,7 +2418,7 @@ interval:
               }
             }
 
-            pocket_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+            latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
 
             if (any_expired) {
               if (id(va_active) || !id(va_status_text).empty()) {
@@ -2435,7 +2435,7 @@ interval:
             } else if (sec_changed) {
               if (!id(va_active) && id(va_status_text).empty()) {
                 if (((id(gui_page) == 8 && id(stuff_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
-                  pocket_ui::schedule_disp_update(&id(disp1));
+                  latter_ui::schedule_disp_update(&id(disp1));
                 }
               }
             }
@@ -2446,37 +2446,37 @@ interval:
             id(find_my_active) = false;
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
-            pocket_ui::schedule_disp_update(&id(disp1));
+            latter_ui::schedule_disp_update(&id(disp1));
             id(screen_sleep_timer).execute();
           }
 
           // Camera Carousel Auto-Live Frame Refresh (every 2200ms while viewing Camera App)
           if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12 &&
-              !pocket_ui::cam_quick_reply_open() && !pocket_ui::cam_intercom_ptt_active() &&
+              !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
               !id(va_active) && id(va_status_text).empty()) {
             uint32_t now_cam_ms = millis();
-            if (!pocket_ui::cam_intercom_status().empty() && id(cam_intercom_status_ms) > 0 &&
+            if (!latter_ui::cam_intercom_status().empty() && id(cam_intercom_status_ms) > 0 &&
                 (now_cam_ms - id(cam_intercom_status_ms) > 2500U)) {
-              pocket_ui::cam_intercom_status() = "";
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::cam_intercom_status() = "";
+              latter_ui::schedule_disp_update(&id(disp1));
             }
-            if (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (pocket_ui::SCREEN_W != pocket_ui::SCREEN_H)) {
+            if (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (latter_ui::SCREEN_W != latter_ui::SCREEN_H)) {
               float ax = id(accel_x).state;
               float ay = id(accel_y).state;
               if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
                 bool want_land = (std::abs(ax) > 0.68f && std::abs(ay) < 0.42f);
                 bool want_port = (std::abs(ay) > 0.68f && std::abs(ax) < 0.42f);
-                if ((want_land && !pocket_ui::cam_landscape_mode()) ||
-                    (want_port && pocket_ui::cam_landscape_mode())) {
-                  pocket_ui::cam_landscape_mode() = want_land;
+                if ((want_land && !latter_ui::cam_landscape_mode()) ||
+                    (want_port && latter_ui::cam_landscape_mode())) {
+                  latter_ui::cam_landscape_mode() = want_land;
                   id(camera_snapshot_art).release();
                   id(fetch_on_demand_camera).execute();
-                  pocket_ui::schedule_disp_update(&id(disp1));
+                  latter_ui::schedule_disp_update(&id(disp1));
                 }
               }
             }
-            if (now_cam_ms - pocket_ui::last_cam_live_fetch_ms() >= 2200U) {
-              pocket_ui::last_cam_live_fetch_ms() = now_cam_ms;
+            if (now_cam_ms - latter_ui::last_cam_live_fetch_ms() >= 2200U) {
+              latter_ui::last_cam_live_fetch_ms() = now_cam_ms;
               id(fetch_on_demand_camera).execute();
             }
           }
@@ -2487,14 +2487,14 @@ interval:
               id(dismiss_notification).execute();
             } else if (id(notif_priority) == "critical" && id(display_power_state) == 0 &&
                        !id(va_active) && id(va_status_text).empty()) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
           // Periodic display refresh during active alarm, timer, or Find My Device ringing
           if ((id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) && id(display_power_state) == 0) {
             if (!id(va_active) && id(va_status_text).empty()) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
@@ -2502,7 +2502,7 @@ interval:
           if (id(gui_page) == 4 && id(system_menu_mode) == 5 && id(update_check_state) > 0 && !id(va_active) && id(va_status_text).empty()) {
             uint32_t dt_upd = millis() - id(update_check_timer);
             if ((id(update_check_state) == 1 && dt_upd > 1500U) || (id(update_check_state) == 2 && dt_upd > 3500U)) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
@@ -2510,7 +2510,7 @@ interval:
           if (id(gui_page) == 2 && id(music_overlay_mode) == 0 && id(music_hud_active)) {
             if (millis() - id(music_hud_timer) >= 5000U) {
               id(music_hud_active) = false;
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
@@ -2531,7 +2531,7 @@ interval:
               id(alarm_ringing) = true;
               id(wake_to_active_state).execute();
               id(play_alarm_sound).execute();
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("alarm", "Snoozed alarm firing now!");
               return;
             }
@@ -2576,7 +2576,7 @@ interval:
                 id(alarm_ringing_idx) = trig_idx;
                 id(wake_to_active_state).execute();
                 id(play_alarm_sound).execute();
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
                 ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", trig_idx);
               }
             }
@@ -2622,7 +2622,7 @@ sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && !id(is_hibernating)) {
-              pocket_ui::record_ambient_frame_ms(0);
+              latter_ui::record_ambient_frame_ms(0);
             }
 
   - platform: homeassistant
@@ -2664,7 +2664,7 @@ sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && id(gui_page) == 6) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2676,7 +2676,7 @@ sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && id(gui_page) == 6) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2688,9 +2688,9 @@ sensor:
       then:
         - lambda: |-
             if (!std::isnan(x) && x >= 40.0f && x <= 100.0f) {
-              pocket_ui::sim_thermostat_target_f() = static_cast<int>(std::round(x));
+              latter_ui::sim_thermostat_target_f() = static_cast<int>(std::round(x));
               if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -2744,7 +2744,7 @@ sensor:
                 id(current_loaded_camera_url) = "";
                 id(camera_snapshot_art).release();
               }
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2758,7 +2758,7 @@ sensor:
             if (!std::isnan(x) && x >= 1.0f && x <= 10.0f) {
               id(active_remote_slot) = static_cast<int>(x) - 1;
               if (id(display_power_state) == 0 && id(gui_page) == 7) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -2810,17 +2810,17 @@ sensor:
       then:
         - lambda: |-
             if (!std::isnan(x) && x >= 0.0f && x <= 1.0f) {
-              if (millis() - pocket_ui::last_local_vol_tap_ms() > 3000U) {
-                pocket_ui::remote_vol_pct() = (int)std::round(x * 100.0f);
+              if (millis() - latter_ui::last_local_vol_tap_ms() > 3000U) {
+                latter_ui::remote_vol_pct() = (int)std::round(x * 100.0f);
                 if (id(active_speaker_entity) == "${local_player_id}") {
-                  id(pocket_music_player).volume = x;
+                  id(latter_media_player).volume = x;
                 }
               }
             }
 
   - platform: wifi_signal
     name: "Wi-Fi Signal"
-    id: pocket_wifi_signal
+    id: latter_wifi_signal
     update_interval: 60s
 
 
@@ -2862,7 +2862,7 @@ binary_sensor:
                   id(alarm_ringing) = false;
                   id(stop_alarm_sound).execute();
                   id(sync_display_brightness).execute();
-                  pocket_ui::schedule_disp_update(&id(disp1));
+                  latter_ui::schedule_disp_update(&id(disp1));
                   id(screen_sleep_timer).execute();
             else:
               - if:
@@ -2902,7 +2902,7 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && !id(is_hibernating)) {
-              pocket_ui::record_ambient_frame_ms(0);
+              latter_ui::record_ambient_frame_ms(0);
             }
 
   - platform: homeassistant
@@ -2914,9 +2914,9 @@ text_sensor:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
               id(active_room_area_name) = x;
-              pocket_ui::latter_room_label() = x;
+              latter_ui::latter_room_label() = x;
               if (id(display_power_state) == 0 && (id(gui_page) == 6 || (id(gui_page) == 4 && id(system_menu_mode) == 8))) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -2931,9 +2931,9 @@ text_sensor:
             if (!x.empty() && x != "unknown" && x != "unavailable" && x != id(active_room_area_id)) {
               id(active_room_area_id) = x;
               id(room_browse_page) = 1;
-              pocket_ui::room_cat_dock_page() = 0;
+              latter_ui::room_cat_dock_page() = 0;
               if (id(display_power_state) == 0 && id(gui_page) == 6) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -2946,13 +2946,13 @@ text_sensor:
       then:
         - lambda: |-
             if (x != "unknown" && x != "unavailable") {
-              bool changed = (x != pocket_ui::room_available_domains_csv());
-              pocket_ui::room_available_domains_csv() = x;
-              std::string valid_cat = pocket_ui::resolve_preferred_room_category(
+              bool changed = (x != latter_ui::room_available_domains_csv());
+              latter_ui::room_available_domains_csv() = x;
+              std::string valid_cat = latter_ui::resolve_preferred_room_category(
                   std::string(id(room_default_category_select).current_option()),
                   id(room_show_all_category_switch).state);
               std::string cats[7];
-              int cnt = pocket_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
+              int cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
               bool cur_ok = false;
               for (int i = 0; i < cnt; i++) {
                 if (cats[i] == id(room_domain_filter)) { cur_ok = true; break; }
@@ -2965,7 +2965,7 @@ text_sensor:
                 }
               }
               if (changed && id(display_power_state) == 0 && id(gui_page) == 6) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -2978,10 +2978,10 @@ text_sensor:
       then:
         - lambda: |-
             if (x != "unknown" && x != "unavailable") {
-              pocket_ui::latter_dock_order_csv() = x;
-              pocket_ui::home_dock_page() = 0;
+              latter_ui::latter_dock_order_csv() = x;
+              latter_ui::home_dock_page() = 0;
               if (id(display_power_state) == 0 && id(gui_page) == 1) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3008,7 +3008,7 @@ text_sensor:
             if (!x.empty() && x != "unknown" && x != "unavailable") {
               id(room_alarm_state) = x;
               if (id(display_power_state) == 0 && (id(gui_page) == 6 || id(gui_page) == 9 || id(gui_page) == 1)) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3021,9 +3021,9 @@ text_sensor:
       then:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
-              pocket_ui::sim_thermostat_mode() = x;
+              latter_ui::sim_thermostat_mode() = x;
               if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3036,9 +3036,9 @@ text_sensor:
       then:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
-              pocket_ui::sim_front_door_locked() = (x == "locked");
+              latter_ui::sim_front_door_locked() = (x == "locked");
               if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3051,9 +3051,9 @@ text_sensor:
       then:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
-              pocket_ui::sim_garage_open() = (x == "open" || x == "opening");
+              latter_ui::sim_garage_open() = (x == "open" || x == "opening");
               if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3066,12 +3066,12 @@ text_sensor:
       then:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
-              if (x == "cleaning") pocket_ui::sim_vacuum_state() = "Cleaning";
-              else if (x == "paused") pocket_ui::sim_vacuum_state() = "Paused";
-              else if (x == "returning") pocket_ui::sim_vacuum_state() = "Returning";
-              else pocket_ui::sim_vacuum_state() = "Docked";
+              if (x == "cleaning") latter_ui::sim_vacuum_state() = "Cleaning";
+              else if (x == "paused") latter_ui::sim_vacuum_state() = "Paused";
+              else if (x == "returning") latter_ui::sim_vacuum_state() = "Returning";
+              else latter_ui::sim_vacuum_state() = "Docked";
               if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 
@@ -3114,7 +3114,7 @@ text_sensor:
       then:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
-              pocket_ui::latter_site_id() = x;
+              latter_ui::latter_site_id() = x;
             }
 
   - platform: homeassistant
@@ -3125,7 +3125,7 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            pocket_ui::latter_vpn_enabled() = (x == "True" || x == "true" || x == "1");
+            latter_ui::latter_vpn_enabled() = (x == "True" || x == "true" || x == "1");
 
   - platform: homeassistant
     id: ha_latter_vpn_client_ip
@@ -3136,7 +3136,7 @@ text_sensor:
       then:
         - lambda: |-
             if (x != "unknown" && x != "unavailable") {
-              pocket_ui::latter_vpn_client_ip() = x;
+              latter_ui::latter_vpn_client_ip() = x;
             }
 
   - platform: homeassistant
@@ -3148,7 +3148,7 @@ text_sensor:
       then:
         - lambda: |-
             if (x != "unknown" && x != "unavailable") {
-              pocket_ui::latter_ble_proxy() = x;
+              latter_ui::latter_ble_proxy() = x;
             }
 
   - platform: homeassistant
@@ -3160,7 +3160,7 @@ text_sensor:
       then:
         - lambda: |-
             if (x.size() == 7 && x[0] == '#') {
-              uint32_t new_rgb = pocket_ui::parse_hex_rgb(x, id(custom_theme_rgb));
+              uint32_t new_rgb = latter_ui::parse_hex_rgb(x, id(custom_theme_rgb));
               if (new_rgb != id(custom_theme_rgb)) {
                 id(custom_theme_rgb) = new_rgb;
                 if (id(theme_palette_select).current_option() == "Custom") {
@@ -3184,7 +3184,7 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3195,9 +3195,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            pocket_ui::cam_listen_active() = (x == "listening");
+            latter_ui::cam_listen_active() = (x == "listening");
             if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3228,7 +3228,7 @@ text_sensor:
               - online_image.release: home_wallpaper_art
               - lambda: |-
                   if (id(display_power_state) == 0 && id(gui_page) == 1) {
-                    pocket_ui::schedule_disp_update(&id(disp1));
+                    latter_ui::schedule_disp_update(&id(disp1));
                   }
             else:
               - if:
@@ -3245,7 +3245,7 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(stuff_subpage) == 9))) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3262,8 +3262,8 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && !id(is_hibernating)) {
-              pocket_ui::weather_sim_dirty() = true;
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::weather_sim_dirty() = true;
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3276,10 +3276,10 @@ text_sensor:
   - platform: wifi_info
     ip_address:
       name: "IP Address"
-      id: pocket_ip_address
+      id: latter_ip_address
   - platform: template
     name: "Firmware Version"
-    id: pocket_assistant_firmware_version
+    id: latter_firmware_version
     icon: "mdi:tag-outline"
     entity_category: diagnostic
     update_interval: 3600s
@@ -3293,7 +3293,7 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
   - platform: homeassistant
     id: ha_firmware_release_summary
@@ -3304,7 +3304,7 @@ text_sensor:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
   # �� Universal Remote Control Slots Summary (Dynamic from Latter v1.0.3+)
   - platform: homeassistant
@@ -3315,7 +3315,7 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            pocket_ui::parse_latter_remote_slots_summary(
+            latter_ui::parse_latter_remote_slots_summary(
                 x,
                 id(remote_slot_0_ent), id(remote_slot_0_name),
                 id(remote_slot_1_ent), id(remote_slot_1_name),
@@ -3325,9 +3325,9 @@ text_sensor:
               id(remote_slot_0_ent), id(remote_slot_1_ent),
               id(remote_slot_2_ent), id(remote_slot_3_ent)
             };
-            id(active_remote_slot) = pocket_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
+            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
             if (id(display_power_state) == 0 && id(gui_page) == 7 && millis() > 3000) {
-              pocket_ui::schedule_disp_update(&id(disp1));
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3398,7 +3398,7 @@ text_sensor:
             if (x != prev_title) {
               prev_title = x;
               if (!x.empty() && x != "Idle" && x != "None" && x != "unknown" && x != "unavailable") {
-                pocket_ui::music_queue_cleared() = false;
+                latter_ui::music_queue_cleared() = false;
               }
               id(throttled_disp_update).execute();
             }
@@ -3487,7 +3487,7 @@ text_sensor:
             if (x != prev_s_title) {
               prev_s_title = x;
               if (!x.empty() && x != "Idle" && x != "None") {
-                pocket_ui::music_queue_cleared() = false;
+                latter_ui::music_queue_cleared() = false;
               }
               if (id(active_speaker_entity) == "${local_player_id}") {
                 id(throttled_disp_update).execute();
@@ -3514,7 +3514,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          bool local_active = (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          bool local_active = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           bool remote_active = (!id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}") && (id(ha_target_state).state == "playing"));
           if (local_active || remote_active) {
             id(va_resume_music_after) = true;
@@ -3524,7 +3524,7 @@ script:
           condition:
             lambda: 'return id(va_resume_music_after);'
           then:
-            - media_player.pause: pocket_music_player
+            - media_player.pause: latter_media_player
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 50
@@ -3572,7 +3572,7 @@ script:
                       then:
                         - mixer_speaker.apply_ducking:
                             id: media_mixing_input
-                            decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                            decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                             duration: 0.5s
                         - mixer_speaker.apply_ducking:
                             id: announcement_mixing_input
@@ -3611,11 +3611,11 @@ script:
           condition:
             lambda: |-
               return (id(active_speaker_entity) != "${local_player_id}") &&
-                     (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           then:
             - wait_until:
                 condition:
-                  lambda: 'return id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING;'
+                  lambda: 'return id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING;'
                 timeout: 2500ms
             - delay: 250ms
       - if:
@@ -3651,7 +3651,7 @@ script:
             lambda: |-
               return (id(display_power_state) == 0) &&
                      !id(va_active) && id(va_status_text).empty() &&
-                     (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      !id(ha_latter_wallpaper_url).state.empty() &&
                      (id(ha_latter_wallpaper_url).state != "none") &&
                      (id(ha_latter_wallpaper_url).state != "unknown") &&
@@ -3699,7 +3699,7 @@ script:
       - delay: 40ms
       - if:
           condition:
-            lambda: 'return !pocket_ui::cal_detail_location().empty();'
+            lambda: 'return !latter_ui::cal_detail_location().empty();'
           then:
             - if:
                 condition:
@@ -3708,7 +3708,7 @@ script:
                   - micro_wake_word.stop:
                   - delay: 20ms
             - lambda: |-
-                std::string base_map_u = pocket_ui::cal_detail_map_url();
+                std::string base_map_u = latter_ui::cal_detail_map_url();
                 if (base_map_u.empty()) {
                   const std::string &w_url = id(ha_latter_wallpaper_url).state;
                   const std::string &c_url = id(ha_latter_camera_snapshot_url).state;
@@ -3724,12 +3724,12 @@ script:
                   if (orig.empty()) orig = extract_origin(w_url);
                   if (orig.empty()) orig = extract_origin(a_url);
                   base_map_u = orig + "/api/latter/map/${name}?w=${screen_w}&h=${screen_h}&shape=${art_shape}&q=" +
-                               pocket_ui::url_encode_query(pocket_ui::cal_detail_location());
+                               latter_ui::url_encode_query(latter_ui::cal_detail_location());
                 }
                 id(notif_camera_url) = base_map_u +
-                                       "&z=" + to_string(pocket_ui::cal_map_zoom()) +
-                                       "&pan_x=" + to_string(pocket_ui::cal_map_pan_x()) +
-                                       "&pan_y=" + to_string(pocket_ui::cal_map_pan_y());
+                                       "&z=" + to_string(latter_ui::cal_map_zoom()) +
+                                       "&pan_x=" + to_string(latter_ui::cal_map_pan_x()) +
+                                       "&pan_y=" + to_string(latter_ui::cal_map_pan_y());
                 ESP_LOGI("cal_map", "Fetching Calendar Map Snapshot: %s", id(notif_camera_url).c_str());
             - online_image.set_url:
                 id: camera_snapshot_art
@@ -3757,8 +3757,8 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::last_cam_live_fetch_ms() = millis();
-          id(notif_camera_url) = pocket_ui::build_carousel_camera_url(
+          latter_ui::last_cam_live_fetch_ms() = millis();
+          id(notif_camera_url) = latter_ui::build_carousel_camera_url(
               id(ha_latter_camera_snapshot_url).state,
               id(ha_latter_wallpaper_url).state,
               id(ha_target_art_url).state,
@@ -3788,10 +3788,10 @@ script:
             target_device: "${name}"
             action: !lambda 'return id(cam_intercom_action).c_str();'
             camera_entity: !lambda |-
-              return pocket_ui::resolve_active_carousel_camera_id(
+              return latter_ui::resolve_active_carousel_camera_id(
                   id(ha_latter_cameras_summary).state,
                   id(ha_latter_camera_snapshot_url).state).c_str();
-            camera_index: !lambda 'return to_string(pocket_ui::cam_carousel_idx());'
+            camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
             message: !lambda 'return id(cam_intercom_message).c_str();'
             anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
 
@@ -3799,17 +3799,17 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::cam_call_active() = true;
-          pocket_ui::cam_listen_active() = true;
-          pocket_ui::cam_intercom_status() = "2-WAY CALL (ANC)";
+          latter_ui::cam_call_active() = true;
+          latter_ui::cam_listen_active() = true;
+          latter_ui::cam_intercom_status() = "2-WAY CALL (ANC)";
           id(cam_intercom_status_ms) = millis();
           id(cam_intercom_action) = "listen_start";
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: send_doorbell_intercom_cmd
       - delay: 350ms
       - if:
           condition:
-            lambda: 'return pocket_ui::cam_call_active() && id(va).get_api_connection() != nullptr;'
+            lambda: 'return latter_ui::cam_call_active() && id(va).get_api_connection() != nullptr;'
           then:
             - script.execute: start_doorbell_ptt
 
@@ -3819,16 +3819,16 @@ script:
       - script.stop: rearm_doorbell_duplex_mic
       - script.stop: start_doorbell_ptt
       - lambda: |-
-          pocket_ui::cam_call_active() = false;
-          pocket_ui::cam_intercom_ptt_active() = false;
-          pocket_ui::cam_listen_active() = false;
-          pocket_ui::cam_intercom_status() = "CALL ENDED";
+          latter_ui::cam_call_active() = false;
+          latter_ui::cam_intercom_ptt_active() = false;
+          latter_ui::cam_listen_active() = false;
+          latter_ui::cam_intercom_status() = "CALL ENDED";
           id(cam_intercom_status_ms) = millis();
           id(cam_intercom_action) = "listen_stop";
           esphome::voice_assistant::abort_voice_assistant(id(va));
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: send_doorbell_intercom_cmd
-      - media_player.stop: pocket_music_player
+      - media_player.stop: latter_media_player
       - script.execute: mp_idle_debounce
 
   - id: rearm_doorbell_duplex_mic
@@ -3838,7 +3838,7 @@ script:
       - if:
           condition:
             lambda: |-
-              return pocket_ui::cam_call_active() &&
+              return latter_ui::cam_call_active() &&
                      (id(gui_page) == 8 && id(stuff_subpage) == 12) &&
                      (id(display_power_state) == 0);
           then:
@@ -3852,10 +3852,10 @@ script:
             lambda: 'return id(va).get_api_connection() == nullptr;'
           then:
             - lambda: |-
-                if (!pocket_ui::cam_call_active()) {
-                  pocket_ui::cam_quick_reply_open() = true;
+                if (!latter_ui::cam_call_active()) {
+                  latter_ui::cam_quick_reply_open() = true;
                 }
-                pocket_ui::schedule_disp_update(&id(disp1));
+                latter_ui::schedule_disp_update(&id(disp1));
             - script.stop: start_doorbell_ptt
       - if:
           condition:
@@ -3864,14 +3864,14 @@ script:
               // On ESP32-P4, full-duplex I2S allows keeping the inbound camera audio stream running!
               return false;
               #else
-              return pocket_ui::cam_listen_active() && !pocket_ui::cam_call_active();
+              return latter_ui::cam_listen_active() && !latter_ui::cam_call_active();
               #endif
           then:
             - lambda: |-
-                pocket_ui::cam_listen_active() = false;
+                latter_ui::cam_listen_active() = false;
                 id(cam_intercom_action) = "listen_stop";
             - script.execute: send_doorbell_intercom_cmd
-            - media_player.stop: pocket_music_player
+            - media_player.stop: latter_media_player
       - if:
           condition:
             micro_wake_word.is_running:
@@ -3879,10 +3879,10 @@ script:
             - micro_wake_word.stop:
             - delay: 20ms
       - lambda: |-
-          pocket_ui::cam_intercom_ptt_active() = true;
-          pocket_ui::cam_intercom_status() = pocket_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
+          latter_ui::cam_intercom_ptt_active() = true;
+          latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
           id(cam_intercom_status_ms) = millis();
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: route_i2s_to_mic
       - voice_assistant.start:
 
@@ -3921,7 +3921,7 @@ script:
       - script.execute: mp_idle_debounce
       - script.execute: sync_wake_word_state
       - script.execute: screen_sleep_timer
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: throttled_disp_update
     mode: restart
@@ -3933,14 +3933,14 @@ script:
               static uint32_t last_throttled_draw = 0;
               uint32_t now = millis();
               if (now - last_throttled_draw < 200) return false;
-              if (now - pocket_ui::last_page2_draw_ms() < 250) return false;
+              if (now - latter_ui::last_page2_draw_ms() < 250) return false;
               if (id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active)) {
                 last_throttled_draw = now;
                 return true;
               }
               return false;
           then:
-            - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: apply_theme_preset
     mode: restart
@@ -3954,7 +3954,7 @@ script:
           #endif
           id(theme_secondary) = is_ips_lcd ? Color(224, 232, 242) : Color(192, 192, 192);
           if (p == "Custom") {
-            pocket_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
+            latter_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
           } else if (p == "Pink" || p == "Pink & Gray") {
             id(theme_primary) = is_ips_lcd ? Color(236, 128, 162) : Color(168, 120, 132);
           } else if (p == "Green" || p == "Green & Gold") {
@@ -3964,7 +3964,7 @@ script:
           } else {
             id(theme_primary) = is_ips_lcd ? Color(88, 184, 238)  : Color(107, 142, 158);
           }
-          if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - id: save_custom_color_to_latter
     mode: restart
@@ -4046,11 +4046,11 @@ script:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
                 if (std::isnan(step) || step <= 0.0f) step = 0.02f;
-                pocket_ui::last_local_vol_tap_ms() = millis();
-                float cur = id(pocket_music_player).volume;
+                latter_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(latter_media_player).volume;
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::min(1.00f, cur + step);
-                id(pocket_music_player).make_call().set_volume(new_vol).perform();
+                id(latter_media_player).make_call().set_volume(new_vol).perform();
           else:
             - homeassistant.action:
                 action: latter.media_volume
@@ -4070,11 +4070,11 @@ script:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
                 if (std::isnan(step) || step <= 0.0f) step = 0.02f;
-                pocket_ui::last_local_vol_tap_ms() = millis();
-                float cur = id(pocket_music_player).volume;
+                latter_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(latter_media_player).volume;
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::max(0.10f, cur - step);
-                id(pocket_music_player).make_call().set_volume(new_vol).perform();
+                id(latter_media_player).make_call().set_volume(new_vol).perform();
           else:
             - homeassistant.action:
                 action: latter.media_volume
@@ -4089,22 +4089,22 @@ script:
           condition:
             lambda: |-
               bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
-              bool local_playing = (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              return pocket_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, millis());
+              bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              return latter_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, millis());
           then:
-            - lambda: 'pocket_ui::set_remote_play_override(false, millis());'
+            - lambda: 'latter_ui::set_remote_play_override(false, millis());'
             - if:
                 condition:
                   lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
                 then:
-                  - media_player.pause: pocket_music_player
+                  - media_player.pause: latter_media_player
             - homeassistant.action:
                 action: latter.media_command
                 data:
                   target_device: "${name}"
                   command: "pause"
           else:
-            - lambda: 'pocket_ui::set_remote_play_override(true, millis());'
+            - lambda: 'latter_ui::set_remote_play_override(true, millis());'
             - if:
                 condition:
                   lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
@@ -4115,7 +4115,7 @@ script:
                   - audio_dac.mute_off: es8311_dac
                   - mixer_speaker.apply_ducking:
                       id: media_mixing_input
-                      decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                      decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                       duration: 0.2s
             - homeassistant.action:
                 action: latter.media_command
@@ -4127,7 +4127,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::set_remote_play_override(false, millis());
+          latter_ui::set_remote_play_override(false, millis());
           id(music_action_feedback) = "Playback Stopped";
           id(music_feedback_timer) = millis();
           id(music_overlay_mode) = 0;
@@ -4137,20 +4137,20 @@ script:
           condition:
             lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
           then:
-            - media_player.pause: pocket_music_player
+            - media_player.pause: latter_media_player
       - homeassistant.action:
           action: latter.media_command
           data:
             target_device: "${name}"
             command: "pause"
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: clear_ha_music_queue
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::set_remote_play_override(false, millis());
-          pocket_ui::music_queue_cleared() = true;
+          latter_ui::set_remote_play_override(false, millis());
+          latter_ui::music_queue_cleared() = true;
           id(track_title).publish_state("");
           id(track_artist).publish_state("");
           id(track_album).publish_state("");
@@ -4169,14 +4169,14 @@ script:
           condition:
             lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
           then:
-            - media_player.stop: pocket_music_player
+            - media_player.stop: latter_media_player
       - online_image.release: remote_album_art
       - homeassistant.action:
           action: latter.media_command
           data:
             target_device: "${name}"
             command: "clear_queue"
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: music_next_track
     mode: restart
@@ -4281,7 +4281,7 @@ script:
   - id: fetch_music_browse
     mode: restart
     then:
-      - lambda: 'pocket_ui::last_music_page_req_ms() = millis();'
+      - lambda: 'latter_ui::last_music_page_req_ms() = millis();'
       - delay: 55ms
       - homeassistant.action:
           action: latter.music_browse
@@ -4417,7 +4417,7 @@ script:
             - script.execute: fetch_remote_art_debounced
           else:
             - online_image.release: remote_album_art
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: speaker_transfer_to_target
     mode: restart
@@ -4452,7 +4452,7 @@ script:
           data:
             entity_id: !lambda 'return id(active_speaker_entity).c_str();'
             group_members: !lambda 'return id(target_speaker_id).c_str();'
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: speaker_unjoin_target
     mode: restart
@@ -4479,7 +4479,7 @@ script:
             entity_id: !lambda 'return id(active_speaker_entity).c_str();'
             transfer_queue: "false"
       - online_image.release: remote_album_art
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   - id: play_music_slot
     mode: restart
     parameters:
@@ -4522,7 +4522,7 @@ script:
           }
           id(music_action_feedback) = "Playing: " + id(selected_slot_name);
           id(music_feedback_timer) = millis();
-          pocket_ui::set_remote_play_override(true, millis());
+          latter_ui::set_remote_play_override(true, millis());
           if (id(selected_category_mode) == "podcast_episodes") {
             id(active_playback_media_type) = "podcast";
           } else if (id(selected_category_mode) == "audiobook") {
@@ -4546,7 +4546,7 @@ script:
             - audio_dac.mute_off: es8311_dac
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
-                decibel_reduction: !lambda 'float v = id(pocket_music_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                 duration: 0.2s
       - homeassistant.action:
           action: music_assistant.play_media
@@ -4555,7 +4555,7 @@ script:
             media_id: !lambda 'return id(selected_slot_id).c_str();'
             media_type: !lambda 'return id(selected_slot_type).c_str();'
             enqueue: "replace"
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: mp_idle_debounce
     mode: restart
@@ -4564,14 +4564,14 @@ script:
       - if:
           condition:
             lambda: |-
-              return (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                     (id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
+              return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
                      !id(va).is_running() &&
                      !id(va_active) &&
                      !id(va_tts_received) &&
                      !id(announcement_mixing_input).is_running() &&
-                     !pocket_ui::cam_call_active() &&
-                     !pocket_ui::cam_listen_active() &&
+                     !latter_ui::cam_call_active() &&
+                     !latter_ui::cam_listen_active() &&
                      !id(alarm_ringing) &&
                      !id(timer_ringing) &&
                      !id(find_my_active) &&
@@ -4594,7 +4594,7 @@ script:
                   }
                   if (!id(usb_connected).state) {
                     if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
-                    pocket_ui::hal_set_wifi_power_save(1);
+                    latter_ui::hal_set_wifi_power_save(1);
                   }
                 }
 
@@ -4633,7 +4633,7 @@ script:
                 condition:
                   lambda: |-
                     return !id(va_resume_music_after) &&
-                           ((id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                           ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                             (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
                 then:
                   - script.execute: pause_all_music
@@ -4660,17 +4660,17 @@ script:
       - if:
           condition:
             lambda: |-
-              return (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                     (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           then:
             - media_player.stop:
-                id: pocket_music_player
+                id: latter_media_player
                 announcement: true
       - speaker.stop: announcement_mixing_input
       - voice_assistant.stop:
       - wait_until:
           condition:
-            lambda: 'return id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_IDLE;'
+            lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_IDLE;'
           timeout: 450ms
       - script.stop: mp_idle_debounce
       - lambda: |-
@@ -4682,11 +4682,11 @@ script:
           id(va_active) = false;
           id(gui_page) = id(return_page);
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(pocket_music_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            pocket_ui::hal_set_wifi_power_save(1);
+              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
+            latter_ui::hal_set_wifi_power_save(1);
           }
       - delay: 25ms
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
       - script.execute: resume_music_after_va
       - if:
@@ -4698,16 +4698,16 @@ script:
     mode: restart
     then:
       - update.perform:
-          id: update_pocket_assistant
+          id: latter_firmware_update
       - lambda: |-
           id(system_menu_mode) = 5;
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: check_firmware_update
     mode: restart
     then:
       - update.check:
-          id: update_pocket_assistant
+          id: latter_firmware_update
 
 
   - id: menu_scroll_transition
@@ -4716,12 +4716,12 @@ script:
       - lambda: |-
           // Frame 1: Render 35% eased frame (SHARED_SCROLL_EASE_*[2])
           id(menu_scroll_step) = 2;
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - delay: 16ms
       - lambda: |-
           // Frame 2: Render 85% eased frame (SHARED_SCROLL_EASE_*[3])
           id(menu_scroll_step) = 3;
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
       - delay: 16ms
       - lambda: |-
           // Frame 3: Commit target page, release scroll lock, and render settled frame
@@ -4740,7 +4740,7 @@ script:
             id(stuff_menu_page) = id(menu_scroll_target_page);
           }
           id(menu_scroll_step) = 0;
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   # ==============================================================================
   # �� UNIVERSAL TV & MEDIA REMOTE COMMAND SCRIPTS (MULTI-DEVICE & MULTI-PROTOCOL)
@@ -4777,7 +4777,7 @@ script:
             id(remote_slot_0_name), id(remote_slot_1_name),
             id(remote_slot_2_name), id(remote_slot_3_name)
           };
-          const pocket_ui::RemoteCustomCmds custom_cmds = {
+          const latter_ui::RemoteCustomCmds custom_cmds = {
             "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT",
             "DPAD_CENTER", "BACK", "HOME",
             "VOLUME_UP", "VOLUME_DOWN", "POWER"
@@ -4788,14 +4788,14 @@ script:
             std::string(id(tv_remote_profile_3).current_option()),
             std::string(id(tv_remote_profile_4).current_option())
           };
-          int res_slot = (target_slot == -1) ? pocket_ui::resolve_active_remote_slot(0, ents)
-                                             : pocket_ui::resolve_active_remote_slot(target_slot, ents);
+          int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0, ents)
+                                             : latter_ui::resolve_active_remote_slot(target_slot, ents);
           id(remote_latter_slot_num) = res_slot + 1;
 
           int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
           id(remote_latter_act) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
 
-          pocket_ui::resolve_remote_dispatch(
+          latter_ui::resolve_remote_dispatch(
               k, target_slot, profs,
               ents, names, custom_cmds,
               id(remote_target_ent), id(remote_target_prof),

@@ -13,7 +13,7 @@
 #include <driver/ledc.h>
 #endif
 
-namespace pocket_ui {
+namespace latter_ui {
 
 struct HardwareCapabilities {
   bool is_round = (LATTER_ROUND_DISPLAY != 0);
@@ -124,11 +124,11 @@ inline void hal_set_wifi_power_save(int mode) {
 
 template <typename DispT>
 inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
-#if defined(USE_ESP32) && defined(POCKET_UI_BACKLIGHT_EN_PIN)
-  gpio_set_direction(static_cast<gpio_num_t>(POCKET_UI_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
-  gpio_set_level(static_cast<gpio_num_t>(POCKET_UI_BACKLIGHT_EN_PIN), (bri_byte > 0) ? 1 : 0);
+#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
+  gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
+  gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), (bri_byte > 0) ? 1 : 0);
 #endif
-#if defined(USE_ESP32) && defined(POCKET_UI_BACKLIGHT_PIN)
+#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
   static bool ledc_inited = false;
   if (!ledc_inited) {
     ledc_timer_config_t ledc_timer = {};
@@ -139,7 +139,7 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
     ledc_timer.clk_cfg = LEDC_AUTO_CLK;
     if (ledc_timer_config(&ledc_timer) == ESP_OK) {
       ledc_channel_config_t ledc_channel = {};
-      ledc_channel.gpio_num = POCKET_UI_BACKLIGHT_PIN;
+      ledc_channel.gpio_num = LATTER_BACKLIGHT_PIN;
       ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
       ledc_channel.channel = LEDC_CHANNEL_0;
       ledc_channel.intr_type = LEDC_INTR_DISABLE;
@@ -155,8 +155,8 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bri_byte);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
   } else {
-    gpio_set_direction(static_cast<gpio_num_t>(POCKET_UI_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(POCKET_UI_BACKLIGHT_PIN), (bri_byte > 0) ? 1 : 0);
+    gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? 1 : 0);
   }
 #endif
   if constexpr (requires(DispT *d, uint8_t b) { d->set_brightness(b); }) {
@@ -167,6 +167,6 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   }
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui
 
-namespace latter_ui = pocket_ui;
+namespace pocket_ui = latter_ui;

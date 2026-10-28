@@ -153,11 +153,11 @@ script:
             id(turn_screen_off).execute();
             return;
           }
-          pocket_ui::screen_is_off_standby() = false;
+          latter_ui::screen_is_off_standby() = false;
           id(disp1).start_poller();
           id(display_power_state) = 1;
           id(display_brightness).turn_on().set_brightness(0.60f).perform();
-          pocket_ui::schedule_disp_update(&id(disp1));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
     mode: restart
@@ -165,7 +165,7 @@ script:
       - lambda: |-
           id(display_power_state) = 2;
           id(disp1).update();
-          pocket_ui::screen_is_off_standby() = true;
+          latter_ui::screen_is_off_standby() = true;
           id(disp1).stop_poller();
           id(display_brightness).turn_off().perform();
 
@@ -183,14 +183,14 @@ script:
     mode: restart
     then:
       - lambda: |-
-          pocket_ui::hal_set_wifi_power_save(0);
-          pocket_ui::screen_is_off_standby() = false;
-          pocket_ui::last_screen_wake_ms() = millis();
+          latter_ui::hal_set_wifi_power_save(0);
+          latter_ui::screen_is_off_standby() = false;
+          latter_ui::last_screen_wake_ms() = millis();
           id(display_power_state) = 0;
           id(disp1).start_poller();
       - script.execute: sync_display_brightness
       - script.execute: screen_sleep_timer
-      - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: start_hibernation_countdown
     mode: restart
@@ -231,7 +231,7 @@ interval:
             const bool ww_busy = id(va).is_running() || !id(va_status_text).empty() ||
                                  id(announcement_mixing_input).is_running() ||
                                  id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                 (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                  id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                  (id(active_game) > 0) || id(is_hibernating) || id(ota_in_progress) ||
                                  !id(wifi_ctrl).is_connected();
@@ -245,14 +245,14 @@ interval:
             }
           }
 
-          if ((id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+          if ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
               !id(speaker_enable).state && !id(va_active) && !id(va_tts_received) &&
               !id(va_resume_music_after) && !id(boot_button).state && (millis() > 5000U)) {
             id(mp_idle_debounce).stop();
             id(route_i2s_to_spk).execute();
             id(speaker_enable).turn_on();
             id(es8311_dac).set_mute_off();
-            float v = id(pocket_music_player).volume;
+            float v = id(latter_media_player).volume;
             float db = (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));
             id(media_mixing_input).apply_ducking(db, 100);
           }
@@ -264,12 +264,12 @@ interval:
             auto s_style = id(screensaver_style_select).current_option();
             if (s_style != "Ambient Clock" && s_style != "Screen Off") {
               const bool local_music_playing =
-                  (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              if (pocket_ui::should_step_ambient_anim(millis(), local_music_playing,
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              if (latter_ui::should_step_ambient_anim(millis(), local_music_playing,
                                                       id(va_active) || !id(va_status_text).empty(),
                                                       id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
-                pocket_ui::schedule_disp_update(&id(disp1));
-                pocket_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+                latter_ui::record_ambient_frame_ms(millis());
               }
             }
           }

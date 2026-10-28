@@ -7,7 +7,7 @@
 #include "ui_layout.h"
 #include "ui_ambient_va.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // ============================================================================
 // SECTION 15: MUSIC PLAYER ENGINE — NOW PLAYING, TRANSPORT HUD & LIBRARY MENUS
@@ -128,9 +128,9 @@ inline void render_music_now_playing(
   }
 
   if (show_controls) {
-    const int prev_btn_x = cx - (POCKET_UI_ROUND_DISPLAY ? 109 : 98);
-    const int next_btn_x = cx + (POCKET_UI_ROUND_DISPLAY ? 109 : 98);
-    const int left_flank_x = POCKET_UI_ROUND_DISPLAY ? 71 : 46;
+    const int prev_btn_x = cx - (LATTER_ROUND_DISPLAY ? 109 : 98);
+    const int next_btn_x = cx + (LATTER_ROUND_DISPLAY ? 109 : 98);
+    const int left_flank_x = LATTER_ROUND_DISPLAY ? 71 : 46;
     const int right_flank_x = SCREEN_W - left_flank_x;
 
     bool is_speech_media = (active_playback_media_type == "podcast" ||
@@ -568,9 +568,9 @@ inline void render_music_menus(
 
     // Wide Scrubber Bar + Vector Seek Buttons (adaptive to screen width)
     const int scrub_y  = 242;
-    const int l_seek_x = POCKET_UI_ROUND_DISPLAY ? 50 : 34;
+    const int l_seek_x = LATTER_ROUND_DISPLAY ? 50 : 34;
     const int r_seek_x = SCREEN_W - l_seek_x;
-    const int bar_x0   = POCKET_UI_ROUND_DISPLAY ? 95 : 72;
+    const int bar_x0   = LATTER_ROUND_DISPLAY ? 95 : 72;
     const int bar_x1   = SCREEN_W - bar_x0;
     const int bar_w    = bar_x1 - bar_x0;
 
@@ -685,4 +685,4 @@ inline void render_music_menus(
   render_back_button(it, cx, font_small, 426, "< BACK");
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

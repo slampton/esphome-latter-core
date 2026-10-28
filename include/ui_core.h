@@ -17,7 +17,7 @@
 #include <initializer_list>
 #include <string>
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
 #if defined(LATTER_SCREEN_W) && !defined(POCKET_UI_SCREEN_W)
@@ -1187,4 +1187,6 @@ inline uint32_t &last_local_vol_tap_ms() {
 
 // ------------------------------------------------------------------------------
 
-}  // namespace pocket_ui
+}  // namespace latter_ui
+
+namespace pocket_ui = latter_ui;

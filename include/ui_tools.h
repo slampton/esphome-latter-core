@@ -7,7 +7,7 @@
 #include "ui_layout.h"
 #include "ui_ambient_va.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 inline bool &tools_direct_home() {
   static bool direct = false;
@@ -1906,7 +1906,7 @@ inline void render_tool_calendar(
 
       // 2. Left/Right Floating Zoom Buttons (adaptive to screen width)
       const int z_by = 233;
-      const int z_lx = POCKET_UI_ROUND_DISPLAY ? 44 : 34;
+      const int z_lx = LATTER_ROUND_DISPLAY ? 44 : 34;
       const int z_rx = SCREEN_W - z_lx;
       Color btn_bg(12, 16, 24);
       Color btn_ring = (cal_map_zoom() > 10) ? theme_primary : col_slate;
@@ -2463,8 +2463,8 @@ inline void render_tool_camera(
   cur_cam_title = fit_text_to_width_font(cur_cam_title, 210, font_small);
 
   Color hdr_brd = cam_call_active() ? Color(66, 188, 106) : (cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary);
-  const int hdr_w = (!POCKET_UI_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? 216 : 256;
-  const int hdr_cx = (!POCKET_UI_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? (cx - 24) : cx;
+  const int hdr_w = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? 216 : 256;
+  const int hdr_cx = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? (cx - 24) : cx;
   render_modern_card(it, hdr_cx, 40, hdr_w, 34, 10, Color(10, 14, 22), hdr_brd,
                      cur_cam_title.c_str(), col_white, font_small);
   if (cam_count > 1 && cam_intercom_status().empty()) {
@@ -2472,7 +2472,7 @@ inline void render_tool_camera(
     it.print(hdr_cx + (hdr_w / 2) - 12, 40, font_small, theme_secondary, TextAlign::CENTER, ">");
     render_dock_page_pips(it, cx, 66, cam_count, cam_carousel_idx(), col_white, col_slate);
   }
-  #if !POCKET_UI_ROUND_DISPLAY
+  #if !LATTER_ROUND_DISPLAY
   if (SCREEN_W != SCREEN_H) {
     // Direct 1-Tap [90°] Widescreen Toggle Badge on Rectangular Screens (e.g. 320x480 P4 Remote Assistant & 410x502 Wrist Assist)
     render_modern_card(it, SCREEN_W - 34, 40, 48, 34, 9,
@@ -2513,4 +2513,4 @@ inline void render_tool_camera(
   render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui

@@ -8,7 +8,7 @@
 #include "ui_tools.h"
 #include "ui_weather_sky.h"
 
-namespace pocket_ui {
+namespace latter_ui {
 
 // =============================================================================
 // SECTION 16: CLOCK PAGE ENGINE (DIGITAL & ANALOG WATCH FACES & BATTERY GAUGE)
@@ -820,7 +820,7 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
     out_xs[1] = cx;
     out_xs[2] = cx + 84;
   } else {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
     out_xs[0] = 112;
     out_xs[1] = 193;
     out_xs[2] = 274;
@@ -942,7 +942,7 @@ inline void render_home_page(
     const int cel_y = layout().celestial_y;
     if (is_dim_backdrop) {
       if (!is_night) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
         it.filled_circle(cx, cy, 228, Color(4, 8, 13));
 #else
         it.filled_rectangle(0, 0, SCREEN_W, SCREEN_H, Color(4, 8, 13));
@@ -1436,4 +1436,4 @@ inline void render_home_page(
   }
 }
 
-}  // namespace pocket_ui
+}  // namespace latter_ui
