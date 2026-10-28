@@ -767,8 +767,8 @@ script:
           id(disp1).stop_poller(); // Stop 1Hz QSPI/SPI framebuffer transfers while screen is off!
           id(display_brightness).turn_off().perform();
 
-          // Disable BLE advertising if it was left on so 2.4GHz BLE never drains battery in Standby
-          if (id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
+          // Only disable BLE in Standby if the user turned off BLE Presence Beacon
+          if (!id(ble_room_beacon_switch).state && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
             id(ble_ctrl).disable();
           }
 

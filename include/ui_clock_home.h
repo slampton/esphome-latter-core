@@ -945,7 +945,7 @@ inline void render_home_page(
 #if LATTER_ROUND_DISPLAY
         it.filled_circle(cx, cy, 228, Color(4, 8, 13));
 #else
-        it.filled_rectangle(0, 0, SCREEN_W, SCREEN_H, Color(4, 8, 13));
+        it.fill(Color(4, 8, 13));
 #endif
       }
       it.filled_circle(cel_x, cel_y, 20, is_night ? Color(22, 24, 28) : Color(36, 30, 8));

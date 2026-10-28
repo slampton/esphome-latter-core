@@ -879,7 +879,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
     }
 #else
-    it.filled_rectangle(0, 0, SCREEN_W, SCREEN_H, bg_c);
+    it.fill(bg_c);
 #endif
   };
   if (storm_sky_flash) {

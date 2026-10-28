@@ -35,6 +35,8 @@ esp32:
       CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
       CONFIG_SPIRAM_USE_CAPS_ALLOC: "n"
       CONFIG_SPIRAM_USE_MALLOC: "y"
+      CONFIG_CACHE_L2_CACHE_256KB: "y"
+      CONFIG_CACHE_L2_CACHE_LINE_128B: "y"
       CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
@@ -69,26 +71,7 @@ update:
     entity_category: config
     type: http
     source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
-    update_interval: never
-
-interval:
-  - interval: 20s
-    then:
-      - lambda: |-
-          static bool c6_checked_once = false;
-          if (!c6_checked_once && id(wifi_ctrl).is_connected()) {
-            c6_checked_once = true;
-            if (id(update_c6_coprocessor).update_info.current_version.empty() ||
-                id(update_c6_coprocessor).update_info.current_version == "unknown") {
-              id(update_c6_coprocessor).setup();
-              id(update_c6_coprocessor).check();
-            } else if (id(update_c6_coprocessor).update_info.latest_version.empty()) {
-              id(update_c6_coprocessor).check();
-            }
-            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
-                     id(update_c6_coprocessor).update_info.current_version.c_str(),
-                     id(update_c6_coprocessor).update_info.latest_version.c_str());
-          }
+    update_interval: 6h
 
 i2c:
   - id: bus_internal
