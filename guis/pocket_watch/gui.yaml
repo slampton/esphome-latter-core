@@ -100,23 +100,23 @@ display:
         int pct = id(ota_progress_pct);
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
-#if LATTER_ROUND_DISPLAY
-        for (int i = 0; i <= pct; i++) {
-          float rad = (static_cast<float>(i) / 100.0f) * 2.0f * PI_F - HALF_PI_F;
-          float s = 0.0f, c = 1.0f;
-          fast_sincos(rad, s, c);
-          it.line(cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
-                  cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
+        if (LATTER_ROUND_DISPLAY) {
+          for (int i = 0; i <= pct; i++) {
+            float rad = (static_cast<float>(i) / 100.0f) * 2.0f * PI_F - HALF_PI_F;
+            float s = 0.0f, c = 1.0f;
+            fast_sincos(rad, s, c);
+            it.line(cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
+                    cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
+          }
+        } else {
+          const int ota_bw = std::min(280, pocket_ui::SCREEN_W - 48);
+          const int ota_bx = cx - (ota_bw / 2);
+          const int ota_fill = (ota_bw * pct) / 100;
+          it.filled_rectangle(ota_bx, cy + 104, ota_bw, 10, id(col_dark_gray));
+          if (ota_fill > 0) {
+            it.filled_rectangle(ota_bx, cy + 104, ota_fill, 10, id(theme_primary));
+          }
         }
-#else
-        const int ota_bw = std::min(280, pocket_ui::SCREEN_W - 48);
-        const int ota_bx = cx - (ota_bw / 2);
-        const int ota_fill = (ota_bw * pct) / 100;
-        it.filled_rectangle(ota_bx, cy + 104, ota_bw, 10, id(col_dark_gray));
-        if (ota_fill > 0) {
-          it.filled_rectangle(ota_bx, cy + 104, ota_fill, 10, id(theme_primary));
-        }
-#endif
 
         it.print(cx, cy - 60, id(font_date), id(theme_primary), TextAlign::CENTER, "FIRMWARE UPDATE");
 
