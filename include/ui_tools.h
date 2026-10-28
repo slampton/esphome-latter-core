@@ -240,7 +240,11 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
       }
       if (y1 >= 75 && y1 <= 390) {
         render_tool_launcher_card(it, col_left_x,  y1, 3, "Stopwatch",  font_small, theme_secondary, col_white);
+#if LATTER_HAS_IMU
         render_tool_launcher_card(it, col_right_x, y1, 7, "Level",      font_small, theme_secondary, col_white);
+#else
+        render_tool_launcher_card(it, col_right_x, y1, 12, "Camera",    font_small, theme_secondary, col_white);
+#endif
       }
       if (y2 >= 75 && y2 <= 390) {
         render_tool_launcher_card(it, col_left_x,  y2, 5, "Flashlight", font_small, theme_secondary, col_white);
@@ -281,6 +285,11 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
   render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, esphome::Color(95, 112, 134));
 }
 
+inline bool &stopwatch_modern_digital() {
+  static bool modern = (LATTER_ROUND_DISPLAY == 0);
+  return modern;
+}
+
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
 inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                   bool stopwatch_running, uint32_t stopwatch_start_time,
@@ -289,7 +298,52 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                   esphome::Color col_white, esphome::Color col_silver,
                                   esphome::Color col_slate, esphome::Color col_dark_gray,
                                   esphome::Color col_red) {
-  // Dual Perimeter Rings & Inner Rehaut Flange
+  uint32_t total_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
+  int mins = (total_ms / 60000U) % 60U;
+  int secs = (total_ms / 1000U) % 60U;
+  int tenths = (total_ms / 100U) % 10U;
+
+  // Modern Digital AMOLED Stopwatch (Always used on Square/Rectangular displays; toggleable via header tap on Round!)
+  if (!LATTER_ROUND_DISPLAY || stopwatch_modern_digital()) {
+    float min_prog = static_cast<float>(total_ms % 60000U) / 60000.0f;
+    render_progress_arc_r224(it, cx, cy, min_prog, stopwatch_running ? col_silver : col_slate);
+
+    it.print(cx, 48, font_small, col_silver, esphome::display::TextAlign::CENTER,
+             LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH");
+
+    char main_buf[32];
+    snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
+    it.print(cx, 146, font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
+
+    if (stopwatch_lap_ms > 0) {
+      int l_mins = (stopwatch_lap_ms / 60000U) % 60U;
+      int l_secs = (stopwatch_lap_ms / 1000U) % 60U;
+      int l_tenths = (stopwatch_lap_ms / 100U) % 10U;
+      char lap_buf[32];
+      snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
+      it.print(cx, 192, font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
+    } else {
+      it.print(cx, 192, font_small, stopwatch_running ? col_silver : col_slate,
+               esphome::display::TextAlign::CENTER, stopwatch_running ? "Running" : "Ready");
+    }
+
+    const char *hero_lbl = stopwatch_running ? "PAUSE" : (total_ms > 0 ? "RESUME" : "START");
+    render_modern_card(it, cx, 248, 188, 44, 12,
+                       stopwatch_running ? esphome::Color(28, 36, 48) : esphome::Color(22, 27, 36),
+                       stopwatch_running ? col_silver : col_white,
+                       hero_lbl, col_white, font_small);
+
+    render_modern_card(it, cx - 70, 324, 124, 46, 12, esphome::Color(22, 27, 36),
+                       (stopwatch_lap_ms > 0) ? col_red : esphome::Color(52, 62, 78),
+                       "LAP / SPLIT", col_white, font_small);
+    render_modern_card(it, cx + 70, 324, 124, 46, 12, esphome::Color(28, 20, 24), col_red,
+                       "RESET", col_red, font_small);
+
+    render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back");
+    return;
+  }
+
+  // Classic Round Chronograph Dial (Round Displays Only)
   it.circle(cx, cy, 230, col_white);
   it.circle(cx, cy, 228, col_silver);
   it.circle(cx, cy, 197, col_dark_gray);
@@ -1028,9 +1082,9 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     it.print(cx, 75, font_small, pulse ? col_white : theme_secondary,
              esphome::display::TextAlign::CENTER, "LOCATING DEVICE");
     it.print(cx, 156, font_date, col_white,
-             esphome::display::TextAlign::CENTER, "POCKET");
+             esphome::display::TextAlign::CENTER, "LATTER");
     it.print(cx, 196, font_date, theme_primary,
-             esphome::display::TextAlign::CENTER, "ASSISTANT");
+             esphome::display::TextAlign::CENTER, "COMPANION");
     it.print(cx, 244, font_small, theme_secondary,
              esphome::display::TextAlign::CENTER, "Acoustic Beacon Active");
 

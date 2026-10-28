@@ -16,18 +16,78 @@
 
 namespace pocket_ui {
 
-// Canonical Display Geometry Constants (Overridable via POCKET_UI_SCREEN_W / POCKET_UI_SCREEN_H)
+// Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
+#if defined(LATTER_SCREEN_W) && !defined(POCKET_UI_SCREEN_W)
+#define POCKET_UI_SCREEN_W LATTER_SCREEN_W
+#endif
+#if defined(LATTER_SCREEN_H) && !defined(POCKET_UI_SCREEN_H)
+#define POCKET_UI_SCREEN_H LATTER_SCREEN_H
+#endif
+#ifndef LATTER_SCREEN_W
+#ifdef POCKET_UI_SCREEN_W
+#define LATTER_SCREEN_W POCKET_UI_SCREEN_W
+#else
+#define LATTER_SCREEN_W 466
+#endif
+#endif
+#ifndef LATTER_SCREEN_H
+#ifdef POCKET_UI_SCREEN_H
+#define LATTER_SCREEN_H POCKET_UI_SCREEN_H
+#else
+#define LATTER_SCREEN_H 466
+#endif
+#endif
 #ifndef POCKET_UI_SCREEN_W
-#define POCKET_UI_SCREEN_W 466
+#define POCKET_UI_SCREEN_W LATTER_SCREEN_W
 #endif
 #ifndef POCKET_UI_SCREEN_H
-#define POCKET_UI_SCREEN_H 466
+#define POCKET_UI_SCREEN_H LATTER_SCREEN_H
 #endif
-static constexpr int SCREEN_W = POCKET_UI_SCREEN_W;
-static constexpr int SCREEN_H = POCKET_UI_SCREEN_H;
+
+#ifndef LATTER_ROUND_DISPLAY
+#ifdef POCKET_UI_ROUND_DISPLAY
+#define LATTER_ROUND_DISPLAY POCKET_UI_ROUND_DISPLAY
+#else
+#define LATTER_ROUND_DISPLAY 1
+#endif
+#endif
+#ifndef POCKET_UI_ROUND_DISPLAY
+#define POCKET_UI_ROUND_DISPLAY LATTER_ROUND_DISPLAY
+#endif
+
+#ifndef LATTER_HAS_IMU
+#define LATTER_HAS_IMU 1
+#endif
+#ifndef LATTER_HAS_BATTERY
+#define LATTER_HAS_BATTERY 1
+#endif
+#ifndef LATTER_IS_STATIONARY
+#define LATTER_IS_STATIONARY 0
+#endif
+#ifndef LATTER_IS_WEARABLE
+#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+#define LATTER_IS_WEARABLE 1
+#else
+#define LATTER_IS_WEARABLE 0
+#endif
+#endif
+#if defined(LATTER_NO_PMU_IRQ_PIN) && !defined(POCKET_UI_NO_PMU_IRQ_PIN)
+#define POCKET_UI_NO_PMU_IRQ_PIN LATTER_NO_PMU_IRQ_PIN
+#endif
+#if defined(LATTER_BACKLIGHT_PIN) && !defined(POCKET_UI_BACKLIGHT_PIN)
+#define POCKET_UI_BACKLIGHT_PIN LATTER_BACKLIGHT_PIN
+#endif
+#if defined(LATTER_BACKLIGHT_EN_PIN) && !defined(POCKET_UI_BACKLIGHT_EN_PIN)
+#define POCKET_UI_BACKLIGHT_EN_PIN LATTER_BACKLIGHT_EN_PIN
+#endif
+
+static constexpr int SCREEN_W = LATTER_SCREEN_W;
+static constexpr int SCREEN_H = LATTER_SCREEN_H;
 static constexpr int SCREEN_CX = SCREEN_W / 2;
 static constexpr int SCREEN_CY = SCREEN_H / 2;
 static constexpr int SCREEN_R = SCREEN_W / 2;
+static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_H;
+static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
 static constexpr int STD_ART_SIZE = 328;
 static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
 
@@ -143,17 +203,15 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 #endif
 }
 
-// Board-Agnostic PMU Crown IRQ / Button Sense Helper:
-//   - Waveshare 1.75C (default): GPIO3 active-LOW hardware IRQ from AXP2101
-//   - Waveshare 2.06 (POCKET_UI_BOARD_206=1): GPIO10 active-HIGH SYS_OUT
+// Hardware-Trait Driven PMU IRQ & Wearable Motion Helpers (Zero hardcoded board numbers)
 inline bool hal_pmu_irq_asserted() {
-#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
-  static int prev_g10 = 1;
-  int cur_g10 = gpio_get_level(GPIO_NUM_10);
-  bool rising_edge = (cur_g10 == 1 && prev_g10 == 0);
-  prev_g10 = cur_g10;
+#if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
+  static int prev_lvl = 1;
+  int cur_lvl = gpio_get_level(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN));
+  bool rising_edge = (cur_lvl == 1 && prev_lvl == 0);
+  prev_lvl = cur_lvl;
   return rising_edge;
-#elif (defined(POCKET_UI_NO_PMU_IRQ_PIN) && POCKET_UI_NO_PMU_IRQ_PIN) || defined(CONFIG_IDF_TARGET_ESP32P4)
+#elif (defined(LATTER_NO_PMU_IRQ_PIN) && LATTER_NO_PMU_IRQ_PIN) || defined(CONFIG_IDF_TARGET_ESP32P4)
   return false;
 #else
   return (gpio_get_level(GPIO_NUM_3) == 0);
@@ -161,7 +219,7 @@ inline bool hal_pmu_irq_asserted() {
 }
 
 inline float get_pickup_motion_threshold(bool screen_is_active) {
-#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+#if LATTER_IS_WEARABLE
   return screen_is_active ? 0.22f : 0.38f;
 #else
   return screen_is_active ? 0.068f : 0.15f;
@@ -169,7 +227,7 @@ inline float get_pickup_motion_threshold(bool screen_is_active) {
 }
 
 inline bool should_in_hand_block_sleep(bool on_battery_and_picked_up) {
-#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
+#if LATTER_IS_WEARABLE
   (void)on_battery_and_picked_up;
   return false;
 #else
@@ -393,6 +451,9 @@ template<typename DisplayT, typename FontT>
 inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, int h, int r,
                                esphome::Color bg_c, esphome::Color border_c,
                                const char *label, esphome::Color text_c, FontT *font) {
+  if (w > SCREEN_W - 16 && std::abs(cx_card - SCREEN_CX) <= 4) {
+    w = SCREEN_W - 16;
+  }
   int x0 = cx_card - w / 2;
   int y0 = cy_card - h / 2;
   int ri = (r > 1) ? (r - 1) : 1;

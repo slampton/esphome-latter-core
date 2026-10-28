@@ -48,7 +48,7 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
   int p3_g = static_cast<int>(235.0f * b3);
   int p3_b = static_cast<int>(82.0f  * b3);
 
-  for (int x = 8; x <= 458; x += 3) {
+  for (int x = 8; x <= SCREEN_W - 8; x += 3) {
     int h_half = circle_half_span(x, 5);
     if (h_half <= 0) continue;
     int y_min = cy - h_half;
@@ -234,9 +234,10 @@ inline void draw_matrix_katakana_glyph(DisplayT &it, int sx, int gy, uint16_t ma
 template<typename DisplayT>
 inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now_ms) {
   (void)cx;
-  static constexpr int NUM_COLS = 22;
   static constexpr int CELL_H = 14;
-  static constexpr int GRID_ROWS = 33; // Flat rectangular terminal grid (rows 0..33 across 466px height)
+  static constexpr int NUM_COLS = (SCREEN_W - 24) / 19;
+  static constexpr int GRID_ROWS = (SCREEN_H / CELL_H) + 1;
+  static constexpr int X_MARGIN = (SCREEN_W - (NUM_COLS - 1) * 19) / 2;
 
   // Slow anti-burn-in horizontal & vertical grid drift
   float t_drift = now_ms * 0.00007f;
@@ -245,7 +246,7 @@ inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now
   float t_sec = now_ms * 0.001f;
 
   for (int i = 0; i < NUM_COLS; i++) {
-    int base_x = 34 + i * 19;
+    int base_x = X_MARGIN + i * 19;
     int sx = base_x + drift_x;
     int max_dy = circle_half_span(sx, 7);
     if (max_dy <= 0) continue;
@@ -852,14 +853,15 @@ inline void render_voice_assistant_overlay(
         ? ((0.55f + 0.25f * fast_sin(t_sec * 9.5f) + 0.20f * fast_cos(t_sec * 15.3f)) * smooth_speak)
         : 0.0f;
 
-    // 1. Base Royal-Blue Perimeter Light Ring (r = 216..230) with soft inner ambient glow
-    int inner_glow_r = 210 - static_cast<int>(6.0f * smooth_vad + 8.0f * syl_env);
-    for (int r = inner_glow_r; r <= 230; r++) {
+    const int max_ring_r = SCREEN_MIN_R - 3;
+    const int base_ring_r = max_ring_r - 14;
+    int inner_glow_r = (base_ring_r - 6) - static_cast<int>(6.0f * smooth_vad + 8.0f * syl_env);
+    for (int r = inner_glow_r; r <= max_ring_r; r++) {
       esphome::Color rc;
-      if (r < 216) {
-        float k = static_cast<float>(r - inner_glow_r) / static_cast<float>(216 - inner_glow_r);
+      if (r < base_ring_r) {
+        float k = static_cast<float>(r - inner_glow_r) / static_cast<float>(base_ring_r - inner_glow_r);
         rc = scale_color(c_echo_deep, k * k * 0.85f);
-      } else if (r <= 227) {
+      } else if (r <= max_ring_r - 3) {
         rc = c_echo_blue;
       } else {
         rc = c_echo_deep;
@@ -924,8 +926,8 @@ inline void render_voice_assistant_overlay(
 
         float sx0 = DIAL_SIN[i],      cy0 = -DIAL_COS[i];
         float sx1 = DIAL_SIN[next_i], cy1 = -DIAL_COS[next_i];
-        int r_in_c = 215 - static_cast<int>(cyan_w * (4.0f + 5.0f * (smooth_vad + syl_env)));
-        for (int r = r_in_c; r <= 228; r += 2) {
+        int r_in_c = (base_ring_r - 1) - static_cast<int>(cyan_w * (4.0f + 5.0f * (smooth_vad + syl_env)));
+        for (int r = r_in_c; r <= max_ring_r - 2; r += 2) {
           int x0 = cx + static_cast<int>(static_cast<float>(r) * sx0);
           int y0 = cy + static_cast<int>(static_cast<float>(r) * cy0);
           int x1 = cx + static_cast<int>(static_cast<float>(r) * sx1);
@@ -1048,6 +1050,8 @@ inline void render_voice_assistant_overlay(
     return;
   }
 
+  const float va_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+
   // ============================================================================
   // PROFILE: "JARVIS" — ELECTRIC CYAN COUNTER-ROTATING CONCENTRIC TECH HUD
   // ============================================================================
@@ -1086,7 +1090,7 @@ inline void render_voice_assistant_overlay(
         float s0, c0, s1, c1;
         fast_sincos(a0, s0, c0);
         fast_sincos(a1, s1, c1);
-        for (float r = r_in; r <= r_out; r += 1.5f) {
+        for (float r = r_in * va_scale; r <= r_out * va_scale; r += 1.5f) {
           int x0 = cx + static_cast<int>(r * s0);
           int y0 = cy - static_cast<int>(r * c0);
           int x1 = cx + static_cast<int>(r * s1);
@@ -1097,12 +1101,12 @@ inline void render_voice_assistant_overlay(
     };
 
     // ------------------------------------------------------------------------
-    // RING 1 (OUTER): r = 176..196 — Rotates CLOCKWISE (+j_angle)
+    // RING 1 (OUTER): r = 176..196 (scaled by va_scale) — Rotates CLOCKWISE (+j_angle)
     // ------------------------------------------------------------------------
     float a_cw1 = j_angle;
-    it.circle(cx, cy, 198, c_cyan_glow);
-    it.circle(cx, cy, 188, c_cyan_mid);
-    it.circle(cx, cy, 182, c_cyan_dim);
+    it.circle(cx, cy, static_cast<int>(198.0f * va_scale), c_cyan_glow);
+    it.circle(cx, cy, static_cast<int>(188.0f * va_scale), c_cyan_mid);
+    it.circle(cx, cy, static_cast<int>(182.0f * va_scale), c_cyan_dim);
 
     // Thick outer segmented callout blocks modeled after reference image
     draw_hud_arc(189.0f, 195.0f, a_cw1 - 0.18f, 0.36f, c_cyan_bright);          // Top block
@@ -1365,7 +1369,7 @@ inline void render_voice_assistant_overlay(
         if (speak_elapsed < launch_offset) continue;
         uint32_t wave_t = (speak_elapsed - launch_offset) % 1900U;
         float progress = static_cast<float>(wave_t) * (1.0f / 1900.0f);
-        int r_center = 38 + static_cast<int>(progress * 180.0f);
+        int r_center = static_cast<int>((38.0f + progress * 180.0f) * va_scale);
 
         // Width grows from ~4px at launch (progress=0) up to ~17px near the outer rim (progress=0.85)
         float spread = progress * (1.15f - 0.25f * progress);
@@ -1492,10 +1496,10 @@ inline void render_voice_assistant_overlay(
     (void)c_deep_violet;
 
     // 4 Full-Bodied Volumetric 3D Silk Plasma Ribbons
-    float base_r = 82.0f + 5.0f * breath + 18.0f * smooth_vad;
-    float a2 = 5.5f + 10.0f * smooth_vad;
-    float a3 = 4.2f + 8.0f * smooth_vad;
-    float a5 = 2.8f + 5.5f * smooth_vad;
+    float base_r = (82.0f + 5.0f * breath + 18.0f * smooth_vad) * va_scale;
+    float a2 = (5.5f + 10.0f * smooth_vad) * va_scale;
+    float a3 = (4.2f + 8.0f * smooth_vad) * va_scale;
+    float a5 = (2.8f + 5.5f * smooth_vad) * va_scale;
 
     draw_silk_ribbon_3d(base_r + 5.0f, a2, a3, a5, (tick) % 60, (tick + 20) % 60, (tick + 40) % 60,
                         0.48f * fast_sin(t_sec * 0.65f), 0.42f * fast_cos(t_sec * 0.55f), t_sec * 0.28f,

@@ -48,8 +48,38 @@ inline void render_clock_page(
     const esphome::Color &col_gray, const esphome::Color &col_dark_gray,
     const esphome::Color &col_red, const esphome::Color &col_gold,
     const esphome::Color &col_green) {
-  // 1. Always render the watch bezel rings, 60-tick perimeter chapter ring, and live battery gauge
-  //    immediately on boot/wake so the watch face looks complete even before Home Assistant time syncs.
+#if !LATTER_ROUND_DISPLAY
+  // Square / Rectangular Modern Digital Chronometer Layout
+  it.rectangle(6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
+#if LATTER_HAS_BATTERY
+  render_battery_indicator(it, SCREEN_W - 46, 28, batt, is_charging, font_small,
+                           theme_primary, col_gold, col_green);
+#endif
+  if (!now.is_valid()) {
+    it.print(cx, cy - 10, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+    return;
+  }
+  it.strftime(cx, cy - 82, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
+  char sq_dig[16], sq_ap[8] = "";
+  format_time_hhmm(now.hour, now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
+  it.print(cx, cy - 8, font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
+  char sq_sec[32];
+  if (is_24h_format) snprintf(sq_sec, sizeof(sq_sec), "SEC  •  %02ds", now.second);
+  else snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, now.second);
+  it.print(cx, cy + 56, font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
+
+  // Smooth horizontal seconds progress bar
+  const int bar_w = std::min(260, SCREEN_W - 64);
+  const int bar_x0 = cx - (bar_w / 2);
+  const int fill_w = (bar_w * (now.second % 60)) / 59;
+  it.filled_rectangle(bar_x0, cy + 92, bar_w, 6, col_dark_gray);
+  if (fill_w > 0) {
+    it.filled_rectangle(bar_x0, cy + 92, fill_w, 6, theme_primary);
+  }
+  return;
+#endif
+
+  // 1. Round Display: Watch bezel rings, 60-tick perimeter chapter ring, and live battery gauge
   it.circle(cx, cy, 230, col_dark_gray);
   it.circle(cx, cy, 228, col_slate);
   it.circle(cx, cy, 222, col_dark_gray);
@@ -918,10 +948,13 @@ inline void render_home_page(
         compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                    moon_phase_raw, moon_cycle, nullptr, nullptr);
       }
-      // Celestial Sun/Moon coordinates: (360, 86) on 466x466 Round, (342, 74) on 410x502 Watch
+      // Celestial Sun/Moon coordinates:
+      //   - Round (466x466): Top-Right (360, 86)
+      //   - Square/Rectangular: Top-Left (58, 76) so Top-Right is reserved for the Battery Indicator!
+      const int cel_x = LATTER_ROUND_DISPLAY ? 360 : 58;
+      const int cel_y = LATTER_ROUND_DISPLAY ? 86 : 76;
       render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night,
-                                      moon_cycle, POCKET_UI_ROUND_DISPLAY ? 360 : 342,
-                                      POCKET_UI_ROUND_DISPLAY ? 86 : 74, true, accel_x, accel_y);
+                                      moon_cycle, cel_x, cel_y, true, accel_x, accel_y);
     }
   }
 
@@ -1099,8 +1132,8 @@ inline void render_home_page(
     get_home_dock_window_xs(dock_count, home_dock_page(), cx, win_xs, has_left_arr, has_right_arr);
     int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     int vis_count = std::min(4, dock_count - start_idx);
-    const int dock_y = 359;
-    const int dock_r = 27;
+    const int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - 52);
+    const int dock_r = (SCREEN_W < 360) ? 24 : 27;
 
     auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow) {
       if (app_id == 6) {
@@ -1344,15 +1377,26 @@ inline void render_home_page(
       draw_dock_glyph(app_id, bx, dock_y, dock_fg_c, false);
     }
 
-    // Page Indicator Pips at y = 405 (17px clear gap below dock circles, 19px clear gap above battery)
-    render_dock_page_pips(it, cx, 405, total_dock_pages, home_dock_page(),
+    // Page Indicator Pips: y = 405 on Round (below dock), or y = dock_y - 40 on Square/Rect (above bottom dock!)
+    const int pips_y = LATTER_ROUND_DISPLAY ? 405 : (dock_y - 40);
+    render_dock_page_pips(it, cx, pips_y, total_dock_pages, home_dock_page(),
                           is_dim_backdrop ? dock_fg_c : col_white,
                           is_dim_backdrop ? dock_ring_c : Color(95, 112, 134));
   }
 
-  // ZONE 6 (chin_y = 435): Lowered Non-Clickable Battery Indicator in Standard Gray (theme_secondary)
+  // ZONE 6: Battery Indicator
+  //   - Round Display: Bottom chin at (cx, 435)
+  //   - Square/Rectangular with Battery (LATTER_HAS_BATTERY == 1): Top-Right status corner at (SCREEN_W - 46, 28)
+  //   - Stationary Mains-Only Display (LATTER_HAS_BATTERY == 0): Omitted!
+#if LATTER_HAS_BATTERY
+#if LATTER_ROUND_DISPLAY
   render_battery_indicator(it, cx, 435, batt, is_charging, font_small,
                            is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+#else
+  render_battery_indicator(it, SCREEN_W - 46, 28, batt, is_charging, font_small,
+                           is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+#endif
+#endif
 
   // ---------------------------------------------------------------------------
   // SUBPAGE 2: TRANSLUCENT AUTO-CENTERED LIVE ACTIVITY OVERLAY

@@ -905,7 +905,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     for (int k = 0; k < 72; k++) {
       // Golden-angle spiral (137.50776 deg = 2.39996323 rad) + small deterministic jitter
       float r_norm = sqrtf((static_cast<float>(k) + 0.5f) * (1.0f / 72.0f));
-      float r_px   = 18.0f + r_norm * 204.0f; // Spans r = 18px out to r = 222px bezel edge
+      const float max_star_r = static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f;
+      float r_px   = 18.0f + r_norm * max_star_r;
       float ang    = static_cast<float>(k) * 2.39996323f + (hash2d_01(k, 19) - 0.5f) * 0.18f;
       float sa = 0.0f, ca = 1.0f;
       fast_sincos(ang, sa, ca);
@@ -1070,9 +1071,14 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       int dx2 = static_cast<int>(fast_sin(t_cld * 1.1f + 3.6f) * 8.0f + par_x * 0.65f);
       int dy2 = static_cast<int>(fast_cos(t_cld * 1.4f + 2.4f) * 2.5f + par_y * 0.65f);
 
-      render_cumulus_cloud(it, 104 + dx0,  98 + dy0, 0.98f, false, is_night);
-      render_cumulus_cloud(it, 362 + dx1, 182 + dy1, 0.88f, false, is_night);
-      render_cumulus_cloud(it, 108 + dx2, 256 + dy2, 0.84f, false, is_night);
+      const bool sun_on_left = (cel_cx > 0 && cel_cx < cx);
+      const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
+      int c0_base_x = static_cast<int>((sun_on_left ? 362.0f : 104.0f) * w_scale);
+      int c1_base_x = static_cast<int>((sun_on_left ? 104.0f : 362.0f) * w_scale);
+      int c2_base_x = static_cast<int>((sun_on_left ? 358.0f : 108.0f) * w_scale);
+      render_cumulus_cloud(it, c0_base_x + dx0,  98 + dy0, 0.98f, false, is_night);
+      render_cumulus_cloud(it, c1_base_x + dx1, 182 + dy1, 0.88f, false, is_night);
+      render_cumulus_cloud(it, c2_base_x + dx2, 256 + dy2, 0.84f, false, is_night);
     } else {
       // Hybrid Overcast Canopy: Combines staggered, sculpted 3D cumulus cloud masses with
       // interleaved wispy stratus tendrils (zero full-width horizontal stripes!)
@@ -1293,8 +1299,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     // Stratified horizontal spawning: divides the 420px sky into 14 sectors so drops never clump!
     auto respawn_drop = [&](int idx, bool random_y) {
       int sector = (idx * 5 + static_cast<int>(rain_seed & 3U)) % 14;
-      float sector_w = 420.0f / 14.0f;
-      drops[idx].x = 24.0f + (static_cast<float>(sector) + 0.12f + rain_rand() * 0.76f) * sector_w;
+      float sector_w = static_cast<float>(SCREEN_W - 24) / 14.0f;
+      drops[idx].x = 12.0f + (static_cast<float>(sector) + 0.12f + rain_rand() * 0.76f) * sector_w;
 
       // 45% Tier 0 (upper/mid-sky rain curtain that fades out at y = 165..265 -> denser at top, sparser at bottom!)
       // 35% Tier 1 (full-height mid-ground rain), 20% Tier 2 (long foreground anime filaments)
@@ -1309,11 +1315,11 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       } else if (tier == 1) {
         drops[idx].spd   = 320.0f + rain_rand() * 85.0f;
         drops[idx].len   = 24.0f  + rain_rand() * 10.0f;
-        drops[idx].max_y = 435.0f;
+        drops[idx].max_y = static_cast<float>(SCREEN_H - 25);
       } else {
         drops[idx].spd   = 390.0f + rain_rand() * 95.0f;
         drops[idx].len   = 32.0f  + rain_rand() * 12.0f;
-        drops[idx].max_y = 445.0f;
+        drops[idx].max_y = static_cast<float>(SCREEN_H - 15);
       }
 
       if (random_y) {
@@ -1431,7 +1437,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       float depth_u = static_cast<float>(i % 5) * 0.25f; // 0.0 (far) .. 1.0 (near-glass)
       float depth_par = 0.28f + 0.65f * depth_u;
       float spd_y = 28.0f + depth_u * 18.0f + hash2d_01(perm_i * 19 + 3, 23) * 16.0f;
-      float cycle_h = 445.0f;
+      float cycle_h = static_cast<float>(SCREEN_H - 20);
 
       float init_phase = fmodf(static_cast<float>(i) * 0.381966011f + static_cast<float>(perm_i) * 0.17f, 1.0f);
       float total_y = t_sec * spd_y + init_phase * cycle_h;
@@ -1444,10 +1450,11 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
       float base_lane = (static_cast<float>(perm_i) + (rx_u - 0.5f) * 2.5f) * (1.0f / 40.0f);
       float swirl_ang = t_sec * (1.15f + 0.35f * depth_u) + phase;
-      int sx = 24 + static_cast<int>(base_lane * 418.0f + fast_sin(swirl_ang) * (7.0f + 5.0f * depth_u) + par_x * depth_par);
-      int sy = 15 + static_cast<int>(local_y + par_y * depth_par);
-      while (sx < 20)  sx += 426;
-      while (sx > 446) sx -= 426;
+      const int snow_span_w = SCREEN_W - 24;
+      int sx = 12 + static_cast<int>(base_lane * static_cast<float>(snow_span_w) + fast_sin(swirl_ang) * (7.0f + 5.0f * depth_u) + par_x * depth_par);
+      int sy = 12 + static_cast<int>(local_y + par_y * depth_par);
+      while (sx < 10)  sx += snow_span_w;
+      while (sx > SCREEN_W - 10) sx -= snow_span_w;
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
 
       if (depth_u >= 0.85f) {

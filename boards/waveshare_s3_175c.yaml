@@ -1,5 +1,15 @@
 # Hardware Abstraction Layer (HAL): Waveshare 1.75C
 
+esphome:
+  build_flags:
+    - "-DLATTER_SCREEN_W=466"
+    - "-DLATTER_SCREEN_H=466"
+    - "-DLATTER_ROUND_DISPLAY=1"
+    - "-DLATTER_HAS_IMU=1"
+    - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_IS_STATIONARY=0"
+    - "-DLATTER_IS_WEARABLE=0"
+
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 32MB

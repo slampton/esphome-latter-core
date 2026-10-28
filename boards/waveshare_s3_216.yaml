@@ -10,9 +10,13 @@
 
 esphome:
   build_flags:
-    - "-DPOCKET_UI_SCREEN_W=480"
-    - "-DPOCKET_UI_SCREEN_H=480"
-    - "-DPOCKET_UI_ROUND_DISPLAY=0"
+    - "-DLATTER_SCREEN_W=480"
+    - "-DLATTER_SCREEN_H=480"
+    - "-DLATTER_ROUND_DISPLAY=0"
+    - "-DLATTER_HAS_IMU=1"
+    - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_IS_STATIONARY=0"
+    - "-DLATTER_IS_WEARABLE=0"
 
 esp32:
   board: esp32-s3-devkitc-1
