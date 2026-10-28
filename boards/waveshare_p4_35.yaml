@@ -68,21 +68,42 @@ update:
     update_interval: never
 
 interval:
-  - interval: 20s
+  - interval: 15s
     then:
       - lambda: |-
-          static bool c6_checked_once = false;
-          if (!c6_checked_once && id(wifi_ctrl).is_connected()) {
-            c6_checked_once = true;
-            id(update_c6_coprocessor).check();
-          } else if (c6_checked_once) {
-            static bool c6_logged_once = false;
-            if (!c6_logged_once && !id(update_c6_coprocessor).update_info.current_version.empty()) {
-              c6_logged_once = true;
-              ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
-                       id(update_c6_coprocessor).update_info.current_version.c_str(),
-                       id(update_c6_coprocessor).update_info.latest_version.c_str());
+          static int c6_step = 0;
+          if (c6_step == 0 && id(wifi_ctrl).is_connected()) {
+            c6_step = 1;
+            esp_hosted_coprocessor_fwver_t ver_info{};
+            if (esp_hosted_get_coprocessor_fwversion(&ver_info) == ESP_OK) {
+              char vbuf[24];
+              snprintf(vbuf, sizeof(vbuf), "%lu.%lu.%lu",
+                       (unsigned long)ver_info.major1,
+                       (unsigned long)ver_info.minor1,
+                       (unsigned long)ver_info.patch1);
+              id(update_c6_coprocessor).update_info.current_version = vbuf;
+              ESP_LOGI("c6_fw", "Queried C6 Co-Processor Firmware over active SDIO: %s", vbuf);
             }
+            id(update_c6_coprocessor).check();
+          } else if (c6_step == 1) {
+            c6_step = 2;
+            esp_hosted_coprocessor_fwver_t ver_info{};
+            if (esp_hosted_get_coprocessor_fwversion(&ver_info) == ESP_OK) {
+              char vbuf[24];
+              snprintf(vbuf, sizeof(vbuf), "%lu.%lu.%lu",
+                       (unsigned long)ver_info.major1,
+                       (unsigned long)ver_info.minor1,
+                       (unsigned long)ver_info.patch1);
+              id(update_c6_coprocessor).update_info.current_version = vbuf;
+              if (id(update_c6_coprocessor).update_info.latest_version == vbuf) {
+                id(update_c6_coprocessor).publish_state(esphome::update::UPDATE_STATE_NO_UPDATE);
+              } else {
+                id(update_c6_coprocessor).publish_state(esphome::update::UPDATE_STATE_AVAILABLE);
+              }
+            }
+            ESP_LOGI("c6_fw", "ESP32-C6 Co-Processor Firmware: installed=%s, latest=%s",
+                     id(update_c6_coprocessor).update_info.current_version.c_str(),
+                     id(update_c6_coprocessor).update_info.latest_version.c_str());
           }
 
 i2c:
