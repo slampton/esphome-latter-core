@@ -78,7 +78,7 @@ wifi:
 
 esp32_ble:
   id: ble_ctrl
-  enable_on_boot: false
+  enable_on_boot: true
 
 esp32_ble_beacon:
   type: iBeacon

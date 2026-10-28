@@ -71,7 +71,7 @@ update:
     entity_category: config
     type: http
     source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
-    update_interval: 6h
+    update_interval: never
 
 i2c:
   - id: bus_internal
@@ -157,6 +157,7 @@ display:
     dimensions:
       width: 320
       height: 480
+    buffer_size: 25%
     transform:
       swap_xy: false
       mirror_x: true
