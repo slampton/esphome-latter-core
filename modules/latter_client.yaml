@@ -60,6 +60,14 @@ esphome:
             if (cur_vp == "Google" || cur_vp == "Original") {
               id(va_visual_profile).publish_state(cur_vp == "Google" ? "Gemini" : "Nebula");
             }
+            #if defined(CONFIG_IDF_TARGET_ESP32P4) || (defined(POCKET_UI_NO_PMU_IRQ_PIN) && POCKET_UI_NO_PMU_IRQ_PIN)
+            if (id(tap_wake_mode).current_option() == "Docked Only") {
+              id(tap_wake_mode).publish_state("Always On");
+            }
+            if (id(pickup_wake_mode).current_option() != "Disabled") {
+              id(pickup_wake_mode).publish_state("Disabled");
+            }
+            #endif
             if (pocket_ui::is_wrist_watch_board()) {
               static bool watch_pwr_seeded = false;
               if (!watch_pwr_seeded) {

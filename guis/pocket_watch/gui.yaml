@@ -690,7 +690,9 @@ touchscreen:
             if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
               auto tw_mode = id(tap_wake_mode).current_option();
               if (tw_mode == "Disabled") return;
+              #if !defined(CONFIG_IDF_TARGET_ESP32P4) && !(defined(POCKET_UI_NO_PMU_IRQ_PIN) && POCKET_UI_NO_PMU_IRQ_PIN)
               if (tw_mode == "Docked Only" && !id(usb_connected).state) return;
+              #endif
 
               id(wake_to_active_state).execute();
               return;

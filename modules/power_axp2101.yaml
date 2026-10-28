@@ -379,7 +379,11 @@ interval:
             uint8_t stat0 = 0;
             bool vbus = id(usb_connected).state;
             if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
-              vbus = (stat0 & 0x20) != 0;
+              bool vbus_good = (stat0 & 0x20) != 0;
+              bool bat_present = (stat0 & 0x08) != 0;
+              // If powered via the UART USB-C port with no LiPo battery attached (bat_present == false),
+              // the board is running on USB 5V power even though AXP2101 VBUS_IN is unpowered!
+              vbus = vbus_good || !bat_present;
               if (!id(usb_connected).has_state() || id(usb_connected).state != vbus) {
                 id(usb_connected).publish_state(vbus);
                 if (id(display_power_state) == 0) {

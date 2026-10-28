@@ -46,6 +46,16 @@ esp32_hosted:
   d3_pin: GPIO17
   reset_pin: GPIO54
 
+update:
+  - platform: esp32_hosted
+    id: update_c6_coprocessor
+    name: "System: C6 Co-Processor Firmware"
+    icon: "mdi:chip"
+    entity_category: config
+    type: http
+    source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
+    update_interval: 6h
+
 i2c:
   - id: bus_internal
     sda: GPIO7
