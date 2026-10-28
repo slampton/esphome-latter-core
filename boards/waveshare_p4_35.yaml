@@ -173,6 +173,8 @@ display:
     dimensions:
       width: 320
       height: 480
+    transform:
+      mirror_x: true
     init_sequence:
       - [0xF0, 0xC3]
       - [0xF0, 0x96]
