@@ -1073,25 +1073,26 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
       const bool sun_on_left = (cel_cx > 0 && cel_cx < cx);
       const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
-      int c0_base_x = static_cast<int>((sun_on_left ? 362.0f : 104.0f) * w_scale);
-      int c1_base_x = static_cast<int>((sun_on_left ? 104.0f : 362.0f) * w_scale);
-      int c2_base_x = static_cast<int>((sun_on_left ? 358.0f : 108.0f) * w_scale);
-      render_cumulus_cloud(it, c0_base_x + dx0,  98 + dy0, 0.98f, false, is_night);
-      render_cumulus_cloud(it, c1_base_x + dx1, 182 + dy1, 0.88f, false, is_night);
-      render_cumulus_cloud(it, c2_base_x + dx2, 256 + dy2, 0.84f, false, is_night);
+      int c0_base_x = static_cast<int>((sun_on_left ? 356.0f : 108.0f) * w_scale);
+      int c1_base_x = static_cast<int>((sun_on_left ? 132.0f : 344.0f) * w_scale);
+      int c2_base_x = static_cast<int>((sun_on_left ? 348.0f : 114.0f) * w_scale);
+      render_cumulus_cloud(it, c0_base_x + dx0, 106 + dy0, 0.94f, false, is_night);
+      render_cumulus_cloud(it, c1_base_x + dx1, 196 + dy1, 0.84f, false, is_night);
+      render_cumulus_cloud(it, c2_base_x + dx2, 262 + dy2, 0.82f, false, is_night);
     } else {
       // Hybrid Overcast Canopy: Combines staggered, sculpted 3D cumulus cloud masses with
-      // interleaved wispy stratus tendrils (zero full-width horizontal stripes!)
+      // interleaved wispy stratus tendrils (scaled to SCREEN_W and offset below upper-left Sun/Moon!)
       float t_ov = now_ms * 0.00042f;
+      const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
 
       esphome::Color c_wisp_crest = is_night ? esphome::Color(74,  94, 120) : esphome::Color(134, 162, 192);
       esphome::Color c_wisp_body  = is_night ? esphome::Color(48,  64,  84) : esphome::Color( 92, 118, 146);
       esphome::Color c_wisp_base  = is_night ? esphome::Color(28,  38,  52) : esphome::Color( 56,  76, 100);
 
-      // 1. Deep Background Cloud Masses (Upper-Left, Upper-Right, and Center-Low)
-      int b0_x = 128 + static_cast<int>(fast_sin(t_ov * 0.8f) * 16.0f + par_x * 0.28f);
-      int b1_x = 338 + static_cast<int>(fast_cos(t_ov * 0.7f + 1.2f) * 18.0f + par_x * 0.34f);
-      int b2_x = 242 + static_cast<int>(fast_sin(t_ov * 0.75f + 2.5f) * 15.0f + par_x * 0.40f);
+      // 1. Deep Background Cloud Masses
+      int b0_x = static_cast<int>(182.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.8f) * 16.0f + par_x * 0.28f);
+      int b1_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 0.7f + 1.2f) * 18.0f + par_x * 0.34f);
+      int b2_x = static_cast<int>(242.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.75f + 2.5f) * 15.0f + par_x * 0.40f);
       render_cumulus_cloud(it, b0_x,  88 + static_cast<int>(par_y * 0.28f), 1.12f, true, is_night);
       render_cumulus_cloud(it, b1_x, 126 + static_cast<int>(par_y * 0.34f), 1.06f, true, is_night);
       render_cumulus_cloud(it, b2_x, 214 + static_cast<int>(par_y * 0.40f), 1.15f, true, is_night);
@@ -1489,8 +1490,13 @@ template<typename DisplayT>
 inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
   // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)
-  static constexpr int ICON_XS[4] = {SCREEN_CX - 121, SCREEN_CX - 40, SCREEN_CX + 41, SCREEN_CX + 122};
-  static constexpr int ICON_Y = 359;
+  const int stride = (SCREEN_W < 380) ? 74 : 81;
+  const int ICON_XS[4] = {
+      SCREEN_CX - (stride * 3) / 2,
+      SCREEN_CX - (stride / 2),
+      SCREEN_CX + (stride / 2),
+      SCREEN_CX + (stride * 3) / 2};
+  const int ICON_Y = layout().app_dock_y;
 
   auto draw_icon_glyph = [&](int idx, int bx, int by, esphome::Color c) {
     if (idx == 0) {

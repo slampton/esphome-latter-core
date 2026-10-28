@@ -444,13 +444,14 @@ inline void render_tv_remote_page(
     it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
   }
 
-  const int left_fx = POCKET_UI_ROUND_DISPLAY ? 64 : 46;
+  const int left_fx  = POCKET_UI_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 38 : 48);
   const int right_fx = SCREEN_W - left_fx;
-  const int top_fy = 134;
-  const int btm_fy = 332;
-  const int f_r = 19;
+  const int flank_dy = POCKET_UI_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 108 : ((SCREEN_W >= 480) ? 128 : 114));
+  const int top_fy   = cy - flank_dy;
+  const int btm_fy   = cy + flank_dy;
+  const int f_r      = 19;
 
-  // 1. HOME: Top-Left
+  // 1. HOME: Top-Left (strictly symmetric with Bottom-Left BACK around cy!)
   it.filled_circle(left_fx, top_fy, f_r, col_dark_gray);
   it.circle(left_fx, top_fy, f_r, col_gray);
   it.filled_triangle(left_fx, top_fy - 8, left_fx - 9, top_fy - 1, left_fx + 9, top_fy - 1, col_white);
@@ -476,26 +477,31 @@ inline void render_tv_remote_page(
   it.circle(right_fx, btm_fy, f_r, col_gray);
   it.filled_rectangle(right_fx - 7, btm_fy - 1, 15, 3, col_white);
 
-  // Concentric D-Pad
-  const int dpad_r_in = 50;
-  const int dpad_r_out = 144;
+  // Adaptive Concentric D-Pad:
+  //   - 320x480 Remote Assistant: r_out = 108, r_in = 42 (zero overlap with corner buttons!)
+  //   - 410x502 Wrist Assist & 466x466 Pocket Assistant: r_out = 144, r_in = 50
+  //   - 480x480 Mobile Assistant & 720x720 Desk Assistant: r_out = 160, r_in = 54 (expanded control ring!)
+  const int dpad_r_out = (SCREEN_W < 380) ? 108 : ((!POCKET_UI_ROUND_DISPLAY && SCREEN_W >= 480) ? 160 : 144);
+  const int dpad_r_in  = (SCREEN_W < 380) ?  42 : ((!POCKET_UI_ROUND_DISPLAY && SCREEN_W >= 480) ?  54 :  50);
+  const int ok_r       = dpad_r_in - 8;
   it.circle(cx, cy, dpad_r_out, col_gray);
   it.circle(cx, cy, dpad_r_in, col_gray);
 
-  const int d_in = 35;
-  const int d_out = 102;
+  const int d_in  = (dpad_r_in * 707) / 1000;
+  const int d_out = (dpad_r_out * 707) / 1000;
   it.line(cx + d_in, cy + d_in, cx + d_out, cy + d_out, col_gray);
   it.line(cx - d_in, cy + d_in, cx - d_out, cy + d_out, col_gray);
   it.line(cx + d_in, cy - d_in, cx + d_out, cy - d_out, col_gray);
   it.line(cx - d_in, cy - d_in, cx - d_out, cy - d_out, col_gray);
 
-  it.filled_triangle(cx, cy - 105, cx - 11, cy - 89, cx + 11, cy - 89, col_white);
-  it.filled_triangle(cx, cy + 105, cx - 11, cy + 89, cx + 11, cy + 89, col_white);
-  it.filled_triangle(cx - 105, cy, cx - 89, cy - 11, cx - 89, cy + 11, col_white);
-  it.filled_triangle(cx + 105, cy, cx + 89, cy - 11, cx + 89, cy + 11, col_white);
+  const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
+  it.filled_triangle(cx, cy - arr_mid - 8, cx - 10, cy - arr_mid + 8, cx + 10, cy - arr_mid + 8, col_white);
+  it.filled_triangle(cx, cy + arr_mid + 8, cx - 10, cy + arr_mid - 8, cx + 10, cy + arr_mid - 8, col_white);
+  it.filled_triangle(cx - arr_mid - 8, cy, cx - arr_mid + 8, cy - 10, cx - arr_mid + 8, cy + 10, col_white);
+  it.filled_triangle(cx + arr_mid + 8, cy, cx + arr_mid - 8, cy - 10, cx + arr_mid - 8, cy + 10, col_white);
 
-  it.filled_circle(cx, cy, 42, col_dark_gray);
-  it.circle(cx, cy, 42, theme_primary);
+  it.filled_circle(cx, cy, ok_r, col_dark_gray);
+  it.circle(cx, cy, ok_r, theme_primary);
   it.print(cx, cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 

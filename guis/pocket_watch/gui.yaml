@@ -664,7 +664,7 @@ display:
       bool show_top_level_back = !id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
                                  id(va_status_text).empty() && id(display_power_state) == 0 &&
                                  (id(gui_page) != 1) &&
-                                 !(id(gui_page) == 4) &&
+                                 !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                  !(id(gui_page) == 3 && id(active_game) > 0) &&
                                  !(id(gui_page) == 2 && (id(music_overlay_mode) > 0 || music_clean_art)) &&
                                  !(id(gui_page) == 6 && (id(room_subpage) > 0 || id(room_browse_mode) == "areas")) &&
@@ -673,7 +673,7 @@ display:
                                  !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
       if (show_top_level_back) {
-        pocket_ui::render_home_indicator_bar(it, cx, 434);
+        pocket_ui::render_home_indicator_bar(it, cx, pocket_ui::layout().home_bar_y);
       }
 
       uint32_t end_draw_ms = millis();
@@ -894,10 +894,8 @@ touchscreen:
               // Top Date Bar & Bottom Battery Chin are intentionally non-clickable on Page 1
               if (id(home_subpage) == 0) {
 
-              // 3. Celestial Sun / Moon Shortcut (Upper-Right on Round; Upper-Left on Square/Rect) -> Open Sun (2) or Moon (3)
-              const bool hit_celestial = LATTER_ROUND_DISPLAY
-                  ? (touch.x >= 312 && touch.y <= 124)
-                  : (touch.x <= 112 && touch.y <= 120);
+              // 3. Celestial Sun / Moon Shortcut (Upper-Left across all 5 devices!) -> Open Sun (2) or Moon (3)
+              const bool hit_celestial = (touch.x <= (LATTER_ROUND_DISPLAY ? 156 : 116) && touch.y <= 130);
               if (id(home_weather_bg_switch).state && hit_celestial) {
                 if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
@@ -1112,20 +1110,23 @@ touchscreen:
                                           pocket_ui::wake_greeting_latched() &&
                                           (now_hm >= pocket_ui::wake_greeting_start_ms()) &&
                                           (now_hm - pocket_ui::wake_greeting_start_ms() < 10500U);
-              if (!greet_blocking && act_count > 0 && touch.y >= 230 && touch.y <= 318 && touch.x >= 35 && touch.x <= 440) {
+              const int act_card_w = std::min(380, pocket_ui::SCREEN_W - 24);
+              const int act_right  = pocket_ui::SCREEN_CX + (act_card_w / 2);
+              const int act_left   = pocket_ui::SCREEN_CX - (act_card_w / 2);
+              if (!greet_blocking && act_count > 0 && touch.y >= 230 && touch.y <= 318 && touch.x >= act_left && touch.x <= act_right) {
                 if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
                   int feat_idx = pocket_ui::resolve_home_featured_activity_idx(act_items, act_count, now_hm);
                   if (act_count > 1) {
-                    if (touch.x >= pocket_ui::SCREEN_CX + 127) {
+                    if (touch.x >= act_right - 50) {
                       pocket_ui::home_activity_overlay_page() = 0;
                       id(home_subpage) = 2;
                       pocket_ui::schedule_disp_update(&id(disp1));
                       return;
                     }
-                    handle_activity_item_action(feat_idx, (touch.x >= pocket_ui::SCREEN_CX + 63));
+                    handle_activity_item_action(feat_idx, (touch.x >= act_right - 106));
                   } else {
-                    handle_activity_item_action(0, (touch.x >= pocket_ui::SCREEN_CX + 123));
+                    handle_activity_item_action(0, (touch.x >= act_right - 54));
                   }
                 }
                 return;
@@ -2126,11 +2127,15 @@ touchscreen:
                 return;
               }
 
-              // 2. Priority Corner Flank Buttons (r <= 38px around (64, 134), (402, 134), (64, 332), (402, 332)):
-              //    Checked BEFORE the outer D-pad ring so pressing in the general area of Home, Back, Vol+, or Vol-
-              //    always triggers that corner button, while the entire equatorial band (y in [172..294]) belongs to Left/Right!
-              int d_tl = (touch.x - 64) * (touch.x - 64) + (touch.y - 134) * (touch.y - 134);
-              if (d_tl <= 1444 || (touch.x <= 102 && touch.y >= 88 && touch.y <= 172 && dist_sq > 16900)) {
+              // 2. Priority Corner Flank Buttons (strictly symmetric around SCREEN_CY & adaptive to SCREEN_W)
+              const int rem_l_fx   = LATTER_ROUND_DISPLAY ? 64 : ((pocket_ui::SCREEN_W < 380) ? 38 : 48);
+              const int rem_r_fx   = pocket_ui::SCREEN_W - rem_l_fx;
+              const int rem_dy     = LATTER_ROUND_DISPLAY ? 99 : ((pocket_ui::SCREEN_W < 380) ? 108 : ((pocket_ui::SCREEN_W >= 480) ? 128 : 114));
+              const int rem_top_fy = pocket_ui::SCREEN_CY - rem_dy;
+              const int rem_btm_fy = pocket_ui::SCREEN_CY + rem_dy;
+
+              int d_tl = (touch.x - rem_l_fx) * (touch.x - rem_l_fx) + (touch.y - rem_top_fy) * (touch.y - rem_top_fy);
+              if (d_tl <= 1369) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_remote_btn_tap = now_rem;
                   id(remote_send_key).execute(6, act_slot);
@@ -2139,8 +2144,8 @@ touchscreen:
                 return;
               }
 
-              int d_tr = (touch.x - 402) * (touch.x - 402) + (touch.y - 134) * (touch.y - 134);
-              if (d_tr <= 1444 || (touch.x >= 364 && touch.y >= 88 && touch.y <= 172 && dist_sq > 16900)) {
+              int d_tr = (touch.x - rem_r_fx) * (touch.x - rem_r_fx) + (touch.y - rem_top_fy) * (touch.y - rem_top_fy);
+              if (d_tr <= 1369) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
                   last_remote_btn_tap = now_rem;
                   id(remote_send_key).execute(7, act_slot);
@@ -2149,8 +2154,8 @@ touchscreen:
                 return;
               }
 
-              int d_bl = (touch.x - 64) * (touch.x - 64) + (touch.y - 332) * (touch.y - 332);
-              if (d_bl <= 1444 || (touch.x <= 102 && touch.y >= 294 && touch.y <= 378 && dist_sq > 16900)) {
+              int d_bl = (touch.x - rem_l_fx) * (touch.x - rem_l_fx) + (touch.y - rem_btm_fy) * (touch.y - rem_btm_fy);
+              if (d_bl <= 1369) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_remote_btn_tap = now_rem;
                   id(remote_send_key).execute(5, act_slot);
@@ -2159,8 +2164,8 @@ touchscreen:
                 return;
               }
 
-              int d_br = (touch.x - 402) * (touch.x - 402) + (touch.y - 332) * (touch.y - 332);
-              if (d_br <= 1444 || (touch.x >= 364 && touch.y >= 294 && touch.y <= 378 && dist_sq > 16900)) {
+              int d_br = (touch.x - rem_r_fx) * (touch.x - rem_r_fx) + (touch.y - rem_btm_fy) * (touch.y - rem_btm_fy);
+              if (d_br <= 1369) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
                   last_remote_btn_tap = now_rem;
                   id(remote_send_key).execute(8, act_slot);
@@ -2169,8 +2174,9 @@ touchscreen:
                 return;
               }
 
-              // 3. Enlarged Directional D-Pad Ring (52px < r <= 158px, dist_sq <= 24964)
-              if (dist_sq > 2704 && dist_sq <= 24964) {
+              // 3. Adaptive Directional D-Pad Ring
+              const int max_dpad_r = (pocket_ui::SCREEN_W < 380) ? 118 : ((!LATTER_ROUND_DISPLAY && pocket_ui::SCREEN_W >= 480) ? 172 : 158);
+              if (dist_sq > 1800 && dist_sq <= (max_dpad_r * max_dpad_r)) {
                 if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
                   last_remote_btn_tap = now_rem;
                   int k_dir = (abs(dy) >= abs(dx)) ? ((dy < 0) ? 0 : 1) : ((dx < 0) ? 2 : 3);
@@ -3502,10 +3508,13 @@ touchscreen:
                   id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
                 } else if (gest.max_travel < 24) {
-                  if (gest.last_x >= 108 && gest.last_x <= 180 && gest.last_y >= 325 && gest.last_y <= 398) {
+                  const int g_btn_y = pocket_ui::layout().app_dock_y;
+                  if (gest.last_x >= pocket_ui::SCREEN_CX - 125 && gest.last_x <= pocket_ui::SCREEN_CX - 55 &&
+                      gest.last_y >= g_btn_y - 34 && gest.last_y <= g_btn_y + 34) {
                     id(game_sound_switch).toggle();
                     pocket_ui::schedule_disp_update(&id(disp1));
-                  } else if (gest.last_x >= 75 && gest.last_x < 375 && gest.last_y >= 130 && gest.last_y <= 398) {
+                  } else if (gest.last_x >= pocket_ui::SCREEN_CX - 140 && gest.last_x < pocket_ui::SCREEN_CX + 140 &&
+                             gest.last_y >= 130 && gest.last_y <= g_btn_y + 34) {
                     id(active_game) = id(game_carousel_idx) + 1;
                     id(mp_idle_debounce).stop();
                     if (id(pocket_music_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) {
@@ -3687,11 +3696,13 @@ touchscreen:
                       ? ((id(sky_weather_subpage) + 1) % 4)
                       : ((id(sky_weather_subpage) + 3) % 4);
                   pocket_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 24 && gest.last_y >= 324 && gest.last_y <= 398) {
+                } else if (gest.max_travel < 24 &&
+                           gest.last_y >= pocket_ui::layout().app_dock_y - 35 &&
+                           gest.last_y <= pocket_ui::layout().app_dock_y + 38) {
                   int target = 0;
-                  if (gest.last_x < pocket_ui::SCREEN_CX - 81) target = 0;
+                  if (gest.last_x < pocket_ui::SCREEN_CX - 76) target = 0;
                   else if (gest.last_x < pocket_ui::SCREEN_CX) target = 1;
-                  else if (gest.last_x < pocket_ui::SCREEN_CX + 81) target = 2;
+                  else if (gest.last_x < pocket_ui::SCREEN_CX + 76) target = 2;
                   else target = 3;
                   if (id(sky_weather_subpage) != target) {
                     id(sky_weather_subpage) = target;
@@ -3761,7 +3772,10 @@ touchscreen:
                         pocket_ui::schedule_disp_update(&id(disp1));
                       }
                     }
-                  } else if (id(room_subpage) == 0 && tp.y >= 324 && tp.y <= 398 && tp.x >= 70 && tp.x <= 396) {
+                  } else if (id(room_subpage) == 0 &&
+                             tp.y >= pocket_ui::layout().app_dock_y - 35 &&
+                             tp.y <= pocket_ui::layout().app_dock_y + 38 &&
+                             tp.x >= pocket_ui::SCREEN_CX - 165 && tp.x <= pocket_ui::SCREEN_CX + 165) {
                     std::string cats[7];
                     int cat_cnt = pocket_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
                     int win_xs[4] = {0, 0, 0, 0};
@@ -3814,7 +3828,8 @@ touchscreen:
                     if (tp.y >= 94 && tp.y < 172) card_idx = 0;
                     else if (tp.y >= 172 && tp.y < 248) card_idx = 1;
                     else if (tp.y >= 248 && tp.y < 323) card_idx = 2;
-                    if (card_idx >= 0 && tp.x >= 72 && tp.x <= 394) {
+                    const int rc_half_w = ((pocket_ui::SCREEN_W < 380) ? (pocket_ui::SCREEN_W - 68) : 316) / 2;
+                    if (card_idx >= 0 && tp.x >= pocket_ui::SCREEN_CX - rc_half_w && tp.x <= pocket_ui::SCREEN_CX + rc_half_w) {
                       std::string s_name = (card_idx == 0) ? id(room_slot_1_name) : (card_idx == 1) ? id(room_slot_2_name) : id(room_slot_3_name);
                       std::string s_id   = (card_idx == 0) ? id(room_slot_1_id)   : (card_idx == 1) ? id(room_slot_2_id)   : (card_idx == 2) ? id(room_slot_3_id)   : (card_idx == 3) ? id(room_slot_4_id)   : id(room_slot_5_id);
                       std::string s_type = (card_idx == 0) ? id(room_slot_1_type) : (card_idx == 1) ? id(room_slot_2_type) : id(room_slot_3_type);
@@ -3872,10 +3887,12 @@ touchscreen:
                     }
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < 404) {
+              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < (pocket_ui::SCREEN_H - 36)) {
                 if (gest.max_travel < 24) {
-                  if (tp.y >= 324 && tp.y <= 398 && tp.x >= pocket_ui::SCREEN_CX - 165 && tp.x <= pocket_ui::SCREEN_CX + 165) {
-                    int new_tab = (tp.x < pocket_ui::SCREEN_CX - 81) ? 0 : ((tp.x < pocket_ui::SCREEN_CX) ? 1 : ((tp.x < pocket_ui::SCREEN_CX + 81) ? 2 : 3));
+                  if (tp.y >= pocket_ui::layout().app_dock_y - 35 &&
+                      tp.y <= pocket_ui::layout().app_dock_y + 38 &&
+                      tp.x >= pocket_ui::SCREEN_CX - 165 && tp.x <= pocket_ui::SCREEN_CX + 165) {
+                    int new_tab = (tp.x < pocket_ui::SCREEN_CX - 76) ? 0 : ((tp.x < pocket_ui::SCREEN_CX) ? 1 : ((tp.x < pocket_ui::SCREEN_CX + 76) ? 2 : 3));
                     pocket_ui::whole_home_tab() = new_tab;
                     pocket_ui::schedule_disp_update(&id(disp1));
                   } else if (pocket_ui::whole_home_tab() == 0 && tp.x >= pocket_ui::SCREEN_CX - 160 && tp.x <= pocket_ui::SCREEN_CX + 160) {

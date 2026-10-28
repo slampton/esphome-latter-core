@@ -184,6 +184,16 @@ static constexpr int16_t CIRCLE_HW[466] = {
 //   - Round Display (POCKET_UI_ROUND_DISPLAY=1, 466x466): O(1) .rodata CIRCLE_HW[c] chord lookup
 //   - Portrait Rectangle Watch (POCKET_UI_ROUND_DISPLAY=0, 410x502): Full horizontal half-width (SCREEN_W/2)
 //     across y in [0..SCREEN_H-1] with smooth r=38px rounded watch corners at top and bottom!
+#ifndef LATTER_CORNER_R
+#if LATTER_ROUND_DISPLAY
+#define LATTER_CORNER_R (LATTER_SCREEN_W / 2)
+#elif LATTER_IS_WEARABLE
+#define LATTER_CORNER_R 62
+#else
+#define LATTER_CORNER_R 20
+#endif
+#endif
+
 inline int circle_half_span(int c, int inset = 5) {
 #if POCKET_UI_ROUND_DISPLAY
   if (c < 0 || c >= SCREEN_W) return 0;
@@ -192,6 +202,17 @@ inline int circle_half_span(int c, int inset = 5) {
 #else
   if (c < 0 || c >= SCREEN_H) return 0;
   int half_w = (SCREEN_W / 2) - inset;
+  const int cr = LATTER_CORNER_R;
+  if (cr > 8) {
+    int dy = 0;
+    if (c < cr) dy = cr - c;
+    else if (c >= SCREEN_H - cr) dy = c - (SCREEN_H - 1 - cr);
+    if (dy > 0 && dy < cr) {
+      int dx_corner = static_cast<int>(std::sqrt(static_cast<float>(cr * cr - dy * dy)));
+      int corner_half_w = (SCREEN_W / 2) - (cr - dx_corner) - inset;
+      if (corner_half_w < half_w) half_w = corner_half_w;
+    }
+  }
   return (half_w > 0) ? half_w : 0;
 #endif
 }
@@ -454,8 +475,12 @@ template<typename DisplayT, typename FontT>
 inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, int h, int r,
                                esphome::Color bg_c, esphome::Color border_c,
                                const char *label, esphome::Color text_c, FontT *font) {
-  if (w > SCREEN_W - 16 && std::abs(cx_card - SCREEN_CX) <= 4) {
-    w = SCREEN_W - 16;
+  if (std::abs(cx_card - SCREEN_CX) <= 4) {
+    if (SCREEN_W < 380 && w >= 256 && w <= 330) {
+      w = SCREEN_W - 68; // Leave 34px right margin on 320px screens so scroll chevrons never overlap cards!
+    } else if (w > SCREEN_W - 20) {
+      w = SCREEN_W - 20;
+    }
   }
   int x0 = cx_card - w / 2;
   int y0 = cy_card - h / 2;
@@ -563,8 +588,8 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
   const int mask_x = 395;
   const int chev_x = 415;
 #else
-  const int mask_x = SCREEN_W - 44;
-  const int chev_x = SCREEN_W - 22;
+  const int mask_x = (SCREEN_W < 380) ? (SCREEN_W - 30) : (SCREEN_W - 42);
+  const int chev_x = (SCREEN_W < 380) ? (SCREEN_W - 15) : (SCREEN_W - 21);
 #endif
   it.filled_rectangle(mask_x, 140, SCREEN_W - mask_x, 160, col_bg);
   if (show_up) render_scroll_chevron(it, chev_x, 162, true, col_active, esphome::Color(0, 0, 0), false);
@@ -576,20 +601,16 @@ template<typename DisplayT, typename FontT>
 inline void render_back_button(DisplayT &it, int cx, FontT *font,
                                int y_pos = 426, const char *label = "< Back",
                                esphome::Color text_col = esphome::Color(158, 158, 158)) {
-#if !POCKET_UI_ROUND_DISPLAY
-  const int y_shift = (SCREEN_H > 466) ? (SCREEN_H - 466) : 0;
-#else
-  const int y_shift = 0;
-#endif
+  const int home_bar_y = POCKET_UI_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
+  const int back_lbl_y = POCKET_UI_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - 28) : y_pos);
   if (label != nullptr && std::strcmp(label, "Home") == 0) {
-    render_home_indicator_bar(it, cx, 434 + y_shift);
+    render_home_indicator_bar(it, cx, home_bar_y);
     return;
   }
-  const int eff_y = (y_pos >= 400) ? (y_pos + y_shift) : y_pos;
   const char *eff_label = (label != nullptr && std::strcmp(label, "< BACK") == 0) ? "< Back" : label;
-  it.print(cx + 1, eff_y + 1, font, esphome::Color(0, 0, 0),
+  it.print(cx + 1, back_lbl_y + 1, font, esphome::Color(0, 0, 0),
            esphome::display::TextAlign::CENTER, eff_label);
-  it.print(cx, eff_y, font, text_col,
+  it.print(cx, back_lbl_y, font, text_col,
            esphome::display::TextAlign::CENTER, eff_label);
 }
 

@@ -37,11 +37,25 @@ struct UiLayout {
   // Header & Footer Y coordinates (Adaptive for Round vs Square/Rectangular)
   int hdr_y = 48;
   int sub_hdr_y = 76;
-  int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - 36);
-  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - 14);
-  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - 52);
-  int dock_pips_y = LATTER_ROUND_DISPLAY ? 405 : (SCREEN_H - 90);
+  int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - 28);
+  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
+  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - 58);
+  int app_dock_y = LATTER_ROUND_DISPLAY ? 372 : (SCREEN_H - 58);
+  int dock_pips_y = LATTER_ROUND_DISPLAY ? 405 : (SCREEN_H - 25);
+  int app_dock_pips_y = LATTER_ROUND_DISPLAY ? 410 : (SCREEN_H - 25);
   int dock_r = (SCREEN_W < 360) ? 24 : 27;
+
+  // Consistent Upper-Left Celestial Sun/Moon Coordinates across all 5 displays
+  int celestial_x = LATTER_ROUND_DISPLAY ? 106 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : 78));
+  int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : 78);
+
+  // Corner-Safe Battery Indicator Coordinates for Non-Round Displays
+  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 72) : ((SCREEN_W < 380) ? (SCREEN_W - 46) : (SCREEN_W - 58)));
+  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 36 : 30);
+
+  // Standard Menu Card Width & Left Text Margin (prevents scroll chevron overlap on 320px screens)
+  int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 68) : 276;
+  int list_card_left = SCREEN_CX - (list_card_w / 2);
 
   // 4-Column Stepper X centers (-5m, -1m, +1m, +5m / -1h, +1h, -5m, +5m)
   constexpr int stepper_x(int col_0_to_3) const {

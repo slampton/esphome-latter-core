@@ -99,10 +99,12 @@ inline void render_system_page(
     esphome::Color chv_c = enabled ? theme_secondary : col_slate;
     render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, label, txt_c, font_small);
     if (enabled) {
-      it.line(110, y_mid, 115, y_mid - 5, chv_c);
-      it.line(110, y_mid, 115, y_mid + 5, chv_c);
-      it.line(356, y_mid, 351, y_mid - 5, chv_c);
-      it.line(356, y_mid, 351, y_mid + 5, chv_c);
+      const int c_l = layout().list_card_left + 15;
+      const int c_r = cx + (layout().list_card_w / 2) - 15;
+      it.line(c_l, y_mid, c_l + 5, y_mid - 5, chv_c);
+      it.line(c_l, y_mid, c_l + 5, y_mid + 5, chv_c);
+      it.line(c_r, y_mid, c_r - 5, y_mid - 5, chv_c);
+      it.line(c_r, y_mid, c_r - 5, y_mid + 5, chv_c);
     }
   };
 
@@ -158,7 +160,6 @@ inline void render_system_page(
     }
     it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
 
-    render_back_button(it, cx, font_small, 426, "Home");
     int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 

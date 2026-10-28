@@ -2283,10 +2283,10 @@ inline void render_games_launcher(
     if (icon_y >= 40 && icon_y <= 380) {
       draw_game_icon(g_idx, icon_x, icon_y);
     }
-    if (title_y >= 140 && title_y <= 295) {
+    if (title_y >= 140 && title_y <= 335) {
       it.print(text_center_x, title_y, font_btn_bold, col_white, TextAlign::CENTER, title);
     }
-    if (score_y >= 140 && score_y <= 295) {
+    if (score_y >= 140 && score_y <= 335) {
       const char *lbl_str = "HIGH SCORE:";
       char val_str[20];
       if (score <= 0) {
@@ -2310,11 +2310,14 @@ inline void render_games_launcher(
     }
   };
 
-  const int icon_cx = 115;
-  const int card_cy = 194;
-  const int text_cx = 290;
-  const int base_title_y = 176;
-  const int base_score_y = 216;
+  const bool compact_w   = (SCREEN_W < 380);
+  const int icon_cx      = compact_w ? cx  : (cx - 118);
+  const int card_cy      = compact_w ? 158 : 194;
+  const int text_cx      = compact_w ? cx  : (cx + 57);
+  const int base_title_y = compact_w ? 242 : 176;
+  const int base_score_y = compact_w ? 274 : 216;
+  const int pips_y       = compact_w ? 314 : 282;
+  const int btn_row_y    = layout().app_dock_y;
 
   if (menu_scroll_active) {
     int step = std::max(0, std::min(4, menu_scroll_step));
@@ -2328,17 +2331,14 @@ inline void render_games_launcher(
     draw_game_card(game_carousel_idx, icon_cx, card_cy, text_cx, base_title_y, base_score_y);
   }
 
-  it.print(cx, 84, font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
+  it.print(cx, compact_w ? 64 : 84, font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
 
-  // Horizontal Carousel Page Pips at y = 282 (anchored to center game showcase, 55px above PLAY button!)
   int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
-  render_dock_page_pips(it, cx, 282, 4, active_pip, col_white, Color(95, 112, 134));
+  render_dock_page_pips(it, cx, pips_y, 4, active_pip, col_white, Color(95, 112, 134));
 
-  // Combined [Speaker (44px) + 28px gap + PLAY (154px) = 226px] centered at cx = 233, y = 359 (aligned with 4-Icon Row!)
-  render_pill_button(it, 214, 324, 359, 22, theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
+  render_pill_button(it, cx - 19, cx + 91, btn_row_y, 22, theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
 
-  // Game Sound Mute / Unmute Button at (142, 359, r = 22 -> outer left edge = 120)
-  const int spk_x = 142, spk_y = 359;
+  const int spk_x = cx - 91, spk_y = btn_row_y;
   it.filled_circle(spk_x, spk_y, 22, col_dark_gray);
   it.circle(spk_x, spk_y, 22, game_sound_on ? theme_secondary : col_slate);
   it.circle(spk_x, spk_y, 21, game_sound_on ? theme_secondary : col_slate);

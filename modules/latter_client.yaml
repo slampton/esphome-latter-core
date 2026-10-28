@@ -3944,19 +3944,22 @@ script:
     then:
       - lambda: |-
           std::string p = std::string(id(theme_palette_select).current_option());
-          // Permanent secondary color: Brushed Silver / Gray #C0C0C0 across all profiles
-          id(theme_secondary) = Color(192, 192, 192);
+          #if defined(LATTER_BACKLIGHT_PIN)
+          const bool is_ips_lcd = true;
+          #else
+          const bool is_ips_lcd = false;
+          #endif
+          id(theme_secondary) = is_ips_lcd ? Color(224, 232, 242) : Color(192, 192, 192);
           if (p == "Custom") {
             pocket_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
           } else if (p == "Pink" || p == "Pink & Gray") {
-            id(theme_primary) = Color(168, 120, 132);  // Muted Ash Pink #A87884
+            id(theme_primary) = is_ips_lcd ? Color(236, 128, 162) : Color(168, 120, 132);
           } else if (p == "Green" || p == "Green & Gold") {
-            id(theme_primary) = Color(66, 116, 83);    // Heritage Sage Green #427453
+            id(theme_primary) = is_ips_lcd ? Color(68, 196, 122)  : Color(66, 116, 83);
           } else if (p == "Blue" || p == "Blue & Gold" || p == "Default Classic") {
-            id(theme_primary) = Color(69, 110, 138);   // Deep Steel Blue #456E8A
+            id(theme_primary) = is_ips_lcd ? Color(56, 156, 244)  : Color(69, 110, 138);
           } else {
-            // Steel Blue (Default): Soft Steel Ice Blue #6B8E9E
-            id(theme_primary) = Color(107, 142, 158);
+            id(theme_primary) = is_ips_lcd ? Color(88, 184, 238)  : Color(107, 142, 158);
           }
           if (id(display_power_state) == 0) pocket_ui::schedule_disp_update(&id(disp1));
 

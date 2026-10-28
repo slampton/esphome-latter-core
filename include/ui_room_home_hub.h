@@ -161,7 +161,7 @@ inline void render_room_control_page(
     int start_idx = get_home_dock_start_index(cat_count, room_cat_dock_page());
     int vis_count = std::min(4, cat_count - start_idx);
 
-    static constexpr int ICON_Y = 359;
+    const int ICON_Y = layout().app_dock_y;
     Color shadow_c(0, 0, 0);
 
     for (int i = 0; i < vis_count; i++) {
@@ -238,7 +238,7 @@ inline void render_room_control_page(
     }
 
     if (total_cat_pages > 1) {
-      render_dock_page_pips(it, cx, 402, total_cat_pages, room_cat_dock_page(),
+      render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_cat_pages, room_cat_dock_page(),
                             col_white, Color(95, 112, 134));
     }
   };
@@ -324,11 +324,12 @@ inline void render_room_control_page(
       if (name.empty() && id_str.empty()) return;
       Color brd_c = is_act ? theme_primary : card_brd_off;
       Color txt_c = is_act ? theme_primary : col_white;
+      const int area_l = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, is_act ? card_bg_on : card_bg_off, brd_c, nullptr, txt_c, font_small);
-      if (is_act) it.filled_circle(114, y_mid, 6, theme_primary);
-      else it.circle(114, y_mid, 5, col_slate);
-      std::string fit_n = fit_text_to_width_font(name, 218, font_small);
-      it.print(132, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
+      if (is_act) it.filled_circle(area_l + 19, y_mid, 6, theme_primary);
+      else it.circle(area_l + 19, y_mid, 5, col_slate);
+      std::string fit_n = fit_text_to_width_font(name, layout().list_card_w - 54, font_small);
+      it.print(area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     };
 
     draw_area_row(110, s1_name, s1_id, s1_act);
@@ -534,30 +535,29 @@ inline void render_room_control_page(
     else if (dtype == "cover") fill_c = Color(34, 68, 96);  // Steel-Cyan shade bar
     else if (dtype == "fan") fill_c = Color(24, 76, 64);    // Emerald-Teal airflow bar
 
-    // 1. Base 316x64 Rounded Card (x = 75..391, y = y_mid - 32 .. y_mid + 32)
-    render_modern_card(it, cx, y_mid, 316, 64, 16, bg_c, brd_c, nullptr, col_white, font_small);
+    const int r_card_w   = (SCREEN_W < 380) ? (SCREEN_W - 68) : 316;
+    const int r_left     = cx - (r_card_w / 2);
+    const int r_right    = cx + (r_card_w / 2);
+    const int r_div_x    = r_left + 64;
+    const int r_slider_w = (r_right - 5) - (r_div_x + 1);
+    render_modern_card(it, cx, y_mid, r_card_w, 64, 16, bg_c, brd_c, nullptr, col_white, font_small);
 
-    // 2. Proportional Horizontal Fill-Slider Bar across the right slider body (x = 140..386, width = 246px)
-    if (has_slider && is_act && level > 0) {
+    if (has_slider && is_act && level > 0 && r_slider_w > 10) {
       int clamped_lvl = std::max(0, std::min(100, level));
-      int fill_w = (246 * clamped_lvl) / 100;
+      int fill_w = (r_slider_w * clamped_lvl) / 100;
       if (fill_w > 4) {
-        it.filled_rectangle(140, y_mid - 29, fill_w, 58, fill_c);
-        // Subtle bright leading edge on the slider bar
-        it.vertical_line(140 + fill_w - 1, y_mid - 28, 56, scale_color(col_white, 0.35f));
+        it.filled_rectangle(r_div_x + 1, y_mid - 29, fill_w, 58, fill_c);
+        it.vertical_line(r_div_x + fill_w, y_mid - 28, 56, scale_color(col_white, 0.35f));
       }
     }
 
-    // 3. Left 64x64 Icon Well (x = 75..139, center x = 107) + Vertical Divider at x = 139
-    draw_tall_card_icon(107, y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
-    it.line(139, y_mid - 22, 139, y_mid + 22, brd_c);
+    draw_tall_card_icon(r_left + 32, y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
+    it.line(r_div_x, y_mid - 22, r_div_x, y_mid + 22, brd_c);
 
-    // 4. Two-Line Typography in Right Body (x = 152..378):
-    //    - Top Line (y_mid - 10): Clean Entity Name
-    //    - Bottom Line (y_mid + 14): Status + Percentage ("75% Brightness", "Open • 60%", "Active", "Off")
     std::string clean_name = strip_trailing_paren_state(raw_name);
-    std::string fit_title = fit_text_to_width_font(clean_name, 222, font_small);
-    it.print(152, y_mid - 10, font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
+    const int max_t_w = (dtype == "light") ? (r_slider_w - 58) : (r_slider_w - 20);
+    std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
+    it.print(r_div_x + 13, y_mid - 10, font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     char sub_buf[40];
     if (dtype == "light") {
@@ -584,11 +584,10 @@ inline void render_room_control_page(
       snprintf(sub_buf, sizeof(sub_buf), is_act ? "On" : "Off");
     }
     Color sub_c = is_act ? theme_secondary : Color(105, 115, 130);
-    it.print(152, y_mid + 14, font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
+    it.print(r_div_x + 13, y_mid + 14, font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
-    // 5. Right-Side Color / Kelvin Inspector Button on Light Cards (cx_orb = 348, r = 16, clear of x>=376 chevron zone!)
     if (dtype == "light") {
-      int ox = 348;
+      int ox = r_right - 28;
       it.filled_circle(ox, y_mid, 16, Color(20, 24, 32));
       it.filled_circle(ox - 5, y_mid - 4, 4, Color(255, 95, 95));
       it.filled_circle(ox + 5, y_mid - 4, 4, Color(90, 225, 135));
@@ -759,11 +758,11 @@ inline void render_security_alarm_page(
                        "Return to Dock", col_white, font_small);
   }
 
-  // Bottom 4-Icon Whole-Home Category Dock at y = 359 (0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum)
+  // Bottom 4-Icon Whole-Home Category Dock at layout().app_dock_y (0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum)
   int WH_XS[4] = {0, 0, 0, 0};
   bool wh_dl = false, wh_dr = false;
   get_home_dock_window_xs(4, 0, cx, WH_XS, wh_dl, wh_dr);
-  static constexpr int WH_Y = 359;
+  const int WH_Y = layout().app_dock_y;
   for (int i = 0; i < 4; i++) {
     int bx = WH_XS[i];
     bool is_act = (i == tab);
@@ -806,7 +805,6 @@ inline void render_security_alarm_page(
     }
   }
 
-  render_back_button(it, cx, font_small, 426, "Home");
 }
 
 }  // namespace pocket_ui

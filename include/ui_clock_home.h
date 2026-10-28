@@ -52,7 +52,7 @@ inline void render_clock_page(
   // Square / Rectangular Modern Digital Chronometer Layout
   it.rectangle(6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
 #if LATTER_HAS_BATTERY
-  render_battery_indicator(it, SCREEN_W - 46, 28, batt, is_charging, font_small,
+  render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
                            theme_primary, col_gold, col_green);
 #endif
   if (!now.is_valid()) {
@@ -478,12 +478,18 @@ inline void draw_home_activity_row_contents(
   // On the translucent overlay (is_list_row == true), cards use the exact System Menu standard:
   //   - w = 276, h = 44, r = 12 (x = 95..371, 63px stride = 19px clear gap!)
   //   - Icon at gx = 113, Text at txt_x = 128 (max_w = 186), Divider at 320, Action Circle at act_bx = 346 (r = 13)
-  const int cx_ref  = SCREEN_CX;
-  const int gx      = is_list_row ? (cx_ref - 120) : (cx_ref - 161);
-  const int txt_x   = is_list_row ? (cx_ref - 105) : (cx_ref - 139);
-  const int max_txt = is_list_row ? 186 : (has_dropdown_ext ? 194 : 252);
-  const int act_bx  = is_list_row ? (cx_ref + 113) : (has_dropdown_ext ? (cx_ref + 95) : (cx_ref + 156));
-  const int btn_r   = is_list_row ?  13 : 19;
+  const int cx_ref     = SCREEN_CX;
+  const int list_w     = layout().list_card_w;
+  const int main_w     = std::min(380, SCREEN_W - 24);
+  const int card_w     = is_list_row ? list_w : main_w;
+  const int card_left  = cx_ref - (card_w / 2);
+  const int card_right = cx_ref + (card_w / 2);
+  const int gx         = is_list_row ? (card_left + 18) : (card_left + 24);
+  const int txt_x      = is_list_row ? (card_left + 33) : (card_left + 44);
+  const int div1_x     = is_list_row ? (card_right - 46) : (has_dropdown_ext ? (card_right - 106) : (card_right - 54));
+  const int act_bx     = is_list_row ? (card_right - 23) : (has_dropdown_ext ? (card_right - 78)  : (card_right - 27));
+  const int max_txt    = std::max(72, div1_x - txt_x - 8);
+  const int btn_r      = is_list_row ? 13 : ((SCREEN_W < 380) ? 16 : 19);
 
   int gy = row_y;
   if (is_list_row) {
@@ -623,13 +629,14 @@ inline void render_home_activity_card_row(
     esphome::Color card_bg = esphome::Color(22, 27, 36),
     esphome::Color card_brd = esphome::Color(52, 62, 78),
     esphome::Color btn_bg = esphome::Color(32, 39, 52)) {
-  const int card_w  = is_list_row ? 276 : std::min(380, SCREEN_W - 26);
-  const int card_h  = is_list_row ?  44 : 68;
-  const int card_r  = is_list_row ?  12 : 16;
-  const int div1_x  = is_list_row ? (cx + 87) : (has_dropdown_ext ? (cx + 63) : (cx + 123));
-  const int div_h   = is_list_row ?  14 : 23;
-  const int div2_x  = cx + 127;
-  const int drop_bx = cx + 158;
+  const int card_w     = is_list_row ? layout().list_card_w : std::min(380, SCREEN_W - 24);
+  const int card_h     = is_list_row ?  44 : 68;
+  const int card_r     = is_list_row ?  12 : 16;
+  const int card_right = cx + (card_w / 2);
+  const int div1_x     = is_list_row ? (card_right - 46) : (has_dropdown_ext ? (card_right - 106) : (card_right - 54));
+  const int div_h      = is_list_row ?  14 : 23;
+  const int div2_x     = card_right - 50;
+  const int drop_bx    = card_right - 25;
 
   render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
                      nullptr, col_white, font_small);
@@ -931,8 +938,9 @@ inline void render_home_page(
   if (has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)")) {
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false);
   } else if (show_weather_bg) {
+    const int cel_x = layout().celestial_x;
+    const int cel_y = layout().celestial_y;
     if (is_dim_backdrop) {
-      // Ultra-dim (~14% luminance) sky canvas when the Activity Overlay is open (zero interlace stripes!)
       if (!is_night) {
 #if POCKET_UI_ROUND_DISPLAY
         it.filled_circle(cx, cy, 228, Color(4, 8, 13));
@@ -940,19 +948,13 @@ inline void render_home_page(
         it.filled_rectangle(0, 0, SCREEN_W, SCREEN_H, Color(4, 8, 13));
 #endif
       }
-      // Subtle 14%-bright sun/moon silhouette at (360, 86)
-      it.filled_circle(360, 86, 20, is_night ? Color(22, 24, 28) : Color(36, 30, 8));
+      it.filled_circle(cel_x, cel_y, 20, is_night ? Color(22, 24, 28) : Color(36, 30, 8));
     } else {
       double moon_cycle = 0.5;
       if (is_night) {
         compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                    moon_phase_raw, moon_cycle, nullptr, nullptr);
       }
-      // Celestial Sun/Moon coordinates:
-      //   - Round (466x466): Top-Right (360, 86)
-      //   - Square/Rectangular: Top-Left (58, 76) so Top-Right is reserved for the Battery Indicator!
-      const int cel_x = LATTER_ROUND_DISPLAY ? 360 : 58;
-      const int cel_y = LATTER_ROUND_DISPLAY ? 86 : 76;
       render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night,
                                       moon_cycle, cel_x, cel_y, true, accel_x, accel_y);
     }
@@ -1046,8 +1048,9 @@ inline void render_home_page(
       static constexpr float  OUT_ALPHA[4] = {0.0f, 0.65f, 0.25f, 0.0f};
       static constexpr float  IN_ALPHA[4]  = {1.0f, 0.42f, 0.76f, 0.94f};
 
-      const int act_w = std::min(380, SCREEN_W - 26);
+      const int act_w = std::min(380, SCREEN_W - 24);
       const int act_x0 = cx - act_w / 2;
+      const int act_right = cx + act_w / 2;
       render_modern_card(it, cx, pill_y, act_w, 68, 16, card_bg, card_brd, nullptr, col_white, font_small);
 
       if (OUT_ALPHA[step] > 0.05f) {
@@ -1062,9 +1065,9 @@ inline void render_home_page(
       // Re-stamp top & bottom card border lines, dividers, and stationary '▼' dropdown chevron
       it.horizontal_line(act_x0 + 16, pill_y - 34, act_w - 32, card_brd);
       it.horizontal_line(act_x0 + 16, pill_y + 33, act_w - 32, card_brd);
-      it.line(cx + 63,  pill_y - 23, cx + 63,  pill_y + 23, card_brd);
-      it.line(cx + 127, pill_y - 23, cx + 127, pill_y + 23, card_brd);
-      const int d_bx = cx + 158;
+      it.line(act_right - 106, pill_y - 23, act_right - 106, pill_y + 23, card_brd);
+      it.line(act_right - 50,  pill_y - 23, act_right - 50,  pill_y + 23, card_brd);
+      const int d_bx = act_right - 25;
       for (int w = -1; w <= 1; w++) {
         it.line(d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
         it.line(d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
@@ -1132,8 +1135,8 @@ inline void render_home_page(
     get_home_dock_window_xs(dock_count, home_dock_page(), cx, win_xs, has_left_arr, has_right_arr);
     int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     int vis_count = std::min(4, dock_count - start_idx);
-    const int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - 52);
-    const int dock_r = (SCREEN_W < 360) ? 24 : 27;
+    const int dock_y = layout().dock_y;
+    const int dock_r = layout().dock_r;
 
     auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow) {
       if (app_id == 6) {
@@ -1377,25 +1380,15 @@ inline void render_home_page(
       draw_dock_glyph(app_id, bx, dock_y, dock_fg_c, false);
     }
 
-    // Page Indicator Pips: y = 405 on Round (below dock), or y = dock_y - 40 on Square/Rect (above bottom dock!)
-    const int pips_y = LATTER_ROUND_DISPLAY ? 405 : (dock_y - 40);
+    const int pips_y = layout().dock_pips_y;
     render_dock_page_pips(it, cx, pips_y, total_dock_pages, home_dock_page(),
                           is_dim_backdrop ? dock_fg_c : col_white,
                           is_dim_backdrop ? dock_ring_c : Color(95, 112, 134));
   }
 
-  // ZONE 6: Battery Indicator
-  //   - Round Display: Bottom chin at (cx, 435)
-  //   - Square/Rectangular with Battery (LATTER_HAS_BATTERY == 1): Top-Right status corner at (SCREEN_W - 46, 28)
-  //   - Stationary Mains-Only Display (LATTER_HAS_BATTERY == 0): Omitted!
 #if LATTER_HAS_BATTERY
-#if LATTER_ROUND_DISPLAY
-  render_battery_indicator(it, cx, 435, batt, is_charging, font_small,
+  render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
                            is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
-#else
-  render_battery_indicator(it, SCREEN_W - 46, 28, batt, is_charging, font_small,
-                           is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
-#endif
 #endif
 
   // ---------------------------------------------------------------------------

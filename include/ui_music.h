@@ -348,14 +348,15 @@ inline void render_music_menus(
       esphome::Color border_c = is_current ? theme_primary : card_brd;
       esphome::Color txt_c = is_current ? theme_primary : col_white;
 
+      const int c_left = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, border_c, nullptr, txt_c, font_small);
       if (is_current) {
-        it.filled_circle(114, y_mid, 6, theme_primary);
+        it.filled_circle(c_left + 19, y_mid, 6, theme_primary);
       } else {
-        it.circle(114, y_mid, 5, col_slate);
+        it.circle(c_left + 19, y_mid, 5, col_slate);
       }
-      std::string disp_name = fit_text_to_width_font(name, 218, font_small);
-      it.print(130, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+      std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 56, font_small);
+      it.print(c_left + 35, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
     };
 
     draw_speaker_card(110 + list_shift, slot_1_name, slot_1_id, slot_1_active);
@@ -426,25 +427,29 @@ inline void render_music_menus(
 
     auto draw_slot_card = [&](int y_mid, const std::string &name, const std::string &mtype, bool is_act) {
       if (name.empty() || y_mid < 65 || y_mid > 395) return;
+      const int c_left  = layout().list_card_left;
+      const int c_right = cx + (layout().list_card_w / 2);
       if (is_drill) {
-        // Left Play Circle (r = 18 at x = 82) stays exactly as before!
-        it.filled_circle(82, y_mid, 18, card_bg);
-        it.circle(82, y_mid, 18, theme_primary);
-        it.filled_triangle(79, y_mid - 6, 79, y_mid + 6, 88, y_mid, theme_primary);
+        const int play_cx = (SCREEN_W < 380) ? 28 : 82;
+        const int dr_left = play_cx + 26;
+        const int dr_w    = c_right - dr_left;
+        const int dr_cx   = dr_left + (dr_w / 2);
+        it.filled_circle(play_cx, y_mid, 18, card_bg);
+        it.circle(play_cx, y_mid, 18, theme_primary);
+        it.filled_triangle(play_cx - 3, y_mid - 6, play_cx - 3, y_mid + 6, play_cx + 6, y_mid, theme_primary);
 
-        // Right Drill-Down Modern Card (x = 120..372, cx_card = 246, w = 252, h = 44, r = 12)
-        render_modern_card(it, 246, y_mid, 252, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
+        render_modern_card(it, dr_cx, y_mid, dr_w, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
 
-        std::string disp_name = fit_text_to_width_font(name, 204, font_small);
-        it.print(136, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
-        draw_drilldown_icon(346, y_mid);
+        std::string disp_name = fit_text_to_width_font(name, dr_w - 48, font_small);
+        it.print(dr_left + 14, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        draw_drilldown_icon(c_right - 24, y_mid);
       } else if (is_podcast_list) {
         render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-        std::string disp_name = fit_text_to_width_font(name, 212, font_small);
-        it.print(114, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
-        draw_drilldown_icon(342, y_mid);
+        std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 58, font_small);
+        it.print(c_left + 19, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        draw_drilldown_icon(c_right - 26, y_mid);
       } else if (mtype == "text") {
-        std::string disp_name = fit_text_to_width_font(name, 248, font_small);
+        std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 24, font_small);
         render_modern_card(it, cx, y_mid, 276, 44, 12, esphome::Color(15, 18, 24), esphome::Color(34, 40, 50),
                            disp_name.c_str(), col_slate, font_small);
       } else {
@@ -453,10 +458,10 @@ inline void render_music_menus(
         render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, border_c, nullptr, txt_c, font_small);
 
         esphome::Color icon_c = (mtype == "radio") ? theme_secondary : theme_primary;
-        it.filled_triangle(110, y_mid - 6, 110, y_mid + 6, 120, y_mid, icon_c);
+        it.filled_triangle(c_left + 15, y_mid - 6, c_left + 15, y_mid + 6, c_left + 25, y_mid, icon_c);
 
-        std::string disp_name = fit_text_to_width_font(name, 224, font_small);
-        it.print(130, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 50, font_small);
+        it.print(c_left + 35, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
       }
     };
 
