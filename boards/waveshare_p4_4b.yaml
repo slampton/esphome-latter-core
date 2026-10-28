@@ -151,6 +151,7 @@ switch:
   - platform: gpio
     name: "Speaker Enable"
     id: speaker_enable
+    entity_category: config
     pin: GPIO53
     restore_mode: ALWAYS_ON
 
