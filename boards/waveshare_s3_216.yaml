@@ -4,8 +4,8 @@
 # Display: 2.16" 480x480 Square AMOLED (CO5300 over 80MHz Quad-SPI, RST: GPIO39, CS: GPIO12)
 # Touch:   CST9220 @ 0x5A (INT: GPIO11, RST: GPIO40)
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO8) + ES7210 ADC @ 0x40 (DIN: GPIO10), PA: GPIO46
-# Clocks:  MCLK: GPIO16, BCLK: GPIO9, LRCLK/WS: GPIO45
-# PMU/IMU: AXP2101 @ 0x34 (IRQ: GPIO3), QMI8658 @ 0x6B, PCF85063 RTC @ 0x51
+# Clocks:  MCLK: GPIO42, BCLK: GPIO9, LRCLK/WS: GPIO45
+# PMU/IMU: AXP2101 @ 0x34 (SYS_OUT: GPIO16), QMI8658 @ 0x6B, PCF85063 RTC @ 0x51, Key3: GPIO18
 # ==============================================================================
 
 esphome:
@@ -17,6 +17,8 @@ esphome:
     - "-DLATTER_HAS_BATTERY=1"
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
+    - "-DLATTER_PMU_IRQ_PIN=16"
+    - "-DLATTER_PMU_IRQ_ACTIVE_HIGH=1"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -80,7 +82,7 @@ i2s_audio:
       number: GPIO9
       allow_other_uses: true
     i2s_mclk_pin:
-      number: GPIO16
+      number: GPIO42
       allow_other_uses: true
 
   - id: i2s_output_bus
@@ -92,7 +94,7 @@ i2s_audio:
       number: GPIO9
       allow_other_uses: true
     i2s_mclk_pin:
-      number: GPIO16
+      number: GPIO42
       allow_other_uses: true
 
 audio_adc:
@@ -151,10 +153,9 @@ switch:
 binary_sensor:
   - platform: gpio
     pin:
-      number: GPIO0
+      number: GPIO18
       mode: INPUT_PULLUP
       inverted: true
-      ignore_strapping_warning: true
     name: "Boot Button"
     id: boot_button
 
@@ -195,7 +196,7 @@ script:
       - lambda: |-
           esp_rom_gpio_connect_out_signal(9, 28, false, false);
           esp_rom_gpio_connect_out_signal(45, 29, false, false);
-          esp_rom_gpio_connect_out_signal(16, 21, false, false);
+          esp_rom_gpio_connect_out_signal(42, 21, false, false);
 
   - id: hal_route_i2s_to_mic
     mode: restart
@@ -203,7 +204,7 @@ script:
       - lambda: |-
           esp_rom_gpio_connect_out_signal(9, 26, false, false);
           esp_rom_gpio_connect_out_signal(45, 27, false, false);
-          esp_rom_gpio_connect_out_signal(16, 23, false, false);
+          esp_rom_gpio_connect_out_signal(42, 23, false, false);
 
   - id: hal_release_deep_sleep_holds
     mode: restart
@@ -220,9 +221,9 @@ script:
     then:
       - lambda: |-
           gpio_config_t io_conf = {};
-          io_conf.pin_bit_mask = (1ULL << GPIO_NUM_3);
+          io_conf.pin_bit_mask = (1ULL << GPIO_NUM_16);
           io_conf.mode = GPIO_MODE_INPUT;
-          io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+          io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
           io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
           io_conf.intr_type = GPIO_INTR_DISABLE;
           gpio_config(&io_conf);
