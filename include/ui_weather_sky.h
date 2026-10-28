@@ -1736,7 +1736,7 @@ inline void render_weather_page(
       it.line(dx - 3, dy + 2, dx - 3, dy + 5, c);
       it.draw_pixel_at(dx - 2, dy + 6, c);
     };
-    const int drop_x = 128;
+    const int drop_x = cx - ((SCREEN_W < 380) ? 96 : 105);
     draw_droplet_outline(drop_x, tele_y, icon_c);
     char hum_str[20];
     if (!std::isnan(weather_humidity)) snprintf(hum_str, sizeof(hum_str), "%.0f%%", weather_humidity);
@@ -1773,7 +1773,7 @@ inline void render_weather_page(
         it.line(x0, y0 - 1, x1, y1 - 1, c);
       }
     };
-    const int w_icon_x = 228;
+    const int w_icon_x = cx - 5;
     draw_wind_glyph(w_icon_x, tele_y, icon_c);
     char wind_str[28];
     const char *w_dir = wind_bearing_to_cardinal(weather_wind_bearing);
@@ -1788,7 +1788,8 @@ inline void render_weather_page(
     }
     it.print(w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
 
-    it.line(80, 310, 386, 310, col_dark_gray);
+    const int div_hw = std::min(153, (SCREEN_W / 2) - 24);
+    it.line(cx - div_hw, 310, cx + div_hw, 310, col_dark_gray);
 
   } else if (sky_weather_subpage == 1) {
     // ----------------------------------------------------------------------

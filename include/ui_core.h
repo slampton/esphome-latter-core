@@ -7,6 +7,9 @@
 // ==============================================================================
 
 #include "esphome.h"
+#ifdef USE_ESP32
+#include <driver/gpio.h>
+#endif
 #include <cmath>
 #include <ctime>
 #include <cstdio>

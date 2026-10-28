@@ -382,11 +382,6 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     it.print(nx, ny, font_small, col_white, esphome::display::TextAlign::CENTER, CHRONO_STRS[i]);
   }
 
-  uint32_t total_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
-  int mins = (total_ms / 60000U) % 60U;
-  int secs = (total_ms / 1000U) % 60U;
-  int tenths = (total_ms / 100U) % 10U;
-
   it.print(cx, 132, font_small, col_silver, esphome::display::TextAlign::CENTER, "CHRONOGRAPH");
 
   char main_buf[32];
@@ -1508,10 +1503,10 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
   esphome::Color card_bg(22, 27, 36);
   esphome::Color card_brd(52, 62, 78);
   if (!s.running && !s.paused) {
-    const int STEP_XS[4] = {cx - 135, cx - 45, cx + 45, cx + 135};
+    const int step_w = (SCREEN_W < 380) ? 62 : 68;
     static constexpr const char *STEP_LBLS[4] = {"-5m", "-1m", "+1m", "+5m"};
     for (int i = 0; i < 4; i++) {
-      render_modern_card(it, STEP_XS[i], 324, 68, 46, 12, card_bg, card_brd,
+      render_modern_card(it, layout().stepper_x(i), 324, step_w, 46, 12, card_bg, card_brd,
                          STEP_LBLS[i], col_white, font_small);
     }
   } else {
@@ -1617,10 +1612,10 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
 
     esphome::Color card_bg(22, 27, 36);
     esphome::Color card_brd(52, 62, 78);
-    const int STEP_XS[4] = {cx - 135, cx - 45, cx + 45, cx + 135};
+    const int step_w = (SCREEN_W < 380) ? 62 : 68;
     static constexpr const char *STEP_LBLS[4] = {"-1h", "+1h", "-5m", "+5m"};
     for (int i = 0; i < 4; i++) {
-      render_modern_card(it, STEP_XS[i], 236, 68, 46, 12, card_bg, card_brd,
+      render_modern_card(it, layout().stepper_x(i), 236, step_w, 46, 12, card_bg, card_brd,
                          STEP_LBLS[i], col_white, font_small);
     }
 
@@ -1656,9 +1651,11 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
 
   it.line(cx - 151, 98, cx + 151, 98, esphome::Color(50, 58, 72));
 
-  // Expanded 5x4 keypad grid (82px horizontal stride centered on cx, 56px vertical stride)
+  // Expanded 5x4 keypad grid (adaptive horizontal stride centered on cx, 56px vertical stride)
   static constexpr int ROWS_Y[5] = {131, 187, 243, 299, 355};
-  const int COLS_X[4] = {cx - 123, cx - 41, cx + 41, cx + 123};
+  const int COLS_X[4] = {
+      layout().calc_col_x(0), layout().calc_col_x(1),
+      layout().calc_col_x(2), layout().calc_col_x(3)};
   static constexpr const char *KEY_LABELS[5][4] = {
       {"C", "±", "%", "/"},
       {"7", "8", "9", "x"},
@@ -1668,7 +1665,7 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
 
   auto draw_calc_key = [&](int kx, int ky, const char *label,
                            esphome::Color bg_c, esphome::Color text_c, esphome::Color border_c) {
-    const int kw = 68;
+    const int kw = (SCREEN_W < 380) ? 62 : 68;
     const int kh = 42;
     const int kr = 9;
     int x0 = kx - kw / 2;

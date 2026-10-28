@@ -70,19 +70,21 @@ inline constexpr bool is_wrist_watch_board() {
 
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
-  if (tx < cx - 180 || tx > cx + 180) return -1;
-  if (tx < cx - 90) return 0;
-  if (tx < cx)      return 1;
-  if (tx < cx + 90) return 2;
+  const int stride = (SCREEN_W < 380) ? 74 : 90;
+  if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
+  if (tx < cx - stride) return 0;
+  if (tx < cx)          return 1;
+  if (tx < cx + stride) return 2;
   return 3;
 }
 
 // Hit-test the 4-column calculator grid (returns 0..3 or -1)
 inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
-  if (tx < cx - 165 || tx > cx + 165) return -1;
-  if (tx < cx - 82) return 0;
-  if (tx < cx)      return 1;
-  if (tx < cx + 82) return 2;
+  const int stride = (SCREEN_W < 380) ? 72 : 82;
+  if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
+  if (tx < cx - stride) return 0;
+  if (tx < cx)          return 1;
+  if (tx < cx + stride) return 2;
   return 3;
 }
 

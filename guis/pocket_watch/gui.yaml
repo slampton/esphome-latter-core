@@ -3689,9 +3689,9 @@ touchscreen:
                   pocket_ui::schedule_disp_update(&id(disp1));
                 } else if (gest.max_travel < 24 && gest.last_y >= 324 && gest.last_y <= 398) {
                   int target = 0;
-                  if (gest.last_x < 152) target = 0;
-                  else if (gest.last_x < 233) target = 1;
-                  else if (gest.last_x < 314) target = 2;
+                  if (gest.last_x < pocket_ui::SCREEN_CX - 81) target = 0;
+                  else if (gest.last_x < pocket_ui::SCREEN_CX) target = 1;
+                  else if (gest.last_x < pocket_ui::SCREEN_CX + 81) target = 2;
                   else target = 3;
                   if (id(sky_weather_subpage) != target) {
                     id(sky_weather_subpage) = target;
@@ -3874,11 +3874,11 @@ touchscreen:
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < 404) {
                 if (gest.max_travel < 24) {
-                  if (tp.y >= 324 && tp.y <= 398 && tp.x >= 70 && tp.x <= 396) {
-                    int new_tab = (tp.x < 152) ? 0 : ((tp.x < 233) ? 1 : ((tp.x < 314) ? 2 : 3));
+                  if (tp.y >= 324 && tp.y <= 398 && tp.x >= pocket_ui::SCREEN_CX - 165 && tp.x <= pocket_ui::SCREEN_CX + 165) {
+                    int new_tab = (tp.x < pocket_ui::SCREEN_CX - 81) ? 0 : ((tp.x < pocket_ui::SCREEN_CX) ? 1 : ((tp.x < pocket_ui::SCREEN_CX + 81) ? 2 : 3));
                     pocket_ui::whole_home_tab() = new_tab;
                     pocket_ui::schedule_disp_update(&id(disp1));
-                  } else if (pocket_ui::whole_home_tab() == 0 && tp.x >= 72 && tp.x <= 394) {
+                  } else if (pocket_ui::whole_home_tab() == 0 && tp.x >= pocket_ui::SCREEN_CX - 160 && tp.x <= pocket_ui::SCREEN_CX + 160) {
                     int a_card = -1;
                     if (tp.y >= 100 && tp.y < 168) a_card = 0;
                     else if (tp.y >= 168 && tp.y < 242) a_card = 1;
@@ -3893,9 +3893,9 @@ touchscreen:
                     }
                   } else if (pocket_ui::whole_home_tab() == 1) {
                     if (tp.y >= 112 && tp.y <= 200) {
-                      if (tp.x >= 78 && tp.x <= 162) {
+                      if (tp.x >= pocket_ui::SCREEN_CX - 155 && tp.x <= pocket_ui::SCREEN_CX - 70) {
                         pocket_ui::sim_thermostat_target_f() = std::max(55, pocket_ui::sim_thermostat_target_f() - 1);
-                      } else if (tp.x >= 304 && tp.x <= 388) {
+                      } else if (tp.x >= pocket_ui::SCREEN_CX + 70 && tp.x <= pocket_ui::SCREEN_CX + 155) {
                         pocket_ui::sim_thermostat_target_f() = std::min(88, pocket_ui::sim_thermostat_target_f() + 1);
                       }
                       id(room_target_entity_id) = "whole_home.thermostat";
@@ -3903,8 +3903,8 @@ touchscreen:
                       id(room_target_level) = pocket_ui::sim_thermostat_target_f();
                       id(execute_room_action).execute();
                       pocket_ui::schedule_disp_update(&id(disp1));
-                    } else if (tp.y >= 234 && tp.y <= 298 && tp.x >= 60 && tp.x <= 406) {
-                      const char *m_id = (tp.x < 147) ? "heat" : ((tp.x < 233) ? "cool" : ((tp.x < 319) ? "auto" : "off"));
+                    } else if (tp.y >= 234 && tp.y <= 298 && tp.x >= pocket_ui::SCREEN_CX - 172 && tp.x <= pocket_ui::SCREEN_CX + 172) {
+                      const char *m_id = (tp.x < pocket_ui::SCREEN_CX - 86) ? "heat" : ((tp.x < pocket_ui::SCREEN_CX) ? "cool" : ((tp.x < pocket_ui::SCREEN_CX + 86) ? "auto" : "off"));
                       pocket_ui::sim_thermostat_mode() = m_id;
                       id(room_target_entity_id) = "whole_home.thermostat";
                       id(room_target_action) = m_id;
