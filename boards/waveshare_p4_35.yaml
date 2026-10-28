@@ -217,7 +217,6 @@ script:
     mode: restart
     then:
       - lambda: |-
-          gpio_deep_sleep_hold_dis();
           gpio_hold_dis(GPIO_NUM_23);
           gpio_hold_dis(GPIO_NUM_27);
           gpio_hold_dis(GPIO_NUM_28);
@@ -275,7 +274,6 @@ script:
           gpio_set_level(GPIO_NUM_29, 0);
           gpio_hold_en(GPIO_NUM_29);
 
-          gpio_deep_sleep_hold_en();
           global_preferences->sync();
 
           // 4. Command AXP2101 PMIC to cut system voltage rails (<40uA Hibernate)
