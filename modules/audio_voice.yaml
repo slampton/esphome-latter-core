@@ -198,6 +198,11 @@ voice_assistant:
     then:
       - lambda: |-
           pocket_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
+          if (pocket_ui::cam_intercom_ptt_active()) {
+            pocket_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
+            pocket_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
           if (!id(va_active)) {
             id(return_page) = id(gui_page);
             id(va_active) = true;
@@ -229,8 +234,13 @@ voice_assistant:
           id(va_was_cancelled) = false;
           id(va_vad_active) = false;
           id(va_tts_received) = false;
-          id(va_status_text) = "Listening...";
           esphome::voice_assistant::reset_va_session_state(id(va));
+          if (pocket_ui::cam_intercom_ptt_active()) {
+            id(va_status_text) = "";
+            pocket_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          id(va_status_text) = "Listening...";
           ESP_LOGI("va", "Status: Listening...");
           if (id(display_power_state) == 0 || id(va_wake_screen_switch).state) {
             id(display_brightness).turn_on().perform();
@@ -241,7 +251,11 @@ voice_assistant:
       - script.stop: screen_sleep_timer
       - lambda: |-
           id(va_vad_active) = true;
-          id(va_status_text) = "Listening...";
+          if (pocket_ui::cam_intercom_ptt_active()) {
+            pocket_ui::cam_intercom_status() = "CAPTURING VOICE...";
+          } else {
+            id(va_status_text) = "Listening...";
+          }
           ESP_LOGI("va", "Status: Listening (VAD active)...");
       - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
   on_stt_vad_end:
@@ -249,7 +263,11 @@ voice_assistant:
       - script.stop: screen_sleep_timer
       - lambda: |-
           id(va_vad_active) = false;
-          id(va_status_text) = "Thinking...";
+          if (pocket_ui::cam_intercom_ptt_active()) {
+            pocket_ui::cam_intercom_status() = "PROCESSING AUDIO...";
+          } else {
+            id(va_status_text) = "Thinking...";
+          }
           ESP_LOGI("va", "Status: Thinking...");
       - lambda: 'pocket_ui::schedule_disp_update(&id(disp1));'
   on_stt_end:
@@ -258,6 +276,23 @@ voice_assistant:
       - script.execute: route_i2s_to_spk
       - lambda: |-
           id(va_vad_active) = false;
+          if (pocket_ui::cam_intercom_ptt_active()) {
+            pocket_ui::cam_intercom_ptt_active() = false;
+            id(va_active) = false;
+            id(va_status_text) = "";
+            esphome::voice_assistant::abort_voice_assistant(id(va));
+            if (!x.empty()) {
+              id(cam_intercom_action) = "talk_message";
+              id(cam_intercom_message) = x;
+              pocket_ui::cam_intercom_status() = "SENT TO DOORBELL";
+              id(cam_intercom_status_ms) = millis();
+              id(send_doorbell_intercom_cmd).execute();
+            } else {
+              pocket_ui::cam_intercom_status() = "";
+            }
+            pocket_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
           id(va_status_text) = "Thinking...";
           // If the user asked Assist to pause/stop/turn off media, do not auto-resume music after VA ends
           std::string utt = x;

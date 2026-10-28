@@ -626,7 +626,9 @@ display:
           render_tool_camera(
               it, cx, cy, id(camera_snapshot_art), id(ha_latter_camera_snapshot_url).state,
               id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_slate));
+              id(col_bg), id(col_white), id(col_slate),
+              id(ha_latter_cameras_summary).state, id(ha_latter_doorbell_talk_state).state,
+              millis());
         }
       } else if (id(gui_page) == 9) {
         // ==========================================
@@ -645,7 +647,8 @@ display:
       bool tools_direct_root = (id(gui_page) == 8 && pocket_ui::tools_direct_home() &&
                                 ((id(stuff_subpage) == 1 && pocket_ui::timer_view_slot() == 0) ||
                                  (id(stuff_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                 (id(stuff_subpage) == 3)));
+                                 (id(stuff_subpage) == 3) ||
+                                 (id(stuff_subpage) == 12 && !pocket_ui::cam_quick_reply_open())));
 
       bool show_top_level_back = !id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
                                  id(va_status_text).empty() && id(display_power_state) == 0 &&
@@ -705,6 +708,25 @@ touchscreen:
             if (id(va_active) || !id(va_status_text).empty()) {
               pocket_ui::last_screen_wake_ms() = now_touch;
               id(cancel_voice_assistant).execute();
+              return;
+            }
+
+            if (id(notif_active)) {
+              pocket_ui::last_screen_wake_ms() = now_touch;
+              bool has_notif_cam = (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
+                                    id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable");
+              if (has_notif_cam && ((touch.y >= 390 && touch.x < pocket_ui::SCREEN_CX) || touch.y < 380)) {
+                // Tap 'Intercom' button (or camera image) -> Jump straight into live Camera Carousel & Two-Way Intercom!
+                id(notif_active) = false;
+                pocket_ui::tools_direct_home() = true;
+                pocket_ui::cam_quick_reply_open() = false;
+                id(gui_page) = 8;
+                id(stuff_subpage) = 12;
+                id(fetch_on_demand_camera).execute();
+                pocket_ui::schedule_disp_update(&id(disp1));
+                return;
+              }
+              id(dismiss_notification).execute();
               return;
             }
 
@@ -2759,18 +2781,36 @@ touchscreen:
                 if (is_back_button(touch)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
-                    id(stuff_subpage) = 0;
+                    if (pocket_ui::cam_quick_reply_open()) {
+                      pocket_ui::cam_quick_reply_open() = false;
+                      pocket_ui::schedule_disp_update(&id(disp1));
+                      return;
+                    }
+                    if (pocket_ui::cam_intercom_ptt_active()) {
+                      pocket_ui::cam_intercom_ptt_active() = false;
+                      id(cancel_voice_assistant).execute();
+                    }
+                    if (pocket_ui::cam_listen_active()) {
+                      pocket_ui::cam_listen_active() = false;
+                      id(cam_intercom_action) = "listen_stop";
+                      id(send_doorbell_intercom_cmd).execute();
+                    }
+                    if (pocket_ui::tools_direct_home()) {
+                      pocket_ui::tools_direct_home() = false;
+                      id(stuff_subpage) = 0;
+                      id(gui_page) = 1;
+                      id(home_subpage) = 0;
+                    } else {
+                      id(stuff_subpage) = 0;
+                    }
                     id(camera_snapshot_art).release();
                     id(sync_wake_word_state).execute();
                     pocket_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 }
-                if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_SCROLL) {
-                  last_stuff_tap = now_stuff;
-                  id(fetch_on_demand_camera).execute();
-                  pocket_ui::schedule_disp_update(&id(disp1));
-                }
+                // Camera Carousel horizontal swipe & release-tap handled in on_update & on_release
+                return;
               }
             }
 
@@ -3089,6 +3129,20 @@ touchscreen:
                   pocket_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
+              } else if (id(stuff_subpage) == 12 && !pocket_ui::cam_quick_reply_open() &&
+                         std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
+                std::string c_ids[pocket_ui::MAX_CAMERA_SLOTS], c_names[pocket_ui::MAX_CAMERA_SLOTS];
+                int c_total = pocket_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, c_ids, c_names);
+                if (c_total > 1) {
+                  gest.swipe_committed = true;
+                  gest.last_swipe_ms = now_u;
+                  int dir = (dx < 0) ? 1 : -1;
+                  pocket_ui::cam_carousel_idx() = step_wrap(pocket_ui::cam_carousel_idx(), dir, c_total);
+                  id(camera_snapshot_art).release();
+                  id(fetch_on_demand_camera).execute();
+                  pocket_ui::schedule_disp_update(&id(disp1));
+                }
+                return;
               } else if (id(stuff_subpage) == 11 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
                 std::string m_slots[pocket_ui::MAX_MACRO_ITEMS], m_names[pocket_ui::MAX_MACRO_ITEMS], m_acts[pocket_ui::MAX_MACRO_ITEMS];
                 int m_total = pocket_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
@@ -3189,9 +3243,18 @@ touchscreen:
                       }
                     }
                     if (best_i >= 0) {
-                      id(gui_page) = dock_apps[start_idx + best_i];
-                      pocket_ui::tools_direct_home() = false;
-                      id(music_overlay_mode) = 0;
+                      int chosen_app = dock_apps[start_idx + best_i];
+                      if (chosen_app == 12) {
+                        id(gui_page) = 8;
+                        id(stuff_subpage) = 12;
+                        pocket_ui::tools_direct_home() = true;
+                        pocket_ui::cam_quick_reply_open() = false;
+                        id(fetch_on_demand_camera).execute();
+                        pocket_ui::schedule_disp_update(&id(disp1));
+                      } else {
+                        id(gui_page) = chosen_app;
+                        pocket_ui::tools_direct_home() = false;
+                        id(music_overlay_mode) = 0;
                       if (id(gui_page) == 4) {
                         id(system_menu_mode) = 0;
                         id(system_dashboard_page) = 1;
@@ -3218,11 +3281,12 @@ touchscreen:
                           id(fetch_room_browse).execute();
                         }
                       }
-                      id(remote_subpage) = 0;
-                      id(stuff_subpage) = 0;
-                      id(active_game) = 0;
-                      ESP_LOGI("touch", "Home Dock Release Tap -> app=%d", id(gui_page));
-                      pocket_ui::schedule_disp_update(&id(disp1));
+                        id(remote_subpage) = 0;
+                        id(stuff_subpage) = 0;
+                        id(active_game) = 0;
+                        ESP_LOGI("touch", "Home Dock Release Tap -> app=%d", id(gui_page));
+                        pocket_ui::schedule_disp_update(&id(disp1));
+                      }
                     }
                   }
                 }
@@ -3965,6 +4029,77 @@ touchscreen:
                       break;
                     }
                   }
+                }
+              } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 12 &&
+                         gest.max_travel < 24 && gest.last_y < 404) {
+                std::string c_ids[pocket_ui::MAX_CAMERA_SLOTS], c_names[pocket_ui::MAX_CAMERA_SLOTS];
+                int c_total = pocket_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, c_ids, c_names);
+                if (pocket_ui::cam_quick_reply_open()) {
+                  int q_row = -1;
+                  if (tp.y >= 86 && tp.y < 144) q_row = 0;
+                  else if (tp.y >= 144 && tp.y < 206) q_row = 1;
+                  else if (tp.y >= 206 && tp.y < 268) q_row = 2;
+                  else if (tp.y >= 268 && tp.y <= 340) q_row = 3;
+                  if (q_row >= 0 && q_row <= 2) {
+                    static constexpr const char *kDoorbellReplies[3] = {
+                      "Please leave the package at the door, thank you!",
+                      "We'll be right there!",
+                      "No soliciting, thank you!"
+                    };
+                    pocket_ui::cam_quick_reply_open() = false;
+                    id(cam_intercom_action) = "quick_reply";
+                    id(cam_intercom_message) = kDoorbellReplies[q_row];
+                    pocket_ui::cam_intercom_status() = "REPLY SENT";
+                    id(cam_intercom_status_ms) = now_rel;
+                    id(send_doorbell_intercom_cmd).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  } else if (q_row == 3) {
+                    pocket_ui::cam_anc_mode_idx() = (pocket_ui::cam_anc_mode_idx() + 1) % 3;
+                    static constexpr const char *kAncCodes[3] = {"ultra", "balanced", "raw"};
+                    id(cam_intercom_anc_str) = kAncCodes[pocket_ui::cam_anc_mode_idx()];
+                    id(cam_intercom_action) = "set_anc_mode";
+                    id(send_doorbell_intercom_cmd).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else if (tp.y <= 68) {
+                  if (c_total > 1 && tp.x < pocket_ui::SCREEN_CX - 55) {
+                    pocket_ui::cam_carousel_idx() = step_wrap(pocket_ui::cam_carousel_idx(), -1, c_total);
+                    id(camera_snapshot_art).release();
+                    id(fetch_on_demand_camera).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  } else if (c_total > 1 && tp.x > pocket_ui::SCREEN_CX + 55) {
+                    pocket_ui::cam_carousel_idx() = step_wrap(pocket_ui::cam_carousel_idx(), 1, c_total);
+                    id(camera_snapshot_art).release();
+                    id(fetch_on_demand_camera).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  } else {
+                    id(fetch_on_demand_camera).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else if (tp.y >= 342 && tp.y <= 398) {
+                  if (tp.x < pocket_ui::SCREEN_CX - 48) {
+                    // Left Pill: Listen / Mute Toggle
+                    pocket_ui::cam_listen_active() = !pocket_ui::cam_listen_active();
+                    id(cam_intercom_action) = pocket_ui::cam_listen_active() ? "listen_start" : "listen_stop";
+                    pocket_ui::cam_intercom_status() = pocket_ui::cam_listen_active() ? "LISTENING (ANC)" : "AUDIO MUTED";
+                    id(cam_intercom_status_ms) = now_rel;
+                    id(send_doorbell_intercom_cmd).execute();
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  } else if (tp.x <= pocket_ui::SCREEN_CX + 48) {
+                    // Center Hero Pill: Push-to-Talk (Start / Send)
+                    if (!pocket_ui::cam_intercom_ptt_active()) {
+                      id(start_doorbell_ptt).execute();
+                    } else {
+                      id(va).request_stop();
+                    }
+                  } else {
+                    // Right Pill: Open Doorbell Quick Reply & ANC Sheet
+                    pocket_ui::cam_quick_reply_open() = true;
+                    pocket_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else {
+                  id(fetch_on_demand_camera).execute();
+                  pocket_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 11 &&
                          gest.max_travel < 24 && gest.last_y >= 80 && gest.last_y < 404) {

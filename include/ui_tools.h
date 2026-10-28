@@ -1157,7 +1157,9 @@ inline void render_notification_overlay(
       it.print(cx + 1, 369, font_small, col_black, TextAlign::CENTER, line2.c_str());
       it.print(cx,     368, font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
     }
-    render_modern_card(it, cx, 412, 168, 36, 10, Color(22, 27, 36), accent_c,
+    render_modern_card(it, cx - 72, 412, 132, 36, 10, Color(22, 34, 48), theme_primary,
+                       "Intercom", col_white, font_small);
+    render_modern_card(it, cx + 72, 412, 132, 36, 10, Color(22, 27, 36), accent_c,
                        "Dismiss", col_white, font_small);
   } else {
     // Text Notification / Loading Camera View
@@ -2149,34 +2151,235 @@ inline void render_tool_macros(
   render_back_button(it, cx, font_small, 426, "< Back");
 }
 
+static constexpr int MAX_CAMERA_SLOTS = 10;
+
+inline int &cam_carousel_idx() {
+  static int idx = 0;
+  return idx;
+}
+
+inline bool &cam_listen_active() {
+  static bool active = false;
+  return active;
+}
+
+inline bool &cam_intercom_ptt_active() {
+  static bool active = false;
+  return active;
+}
+
+inline std::string &cam_intercom_status() {
+  static std::string st = "";
+  return st;
+}
+
+inline int &cam_anc_mode_idx() {
+  static int m = 0; // 0 = Ultra ANC, 1 = Balanced, 2 = Raw
+  return m;
+}
+
+inline bool &cam_quick_reply_open() {
+  static bool open = false;
+  return open;
+}
+
+inline uint32_t &last_cam_live_fetch_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+inline int parse_cameras_summary_list(
+    const std::string &raw,
+    std::string out_ids[MAX_CAMERA_SLOTS],
+    std::string out_names[MAX_CAMERA_SLOTS]) {
+  if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
+    return 0;
+  }
+  size_t pos = 0;
+  int idx = 0;
+  while (pos < raw.size() && idx < MAX_CAMERA_SLOTS) {
+    size_t semi = raw.find(';', pos);
+    std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
+    pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
+    if (tok.empty()) continue;
+    size_t bar = tok.find('|');
+    std::string cid = (bar == std::string::npos) ? tok : tok.substr(0, bar);
+    std::string cnm = (bar == std::string::npos) ? tok : tok.substr(bar + 1);
+    if (!cid.empty()) {
+      out_ids[idx] = cid;
+      out_names[idx] = cnm.empty() ? cid : cnm;
+      idx++;
+    }
+  }
+  return idx;
+}
+
+inline std::string resolve_active_carousel_camera_id(
+    const std::string &cameras_summary, const std::string &fallback_cam_url) {
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS];
+  int cnt = parse_cameras_summary_list(cameras_summary, ids, names);
+  if (cnt > 0) {
+    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
+      cam_carousel_idx() = 0;
+    }
+    return ids[cam_carousel_idx()];
+  }
+  size_t epos = fallback_cam_url.find("entity_id=");
+  if (epos != std::string::npos) {
+    size_t start = epos + 10;
+    size_t amp = fallback_cam_url.find('&', start);
+    return (amp == std::string::npos)
+               ? fallback_cam_url.substr(start)
+               : fallback_cam_url.substr(start, amp - start);
+  }
+  return "";
+}
+
+inline std::string build_carousel_camera_url(
+    const std::string &base_cam_url,
+    const std::string &fallback_wp_url,
+    const std::string &fallback_art_url,
+    const char *device_name,
+    const char *screen_w,
+    const char *screen_h,
+    const char *art_shape,
+    const std::string &cameras_summary,
+    uint32_t now_ms) {
+  std::string target_ent = resolve_active_carousel_camera_id(cameras_summary, base_cam_url);
+  auto extract_origin = [](const std::string &u) -> std::string {
+    if (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0) {
+      size_t p = u.find('/', 8);
+      if (p != std::string::npos) return u.substr(0, p);
+    }
+    return "";
+  };
+  std::string orig = extract_origin(base_cam_url);
+  if (orig.empty()) orig = extract_origin(fallback_wp_url);
+  if (orig.empty()) orig = extract_origin(fallback_art_url);
+  if (orig.empty() || target_ent.empty()) {
+    if (!base_cam_url.empty() && base_cam_url != "none" && base_cam_url != "unknown") {
+      size_t vpos = base_cam_url.find("&v=");
+      std::string prefix = (vpos != std::string::npos) ? base_cam_url.substr(0, vpos) : base_cam_url;
+      return prefix + "&v=" + std::to_string(now_ms);
+    }
+    return "";
+  }
+  std::string slug = (device_name && device_name[0]) ? device_name : "esphome_device";
+  for (char &c : slug) {
+    if (c == '-') c = '_';
+  }
+  return orig + "/api/latter/camera/" + slug +
+         "?entity_id=" + target_ent +
+         "&w=" + (screen_w ? screen_w : "466") +
+         "&h=" + (screen_h ? screen_h : "466") +
+         "&shape=" + (art_shape ? art_shape : "circle") +
+         "&v=" + std::to_string(now_ms);
+}
+
 template<typename DisplayT, typename CamImgT, typename FontSmallT>
 inline void render_tool_camera(
     DisplayT &it, int cx, int cy,
     CamImgT *cam_art, const std::string &cam_url,
     FontSmallT *font_small,
     esphome::Color theme_primary, esphome::Color theme_secondary,
-    esphome::Color col_bg, esphome::Color col_white, esphome::Color col_slate) {
+    esphome::Color col_bg, esphome::Color col_white, esphome::Color col_slate,
+    const std::string &cameras_summary = "",
+    const std::string &doorbell_talk_state = "idle",
+    uint32_t now_ms = 0) {
   using esphome::Color;
   using esphome::display::TextAlign;
+  (void)col_bg;
 
-  bool has_url = (!cam_url.empty() && cam_url != "none" && cam_url != "unknown" && cam_url != "unavailable");
-  if (has_url && cam_art != nullptr && cam_art->get_width() > 16 && cam_art->get_height() > 16) {
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS];
+  int cam_count = parse_cameras_summary_list(cameras_summary, ids, names);
+  if (cam_count > 0 && (cam_carousel_idx() < 0 || cam_carousel_idx() >= cam_count)) {
+    cam_carousel_idx() = 0;
+  }
+
+  static constexpr const char *kAncNames[3] = {"Ultra ANC", "Balanced", "Raw Audio"};
+  const int anc_idx = std::max(0, std::min(2, cam_anc_mode_idx()));
+
+  if (cam_quick_reply_open()) {
+    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "DOORBELL INTERCOM");
+    const Color card_bg(22, 27, 36);
+    const Color card_brd(52, 62, 78);
+    render_modern_card(it, cx, 112, 296, 44, 12, card_bg, theme_primary,
+                       "Leave package at door", col_white, font_small);
+    render_modern_card(it, cx, 175, 296, 44, 12, card_bg, theme_primary,
+                       "We'll be right there!", col_white, font_small);
+    render_modern_card(it, cx, 238, 296, 44, 12, card_bg, card_brd,
+                       "No soliciting, thank you", col_white, font_small);
+    char anc_lbl[48];
+    snprintf(anc_lbl, sizeof(anc_lbl), "DSP Mode: %s >", kAncNames[anc_idx]);
+    render_modern_card(it, cx, 301, 296, 44, 12, Color(18, 28, 40), theme_secondary,
+                       anc_lbl, col_white, font_small);
+    render_back_button(it, cx, font_small, 426, "< Back", col_white);
+    return;
+  }
+
+  bool has_url = (!cam_url.empty() && cam_url != "none" && cam_url != "unknown" && cam_url != "unavailable") || (cam_count > 0);
+  bool has_frame = (has_url && cam_art != nullptr && cam_art->get_width() > 16 && cam_art->get_height() > 16);
+
+  if (has_frame) {
     int iw = cam_art->get_width();
     int ih = cam_art->get_height();
     it.image(cx - iw / 2, cy - ih / 2, cam_art);
-    // Top & bottom translucent HUD bars for title + back button legibility
-    it.filled_rectangle(116, 26, 234, 34, Color(10, 14, 20));
-    it.rectangle(116, 26, 234, 34, theme_primary);
-    it.print(cx, 43, font_small, col_white, TextAlign::CENTER, "LIVE CAMERA (TAP REFRESH)");
-    it.filled_rectangle(148, 406, 170, 38, Color(10, 14, 20));
   } else {
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "CAMERA");
-    const char *msg = has_url ? "Loading camera snapshot..." : "Configure camera in Latter Studio";
-    render_modern_card(it, cx, 222, 308, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
+    const char *msg = has_url ? "Loading live camera feed..." : "Configure camera in Latter Studio";
+    render_modern_card(it, cx, 212, 308, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
                        msg, has_url ? theme_secondary : col_slate, font_small);
   }
-  (void)col_bg;
-  render_back_button(it, cx, font_small, 426, "< Back", col_white);
+
+  // 1. Top Translucent Camera Carousel Header Pill (y = 40)
+  std::string cur_cam_title = (cam_count > 0) ? names[cam_carousel_idx()] : "LIVE CAMERA";
+  for (char &c : cur_cam_title) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
+  if (cam_count > 1) {
+    cur_cam_title += " (" + std::to_string(cam_carousel_idx() + 1) + "/" + std::to_string(cam_count) + ")";
+  }
+  if (!cam_intercom_status().empty()) {
+    cur_cam_title = cam_intercom_status();
+  }
+  cur_cam_title = fit_text_to_width_font(cur_cam_title, 210, font_small);
+
+  Color hdr_brd = cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary;
+  render_modern_card(it, cx, 40, 256, 34, 10, Color(10, 14, 22), hdr_brd,
+                     cur_cam_title.c_str(), col_white, font_small);
+  if (cam_count > 1 && cam_intercom_status().empty()) {
+    it.print(cx - 116, 40, font_small, theme_secondary, TextAlign::CENTER, "<");
+    it.print(cx + 116, 40, font_small, theme_secondary, TextAlign::CENTER, ">");
+    render_dock_page_pips(it, cx, 66, cam_count, cam_carousel_idx(), col_white, col_slate);
+  }
+
+  // 2. Bottom Translucent Two-Way Doorbell Intercom Control Deck (y = 368)
+  if (has_url) {
+    const bool is_listening = cam_listen_active() || (doorbell_talk_state == "listening");
+    const bool is_talking   = cam_intercom_ptt_active() || (doorbell_talk_state == "talking");
+    const bool pulse = ((now_ms / 250U) % 2U) != 0;
+
+    // Left Pill: Listen (De-Noised RTSP Audio Stream)
+    render_modern_card(it, cx - 96, 368, 86, 38, 11,
+                       is_listening ? Color(20, 42, 62) : Color(12, 16, 24),
+                       is_listening ? theme_primary : Color(58, 68, 84),
+                       is_listening ? "Mute" : "Listen",
+                       is_listening ? col_white : theme_secondary, font_small);
+
+    // Center Hero Pill: Push-to-Talk (Voice Capture -> UniFi / Doorbell Speaker)
+    Color talk_bg  = is_talking ? (pulse ? Color(145, 28, 32) : Color(88, 18, 22)) : Color(18, 24, 34);
+    Color talk_brd = is_talking ? Color(245, 72, 72) : theme_primary;
+    render_modern_card(it, cx, 368, 94, 40, 12,
+                       talk_bg, talk_brd,
+                       cam_intercom_ptt_active() ? "Send" : (is_talking ? "Talking" : "Talk"),
+                       col_white, font_small);
+
+    // Right Pill: Quick Replies & ANC Mode Sheet
+    const char *anc_short = (anc_idx == 0) ? "ANC+" : ((anc_idx == 1) ? "ANC" : "Reply");
+    render_modern_card(it, cx + 96, 368, 86, 38, 11,
+                       Color(12, 16, 24), Color(58, 68, 84),
+                       anc_short, theme_secondary, font_small);
+  }
+
+  it.filled_rectangle(cx - 85, 406, 170, 38, Color(10, 14, 20));
+  render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 
 }  // namespace pocket_ui

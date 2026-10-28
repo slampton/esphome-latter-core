@@ -700,15 +700,16 @@ inline std::string &latter_dock_order_csv() {
 inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_tools, bool show_games,
                                   int out_apps[8], bool show_room = true, bool show_alarm = true) {
   int n = 0;
-  bool added[12] = {false};
+  bool added[16] = {false};
   auto try_add = [&](int app_id) {
-    if (n >= 7 || app_id < 0 || app_id > 10 || added[app_id]) return;
+    if (n >= 8 || app_id < 0 || app_id > 14 || added[app_id]) return;
     bool en = (app_id == 2 && show_music) ||
               (app_id == 6 && show_room) ||
               (app_id == 7 && show_remote) ||
               (app_id == 3 && show_games) ||
               (app_id == 8 && show_tools) ||
               (app_id == 9 && show_alarm) ||
+              (app_id == 12) ||
               (app_id == 4); // Settings is always available in the App Dock
     if (en) {
       added[app_id] = true;
@@ -733,6 +734,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
       else if (tok.find("room") != std::string::npos || tok == "6") try_add(6);
       else if (tok.find("remote") != std::string::npos || tok.find("tv") != std::string::npos || tok == "7") try_add(7);
       else if (tok.find("game") != std::string::npos || tok == "3") try_add(3);
+      else if (tok.find("cam") != std::string::npos || tok == "12") try_add(12);
       else if (tok.find("tool") != std::string::npos || tok == "8") try_add(8);
       else if (tok.find("setting") != std::string::npos || tok.find("sys") != std::string::npos || tok == "4") try_add(4);
     }
@@ -1299,6 +1301,16 @@ inline void render_home_page(
               }
             }
           }
+        }
+      } else if (app_id == 12) {
+        // Cameras & Doorbell Intercom: Sculpted Camera Body, Top Viewfinder Prism & Dual-Ring Lens
+        it.filled_rectangle(bx - 13, by - 7, 26, 17, c);
+        it.filled_rectangle(bx - 5, by - 11, 10, 4, c);
+        if (!is_shadow) {
+          Color cut_c = (show_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
+          it.filled_circle(bx, by + 1, 6, cut_c);
+          it.circle(bx, by + 1, 4, c);
+          it.filled_circle(bx, by + 1, 2, c);
         }
       } else if (app_id == 9) {
         // Whole-Home Hub (Alarm, Thermostat, Garage, Vacuum): Solid Pitched-Roof House Silhouette

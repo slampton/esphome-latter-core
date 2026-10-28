@@ -862,6 +862,22 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  - id: cam_intercom_action
+    type: std::string
+    restore_value: no
+    initial_value: '"listen_toggle"'
+  - id: cam_intercom_message
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cam_intercom_anc_str
+    type: std::string
+    restore_value: no
+    initial_value: '"ultra"'
+  - id: cam_intercom_status_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: macro_target_slot
     type: std::string
     restore_value: no
@@ -2420,6 +2436,22 @@ interval:
             id(screen_sleep_timer).execute();
           }
 
+          // Camera Carousel Auto-Live Frame Refresh (every 2200ms while viewing Camera App)
+          if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12 &&
+              !pocket_ui::cam_quick_reply_open() && !pocket_ui::cam_intercom_ptt_active() &&
+              !id(va_active) && id(va_status_text).empty()) {
+            uint32_t now_cam_ms = millis();
+            if (!pocket_ui::cam_intercom_status().empty() && id(cam_intercom_status_ms) > 0 &&
+                (now_cam_ms - id(cam_intercom_status_ms) > 2500U)) {
+              pocket_ui::cam_intercom_status() = "";
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+            if (now_cam_ms - pocket_ui::last_cam_live_fetch_ms() >= 2200U) {
+              pocket_ui::last_cam_live_fetch_ms() = now_cam_ms;
+              id(fetch_on_demand_camera).execute();
+            }
+          }
+
           // Auto-timeout & critical pulse refresh for active Latter push notifications / camera popups
           if (id(notif_active)) {
             if (millis() - id(notif_start_ms) >= id(notif_duration_ms)) {
@@ -3115,6 +3147,31 @@ text_sensor:
     internal: true
 
   - platform: homeassistant
+    id: ha_latter_cameras_summary
+    entity_id: ${room_context_sensor}
+    attribute: cameras_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_doorbell_talk_state
+    entity_id: ${room_context_sensor}
+    attribute: doorbell_talk_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            pocket_ui::cam_listen_active() = (x == "listening");
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
+              pocket_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
     id: ha_latter_custom_bindings_summary
     entity_id: ${room_context_sensor}
     attribute: custom_bindings_summary
@@ -3664,13 +3721,18 @@ script:
   - id: fetch_on_demand_camera
     mode: restart
     then:
+      - lambda: |-
+          pocket_ui::last_cam_live_fetch_ms() = millis();
+          id(notif_camera_url) = pocket_ui::build_carousel_camera_url(
+              id(ha_latter_camera_snapshot_url).state,
+              id(ha_latter_wallpaper_url).state,
+              id(ha_target_art_url).state,
+              "${name}", "${screen_w}", "${screen_h}", "${art_shape}",
+              id(ha_latter_cameras_summary).state,
+              millis());
       - if:
           condition:
-            lambda: |-
-              return !id(ha_latter_camera_snapshot_url).state.empty() &&
-                     id(ha_latter_camera_snapshot_url).state != "none" &&
-                     id(ha_latter_camera_snapshot_url).state != "unknown" &&
-                     id(ha_latter_camera_snapshot_url).state != "unavailable";
+            lambda: 'return !id(notif_camera_url).empty();'
           then:
             - if:
                 condition:
@@ -3680,13 +3742,57 @@ script:
                   - delay: 20ms
             - online_image.set_url:
                 id: camera_snapshot_art
-                url: !lambda |-
-                  std::string u = id(ha_latter_camera_snapshot_url).state;
-                  size_t vpos = u.find("&v=");
-                  if (vpos != std::string::npos) {
-                    u = u.substr(0, vpos);
-                  }
-                  return u + "&v=" + to_string(millis());
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: send_doorbell_intercom_cmd
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.doorbell_intercom
+          data:
+            target_device: "${name}"
+            action: !lambda 'return id(cam_intercom_action).c_str();'
+            camera_entity: !lambda |-
+              return pocket_ui::resolve_active_carousel_camera_id(
+                  id(ha_latter_cameras_summary).state,
+                  id(ha_latter_camera_snapshot_url).state).c_str();
+            camera_index: !lambda 'return to_string(pocket_ui::cam_carousel_idx());'
+            message: !lambda 'return id(cam_intercom_message).c_str();'
+            anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
+
+  - id: start_doorbell_ptt
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(va).get_api_connection() == nullptr;'
+          then:
+            - lambda: |-
+                pocket_ui::cam_quick_reply_open() = true;
+                pocket_ui::schedule_disp_update(&id(disp1));
+            - script.stop: start_doorbell_ptt
+      - if:
+          condition:
+            lambda: 'return pocket_ui::cam_listen_active();'
+          then:
+            - lambda: |-
+                pocket_ui::cam_listen_active() = false;
+                id(cam_intercom_action) = "listen_stop";
+            - script.execute: send_doorbell_intercom_cmd
+      - media_player.stop: pocket_music_player
+      - if:
+          condition:
+            micro_wake_word.is_running:
+          then:
+            - micro_wake_word.stop:
+            - delay: 20ms
+      - lambda: |-
+          pocket_ui::cam_intercom_ptt_active() = true;
+          pocket_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
+          id(cam_intercom_status_ms) = millis();
+          pocket_ui::schedule_disp_update(&id(disp1));
+      - script.execute: route_i2s_to_mic
+      - voice_assistant.start:
 
   - id: fetch_camera_snapshot
     mode: restart
