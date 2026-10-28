@@ -7,10 +7,6 @@
 #     latter.p4_cam: github://slampton/esphome-latter-core/mixins/p4_camera.yaml@main
 # ==============================================================================
 
-esp_ldo:
-  - channel: 3
-    voltage: 2.5V
-
 mipi_csi_cam:
   id: p4_onboard_camera
   name: "Onboard Camera"
