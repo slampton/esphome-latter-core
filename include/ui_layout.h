@@ -51,9 +51,9 @@ struct UiLayout {
   int celestial_x = LATTER_ROUND_DISPLAY ? 106 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : 78));
   int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : 78);
 
-  // Corner-Safe Battery Indicator Coordinates (Aligned with Date at y=52 on Wrist Assist & Mobile Assistant; Pocket & Remote unchanged)
-  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 52) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 54)));
-  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : ((SCREEN_W < 380) ? 24 : 52);
+  // Corner-Safe Battery Indicator Coordinates for Non-Round Displays
+  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 68) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 58)));
+  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 43 : ((SCREEN_W < 380) ? 24 : 28));
 
   // Standard Menu Card Width & Left Text Margin (232px on 320x480; scales up on >520px HD panels)
   int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : ((SCREEN_W > 520) ? ((SCREEN_W * 276) / 466) : 276);
