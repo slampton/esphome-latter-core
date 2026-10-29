@@ -1115,22 +1115,6 @@ globals:
     type: int
     restore_value: yes
     initial_value: '0'
-  - id: remote_slot_0_ent
-    type: std::string
-    restore_value: no
-    initial_value: '"remote.none"'
-  - id: remote_slot_1_ent
-    type: std::string
-    restore_value: no
-    initial_value: '"remote.none"'
-  - id: remote_slot_2_ent
-    type: std::string
-    restore_value: no
-    initial_value: '"remote.none"'
-  - id: remote_slot_3_ent
-    type: std::string
-    restore_value: no
-    initial_value: '"remote.none"'
   - id: remote_latter_cmd
     type: std::string
     restore_value: no
@@ -1143,34 +1127,6 @@ globals:
     type: int
     restore_value: no
     initial_value: '1'
-  - id: remote_slot_0_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_slot_1_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_slot_2_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_slot_3_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_target_ent
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_target_prof
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: remote_target_cmd
-    type: std::string
-    restore_value: no
-    initial_value: '""'
   - id: audio_menu_parent_page
     type: int
     restore_value: no
@@ -2004,6 +1960,43 @@ switch:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
+    name: "System: Telemetry Profiler"
+    id: telemetry_profiler_switch
+    icon: "mdi:chart-timeline-variant-shimmer"
+    entity_category: diagnostic
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(true);
+          latter_ui::profiler_enabled() = true;
+          auto &fr = latter_ui::flight_recorder();
+          fr.window_frames = 0;
+          fr.window_render_us = 0;
+          fr.max_render_us = 0;
+          fr.slow_frames = 0;
+          fr.last_summary_ms = millis();
+          ESP_LOGI("PROF", "[PROF:START] 10-Minute Flight Recorder ENABLED for '${name}' (screen=%dx%d)",
+                   latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+          latter_ui::log_power_and_mem_profile(
+              "PROFILER_ON", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
+              id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
+              id(mww).is_running(), id(va_active),
+              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+              id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+    turn_off_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(false);
+          latter_ui::log_power_and_mem_profile(
+              "PROFILER_OFF", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
+              id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
+              id(mww).is_running(), id(va_active),
+              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+              id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+          latter_ui::profiler_enabled() = false;
+          ESP_LOGI("PROF", "[PROF:STOP] Flight Recorder DISABLED");
+
+  - platform: template
     name: "Area: BLE Presence Beacon"
     id: ble_room_beacon_switch
     icon: "mdi:bluetooth-audio"
@@ -2271,10 +2264,6 @@ interval:
               latter_ui::weather_sim_dirty() = false;
               last_cond_eval_time = now_w_ms;
               std::string c_cond = id(ha_weather_condition).state;
-              if ((c_cond.empty() || c_cond == "unknown" || c_cond == "unavailable") &&
-                  !id(ha_weather_condition_fallback).state.empty()) {
-                c_cond = id(ha_weather_condition_fallback).state;
-              }
               std::string s_sun = id(ha_sun_state).state;
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
               apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
@@ -2522,7 +2511,7 @@ sensor:
 
   - platform: homeassistant
     id: ha_weather_temperature
-    entity_id: ${weather_entity}
+    entity_id: ${weather_forecast_sensor}
     attribute: temperature
     internal: true
     on_value:
@@ -2534,19 +2523,19 @@ sensor:
 
   - platform: homeassistant
     id: ha_weather_humidity
-    entity_id: ${weather_entity}
+    entity_id: ${weather_forecast_sensor}
     attribute: humidity
     internal: true
 
   - platform: homeassistant
     id: ha_weather_wind_speed
-    entity_id: ${weather_entity}
+    entity_id: ${weather_forecast_sensor}
     attribute: wind_speed
     internal: true
 
   - platform: homeassistant
     id: ha_weather_wind_bearing
-    entity_id: ${weather_entity}
+    entity_id: ${weather_forecast_sensor}
     attribute: wind_bearing
     internal: true
 
@@ -2669,29 +2658,7 @@ sensor:
               }
             }
 
-  - platform: homeassistant
-    id: ha_weather_temp_fallback
-    entity_id: ${weather_forecast_sensor}
-    attribute: temperature
-    internal: true
 
-  - platform: homeassistant
-    id: ha_weather_humidity_fallback
-    entity_id: ${weather_forecast_sensor}
-    attribute: humidity
-    internal: true
-
-  - platform: homeassistant
-    id: ha_weather_wind_speed_fallback
-    entity_id: ${weather_forecast_sensor}
-    attribute: wind_speed
-    internal: true
-
-  - platform: homeassistant
-    id: ha_weather_wind_bearing_fallback
-    entity_id: ${weather_forecast_sensor}
-    attribute: wind_bearing
-    internal: true
 
 
   - platform: homeassistant
@@ -2803,13 +2770,16 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_weather_condition
-    entity_id: ${weather_entity}
+    entity_id: ${weather_forecast_sensor}
+    attribute: condition
     internal: true
     on_value:
       then:
         - lambda: |-
             if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::weather_sim_dirty() = true;
               latter_ui::record_ambient_frame_ms(0);
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -3160,18 +3130,7 @@ text_sensor:
     entity_id: ${weather_forecast_sensor}
     internal: true
 
-  - platform: homeassistant
-    id: ha_weather_condition_fallback
-    entity_id: ${weather_forecast_sensor}
-    attribute: condition
-    internal: true
-    on_value:
-      then:
-        - lambda: |-
-            if (id(display_power_state) == 0 && !id(is_hibernating)) {
-              latter_ui::weather_sim_dirty() = true;
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
+
 
   - platform: homeassistant
     id: ha_sun_state
@@ -3222,17 +3181,8 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            latter_ui::parse_latter_remote_slots_summary(
-                x,
-                id(remote_slot_0_ent), id(remote_slot_0_name),
-                id(remote_slot_1_ent), id(remote_slot_1_name),
-                id(remote_slot_2_ent), id(remote_slot_2_name),
-                id(remote_slot_3_ent), id(remote_slot_3_name));
-            const std::string rem_ents[4] = {
-              id(remote_slot_0_ent), id(remote_slot_1_ent),
-              id(remote_slot_2_ent), id(remote_slot_3_ent)
-            };
-            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
+            latter_ui::parse_latter_remote_slots_summary(x);
+            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
             latter_ui::home_dock_page() = 0;
             if (!latter_ui::has_any_configured_remote() && id(gui_page) == 7) {
               id(gui_page) = 1;
@@ -3859,7 +3809,7 @@ script:
     then:
       - lambda: |-
           std::string p = std::string(id(theme_palette_select).current_option());
-          #if defined(LATTER_BACKLIGHT_PIN)
+          #if LATTER_PANEL_IPS
           const bool is_ips_lcd = true;
           #else
           const bool is_ips_lcd = false;
@@ -4684,12 +4634,8 @@ script:
     then:
       - delay: 0ms
       - lambda: |-
-          const std::string ents[4] = {
-            id(remote_slot_0_ent), id(remote_slot_1_ent),
-            id(remote_slot_2_ent), id(remote_slot_3_ent)
-          };
-          int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0, ents)
-                                             : latter_ui::resolve_active_remote_slot(target_slot, ents);
+          int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0)
+                                             : latter_ui::resolve_active_remote_slot(target_slot);
           id(remote_latter_slot_num) = res_slot + 1;
 
           static constexpr const char *kCanonicalCmds[10] = {

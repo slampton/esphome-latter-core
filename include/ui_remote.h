@@ -36,11 +36,6 @@ inline int &remote_control_page() {
   return pg;
 }
 
-inline bool &remote_summary_received_from_ha() {
-  static bool rec = false;
-  return rec;
-}
-
 inline bool is_configured_remote_slot(const std::string &ent) {
   if (ent.empty()) return false;
   return ent != "none" && ent != "NONE" && ent != "remote.none" && ent != "media_player.none";
@@ -69,83 +64,12 @@ inline std::string format_remote_entity_fallback(const std::string &ent) {
       cap = false;
     }
   }
-  auto replace_word = [&](const std::string &from, const std::string &to) {
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-      bool left_ok = (pos == 0 || s[pos - 1] == ' ');
-      bool right_ok = (pos + from.length() == s.length() || s[pos + from.length()] == ' ');
-      if (left_ok && right_ok) {
-        s.replace(pos, from.length(), to);
-      }
-      pos += to.length();
-    }
-  };
-  replace_word("Tv", "TV");
-  replace_word("Lg", "LG");
-  replace_word("Avr", "AVR");
   return s;
 }
 
-inline const char *detect_remote_profile(const std::string &ent, const std::string &name,
-                                         const char *default_profile = "Android TV / Fire TV / Bravia") {
-  std::string s = ent + " " + name;
-  for (char &c : s) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
-  if (s.find("marantz") != std::string::npos || s.find("denon") != std::string::npos ||
-      s.find("cinema") != std::string::npos || s.find("avr") != std::string::npos) {
-    return "Denon / Marantz AVR";
-  }
-  if (s.find("webos") != std::string::npos || s.find("lg_tv") != std::string::npos ||
-      s.find("lg tv") != std::string::npos || s.find("lgtv") != std::string::npos) {
-    return "LG webOS";
-  }
-  if (s.find("apple") != std::string::npos) {
-    return "Apple TV";
-  }
-  if (s.find("roku") != std::string::npos) {
-    return "Roku";
-  }
-  if (s.find("samsung") != std::string::npos || s.find("tizen") != std::string::npos) {
-    return "Samsung TV";
-  }
-  if (s.find("shield") != std::string::npos || s.find("android") != std::string::npos ||
-      s.find("fire") != std::string::npos || s.find("bravia") != std::string::npos ||
-      s.find("chromecast") != std::string::npos || s.find("google") != std::string::npos) {
-    return "Android TV / Fire TV / Bravia";
-  }
-  if (ent.rfind("media_player.", 0) == 0) {
-    return "Denon / Marantz AVR";
-  }
-  return default_profile;
-}
-
-inline void sync_legacy_remote_slots_into_table(const std::string legacy_ents[4],
-                                                const std::string legacy_names[4]) {
-  std::string *t_ents = remote_slots_ent();
-  std::string *t_names = remote_slots_name();
-  bool any_table = false;
-  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
-    if (is_configured_remote_slot(t_ents[i])) {
-      any_table = true;
-      break;
-    }
-  }
-  if (!any_table && !remote_summary_received_from_ha() && legacy_ents != nullptr) {
-    for (int i = 0; i < 4; i++) {
-      t_ents[i] = legacy_ents[i];
-      if (legacy_names != nullptr) t_names[i] = legacy_names[i];
-    }
-  }
-}
-
 // Parses Latter's `slots_summary` attribute ("1:Name:remote_ent:mp_ent:state;2:...")
-// into all 10 slot entries (while syncing the first 4 legacy globals).
-inline void parse_latter_remote_slots_summary(
-    const std::string &summary,
-    std::string &s0_ent, std::string &s0_name,
-    std::string &s1_ent, std::string &s1_name,
-    std::string &s2_ent, std::string &s2_name,
-    std::string &s3_ent, std::string &s3_name) {
-  remote_summary_received_from_ha() = true;
+// directly into the 10-slot table.
+inline void parse_latter_remote_slots_summary(const std::string &summary) {
   std::string *t_ents = remote_slots_ent();
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();
@@ -155,7 +79,8 @@ inline void parse_latter_remote_slots_summary(
     st_on[i] = false;
   }
 
-  if (!summary.empty() && summary != "unknown" && summary != "unavailable" && summary != "none") {
+  if (!summary.empty() && summary != "unknown" && summary != "unavailable" &&
+      summary != "none" && summary != "NONE") {
     size_t pos = 0;
     while (pos < summary.size()) {
       size_t semi = summary.find(';', pos);
@@ -185,7 +110,8 @@ inline void parse_latter_remote_slots_summary(
         }
       }
 
-      st_on[idx] = (st_str == "on" || st_str == "playing" || st_str == "paused" || st_str == "buffering" || st_str == "idle");
+      st_on[idx] = (st_str == "on" || st_str == "playing" || st_str == "paused" ||
+                    st_str == "buffering" || st_str == "idle");
 
       std::string best_ent = (!rem_e.empty() && rem_e != "none" && rem_e != "None") ? rem_e : mp_e;
       if (!best_ent.empty() && best_ent != "none" && best_ent != "None") {
@@ -194,16 +120,10 @@ inline void parse_latter_remote_slots_summary(
       }
     }
   }
-
-  s0_ent = t_ents[0]; s0_name = t_names[0];
-  s1_ent = t_ents[1]; s1_name = t_names[1];
-  s2_ent = t_ents[2]; s2_name = t_names[2];
-  s3_ent = t_ents[3]; s3_name = t_names[3];
   remote_control_page() = 0;
 }
 
-inline int collect_configured_remote_slots(const std::string legacy_ents[4], int out_slots[MAX_REMOTE_SLOTS]) {
-  sync_legacy_remote_slots_into_table(legacy_ents, nullptr);
+inline int collect_configured_remote_slots(int out_slots[MAX_REMOTE_SLOTS]) {
   const std::string *t_ents = remote_slots_ent();
   int count = 0;
   for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
@@ -214,8 +134,7 @@ inline int collect_configured_remote_slots(const std::string legacy_ents[4], int
   return count;
 }
 
-inline int resolve_active_remote_slot(int active_slot, const std::string legacy_ents[4]) {
-  sync_legacy_remote_slots_into_table(legacy_ents, nullptr);
+inline int resolve_active_remote_slot(int active_slot) {
   const std::string *t_ents = remote_slots_ent();
   if (active_slot >= 0 && active_slot < MAX_REMOTE_SLOTS && is_configured_remote_slot(t_ents[active_slot])) {
     return active_slot;
@@ -226,134 +145,20 @@ inline int resolve_active_remote_slot(int active_slot, const std::string legacy_
   return 0;
 }
 
-inline bool &avr_setup_menu_open() {
-  static bool open = false;
-  return open;
-}
-
-struct RemoteCustomCmds {
-  const char *up;
-  const char *down;
-  const char *left;
-  const char *right;
-  const char *select;
-  const char *back;
-  const char *home;
-  const char *vol_up;
-  const char *vol_down;
-  const char *power;
-};
-
-inline void resolve_remote_dispatch(
-    int key_idx, int target_slot,
-    const std::string slot_profiles[4],
-    const std::string legacy_ents[4], const std::string legacy_names[4],
-    const RemoteCustomCmds &custom_cmds,
-    std::string &out_ent, std::string &out_prof,
-    std::string &out_cmd, std::string &out_feedback) {
-  sync_legacy_remote_slots_into_table(legacy_ents, legacy_names);
-  const std::string *t_ents = remote_slots_ent();
-  const std::string *t_names = remote_slots_name();
-
-  static constexpr const char *kFeedback[10] = {
-    "Up", "Down", "Left", "Right", "Select",
-    "Back", "Home", "Vol +", "Vol -", "Toggle Power"
-  };
-  int idx = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
-  int resolved_slot = 0;
-  std::string dev_name;
-  if (target_slot == -1) {
-    resolved_slot = resolve_active_remote_slot(0, legacy_ents);
-    out_ent = t_ents[resolved_slot];
-    dev_name = t_names[resolved_slot].empty() ? format_remote_entity_fallback(out_ent) : t_names[resolved_slot];
-    out_feedback = "Power: " + dev_name;
-  } else {
-    resolved_slot = resolve_active_remote_slot(target_slot, legacy_ents);
-    out_ent = t_ents[resolved_slot];
-    dev_name = t_names[resolved_slot].empty() ? format_remote_entity_fallback(out_ent) : t_names[resolved_slot];
-    out_feedback = (idx == 9) ? ("Power: " + dev_name) : kFeedback[idx];
-  }
-
-  const std::string cfg_prof = (resolved_slot < 4 && slot_profiles != nullptr) ? slot_profiles[resolved_slot] : "Auto-Detect";
-  if (!cfg_prof.empty() && cfg_prof != "Auto-Detect") {
-    out_prof = cfg_prof;
-  } else {
-    out_prof = detect_remote_profile(out_ent, dev_name, "Android TV / Fire TV / Bravia");
-  }
-
-  if (out_prof == "Denon / Marantz AVR") {
-    static constexpr const char *kAvrCmds[10] = {
-      "/goform/formiPhoneAppDirect.xml?MNCUP",
-      "/goform/formiPhoneAppDirect.xml?MNCDN",
-      "/goform/formiPhoneAppDirect.xml?MNCLT",
-      "/goform/formiPhoneAppDirect.xml?MNCRT",
-      "/goform/formiPhoneAppDirect.xml?MNENT",
-      "/goform/formiPhoneAppDirect.xml?MNRTN",
-      "/goform/formiPhoneAppDirect.xml?MNMEN%20ON",
-      "VOLUME_UP", "VOLUME_DOWN", "POWER"
-    };
-    if (idx == 6) {
-      bool &open = avr_setup_menu_open();
-      open = !open;
-      out_cmd = open ? "/goform/formiPhoneAppDirect.xml?MNMEN%20ON"
-                     : "/goform/formiPhoneAppDirect.xml?MNMEN%20OFF";
-    } else {
-      out_cmd = kAvrCmds[idx];
-    }
-    return;
-  }
-
-  if (out_prof == "LG webOS") {
-    static constexpr const char *kWebosBtns[10] = {
-      "UP", "DOWN", "LEFT", "RIGHT", "ENTER",
-      "BACK", "HOME", "VOLUMEUP", "VOLUMEDOWN", "POWER"
-    };
-    out_cmd = kWebosBtns[idx];
-    return;
-  }
-
-  struct RemoteCmdRow {
-    const char *apple_cmd;
-    const char *roku_cmd;
-    const char *samsung_cmd;
-    const char *custom_cmd;
-    const char *android_cmd;
-  };
-  const RemoteCmdRow kCmds[10] = {
-    {"up",          "up",          "KEY_UP",      custom_cmds.up,       "DPAD_UP"},
-    {"down",        "down",        "KEY_DOWN",    custom_cmds.down,     "DPAD_DOWN"},
-    {"left",        "left",        "KEY_LEFT",    custom_cmds.left,     "DPAD_LEFT"},
-    {"right",       "right",       "KEY_RIGHT",   custom_cmds.right,    "DPAD_RIGHT"},
-    {"select",      "select",      "KEY_ENTER",   custom_cmds.select,   "DPAD_CENTER"},
-    {"menu",        "back",        "KEY_RETURN",  custom_cmds.back,     "BACK"},
-    {"top_menu",    "home",        "KEY_HOME",    custom_cmds.home,     "HOME"},
-    {"volume_up",   "volume_up",   "KEY_VOLUP",   custom_cmds.vol_up,   "VOLUME_UP"},
-    {"volume_down", "volume_down", "KEY_VOLDOWN", custom_cmds.vol_down, "VOLUME_DOWN"},
-    {"wakeup",      "power",       "KEY_POWER",   custom_cmds.power,    "POWER"}
-  };
-  if (out_prof == "Apple TV") out_cmd = kCmds[idx].apple_cmd;
-  else if (out_prof == "Roku") out_cmd = kCmds[idx].roku_cmd;
-  else if (out_prof == "Samsung TV") out_cmd = kCmds[idx].samsung_cmd;
-  else if (out_prof == "Custom") out_cmd = kCmds[idx].custom_cmd;
-  else out_cmd = kCmds[idx].android_cmd;
-}
-
 template <typename DisplayT, typename FontT>
 inline void render_tv_remote_page(
     DisplayT &it, int cx, int cy, uint32_t now_ms,
     int remote_subpage, int &active_remote_slot,
-    const std::string legacy_ents[4], const std::string legacy_names[4],
     const std::string &remote_action_feedback, uint32_t remote_feedback_timer,
     FontT *font_date, FontT *font_small,
     const esphome::Color &theme_primary, const esphome::Color &theme_secondary,
     const esphome::Color &col_white, const esphome::Color &col_slate,
     const esphome::Color &col_gray, const esphome::Color &col_dark_gray,
     const esphome::Color &col_red) {
-  sync_legacy_remote_slots_into_table(legacy_ents, legacy_names);
   const std::string *t_ents = remote_slots_ent();
   const std::string *t_names = remote_slots_name();
 
-  int slot = resolve_active_remote_slot(active_remote_slot, legacy_ents);
+  int slot = resolve_active_remote_slot(active_remote_slot);
   active_remote_slot = slot;
 
   std::string rem_name = t_names[slot];
@@ -369,7 +174,7 @@ inline void render_tv_remote_page(
     // SUBPAGE 1: CONTROL (PINNED MASTER POWER + UP TO 10 SCROLLABLE DEVICES)
     // -------------------------------------------------------------------------
     int valid_slots[MAX_REMOTE_SLOTS] = {0};
-    int valid_count = collect_configured_remote_slots(legacy_ents, valid_slots);
+    int valid_count = collect_configured_remote_slots(valid_slots);
     int total_pages = std::max(1, (valid_count + 3) / 4);
     if (remote_control_page() < 0 || remote_control_page() >= total_pages) {
       remote_control_page() = 0;
@@ -466,7 +271,7 @@ inline void render_tv_remote_page(
   const int btm_fy   = dpad_cy + flank_dy;
   const int f_r      = 19;
 
-  // 1. HOME: Top-Left (strictly symmetric with Bottom-Left BACK around dpad_cy!)
+  // 1. HOME: Top-Left
   it.filled_circle(left_fx, top_fy, f_r, col_dark_gray);
   it.circle(left_fx, top_fy, f_r, col_gray);
   it.filled_triangle(left_fx, top_fy - 8, left_fx - 9, top_fy - 1, left_fx + 9, top_fy - 1, col_white);
@@ -492,10 +297,7 @@ inline void render_tv_remote_page(
   it.circle(right_fx, btm_fy, f_r, col_gray);
   it.filled_rectangle(right_fx - 7, btm_fy - 1, 15, 3, col_white);
 
-  // Adaptive Concentric D-Pad:
-  //   - 320x480 Remote Assistant: r_out = 128, r_in = 46 (256px diameter tactile ring!)
-  //   - 410x502 Wrist Assist & 466x466 Pocket Assistant: r_out = 144, r_in = 50
-  //   - 480x480 Mobile Assistant & 720x720 Desk Assistant: r_out = 180, r_in = 60 (360px diameter tactile ring!)
+  // Adaptive Concentric D-Pad
   const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144);
   const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50);
   const int ok_r       = dpad_r_in - 8;

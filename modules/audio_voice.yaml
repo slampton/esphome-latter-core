@@ -198,6 +198,7 @@ voice_assistant:
   on_listening:
     then:
       - lambda: |-
+          latter_ui::log_audio_profile("VA_LISTEN_START");
           latter_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
@@ -251,6 +252,7 @@ voice_assistant:
     then:
       - script.stop: screen_sleep_timer
       - lambda: |-
+          latter_ui::log_audio_profile("VA_VAD_START");
           id(va_vad_active) = true;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "CAPTURING VOICE...";
@@ -263,6 +265,7 @@ voice_assistant:
     then:
       - script.stop: screen_sleep_timer
       - lambda: |-
+          latter_ui::log_audio_profile("VA_VAD_END");
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "PROCESSING AUDIO...";
@@ -276,6 +279,7 @@ voice_assistant:
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
       - lambda: |-
+          latter_ui::log_audio_profile("VA_STT_END", x.c_str());
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
             latter_ui::cam_intercom_ptt_active() = false;
@@ -333,6 +337,7 @@ voice_assistant:
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
     then:
+      - lambda: 'latter_ui::log_audio_profile("VA_TTS_START");'
       - mixer_speaker.apply_ducking:
           id: media_mixing_input
           decibel_reduction: 50
@@ -492,6 +497,7 @@ script:
             - delay: 300ms
       # 3. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
       - lambda: |-
+          latter_ui::log_audio_profile("VA_DRAIN_FINISH");
           esphome::voice_assistant::reset_va_session_state(id(va));
           id(va_vad_active) = false;
           id(va_status_text) = "";

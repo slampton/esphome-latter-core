@@ -21,6 +21,8 @@ struct HardwareCapabilities {
   bool has_battery = (LATTER_HAS_BATTERY != 0);
   bool is_stationary = (LATTER_IS_STATIONARY != 0);
   bool is_wearable = (LATTER_IS_WEARABLE != 0);
+  bool has_touch = (LATTER_HAS_TOUCH != 0);
+  bool is_ips_panel = (LATTER_PANEL_IPS != 0);
 };
 
 inline constexpr HardwareCapabilities caps() {

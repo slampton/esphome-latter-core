@@ -479,6 +479,20 @@ interval:
 
           // BLE Presence Beacon & Improv Supervisor while display is awake:
           uint32_t now_1s_ms = millis();
+          static uint32_t last_prof_10s_ms = 0;
+          static int last_prof_pwr_state = -1;
+          if (latter_ui::profiler_enabled() &&
+              (id(display_power_state) != last_prof_pwr_state || (now_1s_ms - last_prof_10s_ms >= 10000U))) {
+            const char *trig = (id(display_power_state) != last_prof_pwr_state) ? "STATE_CHG" : "10S_TICK";
+            last_prof_pwr_state = id(display_power_state);
+            last_prof_10s_ms = now_1s_ms;
+            latter_ui::log_power_and_mem_profile(
+                trig, id(display_power_state), id(usb_connected).state, id(batt_charging).state,
+                id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
+                id(mww).is_running(), id(va_active),
+                id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+                id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+          }
           if (id(display_power_state) == 0 && !id(is_hibernating) && !id(ota_in_progress)) {
             #if defined(CONFIG_IDF_TARGET_ESP32P4)
             const bool sdio_ready = id(wifi_ctrl).is_connected() && (now_1s_ms > 8000U);

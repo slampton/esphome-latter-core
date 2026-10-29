@@ -9,6 +9,8 @@
 #include "esphome.h"
 #ifdef USE_ESP32
 #include <driver/gpio.h>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 #endif
 #include <cmath>
 #include <ctime>
@@ -40,6 +42,16 @@ namespace latter_ui {
 #endif
 #ifndef LATTER_IS_WEARABLE
 #define LATTER_IS_WEARABLE 0
+#endif
+#ifndef LATTER_HAS_TOUCH
+#define LATTER_HAS_TOUCH 1
+#endif
+#ifndef LATTER_PANEL_IPS
+#if defined(LATTER_BACKLIGHT_PIN)
+#define LATTER_PANEL_IPS 1
+#else
+#define LATTER_PANEL_IPS 0
+#endif
 #endif
 
 static constexpr int SCREEN_W = LATTER_SCREEN_W;
@@ -1142,6 +1154,138 @@ inline float volume_to_db_reduction(float vol) {
 inline uint32_t &last_local_vol_tap_ms() {
   static uint32_t ts = 0;
   return ts;
+}
+
+// ------------------------------------------------------------------------------
+// 5. On-Demand Flight Recorder & Telemetry Profiler ([PROF:*])
+// ------------------------------------------------------------------------------
+struct FlightRecorderStats {
+  bool enabled = false;
+  uint32_t window_frames = 0;
+  uint32_t window_render_us = 0;
+  uint32_t max_render_us = 0;
+  int max_render_page = 0;
+  int max_render_sub = 0;
+  uint32_t slow_frames = 0;
+  uint32_t last_frame_ms = 0;
+  uint32_t last_summary_ms = 0;
+  int last_logged_page = -1;
+  int last_logged_sub = -1;
+  uint32_t va_session_start_ms = 0;
+};
+
+inline FlightRecorderStats &flight_recorder() {
+  static FlightRecorderStats st;
+  return st;
+}
+
+inline bool &profiler_enabled() {
+  return flight_recorder().enabled;
+}
+
+inline uint64_t prof_now_us() {
+#ifdef USE_ESP32
+  return static_cast<uint64_t>(esp_timer_get_time());
+#else
+  return static_cast<uint64_t>(esphome::micros());
+#endif
+}
+
+struct FrameProfileScope {
+  uint64_t t0_us = 0;
+  int page = 0;
+  int sub = 0;
+  int pwr = 0;
+
+  FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
+    if (profiler_enabled()) {
+      t0_us = prof_now_us();
+    }
+  }
+
+  ~FrameProfileScope() {
+    if (t0_us == 0) return;
+    uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
+    uint32_t now_m = esphome::millis();
+    auto &fr = flight_recorder();
+    uint32_t dt_ms = (fr.last_frame_ms > 0 && now_m >= fr.last_frame_ms) ? (now_m - fr.last_frame_ms) : 0U;
+    fr.last_frame_ms = now_m;
+    fr.window_frames++;
+    fr.window_render_us += render_us;
+    if (render_us > fr.max_render_us) {
+      fr.max_render_us = render_us;
+      fr.max_render_page = page;
+      fr.max_render_sub = sub;
+    }
+    const bool is_slow = (render_us >= 22000U);
+    if (is_slow) fr.slow_frames++;
+
+    const bool page_changed = (page != fr.last_logged_page || sub != fr.last_logged_sub);
+    if (page_changed || is_slow) {
+      fr.last_logged_page = page;
+      fr.last_logged_sub = sub;
+      ESP_LOGI("PROF", "[PROF:FRAME] page=%d sub=%d pwr=%d render=%luus dt=%lums%s",
+               page, sub, pwr, (unsigned long)render_us, (unsigned long)dt_ms,
+               is_slow ? " [SLOW_FRAME]" : "");
+    }
+
+    if (fr.last_summary_ms == 0) fr.last_summary_ms = now_m;
+    uint32_t win_el = now_m - fr.last_summary_ms;
+    if (win_el >= 5000U && fr.window_frames > 0) {
+      float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
+      uint32_t avg_us = fr.window_render_us / fr.window_frames;
+      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu",
+               (unsigned long)fr.window_frames, fps, (unsigned long)avg_us,
+               (unsigned long)fr.max_render_us, fr.max_render_page, fr.max_render_sub,
+               (unsigned long)fr.slow_frames);
+      fr.window_frames = 0;
+      fr.window_render_us = 0;
+      fr.max_render_us = 0;
+      fr.slow_frames = 0;
+      fr.last_summary_ms = now_m;
+    }
+  }
+};
+
+inline void log_audio_profile(const char *event_tag, const char *detail = "") {
+  if (!profiler_enabled()) return;
+  uint32_t now_m = esphome::millis();
+  auto &fr = flight_recorder();
+  if (std::strcmp(event_tag, "VA_LISTEN_START") == 0) {
+    fr.va_session_start_ms = now_m;
+  }
+  uint32_t va_el = (fr.va_session_start_ms > 0 && now_m >= fr.va_session_start_ms)
+                       ? (now_m - fr.va_session_start_ms)
+                       : 0U;
+  ESP_LOGI("PROF", "[PROF:AUDIO] event=%s va_elapsed=%lums %s",
+           event_tag, (unsigned long)va_el, detail ? detail : "");
+}
+
+inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
+                                      float batt_pct, float batt_v, bool spk_pa, bool mww_run,
+                                      bool va_act, bool mp_play, bool ble_act, int game_id,
+                                      uint32_t sleep_start_ms) {
+  if (!profiler_enabled()) return;
+  uint32_t now_m = esphome::millis();
+  uint32_t sleep_age_s = (sleep_start_ms > 0 && now_m >= sleep_start_ms)
+                             ? ((now_m - sleep_start_ms) / 1000U)
+                             : 0U;
+  ESP_LOGI("PROF",
+           "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus",
+           trigger, pwr_state, (int)usb, (int)chg,
+           std::isnan(batt_pct) ? -1.0f : batt_pct,
+           std::isnan(batt_v) ? 0.0f : batt_v,
+           (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
+           (unsigned long)sleep_age_s);
+#ifdef USE_ESP32
+  size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t ps_free  = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
+  size_t ps_min   = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U;
+  ESP_LOGI("PROF", "[PROF:MEM] int_free=%luKB int_max_blk=%luKB psram_free=%luKB psram_min=%luKB",
+           (unsigned long)int_free, (unsigned long)int_max,
+           (unsigned long)ps_free, (unsigned long)ps_min);
+#endif
 }
 
 // ------------------------------------------------------------------------------

@@ -30,7 +30,6 @@ substitutions:
 
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
   local_player_id: "media_player.remote_assistant"
-  weather_entity: "weather.forecast_home"
   sun_entity: "sun.sun"
   moon_entity: "sensor.moon_phase"
 

@@ -86,6 +86,16 @@ display:
   - id: !extend disp1
     lambda: |-
       latter_ui::last_disp_update_ms() = millis();
+      int prof_sub = 0;
+      if (id(gui_page) == 1) prof_sub = id(home_subpage);
+      else if (id(gui_page) == 2) prof_sub = id(music_overlay_mode);
+      else if (id(gui_page) == 3) prof_sub = id(active_game);
+      else if (id(gui_page) == 4) prof_sub = id(system_menu_mode);
+      else if (id(gui_page) == 5) prof_sub = id(sky_weather_subpage);
+      else if (id(gui_page) == 6) prof_sub = id(room_subpage);
+      else if (id(gui_page) == 7) prof_sub = id(remote_subpage);
+      else if (id(gui_page) == 8) prof_sub = id(stuff_subpage);
+      latter_ui::FrameProfileScope prof_frame_scope(id(gui_page), prof_sub, id(display_power_state));
       const int cx = latter_ui::SCREEN_CX;
       const int cy = latter_ui::SCREEN_CY;
       const Color C_WHITE = id(col_white);
@@ -247,14 +257,8 @@ display:
                                     ? id(ha_track_title).state : id(track_title).state;
         std::string m_artist_h = (is_rem_h || id(track_artist).state.empty() || id(track_artist).state == "None")
                                      ? id(ha_track_artist).state : id(track_artist).state;
-        float eff_w_temp_h = !std::isnan(id(ha_weather_temperature).state)
-                                 ? id(ha_weather_temperature).state
-                                 : id(ha_weather_temp_fallback).state;
-        std::string eff_w_cond_h = (!id(ha_weather_condition).state.empty() &&
-                                    id(ha_weather_condition).state != "unknown" &&
-                                    id(ha_weather_condition).state != "unavailable")
-                                       ? id(ha_weather_condition).state
-                                       : id(ha_weather_condition_fallback).state;
+        float eff_w_temp_h = id(ha_weather_temperature).state;
+        std::string eff_w_cond_h = id(ha_weather_condition).state;
         bool eff_show_w_bg = id(home_weather_bg_switch).state ||
                              (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
         render_home_page(
@@ -462,24 +466,12 @@ display:
       // PAGE 5: SKY & WEATHER SUITE
       // ==========================================
       } else if (id(gui_page) == 5) {
-        float eff_w_temp = !std::isnan(id(ha_weather_temperature).state)
-                               ? id(ha_weather_temperature).state
-                               : id(ha_weather_temp_fallback).state;
-        float eff_w_hum  = !std::isnan(id(ha_weather_humidity).state)
-                               ? id(ha_weather_humidity).state
-                               : id(ha_weather_humidity_fallback).state;
-        float eff_w_spd  = !std::isnan(id(ha_weather_wind_speed).state)
-                               ? id(ha_weather_wind_speed).state
-                               : id(ha_weather_wind_speed_fallback).state;
-        float eff_w_brg  = !std::isnan(id(ha_weather_wind_bearing).state)
-                               ? id(ha_weather_wind_bearing).state
-                               : id(ha_weather_wind_bearing_fallback).state;
-        std::string eff_w_cond = (!id(ha_weather_condition).state.empty() &&
-                                  id(ha_weather_condition).state != "unknown" &&
-                                  id(ha_weather_condition).state != "unavailable")
-                                     ? id(ha_weather_condition).state
-                                     : id(ha_weather_condition_fallback).state;
-        #if defined(LATTER_BACKLIGHT_PIN)
+        float eff_w_temp = id(ha_weather_temperature).state;
+        float eff_w_hum  = id(ha_weather_humidity).state;
+        float eff_w_spd  = id(ha_weather_wind_speed).state;
+        float eff_w_brg  = id(ha_weather_wind_bearing).state;
+        std::string eff_w_cond = id(ha_weather_condition).state;
+        #if LATTER_PANEL_IPS
         const Color eff_warm_gold(255, 178, 28);
         #else
         const Color eff_warm_gold = id(col_warm_gold);
@@ -543,17 +535,9 @@ display:
       // PAGE 7: UNIVERSAL TV & MEDIA REMOTE CONTROL
       // ==========================================
       } else if (id(gui_page) == 7) {
-        const std::string rem_ents[4] = {
-          id(remote_slot_0_ent), id(remote_slot_1_ent),
-          id(remote_slot_2_ent), id(remote_slot_3_ent)
-        };
-        const std::string rem_names[4] = {
-          id(remote_slot_0_name), id(remote_slot_1_name),
-          id(remote_slot_2_name), id(remote_slot_3_name)
-        };
         render_tv_remote_page(
             it, cx, cy, millis(), id(remote_subpage), id(active_remote_slot),
-            rem_ents, rem_names, id(remote_action_feedback), id(remote_feedback_timer),
+            id(remote_action_feedback), id(remote_feedback_timer),
             id(font_date), id(font_small),
             id(theme_primary), id(theme_secondary),
             id(col_white), id(col_slate), id(col_gray), id(col_dark_gray), id(col_red));
@@ -715,6 +699,10 @@ touchscreen:
             }
 
             if (now_touch - latter_ui::last_screen_wake_ms() < TOUCH_DEBOUNCE_WAKE) {
+              if (latter_ui::profiler_enabled()) {
+                ESP_LOGI("PROF", "[PROF:TOUCH_BLOCKED] x=%d y=%d page=%d reason=WAKE_DEBOUNCE",
+                         touch.x, touch.y, id(gui_page));
+              }
               return;
             }
 
@@ -830,6 +818,10 @@ touchscreen:
 
             // Top-level apps use the bottom Swipe-Up Home Indicator Bar (taps at y >= 412 are ignored so they never misfire)
             if (is_top_level_home_bar && touch.y >= (latter_ui::SCREEN_H - 54)) {
+              if (latter_ui::profiler_enabled()) {
+                ESP_LOGI("PROF", "[PROF:TOUCH_HOLD] x=%d y=%d page=%d reason=HOME_BAR_SWIPE_ZONE",
+                         touch.x, touch.y, id(gui_page));
+              }
               return;
             }
 
@@ -2069,14 +2061,6 @@ touchscreen:
             } else if (id(gui_page) == 7) {
               static uint32_t last_remote_btn_tap = 0;
               uint32_t now_rem = millis();
-              const std::string rem_ents[4] = {
-                id(remote_slot_0_ent), id(remote_slot_1_ent),
-                id(remote_slot_2_ent), id(remote_slot_3_ent)
-              };
-              const std::string rem_names[4] = {
-                id(remote_slot_0_name), id(remote_slot_1_name),
-                id(remote_slot_2_name), id(remote_slot_3_name)
-              };
 
               if (id(remote_subpage) == 1) {
                 if (is_back_button(touch) || touch.y <= 72) {
@@ -2089,7 +2073,7 @@ touchscreen:
                   return;
                 }
                 int valid_slots[latter_ui::MAX_REMOTE_SLOTS] = {0};
-                int valid_count = latter_ui::collect_configured_remote_slots(rem_ents, valid_slots);
+                int valid_count = latter_ui::collect_configured_remote_slots(valid_slots);
                 int total_pages = std::max(1, (valid_count + 3) / 4);
                 if (total_pages > 1 && is_right_chevron_zone(touch)) {
                   if (now_rem - last_remote_btn_tap > TOUCH_DEBOUNCE_RAPID) {
@@ -2106,7 +2090,7 @@ touchscreen:
                 return;
               }
 
-              int act_slot = latter_ui::resolve_active_remote_slot(id(active_remote_slot), rem_ents);
+              int act_slot = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
               id(active_remote_slot) = act_slot;
 
               if (touch.x >= 110 && touch.x <= 356 && touch.y >= 25 && touch.y <= 80) {
@@ -3148,12 +3132,8 @@ touchscreen:
             // 7B. REMOTE CONTROL (PAGE 7, SUBPAGE 1) VERTICAL LIST SWIPE (UP TO 10 REMOTES)
             if (id(gui_page) == 7 && id(remote_subpage) == 1 && gest.start_y > 140 && gest.start_y < 404) {
               if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
-                const std::string rem_ents_u[4] = {
-                  id(remote_slot_0_ent), id(remote_slot_1_ent),
-                  id(remote_slot_2_ent), id(remote_slot_3_ent)
-                };
                 int valid_slots_u[latter_ui::MAX_REMOTE_SLOTS] = {0};
-                int valid_cnt_u = latter_ui::collect_configured_remote_slots(rem_ents_u, valid_slots_u);
+                int valid_cnt_u = latter_ui::collect_configured_remote_slots(valid_slots_u);
                 int total_pg_u = std::max(1, (valid_cnt_u + 3) / 4);
                 if (total_pg_u > 1) {
                   gest.swipe_committed = true;
@@ -3230,6 +3210,7 @@ touchscreen:
     on_release:
       then:
         - lambda: |-
+            uint64_t rel_t0_us = latter_ui::profiler_enabled() ? latter_ui::prof_now_us() : 0ULL;
             id(hud_wake_finger_released) = true;
             auto &gest = latter_ui::touch_gesture();
             uint32_t now_rel = millis();
@@ -4083,12 +4064,8 @@ touchscreen:
                   id(remote_send_key).execute(9, -1);
                   latter_ui::schedule_disp_update(&id(disp1));
                 } else {
-                  const std::string rem_ents_r[4] = {
-                    id(remote_slot_0_ent), id(remote_slot_1_ent),
-                    id(remote_slot_2_ent), id(remote_slot_3_ent)
-                  };
                   int valid_slots_r[latter_ui::MAX_REMOTE_SLOTS] = {0};
-                  int valid_cnt_r = latter_ui::collect_configured_remote_slots(rem_ents_r, valid_slots_r);
+                  int valid_cnt_r = latter_ui::collect_configured_remote_slots(valid_slots_r);
                   int start_idx_r = latter_ui::remote_control_page() * 4;
                   int vis_cnt_r = std::min(4, std::max(0, valid_cnt_r - start_idx_r));
                   for (int row = 0; row < vis_cnt_r; row++) {
@@ -4234,6 +4211,22 @@ touchscreen:
                   }
                 }
               }
+            }
+            if (rel_t0_us > 0ULL) {
+              uint32_t rel_exec_us = static_cast<uint32_t>(latter_ui::prof_now_us() - rel_t0_us);
+              int end_ctx = latter_ui::compute_touch_context(
+                  id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
+                  id(system_menu_mode), id(sky_weather_subpage), id(room_subpage),
+                  id(remote_subpage), id(stuff_subpage));
+              int dx_p = gest.last_x - gest.start_x;
+              int dy_p = gest.last_y - gest.start_y;
+              uint32_t dur_p = (now_rel >= gest.start_ms) ? (now_rel - gest.start_ms) : 0U;
+              ESP_LOGI("PROF",
+                       "[PROF:TOUCH_UP] start=(%d,%d) end=(%d,%d) dx=%d dy=%d travel=%d samples=%d dur=%lums swipe=%d ctx=%d->%d exec=%luus",
+                       gest.start_x, gest.start_y, gest.last_x, gest.last_y,
+                       dx_p, dy_p, gest.max_travel, gest.sample_count,
+                       (unsigned long)dur_p, (int)gest.swipe_committed,
+                       gest.start_context, end_ctx, (unsigned long)rel_exec_us);
             }
             gest.active = false;
             ESP_LOGI("touch", "<<< Touch Released (page=%d)", id(gui_page));

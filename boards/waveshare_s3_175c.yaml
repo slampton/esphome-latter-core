@@ -9,6 +9,8 @@ esphome:
     - "-DLATTER_HAS_BATTERY=1"
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
+    - "-DLATTER_HAS_TOUCH=1"
+    - "-DLATTER_PANEL_IPS=0"
 
 esp32:
   board: esp32-s3-devkitc-1
