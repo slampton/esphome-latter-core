@@ -126,7 +126,7 @@ speaker:
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
-    timeout: 10s
+    timeout: 500ms
 
 packages:
   latter_imu: !include ../modules/imu_none.yaml

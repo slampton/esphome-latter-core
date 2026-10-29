@@ -285,15 +285,19 @@ inline void render_room_control_page(
       it.print(cx, 86, font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
 
       // Card 1 (y_mid = 162): Color Temperature Gradient Slider (2700K .. 6500K)
-      render_modern_card(it, cx, 162, 316, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
-      // Draw Warm-to-Cool gradient bar across x = 92..374 (width = 282px)
+      const int sl_card_w = std::min(316, SCREEN_W - 24);
+      const int k_bar_w   = sl_card_w - 32;
+      const int k_bar_x0  = cx - (k_bar_w / 2);
+      render_modern_card(it, cx, 162, sl_card_w, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
       for (int b = 0; b < 24; b++) {
         float t = static_cast<float>(b) / 23.0f;
         Color band_c = lerp_color(Color(255, 168, 72), Color(185, 222, 255), t);
-        it.filled_rectangle(92 + b * 11, 162 + 6, 12, 16, band_c);
+        int bx0 = k_bar_x0 + (b * k_bar_w) / 24;
+        int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
+        it.filled_rectangle(bx0, 162 + 6, std::max(2, bx1 - bx0), 16, band_c);
       }
       int k_clamped = std::max(2700, std::min(6500, light_insp_kelvin()));
-      int k_knob_x = 92 + ((k_clamped - 2700) * 264) / (6500 - 2700);
+      int k_knob_x = k_bar_x0 + ((k_clamped - 2700) * k_bar_w) / (6500 - 2700);
       it.filled_circle(k_knob_x, 162 + 14, 10, col_white);
       it.circle(k_knob_x, 162 + 14, 11, col_black);
       char k_buf[48];
@@ -301,11 +305,12 @@ inline void render_room_control_page(
       it.print(cx, 162 - 12, font_small, col_white, TextAlign::CENTER, k_buf);
 
       // Card 2 (y_mid = 258): Brightness Fill-Slider (5% .. 100%)
-      render_modern_card(it, cx, 258, 316, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
+      render_modern_card(it, cx, 258, sl_card_w, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
       int b_clamped = std::max(5, std::min(100, light_insp_bri_pct()));
-      int b_fill_w = (296 * b_clamped) / 100;
+      int b_max_w = sl_card_w - 16;
+      int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        it.filled_rectangle(85, 258 - 28, b_fill_w, 56, Color(92, 68, 22));
+        it.filled_rectangle(cx - (b_max_w / 2), 258 - 28, b_fill_w, 56, Color(92, 68, 22));
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);

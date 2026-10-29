@@ -942,6 +942,11 @@ inline void render_home_page(
                    cond == "clearnight" || (cond.find("night") != std::string::npos));
   apply_weather_sim_override(weather_sim_opt, cond, is_night);
 
+  std::string cond_title = format_weather_title(cond);
+  const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
+  const bool weather_ready = (!std::isnan(weather_temp) || sim_override_on) && (cond_title != "Unavailable");
+  const bool eff_weather_bg = show_weather_bg && weather_ready;
+
   const bool is_dim_backdrop = (home_subpage == 2);
   const bool has_custom_wallpaper = (!wallpaper_url.empty() && wallpaper_url != "none" &&
                                      wallpaper_url == loaded_wallpaper_url &&
@@ -949,7 +954,7 @@ inline void render_home_page(
 
   if (has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)")) {
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false);
-  } else if (show_weather_bg) {
+  } else if (eff_weather_bg) {
     const int cel_x = layout().celestial_x;
     const int cel_y = layout().celestial_y;
     if (is_dim_backdrop) {
@@ -976,7 +981,7 @@ inline void render_home_page(
   const Color fg_home_white = is_dim_backdrop ? Color(34, 38, 44) : col_white;
   const Color fg_home_cond  = is_dim_backdrop
                                   ? Color(30, 34, 40)
-                                  : ((!show_weather_bg || is_night) ? theme_secondary : Color(255, 225, 110));
+                                  : ((!eff_weather_bg || is_night) ? theme_secondary : Color(255, 225, 110));
 
   const int z_date_y  = layout().home_date_y;
   const int z_clock_y = layout().home_clock_y;
@@ -1004,9 +1009,6 @@ inline void render_home_page(
   it.print(cx, z_clock_y, font_time, fg_home_white, TextAlign::CENTER, time_str);
 
   // ZONE 3: Stepped-Up Weather Summary in font_date (27pt, blank until weather or simulation arrives!)
-  std::string cond_title = format_weather_title(cond);
-  const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
-  const bool weather_ready = (!std::isnan(weather_temp) || sim_override_on) && (cond_title != "Unavailable");
   if (weather_ready) {
     char w_line[64];
     if (!std::isnan(weather_temp)) {
@@ -1051,7 +1053,7 @@ inline void render_home_page(
     home_activity_idx = feat_idx;
 
     Color card_bg, card_brd, btn_bg;
-    resolve_home_card_palette(show_weather_bg, is_night, cond, card_bg, card_brd, btn_bg);
+    resolve_home_card_palette(eff_weather_bg, is_night, cond, card_bg, card_brd, btn_bg);
 
     int step = home_act_anim_step();
     if (has_drop && step >= 1 && step <= 3 && home_act_prev_idx() != home_act_cur_idx()) {
@@ -1118,7 +1120,7 @@ inline void render_home_page(
 
     // Target background color so the text dissolves seamlessly into the daytime or nighttime sky
     Color bg_target(0, 0, 0);
-    if (show_weather_bg && !is_night) {
+    if (eff_weather_bg && !is_night) {
       bg_target = Color(28, 54, 84);
       if (cond.find("fog") != std::string::npos || cond.find("mist") != std::string::npos) {
         bg_target = Color(32, 46, 60);
@@ -1176,7 +1178,7 @@ inline void render_home_page(
         it.filled_rectangle(bx - 14, by + 10, 3, 3, c);
         it.filled_rectangle(bx + 2,  by + 10, 3, 3, c);
         if (!is_shadow) {
-          Color cut_c = (show_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
+          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           // Negative-space cushion seam & armrest crease so the sofa reads crisply at 54px!
           it.vertical_line(bx - 5, by - 4, 8, cut_c);
           it.horizontal_line(bx - 12, by + 4, 15, cut_c);
@@ -1359,7 +1361,7 @@ inline void render_home_page(
         it.filled_rectangle(bx - 13, by - 7, 26, 17, c);
         it.filled_rectangle(bx - 5, by - 11, 10, 4, c);
         if (!is_shadow) {
-          Color cut_c = (show_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
+          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           it.filled_circle(bx, by + 1, 6, cut_c);
           it.circle(bx, by + 1, 4, c);
           it.filled_circle(bx, by + 1, 2, c);
@@ -1369,7 +1371,7 @@ inline void render_home_page(
         it.filled_triangle(bx, by - 15, bx - 15, by - 2, bx + 15, by - 2, c);
         it.filled_rectangle(bx - 11, by - 2, 23, 15, c);
         if (!is_shadow) {
-          Color cut_c = (show_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
+          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           if (home_alarm_state.find("armed_away") != std::string::npos || home_alarm_state == "triggered") {
             cut_c = Color(235, 65, 65);
           } else if (home_alarm_state.find("armed") != std::string::npos || home_alarm_state == "arming") {

@@ -850,6 +850,9 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
                                             int cel_cx = 341, int cel_cy = 91,
                                             bool mask_hero_temp = true,
                                             float accel_x = 0.0f, float accel_y = 0.0f) {
+  if (cond.empty() || cond == "unknown" || cond == "unavailable" || cond == "none" || cond == "NONE") {
+    return;
+  }
 
   const bool is_fog_mist = (cond.find("fog") != std::string::npos ||
                             cond.find("mist") != std::string::npos ||

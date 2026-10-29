@@ -93,6 +93,14 @@ struct VA_ContinueConversation_Tag {
 };
 template struct Rob<VA_ContinueConversation_Tag, &esphome::voice_assistant::VoiceAssistant::continue_conversation_>;
 
+#ifdef USE_MICROPHONE
+struct VA_MicSource_Tag {
+  typedef esphome::microphone::MicrophoneSource *esphome::voice_assistant::VoiceAssistant::*type;
+  friend type get(VA_MicSource_Tag);
+};
+template struct Rob<VA_MicSource_Tag, &esphome::voice_assistant::VoiceAssistant::mic_source_>;
+#endif
+
 #ifdef USE_MICRO_WAKE_WORD
 struct VA_MicroWakeWord_Tag {
   typedef esphome::micro_wake_word::MicroWakeWord *esphome::voice_assistant::VoiceAssistant::*type;
@@ -147,9 +155,22 @@ inline void reset_va_session_state(VoiceAssistant *va) {
 }
 
 
+// Explicitly stops VoiceAssistant's internal MicrophoneSource so shared I2S buses unlock immediately
+// even when Home Assistant sends STT_END + TTS_END in a single burst without STT_VAD_END.
+inline void stop_va_microphone(VoiceAssistant *va) {
+  if (va == nullptr) return;
+#ifdef USE_MICROPHONE
+  auto *ms = va->*get(VA_MicSource_Tag());
+  if (ms != nullptr && ms->is_running()) {
+    ms->stop();
+  }
+#endif
+}
+
 // Performs a complete, synchronous client + server VoiceAssistant session abort.
 inline void abort_voice_assistant(VoiceAssistant *va) {
   if (va != nullptr) {
+    stop_va_microphone(va);
     va->request_stop();
     va->reset_conversation_id();
 

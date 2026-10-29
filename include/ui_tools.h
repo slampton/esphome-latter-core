@@ -1901,11 +1901,12 @@ inline void render_tool_calendar(
       render_album_art_canvas(it, map_art, cx, false, false, false, false);
 
       // 1. Top Address & Zoom Header Pill (Tap to Re-Center on Event Pin)
-      it.filled_rectangle(94, 24, 278, 34, Color(10, 14, 20));
-      it.rectangle(94, 24, 278, 34, theme_primary);
+      const int map_hdr_w = std::min(278, SCREEN_W - 24);
+      it.filled_rectangle(cx - map_hdr_w / 2, 24, map_hdr_w, 34, Color(10, 14, 20));
+      it.rectangle(cx - map_hdr_w / 2, 24, map_hdr_w, 34, theme_primary);
       char z_prefix[16];
       snprintf(z_prefix, sizeof(z_prefix), "z%d • ", cal_map_zoom());
-      std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), 262, font_small);
+      std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, font_small);
       it.print(cx, 41, font_small, col_white, TextAlign::CENTER, loc_hdr.c_str());
 
       // 2. Left/Right Floating Zoom Buttons (adaptive to screen width)
@@ -1919,7 +1920,7 @@ inline void render_tool_calendar(
       it.circle(z_lx, z_by, 20, btn_ring);
       it.filled_rectangle(z_lx - 8, z_by - 1, 17, 3, (cal_map_zoom() > 10) ? col_white : col_slate);
 
-      // 3. Right Floating Zoom-In (+) Button at (422, 233, r = 21)
+      // 3. Right Floating Zoom-In (+) Button
       Color btn_ring_in = (cal_map_zoom() < 18) ? theme_primary : col_slate;
       Color fg_in = (cal_map_zoom() < 18) ? col_white : col_slate;
       it.filled_circle(z_rx, z_by, 21, btn_bg);
@@ -1928,8 +1929,8 @@ inline void render_tool_calendar(
       it.filled_rectangle(z_rx - 8, z_by - 1, 17, 3, fg_in);
       it.filled_rectangle(z_rx - 1, z_by - 8, 3, 17, fg_in);
 
-      // 4. Bottom Translucent Back Scrim
-      it.filled_rectangle(148, 406, 170, 38, Color(10, 14, 20));
+      // 4. Bottom Translucent Back Scrim (aligned with layout().back_y)
+      it.filled_rectangle(cx - 85, layout().back_y - 20, 170, 38, Color(10, 14, 20));
     } else {
       it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
       render_modern_card(it, cx, 222, 304, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
@@ -1949,9 +1950,11 @@ inline void render_tool_calendar(
                        fit_tm.c_str(), theme_secondary, font_small);
 
     // Wrapped Event Title Card (y_mid = 176, h = 96, up to 3 lines)
-    render_modern_card(it, cx, 176, 324, 96, 14, card_bg, card_brd, nullptr, col_white, font_small);
+    const int det_card_w = std::min(324, SCREEN_W - 20);
+    const int det_txt_w  = det_card_w - 24;
+    render_modern_card(it, cx, 176, det_card_w, 96, 14, card_bg, card_brd, nullptr, col_white, font_small);
     std::string title_lines[3];
-    int t_cnt = wrap_text_lines(cal_detail_title(), 296, font_small, title_lines, 3);
+    int t_cnt = wrap_text_lines(cal_detail_title(), det_txt_w, font_small, title_lines, 3);
     int t_start_y = (t_cnt <= 1) ? 176 : ((t_cnt == 2) ? 163 : 150);
     for (int i = 0; i < t_cnt; i++) {
       it.print(cx, t_start_y + i * 26, font_small, col_white, TextAlign::CENTER, title_lines[i].c_str());
@@ -1960,9 +1963,9 @@ inline void render_tool_calendar(
     const bool has_loc = !cal_detail_location().empty();
     if (has_loc) {
       // Location Address Card (y_mid = 278, h = 68, up to 2 lines)
-      render_modern_card(it, cx, 278, 324, 68, 14, Color(16, 20, 28), card_brd, nullptr, col_slate, font_small);
+      render_modern_card(it, cx, 278, det_card_w, 68, 14, Color(16, 20, 28), card_brd, nullptr, col_slate, font_small);
       std::string loc_lines[2];
-      int l_cnt = wrap_text_lines(cal_detail_location(), 296, font_small, loc_lines, 2);
+      int l_cnt = wrap_text_lines(cal_detail_location(), det_txt_w, font_small, loc_lines, 2);
       int l_start_y = (l_cnt <= 1) ? 278 : 266;
       for (int i = 0; i < l_cnt; i++) {
         it.print(cx, l_start_y + i * 24, font_small, theme_secondary, TextAlign::CENTER, loc_lines[i].c_str());
@@ -1971,10 +1974,11 @@ inline void render_tool_calendar(
       // Prominent "View Map" Button at y = 359
       render_modern_card(it, cx, 359, 236, 44, 12, Color(24, 38, 56), theme_primary,
                          "View Map", col_white, font_small);
-      // Map Pin Icon on left of button
-      it.filled_circle(148, 355, 5, Color(235, 52, 62));
-      it.filled_triangle(144, 357, 152, 357, 148, 365, Color(235, 52, 62));
-      it.filled_circle(148, 355, 2, col_white);
+      // Map Pin Icon on left of button (cx - 85)
+      const int pin_x = cx - 85;
+      it.filled_circle(pin_x, 355, 5, Color(235, 52, 62));
+      it.filled_triangle(pin_x - 4, 357, pin_x + 4, 357, pin_x, 365, Color(235, 52, 62));
+      it.filled_circle(pin_x, 355, 2, col_white);
     } else {
       render_modern_card(it, cx, 288, 296, 48, 12, Color(15, 18, 24), Color(34, 40, 50),
                          "No location specified", col_slate, font_small);
@@ -2513,7 +2517,7 @@ inline void render_tool_camera(
                        "Reply", theme_secondary, font_small);
   }
 
-  it.filled_rectangle(cx - 85, 406, 170, 38, Color(10, 14, 20));
+  it.filled_rectangle(cx - 85, layout().back_y - 20, 170, 38, Color(10, 14, 20));
   render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 

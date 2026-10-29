@@ -121,7 +121,7 @@ speaker:
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
-    timeout: 10s
+    timeout: 500ms
 
 packages:
   latter_imu: !include ../modules/imu_none.yaml
@@ -158,7 +158,6 @@ display:
     dimensions:
       width: 320
       height: 480
-    buffer_size: 25%
     transform:
       swap_xy: false
       mirror_x: true

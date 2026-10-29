@@ -266,6 +266,7 @@ voice_assistant:
       - script.stop: screen_sleep_timer
       - lambda: |-
           latter_ui::log_audio_profile("VA_VAD_END");
+          esphome::voice_assistant::stop_va_microphone(id(va));
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "PROCESSING AUDIO...";
@@ -277,6 +278,7 @@ voice_assistant:
   on_stt_end:
     then:
       - script.stop: screen_sleep_timer
+      - lambda: 'esphome::voice_assistant::stop_va_microphone(id(va));'
       - script.execute: route_i2s_to_spk
       - lambda: |-
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());
@@ -530,25 +532,37 @@ script:
           then:
             - micro_wake_word.stop:
             - delay: 20ms
+      - lambda: |-
+          esphome::voice_assistant::stop_va_microphone(id(va));
+          if (id(latter_mic).is_running()) {
+            id(latter_mic).stop();
+          }
+      - if:
+          condition:
+            lambda: 'return id(latter_mic).is_running();'
+          then:
+            - wait_until:
+                condition:
+                  lambda: 'return !id(latter_mic).is_running();'
+                timeout: 150ms
       - script.execute: hal_route_i2s_to_spk
       - switch.turn_on: speaker_enable
 
   - id: route_i2s_to_mic
     mode: restart
     then:
+      - audio_dac.mute_on: es8311_dac
+      - switch.turn_off: speaker_enable
       - if:
           condition:
-            lambda: |-
-              #if defined(CONFIG_IDF_TARGET_ESP32P4)
-              // ESP32-P4 has a true hardware full-duplex I2S bus (DOUT: GPIO9 + DIN: GPIO11 on shared clocks).
-              // During an active 2-Way Doorbell Call, keep speaker_enable ON and es8311_dac UNMUTED!
-              if (latter_ui::cam_call_active()) return false;
-              #endif
-              return true;
+            lambda: 'return id(physical_speaker).is_running();'
           then:
-            - audio_dac.mute_on: es8311_dac
-            - script.execute: hal_route_i2s_to_mic
-            - switch.turn_off: speaker_enable
+            - lambda: 'id(physical_speaker).stop();'
+            - wait_until:
+                condition:
+                  lambda: 'return !id(physical_speaker).is_running();'
+                timeout: 150ms
+      - script.execute: hal_route_i2s_to_mic
 
   - id: apply_wake_word_sensitivities
     mode: restart
@@ -596,6 +610,7 @@ script:
                     micro_wake_word.is_running:
                 then:
                   - script.execute: route_i2s_to_mic
+                  - script.wait: route_i2s_to_mic
                   - delay: 25ms
                   - script.execute: apply_wake_word_sensitivities
                   - micro_wake_word.start:
@@ -629,6 +644,7 @@ script:
           }
           id(va_tts_received) = false;
       - script.execute: route_i2s_to_mic
+      - script.wait: route_i2s_to_mic
       - voice_assistant.start:
           wake_word: !lambda 'return id(last_detected_wake_word);'
 

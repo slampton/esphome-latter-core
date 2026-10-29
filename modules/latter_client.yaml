@@ -3619,6 +3619,7 @@ script:
   - id: fetch_on_demand_camera
     mode: restart
     then:
+      - delay: 25ms
       - lambda: |-
           latter_ui::last_cam_live_fetch_ms() = millis();
           id(notif_camera_url) = latter_ui::build_carousel_camera_url(
@@ -3722,13 +3723,7 @@ script:
             - script.stop: start_doorbell_ptt
       - if:
           condition:
-            lambda: |-
-              #if defined(CONFIG_IDF_TARGET_ESP32P4)
-              // On ESP32-P4, full-duplex I2S allows keeping the inbound camera audio stream running!
-              return false;
-              #else
-              return latter_ui::cam_listen_active() && !latter_ui::cam_call_active();
-              #endif
+            lambda: 'return latter_ui::cam_listen_active();'
           then:
             - lambda: |-
                 latter_ui::cam_listen_active() = false;
@@ -3747,6 +3742,7 @@ script:
           id(cam_intercom_status_ms) = millis();
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: route_i2s_to_mic
+      - script.wait: route_i2s_to_mic
       - voice_assistant.start:
 
   - id: fetch_camera_snapshot
@@ -4515,6 +4511,7 @@ script:
                   - script.execute: pause_all_music
                   - delay: 160ms
             - script.execute: route_i2s_to_mic
+            - script.wait: route_i2s_to_mic
             - voice_assistant.start:
 
   - id: cancel_voice_assistant
