@@ -779,24 +779,33 @@ inline void render_security_alarm_page(
     if (is_act) it.circle(bx, WH_Y, 26, ring_c);
 
     if (i == 0) {
-      // 0. Security Alarm: Solid-Filled Curved Heraldic Shield with Negative-Space Padlock Cutout
-      static constexpr int8_t SH_HW[27] = {
-         2,  5,  8, 11, 12, 12, 12, 12, 12, 12, 12, 11, 11,
-        11, 10, 10,  9,  8,  8,  7,  6,  5,  4,  3,  2,  1, 0
+      // 0. Security Alarm: Pitched-Crest Shield with Negative-Space Overhanging-Roof House & Doorway
+      static constexpr int8_t SH_HW[31] = {
+         1,  4,  7, 10, 13, 13, 13, 13, 13, 13, 13, 13, 12, 12, 12,
+        12, 11, 11, 11, 10, 10,  9,  9,  8,  7,  6,  5,  4,  3,  2,  1
       };
-      for (int dy = -13; dy <= 13; dy++) {
-        int hw = SH_HW[dy + 13];
-        if (hw > 0) {
-          it.horizontal_line(bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
+      for (int dy = -15; dy <= 15; dy++) {
+        int hw = SH_HW[dy + 15];
+        it.horizontal_line(bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
+      }
+      // Carve Negative-Space House (2px overhanging roof chevron + right chimney + 1px rafter gap + inner house + doorway)
+      for (int dy = -8; dy <= 7; dy++) {
+        for (int dx = -8; dx <= 8; dx++) {
+          int ax = std::abs(dx);
+          bool carve = false;
+          if (dy <= 0) {
+            int r_out = dy + 8;
+            if (ax == r_out || ax == r_out - 1) carve = true;           // 2px outer roof chevron
+            else if (dx >= 4 && dx <= 5 && dy >= -7 && dy <= -3) carve = true; // Right chimney stack
+            else if (ax <= r_out - 3) carve = true;                     // Inner house gable (leaves 1px fg_c gap at r_out - 2)
+          } else {
+            if (ax <= 5 && !(ax <= 1 && dy >= 3)) carve = true;         // House walls with 3x5px centered doorway
+          }
+          if (carve) {
+            it.draw_pixel_at(bx + dx, WH_Y + dy, card_bg_off);
+          }
         }
       }
-      // Negative-space padlock body & shackle carved inside shield
-      it.filled_rectangle(bx - 5, WH_Y - 1, 11, 8, card_bg_off);
-      it.circle(bx, WH_Y - 3, 3, card_bg_off);
-      it.circle(bx, WH_Y - 3, 2, card_bg_off);
-      // Keyhole pip inside padlock body
-      it.filled_circle(bx, WH_Y + 2, 1, fg_c);
-      it.vertical_line(bx, WH_Y + 3, 3, fg_c);
     } else if (i == 1) {
       // 1. Thermostat: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
       int tx = bx - 2;
