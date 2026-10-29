@@ -20,6 +20,7 @@ substitutions:
   art_shape: "square"
   firmware_update_entity: "update.latter_panel_demo_project_firmware"
   default_start_app: "Home"
+  default_clock_face: "Minimal Digital"
   default_art_mode: "Full Screen"
   default_screensaver_style: "Aurora Borealis"
   default_album_sort: "Alphabetical"

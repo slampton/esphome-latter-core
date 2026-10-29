@@ -8,6 +8,7 @@ substitutions:
   version: "2.2.0"
   screen_w: "466"
   screen_h: "466"
+  default_clock_face: "Minimal Digital"
   active_media_sensor: "sensor.latter_device_active_media"
   weather_forecast_sensor: "sensor.latter_device_weather_forecast"
   area_context_sensor: "sensor.latter_device_area_context"
