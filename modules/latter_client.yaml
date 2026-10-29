@@ -3421,7 +3421,12 @@ script:
     then:
       - if:
           condition:
-            lambda: 'return id(va_resume_music_after) && !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
+            lambda: 'return id(alarm_ringing) || id(timer_ringing) || id(find_my_active);'
+          then:
+            - script.stop: resume_music_after_va
+      - if:
+          condition:
+            lambda: 'return id(va_resume_music_after);'
           then:
             - script.execute: mp_idle_debounce
             - lambda: |-

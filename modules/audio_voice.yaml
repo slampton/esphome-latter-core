@@ -492,18 +492,18 @@ script:
   - id: va_tts_drain_and_finish
     mode: restart
     then:
-      # 1. Wait for any ongoing media_player announcement and announcement_mixing_input buffer to finish
+      # 1. Wait for latter_media_player to finish decoding/streaming TTS audio
       - if:
           condition:
             lambda: |-
               return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                     id(announcement_mixing_input).is_running();
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           then:
             - wait_until:
                 condition:
                   lambda: |-
                     return ((id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
-                            !id(announcement_mixing_input).is_running()) ||
+                            (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) ||
                            !id(va_active);
                 timeout: 15s
       # 2. Let the remaining ~250ms of TTS audio inside physical_speaker's 250ms hardware buffer
@@ -512,11 +512,11 @@ script:
           condition:
             lambda: 'return id(va_tts_received) && id(va_active);'
           then:
-            - delay: 300ms
+            - delay: 350ms
       # 3. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
-          esphome::voice_assistant::reset_va_session_state(id(va));
+          esphome::voice_assistant::abort_voice_assistant(id(va));
           id(va_vad_active) = false;
           id(va_status_text) = "";
           id(va_tts_received) = false;
@@ -665,6 +665,9 @@ script:
     mode: restart
     then:
       - script.stop: mp_idle_debounce
+      - script.stop: cancel_voice_assistant
+      - script.stop: va_tts_drain_and_finish
+      - script.stop: resume_music_after_va
       - script.execute: route_i2s_to_spk
       - audio_dac.mute_off: es8311_dac
       - mixer_speaker.apply_ducking:
@@ -778,16 +781,22 @@ script:
           else:
             - if:
                 condition:
-                  lambda: |-
-                    return !id(va_active) && !id(va_tts_received) &&
-                           !id(va).is_running() && !id(announcement_mixing_input).is_running() &&
-                           !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
-                           (id(active_game) == 0);
+                  lambda: 'return id(va_resume_music_after) && !id(va_active) && !id(va_tts_received);'
                 then:
-                  - audio_dac.mute_on: es8311_dac
-                  - switch.turn_off: speaker_enable
-                  - script.execute: route_i2s_to_mic
-                  - script.execute: sync_wake_word_state
+                  - script.execute: resume_music_after_va
+                else:
+                  - if:
+                      condition:
+                        lambda: |-
+                          return !id(va_active) && !id(va_tts_received) &&
+                                 !id(va).is_running() && !id(announcement_mixing_input).is_running() &&
+                                 !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
+                                 (id(active_game) == 0);
+                      then:
+                        - audio_dac.mute_on: es8311_dac
+                        - switch.turn_off: speaker_enable
+                        - script.execute: route_i2s_to_mic
+                        - script.execute: sync_wake_word_state
 
 number:
   - platform: template
