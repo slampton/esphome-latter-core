@@ -2273,9 +2273,10 @@ interval:
             const bool touch_busy = latter_ui::touch_gesture().active ||
                                     (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
             if (!touch_busy && (sim_just_changed || cached_has_motion)) {
-              const bool local_music_playing =
-                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              if (sim_just_changed || latter_ui::should_step_ambient_anim(now_w_ms, local_music_playing,
+              const bool audio_or_mww_busy =
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  id(mww).is_running();
+              if (sim_just_changed || latter_ui::should_step_ambient_anim(now_w_ms, audio_or_mww_busy,
                                                       id(va_active) || !id(va_status_text).empty(),
                                                       id(alarm_ringing) || id(timer_ringing))) {
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -4500,19 +4501,19 @@ script:
                 id(va_tts_received) = false;
             - if:
                 condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - if:
+                condition:
                   lambda: |-
                     return !id(va_resume_music_after) &&
                            ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                             (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
                 then:
                   - script.execute: pause_all_music
-                  - delay: 180ms
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
+                  - delay: 160ms
             - script.execute: route_i2s_to_mic
             - voice_assistant.start:
 

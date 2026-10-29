@@ -710,6 +710,20 @@ inline void render_night_shooting_star(DisplayT &it, uint32_t now_ms, int cy) {
   }
 }
 
+inline bool is_night_meteor_active(uint32_t now_ms) {
+  static constexpr uint32_t METEOR_WINDOW_MS = 11500U;
+  static constexpr uint32_t METEOR_DUR_MS    = 780U;
+  if (!night_meteor_epoch_initialized()) return true;
+  uint32_t rel_ms = now_ms - night_meteor_epoch_ms();
+  uint32_t slot_idx = rel_ms / METEOR_WINDOW_MS;
+  uint32_t slot_ms  = rel_ms % METEOR_WINDOW_MS;
+  int seed = static_cast<int>(slot_idx * 59U + 17U);
+  uint32_t launch_ms = (slot_idx == 0U)
+      ? 1200U
+      : (800U + static_cast<uint32_t>(hash2d_01(seed, 7) * 6600.0f));
+  return (slot_ms + 260U >= launch_ms && slot_ms <= launch_ms + METEOR_DUR_MS + 260U);
+}
+
 // Returns true when the active or simulated weather condition includes live particle or celestial motion.
 // Reusable across Sky & Weather (Page 5), future Home Page live backgrounds, and screensavers.
 inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0) {
@@ -735,12 +749,10 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
   }
   if (is_night && (cond == "clear-night" || cond == "clearnight" ||
                    cond == "sunny" || cond == "clear" || cond == "clear-day")) {
-    return true;
+    return is_night_meteor_active(now_ms);
   }
-  // Daytime Clear / Sunny: keep 20 FPS active so the V-flock of birds never stalls on the 1s idle timer
-  (void)now_ms;
   if (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday")) {
-    return true;
+    return is_clear_day_flock_active(now_ms);
   }
   return false;
 }

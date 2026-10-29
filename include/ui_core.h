@@ -391,9 +391,8 @@ inline void record_ambient_frame_ms(uint32_t now_ms) {
 
 inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
                                      bool va_busy = false, bool alert_busy = false) {
-  (void)local_audio_busy;
   if (va_busy) return false;
-  const uint32_t min_gap = alert_busy ? 120U : 42U;
+  const uint32_t min_gap = alert_busy ? 120U : (local_audio_busy ? 88U : 42U);
   return (now_ms - last_ambient_anim_ms() >= min_gap);
 }
 

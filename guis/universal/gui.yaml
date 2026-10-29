@@ -3237,8 +3237,13 @@ touchscreen:
                                     !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                     !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
+              const int home_pill_tap_y = LATTER_ROUND_DISPLAY ? 422 : (latter_ui::SCREEN_H - 26);
+              const bool is_home_pill_tap = (gest.max_travel < 24 &&
+                                             gest.last_y >= home_pill_tap_y &&
+                                             std::abs(gest.last_x - latter_ui::SCREEN_CX) <= 68);
               if (!gest.swipe_committed && can_swipe_home &&
-                  gest.start_y >= (latter_ui::SCREEN_H - 54) && dy <= -24 && std::abs(dy) > std::abs(dx)) {
+                  ((gest.start_y >= (latter_ui::SCREEN_H - 54) && dy <= -24 && std::abs(dy) > std::abs(dx)) ||
+                   is_home_pill_tap)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_rel;
                 if (id(active_game) > 0) id(stop_alarm_sound).execute();

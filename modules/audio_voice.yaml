@@ -572,7 +572,7 @@ script:
               apply_cutoffs(id(ww_sens_alexa).current_option(), 247, 237, 224));
 
   - id: sync_wake_word_state
-    mode: restart
+    mode: single
     then:
       - if:
           condition:
