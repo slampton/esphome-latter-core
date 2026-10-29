@@ -25,7 +25,7 @@ esphome:
 
 esp32:
   variant: esp32p4
-  engineering_sample: false
+  engineering_sample: true
   cpu_frequency: 360MHz
   flash_size: 32MB
   framework:
