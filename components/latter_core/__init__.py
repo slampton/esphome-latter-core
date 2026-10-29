@@ -54,3 +54,4 @@ async def to_code(config: dict[str, Any]) -> None:
             dst_file = Path(CORE.relative_src_path(hdr))
             shutil.copyfile(src_file, dst_file)
             cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
+    cg.add_global(cg.RawStatement('using namespace latter_ui;'))
