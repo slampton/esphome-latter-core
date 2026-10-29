@@ -223,12 +223,12 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
   //   - Row 0: y_mid = 131 (y = 88..174, 30px below title at y=58)
   //   - Row 1: y_mid = 236 (y = 193..279, 19px vertical gap)
   //   - Row 2: y_mid = 341 (y = 298..384, 19px vertical gap, 31px above < Back at y=415)
-  const int col_off     = (SCREEN_W < 380) ? 61 : 68;
+  const int col_off     = layout().tools_col_off;
   const int col_left_x  = cx - col_off;
   const int col_right_x = cx + col_off;
-  const int row_0_y = 131;
-  const int row_1_y = 236;
-  const int row_2_y = 341;
+  const int row_0_y = layout().tools_row_y(0);
+  const int row_1_y = layout().tools_row_y(1);
+  const int row_2_y = layout().tools_row_y(2);
 
   auto draw_page_cards = [&](int page_idx, int y_shift) {
     int y0 = row_0_y + y_shift;
@@ -1411,26 +1411,29 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
     // -------------------------------------------------------------------------
     it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
 
-    static constexpr int CARD_YS[3] = {122, 222, 322};
+    const int t_card_w = layout().tool_card3_w;
+    const int t_left   = cx - (t_card_w / 2);
+    const int t_div_x  = layout().tool_card3_div_x();
+    const int bx       = t_div_x + 44;
     for (int i = 0; i < 3; i++) {
       const auto &s = slots[i];
-      int y_mid = CARD_YS[i];
+      int y_mid = layout().tool_card3_y(i);
       bool is_act = (s.running || s.paused);
 
       esphome::Color card_bg  = is_act ? esphome::Color(22, 28, 38) : esphome::Color(16, 20, 26);
       esphome::Color border_c = s.running ? theme_primary : (s.paused ? theme_secondary : esphome::Color(44, 52, 66));
 
-      render_modern_card(it, cx, y_mid, 316, 74, 16, card_bg, border_c, nullptr, col_white, font_small);
+      render_modern_card(it, cx, y_mid, t_card_w, 74, 16, card_bg, border_c, nullptr, col_white, font_small);
 
       // Left vertical status accent stripe (4px wide)
       esphome::Color bar_c = s.running ? theme_primary : (s.paused ? theme_secondary : esphome::Color(52, 62, 76));
-      it.filled_rectangle(86, y_mid - 21, 4, 42, bar_c);
+      it.filled_rectangle(t_left + 11, y_mid - 21, 4, 42, bar_c);
 
       // Top Row: Bold MM:SS Time
       int disp_sec = is_act ? s.remaining_sec : s.duration_sec;
       char t_buf[16];
       snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, disp_sec % 60);
-      it.print(100, y_mid - 2, font_chrono_time, is_act ? col_white : col_slate,
+      it.print(t_left + 25, y_mid - 2, font_chrono_time, is_act ? col_white : col_slate,
                esphome::display::TextAlign::BASELINE_LEFT, t_buf);
 
       // Bottom Row: Timer Name + Status ("Chicken • Running", "Pasta • Saved", "5 Min Timer")
@@ -1438,15 +1441,12 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
       if (s.running) lbl += " • Running";
       else if (s.paused) lbl += " • Paused";
       else if (!s.name.empty()) lbl += " • Saved";
-      lbl = fit_text_to_width_font(lbl, 186, font_small);
+      lbl = fit_text_to_width_font(lbl, t_div_x - (t_left + 32), font_small);
       esphome::Color sub_c = s.running ? theme_primary : (s.paused ? theme_secondary : col_gray);
-      it.print(102, y_mid + 18, font_small, sub_c, esphome::display::TextAlign::CENTER_LEFT, lbl.c_str());
+      it.print(t_left + 27, y_mid + 18, font_small, sub_c, esphome::display::TextAlign::CENTER_LEFT, lbl.c_str());
 
-      // Subtle vertical separator at x = 298
-      it.line(298, y_mid - 22, 298, y_mid + 22, esphome::Color(42, 50, 64));
-
-      // Right Action Button: 1-Tap Play (▶) or Pause (||) Circle at (342, y_mid)
-      int bx = 342;
+      // Subtle vertical separator at t_div_x
+      it.line(t_div_x, y_mid - 22, t_div_x, y_mid + 22, esphome::Color(42, 50, 64));
       it.filled_circle(bx, y_mid, 18, is_act ? theme_primary : esphome::Color(30, 36, 48));
       it.circle(bx, y_mid, 18, is_act ? col_white : theme_secondary);
       if (s.running) {
@@ -1547,52 +1547,57 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
       esphome::Color card_bg  = en ? esphome::Color(22, 28, 38) : esphome::Color(14, 17, 22);
       esphome::Color border_c = en ? esphome::Color(58, 70, 88) : esphome::Color(34, 40, 50);
 
-      render_modern_card(it, cx, y_mid, 316, 74, 16, card_bg, border_c, nullptr, col_white, font_small);
+      const int a_card_w = layout().tool_card3_w;
+      const int a_left   = cx - (a_card_w / 2);
+      const int a_div_x  = layout().tool_card3_div_x();
+      render_modern_card(it, cx, y_mid, a_card_w, 74, 16, card_bg, border_c, nullptr, col_white, font_small);
 
       if (is_snoozed) {
-        render_modern_card(it, cx, y_mid, 264, 44, 12, esphome::Color(28, 36, 48), theme_secondary,
+        render_modern_card(it, cx, y_mid, a_card_w - 48, 44, 12, esphome::Color(28, 36, 48), theme_secondary,
                            "DISMISS SNOOZE", col_white, font_small);
         return;
       }
 
       // Left vertical status accent stripe (4px wide)
       esphome::Color bar_c = en ? theme_primary : esphome::Color(38, 44, 54);
-      it.filled_rectangle(86, y_mid - 21, 4, 42, bar_c);
+      it.filled_rectangle(a_left + 11, y_mid - 21, 4, 42, bar_c);
 
       // Top Row: Bold Time + AM/PM
       char t_buf[16];
       char ap_buf[8] = "";
       format_time_hhmm(h, m, is_24h_format, t_buf, sizeof(t_buf), ap_buf, true);
       esphome::Color time_col = en ? col_white : col_gray;
-      it.print(100, y_mid - 2, font_chrono_time, time_col,
+      it.print(a_left + 25, y_mid - 2, font_chrono_time, time_col,
                esphome::display::TextAlign::BASELINE_LEFT, t_buf);
       if (!is_24h_format && ap_buf[0] != '\0') {
         int h12 = h % 12;
         if (h12 == 0) h12 = 12;
-        int ap_x = (h12 >= 10) ? 214 : 190;
+        int ap_x = a_left + ((h12 >= 10) ? 139 : 115);
         it.print(ap_x, y_mid - 2, font_small, en ? theme_secondary : col_gray,
                  esphome::display::TextAlign::BASELINE_LEFT, ap_buf);
       }
 
       // Bottom Row: Clean Schedule Subtitle
-      it.print(102, y_mid + 18, font_small, en ? theme_primary : col_gray,
+      it.print(a_left + 27, y_mid + 18, font_small, en ? theme_primary : col_gray,
                esphome::display::TextAlign::CENTER_LEFT, REC_LABELS[rec & 3]);
 
       // Subtle vertical separator between Edit Zone (left) and Toggle Switch (right)
-      it.line(298, y_mid - 22, 298, y_mid + 22, border_c);
+      it.line(a_div_x, y_mid - 22, a_div_x, y_mid + 22, border_c);
 
-      // Centered Modern Toggle Switch (x = 330..356, y = y_mid)
+      // Centered Modern Toggle Switch
+      const int sw_l = a_div_x + 32;
+      const int sw_r = a_div_x + 58;
       esphome::Color sw_bg = en ? theme_primary : esphome::Color(42, 48, 58);
-      it.filled_circle(330, y_mid, 12, sw_bg);
-      it.filled_circle(356, y_mid, 12, sw_bg);
-      it.filled_rectangle(330, y_mid - 12, 26, 25, sw_bg);
-      int knob_x = en ? 356 : 330;
+      it.filled_circle(sw_l, y_mid, 12, sw_bg);
+      it.filled_circle(sw_r, y_mid, 12, sw_bg);
+      it.filled_rectangle(sw_l, y_mid - 12, 26, 25, sw_bg);
+      int knob_x = en ? sw_r : sw_l;
       it.filled_circle(knob_x, y_mid, 9, en ? col_white : esphome::Color(180, 186, 196));
     };
 
-    draw_modern_alarm_card(122, alarm1_hour, alarm1_minute, alarm1_enabled, alarm1_recurrence, 1);
-    draw_modern_alarm_card(222, alarm2_hour, alarm2_minute, alarm2_enabled, alarm2_recurrence, 2);
-    draw_modern_alarm_card(322, alarm3_hour, alarm3_minute, alarm3_enabled, alarm3_recurrence, 3);
+    draw_modern_alarm_card(layout().tool_card3_y(0), alarm1_hour, alarm1_minute, alarm1_enabled, alarm1_recurrence, 1);
+    draw_modern_alarm_card(layout().tool_card3_y(1), alarm2_hour, alarm2_minute, alarm2_enabled, alarm2_recurrence, 2);
+    draw_modern_alarm_card(layout().tool_card3_y(2), alarm3_hour, alarm3_minute, alarm3_enabled, alarm3_recurrence, 3);
   } else {
     it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
 

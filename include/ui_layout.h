@@ -55,19 +55,128 @@ struct UiLayout {
   int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 86) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 58)));
   int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 38 : ((SCREEN_W < 380) ? 24 : 28));
 
-  // Standard Menu Card Width & Left Text Margin (232px on 320x480 leaves 26px gap before scroll arrows)
-  int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : 276;
+  // Standard Menu Card Width & Left Text Margin (232px on 320x480; scales up on >520px HD panels)
+  int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : ((SCREEN_W > 520) ? ((SCREEN_W * 276) / 466) : 276);
   int list_card_left = SCREEN_CX - (list_card_w / 2);
+
+  // 1. Adaptive 5-Slot Vertical List Geometry (System, Music, Area Picker, Calendar, Intercom, Macros)
+  int slot5_stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
+  int slot5_h      = (SCREEN_H > 520) ? ((SCREEN_H * 44) / 466) : 44;
+  int slot5_cy     = (SCREEN_H > 520) ? SCREEN_CY : 236;
+  constexpr int slot5_y(int idx_0_to_4) const {
+    return slot5_cy + (idx_0_to_4 - 2) * slot5_stride;
+  }
+
+  // 2. Adaptive 3-Card Area Control & Whole-Home Geometry + Unified Hit-Testers
+  int area_card3_stride = (SCREEN_H > 520) ? ((SCREEN_H * 76) / 466) : 76;
+  int area_card3_h      = (SCREEN_H > 520) ? ((SCREEN_H * 64) / 466) : 64;
+  int area_card3_w      = (SCREEN_W < 380) ? (SCREEN_W - 68) : ((SCREEN_W > 520) ? ((SCREEN_W * 316) / 466) : 316);
+  int area_card3_cy     = (SCREEN_H > 520) ? ((SCREEN_H * 208) / 466) : 208;
+  constexpr int area_card3_y(int idx_0_to_2) const {
+    return area_card3_cy + (idx_0_to_2 - 1) * area_card3_stride;
+  }
+  constexpr int area_card_left() const { return cx - (area_card3_w / 2); }
+  constexpr int area_card_right() const { return cx + (area_card3_w / 2); }
+  constexpr int area_card_div_x() const { return area_card_left() + 64; }
+  constexpr int area_card_orb_x() const { return area_card_right() - 28; }
+  constexpr int hit_area_card3(int tx, int ty) const {
+    int hw = (area_card3_w / 2) + 10;
+    if (tx < cx - hw || tx > cx + hw) return -1;
+    int hs = area_card3_stride / 2;
+    for (int i = 0; i < 3; i++) {
+      int ym = area_card3_y(i);
+      if (ty >= ym - hs && ty <= ym + hs) return i;
+    }
+    return -1;
+  }
+  constexpr bool is_area_light_orb(int tx) const {
+    int ox = area_card_orb_x();
+    return (tx >= ox - 28 && tx <= area_card_right() + 8);
+  }
+  constexpr int area_slider_pct(int tx) const {
+    int x0 = area_card_div_x() + 4;
+    int x1 = area_card_right() - 8;
+    if (x1 <= x0) return 100;
+    int raw = ((tx - x0) * 100) / (x1 - x0);
+    int stepped = ((raw + 2) / 5) * 5;
+    return (stepped < 5) ? 5 : ((stepped > 100) ? 100 : stepped);
+  }
+
+  // 3. Adaptive 3-Card Timers & Alarms Landing Geometry + Unified Hit-Tester
+  int tool_card3_stride = (SCREEN_H > 520) ? ((SCREEN_H * 100) / 466) : 100;
+  int tool_card3_h      = (SCREEN_H > 520) ? ((SCREEN_H * 74) / 466) : 74;
+  int tool_card3_w      = (SCREEN_W < 380) ? (SCREEN_W - 36) : ((SCREEN_W > 520) ? ((SCREEN_W * 316) / 466) : 316);
+  int tool_card3_cy     = (SCREEN_H > 520) ? ((SCREEN_H * 222) / 466) : 222;
+  constexpr int tool_card3_y(int idx_0_to_2) const {
+    return tool_card3_cy + (idx_0_to_2 - 1) * tool_card3_stride;
+  }
+  constexpr int tool_card3_div_x() const {
+    return cx + (tool_card3_w / 2) - 93;
+  }
+  constexpr int hit_tool_card3(int tx, int ty) const {
+    int hw = (tool_card3_w / 2) + 12;
+    if (tx < cx - hw || tx > cx + hw) return -1;
+    int hs = tool_card3_stride / 2;
+    for (int i = 0; i < 3; i++) {
+      int ym = tool_card3_y(i);
+      if (ty >= ym - hs && ty <= ym + hs) return i;
+    }
+    return -1;
+  }
+
+  // 4. Adaptive 2x3 Tools Launcher Grid Geometry + Unified Hit-Tester
+  int tools_col_off    = (SCREEN_W < 380) ? 61 : ((SCREEN_W > 520) ? ((SCREEN_W * 68) / 466) : 68);
+  int tools_row_stride = (SCREEN_H > 520) ? ((SCREEN_H * 105) / 466) : 105;
+  int tools_grid_cy    = (SCREEN_H > 520) ? SCREEN_CY : 236;
+  constexpr int tools_row_y(int row_0_to_2) const {
+    return tools_grid_cy + (row_0_to_2 - 1) * tools_row_stride;
+  }
+  constexpr int hit_tools_row(int ty) const {
+    int hs = tools_row_stride / 2;
+    for (int r = 0; r < 3; r++) {
+      int ym = tools_row_y(r);
+      if (ty >= ym - hs && ty <= ym + hs) return r;
+    }
+    return -1;
+  }
+  constexpr int hit_tools_col(int tx) const {
+    int max_dx = tools_col_off * 2 + 12;
+    if (tx >= cx - max_dx && tx <= cx) return 0;
+    if (tx > cx && tx <= cx + max_dx) return 1;
+    return -1;
+  }
+
+  // 5. Adaptive Home Screen Vertical Zones + Unified Hit-Testers
+  int home_date_y     = (SCREEN_H > 520) ? ((SCREEN_H * 52) / 466)  : 52;
+  int home_clock_y    = (SCREEN_H > 520) ? ((SCREEN_H * 128) / 466) : 128;
+  int home_weather_y  = (SCREEN_H > 520) ? ((SCREEN_H * 200) / 466) : 200;
+  int home_activity_y = (SCREEN_H > 520) ? ((SCREEN_H * 266) / 466) : 266;
+  constexpr bool hit_home_clock(int tx, int ty) const {
+    int hw = (w > 520) ? 180 : 135;
+    int hh = (h > 520) ? 64  : 48;
+    return (tx >= cx - hw && tx <= cx + hw && ty >= home_clock_y - hh && ty <= home_clock_y + hh);
+  }
+  constexpr bool hit_home_weather(int tx, int ty) const {
+    int hw = (w > 520) ? 210 : 165;
+    int hh = (h > 520) ? 36  : 28;
+    return (tx >= cx - hw && tx <= cx + hw && ty >= home_weather_y - hh && ty <= home_weather_y + hh);
+  }
+  constexpr bool hit_home_activity(int tx, int ty) const {
+    int act_w = (w - 24 < 380) ? (w - 24) : ((w > 520) ? ((w * 380) / 466) : 380);
+    int hw = act_w / 2;
+    int hh = (h > 520) ? 54 : 44;
+    return (tx >= cx - hw && tx <= cx + hw && ty >= home_activity_y - hh && ty <= home_activity_y + hh);
+  }
 
   // 4-Column Stepper X centers (-5m, -1m, +1m, +5m / -1h, +1h, -5m, +5m)
   constexpr int stepper_x(int col_0_to_3) const {
-    const int stride = (w < 380) ? 74 : 90;
+    const int stride = (w < 380) ? 74 : ((w > 520) ? ((w * 90) / 466) : 90);
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 
   // 4-Column Calculator Keypad X centers
   constexpr int calc_col_x(int col_0_to_3) const {
-    const int stride = (w < 380) ? 72 : 82;
+    const int stride = (w < 380) ? 72 : ((w > 520) ? ((w * 82) / 466) : 82);
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 };

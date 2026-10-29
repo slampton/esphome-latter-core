@@ -910,8 +910,8 @@ touchscreen:
                 return;
               }
 
-              // 4. Hero Digital Clock Tap (y in [79..175], x in [95..355]) -> Open Full Clock Page (Page 0)
-              if (touch.y >= 79 && touch.y <= 175 && touch.x >= 95 && touch.x <= 355) {
+              // 4. Hero Digital Clock Tap -> Open Full Clock Page (Page 0)
+              if (latter_ui::layout().hit_home_clock(touch.x, touch.y)) {
                 if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
                   id(gui_page) = 0;
@@ -920,8 +920,8 @@ touchscreen:
                 return;
               }
 
-              // 5. Weather Temperature & Condition Line Tap (y in [176..229], x in [70..396]) -> Open Sky & Weather (Current Conditions Subpage 0)
-              if (touch.y >= 176 && touch.y <= 229 && touch.x >= 70 && touch.x <= 396) {
+              // 5. Weather Temperature & Condition Line Tap -> Open Sky & Weather (Current Conditions Subpage 0)
+              if (latter_ui::layout().hit_home_weather(touch.x, touch.y)) {
                 if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
                   id(sky_weather_subpage) = 0;
@@ -1113,7 +1113,7 @@ touchscreen:
               const int act_card_w = std::min(380, latter_ui::SCREEN_W - 24);
               const int act_right  = latter_ui::SCREEN_CX + (act_card_w / 2);
               const int act_left   = latter_ui::SCREEN_CX - (act_card_w / 2);
-              if (!greet_blocking && act_count > 0 && touch.y >= 230 && touch.y <= 318 && touch.x >= act_left && touch.x <= act_right) {
+              if (!greet_blocking && act_count > 0 && latter_ui::layout().hit_home_activity(touch.x, touch.y)) {
                 if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
                   int feat_idx = latter_ui::resolve_home_featured_activity_idx(act_items, act_count, now_hm);
@@ -2210,16 +2210,12 @@ touchscreen:
                 }
 
                 if (view_idx == 0) {
-                  int card_i = -1;
-                  if (touch.y >= 84 && touch.y < 175) card_i = 0;
-                  else if (touch.y >= 175 && touch.y < 275) card_i = 1;
-                  else if (touch.y >= 275 && touch.y <= 395) card_i = 2;
-
-                  if (card_i >= 0 && touch.x >= 70 && touch.x <= 396) {
+                  int card_i = latter_ui::layout().hit_tool_card3(touch.x, touch.y);
+                  if (card_i >= 0) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_stuff_tap = now_stuff;
                       auto &s = slots[card_i];
-                      if (touch.x >= 298) {
+                      if (touch.x >= latter_ui::layout().tool_card3_div_x()) {
                         if (!s.running && !s.paused) {
                           s.running = true;
                           s.paused = false;
@@ -2330,12 +2326,10 @@ touchscreen:
                 }
 
                 if (id(alarm_edit_idx) == 0) {
-                  int card_i = 0;
-                  if (touch.y >= 84 && touch.y < 175) card_i = 1;
-                  else if (touch.y >= 175 && touch.y < 275) card_i = 2;
-                  else if (touch.y >= 275 && touch.y <= 395) card_i = 3;
+                  int hit_i = latter_ui::layout().hit_tool_card3(touch.x, touch.y);
+                  int card_i = (hit_i >= 0) ? (hit_i + 1) : 0;
 
-                  if (card_i >= 1 && touch.x >= 70 && touch.x <= 396) {
+                  if (card_i >= 1) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_stuff_tap = now_stuff;
                       if (id(alarm_snooze_until) > 0 && (id(alarm_ringing_idx) == card_i || id(alarm_ringing_idx) == 0)) {
@@ -2343,7 +2337,7 @@ touchscreen:
                         latter_ui::schedule_disp_update(&id(disp1));
                         return;
                       }
-                      if (touch.x >= 298) {
+                      if (touch.x >= latter_ui::layout().tool_card3_div_x()) {
                         if (card_i == 1) {
                           id(alarm1_enabled) = !id(alarm1_enabled);
                           if (!id(alarm1_enabled) && id(alarm_ringing_idx) <= 1) id(alarm_snooze_until) = 0;
@@ -3827,12 +3821,8 @@ touchscreen:
                       }
                     }
                   } else if (id(room_subpage) == 0) {
-                    int card_idx = -1;
-                    if (tp.y >= 94 && tp.y < 172) card_idx = 0;
-                    else if (tp.y >= 172 && tp.y < 248) card_idx = 1;
-                    else if (tp.y >= 248 && tp.y < 323) card_idx = 2;
-                    const int rc_half_w = ((latter_ui::SCREEN_W < 380) ? (latter_ui::SCREEN_W - 68) : 316) / 2;
-                    if (card_idx >= 0 && tp.x >= latter_ui::SCREEN_CX - rc_half_w && tp.x <= latter_ui::SCREEN_CX + rc_half_w) {
+                    int card_idx = latter_ui::layout().hit_area_card3(tp.x, tp.y);
+                    if (card_idx >= 0) {
                       std::string s_name = (card_idx == 0) ? id(room_slot_1_name) : (card_idx == 1) ? id(room_slot_2_name) : id(room_slot_3_name);
                       std::string s_id   = (card_idx == 0) ? id(room_slot_1_id)   : (card_idx == 1) ? id(room_slot_2_id)   : (card_idx == 2) ? id(room_slot_3_id)   : (card_idx == 3) ? id(room_slot_4_id)   : id(room_slot_5_id);
                       std::string s_type = (card_idx == 0) ? id(room_slot_1_type) : (card_idx == 1) ? id(room_slot_2_type) : id(room_slot_3_type);
@@ -3840,7 +3830,6 @@ touchscreen:
                       int &s_lvl         = (card_idx == 0) ? id(room_slot_1_level)  : (card_idx == 1) ? id(room_slot_2_level)  : id(room_slot_3_level);
 
                       if (s_id.empty() || s_type == "text") {
-                        // Ignore taps on empty card slots (switching rooms is strictly via top header tap y <= 88)
                         return;
                       } else if (s_type == "media_player") {
                         id(target_speaker_id) = s_id;
@@ -3849,8 +3838,7 @@ touchscreen:
                         id(speaker_control_target).execute();
                       } else {
                         std::string clean_lbl = latter_ui::strip_trailing_paren_state(s_name);
-                        if (s_type == "light" && tp.x >= 316 && tp.x <= 384) {
-                          // Tapping the Color/Kelvin Palette Orb (cx = 348, r = 16) opens the Light Inspector (room_subpage = 2)!
+                        if (s_type == "light" && latter_ui::layout().is_area_light_orb(tp.x)) {
                           latter_ui::light_insp_entity_id() = s_id;
                           latter_ui::light_insp_name() = clean_lbl;
                           latter_ui::light_insp_bri_pct() = (s_lvl > 0) ? s_lvl : 80;
@@ -3860,9 +3848,8 @@ touchscreen:
                         }
                         id(room_target_entity_id) = s_id;
                         bool has_slider = ((s_type == "light" || s_type == "cover" || s_type == "fan") && s_lvl >= 0);
-                        if (has_slider && tp.x > 144) {
-                          int pct = ((tp.x - 144) * 100) / (384 - 144);
-                          pct = std::max(5, std::min(100, ((pct + 2) / 5) * 5));
+                        if (has_slider && tp.x > latter_ui::layout().area_card_div_x()) {
+                          int pct = latter_ui::layout().area_slider_pct(tp.x);
                           s_act = true;
                           s_lvl = pct;
                           id(room_target_action) = "set_level";
@@ -3908,11 +3895,8 @@ touchscreen:
                       latter_ui::whole_home_tab() = new_tab;
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
-                  } else if (latter_ui::whole_home_tab() == 0 && tp.x >= latter_ui::SCREEN_CX - 160 && tp.x <= latter_ui::SCREEN_CX + 160) {
-                    int a_card = -1;
-                    if (tp.y >= 100 && tp.y < 168) a_card = 0;
-                    else if (tp.y >= 168 && tp.y < 242) a_card = 1;
-                    else if (tp.y >= 242 && tp.y < 316) a_card = 2;
+                  } else if (latter_ui::whole_home_tab() == 0) {
+                    int a_card = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (a_card >= 0) {
                       if (a_card == 0) { id(room_alarm_service) = "disarm"; id(room_alarm_state) = "disarmed"; id(room_action_feedback) = "Disarmed"; }
                       else if (a_card == 1) { id(room_alarm_service) = "arm_home"; id(room_alarm_state) = "armed_home"; id(room_action_feedback) = "Armed Home"; }
@@ -3959,11 +3943,8 @@ touchscreen:
                       id(execute_room_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
-                  } else if (latter_ui::whole_home_tab() == 3 && tp.x >= 72 && tp.x <= 394) {
-                    int v_card = -1;
-                    if (tp.y >= 100 && tp.y < 168) v_card = 0;
-                    else if (tp.y >= 168 && tp.y < 242) v_card = 1;
-                    else if (tp.y >= 242 && tp.y < 316) v_card = 2;
+                  } else if (latter_ui::whole_home_tab() == 3) {
+                    int v_card = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (v_card >= 0) {
                       id(room_target_entity_id) = "whole_home.vacuum";
                       if (v_card == 0) { latter_ui::sim_vacuum_state() = "Cleaning"; id(room_target_action) = "start"; id(room_action_feedback) = "Vacuum Started"; }
@@ -3985,13 +3966,8 @@ touchscreen:
                     id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   } else {
-                    int row = -1;
-                    if (tp.y >= 80 && tp.y < 184) row = 0;
-                    else if (tp.y >= 184 && tp.y < 289) row = 1;
-                    else if (tp.y >= 289 && tp.y < 406) row = 2;
-                    int col = -1;
-                    if (tp.x >= latter_ui::SCREEN_CX - 145 && tp.x <= latter_ui::SCREEN_CX) col = 0;
-                    else if (tp.x > latter_ui::SCREEN_CX && tp.x <= latter_ui::SCREEN_CX + 145) col = 1;
+                    int row = latter_ui::layout().hit_tools_row(tp.y);
+                    int col = latter_ui::layout().hit_tools_col(tp.x);
                     if (row >= 0 && col >= 0) {
                       int target_subpage = 0;
                       if (id(stuff_menu_page) == 0) {

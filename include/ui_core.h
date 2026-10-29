@@ -166,8 +166,16 @@ static constexpr int16_t CIRCLE_HW[466] = {
 
 inline int circle_half_span(int c, int inset = 5) {
 #if LATTER_ROUND_DISPLAY
-  if (c < 0 || c >= SCREEN_W) return 0;
-  int span = static_cast<int>(CIRCLE_HW[c]) - inset;
+  if (c < 0 || c >= SCREEN_H) return 0;
+  int span = 0;
+  if constexpr (SCREEN_W == 466 && SCREEN_H == 466) {
+    span = static_cast<int>(CIRCLE_HW[c]) - inset;
+  } else {
+    int lut_idx = (c * 465) / ((SCREEN_H > 1) ? (SCREEN_H - 1) : 1);
+    if (lut_idx < 0) lut_idx = 0;
+    if (lut_idx > 465) lut_idx = 465;
+    span = ((static_cast<int>(CIRCLE_HW[lut_idx]) * SCREEN_W) / 466) - inset;
+  }
   return (span > 0) ? span : 0;
 #else
   if (c < 0 || c >= SCREEN_H) return 0;
@@ -448,6 +456,9 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
   if (std::abs(cx_card - SCREEN_CX) <= 4) {
     if (SCREEN_W < 380 && h <= 48 && w >= 240 && w <= 330) {
       w = SCREEN_W - 88; // 232px on 320px screen: leaves a clean 26px gap before right-flank scroll arrows!
+    } else if (SCREEN_W > 520 && w >= 260 && w <= 330) {
+      w = (SCREEN_W * w) / 466;
+      h = (SCREEN_H * h) / 466;
     } else if (w > SCREEN_W - 20) {
       w = SCREEN_W - 20;
     }
@@ -1075,15 +1086,19 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 
 template<typename TouchT>
 inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
-  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(12, SCREEN_CX - 150);
-  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, SCREEN_CX + 150);
+  const int half_w = (SCREEN_W > 520) ? ((SCREEN_W * 150) / 466) : 150;
+  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(12, SCREEN_CX - half_w);
+  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, SCREEN_CX + half_w);
   if (t.x < eff_min || t.x > eff_max) return -1;
-  // Continuous 5-slot hit zones (cards at y_mid = 110, 173, 236, 299, 362; h = 44) with zero dead space
-  if (t.y >= 78  && t.y < 146) return 0;
-  if (t.y >= 146 && t.y < 209) return 1;
-  if (t.y >= 209 && t.y < 272) return 2;
-  if (t.y >= 272 && t.y < 335) return 3;
-  if (t.y >= 335 && t.y < 404) return 4;
+  const int stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
+  const int center_y = (SCREEN_H > 520) ? SCREEN_CY : 236;
+  const int half_s = stride / 2;
+  for (int i = 0; i < 5; i++) {
+    int ym = center_y + (i - 2) * stride;
+    int y_top = ym - ((i == 0) ? (half_s + 4) : half_s);
+    int y_bot = ym + ((i == 4) ? (half_s + 10) : half_s);
+    if (t.y >= y_top && t.y <= y_bot) return i;
+  }
   return -1;
 }
 

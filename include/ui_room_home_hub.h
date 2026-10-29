@@ -332,11 +332,11 @@ inline void render_room_control_page(
       it.print(area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     };
 
-    draw_area_row(110, s1_name, s1_id, s1_act);
-    draw_area_row(173, s2_name, s2_id, s2_act);
-    draw_area_row(236, s3_name, s3_id, s3_act);
-    draw_area_row(299, s4_name, s4_id, s4_act);
-    draw_area_row(362, s5_name, s5_id, s5_act);
+    draw_area_row(layout().slot5_y(0), s1_name, s1_id, s1_act);
+    draw_area_row(layout().slot5_y(1), s2_name, s2_id, s2_act);
+    draw_area_row(layout().slot5_y(2), s3_name, s3_id, s3_act);
+    draw_area_row(layout().slot5_y(3), s4_name, s4_id, s4_act);
+    draw_area_row(layout().slot5_y(4), s5_name, s5_id, s5_act);
 
     if (room_browse_total_pages > 1) {
       render_vertical_page_pips(it, room_browse_page > 1, room_browse_page < room_browse_total_pages, col_bg, col_white, col_slate);
@@ -535,10 +535,10 @@ inline void render_room_control_page(
     else if (dtype == "cover") fill_c = Color(34, 68, 96);  // Steel-Cyan shade bar
     else if (dtype == "fan") fill_c = Color(24, 76, 64);    // Emerald-Teal airflow bar
 
-    const int r_card_w   = (SCREEN_W < 380) ? (SCREEN_W - 68) : 316;
-    const int r_left     = cx - (r_card_w / 2);
-    const int r_right    = cx + (r_card_w / 2);
-    const int r_div_x    = r_left + 64;
+    const int r_card_w   = layout().area_card3_w;
+    const int r_left     = layout().area_card_left();
+    const int r_right    = layout().area_card_right();
+    const int r_div_x    = layout().area_card_div_x();
     const int r_slider_w = (r_right - 5) - (r_div_x + 1);
     render_modern_card(it, cx, y_mid, r_card_w, 64, 16, bg_c, brd_c, nullptr, col_white, font_small);
 
@@ -596,9 +596,9 @@ inline void render_room_control_page(
     }
   };
 
-  draw_tall_room_card(132, s1_name, s1_id, s1_type, s1_act, s1_lvl);
-  draw_tall_room_card(208, s2_name, s2_id, s2_type, s2_act, s2_lvl);
-  draw_tall_room_card(284, s3_name, s3_id, s3_type, s3_act, s3_lvl);
+  draw_tall_room_card(layout().area_card3_y(0), s1_name, s1_id, s1_type, s1_act, s1_lvl);
+  draw_tall_room_card(layout().area_card3_y(1), s2_name, s2_id, s2_type, s2_act, s2_lvl);
+  draw_tall_room_card(layout().area_card3_y(2), s3_name, s3_id, s3_type, s3_act, s3_lvl);
 
   // 3. Right-Flank Vertical Page Pips (when > 1 page of 3 cards)
   if (room_browse_total_pages > 1) {
@@ -656,15 +656,15 @@ inline void render_security_alarm_page(
     bool is_home     = (alarm_state == "armed_home" || alarm_state == "armed_night");
     bool is_away     = (alarm_state == "armed_away");
 
-    render_modern_card(it, cx, 132, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(0), 296, 58, 14,
                        is_disarmed ? Color(18, 36, 26) : card_bg_on,
                        is_disarmed ? col_green : card_brd_off,
                        "Disarm", col_white, font_date);
-    render_modern_card(it, cx, 206, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(1), 296, 58, 14,
                        is_home ? Color(38, 32, 16) : card_bg_on,
                        is_home ? col_gold : card_brd_off,
                        "Arm Home", col_white, font_date);
-    render_modern_card(it, cx, 280, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(2), 296, 58, 14,
                        is_away ? Color(40, 18, 22) : card_bg_on,
                        is_away ? col_red : card_brd_off,
                        "Arm Away", col_white, font_date);
@@ -744,15 +744,15 @@ inline void render_security_alarm_page(
     bool is_psd = (sim_vacuum_state() == "Paused");
     bool is_dck = (sim_vacuum_state() == "Docked");
 
-    render_modern_card(it, cx, 132, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(0), 296, 58, 14,
                        is_cln ? Color(18, 36, 26) : card_bg_on,
                        is_cln ? col_green : card_brd_off,
                        "Start Cleaning", col_white, font_small);
-    render_modern_card(it, cx, 206, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(1), 296, 58, 14,
                        is_psd ? Color(38, 32, 16) : card_bg_on,
                        is_psd ? col_gold : card_brd_off,
                        "Pause Vacuum", col_white, font_small);
-    render_modern_card(it, cx, 280, 296, 58, 14,
+    render_modern_card(it, cx, layout().area_card3_y(2), 296, 58, 14,
                        is_dck ? Color(22, 32, 46) : card_bg_on,
                        is_dck ? theme_primary : card_brd_off,
                        "Return to Dock", col_white, font_small);

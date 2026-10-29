@@ -978,28 +978,32 @@ inline void render_home_page(
                                   ? Color(30, 34, 40)
                                   : ((!show_weather_bg || is_night) ? theme_secondary : Color(255, 225, 110));
 
-  // ZONE 1 (y = 52): Centered Date Header in font_date (27pt, blank until HA time syncs!)
+  const int z_date_y  = layout().home_date_y;
+  const int z_clock_y = layout().home_clock_y;
+  const int z_weath_y = layout().home_weather_y;
+
+  // ZONE 1: Centered Date Header in font_date (27pt, blank until HA time syncs!)
   if (now.is_valid()) {
     char date_bar[32];
     TimeT now_copy = now;
     now_copy.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
     if (!is_dim_backdrop) {
-      it.print(cx + 1, 53, font_date, col_black, TextAlign::CENTER, date_bar);
+      it.print(cx + 1, z_date_y + 1, font_date, col_black, TextAlign::CENTER, date_bar);
     }
-    it.print(cx, 52, font_date, fg_home_white, TextAlign::CENTER, date_bar);
+    it.print(cx, z_date_y, font_date, fg_home_white, TextAlign::CENTER, date_bar);
   }
 
-  // ZONE 2 (y = 128): Hero Digital Clock (77pt Roboto, "--:--" until time syncs, Tap -> Clock)
+  // ZONE 2: Hero Digital Clock (77pt Roboto, "--:--" until time syncs, Tap -> Clock)
   char time_str[16] = "--:--";
   if (now.is_valid()) {
     format_time_hhmm(now.hour, now.minute, is_24h_format, time_str, sizeof(time_str));
   }
   if (!is_dim_backdrop) {
-    it.print(cx + 1, 129, font_time, col_black, TextAlign::CENTER, time_str);
+    it.print(cx + 1, z_clock_y + 1, font_time, col_black, TextAlign::CENTER, time_str);
   }
-  it.print(cx, 128, font_time, fg_home_white, TextAlign::CENTER, time_str);
+  it.print(cx, z_clock_y, font_time, fg_home_white, TextAlign::CENTER, time_str);
 
-  // ZONE 3 (y = 200): Stepped-Up Weather Summary in font_date (27pt, blank until weather or simulation arrives!)
+  // ZONE 3: Stepped-Up Weather Summary in font_date (27pt, blank until weather or simulation arrives!)
   std::string cond_title = format_weather_title(cond);
   const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
   const bool weather_ready = (!std::isnan(weather_temp) || sim_override_on) && (cond_title != "Unavailable");
@@ -1012,9 +1016,9 @@ inline void render_home_page(
     }
     std::string fit_w = fit_text_to_width_font(std::string(w_line), 340, font_date);
     if (!is_dim_backdrop) {
-      it.print(cx + 1, 201, font_date, col_black, TextAlign::CENTER, fit_w.c_str());
+      it.print(cx + 1, z_weath_y + 1, font_date, col_black, TextAlign::CENTER, fit_w.c_str());
     }
-    it.print(cx, 200, font_date, fg_home_cond, TextAlign::CENTER, fit_w.c_str());
+    it.print(cx, z_weath_y, font_date, fg_home_cond, TextAlign::CENTER, fit_w.c_str());
   }
 
   // TRANSIENT WAKE GREETING LATCH (8.0s Full Brightness + 2.5s Smooth Fade-Out = 10.5s Total)
@@ -1033,7 +1037,7 @@ inline void render_home_page(
   //   - Deterministic 3-step UPWARD carousel reel transition (outgoing slides UP & fades out,
   //     incoming rises UP from below & fades in, strictly inside the 68px card bounds!)
   if (home_subpage == 0 && !greeting_active && act_count > 0) {
-    const int pill_y = 266;
+    const int pill_y = layout().home_activity_y;
     const bool has_drop = (act_count > 1);
     int feat_idx = resolve_home_featured_activity_idx(act_items, act_count, now_ms);
     if (home_act_cur_idx() >= act_count) home_act_cur_idx() = 0;
@@ -1102,7 +1106,7 @@ inline void render_home_page(
     const char *raw_greet = resolve_wake_greeting(
         now.hour, now.minute, now.day_of_year, cond, weather_temp);
     std::string fit_greet = fit_text_to_width_font(std::string(raw_greet), 340, font_date);
-    int greet_y = 264;
+    int greet_y = layout().home_activity_y - 2;
 
     // 0..8000ms = 1.0f full brightness; 8000..10500ms = smooth 2.5s Hermite fade into background sky color
     float alpha = 1.0f;
