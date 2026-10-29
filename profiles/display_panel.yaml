@@ -10,5 +10,5 @@ esphome:
 
 packages:
   latter_base: !include ../modules/base.yaml
-  latter_room: !include ../modules/room_control.yaml
+  latter_area: !include ../modules/area_control.yaml
   latter_ble_proxy: !include ../mixins/ble_proxy.yaml

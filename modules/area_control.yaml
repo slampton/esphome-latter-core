@@ -1,0 +1,63 @@
+# ==============================================================================
+# Latter Core Module: Headless Area Context & Binding Helper (modules/area_control.yaml)
+# Subscribes to sensor.<slug>_area_context and provides outbound action helpers
+# ==============================================================================
+
+globals:
+  - id: active_area_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: active_area_name
+    type: std::string
+    restore_value: no
+    initial_value: '"Home"'
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_latter_area_name
+    entity_id: ${area_context_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_area_name) = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_area_id
+    entity_id: ${area_context_sensor}
+    attribute: area_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_area_id) = x;
+            }
+
+script:
+  - id: trigger_latter_binding
+    mode: queued
+    parameters:
+      slot_id: string
+    then:
+      - homeassistant.action:
+          action: latter.trigger_binding
+          data:
+            target_device: "${name}"
+            slot: !lambda 'return slot_id;'
+
+  - id: execute_latter_area_action
+    mode: queued
+    parameters:
+      entity_id: string
+      action_name: string
+    then:
+      - homeassistant.action:
+          action: latter.area_action
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return entity_id;'
+            action: !lambda 'return action_name;'

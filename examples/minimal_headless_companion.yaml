@@ -1,19 +1,17 @@
 # ==============================================================================
-# Latter Core Example 1: Minimal Headless / Mixin Companion Node
-# Target: Any standard ESP32-S3 DevKit (Zero external peripherals required)
-# Purpose: Demonstrates how to turn any bare ESP32 into an auto-discovered
-#          Latter companion with BLE room presence beaconing and room context.
+# Latter Core Example: Minimal Headless Companion Node (examples/minimal_headless_companion.yaml)
+# Demonstrates combining Latter Core base, headless Area control, and BLE presence mixin
 # ==============================================================================
 
 substitutions:
-  name: "latter-headless-demo"
-  friendly_name: "Latter Headless Demo"
+  name: "latter-headless-node"
+  friendly_name: "Latter Headless Node"
   version: "2.2.0"
-  active_media_sensor: "sensor.latter_headless_demo_active_media"
-  weather_forecast_sensor: "sensor.latter_headless_demo_weather_forecast"
-  area_context_sensor: "sensor.latter_headless_demo_area_context"
-  calendar_agenda_sensor: "sensor.latter_headless_demo_calendar_agenda"
-  remote_config_sensor: "sensor.latter_headless_demo_remote_config"
+  active_media_sensor: "sensor.latter_headless_node_active_media"
+  weather_forecast_sensor: "sensor.latter_headless_node_weather_forecast"
+  area_context_sensor: "sensor.latter_headless_node_area_context"
+  calendar_agenda_sensor: "sensor.latter_headless_node_calendar_agenda"
+  remote_config_sensor: "sensor.latter_headless_node_remote_config"
 
 esphome:
   name: ${name}
@@ -28,17 +26,11 @@ esp32:
 logger:
   level: INFO
 
-api:
-
-ota:
-  - platform: esphome
-
 wifi:
   ssid: "MyHomeWiFi"
   password: "MyWiFiPassword"
 
-# Include Latter Core Base, Area Room Control Client & BLE Presence Beacon
 packages:
   latter_base: !include ../modules/base.yaml
-  latter_room: !include ../modules/room_control.yaml
+  latter_area: !include ../modules/area_control.yaml
   latter_ble:  !include ../mixins/ble_beacon.yaml

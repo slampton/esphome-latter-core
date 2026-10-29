@@ -15,6 +15,7 @@ api:
   outgoing_connection:
   actions:
     - action: latter_ping
+      id: latter_ping_action
       then:
         - logger.log: "Latter Roaming WireGuard VPN Mixin active"
 

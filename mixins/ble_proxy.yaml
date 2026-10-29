@@ -8,6 +8,7 @@
 api:
   actions:
     - action: latter_ping
+      id: latter_ping_action
       then:
         - logger.log: "Latter Stationary BLE Scanner Proxy Mixin active"
 
