@@ -128,10 +128,10 @@ inline void render_music_now_playing(
   }
 
   if (show_controls) {
-    const int prev_btn_x = cx - (LATTER_ROUND_DISPLAY ? 109 : 98);
-    const int next_btn_x = cx + (LATTER_ROUND_DISPLAY ? 109 : 98);
-    const int left_flank_x = LATTER_ROUND_DISPLAY ? 71 : 46;
-    const int right_flank_x = SCREEN_W - left_flank_x;
+    const int prev_btn_x = layout().music_prev_x();
+    const int next_btn_x = layout().music_next_x();
+    const int left_flank_x = layout().music_left_flank_x();
+    const int right_flank_x = layout().music_right_flank_x();
 
     bool is_speech_media = (active_playback_media_type == "podcast" ||
                             active_playback_media_type == "podcast_episode" ||
@@ -430,8 +430,8 @@ inline void render_music_menus(
       const int c_left  = layout().list_card_left;
       const int c_right = cx + (layout().list_card_w / 2);
       if (is_drill) {
-        const int play_cx = (SCREEN_W < 380) ? 28 : 82;
-        const int dr_left = play_cx + 26;
+        const int play_cx = layout().music_drill_play_cx();
+        const int dr_left = layout().music_drill_split_x();
         const int dr_w    = c_right - dr_left;
         const int dr_cx   = dr_left + (dr_w / 2);
         it.filled_circle(play_cx, y_mid, 18, card_bg);
@@ -566,13 +566,13 @@ inline void render_music_menus(
     }
     it.print(cx, 196, font_small, col_white, esphome::display::TextAlign::CENTER, time_buf);
 
-    // Wide Scrubber Bar + Vector Seek Buttons (adaptive to screen width)
-    const int scrub_y  = 242;
-    const int l_seek_x = LATTER_ROUND_DISPLAY ? 50 : 34;
-    const int r_seek_x = SCREEN_W - l_seek_x;
-    const int bar_x0   = LATTER_ROUND_DISPLAY ? 95 : 72;
-    const int bar_x1   = SCREEN_W - bar_x0;
-    const int bar_w    = bar_x1 - bar_x0;
+    // Wide Scrubber Bar + Vector Seek Buttons (single-source layout().music_scrub_*)
+    const int scrub_y  = layout().music_scrub_y;
+    const int l_seek_x = layout().music_seek_left_x();
+    const int r_seek_x = layout().music_seek_right_x();
+    const int bar_x0   = layout().music_scrub_x0();
+    const int bar_x1   = layout().music_scrub_x1();
+    const int bar_w    = layout().music_scrub_w();
 
     // Left -15s Seek Button
     esphome::Color btn_bg(22, 27, 36);

@@ -285,9 +285,9 @@ inline void render_room_control_page(
       it.print(cx, 86, font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
 
       // Card 1 (y_mid = 162): Color Temperature Gradient Slider (2700K .. 6500K)
-      const int sl_card_w = std::min(316, SCREEN_W - 24);
-      const int k_bar_w   = sl_card_w - 32;
-      const int k_bar_x0  = cx - (k_bar_w / 2);
+      const int sl_card_w = layout().light_slider_card_w();
+      const int k_bar_w   = layout().light_kelvin_bar_w();
+      const int k_bar_x0  = layout().light_kelvin_bar_x0();
       render_modern_card(it, cx, 162, sl_card_w, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
       for (int b = 0; b < 24; b++) {
         float t = static_cast<float>(b) / 23.0f;
@@ -307,10 +307,10 @@ inline void render_room_control_page(
       // Card 2 (y_mid = 258): Brightness Fill-Slider (5% .. 100%)
       render_modern_card(it, cx, 258, sl_card_w, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
       int b_clamped = std::max(5, std::min(100, light_insp_bri_pct()));
-      int b_max_w = sl_card_w - 16;
+      int b_max_w = layout().light_bri_bar_w();
       int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        it.filled_rectangle(cx - (b_max_w / 2), 258 - 28, b_fill_w, 56, Color(92, 68, 22));
+        it.filled_rectangle(layout().light_bri_bar_x0(), 258 - 28, b_fill_w, 56, Color(92, 68, 22));
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);

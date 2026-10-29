@@ -179,6 +179,77 @@ struct UiLayout {
     const int stride = (w < 380) ? 72 : ((w > 520) ? ((w * 82) / 466) : 82);
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
+
+  // 6. Single-Source Music Now Playing, Drilldown & Track Inspector Scrubber Geometry + Hit-Testers
+  int music_art_cy = (SCREEN_H > 520) ? SCREEN_CY : 233;
+  constexpr int music_left_flank_x() const { return is_round ? 71 : ((w < 380) ? 42 : 48); }
+  constexpr int music_right_flank_x() const { return w - music_left_flank_x(); }
+  constexpr int music_prev_x() const { return cx - (is_round ? 109 : ((w < 380) ? 96 : 104)); }
+  constexpr int music_next_x() const { return cx + (is_round ? 109 : ((w < 380) ? 96 : 104)); }
+  constexpr bool hit_music_header(int tx, int ty) const {
+    return (ty <= 85 && (tx >= cx - 130 && tx <= cx + 130));
+  }
+  constexpr bool hit_music_play_pause(int tx, int ty) const {
+    return (tx >= cx - 48 && tx <= cx + 48 && ty >= music_art_cy - 48 && ty <= music_art_cy + 48);
+  }
+  constexpr bool hit_music_prev(int tx, int ty) const {
+    return (tx < cx - 48 && ty >= music_art_cy - 46 && ty < music_art_cy + 48);
+  }
+  constexpr bool hit_music_next(int tx, int ty) const {
+    return (tx > cx + 48 && ty >= music_art_cy - 46 && ty < music_art_cy + 48);
+  }
+  constexpr bool hit_music_spk_shortcut(int tx, int ty) const {
+    return (tx <= cx - 48 && ty >= 70 && ty < music_art_cy - 46);
+  }
+  constexpr bool hit_music_lib_shortcut(int tx, int ty) const {
+    return (tx <= cx - 48 && ty >= music_art_cy + 48 && ty < 405);
+  }
+  constexpr bool hit_music_vol_up(int tx, int ty) const {
+    return (tx >= cx + 48 && ty >= 70 && ty < music_art_cy - 46);
+  }
+  constexpr bool hit_music_vol_down(int tx, int ty) const {
+    return (tx >= cx + 48 && ty >= music_art_cy + 48 && ty < 405);
+  }
+  constexpr bool hit_music_metadata(int tx, int ty) const {
+    return (tx >= cx - 110 && tx <= cx + 110 && ty >= 338 && ty < 405);
+  }
+  constexpr int music_drill_play_cx() const { return (w < 380) ? 28 : 82; }
+  constexpr int music_drill_split_x() const { return music_drill_play_cx() + 26; }
+  int music_scrub_y = 242;
+  constexpr int music_seek_left_x() const { return is_round ? 50 : 34; }
+  constexpr int music_seek_right_x() const { return w - music_seek_left_x(); }
+  constexpr int music_scrub_x0() const { return is_round ? 95 : 72; }
+  constexpr int music_scrub_x1() const { return w - music_scrub_x0(); }
+  constexpr int music_scrub_w() const { return music_scrub_x1() - music_scrub_x0(); }
+  constexpr float music_scrub_frac(int tx) const {
+    int bw = music_scrub_w();
+    if (bw <= 10) return 0.0f;
+    float f = static_cast<float>(tx - music_scrub_x0()) / static_cast<float>(bw);
+    return (f < 0.0f) ? 0.0f : ((f > 1.0f) ? 1.0f : f);
+  }
+
+  // 7. Single-Source Light Kelvin / Brightness Inspector Slider Geometry
+  constexpr int light_slider_card_w() const { return (w - 24 < 316) ? (w - 24) : 316; }
+  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - 32; }
+  constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
+  constexpr int light_bri_bar_w() const { return light_slider_card_w() - 16; }
+  constexpr int light_bri_bar_x0() const { return cx - (light_bri_bar_w() / 2); }
+
+  // 8. Single-Source System Color Swatch & Info Margin Geometry
+  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - 34; }
+  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - 18); }
+  constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : 42); }
+
+  // 9. Single-Source Calendar Map Floating Zoom Button Geometry + Hit-Testers
+  int map_zoom_y = 233;
+  constexpr int map_zoom_left_x() const { return is_round ? 44 : 34; }
+  constexpr int map_zoom_right_x() const { return w - map_zoom_left_x(); }
+  constexpr bool hit_map_zoom_out(int tx, int ty) const {
+    return (ty >= map_zoom_y - 45 && ty <= map_zoom_y + 45 && tx <= map_zoom_left_x() + 42);
+  }
+  constexpr bool hit_map_zoom_in(int tx, int ty) const {
+    return (ty >= map_zoom_y - 45 && ty <= map_zoom_y + 45 && tx >= map_zoom_right_x() - 42);
+  }
 };
 
 inline constexpr UiLayout layout() {

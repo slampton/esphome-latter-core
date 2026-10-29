@@ -1909,10 +1909,10 @@ inline void render_tool_calendar(
       std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, font_small);
       it.print(cx, 41, font_small, col_white, TextAlign::CENTER, loc_hdr.c_str());
 
-      // 2. Left/Right Floating Zoom Buttons (adaptive to screen width)
-      const int z_by = 233;
-      const int z_lx = LATTER_ROUND_DISPLAY ? 44 : 34;
-      const int z_rx = SCREEN_W - z_lx;
+      // 2. Left/Right Floating Zoom Buttons (single-source layout().map_zoom_*)
+      const int z_by = layout().map_zoom_y;
+      const int z_lx = layout().map_zoom_left_x();
+      const int z_rx = layout().map_zoom_right_x();
       Color btn_bg(12, 16, 24);
       Color btn_ring = (cal_map_zoom() > 10) ? theme_primary : col_slate;
       it.filled_circle(z_lx, z_by, 21, btn_bg);

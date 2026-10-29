@@ -247,7 +247,7 @@ inline void render_system_page(
           bool active = !( (i == 5 && !ab_off) || (i == 6 && !ab_sched) || ((i == 7 || i == 8) && ab_off) );
           draw_cycle_card_y(y, disp_labels[i], active);
           if (i == 3) {
-            const int swatch_x = cx + (layout().list_card_w / 2) - 34;
+            const int swatch_x = layout().sys_color_swatch_x();
             it.filled_circle(swatch_x, y, 9, theme_primary);
             it.circle(swatch_x, y, 9, col_white);
           }
@@ -361,7 +361,7 @@ inline void render_system_page(
     // VIEW 8: SYSTEM INFO & OS DIAGNOSTICS (Two-Tone: Slate Labels + White Values)
     // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "SYSTEM INFO", font_small, theme_primary);
-    const int info_x = LATTER_ROUND_DISPLAY ? 88 : ((SCREEN_W < 380) ? 18 : 42);
+    const int info_x = layout().sys_info_x();
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
