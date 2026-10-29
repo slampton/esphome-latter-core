@@ -141,6 +141,14 @@ speaker:
 packages:
   latter_imu: !include ../modules/imu_qmi8658.yaml
 
+sensor:
+  - id: !extend accel_x
+    filters:
+      - multiply: -1.0
+  - id: !extend imu_roll
+    filters:
+      - multiply: -1.0
+
 switch:
   - platform: gpio
     name: "Speaker Enable"

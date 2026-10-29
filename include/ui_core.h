@@ -545,17 +545,37 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
     it.circle(cx, cy, r, ring_c);
   }
 #else
+  (void)cx;
   (void)cy;
-  for (int y = 2; y < SCREEN_H - 2; y++) {
-    int hw_out = circle_half_span(y, 2);
-    int hw_in  = circle_half_span(y, 6);
-    if (hw_out <= 0) continue;
-    if (y < 6 || y >= SCREEN_H - 6 || hw_in <= 0) {
-      it.horizontal_line(cx - hw_out, y, 2 * hw_out + 1, ring_c);
+  const int pad = 3;
+  const int thick = 5;
+  const int cr_out = std::max(8, LATTER_CORNER_R - pad);
+  const int cr_in  = std::max(4, cr_out - thick);
+  const int x_lc   = pad + cr_out;
+  const int x_rc   = SCREEN_W - 1 - pad - cr_out;
+  const int y_tc   = pad + cr_out;
+  const int y_bc   = SCREEN_H - 1 - pad - cr_out;
+
+  for (int y = pad; y <= SCREEN_H - 1 - pad; y++) {
+    if (y >= y_tc && y <= y_bc) {
+      it.horizontal_line(pad, y, thick, ring_c);
+      it.horizontal_line(SCREEN_W - pad - thick, y, thick, ring_c);
     } else {
-      int seg = std::max(4, hw_out - hw_in + 1);
-      it.horizontal_line(cx - hw_out, y, seg, ring_c);
-      it.horizontal_line(cx + hw_out - seg + 1, y, seg, ring_c);
+      int dy = (y < y_tc) ? (y_tc - y) : (y - y_bc);
+      if (dy > cr_out) continue;
+      int dx_out = static_cast<int>(std::sqrt(static_cast<float>(cr_out * cr_out - dy * dy)) + 0.5f);
+      if (dy >= cr_in) {
+        int x0 = x_lc - dx_out;
+        int x1 = x_rc + dx_out;
+        if (x1 >= x0) {
+          it.horizontal_line(x0, y, x1 - x0 + 1, ring_c);
+        }
+      } else {
+        int dx_in = static_cast<int>(std::sqrt(static_cast<float>(cr_in * cr_in - dy * dy)));
+        int seg = std::max(thick, dx_out - dx_in + 1);
+        it.horizontal_line(x_lc - dx_out, y, seg, ring_c);
+        it.horizontal_line(x_rc + dx_out - seg + 1, y, seg, ring_c);
+      }
     }
   }
 #endif
@@ -799,24 +819,39 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   for (int y = start_y; y < end_y; y++) {
     int sy = curr_y >> 12;
     curr_y += step_y;
+    bool row_scrim = apply_scrim || (show_metadata && y >= 340 && y < scrim_end);
+    if (row_scrim && ((y & 1) != 0)) {
+      continue; // Zero-cost scanline scrim on odd rows (eliminates 100k per-pixel draw_pixel_at calls!)
+    }
     const uint16_t *src_row = src_data + sy * src_w;
     int hw = circle_half_span(y, 0);
     int start_x = std::max(0, cx - hw);
     int end_x = std::min(SCREEN_W - 1, cx + hw);
-    bool row_scrim = apply_scrim || (show_metadata && y >= 340 && y < scrim_end);
-    if (row_scrim) {
-      int x0 = start_x + (((start_x + y) & 1) == 0 ? 1 : 0);
-      for (int x = x0; x <= end_x; x += 2) {
-        uint16_t p = src_row[(x * step_x) >> 12];
-        if (p != 0) {
-          uint8_t r = (p & 0xF800) >> 8;
-          uint8_t g = (p & 0x07E0) >> 3;
-          uint8_t b = (p & 0x001F) << 3;
-          it.draw_pixel_at(x, y, esphome::Color(r, g, b));
+    int x = start_x;
+    if (src_w == SCREEN_W) {
+      while (x <= end_x) {
+        uint16_t p = src_row[x];
+        if ((p & 0xE79C) == 0) {
+          x++;
+          continue;
+        }
+        uint16_t p_masked = p & 0xE79C;
+        int run_start = x++;
+        while (x <= end_x && ((src_row[x] & 0xE79C) == p_masked)) {
+          x++;
+        }
+        esphome::Color col(
+            static_cast<uint8_t>((p & 0xF800) >> 8),
+            static_cast<uint8_t>((p & 0x07E0) >> 3),
+            static_cast<uint8_t>((p & 0x001F) << 3));
+        int run_len = x - run_start;
+        if (run_len == 1) {
+          it.draw_pixel_at(run_start, y, col);
+        } else {
+          it.horizontal_line(run_start, y, run_len, col);
         }
       }
     } else {
-      int x = start_x;
       while (x <= end_x) {
         uint16_t p = src_row[(x * step_x) >> 12];
         if ((p & 0xE79C) == 0) {

@@ -151,6 +151,11 @@ media_player:
         - script.execute: mp_idle_debounce
     on_idle:
       then:
+        - if:
+            condition:
+              lambda: 'return id(va_active) && id(va_tts_received);'
+            then:
+              - script.execute: va_tts_drain_and_finish
         - script.execute: screen_sleep_timer
         - script.execute: mp_idle_debounce
 
@@ -460,6 +465,9 @@ voice_assistant:
             }
           }
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          if (id(va_active) || !id(va_status_text).empty()) {
+            id(cancel_voice_assistant).execute();
+          }
           if (!id(timer_ringing)) {
             id(va_timer_name) = fired_name;
             id(timer_ringing) = true;
@@ -613,7 +621,12 @@ script:
                   - script.wait: route_i2s_to_mic
                   - delay: 25ms
                   - script.execute: apply_wake_word_sensitivities
-                  - micro_wake_word.start:
+                  - if:
+                      condition:
+                        not:
+                          micro_wake_word.is_running:
+                      then:
+                        - micro_wake_word.start:
                   - lambda: |-
                       ESP_LOGI("mww", "Wake word detection ARMED (ww1='%s', ww2='%s', mode='%s')",
                                esphome::voice_assistant::last_persisted_ww1().c_str(),
