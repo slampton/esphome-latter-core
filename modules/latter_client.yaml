@@ -35,7 +35,18 @@ esphome:
         - script.execute: apply_default_start_page
         - script.execute: apply_theme_preset
         - lambda: |-
-            id(clock_face_digital) = (id(clock_face_style).current_option() == "Modern Digital (Bold)");
+            #if !LATTER_ROUND_DISPLAY
+            static bool non_round_clock_seeded = false;
+            if (!non_round_clock_seeded) {
+              non_round_clock_seeded = true;
+              if (id(clock_face_style).current_option() == "Modern Roman (Analog)") {
+                auto call = id(clock_face_style).make_call();
+                call.set_option("Minimal Digital");
+                call.perform();
+              }
+            }
+            #endif
+            id(clock_face_digital) = (id(clock_face_style).current_option() != "Modern Roman (Analog)");
             id(is_24h_format) = (id(time_format_select).current_option() == "24-Hour");
         - component.update: batt_level
         - lambda: |-
@@ -1774,13 +1785,14 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Modern Roman (Analog)"
+    initial_option: ${default_clock_face}
     options:
+      - "Minimal Digital"
       - "Modern Roman (Analog)"
       - "Modern Digital (Bold)"
     set_action:
       - lambda: |-
-          id(clock_face_digital) = (x == "Modern Digital (Bold)");
+          id(clock_face_digital) = (x != "Modern Roman (Analog)");
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template

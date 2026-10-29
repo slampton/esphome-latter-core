@@ -244,7 +244,8 @@ display:
             id(font_time), id(font_date), (latter_ui::SCREEN_W < 380) ? id(font_micro) : id(font_small),
             id(theme_primary), id(theme_secondary),
             id(col_white), id(col_slate), id(col_gray), id(col_dark_gray),
-            id(col_red), id(col_gold), id(col_green));
+            id(col_red), id(col_gold), id(col_green),
+            std::string(id(clock_face_style).current_option()));
 
       // ==========================================
       // PAGE 1: INTERACTIVE HOME HUB
@@ -3609,9 +3610,12 @@ touchscreen:
                         call.set_option(cycle_option(id(default_start_app).current_option(), {"Home", "Clock"}));
                         call.perform();
                       } else if (item_idx == 1) {
-                        id(clock_face_digital) = !id(clock_face_digital);
+                        std::string next_cf = cycle_option(
+                            id(clock_face_style).current_option(),
+                            {"Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"});
+                        id(clock_face_digital) = (next_cf != "Modern Roman (Analog)");
                         auto call = id(clock_face_style).make_call();
-                        call.set_option(id(clock_face_digital) ? "Modern Digital (Bold)" : "Modern Roman (Analog)");
+                        call.set_option(next_cf);
                         call.perform();
                       } else if (item_idx == 2) {
                         id(is_24h_format) = !id(is_24h_format);
@@ -3987,16 +3991,23 @@ touchscreen:
                     int col = latter_ui::layout().hit_tools_col(tp.x);
                     if (row >= 0 && col >= 0) {
                       int target_subpage = 0;
+                      #if LATTER_HAS_IMU
                       if (id(stuff_menu_page) == 0) {
-                        static constexpr int P0_MAP[3][2] = {{1, 2}, {3, LATTER_HAS_IMU ? 7 : 12}, {5, 6}};
+                        static constexpr int P0_MAP[3][2] = {{1, 2}, {3, 7}, {5, 6}};
                         target_subpage = P0_MAP[row][col];
-                      } else if (row == 0) {
-                        target_subpage = (col == 0) ? 4 : 8;
-                      } else if (row == 1) {
-                        target_subpage = (col == 0) ? 9 : 10;
-                      } else if (row == 2) {
-                        target_subpage = (col == 0) ? 11 : 12;
+                      } else {
+                        static constexpr int P1_MAP[3][2] = {{4, 8}, {9, 10}, {11, 12}};
+                        target_subpage = P1_MAP[row][col];
                       }
+                      #else
+                      if (id(stuff_menu_page) == 0) {
+                        static constexpr int P0_MAP[3][2] = {{1, 2}, {3, 5}, {6, 9}};
+                        target_subpage = P0_MAP[row][col];
+                      } else {
+                        static constexpr int P1_MAP[3][2] = {{10, 11}, {12, 4}, {8, 0}};
+                        target_subpage = P1_MAP[row][col];
+                      }
+                      #endif
                       if (target_subpage > 0) {
                         id(stuff_subpage) = target_subpage;
                         if (id(stuff_subpage) == 5) {

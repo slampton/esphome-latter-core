@@ -273,7 +273,7 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
 template<typename DisplayT>
 inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool overcast_mode, bool is_night) {
   int half_w = static_cast<int>(84.0f * scale);
-  if (bx + half_w < 6 || bx - half_w >= 460 || by + 45 < 6 || by - 65 >= 460) return;
+  if (bx + half_w < 5 || bx - half_w >= SCREEN_W - 5 || by + 45 < 5 || by - 65 >= SCREEN_H - 5) return;
 
   esphome::Color col_rim    = is_night ? esphome::Color( 86, 108, 138) : (overcast_mode ? esphome::Color(124, 154, 188) : esphome::Color(172, 204, 236));
   esphome::Color col_crest  = is_night ? esphome::Color( 60,  78, 102) : (overcast_mode ? esphome::Color( 90, 118, 150) : esphome::Color(126, 160, 198));
@@ -286,10 +286,16 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
 
   for (int dx = -half_w; dx <= half_w; dx += 2) {
     int x = bx + dx;
+#if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(x, 5);
     if (max_dy <= 8) continue;
     int y_min = SCREEN_CY - max_dy;
     int y_max = SCREEN_CY + max_dy;
+#else
+    if (x < 5 || x + 1 >= SCREEN_W - 5) continue;
+    int y_min = 5;
+    int y_max = SCREEN_H - 6;
+#endif
 
     float u = static_cast<float>(dx) * inv_hw; // -1.0 .. +1.0
     float env = 1.0f - u * u;
@@ -324,7 +330,7 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
     bool sunlit_slope = (u > -0.45f && dome > 0.32f);
     esphome::Color top_c = sunlit_slope ? col_rim : col_crest;
 
-    if (x >= 6 && x + 1 < 460) {
+    if (x >= 5 && x + 1 < SCREEN_W - 5) {
       it.filled_rectangle(x, y_top, 2, y_c1 - y_top, top_c);
       it.filled_rectangle(x, y_c1,  2, y_c2 - y_c1,  col_crest);
       it.filled_rectangle(x, y_c2,  2, y_c3 - y_c2,  col_high);
@@ -345,10 +351,17 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
   float inv_hw = 1.0f / static_cast<float>(half_w);
 
   for (int x = center_x - half_w; x <= center_x + half_w; x += 3) {
+#if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(x, 6);
     if (max_dy <= 10) continue;
     int y_min = cy - max_dy;
     int y_max = cy + max_dy;
+#else
+    (void)cy;
+    if (x < 6 || x >= SCREEN_W - 6) continue;
+    int y_min = 6;
+    int y_max = SCREEN_H - 7;
+#endif
 
     float u = static_cast<float>(x - center_x) * inv_hw;
     float taper = 1.0f - u * u;
@@ -376,7 +389,7 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
     it.vertical_line(x, y_top,  y_mid1 - y_top + 1,  c_crest);
     it.vertical_line(x, y_mid1, y_mid2 - y_mid1 + 1, c_body);
     it.vertical_line(x, y_mid2, y_bot - y_mid2 + 1,  c_base);
-    if (eff_taper > 0.32f && x + 1 < SCREEN_CX + max_dy) {
+    if (eff_taper > 0.32f && x + 1 < SCREEN_W - 6) {
       it.vertical_line(x + 1, y_top + 1, y_mid2 - y_top, c_body);
     }
   }
@@ -1020,20 +1033,20 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Mild atmospheric texture on Sunny days)
   if (is_clear_day) {
     float t_cir = now_ms * 0.00025f;
-    // Very mild, translucent sky-blue palette just above day_bg (28, 54, 84)
+    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
     esphome::Color c_cir_crest(56, 90, 128);
     esphome::Color c_cir_body(42,  70, 104);
     esphome::Color c_cir_base(33,  58,  88);
 
-    int w0_x = 148 + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
-    int w1_x = 308 + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
-    int w2_x = 196 + static_cast<int>(fast_sin(t_cir * 1.05f + 3.1f) * 22.0f + par_x * 0.58f);
+    int w0_x = static_cast<int>(148.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
+    int w1_x = static_cast<int>(308.0f * w_scale) + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
+    int w2_x = static_cast<int>(196.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 1.05f + 3.1f) * 22.0f + par_x * 0.58f);
 
-    render_wispy_cloud_veil(it, w0_x, 102 + static_cast<int>(par_y * 0.32f), 118,  t_cir * 1.1f,        11,
+    render_wispy_cloud_veil(it, w0_x, 102 + static_cast<int>(par_y * 0.32f), static_cast<int>(118.0f * w_scale),  t_cir * 1.1f,        11,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
-    render_wispy_cloud_veil(it, w1_x, 174 + static_cast<int>(par_y * 0.45f), 126, -t_cir * 1.2f + 1.4f, 12,
+    render_wispy_cloud_veil(it, w1_x, 174 + static_cast<int>(par_y * 0.45f), static_cast<int>(126.0f * w_scale), -t_cir * 1.2f + 1.4f, 12,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
-    render_wispy_cloud_veil(it, w2_x, 248 + static_cast<int>(par_y * 0.58f), 112,  t_cir * 1.0f + 2.8f, 13,
+    render_wispy_cloud_veil(it, w2_x, 248 + static_cast<int>(par_y * 0.58f), static_cast<int>(112.0f * w_scale),  t_cir * 1.0f + 2.8f, 13,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
   }
 
@@ -1113,21 +1126,21 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       render_cumulus_cloud(it, b2_x, 214 + static_cast<int>(par_y * 0.40f), 1.15f, true, is_night);
 
       // 2. Interleaved Wispy Cloud Veils weaving across the mid-sky between the cumulus masses
-      int w0_x = 238 + static_cast<int>(fast_cos(t_ov * 1.1f + 0.5f) * 28.0f + par_x * 0.48f);
-      int w1_x = 186 + static_cast<int>(fast_sin(t_ov * 1.25f + 2.1f) * 30.0f + par_x * 0.56f);
-      render_wispy_cloud_veil(it, w0_x, 114 + static_cast<int>(par_y * 0.45f), 165,  t_ov * 1.15f, 1,
+      int w0_x = static_cast<int>(238.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.1f + 0.5f) * 28.0f + par_x * 0.48f);
+      int w1_x = static_cast<int>(186.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 1.25f + 2.1f) * 30.0f + par_x * 0.56f);
+      render_wispy_cloud_veil(it, w0_x, 114 + static_cast<int>(par_y * 0.45f), static_cast<int>(165.0f * w_scale),  t_ov * 1.15f, 1,
                               c_wisp_crest, c_wisp_body, c_wisp_base, cy);
-      render_wispy_cloud_veil(it, w1_x, 178 + static_cast<int>(par_y * 0.52f), 175, -t_ov * 1.30f + 1.7f, 2,
+      render_wispy_cloud_veil(it, w1_x, 178 + static_cast<int>(par_y * 0.52f), static_cast<int>(175.0f * w_scale), -t_ov * 1.30f + 1.7f, 2,
                               c_wisp_crest, c_wisp_body, c_wisp_base, cy);
 
       // 3. Foreground Sculpted Cumulus Formations & Lower Wispy Tendril
-      int f0_x = 116 + static_cast<int>(fast_cos(t_ov * 1.05f + 3.1f) * 20.0f + par_x * 0.68f);
-      int f1_x = 346 + static_cast<int>(fast_sin(t_ov * 0.95f + 0.8f) * 22.0f + par_x * 0.76f);
+      int f0_x = static_cast<int>(116.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.05f + 3.1f) * 20.0f + par_x * 0.68f);
+      int f1_x = static_cast<int>(346.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.95f + 0.8f) * 22.0f + par_x * 0.76f);
       render_cumulus_cloud(it, f0_x, 172 + static_cast<int>(par_y * 0.68f), 0.96f, false, is_night);
       render_cumulus_cloud(it, f1_x, 258 + static_cast<int>(par_y * 0.76f), 0.92f, true,  is_night);
 
-      int w2_x = 228 + static_cast<int>(fast_cos(t_ov * 1.35f + 3.8f) * 26.0f + par_x * 0.82f);
-      render_wispy_cloud_veil(it, w2_x, 276 + static_cast<int>(par_y * 0.78f), 158,  t_ov * 1.40f + 3.4f, 3,
+      int w2_x = static_cast<int>(228.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.35f + 3.8f) * 26.0f + par_x * 0.82f);
+      render_wispy_cloud_veil(it, w2_x, 276 + static_cast<int>(par_y * 0.78f), static_cast<int>(158.0f * w_scale),  t_ov * 1.40f + 3.4f, 3,
                               c_wisp_crest, c_wisp_body, c_wisp_base, cy);
     }
   }
@@ -1135,10 +1148,11 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1F: FOG & MIST — VOLUMETRIC STRATUS PUFFS & UNDULATING WISPY CLOUD VEILS
   if (is_fog_mist) {
     float t_fog = now_ms * 0.00028f;
+    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
 
-    int c0_x = 125 + static_cast<int>(fast_sin(t_fog * 0.8f) * 18.0f + par_x * 0.30f);
-    int c1_x = 340 + static_cast<int>(fast_cos(t_fog * 0.7f + 1.4f) * 20.0f + par_x * 0.45f);
-    int c2_x = 155 + static_cast<int>(fast_sin(t_fog * 0.9f + 2.8f) * 16.0f + par_x * 0.60f);
+    int c0_x = static_cast<int>(125.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.8f) * 18.0f + par_x * 0.30f);
+    int c1_x = static_cast<int>(340.0f * w_scale) + static_cast<int>(fast_cos(t_fog * 0.7f + 1.4f) * 20.0f + par_x * 0.45f);
+    int c2_x = static_cast<int>(155.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.9f + 2.8f) * 16.0f + par_x * 0.60f);
     render_cumulus_cloud(it, c0_x, 102 + static_cast<int>(par_y * 0.30f), 0.90f, true, is_night);
     render_cumulus_cloud(it, c1_x, 188 + static_cast<int>(par_y * 0.45f), 0.85f, true, is_night);
     render_cumulus_cloud(it, c2_x, 266 + static_cast<int>(par_y * 0.60f), 0.80f, true, is_night);
@@ -1155,9 +1169,9 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       float dir = (p & 1) ? -1.0f : 1.0f;
       float depth_par = 0.35f + 0.15f * static_cast<float>(p);
       float phase = t_fog * (1.1f + p * 0.14f) * dir + p * 1.7f;
-      int center_x = PLUME_X0[p] + static_cast<int>(fast_sin(phase) * 32.0f + par_x * depth_par);
+      int center_x = static_cast<int>(PLUME_X0[p] * w_scale) + static_cast<int>(fast_sin(phase) * 32.0f + par_x * depth_par);
       int base_y   = PLUME_Y[p]  + static_cast<int>(fast_cos(phase * 0.8f) * 3.0f + par_y * depth_par * 0.5f);
-      render_wispy_cloud_veil(it, center_x, base_y, PLUME_HW[p], phase, p,
+      render_wispy_cloud_veil(it, center_x, base_y, static_cast<int>(PLUME_HW[p] * w_scale), phase, p,
                               c_wisp_crest, c_wisp_body, c_wisp_base, cy);
     }
   }
@@ -1224,16 +1238,17 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1G_B: THUNDERSTORM — STAGGERED MULTI-DEPTH STORM CLOUDS, SCUD VEILS & FORKED LIGHTNING
   if (is_storm) {
     float t_st = now_ms * 0.00048f;
+    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
     bool dark_storm_clouds = is_night && !storm_sky_flash;
 
     // 1. Deep Background Upper-Left Storm Anvil (drawn behind the lightning bolt!)
-    int bg_anvil_x = 152 + static_cast<int>(fast_sin(t_st * 0.75f) * 18.0f + par_x * 0.28f);
+    int bg_anvil_x = static_cast<int>(152.0f * w_scale) + static_cast<int>(fast_sin(t_st * 0.75f) * 18.0f + par_x * 0.28f);
     render_cumulus_cloud(it, bg_anvil_x, 76 + static_cast<int>(par_y * 0.28f), 1.16f, true, dark_storm_clouds);
 
     // 2. Forked Lightning Bolt (originating between the deep anvil and foreground storm masses)
     if (storm_bolt_vis) {
       int b_seed = static_cast<int>(storm_cycle_idx * 43U + 19U);
-      int x0 = 140 + static_cast<int>(hash2d_01(b_seed, 11) * 186.0f);
+      int x0 = static_cast<int>((140.0f + hash2d_01(b_seed, 11) * 186.0f) * w_scale);
       int y0 = 68;
 
       int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 44.0f);
@@ -1275,16 +1290,16 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     esphome::Color c_scud_base  = storm_sky_flash ? esphome::Color(62, 86, 120)
                                 : (is_night ? esphome::Color(20, 30, 44) : esphome::Color(42, 58, 78));
 
-    int w0_x = 248 + static_cast<int>(fast_cos(t_st * 1.15f + 0.6f) * 28.0f + par_x * 0.44f);
-    int w1_x = 188 + static_cast<int>(fast_sin(t_st * 1.35f + 2.2f) * 32.0f + par_x * 0.62f);
-    render_wispy_cloud_veil(it, w0_x,  96 + static_cast<int>(par_y * 0.42f), 165,  t_st * 1.3f,        21,
+    int w0_x = static_cast<int>(248.0f * w_scale) + static_cast<int>(fast_cos(t_st * 1.15f + 0.6f) * 28.0f + par_x * 0.44f);
+    int w1_x = static_cast<int>(188.0f * w_scale) + static_cast<int>(fast_sin(t_st * 1.35f + 2.2f) * 32.0f + par_x * 0.62f);
+    render_wispy_cloud_veil(it, w0_x,  96 + static_cast<int>(par_y * 0.42f), static_cast<int>(165.0f * w_scale),  t_st * 1.3f,        21,
                             c_scud_crest, c_scud_body, c_scud_base, cy);
-    render_wispy_cloud_veil(it, w1_x, 162 + static_cast<int>(par_y * 0.58f), 172, -t_st * 1.45f + 1.9f, 22,
+    render_wispy_cloud_veil(it, w1_x, 162 + static_cast<int>(par_y * 0.58f), static_cast<int>(172.0f * w_scale), -t_st * 1.45f + 1.9f, 22,
                             c_scud_crest, c_scud_body, c_scud_base, cy);
 
     // 4. Staggered Mid-Altitude Right Storm Cloud (y = 118) & Lower-Left Foreground Squall Cloud (y = 188)
-    int mid_rt_x = 342 + static_cast<int>(fast_cos(t_st * 0.92f + 1.5f) * 22.0f + par_x * 0.52f);
-    int fg_lt_x  = 112 + static_cast<int>(fast_sin(t_st * 1.10f + 3.1f) * 20.0f + par_x * 0.72f);
+    int mid_rt_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_st * 0.92f + 1.5f) * 22.0f + par_x * 0.52f);
+    int fg_lt_x  = static_cast<int>(112.0f * w_scale) + static_cast<int>(fast_sin(t_st * 1.10f + 3.1f) * 20.0f + par_x * 0.72f);
     render_cumulus_cloud(it, mid_rt_x, 118 + static_cast<int>(par_y * 0.52f), 0.98f, true, dark_storm_clouds);
     render_cumulus_cloud(it, fg_lt_x,  188 + static_cast<int>(par_y * 0.72f), 0.88f, false, dark_storm_clouds);
   }

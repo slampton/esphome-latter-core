@@ -234,18 +234,15 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
     int y0 = row_0_y + y_shift;
     int y1 = row_1_y + y_shift;
     int y2 = row_2_y + y_shift;
+    #if LATTER_HAS_IMU
     if (page_idx == 0) {
       if (y0 >= 75 && y0 <= 390) {
         render_tool_launcher_card(it, col_left_x,  y0, 1, "Timers",     font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y0, 2, "Alarms",     font_small, theme_secondary, col_white);
       }
-      if (y1 >= 75 && y1 <= 390) {
+      if (y1 >= 75 && y0 <= 390) {
         render_tool_launcher_card(it, col_left_x,  y1, 3, "Stopwatch",  font_small, theme_secondary, col_white);
-#if LATTER_HAS_IMU
         render_tool_launcher_card(it, col_right_x, y1, 7, "Level",      font_small, theme_secondary, col_white);
-#else
-        render_tool_launcher_card(it, col_right_x, y1, 12, "Camera",    font_small, theme_secondary, col_white);
-#endif
       }
       if (y2 >= 75 && y2 <= 390) {
         render_tool_launcher_card(it, col_left_x,  y2, 5, "Flashlight", font_small, theme_secondary, col_white);
@@ -265,6 +262,34 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
         render_tool_launcher_card(it, col_right_x, y2, 12, "Camera",    font_small, theme_secondary, col_white);
       }
     }
+#else
+    if (page_idx == 0) {
+      if (y0 >= 75 && y0 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y0, 1, "Timers",     font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y0, 2, "Alarms",     font_small, theme_secondary, col_white);
+      }
+      if (y1 >= 75 && y1 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y1, 3, "Stopwatch",  font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y1, 5, "Flashlight", font_small, theme_secondary, col_white);
+      }
+      if (y2 >= 75 && y2 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y2, 6, "Calculator", font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y2, 9, "Calendar",   font_small, theme_secondary, col_white);
+      }
+    } else {
+      if (y0 >= 75 && y0 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y0, 10, "Intercom",  font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y0, 11, "Macros",    font_small, theme_secondary, col_white);
+      }
+      if (y1 >= 75 && y1 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y1, 12, "Camera",    font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y1, 4,  "Dice Roll", font_small, theme_secondary, col_white);
+      }
+      if (y2 >= 75 && y2 <= 390) {
+        render_tool_launcher_card(it, col_left_x,  y2, 8,  "Coin Flip", font_small, theme_secondary, col_white);
+      }
+    }
+#endif
   };
 
   if (menu_scroll_active) {
@@ -1062,17 +1087,15 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
   uint8_t pulse = (now_ms / 250U) % 2U;
   esphome::Color alert_color = find_my_active ? col_white : (alarm_ringing ? col_red : theme_secondary);
   esphome::Color ring_c = pulse ? alert_color : (find_my_active ? theme_secondary : esphome::Color(20, 20, 20));
-  it.circle(cx, cy, 223, ring_c);
-  it.circle(cx, cy, 224, ring_c);
-  it.circle(cx, cy, 225, ring_c);
-  it.circle(cx, cy, 226, ring_c);
+  render_bezel_alert_border(it, cx, cy, ring_c);
 
   if (find_my_active) {
-    // High-visibility expanding radar rings for Find My Pocket Assistant
-    int radar_r = 60 + static_cast<int>((now_ms / 8U) % 145U);
+    // High-visibility expanding radar rings (scaled to SCREEN_MIN_R so they never clip on 320x480)
+    const uint32_t max_span = static_cast<uint32_t>(std::max(60, SCREEN_MIN_R - 76));
+    int radar_r = 50 + static_cast<int>((now_ms / 8U) % max_span);
     it.circle(cx, cy, radar_r, theme_primary);
     it.circle(cx, cy, radar_r + 1, pulse ? col_white : theme_secondary);
-    int radar_r2 = 60 + static_cast<int>(((now_ms / 8U) + 72U) % 145U);
+    int radar_r2 = 50 + static_cast<int>(((now_ms / 8U) + (max_span / 2U)) % max_span);
     it.circle(cx, cy, radar_r2, theme_secondary);
 
     it.print(cx, 75, font_small, pulse ? col_white : theme_secondary,
@@ -1154,11 +1177,9 @@ inline void render_notification_overlay(
     render_album_art_canvas(it, cam_art, cx, false, false, false, true);
   }
 
-  // Perimeter Priority Ring (r = 224..227)
+  // Perimeter Priority Border (adaptive to round and rectangular/rounded-watch bezels)
   Color ring_c = (is_crit && !pulse) ? Color(40, 14, 18) : accent_c;
-  for (int r = 224; r <= 227; r++) {
-    it.circle(cx, cy, r, ring_c);
-  }
+  render_bezel_alert_border(it, cx, cy, ring_c);
 
   // Word-wrap message into up to 2 lines (max 280px each)
   std::string line1 = "";

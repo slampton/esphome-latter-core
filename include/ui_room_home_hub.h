@@ -779,34 +779,72 @@ inline void render_security_alarm_page(
     if (is_act) it.circle(bx, WH_Y, 26, ring_c);
 
     if (i == 0) {
-      // 0. Security Shield
-      it.line(bx, WH_Y - 11, bx - 9, WH_Y - 7, fg_c);
-      it.line(bx, WH_Y - 11, bx + 9, WH_Y - 7, fg_c);
-      it.line(bx - 9, WH_Y - 7, bx - 9, WH_Y + 1, fg_c);
-      it.line(bx + 9, WH_Y - 7, bx + 9, WH_Y + 1, fg_c);
-      it.line(bx - 9, WH_Y + 1, bx, WH_Y + 11, fg_c);
-      it.line(bx + 9, WH_Y + 1, bx, WH_Y + 11, fg_c);
-      it.filled_circle(bx, WH_Y - 1, 3, fg_c);
+      // 0. Security Alarm: Solid-Filled Curved Heraldic Shield with Negative-Space Padlock Cutout
+      static constexpr int8_t SH_HW[27] = {
+         2,  5,  8, 11, 12, 12, 12, 12, 12, 12, 12, 11, 11,
+        11, 10, 10,  9,  8,  8,  7,  6,  5,  4,  3,  2,  1, 0
+      };
+      for (int dy = -13; dy <= 13; dy++) {
+        int hw = SH_HW[dy + 13];
+        if (hw > 0) {
+          it.horizontal_line(bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
+        }
+      }
+      // Negative-space padlock body & shackle carved inside shield
+      it.filled_rectangle(bx - 5, WH_Y - 1, 11, 8, card_bg_off);
+      it.circle(bx, WH_Y - 3, 3, card_bg_off);
+      it.circle(bx, WH_Y - 3, 2, card_bg_off);
+      // Keyhole pip inside padlock body
+      it.filled_circle(bx, WH_Y + 2, 1, fg_c);
+      it.vertical_line(bx, WH_Y + 3, 3, fg_c);
     } else if (i == 1) {
-      // 1. Thermostat Thermometer
-      it.rectangle(bx - 3, WH_Y - 11, 7, 13, fg_c);
-      it.filled_circle(bx, WH_Y + 5, 5, fg_c);
-      it.vertical_line(bx, WH_Y - 5, 8, fg_c);
-      it.horizontal_line(bx + 5, WH_Y - 8, 3, fg_c);
-      it.horizontal_line(bx + 5, WH_Y - 4, 3, fg_c);
+      // 1. Thermostat: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
+      int tx = bx - 2;
+      it.line(tx - 3, WH_Y - 13, tx + 3, WH_Y - 13, fg_c);
+      it.line(tx - 2, WH_Y - 14, tx + 2, WH_Y - 14, fg_c);
+      it.line(tx - 3, WH_Y - 13, tx - 3, WH_Y + 3,  fg_c);
+      it.line(tx - 2, WH_Y - 13, tx - 2, WH_Y + 3,  fg_c);
+      it.line(tx + 3, WH_Y - 13, tx + 3, WH_Y + 3,  fg_c);
+      it.line(tx + 2, WH_Y - 13, tx + 2, WH_Y + 3,  fg_c);
+      it.filled_circle(tx, WH_Y + 8, 6, fg_c);
+      it.filled_circle(tx, WH_Y + 8, 4, card_bg_off);
+      it.filled_circle(tx, WH_Y + 8, 2, fg_c);
+      it.filled_rectangle(tx - 1, WH_Y - 5, 3, 12, fg_c);
+      // 2px-thick degree ticks on right
+      it.filled_rectangle(tx + 6, WH_Y - 11, 5, 2, fg_c);
+      it.filled_rectangle(tx + 6, WH_Y - 6,  4, 2, fg_c);
+      it.filled_rectangle(tx + 6, WH_Y - 1,  5, 2, fg_c);
     } else if (i == 2) {
-      // 2. Garage Door / Lock
-      it.line(bx, WH_Y - 11, bx - 11, WH_Y - 3, fg_c);
-      it.line(bx, WH_Y - 11, bx + 11, WH_Y - 3, fg_c);
-      it.rectangle(bx - 9, WH_Y - 3, 19, 14, fg_c);
-      it.horizontal_line(bx - 6, WH_Y + 1, 13, fg_c);
-      it.horizontal_line(bx - 6, WH_Y + 5, 13, fg_c);
+      // 2. Entry & Garage: Solid Pitched-Roof Garage Facade with Recessed 3-Panel Roll-Up Door
+      it.filled_triangle(bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
+      it.filled_rectangle(bx - 15, WH_Y - 4, 31, 2, fg_c);
+      it.filled_rectangle(bx - 12, WH_Y - 2, 25, 14, fg_c);
+      it.horizontal_line(bx - 12, WH_Y - 2, 25, card_bg_off);
+      // Negative-space garage bay opening
+      it.filled_rectangle(bx - 9, WH_Y, 19, 12, card_bg_off);
+      // 3 distinct raised horizontal roll-up garage door panels inside bay
+      it.filled_rectangle(bx - 7, WH_Y + 1, 15, 3, fg_c);
+      it.filled_rectangle(bx - 7, WH_Y + 5, 15, 3, fg_c);
+      it.filled_rectangle(bx - 7, WH_Y + 9, 15, 3, fg_c);
     } else {
-      // 3. Robot Vacuum Disc + Bumper Arc
-      it.circle(bx, WH_Y, 11, fg_c);
-      it.circle(bx, WH_Y, 10, fg_c);
-      it.filled_circle(bx, WH_Y - 2, 3, fg_c);
-      it.horizontal_line(bx - 6, WH_Y + 5, 13, fg_c);
+      // 3. Robot Vacuum: Solid Top-Down Smart Robot Disc, Front Bumper Seam, LiDAR Turret & Side Brushes
+      // Angled front-left & front-right side-brush whiskers peeking out from under chassis
+      it.line(bx - 9, WH_Y - 9, bx - 14, WH_Y - 13, fg_c);
+      it.line(bx - 8, WH_Y - 10, bx - 12, WH_Y - 14, fg_c);
+      it.line(bx + 9, WH_Y - 9, bx + 14, WH_Y - 13, fg_c);
+      it.line(bx + 8, WH_Y - 10, bx + 12, WH_Y - 14, fg_c);
+      // Solid circular robot chassis (r = 12)
+      it.filled_circle(bx, WH_Y + 1, 12, fg_c);
+      // Negative-space curved front bumper seam across upper arc
+      it.horizontal_line(bx - 8, WH_Y - 6, 17, card_bg_off);
+      it.horizontal_line(bx - 9, WH_Y - 5, 19, card_bg_off);
+      it.line(bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, card_bg_off);
+      it.line(bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, card_bg_off);
+      // Negative-space moat + raised center LiDAR laser turret dome
+      it.filled_circle(bx, WH_Y + 2, 5, card_bg_off);
+      it.filled_circle(bx, WH_Y + 2, 3, fg_c);
+      // Rear status indicator slit
+      it.horizontal_line(bx - 3, WH_Y + 9, 7, card_bg_off);
     }
   }
 

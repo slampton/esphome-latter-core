@@ -539,6 +539,29 @@ inline void render_scroll_chevron(DisplayT &it, int x, int y, bool is_up,
 }
 
 template <typename DisplayT>
+inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Color ring_c) {
+#if LATTER_ROUND_DISPLAY
+  for (int r = SCREEN_R - 10; r <= SCREEN_R - 7; r++) {
+    it.circle(cx, cy, r, ring_c);
+  }
+#else
+  (void)cy;
+  for (int y = 2; y < SCREEN_H - 2; y++) {
+    int hw_out = circle_half_span(y, 2);
+    int hw_in  = circle_half_span(y, 6);
+    if (hw_out <= 0) continue;
+    if (y < 6 || y >= SCREEN_H - 6 || hw_in <= 0) {
+      it.horizontal_line(cx - hw_out, y, 2 * hw_out + 1, ring_c);
+    } else {
+      int seg = std::max(4, hw_out - hw_in + 1);
+      it.horizontal_line(cx - hw_out, y, seg, ring_c);
+      it.horizontal_line(cx + hw_out - seg + 1, y, seg, ring_c);
+    }
+  }
+#endif
+}
+
+template <typename DisplayT>
 inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
                                       esphome::Color bar_col = esphome::Color(175, 190, 210)) {
   // Sleek 108x5px rounded bottom gesture pill bar for Swipe-Up-to-Home

@@ -61,62 +61,75 @@ inline void render_clock_page(
     const esphome::Color &col_white, const esphome::Color &col_slate,
     const esphome::Color &col_gray, const esphome::Color &col_dark_gray,
     const esphome::Color &col_red, const esphome::Color &col_gold,
-    const esphome::Color &col_green) {
-#if !LATTER_ROUND_DISPLAY
-  // Square / Rectangular Modern Digital Chronometer Layout
-  it.rectangle(6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
+    const esphome::Color &col_green,
+    const std::string &clock_face_opt = "") {
+  const bool is_minimal_digital = (clock_face_opt == "Minimal Digital");
+  const bool is_ring_digital    = (clock_face_opt == "Modern Digital (Bold)") ||
+                                  (clock_face_opt.empty() && clock_face_digital);
+
+  if (is_minimal_digital) {
+    // FACE 3: MINIMAL DIGITAL (Default on Mobile, Wrist, Remote & Desk; 3rd face on Pocket Assistant)
+    // Clean Date + Giant Digital Time + AM/PM & Seconds (no bottom progress bar, no 60-tick ring)
+#if LATTER_ROUND_DISPLAY
+    it.circle(cx, cy, 230, col_dark_gray);
+    render_battery_indicator(it, cx, 348, batt, is_charging, font_small,
+                             theme_primary, col_gold, col_green);
+#else
+    it.rectangle(6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
 #if LATTER_HAS_BATTERY
-  render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
-                           theme_primary, col_gold, col_green);
+    render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
+                             theme_primary, col_gold, col_green);
 #endif
-  if (!now.is_valid()) {
-    it.print(cx, cy - 10, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+#endif
+    if (!now.is_valid()) {
+      it.print(cx, cy - 8, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      return;
+    }
+    it.strftime(cx, cy - 82, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
+    char sq_dig[16], sq_ap[8] = "";
+    format_time_hhmm(now.hour, now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
+    it.print(cx, cy - 8, font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
+    char sq_sec[32];
+    if (is_24h_format) snprintf(sq_sec, sizeof(sq_sec), "SEC  •  %02ds", now.second);
+    else snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, now.second);
+    it.print(cx, cy + 56, font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
     return;
   }
-  it.strftime(cx, cy - 82, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
-  char sq_dig[16], sq_ap[8] = "";
-  format_time_hhmm(now.hour, now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
-  it.print(cx, cy - 8, font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
-  char sq_sec[32];
-  if (is_24h_format) snprintf(sq_sec, sizeof(sq_sec), "SEC  •  %02ds", now.second);
-  else snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, now.second);
-  it.print(cx, cy + 56, font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
 
-  // Smooth horizontal seconds progress bar
-  const int bar_w = std::min(260, SCREEN_W - 64);
-  const int bar_x0 = cx - (bar_w / 2);
-  const int fill_w = (bar_w * (now.second % 60)) / 59;
-  it.filled_rectangle(bar_x0, cy + 92, bar_w, 6, col_dark_gray);
-  if (fill_w > 0) {
-    it.filled_rectangle(bar_x0, cy + 92, fill_w, 6, theme_primary);
-  }
-  return;
-#endif
+  // FACE 1 (MODERN ROMAN ANALOG) & FACE 2 (MODERN DIGITAL WITH CHAPTER RING)
+  const float dial_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+  const int r_outer = static_cast<int>(230.0f * dial_scale);
+  const int r_mid   = static_cast<int>(228.0f * dial_scale);
+  const int r_inner = static_cast<int>(222.0f * dial_scale);
+  const int r_t_out = static_cast<int>(220.0f * dial_scale);
+  const int r_t_in5 = static_cast<int>(212.0f * dial_scale);
+  const int r_t_in1 = static_cast<int>(216.0f * dial_scale);
 
-  // 1. Round Display: Watch bezel rings, 60-tick perimeter chapter ring, and live battery gauge
-  it.circle(cx, cy, 230, col_dark_gray);
-  it.circle(cx, cy, 228, col_slate);
-  it.circle(cx, cy, 222, col_dark_gray);
+  it.circle(cx, cy, r_outer, col_dark_gray);
+  it.circle(cx, cy, r_mid, col_slate);
+  it.circle(cx, cy, r_inner, col_dark_gray);
 
   for (int i = 0; i < 60; i++) {
-    if (!clock_face_digital && i == 30) continue;  // 6 o'clock pip sanctuary on Analog dial
+    if (!is_ring_digital && i == 30) continue;  // 6 o'clock pip sanctuary on Analog dial
     float s = DIAL_SIN[i];
     float c = DIAL_COS[i];
-    int r_in = (i % 5 == 0) ? 212 : 216;
+    int r_in = (i % 5 == 0) ? r_t_in5 : r_t_in1;
     const esphome::Color &tick_col = (i % 5 == 0) ? col_slate : col_gray;
     it.line(cx + static_cast<int>(r_in * s), cy - static_cast<int>(r_in * c),
-            cx + static_cast<int>(220 * s), cy - static_cast<int>(220 * c), tick_col);
+            cx + static_cast<int>(r_t_out * s), cy - static_cast<int>(r_t_out * c), tick_col);
   }
 
-  render_battery_indicator(it, cx, 348, batt, is_charging, font_small,
+#if LATTER_HAS_BATTERY
+  const int dial_batt_y = cy + static_cast<int>(115.0f * dial_scale);
+  render_battery_indicator(it, cx, dial_batt_y, batt, is_charging, font_small,
                            theme_primary, col_gold, col_green);
+#endif
 
-  // 2. Pre-sync state: minimalist "--:--" placeholder without text clutter until HA time syncs
   if (!now.is_valid()) {
-    if (clock_face_digital) {
-      it.print(cx, 205, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+    if (is_ring_digital) {
+      it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
     } else {
-      it.print(cx, 305, font_date, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, "--:--");
       it.filled_circle(cx, cy, 7, col_white);
       it.filled_circle(cx, cy, 4, col_red);
       it.filled_circle(cx, cy, 2, col_dark_gray);
@@ -124,46 +137,42 @@ inline void render_clock_page(
     return;
   }
 
-  // 3. Synchronized live watch face rendering
   int hour = now.hour;
   int min = now.minute;
   int sec = now.second;
   int sec_idx = ((sec % 60) + 60) % 60;
 
-  if (clock_face_digital) {
-    // Highlight active second tick in theme primary (enlarged +25% in length & width)
+  if (is_ring_digital) {
     float s_sec = DIAL_SIN[sec_idx];
     float c_sec = DIAL_COS[sec_idx];
     float perp_x = -c_sec;
     float perp_y = -s_sec;
+    float r_s_in = 205.0f * dial_scale;
+    float r_s_out = 220.0f * dial_scale;
     for (int w = -1; w <= 1; w++) {
-      int x1 = cx + static_cast<int>(205.0f * s_sec + w * perp_x);
-      int y1 = cy - static_cast<int>(205.0f * c_sec - w * perp_y);
-      int x2 = cx + static_cast<int>(220.0f * s_sec + w * perp_x);
-      int y2 = cy - static_cast<int>(220.0f * c_sec - w * perp_y);
+      int x1 = cx + static_cast<int>(r_s_in * s_sec + w * perp_x);
+      int y1 = cy - static_cast<int>(r_s_in * c_sec - w * perp_y);
+      int x2 = cx + static_cast<int>(r_s_out * s_sec + w * perp_x);
+      int y2 = cy - static_cast<int>(r_s_out * c_sec - w * perp_y);
       it.line(x1, y1, x2, y2, theme_primary);
     }
 
-    // Date Header: "MON, SEP 28" (Theme Primary)
-    it.strftime(cx, 130, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
+    it.strftime(cx, cy - static_cast<int>(103.0f * dial_scale), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
 
-    // Giant Bold Digital Time: "10:45" (12h) or "14:45" (24h)
     char dig_buf[16];
     char ap_str[8] = "";
     format_time_hhmm(hour, min, is_24h_format, dig_buf, sizeof(dig_buf), ap_str);
-    it.print(cx, 205, font_time, col_white, esphome::display::TextAlign::CENTER, dig_buf);
+    it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_white, esphome::display::TextAlign::CENTER, dig_buf);
 
-    // AM/PM & Seconds Pill: (Theme Secondary)
     char sec_buf[32];
     if (is_24h_format) {
       snprintf(sec_buf, sizeof(sec_buf), "SEC  •  %02ds", sec);
     } else {
       snprintf(sec_buf, sizeof(sec_buf), "%s  •  %02ds", ap_str, sec);
     }
-    it.print(cx, 262, font_small, theme_secondary, esphome::display::TextAlign::CENTER, sec_buf);
+    it.print(cx, cy + static_cast<int>(29.0f * dial_scale), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sec_buf);
   } else {
-    // Formatted date (Theme Primary) and digital time complication (uniform slate gray)
-    it.strftime(cx, 104, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
+    it.strftime(cx, cy - static_cast<int>(129.0f * dial_scale), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     char time_buf[32];
     if (is_24h_format) {
       snprintf(time_buf, sizeof(time_buf), "%02d:%02d", hour, min);
@@ -172,45 +181,42 @@ inline void render_clock_page(
       if (h12 == 0) h12 = 12;
       snprintf(time_buf, sizeof(time_buf), "%d:%02d %s", h12, min, hour >= 12 ? "pm" : "am");
     }
-    it.print(cx, 305, font_date, col_slate, esphome::display::TextAlign::CENTER, time_buf);
+    it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, time_buf);
 
-    // Zero-trig LUT angles for Hour, Minute, and Second hands
     float h_angle = ((hour % 12) + min / 60.0f + sec / 3600.0f) * (2.0f * PI_F / 12.0f);
     float m_angle = (min + sec / 60.0f) * (2.0f * PI_F / 60.0f);
 
-    // Hour Hand: Bold White Sword Hand (base width 14px, length 88px)
     {
       float sin_h = 0.0f, cos_h = 1.0f;
       fast_sincos(h_angle, sin_h, cos_h);
+      float h_len = 88.0f * dial_scale;
       it.filled_triangle(cx - static_cast<int>(7.0f * cos_h), cy - static_cast<int>(7.0f * sin_h),
                          cx + static_cast<int>(7.0f * cos_h), cy + static_cast<int>(7.0f * sin_h),
-                         cx + static_cast<int>(88.0f * sin_h), cy - static_cast<int>(88.0f * cos_h),
+                         cx + static_cast<int>(h_len * sin_h), cy - static_cast<int>(h_len * cos_h),
                          col_white);
     }
 
-    // Minute Hand: Slender Slate Gray Sword Hand (base width 8px, length 148px)
     {
       float sin_m = 0.0f, cos_m = 1.0f;
       fast_sincos(m_angle, sin_m, cos_m);
+      float m_len = 148.0f * dial_scale;
       it.filled_triangle(cx - static_cast<int>(4.0f * cos_m), cy - static_cast<int>(4.0f * sin_m),
                          cx + static_cast<int>(4.0f * cos_m), cy + static_cast<int>(4.0f * sin_m),
-                         cx + static_cast<int>(148.0f * sin_m), cy - static_cast<int>(148.0f * cos_m),
+                         cx + static_cast<int>(m_len * sin_m), cy - static_cast<int>(m_len * cos_m),
                          col_slate);
     }
 
-    // Second Hand: Bold Red Needle (length 168px) with 4px circular counterweight via O(1) DIAL_SIN/COS
     {
       float sin_s = DIAL_SIN[sec_idx];
       float cos_s = DIAL_COS[sec_idx];
-      int tip_x = cx + static_cast<int>(168.0f * sin_s);
-      int tip_y = cy - static_cast<int>(168.0f * cos_s);
-      int tail_x = cx - static_cast<int>(30.0f * sin_s);
-      int tail_y = cy + static_cast<int>(30.0f * cos_s);
+      int tip_x = cx + static_cast<int>(168.0f * dial_scale * sin_s);
+      int tip_y = cy - static_cast<int>(168.0f * dial_scale * cos_s);
+      int tail_x = cx - static_cast<int>(30.0f * dial_scale * sin_s);
+      int tail_y = cy + static_cast<int>(30.0f * dial_scale * cos_s);
       it.line(tail_x, tail_y, tip_x, tip_y, col_red);
       it.filled_circle(tail_x, tail_y, 4, col_red);
     }
 
-    // Center Pinion Cap (White ring, red center pip, dark gray arbor)
     it.filled_circle(cx, cy, 7, col_white);
     it.filled_circle(cx, cy, 4, col_red);
     it.filled_circle(cx, cy, 2, col_dark_gray);
@@ -1368,18 +1374,25 @@ inline void render_home_page(
           it.filled_circle(bx, by + 1, 2, c);
         }
       } else if (app_id == 9) {
-        // Whole-Home Hub (Alarm, Thermostat, Garage, Vacuum): Solid Pitched-Roof House Silhouette
-        it.filled_triangle(bx, by - 15, bx - 15, by - 2, bx + 15, by - 2, c);
-        it.filled_rectangle(bx - 11, by - 2, 23, 15, c);
+        (void)home_alarm_state;
+        // Whole-Home Hub: Sculpted Architectural House (Cantilevered Eaves, Chimney, Negative-Space Door & 4-Pane Window)
+        // 1. Right chimney stack & pitched roof with overhanging eaves
+        it.filled_rectangle(bx + 7, by - 14, 4, 8, c);
+        it.filled_triangle(bx, by - 16, bx - 16, by - 2, bx + 16, by - 2, c);
+        it.filled_rectangle(bx - 16, by - 2, 33, 2, c);
+        // 2. Solid lower house facade
+        it.filled_rectangle(bx - 12, by, 25, 13, c);
         if (!is_shadow) {
           Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
-          if (home_alarm_state.find("armed_away") != std::string::npos || home_alarm_state == "triggered") {
-            cut_c = Color(235, 65, 65);
-          } else if (home_alarm_state.find("armed") != std::string::npos || home_alarm_state == "arming") {
-            cut_c = col_gold;
-          }
-          it.filled_circle(bx, by + 3, 4, cut_c);
-          it.filled_rectangle(bx - 2, by + 7, 5, 3, cut_c);
+          // Negative-space eave shadow line separating overhanging roof from facade
+          it.horizontal_line(bx - 12, by, 25, cut_c);
+          // Negative-space front door on left (with tiny doorknob pip)
+          it.filled_rectangle(bx - 8, by + 3, 6, 10, cut_c);
+          it.draw_pixel_at(bx - 4, by + 8, c);
+          // Negative-space 2x2 paned window on right
+          it.filled_rectangle(bx + 2, by + 3, 7, 6, cut_c);
+          it.vertical_line(bx + 5, by + 3, 6, c);
+          it.horizontal_line(bx + 2, by + 5, 7, c);
         }
       }
     };
