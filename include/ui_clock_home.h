@@ -1233,43 +1233,28 @@ inline void render_home_page(
           }
         }
       } else if (app_id == 8) {
-        // Tools: Solid Filled Single-Head 45-Degree Wrench (Compact r=8.2px Head + Long Rounded Handle)
-        // Matches the solid filled visual weight of the Music icon!
-        auto is_wrench_filled = [](int dx, int dy) -> bool {
-          static constexpr float INV_SQRT2 = 0.70710678f;
-          float fx = static_cast<float>(dx);
-          float fy = static_cast<float>(dy);
-          float u = (fx - fy) * INV_SQRT2;
-          float v = (fx + fy) * INV_SQRT2;
-
-          // 1. Transparent Upper-Right Open U-Jaw Slot (u >= 6.8, |v| <= 3.15px)
-          const float jaw_r  = 3.15f;
-          const float jaw_u0 = 6.8f;
-          if (u >= jaw_u0 && std::fabs(v) <= jaw_r) return false;
-          float du_j = u - jaw_u0;
-          if ((du_j * du_j + v * v) <= (jaw_r * jaw_r)) return false;
-
-          // 2. Compact Upper-Right Wrench Head (centered at u = +8.5, v = 0, r = 8.2px)
-          const float head_r = 8.2f;
-          float du_h = u - 8.5f;
-          if ((du_h * du_h + v * v) <= (head_r * head_r) && u <= 15.0f) {
-            return true;
+        // Tools / App Drawer: 2x2 Grid of 4 Rounded App-Icon Squares (3 Solid Squircles + 1 Framed "More/Etc." Tile)
+        auto is_app_grid_4 = [](int dx, int dy) -> bool {
+          int ax = std::abs(dx);
+          int ay = std::abs(dy);
+          // 3px negative-space cross gutter between the 4 squares (each tile spans 2..11 on X and Y = 10x10px)
+          if (ax < 2 || ax > 11 || ay < 2 || ay > 11) return false;
+          int lx = ax - 2; // 0..9 within tile
+          int ly = ay - 2; // 0..9 within tile
+          // Smooth app-icon squircle corners (clip the 4 extreme corner pixels of each 10x10 tile)
+          if ((lx == 0 || lx == 9) && (ly == 0 || ly == 9)) return false;
+          // Bottom-Right tile (dx > 0 && dy > 0): carve a 4x4 negative-space center cutout for "More / Etc." style
+          if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly >= 3 && ly <= 6) {
+            return false;
           }
-
-          // 3. Long Diagonal Handle Capsule (from u = -14.2 to u = +4.5, half-width = 3.25px)
-          const float shaft_r = 3.25f;
-          if (u >= -14.2f && u <= 4.5f && std::fabs(v) <= shaft_r) return true;
-          float du_cap = u + 14.2f;
-          if ((du_cap * du_cap + v * v) <= (shaft_r * shaft_r)) return true;
-
-          return false;
+          return true;
         };
 
         if (!is_shadow) {
-          for (int dy = -18; dy <= 18; dy++) {
-            for (int dx = -18; dx <= 18; dx++) {
-              if (is_wrench_filled(dx, dy)) {
-                if (!is_wrench_filled(dx + 1, dy + 1)) {
+          for (int dy = -12; dy <= 12; dy++) {
+            for (int dx = -12; dx <= 12; dx++) {
+              if (is_app_grid_4(dx, dy)) {
+                if (!is_app_grid_4(dx + 1, dy + 1)) {
                   it.draw_pixel_at(bx + dx + 1, by + dy + 1, col_black);
                 }
                 it.draw_pixel_at(bx + dx, by + dy, c);

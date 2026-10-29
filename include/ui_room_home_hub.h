@@ -13,6 +13,33 @@ namespace latter_ui {
 // SECTION 16C: AREA-AWARE ROOM CONTROL ENGINE (PAGE 6 — HORIZONTAL FILL-SLIDERS)
 // =============================================================================
 
+// 90-Degree Symmetric 4-Blade Ceiling Fan Pixel Predicate (Central Motor Hub + 1px Moat + 4 Swept Paddle Blades)
+inline bool is_ceiling_fan_blade_arm(float u, float v) {
+  if (v < 4.2f || v > 13.0f) return false;
+  if (v <= 9.6f) {
+    float u_min = -1.5f;
+    float u_max = 1.5f + (v - 4.2f) * 0.44f;
+    return (u >= u_min && u <= u_max);
+  }
+  float du = (u - 1.2f) / 3.1f;
+  float dv = (v - 9.6f) / 3.3f;
+  return (du * du + dv * dv) <= 1.0f;
+}
+
+inline bool is_ceiling_fan_4blade_pixel(int dx, int dy) {
+  int r2 = dx * dx + dy * dy;
+  if (r2 <= 1) return false;   // Negative-space center motor pin
+  if (r2 <= 10) return true;   // Solid central motor housing (r ~ 3.2px)
+  if (r2 <= 18) return false;  // Crisp negative-space collar moat around motor hub
+  if (r2 > 172) return false;
+  float fx = static_cast<float>(dx);
+  float fy = static_cast<float>(dy);
+  return is_ceiling_fan_blade_arm(fx, -fy) ||  // Top blade
+         is_ceiling_fan_blade_arm(fy,  fx) ||  // Right blade
+         is_ceiling_fan_blade_arm(-fx, fy) ||  // Bottom blade
+         is_ceiling_fan_blade_arm(-fy, -fx);   // Left blade
+}
+
 inline bool is_curtain_entity(const std::string &name, const std::string &id_str) {
   std::string s = name + " " + id_str;
   for (char &c : s) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
@@ -201,19 +228,14 @@ inline void render_room_control_page(
         it.filled_triangle(bx + 9, by - 7, bx + 1, by - 7, bx + 9, by + 3, fg_c);
         it.filled_rectangle(bx + 6, by + 3, 4, 6, fg_c);
       } else if (cat == "fan") {
-        // Fans: Compact 3-Blade Swept Propeller Fan (120-degree intervals: Up, Down-Right, Down-Left)
-        // Top blade (0 deg)
-        it.filled_triangle(bx, by - 2, bx - 4, by - 11, bx + 3, by - 11, fg_c);
-        it.filled_circle(bx, by - 11, 3, fg_c);
-        // Bottom-Right blade (120 deg)
-        it.filled_triangle(bx + 1, by + 1, bx + 11, by + 3, bx + 7, by + 9, fg_c);
-        it.filled_circle(bx + 9, by + 6, 3, fg_c);
-        // Bottom-Left blade (240 deg)
-        it.filled_triangle(bx - 1, by + 1, bx - 11, by + 3, bx - 7, by + 9, fg_c);
-        it.filled_circle(bx - 9, by + 6, 3, fg_c);
-        // Center rotor hub + negative-space axle pin
-        it.filled_circle(bx, by, 4, fg_c);
-        it.filled_circle(bx, by, 1, Color(16, 20, 27));
+        // Fans: Traditional 4-Blade Ceiling Fan (Central Motor Hub + 4 Swept Paddle Blades)
+        for (int dy = -13; dy <= 13; dy++) {
+          for (int dx = -13; dx <= 13; dx++) {
+            if (is_ceiling_fan_4blade_pixel(dx, dy)) {
+              it.draw_pixel_at(bx + dx, by + dy, fg_c);
+            }
+          }
+        }
       } else if (cat == "switch") {
         // Switches & Outlets: Rounded Toggle Pill + Knob
         it.filled_circle(bx - 5, by, 7, fg_c);
@@ -229,11 +251,17 @@ inline void render_room_control_page(
         it.line(bx - 3, by - 9, bx + 9, by - 11, fg_c);
         it.line(bx - 3, by - 8, bx + 9, by - 10, fg_c);
       } else {
-        // All Devices: 2x2 Rounded Smart Grid Icon
-        it.filled_rectangle(bx - 9, by - 9, 7, 7, fg_c);
-        it.filled_rectangle(bx + 3, by - 9, 7, 7, fg_c);
-        it.filled_rectangle(bx - 9, by + 3, 7, 7, fg_c);
-        it.filled_rectangle(bx + 3, by + 3, 7, 7, fg_c);
+        // All Devices: 2x2 Rounded App-Tile Grid (3 Solid Squircles + 1 Framed Bottom-Right Tile)
+        for (int dy = -10; dy <= 10; dy++) {
+          for (int dx = -10; dx <= 10; dx++) {
+            int ax = std::abs(dx), ay = std::abs(dy);
+            if (ax < 2 || ax > 9 || ay < 2 || ay > 9) continue;
+            int lx = ax - 2, ly = ay - 2; // 0..7
+            if ((lx == 0 || lx == 7) && (ly == 0 || ly == 7)) continue;
+            if (dx > 0 && dy > 0 && lx >= 2 && lx <= 5 && ly >= 2 && ly <= 5) continue;
+            it.draw_pixel_at(bx + dx, by + dy, fg_c);
+          }
+        }
       }
     }
 
@@ -474,16 +502,16 @@ inline void render_room_control_page(
         it.filled_circle(gx + 8, gy + 7, 2, theme_secondary);
       }
     } else if (dtype == "fan") {
-      // 3-Blade Swept Propeller Fan
+      // Traditional 4-Blade Ceiling Fan (Central Motor Hub + 4 Swept Paddle Blades)
       Color fan_c = is_on ? Color(48, 196, 156) : fg_c;
-      it.filled_triangle(gx, gy - 2, gx - 4, gy - 11, gx + 3, gy - 11, fan_c);
-      it.filled_circle(gx, gy - 11, 3, fan_c);
-      it.filled_triangle(gx + 1, gy + 1, gx + 11, gy + 3, gx + 7, gy + 9, fan_c);
-      it.filled_circle(gx + 9, gy + 6, 3, fan_c);
-      it.filled_triangle(gx - 1, gy + 1, gx - 11, gy + 3, gx - 7, gy + 9, fan_c);
-      it.filled_circle(gx - 9, gy + 6, 3, fan_c);
-      it.filled_circle(gx, gy, 4, col_white);
-      it.filled_circle(gx, gy, 1, Color(16, 20, 27));
+      for (int dy = -13; dy <= 13; dy++) {
+        for (int dx = -13; dx <= 13; dx++) {
+          if (is_ceiling_fan_4blade_pixel(dx, dy)) {
+            int r2 = dx * dx + dy * dy;
+            it.draw_pixel_at(gx + dx, gy + dy, (r2 <= 10 && is_on) ? col_white : fan_c);
+          }
+        }
+      }
     } else if (dtype == "scene" || dtype == "script") {
       // Scene Sparkle Star
       it.line(gx, gy - 11, gx, gy + 11, col_gold);
