@@ -338,12 +338,16 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
     gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? 1 : 0);
   }
 #endif
+#if !defined(LATTER_BACKLIGHT_PIN)
   if constexpr (requires(DispT *d, uint8_t b) { d->set_brightness(b); }) {
     if (disp != nullptr) disp->set_brightness(bri_byte);
   } else {
     (void)disp;
     (void)bri_byte;
   }
+#else
+  (void)disp;
+#endif
 }
 
 }  // namespace latter_ui
