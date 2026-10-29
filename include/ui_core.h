@@ -158,7 +158,7 @@ static constexpr int16_t CIRCLE_HW[466] = {
 #if LATTER_ROUND_DISPLAY
 #define LATTER_CORNER_R (LATTER_SCREEN_W / 2)
 #elif LATTER_IS_WEARABLE
-#define LATTER_CORNER_R 62
+#define LATTER_CORNER_R 98
 #else
 #define LATTER_CORNER_R 20
 #endif
@@ -547,7 +547,7 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
 #else
   (void)cx;
   (void)cy;
-  const int pad = 3;
+  const int pad = LATTER_IS_WEARABLE ? 5 : 3;
   const int thick = 5;
   const int cr_out = std::max(8, LATTER_CORNER_R - pad);
   const int cr_in  = std::max(4, cr_out - thick);
@@ -763,25 +763,21 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int x = start_x;
       while (x <= end_x) {
         uint16_t p = src_row[x];
-        if ((p & 0xE79C) == 0) {
+        if ((p & 0xC718) == 0) {
           x++;
           continue;
         }
-        uint16_t p_masked = p & 0xE79C;
-        int run_start = x++;
-        while (x <= end_x && ((src_row[x] & 0xE79C) == p_masked)) {
+        uint16_t p_masked = p & 0xC718;
+        int run_start = x;
+        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
+        while (x <= end_x && ((src_row[x] & 0xC718) == p_masked)) {
           x++;
         }
         esphome::Color col(
             static_cast<uint8_t>((p & 0xF800) >> 8),
             static_cast<uint8_t>((p & 0x07E0) >> 3),
             static_cast<uint8_t>((p & 0x001F) << 3));
-        int run_len = x - run_start;
-        if (run_len == 1) {
-          it.draw_pixel_at(run_start, y, col);
-        } else {
-          it.horizontal_line(run_start, y, run_len, col);
-        }
+        it.horizontal_line(run_start, y, x - run_start, col);
       }
     }
     return true;
@@ -831,48 +827,40 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     if (src_w == SCREEN_W) {
       while (x <= end_x) {
         uint16_t p = src_row[x];
-        if ((p & 0xE79C) == 0) {
+        if ((p & 0xC718) == 0) {
           x++;
           continue;
         }
-        uint16_t p_masked = p & 0xE79C;
-        int run_start = x++;
-        while (x <= end_x && ((src_row[x] & 0xE79C) == p_masked)) {
+        uint16_t p_masked = p & 0xC718;
+        int run_start = x;
+        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
+        while (x <= end_x && ((src_row[x] & 0xC718) == p_masked)) {
           x++;
         }
         esphome::Color col(
             static_cast<uint8_t>((p & 0xF800) >> 8),
             static_cast<uint8_t>((p & 0x07E0) >> 3),
             static_cast<uint8_t>((p & 0x001F) << 3));
-        int run_len = x - run_start;
-        if (run_len == 1) {
-          it.draw_pixel_at(run_start, y, col);
-        } else {
-          it.horizontal_line(run_start, y, run_len, col);
-        }
+        it.horizontal_line(run_start, y, x - run_start, col);
       }
     } else {
       while (x <= end_x) {
         uint16_t p = src_row[(x * step_x) >> 12];
-        if ((p & 0xE79C) == 0) {
+        if ((p & 0xC718) == 0) {
           x++;
           continue;
         }
-        uint16_t p_masked = p & 0xE79C;
-        int run_start = x++;
-        while (x <= end_x && ((src_row[(x * step_x) >> 12] & 0xE79C) == p_masked)) {
+        uint16_t p_masked = p & 0xC718;
+        int run_start = x;
+        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
+        while (x <= end_x && ((src_row[(x * step_x) >> 12] & 0xC718) == p_masked)) {
           x++;
         }
         esphome::Color col(
             static_cast<uint8_t>((p & 0xF800) >> 8),
             static_cast<uint8_t>((p & 0x07E0) >> 3),
             static_cast<uint8_t>((p & 0x001F) << 3));
-        int run_len = x - run_start;
-        if (run_len == 1) {
-          it.draw_pixel_at(run_start, y, col);
-        } else {
-          it.horizontal_line(run_start, y, run_len, col);
-        }
+        it.horizontal_line(run_start, y, x - run_start, col);
       }
     }
   }

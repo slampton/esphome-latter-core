@@ -2250,7 +2250,8 @@ interval:
               return;
             }
 
-            if (now_va_ms - last_va_anim_time >= 42U) {
+            const uint32_t va_min_gap = (id(va_tts_received) || tts_audio_active) ? 110U : 42U;
+            if (now_va_ms - last_va_anim_time >= va_min_gap) {
               last_va_anim_time = now_va_ms;
               latter_ui::schedule_disp_update(&id(disp1));
               latter_ui::record_ambient_frame_ms(millis());
@@ -3420,7 +3421,7 @@ script:
     then:
       - if:
           condition:
-            lambda: 'return id(va_resume_music_after);'
+            lambda: 'return id(va_resume_music_after) && !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
           then:
             - script.execute: mp_idle_debounce
             - lambda: |-
@@ -4536,6 +4537,14 @@ script:
     then:
       - script.stop: va_tts_drain_and_finish
       - script.stop: mp_idle_debounce
+      - lambda: |-
+          id(va_was_cancelled) = true;
+          id(va_status_text) = "";
+          id(va_tts_received) = false;
+          id(va_vad_active) = false;
+          id(va_active) = false;
+          id(gui_page) = id(return_page);
+          latter_ui::schedule_disp_update(&id(disp1));
       - audio_dac.mute_on: es8311_dac
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input

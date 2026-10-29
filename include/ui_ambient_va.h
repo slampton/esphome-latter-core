@@ -1280,9 +1280,9 @@ inline void render_voice_assistant_overlay(
         it.circle(cx, cy, core_r + b, scale_color(outer_col, k * k * 0.76f));
       }
 
-      // Concentric color-rippling heart from outer edge (r = core_r) to center (r = 1)
+      // Concentric color-rippling heart stepped by 2px (cuts 30 overlapping filled_circle calls in half!)
       float inv_r = 1.0f / static_cast<float>(core_r > 1 ? core_r : 1);
-      for (int r = core_r; r >= 1; r--) {
+      for (int r = core_r; r >= 1; r -= 2) {
         float u = 1.0f - static_cast<float>(r) * inv_r; // 0.0 at edge -> 1.0 at center
         float ripple = 0.14f * fast_sin(u * 4.2f - t_sec * 2.3f);
         float s = fmaxf(0.0f, fminf(1.0f, u * u * (3.0f - 2.0f * u) + ripple));
@@ -1384,7 +1384,7 @@ inline void render_voice_assistant_overlay(
         float radial_env = (1.0f - progress * 0.62f) * smooth_speak;
         float inv_half = 1.0f / static_cast<float>(half_w + 1);
 
-        for (int d = -half_w; d <= half_w; d++) {
+        for (int d = -half_w; d <= half_w; d += 2) {
           int r_curr = r_center + d;
           if (r_curr < 34 || r_curr > 226) continue;
 

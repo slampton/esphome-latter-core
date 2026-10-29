@@ -176,6 +176,22 @@ display:
       }
       standby_black_flushed = false;
 
+      auto now = id(ha_time).now();
+
+      // ==========================================
+      // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER (Highest Priority)
+      // ==========================================
+      if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
+        render_alert_ringing_overlay(
+            it, cx, cy, millis(), id(alarm_ringing), id(alarm_ringing_idx),
+            id(alarm1_recurrence), id(alarm2_recurrence), now, id(is_24h_format),
+            id(font_time), id(font_date), id(font_small), id(font_micro),
+            id(theme_primary), id(theme_secondary), id(col_bg), id(col_black),
+            id(col_white), id(col_gray), id(col_red),
+            id(find_my_active), id(va_timer_name));
+        return;
+      }
+
       // ==========================================
       // GLOBAL OVERLAY: VOICE ASSISTANT TAKEOVER
       // ==========================================
@@ -186,22 +202,6 @@ display:
         render_voice_assistant_overlay(
             it, cx, cy, now_ms, is_speaking, is_thinking, id(va_vad_active),
             id(va_visual_profile).current_option(), C_WHITE, C_SOLARIS_GOLD);
-        return;
-      }
-
-      auto now = id(ha_time).now();
-
-      // ==========================================
-      // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER
-      // ==========================================
-      if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
-        render_alert_ringing_overlay(
-            it, cx, cy, millis(), id(alarm_ringing), id(alarm_ringing_idx),
-            id(alarm1_recurrence), id(alarm2_recurrence), now, id(is_24h_format),
-            id(font_time), id(font_date), id(font_small), id(font_micro),
-            id(theme_primary), id(theme_secondary), id(col_bg), id(col_black),
-            id(col_white), id(col_gray), id(col_red),
-            id(find_my_active), id(va_timer_name));
         return;
       }
 
@@ -713,6 +713,16 @@ touchscreen:
               last_touch_activity = now_touch;
               id(screen_sleep_timer).execute();
             }
+
+            auto &tg_init = latter_ui::touch_gesture();
+            tg_init.start_x = touch.x;
+            tg_init.start_y = touch.y;
+            tg_init.last_x = touch.x;
+            tg_init.last_y = touch.y;
+            tg_init.max_travel = 0;
+            tg_init.sample_count = 1;
+            tg_init.start_ms = now_touch;
+            tg_init.last_touch_ms = now_touch;
 
             if (id(va_active) || !id(va_status_text).empty()) {
               latter_ui::touch_gesture().active = false;
