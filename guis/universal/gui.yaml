@@ -713,17 +713,18 @@ touchscreen:
             }
 
             if (id(va_active) || !id(va_status_text).empty()) {
+              latter_ui::touch_gesture().active = false;
               latter_ui::last_screen_wake_ms() = now_touch;
               id(cancel_voice_assistant).execute();
               return;
             }
 
             if (id(notif_active)) {
+              latter_ui::touch_gesture().active = false;
               latter_ui::last_screen_wake_ms() = now_touch;
               bool has_notif_cam = (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
                                     id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable");
               if (has_notif_cam && ((touch.y >= 390 && touch.x < latter_ui::SCREEN_CX) || touch.y < 380)) {
-                // 1-Tap 'Answer' button (or camera image) -> Open live Camera view AND immediately start 2-Way Call with ANC!
                 id(notif_active) = false;
                 latter_ui::tools_direct_home() = true;
                 latter_ui::cam_quick_reply_open() = false;
@@ -739,6 +740,7 @@ touchscreen:
             }
 
             if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
+              latter_ui::touch_gesture().active = false;
               if (id(find_my_active)) {
                 id(find_my_active) = false;
                 latter_ui::last_screen_wake_ms() = now_touch;
@@ -748,7 +750,7 @@ touchscreen:
                 return;
               }
               if (id(alarm_ringing)) {
-                if (touch.y >= 268 && touch.y <= 324 && touch.x >= 100 && touch.x <= 366) {
+                if (touch.y >= 268 && touch.y <= 324 && touch.x >= latter_ui::SCREEN_CX - 140 && touch.x <= latter_ui::SCREEN_CX + 140) {
                   auto now = id(ha_time).now();
                   if (now.is_valid()) {
                     id(alarm_snooze_until) = now.timestamp + 300;
@@ -761,7 +763,7 @@ touchscreen:
                   latter_ui::schedule_disp_update(&id(disp1));
                   return;
                 }
-                if (touch.y >= 336 && touch.y <= 420 && touch.x >= 95 && touch.x <= 371) {
+                if (touch.y >= 330 && touch.y <= latter_ui::SCREEN_H) {
                   id(alarm_ringing) = false;
                   latter_ui::last_screen_wake_ms() = now_touch;
                   id(stop_alarm_sound).execute();
@@ -769,13 +771,12 @@ touchscreen:
                   return;
                 }
               } else if (id(timer_ringing)) {
-                if (touch.y >= 290 && touch.y <= 395 && touch.x >= 90 && touch.x <= 376) {
-                  id(timer_ringing) = false;
-                  latter_ui::last_screen_wake_ms() = now_touch;
-                  id(stop_alarm_sound).execute();
-                  latter_ui::schedule_disp_update(&id(disp1));
-                  return;
-                }
+                // Any tap on screen while a countdown timer is ringing dismisses it immediately
+                id(timer_ringing) = false;
+                latter_ui::last_screen_wake_ms() = now_touch;
+                id(stop_alarm_sound).execute();
+                latter_ui::schedule_disp_update(&id(disp1));
+                return;
               }
               return;
             }
@@ -816,8 +817,9 @@ touchscreen:
                                          !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                          !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
-            // Top-level apps use the bottom Swipe-Up Home Indicator Bar (taps at y >= 412 are ignored so they never misfire)
-            if (is_top_level_home_bar && touch.y >= (latter_ui::SCREEN_H - 54)) {
+            // Top-level apps use the bottom Swipe-Up Home Indicator Bar (only reserve the bottom 28px chin)
+            const int home_bar_guard_y = LATTER_ROUND_DISPLAY ? 412 : (latter_ui::SCREEN_H - 28);
+            if (is_top_level_home_bar && touch.y >= home_bar_guard_y) {
               if (latter_ui::profiler_enabled()) {
                 ESP_LOGI("PROF", "[PROF:TOUCH_HOLD] x=%d y=%d page=%d reason=HOME_BAR_SWIPE_ZONE",
                          touch.x, touch.y, id(gui_page));
@@ -3686,7 +3688,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 5) {
-                if (gest.start_y < 410 && std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
+                if (gest.start_y < (latter_ui::SCREEN_H - 54) && std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   id(sky_weather_subpage) = (dx < 0)
@@ -3694,14 +3696,18 @@ touchscreen:
                       : ((id(sky_weather_subpage) + 3) % 4);
                   latter_ui::schedule_disp_update(&id(disp1));
                 } else if (gest.max_travel < 30 &&
-                           gest.last_y >= latter_ui::layout().app_dock_y - 35 &&
-                           gest.last_y <= latter_ui::layout().app_dock_y + 38) {
-                  int target = 0;
-                  if (gest.last_x < latter_ui::SCREEN_CX - 76) target = 0;
-                  else if (gest.last_x < latter_ui::SCREEN_CX) target = 1;
-                  else if (gest.last_x < latter_ui::SCREEN_CX + 76) target = 2;
-                  else target = 3;
-                  if (id(sky_weather_subpage) != target) {
+                           gest.last_y >= latter_ui::layout().app_dock_y - 38 &&
+                           gest.last_y <= latter_ui::layout().app_dock_y + 42) {
+                  int w_xs[4] = {0, 0, 0, 0};
+                  bool d_l = false, d_r = false;
+                  latter_ui::get_home_dock_window_xs(4, 0, latter_ui::SCREEN_CX, w_xs, d_l, d_r);
+                  int target = -1;
+                  int best_d = 46;
+                  for (int i = 0; i < 4; i++) {
+                    int d = std::abs(gest.last_x - w_xs[i]);
+                    if (d < best_d) { best_d = d; target = i; }
+                  }
+                  if (target >= 0 && id(sky_weather_subpage) != target) {
                     id(sky_weather_subpage) = target;
                     ESP_LOGI("touch", "Page 5 Release Tap -> subpage=%d", target);
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -3750,7 +3756,7 @@ touchscreen:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > 88 && gest.last_y < (latter_ui::SCREEN_H - 20)) {
+              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > 88 && gest.last_y < (latter_ui::SCREEN_H - 16)) {
                 if (gest.max_travel < 30) {
                   if (is_right_chevron_zone(tp) && id(room_subpage) != 2 && ((id(room_subpage) == 1 && id(room_area_total_pages) > 1) || (id(room_subpage) == 0 && id(room_browse_total_pages) > 1))) {
                     int delta = (tp.y < 215) ? -1 : 1;
@@ -3770,9 +3776,9 @@ touchscreen:
                       }
                     }
                   } else if (id(room_subpage) == 0 &&
-                             tp.y >= latter_ui::layout().app_dock_y - 35 &&
-                             tp.y <= latter_ui::layout().app_dock_y + 38 &&
-                             tp.x >= latter_ui::SCREEN_CX - 165 && tp.x <= latter_ui::SCREEN_CX + 165) {
+                             tp.y >= latter_ui::layout().app_dock_y - 38 &&
+                             tp.y <= latter_ui::layout().app_dock_y + 42 &&
+                             tp.x >= latter_ui::SCREEN_CX - 205 && tp.x <= latter_ui::SCREEN_CX + 205) {
                     std::string cats[7];
                     int cat_cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
                     int win_xs[4] = {0, 0, 0, 0};
@@ -3884,14 +3890,24 @@ touchscreen:
                     }
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < (latter_ui::SCREEN_H - 36)) {
+              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < (latter_ui::SCREEN_H - 16)) {
                 if (gest.max_travel < 30) {
-                  if (tp.y >= latter_ui::layout().app_dock_y - 35 &&
-                      tp.y <= latter_ui::layout().app_dock_y + 38 &&
-                      tp.x >= latter_ui::SCREEN_CX - 165 && tp.x <= latter_ui::SCREEN_CX + 165) {
-                    int new_tab = (tp.x < latter_ui::SCREEN_CX - 76) ? 0 : ((tp.x < latter_ui::SCREEN_CX) ? 1 : ((tp.x < latter_ui::SCREEN_CX + 76) ? 2 : 3));
-                    latter_ui::whole_home_tab() = new_tab;
-                    latter_ui::schedule_disp_update(&id(disp1));
+                  if (tp.y >= latter_ui::layout().app_dock_y - 38 &&
+                      tp.y <= latter_ui::layout().app_dock_y + 42 &&
+                      tp.x >= latter_ui::SCREEN_CX - 205 && tp.x <= latter_ui::SCREEN_CX + 205) {
+                    int wh_xs[4] = {0, 0, 0, 0};
+                    bool d_l = false, d_r = false;
+                    latter_ui::get_home_dock_window_xs(4, 0, latter_ui::SCREEN_CX, wh_xs, d_l, d_r);
+                    int new_tab = -1;
+                    int best_d = 46;
+                    for (int i = 0; i < 4; i++) {
+                      int d = std::abs(tp.x - wh_xs[i]);
+                      if (d < best_d) { best_d = d; new_tab = i; }
+                    }
+                    if (new_tab >= 0) {
+                      latter_ui::whole_home_tab() = new_tab;
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    }
                   } else if (latter_ui::whole_home_tab() == 0 && tp.x >= latter_ui::SCREEN_CX - 160 && tp.x <= latter_ui::SCREEN_CX + 160) {
                     int a_card = -1;
                     if (tp.y >= 100 && tp.y < 168) a_card = 0;

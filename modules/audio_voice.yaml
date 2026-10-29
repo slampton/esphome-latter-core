@@ -302,14 +302,22 @@ voice_assistant:
             return;
           }
           id(va_status_text) = "Thinking...";
-          // If the user asked Assist to pause/stop/turn off media, do not auto-resume music after VA ends
+          // If the user asked Assist to pause/stop media (not a room light/fan or timer), do not auto-resume music
           std::string utt = x;
           for (char &c : utt) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
-          if (utt.find("pause") != std::string::npos ||
-              utt.find("stop") != std::string::npos ||
-              utt.find("turn off") != std::string::npos) {
+          const bool mentions_media = (utt.find("music") != std::string::npos ||
+                                       utt.find("speaker") != std::string::npos ||
+                                       utt.find("audio") != std::string::npos ||
+                                       utt.find("song") != std::string::npos ||
+                                       utt.find("track") != std::string::npos ||
+                                       utt.find("player") != std::string::npos ||
+                                       utt.find("playing") != std::string::npos);
+          const bool mentions_timer = (utt.find("timer") != std::string::npos ||
+                                       utt.find("alarm") != std::string::npos);
+          if ((!mentions_timer && (utt.find("pause") != std::string::npos || utt.find("stop") != std::string::npos)) ||
+              (utt.find("turn off") != std::string::npos && mentions_media)) {
             id(va_resume_music_after) = false;
-            ESP_LOGI("va", "Stop/Pause voice intent detected: clearing va_resume_music_after");
+            ESP_LOGI("va", "Stop/Pause media intent detected: clearing va_resume_music_after");
           }
           ESP_LOGI("va", "STT End (hidden): %s", x.c_str());
   on_intent_progress:

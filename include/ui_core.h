@@ -452,31 +452,47 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
       w = SCREEN_W - 20;
     }
   }
-  int x0 = cx_card - w / 2;
-  int y0 = cy_card - h / 2;
-  int ri = (r > 1) ? (r - 1) : 1;
-  int xi = x0 + 1, yi = y0 + 1, wi = w - 2, hi = h - 2;
+  if (r > h / 2) r = h / 2;
+  if (r < 2) r = 2;
+  const int x0 = cx_card - w / 2;
+  const int y0 = cy_card - h / 2;
 
-  // 1. Draw the 4 corner border circles first (only 4 * pi * r^2 pixels total)
-  it.filled_circle(x0 + r,         y0 + r,         r, border_c);
-  it.filled_circle(x0 + w - 1 - r, y0 + r,         r, border_c);
-  it.filled_circle(x0 + r,         y0 + h - 1 - r, r, border_c);
-  it.filled_circle(x0 + w - 1 - r, y0 + h - 1 - r, r, border_c);
+  // Single-pass scanline rounded rectangle (zero filled_circle calls, zero pixel overdraw):
+  // 1. Top and bottom outer border horizontal lines (row 0 and row h-1)
+  int top_in = r / 2 + 2;
+  it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, border_c);
+  it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, border_c);
 
-  // 2. Single-pass interior fill in bg_c (3 non-overlapping horizontal bands + 4 inner corner circles: ZERO double-fill!)
-  it.filled_rectangle(xi + ri, yi,          wi - 2 * ri, ri,          bg_c);
-  it.filled_rectangle(xi,      yi + ri,     wi,          hi - 2 * ri, bg_c);
-  it.filled_rectangle(xi + ri, yi + hi - ri, wi - 2 * ri, ri,          bg_c);
-  it.filled_circle(xi + ri,         yi + ri,         ri, bg_c);
-  it.filled_circle(xi + wi - 1 - ri, yi + ri,         ri, bg_c);
-  it.filled_circle(xi + ri,         yi + hi - 1 - ri, ri, bg_c);
-  it.filled_circle(xi + wi - 1 - ri, yi + hi - 1 - ri, ri, bg_c);
+  // 2. Top & bottom rounded corner rows (dy = 1 .. r-1)
+  for (int dy = 1; dy < r; dy++) {
+    int ry = r - dy;
+    int dx_out = r - static_cast<int>(std::sqrt(static_cast<float>(r * r - ry * ry)) + 0.5f);
+    int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
+    int span_out = w - 2 * dx_out;
+    int span_in  = w - 2 * dx_in;
+    int yt = y0 + dy;
+    int yb = y0 + h - 1 - dy;
+    if (span_in > 0) {
+      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_in,  yt, span_in,        bg_c);
+      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, border_c);
 
-  // 3. 1px straight outer border lines along top, bottom, left, right
-  it.horizontal_line(x0 + r, y0,         w - 2 * r, border_c);
-  it.horizontal_line(x0 + r, y0 + h - 1, w - 2 * r, border_c);
-  it.vertical_line(x0,         y0 + r, h - 2 * r, border_c);
-  it.vertical_line(x0 + w - 1, y0 + r, h - 2 * r, border_c);
+      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_c);
+      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, border_c);
+    } else if (span_out > 0) {
+      it.horizontal_line(x0 + dx_out, yt, span_out, border_c);
+      it.horizontal_line(x0 + dx_out, yb, span_out, border_c);
+    }
+  }
+
+  // 3. Center body fill + 1px left/right vertical borders (rows r .. h-r-1)
+  int mid_h = h - 2 * r;
+  if (mid_h > 0) {
+    it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_h, bg_c);
+    it.vertical_line(x0,         y0 + r, mid_h, border_c);
+    it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
+  }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     it.print(cx_card, cy_card, font, text_c, esphome::display::TextAlign::CENTER, label);
@@ -692,13 +708,13 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int x = start_x;
       while (x <= end_x) {
         uint16_t p = src_row[x];
-        if ((p & 0xF7DE) == 0) {
+        if ((p & 0xE79C) == 0) {
           x++;
           continue;
         }
-        uint16_t p_masked = p & 0xF7DE;
+        uint16_t p_masked = p & 0xE79C;
         int run_start = x++;
-        while (x <= end_x && ((src_row[x] & 0xF7DE) == p_masked)) {
+        while (x <= end_x && ((src_row[x] & 0xE79C) == p_masked)) {
           x++;
         }
         esphome::Color col(
@@ -765,13 +781,27 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         }
       }
     } else {
-      for (int x = start_x; x <= end_x; x++) {
+      int x = start_x;
+      while (x <= end_x) {
         uint16_t p = src_row[(x * step_x) >> 12];
-        if (p != 0) {
-          uint8_t r = (p & 0xF800) >> 8;
-          uint8_t g = (p & 0x07E0) >> 3;
-          uint8_t b = (p & 0x001F) << 3;
-          it.draw_pixel_at(x, y, esphome::Color(r, g, b));
+        if ((p & 0xE79C) == 0) {
+          x++;
+          continue;
+        }
+        uint16_t p_masked = p & 0xE79C;
+        int run_start = x++;
+        while (x <= end_x && ((src_row[(x * step_x) >> 12] & 0xE79C) == p_masked)) {
+          x++;
+        }
+        esphome::Color col(
+            static_cast<uint8_t>((p & 0xF800) >> 8),
+            static_cast<uint8_t>((p & 0x07E0) >> 3),
+            static_cast<uint8_t>((p & 0x001F) << 3));
+        int run_len = x - run_start;
+        if (run_len == 1) {
+          it.draw_pixel_at(run_start, y, col);
+        } else {
+          it.horizontal_line(run_start, y, run_len, col);
         }
       }
     }

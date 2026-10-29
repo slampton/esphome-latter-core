@@ -902,7 +902,7 @@ script:
       - script.stop: screen_sleep_timer
       - light.turn_on: display_brightness
       - script.execute: sync_display_brightness
-      - component.update: disp1
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - repeat:
           count: 5
           then:

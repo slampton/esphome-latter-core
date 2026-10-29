@@ -1893,9 +1893,7 @@ inline void render_tool_calendar(
   if (cal_detail_mode() == 2) {
     // MODE 2: INTERACTIVE FULL-BLEED OPENSTREETMAP VIEWER (Zoom z=10..18 + Swipe-to-Pan)
     if (map_art != nullptr && map_art->get_width() > 16 && map_art->get_height() > 16) {
-      int iw = map_art->get_width();
-      int ih = map_art->get_height();
-      it.image(cx - iw / 2, cx - ih / 2, map_art);
+      render_album_art_canvas(it, map_art, cx, false, false, false, false);
 
       // 1. Top Address & Zoom Header Pill (Tap to Re-Center on Event Pin)
       it.filled_rectangle(94, 24, 278, 34, Color(10, 14, 20));
@@ -2443,9 +2441,7 @@ inline void render_tool_camera(
   bool has_frame = (has_url && cam_art != nullptr && cam_art->get_width() > 16 && cam_art->get_height() > 16);
 
   if (has_frame) {
-    int iw = cam_art->get_width();
-    int ih = cam_art->get_height();
-    it.image(cx - iw / 2, cy - ih / 2, cam_art);
+    render_album_art_canvas(it, cam_art, cx, false, false, false, false);
   } else {
     const char *msg = has_url ? "Loading live camera feed..." : "Configure camera in Latter Studio";
     render_modern_card(it, cx, 212, 308, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
