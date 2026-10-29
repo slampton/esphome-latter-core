@@ -492,7 +492,7 @@ script:
   - id: va_tts_drain_and_finish
     mode: restart
     then:
-      # 1. Wait for latter_media_player to finish decoding/streaming TTS audio
+      # 1. Wait for latter_media_player to finish decoding the HTTP TTS stream into announcement_mixing_input
       - if:
           condition:
             lambda: |-
@@ -506,14 +506,24 @@ script:
                             (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) ||
                            !id(va_active);
                 timeout: 15s
-      # 2. Let the remaining ~250ms of TTS audio inside physical_speaker's 250ms hardware buffer
-      #    finish playing out of the ES8311 DAC before muting or resuming music
+      # 2. Wait for announcement_mixing_input's PSRAM ring buffer to finish playing out to physical_speaker
+      #    (capped at 2.8s post-decode so it never cuts off speech and never hangs if mixer stays open)
+      - if:
+          condition:
+            lambda: 'return id(va_tts_received) && id(va_active) && id(announcement_mixing_input).is_running();'
+          then:
+            - wait_until:
+                condition:
+                  lambda: 'return !id(announcement_mixing_input).is_running() || !id(va_active);'
+                timeout: 2800ms
+      # 3. Let the final ~250ms of TTS audio inside physical_speaker's hardware DMA buffer finish playing
       - if:
           condition:
             lambda: 'return id(va_tts_received) && id(va_active);'
           then:
-            - delay: 350ms
-      # 3. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
+            - delay: 250ms
+            - speaker.stop: announcement_mixing_input
+      # 4. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
           esphome::voice_assistant::abort_voice_assistant(id(va));

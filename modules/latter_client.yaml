@@ -3406,6 +3406,7 @@ script:
             lambda: 'return id(va_resume_music_after);'
           then:
             - media_player.pause: latter_media_player
+            - speaker.stop: media_mixing_input
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 50
