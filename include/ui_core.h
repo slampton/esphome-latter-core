@@ -20,44 +20,15 @@
 namespace latter_ui {
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
-#if defined(LATTER_SCREEN_W) && !defined(POCKET_UI_SCREEN_W)
-#define POCKET_UI_SCREEN_W LATTER_SCREEN_W
-#endif
-#if defined(LATTER_SCREEN_H) && !defined(POCKET_UI_SCREEN_H)
-#define POCKET_UI_SCREEN_H LATTER_SCREEN_H
-#endif
 #ifndef LATTER_SCREEN_W
-#ifdef POCKET_UI_SCREEN_W
-#define LATTER_SCREEN_W POCKET_UI_SCREEN_W
-#else
 #define LATTER_SCREEN_W 466
 #endif
-#endif
 #ifndef LATTER_SCREEN_H
-#ifdef POCKET_UI_SCREEN_H
-#define LATTER_SCREEN_H POCKET_UI_SCREEN_H
-#else
 #define LATTER_SCREEN_H 466
 #endif
-#endif
-#ifndef POCKET_UI_SCREEN_W
-#define POCKET_UI_SCREEN_W LATTER_SCREEN_W
-#endif
-#ifndef POCKET_UI_SCREEN_H
-#define POCKET_UI_SCREEN_H LATTER_SCREEN_H
-#endif
-
 #ifndef LATTER_ROUND_DISPLAY
-#ifdef POCKET_UI_ROUND_DISPLAY
-#define LATTER_ROUND_DISPLAY POCKET_UI_ROUND_DISPLAY
-#else
 #define LATTER_ROUND_DISPLAY 1
 #endif
-#endif
-#ifndef POCKET_UI_ROUND_DISPLAY
-#define POCKET_UI_ROUND_DISPLAY LATTER_ROUND_DISPLAY
-#endif
-
 #ifndef LATTER_HAS_IMU
 #define LATTER_HAS_IMU 1
 #endif
@@ -68,20 +39,7 @@ namespace latter_ui {
 #define LATTER_IS_STATIONARY 0
 #endif
 #ifndef LATTER_IS_WEARABLE
-#if defined(POCKET_UI_BOARD_206) && POCKET_UI_BOARD_206
-#define LATTER_IS_WEARABLE 1
-#else
 #define LATTER_IS_WEARABLE 0
-#endif
-#endif
-#if defined(LATTER_NO_PMU_IRQ_PIN) && !defined(POCKET_UI_NO_PMU_IRQ_PIN)
-#define POCKET_UI_NO_PMU_IRQ_PIN LATTER_NO_PMU_IRQ_PIN
-#endif
-#if defined(LATTER_BACKLIGHT_PIN) && !defined(POCKET_UI_BACKLIGHT_PIN)
-#define POCKET_UI_BACKLIGHT_PIN LATTER_BACKLIGHT_PIN
-#endif
-#if defined(LATTER_BACKLIGHT_EN_PIN) && !defined(POCKET_UI_BACKLIGHT_EN_PIN)
-#define POCKET_UI_BACKLIGHT_EN_PIN LATTER_BACKLIGHT_EN_PIN
 #endif
 
 static constexpr int SCREEN_W = LATTER_SCREEN_W;
@@ -176,13 +134,13 @@ static constexpr int16_t CIRCLE_HW[466] = {
 // Display Shape Portability Trait:
 //   1 = Circular AMOLED (uses O(1) .rodata CIRCLE_HW chord table)
 //   0 = Rectangular / Square Display (uses full [inset .. SCREEN_W-inset] bounds)
-#ifndef POCKET_UI_ROUND_DISPLAY
-#define POCKET_UI_ROUND_DISPLAY 1
+#ifndef LATTER_ROUND_DISPLAY
+#define LATTER_ROUND_DISPLAY 1
 #endif
 
 // O(1) Bezel Half-Span Lookup:
-//   - Round Display (POCKET_UI_ROUND_DISPLAY=1, 466x466): O(1) .rodata CIRCLE_HW[c] chord lookup
-//   - Portrait Rectangle Watch (POCKET_UI_ROUND_DISPLAY=0, 410x502): Full horizontal half-width (SCREEN_W/2)
+//   - Round Display (LATTER_ROUND_DISPLAY=1, 466x466): O(1) .rodata CIRCLE_HW[c] chord lookup
+//   - Portrait Rectangle Watch (LATTER_ROUND_DISPLAY=0, 410x502): Full horizontal half-width (SCREEN_W/2)
 //     across y in [0..SCREEN_H-1] with smooth r=38px rounded watch corners at top and bottom!
 #ifndef LATTER_CORNER_R
 #if LATTER_ROUND_DISPLAY
@@ -195,7 +153,7 @@ static constexpr int16_t CIRCLE_HW[466] = {
 #endif
 
 inline int circle_half_span(int c, int inset = 5) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
   if (c < 0 || c >= SCREEN_W) return 0;
   int span = static_cast<int>(CIRCLE_HW[c]) - inset;
   return (span > 0) ? span : 0;
@@ -218,7 +176,7 @@ inline int circle_half_span(int c, int inset = 5) {
 }
 
 inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
   int h = circle_half_span(x, inset);
   return (h > 0) && (y >= cy - h) && (y <= cy + h);
 #else
@@ -584,7 +542,7 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
                                       esphome::Color col_inactive) {
   (void)col_inactive;
   if (!show_up && !show_down) return;
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
   const int mask_x = 395;
   const int chev_x = 415;
 #else
@@ -601,8 +559,8 @@ template<typename DisplayT, typename FontT>
 inline void render_back_button(DisplayT &it, int cx, FontT *font,
                                int y_pos = 426, const char *label = "< Back",
                                esphome::Color text_col = esphome::Color(158, 158, 158)) {
-  const int home_bar_y = POCKET_UI_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
-  const int back_lbl_y = POCKET_UI_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - 28) : y_pos);
+  const int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
+  const int back_lbl_y = LATTER_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - 28) : y_pos);
   if (label != nullptr && std::strcmp(label, "Home") == 0) {
     render_home_indicator_bar(it, cx, home_bar_y);
     return;
@@ -694,7 +652,7 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
 }
 
 // Zero-overdraw album art blitter with fused 2x-stride checkerboard scrim,
-// portable across circular (POCKET_UI_ROUND_DISPLAY=1) and square/rectangular displays.
+// portable across circular (LATTER_ROUND_DISPLAY=1) and square/rectangular displays.
 template<typename DisplayT, typename ImageT>
 inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
                                     bool is_standard, bool is_letterbox,
@@ -1056,7 +1014,7 @@ inline uint32_t &last_screen_wake_ms() {
 
 template<typename TouchT>
 inline bool is_back_button(const TouchT &t) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
   return (t.y >= 404 && t.y <= 466 && t.x >= 116 && t.x <= 350);
 #else
   return (t.y >= (SCREEN_H - 64) && t.y <= SCREEN_H && t.x >= (SCREEN_CX - 120) && t.x <= (SCREEN_CX + 120));
@@ -1065,7 +1023,7 @@ inline bool is_back_button(const TouchT &t) {
 
 template<typename TouchT>
 inline bool is_right_chevron_zone(const TouchT &t) {
-#if POCKET_UI_ROUND_DISPLAY
+#if LATTER_ROUND_DISPLAY
   return (t.x >= 376 && t.y >= 70 && t.y <= 395);
 #else
   const int chev_min_x = (SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 48);
@@ -1189,5 +1147,3 @@ inline uint32_t &last_local_vol_tap_ms() {
 // ------------------------------------------------------------------------------
 
 }  // namespace latter_ui
-
-namespace pocket_ui = latter_ui;

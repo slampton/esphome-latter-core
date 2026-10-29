@@ -182,7 +182,6 @@ struct SavedWakeWordsNVS {
 
 static constexpr uint32_t WAKE_WORDS_NVS_KEY = 0x50415757UL;
 static constexpr uint32_t WAKE_WORDS_NVS_MAGIC = 0x50415734UL;
-static constexpr uint32_t WAKE_WORDS_NVS_MAGIC_LEGACY = 0x50415733UL;
 
 inline bool &wake_words_restored_flag() {
   static bool restored = false;
@@ -226,13 +225,11 @@ inline void ensure_wake_words_restored(VoiceAssistant *va, bool force = false) {
   if (global_preferences != nullptr) {
     SavedWakeWordsNVS data{};
     auto pref = global_preferences->make_preference<SavedWakeWordsNVS>(WAKE_WORDS_NVS_KEY);
-    if (pref.load(&data) && (data.magic == WAKE_WORDS_NVS_MAGIC || data.magic == WAKE_WORDS_NVS_MAGIC_LEGACY)) {
+    if (pref.load(&data) && data.magic == WAKE_WORDS_NVS_MAGIC) {
       data.ww1[sizeof(data.ww1) - 1] = '\0';
       data.ww2[sizeof(data.ww2) - 1] = '\0';
       w1 = data.ww1;
-      if (data.magic == WAKE_WORDS_NVS_MAGIC) {
-        w2 = data.ww2;
-      }
+      w2 = data.ww2;
     } else {
       save_wake_words_to_nvs(w1, w2);
     }

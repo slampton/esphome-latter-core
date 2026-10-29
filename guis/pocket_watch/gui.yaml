@@ -1,6 +1,0 @@
-# ==============================================================================
-# Backward-Compatibility Forwarding Stub (guis/pocket_watch/gui.yaml)
-# Canonical multi-geometry GUI shell is now located at guis/universal/gui.yaml
-# ==============================================================================
-packages:
-  latter_universal_gui: !include ../universal/gui.yaml

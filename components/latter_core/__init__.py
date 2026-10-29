@@ -33,7 +33,6 @@ CORE_HEADERS: tuple[str, ...] = (
     "ui_room_home_hub.h",
     "ui_remote.h",
     "ui_system.h",
-    "ui_tools_apps.h",
 )
 
 

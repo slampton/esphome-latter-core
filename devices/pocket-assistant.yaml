@@ -24,7 +24,7 @@ substitutions:
 
   active_media_sensor: "sensor.pocket_assistant_active_media"
   weather_forecast_sensor: "sensor.pocket_assistant_weather_forecast"
-  room_context_sensor: "sensor.pocket_assistant_room_context"
+  area_context_sensor: "sensor.pocket_assistant_area_context"
   calendar_agenda_sensor: "sensor.pocket_assistant_calendar_agenda"
   remote_config_sensor: "sensor.pocket_assistant_remote_config"
 
@@ -33,11 +33,6 @@ substitutions:
   weather_entity: "weather.forecast_home"
   sun_entity: "sun.sun"
   moon_entity: "sensor.moon_phase"
-
-  tv_remote_entity: "remote.none"
-  tv_remote_entity_2: "remote.none"
-  tv_remote_entity_3: "remote.none"
-  tv_remote_entity_4: "remote.none"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/pocket-assistant.yaml@main

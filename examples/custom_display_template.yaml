@@ -29,7 +29,7 @@ substitutions:
   # Latter Companion Integration Entities (Auto-discovered by ha-latter)
   active_media_sensor: "sensor.latter_panel_demo_active_media"
   weather_forecast_sensor: "sensor.latter_panel_demo_weather_forecast"
-  room_context_sensor: "sensor.latter_panel_demo_room_context"
+  area_context_sensor: "sensor.latter_panel_demo_area_context"
   calendar_agenda_sensor: "sensor.latter_panel_demo_calendar_agenda"
   remote_config_sensor: "sensor.latter_panel_demo_remote_config"
 
@@ -38,10 +38,6 @@ substitutions:
   weather_entity: "weather.forecast_home"
   sun_entity: "sun.sun"
   moon_entity: "sensor.moon_phase"
-  tv_remote_entity: "remote.none"
-  tv_remote_entity_2: "remote.none"
-  tv_remote_entity_3: "remote.none"
-  tv_remote_entity_4: "remote.none"
 
 # Load the Latter Core C++20 header staging component (use github://slampton/esphome-latter-core@main in external repos)
 external_components:

@@ -769,10 +769,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
   };
 
   const std::string &csv = latter_dock_order_csv();
-  // Ignore legacy default CSVs so the new canonical order (Music, Home, Room, Remote, Games, Tools, Settings) takes effect automatically
-  const bool is_legacy_default_csv = (csv == "music,room,remote,games,tools" ||
-                                      csv == "music,room,remote,games,tools,alarm");
-  if (!csv.empty() && csv != "unknown" && csv != "unavailable" && !is_legacy_default_csv) {
+  if (!csv.empty() && csv != "unknown" && csv != "unavailable") {
     size_t pos = 0;
     while (pos < csv.size()) {
       size_t comma = csv.find_first_of(",;| ", pos);
@@ -782,7 +779,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
       for (char &c : tok) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
       if (tok.find("music") != std::string::npos || tok == "2") try_add(2);
       else if (tok.find("alarm") != std::string::npos || tok.find("home") != std::string::npos || tok.find("sec") != std::string::npos || tok == "9") try_add(9);
-      else if (tok.find("room") != std::string::npos || tok == "6") try_add(6);
+      else if (tok.find("area") != std::string::npos || tok.find("room") != std::string::npos || tok == "6") try_add(6);
       else if (tok.find("remote") != std::string::npos || tok.find("tv") != std::string::npos || tok == "7") try_add(7);
       else if (tok.find("game") != std::string::npos || tok == "3") try_add(3);
       else if (tok.find("cam") != std::string::npos || tok == "12") try_add(12);

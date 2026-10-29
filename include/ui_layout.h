@@ -78,9 +78,6 @@ inline constexpr bool is_wearable_form_factor() {
   return (LATTER_IS_WEARABLE != 0);
 }
 
-inline constexpr bool is_wrist_watch_board() {
-  return is_wearable_form_factor();
-}
 
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
@@ -169,4 +166,4 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 
 }  // namespace latter_ui
 
-namespace pocket_ui = latter_ui;
+

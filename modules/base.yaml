@@ -10,7 +10,7 @@ substitutions:
   screen_h: "466"
   active_media_sensor: "sensor.latter_device_active_media"
   weather_forecast_sensor: "sensor.latter_device_weather_forecast"
-  room_context_sensor: "sensor.latter_device_room_context"
+  area_context_sensor: "sensor.latter_device_area_context"
   calendar_agenda_sensor: "sensor.latter_device_calendar_agenda"
   remote_config_sensor: "sensor.latter_device_remote_config"
 

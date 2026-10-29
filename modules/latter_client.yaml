@@ -37,17 +37,6 @@ esphome:
         - lambda: |-
             id(clock_face_digital) = (id(clock_face_style).current_option() == "Modern Digital (Bold)");
             id(is_24h_format) = (id(time_format_select).current_option() == "24-Hour");
-            if (id(ha_latter_remote_slots_summary).state.empty()) {
-              id(remote_slot_0_ent) = "${tv_remote_entity}";
-              id(remote_slot_1_ent) = "${tv_remote_entity_2}";
-              id(remote_slot_2_ent) = "${tv_remote_entity_3}";
-              id(remote_slot_3_ent) = "${tv_remote_entity_4}";
-              id(remote_slot_0_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_0_ent));
-              id(remote_slot_1_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_1_ent));
-              id(remote_slot_2_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_2_ent));
-              id(remote_slot_3_name) = latter_ui::format_remote_entity_fallback(id(remote_slot_3_ent));
-            }
-            if (id(remote_slot_0_name).empty()) id(remote_slot_0_name) = "TV Remote";
         - component.update: batt_level
         - lambda: |-
             if (!id(ble_room_beacon_switch).state) {
@@ -59,10 +48,6 @@ esphome:
             esphome::voice_assistant::ensure_wake_words_restored(id(va), true);
             id(va_active_wake_word).publish_state(
                 esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
-            auto cur_vp = id(va_visual_profile).current_option();
-            if (cur_vp == "Google" || cur_vp == "Original") {
-              id(va_visual_profile).publish_state(cur_vp == "Google" ? "Gemini" : "Nebula");
-            }
             #if !LATTER_HAS_IMU
             if (id(tap_wake_mode).current_option() == "Docked Only") {
               id(tap_wake_mode).publish_state("Always On");
@@ -178,7 +163,7 @@ api:
             }
             latter_ui::schedule_disp_update(&id(disp1));
 
-    - action: set_room_slots
+    - action: set_area_slots
       variables:
         mode: string
         page: int
@@ -1461,94 +1446,6 @@ light:
 
 select:
   - platform: template
-    name: "Remote: Slot 1 Profile"
-    id: tv_remote_profile
-    icon: "mdi:television-box"
-    entity_category: config
-    optimistic: true
-    restore_value: true
-    initial_option: "Auto-Detect"
-    options:
-      - "Auto-Detect"
-      - "Android TV / Fire TV / Bravia"
-      - "Denon / Marantz AVR"
-      - "LG webOS"
-      - "Apple TV"
-      - "Roku"
-      - "Samsung TV"
-      - "Custom"
-    set_action:
-      - lambda: |-
-          id(tv_remote_profile).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
-
-  - platform: template
-    name: "Remote: Slot 2 Profile"
-    id: tv_remote_profile_2
-    icon: "mdi:television-box"
-    entity_category: config
-    optimistic: true
-    restore_value: true
-    initial_option: "Auto-Detect"
-    options:
-      - "Auto-Detect"
-      - "Android TV / Fire TV / Bravia"
-      - "Denon / Marantz AVR"
-      - "LG webOS"
-      - "Apple TV"
-      - "Roku"
-      - "Samsung TV"
-      - "Custom"
-    set_action:
-      - lambda: |-
-          id(tv_remote_profile_2).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
-
-  - platform: template
-    name: "Remote: Slot 3 Profile"
-    id: tv_remote_profile_3
-    icon: "mdi:television-box"
-    entity_category: config
-    optimistic: true
-    restore_value: true
-    initial_option: "Auto-Detect"
-    options:
-      - "Auto-Detect"
-      - "Android TV / Fire TV / Bravia"
-      - "Denon / Marantz AVR"
-      - "LG webOS"
-      - "Apple TV"
-      - "Roku"
-      - "Samsung TV"
-      - "Custom"
-    set_action:
-      - lambda: |-
-          id(tv_remote_profile_3).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
-
-  - platform: template
-    name: "Remote: Slot 4 Profile"
-    id: tv_remote_profile_4
-    icon: "mdi:television-box"
-    entity_category: config
-    optimistic: true
-    restore_value: true
-    initial_option: "Auto-Detect"
-    options:
-      - "Auto-Detect"
-      - "Android TV / Fire TV / Bravia"
-      - "Denon / Marantz AVR"
-      - "LG webOS"
-      - "Apple TV"
-      - "Roku"
-      - "Samsung TV"
-      - "Custom"
-    set_action:
-      - lambda: |-
-          id(tv_remote_profile_4).publish_state(x);
-          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
-
-  - platform: template
     name: "Voice: Wake Word Mode"
     id: va_wake_word_mode
     icon: "mdi:account-tie-voice"
@@ -2667,8 +2564,8 @@ sensor:
 
   - platform: homeassistant
     id: ha_room_temperature
-    entity_id: ${room_context_sensor}
-    attribute: room_temp
+    entity_id: ${area_context_sensor}
+    attribute: area_temp
     internal: true
     on_value:
       then:
@@ -2679,8 +2576,8 @@ sensor:
 
   - platform: homeassistant
     id: ha_room_humidity
-    entity_id: ${room_context_sensor}
-    attribute: room_humidity
+    entity_id: ${area_context_sensor}
+    attribute: area_humidity
     internal: true
     on_value:
       then:
@@ -2691,7 +2588,7 @@ sensor:
 
   - platform: homeassistant
     id: ha_wh_thermostat_temp
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: thermostat_temp
     internal: true
     on_value:
@@ -2706,13 +2603,13 @@ sensor:
 
   - platform: homeassistant
     id: ha_latter_alert_duration
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_duration
     internal: true
 
   - platform: homeassistant
     id: ha_latter_alert_id
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_id
     internal: true
     on_value:
@@ -2917,7 +2814,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_room_context_name
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     internal: true
     on_value:
       then:
@@ -2932,7 +2829,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_room_context_area_id
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: area_id
     internal: true
     on_value:
@@ -2949,7 +2846,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_room_available_domains
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: available_domains
     internal: true
     on_value:
@@ -2981,7 +2878,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_dock_apps
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: dock_apps
     internal: true
     on_value:
@@ -2997,7 +2894,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_room_alarm_entity
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alarm_entity
     internal: true
     on_value:
@@ -3009,7 +2906,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_room_alarm_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alarm_state
     internal: true
     on_value:
@@ -3024,7 +2921,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_wh_thermostat_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: thermostat_state
     internal: true
     on_value:
@@ -3039,7 +2936,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_wh_lock_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: lock_state
     internal: true
     on_value:
@@ -3054,7 +2951,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_wh_garage_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: garage_state
     internal: true
     on_value:
@@ -3069,7 +2966,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_wh_vacuum_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: vacuum_state
     internal: true
     on_value:
@@ -3087,37 +2984,37 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_alert_title
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_title
     internal: true
 
   - platform: homeassistant
     id: ha_latter_alert_message
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_message
     internal: true
 
   - platform: homeassistant
     id: ha_latter_alert_priority
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_priority
     internal: true
 
   - platform: homeassistant
     id: ha_latter_alert_chime
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_chime
     internal: true
 
   - platform: homeassistant
     id: ha_latter_alert_camera_url
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: alert_camera_url
     internal: true
 
   - platform: homeassistant
     id: ha_latter_site_id
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: site_id
     internal: true
     on_value:
@@ -3129,7 +3026,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_vpn_enabled
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: vpn_enabled
     internal: true
     on_value:
@@ -3139,7 +3036,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_vpn_client_ip
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: vpn_client_ip
     internal: true
     on_value:
@@ -3151,7 +3048,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_ble_closest_proxy
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: ble_closest_proxy
     internal: true
     on_value:
@@ -3163,7 +3060,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_theme_color_hex
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: theme_color_hex
     internal: true
     on_value:
@@ -3181,13 +3078,13 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_camera_snapshot_url
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: camera_snapshot_url
     internal: true
 
   - platform: homeassistant
     id: ha_latter_cameras_summary
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: cameras_summary
     internal: true
     on_value:
@@ -3199,7 +3096,7 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_doorbell_talk_state
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: doorbell_talk_state
     internal: true
     on_value:
@@ -3212,19 +3109,19 @@ text_sensor:
 
   - platform: homeassistant
     id: ha_latter_intercom_targets_summary
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: intercom_targets_summary
     internal: true
 
   - platform: homeassistant
     id: ha_latter_custom_bindings_summary
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: custom_bindings_summary
     internal: true
 
   - platform: homeassistant
     id: ha_latter_wallpaper_url
-    entity_id: ${room_context_sensor}
+    entity_id: ${area_context_sensor}
     attribute: wallpaper_url
     internal: true
     on_value:
@@ -3977,11 +3874,11 @@ script:
           }
           if (p == "Custom") {
             latter_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
-          } else if (p == "Pink" || p == "Pink & Gray") {
+          } else if (p == "Pink") {
             id(theme_primary) = is_ips_lcd ? Color(236, 128, 162) : Color(168, 120, 132);
-          } else if (p == "Green" || p == "Green & Gold") {
+          } else if (p == "Green") {
             id(theme_primary) = is_ips_lcd ? Color(68, 196, 122)  : Color(66, 116, 83);
-          } else if (p == "Blue" || p == "Blue & Gold" || p == "Default Classic") {
+          } else if (p == "Blue") {
             id(theme_primary) = is_ips_lcd ? Color(56, 156, 244)  : Color(69, 110, 138);
           } else {
             id(theme_primary) = is_ips_lcd ? Color(88, 184, 238)  : Color(107, 142, 158);
@@ -4342,7 +4239,7 @@ script:
     mode: restart
     then:
       - homeassistant.action:
-          action: latter.room_browse
+          action: latter.area_browse
           data:
             target_device: "${name}"
             mode: "entities"
@@ -4356,7 +4253,7 @@ script:
     mode: restart
     then:
       - homeassistant.action:
-          action: latter.room_browse
+          action: latter.area_browse
           data:
             target_device: "${name}"
             mode: "areas"
@@ -4380,7 +4277,7 @@ script:
     mode: restart
     then:
       - homeassistant.action:
-          action: latter.room_action
+          action: latter.area_action
           data:
             target_device: "${name}"
             action: !lambda 'return id(room_alarm_service).c_str();'
@@ -4389,7 +4286,7 @@ script:
     mode: restart
     then:
       - homeassistant.action:
-          action: latter.room_action
+          action: latter.area_action
           data:
             target_device: "${name}"
             entity_id: !lambda 'return id(room_target_entity_id).c_str();'
@@ -4791,120 +4688,32 @@ script:
             id(remote_slot_0_ent), id(remote_slot_1_ent),
             id(remote_slot_2_ent), id(remote_slot_3_ent)
           };
-          const std::string names[4] = {
-            id(remote_slot_0_name), id(remote_slot_1_name),
-            id(remote_slot_2_name), id(remote_slot_3_name)
-          };
-          const latter_ui::RemoteCustomCmds custom_cmds = {
-            "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT",
-            "DPAD_CENTER", "BACK", "HOME",
-            "VOLUME_UP", "VOLUME_DOWN", "POWER"
-          };
-          const std::string profs[4] = {
-            std::string(id(tv_remote_profile).current_option()),
-            std::string(id(tv_remote_profile_2).current_option()),
-            std::string(id(tv_remote_profile_3).current_option()),
-            std::string(id(tv_remote_profile_4).current_option())
-          };
           int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0, ents)
                                              : latter_ui::resolve_active_remote_slot(target_slot, ents);
           id(remote_latter_slot_num) = res_slot + 1;
 
+          static constexpr const char *kCanonicalCmds[10] = {
+            "up", "down", "left", "right", "select",
+            "back", "home", "volume_up", "volume_down", "toggle"
+          };
+          static constexpr const char *kFeedback[10] = {
+            "Up", "Down", "Left", "Right", "Select",
+            "Back", "Home", "Vol +", "Vol -", "Toggle Power"
+          };
           int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
           id(remote_latter_act) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
-
-          latter_ui::resolve_remote_dispatch(
-              k, target_slot, profs,
-              ents, names, custom_cmds,
-              id(remote_target_ent), id(remote_target_prof),
-              id(remote_target_cmd), id(remote_action_feedback));
-          id(remote_latter_cmd) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : id(remote_target_cmd)));
+          id(remote_latter_cmd) = kCanonicalCmds[k];
+          const std::string *t_names = latter_ui::remote_slots_name();
+          if (k == 9 && !t_names[res_slot].empty()) {
+            id(remote_action_feedback) = "Power: " + t_names[res_slot];
+          } else {
+            id(remote_action_feedback) = kFeedback[k];
+          }
           id(remote_feedback_timer) = millis();
-      - if:
-          condition:
-            lambda: 'return key_idx >= 0 && key_idx <= 6;'
-          then:
-            # Direct On-Device C++ Protocol Dispatch for D-Pad, OK, Back & Home (0ms hop, 100% v2.0 compatibility)
-            - if:
-                condition:
-                  lambda: 'return id(remote_target_prof) == "Denon / Marantz AVR";'
-                then:
-                  - homeassistant.action:
-                      action: denonavr.get_command
-                      data:
-                        entity_id: !lambda 'return id(remote_target_ent);'
-                        command: !lambda 'return id(remote_target_cmd);'
-                else:
-                  - if:
-                      condition:
-                        lambda: 'return id(remote_target_prof) == "LG webOS";'
-                      then:
-                        - homeassistant.action:
-                            action: webostv.button
-                            data:
-                              entity_id: !lambda 'return id(remote_target_ent);'
-                              button: !lambda 'return id(remote_target_cmd);'
-                      else:
-                        - homeassistant.action:
-                            action: remote.send_command
-                            data:
-                              entity_id: !lambda 'return id(remote_target_ent);'
-                              command: !lambda 'return id(remote_target_cmd);'
-          else:
-            # Keys 7..9 (Vol+, Vol-, Power): Use Latter when configured (supports paired AVR volume override),
-            # otherwise fall back to direct native media_player / remote services when standalone!
-            - if:
-                condition:
-                  lambda: 'return !id(ha_latter_remote_slots_summary).state.empty();'
-                then:
-                  - homeassistant.action:
-                      action: latter.remote_action
-                      data:
-                        target_device: "${name}"
-                        slot: !lambda 'return to_string(id(remote_latter_slot_num));'
-                        action: !lambda 'return id(remote_latter_act);'
-                        command: !lambda 'return id(remote_latter_cmd);'
-                else:
-                  - if:
-                      condition:
-                        lambda: 'return id(remote_target_ent).rfind("media_player.", 0) == 0;'
-                      then:
-                        - if:
-                            condition:
-                              lambda: 'return key_idx == 7;'
-                            then:
-                              - homeassistant.action:
-                                  action: media_player.volume_up
-                                  data:
-                                    entity_id: !lambda 'return id(remote_target_ent);'
-                        - if:
-                            condition:
-                              lambda: 'return key_idx == 8;'
-                            then:
-                              - homeassistant.action:
-                                  action: media_player.volume_down
-                                  data:
-                                    entity_id: !lambda 'return id(remote_target_ent);'
-                        - if:
-                            condition:
-                              lambda: 'return key_idx == 9;'
-                            then:
-                              - homeassistant.action:
-                                  action: media_player.toggle
-                                  data:
-                                    entity_id: !lambda 'return id(remote_target_ent);'
-                      else:
-                        - if:
-                            condition:
-                              lambda: 'return key_idx == 9 && id(remote_target_prof) != "Custom";'
-                            then:
-                              - homeassistant.action:
-                                  action: remote.toggle
-                                  data:
-                                    entity_id: !lambda 'return id(remote_target_ent);'
-                            else:
-                              - homeassistant.action:
-                                  action: remote.send_command
-                                  data:
-                                    entity_id: !lambda 'return id(remote_target_ent);'
-                                    command: !lambda 'return id(remote_target_cmd);'
+      - homeassistant.action:
+          action: latter.remote_action
+          data:
+            target_device: "${name}"
+            slot: !lambda 'return to_string(id(remote_latter_slot_num));'
+            action: !lambda 'return id(remote_latter_act);'
+            command: !lambda 'return id(remote_latter_cmd);'
