@@ -2265,9 +2265,11 @@ interval:
               last_cond_eval_time = now_w_ms;
               std::string c_cond = id(ha_weather_condition).state;
               std::string s_sun = id(ha_sun_state).state;
+              const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
               apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
-              cached_has_motion = latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
+              cached_has_motion = (sun_ok || weather_sim_active) &&
+                                  latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
             }
 
             const bool touch_busy = latter_ui::touch_gesture().active ||
@@ -2753,6 +2755,20 @@ text_sensor:
   # ��️ Sky & Weather Suite Text Sensors
   # --------------------------------------------------------------------------
   - platform: homeassistant
+    id: ha_sun_state
+    entity_id: sun.sun
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::weather_sim_dirty() = true;
+              latter_ui::record_ambient_frame_ms(0);
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
     id: ha_sun_next_rising
     entity_id: ${sun_entity}
     attribute: next_rising
@@ -3130,16 +3146,6 @@ text_sensor:
     id: ha_weather_forecast_5d
     entity_id: ${weather_forecast_sensor}
     internal: true
-
-
-
-  - platform: homeassistant
-    id: ha_sun_state
-    entity_id: sun.sun
-    internal: true
-    on_value:
-      then:
-        - script.execute: sync_display_brightness
   - platform: wifi_info
     ip_address:
       name: "IP Address"

@@ -944,7 +944,8 @@ inline void render_home_page(
 
   std::string cond_title = format_weather_title(cond);
   const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
-  const bool weather_ready = (!std::isnan(weather_temp) || sim_override_on) && (cond_title != "Unavailable");
+  const bool sun_ready = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
+  const bool weather_ready = ((!std::isnan(weather_temp) && sun_ready) || sim_override_on) && (cond_title != "Unavailable");
   const bool eff_weather_bg = show_weather_bg && weather_ready;
 
   const bool is_dim_backdrop = (home_subpage == 2);

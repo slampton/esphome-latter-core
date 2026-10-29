@@ -1643,6 +1643,11 @@ inline void render_weather_page(
     bool is_night = (sun_state == "below_horizon" || cond == "clear-night" ||
                      cond == "clearnight" || (cond.find("night") != std::string::npos));
     apply_weather_sim_override(weather_sim_opt, cond, is_night);
+    const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
+    const bool sun_ready = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
+    if (!sim_override_on && !sun_ready) {
+      cond = "";
+    }
 
     // 1. Standard Top Header ("CURRENT" at y = 48 + divider at y = 62, matching FORECAST)
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
