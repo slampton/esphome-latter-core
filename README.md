@@ -39,7 +39,7 @@ It serves two purposes:
 
 - 🧪 **[Example 1: Minimal Headless / Mixin Node (`examples/minimal_headless_companion.yaml`)](examples/minimal_headless_companion.yaml)** — Compiles on any bare $5 ESP32-S3 DevKit with zero external peripherals; demonstrates `modules/base.yaml`, `modules/room_control.yaml`, and `mixins/ble_beacon.yaml`.
 - 🖥️ **[Example 2: Custom 480×480 Display Porting Template (`examples/custom_display_template.yaml`)](examples/custom_display_template.yaml)** — Complete, CI-validated reference HAL & manifest for porting the full Latter C++20 UI OS (`components/latter_core`, `include/*.h`, `modules/audio_voice.yaml`, `modules/power_generic.yaml`, `modules/display_ui.yaml`) to a new screen.
-- 🔌 **[Latter Wire & API Contract (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)** — Complete specification of the 5 `sensor.<slug>_*` push sensors, ESPHome API actions (`set_browse_slots`, `set_room_slots`, `show_notification`, `set_timer`, `cancel_timer`, `latter_ping`), and outbound `latter.*` services for building custom clients.
+- 🔌 **[Latter Wire & API Contract (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)** — Complete specification of the 5 `sensor.<slug>_*` push sensors, ESPHome API actions (`set_browse_slots`, `set_area_slots`, `show_notification`, `set_timer`, `cancel_timer`, `latter_ping`), and outbound `latter.*` services for building custom clients.
 - 🛠️ **[Porting & New Hardware Guide (`docs/PORTING_NEW_HARDWARE.md`)](docs/PORTING_NEW_HARDWARE.md)** — How to bring up a new screen size/shape (`ui_layout.h`), power backend (`power_axp2101.yaml` vs. `power_generic.yaml`), or **ESP32-P4** board in 15 minutes.
 
 ---
