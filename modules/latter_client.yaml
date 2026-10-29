@@ -1366,14 +1366,15 @@ image:
   - platform: online_image
     id: camera_snapshot_art
     format: JPEG
-    buffer_size: 32768
+    buffer_size: 65536
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
           id(current_loaded_camera_url) = id(notif_camera_url);
-          if (id(display_power_state) == 0 && id(notif_active)) {
+          if (id(display_power_state) == 0 &&
+              (id(notif_active) || (id(gui_page) == 8 && (id(stuff_subpage) == 9 || id(stuff_subpage) == 12)))) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: sync_wake_word_state
