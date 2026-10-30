@@ -657,7 +657,7 @@ inline void render_music_menus(
     sub_h = fit_text_to_width_font(sub_h, scale_x(270), font_micro);
     it.print(cx, layout().sub_hdr_y, font_micro, col_slate, esphome::display::TextAlign::CENTER, sub_h.c_str());
 
-    render_modern_card(it, cx, scale_y(236), scale_x(324), scale_y(274), scale_s(16), card_bg, card_brd, nullptr, col_white, font_small);
+    render_modern_card(it, cx, scale_y(236), 324, scale_y(274), 16, card_bg, card_brd, nullptr, col_white, font_small);
 
     const std::string *lines[5] = {&slot_1_name, &slot_2_name, &slot_3_name, &slot_4_name, &slot_5_name};
     const bool acts[5] = {slot_1_active, slot_2_active, slot_3_active, slot_4_active, slot_5_active};

@@ -82,17 +82,17 @@ inline void render_clock_page(
 #endif
 #endif
     if (!now.is_valid()) {
-      it.print(cx, cy - 8, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx, cy - scale_y(8), font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
       return;
     }
-    it.strftime(cx, cy - 82, font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
+    it.strftime(cx, cy - scale_y(82), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     char sq_dig[16], sq_ap[8] = "";
     format_time_hhmm(now.hour, now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
-    it.print(cx, cy - 8, font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
+    it.print(cx, cy - scale_y(8), font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
     char sq_sec[32];
     if (is_24h_format) snprintf(sq_sec, sizeof(sq_sec), "SEC  •  %02ds", now.second);
     else snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, now.second);
-    it.print(cx, cy + 56, font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
+    it.print(cx, cy + scale_y(56), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
     return;
   }
 
@@ -886,7 +886,7 @@ inline void render_home_page(
     //   - 5 cards (w = 276, h = 44, r = 12) at y_mid = {110, 173, 236, 299, 362} (63px stride)
     //   - Top of Slot 0 = y 88 (30px below title); Bottom of Slot 4 = y 384 (31px above < BACK)
     // -------------------------------------------------------------------------
-    it.print(cx, 48, font_small, theme_primary, TextAlign::CENTER, "HOME SETTINGS");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "HOME SETTINGS");
 
     const Color card_bg_on(22, 27, 36);
     const Color card_bg_off(15, 18, 24);
@@ -897,26 +897,26 @@ inline void render_home_page(
       Color bg_c  = is_on ? card_bg_on  : card_bg_off;
       Color brd_c = is_on ? card_brd_on : card_brd_off;
       Color txt_c = is_on ? col_white   : col_slate;
-      render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, label, txt_c, font_small);
+      render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12, bg_c, brd_c, label, txt_c, font_small);
     };
 
     char buf[48];
     snprintf(buf, sizeof(buf), "Music Icon: %s", dock_music ? "Shown" : "Hidden");
-    draw_setting_card(110, buf, dock_music);
+    draw_setting_card(layout().slot5_y(0), buf, dock_music);
 
     snprintf(buf, sizeof(buf), "Area Icon: %s", dock_room ? "Shown" : "Hidden");
-    draw_setting_card(173, buf, dock_room);
+    draw_setting_card(layout().slot5_y(1), buf, dock_room);
 
     snprintf(buf, sizeof(buf), "Remote Icon: %s", dock_remote ? "Shown" : "Hidden");
-    draw_setting_card(236, buf, dock_remote);
+    draw_setting_card(layout().slot5_y(2), buf, dock_remote);
 
     snprintf(buf, sizeof(buf), "Games Icon: %s", dock_games ? "Shown" : "Hidden");
-    draw_setting_card(299, buf, dock_games);
+    draw_setting_card(layout().slot5_y(3), buf, dock_games);
 
     snprintf(buf, sizeof(buf), "Tools Icon: %s", dock_tools ? "Shown" : "Hidden");
-    draw_setting_card(362, buf, dock_tools);
+    draw_setting_card(layout().slot5_y(4), buf, dock_tools);
 
-    render_back_button(it, cx, font_small, 426, "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
     return;
   }
 
@@ -1415,14 +1415,14 @@ inline void render_home_page(
   // ---------------------------------------------------------------------------
   if (home_subpage == 2) {
     // Clear bottom chin behind "< Back" so it replaces the battery/gear cleanly
-    it.filled_rectangle(130, 404, 206, 44, show_weather_bg && !is_night ? Color(4, 8, 13) : col_black);
+    it.filled_rectangle(cx - scale_x(103), layout().back_y - scale_y(22), scale_x(206), scale_y(44), show_weather_bg && !is_night ? Color(4, 8, 13) : col_black);
 
     Color ov_bg(22, 27, 36);
     Color ov_brd(52, 62, 78);
     Color ov_btn(32, 39, 52);
 
     if (act_count <= 0) {
-      it.print(cx, 236, font_small, col_slate, TextAlign::CENTER, "No active activities");
+      it.print(cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
     } else {
       int total_pages = (act_count > 5) ? 2 : 1;
       if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;
@@ -1439,16 +1439,17 @@ inline void render_home_page(
       }
 
       if (total_pages > 1) {
+        const int chev_x = LATTER_ROUND_DISPLAY ? 415 : (SCREEN_W - scale_x(36));
         if (home_activity_overlay_page() > 0) {
-          render_scroll_chevron(it, 415, 162, true, theme_secondary, col_black, true);
+          render_scroll_chevron(it, chev_x, scale_y(162), true, theme_secondary, col_black, true);
         }
         if (home_activity_overlay_page() + 1 < total_pages) {
-          render_scroll_chevron(it, 415, 278, false, theme_secondary, col_black, true);
+          render_scroll_chevron(it, chev_x, scale_y(278), false, theme_secondary, col_black, true);
         }
       }
     }
 
-    render_back_button(it, cx, font_small, 426, "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
   }
 }
 

@@ -753,7 +753,7 @@ touchscreen:
               latter_ui::last_screen_wake_ms() = now_touch;
               bool has_notif_cam = (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
                                     id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable");
-              if (has_notif_cam && ((touch.y >= 390 && touch.x < latter_ui::SCREEN_CX) || touch.y < 380)) {
+              if (has_notif_cam && ((touch.y >= latter_ui::scale_y(390) && touch.x < latter_ui::SCREEN_CX) || touch.y < latter_ui::scale_y(380))) {
                 id(notif_active) = false;
                 latter_ui::tools_direct_home() = true;
                 latter_ui::cam_quick_reply_open() = false;
@@ -779,7 +779,8 @@ touchscreen:
                 return;
               }
               if (id(alarm_ringing)) {
-                if (touch.y >= 268 && touch.y <= 324 && touch.x >= latter_ui::SCREEN_CX - 140 && touch.x <= latter_ui::SCREEN_CX + 140) {
+                if (touch.y >= latter_ui::scale_y(268) && touch.y <= latter_ui::scale_y(324) &&
+                    touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
                   auto now = id(ha_time).now();
                   if (now.is_valid()) {
                     id(alarm_snooze_until) = now.timestamp + 300;
@@ -792,7 +793,7 @@ touchscreen:
                   latter_ui::schedule_disp_update(&id(disp1));
                   return;
                 }
-                if (touch.y >= 330 && touch.y <= latter_ui::SCREEN_H) {
+                if (touch.y >= latter_ui::scale_y(330) && touch.y <= latter_ui::SCREEN_H) {
                   id(alarm_ringing) = false;
                   latter_ui::last_screen_wake_ms() = now_touch;
                   id(stop_alarm_sound).execute();
@@ -907,7 +908,7 @@ touchscreen:
                   latter_ui::schedule_disp_update(&id(disp1));
                   return;
                 }
-                if (is_back_button(touch) || touch.y <= 72) {
+                if (is_back_button(touch) || touch.y <= latter_ui::scale_y(72)) {
                   if (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_home_tap = now_hm;
                     id(home_subpage) = 0;
@@ -1101,7 +1102,7 @@ touchscreen:
                 if (act_count > 5 && is_right_chevron_zone(touch)) {
                   if (now_hm - last_home_tap > TOUCH_DEBOUNCE_SCROLL) {
                     last_home_tap = now_hm;
-                    latter_ui::home_activity_overlay_page() = (touch.y < 220) ? 0 : 1;
+                    latter_ui::home_activity_overlay_page() = (touch.y < latter_ui::scale_y(220)) ? 0 : 1;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
@@ -1109,10 +1110,11 @@ touchscreen:
                 int start_i = latter_ui::home_activity_overlay_page() * 5;
                 int vis_cnt = std::min(5, act_count - start_i);
                 int hit_row = -1;
-                if (touch.x >= 90 && touch.x <= 376 && vis_cnt > 0) {
+                const int ov_half_w = latter_ui::layout().list_card_w / 2;
+                if (std::abs(touch.x - latter_ui::SCREEN_CX) <= ov_half_w && vis_cnt > 0) {
                   for (int r = 0; r < vis_cnt; r++) {
                     int cy_r = latter_ui::get_activity_overlay_card_y(vis_cnt, r);
-                    if (touch.y >= cy_r - 28 && touch.y <= cy_r + 32) {
+                    if (touch.y >= cy_r - latter_ui::scale_y(28) && touch.y <= cy_r + latter_ui::scale_y(32)) {
                       hit_row = r;
                       break;
                     }
@@ -1120,7 +1122,7 @@ touchscreen:
                 }
                 if (hit_row >= 0 && (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON)) {
                   last_home_tap = now_hm;
-                  handle_activity_item_action(start_i + hit_row, (touch.x >= 320));
+                  handle_activity_item_action(start_i + hit_row, (touch.x >= latter_ui::SCREEN_CX + ov_half_w - latter_ui::scale_x(56)));
                   return;
                 }
                 // Tapping outside the centered cards on the translucent scrim dismisses the overlay!
@@ -1480,7 +1482,9 @@ touchscreen:
               } else if (id(music_overlay_mode) == 3) {
                 uint32_t now_item = millis();
                 if (id(selected_category_mode) == "active_queue" &&
-                    touch.y >= 24 && touch.y <= 74 && touch.x >= 276 && touch.x <= 380) {
+                    touch.y >= latter_ui::scale_y(24) && touch.y <= latter_ui::scale_y(74) &&
+                    touch.x >= latter_ui::SCREEN_CX + latter_ui::scale_x(43) &&
+                    touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(147)) {
                   static uint32_t last_q_clr = 0;
                   if (now_item - last_q_clr > TOUCH_DEBOUNCE_BUTTON) {
                     last_q_clr = now_item;
@@ -1537,24 +1541,25 @@ touchscreen:
                 static uint32_t last_sheet_tap = 0;
                 uint32_t now_sheet = millis();
                 bool is_current = (id(target_speaker_id) == id(active_speaker_entity));
+                const bool in_sheet_x = (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143));
                 if (!is_current) {
-                  if (touch.y >= 104 && touch.y < 166 && touch.x >= 90 && touch.x <= 376) {
+                  if (in_sheet_x && touch.y >= latter_ui::scale_y(104) && touch.y < latter_ui::scale_y(166)) {
                     if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_transfer_to_target).execute(); }
                     return;
-                  } else if (touch.y >= 166 && touch.y < 226 && touch.x >= 90 && touch.x <= 376) {
+                  } else if (in_sheet_x && touch.y >= latter_ui::scale_y(166) && touch.y < latter_ui::scale_y(226)) {
                     if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_control_target).execute(); }
                     return;
-                  } else if (touch.y >= 226 && touch.y < 286 && touch.x >= 90 && touch.x <= 376) {
+                  } else if (in_sheet_x && touch.y >= latter_ui::scale_y(226) && touch.y < latter_ui::scale_y(286)) {
                     if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_join_target).execute(); }
                     return;
-                  } else if (touch.y >= 286 && touch.y <= 365 && touch.x >= 90 && touch.x <= 376) {
+                  } else if (in_sheet_x && touch.y >= latter_ui::scale_y(286) && touch.y <= latter_ui::scale_y(365)) {
                     if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
                     return;
                   }
                 } else {
                   bool is_remote = (id(target_speaker_id) != "${local_player_id}");
                   if (is_remote) {
-                    if (touch.y >= 114 && touch.y < 180 && touch.x >= 90 && touch.x <= 376) {
+                    if (in_sheet_x && touch.y >= latter_ui::scale_y(114) && touch.y < latter_ui::scale_y(180)) {
                       if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) {
                         last_sheet_tap = now_sheet;
                         id(target_speaker_id) = "${local_player_id}";
@@ -1562,18 +1567,18 @@ touchscreen:
                         id(speaker_transfer_to_target).execute();
                       }
                       return;
-                    } else if (touch.y >= 180 && touch.y < 242 && touch.x >= 90 && touch.x <= 376) {
+                    } else if (in_sheet_x && touch.y >= latter_ui::scale_y(180) && touch.y < latter_ui::scale_y(242)) {
                       if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
                       return;
-                    } else if (touch.y >= 242 && touch.y <= 322 && touch.x >= 90 && touch.x <= 376) {
+                    } else if (in_sheet_x && touch.y >= latter_ui::scale_y(242) && touch.y <= latter_ui::scale_y(322)) {
                       if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(stop_ha_music).execute(); }
                       return;
                     }
                   } else {
-                    if (touch.y >= 130 && touch.y < 200 && touch.x >= 90 && touch.x <= 376) {
+                    if (in_sheet_x && touch.y >= latter_ui::scale_y(130) && touch.y < latter_ui::scale_y(200)) {
                       if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
                       return;
-                    } else if (touch.y >= 200 && touch.y <= 285 && touch.x >= 90 && touch.x <= 376) {
+                    } else if (in_sheet_x && touch.y >= latter_ui::scale_y(200) && touch.y <= latter_ui::scale_y(285)) {
                       if (now_sheet - last_sheet_tap > TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(stop_ha_music).execute(); }
                       return;
                     }
@@ -1600,7 +1605,8 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 104 && touch.y <= 178 && touch.x >= 85 && touch.x <= 381) {
+                if (touch.y >= latter_ui::scale_y(104) && touch.y <= latter_ui::scale_y(178) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
                   if (now_in - last_insp_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_insp_tap = now_in;
                     bool is_rem = (id(active_speaker_entity) != "${local_player_id}");
@@ -1619,7 +1625,7 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 210 && touch.y <= 284) {
+                if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(284)) {
                   if (now_in - last_insp_tap > TOUCH_DEBOUNCE_RAPID) {
                     last_insp_tap = now_in;
                     float dur = id(ha_media_duration).state;
@@ -1648,7 +1654,8 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 292 && touch.y < 412 && touch.x >= 95 && touch.x <= 370) {
+                if (touch.y >= latter_ui::scale_y(292) && touch.y < latter_ui::scale_y(412) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(138)) {
                   if (now_in - last_insp_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_insp_tap = now_in;
                     bool is_bio = (touch.x >= latter_ui::SCREEN_CX);
@@ -1685,7 +1692,7 @@ touchscreen:
                 if (is_right_chevron_zone(touch) && id(music_browse_total_pages) > 1) {
                   if (now_vw - last_back_tap > TOUCH_DEBOUNCE_RAPID) {
                     last_back_tap = now_vw;
-                    int delta = (touch.y < 220) ? -1 : 1;
+                    int delta = (touch.y < latter_ui::scale_y(220)) ? -1 : 1;
                     int next_pg = std::max(1, std::min(id(music_browse_total_pages), id(music_browse_page) + delta));
                     if (next_pg != id(music_browse_page)) {
                       id(music_browse_page) = next_pg;
@@ -1771,20 +1778,21 @@ touchscreen:
                   return;
                 }
               } else if (id(system_menu_mode) == 4) {
-                if (touch.y >= 195 && touch.y <= 285 && now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
-                  if (touch.x >= latter_ui::SCREEN_CX - 140 && touch.x < latter_ui::SCREEN_CX - 5) {
+                if (touch.y >= latter_ui::scale_y(195) && touch.y <= latter_ui::scale_y(285) && now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
+                  if (touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x < latter_ui::SCREEN_CX - 5) {
                     last_sys_action_tap = now_sys;
                     id(system_menu_mode) = 3;
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
-                  } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + 140) {
+                  } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
                     last_sys_action_tap = now_sys;
                     id(restart_button).press();
                     return;
                   }
                 }
               } else if (id(system_menu_mode) == 5) {
-                if (touch.y >= 188 && touch.y <= 264 && touch.x >= 90 && touch.x <= 376) {
+                if (touch.y >= latter_ui::scale_y(188) && touch.y <= latter_ui::scale_y(264) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
                   if (now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_sys_action_tap = now_sys;
                     bool has_update = latter_ui::is_newer_semver(id(ha_firmware_latest_version).state, "${version}");
@@ -1809,13 +1817,13 @@ touchscreen:
                   return;
                 }
               } else if (id(system_menu_mode) == 6) {
-                if (touch.y >= 210 && touch.y <= 290 && now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
-                  if (touch.x >= latter_ui::SCREEN_CX - 140 && touch.x < latter_ui::SCREEN_CX - 5) {
+                if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(290) && now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
+                  if (touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x < latter_ui::SCREEN_CX - 5) {
                     last_sys_action_tap = now_sys;
                     id(system_menu_mode) = 5;
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
-                  } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + 140) {
+                  } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
                     last_sys_action_tap = now_sys;
                     id(trigger_firmware_update).execute();
                     return;
@@ -2013,7 +2021,8 @@ touchscreen:
                   return;
                 }
                 // Save Custom Color Button at y = 376 (y in [352..398])
-                if (touch.y >= 352 && touch.y <= 398 && touch.x >= 110 && touch.x <= 356) {
+                if (touch.y >= latter_ui::scale_y(352) && touch.y <= latter_ui::scale_y(398) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
                   if (now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_sys_action_tap = now_sys;
                     auto call = id(theme_palette_select).make_call();
@@ -2025,10 +2034,11 @@ touchscreen:
                   }
                   return;
                 }
-                // Interactive Touch on the Extra-Large 332px HSV Color Wheel (cx = 233, cy = 180, r = 46..168)
+                // Interactive Touch on the Extra-Large HSV Color Wheel (cx, cy = scale_y(180), r = 46..168 * ws)
+                const float ws = (latter_ui::SCREEN_MIN_DIM > 520) ? (static_cast<float>(latter_ui::SCREEN_MIN_DIM) / 466.0f) : 1.0f;
                 int dx_w = touch.x - latter_ui::SCREEN_CX;
-                int dy_w = touch.y - 180;
-                float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w));
+                int dy_w = touch.y - latter_ui::scale_y(180);
+                float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w)) / ws;
                 if (dist_w >= 46.0f && dist_w <= 168.0f) {
                   float hue = std::atan2(static_cast<float>(dy_w), static_cast<float>(dx_w)) * (180.0f / 3.14159265f);
                   if (hue < 0.0f) hue += 360.0f;
@@ -2061,7 +2071,7 @@ touchscreen:
               }
 
               // Top Header Tap (y <= 88) -> Toggle 5-Row Room Picker (room_subpage == 1)
-              if (touch.y <= 88 && touch.x >= 90 && touch.x <= 376) {
+              if (touch.y <= latter_ui::scale_y(88) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
                 if (now_rm - last_room_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_room_tap = now_rm;
                   if (id(room_subpage) == 1) {
@@ -2266,7 +2276,8 @@ touchscreen:
                 int s_idx = (view_idx >= 1 && view_idx <= 3) ? (view_idx - 1) : 0;
                 auto &s = slots[s_idx];
 
-                if (touch.y >= 218 && touch.y <= 286 && touch.x >= 130 && touch.x <= 336) {
+                if (touch.y >= latter_ui::scale_y(218) && touch.y <= latter_ui::scale_y(286) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(103)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
                     if (!s.running && !s.paused) {
@@ -2289,7 +2300,7 @@ touchscreen:
                   return;
                 }
 
-                if (touch.y >= 290 && touch.y <= 376) {
+                if (touch.y >= latter_ui::scale_y(290) && touch.y <= latter_ui::scale_y(376)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_RAPID) {
                     last_stuff_tap = now_stuff;
                     if (!s.running && !s.paused) {
@@ -2302,7 +2313,7 @@ touchscreen:
                       latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
                       latter_ui::schedule_disp_update(&id(disp1));
                       return;
-                    } else if (touch.x >= latter_ui::SCREEN_CX - 85 && touch.x <= latter_ui::SCREEN_CX + 85) {
+                    } else if (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(85)) {
                       s.running = false;
                       s.paused = false;
                       s.remaining_sec = s.duration_sec;
@@ -2313,7 +2324,8 @@ touchscreen:
                   }
                 }
 
-                if (touch.y >= 110 && touch.y <= 175 && touch.x >= 140 && touch.x <= 326) {
+                if (touch.y >= latter_ui::scale_y(110) && touch.y <= latter_ui::scale_y(175) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(93)) {
                   if (!s.running && !s.paused) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_stuff_tap = now_stuff;
@@ -2383,7 +2395,7 @@ touchscreen:
                   int& cur_m = (edit_idx == 3) ? id(alarm3_minute) : ((edit_idx == 2) ? id(alarm2_minute) : id(alarm1_minute));
                   int& cur_rec = (edit_idx == 3) ? id(alarm3_recurrence) : ((edit_idx == 2) ? id(alarm2_recurrence) : id(alarm1_recurrence));
 
-                  if (touch.y >= 204 && touch.y <= 276) {
+                  if (touch.y >= latter_ui::scale_y(204) && touch.y <= latter_ui::scale_y(276)) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_RAPID) {
                       int st_col = latter_ui::hit_4col_stepper(touch.x);
                       if (st_col >= 0) {
@@ -2398,7 +2410,8 @@ touchscreen:
                     }
                   }
 
-                  if (touch.y >= 280 && touch.y <= 372 && touch.x >= 90 && touch.x <= 376) {
+                  if (touch.y >= latter_ui::scale_y(280) && touch.y <= latter_ui::scale_y(372) &&
+                      std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_stuff_tap = now_stuff;
                       cur_rec = (cur_rec + 1) % 4;
@@ -2429,7 +2442,7 @@ touchscreen:
                 static uint32_t last_rst_tap = 0;
                 uint32_t now_chrono_tap = millis();
 
-                if (touch.y >= 280 && touch.y < 396) {
+                if (touch.y >= latter_ui::scale_y(280) && touch.y < latter_ui::scale_y(396)) {
                   if (touch.x < latter_ui::SCREEN_CX) {
                     if (now_chrono_tap - last_lap_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_lap_tap = now_chrono_tap;
@@ -2455,7 +2468,8 @@ touchscreen:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
-                } else if (touch.y >= 45 && touch.y < 280 && touch.x >= 40 && touch.x <= latter_ui::SCREEN_W - 40) {
+                } else if (touch.y >= latter_ui::scale_y(45) && touch.y < latter_ui::scale_y(280) &&
+                           touch.x >= latter_ui::scale_x(40) && touch.x <= latter_ui::SCREEN_W - latter_ui::scale_x(40)) {
                   if (now_chrono_tap - last_dial_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_dial_tap = now_chrono_tap;
                     if (!id(stopwatch_running)) {
@@ -2479,7 +2493,7 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 385) return;
+                if (touch.y >= latter_ui::scale_y(385)) return;
                 if (!id(dice_anim_active)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
@@ -2512,9 +2526,13 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.x >= latter_ui::SCREEN_CX - 165 && touch.x <= latter_ui::SCREEN_CX + 165 && touch.y >= 104 && touch.y < 412) {
+                if (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(165) &&
+                    touch.y >= latter_ui::scale_y(104) && touch.y < latter_ui::scale_y(412)) {
                   int c = latter_ui::hit_4col_calc(touch.x);
-                  int r = (touch.y < 159) ? 0 : ((touch.y < 215) ? 1 : ((touch.y < 271) ? 2 : ((touch.y < 327) ? 3 : 4)));
+                  int r = (touch.y < latter_ui::scale_y(159)) ? 0
+                        : ((touch.y < latter_ui::scale_y(215)) ? 1
+                        : ((touch.y < latter_ui::scale_y(271)) ? 2
+                        : ((touch.y < latter_ui::scale_y(327)) ? 3 : 4)));
 
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_RAPID) {
                     last_stuff_tap = now_stuff;
@@ -2659,7 +2677,7 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 385) return;
+                if (touch.y >= latter_ui::scale_y(385)) return;
                 if (!id(coin_anim_active)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
@@ -2699,7 +2717,8 @@ touchscreen:
                 }
                 if (latter_ui::cal_detail_mode() == 1) {
                   if (!latter_ui::cal_detail_location().empty() &&
-                      touch.y >= 330 && touch.y <= 390 && touch.x >= 110 && touch.x <= 356) {
+                      touch.y >= latter_ui::scale_y(330) && touch.y <= latter_ui::scale_y(390) &&
+                      std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
                     if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                       last_stuff_tap = now_stuff;
                       latter_ui::cal_map_zoom() = 15;
@@ -2738,7 +2757,7 @@ touchscreen:
                 }
                 if (id(cal_browse_total_pages) > 1 && is_right_chevron_zone(touch)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_RAPID) {
-                    int delta = (touch.y < 220) ? -1 : 1;
+                    int delta = (touch.y < latter_ui::scale_y(220)) ? -1 : 1;
                     int next_pg = std::max(1, std::min(id(cal_browse_total_pages), id(cal_browse_page) + delta));
                     if (next_pg != id(cal_browse_page)) {
                       last_stuff_tap = now_stuff;
@@ -2749,7 +2768,7 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y <= 78 && touch.x >= 110 && touch.x <= 356) {
+                if (touch.y <= latter_ui::scale_y(78) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
                     latter_ui::cal_quick_add_open() = true;
@@ -2757,7 +2776,9 @@ touchscreen:
                   }
                   return;
                 }
-                if (id(cal_slot_1_name).empty() && touch.y >= 190 && touch.y <= 255 && touch.x >= 85 && touch.x <= 381) {
+                if (id(cal_slot_1_name).empty() &&
+                    touch.y >= latter_ui::scale_y(190) && touch.y <= latter_ui::scale_y(255) &&
+                    std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
                     latter_ui::cal_quick_add_open() = true;
@@ -2776,7 +2797,7 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y <= 72 && touch.x >= latter_ui::SCREEN_CX - 120 && touch.x <= latter_ui::SCREEN_CX + 120) {
+                if (touch.y <= latter_ui::scale_y(72) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(120)) {
                   if (now_stuff - last_stuff_tap > TOUCH_DEBOUNCE_BUTTON) {
                     last_stuff_tap = now_stuff;
                     latter_ui::intercom_live_call_mode() = !latter_ui::intercom_live_call_mode();
@@ -2908,9 +2929,10 @@ touchscreen:
             }
 
             if (id(gui_page) == 4 && id(system_menu_mode) == 13 && (now_u - latter_ui::last_disp_update_ms() >= 42U)) {
+              const float ws = (latter_ui::SCREEN_MIN_DIM > 520) ? (static_cast<float>(latter_ui::SCREEN_MIN_DIM) / 466.0f) : 1.0f;
               int dx_w = gest.last_x - latter_ui::SCREEN_CX;
-              int dy_w = gest.last_y - 180;
-              float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w));
+              int dy_w = gest.last_y - latter_ui::scale_y(180);
+              float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w)) / ws;
               if (dist_w >= 46.0f && dist_w <= 168.0f) {
                 float hue = std::atan2(static_cast<float>(dy_w), static_cast<float>(dx_w)) * (180.0f / 3.14159265f);
                 if (hue < 0.0f) hue += 360.0f;
@@ -3068,9 +3090,10 @@ touchscreen:
             // 7A. ROOM CONTROL (PAGE 6, SUBPAGE 2) LIGHT COLOR WHEEL & KELVIN LIVE DRAG
             if (id(gui_page) == 6 && id(room_subpage) == 2 && (now_u - latter_ui::last_disp_update_ms() >= 45U)) {
               if (latter_ui::light_insp_mode() == 0) {
+                const float ws = (latter_ui::SCREEN_MIN_DIM > 520) ? (static_cast<float>(latter_ui::SCREEN_MIN_DIM) / 466.0f) : 1.0f;
                 int dx_w = gest.last_x - latter_ui::SCREEN_CX;
-                int dy_w = gest.last_y - 212;
-                float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w));
+                int dy_w = gest.last_y - latter_ui::scale_y(212);
+                float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w)) / ws;
                 if (dist_w >= 44.0f && dist_w <= 154.0f) {
                   gest.swipe_committed = true;
                   float hue = std::atan2(static_cast<float>(dy_w), static_cast<float>(dx_w)) * (180.0f / 3.14159265f);
@@ -3090,12 +3113,12 @@ touchscreen:
                 const int k_bar_x0  = ly.light_kelvin_bar_x0();
                 const int b_max_w   = ly.light_bri_bar_w();
                 const int b_bar_x0  = ly.light_bri_bar_x0();
-                if (gest.start_y >= 120 && gest.start_y <= 204 && std::abs(gest.last_x - ly.cx) <= (sl_card_w / 2)) {
+                if (gest.start_y >= latter_ui::scale_y(120) && gest.start_y <= latter_ui::scale_y(204) && std::abs(gest.last_x - ly.cx) <= (sl_card_w / 2)) {
                   gest.swipe_committed = true;
                   int k_val = 2700 + ((gest.last_x - k_bar_x0) * (6500 - 2700)) / std::max(1, k_bar_w);
                   latter_ui::light_insp_kelvin() = std::max(2700, std::min(6500, (k_val / 100) * 100));
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.start_y >= 218 && gest.start_y <= 298 && std::abs(gest.last_x - ly.cx) <= (sl_card_w / 2)) {
+                } else if (gest.start_y >= latter_ui::scale_y(218) && gest.start_y <= latter_ui::scale_y(302) && std::abs(gest.last_x - ly.cx) <= (sl_card_w / 2)) {
                   gest.swipe_committed = true;
                   int b_val = ((gest.last_x - b_bar_x0) * 100) / std::max(1, b_max_w);
                   latter_ui::light_insp_bri_pct() = std::max(5, std::min(100, ((b_val + 2) / 5) * 5));
@@ -3106,7 +3129,7 @@ touchscreen:
             }
 
             // 7. ROOM CONTROL (PAGE 6) HORIZONTAL CATEGORY SWIPE (Just like Sky & Weather!) & VERTICAL LIST SWIPE
-            if (id(gui_page) == 6 && id(room_subpage) == 0 && gest.start_y > 88 && gest.start_y < (latter_ui::SCREEN_H - 20)) {
+            if (id(gui_page) == 6 && id(room_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 20)) {
               if (std::abs(dx) >= 30 && std::abs(dx) > std::abs(dy)) {
                 std::string cats[7];
                 int cat_cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
@@ -3743,15 +3766,17 @@ touchscreen:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
-              } else if (id(gui_page) == 6 && id(room_subpage) == 2 && gest.last_y < 404) {
+              } else if (id(gui_page) == 6 && id(room_subpage) == 2 && gest.last_y < latter_ui::scale_y(404)) {
                 // Commit Light Color Wheel or White Kelvin / Brightness Inspector Action on Release!
-                if (gest.max_travel < 30 && tp.y <= 68 && tp.x >= 110 && tp.x <= 356) {
+                if (gest.max_travel < 30 && tp.y <= latter_ui::scale_y(68) &&
+                    std::abs(tp.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
                   latter_ui::light_insp_mode() = (latter_ui::light_insp_mode() == 0) ? 1 : 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                 } else if (latter_ui::light_insp_mode() == 0) {
+                  const float ws = (latter_ui::SCREEN_MIN_DIM > 520) ? (static_cast<float>(latter_ui::SCREEN_MIN_DIM) / 466.0f) : 1.0f;
                   int dx_w = tp.x - latter_ui::SCREEN_CX;
-                  int dy_w = tp.y - 212;
-                  float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w));
+                  int dy_w = tp.y - latter_ui::scale_y(212);
+                  float dist_w = std::sqrt(static_cast<float>(dx_w * dx_w + dy_w * dy_w)) / ws;
                   if (dist_w >= 44.0f && dist_w <= 154.0f) {
                     float hue = std::atan2(static_cast<float>(dy_w), static_cast<float>(dx_w)) * (180.0f / 3.14159265f);
                     if (hue < 0.0f) hue += 360.0f;
@@ -3774,7 +3799,7 @@ touchscreen:
                   const int k_bar_x0  = ly.light_kelvin_bar_x0();
                   const int b_max_w   = ly.light_bri_bar_w();
                   const int b_bar_x0  = ly.light_bri_bar_x0();
-                  if (gest.start_y >= 120 && gest.start_y <= 204 && std::abs(tp.x - ly.cx) <= (sl_card_w / 2)) {
+                  if (gest.start_y >= latter_ui::scale_y(120) && gest.start_y <= latter_ui::scale_y(204) && std::abs(tp.x - ly.cx) <= (sl_card_w / 2)) {
                     int k_val = 2700 + ((tp.x - k_bar_x0) * (6500 - 2700)) / std::max(1, k_bar_w);
                     latter_ui::light_insp_kelvin() = std::max(2700, std::min(6500, (k_val / 100) * 100));
                     id(room_target_entity_id) = latter_ui::light_insp_entity_id();
@@ -3782,7 +3807,7 @@ touchscreen:
                     id(room_target_level) = latter_ui::light_insp_kelvin();
                     id(execute_room_action).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (gest.start_y >= 218 && gest.start_y <= 298 && std::abs(tp.x - latter_ui::SCREEN_CX) <= (sl_card_w / 2)) {
+                  } else if (gest.start_y >= latter_ui::scale_y(218) && gest.start_y <= latter_ui::scale_y(302) && std::abs(tp.x - latter_ui::SCREEN_CX) <= (sl_card_w / 2)) {
                     int b_val = ((tp.x - b_bar_x0) * 100) / std::max(1, b_max_w);
                     latter_ui::light_insp_bri_pct() = std::max(5, std::min(100, ((b_val + 2) / 5) * 5));
                     id(room_target_entity_id) = latter_ui::light_insp_entity_id();
@@ -4065,7 +4090,7 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(stuff_subpage) == 9 &&
-                         latter_ui::cal_detail_mode() == 2 && gest.start_y < 404) {
+                         latter_ui::cal_detail_mode() == 2 && gest.start_y < latter_ui::scale_y(404)) {
                 // INTERACTIVE MAP VIEW: Swipe-to-Pan OR Tap +/- to Zoom OR Tap Top Header to Re-Center
                 if (std::abs(dx) >= 28 || std::abs(dy) >= 28) {
                   gest.swipe_committed = true;
@@ -4100,7 +4125,7 @@ touchscreen:
                       latter_ui::schedule_disp_update(&id(disp1));
                       id(fetch_calendar_map_snapshot).execute();
                     }
-                  } else if (tp.y <= 68 && std::abs(tp.x - latter_ui::SCREEN_CX) <= 140) {
+                  } else if (tp.y <= latter_ui::scale_y(68) && std::abs(tp.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(140)) {
                     // Top Address Pill Tap -> Re-Center on Event Pin
                     if (latter_ui::cal_map_pan_x() != 0 || latter_ui::cal_map_pan_y() != 0) {
                       latter_ui::cal_map_pan_x() = 0;
@@ -4182,7 +4207,7 @@ touchscreen:
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
-                } else if (tp.y <= 68) {
+                } else if (tp.y <= latter_ui::scale_y(68)) {
                   if (!LATTER_ROUND_DISPLAY && (latter_ui::SCREEN_W != latter_ui::SCREEN_H) &&
                       tp.x >= (latter_ui::SCREEN_W - 64)) {
                     // Direct 1-Tap [90°] Widescreen Toggle on Rectangular Displays
@@ -4192,12 +4217,12 @@ touchscreen:
                     id(camera_snapshot_art).release();
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (c_total > 1 && tp.x < latter_ui::SCREEN_CX - 55) {
+                  } else if (c_total > 1 && tp.x < latter_ui::SCREEN_CX - latter_ui::scale_x(55)) {
                     latter_ui::cam_carousel_idx() = step_wrap(latter_ui::cam_carousel_idx(), -1, c_total);
                     id(camera_snapshot_art).release();
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (c_total > 1 && tp.x > latter_ui::SCREEN_CX + 55) {
+                  } else if (c_total > 1 && tp.x > latter_ui::SCREEN_CX + latter_ui::scale_x(55)) {
                     latter_ui::cam_carousel_idx() = step_wrap(latter_ui::cam_carousel_idx(), 1, c_total);
                     id(camera_snapshot_art).release();
                     id(fetch_on_demand_camera).execute();
@@ -4206,8 +4231,8 @@ touchscreen:
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
-                } else if (tp.y >= 342 && tp.y <= 398) {
-                  if (tp.x < latter_ui::SCREEN_CX - 48) {
+                } else if (tp.y >= latter_ui::scale_y(342) && tp.y <= latter_ui::scale_y(398)) {
+                  if (tp.x < latter_ui::SCREEN_CX - latter_ui::scale_x(48)) {
                     // Left Pill: Listen / Mute Toggle
                     latter_ui::cam_listen_active() = !latter_ui::cam_listen_active();
                     id(cam_intercom_action) = latter_ui::cam_listen_active() ? "listen_start" : "listen_stop";
@@ -4215,7 +4240,7 @@ touchscreen:
                     id(cam_intercom_status_ms) = now_rel;
                     id(send_doorbell_intercom_cmd).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (tp.x <= latter_ui::SCREEN_CX + 48) {
+                  } else if (tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(48)) {
                     // Center Hero Pill: 1-Tap Hands-Free 2-Way Call (Start Call / End Call)
                     if (!latter_ui::cam_call_active() && !latter_ui::cam_intercom_ptt_active()) {
                       id(start_doorbell_call).execute();

@@ -278,72 +278,75 @@ inline void render_room_control_page(
   if (room_subpage == 2) {
     // Top Mode Pill at y = 44 (Toggles between "Color Wheel" and "White Temp")
     const bool is_kelvin_mode = (light_insp_mode() == 1);
-    render_modern_card(it, cx, 44, 212, 34, 10, card_bg_on, theme_primary,
+    render_modern_card(it, cx, layout().hdr_y, 212, 34, 10, card_bg_on, theme_primary,
                        is_kelvin_mode ? "Mode: White Temp >" : "Mode: Color Wheel >",
                        col_white, font_small);
 
     if (!is_kelvin_mode) {
-      // MODE 0: 300px 5-Ring HSV Color Wheel for RGB Lights (cy = 212)
-      const int wheel_cy = 212;
-      it.circle(cx, wheel_cy, 150, card_brd_off);
+      // MODE 0: 300px 5-Ring HSV Color Wheel for RGB Lights (cy = scale_y(212))
+      const int wheel_cy = scale_y(212);
+      const float ws = (SCREEN_W > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
+      it.circle(cx, wheel_cy, scale_s(150), card_brd_off);
       for (int a = 0; a < 60; a++) {
         float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
         float c_a = DIAL_COS[a];
         float s_a = DIAL_SIN[a];
-        it.filled_circle(cx + static_cast<int>(c_a * 134.0f), wheel_cy + static_cast<int>(s_a * 134.0f), 14, hsv_to_rgb(hue_01, 1.00f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 112.0f), wheel_cy + static_cast<int>(s_a * 112.0f), 13, hsv_to_rgb(hue_01, 0.82f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 90.0f),  wheel_cy + static_cast<int>(s_a * 90.0f),  11, hsv_to_rgb(hue_01, 0.65f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 70.0f),  wheel_cy + static_cast<int>(s_a * 70.0f),  10, hsv_to_rgb(hue_01, 0.45f, 1.0f));
+        it.filled_circle(cx + static_cast<int>(c_a * 134.0f * ws), wheel_cy + static_cast<int>(s_a * 134.0f * ws), scale_s(14), hsv_to_rgb(hue_01, 1.00f, 1.0f));
+        it.filled_circle(cx + static_cast<int>(c_a * 112.0f * ws), wheel_cy + static_cast<int>(s_a * 112.0f * ws), scale_s(13), hsv_to_rgb(hue_01, 0.82f, 1.0f));
+        it.filled_circle(cx + static_cast<int>(c_a * 90.0f * ws),  wheel_cy + static_cast<int>(s_a * 90.0f * ws),  scale_s(11), hsv_to_rgb(hue_01, 0.65f, 1.0f));
+        it.filled_circle(cx + static_cast<int>(c_a * 70.0f * ws),  wheel_cy + static_cast<int>(s_a * 70.0f * ws),  scale_s(10), hsv_to_rgb(hue_01, 0.45f, 1.0f));
       }
       Color preview_c = hsv_to_rgb(light_insp_hue_deg() / 360.0f, light_insp_sat(), 1.0f);
-      it.filled_circle(cx, wheel_cy, 44, col_black);
-      it.filled_circle(cx, wheel_cy, 39, preview_c);
-      it.circle(cx, wheel_cy, 39, col_white);
+      it.filled_circle(cx, wheel_cy, scale_s(44), col_black);
+      it.filled_circle(cx, wheel_cy, scale_s(39), preview_c);
+      it.circle(cx, wheel_cy, scale_s(39), col_white);
 
       float rad = light_insp_hue_deg() * (PI_F / 180.0f);
-      float r_sel = 70.0f + ((light_insp_sat() - 0.35f) / 0.65f) * 64.0f;
-      r_sel = std::max(68.0f, std::min(136.0f, r_sel));
+      float r_sel = (70.0f + ((light_insp_sat() - 0.35f) / 0.65f) * 64.0f) * ws;
+      r_sel = std::max(68.0f * ws, std::min(136.0f * ws, r_sel));
       int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
       int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-      it.filled_circle(sel_x, sel_y, 11, preview_c);
-      it.circle(sel_x, sel_y, 11, col_white);
-      it.circle(sel_x, sel_y, 12, col_black);
+      it.filled_circle(sel_x, sel_y, scale_s(11), preview_c);
+      it.circle(sel_x, sel_y, scale_s(11), col_white);
+      it.circle(sel_x, sel_y, scale_s(12), col_black);
     } else {
       // MODE 1: White Color Temperature Slider (2700K Warm Amber <-> 6500K Cool Daylight) + Brightness Slider
-      std::string fit_ln = fit_text_to_width_font(light_insp_name(), 260, font_small);
-      it.print(cx, 86, font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
+      std::string fit_ln = fit_text_to_width_font(light_insp_name(), scale_x(260), font_small);
+      it.print(cx, scale_y(86), font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
 
-      // Card 1 (y_mid = 162): Color Temperature Gradient Slider (2700K .. 6500K)
+      // Card 1 (y_mid = scale_y(162)): Color Temperature Gradient Slider (2700K .. 6500K)
       const int sl_card_w = layout().light_slider_card_w();
       const int k_bar_w   = layout().light_kelvin_bar_w();
       const int k_bar_x0  = layout().light_kelvin_bar_x0();
-      render_modern_card(it, cx, 162, sl_card_w, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
+      const int k_cy      = scale_y(162);
+      render_modern_card(it, cx, k_cy, sl_card_w, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
       for (int b = 0; b < 24; b++) {
         float t = static_cast<float>(b) / 23.0f;
         Color band_c = lerp_color(Color(255, 168, 72), Color(185, 222, 255), t);
         int bx0 = k_bar_x0 + (b * k_bar_w) / 24;
         int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
-        it.filled_rectangle(bx0, 162 + 6, std::max(2, bx1 - bx0), 16, band_c);
+        it.filled_rectangle(bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
       }
       int k_clamped = std::max(2700, std::min(6500, light_insp_kelvin()));
       int k_knob_x = k_bar_x0 + ((k_clamped - 2700) * k_bar_w) / (6500 - 2700);
-      it.filled_circle(k_knob_x, 162 + 14, 10, col_white);
-      it.circle(k_knob_x, 162 + 14, 11, col_black);
+      it.filled_circle(k_knob_x, k_cy + scale_y(14), scale_s(10), col_white);
+      it.circle(k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
       char k_buf[48];
       snprintf(k_buf, sizeof(k_buf), "White Temp: %dK", k_clamped);
-      it.print(cx, 162 - 12, font_small, col_white, TextAlign::CENTER, k_buf);
+      it.print(cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
 
-      // Card 2 (y_mid = 258): Brightness Fill-Slider (5% .. 100%)
-      render_modern_card(it, cx, 258, sl_card_w, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
+      // Card 2 (y_mid = scale_y(258)): Brightness Fill-Slider (5% .. 100%)
+      const int b_cy = scale_y(258);
+      render_modern_card(it, cx, b_cy, sl_card_w, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
       int b_clamped = std::max(5, std::min(100, light_insp_bri_pct()));
       int b_max_w = layout().light_bri_bar_w();
       int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        it.filled_rectangle(layout().light_bri_bar_x0(), 258 - 28, b_fill_w, 56, Color(92, 68, 22));
+        it.filled_rectangle(layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
-      it.print(cx, 258, font_small, col_white, TextAlign::CENTER, b_buf);
+      it.print(cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
     }
     return;
   }
@@ -384,14 +387,14 @@ inline void render_room_control_page(
   // 1. Top Room Title (y = 44) & Live Room Climate Line (y = 74)
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
-  std::string fit_hdr = fit_text_to_width_font(hdr, 250, font_small);
+  std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
   it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
 
   if (is_fb) {
-    std::string fit_fb = fit_text_to_width_font(room_action_feedback, 280, font_small);
-    it.print(cx, 74, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    std::string fit_fb = fit_text_to_width_font(room_action_feedback, scale_x(280), font_small);
+    it.print(cx, layout().sub_hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else if (!std::isnan(room_temp) || !std::isnan(room_humidity)) {
-    const int tele_y = 74;
+    const int tele_y = layout().sub_hdr_y;
     const Color icon_c(185, 225, 255);
 
     auto draw_mini_thermometer = [&](int tx, int ty, Color c) {
@@ -455,7 +458,7 @@ inline void render_room_control_page(
                         : (room_domain_filter == "fan")   ? "Fans"
                         : (room_domain_filter == "switch") ? "Switches & Outlets"
                         : "Tap Header to Switch Area";
-    it.print(cx, 74, font_small, col_slate, TextAlign::CENTER, sub_lbl);
+    it.print(cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
   }
 
   // Helper: Draw Enlarged Domain Vector Icon inside the Left 64x64 Card Well (gx = 108)
@@ -687,7 +690,7 @@ inline void render_security_alarm_page(
       else if (alarm_state == "armed_home") { st_lbl = "Status: Armed Home"; st_col = col_gold; }
       else if (alarm_state == "armed_away") { st_lbl = "Status: Armed Away"; st_col = col_red; }
     }
-    it.print(cx, 74, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
+    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : st_lbl.c_str());
 
     bool is_disarmed = (alarm_state == "disarmed" || alarm_state.empty() || alarm_state == "none");
@@ -774,7 +777,7 @@ inline void render_security_alarm_page(
     // TAB 3: ROBOT VACUUM
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
     std::string v_st = "Status: " + sim_vacuum_state();
-    it.print(cx, 74, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : v_st.c_str());
 
     bool is_cln = (sim_vacuum_state() == "Cleaning");
