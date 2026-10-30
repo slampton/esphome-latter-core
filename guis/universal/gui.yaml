@@ -102,8 +102,11 @@ display:
       const Color C_WHITE = id(col_white);
       const Color C_SOLARIS_GOLD = id(col_solaris_gold);
       #if !LATTER_ROUND_DISPLAY
-      // Ensure MIPI-DSI dirty-rectangle tracking always flushes the full SCREEN_W x SCREEN_H canvas
+      // Bypass MipiDsi::draw_pixel_at's (ptr_16[pos] == new_color) early return after clear()
+      // so x_low_=0, y_low_=0, x_high_=W-1, y_high_=H-1 is always latched for single-shot DMA2D flush
+      it.draw_pixel_at(0, 0, Color(8, 8, 8));
       it.draw_pixel_at(0, 0, id(col_bg));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, Color(8, 8, 8));
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, id(col_bg));
       #endif
 
