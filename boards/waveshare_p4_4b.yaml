@@ -23,6 +23,8 @@ esphome:
     - "-DLATTER_BACKLIGHT_PIN=26"
     - "-DLATTER_BACKLIGHT_EN_PIN=33"
     - "-DLATTER_BACKLIGHT_INVERTED=1"
+    - "-DLATTER_DSI_IRAM_SAFE=1"
+    - "-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks"
 
 esp32:
   variant: esp32p4
@@ -44,6 +46,9 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_LCD_DSI_ISR_CACHE_SAFE: "y"
+      CONFIG_GDMA_ISR_IRAM_SAFE: "y"
+      CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"
     advanced:
       enable_idf_experimental_features: true
       flash_chip: generic

@@ -307,8 +307,15 @@ ota:
             static uint32_t last_ota_draw_ms = 0;
             uint32_t now_m = millis();
             int pct = static_cast<int>(x);
+            #if defined(LATTER_DSI_IRAM_SAFE)
+            const int min_step_pct = 10;
+            const uint32_t min_step_ms = 800U;
+            #else
+            const int min_step_pct = 5;
+            const uint32_t min_step_ms = 400U;
+            #endif
             if (pct != id(ota_progress_pct) &&
-                (pct == 100 || (pct - id(ota_progress_pct) >= 5 && (now_m - last_ota_draw_ms >= 400U)) || pct < id(ota_progress_pct))) {
+                (pct == 100 || (pct - id(ota_progress_pct) >= min_step_pct && (now_m - last_ota_draw_ms >= min_step_ms)) || pct < id(ota_progress_pct))) {
               id(ota_progress_pct) = pct;
               last_ota_draw_ms = now_m;
               id(disp1).update();
@@ -342,8 +349,15 @@ ota:
             static uint32_t last_ota_draw_ms = 0;
             uint32_t now_m = millis();
             int pct = static_cast<int>(x);
+            #if defined(LATTER_DSI_IRAM_SAFE)
+            const int min_step_pct = 10;
+            const uint32_t min_step_ms = 800U;
+            #else
+            const int min_step_pct = 5;
+            const uint32_t min_step_ms = 400U;
+            #endif
             if (pct != id(ota_progress_pct) &&
-                (pct == 100 || (pct - id(ota_progress_pct) >= 5 && (now_m - last_ota_draw_ms >= 400U)) || pct < id(ota_progress_pct))) {
+                (pct == 100 || (pct - id(ota_progress_pct) >= min_step_pct && (now_m - last_ota_draw_ms >= min_step_ms)) || pct < id(ota_progress_pct))) {
               id(ota_progress_pct) = pct;
               last_ota_draw_ms = now_m;
               id(disp1).update();
