@@ -1622,10 +1622,12 @@ select:
       - lambda: |-
           id(power_profile_select).publish_state(x);
           if (millis() <= 2500 || x == "Custom") return;
-          auto set_sel = [](auto &sel, const char *opt) {
-            auto call = sel.make_call();
-            call.set_option(opt);
-            call.perform();
+          auto set_sel = [](auto *sel, const char *opt) {
+            if (sel != nullptr) {
+              auto call = sel->make_call();
+              call.set_option(opt);
+              call.perform();
+            }
           };
           if (x == "Pocket Carry") {
             set_sel(id(va_wake_word_mode), "Docked Only");
