@@ -210,20 +210,22 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
   const float inv_2pen = 1.0f / (2.0f * penumbra);
   const float r_plus_sq_inv = 1.0f / static_cast<float>((moon_r + 2) * (moon_r + 2));
   const float phase_cos = fast_cos(static_cast<float>(cycle * 2.0 * 3.1415926535));
-  const float term_sign = (cycle <= 0.5) ? 1.0f : -1.0f;
+  const bool waxing = (cycle <= 0.5);
+  const float term_sign = waxing ? 1.0f : -1.0f;
 
-  const int moon_r_sq = moon_r * moon_r;
-  int w_line = 0;
   for (int my = -moon_r; my <= moon_r; my++) {
-    int my_sq = my * my;
-    while ((w_line + 1) * (w_line + 1) + my_sq <= moon_r_sq) w_line++;
-    while (w_line * w_line + my_sq > moon_r_sq) w_line--;
+    int py = moon_cy + my;
+    if (py < 0 || py >= SCREEN_H) continue;
+    int w_line = chord_half_span_int(moon_r, my);
+    float my_sq_f = static_cast<float>(my * my);
     float x_term = term_sign * static_cast<float>(w_line) * phase_cos;
+    int pen_lo = static_cast<int>(floorf(x_term - penumbra));
+    int pen_hi = static_cast<int>(ceilf(x_term + penumbra));
 
     int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / (2 * moon_r));
     int ty_45  = (moon_r == 22) ? (my + 22) : 0;
 
-    for (int mx = -w_line; mx <= w_line; mx++) {
+    auto eval_lunar_key = [&](int mx, esphome::Color &out_col) -> uint16_t {
       uint8_t tex_u8;
       if (moon_r == 69) {
         tex_u8 = LUNAR_ALBEDO_139[ty_139][mx + 69];
@@ -234,37 +236,58 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
         tex_u8 = LUNAR_ALBEDO_139[ty_139][tx_139];
       }
 
-      // Gentle 3D spherical limb roll-off near the outer rim (zero inner-loop sqrtf!)
-      float r2_norm = static_cast<float>(mx * mx + my * my) * r_plus_sq_inv;
-      float limb = 0.86f + 0.14f * (1.0f - r2_norm);
-      float base_lum = static_cast<float>(tex_u8) * limb;
+      float r2_norm = (static_cast<float>(mx * mx) + my_sq_f) * r_plus_sq_inv;
+      float base_lum = static_cast<float>(tex_u8) * (0.86f + 0.14f * (1.0f - r2_norm));
 
-      // Smooth cubic Hermite terminator shadow line
-      float dist_to_term = (cycle <= 0.5) ? (static_cast<float>(mx) - x_term)
-                                          : (x_term - static_cast<float>(mx));
       float shadow;
-      if (dist_to_term > penumbra) {
-        shadow = 1.0f;
-      } else if (dist_to_term < -penumbra) {
-        shadow = 0.0f;
+      if (mx < pen_lo) {
+        shadow = waxing ? 0.0f : 1.0f;
+      } else if (mx > pen_hi) {
+        shadow = waxing ? 1.0f : 0.0f;
       } else {
-        float t = (dist_to_term + penumbra) * inv_2pen;
-        shadow = t * t * (3.0f - 2.0f * t);
+        float dist_to_term = waxing ? (static_cast<float>(mx) - x_term)
+                                    : (x_term - static_cast<float>(mx));
+        if (dist_to_term >= penumbra) {
+          shadow = 1.0f;
+        } else if (dist_to_term <= -penumbra) {
+          shadow = 0.0f;
+        } else {
+          float t = (dist_to_term + penumbra) * inv_2pen;
+          shadow = t * t * (3.0f - 2.0f * t);
+        }
       }
 
-      // Subtle Earthshine on the unlit side so maria remain faintly discernible in shadow
       float dark_lum = 7.0f + base_lum * 0.055f;
       float final_lum = base_lum * shadow + dark_lum * (1.0f - shadow);
       uint8_t c = static_cast<uint8_t>(fminf(255.0f, final_lum));
-
-      esphome::Color p_col = (shadow < 0.05f)
+      bool is_dark = (shadow < 0.05f);
+      out_col = is_dark
           ? esphome::Color(static_cast<uint8_t>(c * 0.78f),
                            static_cast<uint8_t>(c * 0.92f),
                            static_cast<uint8_t>(fminf(255.0f, c * 1.25f)))
           : esphome::Color(c,
                            static_cast<uint8_t>(c * 0.98f),
                            static_cast<uint8_t>(c * 0.94f));
-      it.draw_pixel_at(moon_cx + mx, moon_cy + my, p_col);
+      return static_cast<uint16_t>((c & 0xFCU) | (is_dark ? 1U : 0U));
+    };
+
+    int mx = -w_line;
+    while (mx <= w_line) {
+      esphome::Color p_col;
+      uint16_t key = eval_lunar_key(mx, p_col);
+      int run_start = mx;
+      mx++;
+      while (mx <= w_line) {
+        esphome::Color next_col;
+        if (eval_lunar_key(mx, next_col) != key) break;
+        mx++;
+      }
+      int run_len = mx - run_start;
+      if (run_len > 1) {
+        it.horizontal_line(moon_cx + run_start, py, run_len, p_col);
+      } else {
+        it.draw_pixel_at(moon_cx + run_start, py, p_col);
+      }
     }
   }
   it.circle(moon_cx, moon_cy, moon_r, esphome::Color(45, 55, 70));
@@ -956,7 +979,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
 
       (void)mask_hero_temp;
-      if ((sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= 784) continue;
+      const int excl_r = scale_min(28);
+      if ((sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
 
       float twinkle = fast_sin(t_star + static_cast<float>(k) * 0.85f);
       uint8_t br = static_cast<uint8_t>(182 + static_cast<int>(63.0f * twinkle));
@@ -987,7 +1011,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1B: CELESTIAL CORNER POCKET ICON (3D GRADIENT SUN ORB / LUNAR DISC)
   if (cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
-      const int m_r = scale_s(22);
+      const int m_r = scale_min(22);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle, false);
       if (is_fog_mist) {
         it.circle(cel_cx, cel_cy, m_r + 3, esphome::Color(55, 70, 88));
@@ -996,39 +1020,38 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     } else {
       bool show_sun = (is_clear_day || is_partly || is_windy);
       if (show_sun || is_fog_mist) {
-        const esphome::Color sky_c        = is_fog_mist ? esphome::Color(32, 46, 60)   : esphome::Color(28, 54, 84);
-        const esphome::Color c_haze       = is_fog_mist ? esphome::Color(108, 108, 78) : esphome::Color(158, 134, 34);
-        const esphome::Color c_limb       = is_fog_mist ? esphome::Color(144, 132, 82) : esphome::Color(232, 168, 14);
-        const esphome::Color c_body       = is_fog_mist ? esphome::Color(174, 160, 102): esphome::Color(250, 204, 24);
-        const esphome::Color c_core       = is_fog_mist ? esphome::Color(198, 186, 128): esphome::Color(255, 228, 72);
+        const esphome::Color sky_c  = is_fog_mist ? esphome::Color(32, 46, 60)    : esphome::Color(28, 54, 84);
+        const esphome::Color c_haze = is_fog_mist ? esphome::Color(108, 108, 78)  : esphome::Color(158, 134, 34);
+        const esphome::Color c_limb = is_fog_mist ? esphome::Color(144, 132, 82)  : esphome::Color(232, 168, 14);
+        const esphome::Color c_body = is_fog_mist ? esphome::Color(174, 160, 102) : esphome::Color(250, 204, 24);
+        const esphome::Color c_core = is_fog_mist ? esphome::Color(198, 186, 128) : esphome::Color(255, 228, 72);
 
-        const int s_r_out = scale_s(24);
-        const int s_r_in  = scale_s(21);
+        const int s_r_out = scale_min(24);
+        const int s_r_in  = scale_min(21);
         const int r2_out  = s_r_out * s_r_out;
         const int r2_in   = s_r_in * s_r_in;
         const float r2_span = static_cast<float>(std::max(1, r2_out - r2_in));
-        const float inv_r_in = 1.0f / static_cast<float>(s_r_in);
+        const float inv_r2_in = 1.0f / static_cast<float>(std::max(1, r2_in));
         for (int dy = -s_r_out; dy <= s_r_out; dy++) {
+          int py = cel_cy + dy;
+          if (py < 0 || py >= SCREEN_H) continue;
+          int hw = chord_half_span_int(s_r_out, dy);
           int dy2 = dy * dy;
-          for (int dx = -s_r_out; dx <= s_r_out; dx++) {
+          float ldy = static_cast<float>(dy) + 2.2f;
+          float ldy2 = ldy * ldy;
+          for (int dx = -hw; dx <= hw; dx++) {
             int r2 = dx * dx + dy2;
-            if (r2 > r2_out) continue;
             if (r2 > r2_in) {
               float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
-              it.draw_pixel_at(cel_cx + dx, cel_cy + dy, lerp_color(sky_c, c_haze, k));
+              it.draw_pixel_at(cel_cx + dx, py, lerp_color(sky_c, c_haze, k));
             } else {
-              float ldx = static_cast<float>(dx) + 2.5f;
-              float ldy = static_cast<float>(dy) + 2.5f;
-              float d_norm = sqrtf(ldx * ldx + ldy * ldy) * inv_r_in;
-              float u = 1.0f - (d_norm > 1.0f ? 1.0f : d_norm);
-              esphome::Color pix_c;
-              if (u < 0.26f) {
-                pix_c = lerp_color(c_limb, c_body, u * (1.0f / 0.26f));
-              } else {
-                float k = (u - 0.26f) * (1.0f / 0.74f);
-                pix_c = lerp_color(c_body, c_core, k * k);
-              }
-              it.draw_pixel_at(cel_cx + dx, cel_cy + dy, pix_c);
+              float ldx = static_cast<float>(dx) + 2.2f;
+              float d2_norm = (ldx * ldx + ldy2) * inv_r2_in;
+              float u = 1.0f - (d2_norm > 1.0f ? 1.0f : d2_norm);
+              esphome::Color pix_c = (u < 0.35f)
+                  ? lerp_color(c_limb, c_body, u * (1.0f / 0.35f))
+                  : lerp_color(c_body, c_core, (u - 0.35f) * (1.0f / 0.65f));
+              it.draw_pixel_at(cel_cx + dx, py, pix_c);
             }
           }
         }

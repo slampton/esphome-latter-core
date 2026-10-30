@@ -612,8 +612,7 @@ inline void draw_home_activity_row_contents(
   it.print(txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_act.c_str());
 
   // Inline Action Button (Play / Pause / Disarm / Open Calendar, r = btn_r at act_bx)
-  it.filled_circle(act_bx, gy, btn_r, fg_btn);
-  it.circle(act_bx, gy, btn_r, fg_sec);
+  render_glass_circle(it, act_bx, gy, btn_r, fg_btn, fg_sec);
 
   int sym_s = is_list_row ? 5 : 6;
   if (cur_act.kind == 5) {
@@ -906,21 +905,22 @@ inline void render_home_page(
   const bool has_custom_wallpaper = (!wallpaper_url.empty() && wallpaper_url != "none" &&
                                      wallpaper_url == loaded_wallpaper_url &&
                                      wallpaper_art != nullptr && wallpaper_art->get_width() > 0);
+  const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
 
-  if (has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)")) {
-    render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false);
+  if (use_custom_wallpaper) {
+    render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false, is_dim_backdrop ? 2 : 0);
   } else if (eff_weather_bg) {
     const int cel_x = layout().celestial_x;
     const int cel_y = layout().celestial_y;
     if (is_dim_backdrop) {
       if (!is_night) {
 #if LATTER_ROUND_DISPLAY
-        it.filled_circle(cx, cy, 228, Color(4, 8, 13));
+        it.filled_circle(cx, cy, 228, Color(7, 13, 22));
 #else
-        it.fill(Color(4, 8, 13));
+        it.fill(Color(7, 13, 22));
 #endif
       }
-      it.filled_circle(cel_x, cel_y, 20, is_night ? Color(22, 24, 28) : Color(36, 30, 8));
+      it.filled_circle(cel_x, cel_y, scale_min(20), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
     } else {
       double moon_cycle = 0.5;
       if (is_night) {
@@ -932,11 +932,65 @@ inline void render_home_page(
     }
   }
 
-  // Smooth 14%-luminance ghost colors when home_subpage == 2 (zero scanline/interlace artifacts!)
-  const Color fg_home_white = is_dim_backdrop ? Color(34, 38, 44) : col_white;
-  const Color fg_home_cond  = is_dim_backdrop
-                                  ? Color(30, 34, 40)
-                                  : ((!eff_weather_bg || is_night) ? theme_secondary : Color(255, 225, 110));
+  // ---------------------------------------------------------------------------
+  // SUBPAGE 2: FROSTED GLASS AUTO-CENTERED LIVE ACTIVITY OVERLAY
+  //   - Renders over the ambient dimmed Wallpaper or Weather Sky backdrop without
+  //     colliding against the giant center Home Clock / Dock geometry.
+  // ---------------------------------------------------------------------------
+  if (home_subpage == 2) {
+    char hdr_buf[36] = "ACTIVE ITEMS";
+    if (now.is_valid()) {
+      char t_sub[16];
+      format_time_hhmm(now.hour, now.minute, is_24h_format, t_sub, sizeof(t_sub));
+      snprintf(hdr_buf, sizeof(hdr_buf), "ACTIVE  •  %s", t_sub);
+    }
+    it.print(cx + 1, layout().hdr_y + 1, font_small, col_black, TextAlign::CENTER, hdr_buf);
+    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
+
+    Color ov_bg(22, 27, 36);
+    Color ov_brd(56, 68, 86);
+    Color ov_btn(34, 42, 56);
+    if (use_custom_wallpaper) {
+      ov_bg  = sample_image_ambient_tint(wallpaper_art, Color(20, 25, 34));
+      ov_btn = sample_image_ambient_tint(wallpaper_art, Color(32, 40, 54));
+    } else if (eff_weather_bg) {
+      resolve_home_card_palette(eff_weather_bg, is_night, cond, ov_bg, ov_brd, ov_btn);
+    }
+
+    if (act_count <= 0) {
+      it.print(cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
+    } else {
+      int total_pages = (act_count > 5) ? 2 : 1;
+      if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;
+      if (home_activity_overlay_page() < 0) home_activity_overlay_page() = 0;
+
+      int start_i = home_activity_overlay_page() * 5;
+      int vis_cnt = std::min(5, act_count - start_i);
+
+      for (int row = 0; row < vis_cnt; row++) {
+        int y_mid = get_activity_overlay_card_y(vis_cnt, row);
+        render_home_activity_card_row(
+            it, cx, y_mid, act_items[start_i + row], false, font_small,
+            theme_secondary, col_white, true, ov_bg, ov_brd, ov_btn);
+      }
+
+      if (total_pages > 1) {
+        const int chev_x = LATTER_ROUND_DISPLAY ? 415 : (SCREEN_W - scale_x(36));
+        if (home_activity_overlay_page() > 0) {
+          render_scroll_chevron(it, chev_x, scale_y(162), true, theme_secondary, col_black, true);
+        }
+        if (home_activity_overlay_page() + 1 < total_pages) {
+          render_scroll_chevron(it, chev_x, scale_y(278), false, theme_secondary, col_black, true);
+        }
+      }
+    }
+
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    return;
+  }
+
+  const Color fg_home_white = col_white;
+  const Color fg_home_cond  = (!eff_weather_bg || is_night) ? theme_secondary : Color(255, 225, 110);
 
   const int z_date_y  = layout().home_date_y;
   const int z_clock_y = layout().home_clock_y;
@@ -1369,64 +1423,18 @@ inline void render_home_page(
 
     const int pips_y = layout().dock_pips_y;
     render_viewport_scrollbar(it, cx, pips_y, dock_count, anim_start,
-                              is_dim_backdrop ? dock_fg_c : theme_primary,
-                              is_dim_backdrop);
+                              theme_primary, false);
   }
 
 #if LATTER_HAS_BATTERY
   if (SCREEN_W < 380 && font_micro != nullptr) {
     render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_micro,
-                             is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+                             theme_secondary, col_gold, col_green);
   } else {
     render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
-                             is_dim_backdrop ? Color(30, 34, 40) : theme_secondary, col_gold, col_green);
+                             theme_secondary, col_gold, col_green);
   }
 #endif
-
-  // ---------------------------------------------------------------------------
-  // SUBPAGE 2: TRANSLUCENT AUTO-CENTERED LIVE ACTIVITY OVERLAY
-  //   - Background Home elements are already rendered in smooth ~14% ghost tones (zero interlace stripes!)
-  //   - No title; auto-centers 1..5 standard System-sized cards (w = 276, h = 44, r = 12, 63px stride = 19px gap!)
-  //   - Supports Page 1 / Page 2 via right-flank ▲ / ▼ chevron if >5 items are active!
-  // ---------------------------------------------------------------------------
-  if (home_subpage == 2) {
-    // Clear bottom chin behind "< Back" so it replaces the battery/gear cleanly
-    it.filled_rectangle(cx - scale_x(103), layout().back_y - scale_y(22), scale_x(206), scale_y(44), show_weather_bg && !is_night ? Color(4, 8, 13) : col_black);
-
-    Color ov_bg(22, 27, 36);
-    Color ov_brd(52, 62, 78);
-    Color ov_btn(32, 39, 52);
-
-    if (act_count <= 0) {
-      it.print(cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
-    } else {
-      int total_pages = (act_count > 5) ? 2 : 1;
-      if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;
-      if (home_activity_overlay_page() < 0) home_activity_overlay_page() = 0;
-
-      int start_i = home_activity_overlay_page() * 5;
-      int vis_cnt = std::min(5, act_count - start_i);
-
-      for (int row = 0; row < vis_cnt; row++) {
-        int y_mid = get_activity_overlay_card_y(vis_cnt, row);
-        render_home_activity_card_row(
-            it, cx, y_mid, act_items[start_i + row], false, font_small,
-            theme_secondary, col_white, true, ov_bg, ov_brd, ov_btn);
-      }
-
-      if (total_pages > 1) {
-        const int chev_x = LATTER_ROUND_DISPLAY ? 415 : (SCREEN_W - scale_x(36));
-        if (home_activity_overlay_page() > 0) {
-          render_scroll_chevron(it, chev_x, scale_y(162), true, theme_secondary, col_black, true);
-        }
-        if (home_activity_overlay_page() + 1 < total_pages) {
-          render_scroll_chevron(it, chev_x, scale_y(278), false, theme_secondary, col_black, true);
-        }
-      }
-    }
-
-    render_back_button(it, cx, font_small, layout().back_y, "< Back");
-  }
 }
 
 }  // namespace latter_ui

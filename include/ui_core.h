@@ -61,8 +61,6 @@ static constexpr int SCREEN_CY = SCREEN_H / 2;
 static constexpr int SCREEN_R = SCREEN_W / 2;
 static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_H;
 static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
-static constexpr int STD_ART_SIZE = (SCREEN_MIN_DIM > 520) ? ((328 * SCREEN_MIN_DIM) / 466) : 328;
-static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
 
 inline constexpr int scale_x(int v466) {
   return (SCREEN_W > 520) ? ((v466 * SCREEN_W + 233) / 466) : v466;
@@ -84,6 +82,9 @@ inline constexpr int scale_min(int v466) {
 inline constexpr float scale_min_f(float v466) {
   return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
 }
+
+static constexpr int STD_ART_SIZE = scale_min(264);
+static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
 
 // 1. Mathematical, Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 // ------------------------------------------------------------------------------
@@ -534,13 +535,43 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
   const int x0 = cx_card - w / 2;
   const int y0 = cy_card - h / 2;
 
-  // Single-pass scanline rounded rectangle (zero filled_circle calls, zero pixel overdraw):
-  // 1. Top and bottom outer border horizontal lines (row 0 and row h-1)
-  int top_in = r / 2 + 2;
-  it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, border_c);
-  it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, border_c);
+  const bool is_lit_glass = (static_cast<int>(bg_c.r) + static_cast<int>(bg_c.g) + static_cast<int>(bg_c.b)) > 12;
+  const esphome::Color brd_top = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 28)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 32)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 38)))
+      : border_c;
+  const esphome::Color brd_btm = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>((static_cast<int>(border_c.r) * 180) >> 8),
+                       static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
+                       static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
+      : border_c;
+  const esphome::Color bg_spec = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 12)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 15)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 20)))
+      : bg_c;
+  const esphome::Color bg_top = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 6)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 8)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 11)))
+      : bg_c;
+  const esphome::Color bg_upper = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 3)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 4)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 5)))
+      : bg_c;
+  const esphome::Color bg_btm = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.r) - 4)),
+                       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.g) - 5)),
+                       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
+      : bg_c;
 
-  // 2. Top & bottom rounded corner rows (dy = 1 .. r-1)
+  // Single-pass scanline rounded rectangle with top-lit specular glass bevel & vertical sheen:
+  int top_in = r / 2 + 2;
+  it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, brd_top);
+  it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
+
   for (int dy = 1; dy < r; dy++) {
     int ry = r - dy;
     int dx_out = r - chord_half_span_int(r, ry, true);
@@ -549,24 +580,32 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
     int span_in  = w - 2 * dx_in;
     int yt = y0 + dy;
     int yb = y0 + h - 1 - dy;
+    esphome::Color b_t = (dy <= r / 2) ? brd_top : border_c;
+    esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
+    esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
     if (span_in > 0) {
-      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, border_c);
-      it.horizontal_line(x0 + dx_in,  yt, span_in,        bg_c);
-      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, b_t);
+      it.horizontal_line(x0 + dx_in,  yt, span_in,        f_t);
+      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, b_t);
 
-      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, border_c);
-      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_c);
-      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, b_b);
+      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_btm);
+      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, b_b);
     } else if (span_out > 0) {
-      it.horizontal_line(x0 + dx_out, yt, span_out, border_c);
-      it.horizontal_line(x0 + dx_out, yb, span_out, border_c);
+      it.horizontal_line(x0 + dx_out, yt, span_out, b_t);
+      it.horizontal_line(x0 + dx_out, yb, span_out, b_b);
     }
   }
 
-  // 3. Center body fill + 1px left/right vertical borders (rows r .. h-r-1)
   int mid_h = h - 2 * r;
   if (mid_h > 0) {
-    it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_h, bg_c);
+    int mid_top = mid_h / 2;
+    if (mid_top > 0) {
+      it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_top, bg_upper);
+    }
+    if (mid_h - mid_top > 0) {
+      it.filled_rectangle(x0 + 1, y0 + r + mid_top, w - 2, mid_h - mid_top, bg_c);
+    }
     it.vertical_line(x0,         y0 + r, mid_h, border_c);
     it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
   }
@@ -584,10 +623,42 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
 
+  const bool is_lit_glass = (static_cast<int>(bg_c.r) + static_cast<int>(bg_c.g) + static_cast<int>(bg_c.b)) > 12;
+  const esphome::Color brd_top = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 28)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 32)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 38)))
+      : border_c;
+  const esphome::Color brd_btm = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>((static_cast<int>(border_c.r) * 180) >> 8),
+                       static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
+                       static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
+      : border_c;
+  const esphome::Color bg_spec = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 12)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 15)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 20)))
+      : bg_c;
+  const esphome::Color bg_top = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 6)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 8)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 11)))
+      : bg_c;
+  const esphome::Color bg_upper = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 3)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 4)),
+                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 5)))
+      : bg_c;
+  const esphome::Color bg_btm = is_lit_glass
+      ? esphome::Color(static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.r) - 4)),
+                       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.g) - 5)),
+                       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
+      : bg_c;
+
   int top_in = r / 2 + 2;
   if (w > 2 * top_in) {
-    it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, border_c);
-    it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, border_c);
+    it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, brd_top);
+    it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
   }
 
   for (int dy = 1; dy < r; dy++) {
@@ -598,26 +669,110 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
     int span_in  = w - 2 * dx_in;
     int yt = y0 + dy;
     int yb = y0 + h - 1 - dy;
+    esphome::Color b_t = (dy <= r / 2) ? brd_top : border_c;
+    esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
+    esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
     if (span_in > 0) {
-      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, border_c);
-      it.horizontal_line(x0 + dx_in,  yt, span_in,        bg_c);
-      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, b_t);
+      it.horizontal_line(x0 + dx_in,  yt, span_in,        f_t);
+      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, b_t);
 
-      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, border_c);
-      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_c);
-      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, b_b);
+      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_btm);
+      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, b_b);
     } else if (span_out > 0) {
-      it.horizontal_line(x0 + dx_out, yt, span_out, border_c);
-      it.horizontal_line(x0 + dx_out, yb, span_out, border_c);
+      it.horizontal_line(x0 + dx_out, yt, span_out, b_t);
+      it.horizontal_line(x0 + dx_out, yb, span_out, b_b);
     }
   }
 
   int mid_h = h - 2 * r;
   if (mid_h > 0) {
-    it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_h, bg_c);
+    int mid_top = mid_h / 2;
+    if (mid_top > 0) {
+      it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_top, bg_upper);
+    }
+    if (mid_h - mid_top > 0) {
+      it.filled_rectangle(x0 + 1, y0 + r + mid_top, w - 2, mid_h - mid_top, bg_c);
+    }
     it.vertical_line(x0,         y0 + r, mid_h, border_c);
     it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
   }
+}
+
+// Single-pass scanline frosted-glass circular button pill with top-lit specular bevel rim
+template<typename DisplayT>
+inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
+                                esphome::Color bg_c, esphome::Color border_c) {
+  if (r <= 1) return;
+  const esphome::Color brd_top(
+      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 34)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 38)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 44)));
+  const esphome::Color brd_btm(
+      static_cast<uint8_t>((static_cast<int>(border_c.r) * 165) >> 8),
+      static_cast<uint8_t>((static_cast<int>(border_c.g) * 165) >> 8),
+      static_cast<uint8_t>((static_cast<int>(border_c.b) * 165) >> 8));
+  const esphome::Color bg_spec(
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 14)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 17)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 22)));
+  const esphome::Color bg_top(
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 7)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 9)),
+      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 12)));
+  const esphome::Color bg_btm(
+      static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.r) - 5)),
+      static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.g) - 6)),
+      static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 8)));
+
+  for (int dy = -r; dy <= r; dy++) {
+    int y = cy_btn + dy;
+    if (y < 0 || y >= SCREEN_H) continue;
+    int hw_out = chord_half_span_int(r, dy, true);
+    int hw_in  = (std::abs(dy) >= r - 1) ? 0 : chord_half_span_int(r - 1, dy, true);
+    esphome::Color brd_row = (dy < -r / 3) ? brd_top : ((dy > r / 3) ? brd_btm : border_c);
+    if (hw_in <= 0) {
+      it.horizontal_line(cx_btn - hw_out, y, 2 * hw_out + 1, brd_row);
+    } else {
+      esphome::Color fill_row = (dy == -r + 1) ? bg_spec : ((dy < -r / 4) ? bg_top : ((dy > r / 4) ? bg_btm : bg_c));
+      int cap_w = std::max(1, hw_out - hw_in);
+      it.horizontal_line(cx_btn - hw_out, y, cap_w, brd_row);
+      it.horizontal_line(cx_btn - hw_in,  y, 2 * hw_in + 1, fill_row);
+      it.horizontal_line(cx_btn + hw_in + 1, y, cap_w, brd_row);
+    }
+  }
+}
+
+// Ultra-fast (<2us) 4x4 grid sampler that extracts an ambient color tint from an RGB565 image buffer
+// so frosted glass cards and HUD controls subtly pick up the color palette of the underlying artwork.
+template<typename ImageT>
+inline esphome::Color sample_image_ambient_tint(ImageT *img,
+                                                esphome::Color base_bg = esphome::Color(22, 27, 36)) {
+  if (img == nullptr) return base_bg;
+  const uint16_t *src = reinterpret_cast<const uint16_t *>(img->get_data_start());
+  int w = img->get_width();
+  int h = img->get_height();
+  if (src == nullptr || w < 16 || h < 16) return base_bg;
+
+  uint32_t sum_r = 0, sum_g = 0, sum_b = 0;
+  for (int gy = 1; gy <= 4; gy++) {
+    int sy = (h * gy) / 5;
+    const uint16_t *row = src + sy * w;
+    for (int gx = 1; gx <= 4; gx++) {
+      uint16_t p = row[(w * gx) / 5];
+      sum_r += (p & 0xF800U) >> 8;
+      sum_g += (p & 0x07E0U) >> 3;
+      sum_b += (p & 0x001FU) << 3;
+    }
+  }
+  uint8_t avg_r = static_cast<uint8_t>(sum_r >> 4);
+  uint8_t avg_g = static_cast<uint8_t>(sum_g >> 4);
+  uint8_t avg_b = static_cast<uint8_t>(sum_b >> 4);
+  return esphome::Color(
+      static_cast<uint8_t>(std::min(68, static_cast<int>(base_bg.r) + (avg_r >> 3))),
+      static_cast<uint8_t>(std::min(74, static_cast<int>(base_bg.g) + (avg_g >> 3))),
+      static_cast<uint8_t>(std::min(88, static_cast<int>(base_bg.b) + (avg_b >> 3))));
 }
 
 template<typename DisplayT>
@@ -932,26 +1087,114 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   return (gui_page * 100) + sub;
 }
 
-// Zero-overdraw album art blitter with fused 2x-stride checkerboard scrim,
-// portable across circular (LATTER_ROUND_DISPLAY=1) and square/rectangular displays.
+inline int compute_art_row_scale_q3(int y, bool apply_scrim, bool show_metadata, int dim_level) {
+  if (dim_level >= 2) return 2; // 25% ambient backdrop behind glass menu cards
+  if (apply_scrim) {
+    if (y < scale_y(76) || (show_metadata && y >= scale_y(324))) return 3; // 37.5% behind header/metadata
+    return 4; // 50% behind HUD transport buttons
+  }
+  if (show_metadata) {
+    if (y < scale_y(304)) return 8;
+    if (y < scale_y(316)) return 7;
+    if (y < scale_y(328)) return 6;
+    if (y < scale_y(340)) return 5;
+    if (y < scale_y(352)) return 4;
+    if (y < scale_y(410)) return 3;
+  }
+  return 8;
+}
+
+// Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
+// smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
 template<typename DisplayT, typename ImageT>
 inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
                                     bool is_standard, bool is_letterbox,
-                                    bool apply_scrim, bool show_metadata) {
+                                    bool apply_scrim, bool show_metadata,
+                                    int dim_level = 0) {
   if (target_art == nullptr) return false;
   const uint16_t *src_data = reinterpret_cast<const uint16_t *>(target_art->get_data_start());
   int src_w = target_art->get_width();
   int src_h = target_art->get_height();
   if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
 
-  int start_y = is_letterbox ? scale_y(60) : 0;
-  int end_y = is_letterbox ? scale_y(385) : SCREEN_H;
-  int scrim_start = scale_y(340);
-  int scrim_end = is_letterbox ? scale_y(398) : scale_y(405);
+  if (is_standard) {
+    const int std_size = STD_ART_SIZE;
+    const int art_cy   = (show_metadata || apply_scrim) ? scale_y(198) : SCREEN_CY;
+    const int x0       = cx - (std_size / 2);
+    const int y0       = art_cy - (std_size / 2);
+    const int r_std    = scale_min(14);
+    const int step_x   = (src_w << 12) / std_size;
+    const int step_y   = (src_h << 12) / std_size;
+    const int mul_q3   = (dim_level >= 2) ? 2 : (apply_scrim ? 4 : 8);
 
-  if (src_w == SCREEN_W && src_h == SCREEN_H && !is_standard) {
+    int curr_y = 0;
+    for (int y = 0; y < std_size; y++) {
+      int sy = std::min(src_h - 1, curr_y >> 12);
+      curr_y += step_y;
+      int py = y0 + y;
+      if (py < 0 || py >= SCREEN_H) continue;
+
+      int dx_clip = 0;
+      if (y < r_std) {
+        dx_clip = r_std - chord_half_span_int(r_std, r_std - y, true);
+      } else if (y >= std_size - r_std) {
+        dx_clip = r_std - chord_half_span_int(r_std, y - (std_size - 1 - r_std), true);
+      }
+      int x_start = dx_clip;
+      int x_end   = std_size - 1 - dx_clip;
+      const uint16_t *src_row = src_data + sy * src_w;
+      int x = x_start;
+      while (x <= x_end) {
+        uint16_t p = src_row[(x * step_x) >> 12];
+        int run_start = x;
+        x++;
+        while (x <= x_end && src_row[(x * step_x) >> 12] == p) {
+          x++;
+        }
+        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
+        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
+        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
+        if (mul_q3 < 8) {
+          r = static_cast<uint8_t>((r * mul_q3) >> 3);
+          g = static_cast<uint8_t>((g * mul_q3) >> 3);
+          b = static_cast<uint8_t>((b * mul_q3) >> 3);
+        }
+        esphome::Color col(r, g, b);
+        int run_len = x - run_start;
+        if (run_len > 1) {
+          it.horizontal_line(x0 + run_start, py, run_len, col);
+        } else {
+          it.draw_pixel_at(x0 + run_start, py, col);
+        }
+      }
+    }
+
+    // Crisp top-lit specular glass frame around the centered Standard album art square
+    const esphome::Color brd_top(88, 102, 124);
+    const esphome::Color brd_side(56, 66, 82);
+    const esphome::Color brd_btm(38, 45, 58);
+    int top_in = r_std / 2 + 2;
+    it.horizontal_line(x0 + top_in, y0,                std_size - 2 * top_in, brd_top);
+    it.horizontal_line(x0 + top_in, y0 + std_size - 1, std_size - 2 * top_in, brd_btm);
+    it.vertical_line(x0,                y0 + r_std, std_size - 2 * r_std, brd_side);
+    it.vertical_line(x0 + std_size - 1, y0 + r_std, std_size - 2 * r_std, brd_side);
+    for (int dy = 1; dy < r_std; dy++) {
+      int dx_out = r_std - chord_half_span_int(r_std, r_std - dy, true);
+      int dx_in  = dx_out + 1;
+      it.horizontal_line(x0 + dx_out, y0 + dy, dx_in - dx_out, brd_top);
+      it.horizontal_line(x0 + std_size - dx_in, y0 + dy, dx_in - dx_out, brd_top);
+      it.horizontal_line(x0 + dx_out, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
+      it.horizontal_line(x0 + std_size - dx_in, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
+    }
+    return true;
+  }
+
+  int start_y = is_letterbox ? scale_y(62) : 0;
+  int end_y   = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
+
+  if (src_w == SCREEN_W && src_h == SCREEN_H) {
     for (int y = start_y; y < end_y; y++) {
-      bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
+      int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
@@ -967,10 +1210,10 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
         uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
         uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (row_scrim) {
-          r >>= 1;
-          g >>= 1;
-          b >>= 1;
+        if (mul_q3 < 8) {
+          r = static_cast<uint8_t>((r * mul_q3) >> 3);
+          g = static_cast<uint8_t>((g * mul_q3) >> 3);
+          b = static_cast<uint8_t>((b * mul_q3) >> 3);
         }
         esphome::Color col(r, g, b);
         int run_len = x - run_start;
@@ -981,97 +1224,61 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         }
       }
     }
-    return true;
-  }
+  } else {
+    // Aspect-preserving center-crop ("cover") mapping so square album art is never stretched on portrait screens
+    const int view_h  = std::max(1, end_y - start_y);
+    const int step_x  = (src_w << 12) / SCREEN_W;
+    const int step_y  = (src_h << 12) / view_h;
+    const int step_fp = std::min(step_x, step_y);
+    const int vis_src_w_fp = SCREEN_W * step_fp;
+    const int vis_src_h_fp = view_h * step_fp;
+    const int src_x0_fp = std::max(0, ((src_w << 12) - vis_src_w_fp) / 2);
+    const int src_y0_fp = std::max(0, ((src_h << 12) - vis_src_h_fp) / 2);
 
-  if (is_standard) {
-    int step_x = (src_w << 12) / STD_ART_SIZE;
-    int step_y = (src_h << 12) / STD_ART_SIZE;
-    int curr_y = 0;
-    for (int y = 0; y < STD_ART_SIZE; y++) {
-      int sy = curr_y >> 12;
-      curr_y += step_y;
+    int curr_y = src_y0_fp;
+    for (int y = start_y; y < end_y; y++) {
+      int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
+      curr_y += step_fp;
+      int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
       const uint16_t *src_row = src_data + sy * src_w;
-      int py = STD_ART_OFFSET + y;
-      int curr_x = 0;
-      for (int x = 0; x < STD_ART_SIZE; x++) {
-        uint16_t p = src_row[curr_x >> 12];
+      int hw = circle_half_span(y, 0);
+      int start_x = std::max(0, cx - hw);
+      int end_x = std::min(SCREEN_W - 1, cx + hw);
+      int x = start_x;
+      while (x <= end_x) {
+        int sx = std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12);
+        uint16_t p = src_row[sx];
+        int run_start = x;
+        x++;
+        while (x <= end_x && src_row[std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12)] == p) {
+          x++;
+        }
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
         uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
         uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (apply_scrim) {
-          r >>= 1;
-          g >>= 1;
-          b >>= 1;
+        if (mul_q3 < 8) {
+          r = static_cast<uint8_t>((r * mul_q3) >> 3);
+          g = static_cast<uint8_t>((g * mul_q3) >> 3);
+          b = static_cast<uint8_t>((b * mul_q3) >> 3);
         }
-        it.draw_pixel_at(STD_ART_OFFSET + x, py, esphome::Color(r, g, b));
-        curr_x += step_x;
+        esphome::Color col(r, g, b);
+        int run_len = x - run_start;
+        if (run_len > 1) {
+          it.horizontal_line(run_start, y, run_len, col);
+        } else {
+          it.draw_pixel_at(run_start, y, col);
+        }
       }
     }
-    return true;
   }
 
-  int step_x = (src_w << 12) / SCREEN_W;
-  int step_y = (src_h << 12) / SCREEN_H;
-  int curr_y = start_y * step_y;
-  for (int y = start_y; y < end_y; y++) {
-    int sy = curr_y >> 12;
-    curr_y += step_y;
-    bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
-    const uint16_t *src_row = src_data + sy * src_w;
-    int hw = circle_half_span(y, 0);
-    int start_x = std::max(0, cx - hw);
-    int end_x = std::min(SCREEN_W - 1, cx + hw);
-    int x = start_x;
-    if (src_w == SCREEN_W) {
-      while (x <= end_x) {
-        uint16_t p = src_row[x];
-        int run_start = x;
-        x++;
-        while (x <= end_x && src_row[x] == p) {
-          x++;
-        }
-        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
-        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
-        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (row_scrim) {
-          r >>= 1;
-          g >>= 1;
-          b >>= 1;
-        }
-        esphome::Color col(r, g, b);
-        int run_len = x - run_start;
-        if (run_len > 1) {
-          it.horizontal_line(run_start, y, run_len, col);
-        } else {
-          it.draw_pixel_at(run_start, y, col);
-        }
-      }
-    } else {
-      while (x <= end_x) {
-        uint16_t p = src_row[(x * step_x) >> 12];
-        int run_start = x;
-        x++;
-        while (x <= end_x && src_row[(x * step_x) >> 12] == p) {
-          x++;
-        }
-        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
-        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
-        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (row_scrim) {
-          r >>= 1;
-          g >>= 1;
-          b >>= 1;
-        }
-        esphome::Color col(r, g, b);
-        int run_len = x - run_start;
-        if (run_len > 1) {
-          it.horizontal_line(run_start, y, run_len, col);
-        } else {
-          it.draw_pixel_at(run_start, y, col);
-        }
-      }
-    }
+  if (is_letterbox) {
+    int hw_top = circle_half_span(start_y, 0);
+    int hw_btm = circle_half_span(end_y - 1, 0);
+    int x0_t = std::max(0, cx - hw_top), x1_t = std::min(SCREEN_W - 1, cx + hw_top);
+    int x0_b = std::max(0, cx - hw_btm), x1_b = std::min(SCREEN_W - 1, cx + hw_btm);
+    if (x1_t > x0_t) it.horizontal_line(x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
+    if (x1_b > x0_b) it.horizontal_line(x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
   }
   return true;
 }

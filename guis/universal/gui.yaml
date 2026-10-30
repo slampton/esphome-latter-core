@@ -355,7 +355,9 @@ display:
               id(ha_media_duration).state, id(music_pos_base), id(music_pos_sync_time),
               (id(active_speaker_entity) != "${local_player_id}" || id(track_title).state.empty() || id(track_title).state == "None") ? id(ha_track_title).state : id(track_title).state,
               (id(active_speaker_entity) != "${local_player_id}" || id(track_artist).state.empty() || id(track_artist).state == "None") ? id(ha_track_artist).state : id(track_artist).state,
-              (id(active_speaker_entity) != "${local_player_id}" || id(track_album).state.empty() || id(track_album).state == "None") ? id(ha_track_album).state : id(track_album).state);
+              (id(active_speaker_entity) != "${local_player_id}" || id(track_album).state.empty() || id(track_album).state == "None") ? id(ha_track_album).state : id(track_album).state,
+              id(album_art), id(remote_album_art),
+              id(ha_target_art_url).state, id(current_loaded_art_url));
         }
 
       // ==========================================

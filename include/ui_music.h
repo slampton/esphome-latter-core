@@ -110,6 +110,11 @@ inline void render_music_now_playing(
     it.filled_circle(cx, art_center_y, scale_s(16), is_remote ? theme_secondary : theme_primary);
   }
 
+  const esphome::Color glass_bg = rendered_art
+      ? sample_image_ambient_tint(is_remote ? remote_art : local_art, esphome::Color(20, 25, 34))
+      : esphome::Color(22, 27, 36);
+  const esphome::Color glass_brd(62, 74, 92);
+
   std::string spk_title = active_speaker_name;
   if (spk_title.empty() || spk_title == "None") spk_title = friendly_name;
   bool is_feedback = (now_ms - music_feedback_timer < 1800U && !music_action_feedback.empty());
@@ -118,14 +123,17 @@ inline void render_music_now_playing(
   } else if (now_ms < 4000U) {
     spk_title = "Connecting...";
   }
-  spk_title = fit_text_to_width_font(spk_title, scale_x(280), font_small);
+  spk_title = fit_text_to_width_font(spk_title, scale_x(260), font_small);
 
   if (show_controls || music_hud_active) {
     int hdr_y = scale_y(50);
-    if (!is_standard) {
-      it.print(cx + 1, hdr_y + 1, font_small, col_black, esphome::display::TextAlign::CENTER, spk_title.c_str());
+    if (rendered_art) {
+      int pill_w = std::min(scale_x(268), std::max(scale_x(136), static_cast<int>(spk_title.size()) * scale_x(11) + scale_x(34)));
+      render_modern_card(it, cx - pill_w / 2, hdr_y - scale_y(15), pill_w, scale_y(30), glass_bg,
+                         is_feedback ? theme_primary : glass_brd, scale_s(15));
     }
-    it.print(cx, hdr_y, font_small, col_white, esphome::display::TextAlign::CENTER, spk_title.c_str());
+    it.print(cx + 1, hdr_y + 1, font_small, col_black, esphome::display::TextAlign::CENTER, spk_title.c_str());
+    it.print(cx, hdr_y, font_small, is_feedback ? theme_secondary : col_white, esphome::display::TextAlign::CENTER, spk_title.c_str());
   }
 
   if (show_controls) {
@@ -135,17 +143,30 @@ inline void render_music_now_playing(
     const int right_flank_x = layout().music_right_flank_x();
     const int top_fy = scale_y(140);
     const int btm_fy = scale_y(326);
+    const int nav_r   = scale_s(22);
+    const int flank_r = scale_s(18);
+
+    render_glass_circle(it, prev_btn_x, art_center_y, nav_r, glass_bg, glass_brd);
+    render_glass_circle(it, next_btn_x, art_center_y, nav_r, glass_bg, glass_brd);
+    render_glass_circle(it, right_flank_x, top_fy, flank_r, glass_bg, glass_brd);
+    render_glass_circle(it, right_flank_x, btm_fy, flank_r, glass_bg, glass_brd);
+    if (show_spk_shortcut) {
+      render_glass_circle(it, left_flank_x, top_fy, flank_r, glass_bg, glass_brd);
+    }
+    if (show_lib_shortcut) {
+      render_glass_circle(it, left_flank_x, btm_fy, flank_r, glass_bg, glass_brd);
+    }
 
     bool is_speech_media = (active_playback_media_type == "podcast" ||
                             active_playback_media_type == "podcast_episode" ||
                             active_playback_media_type == "audiobook");
 
     auto draw_skip_glyph_lut = [&](int bx, int by, int dir_sign, const char *lbl, esphome::Color c) {
-      int r1 = scale_s(15), r2 = scale_s(16);
+      int r1 = scale_s(14), r2 = scale_s(15);
       if (dir_sign < 0) {
-        it.filled_triangle(bx - scale_s(10), by - r1, bx - 1, by - scale_s(21), bx - 1, by - scale_s(9), c);
+        it.filled_triangle(bx - scale_s(9), by - r1, bx - 1, by - scale_s(19), bx - 1, by - scale_s(9), c);
       } else {
-        it.filled_triangle(bx + scale_s(10), by - r1, bx + 1, by - scale_s(21), bx + 1, by - scale_s(9), c);
+        it.filled_triangle(bx + scale_s(9), by - r1, bx + 1, by - scale_s(19), bx + 1, by - scale_s(9), c);
       }
       for (int idx = 3; idx < 50; idx += 2) {
         int next_idx = std::min(50, idx + 2);
@@ -157,23 +178,22 @@ inline void render_music_now_playing(
         it.line(bx + (int)(r2 * s1), by - (int)(r2 * c1), bx + (int)(r2 * s2), by - (int)(r2 * c2), c);
       }
       it.print(bx, by + 1, font_micro, c, esphome::display::TextAlign::CENTER, lbl);
-      it.print(bx + 1, by + 1, font_micro, c, esphome::display::TextAlign::CENTER, lbl);
     };
 
     auto draw_prev_glyph = [&](int ox, int oy, esphome::Color c) {
       int px = prev_btn_x + ox;
       int py = art_center_y + oy;
-      int h = scale_s(10);
-      it.filled_rectangle(px - scale_s(14), py - h, scale_s(3), h * 2 + 1, c);
-      it.filled_triangle(px - scale_s(8), py, px + scale_s(6), py - h, px + scale_s(6), py + h, c);
+      int h = scale_s(9);
+      it.filled_rectangle(px - scale_s(9), py - h, scale_s(3), h * 2 + 1, c);
+      it.filled_triangle(px - scale_s(4), py, px + scale_s(8), py - h, px + scale_s(8), py + h, c);
     };
 
     auto draw_next_glyph = [&](int ox, int oy, esphome::Color c) {
       int nx = next_btn_x + ox;
       int ny = art_center_y + oy;
-      int h = scale_s(10);
-      it.filled_triangle(nx + scale_s(8), ny, nx - scale_s(6), ny - h, nx - scale_s(6), ny + h, c);
-      it.filled_rectangle(nx + scale_s(11), ny - h, scale_s(3), h * 2 + 1, c);
+      int h = scale_s(9);
+      it.filled_triangle(nx + scale_s(4), ny, nx - scale_s(8), ny - h, nx - scale_s(8), ny + h, c);
+      it.filled_rectangle(nx + scale_s(6), ny - h, scale_s(3), h * 2 + 1, c);
     };
 
     if (is_speech_media) {
@@ -188,8 +208,8 @@ inline void render_music_now_playing(
       draw_next_glyph(0, 0, col_white);
     }
 
-    const int pls = scale_s(7);
-    const int pth = scale_s(3);
+    const int pls = scale_s(6);
+    const int pth = scale_s(2);
     it.filled_rectangle(right_flank_x - pls + 1, top_fy + 1, pls * 2 + 1, pth, col_black);
     it.filled_rectangle(right_flank_x,           top_fy - pls + 1, pth, pls * 2 + 1, col_black);
     it.filled_rectangle(right_flank_x - pls,     top_fy,     pls * 2 + 1, pth, col_white);
@@ -202,15 +222,15 @@ inline void render_music_now_playing(
       auto draw_spk = [&](int ox, int oy, esphome::Color c) {
         int sx = left_flank_x + ox;
         int sy = top_fy + oy;
-        it.filled_rectangle(sx - scale_s(9), sy - scale_s(4), scale_s(5), scale_s(9), c);
-        it.filled_triangle(sx - scale_s(4), sy - scale_s(4), sx - scale_s(4), sy + scale_s(4), sx + scale_s(2), sy + scale_s(9), c);
-        it.filled_triangle(sx - scale_s(4), sy - scale_s(4), sx + scale_s(2), sy + scale_s(9), sx + scale_s(2), sy - scale_s(9), c);
-        it.line(sx + scale_s(5), sy - scale_s(4), sx + scale_s(7), sy - scale_s(2), c);
-        it.line(sx + scale_s(7), sy - scale_s(2), sx + scale_s(7), sy + scale_s(2), c);
-        it.line(sx + scale_s(7), sy + scale_s(2), sx + scale_s(5), sy + scale_s(4), c);
-        it.line(sx + scale_s(8), sy - scale_s(7), sx + scale_s(11), sy - scale_s(3), c);
-        it.line(sx + scale_s(11), sy - scale_s(3), sx + scale_s(11), sy + scale_s(3), c);
-        it.line(sx + scale_s(11), sy + scale_s(3), sx + scale_s(8), sy + scale_s(7), c);
+        it.filled_rectangle(sx - scale_s(8), sy - scale_s(3), scale_s(4), scale_s(7), c);
+        it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx - scale_s(4), sy + scale_s(3), sx + scale_s(1), sy + scale_s(7), c);
+        it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx + scale_s(1), sy + scale_s(7), sx + scale_s(1), sy - scale_s(7), c);
+        it.line(sx + scale_s(4), sy - scale_s(3), sx + scale_s(6), sy - scale_s(1), c);
+        it.line(sx + scale_s(6), sy - scale_s(1), sx + scale_s(6), sy + scale_s(1), c);
+        it.line(sx + scale_s(6), sy + scale_s(1), sx + scale_s(4), sy + scale_s(3), c);
+        it.line(sx + scale_s(7), sy - scale_s(6), sx + scale_s(9), sy - scale_s(2), c);
+        it.line(sx + scale_s(9), sy - scale_s(2), sx + scale_s(9), sy + scale_s(2), c);
+        it.line(sx + scale_s(9), sy + scale_s(2), sx + scale_s(7), sy + scale_s(6), c);
       };
       draw_spk(1, 1, col_black);
       draw_spk(0, 0, col_white);
@@ -220,27 +240,25 @@ inline void render_music_now_playing(
       auto draw_lib = [&](int ox, int oy, esphome::Color c) {
         int lx = left_flank_x + ox;
         int ly = btm_fy + oy;
-        it.filled_rectangle(lx - scale_s(9), ly - scale_s(8), scale_s(3), scale_s(16), c);
-        it.filled_rectangle(lx - scale_s(4), ly - scale_s(8), scale_s(3), scale_s(16), c);
-        it.line(lx + scale_s(2), ly + scale_s(7), lx + scale_s(6), ly - scale_s(8), c);
-        it.line(lx + scale_s(3), ly + scale_s(7), lx + scale_s(7), ly - scale_s(8), c);
-        it.line(lx + scale_s(6), ly + scale_s(7), lx + scale_s(10), ly - scale_s(7), c);
-        it.line(lx + scale_s(7), ly + scale_s(7), lx + scale_s(11), ly - scale_s(7), c);
+        it.filled_rectangle(lx - scale_s(8), ly - scale_s(7), scale_s(3), scale_s(14), c);
+        it.filled_rectangle(lx - scale_s(3), ly - scale_s(7), scale_s(3), scale_s(14), c);
+        it.line(lx + scale_s(2), ly + scale_s(6), lx + scale_s(5), ly - scale_s(7), c);
+        it.line(lx + scale_s(3), ly + scale_s(6), lx + scale_s(6), ly - scale_s(7), c);
+        it.line(lx + scale_s(5), ly + scale_s(6), lx + scale_s(8), ly - scale_s(6), c);
+        it.line(lx + scale_s(6), ly + scale_s(6), lx + scale_s(9), ly - scale_s(6), c);
       };
       draw_lib(1, 1, col_black);
       draw_lib(0, 0, col_white);
     }
 
     const int pp_r = scale_s(34);
-    it.filled_circle(cx, art_center_y, pp_r, col_dark_gray);
-    it.circle(cx, art_center_y, pp_r, col_black);
-    it.circle(cx, art_center_y, pp_r - 1, col_gray);
+    render_glass_circle(it, cx, art_center_y, pp_r, glass_bg, theme_primary);
 
     if (!is_playing) {
-      it.filled_triangle(cx - scale_s(7), art_center_y - scale_s(15), cx - scale_s(7), art_center_y + scale_s(15), cx + scale_s(15), art_center_y, theme_primary);
+      it.filled_triangle(cx - scale_s(7), art_center_y - scale_s(14), cx - scale_s(7), art_center_y + scale_s(14), cx + scale_s(14), art_center_y, col_white);
     } else {
-      it.filled_rectangle(cx - scale_s(9), art_center_y - scale_s(13), scale_s(6), scale_s(26), theme_primary);
-      it.filled_rectangle(cx + scale_s(3), art_center_y - scale_s(13), scale_s(6), scale_s(26), theme_primary);
+      it.filled_rectangle(cx - scale_s(9), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
+      it.filled_rectangle(cx + scale_s(3), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
     }
   }
 
@@ -264,9 +282,9 @@ inline void render_music_now_playing(
     title = fit_text_to_width_font(title, scale_x(280), font_small);
 
     bool has_shadow = has_art;
-    const int y_t = scale_y(352);
-    const int y_ar = scale_y(373);
-    const int y_al = scale_y(394);
+    const int y_t  = scale_y(352);
+    const int y_ar = scale_y(374);
+    const int y_al = scale_y(395);
     if (has_shadow) {
       it.print(cx + 1, y_t + 1, font_small, col_black, esphome::display::TextAlign::CENTER, title.c_str());
     }
@@ -277,19 +295,20 @@ inline void render_music_now_playing(
       if (has_shadow) {
         it.print(cx + 1, y_ar + 1, font_small, col_black, esphome::display::TextAlign::CENTER, artist.c_str());
       }
-      it.print(cx, y_ar, font_small, col_white, esphome::display::TextAlign::CENTER, artist.c_str());
+      it.print(cx, y_ar, font_small, theme_secondary, esphome::display::TextAlign::CENTER, artist.c_str());
     }
     if (!album.empty() && album != "None") {
       album = fit_text_to_width_font(album, scale_x(240), font_small);
       if (has_shadow) {
         it.print(cx + 1, y_al + 1, font_small, col_black, esphome::display::TextAlign::CENTER, album.c_str());
       }
-      it.print(cx, y_al, font_small, col_white, esphome::display::TextAlign::CENTER, album.c_str());
+      it.print(cx, y_al, font_small, esphome::Color(154, 166, 182), esphome::display::TextAlign::CENTER, album.c_str());
     }
   }
 }
 
-template<typename DisplayT, typename FontDateT, typename FontSmallT, typename FontMicroT>
+template<typename DisplayT, typename FontDateT, typename FontSmallT, typename FontMicroT,
+         typename LocalImageT = void, typename RemoteImageT = void>
 inline void render_music_menus(
     DisplayT &it, int cx, int music_overlay_mode,
     const std::string &active_speaker_entity, const std::string &active_speaker_name,
@@ -310,14 +329,30 @@ inline void render_music_menus(
     uint32_t now_ms = 0, bool is_playing = false, float dur = 0.0f,
     float music_pos_base = 0.0f, uint32_t music_pos_sync_time = 0,
     const std::string &cur_title = "", const std::string &cur_artist = "",
-    const std::string &cur_album = "") {
+    const std::string &cur_album = "",
+    LocalImageT *local_art = nullptr, RemoteImageT *remote_art = nullptr,
+    const std::string &ha_target_art_url = "", const std::string &current_loaded_art_url = "") {
   auto draw_right_chevrons = [&](bool show_up, bool show_down) {
     render_vertical_page_pips(it, show_up, show_down, col_bg, theme_secondary, col_slate);
   };
 
   (void)font_date;
-  const esphome::Color card_bg(22, 27, 36);
-  const esphome::Color card_brd(52, 62, 78);
+  const bool is_rem = (active_speaker_entity != local_player_id);
+  esphome::Color card_bg(22, 27, 36);
+  const esphome::Color card_brd(56, 68, 84);
+
+  if (!menu_scroll_active) {
+    if (is_rem) {
+      if (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
+          current_loaded_art_url == ha_target_art_url && remote_art != nullptr && remote_art->get_width() > 0) {
+        render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
+        card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
+      }
+    } else if (local_art != nullptr && local_art->get_width() > 0) {
+      render_album_art_canvas(it, local_art, cx, false, false, true, false, 2);
+      card_bg = sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34));
+    }
+  }
 
   const int row0_y = layout().slot5_y(0);
   const int row_s  = layout().slot5_stride;
@@ -435,8 +470,7 @@ inline void render_music_menus(
         const int dr_w    = c_right - dr_left;
         const int dr_cx   = dr_left + (dr_w / 2);
         const int play_r  = scale_s(18);
-        it.filled_circle(play_cx, y_mid, play_r, card_bg);
-        it.circle(play_cx, y_mid, play_r, theme_primary);
+        render_glass_circle(it, play_cx, y_mid, play_r, card_bg, theme_primary);
         it.filled_triangle(play_cx - scale_s(3), y_mid - scale_s(6),
                            play_cx - scale_s(3), y_mid + scale_s(6),
                            play_cx + scale_s(6), y_mid, theme_primary);
@@ -574,18 +608,15 @@ inline void render_music_menus(
     const int bar_w    = layout().music_scrub_w();
 
     // Left -15s Seek Button
-    esphome::Color btn_bg(22, 27, 36);
     esphome::Color btn_brd(58, 68, 84);
-    it.filled_circle(l_seek_x, scrub_y, 20, btn_bg);
-    it.circle(l_seek_x, scrub_y, 20, btn_brd);
+    render_glass_circle(it, l_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
     it.line(l_seek_x + 4, scrub_y - 6, l_seek_x - 2, scrub_y, col_white);
     it.line(l_seek_x - 2, scrub_y,     l_seek_x + 4, scrub_y + 6, col_white);
     it.line(l_seek_x - 2, scrub_y - 6, l_seek_x - 8, scrub_y, theme_secondary);
     it.line(l_seek_x - 8, scrub_y,     l_seek_x - 2, scrub_y + 6, theme_secondary);
 
     // Right +15s Seek Button
-    it.filled_circle(r_seek_x, scrub_y, 20, btn_bg);
-    it.circle(r_seek_x, scrub_y, 20, btn_brd);
+    render_glass_circle(it, r_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
     it.line(r_seek_x - 4, scrub_y - 6, r_seek_x + 2, scrub_y, col_white);
     it.line(r_seek_x + 2, scrub_y,     r_seek_x - 4, scrub_y + 6, col_white);
     it.line(r_seek_x + 2, scrub_y - 6, r_seek_x + 8, scrub_y, theme_secondary);
