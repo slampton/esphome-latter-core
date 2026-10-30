@@ -29,6 +29,12 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
+  default_power_profile: "Always-On Wall / Desk"
+  default_pickup_wake: "Disabled"
+  default_tap_wake: "Always On"
+  default_battery_timeout: "Never"
+  default_docked_timeout: "5 min"
+  default_hibernate_timeout: "Disabled"
 
   active_media_sensor: "sensor.desk_assistant_active_media"
   weather_forecast_sensor: "sensor.desk_assistant_weather_forecast"

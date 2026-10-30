@@ -1466,6 +1466,19 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
 #endif
 }
 
+inline bool &applying_power_profile() {
+  static bool v = false;
+  return v;
+}
+
+template<typename SelT>
+inline void mark_power_profile_custom_if_manual(SelT *prof_sel) {
+  if (prof_sel == nullptr || applying_power_profile() || esphome::millis() < 3500U) return;
+  if (prof_sel->current_option() != "Custom") {
+    prof_sel->publish_state("Custom");
+  }
+}
+
 // ------------------------------------------------------------------------------
 
 }  // namespace latter_ui

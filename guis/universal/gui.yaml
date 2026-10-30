@@ -457,6 +457,7 @@ display:
             batt, id(batt_charging).state, id(batt_voltage).state,
             id(latter_wifi_signal).state, id(latter_ip_address).state, id(imu_temp).state,
             free_heap_kb, now.is_valid(), id(ble_ctrl).is_active(),
+            id(power_profile_select).current_option(),
             id(pickup_wake_mode).current_option(), id(tap_wake_mode).current_option(),
             id(display_off_timeout).current_option(), id(docked_screensaver_switch).state,
             id(screensaver_style_select).current_option(), id(screensaver_docked_timeout).current_option(),
@@ -3683,38 +3684,44 @@ touchscreen:
                   } else if (id(system_menu_mode) == 1) {
                     int slot_idx = get_5slot_index(tp, 75, 385);
                     if (slot_idx >= 0) {
-                      int idx = (id(sleep_menu_page) == 1) ? slot_idx : (slot_idx + 4);
+                      int idx = (id(sleep_menu_page) == 1) ? slot_idx : (slot_idx + 5);
                       if (idx == 0) {
+                        auto call = id(power_profile_select).make_call();
+                        call.set_option(cycle_option(
+                            id(power_profile_select).current_option(),
+                            {"Pocket Carry", "Handheld Roaming", "Wearable Watch", "Living Room Tabletop", "Always-On Wall / Desk"}));
+                        call.perform();
+                      } else if (idx == 1) {
                         auto call = id(pickup_wake_mode).make_call();
                         call.set_option(cycle_option(id(pickup_wake_mode).current_option(), {"Always On", "Docked Only", "Disabled"}));
                         call.perform();
-                      } else if (idx == 1) {
+                      } else if (idx == 2) {
                         auto call = id(tap_wake_mode).make_call();
                         call.set_option(cycle_option(id(tap_wake_mode).current_option(), {"Always On", "Docked Only", "Disabled"}));
                         call.perform();
-                      } else if (idx == 2) {
+                      } else if (idx == 3) {
                         auto call = id(display_off_timeout).make_call();
                         call.set_option(cycle_option(id(display_off_timeout).current_option(), {"10s", "15s", "30s", "1 min", "2 min", "Never"}));
                         call.perform();
-                      } else if (idx == 3) {
-                        id(docked_screensaver_switch).toggle();
                       } else if (idx == 4) {
+                        id(docked_screensaver_switch).toggle();
+                      } else if (idx == 5) {
                         if (id(docked_screensaver_switch).state) {
                           auto call = id(screensaver_style_select).make_call();
                           call.set_option(cycle_option(id(screensaver_style_select).current_option(), {"Ambient Clock", "Aurora Borealis", "Starfield", "Matrix Rain", "Fireworks"}));
                           call.perform();
                         }
-                      } else if (idx == 5) {
+                      } else if (idx == 6) {
                         auto call = id(screensaver_docked_timeout).make_call();
                         call.set_option(cycle_option(id(screensaver_docked_timeout).current_option(), {"10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"}));
                         call.perform();
-                      } else if (idx == 6) {
+                      } else if (idx == 7) {
                         auto call = id(hibernate_timeout_mode).make_call();
                         call.set_option(cycle_option(id(hibernate_timeout_mode).current_option(), {"5 min", "10 min", "15 min", "30 min", "Disabled"}));
                         call.perform();
-                      } else if (idx == 7) {
-                        id(instant_crown_hibernate_switch).toggle();
                       } else if (idx == 8) {
+                        id(instant_crown_hibernate_switch).toggle();
+                      } else if (idx == 9) {
                         id(prevent_deep_sleep_switch).toggle();
                       }
                       latter_ui::schedule_disp_update(&id(disp1));

@@ -285,7 +285,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "30s"
+    initial_option: ${default_battery_timeout}
     options:
       - "10s"
       - "15s"
@@ -295,6 +295,7 @@ select:
       - "Never"
     set_action:
       - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           id(screen_sleep_timer).execute();
           latter_ui::schedule_disp_update(&id(disp1));
 
@@ -304,7 +305,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "1 min"
+    initial_option: ${default_docked_timeout}
     options:
       - "10s"
       - "15s"
@@ -315,6 +316,7 @@ select:
       - "Never"
     set_action:
       - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           id(screen_sleep_timer).execute();
           latter_ui::schedule_disp_update(&id(disp1));
 
@@ -324,7 +326,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "15 min"
+    initial_option: ${default_hibernate_timeout}
     options:
       - "5 min"
       - "10 min"
@@ -333,6 +335,7 @@ select:
       - "Disabled"
     set_action:
       - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
@@ -341,13 +344,14 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Docked Only"
+    initial_option: ${default_pickup_wake}
     options:
       - "Always On"
       - "Docked Only"
       - "Disabled"
     set_action:
       - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           if (id(display_power_state) == 2) {
             bool pw_act = (x == "Always On") || (x == "Docked Only" && id(usb_connected).state);
             id(hal_set_imu_power_mode).execute(pw_act ? 0x01 : 0x00);
@@ -360,13 +364,14 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Docked Only"
+    initial_option: ${default_tap_wake}
     options:
       - "Always On"
       - "Docked Only"
       - "Disabled"
     set_action:
       - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           latter_ui::schedule_disp_update(&id(disp1));
 
 interval:

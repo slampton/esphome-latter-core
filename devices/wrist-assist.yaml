@@ -29,6 +29,12 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
+  default_power_profile: "Wearable Watch"
+  default_pickup_wake: "Always On"
+  default_tap_wake: "Always On"
+  default_battery_timeout: "15s"
+  default_docked_timeout: "1 min"
+  default_hibernate_timeout: "15 min"
 
   active_media_sensor: "sensor.wrist_assist_active_media"
   weather_forecast_sensor: "sensor.wrist_assist_weather_forecast"

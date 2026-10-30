@@ -1432,6 +1432,7 @@ select:
     set_action:
       - lambda: |-
           id(va_wake_word_mode).publish_state(x);
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: sync_wake_word_state
 
@@ -1610,7 +1611,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Pocket Carry"
+    initial_option: ${default_power_profile}
     options:
       - "Pocket Carry"
       - "Handheld Roaming"
@@ -1621,9 +1622,13 @@ select:
     set_action:
       - lambda: |-
           id(power_profile_select).publish_state(x);
-          if (millis() <= 2500 || x == "Custom") return;
+          if (millis() <= 2500 || x == "Custom") {
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          latter_ui::applying_power_profile() = true;
           auto set_sel = [](auto *sel, const char *opt) {
-            if (sel != nullptr) {
+            if (sel != nullptr && sel->current_option() != opt) {
               auto call = sel->make_call();
               call.set_option(opt);
               call.perform();
@@ -1651,12 +1656,12 @@ select:
             set_sel(id(screensaver_docked_timeout), "1 min");
             set_sel(id(hibernate_timeout_mode), "15 min");
           } else if (x == "Living Room Tabletop") {
-            set_sel(id(va_wake_word_mode), "Always On");
-            set_sel(id(tap_wake_mode), "Always On");
-            set_sel(id(pickup_wake_mode), "Always On");
-            set_sel(id(display_off_timeout), "1 min");
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Docked Only");
+            set_sel(id(pickup_wake_mode), "Disabled");
+            set_sel(id(display_off_timeout), "30s");
             set_sel(id(screensaver_docked_timeout), "5 min");
-            set_sel(id(hibernate_timeout_mode), "Disabled");
+            set_sel(id(hibernate_timeout_mode), "15 min");
           } else if (x == "Always-On Wall / Desk") {
             set_sel(id(va_wake_word_mode), "Always On");
             set_sel(id(tap_wake_mode), "Always On");
@@ -1665,6 +1670,8 @@ select:
             set_sel(id(screensaver_docked_timeout), "5 min");
             set_sel(id(hibernate_timeout_mode), "Disabled");
           }
+          latter_ui::applying_power_profile() = false;
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Screensaver Style"

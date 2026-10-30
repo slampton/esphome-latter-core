@@ -29,6 +29,12 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
+  default_power_profile: "Handheld Roaming"
+  default_pickup_wake: "Always On"
+  default_tap_wake: "Always On"
+  default_battery_timeout: "30s"
+  default_docked_timeout: "1 min"
+  default_hibernate_timeout: "30 min"
 
   active_media_sensor: "sensor.mobile_assistant_active_media"
   weather_forecast_sensor: "sensor.mobile_assistant_weather_forecast"

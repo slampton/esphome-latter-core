@@ -104,8 +104,13 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "1 min"
+    initial_option: ${default_battery_timeout}
     options: ["10s", "15s", "30s", "1 min", "2 min", "Never"]
+    set_action:
+      - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          id(screen_sleep_timer).execute();
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Docked Idle Timeout"
@@ -113,8 +118,13 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "5 min"
+    initial_option: ${default_docked_timeout}
     options: ["10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"]
+    set_action:
+      - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          id(screen_sleep_timer).execute();
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Battery Hibernate Timeout"
@@ -122,8 +132,12 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Disabled"
+    initial_option: ${default_hibernate_timeout}
     options: ["5 min", "10 min", "15 min", "30 min", "Disabled"]
+    set_action:
+      - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Pickup to Wake"
@@ -131,8 +145,12 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Disabled"
+    initial_option: ${default_pickup_wake}
     options: ["Always On", "Docked Only", "Disabled"]
+    set_action:
+      - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
     name: "Sleep & Wake: Tap to Wake"
@@ -140,8 +158,12 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "Always On"
+    initial_option: ${default_tap_wake}
     options: ["Always On", "Docked Only", "Disabled"]
+    set_action:
+      - lambda: |-
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          latter_ui::schedule_disp_update(&id(disp1));
 
 script:
   - id: trigger_screensaver_now

@@ -50,6 +50,7 @@ inline void render_system_page(
     float wifi_sig, const std::string &ip_str, float imu_temp_c,
     uint32_t free_heap_kb, bool ha_time_valid, bool ble_active,
     // Sleep & Wake values
+    const std::string &power_profile_opt,
     const std::string &pickup_wake_opt, const std::string &tap_wake_opt,
     const std::string &screen_off_opt, bool docked_ss_on, const std::string &ss_style_opt,
     const std::string &dock_inact_opt, const std::string &hibernate_to_opt,
@@ -167,36 +168,45 @@ inline void render_system_page(
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 1) {
-    int current_offset = compute_scroll_offset(sleep_menu_page, SHARED_SCROLL_EASE_252, 252);
-    char sleep_labels[9][36];
-    snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", pickup_wake_opt.c_str());
-    snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Tap Wake: %s", tap_wake_opt.c_str());
-    snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Battery Timeout: %s", screen_off_opt.c_str());
-    snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Docked Saver: %s", docked_ss_on ? "On" : "Off");
+    static constexpr int16_t SCROLL_EASE_315[5] = {0, 68, 170, 268, 315};
+    int current_offset = compute_scroll_offset(sleep_menu_page, SCROLL_EASE_315, 315);
+    char sleep_labels[10][36];
+    const char *short_p = (power_profile_opt == "Pocket Carry") ? "Pocket"
+                        : (power_profile_opt == "Handheld Roaming") ? "Roaming"
+                        : (power_profile_opt == "Wearable Watch") ? "Watch"
+                        : (power_profile_opt == "Living Room Tabletop") ? "Tabletop"
+                        : (power_profile_opt == "Always-On Wall / Desk") ? "Wall/Desk"
+                        : power_profile_opt.c_str();
+    snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
+    snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: %s", pickup_wake_opt.c_str());
+    snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Tap Wake: %s", tap_wake_opt.c_str());
+    snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: %s", screen_off_opt.c_str());
+    snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Docked Saver: %s", docked_ss_on ? "On" : "Off");
     const char *short_s = (ss_style_opt == "Aurora Borealis") ? "Aurora"
                           : ((ss_style_opt == "Matrix Rain") ? "Matrix" : ss_style_opt.c_str());
-    snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Saver Style: %s", short_s);
-    snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Docked Timeout: %s", dock_inact_opt.c_str());
-    snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: %s", hibernate_to_opt.c_str());
-    snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: %s", instant_crown_hib ? "Instant" : "5s Delay");
-    snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Stay Awake: %s", stay_awake_on ? "On" : "Off");
+    snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Saver Style: %s", short_s);
+    snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Docked Timeout: %s", dock_inact_opt.c_str());
+    snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: %s", hibernate_to_opt.c_str());
+    snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: %s", instant_crown_hib ? "Instant" : "5s Delay");
+    snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Stay Awake: %s", stay_awake_on ? "On" : "Off");
 
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 10; i++) {
       int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
-        if (i == 3) {
+        if (i == 4) {
           draw_toggle_card_y(y, sleep_labels[i], docked_ss_on);
-        } else if (i == 7) {
-          draw_toggle_card_y(y, sleep_labels[i], true);
         } else if (i == 8) {
+          draw_toggle_card_y(y, sleep_labels[i], true);
+        } else if (i == 9) {
           draw_toggle_card_y(y, sleep_labels[i], stay_awake_on);
         } else {
-          bool en = (i == 0) ? (pickup_wake_opt != "Disabled")
-                  : (i == 1) ? (tap_wake_opt != "Disabled")
-                  : (i == 2) ? (screen_off_opt != "Never")
-                  : (i == 4) ? docked_ss_on
-                  : (i == 5) ? (dock_inact_opt != "Never")
-                  : (i == 6) ? (hibernate_to_opt != "Disabled")
+          bool en = (i == 0) ? true
+                  : (i == 1) ? (pickup_wake_opt != "Disabled")
+                  : (i == 2) ? (tap_wake_opt != "Disabled")
+                  : (i == 3) ? (screen_off_opt != "Never")
+                  : (i == 5) ? docked_ss_on
+                  : (i == 6) ? (dock_inact_opt != "Never")
+                  : (i == 7) ? (hibernate_to_opt != "Disabled")
                   : true;
           draw_cycle_card_y(y, sleep_labels[i], en);
         }
