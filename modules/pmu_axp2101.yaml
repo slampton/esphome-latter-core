@@ -1,0 +1,345 @@
+# ==============================================================================
+# Latter Core Module: AXP2101 PMIC Hardware Driver (modules/pmu_axp2101.yaml)
+# Included by boards with an AXP2101 PMU @ 0x34 (S3-1.75C, S3-2.06, S3-2.16, P4-3.5)
+# ==============================================================================
+
+binary_sensor:
+  - platform: template
+    name: "USB Power Connected"
+    id: usb_connected
+    device_class: power
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Battery Charging"
+    id: batt_charging
+    device_class: battery_charging
+    entity_category: diagnostic
+
+sensor:
+  - platform: template
+    name: "Battery Level"
+    id: batt_level
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    filters:
+      - or:
+          - throttle: 60s
+          - delta: 1.0
+    lambda: |-
+      static float filtered_pct = -1.0f;
+      static uint32_t last_stby_batt_ms = 0;
+      if (id(va_active) || id(va_tts_received)) {
+        if (filtered_pct >= 0.0f) return filtered_pct;
+        return {};
+      }
+      if (id(display_power_state) == 2 && !id(usb_connected).state && filtered_pct >= 0.0f) {
+        uint32_t now_b = millis();
+        if (now_b - last_stby_batt_ms < 60000U) {
+          return {};
+        }
+        last_stby_batt_ms = now_b;
+      }
+      uint8_t reg = 0xA4;
+      uint8_t pct = 0;
+      if (id(bus_internal).write_readv(0x34, &reg, 1, &pct, 1) == esphome::i2c::ERROR_OK) {
+        if (pct <= 100) {
+          // Read hardware charge status from PMU Status 2 (REG 01H)
+          uint8_t reg1 = 0x01;
+          uint8_t stat1 = 0;
+          bool is_chg_done = false;
+          if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) == esphome::i2c::ERROR_OK) {
+            uint8_t chg_state = stat1 & 0x07;
+            if (chg_state == 4) is_chg_done = true; // State 4: Charge Done
+          }
+
+          // Calibrated 0..99% -> 0..100% scale:
+          // The AXP2101 fuel gauge (REG 0xA4) natively settles at 99% across the normal
+          // resting full-charge plateau (~4.11V-4.19V). Mapping 0..99 linearly to 0..100
+          // allows the gauge to reach 100% naturally on the charger AND remain at 100%
+          // after unplugging without artificial USB-only clamps or NVS boot overrides.
+          float scaled = (pct >= 99 || is_chg_done)
+                             ? 100.0f
+                             : std::roundf((static_cast<float>(pct) * 100.0f) / 99.0f);
+
+          static uint32_t last_step_ms = 0;
+          static uint32_t below_since_ms = 0;
+          uint32_t now_ms = millis();
+
+          // 1. Initial boot / wake seeding directly from calibrated hardware reading
+          if (filtered_pct < 0.0f) {
+            filtered_pct = scaled;
+            last_step_ms = now_ms;
+            below_since_ms = 0;
+            return filtered_pct;
+          }
+
+          // 2. Rate-limited monotonic smoothing
+          if (id(usb_connected).state) {
+            below_since_ms = 0;
+            if (is_chg_done || scaled >= 100.0f) {
+              filtered_pct = 100.0f;
+              last_step_ms = now_ms;
+            } else if (scaled > filtered_pct) {
+              filtered_pct = std::min(filtered_pct + 1.0f, scaled);
+              last_step_ms = now_ms;
+            } else if (scaled < filtered_pct - 3.0f && (now_ms - last_step_ms >= 30000U)) {
+              filtered_pct = std::max(filtered_pct - 1.0f, scaled);
+              last_step_ms = now_ms;
+            }
+          } else {
+            // Discharging on battery: monotonic non-increasing with 45s sustained-drop debounce
+            // so transient Wi-Fi/speaker load sags and charger unplug transitions never cause
+            // instant 1%-per-5s step-downs.
+            if (scaled < filtered_pct) {
+              if (below_since_ms == 0) {
+                below_since_ms = now_ms;
+              }
+              const uint32_t hold_ms = (filtered_pct - scaled >= 4.0f) ? 20000U : 45000U;
+              if ((now_ms - below_since_ms >= hold_ms) && (now_ms - last_step_ms >= hold_ms)) {
+                filtered_pct = std::max(filtered_pct - 1.0f, scaled);
+                last_step_ms = now_ms;
+                below_since_ms = now_ms;
+              }
+            } else {
+              below_since_ms = 0;
+            }
+          }
+
+          filtered_pct = std::max(0.0f, std::min(100.0f, filtered_pct));
+          return filtered_pct;
+        }
+      }
+      return {};
+
+  - platform: template
+    name: "Battery Voltage"
+    id: batt_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    filters:
+      - throttle: 120s
+    lambda: |-
+      static float last_v = NAN;
+      if (id(va_active) || id(va_tts_received) || (id(display_power_state) == 2 && !id(usb_connected).state && !std::isnan(last_v))) {
+        return {};
+      }
+      uint8_t reg = 0x34;
+      uint8_t buf[2] = {0, 0};
+      if (id(bus_internal).write_readv(0x34, &reg, 1, buf, 2) == esphome::i2c::ERROR_OK) {
+        uint16_t mv = ((buf[0] & 0x3F) << 8) | buf[1];
+        last_v = (float)mv / 1000.0f;
+        return last_v;
+      }
+      return {};
+
+button:
+  - platform: template
+    name: "Actions: Hibernate Now"
+    id: enter_deep_sleep_btn
+    icon: "mdi:sleep"
+    entity_category: config
+    on_press:
+      - script.execute: enter_deep_sleep
+
+script:
+  - id: hal_poll_pmu_1s
+    mode: restart
+    then:
+      - lambda: |-
+          // Poll AXP2101 VBUS and battery charging telemetry (skip during active Voice Assistant to keep bus_internal quiet)
+          if (!id(va_active) && !id(va_tts_received)) {
+            uint8_t reg0 = 0x00;
+            uint8_t stat0 = 0;
+            bool vbus = id(usb_connected).state;
+            if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
+              bool vbus_good = (stat0 & 0x20) != 0;
+              bool bat_present = (stat0 & 0x08) != 0;
+              // If powered via the UART USB-C port with no LiPo battery attached (bat_present == false),
+              // the board is running on USB 5V power even though AXP2101 VBUS_IN is unpowered!
+              vbus = vbus_good || !bat_present;
+              if (!id(usb_connected).has_state() || id(usb_connected).state != vbus) {
+                id(usb_connected).publish_state(vbus);
+                if (id(display_power_state) == 0) {
+                  id(screen_sleep_timer).execute();
+                }
+                // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
+                // so the screensaver never stays awake draining the battery.
+                if (!vbus && id(display_power_state) == 1) {
+                  id(turn_screen_off).execute();
+                } else if (id(display_power_state) == 2) {
+                  if (!vbus) id(sleep_start_time) = millis();
+                  auto pw_mode = id(pickup_wake_mode).current_option();
+                  bool pw_active = (pw_mode == "Always On") || (pw_mode == "Docked Only" && vbus);
+                  id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
+                  id(sync_wake_word_state).execute();
+                }
+              }
+            }
+            uint8_t reg1 = 0x01;
+            uint8_t stat1 = 0;
+            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) == esphome::i2c::ERROR_OK) {
+              uint8_t chg_dir = (stat1 >> 5) & 0x03;
+              uint8_t chg_state = stat1 & 0x07;
+              bool is_charging = vbus && (chg_dir == 1) && (chg_state < 4);
+              if (!id(batt_charging).has_state() || id(batt_charging).state != is_charging) {
+                id(batt_charging).publish_state(is_charging);
+              }
+            }
+          }
+
+  - id: hal_poll_pmu_button_50ms
+    mode: restart
+    parameters:
+      did_ss_draw: bool
+    then:
+      - lambda: |-
+          // ADR-001 Hardware-Gated 20 Hz Check for Top Crown Button (AXP2101 PEK Short/Long Press):
+          // Only queries I2C register 0x49 when PMU IRQ pin is asserted or once per 200ms on a non-draw tick.
+          static uint8_t fallback_div = 0;
+          const bool irq_pin_low = latter_ui::hal_pmu_irq_asserted();
+          if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 4U && !id(va_active) && !id(va_tts_received))) {
+            if (!irq_pin_low) fallback_div = 0;
+            uint8_t irq_reg = 0x49;
+            uint8_t irq_val = 0;
+            if (id(bus_internal).write_readv(0x34, &irq_reg, 1, &irq_val, 1) == esphome::i2c::ERROR_OK) {
+              if (irq_val & 0x0C) {
+                id(handle_crown_button_press).execute();
+              } else if (irq_pin_low) {
+                uint8_t clr_all[2] = {0x48, 0xFF};
+                id(bus_internal).write(0x34, clr_all, 2);
+                clr_all[0] = 0x49;
+                id(bus_internal).write(0x34, clr_all, 2);
+                clr_all[0] = 0x4A;
+                id(bus_internal).write(0x34, clr_all, 2);
+              }
+            }
+          }
+
+  - id: hal_wait_pmu_button_release
+    mode: restart
+    then:
+      - lambda: |-
+          // Wait for Top Crown Button (AXP2101 PEK) to be released (up to 3.0s) so PMIC does not immediately re-power on
+          int guard = 0;
+          while (guard < 150) {
+            uint8_t clr_all[2] = {0x48, 0xFF};
+            id(bus_internal).write(0x34, clr_all, 2);
+            clr_all[0] = 0x49;
+            id(bus_internal).write(0x34, clr_all, 2);
+            clr_all[0] = 0x4A;
+            id(bus_internal).write(0x34, clr_all, 2);
+
+            uint8_t irq_c = 0x49;
+            uint8_t val_c = 0;
+            if (id(bus_internal).write_readv(0x34, &irq_c, 1, &val_c, 1) == esphome::i2c::ERROR_OK) {
+              if ((val_c & 0x0C) == 0) {
+                break;
+              }
+            }
+            esp_rom_delay_us(20000);
+            guard++;
+          }
+          esp_rom_delay_us(100000);
+
+  - id: handle_crown_button_press
+    mode: restart
+    then:
+      - lambda: |-
+          static uint32_t last_crown_press = 0;
+          uint32_t now_c = millis();
+          if (now_c - last_crown_press < 150) return;
+          last_crown_press = now_c;
+
+          uint8_t irq_reg = 0x49;
+          uint8_t irq_val = 0;
+          if (id(bus_internal).write_readv(0x34, &irq_reg, 1, &irq_val, 1) == esphome::i2c::ERROR_OK) {
+            uint8_t clr_all[2] = {0x48, 0xFF};
+            id(bus_internal).write(0x34, clr_all, 2);
+            clr_all[0] = 0x49;
+            id(bus_internal).write(0x34, clr_all, 2);
+            clr_all[0] = 0x4A;
+            id(bus_internal).write(0x34, clr_all, 2);
+
+            if (irq_val & 0x0C) {
+              if (id(is_hibernating)) {
+                if (id(hibernate_countdown_val) > 0) {
+                  id(is_hibernating) = false;
+                  id(hibernate_countdown_val) = 0;
+                  id(wake_to_active_state).execute();
+                }
+                return;
+              }
+              bool is_long = (irq_val & 0x04) != 0;
+
+              if (is_long) {
+                if (id(instant_crown_hibernate_switch).state) {
+                  id(start_instant_hibernation).execute();
+                } else {
+                  id(start_hibernation_countdown).execute();
+                }
+                return;
+              }
+
+              if (id(alarm_ringing)) {
+                auto now = id(ha_time).now();
+                if (now.is_valid()) {
+                  id(alarm_snooze_until) = now.timestamp + 300;
+                } else {
+                  id(alarm_snooze_until) = (millis() / 1000) + 300;
+                }
+                id(alarm_ringing) = false;
+                id(stop_alarm_sound).execute();
+                latter_ui::schedule_disp_update(&id(disp1));
+                id(screen_sleep_timer).execute();
+                return;
+              }
+              if (id(timer_ringing) || id(find_my_active) || id(notif_active)) {
+                if (id(notif_active)) {
+                  id(dismiss_notification).execute();
+                  return;
+                }
+                id(timer_ringing) = false;
+                id(find_my_active) = false;
+                id(stop_alarm_sound).execute();
+                id(sync_display_brightness).execute();
+                latter_ui::schedule_disp_update(&id(disp1));
+                id(screen_sleep_timer).execute();
+                return;
+              }
+
+              if (!id(display_brightness).current_values.is_on() || id(display_power_state) != 0) {
+                id(wake_to_active_state).execute();
+                return;
+              }
+
+              if (id(va_active) || !id(va_status_text).empty()) {
+                id(cancel_voice_assistant).execute();
+                return;
+              }
+
+              if (id(gui_page) == 8 && id(stuff_subpage) == 3) {
+                id(screen_sleep_timer).execute();
+                if (!id(stopwatch_running)) {
+                  id(stopwatch_running) = true;
+                  id(stopwatch_start_time) = millis() - id(stopwatch_elapsed_ms);
+                  id(sleep_start_time) = 0;
+                  id(display_brightness).turn_on().perform();
+                } else {
+                  id(stopwatch_running) = false;
+                  id(stopwatch_elapsed_ms) = millis() - id(stopwatch_start_time);
+                }
+                latter_ui::schedule_disp_update(&id(disp1));
+                return;
+              }
+
+              id(turn_screen_off).execute();
+              return;
+            }
+          }

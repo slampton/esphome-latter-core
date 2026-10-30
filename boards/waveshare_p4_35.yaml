@@ -8,6 +8,32 @@
 # PMU:     AXP2101 @ 0x34
 # ==============================================================================
 
+substitutions:
+  screen_w: "320"
+  screen_h: "480"
+  font_time_size: "77"
+  font_chrono_size: "38"
+  font_date_size: "27"
+  font_btn_bold_size: "26"
+  font_small_size: "21"
+  font_micro_size: "14"
+  font_games_size: "38"
+  art_resize: "320x480"
+  art_shape: "square"
+  default_start_app: "Home"
+  default_clock_face: "Minimal Digital"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+  default_power_profile: "Living Room Tabletop"
+  default_pickup_wake: "Disabled"
+  default_tap_wake: "Docked Only"
+  default_battery_timeout: "30s"
+  default_docked_timeout: "5 min"
+  default_hibernate_timeout: "15 min"
+
 esphome:
   build_flags:
     - "-DLATTER_SCREEN_W=320"
@@ -127,6 +153,7 @@ speaker:
 
 packages:
   latter_imu: !include ../modules/imu_none.yaml
+  latter_pmu: !include ../modules/pmu_axp2101.yaml
 
 switch:
   - platform: gpio

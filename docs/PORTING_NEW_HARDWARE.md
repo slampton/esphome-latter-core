@@ -6,51 +6,64 @@ Because `esphome-latter-core` separates the **Hardware Abstraction Layer (HAL)**
 
 ## Step 1: Create Your Board HAL (`boards/<my_board>.yaml`)
 
-A board HAL file defines four things:
-1. **Compile-Time Display Geometry & Capability Flags**:
+A board HAL file defines five things:
+1. **Default Geometry, Typography & Power Profile Substitutions**:
+   ```yaml
+   substitutions:
+     screen_w: "480"
+     screen_h: "480"
+     font_time_size: "77"
+     font_chrono_size: "38"
+     font_date_size: "27"
+     font_btn_bold_size: "26"
+     font_small_size: "21"
+     font_micro_size: "14"
+     font_games_size: "38"
+     art_resize: "480x480"
+     art_shape: "square"
+     default_power_profile: "Always-On Wall / Desk"
+     default_pickup_wake: "Disabled"
+     default_tap_wake: "Always On"
+     default_battery_timeout: "Never"
+     default_docked_timeout: "5 min"
+     default_hibernate_timeout: "Disabled"
+   ```
+2. **Compile-Time Display Geometry & Capability Flags**:
    ```yaml
    esphome:
-     compile_process_limit: 2
-     platformio_options:
-       build_flags:
-         - "-DLATTER_SCREEN_W=480"
-         - "-DLATTER_SCREEN_H=480"
-         - "-DLATTER_ROUND_DISPLAY=0" # 1 = Circular bezel chord clipping, 0 = Square/Rectangular
-         - "-DLATTER_HAS_IMU=1"
-         - "-DLATTER_HAS_BATTERY=1"
-         - "-DLATTER_IS_STATIONARY=0"
-         - "-DLATTER_IS_WEARABLE=0"
-         - "-DLATTER_HAS_TOUCH=1"
-         - "-DLATTER_PANEL_IPS=0"
+     build_flags:
+       - "-DLATTER_SCREEN_W=480"
+       - "-DLATTER_SCREEN_H=480"
+       - "-DLATTER_ROUND_DISPLAY=0" # 1 = Circular bezel chord clipping, 0 = Square/Rectangular
+       - "-DLATTER_HAS_IMU=1"
+       - "-DLATTER_HAS_BATTERY=1"
+       - "-DLATTER_IS_STATIONARY=0"
+       - "-DLATTER_IS_WEARABLE=0"
+       - "-DLATTER_HAS_TOUCH=1"
+       - "-DLATTER_PANEL_IPS=0"
    ```
-2. **Display & Touchscreen Components** (`id: disp1` and `id: touch_screen`).
-3. **Audio Components** (`id: physical_speaker`, `id: latter_mic`, `id: es8311_dac`, `id: speaker_enable`) and **IMU** (`id: imu`).
-4. **HAL Scripts**:
-   - `hal_route_i2s_to_spk` & `hal_route_i2s_to_mic` (can be no-ops on boards with independent I2S buses).
+3. **Display & Touchscreen Components** (`id: disp1` and `id: touch_screen`).
+4. **Audio Components** (`id: physical_speaker`, `id: latter_mic`, `id: es8311_dac`, `id: speaker_enable`), **IMU Driver** (`modules/imu_qmi8658.yaml` or `modules/imu_none.yaml`), and **PMU Driver** (`modules/pmu_axp2101.yaml` or `modules/pmu_none.yaml`):
+   ```yaml
+   packages:
+     latter_imu: !include ../modules/imu_qmi8658.yaml
+     latter_pmu: !include ../modules/pmu_axp2101.yaml
+   ```
+5. **HAL Scripts**:
+   - `hal_route_i2s_to_spk` & `hal_route_i2s_to_mic` (can be no-ops on boards with independent or single shared I2S buses).
    - `hal_release_deep_sleep_holds`, `hal_init_pmu_irq`, `hal_enter_hardware_hibernate`, `hal_set_imu_power_mode`, `hal_set_audio_codecs_standby`.
 
 ---
 
-## Step 2: Choose Your Power Module
+## Step 2: Create the Top-Level Device Manifest
 
-- **Battery Handhelds/Watches with AXP2101 PMIC**: Include `modules/power_axp2101.yaml`.
-- **Wall Panels, Desk Displays, or Non-AXP2101 Boards**: Include `modules/power_generic.yaml`.
-
----
-
-## Step 3: Create the Top-Level Device Manifest
-
-In your device YAML, set the geometry substitutions (`screen_w`, `screen_h`, `art_resize`, `art_shape`) and load `esphome-latter-core`:
+Because your board HAL encapsulates all display geometry, IMU, and PMU hardware drivers, every device YAML uses the exact same universal module stack (`audio_voice.yaml`, `power_manager.yaml`, `latter_client.yaml`, `guis/universal/gui.yaml`):
 
 ```yaml
 substitutions:
   name: "my-panel"
   friendly_name: "My Panel"
   version: "2.2.0"
-  screen_w: "480"
-  screen_h: "480"
-  art_resize: "480x480"
-  art_shape: "square"
   firmware_update_entity: "update.my_panel_project_firmware"
   local_player_id: "media_player.my_panel"
   active_media_sensor: "sensor.my_panel_active_media"
@@ -75,7 +88,7 @@ packages:
     ref: main
     files:
       - modules/audio_voice.yaml
-      - modules/power_generic.yaml
+      - modules/power_manager.yaml
       - modules/latter_client.yaml
       - guis/universal/gui.yaml
 ```

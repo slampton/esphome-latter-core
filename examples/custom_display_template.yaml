@@ -6,8 +6,8 @@
 #   1. Copy-paste starter template for porting the full Latter C++20 UI OS
 #      (Clock faces, 20 FPS Weather, Assist, Music Assistant, Area Control,
 #      Whole-Home Hub, 4-Slot Remote, 4 Games, 12 Tools) to a new screen.
-#   2. Automated CI target verifying that all 13 C++20 headers in include/
-#      and modules/{audio_voice,power_generic,display_ui}.yaml validate cleanly.
+#   2. Automated CI target verifying that all C++20 headers in include/
+#      and modules/{audio_voice,power_manager,display_ui}.yaml validate cleanly.
 # ==============================================================================
 
 substitutions:
@@ -63,6 +63,12 @@ esphome:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"
     - "-DLATTER_ROUND_DISPLAY=0"
+    - "-DLATTER_HAS_IMU=1"
+    - "-DLATTER_HAS_BATTERY=0"
+    - "-DLATTER_IS_STATIONARY=1"
+    - "-DLATTER_IS_WEARABLE=0"
+    - "-DLATTER_HAS_TOUCH=1"
+    - "-DLATTER_PANEL_IPS=0"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -237,6 +243,7 @@ script:
 # ==============================================================================
 packages:
   latter_imu:         !include ../modules/imu_qmi8658.yaml
+  latter_pmu:         !include ../modules/pmu_none.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
-  latter_power_gen:   !include ../modules/power_generic.yaml
+  latter_power:       !include ../modules/power_manager.yaml
   latter_display_ui:  !include ../modules/display_ui.yaml

@@ -1,6 +1,6 @@
 # ==============================================================================
 # Latter Core Profile: Full Companion Bundle (profiles/full_companion.yaml)
-# Includes all core headers & subsystems for flagship smart displays (Pocket Assistant, Wrist Assist)
+# Universal OS bundle for all Latter smart displays (S3 & P4, Battery & Mains)
 # ==============================================================================
 
 external_components:
@@ -15,5 +15,5 @@ latter_core:
 
 packages:
   latter_audio_voice: !include ../modules/audio_voice.yaml
-  latter_power_pmu:   !include ../modules/power_axp2101.yaml
+  latter_power:       !include ../modules/power_manager.yaml
   latter_display_ui:  !include ../modules/display_ui.yaml

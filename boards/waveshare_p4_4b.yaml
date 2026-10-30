@@ -8,6 +8,32 @@
 # Clocks:  MCLK: GPIO13, BCLK: GPIO12, LRCLK/WS: GPIO10
 # ==============================================================================
 
+substitutions:
+  screen_w: "720"
+  screen_h: "720"
+  font_time_size: "112"
+  font_chrono_size: "56"
+  font_date_size: "38"
+  font_btn_bold_size: "36"
+  font_small_size: "30"
+  font_micro_size: "20"
+  font_games_size: "56"
+  art_resize: "720x720"
+  art_shape: "square"
+  default_start_app: "Home"
+  default_clock_face: "Minimal Digital"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+  default_power_profile: "Always-On Wall / Desk"
+  default_pickup_wake: "Disabled"
+  default_tap_wake: "Always On"
+  default_battery_timeout: "Never"
+  default_docked_timeout: "5 min"
+  default_hibernate_timeout: "Disabled"
+
 esphome:
   build_flags:
     - "-DLATTER_SCREEN_W=720"
@@ -138,6 +164,7 @@ speaker:
 
 packages:
   latter_imu: !include ../modules/imu_none.yaml
+  latter_pmu: !include ../modules/pmu_none.yaml
 
 switch:
   - platform: gpio

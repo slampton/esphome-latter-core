@@ -90,12 +90,21 @@ esp32_ble:
   id: ble_ctrl
   enable_on_boot: false
 
+esp32_ble_beacon:
+  type: iBeacon
+  uuid: "504F434B-4554-4153-5354-000000000210"
+  major: 1
+  minor: 5
+  measured_power: -59
+  min_interval: 500ms
+  max_interval: 1000ms
+
 safe_mode:
   boot_is_good_after: 5s
 
 packages:
   hal: !include ../boards/waveshare_p4_4b.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
-  latter_power_gen:   !include ../modules/power_generic.yaml
+  latter_power:       !include ../modules/power_manager.yaml
   latter_client:      !include ../modules/latter_client.yaml
   latter_gui:         !include ../guis/universal/gui.yaml

@@ -38,9 +38,9 @@ It serves two purposes:
 ## Developer Documentation & Compilable Examples
 
 - 🧪 **[Example 1: Minimal Headless / Mixin Node (`examples/minimal_headless_companion.yaml`)](examples/minimal_headless_companion.yaml)** — Compiles on any bare $5 ESP32-S3 DevKit with zero external peripherals; demonstrates `modules/base.yaml`, `modules/area_control.yaml`, and `mixins/ble_beacon.yaml`.
-- 🖥️ **[Example 2: Custom 480×480 Display Porting Template (`examples/custom_display_template.yaml`)](examples/custom_display_template.yaml)** — Complete, CI-validated reference HAL & manifest for porting the full Latter C++20 UI OS (`components/latter_core`, `include/*.h`, `modules/audio_voice.yaml`, `modules/power_generic.yaml`, `modules/latter_client.yaml`) to a new screen.
+- 🖥️ **[Example 2: Custom 480×480 Display Porting Template (`examples/custom_display_template.yaml`)](examples/custom_display_template.yaml)** — Complete, CI-validated reference HAL & manifest for porting the full Latter C++20 UI OS (`components/latter_core`, `include/*.h`, `modules/audio_voice.yaml`, `modules/power_manager.yaml`, `modules/latter_client.yaml`) to a new screen.
 - 🔌 **[Latter Wire & API Contract (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)** — Complete specification of the 5 `sensor.<slug>_*` push sensors, ESPHome API actions (`set_browse_slots`, `set_area_slots`, `show_notification`, `set_timer`, `cancel_timer`, `latter_ping`), and outbound `latter.*` services for building custom clients.
-- 🛠️ **[Porting & New Hardware Guide (`docs/PORTING_NEW_HARDWARE.md`)](docs/PORTING_NEW_HARDWARE.md)** — How to bring up a new screen size/shape (`ui_layout.h`), power backend (`power_axp2101.yaml` vs. `power_generic.yaml`), or **ESP32-P4** board in 15 minutes.
+- 🛠️ **[Porting & New Hardware Guide (`docs/PORTING_NEW_HARDWARE.md`)](docs/PORTING_NEW_HARDWARE.md)** — How to bring up a new screen size/shape (`ui_layout.h`), PMU/IMU HAL (`pmu_axp2101.yaml` / `pmu_none.yaml`, `imu_qmi8658.yaml` / `imu_none.yaml`), or **ESP32-P4** board in 15 minutes.
 
 ---
 
@@ -114,8 +114,11 @@ esphome-latter-core/
 ├── modules/
 │   ├── base.yaml                # Base identity, time sync & latter_ping
 │   ├── audio_voice.yaml         # Sendspin 48kHz FLAC player, PSRAM mixer, MicroWakeWord & Assist pipeline
-│   ├── power_axp2101.yaml       # AXP2101 PMU 3-tier power state machine (Active, Standby, <40uA Hibernate)
-│   ├── power_generic.yaml       # Generic power & screen-timeout state machine for non-AXP2101 / ESP32-P4 panels
+│   ├── power_manager.yaml       # Universal 3-tier power state machine, timers, screensavers & peripheral supervisor
+│   ├── pmu_axp2101.yaml         # AXP2101 PMU fuel gauge, VBUS & PEK Crown button driver (included by boards/)
+│   ├── pmu_none.yaml            # Stationary mains power stubs (included by boards/)
+│   ├── imu_qmi8658.yaml         # QMI8658 6-axis IMU & shake detector driver (included by boards/)
+│   ├── imu_none.yaml            # No-IMU sensor stubs (included by boards/)
 │   ├── display_ui.yaml          # Unified lifecycle, Latter API contract actions, display renderer & touch router
 │   └── area_control.yaml        # Standalone headless/custom area control client module
 ├── mixins/
@@ -124,8 +127,9 @@ esphome-latter-core/
 │   ├── roaming_vpn.yaml
 │   └── diagnostics.yaml
 ├── profiles/
-│   ├── full_companion.yaml      # Bundle for AXP2101 battery handhelds/watches (audio_voice + power_axp2101 + display_ui)
-│   └── panel_companion.yaml     # Bundle for non-AXP2101 / ESP32-P4 panels (audio_voice + power_generic + display_ui)
+│   ├── full_companion.yaml      # Universal bundle for smart displays (audio_voice + power_manager + display_ui)
+│   ├── display_panel.yaml       # Lightweight stationary display panel bundle
+│   └── headless_companion.yaml  # Headless sensor / button companion bundle
 ├── examples/
 │   ├── minimal_headless_companion.yaml # Zero-peripheral ESP32-S3 demo (base + area_control + ble_beacon)
 │   └── custom_display_template.yaml    # 480x480 square display porting template & CI target

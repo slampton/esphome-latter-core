@@ -1,0 +1,56 @@
+# ==============================================================================
+# Latter Core Module: Stationary / Non-PMU Power Stubs (modules/pmu_none.yaml)
+# Included by mains/5V-powered boards without a battery PMIC (Desk Assistant P4-4B)
+# ==============================================================================
+
+binary_sensor:
+  - platform: template
+    name: "USB Power Connected"
+    id: usb_connected
+    device_class: power
+    entity_category: diagnostic
+    lambda: 'return true;'
+
+  - platform: template
+    name: "Battery Charging"
+    id: batt_charging
+    device_class: battery_charging
+    entity_category: diagnostic
+    lambda: 'return false;'
+
+sensor:
+  - platform: template
+    name: "Battery Level"
+    id: batt_level
+    unit_of_measurement: "%"
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return 100.0f;'
+
+  - platform: template
+    name: "Battery Voltage"
+    id: batt_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 2
+    update_interval: 120s
+    lambda: 'return 5.00f;'
+
+script:
+  - id: hal_poll_pmu_1s
+    mode: restart
+    then:
+      - lambda: 'return;'
+
+  - id: hal_poll_pmu_button_50ms
+    mode: restart
+    parameters:
+      did_ss_draw: bool
+    then:
+      - lambda: '(void)did_ss_draw;'
+
+  - id: hal_wait_pmu_button_release
+    mode: restart
+    then:
+      - lambda: 'return;'
