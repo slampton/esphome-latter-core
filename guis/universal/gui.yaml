@@ -858,7 +858,8 @@ touchscreen:
             bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
                                       ((id(stuff_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
                                        (id(stuff_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                       (id(stuff_subpage) == 3)));
+                                       (id(stuff_subpage) == 3) ||
+                                       (id(stuff_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
             bool is_top_level_home_bar = (id(gui_page) != 1) &&
                                          !music_clean_touch &&
                                          !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
@@ -2999,7 +3000,8 @@ touchscreen:
             bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
                                       ((id(stuff_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
                                        (id(stuff_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                       (id(stuff_subpage) == 3)));
+                                       (id(stuff_subpage) == 3) ||
+                                       (id(stuff_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
             bool can_swipe_home = (id(gui_page) != 1) &&
                                   !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                   !(id(gui_page) == 3 && id(active_game) > 0) &&
@@ -3016,6 +3018,7 @@ touchscreen:
               if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
                 id(stop_doorbell_call).execute();
               }
+              const bool was_cam_page = (id(gui_page) == 8 && id(stuff_subpage) == 12);
               latter_ui::tools_direct_home() = false;
               latter_ui::timer_view_slot() = 0;
               id(alarm_edit_idx) = 0;
@@ -3026,6 +3029,10 @@ touchscreen:
               id(sleep_menu_page) = 1; id(display_menu_page) = 1; id(system_dashboard_page) = 1; id(menu_scroll_active) = false;
               id(music_hud_active) = false; id(remote_subpage) = 0; id(stuff_subpage) = 0; id(stuff_menu_page) = 0;
               id(sky_weather_subpage) = 0;
+              if (was_cam_page) {
+                id(camera_snapshot_art).release();
+                id(sync_wake_word_state).execute();
+              }
               ESP_LOGI("touch", "Swipe-Up Home Bar -> Home");
               latter_ui::schedule_disp_update(&id(disp1));
               return;
@@ -3399,7 +3406,8 @@ touchscreen:
               bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
                                         ((id(stuff_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
                                          (id(stuff_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                         (id(stuff_subpage) == 3)));
+                                         (id(stuff_subpage) == 3) ||
+                                         (id(stuff_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
               bool can_swipe_home = (id(gui_page) != 1) &&
                                     !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                     !(id(gui_page) == 3 && id(active_game) > 0) &&
@@ -3422,6 +3430,7 @@ touchscreen:
                 if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
                   id(stop_doorbell_call).execute();
                 }
+                const bool was_cam_page = (id(gui_page) == 8 && id(stuff_subpage) == 12);
                 latter_ui::tools_direct_home() = false;
                 latter_ui::timer_view_slot() = 0;
                 id(alarm_edit_idx) = 0;
@@ -3432,6 +3441,10 @@ touchscreen:
                 id(sleep_menu_page) = 1; id(display_menu_page) = 1; id(system_dashboard_page) = 1; id(menu_scroll_active) = false;
                 id(music_hud_active) = false; id(remote_subpage) = 0; id(stuff_subpage) = 0; id(stuff_menu_page) = 0;
                 id(sky_weather_subpage) = 0;
+                if (was_cam_page) {
+                  id(camera_snapshot_art).release();
+                  id(sync_wake_word_state).execute();
+                }
                 latter_ui::schedule_disp_update(&id(disp1));
               } else if (!gest.swipe_committed && id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::scale_y(320)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};

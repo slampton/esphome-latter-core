@@ -12,20 +12,13 @@
 
 substitutions:
   name: "latter-panel-demo"
+  device_slug: "latter_panel_demo"
   friendly_name: "Latter Panel Demo"
   version: "2.2.0"
   screen_w: "480"
   screen_h: "480"
-  art_resize: "480x480"
   art_shape: "square"
-  firmware_update_entity: "update.latter_panel_demo_project_firmware"
-  default_start_app: "Home"
   default_clock_face: "Minimal Digital"
-  default_art_mode: "Full Screen"
-  default_screensaver_style: "Aurora Borealis"
-  default_album_sort: "Alphabetical"
-  default_artist_album_sort: "Oldest on Top"
-  default_podcast_sort: "Newest on Top"
   default_power_profile: "Handheld Roaming"
   default_pickup_wake: "Always On"
   default_tap_wake: "Always On"
@@ -33,18 +26,12 @@ substitutions:
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "30 min"
 
-  # Latter Companion Integration Entities (Auto-discovered by ha-latter)
-  active_media_sensor: "sensor.latter_panel_demo_active_media"
-  weather_forecast_sensor: "sensor.latter_panel_demo_weather_forecast"
-  area_context_sensor: "sensor.latter_panel_demo_area_context"
-  calendar_agenda_sensor: "sensor.latter_panel_demo_calendar_agenda"
-  remote_config_sensor: "sensor.latter_panel_demo_remote_config"
-
-  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
-  local_player_id: "media_player.latter_panel_demo"
-  weather_entity: "weather.forecast_home"
-  sun_entity: "sun.sun"
-  moon_entity: "sensor.moon_phase"
+  # Optional Standalone ESPHome Overrides (only needed if NOT using the ha-latter integration):
+  # weather_entity: "weather.forecast_home"
+  # remote_1_entity: "remote.living_room_tv"
+  # remote_1_name: "Living Room TV"
+  # remote_2_entity: "remote.bedroom_tv"
+  # remote_2_name: "Bedroom TV"
 
 # Load the Latter Core C++20 header staging component (use github://slampton/esphome-latter-core@main in external repos)
 external_components:

@@ -5,13 +5,9 @@
 
 substitutions:
   name: "latter-headless-node"
+  device_slug: "latter_headless_node"
   friendly_name: "Latter Headless Node"
   version: "2.2.0"
-  active_media_sensor: "sensor.latter_headless_node_active_media"
-  weather_forecast_sensor: "sensor.latter_headless_node_weather_forecast"
-  area_context_sensor: "sensor.latter_headless_node_area_context"
-  calendar_agenda_sensor: "sensor.latter_headless_node_calendar_agenda"
-  remote_config_sensor: "sensor.latter_headless_node_remote_config"
 
 esphome:
   name: ${name}

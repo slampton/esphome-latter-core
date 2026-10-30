@@ -623,7 +623,11 @@ script:
                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                                 id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
-                                (id(active_game) > 0) || id(is_hibernating) || id(ota_in_progress) ||
+                                (id(active_game) > 0) ||
+                                (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) ||
+                                latter_ui::cam_download_in_progress() ||
+                                latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+                                id(is_hibernating) || id(ota_in_progress) ||
                                 !id(wifi_ctrl).is_connected() || (millis() < 12000U);
               return mode_allowed && !busy;
           then:

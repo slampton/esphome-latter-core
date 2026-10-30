@@ -67,20 +67,53 @@ inline std::string format_remote_entity_fallback(const std::string &ent) {
   return s;
 }
 
-// Parses Latter's `slots_summary` attribute ("1:Name:remote_ent:mp_ent:state;2:...")
-// directly into the 10-slot table.
-inline void parse_latter_remote_slots_summary(const std::string &summary) {
+// Seeds slots 0..3 from YAML substitutions (`remote_1_entity`..`remote_4_entity`)
+// for standalone ESPHome deployments that do not use the `ha-latter` integration.
+inline void seed_standalone_remote_slots(
+    const char *e1, const char *n1,
+    const char *e2, const char *n2,
+    const char *e3, const char *n3,
+    const char *e4, const char *n4) {
   std::string *t_ents = remote_slots_ent();
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();
+  const char *ents[4] = {e1, e2, e3, e4};
+  const char *names[4] = {n1, n2, n3, n4};
   for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
     t_ents[i] = "remote.none";
     t_names[i].clear();
     st_on[i] = false;
   }
+  for (int i = 0; i < 4; i++) {
+    std::string ent = (ents[i] != nullptr) ? ents[i] : "remote.none";
+    if (is_configured_remote_slot(ent)) {
+      t_ents[i] = ent;
+      std::string nm = (names[i] != nullptr) ? names[i] : "";
+      t_names[i] = nm.empty() ? format_remote_entity_fallback(ent) : nm;
+    }
+  }
+}
+
+// Parses Latter's `slots_summary` attribute ("1:Name:remote_ent:mp_ent:state;2:...")
+// directly into the 10-slot table, falling back to YAML standalone slots 1..4 if empty.
+inline void parse_latter_remote_slots_summary(
+    const std::string &summary,
+    const char *e1 = nullptr, const char *n1 = nullptr,
+    const char *e2 = nullptr, const char *n2 = nullptr,
+    const char *e3 = nullptr, const char *n3 = nullptr,
+    const char *e4 = nullptr, const char *n4 = nullptr) {
+  seed_standalone_remote_slots(e1, n1, e2, n2, e3, n3, e4, n4);
+  std::string *t_ents = remote_slots_ent();
+  std::string *t_names = remote_slots_name();
+  bool *st_on = remote_slot_states_on();
 
   if (!summary.empty() && summary != "unknown" && summary != "unavailable" &&
       summary != "none" && summary != "NONE") {
+    for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+      t_ents[i] = "remote.none";
+      t_names[i].clear();
+      st_on[i] = false;
+    }
     size_t pos = 0;
     while (pos < summary.size()) {
       size_t semi = summary.find(';', pos);

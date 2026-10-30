@@ -4,6 +4,7 @@
 
 substitutions:
   name: "latter-device"
+  device_slug: "latter_device"
   friendly_name: "Latter Device"
   version: "2.2.0"
   screen_w: "466"
@@ -22,11 +23,20 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
-  active_media_sensor: "sensor.latter_device_active_media"
-  weather_forecast_sensor: "sensor.latter_device_weather_forecast"
-  area_context_sensor: "sensor.latter_device_area_context"
-  calendar_agenda_sensor: "sensor.latter_device_calendar_agenda"
-  remote_config_sensor: "sensor.latter_device_remote_config"
+  active_media_sensor: "sensor.${device_slug}_active_media"
+  weather_entity: "sensor.${device_slug}_weather_forecast"
+  weather_forecast_sensor: "${weather_entity}"
+  area_context_sensor: "sensor.${device_slug}_area_context"
+  calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
+  remote_config_sensor: "sensor.${device_slug}_remote_config"
+  remote_1_entity: "remote.none"
+  remote_1_name: ""
+  remote_2_entity: "remote.none"
+  remote_2_name: ""
+  remote_3_entity: "remote.none"
+  remote_3_name: ""
+  remote_4_entity: "remote.none"
+  remote_4_name: ""
 
 api:
   actions:

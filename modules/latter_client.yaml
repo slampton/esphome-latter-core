@@ -1,5 +1,46 @@
 # Core Subsystem: Display Engine, Lifecycle, Latter API Contract & UI Router
 
+substitutions:
+  device_slug: "latter_device"
+  version: "2.2.0"
+  screen_w: "466"
+  screen_h: "466"
+  font_time_size: "77"
+  font_chrono_size: "38"
+  font_date_size: "27"
+  font_btn_bold_size: "26"
+  font_small_size: "21"
+  font_micro_size: "14"
+  font_games_size: "38"
+  art_resize: "${screen_w}x${screen_h}"
+  art_shape: "square"
+  default_start_app: "Home"
+  default_clock_face: "Minimal Digital"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Aurora Borealis"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
+  sun_entity: "sun.sun"
+  moon_entity: "sensor.moon_phase"
+  local_player_id: "media_player.${device_slug}"
+  firmware_update_entity: "update.${device_slug}_project_firmware"
+  active_media_sensor: "sensor.${device_slug}_active_media"
+  weather_entity: "sensor.${device_slug}_weather_forecast"
+  weather_forecast_sensor: "${weather_entity}"
+  area_context_sensor: "sensor.${device_slug}_area_context"
+  calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
+  remote_config_sensor: "sensor.${device_slug}_remote_config"
+  remote_1_entity: "remote.none"
+  remote_1_name: ""
+  remote_2_entity: "remote.none"
+  remote_2_name: ""
+  remote_3_entity: "remote.none"
+  remote_3_name: ""
+  remote_4_entity: "remote.none"
+  remote_4_name: ""
+
 esphome:
   on_boot:
     - priority: 800
@@ -17,7 +58,14 @@ esphome:
       then:
         - safe_mode.mark_successful:
         - script.execute: hal_init_pmu_irq
-        - lambda: 'esphome::voice_assistant::install_sendspin_mono_downmixer(id(sendspin_source));'
+        - lambda: |-
+            esphome::voice_assistant::install_sendspin_mono_downmixer(id(sendspin_source));
+            latter_ui::seed_standalone_remote_slots(
+                "${remote_1_entity}", "${remote_1_name}",
+                "${remote_2_entity}", "${remote_2_name}",
+                "${remote_3_entity}", "${remote_3_name}",
+                "${remote_4_entity}", "${remote_4_name}");
+            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
         - media_player.pause: latter_media_player
         - online_image.release: remote_album_art
         - online_image.release: home_wallpaper_art
@@ -106,6 +154,11 @@ api:
       - lambda: |-
           esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
   actions:
+    - action: latter_ping
+      id: latter_ping_action
+      then:
+        - logger.log: "Latter companion connected"
+
     - action: set_browse_slots
       variables:
         mode: string
@@ -3247,7 +3300,7 @@ text_sensor:
             else:
               - if:
                   condition:
-                    lambda: 'return x != id(current_loaded_wallpaper_url);'
+                    lambda: 'return (id(display_power_state) == 0) && (x != id(current_loaded_wallpaper_url));'
                   then:
                     - script.execute: fetch_wallpaper_debounced
 
@@ -3266,6 +3319,18 @@ text_sensor:
     id: ha_weather_forecast_5d
     entity_id: ${weather_forecast_sensor}
     internal: true
+    on_value:
+      then:
+        - lambda: |-
+            // Standalone Mode Fallback: If `${weather_entity}` points directly to a native
+            // Home Assistant `weather.*` entity (whose main `.state` is "sunny", "rainy", etc.
+            // rather than Latter's "MON:72:55:sunny;..." 5-day summary), mirror `.state` into
+            // `ha_weather_condition` so the 20 FPS Sky & Weather engine works without ha-latter!
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x.find(':') == std::string::npos) {
+              if (id(ha_weather_condition).state != x) {
+                id(ha_weather_condition).publish_state(x);
+              }
+            }
   - platform: wifi_info
     ip_address:
       name: "IP Address"
@@ -3308,7 +3373,12 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            latter_ui::parse_latter_remote_slots_summary(x);
+            latter_ui::parse_latter_remote_slots_summary(
+                x,
+                "${remote_1_entity}", "${remote_1_name}",
+                "${remote_2_entity}", "${remote_2_name}",
+                "${remote_3_entity}", "${remote_3_name}",
+                "${remote_4_entity}", "${remote_4_name}");
             id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
             latter_ui::home_dock_page() = 0;
             if (!latter_ui::has_any_configured_remote() && id(gui_page) == 7) {
@@ -3317,6 +3387,23 @@ text_sensor:
             }
             if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 7) && millis() > 3000) {
               latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_active_speaker_name
+    entity_id: ${active_media_sensor}
+    attribute: speaker_name
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != "None") {
+              if (id(active_speaker_entity) != "${local_player_id}") {
+                id(active_speaker_name) = x;
+                if (id(display_power_state) == 0 && id(gui_page) == 2) {
+                  id(throttled_disp_update).execute();
+                }
+              }
             }
 
   - platform: homeassistant
@@ -3331,6 +3418,11 @@ text_sensor:
                 id(active_speaker_entity) = x;
                 if (x == "${local_player_id}") {
                   id(active_speaker_name) = "${friendly_name}";
+                } else if (!id(ha_active_speaker_name).state.empty() &&
+                           id(ha_active_speaker_name).state != "unknown" &&
+                           id(ha_active_speaker_name).state != "unavailable" &&
+                           id(ha_active_speaker_name).state != "None") {
+                  id(active_speaker_name) = id(ha_active_speaker_name).state;
                 } else {
                   std::string s = x;
                   size_t dot = s.find('.');
@@ -3354,7 +3446,9 @@ text_sensor:
         - if:
             condition:
               lambda: |-
-                return (x != "${local_player_id}") &&
+                return (id(display_power_state) == 0) &&
+                       (id(gui_page) == 2) &&
+                       (x != "${local_player_id}") &&
                        !id(ha_target_art_url).state.empty() &&
                        (id(ha_target_art_url).state != "none") &&
                        (id(ha_target_art_url).state != id(current_loaded_art_url));
@@ -3447,7 +3541,11 @@ text_sensor:
             else:
               - if:
                   condition:
-                    lambda: 'return (id(active_speaker_entity) != "${local_player_id}");'
+                    lambda: |-
+                      return (id(display_power_state) == 0) &&
+                             (id(gui_page) == 2) &&
+                             (id(active_speaker_entity) != "${local_player_id}") &&
+                             (x != id(current_loaded_art_url));
                   then:
                     - script.execute: fetch_remote_art_debounced
 
@@ -4797,10 +4895,72 @@ script:
             id(remote_action_feedback) = kFeedback[k];
           }
           id(remote_feedback_timer) = millis();
-      - homeassistant.action:
-          action: latter.remote_action
-          data:
-            target_device: "${name}"
-            slot: !lambda 'return to_string(id(remote_latter_slot_num));'
-            action: !lambda 'return id(remote_latter_act);'
-            command: !lambda 'return id(remote_latter_cmd);'
+      - if:
+          condition:
+            lambda: |-
+              const std::string &sum = id(ha_latter_remote_slots_summary).state;
+              return !sum.empty() && sum != "unknown" && sum != "unavailable" && sum != "none" && sum != "NONE";
+          then:
+            - homeassistant.action:
+                action: latter.remote_action
+                data:
+                  target_device: "${name}"
+                  slot: !lambda 'return to_string(id(remote_latter_slot_num));'
+                  action: !lambda 'return id(remote_latter_act);'
+                  command: !lambda 'return id(remote_latter_cmd);'
+          else:
+            # Standalone ESPHome Fallback (when ha-latter is not installed and remote_1..4_entity are used)
+            - if:
+                condition:
+                  lambda: |-
+                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                    return latter_ui::is_configured_remote_slot(latter_ui::remote_slots_ent()[idx]);
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return id(remote_latter_act) == "toggle";'
+                      then:
+                        - homeassistant.action:
+                            action: homeassistant.toggle
+                            data:
+                              entity_id: !lambda |-
+                                int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                return latter_ui::remote_slots_ent()[idx].c_str();
+                      else:
+                        - if:
+                            condition:
+                              lambda: 'return id(remote_latter_act) == "volume_up";'
+                            then:
+                              - homeassistant.action:
+                                  action: !lambda |-
+                                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                    return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
+                                        ? "media_player.volume_up" : "remote.send_command";
+                                  data:
+                                    entity_id: !lambda |-
+                                      int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                      return latter_ui::remote_slots_ent()[idx].c_str();
+                                    command: "volume_up"
+                            else:
+                              - if:
+                                  condition:
+                                    lambda: 'return id(remote_latter_act) == "volume_down";'
+                                  then:
+                                    - homeassistant.action:
+                                        action: !lambda |-
+                                          int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                          return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
+                                              ? "media_player.volume_down" : "remote.send_command";
+                                        data:
+                                          entity_id: !lambda |-
+                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                            return latter_ui::remote_slots_ent()[idx].c_str();
+                                          command: "volume_down"
+                                  else:
+                                    - homeassistant.action:
+                                        action: remote.send_command
+                                        data:
+                                          entity_id: !lambda |-
+                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                            return latter_ui::remote_slots_ent()[idx].c_str();
+                                          command: !lambda 'return id(remote_latter_cmd);'

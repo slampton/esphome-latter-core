@@ -280,8 +280,13 @@ interval:
                                  id(announcement_mixing_input).is_running() ||
                                  id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                                  id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
-                                 (id(active_game) > 0) || id(is_hibernating) || id(ota_in_progress) ||
+                                 (id(active_game) > 0) ||
+                                 (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) ||
+                                 latter_ui::cam_download_in_progress() ||
+                                 latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+                                 id(is_hibernating) || id(ota_in_progress) ||
                                  !id(wifi_ctrl).is_connected();
             const bool should_ww_run = ww_allowed && !ww_busy;
             if (ww_changed) {
@@ -630,6 +635,20 @@ script:
             id(speaker_enable).turn_on();
           }
           id(hal_set_imu_power_mode).execute(0x01);
+          if (id(gui_page) == 2 &&
+              id(active_speaker_entity) != "${local_player_id}" &&
+              !id(ha_target_art_url).state.empty() &&
+              id(ha_target_art_url).state != "none" &&
+              id(ha_target_art_url).state != id(current_loaded_art_url)) {
+            id(fetch_remote_art_debounced).execute();
+          }
+          if (!id(ha_latter_wallpaper_url).state.empty() &&
+              id(ha_latter_wallpaper_url).state != "none" &&
+              id(ha_latter_wallpaper_url).state != "unknown" &&
+              id(ha_latter_wallpaper_url).state != "unavailable" &&
+              id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url)) {
+            id(fetch_wallpaper_debounced).execute();
+          }
       - script.execute: sync_display_brightness
       - script.execute: screen_sleep_timer
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
