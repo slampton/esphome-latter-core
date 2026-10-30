@@ -1384,7 +1384,7 @@ image:
   - platform: online_image
     id: camera_snapshot_art
     format: JPEG
-    buffer_size: 131072
+    buffer_size: 65536
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"
