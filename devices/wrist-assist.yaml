@@ -1,4 +1,4 @@
-# Build-Stamp: 2026-10-29 19:55:58
+# Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
 # Wrist Assist (v2.2 Modular Architecture)
 # Target: Waveshare ESP32-S3-Touch-AMOLED-2.06 (410x502 Rectangular Watch)
@@ -12,6 +12,13 @@ substitutions:
   version: "2.2.0"
   screen_w: "410"
   screen_h: "502"
+  font_time_size: "77"
+  font_chrono_size: "38"
+  font_date_size: "27"
+  font_btn_bold_size: "26"
+  font_small_size: "21"
+  font_micro_size: "14"
+  font_games_size: "38"
   art_resize: "410x502"
   art_shape: "square"
   firmware_update_entity: "update.wrist_assist_project_firmware"

@@ -506,8 +506,7 @@ script:
                             (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) ||
                            !id(va_active);
                 timeout: 15s
-      # 2. Wait for announcement_mixing_input's PSRAM ring buffer to finish playing out to physical_speaker
-      #    (capped at 2.8s post-decode so it never cuts off speech and never hangs if mixer stays open)
+      # 2. Wait for announcement_mixing_input's 15s PSRAM ring buffer to finish playing out to physical_speaker
       - if:
           condition:
             lambda: 'return id(va_tts_received) && id(va_active) && id(announcement_mixing_input).is_running();'
@@ -515,7 +514,7 @@ script:
             - wait_until:
                 condition:
                   lambda: 'return !id(announcement_mixing_input).is_running() || !id(va_active);'
-                timeout: 2800ms
+                timeout: 16s
       # 3. Let the final ~250ms of TTS audio inside physical_speaker's hardware DMA buffer finish playing
       - if:
           condition:

@@ -471,11 +471,11 @@ inline int resolve_home_featured_activity_idx(const HomeActivityItem items[8], i
 // System Menu standard: h = 44px, r = 12, STRIDE = 63px (19px gap!), centered at CENTER_Y = 236
 // (so 5 items sit at {110, 173, 236, 299, 362} — 100% identical to System Menu!).
 inline int get_activity_overlay_card_y(int vis_count, int row_idx) {
-  static constexpr int STRIDE = 63;
-  static constexpr int CENTER_Y = 236;
-  int total_span = (vis_count - 1) * STRIDE;
-  int start_y = CENTER_Y - (total_span / 2);
-  return start_y + row_idx * STRIDE;
+  const int stride = layout().slot5_stride;
+  const int center_y = layout().slot5_cy;
+  int total_span = (vis_count - 1) * stride;
+  int start_y = center_y - (total_span / 2);
+  return start_y + row_idx * stride;
 }
 
 template <typename DisplayT, typename FontSmallT>
@@ -492,24 +492,18 @@ inline void draw_home_activity_row_contents(
   const Color fg_sec = (alpha >= 0.99f) ? theme_secondary : lerp_color(card_bg, theme_secondary, alpha);
   const Color fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, btn_bg, alpha);
 
-  // On Home (is_list_row == false), the card spans w = 380px (x = 43..423, ~30px inside the bezel):
-  //   - When 2+ active (has_dropdown_ext): Left body x=43..295 (gx=72, txt_x=94, max_w=194), Play/Pause at 328, Dropdown '▼' at 391
-  //   - When 1 active (!has_dropdown_ext): Left body x=43..355 (gx=72, txt_x=94, max_w=252), Play/Pause at 389
-  // On the translucent overlay (is_list_row == true), cards use the exact System Menu standard:
-  //   - w = 276, h = 44, r = 12 (x = 95..371, 63px stride = 19px clear gap!)
-  //   - Icon at gx = 113, Text at txt_x = 128 (max_w = 186), Divider at 320, Action Circle at act_bx = 346 (r = 13)
   const int cx_ref     = SCREEN_CX;
   const int list_w     = layout().list_card_w;
-  const int main_w     = std::min(380, SCREEN_W - 32);
+  const int main_w     = (SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32);
   const int card_w     = is_list_row ? list_w : main_w;
   const int card_left  = cx_ref - (card_w / 2);
   const int card_right = cx_ref + (card_w / 2);
-  const int gx         = is_list_row ? (card_left + 18) : (card_left + 28);
-  const int txt_x      = is_list_row ? (card_left + 33) : (card_left + 48);
-  const int div1_x     = is_list_row ? (card_right - 44) : (has_dropdown_ext ? (card_right - 108) : (card_right - 56));
-  const int act_bx     = is_list_row ? (card_right - 22) : (has_dropdown_ext ? (card_right - 80)  : (card_right - 28));
-  const int max_txt    = std::max(64, div1_x - txt_x - 8);
-  const int btn_r      = is_list_row ? 13 : ((SCREEN_W < 380) ? 16 : 19);
+  const int gx         = is_list_row ? (card_left + scale_x(18)) : (card_left + scale_x(28));
+  const int txt_x      = is_list_row ? (card_left + scale_x(33)) : (card_left + scale_x(48));
+  const int div1_x     = is_list_row ? (card_right - scale_x(44)) : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
+  const int act_bx     = is_list_row ? (card_right - scale_x(22)) : (has_dropdown_ext ? (card_right - scale_x(80))  : (card_right - scale_x(28)));
+  const int max_txt    = std::max(64, div1_x - txt_x - scale_x(8));
+  const int btn_r      = is_list_row ? scale_s(13) : ((SCREEN_W < 380) ? 16 : scale_s(19));
 
   int gy = row_y;
   if (is_list_row) {
@@ -649,14 +643,14 @@ inline void render_home_activity_card_row(
     esphome::Color card_bg = esphome::Color(22, 27, 36),
     esphome::Color card_brd = esphome::Color(52, 62, 78),
     esphome::Color btn_bg = esphome::Color(32, 39, 52)) {
-  const int card_w     = is_list_row ? layout().list_card_w : std::min(380, SCREEN_W - 32);
+  const int card_w     = is_list_row ? layout().list_card_w : ((SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32));
   const int card_h     = is_list_row ?  44 : 68;
   const int card_r     = is_list_row ?  12 : 16;
   const int card_right = cx + (card_w / 2);
-  const int div1_x     = is_list_row ? (card_right - 44) : (has_dropdown_ext ? (card_right - 108) : (card_right - 56));
-  const int div_h      = is_list_row ?  14 : 23;
-  const int div2_x     = card_right - 52;
-  const int drop_bx    = card_right - 26;
+  const int div1_x     = is_list_row ? (card_right - scale_x(44)) : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
+  const int div_h      = is_list_row ?  scale_y(14) : scale_y(23);
+  const int div2_x     = card_right - scale_x(52);
+  const int drop_bx    = card_right - scale_x(26);
 
   render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
                      nullptr, col_white, font_small);
@@ -830,12 +824,12 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
   if (vis_count == 1) {
     out_xs[0] = cx;
   } else if (vis_count == 2) {
-    out_xs[0] = cx - 44;
-    out_xs[1] = cx + 44;
+    out_xs[0] = cx - scale_x(44);
+    out_xs[1] = cx + scale_x(44);
   } else if (vis_count == 3) {
-    out_xs[0] = cx - 84;
+    out_xs[0] = cx - scale_x(84);
     out_xs[1] = cx;
-    out_xs[2] = cx + 84;
+    out_xs[2] = cx + scale_x(84);
   } else {
 #if LATTER_ROUND_DISPLAY
     out_xs[0] = 112;
@@ -843,7 +837,7 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
     out_xs[2] = 274;
     out_xs[3] = 355;
 #else
-    const int stride = (SCREEN_W < 380) ? 74 : 98;
+    const int stride = (SCREEN_W < 380) ? 74 : scale_x(98);
     out_xs[0] = cx - (stride * 3) / 2;
     out_xs[1] = cx - (stride / 2);
     out_xs[2] = cx + (stride / 2);
@@ -1073,26 +1067,26 @@ inline void render_home_page(
       static constexpr float  OUT_ALPHA[4] = {0.0f, 0.65f, 0.25f, 0.0f};
       static constexpr float  IN_ALPHA[4]  = {1.0f, 0.42f, 0.76f, 0.94f};
 
-      const int act_w = std::min(380, SCREEN_W - 32);
+      const int act_w = (SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32);
+      const int act_h = scale_y(68);
       const int act_x0 = cx - act_w / 2;
       const int act_right = cx + act_w / 2;
       render_modern_card(it, cx, pill_y, act_w, 68, 16, card_bg, card_brd, nullptr, col_white, font_small);
 
       if (OUT_ALPHA[step] > 0.05f) {
         draw_home_activity_row_contents(
-            it, pill_y + OUT_DY[step], act_items[home_act_prev_idx()], true, false, font_small,
+            it, pill_y + scale_y(OUT_DY[step]), act_items[home_act_prev_idx()], true, false, font_small,
             card_bg, btn_bg, theme_secondary, col_white, OUT_ALPHA[step]);
       }
       draw_home_activity_row_contents(
-          it, pill_y + IN_DY[step], act_items[home_act_cur_idx()], true, false, font_small,
+          it, pill_y + scale_y(IN_DY[step]), act_items[home_act_cur_idx()], true, false, font_small,
           card_bg, btn_bg, theme_secondary, col_white, IN_ALPHA[step]);
 
-      // Re-stamp top & bottom card border lines, dividers, and stationary '▼' dropdown chevron
-      it.horizontal_line(act_x0 + 16, pill_y - 34, act_w - 32, card_brd);
-      it.horizontal_line(act_x0 + 16, pill_y + 33, act_w - 32, card_brd);
-      it.line(act_right - 108, pill_y - 23, act_right - 108, pill_y + 23, card_brd);
-      it.line(act_right - 52,  pill_y - 23, act_right - 52,  pill_y + 23, card_brd);
-      const int d_bx = act_right - 26;
+      it.horizontal_line(act_x0 + scale_x(16), pill_y - act_h / 2, act_w - scale_x(32), card_brd);
+      it.horizontal_line(act_x0 + scale_x(16), pill_y + act_h / 2 - 1, act_w - scale_x(32), card_brd);
+      it.line(act_right - scale_x(108), pill_y - scale_y(23), act_right - scale_x(108), pill_y + scale_y(23), card_brd);
+      it.line(act_right - scale_x(52),  pill_y - scale_y(23), act_right - scale_x(52),  pill_y + scale_y(23), card_brd);
+      const int d_bx = act_right - scale_x(26);
       for (int w = -1; w <= 1; w++) {
         it.line(d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
         it.line(d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);

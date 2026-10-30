@@ -1,4 +1,4 @@
-# Build-Stamp: 2026-10-29 19:55:58
+# Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
 # Desk Assistant (v2.2 Modular Architecture)
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-4B (720x720 Square Display, SKU 31416)
@@ -12,6 +12,13 @@ substitutions:
   version: "2.2.0"
   screen_w: "720"
   screen_h: "720"
+  font_time_size: "112"
+  font_chrono_size: "56"
+  font_date_size: "38"
+  font_btn_bold_size: "36"
+  font_small_size: "30"
+  font_micro_size: "20"
+  font_games_size: "56"
   art_resize: "720x720"
   art_shape: "square"
   firmware_update_entity: "update.desk_assistant_project_firmware"

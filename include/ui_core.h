@@ -61,8 +61,20 @@ static constexpr int SCREEN_CY = SCREEN_H / 2;
 static constexpr int SCREEN_R = SCREEN_W / 2;
 static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_H;
 static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
-static constexpr int STD_ART_SIZE = 328;
+static constexpr int STD_ART_SIZE = (SCREEN_MIN_DIM > 520) ? ((328 * SCREEN_MIN_DIM) / 466) : 328;
 static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
+
+inline constexpr int scale_x(int v466) {
+  return (SCREEN_W > 520) ? ((v466 * SCREEN_W + 233) / 466) : v466;
+}
+
+inline constexpr int scale_y(int v466) {
+  return (SCREEN_H > 520) ? ((v466 * SCREEN_H + 233) / 466) : v466;
+}
+
+inline constexpr int scale_s(int v466) {
+  return (SCREEN_MIN_DIM > 520) ? ((v466 * SCREEN_MIN_DIM + 233) / 466) : v466;
+}
 
 // 1. Mathematical, Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 // ------------------------------------------------------------------------------
@@ -452,12 +464,13 @@ template<typename DisplayT, typename FontT>
 inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, int h, int r,
                                esphome::Color bg_c, esphome::Color border_c,
                                const char *label, esphome::Color text_c, FontT *font) {
-  if (std::abs(cx_card - SCREEN_CX) <= 4) {
+  if (SCREEN_W > 520) {
+    if (w <= 340) w = scale_x(w);
+    if (h <= 96)  h = scale_y(h);
+    if (r <= 24)  r = scale_s(r);
+  } else if (std::abs(cx_card - SCREEN_CX) <= 4) {
     if (SCREEN_W < 380 && h <= 48 && w >= 240 && w <= 330) {
       w = SCREEN_W - 88; // 232px on 320px screen: leaves a clean 26px gap before right-flank scroll arrows!
-    } else if (SCREEN_W > 520 && w >= 260 && w <= 330) {
-      w = (SCREEN_W * w) / 466;
-      h = (SCREEN_H * h) / 466;
     } else if (w > SCREEN_W - 20) {
       w = SCREEN_W - 20;
     }
@@ -512,29 +525,29 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
 template<typename DisplayT>
 inline void render_scroll_chevron(DisplayT &it, int x, int y, bool is_up,
                                   esphome::Color c, esphome::Color shadow_c, bool shadow = false) {
+  const int dx = scale_s(7);
+  const int dy_hi = scale_s(5);
+  const int dy_lo = scale_s(4);
+  const int thick = (SCREEN_W > 520) ? 3 : 2;
   if (shadow) {
-    if (is_up) {
-      it.line(x - 7, y + 5, x, y - 4, shadow_c);
-      it.line(x - 7, y + 6, x, y - 3, shadow_c);
-      it.line(x + 7, y + 5, x, y - 4, shadow_c);
-      it.line(x + 7, y + 6, x, y - 3, shadow_c);
-    } else {
-      it.line(x - 7, y - 3, x, y + 6, shadow_c);
-      it.line(x - 7, y - 2, x, y + 7, shadow_c);
-      it.line(x + 7, y - 3, x, y + 6, shadow_c);
-      it.line(x + 7, y - 2, x, y + 7, shadow_c);
+    for (int t = 0; t < thick; t++) {
+      if (is_up) {
+        it.line(x - dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
+        it.line(x + dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
+      } else {
+        it.line(x - dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
+        it.line(x + dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
+      }
     }
   }
-  if (is_up) {
-    it.line(x - 7, y + 4, x, y - 5, c);
-    it.line(x - 7, y + 5, x, y - 4, c);
-    it.line(x + 7, y + 4, x, y - 5, c);
-    it.line(x + 7, y + 5, x, y - 4, c);
-  } else {
-    it.line(x - 7, y - 4, x, y + 5, c);
-    it.line(x - 7, y - 5, x, y + 4, c);
-    it.line(x + 7, y - 4, x, y + 5, c);
-    it.line(x + 7, y - 5, x, y + 4, c);
+  for (int t = 0; t < thick; t++) {
+    if (is_up) {
+      it.line(x - dx, y + dy_lo + t, x, y - dy_hi + t, c);
+      it.line(x + dx, y + dy_lo + t, x, y - dy_hi + t, c);
+    } else {
+      it.line(x - dx, y - dy_hi + t, x, y + dy_lo + t, c);
+      it.line(x + dx, y - dy_hi + t, x, y + dy_lo + t, c);
+    }
   }
 }
 
@@ -584,35 +597,35 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
 template <typename DisplayT>
 inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
                                       esphome::Color bar_col = esphome::Color(175, 190, 210)) {
-  // Sleek 108x5px rounded bottom gesture pill bar for Swipe-Up-to-Home
-  const int half_w = 54;
-  // 1px dark drop shadow for contrast over bright daytime skies
-  it.filled_rectangle(cx - half_w + 2, y_pos - 1, (half_w - 2) * 2, 5, esphome::Color(0, 0, 0));
-  // Pill core
-  it.filled_rectangle(cx - half_w + 2, y_pos - 2, (half_w - 2) * 2, 5, bar_col);
-  it.filled_circle(cx - half_w + 2, y_pos, 2, bar_col);
-  it.filled_circle(cx + half_w - 2, y_pos, 2, bar_col);
+  const int half_w = scale_x(54);
+  const int bar_h  = (SCREEN_H > 520) ? 7 : 5;
+  const int cap_r  = bar_h / 2;
+  it.filled_rectangle(cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, esphome::Color(0, 0, 0));
+  it.filled_rectangle(cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
+  it.filled_circle(cx - half_w + cap_r, y_pos, cap_r, bar_col);
+  it.filled_circle(cx + half_w - cap_r, y_pos, cap_r, bar_col);
 }
 
 template <typename DisplayT>
 inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pages, int active_page,
                                   esphome::Color col_active, esphome::Color col_inactive) {
   if (total_pages <= 1) return;
-  const int spacing = 14;
+  const int spacing = scale_x(14);
+  const int dot_r   = (SCREEN_W > 520) ? 3 : 2;
   const int total_w = (total_pages - 1) * spacing;
   const int start_x = cx - (total_w / 2);
   for (int p = 0; p < total_pages; p++) {
     int px = start_x + p * spacing;
     if (p == active_page) {
-      // Active page: 8x5px rounded pill with 1px drop shadow
-      it.filled_rectangle(px - 2, y_pos - 1, 5, 5, esphome::Color(0, 0, 0));
-      it.filled_rectangle(px - 3, y_pos - 2, 7, 5, col_active);
-      it.filled_circle(px - 3, y_pos, 2, col_active);
-      it.filled_circle(px + 3, y_pos, 2, col_active);
+      int pw = scale_x(7);
+      int ph = dot_r * 2 + 1;
+      it.filled_rectangle(px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, esphome::Color(0, 0, 0));
+      it.filled_rectangle(px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
+      it.filled_circle(px - pw / 2, y_pos, dot_r, col_active);
+      it.filled_circle(px + pw / 2, y_pos, dot_r, col_active);
     } else {
-      // Inactive page: r = 2 dot with 1px drop shadow
-      it.filled_circle(px + 1, y_pos + 1, 2, esphome::Color(0, 0, 0));
-      it.filled_circle(px,     y_pos,     2, col_inactive);
+      it.filled_circle(px + 1, y_pos + 1, dot_r, esphome::Color(0, 0, 0));
+      it.filled_circle(px,     y_pos,     dot_r, col_inactive);
     }
   }
 }
@@ -627,12 +640,14 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
   const int mask_x = 395;
   const int chev_x = 415;
 #else
-  const int mask_x = (SCREEN_W < 380) ? (SCREEN_W - 30) : (SCREEN_W - 42);
-  const int chev_x = (SCREEN_W < 380) ? (SCREEN_W - 15) : (SCREEN_W - 21);
+  const int mask_x = (SCREEN_W < 380) ? (SCREEN_W - 30) : ((SCREEN_W > 520) ? (SCREEN_W - 88) : (SCREEN_W - 42));
+  const int chev_x = (SCREEN_W < 380) ? (SCREEN_W - 15) : ((SCREEN_W > 520) ? (SCREEN_W - 48) : (SCREEN_W - 21));
 #endif
-  it.filled_rectangle(mask_x, 140, SCREEN_W - mask_x, 160, col_bg);
-  if (show_up) render_scroll_chevron(it, chev_x, 162, true, col_active, esphome::Color(0, 0, 0), false);
-  if (show_down) render_scroll_chevron(it, chev_x, 278, false, col_active, esphome::Color(0, 0, 0), false);
+  const int up_y = scale_y(162);
+  const int dn_y = scale_y(278);
+  it.filled_rectangle(mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
+  if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, esphome::Color(0, 0, 0), false);
+  if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, esphome::Color(0, 0, 0), false);
 }
 
 // Universal Low-Profile Back Label or Swipe-Up Home Indicator Bar
@@ -640,8 +655,8 @@ template<typename DisplayT, typename FontT>
 inline void render_back_button(DisplayT &it, int cx, FontT *font,
                                int y_pos = 426, const char *label = "< Back",
                                esphome::Color text_col = esphome::Color(158, 158, 158)) {
-  const int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
-  const int back_lbl_y = LATTER_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - 28) : y_pos);
+  const int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(12));
+  const int back_lbl_y = LATTER_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - scale_y(28)) : scale_y(y_pos));
   if (label != nullptr && std::strcmp(label, "Home") == 0) {
     render_home_indicator_bar(it, cx, home_bar_y);
     return;
@@ -746,13 +761,14 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   int src_h = target_art->get_height();
   if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
 
-  int start_y = is_letterbox ? 60 : 0;
-  int end_y = is_letterbox ? 385 : SCREEN_H;
-  int scrim_end = is_letterbox ? 398 : 405;
+  int start_y = is_letterbox ? scale_y(60) : 0;
+  int end_y = is_letterbox ? scale_y(385) : SCREEN_H;
+  int scrim_start = scale_y(340);
+  int scrim_end = is_letterbox ? scale_y(398) : scale_y(405);
 
   if (src_w == SCREEN_W && src_h == SCREEN_H && !is_standard) {
     for (int y = start_y; y < end_y; y++) {
-      bool row_scrim = apply_scrim || (show_metadata && y >= 340 && y < scrim_end);
+      bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
       if (row_scrim && ((y & 1) != 0)) {
         continue; // Odd row stays pure black in pre-cleared framebuffer with zero CPU/PSRAM cost!
       }
@@ -815,7 +831,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   for (int y = start_y; y < end_y; y++) {
     int sy = curr_y >> 12;
     curr_y += step_y;
-    bool row_scrim = apply_scrim || (show_metadata && y >= 340 && y < scrim_end);
+    bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
     if (row_scrim && ((y & 1) != 0)) {
       continue; // Zero-cost scanline scrim on odd rows (eliminates 100k per-pixel draw_pixel_at calls!)
     }
@@ -1117,7 +1133,9 @@ inline bool is_back_button(const TouchT &t) {
 #if LATTER_ROUND_DISPLAY
   return (t.y >= 404 && t.y <= 466 && t.x >= 116 && t.x <= 350);
 #else
-  return (t.y >= (SCREEN_H - 64) && t.y <= SCREEN_H && t.x >= (SCREEN_CX - 120) && t.x <= (SCREEN_CX + 120));
+  const int bh = scale_y(64);
+  const int bw = scale_x(120);
+  return (t.y >= (SCREEN_H - bh) && t.y <= SCREEN_H && t.x >= (SCREEN_CX - bw) && t.x <= (SCREEN_CX + bw));
 #endif
 }
 
@@ -1126,8 +1144,9 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 #if LATTER_ROUND_DISPLAY
   return (t.x >= 376 && t.y >= 70 && t.y <= 395);
 #else
-  const int chev_min_x = (SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 48);
-  return (t.x >= chev_min_x && t.y >= 70 && t.y <= (SCREEN_H - 70));
+  const int chev_min_x = (SCREEN_W < 380) ? (SCREEN_W - 36) : ((SCREEN_W > 520) ? (SCREEN_W - 96) : (SCREEN_W - 48));
+  const int margin_y = scale_y(70);
+  return (t.x >= chev_min_x && t.y >= margin_y && t.y <= (SCREEN_H - margin_y));
 #endif
 }
 

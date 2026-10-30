@@ -195,16 +195,14 @@ inline void render_tv_remote_page(
     const esphome::Color card_bg(22, 27, 36);
     const esphome::Color card_brd(52, 62, 78);
 
-    // Row 0 (y = 110): Pinned Master System Power Card (targets Slot 1)
-    render_modern_card(it, cx, 110, 276, 44, 12, esphome::Color(28, 18, 22), col_red,
+    render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, esphome::Color(28, 18, 22), col_red,
                        "Toggle Power", col_white, font_small);
 
-    // Rows 1..4 (y = 173, 236, 299, 362): 4 Devices Per Page
     int start_idx = cur_page * 4;
     int vis_count = std::min(4, std::max(0, valid_count - start_idx));
     for (int row = 0; row < vis_count; row++) {
       int s_idx = valid_slots[start_idx + row];
-      int y_mid = 173 + row * 63;
+      int y_mid = layout().slot5_y(row + 1);
       bool is_sel = (s_idx == slot);
       bool is_primary_slot = (s_idx == valid_slots[0]);
 
@@ -214,32 +212,33 @@ inline void render_tv_remote_page(
       esphome::Color border_c = is_sel ? theme_primary : card_brd;
       esphome::Color text_c = is_sel ? theme_primary : col_white;
 
-      int card_cx = is_primary_slot ? cx  : (cx - 25);
+      int card_cx = is_primary_slot ? cx  : (cx - scale_x(25));
       int card_w  = is_primary_slot ? 276 : 226;
-      int max_txt = is_primary_slot ? 228 : 182;
+      int max_txt = is_primary_slot ? scale_x(228) : scale_x(182);
 
       render_modern_card(it, card_cx, y_mid, card_w, 44, 12, card_bg, border_c, nullptr, text_c, font_small);
       if (is_sel) {
-        it.filled_circle(cx - 119, y_mid, 6, theme_primary);
+        it.filled_circle(cx - scale_x(119), y_mid, scale_s(6), theme_primary);
       } else {
-        it.circle(cx - 119, y_mid, 5, col_slate);
+        it.circle(cx - scale_x(119), y_mid, scale_s(5), col_slate);
       }
       std::string fit_lbl = fit_text_to_width_font(d_name, max_txt, font_small);
-      it.print(cx - 103, y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
+      it.print(cx - scale_x(103), y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
 
       if (!is_primary_slot) {
-        const int p_cx = cx + 120;
+        const int p_cx = cx + scale_x(120);
+        const int p_r  = scale_s(18);
         const bool is_dev_on = remote_slot_states_on()[s_idx];
-        it.filled_circle(p_cx, y_mid, 18, card_bg);
-        it.circle(p_cx, y_mid, 18, is_dev_on ? theme_secondary : col_red);
+        it.filled_circle(p_cx, y_mid, p_r, card_bg);
+        it.circle(p_cx, y_mid, p_r, is_dev_on ? theme_secondary : col_red);
         for (int i = 6; i < 54; i += 2) {
-          int x1 = p_cx + static_cast<int>(7.0f * DIAL_SIN[i]);
-          int y1 = y_mid - static_cast<int>(7.0f * DIAL_COS[i]);
-          int x2 = p_cx + static_cast<int>(7.0f * DIAL_SIN[i + 2]);
-          int y2 = y_mid - static_cast<int>(7.0f * DIAL_COS[i + 2]);
+          int x1 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i]);
+          int y1 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i]);
+          int x2 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i + 2]);
+          int y2 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i + 2]);
           it.line(x1, y1, x2, y2, col_white);
         }
-        it.filled_rectangle(p_cx - 1, y_mid - 9, 3, 8, col_white);
+        it.filled_rectangle(p_cx - 1, y_mid - scale_s(9), 3, scale_s(8), col_white);
       }
     }
 
@@ -256,51 +255,53 @@ inline void render_tv_remote_page(
   // SUBPAGE 0: MAIN REMOTE CONTROL INTERFACE
   // ---------------------------------------------------------------------------
   if (is_fb) {
-    std::string fit_fb = fit_text_to_width_font(remote_action_feedback, 280, font_small);
+    std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
     it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
   } else {
-    std::string disp_title = fit_text_to_width_font(rem_name, 280, font_small);
+    std::string disp_title = fit_text_to_width_font(rem_name, scale_x(280), font_small);
     it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
   }
 
-  const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + 8);
-  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 34 : ((SCREEN_W >= 480) ? 44 : 48));
+  const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + scale_y(8));
+  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 34 : ((SCREEN_W > 520) ? 104 : ((SCREEN_W >= 480) ? 44 : 48)));
   const int right_fx = SCREEN_W - left_fx;
-  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 128 : ((SCREEN_W >= 480) ? 148 : 116));
+  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 196 : ((SCREEN_W >= 480) ? 148 : 116)));
   const int top_fy   = dpad_cy - flank_dy;
   const int btm_fy   = dpad_cy + flank_dy;
-  const int f_r      = 19;
+  const int f_r      = scale_s(19);
 
   // 1. HOME: Top-Left
   it.filled_circle(left_fx, top_fy, f_r, col_dark_gray);
   it.circle(left_fx, top_fy, f_r, col_gray);
-  it.filled_triangle(left_fx, top_fy - 8, left_fx - 9, top_fy - 1, left_fx + 9, top_fy - 1, col_white);
-  it.filled_rectangle(left_fx - 6, top_fy - 1, 13, 8, col_white);
-  it.filled_rectangle(left_fx - 2, top_fy + 2, 5, 5, col_dark_gray);
+  it.filled_triangle(left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
+  it.filled_rectangle(left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
+  it.filled_rectangle(left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), col_dark_gray);
 
   // 2. VOL UP: Top-Right
+  const int pls = scale_s(7);
+  const int pth = scale_s(3);
   it.filled_circle(right_fx, top_fy, f_r, col_dark_gray);
   it.circle(right_fx, top_fy, f_r, col_gray);
-  it.filled_rectangle(right_fx - 7, top_fy - 1, 15, 3, col_white);
-  it.filled_rectangle(right_fx - 1, top_fy - 7, 3, 15, col_white);
+  it.filled_rectangle(right_fx - pls, top_fy - pth / 2, pls * 2 + 1, pth, col_white);
+  it.filled_rectangle(right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
 
   // 3. BACK: Bottom-Left
   it.filled_circle(left_fx, btm_fy, f_r, col_dark_gray);
   it.circle(left_fx, btm_fy, f_r, col_gray);
-  it.line(left_fx + 3, btm_fy - 7, left_fx - 4, btm_fy, col_white);
-  it.line(left_fx + 4, btm_fy - 7, left_fx - 3, btm_fy, col_white);
-  it.line(left_fx - 4, btm_fy, left_fx + 3, btm_fy + 7, col_white);
-  it.line(left_fx - 3, btm_fy, left_fx + 4, btm_fy + 7, col_white);
+  it.line(left_fx + scale_s(3), btm_fy - scale_s(7), left_fx - scale_s(4), btm_fy, col_white);
+  it.line(left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
+  it.line(left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
+  it.line(left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
 
   // 4. VOL DOWN: Bottom-Right
   it.filled_circle(right_fx, btm_fy, f_r, col_dark_gray);
   it.circle(right_fx, btm_fy, f_r, col_gray);
-  it.filled_rectangle(right_fx - 7, btm_fy - 1, 15, 3, col_white);
+  it.filled_rectangle(right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
 
   // Adaptive Concentric D-Pad
-  const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144);
-  const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50);
-  const int ok_r       = dpad_r_in - 8;
+  const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));
+  const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((SCREEN_W > 520) ?  86 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50));
+  const int ok_r       = dpad_r_in - scale_s(8);
   it.circle(cx, dpad_cy, dpad_r_out, col_gray);
   it.circle(cx, dpad_cy, dpad_r_in, col_gray);
 

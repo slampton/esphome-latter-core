@@ -36,24 +36,24 @@ struct UiLayout {
   int cy = SCREEN_CY;
   bool is_round = (LATTER_ROUND_DISPLAY != 0);
 
-  // Header & Footer Y coordinates (Adaptive for Round vs Wearable Watch vs Square/Rect)
-  int hdr_y = LATTER_ROUND_DISPLAY ? 48 : (LATTER_IS_WEARABLE ? 36 : 28);
-  int sub_hdr_y = LATTER_ROUND_DISPLAY ? 76 : (LATTER_IS_WEARABLE ? 64 : 56);
-  int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - 28);
-  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - 12);
-  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - 58);
-  int app_dock_y = LATTER_ROUND_DISPLAY ? 372 : (SCREEN_H - 58);
-  int dock_pips_y = LATTER_ROUND_DISPLAY ? 405 : (SCREEN_H - 25);
-  int app_dock_pips_y = LATTER_ROUND_DISPLAY ? 410 : (SCREEN_H - 25);
-  int dock_r = (SCREEN_W < 360) ? 24 : 27;
+  // Header & Footer Y coordinates (Adaptive for Round vs Wearable Watch vs Square/Rect vs 720p HD)
+  int hdr_y = LATTER_ROUND_DISPLAY ? 48 : (LATTER_IS_WEARABLE ? 36 : ((SCREEN_H > 520) ? 48 : 28));
+  int sub_hdr_y = LATTER_ROUND_DISPLAY ? 76 : (LATTER_IS_WEARABLE ? 64 : ((SCREEN_H > 520) ? 88 : 56));
+  int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - scale_y(28));
+  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(12));
+  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - scale_y(58));
+  int app_dock_y = LATTER_ROUND_DISPLAY ? 372 : (SCREEN_H - scale_y(58));
+  int dock_pips_y = LATTER_ROUND_DISPLAY ? 405 : (SCREEN_H - scale_y(25));
+  int app_dock_pips_y = LATTER_ROUND_DISPLAY ? 410 : (SCREEN_H - scale_y(25));
+  int dock_r = (SCREEN_W < 360) ? 24 : ((SCREEN_W > 520) ? 40 : 27);
 
   // Consistent Upper-Left Celestial Sun/Moon Coordinates across all 5 displays
-  int celestial_x = LATTER_ROUND_DISPLAY ? 106 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : ((SCREEN_W > 520) ? 112 : 78)));
-  int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : ((SCREEN_H > 520) ? 112 : 78));
+  int celestial_x = LATTER_ROUND_DISPLAY ? 106 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : ((SCREEN_W > 520) ? 118 : 78)));
+  int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : ((SCREEN_H > 520) ? 118 : 78));
 
   // Corner-Safe Battery Indicator Coordinates for Non-Round Displays
-  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 68) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : (SCREEN_W - 58)));
-  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 43 : ((SCREEN_W < 380) ? 24 : 28));
+  int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 68) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : ((SCREEN_W > 520) ? (SCREEN_W - 86) : (SCREEN_W - 58))));
+  int battery_y  = LATTER_ROUND_DISPLAY ? 435       : (LATTER_IS_WEARABLE ? 43 : ((SCREEN_W < 380) ? 24 : ((SCREEN_H > 520) ? 42 : 28)));
 
   // Standard Menu Card Width & Left Text Margin (232px on 320x480; scales up on >520px HD panels)
   int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : ((SCREEN_W > 520) ? ((SCREEN_W * 276) / 466) : 276);
@@ -77,8 +77,8 @@ struct UiLayout {
   }
   constexpr int area_card_left() const { return cx - (area_card3_w / 2); }
   constexpr int area_card_right() const { return cx + (area_card3_w / 2); }
-  constexpr int area_card_div_x() const { return area_card_left() + 64; }
-  constexpr int area_card_orb_x() const { return area_card_right() - 28; }
+  constexpr int area_card_div_x() const { return area_card_left() + scale_x(64); }
+  constexpr int area_card_orb_x() const { return area_card_right() - scale_x(28); }
   constexpr int hit_area_card3(int tx, int ty) const {
     int hw = (area_card3_w / 2) + 10;
     if (tx < cx - hw || tx > cx + hw) return -1;
@@ -91,7 +91,7 @@ struct UiLayout {
   }
   constexpr bool is_area_light_orb(int tx) const {
     int ox = area_card_orb_x();
-    return (tx >= ox - 28 && tx <= area_card_right() + 8);
+    return (tx >= ox - scale_x(28) && tx <= area_card_right() + 8);
   }
   constexpr int area_slider_pct(int tx) const {
     int x0 = area_card_div_x() + 4;
@@ -111,7 +111,7 @@ struct UiLayout {
     return tool_card3_cy + (idx_0_to_2 - 1) * tool_card3_stride;
   }
   constexpr int tool_card3_div_x() const {
-    return cx + (tool_card3_w / 2) - 93;
+    return cx + (tool_card3_w / 2) - scale_x(93);
   }
   constexpr int hit_tool_card3(int tx, int ty) const {
     int hw = (tool_card3_w / 2) + 12;
@@ -125,7 +125,7 @@ struct UiLayout {
   }
 
   // 4. Adaptive 2x3 Tools Launcher Grid Geometry + Unified Hit-Tester
-  int tools_col_off    = (SCREEN_W < 380) ? 61 : ((SCREEN_W > 520) ? ((SCREEN_W * 68) / 466) : 68);
+  int tools_col_off    = (SCREEN_W < 380) ? 61 : ((SCREEN_W > 520) ? ((SCREEN_W * 74) / 466) : 68);
   int tools_row_stride = (SCREEN_H > 520) ? ((SCREEN_H * 105) / 466) : 105;
   int tools_grid_cy    = (SCREEN_H > 520) ? SCREEN_CY : 236;
   constexpr int tools_row_y(int row_0_to_2) const {
@@ -181,44 +181,51 @@ struct UiLayout {
   }
 
   // 6. Single-Source Music Now Playing, Drilldown & Track Inspector Scrubber Geometry + Hit-Testers
-  int music_art_cy = (SCREEN_H > 520) ? SCREEN_CY : 233;
-  constexpr int music_left_flank_x() const { return is_round ? 71 : ((w < 380) ? 42 : 48); }
+  int music_art_cy = scale_y(233);
+  constexpr int music_left_flank_x() const { return is_round ? 71 : ((w < 380) ? 42 : scale_x(48)); }
   constexpr int music_right_flank_x() const { return w - music_left_flank_x(); }
-  constexpr int music_prev_x() const { return cx - (is_round ? 109 : ((w < 380) ? 96 : 104)); }
-  constexpr int music_next_x() const { return cx + (is_round ? 109 : ((w < 380) ? 96 : 104)); }
+  constexpr int music_prev_x() const { return cx - (is_round ? 109 : ((w < 380) ? 96 : scale_x(104))); }
+  constexpr int music_next_x() const { return cx + (is_round ? 109 : ((w < 380) ? 96 : scale_x(104))); }
   constexpr bool hit_music_header(int tx, int ty) const {
-    return (ty <= 85 && (tx >= cx - 130 && tx <= cx + 130));
+    return (ty <= scale_y(85) && (tx >= cx - scale_x(130) && tx <= cx + scale_x(130)));
   }
   constexpr bool hit_music_play_pause(int tx, int ty) const {
-    return (tx >= cx - 48 && tx <= cx + 48 && ty >= music_art_cy - 48 && ty <= music_art_cy + 48);
+    int r = scale_s(48);
+    return (tx >= cx - r && tx <= cx + r && ty >= music_art_cy - r && ty <= music_art_cy + r);
   }
   constexpr bool hit_music_prev(int tx, int ty) const {
-    return (tx < cx - 48 && ty >= music_art_cy - 46 && ty < music_art_cy + 48);
+    int r = scale_s(48);
+    return (tx < cx - r && ty >= music_art_cy - r && ty < music_art_cy + r);
   }
   constexpr bool hit_music_next(int tx, int ty) const {
-    return (tx > cx + 48 && ty >= music_art_cy - 46 && ty < music_art_cy + 48);
+    int r = scale_s(48);
+    return (tx > cx + r && ty >= music_art_cy - r && ty < music_art_cy + r);
   }
   constexpr bool hit_music_spk_shortcut(int tx, int ty) const {
-    return (tx <= cx - 48 && ty >= 70 && ty < music_art_cy - 46);
+    int r = scale_s(48);
+    return (tx <= cx - r && ty >= scale_y(70) && ty < music_art_cy - r);
   }
   constexpr bool hit_music_lib_shortcut(int tx, int ty) const {
-    return (tx <= cx - 48 && ty >= music_art_cy + 48 && ty < 405);
+    int r = scale_s(48);
+    return (tx <= cx - r && ty >= music_art_cy + r && ty < scale_y(405));
   }
   constexpr bool hit_music_vol_up(int tx, int ty) const {
-    return (tx >= cx + 48 && ty >= 70 && ty < music_art_cy - 46);
+    int r = scale_s(48);
+    return (tx >= cx + r && ty >= scale_y(70) && ty < music_art_cy - r);
   }
   constexpr bool hit_music_vol_down(int tx, int ty) const {
-    return (tx >= cx + 48 && ty >= music_art_cy + 48 && ty < 405);
+    int r = scale_s(48);
+    return (tx >= cx + r && ty >= music_art_cy + r && ty < scale_y(405));
   }
   constexpr bool hit_music_metadata(int tx, int ty) const {
-    return (tx >= cx - 110 && tx <= cx + 110 && ty >= 338 && ty < 405);
+    return (tx >= cx - scale_x(110) && tx <= cx + scale_x(110) && ty >= scale_y(338) && ty < scale_y(408));
   }
-  constexpr int music_drill_play_cx() const { return (w < 380) ? 28 : 82; }
-  constexpr int music_drill_split_x() const { return music_drill_play_cx() + 26; }
-  int music_scrub_y = 242;
-  constexpr int music_seek_left_x() const { return is_round ? 50 : 34; }
+  constexpr int music_drill_play_cx() const { return (w < 380) ? 28 : scale_x(82); }
+  constexpr int music_drill_split_x() const { return music_drill_play_cx() + scale_x(26); }
+  int music_scrub_y = scale_y(242);
+  constexpr int music_seek_left_x() const { return is_round ? 50 : scale_x(34); }
   constexpr int music_seek_right_x() const { return w - music_seek_left_x(); }
-  constexpr int music_scrub_x0() const { return is_round ? 95 : 72; }
+  constexpr int music_scrub_x0() const { return is_round ? 95 : scale_x(72); }
   constexpr int music_scrub_x1() const { return w - music_scrub_x0(); }
   constexpr int music_scrub_w() const { return music_scrub_x1() - music_scrub_x0(); }
   constexpr float music_scrub_frac(int tx) const {
@@ -229,26 +236,28 @@ struct UiLayout {
   }
 
   // 7. Single-Source Light Kelvin / Brightness Inspector Slider Geometry
-  constexpr int light_slider_card_w() const { return (w - 24 < 316) ? (w - 24) : 316; }
-  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - 32; }
+  constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : scale_x(316); }
+  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_x(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
-  constexpr int light_bri_bar_w() const { return light_slider_card_w() - 16; }
+  constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_x(16); }
   constexpr int light_bri_bar_x0() const { return cx - (light_bri_bar_w() / 2); }
 
   // 8. Single-Source System Color Swatch & Info Margin Geometry
-  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - 34; }
-  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - 18); }
-  constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : 42); }
+  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_x(34); }
+  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_x(22)); }
+  constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
 
   // 9. Single-Source Calendar Map Floating Zoom Button Geometry + Hit-Testers
-  int map_zoom_y = 233;
-  constexpr int map_zoom_left_x() const { return is_round ? 44 : 34; }
+  int map_zoom_y = scale_y(233);
+  constexpr int map_zoom_left_x() const { return is_round ? 44 : scale_x(34); }
   constexpr int map_zoom_right_x() const { return w - map_zoom_left_x(); }
   constexpr bool hit_map_zoom_out(int tx, int ty) const {
-    return (ty >= map_zoom_y - 45 && ty <= map_zoom_y + 45 && tx <= map_zoom_left_x() + 42);
+    int r = scale_s(45);
+    return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx <= map_zoom_left_x() + r);
   }
   constexpr bool hit_map_zoom_in(int tx, int ty) const {
-    return (ty >= map_zoom_y - 45 && ty <= map_zoom_y + 45 && tx >= map_zoom_right_x() - 42);
+    int r = scale_s(45);
+    return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx >= map_zoom_right_x() - r);
   }
 };
 
@@ -263,7 +272,7 @@ inline constexpr bool is_wearable_form_factor() {
 
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
-  const int stride = (SCREEN_W < 380) ? 74 : 90;
+  const int stride = (SCREEN_W < 380) ? 74 : scale_x(90);
   if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
   if (tx < cx - stride) return 0;
   if (tx < cx)          return 1;
@@ -273,7 +282,7 @@ inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
 
 // Hit-test the 4-column calculator grid (returns 0..3 or -1)
 inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
-  const int stride = (SCREEN_W < 380) ? 72 : 82;
+  const int stride = (SCREEN_W < 380) ? 72 : scale_x(82);
   if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
   if (tx < cx - stride) return 0;
   if (tx < cx)          return 1;

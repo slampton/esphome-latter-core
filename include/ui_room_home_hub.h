@@ -191,6 +191,7 @@ inline void render_room_control_page(
     const int ICON_Y = layout().app_dock_y;
     Color shadow_c(0, 0, 0);
 
+    const int dr = layout().dock_r;
     for (int i = 0; i < vis_count; i++) {
       int bx = win_xs[i];
       int by = ICON_Y;
@@ -199,11 +200,11 @@ inline void render_room_control_page(
       Color ring_c = is_act ? theme_primary : Color(90, 112, 138);
       Color fg_c   = is_act ? theme_primary : col_white;
 
-      it.filled_circle(bx, by, 26, Color(16, 20, 27));
-      it.circle(bx + 1, by + 1, 27, shadow_c);
-      it.circle(bx,     by,     27, ring_c);
+      it.filled_circle(bx, by, dr - 1, Color(16, 20, 27));
+      it.circle(bx + 1, by + 1, dr, shadow_c);
+      it.circle(bx,     by,     dr, ring_c);
       if (is_act) {
-        it.circle(bx, by, 26, ring_c);
+        it.circle(bx, by, dr - 1, ring_c);
       }
 
       if (cat == "scene") {
@@ -569,6 +570,7 @@ inline void render_room_control_page(
     else if (dtype == "fan") fill_c = Color(24, 76, 64);    // Emerald-Teal airflow bar
 
     const int r_card_w   = layout().area_card3_w;
+    const int r_card_h   = layout().area_card3_h;
     const int r_left     = layout().area_card_left();
     const int r_right    = layout().area_card_right();
     const int r_div_x    = layout().area_card_div_x();
@@ -579,18 +581,19 @@ inline void render_room_control_page(
       int clamped_lvl = std::max(0, std::min(100, level));
       int fill_w = (r_slider_w * clamped_lvl) / 100;
       if (fill_w > 4) {
-        it.filled_rectangle(r_div_x + 1, y_mid - 29, fill_w, 58, fill_c);
-        it.vertical_line(r_div_x + fill_w, y_mid - 28, 56, scale_color(col_white, 0.35f));
+        int fh = r_card_h - 6;
+        it.filled_rectangle(r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
+        it.vertical_line(r_div_x + fill_w, y_mid - fh / 2 + 1, fh - 2, scale_color(col_white, 0.35f));
       }
     }
 
-    draw_tall_card_icon(r_left + 32, y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
-    it.line(r_div_x, y_mid - 22, r_div_x, y_mid + 22, brd_c);
+    draw_tall_card_icon(r_left + scale_x(32), y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
+    it.line(r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
 
     std::string clean_name = strip_trailing_paren_state(raw_name);
-    const int max_t_w = (dtype == "light") ? (r_slider_w - 58) : (r_slider_w - 20);
+    const int max_t_w = (dtype == "light") ? (r_slider_w - scale_x(58)) : (r_slider_w - scale_x(20));
     std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
-    it.print(r_div_x + 13, y_mid - 10, font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
+    it.print(r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     char sub_buf[40];
     if (dtype == "light") {
@@ -617,15 +620,17 @@ inline void render_room_control_page(
       snprintf(sub_buf, sizeof(sub_buf), is_act ? "On" : "Off");
     }
     Color sub_c = is_act ? theme_secondary : Color(105, 115, 130);
-    it.print(r_div_x + 13, y_mid + 14, font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
+    it.print(r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
     if (dtype == "light") {
-      int ox = r_right - 28;
-      it.filled_circle(ox, y_mid, 16, Color(20, 24, 32));
-      it.filled_circle(ox - 5, y_mid - 4, 4, Color(255, 95, 95));
-      it.filled_circle(ox + 5, y_mid - 4, 4, Color(90, 225, 135));
-      it.filled_circle(ox,     y_mid + 5, 4, Color(95, 165, 255));
-      it.circle(ox, y_mid, 16, is_act ? col_white : col_slate);
+      int ox = layout().area_card_orb_x();
+      int orb_r = scale_s(16);
+      int dot_r = scale_s(4);
+      it.filled_circle(ox, y_mid, orb_r, Color(20, 24, 32));
+      it.filled_circle(ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
+      it.filled_circle(ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
+      it.filled_circle(ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
+      it.circle(ox, y_mid, orb_r, is_act ? col_white : col_slate);
     }
   };
 
@@ -703,64 +708,63 @@ inline void render_security_alarm_page(
                        "Arm Away", col_white, font_date);
 
   } else if (tab == 1) {
-    // TAB 1: WHOLE-HOME THERMOSTAT / CLIMATE
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
     char sub_t[48];
     const std::string &m = sim_thermostat_mode();
     const char *m_lbl = (m == "heat") ? "Heating" : ((m == "cool") ? "Cooling" : ((m == "off") ? "System Off" : "Auto Climate"));
     snprintf(sub_t, sizeof(sub_t), "%s  •  Indoor 70°", m_lbl);
-    it.print(cx, 74, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : sub_t);
 
-    // Hero Target Temperature Stepper Card at y = 156 (h = 84, w = 312)
+    const int hero_y = scale_y(156);
+    const int mode_y = scale_y(266);
     Color mode_brd = (m == "heat") ? col_gold : ((m == "cool") ? Color(75, 175, 255) : ((m == "auto") ? col_green : card_brd_off));
-    render_modern_card(it, cx, 156, 312, 84, 18, card_bg_on, mode_brd, nullptr, col_white, font_date);
-    // [-] Button at cx - 115, [+] Button at cx + 115
-    const int minus_x = cx - 115;
-    const int plus_x  = cx + 115;
-    it.filled_circle(minus_x, 156, 24, Color(30, 38, 52));
-    it.circle(minus_x, 156, 24, card_brd_off);
-    it.horizontal_line(minus_x - 8, 156, 17, col_white);
-    it.horizontal_line(minus_x - 8, 157, 17, col_white);
+    render_modern_card(it, cx, hero_y, 312, 84, 18, card_bg_on, mode_brd, nullptr, col_white, font_date);
+    const int minus_x = cx - scale_x(115);
+    const int plus_x  = cx + scale_x(115);
+    const int btn_r   = scale_s(24);
+    const int gl_s    = scale_s(8);
+    it.filled_circle(minus_x, hero_y, btn_r, Color(30, 38, 52));
+    it.circle(minus_x, hero_y, btn_r, card_brd_off);
+    it.horizontal_line(minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
+    it.horizontal_line(minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
 
-    it.filled_circle(plus_x, 156, 24, Color(30, 38, 52));
-    it.circle(plus_x, 156, 24, card_brd_off);
-    it.horizontal_line(plus_x - 8, 156, 17, col_white);
-    it.horizontal_line(plus_x - 8, 157, 17, col_white);
-    it.vertical_line(plus_x,     148, 17, col_white);
-    it.vertical_line(plus_x + 1, 148, 17, col_white);
+    it.filled_circle(plus_x, hero_y, btn_r, Color(30, 38, 52));
+    it.circle(plus_x, hero_y, btn_r, card_brd_off);
+    it.horizontal_line(plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
+    it.horizontal_line(plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
+    it.vertical_line(plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
+    it.vertical_line(plus_x + 1, hero_y - gl_s, gl_s * 2 + 1, col_white);
 
     char t_val[16];
     snprintf(t_val, sizeof(t_val), "%d°", sim_thermostat_target_f());
-    it.print(cx, 156, font_date, col_white, TextAlign::CENTER, t_val);
+    it.print(cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
 
-    // 4 HVAC Mode Pills at y = 266 (Heat, Cool, Auto, Off)
-    const int M_XS[4] = {cx - 129, cx - 43, cx + 43, cx + 129};
+    const int M_XS[4] = {cx - scale_x(129), cx - scale_x(43), cx + scale_x(43), cx + scale_x(129)};
     const char *M_NAMES[4] = {"Heat", "Cool", "Auto", "Off"};
     const char *M_IDS[4]   = {"heat", "cool", "auto", "off"};
     for (int i = 0; i < 4; i++) {
       bool act = (m == M_IDS[i]);
-      render_modern_card(it, M_XS[i], 266, 76, 48, 12,
+      render_modern_card(it, M_XS[i], mode_y, 76, 48, 12,
                          act ? card_bg_on : card_bg_off,
                          act ? mode_brd : card_brd_off,
                          M_NAMES[i], act ? col_white : col_slate, font_small);
     }
 
   } else if (tab == 2) {
-    // TAB 2: GARAGE DOOR & ENTRY LOCKS
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
-    it.print(cx, 74, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? room_action_feedback.c_str() : "Tap Card to Toggle");
 
     bool g_open = sim_garage_open();
-    render_modern_card(it, cx, 156, 308, 72, 16,
+    render_modern_card(it, cx, scale_y(156), 308, 72, 16,
                        g_open ? Color(40, 24, 18) : card_bg_on,
                        g_open ? col_gold : col_green,
                        g_open ? "Garage: Open (Close)" : "Garage: Closed (Open)",
                        col_white, font_small);
 
     bool d_locked = sim_front_door_locked();
-    render_modern_card(it, cx, 252, 308, 72, 16,
+    render_modern_card(it, cx, scale_y(256), 308, 72, 16,
                        d_locked ? Color(18, 36, 26) : Color(40, 18, 22),
                        d_locked ? col_green : col_red,
                        d_locked ? "Front Door: Locked" : "Front Door: Unlocked",
@@ -796,15 +800,16 @@ inline void render_security_alarm_page(
   bool wh_dl = false, wh_dr = false;
   get_home_dock_window_xs(4, 0, cx, WH_XS, wh_dl, wh_dr);
   const int WH_Y = layout().app_dock_y;
+  const int dr = layout().dock_r;
   for (int i = 0; i < 4; i++) {
     int bx = WH_XS[i];
     bool is_act = (i == tab);
     Color ring_c = is_act ? theme_primary : Color(90, 112, 138);
     Color fg_c   = is_act ? theme_primary : col_white;
-    it.filled_circle(bx, WH_Y, 26, card_bg_off);
-    it.circle(bx + 1, WH_Y + 1, 27, Color(0, 0, 0));
-    it.circle(bx, WH_Y, 27, ring_c);
-    if (is_act) it.circle(bx, WH_Y, 26, ring_c);
+    it.filled_circle(bx, WH_Y, dr - 1, card_bg_off);
+    it.circle(bx + 1, WH_Y + 1, dr, Color(0, 0, 0));
+    it.circle(bx, WH_Y, dr, ring_c);
+    if (is_act) it.circle(bx, WH_Y, dr - 1, ring_c);
 
     if (i == 0) {
       // 0. Security Alarm: Pitched-Crest Shield with Negative-Space Overhanging-Roof House & Doorway

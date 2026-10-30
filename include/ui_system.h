@@ -126,21 +126,24 @@ inline void render_system_page(
     render_vertical_page_pips(it, show_up, show_down, col_bg, theme_secondary, col_slate);
   };
 
-  auto compute_scroll_offset = [&](int cur_page, const int16_t ease_lut[5], int max_shift) -> int {
+  const int row0_y = layout().slot5_y(0);
+  const int row_s  = layout().slot5_stride;
+  const int mask_top_h = scale_y(82);
+  const int mask_btm_y = scale_y(388);
+  const int min_vis_y  = scale_y(60);
+  const int max_vis_y  = scale_y(395);
+
+  auto compute_scroll_offset = [&](int cur_page, const int16_t ease_lut[5], int max_shift_466) -> int {
+    const int max_shift = scale_y(max_shift_466);
     if (menu_scroll_active) {
       int step = std::max(0, std::min(4, menu_scroll_step));
-      int shift = ease_lut[step];
+      int shift = scale_y(ease_lut[step]);
       return (menu_scroll_dir == 1) ? shift : (max_shift - shift);
     }
     return (cur_page == 2) ? max_shift : 0;
   };
 
   if (system_menu_mode == 0) {
-    // -------------------------------------------------------------------------
-    // VIEW 0: MAIN SYSTEM DASHBOARD (5-Slot Standard: y_mid = 110, 173, 236, 299, 362)
-    // Page 1 (Slots 0..4): Display, Sleep & Wake, Sound, Voice, Music
-    // Page 2 (Slots 0..4, scrolled by 3 rows / 189px): Voice, Music, Home, Info, Actions
-    // -------------------------------------------------------------------------
     static constexpr int16_t SCROLL_EASE_189[5] = {0, 41, 102, 161, 189};
     int current_offset = compute_scroll_offset(system_dashboard_page, SCROLL_EASE_189, 189);
     static constexpr const char *kSysLabels[8] = {
@@ -148,25 +151,22 @@ inline void render_system_page(
       "Music",   "Home",         "Actions", "Info"
     };
     for (int i = 0; i < 8; i++) {
-      int y = 110 + i * 63 - current_offset;
-      if (menu_scroll_active ? (y >= 60 && y <= 395) : (y >= 100 && y <= 370)) {
+      int y = row0_y + i * row_s - current_offset;
+      if (menu_scroll_active ? (y >= min_vis_y && y <= max_vis_y) : (y >= row0_y - 10 && y <= layout().slot5_y(4) + 10)) {
         render_modern_card(it, cx, y, 276, 44, 12, card_bg_on, card_brd_on, kSysLabels[i], col_white, font_small);
       }
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, 466, 82, col_bg);
-      it.filled_rectangle(0, 388, 466, 78, col_bg);
+      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
+      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
+    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
 
     int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 1) {
-    // -------------------------------------------------------------------------
-    // VIEW 1: SLEEP & WAKE SUBMENU (9 Items across 2 Pages, 63px Stride / 252px Scroll)
-    // -------------------------------------------------------------------------
     int current_offset = compute_scroll_offset(sleep_menu_page, SHARED_SCROLL_EASE_252, 252);
     char sleep_labels[9][36];
     snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", pickup_wake_opt.c_str());
@@ -182,8 +182,8 @@ inline void render_system_page(
     snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Stay Awake: %s", stay_awake_on ? "On" : "Off");
 
     for (int i = 0; i < 9; i++) {
-      int y = 110 + i * 63 - current_offset;
-      if (y >= 60 && y <= 395) {
+      int y = row0_y + i * row_s - current_offset;
+      if (y >= min_vis_y && y <= max_vis_y) {
         if (i == 3) {
           draw_toggle_card_y(y, sleep_labels[i], docked_ss_on);
         } else if (i == 7) {
@@ -204,8 +204,8 @@ inline void render_system_page(
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, 466, 82, col_bg);
-      it.filled_rectangle(0, 388, 466, 78, col_bg);
+      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
+      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     render_menu_header(it, cx, 48, "SLEEP & WAKE", font_small, theme_primary);
     draw_back();
@@ -213,9 +213,6 @@ inline void render_system_page(
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 2) {
-    // -------------------------------------------------------------------------
-    // VIEW 2: DISPLAY SUBMENU (9 Items across 2 Pages, 63px Stride / 252px Scroll)
-    // -------------------------------------------------------------------------
     int current_offset = compute_scroll_offset(display_menu_page, SHARED_SCROLL_EASE_252, 252);
     char disp_labels[9][36];
     snprintf(disp_labels[0], sizeof(disp_labels[0]), "Start Screen: %s",
@@ -238,26 +235,26 @@ inline void render_system_page(
     bool ab_sched = (auto_brightness_opt == "Time Schedule");
 
     for (int i = 0; i < 9; i++) {
-      int y = 110 + i * 63 - current_offset;
-      if (y >= 60 && y <= 395) {
+      int y = row0_y + i * row_s - current_offset;
+      if (y >= min_vis_y && y <= max_vis_y) {
         if (i <= 2) {
-          // 2-state toggles (Start Screen, Clock Face, Time Format)
           draw_toggle_card_y(y, disp_labels[i], true);
         } else {
           bool active = !( (i == 5 && !ab_off) || (i == 6 && !ab_sched) || ((i == 7 || i == 8) && ab_off) );
           draw_cycle_card_y(y, disp_labels[i], active);
           if (i == 3) {
             const int swatch_x = layout().sys_color_swatch_x();
-            it.filled_circle(swatch_x, y, 9, theme_primary);
-            it.circle(swatch_x, y, 9, col_white);
+            const int sw_r = scale_s(9);
+            it.filled_circle(swatch_x, y, sw_r, theme_primary);
+            it.circle(swatch_x, y, sw_r, col_white);
           }
         }
       }
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, 466, 82, col_bg);
-      it.filled_rectangle(0, 388, 466, 78, col_bg);
+      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
+      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     render_menu_header(it, cx, 48, "DISPLAY", font_small, theme_primary);
     draw_back();
@@ -265,33 +262,24 @@ inline void render_system_page(
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 3) {
-    // -------------------------------------------------------------------------
-    // VIEW 3: ACTIONS SUBMENU (5 One-Shot / On-Demand System Controls at 63px Stride)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "ACTIONS", font_small, theme_primary);
-    draw_action_card_y(110, "Screensaver Now",   card_brd_on, col_white, card_bg_on);
-    draw_action_card_y(173, "Hibernate Now",     card_brd_on, col_white, card_bg_on);
-    draw_action_card_y(236, "Software Update >", card_brd_on, col_white, card_bg_on);
+    draw_action_card_y(layout().slot5_y(0), "Screensaver Now",   card_brd_on, col_white, card_bg_on);
+    draw_action_card_y(layout().slot5_y(1), "Hibernate Now",     card_brd_on, col_white, card_bg_on);
+    draw_action_card_y(layout().slot5_y(2), "Software Update >", card_brd_on, col_white, card_bg_on);
     snprintf(buf, sizeof(buf), "BLE Beacon: %s", ble_active ? "On" : "Off");
-    draw_toggle_card_y(299, buf, ble_active);
-    draw_action_card_y(362, "Restart Device",    col_red,     col_white, esphome::Color(28, 18, 22));
+    draw_toggle_card_y(layout().slot5_y(3), buf, ble_active);
+    draw_action_card_y(layout().slot5_y(4), "Restart Device",    col_red,     col_white, esphome::Color(28, 18, 22));
     draw_back();
 
   } else if (system_menu_mode == 4) {
-    // -------------------------------------------------------------------------
-    // VIEW 4: RESTART CONFIRMATION DIALOG
-    // -------------------------------------------------------------------------
-    it.print(cx, 130, font_small, theme_primary, esphome::display::TextAlign::CENTER, "RESTART?");
-    render_modern_card(it, cx - 73, 230, 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
-    render_modern_card(it, cx + 73, 230, 112, 44, 12, esphome::Color(28, 18, 22), col_red, "Restart", col_white, font_small);
+    it.print(cx, scale_y(130), font_small, theme_primary, esphome::display::TextAlign::CENTER, "RESTART?");
+    render_modern_card(it, cx - scale_x(73), scale_y(230), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
+    render_modern_card(it, cx + scale_x(73), scale_y(230), 112, 44, 12, esphome::Color(28, 18, 22), col_red, "Restart", col_white, font_small);
 
   } else if (system_menu_mode == 5) {
-    // -------------------------------------------------------------------------
-    // VIEW 5: SOFTWARE UPDATE SCREEN
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "UPDATE", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
-    it.print(cx, 95, font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
+    it.print(cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
     bool has_update = is_newer_semver(ha_fw_latest, version_str);
     if (update_check_state == 1) {
@@ -307,66 +295,58 @@ inline void render_system_page(
 
     if (has_update) {
       snprintf(buf, sizeof(buf), "Available: v%s", ha_fw_latest.empty() ? "2.0.x" : ha_fw_latest.c_str());
-      it.print(cx, 125, font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      it.print(cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       std::string summ = ha_fw_summary;
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
-      summ = fit_text_to_width_font(summ, 280, font_small);
-      it.print(cx, 160, font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
-      draw_action_card_y(215, "Update Now", theme_primary, theme_secondary, card_bg_on);
+      summ = fit_text_to_width_font(summ, scale_x(280), font_small);
+      it.print(cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
+      draw_action_card_y(scale_y(215), "Update Now", theme_primary, theme_secondary, card_bg_on);
     } else {
       snprintf(buf, sizeof(buf), "Latest: v%s", version_str);
-      it.print(cx, 125, font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      it.print(cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       if (update_check_state == 1) {
-        it.print(cx, 160, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Checking Home Assistant...");
-        draw_action_card_y(215, "Checking...", theme_primary, theme_secondary, card_bg_on);
+        it.print(cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Checking Home Assistant...");
+        draw_action_card_y(scale_y(215), "Checking...", theme_primary, theme_secondary, card_bg_on);
       } else if (update_check_state == 2) {
-        it.print(cx, 160, font_small, col_slate, esphome::display::TextAlign::CENTER, "No updates available");
-        draw_action_card_y(215, "Up to date", card_brd_on, col_white, card_bg_on);
+        it.print(cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "No updates available");
+        draw_action_card_y(scale_y(215), "Up to date", card_brd_on, col_white, card_bg_on);
       } else {
-        it.print(cx, 160, font_small, col_slate, esphome::display::TextAlign::CENTER, "Firmware is up to date");
-        draw_action_card_y(215, "Check for Updates", theme_primary, col_white, card_bg_on);
+        it.print(cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "Firmware is up to date");
+        draw_action_card_y(scale_y(215), "Check for Updates", theme_primary, col_white, card_bg_on);
       }
     }
     draw_back();
 
   } else if (system_menu_mode == 6) {
-    // -------------------------------------------------------------------------
-    // VIEW 6: UPDATE CONFIRMATION DIALOG
-    // -------------------------------------------------------------------------
-    it.print(cx, 100, font_small, theme_primary, esphome::display::TextAlign::CENTER, "INSTALL UPDATE?");
-    it.print(cx, 145, font_small, col_white, esphome::display::TextAlign::CENTER, "Download & flash firmware");
-    it.print(cx, 175, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Keep device powered on");
-    render_modern_card(it, cx - 73, 240, 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
-    render_modern_card(it, cx + 73, 240, 112, 44, 12, card_bg_on, theme_primary, "Install", col_white, font_small);
+    it.print(cx, scale_y(100), font_small, theme_primary, esphome::display::TextAlign::CENTER, "INSTALL UPDATE?");
+    it.print(cx, scale_y(145), font_small, col_white, esphome::display::TextAlign::CENTER, "Download & flash firmware");
+    it.print(cx, scale_y(175), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Keep device powered on");
+    render_modern_card(it, cx - scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
+    render_modern_card(it, cx + scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, theme_primary, "Install", col_white, font_small);
 
   } else if (system_menu_mode == 7) {
-    // -------------------------------------------------------------------------
-    // VIEW 7: SOUND SUBMENU (4 Items on 1 Page at 63px Stride)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "SOUND", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Speaker Vol: %d%%", spk_vol_pct);
-    draw_cycle_card_y(110, buf, true);
+    draw_cycle_card_y(layout().slot5_y(0), buf, true);
     snprintf(buf, sizeof(buf), "Alert Vol: %d%%", alert_vol_pct);
-    draw_cycle_card_y(173, buf, true);
+    draw_cycle_card_y(layout().slot5_y(1), buf, true);
     snprintf(buf, sizeof(buf), "Vol Step: %d%%", vol_step_pct);
-    draw_cycle_card_y(236, buf, true);
+    draw_cycle_card_y(layout().slot5_y(2), buf, true);
     snprintf(buf, sizeof(buf), "Game Sound: %s", game_sound_on ? "On" : "Muted");
-    draw_toggle_card_y(299, buf, game_sound_on);
+    draw_toggle_card_y(layout().slot5_y(3), buf, game_sound_on);
     draw_back();
 
   } else if (system_menu_mode == 8) {
-    // -------------------------------------------------------------------------
-    // VIEW 8: SYSTEM INFO & OS DIAGNOSTICS (Two-Tone: Slate Labels + White Values)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "SYSTEM INFO", font_small, theme_primary);
     const int info_x = layout().sys_info_x();
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
+      int ey = scale_y(y);
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
-      it.print(info_x, y, font_small, col_white, esphome::display::TextAlign::LEFT, lbl);
-      it.print(info_x + w_lbl + 6, y, font_small, val_col, esphome::display::TextAlign::LEFT, val);
+      it.print(info_x, ey, font_small, col_white, esphome::display::TextAlign::LEFT, lbl);
+      it.print(info_x + w_lbl + 8, ey, font_small, val_col, esphome::display::TextAlign::LEFT, val);
     };
 
     bool has_update = is_newer_semver(ha_fw_latest, version_str);
@@ -426,46 +406,37 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 9) {
-    // -------------------------------------------------------------------------
-    // VIEW 9: MUSIC SETTINGS SUBMENU (5 Items at 63px Stride)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "MUSIC", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Art: %s", art_mode_opt.c_str());
-    draw_cycle_card_y(110, buf, true);
+    draw_cycle_card_y(layout().slot5_y(0), buf, true);
     snprintf(buf, sizeof(buf), "Overlay: %s", overlay_style_opt.c_str());
-    draw_cycle_card_y(173, buf, true);
+    draw_cycle_card_y(layout().slot5_y(1), buf, true);
     snprintf(buf, sizeof(buf), "Album Sort: %s", album_sort_opt.c_str());
-    draw_cycle_card_y(236, buf, true);
+    draw_cycle_card_y(layout().slot5_y(2), buf, true);
     snprintf(buf, sizeof(buf), "Artist Discog: %s", artist_sort_opt.c_str());
-    draw_cycle_card_y(299, buf, true);
+    draw_cycle_card_y(layout().slot5_y(3), buf, true);
     snprintf(buf, sizeof(buf), "Podcast Sort: %s", podcast_sort_opt.c_str());
-    draw_toggle_card_y(362, buf, true);
+    draw_toggle_card_y(layout().slot5_y(4), buf, true);
     draw_back();
 
   } else if (system_menu_mode == 11) {
-    // -------------------------------------------------------------------------
-    // VIEW 11: VOICE SUBMENU (5 Voice Assistant & Wake Word Settings at 63px Stride)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "VOICE", font_small, theme_primary);
     const bool ww_en = (va_ww_mode_opt != "Disabled");
     snprintf(buf, sizeof(buf), "Wake Mode: %s", va_ww_mode_opt.c_str());
-    draw_cycle_card_y(110, buf, ww_en);
+    draw_cycle_card_y(layout().slot5_y(0), buf, ww_en);
     snprintf(buf, sizeof(buf), "Wake Word: %s", va_ww_active_opt.empty() ? "Okay Nabu" : va_ww_active_opt.c_str());
-    draw_cycle_card_y(173, buf, ww_en);
-    draw_action_card_y(236, "Sensitivity (Per Model) >",
+    draw_cycle_card_y(layout().slot5_y(1), buf, ww_en);
+    draw_action_card_y(layout().slot5_y(2), "Sensitivity (Per Model) >",
                        ww_en ? card_brd_on : card_brd_off,
                        ww_en ? col_white   : col_slate,
                        ww_en ? card_bg_on  : card_bg_off);
     snprintf(buf, sizeof(buf), "Profile: %s", va_profile_opt.c_str());
-    draw_cycle_card_y(299, buf, true);
+    draw_cycle_card_y(layout().slot5_y(3), buf, true);
     snprintf(buf, sizeof(buf), "Wake Screen: %s", va_wake_scr ? "On" : "Off");
-    draw_toggle_card_y(362, buf, va_wake_scr);
+    draw_toggle_card_y(layout().slot5_y(4), buf, va_wake_scr);
     draw_back();
 
   } else if (system_menu_mode == 12) {
-    // -------------------------------------------------------------------------
-    // VIEW 12: PER-MODEL WAKE WORD SENSITIVITY SUBMENU (5 Items at 63px Stride)
-    // -------------------------------------------------------------------------
     render_menu_header(it, cx, 48, "SENSITIVITY", font_small, theme_primary);
     auto short_sens = [](const std::string &s) -> const char * {
       if (s == "Slightly sensitive") return "Low";
@@ -473,70 +444,64 @@ inline void render_system_page(
       return "Medium";
     };
     snprintf(buf, sizeof(buf), "Okay Nabu: %s", short_sens(sens_nabu_opt));
-    draw_cycle_card_y(110, buf, true);
+    draw_cycle_card_y(layout().slot5_y(0), buf, true);
     snprintf(buf, sizeof(buf), "Hey Luna: %s", short_sens(sens_luna_opt));
-    draw_cycle_card_y(173, buf, true);
+    draw_cycle_card_y(layout().slot5_y(1), buf, true);
     snprintf(buf, sizeof(buf), "Hey Jarvis: %s", short_sens(sens_jarvis_opt));
-    draw_cycle_card_y(236, buf, true);
+    draw_cycle_card_y(layout().slot5_y(2), buf, true);
     snprintf(buf, sizeof(buf), "Hey Mycroft: %s", short_sens(sens_mycroft_opt));
-    draw_cycle_card_y(299, buf, true);
+    draw_cycle_card_y(layout().slot5_y(3), buf, true);
     snprintf(buf, sizeof(buf), "Alexa: %s", short_sens(sens_alexa_opt));
-    draw_cycle_card_y(362, buf, true);
+    draw_cycle_card_y(layout().slot5_y(4), buf, true);
     draw_back();
 
   } else if (system_menu_mode == 13) {
-    // -------------------------------------------------------------------------
-    // VIEW 13: EXTRA-LARGE 332PX 5-RING HSV COLOR WHEEL (No Title Header)
-    // -------------------------------------------------------------------------
-    const int wheel_cy = 180;
-    it.circle(cx, wheel_cy, 166, card_brd_off);
+    const int wheel_cy = scale_y(180);
+    const float ws = (SCREEN_MIN_DIM > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
+    it.circle(cx, wheel_cy, scale_s(166), card_brd_off);
 
-    // Render 60-segment, 5-ring HSV Color Wheel (r = 148, 124, 101, 79, 59; outer diameter = 332px!)
     for (int a = 0; a < 60; a++) {
       float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
       float c_a = DIAL_COS[a];
       float s_a = DIAL_SIN[a];
 
-      int x1 = cx + static_cast<int>(c_a * 148.0f);
-      int y1 = wheel_cy + static_cast<int>(s_a * 148.0f);
-      it.filled_circle(x1, y1, 16, hsv_to_rgb(hue_01, 1.00f, 1.0f));
+      int x1 = cx + static_cast<int>(c_a * 148.0f * ws);
+      int y1 = wheel_cy + static_cast<int>(s_a * 148.0f * ws);
+      it.filled_circle(x1, y1, scale_s(16), hsv_to_rgb(hue_01, 1.00f, 1.0f));
 
-      int x2 = cx + static_cast<int>(c_a * 124.0f);
-      int y2 = wheel_cy + static_cast<int>(s_a * 124.0f);
-      it.filled_circle(x2, y2, 14, hsv_to_rgb(hue_01, 0.84f, 1.0f));
+      int x2 = cx + static_cast<int>(c_a * 124.0f * ws);
+      int y2 = wheel_cy + static_cast<int>(s_a * 124.0f * ws);
+      it.filled_circle(x2, y2, scale_s(14), hsv_to_rgb(hue_01, 0.84f, 1.0f));
 
-      int x3 = cx + static_cast<int>(c_a * 101.0f);
-      int y3 = wheel_cy + static_cast<int>(s_a * 101.0f);
-      it.filled_circle(x3, y3, 12, hsv_to_rgb(hue_01, 0.68f, 1.0f));
+      int x3 = cx + static_cast<int>(c_a * 101.0f * ws);
+      int y3 = wheel_cy + static_cast<int>(s_a * 101.0f * ws);
+      it.filled_circle(x3, y3, scale_s(12), hsv_to_rgb(hue_01, 0.68f, 1.0f));
 
-      int x4 = cx + static_cast<int>(c_a * 79.0f);
-      int y4 = wheel_cy + static_cast<int>(s_a * 79.0f);
-      it.filled_circle(x4, y4, 11, hsv_to_rgb(hue_01, 0.52f, 1.0f));
+      int x4 = cx + static_cast<int>(c_a * 79.0f * ws);
+      int y4 = wheel_cy + static_cast<int>(s_a * 79.0f * ws);
+      it.filled_circle(x4, y4, scale_s(11), hsv_to_rgb(hue_01, 0.52f, 1.0f));
 
-      int x5 = cx + static_cast<int>(c_a * 59.0f);
-      int y5 = wheel_cy + static_cast<int>(s_a * 59.0f);
-      it.filled_circle(x5, y5, 9, hsv_to_rgb(hue_01, 0.36f, 1.0f));
+      int x5 = cx + static_cast<int>(c_a * 59.0f * ws);
+      int y5 = wheel_cy + static_cast<int>(s_a * 59.0f * ws);
+      it.filled_circle(x5, y5, scale_s(9), hsv_to_rgb(hue_01, 0.36f, 1.0f));
     }
 
-    // Center Live Preview Bullseye (r = 44)
-    it.filled_circle(cx, wheel_cy, 49, col_black);
-    it.filled_circle(cx, wheel_cy, 44, theme_primary);
-    it.circle(cx, wheel_cy, 44, col_white);
-    it.circle(cx, wheel_cy, 45, theme_secondary);
+    it.filled_circle(cx, wheel_cy, scale_s(49), col_black);
+    it.filled_circle(cx, wheel_cy, scale_s(44), theme_primary);
+    it.circle(cx, wheel_cy, scale_s(44), col_white);
+    it.circle(cx, wheel_cy, scale_s(45), theme_secondary);
 
-    // Selector Reticle on the Wheel at (color_wheel_hue_deg(), color_wheel_sat())
     float rad = color_wheel_hue_deg() * (PI_F / 180.0f);
-    float r_sel = 59.0f + ((color_wheel_sat() - 0.35f) / 0.65f) * 89.0f;
-    r_sel = std::max(57.0f, std::min(150.0f, r_sel));
+    float r_sel = (59.0f + ((color_wheel_sat() - 0.35f) / 0.65f) * 89.0f) * ws;
+    r_sel = std::max(57.0f * ws, std::min(150.0f * ws, r_sel));
     int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
     int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-    it.filled_circle(sel_x, sel_y, 12, theme_primary);
-    it.circle(sel_x, sel_y, 12, col_white);
-    it.circle(sel_x, sel_y, 13, col_white);
-    it.circle(sel_x, sel_y, 14, col_black);
+    it.filled_circle(sel_x, sel_y, scale_s(12), theme_primary);
+    it.circle(sel_x, sel_y, scale_s(12), col_white);
+    it.circle(sel_x, sel_y, scale_s(13), col_white);
+    it.circle(sel_x, sel_y, scale_s(14), col_black);
 
-    // Compact Save Button at y = 376
-    render_modern_card(it, cx, 376, 224, 38, 12, card_bg_on, theme_primary, "Save Custom Color", col_white, font_small);
+    render_modern_card(it, cx, scale_y(376), 224, 38, 12, card_bg_on, theme_primary, "Save Custom Color", col_white, font_small);
     draw_back();
   }
 }

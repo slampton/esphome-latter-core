@@ -1,4 +1,4 @@
-# Build-Stamp: 2026-10-29 19:55:58
+# Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
 # Mobile Assistant (v2.2 Modular Architecture)
 # Target: Waveshare ESP32-S3-Touch-AMOLED-2.16 (480x480 Square AMOLED, SKU 33969)
@@ -12,6 +12,13 @@ substitutions:
   version: "2.2.0"
   screen_w: "480"
   screen_h: "480"
+  font_time_size: "77"
+  font_chrono_size: "38"
+  font_date_size: "27"
+  font_btn_bold_size: "26"
+  font_small_size: "21"
+  font_micro_size: "14"
+  font_games_size: "38"
   art_resize: "480x480"
   art_shape: "square"
   firmware_update_entity: "update.mobile_assistant_project_firmware"

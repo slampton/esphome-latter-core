@@ -272,6 +272,10 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
 
 template<typename DisplayT>
 inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool overcast_mode, bool is_night) {
+  if (SCREEN_W > 520) {
+    scale *= (static_cast<float>(SCREEN_W) / 466.0f);
+    by = scale_y(by);
+  }
   int half_w = static_cast<int>(84.0f * scale);
   if (bx + half_w < 5 || bx - half_w >= SCREEN_W - 5 || by + 45 < 5 || by - 65 >= SCREEN_H - 5) return;
 
@@ -979,36 +983,39 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1B: CELESTIAL CORNER POCKET ICON (3D GRADIENT SUN ORB / LUNAR DISC)
   if (cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
-      render_lunar_disc(it, cel_cx, cel_cy, 22, moon_cycle, false);
+      const int m_r = scale_s(22);
+      render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle, false);
       if (is_fog_mist) {
-        it.circle(cel_cx, cel_cy, 25, esphome::Color(55, 70, 88));
-        it.circle(cel_cx, cel_cy, 29, esphome::Color(38, 50, 65));
+        it.circle(cel_cx, cel_cy, m_r + 3, esphome::Color(55, 70, 88));
+        it.circle(cel_cx, cel_cy, m_r + 7, esphome::Color(38, 50, 65));
       }
     } else {
       bool show_sun = (is_clear_day || is_partly || is_windy);
       if (show_sun || is_fog_mist) {
-        // Dominant Sunshine-Yellow 3D Solar Orb (Goldenrod rim -> Bright Yellow body -> Lemon-White 3D highlight)
         const esphome::Color sky_c        = is_fog_mist ? esphome::Color(32, 46, 60)   : esphome::Color(28, 54, 84);
         const esphome::Color c_haze       = is_fog_mist ? esphome::Color(108, 108, 78) : esphome::Color(158, 134, 34);
         const esphome::Color c_limb       = is_fog_mist ? esphome::Color(144, 132, 82) : esphome::Color(232, 168, 14);
         const esphome::Color c_body       = is_fog_mist ? esphome::Color(174, 160, 102): esphome::Color(250, 204, 24);
         const esphome::Color c_core       = is_fog_mist ? esphome::Color(198, 186, 128): esphome::Color(255, 228, 72);
 
-        // Single-Pass Zero-Overdraw 3D Scanline Solar Orb (writes ~1,800 pixels instead of 18,000!)
-        for (int dy = -24; dy <= 24; dy++) {
+        const int s_r_out = scale_s(24);
+        const int s_r_in  = scale_s(21);
+        const int r2_out  = s_r_out * s_r_out;
+        const int r2_in   = s_r_in * s_r_in;
+        const float r2_span = static_cast<float>(std::max(1, r2_out - r2_in));
+        const float inv_r_in = 1.0f / static_cast<float>(s_r_in);
+        for (int dy = -s_r_out; dy <= s_r_out; dy++) {
           int dy2 = dy * dy;
-          for (int dx = -24; dx <= 24; dx++) {
+          for (int dx = -s_r_out; dx <= s_r_out; dx++) {
             int r2 = dx * dx + dy2;
-            if (r2 > 576) continue; // Outside r = 24
-            if (r2 > 441) {
-              // Outer 3px atmospheric feather (21 < r <= 24 -> r2 in 442..576)
-              float k = static_cast<float>(576 - r2) * (0.84f / 135.0f);
+            if (r2 > r2_out) continue;
+            if (r2 > r2_in) {
+              float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
               it.draw_pixel_at(cel_cx + dx, cel_cy + dy, lerp_color(sky_c, c_haze, k));
             } else {
-              // Inner 3D Solar Disc (r <= 21) with upper-left (-2.5, -2.5) highlight offset
               float ldx = static_cast<float>(dx) + 2.5f;
               float ldy = static_cast<float>(dy) + 2.5f;
-              float d_norm = sqrtf(ldx * ldx + ldy * ldy) * (1.0f / 21.5f);
+              float d_norm = sqrtf(ldx * ldx + ldy * ldy) * inv_r_in;
               float u = 1.0f - (d_norm > 1.0f ? 1.0f : d_norm);
               esphome::Color pix_c;
               if (u < 0.26f) {
@@ -1520,7 +1527,7 @@ template<typename DisplayT>
 inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
   // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)
-  const int stride = LATTER_ROUND_DISPLAY ? 81 : ((SCREEN_W < 380) ? 74 : 98);
+  const int stride = LATTER_ROUND_DISPLAY ? 81 : ((SCREEN_W < 380) ? 74 : scale_x(98));
   const int ICON_XS[4] = {
       SCREEN_CX - (stride * 3) / 2,
       SCREEN_CX - (stride / 2),
@@ -1601,18 +1608,19 @@ inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
   };
 
   esphome::Color shadow_c(0, 0, 0);
+  const int dr = layout().dock_r;
   for (int i = 0; i < 4; i++) {
     int bx = ICON_XS[i];
     int by = ICON_Y;
     bool is_act = (i == active_subpage);
     esphome::Color fg_c = is_act ? col_active : col_inactive;
     if (is_act) {
-      it.circle(bx + 1, by + 1, 27, shadow_c);
-      it.circle(bx,     by,     27, col_active);
-      it.circle(bx,     by,     26, col_active);
+      it.circle(bx + 1, by + 1, dr, shadow_c);
+      it.circle(bx,     by,     dr, col_active);
+      it.circle(bx,     by,     dr - 1, col_active);
     } else {
-      it.circle(bx + 1, by + 1, 27, shadow_c);
-      it.circle(bx,     by,     27, esphome::Color(90, 112, 138));
+      it.circle(bx + 1, by + 1, dr, shadow_c);
+      it.circle(bx,     by,     dr, esphome::Color(90, 112, 138));
     }
     draw_icon_glyph(i, bx + 1, by + 1, shadow_c);
     draw_icon_glyph(i, bx,     by,     fg_c);
@@ -1674,12 +1682,12 @@ inline void render_weather_page(
     int w_num = 0, x_off = 0, base = 0, th = 0;
     font_time->measure(temp_num, &w_num, &x_off, &base, &th);
     const int num_cx = cx - 5;
-    const int deg_cx = num_cx + (w_num / 2) + 18;
-    const int deg_cy = 100;
+    const int deg_cx = num_cx + (w_num / 2) + scale_x(18);
+    const int deg_cy = scale_y(100);
     const Color col_deg_silver(204, 214, 228);
     const Color col_deg_aa(120, 132, 148);
 
-    it.print(num_cx, 120, font_time, col_white, TextAlign::CENTER, temp_num);
+    it.print(num_cx, scale_y(120), font_time, col_white, TextAlign::CENTER, temp_num);
 
     for (int dy = -9; dy <= 9; dy++) {
       for (int dx = -9; dx <= 9; dx++) {
@@ -1692,10 +1700,9 @@ inline void render_weather_page(
       }
     }
 
-    std::string cond_title = fit_text_to_width_font(format_weather_title(cond), 340, font_date);
-    it.print(cx, 182, font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
+    std::string cond_title = fit_text_to_width_font(format_weather_title(cond), scale_x(340), font_date);
+    it.print(cx, scale_y(182), font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
 
-    // 3. Today's High / Low moved down +12px to y = 236 with 2px-Stroke Outline Up (↑) & Down (↓) Arrows!
     float hi_val = weather_high;
     float lo_val = weather_low;
     if ((std::isnan(hi_val) || std::isnan(lo_val)) &&
@@ -1708,7 +1715,7 @@ inline void render_weather_page(
     }
 
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
-    const int hilo_y = (SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236);
+    const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
     const Color icon_c(185, 225, 255);
 
     // 2px-stroke outline Up/Down arrow primitive matching Humidity & Wind icon weight
@@ -1767,7 +1774,7 @@ inline void render_weather_page(
       it.print(lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
     }
 
-    const int tele_y = (SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284);
+    const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
 
     auto draw_droplet_outline = [&](int dx, int dy, Color c) {
       it.line(dx,     dy - 11, dx - 7, dy + 1, c);
@@ -1929,15 +1936,14 @@ inline void render_weather_page(
       apply_weather_sim_override(weather_sim_opt, fc_days[0].cond, dummy_night);
     }
 
-    // Cohesive 4-column Forecast layout (27pt font_date on wide square screens >=460px; 21pt font_small elsewhere)
     const bool large_fc = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 460);
-    const int fc_top_y  = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 48 : 54);
-    const int fc_step_y = LATTER_ROUND_DISPLAY ? 47 : ((SCREEN_W < 380) ? 46 : ((SCREEN_H >= 500) ? 55 : 52));
-    const int row_hw    = (SCREEN_W < 380) ? 132 : (large_fc ? 190 : 154);
-    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 28 : (large_fc ? 42 : 34));
-    const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : (large_fc ? 114 : 92));
-    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : (large_fc ? 26 : 22));
-    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : (large_fc ? 44 : 34));
+    const int fc_top_y  = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 48 : scale_y(54));
+    const int fc_step_y = LATTER_ROUND_DISPLAY ? 47 : ((SCREEN_W < 380) ? 46 : ((SCREEN_H > 520) ? scale_y(54) : ((SCREEN_H >= 500) ? 55 : 52)));
+    const int row_hw    = (SCREEN_W < 380) ? 132 : (large_fc ? scale_x(190) : 154);
+    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 28 : (large_fc ? scale_x(42) : 34));
+    const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : (large_fc ? scale_x(114) : 92));
+    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : (large_fc ? scale_x(26) : 22));
+    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : (large_fc ? scale_x(44) : 34));
 
     for (int i = 0; i < fc_count && i < 5; i++) {
       int ry = fc_top_y + i * fc_step_y;
@@ -1971,9 +1977,9 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
 
-    const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : 44);
-    const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H >= 500) ? 138 : 134));
-    const int arc_ry = arc_rx; // True 1:1 geometric half-circle across all devices!
+    const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : scale_y(44));
+    const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
+    const int arc_ry = arc_rx;
     const int arc_cy = sun_top_y + arc_ry;
 
     for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
@@ -2019,8 +2025,8 @@ inline void render_weather_page(
     std::string s_set = format_iso_time(sun_next_setting, is_24h_format);
 
     const int col_dx = (arc_rx * 60) / 100;
-    const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + 78);
-    const int val_y  = lbl_y + 30;
+    const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + scale_y(78));
+    const int val_y  = lbl_y + scale_y(30);
 
     it.print(cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
     it.print(cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
@@ -2041,12 +2047,12 @@ inline void render_weather_page(
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
 
     const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
-    const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : 36);
-    const int illum_y    = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 64 : (large_moon_txt ? 64 : 68));
-    const int phase_y    = illum_y - (large_moon_txt ? 32 : 28);
-    const int text_gap   = LATTER_ROUND_DISPLAY ? 28 : (large_moon_txt ? 34 : 22);
+    const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : scale_y(36));
+    const int illum_y    = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 64 : scale_y(64));
+    const int phase_y    = illum_y - (large_moon_txt ? scale_y(32) : 28);
+    const int text_gap   = LATTER_ROUND_DISPLAY ? 28 : (large_moon_txt ? scale_y(34) : 22);
     const int disc_span  = (phase_y - text_gap) - moon_top_y;
-    const int moon_r     = LATTER_ROUND_DISPLAY ? 86 : std::min(120, std::min((SCREEN_W / 2) - 42, disc_span / 2));
+    const int moon_r     = LATTER_ROUND_DISPLAY ? 86 : std::min(scale_s(120), std::min((SCREEN_W / 2) - scale_x(42), disc_span / 2));
     const int moon_cy    = moon_top_y + moon_r;
 
     render_lunar_disc(it, cx, moon_cy, moon_r, cycle, true);

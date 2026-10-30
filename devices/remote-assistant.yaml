@@ -1,4 +1,4 @@
-# Build-Stamp: 2026-10-29 19:55:58
+# Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
 # Remote Assistant (v2.2 Modular Architecture)
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (320x480 IPS LCD + Camera, SKU 33360)
@@ -12,6 +12,13 @@ substitutions:
   version: "2.2.0"
   screen_w: "320"
   screen_h: "480"
+  font_time_size: "77"
+  font_chrono_size: "38"
+  font_date_size: "27"
+  font_btn_bold_size: "26"
+  font_small_size: "21"
+  font_micro_size: "14"
+  font_games_size: "38"
   art_resize: "320x480"
   art_shape: "square"
   firmware_update_entity: "update.remote_assistant_project_firmware"

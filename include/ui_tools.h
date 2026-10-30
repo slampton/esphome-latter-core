@@ -206,7 +206,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     it.filled_circle(ix + 9, iy - 5, 1, card_bg);
   }
 
-  it.print(cx_card, cy_card + 22, font_small, col_white,
+  it.print(cx_card, cy_card + scale_y(22), font_small, col_white,
            esphome::display::TextAlign::CENTER, label);
 }
 
@@ -230,62 +230,64 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
   const int row_1_y = layout().tools_row_y(1);
   const int row_2_y = layout().tools_row_y(2);
 
+  const int min_vis_y = scale_y(75);
+  const int max_vis_y = scale_y(395);
   auto draw_page_cards = [&](int page_idx, int y_shift) {
     int y0 = row_0_y + y_shift;
     int y1 = row_1_y + y_shift;
     int y2 = row_2_y + y_shift;
     #if LATTER_HAS_IMU
     if (page_idx == 0) {
-      if (y0 >= 75 && y0 <= 390) {
+      if (y0 >= min_vis_y && y0 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y0, 1, "Timers",     font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y0, 2, "Alarms",     font_small, theme_secondary, col_white);
       }
-      if (y1 >= 75 && y0 <= 390) {
+      if (y1 >= min_vis_y && y1 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y1, 3, "Stopwatch",  font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y1, 7, "Level",      font_small, theme_secondary, col_white);
       }
-      if (y2 >= 75 && y2 <= 390) {
+      if (y2 >= min_vis_y && y2 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y2, 5, "Flashlight", font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y2, 6, "Calculator", font_small, theme_secondary, col_white);
       }
     } else {
-      if (y0 >= 75 && y0 <= 390) {
+      if (y0 >= min_vis_y && y0 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y0, 4,  "Dice Roll", font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y0, 8,  "Coin Flip", font_small, theme_secondary, col_white);
       }
-      if (y1 >= 75 && y1 <= 390) {
+      if (y1 >= min_vis_y && y1 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y1, 9,  "Calendar",  font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y1, 10, "Intercom",  font_small, theme_secondary, col_white);
       }
-      if (y2 >= 75 && y2 <= 390) {
+      if (y2 >= min_vis_y && y2 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y2, 11, "Macros",    font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y2, 12, "Camera",    font_small, theme_secondary, col_white);
       }
     }
 #else
     if (page_idx == 0) {
-      if (y0 >= 75 && y0 <= 390) {
+      if (y0 >= min_vis_y && y0 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y0, 1, "Timers",     font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y0, 2, "Alarms",     font_small, theme_secondary, col_white);
       }
-      if (y1 >= 75 && y1 <= 390) {
+      if (y1 >= min_vis_y && y1 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y1, 3, "Stopwatch",  font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y1, 5, "Flashlight", font_small, theme_secondary, col_white);
       }
-      if (y2 >= 75 && y2 <= 390) {
+      if (y2 >= min_vis_y && y2 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y2, 6, "Calculator", font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y2, 9, "Calendar",   font_small, theme_secondary, col_white);
       }
     } else {
-      if (y0 >= 75 && y0 <= 390) {
+      if (y0 >= min_vis_y && y0 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y0, 10, "Intercom",  font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y0, 11, "Macros",    font_small, theme_secondary, col_white);
       }
-      if (y1 >= 75 && y1 <= 390) {
+      if (y1 >= min_vis_y && y1 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y1, 12, "Camera",    font_small, theme_secondary, col_white);
         render_tool_launcher_card(it, col_right_x, y1, 4,  "Dice Roll", font_small, theme_secondary, col_white);
       }
-      if (y2 >= 75 && y2 <= 390) {
+      if (y2 >= min_vis_y && y2 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y2, 8,  "Coin Flip", font_small, theme_secondary, col_white);
       }
     }
@@ -294,17 +296,17 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
 
   if (menu_scroll_active) {
     int step = std::min(4, menu_scroll_step);
-    int offset = SHARED_SCROLL_EASE_252[step];
+    int offset = scale_y(SHARED_SCROLL_EASE_252[step]);
+    int full_span = scale_y(252);
     draw_page_cards(stuff_menu_page, -menu_scroll_dir * offset);
-    draw_page_cards(menu_scroll_target_page, menu_scroll_dir * (252 - offset));
+    draw_page_cards(menu_scroll_target_page, menu_scroll_dir * (full_span - offset));
   } else {
     draw_page_cards(stuff_menu_page, 0);
   }
 
-  // Viewport Masks (only needed during active 2-frame scroll transition!), Header & Right-Flank Scroll Chevrons
   if (menu_scroll_active) {
-    it.filled_rectangle(0, 0, 466, 82, col_bg);
-    it.filled_rectangle(0, 388, 466, 78, col_bg);
+    it.filled_rectangle(0, 0, SCREEN_W, scale_y(82), col_bg);
+    it.filled_rectangle(0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
   it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
   int active_page = menu_scroll_active ? menu_scroll_target_page : stuff_menu_page;
@@ -2011,7 +2013,6 @@ inline void render_tool_calendar(
 
   if (cal_quick_add_open()) {
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
-    static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
     static constexpr const char *kQuickLabels[5] = {
       "In 15m: Quick Reminder",
       "In 30m: Check-In / Task",
@@ -2019,12 +2020,13 @@ inline void render_tool_calendar(
       "In 3h: Errand / Pickup",
       "Tomorrow: Morning Reminder"
     };
+    const int c_left = layout().list_card_left;
     for (int i = 0; i < 5; i++) {
-      int y_mid = ROW_YS[i];
+      int y_mid = layout().slot5_y(i);
       render_modern_card(it, cx, y_mid, 296, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_rectangle(102, y_mid - 1, 9, 3, theme_primary);
-      it.filled_rectangle(105, y_mid - 4, 3, 9, theme_primary);
-      it.print(120, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
+      it.filled_rectangle(c_left + 12, y_mid - 1, 9, 3, theme_primary);
+      it.filled_rectangle(c_left + 15, y_mid - 4, 3, 9, theme_primary);
+      it.print(c_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
     }
     render_back_button(it, cx, font_small, 426, "< Cancel");
     return;
@@ -2066,13 +2068,12 @@ inline void render_tool_calendar(
   }
 
   if (names[0].empty()) {
-    render_modern_card(it, cx, 222, 296, 54, 14, Color(16, 20, 27), Color(38, 46, 58),
+    render_modern_card(it, cx, scale_y(222), 296, 54, 14, Color(16, 20, 27), Color(38, 46, 58),
                        "No upcoming events (Tap +)", col_slate, font_small);
   } else {
-    static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
     for (int i = 0; i < 5; i++) {
       if (names[i].empty()) continue;
-      int y_mid = ROW_YS[i];
+      int y_mid = layout().slot5_y(i);
       Color brd_c = acts[i] ? theme_primary : card_brd;
       Color txt_c = acts[i] ? col_white : col_slate;
       const int c_left = layout().list_card_left;
@@ -2149,22 +2150,22 @@ inline void render_tool_intercom(
 
   const Color card_bg(22, 27, 36);
   const Color card_brd(52, 62, 78);
-  static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
+  const int c_left = layout().list_card_left;
 
   if (intercom_live_call_mode()) {
     std::string t_ids[5], t_lbls[5];
     int cnt = parse_intercom_targets_list(intercom_targets_summary, t_ids, t_lbls);
     for (int i = 0; i < cnt; i++) {
-      int y_mid = ROW_YS[i];
+      int y_mid = layout().slot5_y(i);
       bool is_sip = (t_ids[i].rfind("sip:", 0) == 0);
       Color brd_c = is_sip ? theme_secondary : Color(66, 188, 106);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, col_white, font_small);
-      it.filled_circle(cx - 124, y_mid, 6, brd_c);
-      std::string fit_l = fit_text_to_width_font(t_lbls[i], 230, font_small);
-      it.print(cx - 108, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
+      it.filled_circle(c_left + scale_x(18), y_mid, scale_s(6), brd_c);
+      std::string fit_l = fit_text_to_width_font(t_lbls[i], layout().list_card_w - scale_x(46), font_small);
+      it.print(c_left + scale_x(34), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
     }
     if (cnt < 5) {
-      render_modern_card(it, cx, ROW_YS[4], 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
+      render_modern_card(it, cx, layout().slot5_y(4), 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
                          "Unlock Gate / Door (DTMF)", col_white, font_small);
     }
   } else {
@@ -2176,12 +2177,10 @@ inline void render_tool_intercom(
       "Movie time in Living Room!"
     };
     for (int i = 0; i < 5; i++) {
-      int y_mid = ROW_YS[i];
+      int y_mid = layout().slot5_y(i);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_triangle(cx - 129, y_mid - 4, cx - 129, y_mid + 4, cx - 122, y_mid, theme_primary);
-      it.line(cx - 119, y_mid - 5, cx - 117, y_mid, theme_secondary);
-      it.line(cx - 117, y_mid, cx - 119, y_mid + 5, theme_secondary);
-      it.print(cx - 109, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
+      it.filled_triangle(c_left + scale_x(14), y_mid - 4, c_left + scale_x(14), y_mid + 4, c_left + scale_x(21), y_mid, theme_primary);
+      it.print(c_left + scale_x(32), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
     }
   }
   (void)col_slate;
@@ -2259,16 +2258,15 @@ inline void render_tool_macros(
 
   const Color card_bg(22, 27, 36);
   const Color card_brd(52, 62, 78);
-  static constexpr int ROW_YS[5] = {110, 173, 236, 299, 362};
 
   if (total_items == 0) {
-    render_modern_card(it, cx, 222, 304, 54, 14, Color(16, 20, 27), Color(44, 52, 66),
+    render_modern_card(it, cx, scale_y(222), 304, 54, 14, Color(16, 20, 27), Color(44, 52, 66),
                        "Pin entities in Latter Studio", col_slate, font_small);
   } else {
     int start_idx = cur_page * 5;
     int vis_count = std::min(5, total_items - start_idx);
     for (int i = 0; i < vis_count; i++) {
-      int y_mid = ROW_YS[i];
+      int y_mid = layout().slot5_y(i);
       int item_idx = start_idx + i;
       const int m_left = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
