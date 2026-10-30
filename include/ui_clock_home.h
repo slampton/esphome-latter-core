@@ -1332,23 +1332,45 @@ inline void render_home_page(
 
     const Color dock_ring_c = is_dim_backdrop ? Color(18, 22, 28) : Color(95, 118, 148);
     const Color dock_fg_c   = is_dim_backdrop ? Color(34, 38, 44) : col_white;
-    for (int i = 0; i < vis_count; i++) {
-      int bx = win_xs[i];
-      int app_id = dock_apps[start_idx + i];
-      if (!is_dim_backdrop) {
+    const float anim_start  = home_dock_anim().step_window(start_idx, now_ms);
+    const int stride        = get_dock_slot_stride(win_xs, vis_count);
+    const int left_cx       = win_xs[0];
+    const int right_cx      = win_xs[vis_count - 1];
+    const int clip_pad      = stride / 2 + dock_r;
+
+    for (int g_idx = 0; g_idx < dock_count; g_idx++) {
+      float rel_slot = static_cast<float>(g_idx) - anim_start;
+      if (rel_slot < -0.85f || rel_slot > static_cast<float>(vis_count - 1) + 0.85f) continue;
+      int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride)));
+      if (bx < left_cx - clip_pad || bx > right_cx + clip_pad) continue;
+
+      float alpha = 1.0f;
+      if (rel_slot < 0.0f) alpha = std::max(0.15f, 1.0f + rel_slot * 1.15f);
+      else if (rel_slot > static_cast<float>(vis_count - 1)) {
+        alpha = std::max(0.15f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.15f);
+      }
+
+      Color slot_ring_c(static_cast<uint8_t>(dock_ring_c.r * alpha),
+                        static_cast<uint8_t>(dock_ring_c.g * alpha),
+                        static_cast<uint8_t>(dock_ring_c.b * alpha));
+      Color slot_fg_c(static_cast<uint8_t>(dock_fg_c.r * alpha),
+                      static_cast<uint8_t>(dock_fg_c.g * alpha),
+                      static_cast<uint8_t>(dock_fg_c.b * alpha));
+      int app_id = dock_apps[g_idx];
+      if (!is_dim_backdrop && alpha > 0.55f) {
         it.circle(bx + 1, dock_y + 1, dock_r, col_black);
       }
-      it.circle(bx, dock_y, dock_r, dock_ring_c);
-      if (!is_dim_backdrop) {
+      it.circle(bx, dock_y, dock_r, slot_ring_c);
+      if (!is_dim_backdrop && alpha > 0.55f) {
         draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true);
       }
-      draw_dock_glyph(app_id, bx, dock_y, dock_fg_c, false);
+      draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false);
     }
 
     const int pips_y = layout().dock_pips_y;
-    render_dock_page_pips(it, cx, pips_y, total_dock_pages, home_dock_page(),
-                          is_dim_backdrop ? dock_fg_c : col_white,
-                          is_dim_backdrop ? dock_ring_c : Color(95, 112, 134));
+    render_viewport_scrollbar(it, cx, pips_y, dock_count, anim_start,
+                              is_dim_backdrop ? dock_fg_c : theme_primary,
+                              is_dim_backdrop);
   }
 
 #if LATTER_HAS_BATTERY

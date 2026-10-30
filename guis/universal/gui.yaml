@@ -688,6 +688,9 @@ display:
       uint32_t end_draw_ms = millis();
       latter_ui::last_disp_update_ms() = end_draw_ms;
       latter_ui::record_ambient_frame_ms(end_draw_ms);
+      if (latter_ui::any_dock_anim_active()) {
+        latter_ui::schedule_anim_disp_update(&id(disp1));
+      }
 
 
 touchscreen:
@@ -3466,7 +3469,7 @@ touchscreen:
                     std::abs(dy) >= 22 && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
-                  latter_ui::music_scroll_tap_lockout_until_ms() = now_rel + 550U;
+                  latter_ui::music_scroll_tap_lockout_until_ms() = now_rel + 180U;
                   int sign = (dy < 0) ? 1 : -1;
                   int delta = sign;
                   bool wrap_list = (id(music_overlay_mode) == 3) &&
@@ -3486,8 +3489,8 @@ touchscreen:
                     id(menu_scroll_transition).execute();
                     id(fetch_music_browse).execute();
                   }
-                } else if (!id(menu_scroll_active) && gest.max_travel < 28 && gest.last_y < latter_ui::scale_y(404) &&
-                           ((now_rel - gest.last_swipe_ms >= 550U && now_rel >= latter_ui::music_scroll_tap_lockout_until_ms()) ||
+                } else if (!id(menu_scroll_active) && gest.max_travel < latter_ui::scale_s(36) && gest.last_y < latter_ui::scale_y(404) &&
+                           ((now_rel - gest.last_swipe_ms >= 180U && now_rel >= latter_ui::music_scroll_tap_lockout_until_ms()) ||
                             is_right_chevron_zone(tp))) {
                   if (is_right_chevron_zone(tp)) {
                     if (id(music_overlay_mode) == 2) {
@@ -3552,7 +3555,7 @@ touchscreen:
                   } else if (id(music_overlay_mode) == 3) {
                     bool is_drill = (id(selected_category_mode) == "artist" || id(selected_category_mode) == "album" || id(selected_category_mode) == "artist_albums");
                     bool is_podcast_list = (id(selected_category_mode) == "podcast");
-                    int slot_idx = get_5slot_index(tp, 42, 385);
+                    int slot_idx = get_5slot_index(tp, 12, 415);
                     if (slot_idx >= 0) {
                       int slot_num = slot_idx + 1;
                       std::string s_id = (slot_num == 1) ? id(slot_1_id) : (slot_num == 2) ? id(slot_2_id) : (slot_num == 3) ? id(slot_3_id) : (slot_num == 4) ? id(slot_4_id) : id(slot_5_id);
@@ -3573,9 +3576,9 @@ touchscreen:
                           id(music_browse_page) = 1;
                           id(fetch_music_browse).execute();
                           latter_ui::schedule_disp_update(&id(disp1));
-                        } else if (is_drill && tp.x <= latter_ui::layout().music_drill_split_x()) {
+                        } else if (is_drill && latter_ui::layout().hit_music_drill_play(tp.x)) {
                           id(play_music_slot).execute(slot_num);
-                        } else if (is_drill && tp.x > latter_ui::layout().music_drill_split_x()) {
+                        } else if (is_drill && !latter_ui::layout().hit_music_drill_play(tp.x)) {
                           if (id(selected_category_mode) == "artist") {
                             id(drilldown_artist_name) = s_name;
                             id(drilldown_artist_page) = id(music_browse_page);

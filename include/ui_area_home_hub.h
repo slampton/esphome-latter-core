@@ -203,13 +203,30 @@ inline void render_area_control_page(
                                  has_l, has_r, cat_count, active_global_idx,
                                  theme_primary, col_white);
 
-    const int ICON_Y = layout().app_dock_y;
-    for (int i = 0; i < vis_count; i++) {
-      int bx = win_xs[i];
+    const int ICON_Y   = layout().app_dock_y;
+    const int left_cx  = win_xs[0];
+    const int right_cx = win_xs[vis_count - 1];
+    const int stride   = get_dock_slot_stride(win_xs, vis_count);
+    const float anim_start = mode_bar_anim().cur_start;
+
+    for (int g_idx = 0; g_idx < cat_count; g_idx++) {
+      float rel_slot = static_cast<float>(g_idx) - anim_start;
+      if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
+      int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride)));
+      if (bx < left_cx - scale_x(16) || bx > right_cx + scale_x(16)) continue;
+
       int by = ICON_Y;
-      const std::string &cat = cats[start_idx + i];
+      const std::string &cat = cats[g_idx];
       bool is_act = (cat == active_domain);
-      Color fg_c  = is_act ? theme_primary : col_white;
+      Color raw_c = is_act ? theme_primary : col_white;
+      float alpha = 1.0f;
+      if (rel_slot < 0.0f) alpha = std::max(0.25f, 1.0f + rel_slot * 1.4f);
+      else if (rel_slot > static_cast<float>(vis_count - 1)) {
+        alpha = std::max(0.25f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.4f);
+      }
+      Color fg_c(static_cast<uint8_t>(16 + (raw_c.r - 16) * alpha),
+                 static_cast<uint8_t>(20 + (raw_c.g - 20) * alpha),
+                 static_cast<uint8_t>(27 + (raw_c.b - 27) * alpha));
 
       if (cat == "scene") {
         // Lighting Scenes: Sculpted 8-Ray Sparkle Star

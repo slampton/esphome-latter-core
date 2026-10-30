@@ -40,11 +40,11 @@ struct UiLayout {
   int hdr_y = LATTER_ROUND_DISPLAY ? 48 : (LATTER_IS_WEARABLE ? 36 : ((SCREEN_H > 520) ? 48 : 28));
   int sub_hdr_y = LATTER_ROUND_DISPLAY ? 76 : (LATTER_IS_WEARABLE ? 64 : ((SCREEN_H > 520) ? 88 : 56));
   int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - scale_y(28));
-  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(12));
-  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - scale_y(58));
-  int app_dock_y = LATTER_ROUND_DISPLAY ? 372 : (SCREEN_H - scale_y(58));
-  int dock_pips_y = LATTER_ROUND_DISPLAY ? 405 : (SCREEN_H - scale_y(25));
-  int app_dock_pips_y = LATTER_ROUND_DISPLAY ? 410 : (SCREEN_H - scale_y(25));
+  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(11));
+  int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - scale_y(66));
+  int app_dock_y = LATTER_ROUND_DISPLAY ? 369 : (SCREEN_H - scale_y(66));
+  int dock_pips_y = LATTER_ROUND_DISPLAY ? 404 : (SCREEN_H - scale_y(27));
+  int app_dock_pips_y = LATTER_ROUND_DISPLAY ? 408 : (SCREEN_H - scale_y(27));
   int dock_r = (SCREEN_W < 360) ? 24 : ((SCREEN_W > 520) ? 40 : 27);
 
   // Consistent Upper-Left Celestial Sun/Moon Coordinates across all 5 displays
@@ -222,6 +222,7 @@ struct UiLayout {
   }
   constexpr int music_drill_play_cx() const { return (w < 380) ? 28 : scale_x(82); }
   constexpr int music_drill_split_x() const { return music_drill_play_cx() + scale_x(26); }
+  constexpr bool hit_music_drill_play(int tx) const { return tx <= (music_drill_split_x() + scale_x(8)); }
   int music_scrub_y = scale_y(242);
   constexpr int music_seek_left_x() const { return is_round ? 50 : scale_x(34); }
   constexpr int music_seek_right_x() const { return w - music_seek_left_x(); }
@@ -331,6 +332,8 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   const int gpio_off_lvl = 0;
 #endif
   static bool ledc_timer_inited = false;
+  static bool ledc_channel_inited = false;
+  static int last_hw_duty = -1;
   if (!ledc_timer_inited) {
     ledc_timer_config_t ledc_timer = {};
     ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
@@ -343,17 +346,24 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
     }
   }
   if (ledc_timer_inited) {
-    ledc_channel_config_t ledc_channel = {};
-    ledc_channel.gpio_num = LATTER_BACKLIGHT_PIN;
-    ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
-    ledc_channel.channel = LEDC_CHANNEL_0;
-    ledc_channel.intr_type = LEDC_INTR_DISABLE;
-    ledc_channel.timer_sel = LEDC_TIMER_0;
-    ledc_channel.duty = hw_duty;
-    ledc_channel.hpoint = 0;
-    ledc_channel_config(&ledc_channel);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, hw_duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    if (!ledc_channel_inited) {
+      ledc_channel_config_t ledc_channel = {};
+      ledc_channel.gpio_num = LATTER_BACKLIGHT_PIN;
+      ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+      ledc_channel.channel = LEDC_CHANNEL_0;
+      ledc_channel.intr_type = LEDC_INTR_DISABLE;
+      ledc_channel.timer_sel = LEDC_TIMER_0;
+      ledc_channel.duty = hw_duty;
+      ledc_channel.hpoint = 0;
+      if (ledc_channel_config(&ledc_channel) == ESP_OK) {
+        ledc_channel_inited = true;
+        last_hw_duty = hw_duty;
+      }
+    } else if (last_hw_duty != static_cast<int>(hw_duty)) {
+      ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, hw_duty);
+      ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+      last_hw_duty = hw_duty;
+    }
   } else {
     gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? gpio_on_lvl : gpio_off_lvl);
@@ -446,6 +456,122 @@ inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int o
   out_has_right_arrow = (start_idx + 4 < total_count);
 }
 
+// =============================================================================
+// SMOOTH HORIZONTAL CONVEYOR SLIDE & CAPSULE GLIDE ANIMATOR (ESP32-P4 & S3)
+// =============================================================================
+struct DockSlideAnimator {
+  float cur_start = 0.0f;
+  float from_start = 0.0f;
+  int target_start = -1;
+  uint32_t win_start_ms = 0;
+  bool win_animating = false;
+
+  float cur_active = 0.0f;
+  float from_active = 0.0f;
+  int target_active = -1;
+  uint32_t act_start_ms = 0;
+  bool act_animating = false;
+
+  static constexpr uint32_t kDurationMs = 210U;
+
+  static inline float ease_out_cubic(float t) {
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+    float inv = 1.0f - t;
+    return 1.0f - (inv * inv * inv);
+  }
+
+  void reset() {
+    target_start = -1;
+    target_active = -1;
+    win_animating = false;
+    act_animating = false;
+  }
+
+  float step_window(int new_start, uint32_t now_ms) {
+    if (target_start < 0 || std::abs(new_start - target_start) > 4) {
+      target_start = new_start;
+      from_start = static_cast<float>(new_start);
+      cur_start = from_start;
+      win_animating = false;
+      return cur_start;
+    }
+    if (new_start != target_start) {
+      from_start = cur_start;
+      target_start = new_start;
+      win_start_ms = now_ms;
+      win_animating = true;
+    }
+    if (win_animating) {
+      uint32_t dt = now_ms - win_start_ms;
+      if (dt >= kDurationMs) {
+        cur_start = static_cast<float>(target_start);
+        win_animating = false;
+      } else {
+        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kDurationMs));
+        cur_start = from_start + (static_cast<float>(target_start) - from_start) * e;
+      }
+    } else {
+      cur_start = static_cast<float>(target_start);
+    }
+    return cur_start;
+  }
+
+  float step_active(int new_active, uint32_t now_ms) {
+    if (target_active < 0 || std::abs(new_active - target_active) > 6) {
+      target_active = new_active;
+      from_active = static_cast<float>(new_active);
+      cur_active = from_active;
+      act_animating = false;
+      return cur_active;
+    }
+    if (new_active != target_active) {
+      from_active = cur_active;
+      target_active = new_active;
+      act_start_ms = now_ms;
+      act_animating = true;
+    }
+    if (act_animating) {
+      uint32_t dt = now_ms - act_start_ms;
+      if (dt >= kDurationMs) {
+        cur_active = static_cast<float>(target_active);
+        act_animating = false;
+      } else {
+        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kDurationMs));
+        cur_active = from_active + (static_cast<float>(target_active) - from_active) * e;
+      }
+    } else {
+      cur_active = static_cast<float>(target_active);
+    }
+    return cur_active;
+  }
+
+  bool is_animating() const { return win_animating || act_animating; }
+};
+
+inline DockSlideAnimator &home_dock_anim() {
+  static DockSlideAnimator anim;
+  return anim;
+}
+
+inline DockSlideAnimator &mode_bar_anim() {
+  static DockSlideAnimator anim;
+  return anim;
+}
+
+inline bool any_dock_anim_active() {
+  return home_dock_anim().is_animating() || mode_bar_anim().is_animating();
+}
+
+inline int get_dock_slot_stride(const int *win_xs, int vis_count) {
+  if (vis_count >= 2) return win_xs[1] - win_xs[0];
+#if LATTER_ROUND_DISPLAY
+  return 81;
+#else
+  return (SCREEN_W < 380) ? 74 : scale_x(98);
+#endif
+}
+
 template <typename DisplayT>
 inline void render_in_app_mode_bar_track(
     DisplayT &it, int cx, const int *win_xs, int vis_count, int active_vis_idx,
@@ -454,11 +580,17 @@ inline void render_in_app_mode_bar_track(
   using esphome::Color;
   if (vis_count <= 0) return;
 
+  const uint32_t now_ms = esphome::millis();
+  const int win_start_idx = (active_vis_idx >= 0) ? (active_global_idx - active_vis_idx) : 0;
+  float anim_start  = mode_bar_anim().step_window(win_start_idx, now_ms);
+  float anim_active = mode_bar_anim().step_active(active_global_idx, now_ms);
+
   const int by = layout().app_dock_y;
   const int dr = layout().dock_r;
   const int r_track = dr + scale_s(3);
   const int left_cx  = win_xs[0];
   const int right_cx = win_xs[vis_count - 1];
+  const int stride   = get_dock_slot_stride(win_xs, vis_count);
   const Color track_bg(16, 20, 27);
   const Color track_brd(52, 64, 82);
   const Color cap_bg(16, 20, 27);
@@ -484,15 +616,20 @@ inline void render_in_app_mode_bar_track(
   // 2. Subtle vertical slot dividers between inactive slots inside the track
   const int div_h = dr - scale_s(6);
   const Color div_col(30, 38, 50);
+  const float rel_active = anim_active - anim_start;
   for (int i = 0; i < vis_count - 1; i++) {
-    if (i == active_vis_idx || (i + 1) == active_vis_idx) continue;
+    if (std::fabs(static_cast<float>(i) - rel_active) < 0.65f ||
+        std::fabs(static_cast<float>(i + 1) - rel_active) < 0.65f) {
+      continue;
+    }
     int mid_x = (win_xs[i] + win_xs[i + 1]) / 2;
     it.vertical_line(mid_x, by - div_h, div_h * 2 + 1, div_col);
   }
 
-  // 3. Active Slot Capsule Highlight inside the track
-  if (active_vis_idx >= 0 && active_vis_idx < vis_count) {
-    int abx = win_xs[active_vis_idx];
+  // 3. Smoothly Gliding Active Slot Capsule Highlight inside the track
+  if (rel_active >= -0.35f && rel_active <= static_cast<float>(vis_count - 1) + 0.35f) {
+    int abx = left_cx + static_cast<int>(std::roundf(rel_active * static_cast<float>(stride)));
+    abx = std::max(left_cx, std::min(right_cx, abx));
     it.filled_circle(abx, by, dr - 1, cap_bg);
     it.circle(abx, by, dr, theme_primary);
     it.circle(abx, by, dr - 1, theme_primary);
@@ -516,10 +653,10 @@ inline void render_in_app_mode_bar_track(
     it.line(rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
   }
 
-  // 5. Category Index Pips below the Mode Bar when total_count > 4
+  // 5. Proportional Viewport Scrollbar below the Mode Bar when total_count > 4
   if (total_count > 4) {
-    render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_count, active_global_idx,
-                          theme_primary, Color(85, 102, 124));
+    render_viewport_scrollbar(it, cx, layout().app_dock_pips_y, total_count, anim_start,
+                              theme_primary, false);
   }
 }
 }  // namespace latter_ui

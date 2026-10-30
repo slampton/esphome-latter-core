@@ -44,6 +44,10 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_LCD_DSI_ISR_IRAM_SAFE: "y"
+      CONFIG_LCD_RGB_ISR_IRAM_SAFE: "y"
+      CONFIG_GDMA_ISR_IRAM_SAFE: "y"
+      CONFIG_GDMA_CTRL_FUNC_IN_IRAM: "y"
     advanced:
       enable_idf_experimental_features: true
       flash_chip: generic

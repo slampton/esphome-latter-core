@@ -607,6 +607,41 @@ inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
 }
 
 template <typename DisplayT>
+inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total_items,
+                                      float cur_start_idx, esphome::Color col_thumb,
+                                      bool is_dim = false) {
+  if (total_items <= 4) return;
+  const int track_w = (SCREEN_W < 380) ? 84 : ((SCREEN_W > 520) ? 168 : 112);
+  const int track_h = (SCREEN_W > 520) ? 6 : 4;
+  const int r_cap   = track_h / 2;
+  const int track_x0 = cx - (track_w / 2);
+  const int track_y0 = y_pos - r_cap;
+
+  const esphome::Color col_track = is_dim ? esphome::Color(16, 20, 26) : esphome::Color(30, 38, 50);
+  const esphome::Color col_brd   = is_dim ? esphome::Color(24, 30, 38) : esphome::Color(50, 62, 78);
+
+  if (!is_dim) {
+    it.filled_rectangle(track_x0 + 1, track_y0 + 1, track_w, track_h, esphome::Color(0, 0, 0));
+  }
+  it.filled_rectangle(track_x0, track_y0, track_w, track_h, col_track);
+  it.horizontal_line(track_x0 + 1, track_y0, track_w - 2, col_brd);
+  it.horizontal_line(track_x0 + 1, track_y0 + track_h - 1, track_w - 2, col_brd);
+  it.filled_circle(track_x0 + r_cap, y_pos, r_cap, col_track);
+  it.filled_circle(track_x0 + track_w - r_cap, y_pos, r_cap, col_track);
+
+  const int min_thumb_w = (SCREEN_W > 520) ? 28 : 20;
+  const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
+  const float max_start = static_cast<float>(std::max(1, total_items - 4));
+  const float clamped_start = std::max(0.0f, std::min(max_start, cur_start_idx));
+  const float frac = clamped_start / max_start;
+  const int thumb_x0 = track_x0 + static_cast<int>( std::roundf(frac * static_cast<float>(track_w - thumb_w)) );
+
+  it.filled_rectangle(thumb_x0, track_y0, thumb_w, track_h, col_thumb);
+  it.filled_circle(thumb_x0 + r_cap, y_pos, r_cap, col_thumb);
+  it.filled_circle(thumb_x0 + thumb_w - r_cap, y_pos, r_cap, col_thumb);
+}
+
+template <typename DisplayT>
 inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pages, int active_page,
                                   esphome::Color col_active, esphome::Color col_inactive) {
   if (total_pages <= 1) return;
@@ -1153,10 +1188,10 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 template<typename TouchT>
 inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
   const int half_w = (SCREEN_W > 520) ? ((SCREEN_W * 150) / 466) : 150;
-  const int scaled_min = (SCREEN_W < 380 && x_min < 60) ? 6 : scale_x(x_min);
-  const int scaled_max = (SCREEN_W < 380) ? (SCREEN_W - 12) : scale_x(x_max);
-  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(6, std::min(scaled_min, SCREEN_CX - half_w));
-  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, std::max(scaled_max, SCREEN_CX + half_w));
+  const int scaled_min = (SCREEN_W < 380 && x_min < 60) ? 4 : scale_x(x_min);
+  const int scaled_max = (SCREEN_W < 380) ? (SCREEN_W - 10) : scale_x(x_max);
+  const int eff_min = (SCREEN_W == 466) ? std::min(x_min, 38) : std::max(4, std::min(scaled_min, SCREEN_CX - half_w));
+  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 10, std::max(scaled_max, SCREEN_CX + half_w));
   if (t.x < eff_min || t.x > eff_max) return -1;
   const int stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
   const int center_y = (SCREEN_H > 520) ? SCREEN_CY : 236;
@@ -1241,6 +1276,26 @@ struct DisplayUpdateScheduler : public esphome::Component {
           });
     }
   }
+
+  template<typename DispT>
+  static void request_anim_ptr(DispT *disp) {
+    if (disp != nullptr && !screen_is_off_standby()) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      constexpr uint32_t kFrameMs = 18U;
+#else
+      constexpr uint32_t kFrameMs = 26U;
+#endif
+      uint32_t now_m = esphome::millis();
+      uint32_t elapsed = now_m - last_disp_update_ms();
+      uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : 4U;
+      auto *comp = static_cast<esphome::Component *>(disp);
+      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+          "async_draw", delay_ms, [disp]() {
+            if (screen_is_off_standby()) return;
+            disp->update();
+          });
+    }
+  }
 };
 
 template<typename DispT>
@@ -1251,6 +1306,11 @@ inline void schedule_disp_update(DispT *disp) {
 template<typename DispT>
 inline void schedule_disp_update(DispT *const *disp_ptr) {
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_ptr(*disp_ptr);
+}
+
+template<typename DispT>
+inline void schedule_anim_disp_update(DispT *disp) {
+  DisplayUpdateScheduler::request_anim_ptr(disp);
 }
 
 // Converts a linear media_player volume (0.0 .. 1.0) into the exact dB attenuation
