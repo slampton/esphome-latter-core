@@ -848,9 +848,6 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   if (src_w == SCREEN_W && src_h == SCREEN_H && !is_standard) {
     for (int y = start_y; y < end_y; y++) {
       bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
-      if (row_scrim && ((y & 1) != 0)) {
-        continue; // Odd row stays pure black in pre-cleared framebuffer with zero CPU/PSRAM cost!
-      }
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
@@ -858,21 +855,26 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int x = start_x;
       while (x <= end_x) {
         uint16_t p = src_row[x];
-        if ((p & 0xC718) == 0) {
-          x++;
-          continue;
-        }
-        uint16_t p_masked = p & 0xC718;
         int run_start = x;
-        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
-        while (x <= end_x && ((src_row[x] & 0xC718) == p_masked)) {
+        x++;
+        while (x <= end_x && src_row[x] == p) {
           x++;
         }
-        esphome::Color col(
-            static_cast<uint8_t>((p & 0xF800) >> 8),
-            static_cast<uint8_t>((p & 0x07E0) >> 3),
-            static_cast<uint8_t>((p & 0x001F) << 3));
-        it.horizontal_line(run_start, y, x - run_start, col);
+        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
+        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
+        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
+        if (row_scrim) {
+          r >>= 1;
+          g >>= 1;
+          b >>= 1;
+        }
+        esphome::Color col(r, g, b);
+        int run_len = x - run_start;
+        if (run_len > 1) {
+          it.horizontal_line(run_start, y, run_len, col);
+        } else {
+          it.draw_pixel_at(run_start, y, col);
+        }
       }
     }
     return true;
@@ -889,15 +891,16 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int py = STD_ART_OFFSET + y;
       int curr_x = 0;
       for (int x = 0; x < STD_ART_SIZE; x++) {
-        if (!apply_scrim || ((x + py) & 1) != 0) {
-          uint16_t p = src_row[curr_x >> 12];
-          if (p != 0) {
-            uint8_t r = (p & 0xF800) >> 8;
-            uint8_t g = (p & 0x07E0) >> 3;
-            uint8_t b = (p & 0x001F) << 3;
-            it.draw_pixel_at(STD_ART_OFFSET + x, py, esphome::Color(r, g, b));
-          }
+        uint16_t p = src_row[curr_x >> 12];
+        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
+        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
+        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
+        if (apply_scrim) {
+          r >>= 1;
+          g >>= 1;
+          b >>= 1;
         }
+        it.draw_pixel_at(STD_ART_OFFSET + x, py, esphome::Color(r, g, b));
         curr_x += step_x;
       }
     }
@@ -911,9 +914,6 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int sy = curr_y >> 12;
     curr_y += step_y;
     bool row_scrim = apply_scrim || (show_metadata && y >= scrim_start && y < scrim_end);
-    if (row_scrim && ((y & 1) != 0)) {
-      continue; // Zero-cost scanline scrim on odd rows (eliminates 100k per-pixel draw_pixel_at calls!)
-    }
     const uint16_t *src_row = src_data + sy * src_w;
     int hw = circle_half_span(y, 0);
     int start_x = std::max(0, cx - hw);
@@ -922,40 +922,50 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     if (src_w == SCREEN_W) {
       while (x <= end_x) {
         uint16_t p = src_row[x];
-        if ((p & 0xC718) == 0) {
-          x++;
-          continue;
-        }
-        uint16_t p_masked = p & 0xC718;
         int run_start = x;
-        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
-        while (x <= end_x && ((src_row[x] & 0xC718) == p_masked)) {
+        x++;
+        while (x <= end_x && src_row[x] == p) {
           x++;
         }
-        esphome::Color col(
-            static_cast<uint8_t>((p & 0xF800) >> 8),
-            static_cast<uint8_t>((p & 0x07E0) >> 3),
-            static_cast<uint8_t>((p & 0x001F) << 3));
-        it.horizontal_line(run_start, y, x - run_start, col);
+        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
+        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
+        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
+        if (row_scrim) {
+          r >>= 1;
+          g >>= 1;
+          b >>= 1;
+        }
+        esphome::Color col(r, g, b);
+        int run_len = x - run_start;
+        if (run_len > 1) {
+          it.horizontal_line(run_start, y, run_len, col);
+        } else {
+          it.draw_pixel_at(run_start, y, col);
+        }
       }
     } else {
       while (x <= end_x) {
         uint16_t p = src_row[(x * step_x) >> 12];
-        if ((p & 0xC718) == 0) {
-          x++;
-          continue;
-        }
-        uint16_t p_masked = p & 0xC718;
         int run_start = x;
-        x = (x + 2 <= end_x + 1) ? (x + 2) : (x + 1);
-        while (x <= end_x && ((src_row[(x * step_x) >> 12] & 0xC718) == p_masked)) {
+        x++;
+        while (x <= end_x && src_row[(x * step_x) >> 12] == p) {
           x++;
         }
-        esphome::Color col(
-            static_cast<uint8_t>((p & 0xF800) >> 8),
-            static_cast<uint8_t>((p & 0x07E0) >> 3),
-            static_cast<uint8_t>((p & 0x001F) << 3));
-        it.horizontal_line(run_start, y, x - run_start, col);
+        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
+        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
+        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
+        if (row_scrim) {
+          r >>= 1;
+          g >>= 1;
+          b >>= 1;
+        }
+        esphome::Color col(r, g, b);
+        int run_len = x - run_start;
+        if (run_len > 1) {
+          it.horizontal_line(run_start, y, run_len, col);
+        } else {
+          it.draw_pixel_at(run_start, y, col);
+        }
       }
     }
   }

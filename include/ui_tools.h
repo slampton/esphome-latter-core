@@ -2340,6 +2340,11 @@ inline uint32_t &last_cam_live_fetch_ms() {
   return ts;
 }
 
+inline bool &cam_download_in_progress() {
+  static bool busy = false;
+  return busy;
+}
+
 inline int parse_cameras_summary_list(
     const std::string &raw,
     std::string out_ids[MAX_CAMERA_SLOTS],
@@ -2470,7 +2475,7 @@ inline void render_tool_camera(
              cam_landscape_mode() ? "90° Landscape" : "Portrait", kAncNames[anc_idx]);
     render_modern_card(it, cx, layout().slot5_y(4), 296, 44, 12, Color(18, 28, 40), theme_secondary,
                        view_lbl, col_white, font_small);
-    render_back_button(it, cx, font_small, 426, "< Back", col_white);
+    render_back_button(it, cx, font_small, layout().back_y, "< Back", col_white);
     return;
   }
 
@@ -2549,7 +2554,7 @@ inline void render_tool_camera(
   }
 
   it.filled_rectangle(cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
-  render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back", col_white);
+  render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 
 }  // namespace latter_ui

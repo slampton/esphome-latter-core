@@ -53,8 +53,8 @@ esphome:
             if (!id(ble_area_beacon_switch).state) {
               id(ble_area_beacon_switch).publish_state(true);
             }
-            if (!LATTER_HAS_IMU && id(home_dock_games_switch).state) {
-              id(home_dock_games_switch).publish_state(false);
+            if (!LATTER_HAS_IMU && !id(home_dock_games_switch).state) {
+              id(home_dock_games_switch).publish_state(true);
             }
             esphome::voice_assistant::ensure_wake_words_restored(id(va), true);
             id(va_active_wake_word).publish_state(
@@ -1384,12 +1384,14 @@ image:
   - platform: online_image
     id: camera_snapshot_art
     format: JPEG
-    buffer_size: 65536
+    buffer_size: 131072
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
+          latter_ui::cam_download_in_progress() = false;
+          latter_ui::last_cam_live_fetch_ms() = millis();
           id(current_loaded_camera_url) = id(notif_camera_url);
           if (id(display_power_state) == 0 &&
               (id(notif_active) || (id(gui_page) == 8 && (id(stuff_subpage) == 9 || id(stuff_subpage) == 12)))) {
@@ -1397,7 +1399,10 @@ image:
           }
       - script.execute: sync_wake_word_state
     on_error:
-      - lambda: 'id(current_loaded_camera_url) = "";'
+      - lambda: |-
+          latter_ui::cam_download_in_progress() = false;
+          latter_ui::last_cam_live_fetch_ms() = millis();
+          id(current_loaded_camera_url) = "";
       - script.execute: sync_wake_word_state
 
 
@@ -2476,7 +2481,14 @@ interval:
                 }
               }
             }
-            if (now_cam_ms - latter_ui::last_cam_live_fetch_ms() >= 2200U) {
+            #if defined(CONFIG_IDF_TARGET_ESP32P4)
+            const uint32_t kCamRefreshMs = 500U;
+            #else
+            const uint32_t kCamRefreshMs = 900U;
+            #endif
+            const uint32_t elapsed_cam_ms = now_cam_ms - latter_ui::last_cam_live_fetch_ms();
+            if ((!latter_ui::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
+                (elapsed_cam_ms >= 4500U)) {
               latter_ui::last_cam_live_fetch_ms() = now_cam_ms;
               id(fetch_on_demand_camera).execute();
             }
@@ -3738,7 +3750,7 @@ script:
   - id: fetch_on_demand_camera
     mode: restart
     then:
-      - delay: 25ms
+      - delay: 15ms
       - lambda: |-
           latter_ui::last_cam_live_fetch_ms() = millis();
           id(notif_camera_url) = latter_ui::build_carousel_camera_url(
@@ -3752,6 +3764,7 @@ script:
           condition:
             lambda: 'return !id(notif_camera_url).empty();'
           then:
+            - lambda: 'latter_ui::cam_download_in_progress() = true;'
             - if:
                 condition:
                   micro_wake_word.is_running:
