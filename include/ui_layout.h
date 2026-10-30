@@ -802,14 +802,14 @@ inline void clear_ui_focus() {
 }
 
 template<typename DisplayT>
-inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r, Color accent, Color inner_hi) {
+inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r, esphome::Color accent, esphome::Color inner_hi) {
   it.circle(cx, cy, r + 2, accent);
   it.circle(cx, cy, r + 3, accent);
   it.circle(cx, cy, r + 1, inner_hi);
 }
 
 template<typename DisplayT>
-inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h, Color accent, Color inner_hi) {
+inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h, esphome::Color accent, esphome::Color inner_hi) {
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
   it.rectangle(x0 - 2, y0 - 2, w + 4, h + 4, accent);
@@ -819,7 +819,7 @@ inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h, C
 
 template<typename DisplayT>
 inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uint32_t now_ms,
-                                        Color theme_primary, Color col_white) {
+                                        esphome::Color theme_primary, esphome::Color col_white) {
   if (!ui_focus_active(now_ms)) return;
   const auto &ly = layout();
   const int f_idx = std::max(0, ui_focus_index());
@@ -844,11 +844,14 @@ inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uin
       render_focus_ring_rect(it, ly.cx, ly.slot5_y(slot), ly.list_card_w, ly.slot5_h, col_white, theme_primary);
     }
   } else if ((page == 3 && subpage == 0) || (page == 8 && subpage == 0)) {
-    // 2x2 Quad Grid Launcher Focus (Games & Tools)
-    const int slot = f_idx % 4;
+    // 2x3 Launcher Grid Focus (Games & Tools)
+    const int slot = f_idx % 6;
     const int col = slot % 2;
     const int row = slot / 2;
-    render_focus_ring_rect(it, ly.quad_cx(col), ly.quad_cy(row), ly.quad_w, ly.quad_h, col_white, theme_primary);
+    const int gcx = ly.cx + ((col == 0) ? -ly.tools_col_off : ly.tools_col_off);
+    const int gcy = ly.tools_row_y(row);
+    const int gw = (SCREEN_W < 380) ? 110 : scale_x(122);
+    render_focus_ring_rect(it, gcx, gcy, gw, scale_y(86), col_white, theme_primary);
   } else if (page == 4 || (page == 8 && (subpage >= 9 && subpage <= 11))) {
     // 5-Slot Vertical Menu List Focus
     const int slot = f_idx % 5;
@@ -860,7 +863,7 @@ inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uin
     } else {
       const int slot = f_idx % 7;
       if (slot < 3) {
-        render_focus_ring_rect(it, ly.cx, ly.slot3_y(slot), ly.slot3_card_w, ly.slot3_h, col_white, theme_primary);
+        render_focus_ring_rect(it, ly.cx, ly.area_card3_y(slot), ly.area_card3_w, ly.area_card3_h, col_white, theme_primary);
       } else {
         const int m_idx = (slot - 3) % 4;
         const int stride = (SCREEN_W < 380) ? 56 : scale_x(68);
