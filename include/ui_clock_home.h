@@ -747,15 +747,15 @@ inline std::string &latter_dock_order_csv() {
 }
 
 // Canonical Dock Order (customizable via Latter `dock_apps` CSV attribute):
-// Defaults to Music (2), Room Control (6), Remote (7), Games (3), Tools (8), Security Alarm (9), Settings (4)
+// Defaults to Music (2), Area Control (6), Remote (7), Games (3), Tools (8), Security Alarm (9), Settings (4)
 inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_tools, bool show_games,
-                                  int out_apps[8], bool show_room = true, bool show_alarm = true) {
+                                  int out_apps[8], bool show_area = true, bool show_alarm = true) {
   int n = 0;
   bool added[16] = {false};
   auto try_add = [&](int app_id) {
     if (n >= 8 || app_id < 0 || app_id > 14 || added[app_id]) return;
     bool en = (app_id == 2 && show_music) ||
-              (app_id == 6 && show_room) ||
+              (app_id == 6 && show_area) ||
               (app_id == 7 && show_remote && has_any_configured_remote()) ||
               (app_id == 3 && show_games && (LATTER_HAS_IMU != 0)) ||
               (app_id == 8 && show_tools) ||
@@ -779,7 +779,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
       for (char &c : tok) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
       if (tok.find("music") != std::string::npos || tok == "2") try_add(2);
       else if (tok.find("alarm") != std::string::npos || tok.find("home") != std::string::npos || tok.find("sec") != std::string::npos || tok == "9") try_add(9);
-      else if (tok.find("area") != std::string::npos || tok.find("room") != std::string::npos || tok == "6") try_add(6);
+      else if (tok.find("area") != std::string::npos || tok == "6") try_add(6);
       else if (tok.find("remote") != std::string::npos || tok.find("tv") != std::string::npos || tok == "7") try_add(7);
       else if (tok.find("game") != std::string::npos || tok == "3") try_add(3);
       else if (tok.find("cam") != std::string::npos || tok == "12") try_add(12);
@@ -789,10 +789,10 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
   }
 
   // Canonical Default Home Dock Order:
-  // 1. Music (2), 2. Home (9), 3. Room (6), 4. Remote (7), 5. Games (3), 6. Tools (8), 7. Settings (4)
+  // 1. Music (2), 2. Home (9), 3. Area (6), 4. Remote (7), 5. Games (3), 6. Tools (8), 7. Settings (4)
   try_add(2); // 1. Music
   try_add(9); // 2. Home (Whole-Home Hub)
-  try_add(6); // 3. Room Control
+  try_add(6); // 3. Area Control
   try_add(7); // 4. Remote Control
   try_add(3); // 5. Games
   try_add(8); // 6. Tools
@@ -868,7 +868,7 @@ inline void render_home_page(
     esphome::Color col_bg, esphome::Color col_black, esphome::Color col_white,
     esphome::Color col_slate, esphome::Color col_dark_gray,
     esphome::Color col_gold, esphome::Color col_green,
-    bool show_wake_greeting = true, bool dock_room = true,
+    bool show_wake_greeting = true, bool dock_area = true,
     WallImgT *wallpaper_art = nullptr,
     const std::string &wallpaper_url = "",
     const std::string &loaded_wallpaper_url = "",
@@ -904,8 +904,8 @@ inline void render_home_page(
     snprintf(buf, sizeof(buf), "Music Icon: %s", dock_music ? "Shown" : "Hidden");
     draw_setting_card(layout().slot5_y(0), buf, dock_music);
 
-    snprintf(buf, sizeof(buf), "Area Icon: %s", dock_room ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(1), buf, dock_room);
+    snprintf(buf, sizeof(buf), "Area Icon: %s", dock_area ? "Shown" : "Hidden");
+    draw_setting_card(layout().slot5_y(1), buf, dock_area);
 
     snprintf(buf, sizeof(buf), "Remote Icon: %s", dock_remote ? "Shown" : "Hidden");
     draw_setting_card(layout().slot5_y(2), buf, dock_remote);
@@ -1143,7 +1143,7 @@ inline void render_home_page(
 
   // ZONE 5 (y = 359): Fluid 4-Icon Sliding App Dock (r = 27 / 54px diameter, 30px outer bezel buffer)
   int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  int dock_count = collect_home_dock_apps(dock_music, dock_remote, dock_tools, dock_games, dock_apps, dock_room, dock_alarm);
+  int dock_count = collect_home_dock_apps(dock_music, dock_remote, dock_tools, dock_games, dock_apps, dock_area, dock_alarm);
   if (dock_count > 0) {
     int total_dock_pages = (dock_count + 3) / 4;
     if (home_dock_page() < 0 || home_dock_page() >= total_dock_pages) {
@@ -1159,7 +1159,7 @@ inline void render_home_page(
 
     auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow) {
       if (app_id == 6) {
-        // Room Control (Option B): Sculpted 2-Cushion Sofa + Tall Floor Lamp Silhouette
+        // Area Control (Option B): Sculpted 2-Cushion Sofa + Tall Floor Lamp Silhouette
         // 1. Floor Lamp on right (x = bx + 11, lampshade at top y = by - 14..by - 7, pole to y = by + 12)
         it.filled_triangle(bx + 11, by - 15, bx + 6, by - 7, bx + 16, by - 7, c);
         it.filled_rectangle(bx + 8, by - 14, 7, 3, c);

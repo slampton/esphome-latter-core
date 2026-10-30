@@ -496,12 +496,12 @@ interval:
           if (id(display_power_state) == 0 && !id(is_hibernating) && !id(ota_in_progress)) {
             #if defined(CONFIG_IDF_TARGET_ESP32P4)
             const bool sdio_ready = id(wifi_ctrl).is_connected() && (now_1s_ms > 8000U);
-            const bool want_ble = id(ble_room_beacon_switch).state && sdio_ready;
+            const bool want_ble = id(ble_area_beacon_switch).state && sdio_ready;
             #else
-            const bool want_ble = id(ble_room_beacon_switch).state || (!id(wifi_ctrl).is_connected() && now_1s_ms > 15000U);
+            const bool want_ble = id(ble_area_beacon_switch).state || (!id(wifi_ctrl).is_connected() && now_1s_ms > 15000U);
             #endif
             if (want_ble && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-              ESP_LOGI("ble", "Enabling BLE radio (Room Presence Beacon / Improv)");
+              ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
               id(ble_ctrl).enable();
             } else if (!want_ble && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
               ESP_LOGI("ble", "Disabling BLE radio (BLE Presence Beacon switch is OFF)");
@@ -782,7 +782,7 @@ script:
           id(display_brightness).turn_off().perform();
 
           // Only disable BLE in Standby if the user turned off BLE Presence Beacon
-          if (!id(ble_room_beacon_switch).state && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
+          if (!id(ble_area_beacon_switch).state && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
             id(ble_ctrl).disable();
           }
 
@@ -847,7 +847,7 @@ script:
           id(sleep_start_time) = 0;
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
-          if (id(ble_room_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+          if (id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }
           id(hal_set_audio_codecs_standby).execute(false);

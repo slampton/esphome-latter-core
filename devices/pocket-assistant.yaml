@@ -83,7 +83,7 @@ wifi:
       - delay: 5s
       - if:
           condition:
-            lambda: 'return id(ble_ctrl).is_active() && !id(ble_room_beacon_switch).state;'
+            lambda: 'return id(ble_ctrl).is_active() && !id(ble_area_beacon_switch).state;'
           then:
             - ble.disable:
 

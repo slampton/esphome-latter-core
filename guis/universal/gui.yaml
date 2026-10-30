@@ -101,7 +101,7 @@ display:
       else if (id(gui_page) == 3) prof_sub = id(active_game);
       else if (id(gui_page) == 4) prof_sub = id(system_menu_mode);
       else if (id(gui_page) == 5) prof_sub = id(sky_weather_subpage);
-      else if (id(gui_page) == 6) prof_sub = id(room_subpage);
+      else if (id(gui_page) == 6) prof_sub = id(area_subpage);
       else if (id(gui_page) == 7) prof_sub = id(remote_subpage);
       else if (id(gui_page) == 8) prof_sub = id(stuff_subpage);
       else if (id(gui_page) == 9) prof_sub = latter_ui::whole_home_tab();
@@ -299,10 +299,10 @@ display:
             id(theme_primary), id(theme_secondary),
             id(col_bg), id(col_black), id(col_white), id(col_slate),
             id(col_dark_gray), id(col_gold), id(col_green),
-            id(home_wake_greeting_switch).state, id(home_dock_room_switch).state,
+            id(home_wake_greeting_switch).state, id(home_dock_area_switch).state,
             id(home_wallpaper_art), id(ha_latter_wallpaper_url).state,
             id(current_loaded_wallpaper_url), id(ha_calendar_agenda_raw).state,
-            id(home_dock_alarm_switch).state, id(room_alarm_state), id(font_micro));
+            id(home_dock_alarm_switch).state, id(area_alarm_state), id(font_micro));
 
       // ==========================================
       // PAGE 2: MUSIC PLAYER & LIBRARY BROWSER
@@ -511,42 +511,42 @@ display:
             id(font_chrono_time));
 
       // ==========================================
-      // PAGE 6: AREA-AWARE ROOM CONTROL (LATTER)
+      // PAGE 6: AREA CONTROL (LATTER)
       // ==========================================
       } else if (id(gui_page) == 6) {
-        const bool is_area_picker = (id(room_subpage) == 1);
-        render_room_control_page(
-            it, cx, millis(), id(room_subpage), is_area_picker ? "areas" : "entities", id(room_domain_filter),
-            id(active_room_area_name), id(ha_room_temperature).state, id(ha_room_humidity).state,
-            id(room_alarm_entity), id(room_alarm_state),
-            is_area_picker ? id(room_area_page) : id(room_browse_page),
-            is_area_picker ? id(room_area_total_pages) : id(room_browse_total_pages),
-            id(room_action_feedback), id(room_feedback_timer),
-            is_area_picker ? id(room_area_1_name) : id(room_slot_1_name),
-            is_area_picker ? id(room_area_1_id)   : id(room_slot_1_id),
-            is_area_picker ? "area"               : id(room_slot_1_type),
-            is_area_picker ? id(room_area_1_active) : id(room_slot_1_active), id(room_slot_1_level),
-            is_area_picker ? id(room_area_2_name) : id(room_slot_2_name),
-            is_area_picker ? id(room_area_2_id)   : id(room_slot_2_id),
-            is_area_picker ? "area"               : id(room_slot_2_type),
-            is_area_picker ? id(room_area_2_active) : id(room_slot_2_active), id(room_slot_2_level),
-            is_area_picker ? id(room_area_3_name) : id(room_slot_3_name),
-            is_area_picker ? id(room_area_3_id)   : id(room_slot_3_id),
-            is_area_picker ? "area"               : id(room_slot_3_type),
-            is_area_picker ? id(room_area_3_active) : id(room_slot_3_active), id(room_slot_3_level),
-            is_area_picker ? id(room_area_4_name) : id(room_slot_4_name),
-            is_area_picker ? id(room_area_4_id)   : id(room_slot_4_id),
-            is_area_picker ? "area"               : id(room_slot_4_type),
-            is_area_picker ? id(room_area_4_active) : id(room_slot_4_active), id(room_slot_4_level),
-            is_area_picker ? id(room_area_5_name) : id(room_slot_5_name),
-            is_area_picker ? id(room_area_5_id)   : id(room_slot_5_id),
-            is_area_picker ? "area"               : id(room_slot_5_type),
-            is_area_picker ? id(room_area_5_active) : id(room_slot_5_active), id(room_slot_5_level),
+        const bool is_area_picker = (id(area_subpage) == 1);
+        render_area_control_page(
+            it, cx, millis(), id(area_subpage), is_area_picker ? "areas" : "entities", id(area_domain_filter),
+            id(active_area_name), id(ha_area_temperature).state, id(ha_area_humidity).state,
+            id(area_alarm_entity), id(area_alarm_state),
+            is_area_picker ? id(area_list_page) : id(area_browse_page),
+            is_area_picker ? id(area_list_total_pages) : id(area_browse_total_pages),
+            id(area_action_feedback), id(area_feedback_timer),
+            is_area_picker ? id(area_list_1_name) : id(area_slot_1_name),
+            is_area_picker ? id(area_list_1_id)   : id(area_slot_1_id),
+            is_area_picker ? "area"               : id(area_slot_1_type),
+            is_area_picker ? id(area_list_1_active) : id(area_slot_1_active), id(area_slot_1_level),
+            is_area_picker ? id(area_list_2_name) : id(area_slot_2_name),
+            is_area_picker ? id(area_list_2_id)   : id(area_slot_2_id),
+            is_area_picker ? "area"               : id(area_slot_2_type),
+            is_area_picker ? id(area_list_2_active) : id(area_slot_2_active), id(area_slot_2_level),
+            is_area_picker ? id(area_list_3_name) : id(area_slot_3_name),
+            is_area_picker ? id(area_list_3_id)   : id(area_slot_3_id),
+            is_area_picker ? "area"               : id(area_slot_3_type),
+            is_area_picker ? id(area_list_3_active) : id(area_slot_3_active), id(area_slot_3_level),
+            is_area_picker ? id(area_list_4_name) : id(area_slot_4_name),
+            is_area_picker ? id(area_list_4_id)   : id(area_slot_4_id),
+            is_area_picker ? "area"               : id(area_slot_4_type),
+            is_area_picker ? id(area_list_4_active) : id(area_slot_4_active), id(area_slot_4_level),
+            is_area_picker ? id(area_list_5_name) : id(area_slot_5_name),
+            is_area_picker ? id(area_list_5_id)   : id(area_slot_5_id),
+            is_area_picker ? "area"               : id(area_slot_5_type),
+            is_area_picker ? id(area_list_5_active) : id(area_slot_5_active), id(area_slot_5_level),
             id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
             id(col_bg), id(col_black), id(col_white), id(col_slate), id(col_dark_gray),
             id(col_gold), id(col_green), id(col_red),
-            id(room_show_all_category_switch).state);
-        if (id(room_subpage) > 0) {
+            id(area_show_all_category_switch).state);
+        if (id(area_subpage) > 0) {
           render_back_button(it, cx, id(font_small), 426, "< Back");
         }
 
@@ -655,8 +655,8 @@ display:
         // PAGE 9: DEDICATED HOME SECURITY ALARM APP
         // ==========================================
         render_security_alarm_page(
-            it, cx, millis(), id(room_alarm_entity), id(room_alarm_state),
-            id(room_action_feedback), id(room_feedback_timer),
+            it, cx, millis(), id(area_alarm_entity), id(area_alarm_state),
+            id(area_action_feedback), id(area_feedback_timer),
             id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
             id(col_white), id(col_slate), id(col_gold), id(col_green), id(col_red));
       }
@@ -676,7 +676,7 @@ display:
                                  !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                  !(id(gui_page) == 3 && id(active_game) > 0) &&
                                  !(id(gui_page) == 2 && (id(music_overlay_mode) > 0 || music_clean_art)) &&
-                                 !(id(gui_page) == 6 && (id(room_subpage) > 0 || id(room_browse_mode) == "areas")) &&
+                                 !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
                                  !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
                                  !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                  !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
@@ -823,7 +823,7 @@ touchscreen:
             gest.start_page = id(gui_page);
             gest.start_context = latter_ui::compute_touch_context(
                 id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
-                id(system_menu_mode), id(sky_weather_subpage), id(room_subpage),
+                id(system_menu_mode), id(sky_weather_subpage), id(area_subpage),
                 id(remote_subpage), id(stuff_subpage), latter_ui::whole_home_tab());
             gest.active = true;
             gest.swipe_committed = false;
@@ -842,7 +842,7 @@ touchscreen:
                                          !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                          !(id(gui_page) == 3 && id(active_game) > 0) &&
                                          !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                         !(id(gui_page) == 6 && (id(room_subpage) > 0 || id(room_browse_mode) == "areas")) &&
+                                         !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
                                          !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
                                          !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                          !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
@@ -900,7 +900,7 @@ touchscreen:
                 if (slot_idx >= 0 && slot_idx <= 4 && (now_hm - last_home_tap > TOUCH_DEBOUNCE_BUTTON)) {
                   last_home_tap = now_hm;
                   if (slot_idx == 0) id(home_dock_music_switch).toggle();
-                  else if (slot_idx == 1) id(home_dock_room_switch).toggle();
+                  else if (slot_idx == 1) id(home_dock_area_switch).toggle();
                   else if (slot_idx == 2) id(home_dock_remote_switch).toggle();
                   else if (slot_idx == 3) id(home_dock_games_switch).toggle();
                   else if (slot_idx == 4) id(home_dock_tools_switch).toggle();
@@ -1764,7 +1764,7 @@ touchscreen:
                   else if (slot == 1) { id(start_hibernation_countdown).execute(); return; }
                   else if (slot == 2) { id(system_menu_mode) = 5; latter_ui::schedule_disp_update(&id(disp1)); return; }
                   else if (slot == 3) {
-                    id(ble_room_beacon_switch).toggle();
+                    id(ble_area_beacon_switch).toggle();
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
                   } else if (slot == 4) { id(system_menu_mode) = 4; latter_ui::schedule_disp_update(&id(disp1)); return; }
@@ -2058,38 +2058,38 @@ touchscreen:
               // Page 5 (Sky & Weather) uses gesture-aware swipe + release-tap (handled in on_update & on_release)
               return;
             } else if (id(gui_page) == 6) {
-              static uint32_t last_room_tap = 0;
+              static uint32_t last_area_tap = 0;
               uint32_t now_rm = millis();
 
-              if (id(room_subpage) > 0 && is_back_button(touch)) {
-                if (now_rm - last_room_tap > TOUCH_DEBOUNCE_BUTTON) {
-                  last_room_tap = now_rm;
-                  id(room_subpage) = 0;
+              if (id(area_subpage) > 0 && is_back_button(touch)) {
+                if (now_rm - last_area_tap > TOUCH_DEBOUNCE_BUTTON) {
+                  last_area_tap = now_rm;
+                  id(area_subpage) = 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
               }
 
-              // Top Header Tap (y <= 88) -> Toggle 5-Row Room Picker (room_subpage == 1)
+              // Top Header Tap (y <= 88) -> Toggle 5-Row Area Picker (area_subpage == 1)
               if (touch.y <= latter_ui::scale_y(88) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
-                if (now_rm - last_room_tap > TOUCH_DEBOUNCE_BUTTON) {
-                  last_room_tap = now_rm;
-                  if (id(room_subpage) == 1) {
-                    id(room_subpage) = 0;
+                if (now_rm - last_area_tap > TOUCH_DEBOUNCE_BUTTON) {
+                  last_area_tap = now_rm;
+                  if (id(area_subpage) == 1) {
+                    id(area_subpage) = 0;
                   } else {
-                    id(room_subpage) = 1;
-                    id(room_area_page) = 1;
-                    if (id(room_area_1_name).empty()) {
-                      id(room_area_1_name) = "Loading areas...";
-                      id(room_area_1_id) = "";
+                    id(area_subpage) = 1;
+                    id(area_list_page) = 1;
+                    if (id(area_list_1_name).empty()) {
+                      id(area_list_1_name) = "Loading areas...";
+                      id(area_list_1_id) = "";
                     }
-                    id(fetch_room_areas_browse).execute();
+                    id(fetch_area_list_browse).execute();
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
               }
-              // All other Page 6 interactions (Horizontal Tab Swipe, Vertical Card/Room Swipe, Release-Tap) are handled in on_update & on_release
+              // All other Page 6 interactions (Horizontal Tab Swipe, Vertical Card/Area Swipe, Release-Tap) are handled in on_update & on_release
               return;
             } else if (id(gui_page) == 7) {
               static uint32_t last_remote_btn_tap = 0;
@@ -2921,7 +2921,7 @@ touchscreen:
 
             int cur_ctx_u = latter_ui::compute_touch_context(
                 id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
-                id(system_menu_mode), id(sky_weather_subpage), id(room_subpage),
+                id(system_menu_mode), id(sky_weather_subpage), id(area_subpage),
                 id(remote_subpage), id(stuff_subpage), latter_ui::whole_home_tab());
             if (cur_ctx_u != gest.start_context) {
               // Page or subpage changed during on_touch -> ignore remaining motion of this touch!
@@ -2963,7 +2963,7 @@ touchscreen:
                                   !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                   !(id(gui_page) == 3 && id(active_game) > 0) &&
                                   !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                  !(id(gui_page) == 6 && (id(room_subpage) > 0 || id(room_browse_mode) == "areas")) &&
+                                  !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
                                   !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
                                   !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                   !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
@@ -2998,7 +2998,7 @@ touchscreen:
                 int dock_count = latter_ui::collect_home_dock_apps(
                     id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
                     id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
-                    dock_apps, id(home_dock_room_switch).state, id(home_dock_alarm_switch).state);
+                    dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
                 int total_pages = (dock_count + 3) / 4;
                 if (total_pages > 1) {
                   gest.swipe_committed = true;
@@ -3087,8 +3087,8 @@ touchscreen:
               }
             }
 
-            // 7A. ROOM CONTROL (PAGE 6, SUBPAGE 2) LIGHT COLOR WHEEL & KELVIN LIVE DRAG
-            if (id(gui_page) == 6 && id(room_subpage) == 2 && (now_u - latter_ui::last_disp_update_ms() >= 45U)) {
+            // 7A. AREA CONTROL (PAGE 6, SUBPAGE 2) LIGHT COLOR WHEEL & KELVIN LIVE DRAG
+            if (id(gui_page) == 6 && id(area_subpage) == 2 && (now_u - latter_ui::last_disp_update_ms() >= 45U)) {
               if (latter_ui::light_insp_mode() == 0) {
                 const float ws = (latter_ui::SCREEN_MIN_DIM > 520) ? (static_cast<float>(latter_ui::SCREEN_MIN_DIM) / 466.0f) : 1.0f;
                 int dx_w = gest.last_x - latter_ui::SCREEN_CX;
@@ -3103,7 +3103,7 @@ touchscreen:
                   latter_ui::light_insp_sat() = sat;
                   esphome::Color c = latter_ui::hsv_to_rgb(hue / 360.0f, sat, 1.0f);
                   uint32_t rgb_v = (static_cast<uint32_t>(c.r) << 16) | (static_cast<uint32_t>(c.g) << 8) | static_cast<uint32_t>(c.b);
-                  latter_ui::room_color_hex_param() = latter_ui::format_hex_rgb(rgb_v); id(room_target_code) = latter_ui::room_color_hex_param();
+                  latter_ui::area_color_hex_param() = latter_ui::format_hex_rgb(rgb_v); id(area_target_code) = latter_ui::area_color_hex_param();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else {
@@ -3128,25 +3128,25 @@ touchscreen:
               return;
             }
 
-            // 7. ROOM CONTROL (PAGE 6) HORIZONTAL CATEGORY SWIPE (Just like Sky & Weather!) & VERTICAL LIST SWIPE
-            if (id(gui_page) == 6 && id(room_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 20)) {
+            // 7. AREA CONTROL (PAGE 6) HORIZONTAL CATEGORY SWIPE (Just like Sky & Weather!) & VERTICAL LIST SWIPE
+            if (id(gui_page) == 6 && id(area_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 20)) {
               if (std::abs(dx) >= 30 && std::abs(dx) > std::abs(dy)) {
                 std::string cats[7];
-                int cat_cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
+                int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                 if (cat_cnt > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_u;
                   int cur_i = 0;
                   for (int i = 0; i < cat_cnt; i++) {
-                    if (cats[i] == id(room_domain_filter)) { cur_i = i; break; }
+                    if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
                   }
                   int next_i = (dx < 0) ? ((cur_i + 1) % cat_cnt) : ((cur_i + cat_cnt - 1) % cat_cnt);
-                  id(room_domain_filter) = cats[next_i];
+                  id(area_domain_filter) = cats[next_i];
                   // Keep the 4-icon bottom category dock window synced with the active category!
-                  latter_ui::room_cat_dock_page() = (next_i >= 4) ? 1 : 0;
-                  id(room_browse_mode) = "entities";
-                  id(room_browse_page) = 1;
-                  id(fetch_room_browse).execute();
+                  latter_ui::area_cat_dock_page() = (next_i >= 4) ? 1 : 0;
+                  id(area_browse_mode) = "entities";
+                  id(area_browse_page) = 1;
+                  id(fetch_area_browse).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
@@ -3157,18 +3157,18 @@ touchscreen:
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int delta = (dy < 0) ? 1 : -1;
-                if (id(room_subpage) == 1 && id(room_area_total_pages) > 1) {
-                  int next_pg = std::max(1, std::min(id(room_area_total_pages), id(room_area_page) + delta));
-                  if (next_pg != id(room_area_page)) {
-                    id(room_area_page) = next_pg;
-                    id(fetch_room_areas_browse).execute();
+                if (id(area_subpage) == 1 && id(area_list_total_pages) > 1) {
+                  int next_pg = std::max(1, std::min(id(area_list_total_pages), id(area_list_page) + delta));
+                  if (next_pg != id(area_list_page)) {
+                    id(area_list_page) = next_pg;
+                    id(fetch_area_list_browse).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
-                } else if (id(room_subpage) == 0 && id(room_browse_total_pages) > 1) {
-                  int next_pg = std::max(1, std::min(id(room_browse_total_pages), id(room_browse_page) + delta));
-                  if (next_pg != id(room_browse_page)) {
-                    id(room_browse_page) = next_pg;
-                    id(fetch_room_browse).execute();
+                } else if (id(area_subpage) == 0 && id(area_browse_total_pages) > 1) {
+                  int next_pg = std::max(1, std::min(id(area_browse_total_pages), id(area_browse_page) + delta));
+                  if (next_pg != id(area_browse_page)) {
+                    id(area_browse_page) = next_pg;
+                    id(fetch_area_browse).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
@@ -3264,7 +3264,7 @@ touchscreen:
             gest.last_touch_ms = now_rel;
             int cur_ctx_rel = latter_ui::compute_touch_context(
                 id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
-                id(system_menu_mode), id(sky_weather_subpage), id(room_subpage),
+                id(system_menu_mode), id(sky_weather_subpage), id(area_subpage),
                 id(remote_subpage), id(stuff_subpage), latter_ui::whole_home_tab());
 
             if (gest.active && cur_ctx_rel == gest.start_context) {
@@ -3283,7 +3283,7 @@ touchscreen:
                                     !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
                                     !(id(gui_page) == 3 && id(active_game) > 0) &&
                                     !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                    !(id(gui_page) == 6 && (id(room_subpage) > 0 || id(room_browse_mode) == "areas")) &&
+                                    !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
                                     !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
                                     !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                     !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
@@ -3317,7 +3317,7 @@ touchscreen:
                 int dock_count = latter_ui::collect_home_dock_apps(
                     id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
                     id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
-                    dock_apps, id(home_dock_room_switch).state, id(home_dock_alarm_switch).state);
+                    dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
                 int total_pages = (dock_count + 3) / 4;
 
                 const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 18 : 20;
@@ -3370,19 +3370,19 @@ touchscreen:
                           id(fetch_remote_art_debounced).execute();
                         }
                       } else if (id(gui_page) == 6) {
-                        latter_ui::room_cat_dock_page() = 0;
-                        id(room_domain_filter) = latter_ui::resolve_preferred_room_category(
-                            std::string(id(room_default_category_select).current_option()),
-                            id(room_show_all_category_switch).state);
-                        if (id(active_room_area_id).empty()) {
-                          id(room_subpage) = 1;
-                          id(room_area_page) = 1;
-                          id(fetch_room_areas_browse).execute();
+                        latter_ui::area_cat_dock_page() = 0;
+                        id(area_domain_filter) = latter_ui::resolve_preferred_area_category(
+                            std::string(id(area_default_category_select).current_option()),
+                            id(area_show_all_category_switch).state);
+                        if (id(active_area_id).empty()) {
+                          id(area_subpage) = 1;
+                          id(area_list_page) = 1;
+                          id(fetch_area_list_browse).execute();
                         } else {
-                          id(room_subpage) = 0;
-                          id(room_browse_mode) = "entities";
-                          id(room_browse_page) = 1;
-                          id(fetch_room_browse).execute();
+                          id(area_subpage) = 0;
+                          id(area_browse_mode) = "entities";
+                          id(area_browse_page) = 1;
+                          id(fetch_area_browse).execute();
                         }
                       }
                         id(remote_subpage) = 0;
@@ -3766,7 +3766,7 @@ touchscreen:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
-              } else if (id(gui_page) == 6 && id(room_subpage) == 2 && gest.last_y < latter_ui::scale_y(404)) {
+              } else if (id(gui_page) == 6 && id(area_subpage) == 2 && gest.last_y < latter_ui::scale_y(404)) {
                 // Commit Light Color Wheel or White Kelvin / Brightness Inspector Action on Release!
                 if (gest.max_travel < 30 && tp.y <= latter_ui::scale_y(68) &&
                     std::abs(tp.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
@@ -3785,11 +3785,11 @@ touchscreen:
                     latter_ui::light_insp_sat() = sat;
                     esphome::Color c = latter_ui::hsv_to_rgb(hue / 360.0f, sat, 1.0f);
                     uint32_t rgb_v = (static_cast<uint32_t>(c.r) << 16) | (static_cast<uint32_t>(c.g) << 8) | static_cast<uint32_t>(c.b);
-                    latter_ui::room_color_hex_param() = latter_ui::format_hex_rgb(rgb_v); id(room_target_code) = latter_ui::room_color_hex_param();
-                    id(room_target_entity_id) = latter_ui::light_insp_entity_id();
-                    id(room_target_action) = "set_color";
-                    id(room_target_level) = latter_ui::light_insp_bri_pct();
-                    id(execute_room_action).execute();
+                    latter_ui::area_color_hex_param() = latter_ui::format_hex_rgb(rgb_v); id(area_target_code) = latter_ui::area_color_hex_param();
+                    id(area_target_entity_id) = latter_ui::light_insp_entity_id();
+                    id(area_target_action) = "set_color";
+                    id(area_target_level) = latter_ui::light_insp_bri_pct();
+                    id(execute_area_action).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 } else {
@@ -3802,50 +3802,50 @@ touchscreen:
                   if (gest.start_y >= latter_ui::scale_y(120) && gest.start_y <= latter_ui::scale_y(204) && std::abs(tp.x - ly.cx) <= (sl_card_w / 2)) {
                     int k_val = 2700 + ((tp.x - k_bar_x0) * (6500 - 2700)) / std::max(1, k_bar_w);
                     latter_ui::light_insp_kelvin() = std::max(2700, std::min(6500, (k_val / 100) * 100));
-                    id(room_target_entity_id) = latter_ui::light_insp_entity_id();
-                    id(room_target_action) = "set_kelvin";
-                    id(room_target_level) = latter_ui::light_insp_kelvin();
-                    id(execute_room_action).execute();
+                    id(area_target_entity_id) = latter_ui::light_insp_entity_id();
+                    id(area_target_action) = "set_kelvin";
+                    id(area_target_level) = latter_ui::light_insp_kelvin();
+                    id(execute_area_action).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   } else if (gest.start_y >= latter_ui::scale_y(218) && gest.start_y <= latter_ui::scale_y(302) && std::abs(tp.x - latter_ui::SCREEN_CX) <= (sl_card_w / 2)) {
                     int b_val = ((tp.x - b_bar_x0) * 100) / std::max(1, b_max_w);
                     latter_ui::light_insp_bri_pct() = std::max(5, std::min(100, ((b_val + 2) / 5) * 5));
-                    id(room_target_entity_id) = latter_ui::light_insp_entity_id();
-                    id(room_target_action) = "set_level";
-                    id(room_target_level) = latter_ui::light_insp_bri_pct();
-                    id(execute_room_action).execute();
+                    id(area_target_entity_id) = latter_ui::light_insp_entity_id();
+                    id(area_target_action) = "set_level";
+                    id(area_target_level) = latter_ui::light_insp_bri_pct();
+                    id(execute_area_action).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > latter_ui::scale_y(88) && gest.last_y < (latter_ui::SCREEN_H - 16)) {
                 if (gest.max_travel < 30) {
-                  if (is_right_chevron_zone(tp) && id(room_subpage) != 2 && ((id(room_subpage) == 1 && id(room_area_total_pages) > 1) || (id(room_subpage) == 0 && id(room_browse_total_pages) > 1))) {
+                  if (is_right_chevron_zone(tp) && id(area_subpage) != 2 && ((id(area_subpage) == 1 && id(area_list_total_pages) > 1) || (id(area_subpage) == 0 && id(area_browse_total_pages) > 1))) {
                     int delta = (tp.y < latter_ui::SCREEN_CY) ? -1 : 1;
-                    if (id(room_subpage) == 1 && id(room_area_total_pages) > 1) {
-                      int next_pg = std::max(1, std::min(id(room_area_total_pages), id(room_area_page) + delta));
-                      if (next_pg != id(room_area_page)) {
-                        id(room_area_page) = next_pg;
-                        id(fetch_room_areas_browse).execute();
+                    if (id(area_subpage) == 1 && id(area_list_total_pages) > 1) {
+                      int next_pg = std::max(1, std::min(id(area_list_total_pages), id(area_list_page) + delta));
+                      if (next_pg != id(area_list_page)) {
+                        id(area_list_page) = next_pg;
+                        id(fetch_area_list_browse).execute();
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
-                    } else if (id(room_subpage) == 0 && id(room_browse_total_pages) > 1) {
-                      int next_pg = std::max(1, std::min(id(room_browse_total_pages), id(room_browse_page) + delta));
-                      if (next_pg != id(room_browse_page)) {
-                        id(room_browse_page) = next_pg;
-                        id(fetch_room_browse).execute();
+                    } else if (id(area_subpage) == 0 && id(area_browse_total_pages) > 1) {
+                      int next_pg = std::max(1, std::min(id(area_browse_total_pages), id(area_browse_page) + delta));
+                      if (next_pg != id(area_browse_page)) {
+                        id(area_browse_page) = next_pg;
+                        id(fetch_area_browse).execute();
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
-                  } else if (id(room_subpage) == 0 &&
+                  } else if (id(area_subpage) == 0 &&
                              tp.y >= latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14 &&
                              tp.y <= latter_ui::layout().app_dock_y + latter_ui::layout().dock_r + 16 &&
                              tp.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(205) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(205)) {
                     std::string cats[7];
-                    int cat_cnt = latter_ui::collect_room_categories(id(room_show_all_category_switch).state, cats);
+                    int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                     int win_xs[4] = {0, 0, 0, 0};
                     bool dummy_l = false, dummy_r = false;
-                    latter_ui::get_home_dock_window_xs(cat_cnt, latter_ui::room_cat_dock_page(), latter_ui::SCREEN_CX, win_xs, dummy_l, dummy_r);
-                    int start_idx = latter_ui::get_home_dock_start_index(cat_cnt, latter_ui::room_cat_dock_page());
+                    latter_ui::get_home_dock_window_xs(cat_cnt, latter_ui::area_cat_dock_page(), latter_ui::SCREEN_CX, win_xs, dummy_l, dummy_r);
+                    int start_idx = latter_ui::get_home_dock_start_index(cat_cnt, latter_ui::area_cat_dock_page());
                     int vis_count = std::min(4, cat_cnt - start_idx);
                     int best_i = -1;
                     int best_dist = (vis_count < 4) ? latter_ui::scale_x(50) : latter_ui::scale_x(42);
@@ -3858,43 +3858,43 @@ touchscreen:
                     }
                     if (best_i >= 0) {
                       std::string new_flt = cats[start_idx + best_i];
-                      if (id(room_domain_filter) != new_flt) {
-                        id(room_domain_filter) = new_flt;
-                        id(room_browse_mode) = "entities";
-                        id(room_browse_page) = 1;
-                        id(fetch_room_browse).execute();
+                      if (id(area_domain_filter) != new_flt) {
+                        id(area_domain_filter) = new_flt;
+                        id(area_browse_mode) = "entities";
+                        id(area_browse_page) = 1;
+                        id(fetch_area_browse).execute();
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
-                  } else if (id(room_subpage) == 1) {
+                  } else if (id(area_subpage) == 1) {
                     int slot_idx = get_5slot_index(tp, 75, 385);
                     if (slot_idx >= 0) {
-                      std::string s_name = (slot_idx == 0) ? id(room_area_1_name) : (slot_idx == 1) ? id(room_area_2_name) : (slot_idx == 2) ? id(room_area_3_name) : (slot_idx == 3) ? id(room_area_4_name) : id(room_area_5_name);
-                      std::string s_id   = (slot_idx == 0) ? id(room_area_1_id)   : (slot_idx == 1) ? id(room_area_2_id)   : (slot_idx == 2) ? id(room_area_3_id)   : (slot_idx == 3) ? id(room_area_4_id)   : id(room_area_5_id);
+                      std::string s_name = (slot_idx == 0) ? id(area_list_1_name) : (slot_idx == 1) ? id(area_list_2_name) : (slot_idx == 2) ? id(area_list_3_name) : (slot_idx == 3) ? id(area_list_4_name) : id(area_list_5_name);
+                      std::string s_id   = (slot_idx == 0) ? id(area_list_1_id)   : (slot_idx == 1) ? id(area_list_2_id)   : (slot_idx == 2) ? id(area_list_3_id)   : (slot_idx == 3) ? id(area_list_4_id)   : id(area_list_5_id);
                       if (!s_id.empty()) {
-                        id(active_room_area_id) = s_id;
-                        id(active_room_area_name) = latter_ui::strip_trailing_paren_state(s_name);
-                        latter_ui::room_cat_dock_page() = 0;
-                        id(room_domain_filter) = latter_ui::resolve_preferred_room_category(
-                            std::string(id(room_default_category_select).current_option()),
-                            id(room_show_all_category_switch).state);
-                        id(room_subpage) = 0;
-                        id(room_browse_mode) = "entities";
-                        id(room_browse_page) = 1;
-                        id(room_action_feedback) = "Area: " + id(active_room_area_name);
-                        id(room_feedback_timer) = now_rel;
-                        id(select_active_room_latter).execute();
+                        id(active_area_id) = s_id;
+                        id(active_area_name) = latter_ui::strip_trailing_paren_state(s_name);
+                        latter_ui::area_cat_dock_page() = 0;
+                        id(area_domain_filter) = latter_ui::resolve_preferred_area_category(
+                            std::string(id(area_default_category_select).current_option()),
+                            id(area_show_all_category_switch).state);
+                        id(area_subpage) = 0;
+                        id(area_browse_mode) = "entities";
+                        id(area_browse_page) = 1;
+                        id(area_action_feedback) = "Area: " + id(active_area_name);
+                        id(area_feedback_timer) = now_rel;
+                        id(select_active_area_latter).execute();
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
-                  } else if (id(room_subpage) == 0) {
+                  } else if (id(area_subpage) == 0) {
                     int card_idx = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (card_idx >= 0) {
-                      std::string s_name = (card_idx == 0) ? id(room_slot_1_name) : (card_idx == 1) ? id(room_slot_2_name) : id(room_slot_3_name);
-                      std::string s_id   = (card_idx == 0) ? id(room_slot_1_id)   : (card_idx == 1) ? id(room_slot_2_id)   : (card_idx == 2) ? id(room_slot_3_id)   : (card_idx == 3) ? id(room_slot_4_id)   : id(room_slot_5_id);
-                      std::string s_type = (card_idx == 0) ? id(room_slot_1_type) : (card_idx == 1) ? id(room_slot_2_type) : id(room_slot_3_type);
-                      bool &s_act        = (card_idx == 0) ? id(room_slot_1_active) : (card_idx == 1) ? id(room_slot_2_active) : id(room_slot_3_active);
-                      int &s_lvl         = (card_idx == 0) ? id(room_slot_1_level)  : (card_idx == 1) ? id(room_slot_2_level)  : id(room_slot_3_level);
+                      std::string s_name = (card_idx == 0) ? id(area_slot_1_name) : (card_idx == 1) ? id(area_slot_2_name) : id(area_slot_3_name);
+                      std::string s_id   = (card_idx == 0) ? id(area_slot_1_id)   : (card_idx == 1) ? id(area_slot_2_id)   : (card_idx == 2) ? id(area_slot_3_id)   : (card_idx == 3) ? id(area_slot_4_id)   : id(area_slot_5_id);
+                      std::string s_type = (card_idx == 0) ? id(area_slot_1_type) : (card_idx == 1) ? id(area_slot_2_type) : id(area_slot_3_type);
+                      bool &s_act        = (card_idx == 0) ? id(area_slot_1_active) : (card_idx == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
+                      int &s_lvl         = (card_idx == 0) ? id(area_slot_1_level)  : (card_idx == 1) ? id(area_slot_2_level)  : id(area_slot_3_level);
 
                       if (s_id.empty() || s_type == "text") {
                         return;
@@ -3909,36 +3909,36 @@ touchscreen:
                           latter_ui::light_insp_entity_id() = s_id;
                           latter_ui::light_insp_name() = clean_lbl;
                           latter_ui::light_insp_bri_pct() = (s_lvl > 0) ? s_lvl : 80;
-                          id(room_subpage) = 2;
+                          id(area_subpage) = 2;
                           latter_ui::schedule_disp_update(&id(disp1));
                           return;
                         }
-                        id(room_target_entity_id) = s_id;
+                        id(area_target_entity_id) = s_id;
                         bool has_slider = ((s_type == "light" || s_type == "cover" || s_type == "fan") && s_lvl >= 0);
                         if (has_slider && tp.x > latter_ui::layout().area_card_div_x()) {
                           int pct = latter_ui::layout().area_slider_pct(tp.x);
                           s_act = true;
                           s_lvl = pct;
-                          id(room_target_action) = "set_level";
-                          id(room_target_level) = pct;
-                          id(room_action_feedback) = clean_lbl + ": " + to_string(pct) + "%";
+                          id(area_target_action) = "set_level";
+                          id(area_target_level) = pct;
+                          id(area_action_feedback) = clean_lbl + ": " + to_string(pct) + "%";
                         } else {
                           s_act = !s_act;
-                          id(room_target_action) = "toggle";
-                          id(room_target_level) = s_act ? 100 : 0;
+                          id(area_target_action) = "toggle";
+                          id(area_target_level) = s_act ? 100 : 0;
                           if (s_type == "scene" || s_type == "script") {
                             s_act = true;
-                            id(room_action_feedback) = "Activated: " + clean_lbl;
+                            id(area_action_feedback) = "Activated: " + clean_lbl;
                           } else if (s_type == "cover") {
                             s_lvl = s_act ? 100 : 0;
-                            id(room_action_feedback) = clean_lbl + (s_act ? ": Open" : ": Closed");
+                            id(area_action_feedback) = clean_lbl + (s_act ? ": Open" : ": Closed");
                           } else {
                             if (s_act && s_lvl <= 0) s_lvl = 100;
-                            id(room_action_feedback) = clean_lbl + (s_act ? ": On" : ": Off");
+                            id(area_action_feedback) = clean_lbl + (s_act ? ": On" : ": Off");
                           }
                         }
-                        id(room_feedback_timer) = now_rel;
-                        id(execute_room_action).execute();
+                        id(area_feedback_timer) = now_rel;
+                        id(execute_area_action).execute();
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
@@ -3972,10 +3972,10 @@ touchscreen:
                   } else if (latter_ui::whole_home_tab() == 0) {
                     int a_card = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (a_card >= 0) {
-                      if (a_card == 0) { id(room_alarm_service) = "disarm"; id(room_alarm_state) = "disarmed"; id(room_action_feedback) = "Disarmed"; }
-                      else if (a_card == 1) { id(room_alarm_service) = "arm_home"; id(room_alarm_state) = "armed_home"; id(room_action_feedback) = "Armed Home"; }
-                      else { id(room_alarm_service) = "arm_away"; id(room_alarm_state) = "armed_away"; id(room_action_feedback) = "Armed Away"; }
-                      id(room_feedback_timer) = now_rel;
+                      if (a_card == 0) { id(area_alarm_service) = "disarm"; id(area_alarm_state) = "disarmed"; id(area_action_feedback) = "Disarmed"; }
+                      else if (a_card == 1) { id(area_alarm_service) = "arm_home"; id(area_alarm_state) = "armed_home"; id(area_action_feedback) = "Armed Home"; }
+                      else { id(area_alarm_service) = "arm_away"; id(area_alarm_state) = "armed_away"; id(area_action_feedback) = "Armed Away"; }
+                      id(area_feedback_timer) = now_rel;
                       id(execute_alarm_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -3986,49 +3986,49 @@ touchscreen:
                       } else if (tp.x >= latter_ui::SCREEN_CX + latter_ui::scale_x(70) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(155)) {
                         latter_ui::sim_thermostat_target_f() = std::min(88, latter_ui::sim_thermostat_target_f() + 1);
                       }
-                      id(room_target_entity_id) = "whole_home.thermostat";
-                      id(room_target_action) = "set_level";
-                      id(room_target_level) = latter_ui::sim_thermostat_target_f();
-                      id(execute_room_action).execute();
+                      id(area_target_entity_id) = "whole_home.thermostat";
+                      id(area_target_action) = "set_level";
+                      id(area_target_level) = latter_ui::sim_thermostat_target_f();
+                      id(execute_area_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     } else if (tp.y >= latter_ui::scale_y(234) && tp.y <= latter_ui::scale_y(298) &&
                                tp.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(172) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(172)) {
                       const int s86 = latter_ui::scale_x(86);
                       const char *m_id = (tp.x < latter_ui::SCREEN_CX - s86) ? "heat" : ((tp.x < latter_ui::SCREEN_CX) ? "cool" : ((tp.x < latter_ui::SCREEN_CX + s86) ? "auto" : "off"));
                       latter_ui::sim_thermostat_mode() = m_id;
-                      id(room_target_entity_id) = "whole_home.thermostat";
-                      id(room_target_action) = m_id;
-                      id(execute_room_action).execute();
+                      id(area_target_entity_id) = "whole_home.thermostat";
+                      id(area_target_action) = m_id;
+                      id(execute_area_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   } else if (latter_ui::whole_home_tab() == 2 &&
                              std::abs(tp.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(160)) {
                     if (tp.y >= latter_ui::scale_y(112) && tp.y < latter_ui::scale_y(204)) {
                       latter_ui::sim_garage_open() = !latter_ui::sim_garage_open();
-                      id(room_target_entity_id) = "whole_home.garage";
-                      id(room_target_action) = latter_ui::sim_garage_open() ? "turn_on" : "turn_off";
-                      id(room_action_feedback) = latter_ui::sim_garage_open() ? "Opening Garage..." : "Closing Garage...";
-                      id(room_feedback_timer) = now_rel;
-                      id(execute_room_action).execute();
+                      id(area_target_entity_id) = "whole_home.garage";
+                      id(area_target_action) = latter_ui::sim_garage_open() ? "turn_on" : "turn_off";
+                      id(area_action_feedback) = latter_ui::sim_garage_open() ? "Opening Garage..." : "Closing Garage...";
+                      id(area_feedback_timer) = now_rel;
+                      id(execute_area_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     } else if (tp.y >= latter_ui::scale_y(208) && tp.y < latter_ui::scale_y(304)) {
                       latter_ui::sim_front_door_locked() = !latter_ui::sim_front_door_locked();
-                      id(room_target_entity_id) = "whole_home.lock";
-                      id(room_target_action) = latter_ui::sim_front_door_locked() ? "lock" : "unlock";
-                      id(room_action_feedback) = latter_ui::sim_front_door_locked() ? "Front Door Locked" : "Front Door Unlocked";
-                      id(room_feedback_timer) = now_rel;
-                      id(execute_room_action).execute();
+                      id(area_target_entity_id) = "whole_home.lock";
+                      id(area_target_action) = latter_ui::sim_front_door_locked() ? "lock" : "unlock";
+                      id(area_action_feedback) = latter_ui::sim_front_door_locked() ? "Front Door Locked" : "Front Door Unlocked";
+                      id(area_feedback_timer) = now_rel;
+                      id(execute_area_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   } else if (latter_ui::whole_home_tab() == 3) {
                     int v_card = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (v_card >= 0) {
-                      id(room_target_entity_id) = "whole_home.vacuum";
-                      if (v_card == 0) { latter_ui::sim_vacuum_state() = "Cleaning"; id(room_target_action) = "start"; id(room_action_feedback) = "Vacuum Started"; }
-                      else if (v_card == 1) { latter_ui::sim_vacuum_state() = "Paused"; id(room_target_action) = "pause"; id(room_action_feedback) = "Vacuum Paused"; }
-                      else { latter_ui::sim_vacuum_state() = "Docked"; id(room_target_action) = "dock"; id(room_action_feedback) = "Returning to Dock"; }
-                      id(room_feedback_timer) = now_rel;
-                      id(execute_room_action).execute();
+                      id(area_target_entity_id) = "whole_home.vacuum";
+                      if (v_card == 0) { latter_ui::sim_vacuum_state() = "Cleaning"; id(area_target_action) = "start"; id(area_action_feedback) = "Vacuum Started"; }
+                      else if (v_card == 1) { latter_ui::sim_vacuum_state() = "Paused"; id(area_target_action) = "pause"; id(area_action_feedback) = "Vacuum Paused"; }
+                      else { latter_ui::sim_vacuum_state() = "Docked"; id(area_target_action) = "dock"; id(area_action_feedback) = "Returning to Dock"; }
+                      id(area_feedback_timer) = now_rel;
+                      id(execute_area_action).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   }
@@ -4295,7 +4295,7 @@ touchscreen:
               uint32_t rel_exec_us = static_cast<uint32_t>(latter_ui::prof_now_us() - rel_t0_us);
               int end_ctx = latter_ui::compute_touch_context(
                   id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
-                  id(system_menu_mode), id(sky_weather_subpage), id(room_subpage),
+                  id(system_menu_mode), id(sky_weather_subpage), id(area_subpage),
                   id(remote_subpage), id(stuff_subpage), latter_ui::whole_home_tab());
               int dx_p = gest.last_x - gest.start_x;
               int dy_p = gest.last_y - gest.start_y;

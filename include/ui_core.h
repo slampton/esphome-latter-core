@@ -734,7 +734,7 @@ inline uint32_t &music_scroll_tap_lockout_until_ms() {
 }
 
 inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
-                                 int sys_mode, int weather_sub, int room_sub, int rem_sub, int stuff_sub,
+                                 int sys_mode, int weather_sub, int area_sub, int rem_sub, int stuff_sub,
                                  int wh_tab = 0) {
   int sub = 0;
   if (gui_page == 1) sub = home_sub;
@@ -742,7 +742,7 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   else if (gui_page == 3) sub = active_game;
   else if (gui_page == 4) sub = sys_mode;
   else if (gui_page == 5) sub = weather_sub;
-  else if (gui_page == 6) sub = room_sub;
+  else if (gui_page == 6) sub = area_sub;
   else if (gui_page == 7) sub = rem_sub;
   else if (gui_page == 8) sub = stuff_sub;
   else if (gui_page == 9) sub = wh_tab;

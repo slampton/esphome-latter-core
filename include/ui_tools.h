@@ -2112,7 +2112,7 @@ inline int parse_intercom_targets_list(
     std::string out_ids[5],
     std::string out_labels[5]) {
   out_ids[0] = "all";
-  out_labels[0] = "Call All Rooms (2-Way)";
+  out_labels[0] = "Call All Areas (2-Way)";
   int idx = 1;
   if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
     return idx;

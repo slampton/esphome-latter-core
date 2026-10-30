@@ -33,7 +33,7 @@ inline std::string &latter_ble_proxy() {
   return s;
 }
 
-inline std::string &latter_room_label() {
+inline std::string &latter_area_label() {
   static std::string s = "Home";
   return s;
 }
@@ -385,12 +385,12 @@ inline void render_system_page(
 
     print_info_row(212, "IP:", ip_str.empty() ? "Connecting..." : ip_str.c_str(), col_slate);
 
-    std::string room_str = latter_room_label().empty() ? "Home" : latter_room_label();
+    std::string area_str = latter_area_label().empty() ? "Home" : latter_area_label();
     if (!latter_ble_proxy().empty() && latter_ble_proxy() != "unknown" && latter_ble_proxy() != "unavailable") {
-      room_str += " (" + latter_ble_proxy() + ")";
+      area_str += " (" + latter_ble_proxy() + ")";
     }
-    room_str = fit_text_to_width_font(room_str, 220, font_small);
-    print_info_row(244, "Area:", room_str.c_str(), col_slate);
+    area_str = fit_text_to_width_font(area_str, 220, font_small);
+    print_info_row(244, "Area:", area_str.c_str(), col_slate);
 
     snprintf(buf, sizeof(buf), "%.0f%% (%.2fV)%s",
              std::isnan(batt) ? 100.0f : batt,

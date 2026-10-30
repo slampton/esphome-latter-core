@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core UI Module: Area Room Control & Whole-Home Hub (ui_room_home_hub.h)
+// Latter Core UI Module: Area Control & Whole-Home Hub (ui_area_home_hub.h)
 // ==============================================================================
 
 #include "ui_layout.h"
@@ -10,7 +10,7 @@
 namespace latter_ui {
 
 // =============================================================================
-// SECTION 16C: AREA-AWARE ROOM CONTROL ENGINE (PAGE 6 — HORIZONTAL FILL-SLIDERS)
+// SECTION 16C: AREA CONTROL ENGINE (PAGE 6 — HORIZONTAL FILL-SLIDERS)
 // =============================================================================
 
 // 90-Degree Symmetric 4-Blade Ceiling Fan Pixel Predicate (Central Motor Hub + 1px Moat + 4 Swept Paddle Blades)
@@ -58,25 +58,27 @@ inline std::string strip_trailing_paren_state(const std::string &s) {
   return s;
 }
 
-// Dynamic Per-Room Category State & Helpers:
+// Dynamic Per-Area Category State & Helpers:
 // Canonical Category Codes:
-//   "scene"  = Lighting Scenes
-//   "light"  = Lights
-//   "cover"  = Curtains & Blinds
-//   "fan"    = Ceiling & Room Fans
-//   "switch" = Switches, Outlets & Helpers
-//   "all"    = Optional Master All-Devices View (disabled by default)
-inline std::string &room_available_domains_csv() {
+//   "scene"   = Lighting Scenes
+//   "light"   = Lights
+//   "cover"   = Curtains & Blinds
+//   "fan"     = Ceiling & Area Fans
+//   "switch"  = Switches, Outlets & Helpers
+//   "climate" = Area Climate / Thermostats
+//   "media"   = Area Media Players
+//   "all"     = Optional Master All-Devices View (disabled by default)
+inline std::string &area_available_domains_csv() {
   static std::string s = "";
   return s;
 }
 
-inline int &room_cat_dock_page() {
+inline int &area_cat_dock_page() {
   static int pg = 0;
   return pg;
 }
 
-// Light Color & Kelvin Inspector State (room_subpage == 2)
+// Light Color & Kelvin Inspector State (area_subpage == 2)
 inline std::string &light_insp_entity_id() { static std::string s = ""; return s; }
 inline std::string &light_insp_name() { static std::string s = "Light"; return s; }
 inline int &light_insp_mode() { static int m = 0; return m; } // 0 = HSV Color Wheel, 1 = White Kelvin + Brightness
@@ -84,7 +86,7 @@ inline float &light_insp_hue_deg() { static float h = 35.0f; return h; }
 inline float &light_insp_sat() { static float s = 0.85f; return s; }
 inline int &light_insp_kelvin() { static int k = 3500; return k; }
 inline int &light_insp_bri_pct() { static int b = 80; return b; }
-inline std::string &room_color_hex_param() { static std::string s = "#FFAA55"; return s; }
+inline std::string &area_color_hex_param() { static std::string s = "#FFAA55"; return s; }
 
 // Whole-Home Hub State & Built-In Demo Simulator State (Page 9, Tabs 0..3)
 inline int &whole_home_tab() { static int t = 0; return t; } // 0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum
@@ -94,19 +96,20 @@ inline bool &sim_garage_open() { static bool o = false; return o; }
 inline bool &sim_front_door_locked() { static bool l = true; return l; }
 inline std::string &sim_vacuum_state() { static std::string v = "Docked"; return v; } // "Cleaning", "Paused", "Docked"
 
-inline const char *map_room_default_label_to_domain(const std::string &opt) {
+inline const char *map_area_default_label_to_domain(const std::string &opt) {
   if (opt == "Lights") return "light";
   if (opt == "Blinds & Curtains") return "cover";
   if (opt == "Fans") return "fan";
   if (opt == "Switches") return "switch";
+  if (opt == "Climate") return "climate";
   if (opt == "Media") return "media";
   if (opt == "All Devices") return "all";
   return "scene"; // Default: Scenes
 }
 
-inline int collect_room_categories(bool show_all_cat, std::string out_cats[7]) {
+inline int collect_area_categories(bool show_all_cat, std::string out_cats[7]) {
   int n = 0;
-  const std::string &csv = room_available_domains_csv();
+  const std::string &csv = area_available_domains_csv();
   auto has_tok = [&](const char *tok) -> bool {
     if (csv.empty() || csv == "unknown" || csv == "unavailable") {
       return true;
@@ -128,10 +131,10 @@ inline int collect_room_categories(bool show_all_cat, std::string out_cats[7]) {
   return n;
 }
 
-inline std::string resolve_preferred_room_category(const std::string &pref_label, bool show_all_cat) {
+inline std::string resolve_preferred_area_category(const std::string &pref_label, bool show_all_cat) {
   std::string cats[7];
-  int cnt = collect_room_categories(show_all_cat, cats);
-  std::string wanted = map_room_default_label_to_domain(pref_label);
+  int cnt = collect_area_categories(show_all_cat, cats);
+  std::string wanted = map_area_default_label_to_domain(pref_label);
   for (int i = 0; i < cnt; i++) {
     if (cats[i] == wanted) return wanted;
   }
@@ -139,15 +142,15 @@ inline std::string resolve_preferred_room_category(const std::string &pref_label
 }
 
 template <typename DisplayT, typename FontDateT, typename FontSmallT>
-inline void render_room_control_page(
+inline void render_area_control_page(
     DisplayT &it, int cx, uint32_t now_ms,
-    int room_subpage, const std::string &room_browse_mode,
-    const std::string &room_domain_filter,
+    int area_subpage, const std::string &area_browse_mode,
+    const std::string &area_domain_filter,
     const std::string &active_area_name,
-    float room_temp, float room_humidity,
+    float area_temp, float area_humidity,
     const std::string &alarm_entity, const std::string &alarm_state,
-    int room_browse_page, int room_browse_total_pages,
-    const std::string &room_action_feedback, uint32_t room_feedback_timer,
+    int area_browse_page, int area_browse_total_pages,
+    const std::string &area_action_feedback, uint32_t area_feedback_timer,
     const std::string &s1_name, const std::string &s1_id, const std::string &s1_type, bool s1_act, int s1_lvl,
     const std::string &s2_name, const std::string &s2_id, const std::string &s2_type, bool s2_act, int s2_lvl,
     const std::string &s3_name, const std::string &s3_id, const std::string &s3_type, bool s3_act, int s3_lvl,
@@ -167,25 +170,25 @@ inline void render_room_control_page(
   (void)alarm_state;
   (void)col_red;
 
-  const bool is_fb = (now_ms - room_feedback_timer < 1500U && !room_action_feedback.empty());
+  const bool is_fb = (now_ms - area_feedback_timer < 1500U && !area_action_feedback.empty());
   const Color card_bg_off(16, 20, 27);
   const Color card_bg_on(22, 28, 38);
   const Color card_brd_off(44, 52, 66);
 
-  // Helper: Draw Dynamic Room Category Dock at y = 359, r = 27 (Fluid 1..4 Icon Window)
-  auto render_room_bottom_dock = [&](const std::string &active_domain) {
+  // Helper: Draw Dynamic Area Category Dock at layout().app_dock_y (Fluid 1..4 Icon Window)
+  auto render_area_bottom_dock = [&](const std::string &active_domain) {
     std::string cats[7];
-    int cat_count = collect_room_categories(show_all_cat, cats);
+    int cat_count = collect_area_categories(show_all_cat, cats);
     if (cat_count <= 0) return;
 
     int total_cat_pages = (cat_count + 3) / 4;
-    if (room_cat_dock_page() < 0 || room_cat_dock_page() >= total_cat_pages) {
-      room_cat_dock_page() = 0;
+    if (area_cat_dock_page() < 0 || area_cat_dock_page() >= total_cat_pages) {
+      area_cat_dock_page() = 0;
     }
     int win_xs[4] = {0, 0, 0, 0};
     bool dummy_l = false, dummy_r = false;
-    get_home_dock_window_xs(cat_count, room_cat_dock_page(), cx, win_xs, dummy_l, dummy_r);
-    int start_idx = get_home_dock_start_index(cat_count, room_cat_dock_page());
+    get_home_dock_window_xs(cat_count, area_cat_dock_page(), cx, win_xs, dummy_l, dummy_r);
+    int start_idx = get_home_dock_start_index(cat_count, area_cat_dock_page());
     int vis_count = std::min(4, cat_count - start_idx);
 
     const int ICON_Y = layout().app_dock_y;
@@ -244,7 +247,7 @@ inline void render_room_control_page(
         it.filled_rectangle(bx - 5, by - 7, 10, 15, fg_c);
         it.filled_circle(bx + 5, by, 4, Color(16, 20, 27));
       } else if (cat == "media") {
-        // Room Media: Beamed Eighth Notes
+        // Area Media: Beamed Eighth Notes
         it.filled_circle(bx - 6, by + 6, 4, fg_c);
         it.filled_circle(bx + 5, by + 4, 4, fg_c);
         it.filled_rectangle(bx - 3, by - 9, 2, 15, fg_c);
@@ -267,7 +270,7 @@ inline void render_room_control_page(
     }
 
     if (total_cat_pages > 1) {
-      render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_cat_pages, room_cat_dock_page(),
+      render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_cat_pages, area_cat_dock_page(),
                             col_white, Color(95, 112, 134));
     }
   };
@@ -275,7 +278,7 @@ inline void render_room_control_page(
   // ===========================================================================
   // SUBPAGE 2: LIGHT COLOR (HSV WHEEL) & WHITE KELVIN INSPECTOR
   // ===========================================================================
-  if (room_subpage == 2) {
+  if (area_subpage == 2) {
     // Top Mode Pill at y = 44 (Toggles between "Color Wheel" and "White Temp")
     const bool is_kelvin_mode = (light_insp_mode() == 1);
     render_modern_card(it, cx, layout().hdr_y, 212, 34, 10, card_bg_on, theme_primary,
@@ -352,9 +355,9 @@ inline void render_room_control_page(
   }
 
   // ===========================================================================
-  // SUBPAGE 1 / AREAS MODE: 5-SLOT ROOM SWITCHER
+  // SUBPAGE 1 / AREAS MODE: 5-SLOT AREA SWITCHER
   // ===========================================================================
-  if (room_subpage == 1 || room_browse_mode == "areas" || room_browse_mode == "room_areas") {
+  if (area_subpage == 1 || area_browse_mode == "areas" || area_browse_mode == "area_areas") {
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT AREA");
 
     auto draw_area_row = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
@@ -375,25 +378,25 @@ inline void render_room_control_page(
     draw_area_row(layout().slot5_y(3), s4_name, s4_id, s4_act);
     draw_area_row(layout().slot5_y(4), s5_name, s5_id, s5_act);
 
-    if (room_browse_total_pages > 1) {
-      render_vertical_page_pips(it, room_browse_page > 1, room_browse_page < room_browse_total_pages, col_bg, col_white, col_slate);
+    if (area_browse_total_pages > 1) {
+      render_vertical_page_pips(it, area_browse_page > 1, area_browse_page < area_browse_total_pages, col_bg, col_white, col_slate);
     }
     return;
   }
 
   // ===========================================================================
-  // SUBPAGE 0: MAIN ROOM CONTROL (HEADER + CLIMATE + 3 TALL SLIDER CARDS + DOCK)
+  // SUBPAGE 0: MAIN AREA CONTROL (HEADER + CLIMATE + 3 TALL SLIDER CARDS + DOCK)
   // ===========================================================================
-  // 1. Top Room Title (y = 44) & Live Room Climate Line (y = 74)
+  // 1. Top Area Title (y = 44) & Live Area Climate Line (y = 74)
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
   it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
 
   if (is_fb) {
-    std::string fit_fb = fit_text_to_width_font(room_action_feedback, scale_x(280), font_small);
+    std::string fit_fb = fit_text_to_width_font(area_action_feedback, scale_x(280), font_small);
     it.print(cx, layout().sub_hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
-  } else if (!std::isnan(room_temp) || !std::isnan(room_humidity)) {
+  } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
     const int tele_y = layout().sub_hdr_y;
     const Color icon_c(185, 225, 255);
 
@@ -421,14 +424,14 @@ inline void render_room_control_page(
 
     char t_str[16] = "", h_str[16] = "";
     int w_t = 0, w_h = 0, x_off = 0, base = 0, th = 0;
-    bool has_t = !std::isnan(room_temp);
-    bool has_h = !std::isnan(room_humidity);
+    bool has_t = !std::isnan(area_temp);
+    bool has_h = !std::isnan(area_humidity);
     if (has_t) {
-      snprintf(t_str, sizeof(t_str), "%.0f°", room_temp);
+      snprintf(t_str, sizeof(t_str), "%.0f°", area_temp);
       font_small->measure(t_str, &w_t, &x_off, &base, &th);
     }
     if (has_h) {
-      snprintf(h_str, sizeof(h_str), "%.0f%%", room_humidity);
+      snprintf(h_str, sizeof(h_str), "%.0f%%", area_humidity);
       font_small->measure(h_str, &w_h, &x_off, &base, &th);
     }
 
@@ -452,11 +455,11 @@ inline void render_room_control_page(
       it.print(left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     }
   } else {
-    const char *sub_lbl = (room_domain_filter == "scene") ? "Lighting Scenes"
-                        : (room_domain_filter == "light") ? "Lights"
-                        : (room_domain_filter == "cover") ? "Blinds & Curtains"
-                        : (room_domain_filter == "fan")   ? "Fans"
-                        : (room_domain_filter == "switch") ? "Switches & Outlets"
+    const char *sub_lbl = (area_domain_filter == "scene") ? "Lighting Scenes"
+                        : (area_domain_filter == "light") ? "Lights"
+                        : (area_domain_filter == "cover") ? "Blinds & Curtains"
+                        : (area_domain_filter == "fan")   ? "Fans"
+                        : (area_domain_filter == "switch") ? "Switches & Outlets"
                         : "Tap Header to Switch Area";
     it.print(cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
   }
@@ -533,7 +536,7 @@ inline void render_room_control_page(
       it.line(gx + 6, gy - 5, gx + 8, gy - 5, theme_secondary);
       it.line(gx + 6, gy - 1, gx + 9, gy - 1, theme_secondary);
     } else if (dtype == "media_player") {
-      // Room Speaker Note
+      // Area Speaker Note
       it.filled_circle(gx - 4, gy + 5, 4, theme_primary);
       it.filled_circle(gx + 5, gy + 3, 4, theme_primary);
       it.filled_rectangle(gx - 1, gy - 9, 2, 14, theme_primary);
@@ -551,7 +554,7 @@ inline void render_room_control_page(
   };
 
   // 2. Render 3 Tall Sculpted Slider Cards at y_mid = {132, 208, 284} (w = 316, h = 64, r = 16 -> x = 75..391)
-  auto draw_tall_room_card = [&](int y_mid, const std::string &raw_name, const std::string &id_str,
+  auto draw_tall_area_card = [&](int y_mid, const std::string &raw_name, const std::string &id_str,
                                  const std::string &dtype, bool is_act, int level) {
     if (raw_name.empty() && id_str.empty()) return;
 
@@ -637,17 +640,17 @@ inline void render_room_control_page(
     }
   };
 
-  draw_tall_room_card(layout().area_card3_y(0), s1_name, s1_id, s1_type, s1_act, s1_lvl);
-  draw_tall_room_card(layout().area_card3_y(1), s2_name, s2_id, s2_type, s2_act, s2_lvl);
-  draw_tall_room_card(layout().area_card3_y(2), s3_name, s3_id, s3_type, s3_act, s3_lvl);
+  draw_tall_area_card(layout().area_card3_y(0), s1_name, s1_id, s1_type, s1_act, s1_lvl);
+  draw_tall_area_card(layout().area_card3_y(1), s2_name, s2_id, s2_type, s2_act, s2_lvl);
+  draw_tall_area_card(layout().area_card3_y(2), s3_name, s3_id, s3_type, s3_act, s3_lvl);
 
   // 3. Right-Flank Vertical Page Pips (when > 1 page of 3 cards)
-  if (room_browse_total_pages > 1) {
-    render_vertical_page_pips(it, room_browse_page > 1, room_browse_page < room_browse_total_pages, col_bg, col_white, col_slate);
+  if (area_browse_total_pages > 1) {
+    render_vertical_page_pips(it, area_browse_page > 1, area_browse_page < area_browse_total_pages, col_bg, col_white, col_slate);
   }
 
   // 4. Dynamic Bottom Category Dock
-  render_room_bottom_dock(room_domain_filter);
+  render_area_bottom_dock(area_domain_filter);
 }
 
 // =============================================================================
@@ -657,7 +660,7 @@ template <typename DisplayT, typename FontDateT, typename FontSmallT>
 inline void render_security_alarm_page(
     DisplayT &it, int cx, uint32_t now_ms,
     const std::string &alarm_entity, const std::string &alarm_state,
-    const std::string &room_action_feedback, uint32_t room_feedback_timer,
+    const std::string &area_action_feedback, uint32_t area_feedback_timer,
     FontDateT *font_date, FontSmallT *font_small,
     esphome::Color theme_primary, esphome::Color theme_secondary,
     esphome::Color col_white, esphome::Color col_slate,
@@ -665,7 +668,7 @@ inline void render_security_alarm_page(
   using esphome::Color;
   using esphome::display::TextAlign;
 
-  const bool is_fb = (now_ms - room_feedback_timer < 1500U && !room_action_feedback.empty());
+  const bool is_fb = (now_ms - area_feedback_timer < 1500U && !area_action_feedback.empty());
   const Color card_bg_on(22, 28, 38);
   const Color card_bg_off(16, 20, 27);
   const Color card_brd_off(44, 52, 66);
@@ -691,7 +694,7 @@ inline void render_security_alarm_page(
       else if (alarm_state == "armed_away") { st_lbl = "Status: Armed Away"; st_col = col_red; }
     }
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
-             is_fb ? room_action_feedback.c_str() : st_lbl.c_str());
+             is_fb ? area_action_feedback.c_str() : st_lbl.c_str());
 
     bool is_disarmed = (alarm_state == "disarmed" || alarm_state.empty() || alarm_state == "none");
     bool is_home     = (alarm_state == "armed_home" || alarm_state == "armed_night");
@@ -717,7 +720,7 @@ inline void render_security_alarm_page(
     const char *m_lbl = (m == "heat") ? "Heating" : ((m == "cool") ? "Cooling" : ((m == "off") ? "System Off" : "Auto Climate"));
     snprintf(sub_t, sizeof(sub_t), "%s  •  Indoor 70°", m_lbl);
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? room_action_feedback.c_str() : sub_t);
+             is_fb ? area_action_feedback.c_str() : sub_t);
 
     const int hero_y = scale_y(156);
     const int mode_y = scale_y(266);
@@ -757,7 +760,7 @@ inline void render_security_alarm_page(
   } else if (tab == 2) {
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? room_action_feedback.c_str() : "Tap Card to Toggle");
+             is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle");
 
     bool g_open = sim_garage_open();
     render_modern_card(it, cx, scale_y(156), 308, 72, 16,
@@ -778,7 +781,7 @@ inline void render_security_alarm_page(
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
     std::string v_st = "Status: " + sim_vacuum_state();
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? room_action_feedback.c_str() : v_st.c_str());
+             is_fb ? area_action_feedback.c_str() : v_st.c_str());
 
     bool is_cln = (sim_vacuum_state() == "Cleaning");
     bool is_psd = (sim_vacuum_state() == "Paused");

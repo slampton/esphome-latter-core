@@ -1,5 +1,5 @@
 # ==============================================================================
-# Latter Core Mixin: Roaming BLE Room Presence Beacon (mixins/ble_beacon.yaml)
+# Latter Core Mixin: Roaming BLE Area Presence Beacon (mixins/ble_beacon.yaml)
 # Usage:
 #   packages:
 #     latter.ble: github://slampton/esphome-latter-core/mixins/ble_beacon.yaml@main
@@ -13,7 +13,7 @@ api:
     - action: latter_ping
       id: latter_ping_action
       then:
-        - logger.log: "Latter BLE Room Presence Mixin active"
+        - logger.log: "Latter BLE Area Presence Mixin active"
 
 esp32_ble:
   id: latter_ble_ctrl

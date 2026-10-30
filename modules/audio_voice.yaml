@@ -309,7 +309,7 @@ voice_assistant:
             return;
           }
           id(va_status_text) = "Thinking...";
-          // If the user asked Assist to pause/stop media (not a room light/fan or timer), do not auto-resume music
+          // If the user asked Assist to pause/stop media (not an area light/fan or timer), do not auto-resume music
           std::string utt = x;
           for (char &c : utt) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
           const bool mentions_media = (utt.find("music") != std::string::npos ||

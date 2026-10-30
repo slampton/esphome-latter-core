@@ -1,5 +1,5 @@
 # ==============================================================================
-# Latter Core Mixin: Stationary Room BLE Scanner Proxy (mixins/ble_proxy.yaml)
+# Latter Core Mixin: Stationary Area BLE Scanner Proxy (mixins/ble_proxy.yaml)
 # Usage:
 #   packages:
 #     latter.proxy: github://slampton/esphome-latter-core/mixins/ble_proxy.yaml@main
