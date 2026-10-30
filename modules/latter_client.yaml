@@ -41,6 +41,9 @@ substitutions:
   remote_4_entity: "remote.none"
   remote_4_name: ""
 
+packages:
+  latter_pipeline: !include display_pipeline.yaml
+
 esphome:
   on_boot:
     - priority: 800

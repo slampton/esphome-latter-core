@@ -5,5 +5,4 @@
 
 packages:
   latter_client:   !include latter_client.yaml
-  latter_pipeline: !include display_pipeline.yaml
   latter_gui:      !include ../guis/universal/gui.yaml
