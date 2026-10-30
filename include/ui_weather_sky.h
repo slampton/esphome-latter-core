@@ -684,10 +684,12 @@ inline void render_night_shooting_star(DisplayT &it, uint32_t now_ms, int cy) {
   float vx = static_cast<float>(dir_x) * ca;
   float vy = sa;
 
-  // Origin distributed across upper/mid night sky (including paths that cross over the Moon at 346,91)
-  float x0 = (dir_x > 0) ? (75.0f + rx * 210.0f) : (180.0f + rx * 215.0f);
-  float y0 = 42.0f + ry * 128.0f;
-  float total_dist = 145.0f + rlen * 75.0f;
+  // Origin distributed across upper/mid night sky (proportional across all display widths/heights)
+  const float w_scale = static_cast<float>(SCREEN_W) * (1.0f / 466.0f);
+  const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
+  float x0 = ((dir_x > 0) ? (75.0f + rx * 210.0f) : (180.0f + rx * 215.0f)) * w_scale;
+  float y0 = (42.0f + ry * 128.0f) * h_scale;
+  float total_dist = scale_min_f(145.0f + rlen * 75.0f);
 
   float d_head = total_dist * u_head;
   float d_tail = total_dist * u_tail;
@@ -784,7 +786,7 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
 template<typename DisplayT>
 inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float flap_phase,
                                 float scale, int cy, int cel_cx = 341, int cel_cy = 91) {
-  if (by < 12 || by > 454) return;
+  if (by < 12 || by > SCREEN_H - 12) return;
   float s1 = fast_sin(flap_phase);
   float s2 = fast_sin(flap_phase - 0.55f);
   int w_in  = static_cast<int>(5.2f * scale);
@@ -795,6 +797,7 @@ inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float fla
   esphome::Color col_sky_upper(156, 188, 222); // Subtle silver-slate upper wing (softer than white, high contrast on navy)
   esphome::Color col_sky_under(102, 136, 174); // Muted steel-blue underwing shadow
   esphome::Color col_sun_silh(18,  30,  46);   // Dark silhouette when crossing directly in front of the golden Sun
+  const int sun_r_sq = scale_min(24) * scale_min(24);
 
   int lx_m = bx - w_in,  ly_m = by + dy_in - (dir > 0 ? 1 : 0);
   int lx_t = bx - w_out, ly_t = by + dy_out - (dir > 0 ? 2 : 0);
@@ -805,7 +808,7 @@ inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float fla
     if (is_inside_bezel(x0, y0, cy, 2) && is_inside_bezel(x1, y1, cy, 2)) {
       int mx = (x0 + x1) >> 1;
       int my = (y0 + y1) >> 1;
-      bool over_sun = ((mx - cel_cx) * (mx - cel_cx) + (my - cel_cy) * (my - cel_cy)) <= 576; // r <= 24px
+      bool over_sun = ((mx - cel_cx) * (mx - cel_cx) + (my - cel_cy) * (my - cel_cy)) <= sun_r_sq;
       if (over_sun) {
         it.line(x0, y0,     x1, y1,     col_sun_silh);
         it.line(x0, y0 + 1, x1, y1 + 1, col_sun_silh);
@@ -823,12 +826,13 @@ inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float fla
 }
 
 // Draws a true 3D Euler-rotated tumbling leaf mesh (tip, base, cambered lobes, midrib & petiole stem)
-// projected into 2D screen space via rotate_3d_xyz() + project_3d() with 3D normal-vector sunlight glint
+// projected into 2D screen space via Mat3::from_euler() + project_3d() with 3D normal-vector sunlight glint
 template<typename DisplayT>
 inline void draw_tumbling_leaf_3d(DisplayT &it, Vec3 center_3d, float rx, float ry, float rz,
                                   float scale, esphome::Color col_base, esphome::Color col_vein, int cy) {
+  const Mat3 rot = Mat3::from_euler(rx, ry, rz);
   auto xform = [&](Vec3 local) -> ProjectedPoint {
-    Vec3 r = rotate_3d_xyz({local.x * scale, local.y * scale, local.z * scale}, rx, ry, rz);
+    Vec3 r = rot.transform({local.x * scale, local.y * scale, local.z * scale});
     return project_3d({center_3d.x + r.x, center_3d.y + r.y, center_3d.z + r.z}, SCREEN_CX, cy, 250.0f, 320.0f);
   };
 
@@ -840,8 +844,8 @@ inline void draw_tumbling_leaf_3d(DisplayT &it, Vec3 center_3d, float rx, float 
 
   if (!p_tip.visible || !p_base.visible) return;
 
-  // 3D surface normal Z/Y glint: brighten leaf blade when angled toward upper-right skylight
-  Vec3 norm = rotate_3d_xyz({0.0f, 0.0f, 1.0f}, rx, ry, rz);
+  // 3D surface normal Z/Y glint: brighten leaf blade when angled toward upper-right skylight (0 extra trig calls!)
+  Vec3 norm = rot.normal_z();
   float glint = 0.78f + 0.34f * fmaxf(0.0f, norm.z * 0.7f - norm.y * 0.5f);
   esphome::Color c_blade = scale_color(col_base, fminf(1.15f, glint));
 
@@ -1189,12 +1193,13 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     static constexpr int16_t GUST_Y[3] = { 82, 168, 236};
     esphome::Color gust_hi  = is_night ? esphome::Color(70, 98, 130)  : esphome::Color(115, 155, 195);
     esphome::Color gust_dim = is_night ? esphome::Color(38, 56,  78)  : esphome::Color( 62,  92, 128);
+    const int gust_wrap = SCREEN_W + 94;
     for (int g = 0; g < 3; g++) {
-      int gx_head = ((static_cast<int>(now_ms / 5U) + g * 185) % 560) - 50;
-      int gy_base = GUST_Y[g];
+      int gx_head = ((static_cast<int>(now_ms / 5U) + g * (gust_wrap / 3)) % gust_wrap) - 50;
+      int gy_base = scale_y(GUST_Y[g]);
       int prev_x = 0, prev_y = 0;
       for (int s = 0; s <= 6; s++) {
-        int sx = gx_head - s * 18;
+        int sx = gx_head - s * scale_min(18);
         int sy = gy_base + static_cast<int>(fast_sin(sx * 0.025f + g * 1.7f) * 7.0f);
         if (s > 0 && is_inside_bezel(sx, sy, cy, 8) && is_inside_bezel(prev_x, prev_y, cy, 8)) {
           esphome::Color seg_c = (s >= 2 && s <= 4) ? gust_hi : gust_dim;
@@ -1349,7 +1354,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (tier == 0) {
         drops[idx].spd   = 250.0f + rain_rand() * 70.0f;
         drops[idx].len   = 18.0f  + rain_rand() * 8.0f;
-        drops[idx].max_y = 165.0f + rain_rand() * 105.0f; // Dissolves in mid-sky!
+        drops[idx].max_y = static_cast<float>(scale_y(165)) + rain_rand() * static_cast<float>(scale_y(105));
       } else if (tier == 1) {
         drops[idx].spd   = 320.0f + rain_rand() * 85.0f;
         drops[idx].len   = 24.0f  + rain_rand() * 10.0f;
@@ -1389,7 +1394,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       float step_y = drops[i].spd * spd_mult * dt;
       drops[i].y += step_y;
       drops[i].x -= step_y * slant;
-      if (drops[i].x < 18.0f) drops[i].x += 426.0f;
+      if (drops[i].x < 18.0f) drops[i].x += static_cast<float>(SCREEN_W - 36);
 
       if (drops[i].y > drops[i].max_y) {
         respawn_drop(i, false);
@@ -1443,21 +1448,22 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       }
     }
 
-    // Subtle Ghibli Water-Surface Splash Ripples along the y = 310 Horizon Divider Line
+    // Subtle Ghibli Water-Surface Splash Ripples along the Horizon Divider Line
     int num_splashes = is_heavy ? 5 : 3;
+    const int splash_y = scale_y(309);
     esphome::Color splash_c = is_night ? esphome::Color(86, 128, 178) : esphome::Color(115, 160, 210);
     for (int s = 0; s < num_splashes; s++) {
       uint32_t sp_t = (now_ms + static_cast<uint32_t>(s) * 210U);
       uint32_t sp_cycle = sp_t / 650U;
       float sp_p = static_cast<float>(sp_t % 650U) * (1.0f / 650.0f);
       if (sp_p < 0.65f) {
-        int sp_x = 96 + static_cast<int>(hash2d_01(static_cast<int>(sp_cycle * 31U + s * 17U), 23) * 274.0f);
-        int rx_sp = 2 + static_cast<int>(sp_p * 8.0f);
+        int sp_x = scale_x(96) + static_cast<int>(hash2d_01(static_cast<int>(sp_cycle * 31U + s * 17U), 23) * static_cast<float>(SCREEN_W - 2 * scale_x(96)));
+        int rx_sp = 2 + static_cast<int>(sp_p * scale_min_f(8.0f));
         esphome::Color rc = scale_color(splash_c, 1.0f - (sp_p * 1.45f));
-        it.horizontal_line(sp_x - rx_sp, 309, rx_sp * 2 + 1, rc);
+        it.horizontal_line(sp_x - rx_sp, splash_y, rx_sp * 2 + 1, rc);
         if (sp_p < 0.30f) {
-          it.draw_pixel_at(sp_x - 2, 307, rc);
-          it.draw_pixel_at(sp_x + 2, 307, rc);
+          it.draw_pixel_at(sp_x - 2, splash_y - 2, rc);
+          it.draw_pixel_at(sp_x + 2, splash_y - 2, rc);
         }
       }
     }

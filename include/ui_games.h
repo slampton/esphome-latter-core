@@ -183,16 +183,16 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   auto spawn_wave_balls = [&](int w_idx) {
     static constexpr float RADII[5] = {20.0f, 18.0f, 16.0f, 14.0f, 12.0f};
-    // Spawn on an outer ring (dist 108..134px) at golden-angle offsets so balls never overlap the 54px diamond pegs
+    // Spawn on an outer ring (dist 108..134px scaled) at golden-angle offsets so balls never overlap the diamond pegs
     float base_ang = static_cast<float>(w_idx - 1) * 0.65f;
     for (int i = 0; i < 5; i++) {
       float ang = base_ang + static_cast<float>(i) * 1.256637f; // 72 deg spacing
       float s_a = 0.0f, c_a = 1.0f;
       fast_sincos(ang, s_a, c_a);
-      float dist = 112.0f + static_cast<float>((i & 1) * 16);
+      float dist = scale_min_f(112.0f + static_cast<float>((i & 1) * 16));
       balls[i] = {static_cast<float>(cx) + c_a * dist,
                   static_cast<float>(cy) + s_a * dist,
-                  0.0f, 0.0f, RADII[i], i, false, 0U, 0.0f, 0.0f};
+                  0.0f, 0.0f, scale_min_f(RADII[i]), i, false, 0U, 0.0f, 0.0f};
     }
   };
 
@@ -248,8 +248,9 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // Wave 4: 3 pegs (Top, Bottom, Left)
   // Wave 5+: 4 pegs (Full Diamond: Top, Bottom, Left, Right; gently orbits on Wave 6+)
   const int num_pegs = std::min(4, std::max(0, wave_num - 1));
-  const float peg_ring_r = 54.0f;
-  const float peg_r = 6.0f;
+  const float peg_ring_r = scale_min_f(54.0f);
+  const float peg_r = scale_min_f(6.0f);
+  const int wall_y = layout().back_y - scale_y(60);
   static constexpr float PEG_BASE_ANG[4] = {
       -1.5707963f, // Top (12 o'clock)
        1.5707963f, // Bottom (6 o'clock)
@@ -311,7 +312,10 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   //   - Crisp tilt acceleration (34.0 px/s^2 per deg)
   const float friction = powf(0.975f, dt / 0.05f);
   const float bounce = 0.82f;
-  const float arena_r = 208.0f;
+  const float arena_r = scale_min_f(208.0f);
+  const float hole_cap_r = scale_min_f(24.0f);
+  const float hole_bevel_r = scale_min_f(42.0f);
+  const float outer_lip_r = scale_min_f(180.0f);
 
   float ax = roll_delta * 34.0f;
   float ay = -pitch_delta * 34.0f;
@@ -330,8 +334,8 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
       float dy = balls[i].y - static_cast<float>(cy);
       float dist_hole = sqrtf(dx * dx + dy * dy);
 
-      // Center hole capture rim (r = 24px)
-      if (dist_hole < 24.0f) {
+      // Center hole capture rim (r = 24px scaled)
+      if (dist_hole < hole_cap_r) {
         balls[i].sunk = true;
         balls[i].sink_start_ms = now_ms;
         balls[i].sink_x = balls[i].x;
@@ -355,22 +359,22 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
         continue;
       }
 
-      // Flat free-rolling arena table (r = 42..180px) so marbles carry real speed and can get away
+      // Flat free-rolling arena table (r = 42..180px scaled) so marbles carry real speed and can get away
       // from you, with:
       //   1. Tight hole lip bevel (24..42px) so you must aim onto the rim to sink a marble
       //   2. Subtle outer-bezel lip (dist > 180px) so marbles don't get trapped against the wall
-      if (dist_hole < 42.0f && dist_hole >= 24.0f) {
-        float bevel_pull = (42.0f - dist_hole) * 9.5f;
+      if (dist_hole < hole_bevel_r && dist_hole >= hole_cap_r) {
+        float bevel_pull = (hole_bevel_r - dist_hole) * 9.5f;
         balls[i].vx -= (dx / dist_hole) * bevel_pull * dt;
         balls[i].vy -= (dy / dist_hole) * bevel_pull * dt;
-      } else if (dist_hole > 180.0f) {
-        float rim_nudge = (dist_hole - 180.0f) * 1.15f;
+      } else if (dist_hole > outer_lip_r) {
+        float rim_nudge = (dist_hole - outer_lip_r) * 1.15f;
         balls[i].vx -= (dx / dist_hole) * rim_nudge * dt;
         balls[i].vy -= (dy / dist_hole) * rim_nudge * dt;
       }
 
       // Slight rolling-inertia differentiation by size (smaller marbles accelerate slightly faster)
-      float inertia_scale = 0.92f + (20.0f - balls[i].r) * 0.02f;
+      float inertia_scale = 0.92f + (scale_min_f(20.0f) - balls[i].r) * 0.02f;
       balls[i].vx = (balls[i].vx + ax * inertia_scale * dt) * friction;
       balls[i].vy = (balls[i].vy + ay * inertia_scale * dt) * friction;
       balls[i].x += balls[i].vx * dt;
@@ -404,8 +408,8 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
         }
       }
 
-      // Horizontal bottom cushion wall at y = 374 (protects scorekeeper at y = 392 & < Back at y = 426!)
-      float max_bot_y = 374.0f - balls[i].r;
+      // Horizontal bottom cushion wall protecting scorekeeper & < Exit
+      float max_bot_y = static_cast<float>(wall_y) - balls[i].r;
       if (balls[i].y > max_bot_y) {
         balls[i].y = max_bot_y;
         if (balls[i].vy > 0.0f) {
@@ -507,27 +511,28 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   (void)theme_primary; (void)col_gray;
   // Subtle horizontal bottom cushion wall + Score + "< Exit" aligned to layout().back_y
   const int hud_y = layout().back_y - scale_y(34);
-  it.line(cx - 151, 374, cx + 151, 374, col_slate * 0.45f);
-  it.line(cx - 149, 375, cx + 149, 375, col_dark_gray);
+  const int wall_hw = scale_min(151);
+  it.line(cx - wall_hw, wall_y, cx + wall_hw, wall_y, col_slate * 0.45f);
+  it.line(cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, col_dark_gray);
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d", wave_num, sunk_count, time_remaining, game_score);
   it.print(cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // Center Hole Target with Swirling Event Horizon
-  it.circle(cx, cy, 34, col_dark_gray);
-  it.circle(cx, cy, 30, col_slate);
-  it.circle(cx, cy, 29, col_white);
-  it.circle(cx, cy, 28, col_white);
-  it.filled_circle(cx, cy, 25, col_bg);
+  it.circle(cx, cy, scale_min(34), col_dark_gray);
+  it.circle(cx, cy, scale_min(30), col_slate);
+  it.circle(cx, cy, scale_min(29), col_white);
+  it.circle(cx, cy, scale_min(28), col_white);
+  it.filled_circle(cx, cy, scale_min(25), col_bg);
 
   float swirl = static_cast<float>((now_ms / 25U) % 360U) * (PI_F / 180.0f);
   for (int s = 0; s < 4; s++) {
     float sa = swirl + static_cast<float>(s) * (PI_F * 0.5f);
     float s_sa = 0.0f, c_sa = 1.0f;
     fast_sincos(sa, s_sa, c_sa);
-    it.line(cx + static_cast<int>(c_sa * 26.0f), cy + static_cast<int>(s_sa * 26.0f),
-            cx + static_cast<int>(c_sa * 32.0f), cy + static_cast<int>(s_sa * 32.0f), col_slate);
+    it.line(cx + static_cast<int>(c_sa * scale_min_f(26.0f)), cy + static_cast<int>(s_sa * scale_min_f(26.0f)),
+            cx + static_cast<int>(c_sa * scale_min_f(32.0f)), cy + static_cast<int>(s_sa * scale_min_f(32.0f)), col_slate);
   }
 
   // Render Diamond Bumper Dots (Wave 2..5+)
@@ -600,40 +605,41 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char w_buf[36];
     if (now_ms - wave_clear_ms < 1100U) {
       snprintf(w_buf, sizeof(w_buf), "WAVE %d CLEAR! +6s", wave_num - 1);
-      it.print(cx, 126, font_date, col_gold, esphome::display::TextAlign::CENTER, w_buf);
+      it.print(cx, cy - scale_y(107), font_date, col_gold, esphome::display::TextAlign::CENTER, w_buf);
     } else {
       snprintf(w_buf, sizeof(w_buf), "GET READY! WAVE %d", wave_num);
-      it.print(cx, 126, font_date, col_cyan, esphome::display::TextAlign::CENTER, w_buf);
+      it.print(cx, cy - scale_y(107), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_buf);
     }
   }
 
   // Round Over Summary Modal
   if (round_over) {
-    it.filled_circle(cx, cy, 115, col_bg);
-    it.circle(cx, cy, 115, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, 113, is_new_high ? col_gold : theme_secondary);
+    const int mod_r = scale_min(115);
+    it.filled_circle(cx, cy, mod_r, col_bg);
+    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, 156, font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       if (wave_num == 1) {
-        it.print(cx, 156, font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
+        it.print(cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
       } else {
         char w_end[32];
         snprintf(w_end, sizeof(w_end), "WAVE %d REACHED", wave_num);
-        it.print(cx, 156, font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
+        it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
       }
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", game_score);
-    it.print(cx, 198, font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_marbles);
-    it.print(cx, 233, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, 275, font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -747,31 +753,34 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   if (dt < 0.012f) dt = 0.012f;
   if (dt > 0.075f) dt = 0.075f;
 
-  // Target size & sway scale with round_num (simulating 30m -> 50m -> 70m -> 90m range!)
-  const int target_r = std::max(26, 36 - (round_num - 1) * 2);
+  // Target size & sway scale with round_num (simulating 30m -> 50m -> 70m -> 90m range across all display sizes!)
+  const int target_r = scale_min(std::max(26, 36 - (round_num - 1) * 2));
   const float sway_spd = 0.78f + static_cast<float>(std::min(6, round_num - 1)) * 0.16f;
   target_phase += sway_spd * dt;
 
-  const float target_base_y = 112.0f;
-  const float bow_y = 346.0f;
-  float target_x = static_cast<float>(cx) + fast_sin(target_phase) * 102.0f;
-  float target_y = target_base_y + fast_cos(target_phase * 1.4f) * 24.0f;
+  const float target_base_y = static_cast<float>(scale_y(112));
+  const float bow_y = static_cast<float>(layout().back_y - scale_y(88));
+  float target_x = static_cast<float>(cx) + fast_sin(target_phase) * scale_min_f(102.0f);
+  float target_y = target_base_y + fast_cos(target_phase * 1.4f) * scale_min_f(24.0f);
 
   // Crosswind scales smoothly with round_num (gentle in Round 1, brisk in Round 3+)
   float max_wind = std::min(8.0f, 2.5f + static_cast<float>(round_num - 1) * 1.3f);
   wind_speed = fast_sin(static_cast<float>(now_ms % 62832U) * 0.00065f) * max_wind;
 
-  // EMA-smoothed Player Aim Reticle (centered around target_base_y = 112 so neutral posture aims at target level)
-  float raw_ax = static_cast<float>(cx) + roll_delta * 6.8f;
-  float raw_ay = target_base_y - pitch_delta * 6.8f;
+  // EMA-smoothed Player Aim Reticle (centered around target_base_y so neutral posture aims at target level)
+  float raw_ax = static_cast<float>(cx) + roll_delta * scale_min_f(6.8f);
+  float raw_ay = target_base_y - pitch_delta * scale_min_f(6.8f);
   if (touch_gesture().active && touch_gesture().last_y < layout().back_y - scale_y(42) &&
       (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(8))) {
     raw_ax = static_cast<float>(touch_gesture().last_x);
     raw_ay = static_cast<float>(touch_gesture().last_y);
   }
-  if (raw_ax < static_cast<float>(cx - 173)) raw_ax = static_cast<float>(cx - 173);
-  else if (raw_ax > static_cast<float>(cx + 173)) raw_ax = static_cast<float>(cx + 173);
-  if (raw_ay < 48.0f) raw_ay = 48.0f; else if (raw_ay > 280.0f) raw_ay = 280.0f;
+  const float max_aim_dx = scale_min_f(173.0f);
+  if (raw_ax < static_cast<float>(cx) - max_aim_dx) raw_ax = static_cast<float>(cx) - max_aim_dx;
+  else if (raw_ax > static_cast<float>(cx) + max_aim_dx) raw_ax = static_cast<float>(cx) + max_aim_dx;
+  const float min_aim_y = static_cast<float>(scale_y(48));
+  const float max_aim_y = bow_y - static_cast<float>(scale_y(50));
+  if (raw_ay < min_aim_y) raw_ay = min_aim_y; else if (raw_ay > max_aim_y) raw_ay = max_aim_y;
   if (LATTER_HAS_IMU == 0 && touch_gesture().active) {
     smooth_ax = raw_ax;
     smooth_ay = raw_ay;
@@ -1014,16 +1023,16 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char rb[36];
     if (now_ms - round_banner_ms < 1100U) {
       snprintf(rb, sizeof(rb), "ROUND %d CLEAR!", round_num - 1);
-      it.print(cx, 225, font_date, col_gold, esphome::display::TextAlign::CENTER, rb);
+      it.print(cx, cy - scale_y(8), font_date, col_gold, esphome::display::TextAlign::CENTER, rb);
     } else {
       snprintf(rb, sizeof(rb), "ROUND %d! GOAL %d", round_num, round_goal);
-      it.print(cx, 225, font_date, col_cyan, esphome::display::TextAlign::CENTER, rb);
+      it.print(cx, cy - scale_y(8), font_date, col_cyan, esphome::display::TextAlign::CENTER, rb);
     }
   } else if (!round_over && hit_feedback[0] != '\0' && (now_ms - feedback_timer < 1100U)) {
-    it.print(cx, 225, font_date, feedback_col, esphome::display::TextAlign::CENTER, hit_feedback);
+    it.print(cx, cy - scale_y(8), font_date, feedback_col, esphome::display::TextAlign::CENTER, hit_feedback);
   }
 
-  // 7. Single Bottom Scorekeeper Line at y = 408 (Universal Clean Game Canvas Standard)
+  // 7. Single Bottom Scorekeeper Line (Universal Clean Game Canvas Standard)
   char wind_buf[20];
   if (fabsf(wind_speed) < 1.0f) {
     snprintf(wind_buf, sizeof(wind_buf), "CALM");
@@ -1039,27 +1048,28 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   // 8. Round Over Summary Modal
   if (round_over) {
-    it.filled_circle(cx, cy, 115, col_bg);
-    it.circle(cx, cy, 115, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, 113, is_new_high ? col_gold : theme_secondary);
+    const int mod_r = scale_min(115);
+    it.filled_circle(cx, cy, mod_r, col_bg);
+    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, 156, font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       char r_end[32];
       snprintf(r_end, sizeof(r_end), "ROUND %d REACHED", round_num);
-      it.print(cx, 156, font_date, col_cyan, esphome::display::TextAlign::CENTER, r_end);
+      it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, r_end);
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", arch_score);
-    it.print(cx, 198, font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_archery);
-    it.print(cx, 233, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, 275, font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1187,14 +1197,18 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   static uint32_t banner_ms = 0;
   static char banner_text[32] = "";
 
-  // Helper to populate the symmetric 4-5-5-4 dome brick rack centered at cx = 233
+  // Helper to populate the symmetric 4-5-5-4 dome brick rack centered at cx across all display sizes
   auto init_brick_wave = [&](int wv) {
     static constexpr int ROW_COUNTS[4] = {4, 5, 5, 4};
     static constexpr int ROW_YS[4] = {82, 104, 126, 148};
+    const int brk_pitch = scale_min(46);
+    const int brk_w = scale_min(40);
+    const int brk_h = scale_min(14);
     int idx = 0;
     for (int r = 0; r < 4; r++) {
       int cnt = ROW_COUNTS[r];
-      int start_x = cx - ((cnt - 1) * 46) / 2;
+      int start_x = cx - ((cnt - 1) * brk_pitch) / 2;
+      int row_y = cy - scale_min(233 - ROW_YS[r]);
       for (int c = 0; c < cnt; c++) {
         uint8_t hp = 1;
         if (wv == 2 && r == 0) {
@@ -1209,10 +1223,10 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
           else if (r == 1) hp = 2;
           else if (r == 2 && (c == 0 || c == 2 || c == 4)) hp = 2;
         }
-        bricks[idx].x = (int16_t)(start_x + c * 46);
-        bricks[idx].y = (int16_t)ROW_YS[r];
-        bricks[idx].w = 40;
-        bricks[idx].h = 14;
+        bricks[idx].x = (int16_t)(start_x + c * brk_pitch);
+        bricks[idx].y = (int16_t)row_y;
+        bricks[idx].w = (int16_t)brk_w;
+        bricks[idx].h = (int16_t)brk_h;
         bricks[idx].row = (uint8_t)r;
         bricks[idx].hp = hp;
         bricks[idx].max_hp = hp;
@@ -1221,10 +1235,14 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
     }
   };
 
+  const int paddle_y = std::min(layout().back_y - scale_y(76), cy + scale_min(117));
+  const int paddle_w = scale_min(58);
+  const int paddle_h = scale_min(10);
+
   auto reset_ball_on_paddle = [&]() {
     ball_launched = false;
     ball_x = smooth_paddle_x;
-    ball_y = 344.0f;
+    ball_y = static_cast<float>(paddle_y - scale_min(11));
     ball_vx = 0.0f;
     ball_vy = 0.0f;
     for (int t = 0; t < 4; t++) {
@@ -1255,23 +1273,19 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   if (dt < 0.012f) dt = 0.012f;
   if (dt > 0.075f) dt = 0.075f;
 
-  // Paddle geometry & circular chord clamping at y = 356
-  const int paddle_y = 350;
-  const int paddle_w = 58;
-  const int paddle_h = 10;
-  // At y = 356 (dy = 123 from cy = 233), r = 208 arena chord half-width is 167px.
-  // Clamping paddle center within cx +/- 136 keeps the entire 58px capsule inside the dome.
-  float raw_target_x = (float)cx + roll_delta * 8.4f;
+  // Paddle geometry & circular chord clamping
+  const int max_pad_dx = scale_min(136);
+  float raw_target_x = (float)cx + roll_delta * scale_min_f(8.4f);
   if (touch_gesture().active && touch_gesture().last_y < layout().back_y - scale_y(38) &&
       (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(8))) {
     raw_target_x = static_cast<float>(touch_gesture().last_x);
   }
-  if (raw_target_x < (float)(cx - 136)) raw_target_x = (float)(cx - 136);
-  if (raw_target_x > (float)(cx + 136)) raw_target_x = (float)(cx + 136);
+  if (raw_target_x < (float)(cx - max_pad_dx)) raw_target_x = (float)(cx - max_pad_dx);
+  if (raw_target_x > (float)(cx + max_pad_dx)) raw_target_x = (float)(cx + max_pad_dx);
   smooth_paddle_x += (raw_target_x - smooth_paddle_x) * 0.34f;
   float paddle_x = smooth_paddle_x;
 
-  float target_speed = std::min(285.0f, 215.0f + (wave_num - 1) * 14.0f);
+  float target_speed = scale_min_f(std::min(285.0f, 215.0f + (wave_num - 1) * 14.0f));
 
   // Touch Trigger: Launch Ball or Replay
   if (marble_touch_x >= 0.0f || game_btn_pressed) {
@@ -1338,15 +1352,16 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
       //      reflection so the inward-curving lower bezel never kicks a falling ball back up into
       //      a 10:00 <-> 4:00 or 2:00 <-> 8:00 diameter loop!
       static int wall_bounces = 0;
+      const float dome_ball_r = scale_min_f(202.0f);
       float b_dx = ball_x - (float)cx;
       float b_dy = ball_y - (float)cy;
       float b_dist = sqrtf(b_dx * b_dx + b_dy * b_dy);
-      if (b_dist > 202.0f && ball_y < (float)(paddle_y - 4)) {
+      if (b_dist > dome_ball_r && ball_y < (float)(paddle_y - 4)) {
         float bnx = b_dx / b_dist;
         float bny = b_dy / b_dist;
         // Clamp ball position back inside dome so it never sticks in the wall
-        ball_x = (float)cx + bnx * 201.0f;
-        ball_y = (float)cy + bny * 201.0f;
+        ball_x = (float)cx + bnx * (dome_ball_r - 1.0f);
+        ball_y = (float)cy + bny * (dome_ball_r - 1.0f);
 
         // Below the equator (4:00 / 8:00), use a horizontal side-wall normal (rny = 0)
         // so the lower curve banks the ball inward toward the paddle instead of upward!
@@ -1483,7 +1498,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
         banner_ms = now_ms;
         pending_game_sfx() = 5; // Wave Clear Fanfare!
         reset_ball_on_paddle();
-      } else if (ball_y > 376.0f) {
+      } else if (ball_y > static_cast<float>(paddle_y + scale_min(26))) {
         lives_left--;
         pending_game_sfx() = 14; // Ball Lost Tone
         rally_combo = 0;
@@ -1513,9 +1528,10 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE (Clean Full-Screen Circular Dome Arena)
   // ==========================================================================
 
-  // 1. Subtle Upper Circular Dome Wall (r = 208 & 207)
-  it.circle(cx, cy, 208, col_dark_gray);
-  it.circle(cx, cy, 207, col_slate * 0.35f);
+  // 1. Subtle Upper Circular Dome Wall (r = 208 & 207 scaled)
+  const int dome_r = scale_min(208);
+  it.circle(cx, cy, dome_r, col_dark_gray);
+  it.circle(cx, cy, dome_r - 1, col_slate * 0.35f);
 
   // 2. Bottom Scorekeeper HUD at y = 408
   int bricks_remaining = 0;
@@ -1590,31 +1606,32 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   // 7. Launch Prompt or Game Over Scoreboard Overlay
   if (round_over) {
-    it.filled_circle(cx, cy, 115, col_bg);
-    it.circle(cx, cy, 115, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, 113, is_new_high ? col_gold : theme_secondary);
+    const int mod_r = scale_min(115);
+    it.filled_circle(cx, cy, mod_r, col_bg);
+    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, 156, font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       if (wave_num == 1) {
-        it.print(cx, 156, font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
+        it.print(cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
       } else {
         char w_end[32];
         snprintf(w_end, sizeof(w_end), "WAVE %d REACHED", wave_num);
-        it.print(cx, 156, font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
+        it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
       }
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", bo_score);
-    it.print(cx, 198, font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_breakout);
-    it.print(cx, 233, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, 275, font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1861,6 +1878,8 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   static uint32_t level_clear_until_ms = 0;
   static ConfettiSpark confetti[16];
 
+  const int bot_wall_y = layout().back_y - scale_y(60);
+
   auto spawn_level_platter = [&](int lv, uint32_t seed_base) {
     treats_left = NUM_TREATS;
     float base_ang = static_cast<float>(lv) * 0.45f;
@@ -1869,19 +1888,20 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int s = static_cast<int>(seed_base + i * 73U + lv * 37U);
       float ang = base_ang + static_cast<float>(i) * (2.0f * PI_F / static_cast<float>(NUM_TREATS)) +
                   (hash2d_01(s, 11) - 0.5f) * 0.35f;
-      float rad = 76.0f + (static_cast<float>((i * 3) % 4) * 26.0f) + hash2d_01(s, 29) * 18.0f;
+      float rad = scale_min_f(76.0f + (static_cast<float>((i * 3) % 4) * 26.0f) + hash2d_01(s, 29) * 18.0f);
       float tx = static_cast<float>(cx) + fast_cos(ang) * rad;
-      float ty = std::min(352.0f, static_cast<float>(cy) + fast_sin(ang) * rad);
+      float ty = std::min(static_cast<float>(bot_wall_y - scale_min(18)), static_cast<float>(cy) + fast_sin(ang) * rad);
 
       // Push away if too close to current monster position
       float dmx = tx - mon_x, dmy = ty - mon_y;
-      if (dmx * dmx + dmy * dmy < 4900.0f) {
+      float min_sep = scale_min_f(70.0f);
+      if (dmx * dmx + dmy * dmy < min_sep * min_sep) {
         tx = static_cast<float>(cx) - dmx * 1.1f;
         ty = static_cast<float>(cy) - dmy * 1.1f;
       }
 
       // Level 2+: Treats drift around the plate!
-      float drift_spd = (lv <= 1) ? 0.0f : std::min(68.0f, 22.0f + static_cast<float>(lv - 2) * 12.0f);
+      float drift_spd = (lv <= 1) ? 0.0f : scale_min_f(std::min(68.0f, 22.0f + static_cast<float>(lv - 2) * 12.0f));
       float v_ang = hash2d_01(s, 47) * (2.0f * PI_F);
       treats[i] = {tx, ty, fast_cos(v_ang) * drift_spd, fast_sin(v_ang) * drift_spd, next_kind++, false};
     }
@@ -1960,19 +1980,21 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
       treats[i].x += treats[i].vx * dt;
       treats[i].y += treats[i].vy * dt;
 
-      // Bounce treats off the horizontal bottom wall (y = 358)
-      if (treats[i].y > 358.0f) {
-        treats[i].y = 358.0f;
+      // Bounce treats off the horizontal bottom wall
+      const float max_treat_y = static_cast<float>(bot_wall_y - scale_min(16));
+      if (treats[i].y > max_treat_y) {
+        treats[i].y = max_treat_y;
         if (treats[i].vy > 0.0f) treats[i].vy = -treats[i].vy * 0.9f;
       }
-      // Bounce treats inside the plate rim (r = 180)
+      // Bounce treats inside the plate rim (r = 180 scaled)
+      const float treat_rim_r = scale_min_f(180.0f);
       float bdx = treats[i].x - static_cast<float>(cx);
       float bdy = treats[i].y - static_cast<float>(cy);
       float bd = sqrtf(bdx * bdx + bdy * bdy);
-      if (bd > 180.0f && bd > 0.1f) {
+      if (bd > treat_rim_r && bd > 0.1f) {
         float nx = bdx / bd, ny = bdy / bd;
-        treats[i].x = static_cast<float>(cx) + nx * 180.0f;
-        treats[i].y = static_cast<float>(cy) + ny * 180.0f;
+        treats[i].x = static_cast<float>(cx) + nx * treat_rim_r;
+        treats[i].y = static_cast<float>(cy) + ny * treat_rim_r;
         float v_dot = treats[i].vx * nx + treats[i].vy * ny;
         if (v_dot > 0.0f) {
           treats[i].vx -= 1.9f * v_dot * nx;
@@ -2026,16 +2048,18 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   mon_x += mon_vx * dt;
   mon_y += mon_vy * dt;
 
-  // Keep Monster above the y = 374 bottom wall (mon_r = 34 -> max mon_y = 340)
-  if (mon_y > 340.0f) {
-    mon_y = 340.0f;
+  // Keep Monster above the bottom wall (mon_r = 34 scaled)
+  const int mon_r = scale_min(34);
+  const float max_mon_y = static_cast<float>(bot_wall_y - mon_r);
+  if (mon_y > max_mon_y) {
+    mon_y = max_mon_y;
     if (mon_vy > 0.0f) mon_vy = -mon_vy * 0.6f;
   }
-  // Keep Monster inside the circular play bowl (max center r = 172)
+  // Keep Monster inside the circular play bowl (max center r = 172 scaled)
   float mdx = mon_x - static_cast<float>(cx);
   float mdy = mon_y - static_cast<float>(cy);
   float mdist = sqrtf(mdx * mdx + mdy * mdy);
-  const float max_mon_r = 172.0f;
+  const float max_mon_r = scale_min_f(172.0f);
   if (mdist > max_mon_r && mdist > 0.001f) {
     float nx = mdx / mdist;
     float ny = mdy / mdist;
@@ -2048,7 +2072,8 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
     }
   }
 
-  // Check if the Monster chomped any remaining treat (tighter 36px capture radius)
+  // Check if the Monster chomped any remaining treat (tighter 36px capture radius scaled)
+  const float chomp_cap_r = scale_min_f(36.0f);
   if (!in_celebration) {
     for (int i = 0; i < NUM_TREATS; i++) {
       if (treats[i].eaten) continue;
@@ -2056,7 +2081,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
       float dy = treats[i].y - mon_y;
       float dist = sqrtf(dx * dx + dy * dy);
 
-      if (dist < 36.0f) {
+      if (dist < chomp_cap_r) {
         treats[i].eaten = true;
         treats_left--;
         treat_score++;
@@ -2110,9 +2135,9 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE
   // ==========================================================================
 
-  // 1. Play Bowl Rim, Bottom Wall (y = 374), Scorekeeper HUD & "< Exit"
-  it.circle(cx, cy, 208, col_dark_gray);
-  it.line(cx - 151, 374, cx + 151, 374, col_dark_gray);
+  // 1. Play Bowl Rim, Bottom Wall, Scorekeeper HUD & "< Exit"
+  it.circle(cx, cy, scale_min(208), col_dark_gray);
+  it.line(cx - scale_min(151), bot_wall_y, cx + scale_min(151), bot_wall_y, col_dark_gray);
   char t_buf[56];
   snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
            level_num, treats_left, treat_score, high_score_chomp);
@@ -2131,7 +2156,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // 3. Render Roaming Cookie-Monster Friend (wears Party Hat on Level 2+ or during celebration!)
   int imx = static_cast<int>(mon_x);
   int imy = static_cast<int>(mon_y);
-  render_chomp_monster(it, imx, imy, 34, look_dx, look_dy, mouth_open, is_chomping,
+  render_chomp_monster(it, imx, imy, mon_r, look_dx, look_dy, mouth_open, is_chomping,
                        (level_num >= 2 || in_celebration), now_ms,
                        col_white, col_black, col_gold, col_red, col_magenta, col_dark_gray);
 

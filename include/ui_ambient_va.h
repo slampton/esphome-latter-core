@@ -275,10 +275,16 @@ inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now
   for (int i = 0; i < NUM_COLS; i++) {
     int base_x = X_MARGIN + i * 19;
     int sx = base_x + drift_x;
+#if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(sx, 7);
     if (max_dy <= 0) continue;
     int y_min = cy - max_dy;
     int y_max = cy + max_dy;
+#else
+    if (sx < 7 || sx >= SCREEN_W - 7) continue;
+    int y_min = 7;
+    int y_max = SCREEN_H - 8;
+#endif
 
     // Circular bezel clipping bounds in flat terminal row coordinates
     int clip_min_row = (y_min - drift_y) / CELL_H;
@@ -455,17 +461,22 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
     float rtype = hash2d_01(seed_base, 47);
     float rhue = hash2d_01(seed_base, 73);
 
-    int bx = cx + static_cast<int>((rx - 0.5f) * 220.0f);
-    int by = (cy - 32) + static_cast<int>((ry - 0.5f) * 155.0f);
+    int bx = cx + static_cast<int>((rx - 0.5f) * scale_min_f(220.0f));
+    int by = (cy - scale_min(32)) + static_cast<int>((ry - 0.5f) * scale_min_f(155.0f));
     int dx_b = bx - cx, dy_b = by - cy;
-    if (dx_b * dx_b + dy_b * dy_b > 14400) {
+    int max_burst_r = scale_min(120);
+    if (dx_b * dx_b + dy_b * dy_b > max_burst_r * max_burst_r) {
       bx = cx + (dx_b * 105) / 155;
       by = cy + (dy_b * 105) / 155;
     }
 
-    int launch_x = cx + static_cast<int>((hash2d_01(seed_base, 91) - 0.5f) * 120.0f);
+    int launch_x = cx + static_cast<int>((hash2d_01(seed_base, 91) - 0.5f) * scale_min_f(120.0f));
+#if LATTER_ROUND_DISPLAY
     int launch_h = circle_half_span(launch_x, 10);
-    int launch_y = cy + (launch_h > 40 ? launch_h : 180);
+#else
+    int launch_h = (SCREEN_H / 2) - 10;
+#endif
+    int launch_y = cy + (launch_h > 40 ? launch_h : scale_min(180));
 
     if (phase < 0.22f) {
       float u = phase * (1.0f / 0.22f);
@@ -512,22 +523,14 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
     int shell_style = static_cast<int>(rtype * 4.0f) & 3;
     float max_radius = 98.0f + 32.0f * hash2d_01(seed_base, 61);
 
-    // Precompute 3D Euler trig once per shell (saves 35 * 3 = 105 fast_sincos calls per shell!)
+    // Precompute 3D rotation matrix once per shell (0 per-spark trig lookups!)
     float rot_x = hash2d_01(seed_base, 101) * PI_F + bp * 0.55f;
     float rot_y = hash2d_01(seed_base, 113) * PI_F - bp * 0.45f;
     float rot_z = hash2d_01(seed_base, 127) * PI_F + bp * 0.30f;
-    float sx_r, cx_r, sy_r, cy_r, sz_r, cz_r;
-    fast_sincos(rot_x, sx_r, cx_r);
-    fast_sincos(rot_y, sy_r, cy_r);
-    fast_sincos(rot_z, sz_r, cz_r);
+    const Mat3 shell_rot = Mat3::from_euler(rot_x, rot_y, rot_z);
 
     for (int k = 0; k < NUM_SPARKS; k++) {
-      const Vec3 &u = FIB_SPHERE_36[k];
-      float y1 = u.y * cx_r - u.z * sx_r;
-      float z1 = u.y * sx_r + u.z * cx_r;
-      float x2 = u.x * cy_r + z1 * sy_r;
-      float z2 = -u.x * sy_r + z1 * cy_r;
-      Vec3 dir_3d{x2 * cz_r - y1 * sz_r, x2 * sz_r + y1 * cz_r, z2};
+      Vec3 dir_3d = shell_rot.transform(FIB_SPHERE_36[k]);
 
       bool is_pistil = (shell_style == 1 && (k & 3) == 0);
       float jitter = is_pistil ? 0.52f : (0.88f + 0.24f * hash2d_01(seed_base + k, k * 7));
@@ -618,17 +621,17 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
     // Continuous visible Lissajous floating drift (updated every second on disp1's 1 Hz tick):
     // Glides smoothly across +/-42px X and +/-52px Y so the clock & date visibly float around the screen
     float t_drift = static_cast<float>(now_ms % 3600000U) * 0.000035f;
-    int drift_x = static_cast<int>(fast_sin(t_drift) * 28.0f);
-    int drift_y = static_cast<int>(fast_cos(t_drift * 0.73f) * 32.0f);
+    int drift_x = static_cast<int>(fast_sin(t_drift) * scale_min_f(28.0f));
+    int drift_y = static_cast<int>(fast_cos(t_drift * 0.73f) * scale_min_f(32.0f));
 
     char amb_time[16];
     if (now.is_valid()) {
       format_time_hhmm(now.hour, now.minute, is_24h, amb_time, sizeof(amb_time));
-      it.print(cx + drift_x, cy - 20 + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, amb_time);
-      it.strftime(cx + drift_x, cy + 45 + drift_y, font_small, esphome::Color(90, 102, 118),
+      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, amb_time);
+      it.strftime(cx + drift_x, cy + scale_y(48) + drift_y, font_small, esphome::Color(90, 102, 118),
                   esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     } else {
-      it.print(cx + drift_x, cy - 20 + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
     }
     return;
   }
@@ -967,12 +970,15 @@ inline void render_voice_assistant_overlay(
     return;
   }
 
+  const float va_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+
   // ============================================================================
   // PROFILE: "GEMINI" — 3 WHITE DOTS GRACEFUL WAVE, SPINNING ORBIT & EQUALIZER
   // ============================================================================
   if (is_google) {
     const esphome::Color c_halo_outer(32, 58, 108);
     const esphome::Color c_halo_inner(110, 168, 255);
+    const int cap_r = scale_min(12);
 
     static uint32_t last_g_ms = 0;
     static float g_phase = 0.0f;
@@ -1018,7 +1024,7 @@ inline void render_voice_assistant_overlay(
     // 1. THINKING MODE: 3 White Dots Spin Around the Central Point (with smooth entry/exit morph)
     if (show_thinking_spin || spin_blend > 0.15f) {
       g_phase = fmodf(g_phase + dt_g * 4.2f, 200.0f * PI_F);
-      const float orbit_r = 40.0f * spin_blend;
+      const float orbit_r = 40.0f * va_scale * spin_blend;
       static constexpr float LINE_X[3] = {-50.0f, 0.0f, 50.0f};
 
       for (int d = 0; d < 3; d++) {
@@ -1031,19 +1037,19 @@ inline void render_voice_assistant_overlay(
             int tx = cx + static_cast<int>(orbit_r * tc);
             int ty = cy + static_cast<int>(orbit_r * ts);
             float fade = static_cast<float>(4 - tail) * 0.22f * spin_blend;
-            it.filled_circle(tx, ty, 11 - tail * 2, scale_color(c_halo_inner, fade));
+            it.filled_circle(tx, ty, std::max(2, scale_min(11 - tail * 2)), scale_color(c_halo_inner, fade));
           }
         }
         float s = 0.0f, c = 1.0f;
         fast_sincos(ang, s, c);
-        int dx = cx + static_cast<int>((1.0f - spin_blend) * LINE_X[d] + orbit_r * c);
+        int dx = cx + static_cast<int>((1.0f - spin_blend) * LINE_X[d] * va_scale + orbit_r * c);
         int dy = cy + static_cast<int>(orbit_r * s);
-        draw_glowing_capsule(dx, dy, 12, 0);
+        draw_glowing_capsule(dx, dy, cap_r, 0);
       }
       return;
     }
 
-    static constexpr int DOT_OFF_X[3] = {-50, 0, 50};
+    const int dot_off_x[3] = {-scale_min(50), 0, scale_min(50)};
 
     // 2. SPEAKING MODE: 3 White Dots Stretch into Vertical Equalizer Capsules
     if (is_speaking) {
@@ -1054,8 +1060,8 @@ inline void render_voice_assistant_overlay(
       static constexpr float BAR_MAX_H[3] = {22.0f, 36.0f, 22.0f};
       for (int d = 0; d < 3; d++) {
         float w = 0.50f + 0.50f * fast_sin(g_phase * BAR_MULT[d] + BAR_PHASE[d]);
-        int half_h = static_cast<int>(w * BAR_MAX_H[d] * (0.35f + 0.65f * syl_env));
-        draw_glowing_capsule(cx + DOT_OFF_X[d], cy, 12, half_h);
+        int half_h = static_cast<int>(w * BAR_MAX_H[d] * va_scale * (0.35f + 0.65f * syl_env));
+        draw_glowing_capsule(cx + dot_off_x[d], cy, cap_r, half_h);
       }
       return;
     }
@@ -1064,7 +1070,7 @@ inline void render_voice_assistant_overlay(
     //    - 120-degree (2.094 rad) spacing + 2nd harmonic arch prevents the 3 dots from ever forming a
     //      straight tilting seesaw line, while sweeping through deep, graceful highs and lows!
     float wave_spd = 2.9f + 1.3f * smooth_vad;
-    float wave_amp = 14.0f + 12.0f * smooth_vad; // Sweeps +/-14px idle up to +/-26px when speaking!
+    float wave_amp = (14.0f + 12.0f * smooth_vad) * va_scale;
     g_phase = fmodf(g_phase + dt_g * wave_spd, 200.0f * PI_F);
 
     for (int d = 0; d < 3; d++) {
@@ -1072,12 +1078,10 @@ inline void render_voice_assistant_overlay(
       // Fundamental sine + 2nd-harmonic curvature so the 3 dots trace a rolling arch, never a straight line
       float wave_y = 0.82f * fast_sin(ph) - 0.28f * fast_cos(2.0f * ph);
       int dy = static_cast<int>(wave_y * wave_amp);
-      draw_glowing_capsule(cx + DOT_OFF_X[d], cy + dy, 12, 0);
+      draw_glowing_capsule(cx + dot_off_x[d], cy + dy, cap_r, 0);
     }
     return;
   }
-
-  const float va_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
 
   // ============================================================================
   // PROFILE: "JARVIS" — ELECTRIC CYAN COUNTER-ROTATING CONCENTRIC TECH HUD
@@ -1151,8 +1155,8 @@ inline void render_voice_assistant_overlay(
         float da = a_cw1 + static_cast<float>(i) * (2.0f * PI_F / 60.0f);
         float ds, dc;
         fast_sincos(da, ds, dc);
-        int dx = cx + static_cast<int>(175.0f * ds);
-        int dy = cy - static_cast<int>(175.0f * dc);
+        int dx = cx + static_cast<int>(175.0f * va_scale * ds);
+        int dy = cy - static_cast<int>(175.0f * va_scale * dc);
         it.filled_circle(dx, dy, (i % 6 == 0) ? 2 : 1, c_cyan_mid);
       }
     }
@@ -1161,8 +1165,8 @@ inline void render_voice_assistant_overlay(
     // RING 2 (MID-OUTER): r = 128..160 — Rotates COUNTER-CLOCKWISE (-j_angle * 1.15f)
     // ------------------------------------------------------------------------
     float a_ccw2 = -j_angle * 1.15f;
-    it.circle(cx, cy, 160, c_cyan_dim);
-    it.circle(cx, cy, 134, c_cyan_dim);
+    it.circle(cx, cy, scale_min(160), c_cyan_dim);
+    it.circle(cx, cy, scale_min(134), c_cyan_dim);
 
     // Sweeping outer guide arcs on Ring 2
     draw_hud_arc(155.0f, 160.0f, a_ccw2 - 0.35f, 0.55f, c_cyan_bright);
@@ -1173,9 +1177,9 @@ inline void render_voice_assistant_overlay(
       float ba = a_ccw2 - 0.10f + static_cast<float>(b) * 0.125f;
       float bs, bc;
       fast_sincos(ba, bs, bc);
-      float px = bc, py = bs; // Perpendicular tangent
-      int r_in_b = 120;
-      int r_out_b = 129 + static_cast<int>(energy * 6.0f * (0.5f + 0.5f * DIAL_SIN[(b * 5 + static_cast<int>(now_ms / 40U)) % 60]));
+      float px = bc * va_scale, py = bs * va_scale; // Perpendicular tangent
+      float r_in_b = 120.0f * va_scale;
+      float r_out_b = (129.0f + energy * 6.0f * (0.5f + 0.5f * DIAL_SIN[(b * 5 + static_cast<int>(now_ms / 40U)) % 60])) * va_scale;
       int x0 = cx + static_cast<int>(r_in_b * bs - 2.5f * px);
       int y0 = cy - static_cast<int>(r_in_b * bc - 2.5f * py);
       int x1 = cx + static_cast<int>(r_out_b * bs - 2.5f * px);
@@ -1200,10 +1204,10 @@ inline void render_voice_assistant_overlay(
       float ds, dc;
       fast_sincos(da, ds, dc);
       int dot_r = (d >= 3 && d <= 8) ? 3 : 2;
-      it.filled_circle(cx + static_cast<int>(140.0f * ds), cy - static_cast<int>(140.0f * dc),
+      it.filled_circle(cx + static_cast<int>(140.0f * va_scale * ds), cy - static_cast<int>(140.0f * va_scale * dc),
                        dot_r, (d % 3 == 0 && energy > 0.2f) ? c_cyan_ice : c_cyan_bright);
       if (d >= 4 && d <= 9) {
-        it.filled_circle(cx + static_cast<int>(151.0f * ds), cy - static_cast<int>(151.0f * dc),
+        it.filled_circle(cx + static_cast<int>(151.0f * va_scale * ds), cy - static_cast<int>(151.0f * va_scale * dc),
                          2, c_cyan_mid);
       }
     }
@@ -1213,23 +1217,23 @@ inline void render_voice_assistant_overlay(
       float ka = a_ccw2 + 2.85f + static_cast<float>(k) * 0.095f;
       float ks, kc;
       fast_sincos(ka, ks, kc);
-      it.line(cx + static_cast<int>(122.0f * ks), cy - static_cast<int>(122.0f * kc),
-              cx + static_cast<int>(132.0f * ks), cy - static_cast<int>(132.0f * kc), c_cyan_bright);
+      it.line(cx + static_cast<int>(122.0f * va_scale * ks), cy - static_cast<int>(122.0f * va_scale * kc),
+              cx + static_cast<int>(132.0f * va_scale * ks), cy - static_cast<int>(132.0f * va_scale * kc), c_cyan_bright);
     }
 
     // ------------------------------------------------------------------------
     // RING 3 (INNER ROTATING): r = 98..112 — Rotates CLOCKWISE (+j_angle * 0.85f)
     // ------------------------------------------------------------------------
     float a_cw3 = j_angle * 0.85f;
-    it.circle(cx, cy, 102, c_cyan_mid);
+    it.circle(cx, cy, scale_min(102), c_cyan_mid);
 
     // Fine vernacular degree ticks around Ring 3
     for (int i = 0; i < 60; i++) {
       float ta = a_cw3 + static_cast<float>(i) * (2.0f * PI_F / 60.0f);
       float ts, tc;
       fast_sincos(ta, ts, tc);
-      int r0 = 102;
-      int r1 = (i % 5 == 0) ? 108 : 105;
+      float r0 = 102.0f * va_scale;
+      float r1 = ((i % 5 == 0) ? 108.0f : 105.0f) * va_scale;
       it.line(cx + static_cast<int>(r0 * ts), cy - static_cast<int>(r0 * tc),
               cx + static_cast<int>(r1 * ts), cy - static_cast<int>(r1 * tc),
               (i % 5 == 0) ? c_cyan_bright : c_cyan_dim);
@@ -1241,11 +1245,11 @@ inline void render_voice_assistant_overlay(
     // RING 4 (STATIONARY CENTER RETICLE): r = 70..84 — Stationary with Voice Pulse
     // ------------------------------------------------------------------------
     int core_pulse = static_cast<int>(energy * 5.0f);
-    it.circle(cx, cy, 82, c_cyan_mid);
-    it.circle(cx, cy, 74, c_cyan_bright);
-    it.circle(cx, cy, 73, c_cyan_mid);
+    it.circle(cx, cy, scale_min(82), c_cyan_mid);
+    it.circle(cx, cy, scale_min(74), c_cyan_bright);
+    it.circle(cx, cy, scale_min(73), c_cyan_mid);
     if (energy > 0.08f || is_thinking) {
-      int inner_r = 64 - core_pulse;
+      int inner_r = scale_min(64 - core_pulse);
       it.circle(cx, cy, inner_r, scale_color(c_cyan_bright, 0.45f + 0.55f * energy));
     }
 
@@ -1255,17 +1259,21 @@ inline void render_voice_assistant_overlay(
     draw_hud_arc(74.0f, 79.0f, 4.25f, 1.25f, c_cyan_bright);
 
     // 4 Stationary Cardinal Crosshair Reticle Marks (12, 3, 6, 9 o'clock)
-    it.line(cx, cy - 88, cx, cy - 68, c_cyan_ice);
-    it.line(cx - 4, cy - 82, cx + 4, cy - 82, c_cyan_bright);
+    const int r_ret_out = scale_min(88);
+    const int r_ret_mid = scale_min(82);
+    const int r_ret_in  = scale_min(68);
+    const int ret_tick  = scale_min(4);
+    it.line(cx, cy - r_ret_out, cx, cy - r_ret_in, c_cyan_ice);
+    it.line(cx - ret_tick, cy - r_ret_mid, cx + ret_tick, cy - r_ret_mid, c_cyan_bright);
 
-    it.line(cx, cy + 68, cx, cy + 88, c_cyan_ice);
-    it.line(cx - 4, cy + 82, cx + 4, cy + 82, c_cyan_bright);
+    it.line(cx, cy + r_ret_in, cx, cy + r_ret_out, c_cyan_ice);
+    it.line(cx - ret_tick, cy + r_ret_mid, cx + ret_tick, cy + r_ret_mid, c_cyan_bright);
 
-    it.line(cx - 88, cy, cx - 68, cy, c_cyan_ice);
-    it.line(cx - 82, cy - 4, cx - 82, cy + 4, c_cyan_bright);
+    it.line(cx - r_ret_out, cy, cx - r_ret_in, cy, c_cyan_ice);
+    it.line(cx - r_ret_mid, cy - ret_tick, cx - r_ret_mid, cy + ret_tick, c_cyan_bright);
 
-    it.line(cx + 68, cy, cx + 88, cy, c_cyan_ice);
-    it.line(cx + 82, cy - 4, cx + 82, cy + 4, c_cyan_bright);
+    it.line(cx + r_ret_in, cy, cx + r_ret_out, cy, c_cyan_ice);
+    it.line(cx + r_ret_mid, cy - ret_tick, cx + r_ret_mid, cy + ret_tick, c_cyan_bright);
     return;
   }
 
@@ -1327,6 +1335,7 @@ inline void render_voice_assistant_overlay(
                                    float rx, float ry, float rz,
                                    esphome::Color col_core, esphome::Color col_aura,
                                    bool with_outer_bloom) {
+      const Mat3 rot = Mat3::from_euler(rx, ry, rz);
       int prev_x = 0, prev_y = 0, first_x = 0, first_y = 0;
       int prev_ix = 0, prev_iy = 0, first_ix = 0, first_iy = 0;
       int prev_ox = 0, prev_oy = 0, first_ox = 0, first_oy = 0;
@@ -1341,9 +1350,9 @@ inline void render_voice_assistant_overlay(
 
         float ux = DIAL_SIN[i];
         float uy = -DIAL_COS[i];
-        Vec3 v_mid = rotate_3d_xyz({r * ux, r * uy, z_local}, rx, ry, rz);
-        Vec3 v_in  = rotate_3d_xyz({(r - 2.2f) * ux, (r - 2.2f) * uy, z_local}, rx, ry, rz);
-        Vec3 v_out = rotate_3d_xyz({(r + 2.2f) * ux, (r + 2.2f) * uy, z_local}, rx, ry, rz);
+        Vec3 v_mid = rot.transform({r * ux, r * uy, z_local});
+        Vec3 v_in  = rot.transform({(r - 2.2f) * ux, (r - 2.2f) * uy, z_local});
+        Vec3 v_out = rot.transform({(r + 2.2f) * ux, (r + 2.2f) * uy, z_local});
 
         ProjectedPoint p  = project_3d(v_mid, cx, cy, 260.0f, 320.0f);
         ProjectedPoint pi = project_3d(v_in,  cx, cy, 260.0f, 320.0f);
@@ -1413,7 +1422,7 @@ inline void render_voice_assistant_overlay(
 
         for (int d = -half_w; d <= half_w; d += 2) {
           int r_curr = r_center + d;
-          if (r_curr < 34 || r_curr > 226) continue;
+          if (r_curr < scale_min(34) || r_curr > scale_min(226)) continue;
 
           // Smooth bell-curve cross-sectional diffusion from wave crest (edge_u=0) to feathered edges (edge_u=1)
           float edge_u = static_cast<float>(d < 0 ? -d : d) * inv_half;
@@ -1430,7 +1439,7 @@ inline void render_voice_assistant_overlay(
         }
       }
 
-      int core_r = 25 + static_cast<int>(5.0f * syl_env);
+      int core_r = scale_min(25 + static_cast<int>(5.0f * syl_env));
       render_nebula_purple_orb(core_r, syl_env);
       return;
     }
@@ -1444,8 +1453,8 @@ inline void render_voice_assistant_overlay(
       float pulse = fast_sin(static_cast<float>(now_ms % 650U) * (2.0f * PI_F / 650.0f));
 
       // Subtle guide tracks from Original Thinking
-      it.circle(cx, cy, 74, esphome::Color(28, 18, 46));
-      it.circle(cx, cy, 118, esphome::Color(24, 16, 40));
+      it.circle(cx, cy, scale_min(74), esphome::Color(28, 18, 46));
+      it.circle(cx, cy, scale_min(118), esphome::Color(24, 16, 40));
 
       // 3 Volumetric 3D Silk Vortex Ribbons
       float vortex_r = 68.0f + 3.0f * pulse;
@@ -1466,6 +1475,8 @@ inline void render_voice_assistant_overlay(
       float spin_cw = static_cast<float>(now_ms % 1150U) * (2.0f * PI_F / 1150.0f);
       float orb_rx1 = 0.36f * fast_sin(t_sec * 0.9f),  orb_ry1 = 0.32f * fast_cos(t_sec * 0.8f);
       float orb_rx2 = -0.34f * fast_cos(t_sec * 0.85f), orb_ry2 = 0.36f * fast_sin(t_sec * 0.95f);
+      const Mat3 rot_cw  = Mat3::from_euler(orb_rx1, orb_ry1, 0.0f);
+      const Mat3 rot_ccw = Mat3::from_euler(orb_rx2, orb_ry2, 0.0f);
 
       for (int i = 0; i < 4; i++) {
         float ang_cw  = spin_cw + static_cast<float>(i) * (PI_F * 0.5f);
@@ -1476,7 +1487,7 @@ inline void render_voice_assistant_overlay(
           float ta = ang_cw - static_cast<float>(tail) * 0.12f;
           float ts, tc;
           fast_sincos(ta, ts, tc);
-          Vec3 v_cw = rotate_3d_xyz({74.0f * tc, 74.0f * ts, 0.0f}, orb_rx1, orb_ry1, 0.0f);
+          Vec3 v_cw = rot_cw.transform({74.0f * tc, 74.0f * ts, 0.0f});
           ProjectedPoint p_cw = project_3d(v_cw, cx, cy, 260.0f, 320.0f);
           if (tail == 0) {
             it.line(p_cw.x - 5, p_cw.y, p_cw.x + 5, p_cw.y, c_elec_cyan);
@@ -1494,7 +1505,7 @@ inline void render_voice_assistant_overlay(
           float ta = ang_ccw + static_cast<float>(tail) * 0.12f;
           float ts, tc;
           fast_sincos(ta, ts, tc);
-          Vec3 v_ccw = rotate_3d_xyz({118.0f * tc, 118.0f * ts, 0.0f}, orb_rx2, orb_ry2, 0.0f);
+          Vec3 v_ccw = rot_ccw.transform({118.0f * tc, 118.0f * ts, 0.0f});
           ProjectedPoint p_ccw = project_3d(v_ccw, cx, cy, 260.0f, 320.0f);
           if (tail == 0) {
             it.line(p_ccw.x - 6, p_ccw.y, p_ccw.x + 6, p_ccw.y, c_amethyst);
@@ -1508,7 +1519,7 @@ inline void render_voice_assistant_overlay(
         }
       }
 
-      int core_r = 25 + static_cast<int>(4.0f * pulse);
+      int core_r = scale_min(25 + static_cast<int>(4.0f * pulse));
       render_nebula_purple_orb(core_r, 0.75f);
       return;
     }
@@ -1522,11 +1533,11 @@ inline void render_voice_assistant_overlay(
 
     (void)c_deep_violet;
 
-    // 4 Full-Bodied Volumetric 3D Silk Plasma Ribbons
-    float base_r = (82.0f + 5.0f * breath + 18.0f * smooth_vad) * va_scale;
-    float a2 = (5.5f + 10.0f * smooth_vad) * va_scale;
-    float a3 = (4.2f + 8.0f * smooth_vad) * va_scale;
-    float a5 = (2.8f + 5.5f * smooth_vad) * va_scale;
+    // 4 Full-Bodied Volumetric 3D Silk Plasma Ribbons (project_3d auto-scales FOV across all display sizes)
+    float base_r = 82.0f + 5.0f * breath + 18.0f * smooth_vad;
+    float a2 = 5.5f + 10.0f * smooth_vad;
+    float a3 = 4.2f + 8.0f * smooth_vad;
+    float a5 = 2.8f + 5.5f * smooth_vad;
 
     draw_silk_ribbon_3d(base_r + 5.0f, a2, a3, a5, (tick) % 60, (tick + 20) % 60, (tick + 40) % 60,
                         0.48f * fast_sin(t_sec * 0.65f), 0.42f * fast_cos(t_sec * 0.55f), t_sec * 0.28f,
@@ -1541,7 +1552,7 @@ inline void render_voice_assistant_overlay(
                         0.24f * fast_sin(t_sec * 0.95f), 0.24f * fast_cos(t_sec * 0.95f), -t_sec * 0.18f,
                         c_pink_spec, c_neon_magenta, false);
 
-    int core_r = 25 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad);
+    int core_r = scale_min(25 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad));
     render_nebula_purple_orb(core_r, smooth_vad);
     return;
   }
@@ -1571,7 +1582,7 @@ inline void render_voice_assistant_overlay(
       uint32_t wave_t = (speak_elapsed - launch_offset) % 1800U;
       float prog = static_cast<float>(wave_t) * (1.0f / 1800.0f);
       float fade = fast_sin(prog * PI_F) * (0.45f + 0.45f * syl_env) * smooth_speak;
-      int r_wave = 82 + static_cast<int>(prog * 132.0f);
+      int r_wave = scale_min(82 + static_cast<int>(prog * 132.0f));
       esphome::Color ring_c = scale_color(get_va_radiation_color(true, prog + static_cast<float>(w) * 0.33f), fade);
       esphome::Color glow_c = scale_color(ring_c, 0.45f);
       it.circle(cx, cy, r_wave - 1, glow_c);
@@ -1580,11 +1591,11 @@ inline void render_voice_assistant_overlay(
     }
 
     // Center Solar Corona & Photosphere Core matching Listening mode aesthetics
-    const float r_inner = 42.0f + 3.0f * breath;
+    const float r_inner = (42.0f + 3.0f * breath) * va_scale;
     for (int i = 0; i < 60; i += 2) {
       float wave = DIAL_SIN[(i * 3 + tick) % 60] * 0.6f + DIAL_COS[(i * 2 + tick) % 60] * 0.4f;
-      float bar_len = (16.0f + 22.0f * syl_env) + (6.0f + 10.0f * syl_env) * wave;
-      if (bar_len < 6.0f) bar_len = 6.0f;
+      float bar_len = ((16.0f + 22.0f * syl_env) + (6.0f + 10.0f * syl_env) * wave) * va_scale;
+      if (bar_len < 6.0f * va_scale) bar_len = 6.0f * va_scale;
 
       float ux = DIAL_SIN[i];
       float uy = -DIAL_COS[i];
@@ -1599,7 +1610,7 @@ inline void render_voice_assistant_overlay(
       it.line(xm, ym, x1, y1, (i % 4 == 0) ? c_emerald : c_gold);
     }
 
-    int core_r = 27 + static_cast<int>(4.0f * breath + 5.0f * syl_env);
+    int core_r = scale_min(27 + static_cast<int>(4.0f * breath + 5.0f * syl_env));
     it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
     it.filled_circle(cx, cy, core_r + 1, c_amber);
     it.filled_circle(cx, cy, core_r - 3, c_gold);
@@ -1607,7 +1618,7 @@ inline void render_voice_assistant_overlay(
     return;
   }
   if (is_thinking) {
-    // 3D Gimbaled Armillary Sphere / Solar Astrolabe (rotate_3d_xyz + project_3d)
+    // 3D Gimbaled Armillary Sphere / Solar Astrolabe (Mat3 + project_3d)
     const int head_1 = static_cast<int>((now_ms / 18U) % 60U);
     const int head_2 = (60 - static_cast<int>((now_ms / 22U) % 60U)) % 60;
     const int head_3 = static_cast<int>((now_ms / 28U) % 60U);
@@ -1615,11 +1626,14 @@ inline void render_voice_assistant_overlay(
     float rx1 = 0.62f * fast_sin(t_sec * 1.1f),  ry1 = 0.52f * fast_cos(t_sec * 0.9f);
     float rx2 = -0.58f * fast_cos(t_sec * 0.95f), ry2 = 0.60f * fast_sin(t_sec * 1.15f);
     float rx3 = 0.42f * fast_cos(t_sec * 0.75f),  ry3 = -0.48f * fast_sin(t_sec * 0.85f);
+    const Mat3 rot1 = Mat3::from_euler(rx1, ry1, 0.0f);
+    const Mat3 rot2 = Mat3::from_euler(rx2, ry2, 0.0f);
+    const Mat3 rot3 = Mat3::from_euler(rx3, ry3, 0.0f);
 
-    auto draw_3d_meridian = [&](float rad, float rx, float ry, esphome::Color col) {
+    auto draw_3d_meridian = [&](float rad, const Mat3 &rot, esphome::Color col) {
       int px = 0, py = 0, fx = 0, fy = 0;
       for (int i = 0; i < 60; i += 3) {
-        Vec3 v = rotate_3d_xyz({rad * DIAL_SIN[i], -rad * DIAL_COS[i], 0.0f}, rx, ry, 0.0f);
+        Vec3 v = rot.transform({rad * DIAL_SIN[i], -rad * DIAL_COS[i], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
         if (i == 0) { fx = p.x; fy = p.y; }
         else { it.line(px, py, p.x, p.y, col); }
@@ -1628,15 +1642,15 @@ inline void render_voice_assistant_overlay(
       it.line(px, py, fx, fy, col);
     };
 
-    draw_3d_meridian(66.0f,  rx1, ry1, scale_color(c_amber,   0.34f * smooth_think));
-    draw_3d_meridian(94.0f,  rx2, ry2, scale_color(c_gold,    0.30f * smooth_think));
-    draw_3d_meridian(122.0f, rx3, ry3, scale_color(c_emerald, 0.30f * smooth_think));
+    draw_3d_meridian(66.0f,  rot1, scale_color(c_amber,   0.34f * smooth_think));
+    draw_3d_meridian(94.0f,  rot2, scale_color(c_gold,    0.30f * smooth_think));
+    draw_3d_meridian(122.0f, rot3, scale_color(c_emerald, 0.30f * smooth_think));
 
     for (int n = 0; n < 3; n++) {
       int b1 = (head_1 + n * 20) % 60;
       for (int tail = 5; tail >= 0; tail--) {
         int idx = (b1 - tail * 2 + 60) % 60;
-        Vec3 v = rotate_3d_xyz({66.0f * DIAL_SIN[idx], -66.0f * DIAL_COS[idx], 0.0f}, rx1, ry1, 0.0f);
+        Vec3 v = rot1.transform({66.0f * DIAL_SIN[idx], -66.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
         it.filled_circle(p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
                          (tail == 0) ? scale_color(c_warm_white, smooth_think) : scale_color(c_gold, (6 - tail) * 0.16f * smooth_think));
@@ -1644,7 +1658,7 @@ inline void render_voice_assistant_overlay(
       int b2 = (head_2 + n * 20 + 10) % 60;
       for (int tail = 5; tail >= 0; tail--) {
         int idx = (b2 + tail * 2) % 60;
-        Vec3 v = rotate_3d_xyz({94.0f * DIAL_SIN[idx], -94.0f * DIAL_COS[idx], 0.0f}, rx2, ry2, 0.0f);
+        Vec3 v = rot2.transform({94.0f * DIAL_SIN[idx], -94.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
         it.filled_circle(p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
                          (tail == 0) ? scale_color(c_warm_white, smooth_think) : scale_color(c_emerald, (6 - tail) * 0.16f * smooth_think));
@@ -1652,7 +1666,7 @@ inline void render_voice_assistant_overlay(
       int b3 = (head_3 + n * 20 + 5) % 60;
       for (int tail = 4; tail >= 0; tail--) {
         int idx = (b3 - tail * 2 + 60) % 60;
-        Vec3 v = rotate_3d_xyz({122.0f * DIAL_SIN[idx], -122.0f * DIAL_COS[idx], 0.0f}, rx3, ry3, 0.0f);
+        Vec3 v = rot3.transform({122.0f * DIAL_SIN[idx], -122.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
         it.filled_circle(p.x, p.y, (tail == 0) ? 3 : 2,
                          (tail == 0) ? scale_color(c_gold, smooth_think) : scale_color(c_amber, (5 - tail) * 0.18f * smooth_think));
@@ -1660,7 +1674,7 @@ inline void render_voice_assistant_overlay(
     }
 
     float pulse = fast_sin(static_cast<float>(now_ms % 600U) * (2.0f * PI_F / 600.0f));
-    int core_r = 25 + static_cast<int>(4.0f * pulse);
+    int core_r = scale_min(25 + static_cast<int>(4.0f * pulse));
     it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
     it.filled_circle(cx, cy, core_r + 1, c_amber);
     it.filled_circle(cx, cy, core_r - 3, c_gold);
@@ -1672,11 +1686,11 @@ inline void render_voice_assistant_overlay(
   float breath = fast_sin(static_cast<float>(now_ms % 1800U) * (2.0f * PI_F / 1800.0f));
   int tick = static_cast<int>(now_ms / 45U);
 
-  const float r_inner = 42.0f + 3.0f * breath;
+  const float r_inner = (42.0f + 3.0f * breath) * va_scale;
   for (int i = 0; i < 60; i += 2) {
     float wave = DIAL_SIN[(i * 3 + tick) % 60] * 0.6f + DIAL_COS[(i * 2 + tick) % 60] * 0.4f;
-    float bar_len = (16.0f + 6.0f * breath + 24.0f * smooth_vad) + (6.0f + 10.0f * smooth_vad) * wave;
-    if (bar_len < 6.0f) bar_len = 6.0f;
+    float bar_len = ((16.0f + 6.0f * breath + 24.0f * smooth_vad) + (6.0f + 10.0f * smooth_vad) * wave) * va_scale;
+    if (bar_len < 6.0f * va_scale) bar_len = 6.0f * va_scale;
 
     float ux = DIAL_SIN[i];
     float uy = -DIAL_COS[i];
@@ -1691,7 +1705,7 @@ inline void render_voice_assistant_overlay(
     it.line(xm, ym, x1, y1, (smooth_vad > 0.25f && (i % 4 == 0)) ? c_emerald : c_gold);
   }
 
-  int core_r = 27 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad);
+  int core_r = scale_min(27 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad));
   it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
   it.filled_circle(cx, cy, core_r + 1, c_amber);
   it.filled_circle(cx, cy, core_r - 3, c_gold);

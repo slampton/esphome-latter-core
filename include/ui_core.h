@@ -76,6 +76,15 @@ inline constexpr int scale_s(int v466) {
   return (SCREEN_MIN_DIM > 520) ? ((v466 * SCREEN_MIN_DIM + 233) / 466) : v466;
 }
 
+// True all-resolution proportional scaling (scales down on 320x480 / 410x502 and up on 720x720)
+inline constexpr int scale_min(int v466) {
+  return (v466 * SCREEN_MIN_DIM + 233) / 466;
+}
+
+inline constexpr float scale_min_f(float v466) {
+  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
+}
+
 // 1. Mathematical, Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 // ------------------------------------------------------------------------------
 static constexpr float PI_F = 3.14159265358979323846f;
@@ -176,6 +185,24 @@ static constexpr int16_t CIRCLE_HW[466] = {
 #endif
 #endif
 
+// Zero-sqrtf Exact Integer Circle Chord Half-Span:
+// Computes floor(sqrt(r^2 - dy^2)) when round_nearest=false, or floor(sqrt(r^2 - dy^2) + 0.5)
+// when round_nearest=true, using 2-step integer Newton-Raphson (0 floating-point / libm stalls).
+inline int chord_half_span_int(int r, int dy, bool round_nearest = false) {
+  if (dy < 0) dy = -dy;
+  if (dy == 0) return (r > 0) ? r : 0;
+  if (dy >= r) return 0;
+  const int n = r * r - dy * dy;
+  int x = r - (dy * dy) / (2 * r);
+  if (x <= 0) x = 1;
+  x = (x + n / x) >> 1;
+  x = (x + n / x) >> 1;
+  while (x * x > n) x--;
+  while ((x + 1) * (x + 1) <= n) x++;
+  if (round_nearest && ((x + 1) * x < n)) x++;
+  return x;
+}
+
 inline int circle_half_span(int c, int inset = 5) {
 #if LATTER_ROUND_DISPLAY
   if (c < 0 || c >= SCREEN_H) return 0;
@@ -198,7 +225,7 @@ inline int circle_half_span(int c, int inset = 5) {
     if (c < cr) dy = cr - c;
     else if (c >= SCREEN_H - cr) dy = c - (SCREEN_H - 1 - cr);
     if (dy > 0 && dy < cr) {
-      int dx_corner = static_cast<int>(std::sqrt(static_cast<float>(cr * cr - dy * dy)));
+      int dx_corner = chord_half_span_int(cr, dy, false);
       int corner_half_w = (SCREEN_W / 2) - (cr - dx_corner) - inset;
       if (corner_half_w < half_w) half_w = corner_half_w;
     }
@@ -270,7 +297,7 @@ inline void fast_sincos(float rad, float &out_s, float &out_c) {
   out_c = fast_cos(rad);
 }
 
-// Lightweight 3D Vector, Euler Rotation & Perspective Projection Primitives
+// Universal 3D Vector, Precomputed 3x3 Rotation Matrix & Resolution-Adaptive Perspective Projection
 struct Vec3 {
   float x, y, z;
 };
@@ -281,28 +308,55 @@ struct ProjectedPoint {
   bool visible;
 };
 
-inline Vec3 rotate_3d_xyz(Vec3 v, float rx, float ry, float rz) {
-  float sx, cx_r, sy, cy_r, sz, cz_r;
-  fast_sincos(rx, sx, cx_r);
-  fast_sincos(ry, sy, cy_r);
-  fast_sincos(rz, sz, cz_r);
+// Precomputed 3x3 Rotation Matrix: computes Euler trig once per mesh/object instead of 6 trig calls per vertex
+struct Mat3 {
+  float m[3][3];
 
-  // Rotate around X
-  float y1 = v.y * cx_r - v.z * sx;
-  float z1 = v.y * sx + v.z * cx_r;
-  // Rotate around Y
-  float x2 = v.x * cy_r + z1 * sy;
-  float z2 = -v.x * sy + z1 * cy_r;
-  // Rotate around Z
-  float x3 = x2 * cz_r - y1 * sz;
-  float y3 = x2 * sz + y1 * cz_r;
-  return {x3, y3, z2};
+  static inline Mat3 identity() {
+    return {{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+  }
+
+  // Exact match for rotate_3d_xyz(v, rx, ry, rz) intrinsic order: Rz(rz) * Ry(ry) * Rx(rx)
+  static inline Mat3 from_euler(float rx, float ry, float rz) {
+    float sx, cx_r, sy, cy_r, sz, cz_r;
+    fast_sincos(rx, sx, cx_r);
+    fast_sincos(ry, sy, cy_r);
+    fast_sincos(rz, sz, cz_r);
+    Mat3 out;
+    out.m[0][0] = cy_r * cz_r;
+    out.m[0][1] = sx * sy * cz_r - cx_r * sz;
+    out.m[0][2] = cx_r * sy * cz_r + sx * sz;
+    out.m[1][0] = cy_r * sz;
+    out.m[1][1] = sx * sy * sz + cx_r * cz_r;
+    out.m[1][2] = cx_r * sy * sz - sx * cz_r;
+    out.m[2][0] = -sy;
+    out.m[2][1] = sx * cy_r;
+    out.m[2][2] = cx_r * cy_r;
+    return out;
+  }
+
+  inline Vec3 transform(Vec3 v) const {
+    return {
+        m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+        m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
+        m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
+    };
+  }
+
+  // Returns transformed unit +Z normal (0 multiplies: direct column 2 readout)
+  inline Vec3 normal_z() const {
+    return {m[0][2], m[1][2], m[2][2]};
+  }
+};
+
+inline Vec3 rotate_3d_xyz(Vec3 v, float rx, float ry, float rz) {
+  return Mat3::from_euler(rx, ry, rz).transform(v);
 }
 
 inline ProjectedPoint project_3d(Vec3 v, int cx, int cy, float fov = 240.0f, float viewer_dist = 320.0f) {
   float depth = v.z + viewer_dist;
   if (depth <= 15.0f) return {cx, cy, 0.0f, false};
-  float k = fov / depth;
+  float k = scale_min_f(fov) / depth;
   int sx = cx + static_cast<int>(v.x * k);
   int sy = cy + static_cast<int>(v.y * k);
   return {sx, sy, k, is_inside_bezel(sx, sy, cy, 4)};
@@ -489,7 +543,7 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
   // 2. Top & bottom rounded corner rows (dy = 1 .. r-1)
   for (int dy = 1; dy < r; dy++) {
     int ry = r - dy;
-    int dx_out = r - static_cast<int>(std::sqrt(static_cast<float>(r * r - ry * ry)) + 0.5f);
+    int dx_out = r - chord_half_span_int(r, ry, true);
     int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
     int span_out = w - 2 * dx_out;
     int span_in  = w - 2 * dx_in;
@@ -538,7 +592,7 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
 
   for (int dy = 1; dy < r; dy++) {
     int ry = r - dy;
-    int dx_out = r - static_cast<int>(std::sqrt(static_cast<float>(r * r - ry * ry)) + 0.5f);
+    int dx_out = r - chord_half_span_int(r, ry, true);
     int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
     int span_out = w - 2 * dx_out;
     int span_in  = w - 2 * dx_in;
@@ -620,7 +674,7 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
     } else {
       int dy = (y < y_tc) ? (y_tc - y) : (y - y_bc);
       if (dy > cr_out) continue;
-      int dx_out = static_cast<int>(std::sqrt(static_cast<float>(cr_out * cr_out - dy * dy)) + 0.5f);
+      int dx_out = chord_half_span_int(cr_out, dy, true);
       if (dy >= cr_in) {
         int x0 = x_lc - dx_out;
         int x1 = x_rc + dx_out;
@@ -628,7 +682,7 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
           it.horizontal_line(x0, y, x1 - x0 + 1, ring_c);
         }
       } else {
-        int dx_in = static_cast<int>(std::sqrt(static_cast<float>(cr_in * cr_in - dy * dy)));
+        int dx_in = chord_half_span_int(cr_in, dy, false);
         int seg = std::max(thick, dx_out - dx_in + 1);
         it.horizontal_line(x_lc - dx_out, y, seg, ring_c);
         it.horizontal_line(x_rc + dx_out - seg + 1, y, seg, ring_c);
@@ -636,6 +690,56 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
     }
   }
 #endif
+}
+
+// Universal Reusable 3-Tap Feathered Line, 60-Segment Ring Gauge & Auto-Scaling Sparkline Primitives
+template <typename DisplayT>
+inline void draw_aa_line(DisplayT &it, int x0, int y0, int x1, int y1,
+                         esphome::Color core_col, esphome::Color bg_col) {
+  esphome::Color fringe = lerp_color(bg_col, core_col, 0.42f);
+  draw_glow_line(it, x0, y0, x1, y1, core_col, fringe);
+}
+
+template <typename DisplayT>
+inline void render_arc_gauge(DisplayT &it, int cx, int cy, int r, int thickness,
+                             float pct_01, esphome::Color active_col, esphome::Color track_col) {
+  if (pct_01 < 0.0f) pct_01 = 0.0f;
+  if (pct_01 > 1.0f) pct_01 = 1.0f;
+  int active_ticks = static_cast<int>(pct_01 * 60.0f + 0.5f);
+  int r_in = (r > thickness) ? (r - thickness) : 1;
+  for (int i = 0; i < 60; i++) {
+    int lut = (i + 45) % 60; // Start at 12 o'clock (top)
+    int x0 = cx + static_cast<int>(DIAL_COS[lut] * static_cast<float>(r_in));
+    int y0 = cy + static_cast<int>(DIAL_SIN[lut] * static_cast<float>(r_in));
+    int x1 = cx + static_cast<int>(DIAL_COS[lut] * static_cast<float>(r));
+    int y1 = cy + static_cast<int>(DIAL_SIN[lut] * static_cast<float>(r));
+    it.line(x0, y0, x1, y1, (i < active_ticks) ? active_col : track_col);
+  }
+}
+
+template <typename DisplayT>
+inline void render_sparkline(DisplayT &it, int x0, int y0, int w, int h,
+                             const float *samples, int count,
+                             esphome::Color line_col, esphome::Color fill_col) {
+  if (samples == nullptr || count < 2 || w <= 4 || h <= 4) return;
+  float v_min = samples[0], v_max = samples[0];
+  for (int i = 1; i < count; i++) {
+    if (samples[i] < v_min) v_min = samples[i];
+    if (samples[i] > v_max) v_max = samples[i];
+  }
+  float span = (v_max - v_min > 0.001f) ? (v_max - v_min) : 1.0f;
+  int prev_x = x0;
+  int prev_y = y0 + h - 1 - static_cast<int>(((samples[0] - v_min) / span) * static_cast<float>(h - 2));
+  for (int i = 1; i < count; i++) {
+    int cur_x = x0 + (i * (w - 1)) / (count - 1);
+    int cur_y = y0 + h - 1 - static_cast<int>(((samples[i] - v_min) / span) * static_cast<float>(h - 2));
+    if (cur_y < y0 + h - 1) {
+      it.vertical_line(cur_x, cur_y, (y0 + h - 1) - cur_y, fill_col);
+    }
+    it.line(prev_x, prev_y, cur_x, cur_y, line_col);
+    prev_x = cur_x;
+    prev_y = cur_y;
+  }
 }
 
 template <typename DisplayT>

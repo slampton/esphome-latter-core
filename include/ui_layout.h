@@ -668,7 +668,7 @@ inline void render_in_app_mode_bar_track(
   for (int dy = -r_track; dy <= r_track; dy++) {
     int py = by + dy;
     if (py < 0 || py >= SCREEN_H) continue;
-    int dx_cap = static_cast<int>(std::sqrt(static_cast<float>(r_track * r_track - dy * dy)));
+    int dx_cap = chord_half_span_int(r_track, dy, false);
     int x0 = left_cx - dx_cap;
     int x1 = right_cx + dx_cap;
     if (x1 > x0) {
