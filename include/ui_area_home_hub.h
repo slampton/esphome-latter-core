@@ -107,7 +107,7 @@ inline const char *map_area_default_label_to_domain(const std::string &opt) {
   return "scene"; // Default: Scenes
 }
 
-inline int collect_area_categories(bool show_all_cat, std::string out_cats[7]) {
+inline int collect_area_categories(bool show_all_cat, std::string *out_cats) {
   int n = 0;
   const std::string &csv = area_available_domains_csv();
   auto has_tok = [&](const char *tok) -> bool {
@@ -118,12 +118,13 @@ inline int collect_area_categories(bool show_all_cat, std::string out_cats[7]) {
   };
 
   if (show_all_cat) out_cats[n++] = "all";
-  if (has_tok("scene") && n < 7)  out_cats[n++] = "scene";
-  if (has_tok("light") && n < 7)  out_cats[n++] = "light";
-  if (has_tok("cover") && n < 7)  out_cats[n++] = "cover";
-  if (has_tok("fan") && n < 7)    out_cats[n++] = "fan";
-  if (has_tok("switch") && n < 7) out_cats[n++] = "switch";
-  if (has_tok("media") && n < 7)  out_cats[n++] = "media";
+  if (has_tok("scene")   && n < 8) out_cats[n++] = "scene";
+  if (has_tok("light")   && n < 8) out_cats[n++] = "light";
+  if (has_tok("cover")   && n < 8) out_cats[n++] = "cover";
+  if (has_tok("fan")     && n < 8) out_cats[n++] = "fan";
+  if (has_tok("switch")  && n < 8) out_cats[n++] = "switch";
+  if (has_tok("climate") && n < 8) out_cats[n++] = "climate";
+  if (has_tok("media")   && n < 8) out_cats[n++] = "media";
 
   if (n == 0) {
     out_cats[n++] = "light";
@@ -132,7 +133,7 @@ inline int collect_area_categories(bool show_all_cat, std::string out_cats[7]) {
 }
 
 inline std::string resolve_preferred_area_category(const std::string &pref_label, bool show_all_cat) {
-  std::string cats[7];
+  std::string cats[8];
   int cnt = collect_area_categories(show_all_cat, cats);
   std::string wanted = map_area_default_label_to_domain(pref_label);
   for (int i = 0; i < cnt; i++) {
@@ -175,40 +176,40 @@ inline void render_area_control_page(
   const Color card_bg_on(22, 28, 38);
   const Color card_brd_off(44, 52, 66);
 
-  // Helper: Draw Dynamic Area Category Dock at layout().app_dock_y (Fluid 1..4 Icon Window)
+  // Helper: Draw Unified Area Category Mode Bar at layout().app_dock_y (1..4 Icon Conveyor Window)
   auto render_area_bottom_dock = [&](const std::string &active_domain) {
-    std::string cats[7];
+    std::string cats[8];
     int cat_count = collect_area_categories(show_all_cat, cats);
     if (cat_count <= 0) return;
 
-    int total_cat_pages = (cat_count + 3) / 4;
-    if (area_cat_dock_page() < 0 || area_cat_dock_page() >= total_cat_pages) {
-      area_cat_dock_page() = 0;
+    int active_global_idx = 0;
+    for (int i = 0; i < cat_count; i++) {
+      if (cats[i] == active_domain) {
+        active_global_idx = i;
+        break;
+      }
     }
-    int win_xs[4] = {0, 0, 0, 0};
-    bool dummy_l = false, dummy_r = false;
-    get_home_dock_window_xs(cat_count, area_cat_dock_page(), cx, win_xs, dummy_l, dummy_r);
-    int start_idx = get_home_dock_start_index(cat_count, area_cat_dock_page());
+    area_cat_dock_page() = get_mode_bar_start_index(cat_count, area_cat_dock_page());
+    int start_idx = area_cat_dock_page();
     int vis_count = std::min(4, cat_count - start_idx);
+    int win_xs[4] = {0, 0, 0, 0};
+    bool has_l = false, has_r = false;
+    get_mode_bar_window_xs(cat_count, start_idx, cx, win_xs, has_l, has_r);
+
+    int active_vis_idx = (active_global_idx >= start_idx && active_global_idx < start_idx + vis_count)
+                             ? (active_global_idx - start_idx)
+                             : -1;
+    render_in_app_mode_bar_track(it, cx, win_xs, vis_count, active_vis_idx,
+                                 has_l, has_r, cat_count, active_global_idx,
+                                 theme_primary, col_white);
 
     const int ICON_Y = layout().app_dock_y;
-    Color shadow_c(0, 0, 0);
-
-    const int dr = layout().dock_r;
     for (int i = 0; i < vis_count; i++) {
       int bx = win_xs[i];
       int by = ICON_Y;
       const std::string &cat = cats[start_idx + i];
       bool is_act = (cat == active_domain);
-      Color ring_c = is_act ? theme_primary : Color(90, 112, 138);
-      Color fg_c   = is_act ? theme_primary : col_white;
-
-      it.filled_circle(bx, by, dr - 1, Color(16, 20, 27));
-      it.circle(bx + 1, by + 1, dr, shadow_c);
-      it.circle(bx,     by,     dr, ring_c);
-      if (is_act) {
-        it.circle(bx, by, dr - 1, ring_c);
-      }
+      Color fg_c  = is_act ? theme_primary : col_white;
 
       if (cat == "scene") {
         // Lighting Scenes: Sculpted 8-Ray Sparkle Star
@@ -246,6 +247,22 @@ inline void render_area_control_page(
         it.filled_circle(bx + 5, by, 7, fg_c);
         it.filled_rectangle(bx - 5, by - 7, 10, 15, fg_c);
         it.filled_circle(bx + 5, by, 4, Color(16, 20, 27));
+      } else if (cat == "climate") {
+        // Area Climate: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
+        int tx = bx - 2;
+        it.line(tx - 3, by - 11, tx + 3, by - 11, fg_c);
+        it.line(tx - 2, by - 12, tx + 2, by - 12, fg_c);
+        it.line(tx - 3, by - 11, tx - 3, by + 3,  fg_c);
+        it.line(tx - 2, by - 11, tx - 2, by + 3,  fg_c);
+        it.line(tx + 3, by - 11, tx + 3, by + 3,  fg_c);
+        it.line(tx + 2, by - 11, tx + 2, by + 3,  fg_c);
+        it.filled_circle(tx, by + 7, 5, fg_c);
+        it.filled_circle(tx, by + 7, 3, Color(16, 20, 27));
+        it.filled_circle(tx, by + 7, 1, fg_c);
+        it.filled_rectangle(tx - 1, by - 4, 3, 10, fg_c);
+        it.filled_rectangle(tx + 5, by - 9, 4, 2, fg_c);
+        it.filled_rectangle(tx + 5, by - 5, 3, 2, fg_c);
+        it.filled_rectangle(tx + 5, by - 1, 4, 2, fg_c);
       } else if (cat == "media") {
         // Area Media: Beamed Eighth Notes
         it.filled_circle(bx - 6, by + 6, 4, fg_c);
@@ -267,11 +284,6 @@ inline void render_area_control_page(
           }
         }
       }
-    }
-
-    if (total_cat_pages > 1) {
-      render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_cat_pages, area_cat_dock_page(),
-                            col_white, Color(95, 112, 134));
     }
   };
 
@@ -455,11 +467,13 @@ inline void render_area_control_page(
       it.print(left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     }
   } else {
-    const char *sub_lbl = (area_domain_filter == "scene") ? "Lighting Scenes"
-                        : (area_domain_filter == "light") ? "Lights"
-                        : (area_domain_filter == "cover") ? "Blinds & Curtains"
-                        : (area_domain_filter == "fan")   ? "Fans"
-                        : (area_domain_filter == "switch") ? "Switches & Outlets"
+    const char *sub_lbl = (area_domain_filter == "scene")   ? "Lighting Scenes"
+                        : (area_domain_filter == "light")   ? "Lights"
+                        : (area_domain_filter == "cover")   ? "Blinds & Curtains"
+                        : (area_domain_filter == "fan")     ? "Fans"
+                        : (area_domain_filter == "switch")  ? "Switches & Outlets"
+                        : (area_domain_filter == "climate") ? "Climate & Thermostats"
+                        : (area_domain_filter == "media")   ? "Area Media"
                         : "Tap Header to Switch Area";
     it.print(cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
   }
@@ -801,21 +815,16 @@ inline void render_security_alarm_page(
                        "Return to Dock", col_white, font_small);
   }
 
-  // Bottom 4-Icon Whole-Home Category Dock at layout().app_dock_y (0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum)
+  // Bottom 4-Icon Whole-Home In-App Segmented Mode Bar at layout().app_dock_y (0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum)
   int WH_XS[4] = {0, 0, 0, 0};
   bool wh_dl = false, wh_dr = false;
-  get_home_dock_window_xs(4, 0, cx, WH_XS, wh_dl, wh_dr);
+  get_mode_bar_window_xs(4, 0, cx, WH_XS, wh_dl, wh_dr);
   const int WH_Y = layout().app_dock_y;
-  const int dr = layout().dock_r;
+  render_in_app_mode_bar_track(it, cx, WH_XS, 4, tab, false, false, 4, tab, theme_primary, col_white);
   for (int i = 0; i < 4; i++) {
     int bx = WH_XS[i];
     bool is_act = (i == tab);
-    Color ring_c = is_act ? theme_primary : Color(90, 112, 138);
     Color fg_c   = is_act ? theme_primary : col_white;
-    it.filled_circle(bx, WH_Y, dr - 1, card_bg_off);
-    it.circle(bx + 1, WH_Y + 1, dr, Color(0, 0, 0));
-    it.circle(bx, WH_Y, dr, ring_c);
-    if (is_act) it.circle(bx, WH_Y, dr - 1, ring_c);
 
     if (i == 0) {
       // 0. Security Alarm: Pitched-Crest Shield with Negative-Space Overhanging-Roof House & Doorway

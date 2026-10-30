@@ -1841,6 +1841,7 @@ select:
       - "Blinds & Curtains"
       - "Fans"
       - "Switches"
+      - "Climate"
       - "Media"
       - "All Devices"
     set_action:
@@ -2858,19 +2859,24 @@ text_sensor:
               std::string valid_cat = latter_ui::resolve_preferred_area_category(
                   std::string(id(area_default_category_select).current_option()),
                   id(area_show_all_category_switch).state);
-              std::string cats[7];
+              std::string cats[8];
               int cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
               bool cur_ok = false;
+              int act_idx = 0;
               for (int i = 0; i < cnt; i++) {
-                if (cats[i] == id(area_domain_filter)) { cur_ok = true; break; }
+                if (cats[i] == id(area_domain_filter)) { cur_ok = true; act_idx = i; break; }
               }
               if (!cur_ok && !valid_cat.empty()) {
                 id(area_domain_filter) = valid_cat;
+                for (int i = 0; i < cnt; i++) {
+                  if (cats[i] == valid_cat) { act_idx = i; break; }
+                }
                 if (id(gui_page) == 6 && id(area_subpage) == 0) {
                   id(area_browse_page) = 1;
                   id(fetch_area_browse).execute();
                 }
               }
+              latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), act_idx, cnt);
               if (changed && id(display_power_state) == 0 && id(gui_page) == 6) {
                 latter_ui::schedule_disp_update(&id(disp1));
               }

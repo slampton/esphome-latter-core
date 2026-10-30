@@ -1608,20 +1608,14 @@ inline void render_weather_subpage_icons(DisplayT &it, int active_subpage,
   };
 
   esphome::Color shadow_c(0, 0, 0);
-  const int dr = layout().dock_r;
+  render_in_app_mode_bar_track(it, SCREEN_CX, ICON_XS, 4, active_subpage,
+                               false, false, 4, active_subpage,
+                               col_active, col_inactive);
   for (int i = 0; i < 4; i++) {
     int bx = ICON_XS[i];
     int by = ICON_Y;
     bool is_act = (i == active_subpage);
     esphome::Color fg_c = is_act ? col_active : col_inactive;
-    if (is_act) {
-      it.circle(bx + 1, by + 1, dr, shadow_c);
-      it.circle(bx,     by,     dr, col_active);
-      it.circle(bx,     by,     dr - 1, col_active);
-    } else {
-      it.circle(bx + 1, by + 1, dr, shadow_c);
-      it.circle(bx,     by,     dr, esphome::Color(90, 112, 138));
-    }
     draw_icon_glyph(i, bx + 1, by + 1, shadow_c);
     draw_icon_glyph(i, bx,     by,     fg_c);
   }

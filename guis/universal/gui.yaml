@@ -3128,10 +3128,64 @@ touchscreen:
               return;
             }
 
-            // 7. AREA CONTROL (PAGE 6) HORIZONTAL CATEGORY SWIPE (Just like Sky & Weather!) & VERTICAL LIST SWIPE
-            if (id(gui_page) == 6 && id(area_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 20)) {
-              if (std::abs(dx) >= 30 && std::abs(dx) > std::abs(dy)) {
-                std::string cats[7];
+            // 7. AREA CONTROL (PAGE 6): LIVE CARD SLIDER DRAG, BOTTOM MODE BAR SWIPE & NON-SLIDER CATEGORY SWIPE
+            if (id(gui_page) == 6 && id(area_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 16)) {
+              const int dock_top_y = latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14;
+              int start_card = (gest.start_y < dock_top_y) ? latter_ui::layout().hit_area_card3(gest.start_x, gest.start_y) : -1;
+              std::string start_type = (start_card == 0) ? id(area_slot_1_type) : (start_card == 1) ? id(area_slot_2_type) : (start_card == 2) ? id(area_slot_3_type) : "";
+              int start_lvl = (start_card == 0) ? id(area_slot_1_level) : (start_card == 1) ? id(area_slot_2_level) : (start_card == 2) ? id(area_slot_3_level) : -1;
+              bool is_card_slider_drag = (start_card >= 0 && (start_type == "light" || start_type == "cover" || start_type == "fan") && start_lvl >= 0 && gest.start_x > latter_ui::layout().area_card_div_x());
+
+              // (a) Live Horizontal Fill-Slider Drag inside an Area Card (never triggers category swipe!)
+              if (is_card_slider_drag) {
+                if (std::abs(dx) >= 6 && std::abs(dx) >= std::abs(dy)) {
+                  static uint32_t last_area_slider_ms = 0;
+                  int pct = latter_ui::layout().area_slider_pct(gest.last_x);
+                  bool &s_act = (start_card == 0) ? id(area_slot_1_active) : (start_card == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
+                  int  &s_lvl = (start_card == 0) ? id(area_slot_1_level)  : (start_card == 1) ? id(area_slot_2_level)  : id(area_slot_3_level);
+                  if (s_lvl != pct || !s_act) {
+                    s_act = true;
+                    s_lvl = pct;
+                    if (now_u - last_area_slider_ms > 45) {
+                      last_area_slider_ms = now_u;
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    }
+                  }
+                }
+                return;
+              }
+
+              // (b) Bottom Segmented Mode Bar Horizontal Swipe -> Slide 4-Icon Conveyor Window (or step <=4 categories)
+              if (gest.start_y >= dock_top_y && std::abs(dx) >= 24 && std::abs(dx) > std::abs(dy)) {
+                std::string cats[8];
+                int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
+                gest.swipe_committed = true;
+                gest.last_swipe_ms = now_u;
+                if (cat_cnt > 4) {
+                  int cur_win = latter_ui::get_mode_bar_start_index(cat_cnt, latter_ui::area_cat_dock_page());
+                  int next_win = std::max(0, std::min(cat_cnt - 4, cur_win + ((dx < 0) ? 2 : -2)));
+                  if (next_win != cur_win) {
+                    latter_ui::area_cat_dock_page() = next_win;
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else if (cat_cnt > 1) {
+                  int cur_i = 0;
+                  for (int i = 0; i < cat_cnt; i++) {
+                    if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
+                  }
+                  int next_i = (dx < 0) ? ((cur_i + 1) % cat_cnt) : ((cur_i + cat_cnt - 1) % cat_cnt);
+                  id(area_domain_filter) = cats[next_i];
+                  id(area_browse_mode) = "entities";
+                  id(area_browse_page) = 1;
+                  id(fetch_area_browse).execute();
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+                return;
+              }
+
+              // (c) Non-Slider Middle Canvas Horizontal Swipe -> Step Active Category & Sync Mode Bar Window
+              if (gest.start_y < dock_top_y && std::abs(dx) >= 34 && (std::abs(dx) * 2) > (std::abs(dy) * 3)) {
+                std::string cats[8];
                 int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                 if (cat_cnt > 1) {
                   gest.swipe_committed = true;
@@ -3142,8 +3196,7 @@ touchscreen:
                   }
                   int next_i = (dx < 0) ? ((cur_i + 1) % cat_cnt) : ((cur_i + cat_cnt - 1) % cat_cnt);
                   id(area_domain_filter) = cats[next_i];
-                  // Keep the 4-icon bottom category dock window synced with the active category!
-                  latter_ui::area_cat_dock_page() = (next_i >= 4) ? 1 : 0;
+                  latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), next_i, cat_cnt);
                   id(area_browse_mode) = "entities";
                   id(area_browse_page) = 1;
                   id(fetch_area_browse).execute();
@@ -3818,7 +3871,30 @@ touchscreen:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > latter_ui::scale_y(88) && gest.last_y < (latter_ui::SCREEN_H - 16)) {
-                if (gest.max_travel < 30) {
+                const int dock_top_y = latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14;
+                int start_card = (id(area_subpage) == 0 && gest.start_y < dock_top_y) ? latter_ui::layout().hit_area_card3(gest.start_x, gest.start_y) : -1;
+                std::string start_type = (start_card == 0) ? id(area_slot_1_type) : (start_card == 1) ? id(area_slot_2_type) : (start_card == 2) ? id(area_slot_3_type) : "";
+                int start_lvl = (start_card == 0) ? id(area_slot_1_level) : (start_card == 1) ? id(area_slot_2_level) : (start_card == 2) ? id(area_slot_3_level) : -1;
+                bool is_card_slider_drag = (start_card >= 0 && (start_type == "light" || start_type == "cover" || start_type == "fan") && start_lvl >= 0 && gest.start_x > latter_ui::layout().area_card_div_x());
+
+                if (is_card_slider_drag && gest.max_travel >= 30) {
+                  std::string s_name = (start_card == 0) ? id(area_slot_1_name) : (start_card == 1) ? id(area_slot_2_name) : id(area_slot_3_name);
+                  std::string s_id   = (start_card == 0) ? id(area_slot_1_id)   : (start_card == 1) ? id(area_slot_2_id)   : id(area_slot_3_id);
+                  bool &s_act        = (start_card == 0) ? id(area_slot_1_active) : (start_card == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
+                  int  &s_lvl        = (start_card == 0) ? id(area_slot_1_level)  : (start_card == 1) ? id(area_slot_2_level)  : id(area_slot_3_level);
+                  if (!s_id.empty()) {
+                    int pct = latter_ui::layout().area_slider_pct(tp.x);
+                    s_act = true;
+                    s_lvl = pct;
+                    id(area_target_entity_id) = s_id;
+                    id(area_target_action) = "set_level";
+                    id(area_target_level) = pct;
+                    id(area_action_feedback) = latter_ui::strip_trailing_paren_state(s_name) + ": " + to_string(pct) + "%";
+                    id(area_feedback_timer) = now_rel;
+                    id(execute_area_action).execute();
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else if (gest.max_travel < 30) {
                   if (is_right_chevron_zone(tp) && id(area_subpage) != 2 && ((id(area_subpage) == 1 && id(area_list_total_pages) > 1) || (id(area_subpage) == 0 && id(area_browse_total_pages) > 1))) {
                     int delta = (tp.y < latter_ui::SCREEN_CY) ? -1 : 1;
                     if (id(area_subpage) == 1 && id(area_list_total_pages) > 1) {
@@ -3837,33 +3913,46 @@ touchscreen:
                       }
                     }
                   } else if (id(area_subpage) == 0 &&
-                             tp.y >= latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14 &&
+                             tp.y >= dock_top_y &&
                              tp.y <= latter_ui::layout().app_dock_y + latter_ui::layout().dock_r + 16 &&
-                             tp.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(205) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(205)) {
-                    std::string cats[7];
+                             tp.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(215) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(215)) {
+                    std::string cats[8];
                     int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                     int win_xs[4] = {0, 0, 0, 0};
-                    bool dummy_l = false, dummy_r = false;
-                    latter_ui::get_home_dock_window_xs(cat_cnt, latter_ui::area_cat_dock_page(), latter_ui::SCREEN_CX, win_xs, dummy_l, dummy_r);
-                    int start_idx = latter_ui::get_home_dock_start_index(cat_cnt, latter_ui::area_cat_dock_page());
+                    bool has_l = false, has_r = false;
+                    latter_ui::get_mode_bar_window_xs(cat_cnt, latter_ui::area_cat_dock_page(), latter_ui::SCREEN_CX, win_xs, has_l, has_r);
+                    int start_idx = latter_ui::get_mode_bar_start_index(cat_cnt, latter_ui::area_cat_dock_page());
                     int vis_count = std::min(4, cat_cnt - start_idx);
-                    int best_i = -1;
-                    int best_dist = (vis_count < 4) ? latter_ui::scale_x(50) : latter_ui::scale_x(42);
-                    for (int i = 0; i < vis_count; i++) {
-                      int d = std::abs(tp.x - win_xs[i]);
-                      if (d < best_dist) {
-                        best_dist = d;
-                        best_i = i;
+                    if (has_l && vis_count > 0 && tp.x < win_xs[0] - latter_ui::layout().dock_r) {
+                      latter_ui::area_cat_dock_page() = std::max(0, start_idx - 1);
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    } else if (has_r && vis_count > 0 && tp.x > win_xs[vis_count - 1] + latter_ui::layout().dock_r) {
+                      latter_ui::area_cat_dock_page() = std::min(cat_cnt - 4, start_idx + 1);
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    } else {
+                      int best_i = -1;
+                      int best_dist = (vis_count < 4) ? latter_ui::scale_x(50) : latter_ui::scale_x(42);
+                      for (int i = 0; i < vis_count; i++) {
+                        int d = std::abs(tp.x - win_xs[i]);
+                        if (d < best_dist) {
+                          best_dist = d;
+                          best_i = i;
+                        }
                       }
-                    }
-                    if (best_i >= 0) {
-                      std::string new_flt = cats[start_idx + best_i];
-                      if (id(area_domain_filter) != new_flt) {
-                        id(area_domain_filter) = new_flt;
-                        id(area_browse_mode) = "entities";
-                        id(area_browse_page) = 1;
-                        id(fetch_area_browse).execute();
-                        latter_ui::schedule_disp_update(&id(disp1));
+                      if (best_i >= 0) {
+                        int chosen_idx = start_idx + best_i;
+                        std::string new_flt = cats[chosen_idx];
+                        int prev_win = latter_ui::area_cat_dock_page();
+                        latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), chosen_idx, cat_cnt);
+                        if (id(area_domain_filter) != new_flt) {
+                          id(area_domain_filter) = new_flt;
+                          id(area_browse_mode) = "entities";
+                          id(area_browse_page) = 1;
+                          id(fetch_area_browse).execute();
+                          latter_ui::schedule_disp_update(&id(disp1));
+                        } else if (latter_ui::area_cat_dock_page() != prev_win) {
+                          latter_ui::schedule_disp_update(&id(disp1));
+                        }
                       }
                     }
                   } else if (id(area_subpage) == 1) {

@@ -370,6 +370,158 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   (void)disp;
 #endif
 }
+
+// =============================================================================
+// FLUID 4-ICON HOME DOCK & UNIFIED IN-APP SEGMENTED MODE BAR GEOMETRY
+// =============================================================================
+inline int get_home_dock_start_index(int total_count, int page) {
+  if (total_count <= 4 || page <= 0) return 0;
+  int total_pages = (total_count + 3) / 4;
+  int eff_page = (page >= total_pages) ? (total_pages - 1) : page;
+  int raw_start = eff_page * 4;
+  if (raw_start + 4 > total_count) {
+    raw_start = total_count - 4;
+  }
+  return std::max(0, raw_start);
+}
+
+inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_xs[4],
+                                    bool &out_has_left_arrow, bool &out_has_right_arrow) {
+  out_has_left_arrow = false;
+  out_has_right_arrow = false;
+  if (total_count <= 0) return;
+  int start_idx = get_home_dock_start_index(total_count, page);
+  int vis_count = std::min(4, total_count - start_idx);
+  if (vis_count == 1) {
+    out_xs[0] = cx;
+  } else if (vis_count == 2) {
+    out_xs[0] = cx - scale_x(44);
+    out_xs[1] = cx + scale_x(44);
+  } else if (vis_count == 3) {
+    out_xs[0] = cx - scale_x(84);
+    out_xs[1] = cx;
+    out_xs[2] = cx + scale_x(84);
+  } else {
+#if LATTER_ROUND_DISPLAY
+    out_xs[0] = 112;
+    out_xs[1] = 193;
+    out_xs[2] = 274;
+    out_xs[3] = 355;
+#else
+    const int stride = (SCREEN_W < 380) ? 74 : scale_x(98);
+    out_xs[0] = cx - (stride * 3) / 2;
+    out_xs[1] = cx - (stride / 2);
+    out_xs[2] = cx + (stride / 2);
+    out_xs[3] = cx + (stride * 3) / 2;
+#endif
+  }
+}
+
+// Unified In-App Segmented Mode Bar (Option A: Stadium Pill + 1-Step Conveyor Window)
+// Floating circles on Page 1 launch apps; connected stadium pill tracks inside
+// apps (Sky & Weather, Area Control, Whole-Home Hub) switch the middle view.
+inline int get_mode_bar_start_index(int total_count, int win_start) {
+  if (total_count <= 4 || win_start <= 0) return 0;
+  return std::max(0, std::min(total_count - 4, win_start));
+}
+
+inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count) {
+  if (total_count <= 4) {
+    win_start = 0;
+    return;
+  }
+  win_start = std::max(0, std::min(total_count - 4, active_idx - 1));
+}
+
+inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[4],
+                                   bool &out_has_left_arrow, bool &out_has_right_arrow) {
+  out_has_left_arrow = false;
+  out_has_right_arrow = false;
+  if (total_count <= 0) return;
+  int start_idx = get_mode_bar_start_index(total_count, win_start);
+  int vis_count = std::min(4, total_count - start_idx);
+  bool dl = false, dr = false;
+  get_home_dock_window_xs(vis_count, 0, cx, out_xs, dl, dr);
+  out_has_left_arrow  = (start_idx > 0);
+  out_has_right_arrow = (start_idx + 4 < total_count);
+}
+
+template <typename DisplayT>
+inline void render_in_app_mode_bar_track(
+    DisplayT &it, int cx, const int *win_xs, int vis_count, int active_vis_idx,
+    bool has_left_arrow, bool has_right_arrow, int total_count, int active_global_idx,
+    esphome::Color theme_primary, esphome::Color col_white) {
+  using esphome::Color;
+  if (vis_count <= 0) return;
+
+  const int by = layout().app_dock_y;
+  const int dr = layout().dock_r;
+  const int r_track = dr + scale_s(3);
+  const int left_cx  = win_xs[0];
+  const int right_cx = win_xs[vis_count - 1];
+  const Color track_bg(16, 20, 27);
+  const Color track_brd(52, 64, 82);
+  const Color cap_bg(16, 20, 27);
+
+  // 1. Continuous Scanline Stadium Pill Track connecting left_cx .. right_cx
+  for (int dy = -r_track; dy <= r_track; dy++) {
+    int py = by + dy;
+    if (py < 0 || py >= SCREEN_H) continue;
+    int dx_cap = static_cast<int>(std::sqrt(static_cast<float>(r_track * r_track - dy * dy)));
+    int x0 = left_cx - dx_cap;
+    int x1 = right_cx + dx_cap;
+    if (x1 > x0) {
+      it.horizontal_line(x0, py, x1 - x0 + 1, track_bg);
+      if (std::abs(dy) == r_track) {
+        it.horizontal_line(left_cx, py, right_cx - left_cx + 1, track_brd);
+      } else {
+        it.draw_pixel_at(x0, py, track_brd);
+        it.draw_pixel_at(x1, py, track_brd);
+      }
+    }
+  }
+
+  // 2. Subtle vertical slot dividers between inactive slots inside the track
+  const int div_h = dr - scale_s(6);
+  const Color div_col(30, 38, 50);
+  for (int i = 0; i < vis_count - 1; i++) {
+    if (i == active_vis_idx || (i + 1) == active_vis_idx) continue;
+    int mid_x = (win_xs[i] + win_xs[i + 1]) / 2;
+    it.vertical_line(mid_x, by - div_h, div_h * 2 + 1, div_col);
+  }
+
+  // 3. Active Slot Capsule Highlight inside the track
+  if (active_vis_idx >= 0 && active_vis_idx < vis_count) {
+    int abx = win_xs[active_vis_idx];
+    it.filled_circle(abx, by, dr - 1, cap_bg);
+    it.circle(abx, by, dr, theme_primary);
+    it.circle(abx, by, dr - 1, theme_primary);
+  }
+
+  // 4. Outer Left '<' and Right '>' Conveyor Chevrons when total_count > 4
+  const int chev_off = dr + ((SCREEN_W < 380) ? 10 : scale_x(13));
+  const int ch_s = scale_s(5);
+  if (has_left_arrow) {
+    int lx = left_cx - chev_off;
+    it.line(lx + ch_s / 2, by - ch_s, lx - ch_s / 2, by, col_white);
+    it.line(lx - ch_s / 2, by, lx + ch_s / 2, by + ch_s, col_white);
+    it.line(lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
+    it.line(lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
+  }
+  if (has_right_arrow) {
+    int rx = right_cx + chev_off;
+    it.line(rx - ch_s / 2, by - ch_s, rx + ch_s / 2, by, col_white);
+    it.line(rx + ch_s / 2, by, rx - ch_s / 2, by + ch_s, col_white);
+    it.line(rx - ch_s / 2 - 1, by - ch_s, rx + ch_s / 2 - 1, by, theme_primary);
+    it.line(rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
+  }
+
+  // 5. Category Index Pips below the Mode Bar when total_count > 4
+  if (total_count > 4) {
+    render_dock_page_pips(it, cx, layout().app_dock_pips_y, total_count, active_global_idx,
+                          theme_primary, Color(85, 102, 124));
+  }
+}
 }  // namespace latter_ui
 
 

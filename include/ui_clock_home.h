@@ -800,52 +800,6 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
   return n;
 }
 
-// Fluid 4-Icon Sliding Window Helper:
-// When total_count > 4, Page 0 shows the first 4 icons (0..3) and Page 1 slides fluidly to show
-// the last 4 icons (total_count - 4 .. total_count - 1) so the dock always displays 4 balanced icons!
-inline int get_home_dock_start_index(int total_count, int page) {
-  if (total_count <= 4 || page <= 0) return 0;
-  int total_pages = (total_count + 3) / 4;
-  int eff_page = (page >= total_pages) ? (total_pages - 1) : page;
-  int raw_start = eff_page * 4;
-  if (raw_start + 4 > total_count) {
-    raw_start = total_count - 4;
-  }
-  return std::max(0, raw_start);
-}
-
-inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_xs[4],
-                                    bool &out_has_left_arrow, bool &out_has_right_arrow) {
-  out_has_left_arrow = false;
-  out_has_right_arrow = false;
-  if (total_count <= 0) return;
-  int start_idx = get_home_dock_start_index(total_count, page);
-  int vis_count = std::min(4, total_count - start_idx);
-  if (vis_count == 1) {
-    out_xs[0] = cx;
-  } else if (vis_count == 2) {
-    out_xs[0] = cx - scale_x(44);
-    out_xs[1] = cx + scale_x(44);
-  } else if (vis_count == 3) {
-    out_xs[0] = cx - scale_x(84);
-    out_xs[1] = cx;
-    out_xs[2] = cx + scale_x(84);
-  } else {
-#if LATTER_ROUND_DISPLAY
-    out_xs[0] = 112;
-    out_xs[1] = 193;
-    out_xs[2] = 274;
-    out_xs[3] = 355;
-#else
-    const int stride = (SCREEN_W < 380) ? 74 : scale_x(98);
-    out_xs[0] = cx - (stride * 3) / 2;
-    out_xs[1] = cx - (stride / 2);
-    out_xs[2] = cx + (stride / 2);
-    out_xs[3] = cx + (stride * 3) / 2;
-#endif
-  }
-}
-
 template <typename DisplayT, typename TimeT, typename StrT, typename FontTimeT, typename FontDateT, typename FontSmallT, typename WallImgT = void, typename FontMicroT = FontSmallT>
 inline void render_home_page(
     DisplayT &it, int cx, int cy, uint32_t now_ms, int home_subpage,
