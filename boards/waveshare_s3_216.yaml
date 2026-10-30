@@ -28,6 +28,7 @@ esp32:
   framework:
     type: esp-idf
     sdkconfig_options:
+      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
       CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
       CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM: "64"
       CONFIG_LWIP_TCP_WND_DEFAULT: "65535"

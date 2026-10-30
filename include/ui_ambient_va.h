@@ -48,15 +48,38 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
   int p3_g = static_cast<int>(235.0f * b3);
   int p3_b = static_cast<int>(82.0f  * b3);
 
-  for (int x = 8; x <= SCREEN_W - 8; x += 3) {
+  static constexpr int X_STEP = (SCREEN_W > 520) ? 4 : 3;
+  static constexpr int FILL_W = (SCREEN_W > 520) ? 3 : 2;
+  static constexpr int MAX_COLS = (SCREEN_W / X_STEP) + 2;
+
+  struct AuroraCol {
+    int16_t x;
+    int16_t col_top, col_bot;
+    int16_t y1, top1, step1_fp;
+    int16_t y2, top2, step2_fp;
+    int16_t y3, top3, step3_fp;
+  };
+  AuroraCol cols[MAX_COLS];
+  int num_cols = 0;
+  int global_top = SCREEN_H;
+  int global_bot = 0;
+
+  const float h_sc = static_cast<float>(SCREEN_H) / 466.0f;
+  const float x_sc = 466.0f / static_cast<float>(SCREEN_W);
+
+  // Pass 1: Precompute 1D vertical veil bounds per column strip (O(SCREEN_W), <80us)
+  for (int x = 6; x <= SCREEN_W - 6 && num_cols < MAX_COLS; x += X_STEP) {
+#if LATTER_ROUND_DISPLAY
     int h_half = circle_half_span(x, 5);
     if (h_half <= 0) continue;
     int y_min = cy - h_half;
     int y_max = cy + h_half;
-    float xf = static_cast<float>(x);
+#else
+    int y_min = 6;
+    int y_max = SCREEN_H - 6;
+#endif
+    float xf = static_cast<float>(x) * x_sc;
 
-    // Full-bodied physical veil geometry scaled proportionally to SCREEN_H
-    const float h_sc = static_cast<float>(SCREEN_H) / 466.0f;
     int y1 = cy - static_cast<int>(10.0f * h_sc) + static_cast<int>((fast_sin(xf * 0.011f + t * 0.6f) * 58.0f + fast_cos(xf * 0.006f - t * 0.35f) * 28.0f) * h_sc);
     int len1 = static_cast<int>((120.0f + fast_sin(xf * 0.024f + t * 1.2f) * 35.0f) * h_sc);
     int top1 = y1 - len1;
@@ -72,26 +95,36 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
     int top3 = y3 - len3;
     int step3_fp = (63 << 10) / (len3 > 1 ? len3 : 1);
 
-    int col_top = top1;
-    if (top2 < col_top) col_top = top2;
-    if (top3 < col_top) col_top = top3;
-    if (col_top < y_min) col_top = y_min;
+    int c_top = std::min({top1, top2, top3});
+    if (c_top < y_min) c_top = y_min;
+    int c_bot = std::max({y1, y2, y3});
+    if (c_bot > y_max) c_bot = y_max;
+    if (c_top > c_bot) continue;
 
-    int col_bot = y1;
-    if (y2 > col_bot) col_bot = y2;
-    if (y3 > col_bot) col_bot = y3;
-    if (col_bot > y_max) col_bot = y_max;
+    if (c_top < global_top) global_top = c_top;
+    if (c_bot > global_bot) global_bot = c_bot;
 
-    // Exact Chunk 73 Hue-Preserving Soft-Add Blending:
-    // Weights RGB mix by (w_max + 25% of secondary weights) / w_sum so intersections glow
-    // into deep indigo, royal blue, and seafoam instead of saturating to white.
-    for (int py = col_bot; py >= col_top; py -= 2) {
+    cols[num_cols++] = {
+      static_cast<int16_t>(x),
+      static_cast<int16_t>(c_top), static_cast<int16_t>(c_bot),
+      static_cast<int16_t>(y1), static_cast<int16_t>(top1), static_cast<int16_t>(step1_fp),
+      static_cast<int16_t>(y2), static_cast<int16_t>(top2), static_cast<int16_t>(step2_fp),
+      static_cast<int16_t>(y3), static_cast<int16_t>(top3), static_cast<int16_t>(step3_fp)
+    };
+  }
+
+  // Pass 2: Row-Major Scanline Render (sequential horizontal memory access in L1/L2 cache!)
+  for (int py = global_top; py <= global_bot; py += 2) {
+    for (int i = 0; i < num_cols; i++) {
+      const auto &c = cols[i];
+      if (py < c.col_top || py > c.col_bot) continue;
+
       int r = 0, g = 0, b = 0;
       uint32_t w_sum = 0;
       uint32_t w_max = 0;
 
-      if (py <= y1 && py >= top1) {
-        int idx1 = ((y1 - py) * step1_fp) >> 10;
+      if (py <= c.y1 && py >= c.top1) {
+        int idx1 = ((c.y1 - py) * c.step1_fp) >> 10;
         uint32_t w1 = AURORA_PLUME_LUT[idx1 & 63];
         r += (p1_r * static_cast<int>(w1)) >> 8;
         g += (p1_g * static_cast<int>(w1)) >> 8;
@@ -99,8 +132,8 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
         w_sum += w1;
         w_max = w1;
       }
-      if (py <= y2 && py >= top2) {
-        int idx2 = ((y2 - py) * step2_fp) >> 10;
+      if (py <= c.y2 && py >= c.top2) {
+        int idx2 = ((c.y2 - py) * c.step2_fp) >> 10;
         uint32_t w2 = AURORA_PLUME_LUT[idx2 & 63];
         r += (p2_r * static_cast<int>(w2)) >> 8;
         g += (p2_g * static_cast<int>(w2)) >> 8;
@@ -108,8 +141,8 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
         w_sum += w2;
         if (w2 > w_max) w_max = w2;
       }
-      if (py <= y3 && py >= top3) {
-        int idx3 = ((y3 - py) * step3_fp) >> 10;
+      if (py <= c.y3 && py >= c.top3) {
+        int idx3 = ((c.y3 - py) * c.step3_fp) >> 10;
         uint32_t w3 = AURORA_PLUME_LUT[idx3 & 63];
         r += (p3_r * static_cast<int>(w3)) >> 8;
         g += (p3_g * static_cast<int>(w3)) >> 8;
@@ -129,18 +162,11 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
         uint8_t cr = static_cast<uint8_t>(r > 255 ? 255 : r);
         uint8_t cg = static_cast<uint8_t>(g > 255 ? 255 : g);
         uint8_t cb = static_cast<uint8_t>(b > 255 ? 255 : b);
-        it.horizontal_line(x, py, 2, esphome::Color(cr, cg, cb));
-        if (py - 1 >= y_min) {
-          it.draw_pixel_at(x, py - 1, esphome::Color(
-              static_cast<uint8_t>((cr * 96U) >> 8),
-              static_cast<uint8_t>((cg * 96U) >> 8),
-              static_cast<uint8_t>((cb * 96U) >> 8)));
-        }
+        it.horizontal_line(c.x, py, FILL_W, esphome::Color(cr, cg, cb));
       }
     }
   }
 }
-
 template<typename DisplayT>
 inline void render_screensaver_starfield(DisplayT &it, int cx, int cy, uint32_t now_ms = 0) {
   struct Star3D { float x, y, z; };
