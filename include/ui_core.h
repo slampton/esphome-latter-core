@@ -523,6 +523,50 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
 }
 
 template<typename DisplayT>
+inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
+                               esphome::Color bg_c, esphome::Color border_c, int r = 10) {
+  if (w <= 4 || h <= 4) return;
+  if (r > h / 2) r = h / 2;
+  if (r > w / 2) r = w / 2;
+  if (r < 2) r = 2;
+
+  int top_in = r / 2 + 2;
+  if (w > 2 * top_in) {
+    it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, border_c);
+    it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, border_c);
+  }
+
+  for (int dy = 1; dy < r; dy++) {
+    int ry = r - dy;
+    int dx_out = r - static_cast<int>(std::sqrt(static_cast<float>(r * r - ry * ry)) + 0.5f);
+    int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
+    int span_out = w - 2 * dx_out;
+    int span_in  = w - 2 * dx_in;
+    int yt = y0 + dy;
+    int yb = y0 + h - 1 - dy;
+    if (span_in > 0) {
+      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_in,  yt, span_in,        bg_c);
+      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, border_c);
+
+      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, border_c);
+      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_c);
+      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, border_c);
+    } else if (span_out > 0) {
+      it.horizontal_line(x0 + dx_out, yt, span_out, border_c);
+      it.horizontal_line(x0 + dx_out, yb, span_out, border_c);
+    }
+  }
+
+  int mid_h = h - 2 * r;
+  if (mid_h > 0) {
+    it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_h, bg_c);
+    it.vertical_line(x0,         y0 + r, mid_h, border_c);
+    it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
+  }
+}
+
+template<typename DisplayT>
 inline void render_scroll_chevron(DisplayT &it, int x, int y, bool is_up,
                                   esphome::Color c, esphome::Color shadow_c, bool shadow = false) {
   const int dx = scale_s(7);
