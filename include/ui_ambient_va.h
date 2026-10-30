@@ -55,19 +55,20 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
     int y_max = cy + h_half;
     float xf = static_cast<float>(x);
 
-    // Full-bodied Chunk 72 physical veil geometry (120..150px heights & wide organic overlap)
-    int y1 = cy - 10 + static_cast<int>(fast_sin(xf * 0.011f + t * 0.6f) * 58.0f + fast_cos(xf * 0.006f - t * 0.35f) * 28.0f);
-    int len1 = 120 + static_cast<int>(fast_sin(xf * 0.024f + t * 1.2f) * 35.0f);
+    // Full-bodied physical veil geometry scaled proportionally to SCREEN_H
+    const float h_sc = static_cast<float>(SCREEN_H) / 466.0f;
+    int y1 = cy - static_cast<int>(10.0f * h_sc) + static_cast<int>((fast_sin(xf * 0.011f + t * 0.6f) * 58.0f + fast_cos(xf * 0.006f - t * 0.35f) * 28.0f) * h_sc);
+    int len1 = static_cast<int>((120.0f + fast_sin(xf * 0.024f + t * 1.2f) * 35.0f) * h_sc);
     int top1 = y1 - len1;
     int step1_fp = (63 << 10) / (len1 > 1 ? len1 : 1);
 
-    int y2 = cy + 32 + static_cast<int>(fast_sin(xf * 0.014f - t * 0.8f + 1.6f) * 62.0f + fast_sin(xf * 0.008f + t * 0.5f) * 32.0f);
-    int len2 = 135 + static_cast<int>(fast_cos(xf * 0.028f - t * 1.5f) * 40.0f);
+    int y2 = cy + static_cast<int>(32.0f * h_sc) + static_cast<int>((fast_sin(xf * 0.014f - t * 0.8f + 1.6f) * 62.0f + fast_sin(xf * 0.008f + t * 0.5f) * 32.0f) * h_sc);
+    int len2 = static_cast<int>((135.0f + fast_cos(xf * 0.028f - t * 1.5f) * 40.0f) * h_sc);
     int top2 = y2 - len2;
     int step2_fp = (63 << 10) / (len2 > 1 ? len2 : 1);
 
-    int y3 = cy + 78 + static_cast<int>(fast_sin(xf * 0.017f + t * 1.0f + 3.1f) * 66.0f + fast_cos(xf * 0.010f - t * 0.7f) * 36.0f);
-    int len3 = 150 + static_cast<int>(fast_sin(xf * 0.032f + t * 1.8f) * 44.0f);
+    int y3 = cy + static_cast<int>(78.0f * h_sc) + static_cast<int>((fast_sin(xf * 0.017f + t * 1.0f + 3.1f) * 66.0f + fast_cos(xf * 0.010f - t * 0.7f) * 36.0f) * h_sc);
+    int len3 = static_cast<int>((150.0f + fast_sin(xf * 0.032f + t * 1.8f) * 44.0f) * h_sc);
     int top3 = y3 - len3;
     int step3_fp = (63 << 10) / (len3 > 1 ? len3 : 1);
 

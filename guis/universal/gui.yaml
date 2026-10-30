@@ -101,6 +101,11 @@ display:
       const int cy = latter_ui::SCREEN_CY;
       const Color C_WHITE = id(col_white);
       const Color C_SOLARIS_GOLD = id(col_solaris_gold);
+      #if !LATTER_ROUND_DISPLAY
+      // Ensure MIPI-DSI dirty-rectangle tracking always flushes the full SCREEN_W x SCREEN_H canvas
+      it.draw_pixel_at(0, 0, id(col_bg));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, id(col_bg));
+      #endif
 
       // ==========================================
       // GLOBAL OVERLAY: OTA FIRMWARE UPDATE IN PROGRESS
