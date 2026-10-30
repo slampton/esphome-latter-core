@@ -178,17 +178,31 @@ inline void render_system_page(
                         : (power_profile_opt == "Always-On Wall / Desk") ? "Wall/Desk"
                         : power_profile_opt.c_str();
     snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
+#if LATTER_HAS_IMU
     snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: %s", pickup_wake_opt.c_str());
+#else
+    snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: N/A");
+#endif
     snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Tap Wake: %s", tap_wake_opt.c_str());
+#if LATTER_HAS_BATTERY
     snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: %s", screen_off_opt.c_str());
+#else
+    snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: N/A");
+#endif
     snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Docked Saver: %s", docked_ss_on ? "On" : "Off");
     const char *short_s = (ss_style_opt == "Aurora Borealis") ? "Aurora"
                           : ((ss_style_opt == "Matrix Rain") ? "Matrix" : ss_style_opt.c_str());
     snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Saver Style: %s", short_s);
     snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Docked Timeout: %s", dock_inact_opt.c_str());
+#if LATTER_HAS_BATTERY
     snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: %s", hibernate_to_opt.c_str());
     snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: %s", instant_crown_hib ? "Instant" : "5s Delay");
     snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Stay Awake: %s", stay_awake_on ? "On" : "Off");
+#else
+    snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: N/A");
+    snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: N/A");
+    snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Stay Awake: N/A");
+#endif
 
     for (int i = 0; i < 10; i++) {
       int y = row0_y + i * row_s - current_offset;
@@ -196,17 +210,17 @@ inline void render_system_page(
         if (i == 4) {
           draw_toggle_card_y(y, sleep_labels[i], docked_ss_on);
         } else if (i == 8) {
-          draw_toggle_card_y(y, sleep_labels[i], true);
+          draw_toggle_card_y(y, sleep_labels[i], LATTER_HAS_BATTERY != 0);
         } else if (i == 9) {
-          draw_toggle_card_y(y, sleep_labels[i], stay_awake_on);
+          draw_toggle_card_y(y, sleep_labels[i], (LATTER_HAS_BATTERY != 0) && stay_awake_on);
         } else {
           bool en = (i == 0) ? true
-                  : (i == 1) ? (pickup_wake_opt != "Disabled")
+                  : (i == 1) ? ((LATTER_HAS_IMU != 0) && (pickup_wake_opt != "Disabled"))
                   : (i == 2) ? (tap_wake_opt != "Disabled")
-                  : (i == 3) ? (screen_off_opt != "Never")
+                  : (i == 3) ? ((LATTER_HAS_BATTERY != 0) && (screen_off_opt != "Never"))
                   : (i == 5) ? docked_ss_on
                   : (i == 6) ? (dock_inact_opt != "Never")
-                  : (i == 7) ? (hibernate_to_opt != "Disabled")
+                  : (i == 7) ? ((LATTER_HAS_BATTERY != 0) && (hibernate_to_opt != "Disabled"))
                   : true;
           draw_cycle_card_y(y, sleep_labels[i], en);
         }
@@ -274,7 +288,11 @@ inline void render_system_page(
   } else if (system_menu_mode == 3) {
     render_menu_header(it, cx, 48, "ACTIONS", font_small, theme_primary);
     draw_action_card_y(layout().slot5_y(0), "Screensaver Now",   card_brd_on, col_white, card_bg_on);
+#if LATTER_HAS_BATTERY
     draw_action_card_y(layout().slot5_y(1), "Hibernate Now",     card_brd_on, col_white, card_bg_on);
+#else
+    draw_action_card_y(layout().slot5_y(1), "Screen Off Now",    card_brd_on, col_white, card_bg_on);
+#endif
     draw_action_card_y(layout().slot5_y(2), "Software Update >", card_brd_on, col_white, card_bg_on);
     snprintf(buf, sizeof(buf), "BLE Beacon: %s", ble_active ? "On" : "Off");
     draw_toggle_card_y(layout().slot5_y(3), buf, ble_active);

@@ -1454,6 +1454,7 @@ select:
           latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: sync_wake_word_state
+      - script.execute: mp_idle_debounce
 
   - platform: template
     name: "Voice: Active Wake Word"
@@ -4586,16 +4587,14 @@ script:
                   ESP_LOGI("ble", "Local audio idle: re-enabling BLE Presence Beacon");
                   id(ble_ctrl).enable();
                 }
-                if (id(display_power_state) == 2) {
-                  auto ww_mode = id(va_wake_word_mode).current_option();
-                  bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
-                  if (!ww_act) {
-                    id(hal_set_audio_codecs_standby).execute(true);
-                  }
-                  if (!id(usb_connected).state) {
-                    if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
-                    latter_ui::hal_set_wifi_power_save(1);
-                  }
+                auto ww_mode = id(va_wake_word_mode).current_option();
+                const bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
+                if (!ww_act) {
+                  id(hal_set_audio_codecs_standby).execute(true);
+                }
+                if (id(display_power_state) == 2 && !id(usb_connected).state) {
+                  if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
+                  latter_ui::hal_set_wifi_power_save(2);
                 }
 
   - id: toggle_voice_assistant
@@ -4616,6 +4615,8 @@ script:
                       format: "Assist pipeline not connected to Home Assistant yet; ignoring PTT press"
                   - script.stop: toggle_voice_assistant
             - lambda: |-
+                latter_ui::hal_set_wifi_power_save(0);
+                id(hal_set_audio_codecs_standby).execute(false);
                 // If waking from screen-off or standby, honor Assist Screen Wake preference
                 if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
                   if (id(va_wake_screen_switch).state) {

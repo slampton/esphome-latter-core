@@ -355,9 +355,18 @@ inline uint32_t hal_calibrate_rtc() {
 }
 
 inline void hal_set_wifi_power_save(int mode) {
-#if defined(USE_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32P4)
+#if defined(USE_ESP32) && (!defined(LATTER_IS_STATIONARY) || !LATTER_IS_STATIONARY)
   extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
-  esp_wifi_set_ps(mode);
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+  // On ESP32-P4 (ESP-Hosted SDIO to C6), cap at WIFI_PS_MIN_MODEM (1) so SDIO RPC stays responsive
+  const int eff_mode = (mode > 0) ? 1 : 0;
+#else
+  const int eff_mode = (mode < 0) ? 0 : ((mode > 2) ? 2 : mode);
+#endif
+  static int last_ps_mode = -1;
+  if (eff_mode == last_ps_mode) return;
+  last_ps_mode = eff_mode;
+  esp_wifi_set_ps(eff_mode);
 #else
   (void)mode;
 #endif

@@ -145,7 +145,7 @@ speaker:
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
-    timeout: 10s
+    timeout: 500ms
 
 
 packages:
@@ -161,7 +161,7 @@ switch:
     pin:
       number: GPIO46
       ignore_strapping_warning: true
-    restore_mode: ALWAYS_ON
+    restore_mode: ALWAYS_OFF
 
 
 # Physical Side Push-to-Talk / Action Button (GPIO0)
@@ -323,9 +323,17 @@ script:
       ctrl7_val: int
     then:
       - lambda: |-
-          if (ctrl7_val > 0) id(imu).start_poller();
-          else id(imu).stop_poller();
-          // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only Pickup Wake, 0x00 = Power-Down
+          static int last_ctrl7 = -1;
+          if (ctrl7_val == last_ctrl7) return;
+          last_ctrl7 = ctrl7_val;
+          if (ctrl7_val > 0) {
+            id(imu).start_poller();
+            id(motion_mag).start_poller();
+          } else {
+            id(imu).stop_poller();
+            id(motion_mag).stop_poller();
+          }
+          // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only, 0x00 = Power-Down
           uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(ctrl7_val)};
           id(bus_internal).write(0x6B, qmi_ctrl7, 2);
 
@@ -335,6 +343,10 @@ script:
       standby: bool
     then:
       - lambda: |-
+          static int last_stby = -1;
+          const int target = standby ? 1 : 0;
+          if (target == last_stby) return;
+          last_stby = target;
           if (standby) {
             uint8_t dac_lp[2] = {0x0D, 0xFC};
             id(bus_internal).write(0x18, dac_lp, 2);

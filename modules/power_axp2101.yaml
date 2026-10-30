@@ -51,14 +51,10 @@ binary_sensor:
       static uint32_t last_active_time = 0;
       static bool is_active = false;
 
-      // When screen is off/standby and Pickup Wake is disabled (e.g. unplugged on battery with "Docked Only"),
-      // the QMI8658 IMU is completely powered down (CTRL7 = 0x00) — keep pickup_detected false.
-      if (id(display_power_state) != 0) {
-        auto pw_mode = id(pickup_wake_mode).current_option();
-        if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !id(usb_connected).state)) {
-          is_active = false;
-          return false;
-        }
+      auto pw_mode = id(pickup_wake_mode).current_option();
+      if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !id(usb_connected).state)) {
+        is_active = false;
+        return false;
       }
 
       float dyn = id(motion_mag).state;
@@ -66,8 +62,11 @@ binary_sensor:
 
       // Dual-Threshold In-Hand Detection:
       // While screen is active, 0.068g maintains active hold in your hand without false-triggering on desk/USB noise.
-      // While screen is sleeping/standby, 0.15g requires a deliberate pickup motion to wake.
+      // While screen is sleeping/standby, 0.15g requires a deliberate pickup motion to wake (0.22g if speaker is playing).
       float thresh = latter_ui::get_pickup_motion_threshold(id(display_power_state) == 0);
+      if (id(display_power_state) != 0 && id(speaker_enable).state && thresh < 0.22f) {
+        thresh = 0.22f;
+      }
       const uint32_t active_ms = (id(display_power_state) == 0) ? 3000 : 2000;
       uint32_t now_ms = millis();
 
@@ -96,12 +95,16 @@ binary_sensor:
                   then:
                     - script.execute: wake_to_active_state
                   else:
-                    - script.execute: screen_sleep_timer
+                    - if:
+                        condition:
+                          lambda: 'return !id(usb_connected).state && !id(speaker_enable).state;'
+                        then:
+                          - script.execute: screen_sleep_timer
     on_release:
       then:
         - if:
             condition:
-              lambda: 'return id(display_power_state) == 0;'
+              lambda: 'return id(display_power_state) == 0 && !id(usb_connected).state && !id(speaker_enable).state;'
             then:
               - script.execute: screen_sleep_timer
 
@@ -120,9 +123,17 @@ sensor:
           - delta: 1.0
     lambda: |-
       static float filtered_pct = -1.0f;
+      static uint32_t last_stby_batt_ms = 0;
       if (id(va_active) || id(va_tts_received)) {
         if (filtered_pct >= 0.0f) return filtered_pct;
         return {};
+      }
+      if (id(display_power_state) == 2 && !id(usb_connected).state && filtered_pct >= 0.0f) {
+        uint32_t now_b = millis();
+        if (now_b - last_stby_batt_ms < 60000U) {
+          return {};
+        }
+        last_stby_batt_ms = now_b;
       }
       uint8_t reg = 0xA4;
       uint8_t pct = 0;
@@ -498,7 +509,7 @@ interval:
                 id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
                 id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
           }
-          if (id(display_power_state) == 0 && !id(is_hibernating) && !id(ota_in_progress)) {
+          if (!id(is_hibernating) && !id(ota_in_progress)) {
             #if defined(CONFIG_IDF_TARGET_ESP32P4)
             const bool sdio_ready = id(wifi_ctrl).is_connected() && (now_1s_ms > 8000U);
             const bool want_ble = id(ble_area_beacon_switch).state && sdio_ready;
@@ -511,6 +522,51 @@ interval:
             } else if (!want_ble && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
               ESP_LOGI("ble", "Disabling BLE radio (BLE Presence Beacon switch is OFF)");
               id(ble_ctrl).disable();
+            }
+          }
+
+          // Dynamic QMI8658 IMU & Wi-Fi Modem Sleep Power Supervisor:
+          // - Gyroscope (~1 mA) is ONLY enabled during 3D IMU games (Page 3, active_game 1..4).
+          // - In Active UI (display_power_state == 0), Accelerometer-only (0x01, ~50 uA) powers Pickup Wake,
+          //   Weather Sky parallax, Bubble Level, and Camera orientation; or 0x00 if Pickup Wake is disabled
+          //   and no accelerometer app is open.
+          if (!id(is_hibernating) && !id(ota_in_progress) && (now_1s_ms > 6000U)) {
+            auto pw_mode = id(pickup_wake_mode).current_option();
+            const bool pw_allowed = (pw_mode == "Always On") ||
+                                    (pw_mode == "Docked Only" && id(usb_connected).state);
+            if (id(display_power_state) == 0) {
+              const bool need_gyro = (id(gui_page) == 3 && id(active_game) >= 1 && id(active_game) <= 4);
+              const bool need_accel = pw_allowed ||
+                                      (id(gui_page) == 1 && id(home_subpage) == 0) ||
+                                      (id(gui_page) == 5) ||
+                                      (id(gui_page) == 8 && (id(stuff_subpage) == 7 || id(stuff_subpage) == 12));
+              id(hal_set_imu_power_mode).execute(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
+            } else {
+              id(hal_set_imu_power_mode).execute(pw_allowed ? 0x01 : 0x00);
+            }
+
+            // Dynamic Wi-Fi Modem Sleep Supervisor:
+            // - 0 (WIFI_PS_NONE): USB connected, Voice Assistant/TTS active, local music streaming,
+            //   live camera/intercom viewing, or within 4s of user touch/wake.
+            // - 1 (WIFI_PS_MIN_MODEM): Unplugged on battery with display awake and audio/camera idle.
+            // - 2 (WIFI_PS_MAX_MODEM): Unplugged on battery in Screen Off Standby with audio idle.
+            uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
+                                                 latter_ui::touch_gesture().last_touch_ms);
+            const bool high_tput_needed =
+                id(usb_connected).state ||
+                id(va_active) || id(va).is_running() || id(va_tts_received) ||
+                id(announcement_mixing_input).is_running() ||
+                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) ||
+                latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+                (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 4000U));
+            if (high_tput_needed) {
+              latter_ui::hal_set_wifi_power_save(0);
+            } else if (id(display_power_state) == 2) {
+              latter_ui::hal_set_wifi_power_save(2);
+            } else {
+              latter_ui::hal_set_wifi_power_save(1);
             }
           }
 
@@ -543,8 +599,15 @@ interval:
               id(screen_sleep_timer).execute();
             }
             if (!id(usb_connected).state && id(gui_page) == 8 &&
-                (id(stuff_subpage) == 5 || id(stuff_subpage) == 7) && touch_idle_ms >= 300000U) {
+                (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 || id(stuff_subpage) == 12) &&
+                touch_idle_ms >= 300000U) {
               ESP_LOGI("power", "Tool untouched on battery for 5 min: exiting to launcher");
+              if (id(stuff_subpage) == 12) {
+                if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
+                  id(stop_doorbell_call).execute();
+                }
+                id(camera_snapshot_art).release();
+              }
               id(stuff_subpage) = 0;
               id(sync_display_brightness).execute();
               id(screen_sleep_timer).execute();
@@ -758,6 +821,7 @@ script:
   - id: trigger_screensaver_now
     mode: restart
     then:
+      - script.stop: screen_sleep_timer
       - lambda: |-
           auto s_style = id(screensaver_style_select).current_option();
           if (s_style == "Screen Off") {
@@ -768,12 +832,17 @@ script:
           id(disp1).start_poller();
           id(display_power_state) = 1; // SCREENSAVER
           id(sleep_start_time) = 0; // Inhibit deep sleep countdown while screensaver active
+          auto pw_mode = id(pickup_wake_mode).current_option();
+          const bool pw_active = (pw_mode == "Always On") ||
+                                 (pw_mode == "Docked Only" && id(usb_connected).state);
+          id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
           id(display_brightness).turn_on().set_brightness(0.60f).perform(); // Screensaver locked at 60%
           latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
     mode: restart
     then:
+      - script.stop: screen_sleep_timer
       - lambda: |-
           id(display_power_state) = 2; // SCREEN_OFF
           id(sleep_start_time) = millis();
@@ -832,6 +901,10 @@ script:
             id(display_power_state) = 1; // SCREENSAVER
             id(sleep_start_time) = 0; // Inhibit deep sleep countdown while screensaver active
             latter_ui::record_ambient_frame_ms(millis());
+            auto pw_mode = id(pickup_wake_mode).current_option();
+            const bool pw_active = (pw_mode == "Always On") ||
+                                   (pw_mode == "Docked Only" && id(usb_connected).state);
+            id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
             id(display_brightness).turn_on().set_brightness(0.60f).perform(); // Screensaver locked at 60%
             if (s_style == "Ambient Clock") {
               latter_ui::schedule_disp_update(&id(disp1));
@@ -859,8 +932,8 @@ script:
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
             id(speaker_enable).turn_on();
           }
-          // Restore full QMI8658 6-Axis mode (Accelerometer + Gyroscope active) via HAL
-          id(hal_set_imu_power_mode).execute(0x03);
+          // Restore QMI8658 Accelerometer mode (0x01) on wake; 6-axis Gyro (0x03) only activates in 3D games
+          id(hal_set_imu_power_mode).execute(0x01);
       - script.execute: sync_display_brightness
       - script.execute: screen_sleep_timer
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
@@ -1018,14 +1091,13 @@ script:
               } else {
                 if (id(display_off_timeout).current_option() == "Never") return false;
               }
-              // Keep display awake while Flashlight (subpage 5), Bubble Level (subpage 7), or 2-Way Camera Call is active
+              // Keep display awake while Flashlight (subpage 5), Bubble Level (subpage 7), or Live Camera (subpage 12) is active
               const bool active_tool_awake =
-                  (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 ||
-                                         (id(stuff_subpage) == 12 && (latter_ui::cam_call_active() || latter_ui::cam_listen_active()))));
+                  (id(gui_page) == 8 && (id(stuff_subpage) == 5 || id(stuff_subpage) == 7 || id(stuff_subpage) == 12));
               const uint32_t since_touch_ms = millis() - std::max(latter_ui::last_screen_wake_ms(),
                                                                   latter_ui::touch_gesture().last_touch_ms);
               const bool in_hand_hold = (since_touch_ms < 90000U) &&
-                  latter_ui::should_in_hand_block_sleep(!id(usb_connected).state && id(pickup_detected).state);
+                  latter_ui::should_in_hand_block_sleep(!id(usb_connected).state && !id(speaker_enable).state && id(pickup_detected).state);
               return !id(ota_in_progress) &&
                      !id(va_active) &&
                      !id(va).is_running() &&
@@ -1035,6 +1107,7 @@ script:
                      !id(timer_ringing) &&
                      !id(alarm_ringing) &&
                      !id(find_my_active) &&
+                     !id(notif_active) &&
                      !in_hand_hold &&
                      !active_tool_awake &&
                      (id(active_game) == 0);

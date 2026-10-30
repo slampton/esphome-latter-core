@@ -1788,7 +1788,14 @@ touchscreen:
                 if (slot >= 0 && slot <= 4 && now_sys - last_sys_action_tap > TOUCH_DEBOUNCE_BUTTON) {
                   last_sys_action_tap = now_sys;
                   if (slot == 0) { id(trigger_screensaver_now).execute(); return; }
-                  else if (slot == 1) { id(start_hibernation_countdown).execute(); return; }
+                  else if (slot == 1) {
+                    #if LATTER_HAS_BATTERY
+                    id(start_hibernation_countdown).execute();
+                    #else
+                    id(turn_screen_off).execute();
+                    #endif
+                    return;
+                  }
                   else if (slot == 2) { id(system_menu_mode) = 5; latter_ui::schedule_disp_update(&id(disp1)); return; }
                   else if (slot == 3) {
                     id(ble_area_beacon_switch).toggle();
@@ -2934,6 +2941,11 @@ touchscreen:
             if (!gest.active) return;
             uint32_t now_u = millis();
             gest.last_touch_ms = now_u;
+            static uint32_t last_drag_sleep_rst_ms = 0;
+            if (id(display_power_state) == 0 && !id(va_active) && (now_u - last_drag_sleep_rst_ms >= 2000U)) {
+              last_drag_sleep_rst_ms = now_u;
+              id(screen_sleep_timer).execute();
+            }
             if (touches[0].x != gest.last_x || touches[0].y != gest.last_y) {
               gest.sample_count++;
             }
@@ -3366,6 +3378,9 @@ touchscreen:
             auto &gest = latter_ui::touch_gesture();
             uint32_t now_rel = millis();
             gest.last_touch_ms = now_rel;
+            if (id(display_power_state) == 0 && !id(va_active)) {
+              id(screen_sleep_timer).execute();
+            }
             int cur_ctx_rel = latter_ui::compute_touch_context(
                 id(gui_page), id(home_subpage), id(music_overlay_mode), id(active_game),
                 id(system_menu_mode), id(sky_weather_subpage), id(area_subpage),
@@ -3746,17 +3761,21 @@ touchscreen:
                             {"Pocket Carry", "Handheld Roaming", "Wearable Watch", "Living Room Tabletop", "Always-On Wall / Desk"}));
                         call.perform();
                       } else if (idx == 1) {
+                        #if LATTER_HAS_IMU
                         auto call = id(pickup_wake_mode).make_call();
                         call.set_option(cycle_option(id(pickup_wake_mode).current_option(), {"Always On", "Docked Only", "Disabled"}));
                         call.perform();
+                        #endif
                       } else if (idx == 2) {
                         auto call = id(tap_wake_mode).make_call();
                         call.set_option(cycle_option(id(tap_wake_mode).current_option(), {"Always On", "Docked Only", "Disabled"}));
                         call.perform();
                       } else if (idx == 3) {
+                        #if LATTER_HAS_BATTERY
                         auto call = id(display_off_timeout).make_call();
                         call.set_option(cycle_option(id(display_off_timeout).current_option(), {"10s", "15s", "30s", "1 min", "2 min", "Never"}));
                         call.perform();
+                        #endif
                       } else if (idx == 4) {
                         id(docked_screensaver_switch).toggle();
                       } else if (idx == 5) {
@@ -3770,13 +3789,19 @@ touchscreen:
                         call.set_option(cycle_option(id(screensaver_docked_timeout).current_option(), {"10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"}));
                         call.perform();
                       } else if (idx == 7) {
+                        #if LATTER_HAS_BATTERY
                         auto call = id(hibernate_timeout_mode).make_call();
                         call.set_option(cycle_option(id(hibernate_timeout_mode).current_option(), {"5 min", "10 min", "15 min", "30 min", "Disabled"}));
                         call.perform();
+                        #endif
                       } else if (idx == 8) {
+                        #if LATTER_HAS_BATTERY
                         id(instant_crown_hibernate_switch).toggle();
+                        #endif
                       } else if (idx == 9) {
+                        #if LATTER_HAS_BATTERY
                         id(prevent_deep_sleep_switch).toggle();
+                        #endif
                       }
                       latter_ui::schedule_disp_update(&id(disp1));
                     }

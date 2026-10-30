@@ -134,7 +134,7 @@ switch:
     id: speaker_enable
     entity_category: config
     pin: GPIO53
-    restore_mode: ALWAYS_ON
+    restore_mode: ALWAYS_OFF
 
 binary_sensor:
   - platform: gpio
@@ -282,6 +282,10 @@ script:
       standby: bool
     then:
       - lambda: |-
+          static int last_stby = -1;
+          const int target = standby ? 1 : 0;
+          if (target == last_stby) return;
+          last_stby = target;
           if (standby) {
             uint8_t dac_lp[2] = {0x0D, 0xFC};
             id(bus_internal).write(0x18, dac_lp, 2);
