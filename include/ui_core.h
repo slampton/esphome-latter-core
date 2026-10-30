@@ -1153,8 +1153,10 @@ inline bool is_right_chevron_zone(const TouchT &t) {
 template<typename TouchT>
 inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
   const int half_w = (SCREEN_W > 520) ? ((SCREEN_W * 150) / 466) : 150;
-  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(12, SCREEN_CX - half_w);
-  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, SCREEN_CX + half_w);
+  const int scaled_min = (SCREEN_W < 380 && x_min < 60) ? 6 : scale_x(x_min);
+  const int scaled_max = (SCREEN_W < 380) ? (SCREEN_W - 12) : scale_x(x_max);
+  const int eff_min = (SCREEN_W == 466) ? x_min : std::max(6, std::min(scaled_min, SCREEN_CX - half_w));
+  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 12, std::max(scaled_max, SCREEN_CX + half_w));
   if (t.x < eff_min || t.x > eff_max) return -1;
   const int stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
   const int center_y = (SCREEN_H > 520) ? SCREEN_CY : 236;

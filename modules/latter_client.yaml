@@ -4440,8 +4440,10 @@ script:
                 decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
                 duration: 0.2s
       - homeassistant.action:
-          action: music_assistant.play_media
+          action: latter.media_command
           data:
+            target_device: "${name}"
+            command: "play_media"
             entity_id: !lambda 'return id(active_speaker_entity).c_str();'
             media_id: !lambda 'return id(selected_slot_id).c_str();'
             media_type: !lambda 'return id(selected_slot_type).c_str();'

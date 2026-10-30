@@ -434,15 +434,18 @@ inline void render_music_menus(
         const int dr_left = layout().music_drill_split_x();
         const int dr_w    = c_right - dr_left;
         const int dr_cx   = dr_left + (dr_w / 2);
-        it.filled_circle(play_cx, y_mid, 18, card_bg);
-        it.circle(play_cx, y_mid, 18, theme_primary);
-        it.filled_triangle(play_cx - 3, y_mid - 6, play_cx - 3, y_mid + 6, play_cx + 6, y_mid, theme_primary);
+        const int play_r  = scale_s(18);
+        it.filled_circle(play_cx, y_mid, play_r, card_bg);
+        it.circle(play_cx, y_mid, play_r, theme_primary);
+        it.filled_triangle(play_cx - scale_s(3), y_mid - scale_s(6),
+                           play_cx - scale_s(3), y_mid + scale_s(6),
+                           play_cx + scale_s(6), y_mid, theme_primary);
 
         render_modern_card(it, dr_cx, y_mid, dr_w, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
 
-        std::string disp_name = fit_text_to_width_font(name, dr_w - 48, font_small);
-        it.print(dr_left + 14, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
-        draw_drilldown_icon(c_right - 24, y_mid);
+        std::string disp_name = fit_text_to_width_font(name, dr_w - scale_x(48), font_small);
+        it.print(dr_left + scale_x(14), y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        draw_drilldown_icon(c_right - scale_x(24), y_mid);
       } else if (is_podcast_list) {
         render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
         std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 58, font_small);
