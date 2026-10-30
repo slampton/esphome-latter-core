@@ -295,7 +295,7 @@ api:
               latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
               id(timer_ringing) = false;
               id(gui_page) = 8;
-              id(stuff_subpage) = 1;
+              id(tools_subpage) = 1;
               id(wake_to_active_state).execute();
               latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("timer", "Voice/HA Timer started for %d seconds in slot %d", (int)seconds, slot + 1);
@@ -356,41 +356,16 @@ ota:
       then:
         - script.stop: screen_sleep_timer
         - lambda: |-
-            id(ota_in_progress) = true;
-            id(ota_progress_pct) = 0;
-            id(sleep_start_time) = 0;
-            latter_ui::screen_is_off_standby() = false;
-            id(display_power_state) = 0;
-            id(disp1).stop_poller();
             id(hal_release_deep_sleep_holds).execute();
-            latter_ui::hal_set_display_brightness(&id(disp1), 230);
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
         - component.update: disp1
     on_progress:
       then:
-        - lambda: |-
-            static uint32_t last_ota_draw_ms = 0;
-            uint32_t now_m = millis();
-            int pct = static_cast<int>(x);
-            #if defined(LATTER_DSI_IRAM_SAFE)
-            const int min_step_pct = 10;
-            const uint32_t min_step_ms = 800U;
-            #else
-            const int min_step_pct = 5;
-            const uint32_t min_step_ms = 400U;
-            #endif
-            if (pct != id(ota_progress_pct) &&
-                (pct == 100 || (pct - id(ota_progress_pct) >= min_step_pct && (now_m - last_ota_draw_ms >= min_step_ms)) || pct < id(ota_progress_pct))) {
-              id(ota_progress_pct) = pct;
-              last_ota_draw_ms = now_m;
-              id(disp1).update();
-            }
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
     on_end:
       then:
-        - lambda: |-
-            id(ota_progress_pct) = 100;
-            id(disp1).update();
-            id(ota_in_progress) = false;
-            id(disp1).start_poller();
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
 
   - platform: http_request
     id: ota_http
@@ -398,41 +373,16 @@ ota:
       then:
         - script.stop: screen_sleep_timer
         - lambda: |-
-            id(ota_in_progress) = true;
-            id(ota_progress_pct) = 0;
-            id(sleep_start_time) = 0;
-            latter_ui::screen_is_off_standby() = false;
-            id(display_power_state) = 0;
-            id(disp1).stop_poller();
             id(hal_release_deep_sleep_holds).execute();
-            latter_ui::hal_set_display_brightness(&id(disp1), 230);
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
         - component.update: disp1
     on_progress:
       then:
-        - lambda: |-
-            static uint32_t last_ota_draw_ms = 0;
-            uint32_t now_m = millis();
-            int pct = static_cast<int>(x);
-            #if defined(LATTER_DSI_IRAM_SAFE)
-            const int min_step_pct = 10;
-            const uint32_t min_step_ms = 800U;
-            #else
-            const int min_step_pct = 5;
-            const uint32_t min_step_ms = 400U;
-            #endif
-            if (pct != id(ota_progress_pct) &&
-                (pct == 100 || (pct - id(ota_progress_pct) >= min_step_pct && (now_m - last_ota_draw_ms >= min_step_ms)) || pct < id(ota_progress_pct))) {
-              id(ota_progress_pct) = pct;
-              last_ota_draw_ms = now_m;
-              id(disp1).update();
-            }
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
     on_end:
       then:
-        - lambda: |-
-            id(ota_progress_pct) = 100;
-            id(disp1).update();
-            id(ota_in_progress) = false;
-            id(disp1).start_poller();
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
 
 time:
   - platform: homeassistant
@@ -1140,62 +1090,14 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
-  - id: stuff_subpage
+  - id: tools_subpage
     type: int
     restore_value: no
-    initial_value: '0' # 0 = Launcher, 1 = Timer, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip
-  - id: stuff_menu_page
+    initial_value: '0' # 0 = Launcher, 1 = Timers, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip, 9 = Calendar, 10 = Intercom, 11 = Macros, 12 = Cameras
+  - id: tools_menu_page
     type: int
     restore_value: no
-    initial_value: '0' # 0 = Page 1 (4 icons), 1 = Page 2 (4 icons)
-  - id: coin_side
-    type: int
-    restore_value: no
-    initial_value: '0' # 0 = Heads, 1 = Tails
-  - id: coin_anim_active
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: coin_anim_start_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-  - id: dice_val_d6
-    type: int
-    restore_value: no
-    initial_value: '1' # 1..6
-  - id: dice_val_d6_2
-    type: int
-    restore_value: no
-    initial_value: '6' # 1..6
-  - id: dice_anim_active
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: calc_entry
-    type: std::string
-    restore_value: no
-    initial_value: '"0"'
-  - id: calc_history
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: calc_prev_val
-    type: float
-    restore_value: no
-    initial_value: '0.0'
-  - id: calc_op
-    type: int
-    restore_value: no
-    initial_value: '0' # 0 = none, 1 = +, 2 = -, 3 = *, 4 = /
-  - id: calc_new_entry
-    type: bool
-    restore_value: no
-    initial_value: 'true'
-  - id: dice_anim_start_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
+    initial_value: '0' # 0 = Page 1 (6 icons), 1 = Page 2 (6 icons)
   - id: remote_action_feedback
     type: std::string
     restore_value: no
@@ -2266,10 +2168,10 @@ interval:
           // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
           // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms() (>= 42ms gap)
           if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 8 && !id(va_active) && id(va_status_text).empty()) {
-            if ((id(stuff_subpage) == 3 && id(stopwatch_running)) ||
-                (id(stuff_subpage) == 4 && id(dice_anim_active)) ||
-                (id(stuff_subpage) == 7) ||
-                (id(stuff_subpage) == 8 && id(coin_anim_active))) {
+            if ((id(tools_subpage) == 3 && id(stopwatch_running)) ||
+                (id(tools_subpage) == 4 && latter_ui::dice_state().anim_active) ||
+                (id(tools_subpage) == 7) ||
+                (id(tools_subpage) == 8 && latter_ui::coin_state().anim_active)) {
               if (millis() - latter_ui::last_ambient_anim_ms() >= 42U) {
                 latter_ui::schedule_disp_update(&id(disp1));
                 latter_ui::record_ambient_frame_ms(millis());
@@ -2402,7 +2304,7 @@ interval:
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
             } else if (sec_changed) {
               if (!id(va_active) && id(va_status_text).empty()) {
-                if (((id(gui_page) == 8 && id(stuff_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
+                if (((id(gui_page) == 8 && id(tools_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               }
@@ -2419,7 +2321,7 @@ interval:
           }
 
           // Camera Carousel Auto-Live Frame Refresh (every 2200ms while viewing Camera App)
-          if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12 &&
+          if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12 &&
               !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
               !id(va_active) && id(va_status_text).empty()) {
             uint32_t now_cam_ms = millis();
@@ -3158,7 +3060,7 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
 
@@ -3171,7 +3073,7 @@ text_sensor:
       then:
         - lambda: |-
             latter_ui::cam_listen_active() = (x == "listening");
-            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) {
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
 
@@ -3219,7 +3121,7 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(stuff_subpage) == 9))) {
+            if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(tools_subpage) == 9))) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
 
@@ -3552,7 +3454,7 @@ script:
             else if (act == "prev" || act == "left" || act == "up" || act == "ccw") step = -1;
           }
           if (act == "home") {
-            if (id(gui_page) == 8 && id(stuff_subpage) == 12) {
+            if (id(gui_page) == 8 && id(tools_subpage) == 12) {
               if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
                 id(stop_doorbell_call).execute();
               }
@@ -3562,7 +3464,7 @@ script:
             id(gui_page) = 1;
             id(home_subpage) = 0;
             id(active_game) = 0;
-            id(stuff_subpage) = 0;
+            id(tools_subpage) = 0;
             id(area_subpage) = 0;
             id(remote_subpage) = 0;
             id(music_overlay_mode) = 0;
@@ -3573,8 +3475,8 @@ script:
             return;
           }
           if (act == "back") {
-            if (id(gui_page) == 8 && id(stuff_subpage) > 0) {
-              if (id(stuff_subpage) == 12) {
+            if (id(gui_page) == 8 && id(tools_subpage) > 0) {
+              if (id(tools_subpage) == 12) {
                 if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
                   id(stop_doorbell_call).execute();
                 }
@@ -3583,10 +3485,10 @@ script:
               }
               if (latter_ui::tools_direct_home()) {
                 latter_ui::tools_direct_home() = false;
-                id(stuff_subpage) = 0;
+                id(tools_subpage) = 0;
                 id(gui_page) = 1;
               } else {
-                id(stuff_subpage) = 0;
+                id(tools_subpage) = 0;
               }
             } else if (id(gui_page) == 3 && id(active_game) > 0) {
               id(active_game) = 0;
@@ -3614,7 +3516,7 @@ script:
               id(sky_weather_subpage) = f_idx % 4;
             } else if (id(gui_page) == 9) {
               latter_ui::whole_home_tab() = f_idx % 5;
-            } else if (id(gui_page) == 8 && id(stuff_subpage) == 12) {
+            } else if (id(gui_page) == 8 && id(tools_subpage) == 12) {
               std::string cam_ids[latter_ui::MAX_CAMERA_SLOTS], cam_names[latter_ui::MAX_CAMERA_SLOTS];
               int c_cnt = std::max(1, latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, cam_ids, cam_names));
               latter_ui::cam_carousel_idx() = (latter_ui::cam_carousel_idx() + step + c_cnt) % c_cnt;
@@ -3651,9 +3553,9 @@ script:
             } else if (id(gui_page) == 7) {
               const int key_map[8] = {9, 0, 2, 4, 3, 1, 5, 6};
               id(remote_send_key).execute(key_map[f_idx % 8], id(active_remote_slot));
-            } else if (id(gui_page) == 8 && id(stuff_subpage) == 0) {
-              id(stuff_subpage) = (id(stuff_menu_page) * 6) + (f_idx % 6) + 1;
-              if (id(stuff_subpage) == 12) id(fetch_on_demand_camera).execute();
+            } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
+              id(tools_subpage) = (id(tools_menu_page) * 6) + (f_idx % 6) + 1;
+              if (id(tools_subpage) == 12) id(fetch_on_demand_camera).execute();
             }
             id(sync_wake_word_state).execute();
             latter_ui::schedule_disp_update(&id(disp1));
@@ -3995,7 +3897,7 @@ script:
           condition:
             lambda: |-
               return latter_ui::cam_call_active() &&
-                     (id(gui_page) == 8 && id(stuff_subpage) == 12) &&
+                     (id(gui_page) == 8 && id(tools_subpage) == 12) &&
                      (id(display_power_state) == 0);
           then:
             - script.execute: start_doorbell_ptt
@@ -4178,7 +4080,7 @@ script:
             b_target = parse_bri(opt);
           }
 
-          if ((id(gui_page) == 8 && id(stuff_subpage) == 5) || id(find_my_active)) {
+          if ((id(gui_page) == 8 && id(tools_subpage) == 5) || id(find_my_active)) {
             b_target = 1.00f;
           }
 
@@ -4901,8 +4803,8 @@ script:
             id(music_category_page) = id(menu_scroll_target_page);
           } else if (id(gui_page) == 3 && id(active_game) == 0) {
             id(game_carousel_idx) = id(menu_scroll_target_page);
-          } else if (id(gui_page) == 8 && id(stuff_subpage) == 0) {
-            id(stuff_menu_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
+            id(tools_menu_page) = id(menu_scroll_target_page);
           }
           id(menu_scroll_step) = 0;
           latter_ui::schedule_disp_update(&id(disp1));

@@ -108,6 +108,52 @@ inline constexpr float scale_min_f(float v466) {
 static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
 
+namespace PageId {
+  static constexpr int HOME       = 1;
+  static constexpr int MUSIC      = 2;
+  static constexpr int GAMES      = 3;
+  static constexpr int SYSTEM     = 4;
+  static constexpr int WEATHER    = 5;
+  static constexpr int AREA       = 6;
+  static constexpr int REMOTE     = 7;
+  static constexpr int TOOLS      = 8;
+  static constexpr int WHOLE_HOME = 9;
+}
+
+namespace ToolsSubpage {
+  static constexpr int LAUNCHER   = 0;
+  static constexpr int TIMERS     = 1;
+  static constexpr int ALARMS     = 2;
+  static constexpr int STOPWATCH  = 3;
+  static constexpr int DICE       = 4;
+  static constexpr int FLASHLIGHT = 5;
+  static constexpr int CALCULATOR = 6;
+  static constexpr int LEVEL      = 7;
+  static constexpr int COIN_FLIP  = 8;
+  static constexpr int CALENDAR   = 9;
+  static constexpr int INTERCOM   = 10;
+  static constexpr int MACROS     = 11;
+  static constexpr int CAMERAS    = 12;
+}
+
+namespace MusicOverlayMode {
+  static constexpr int NOW_PLAYING     = 0;
+  static constexpr int SPEAKERS        = 1;
+  static constexpr int LIBRARY_CATS    = 2;
+  static constexpr int ITEM_BROWSER    = 3;
+  static constexpr int SPEAKER_ACTIONS = 4;
+  static constexpr int MUSIC_HUB       = 5;
+  static constexpr int TRACK_INSPECTOR = 6;
+}
+
+// 32-Bit Dual-Pixel SIMD RGB565 Fast Dimmers (processes 2 adjacent RGB565 pixels in 1 CPU cycle)
+inline constexpr uint32_t dim_rgb565_pair_50pct(uint32_t px32) {
+  return (px32 & 0xF7DEF7DEU) >> 1;
+}
+inline constexpr uint32_t dim_rgb565_pair_25pct(uint32_t px32) {
+  return dim_rgb565_pair_50pct(dim_rgb565_pair_50pct(px32));
+}
+
 // 1. Mathematical, Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 // ------------------------------------------------------------------------------
 static constexpr float PI_F = 3.14159265358979323846f;
@@ -1094,7 +1140,7 @@ inline uint32_t &music_scroll_tap_lockout_until_ms() {
 }
 
 inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
-                                 int sys_mode, int weather_sub, int area_sub, int rem_sub, int stuff_sub,
+                                 int sys_mode, int weather_sub, int area_sub, int rem_sub, int tools_sub,
                                  int wh_tab = 0) {
   int sub = 0;
   if (gui_page == 1) sub = home_sub;
@@ -1104,7 +1150,7 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   else if (gui_page == 5) sub = weather_sub;
   else if (gui_page == 6) sub = area_sub;
   else if (gui_page == 7) sub = rem_sub;
-  else if (gui_page == 8) sub = stuff_sub;
+  else if (gui_page == 8) sub = tools_sub;
   else if (gui_page == 9) sub = wh_tab;
   return (gui_page * 100) + sub;
 }
@@ -1176,7 +1222,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
         uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
         uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 < 8) {
+        if (mul_q3 == 4) {
+          r >>= 1; g >>= 1; b >>= 1;
+        } else if (mul_q3 == 2) {
+          r >>= 2; g >>= 2; b >>= 2;
+        } else if (mul_q3 < 8) {
           r = static_cast<uint8_t>((r * mul_q3) >> 3);
           g = static_cast<uint8_t>((g * mul_q3) >> 3);
           b = static_cast<uint8_t>((b * mul_q3) >> 3);
@@ -1232,7 +1282,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
         uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
         uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 < 8) {
+        if (mul_q3 == 4) {
+          r >>= 1; g >>= 1; b >>= 1;
+        } else if (mul_q3 == 2) {
+          r >>= 2; g >>= 2; b >>= 2;
+        } else if (mul_q3 < 8) {
           r = static_cast<uint8_t>((r * mul_q3) >> 3);
           g = static_cast<uint8_t>((g * mul_q3) >> 3);
           b = static_cast<uint8_t>((b * mul_q3) >> 3);
@@ -1278,7 +1332,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
         uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
         uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 < 8) {
+        if (mul_q3 == 4) {
+          r >>= 1; g >>= 1; b >>= 1;
+        } else if (mul_q3 == 2) {
+          r >>= 2; g >>= 2; b >>= 2;
+        } else if (mul_q3 < 8) {
           r = static_cast<uint8_t>((r * mul_q3) >> 3);
           g = static_cast<uint8_t>((g * mul_q3) >> 3);
           b = static_cast<uint8_t>((b * mul_q3) >> 3);
@@ -1548,6 +1606,13 @@ static constexpr uint32_t TOUCH_GUARD_DISMISS    = 250; // ms: Minimum post-wake
 inline uint32_t &last_screen_wake_ms() {
   static uint32_t ts = 0;
   return ts;
+}
+
+inline bool touch_allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) {
+  static uint32_t s_last_tap_ms = 0;
+  if (now_ms - s_last_tap_ms <= cooldown_ms) return false;
+  s_last_tap_ms = now_ms;
+  return true;
 }
 
 template<typename TouchT>

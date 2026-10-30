@@ -90,15 +90,10 @@ sensor:
         bool is_deliberate_shake = (planar_dyn >= 0.46f || delta >= 0.49f);
         if (is_deliberate_shake && (now_m - last_shake_time > 1200)) {
           last_shake_time = now_m;
-          if (id(stuff_subpage) == 8 && !id(coin_anim_active)) {
-            id(coin_anim_active) = true;
-            id(coin_anim_start_ms) = now_m;
-            id(coin_side) = (esp_random() % 2);
-          } else if (id(stuff_subpage) == 4 && !id(dice_anim_active)) {
-            id(dice_anim_active) = true;
-            id(dice_anim_start_ms) = now_m;
-            id(dice_val_d6) = (esp_random() % 6) + 1;
-            id(dice_val_d6_2) = (esp_random() % 6) + 1;
+          if (id(tools_subpage) == 8 && !latter_ui::coin_state().anim_active) {
+            latter_ui::trigger_coin_flip(now_m, esp_random());
+          } else if (id(tools_subpage) == 4 && !latter_ui::dice_state().anim_active) {
+            latter_ui::trigger_dice_roll(now_m, esp_random(), esp_random());
           }
         }
       }

@@ -889,6 +889,71 @@ inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uin
     else render_focus_ring_circle(it, ly.cx + scale_x(82), scale_y(352), scale_s(24), col_white, theme_primary);
   }
 }
+
+// ==============================================================================
+// 7. Unified OTA Firmware Update Display & Poller Lifecycle Helpers
+// ==============================================================================
+template<typename DispT>
+inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progress_pct,
+                             uint32_t &sleep_start_time, int &display_power_state) {
+  ota_in_progress = true;
+  ota_progress_pct = 0;
+  sleep_start_time = 0;
+  screen_is_off_standby() = false;
+  display_power_state = 0;
+  if (disp != nullptr) {
+    disp->stop_poller();
+    hal_set_display_brightness(disp, 230);
+  }
+}
+
+template<typename DispT>
+inline void handle_ota_begin(DispT *const *disp_ptr, bool &ota_in_progress, int &ota_progress_pct,
+                             uint32_t &sleep_start_time, int &display_power_state) {
+  if (disp_ptr != nullptr) {
+    handle_ota_begin(*disp_ptr, ota_in_progress, ota_progress_pct, sleep_start_time, display_power_state);
+  }
+}
+
+template<typename DispT>
+inline void handle_ota_progress(DispT *disp, float raw_pct, int &ota_progress_pct, uint32_t now_m) {
+  static uint32_t last_ota_draw_ms = 0;
+  int pct = static_cast<int>(raw_pct);
+#if defined(LATTER_DSI_IRAM_SAFE)
+  constexpr int min_step_pct = 10;
+  constexpr uint32_t min_step_ms = 800U;
+#else
+  constexpr int min_step_pct = 5;
+  constexpr uint32_t min_step_ms = 400U;
+#endif
+  if (pct != ota_progress_pct &&
+      (pct == 100 || (pct - ota_progress_pct >= min_step_pct && (now_m - last_ota_draw_ms >= min_step_ms)) || pct < ota_progress_pct)) {
+    ota_progress_pct = pct;
+    last_ota_draw_ms = now_m;
+    if (disp != nullptr) disp->update();
+  }
+}
+
+template<typename DispT>
+inline void handle_ota_progress(DispT *const *disp_ptr, float raw_pct, int &ota_progress_pct, uint32_t now_m) {
+  if (disp_ptr != nullptr) handle_ota_progress(*disp_ptr, raw_pct, ota_progress_pct, now_m);
+}
+
+template<typename DispT>
+inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress_pct) {
+  ota_progress_pct = 100;
+  if (disp != nullptr) {
+    disp->update();
+    disp->start_poller();
+  }
+  ota_in_progress = false;
+}
+
+template<typename DispT>
+inline void handle_ota_end(DispT *const *disp_ptr, bool &ota_in_progress, int &ota_progress_pct) {
+  if (disp_ptr != nullptr) handle_ota_end(*disp_ptr, ota_in_progress, ota_progress_pct);
+}
+
 }  // namespace latter_ui
 
 

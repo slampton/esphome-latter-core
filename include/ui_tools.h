@@ -211,7 +211,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
-inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
+inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
                                   bool menu_scroll_active, int menu_scroll_step,
                                   int menu_scroll_dir, int menu_scroll_target_page,
                                   FontBigT *font_date, FontSmallT *font_small,
@@ -298,10 +298,10 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
     int step = std::min(4, menu_scroll_step);
     int offset = scale_y(SHARED_SCROLL_EASE_252[step]);
     int full_span = scale_y(252);
-    draw_page_cards(stuff_menu_page, -menu_scroll_dir * offset);
+    draw_page_cards(tools_menu_page, -menu_scroll_dir * offset);
     draw_page_cards(menu_scroll_target_page, menu_scroll_dir * (full_span - offset));
   } else {
-    draw_page_cards(stuff_menu_page, 0);
+    draw_page_cards(tools_menu_page, 0);
   }
 
   if (menu_scroll_active) {
@@ -309,7 +309,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int stuff_menu_page,
     it.filled_rectangle(0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
   it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
-  int active_page = menu_scroll_active ? menu_scroll_target_page : stuff_menu_page;
+  int active_page = menu_scroll_active ? menu_scroll_target_page : tools_menu_page;
   render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, esphome::Color(95, 112, 134));
 }
 
@@ -1752,6 +1752,238 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
   }
 
   render_back_button(it, cx, font_small, 426, "< BACK");
+}
+
+// ==============================================================================
+// Self-Contained C++20 Tool State Engines (Calculator, Dice Roll, Coin Flip)
+// Eliminates 12 scalar ESPHome GlobalsComponent instances and 130 lines of YAML
+// ==============================================================================
+struct CalculatorState {
+  std::string entry = "0";
+  std::string history = "";
+  float prev_val = 0.0f;
+  int op = 0;  // 0 = none, 1 = +, 2 = -, 3 = *, 4 = /
+  bool new_entry = true;
+};
+
+inline CalculatorState &calc_state() {
+  static CalculatorState s_calc;
+  return s_calc;
+}
+
+inline void reset_calculator_state() {
+  auto &st = calc_state();
+  st.entry = "0";
+  st.history = "";
+  st.prev_val = 0.0f;
+  st.op = 0;
+  st.new_entry = true;
+}
+
+inline void handle_calculator_keypad_tap(int tx, int ty, std::string &calc_entry,
+                                         std::string &calc_history, float &calc_prev_val,
+                                         int &calc_op, bool &calc_new_entry) {
+  int c = hit_4col_calc(tx);
+  int r = (ty < scale_y(159)) ? 0
+        : ((ty < scale_y(215)) ? 1
+        : ((ty < scale_y(271)) ? 2
+        : ((ty < scale_y(327)) ? 3 : 4)));
+  if (c < 0 || c > 3) return;
+
+  auto compute_op = [](double a, double b, int op) -> double {
+    if (op == 1) return a + b;
+    if (op == 2) return a - b;
+    if (op == 3) return a * b;
+    if (op == 4) return (b != 0.0) ? (a / b) : NAN;
+    return b;
+  };
+  auto op_to_str = [](int op) -> const char * {
+    if (op == 1) return "+";
+    if (op == 2) return "-";
+    if (op == 3) return "x";
+    if (op == 4) return "/";
+    return "";
+  };
+  auto format_calc_num = [](double v) -> std::string {
+    if (std::isnan(v) || std::isinf(v)) return "Error";
+    char b[32];
+    if (std::abs(v - std::round(v)) < 1e-7 && std::abs(v) < 1e9) {
+      snprintf(b, sizeof(b), "%lld", (long long) std::round(v));
+      return std::string(b);
+    }
+    snprintf(b, sizeof(b), "%.8g", v);
+    return std::string(b);
+  };
+
+  if (r == 0 && c == 0) {
+    calc_entry = "0";
+    calc_history = "";
+    calc_prev_val = 0.0f;
+    calc_op = 0;
+    calc_new_entry = true;
+  } else if (r == 0 && c == 1) {
+    if (calc_entry != "0" && calc_entry != "Error") {
+      if (calc_entry[0] == '-') calc_entry = calc_entry.substr(1);
+      else calc_entry = "-" + calc_entry;
+    }
+  } else if (r == 0 && c == 2) {
+    double cur = 0.0;
+    sscanf(calc_entry.c_str(), "%lf", &cur);
+    if (calc_op == 1 || calc_op == 2) {
+      double pct_val = (double) calc_prev_val * (cur / 100.0);
+      calc_entry = format_calc_num(pct_val);
+      calc_new_entry = false;
+    } else {
+      double pct_val = cur / 100.0;
+      calc_entry = format_calc_num(pct_val);
+      calc_new_entry = true;
+    }
+  } else if (r == 4 && c == 2) {
+    if (!calc_new_entry && calc_entry != "Error") {
+      if (calc_entry.length() > 1) {
+        calc_entry.pop_back();
+        if (calc_entry == "-") calc_entry = "0";
+      } else {
+        calc_entry = "0";
+      }
+    }
+  } else if (c == 3) {
+    int new_op = 0;
+    if (r == 0) new_op = 4;
+    else if (r == 1) new_op = 3;
+    else if (r == 2) new_op = 2;
+    else if (r == 3) new_op = 1;
+    else if (r == 4) new_op = 5;
+
+    double cur = (double) calc_prev_val;
+    if (!calc_entry.empty()) {
+      sscanf(calc_entry.c_str(), "%lf", &cur);
+    }
+
+    if (new_op == 5) {
+      if (calc_op != 0) {
+        std::string operand_str = calc_entry.empty() ? format_calc_num(cur) : calc_entry;
+        calc_history = format_calc_num(calc_prev_val) + " " + op_to_str(calc_op) + " " + operand_str + " =";
+        double res = compute_op(calc_prev_val, cur, calc_op);
+        calc_entry = format_calc_num(res);
+        calc_op = 0;
+        calc_new_entry = true;
+      }
+    } else {
+      if (calc_op != 0 && !calc_new_entry && !calc_entry.empty()) {
+        double res = compute_op(calc_prev_val, cur, calc_op);
+        calc_prev_val = (float) res;
+      } else if (!calc_entry.empty()) {
+        calc_prev_val = (float) cur;
+      }
+      calc_op = new_op;
+      calc_new_entry = true;
+      calc_history = format_calc_num(calc_prev_val) + " " + op_to_str(calc_op);
+      calc_entry = format_calc_num(calc_prev_val);
+    }
+  } else if (r == 4 && c == 1) {
+    if (calc_new_entry || calc_entry.empty()) {
+      calc_entry = "0.";
+      calc_new_entry = false;
+    } else if (calc_entry.find('.') == std::string::npos) {
+      calc_entry += ".";
+    }
+  } else {
+    char digit = '0';
+    if (r == 4 && c == 0) digit = '0';
+    else if (r == 3 && c == 0) digit = '1';
+    else if (r == 3 && c == 1) digit = '2';
+    else if (r == 3 && c == 2) digit = '3';
+    else if (r == 2 && c == 0) digit = '4';
+    else if (r == 2 && c == 1) digit = '5';
+    else if (r == 2 && c == 2) digit = '6';
+    else if (r == 1 && c == 0) digit = '7';
+    else if (r == 1 && c == 1) digit = '8';
+    else if (r == 1 && c == 2) digit = '9';
+
+    if (calc_new_entry || calc_entry.empty()) {
+      calc_entry = std::string(1, digit);
+      calc_new_entry = false;
+    } else {
+      if (calc_entry == "0") calc_entry = std::string(1, digit);
+      else if (calc_entry.length() < 9) calc_entry += digit;
+    }
+  }
+}
+
+inline void handle_calculator_keypad_tap(int tx, int ty) {
+  auto &st = calc_state();
+  handle_calculator_keypad_tap(tx, ty, st.entry, st.history, st.prev_val, st.op, st.new_entry);
+}
+
+template<typename DisplayT, typename FontDateT, typename FontBoldT, typename FontSmallT>
+inline void render_tool_calculator(DisplayT &it, int cx,
+                                   FontDateT *font_date, FontBoldT *font_btn_bold,
+                                   FontSmallT *font_small,
+                                   esphome::Color theme_primary, esphome::Color col_white,
+                                   esphome::Color col_slate, esphome::Color col_dark_gray) {
+  const auto &st = calc_state();
+  render_tool_calculator(it, cx, st.history, st.entry, st.op, st.new_entry,
+                         font_date, font_btn_bold, font_small,
+                         theme_primary, col_white, col_slate, col_dark_gray);
+}
+
+struct DiceRollState {
+  int val_1 = 1;
+  int val_2 = 6;
+  bool anim_active = false;
+  uint32_t anim_start_ms = 0;
+};
+
+inline DiceRollState &dice_state() {
+  static DiceRollState s_dice;
+  return s_dice;
+}
+
+inline void trigger_dice_roll(uint32_t now_ms, uint32_t rand_a, uint32_t rand_b) {
+  auto &st = dice_state();
+  st.anim_active = true;
+  st.anim_start_ms = now_ms;
+  st.val_1 = static_cast<int>(rand_a % 6U) + 1;
+  st.val_2 = static_cast<int>(rand_b % 6U) + 1;
+}
+
+template<typename DisplayT, typename FontBigT, typename FontSmallT>
+inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
+                                  FontBigT *font_date, FontSmallT *font_small,
+                                  esphome::Color theme_primary, esphome::Color theme_secondary,
+                                  esphome::Color col_white, esphome::Color col_dark_gray) {
+  auto &st = dice_state();
+  render_tool_dice_roll(it, cx, now_ms, st.anim_active, st.anim_start_ms, st.val_1, st.val_2,
+                        font_date, font_small, theme_primary, theme_secondary, col_white, col_dark_gray);
+}
+
+struct CoinFlipState {
+  int side = 0;  // 0 = Heads, 1 = Tails
+  bool anim_active = false;
+  uint32_t anim_start_ms = 0;
+};
+
+inline CoinFlipState &coin_state() {
+  static CoinFlipState s_coin;
+  return s_coin;
+}
+
+inline void trigger_coin_flip(uint32_t now_ms, uint32_t rand_val) {
+  auto &st = coin_state();
+  st.anim_active = true;
+  st.anim_start_ms = now_ms;
+  st.side = static_cast<int>(rand_val % 2U);
+}
+
+template<typename DisplayT, typename FontBigT, typename FontSmallT>
+inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
+                                  FontBigT *font_date, FontSmallT *font_small,
+                                  esphome::Color theme_primary, esphome::Color theme_secondary,
+                                  esphome::Color col_white, esphome::Color col_dark_gray) {
+  auto &st = coin_state();
+  render_tool_coin_flip(it, cx, now_ms, st.anim_active, st.anim_start_ms, st.side,
+                        font_date, font_small, theme_primary, theme_secondary, col_white, col_dark_gray);
 }
 
 inline bool &cal_quick_add_open() {

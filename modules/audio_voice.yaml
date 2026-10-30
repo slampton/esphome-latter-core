@@ -420,7 +420,7 @@ voice_assistant:
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           id(timer_ringing) = false;
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
+            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -432,7 +432,7 @@ voice_assistant:
           latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
+            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -455,7 +455,7 @@ voice_assistant:
             id(stop_alarm_sound).execute();
           }
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(stuff_subpage) == 1 && id(display_power_state) == 0) {
+            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -628,7 +628,7 @@ script:
                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                                 id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                 (id(active_game) > 0) ||
-                                (id(display_power_state) == 0 && id(gui_page) == 8 && id(stuff_subpage) == 12) ||
+                                (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
                                 latter_ui::cam_download_in_progress() ||
                                 latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
                                 id(is_hibernating) || id(ota_in_progress) ||

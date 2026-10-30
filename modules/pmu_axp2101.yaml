@@ -324,7 +324,7 @@ script:
                 return;
               }
 
-              if (id(gui_page) == 8 && id(stuff_subpage) == 3) {
+              if (id(gui_page) == 8 && id(tools_subpage) == 3) {
                 id(screen_sleep_timer).execute();
                 if (!id(stopwatch_running)) {
                   id(stopwatch_running) = true;
