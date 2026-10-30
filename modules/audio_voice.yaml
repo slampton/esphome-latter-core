@@ -1,5 +1,9 @@
 # Core Subsystem: Audio & Voice Assistant (Hardware I2S & Codecs defined in boards/*.yaml HAL)
 
+substitutions:
+  sendspin_buffer_size: "196608"
+  announcement_buffer_size: "65536"
+
 # ESPHome 2026.10.0+ microFLAC v0.3.0 decoder with 80MHz Octal PSRAM frame buffers
 audio:
   codecs:
@@ -47,13 +51,13 @@ sendspin:
 media_source:
   - platform: audio_http
     id: http_announcement_source
-    buffer_size: 65536
+    buffer_size: ${announcement_buffer_size}
 
   - platform: sendspin
     id: sendspin_source
     task_stack_in_psram: true
     decode_memory: psram
-    buffer_size: 196608
+    buffer_size: ${sendspin_buffer_size}
 
 
 media_player:
@@ -95,7 +99,7 @@ media_player:
             duration: 0.1s
         - script.execute: route_i2s_to_spk
         - switch.turn_on: speaker_enable
-        - audio_dac.mute_off: es8311_dac
+        - lambda: 'id(hal_set_dac_mute).execute(false);'
         - lambda: |-
             if (id(va_active)) {
               id(va_vad_active) = false;
@@ -131,7 +135,7 @@ media_player:
                         duration: 0.1s
               - script.execute: route_i2s_to_spk
               - switch.turn_on: speaker_enable
-              - audio_dac.mute_off: es8311_dac
+              - lambda: 'id(hal_set_dac_mute).execute(false);'
               - lambda: |-
                   latter_ui::screen_is_off_standby() = false;
                   id(display_power_state) = 0;
@@ -348,7 +352,7 @@ voice_assistant:
                 duration: 0.1s
             - script.stop: screen_sleep_timer
             - script.execute: route_i2s_to_spk
-            - audio_dac.mute_off: es8311_dac
+            - lambda: 'id(hal_set_dac_mute).execute(false);'
             - lambda: |-
                 id(va_vad_active) = false;
                 id(va_tts_received) = true;
@@ -368,7 +372,7 @@ voice_assistant:
           duration: 0.1s
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
-      - audio_dac.mute_off: es8311_dac
+      - lambda: 'id(hal_set_dac_mute).execute(false);'
       - lambda: |-
           id(va_vad_active) = false;
           id(va_tts_received) = true;
@@ -379,7 +383,7 @@ voice_assistant:
     then:
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
-      - audio_dac.mute_off: es8311_dac
+      - lambda: 'id(hal_set_dac_mute).execute(false);'
       - lambda: |-
           id(va_vad_active) = false;
           id(va_tts_received) = true;
@@ -574,7 +578,7 @@ script:
   - id: route_i2s_to_mic
     mode: restart
     then:
-      - audio_dac.mute_on: es8311_dac
+      - lambda: 'id(hal_set_dac_mute).execute(true);'
       - switch.turn_off: speaker_enable
       - if:
           condition:
@@ -690,7 +694,7 @@ script:
       - script.stop: va_tts_drain_and_finish
       - script.stop: resume_music_after_va
       - script.execute: route_i2s_to_spk
-      - audio_dac.mute_off: es8311_dac
+      - lambda: 'id(hal_set_dac_mute).execute(false);'
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
           decibel_reduction: !lambda |-
@@ -746,7 +750,7 @@ script:
           then:
             - script.execute: route_i2s_to_spk
             - switch.turn_on: speaker_enable
-            - audio_dac.mute_off: es8311_dac
+            - lambda: 'id(hal_set_dac_mute).execute(false);'
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
           decibel_reduction: !lambda |-
@@ -814,7 +818,7 @@ script:
                                  !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
                                  (id(active_game) == 0);
                       then:
-                        - audio_dac.mute_on: es8311_dac
+                        - lambda: 'id(hal_set_dac_mute).execute(true);'
                         - switch.turn_off: speaker_enable
                         - script.execute: route_i2s_to_mic
                         - script.execute: sync_wake_word_state

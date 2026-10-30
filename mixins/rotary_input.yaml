@@ -1,0 +1,82 @@
+# ==============================================================================
+# Latter Core Mixin: Universal Rotary Encoder & Push-Button UI Input (mixins/rotary_input.yaml)
+# Drives the Universal Focus & Input Router (ui_input_event) on non-touch or hybrid displays.
+# Usage:
+#   substitutions:
+#     rotary_pin_a: "GPIO40"
+#     rotary_pin_b: "GPIO41"
+#     rotary_pin_btn: "GPIO42"
+#   packages:
+#     latter.rotary: github://slampton/esphome-latter-core/mixins/rotary_input.yaml@main
+# ==============================================================================
+
+substitutions:
+  rotary_pin_a: "GPIO40"
+  rotary_pin_b: "GPIO41"
+  rotary_pin_btn: "GPIO42"
+
+api:
+  actions:
+    - action: latter_ping
+      id: latter_ping_action
+      then:
+        - logger.log: "Latter Rotary Input Mixin active"
+
+sensor:
+  - platform: rotary_encoder
+    id: latter_rotary_encoder
+    name: "UI Rotary Dial"
+    internal: true
+    pin_a:
+      number: ${rotary_pin_a}
+      mode: INPUT_PULLUP
+    pin_b:
+      number: ${rotary_pin_b}
+      mode: INPUT_PULLUP
+    resolution: 1
+    on_clockwise:
+      - script.execute:
+          id: ui_input_event
+          action: "next"
+          delta: 1
+    on_anticlockwise:
+      - script.execute:
+          id: ui_input_event
+          action: "prev"
+          delta: -1
+
+binary_sensor:
+  - platform: gpio
+    id: latter_rotary_button
+    name: "UI Rotary Button"
+    internal: true
+    pin:
+      number: ${rotary_pin_btn}
+      mode: INPUT_PULLUP
+      inverted: true
+    on_multi_click:
+      - timing:
+          - ON for at most 450ms
+          - OFF for at least 220ms
+        then:
+          - script.execute:
+              id: ui_input_event
+              action: "select"
+              delta: 0
+      - timing:
+          - ON for at most 350ms
+          - OFF for at most 220ms
+          - ON for at most 350ms
+          - OFF for at least 100ms
+        then:
+          - script.execute:
+              id: ui_input_event
+              action: "home"
+              delta: 0
+      - timing:
+          - ON for at least 600ms
+        then:
+          - script.execute:
+              id: ui_input_event
+              action: "back"
+              delta: 0

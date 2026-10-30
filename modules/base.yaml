@@ -23,6 +23,8 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
+  sendspin_buffer_size: "196608"
+  announcement_buffer_size: "65536"
   active_media_sensor: "sensor.${device_slug}_active_media"
   weather_entity: "sensor.${device_slug}_weather_forecast"
   weather_forecast_sensor: "${weather_entity}"
@@ -48,3 +50,16 @@ api:
 time:
   - platform: homeassistant
     id: ha_time
+
+text_sensor:
+  - platform: template
+    name: "System: Hardware Manifest"
+    id: latter_hardware_manifest
+    icon: "mdi:chip"
+    entity_category: diagnostic
+    update_interval: 300s
+    lambda: |-
+      return std::string("{\"w\":0,\"h\":0,\"shape\":\"none\",\"profile\":\"headless_node\","
+                         "\"display\":0,\"touch\":0,\"audio\":0,\"mic\":0,\"spk\":0,"
+                         "\"imu\":0,\"battery\":0,\"stationary\":1,\"wearable\":0,"
+                         "\"ips\":0,\"chip\":\"ESP32\",\"psram_mb\":8}");

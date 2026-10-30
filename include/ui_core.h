@@ -46,6 +46,28 @@ namespace latter_ui {
 #ifndef LATTER_HAS_TOUCH
 #define LATTER_HAS_TOUCH 1
 #endif
+#ifndef LATTER_HAS_DISPLAY
+#define LATTER_HAS_DISPLAY 1
+#endif
+#ifndef LATTER_HAS_AUDIO
+#define LATTER_HAS_AUDIO 1
+#endif
+#ifndef LATTER_HAS_MIC
+#define LATTER_HAS_MIC LATTER_HAS_AUDIO
+#endif
+#ifndef LATTER_HAS_SPEAKER
+#define LATTER_HAS_SPEAKER LATTER_HAS_AUDIO
+#endif
+#ifndef LATTER_CHIP_P4
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+#define LATTER_CHIP_P4 1
+#else
+#define LATTER_CHIP_P4 0
+#endif
+#endif
+#ifndef LATTER_PSRAM_MB
+#define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)
+#endif
 #ifndef LATTER_PANEL_IPS
 #if defined(LATTER_BACKLIGHT_PIN)
 #define LATTER_PANEL_IPS 1

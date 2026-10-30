@@ -321,7 +321,7 @@ interval:
             id(mp_idle_debounce).stop();
             id(route_i2s_to_spk).execute();
             id(speaker_enable).turn_on();
-            id(es8311_dac).set_mute_off();
+            id(hal_set_dac_mute).execute(false);
             float v = id(latter_media_player).volume;
             float db = (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));
             id(media_mixing_input).apply_ducking(db, 100);
@@ -574,7 +574,7 @@ script:
           id(sync_wake_word_state).execute();
 
           if (!local_audio_playing) {
-            id(es8311_dac).set_mute_on();
+            id(hal_set_dac_mute).execute(true);
             id(speaker_enable).turn_off();
             id(route_i2s_to_mic).execute();
             if (!ww_active) {
@@ -671,7 +671,7 @@ script:
             - micro_wake_word.stop:
             - voice_assistant.stop:
             - media_player.pause: latter_media_player
-            - audio_dac.mute_on: es8311_dac
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
             - script.stop: screen_sleep_timer
             - light.turn_on: display_brightness
@@ -698,7 +698,7 @@ script:
             - micro_wake_word.stop:
             - voice_assistant.stop:
             - media_player.pause: latter_media_player
-            - audio_dac.mute_on: es8311_dac
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
             - script.stop: screen_sleep_timer
             - light.turn_on: display_brightness
@@ -745,7 +745,7 @@ script:
             - micro_wake_word.stop:
             - voice_assistant.stop:
             - media_player.pause: latter_media_player
-            - audio_dac.mute_on: es8311_dac
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
             - script.stop: screen_sleep_timer
             - light.turn_on: display_brightness

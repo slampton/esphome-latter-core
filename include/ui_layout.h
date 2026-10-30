@@ -69,16 +69,45 @@ namespace latter_ui {
 
 struct HardwareCapabilities {
   bool is_round = (LATTER_ROUND_DISPLAY != 0);
+  bool has_display = (LATTER_HAS_DISPLAY != 0);
+  bool has_touch = (LATTER_HAS_TOUCH != 0);
+  bool has_audio = (LATTER_HAS_AUDIO != 0);
+  bool has_mic = (LATTER_HAS_MIC != 0);
+  bool has_speaker = (LATTER_HAS_SPEAKER != 0);
   bool has_imu = (LATTER_HAS_IMU != 0);
   bool has_battery = (LATTER_HAS_BATTERY != 0);
   bool is_stationary = (LATTER_IS_STATIONARY != 0);
   bool is_wearable = (LATTER_IS_WEARABLE != 0);
-  bool has_touch = (LATTER_HAS_TOUCH != 0);
   bool is_ips_panel = (LATTER_PANEL_IPS != 0);
+  bool is_chip_p4 = (LATTER_CHIP_P4 != 0);
+  int psram_mb = LATTER_PSRAM_MB;
 };
 
 inline constexpr HardwareCapabilities caps() {
   return HardwareCapabilities{};
+}
+
+inline std::string build_hardware_manifest_json() {
+  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
+  const char *profile = (!LATTER_HAS_DISPLAY)
+                            ? "headless_node"
+                            : (LATTER_IS_WEARABLE
+                                   ? "wearable_display"
+                                   : (LATTER_IS_STATIONARY ? "stationary_display" : "mobile_display"));
+  const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
+  char buf[288];
+  std::snprintf(buf, sizeof(buf),
+                "{\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
+                "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
+                "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
+                "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d}",
+                SCREEN_W, SCREEN_H, shape, profile,
+                (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
+                (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
+                (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
+                (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
+                (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB);
+  return std::string(buf);
 }
 
 struct UiLayout {
@@ -736,6 +765,125 @@ inline void render_in_app_mode_bar_track(
   if (total_count > 4) {
     render_viewport_scrollbar(it, cx, layout().app_dock_pips_y, total_count, anim_start,
                               theme_primary, false);
+  }
+}
+
+// ==============================================================================
+// 6. Universal Touchless / Rotary Encoder / Button Focus Navigation Engine
+// ==============================================================================
+inline int &ui_focus_index() {
+  static int s_idx = 0;
+  return s_idx;
+}
+
+inline uint32_t &ui_focus_last_ms() {
+  static uint32_t s_ms = 0;
+  return s_ms;
+}
+
+inline bool ui_focus_active(uint32_t now_ms) {
+#if !LATTER_HAS_TOUCH
+  (void) now_ms;
+  return true;
+#else
+  const uint32_t last = ui_focus_last_ms();
+  return (last > 0) && ((now_ms - last) < 8000U);
+#endif
+}
+
+inline void activate_ui_focus(uint32_t now_ms) {
+  ui_focus_last_ms() = (now_ms == 0) ? 1U : now_ms;
+}
+
+inline void clear_ui_focus() {
+#if LATTER_HAS_TOUCH
+  ui_focus_last_ms() = 0;
+#endif
+}
+
+template<typename DisplayT>
+inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r, Color accent, Color inner_hi) {
+  it.circle(cx, cy, r + 2, accent);
+  it.circle(cx, cy, r + 3, accent);
+  it.circle(cx, cy, r + 1, inner_hi);
+}
+
+template<typename DisplayT>
+inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h, Color accent, Color inner_hi) {
+  const int x0 = cx - w / 2;
+  const int y0 = cy - h / 2;
+  it.rectangle(x0 - 2, y0 - 2, w + 4, h + 4, accent);
+  it.rectangle(x0 - 3, y0 - 3, w + 6, h + 6, accent);
+  it.rectangle(x0 - 1, y0 - 1, w + 2, h + 2, inner_hi);
+}
+
+template<typename DisplayT>
+inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uint32_t now_ms,
+                                        Color theme_primary, Color col_white) {
+  if (!ui_focus_active(now_ms)) return;
+  const auto &ly = layout();
+  const int f_idx = std::max(0, ui_focus_index());
+
+  if (page == 1 && subpage == 0) {
+    // Home Dock Icon Focus
+    const int vis_idx = f_idx % 4;
+    const int stride = (SCREEN_W < 380) ? 56 : scale_x(64);
+    const int fx = ly.cx + static_cast<int>((static_cast<float>(vis_idx) - 1.5f) * static_cast<float>(stride));
+    render_focus_ring_circle(it, fx, ly.dock_y, ly.dock_r, col_white, theme_primary);
+  } else if (page == 2) {
+    if (subpage == 0) {
+      // Music Now Playing Transport Controls (0: Prev, 1: Play/Pause, 2: Next, 3: Library, 4: Speakers)
+      const int idx = f_idx % 5;
+      if (idx == 0) render_focus_ring_circle(it, ly.cx - scale_x(86), scale_y(310), scale_s(26), col_white, theme_primary);
+      else if (idx == 1) render_focus_ring_circle(it, ly.cx, scale_y(310), scale_s(34), col_white, theme_primary);
+      else if (idx == 2) render_focus_ring_circle(it, ly.cx + scale_x(86), scale_y(310), scale_s(26), col_white, theme_primary);
+      else if (idx == 3) render_focus_ring_circle(it, ly.cx - scale_x(64), ly.app_dock_y, scale_s(24), col_white, theme_primary);
+      else render_focus_ring_circle(it, ly.cx + scale_x(64), ly.app_dock_y, scale_s(24), col_white, theme_primary);
+    } else {
+      const int slot = f_idx % 5;
+      render_focus_ring_rect(it, ly.cx, ly.slot5_y(slot), ly.list_card_w, ly.slot5_h, col_white, theme_primary);
+    }
+  } else if ((page == 3 && subpage == 0) || (page == 8 && subpage == 0)) {
+    // 2x2 Quad Grid Launcher Focus (Games & Tools)
+    const int slot = f_idx % 4;
+    const int col = slot % 2;
+    const int row = slot / 2;
+    render_focus_ring_rect(it, ly.quad_cx(col), ly.quad_cy(row), ly.quad_w, ly.quad_h, col_white, theme_primary);
+  } else if (page == 4 || (page == 8 && (subpage >= 9 && subpage <= 11))) {
+    // 5-Slot Vertical Menu List Focus
+    const int slot = f_idx % 5;
+    render_focus_ring_rect(it, ly.cx, ly.slot5_y(slot), ly.list_card_w, ly.slot5_h, col_white, theme_primary);
+  } else if (page == 6) {
+    if (subpage == 1) {
+      const int slot = f_idx % 5;
+      render_focus_ring_rect(it, ly.cx, ly.slot5_y(slot), ly.list_card_w, ly.slot5_h, col_white, theme_primary);
+    } else {
+      const int slot = f_idx % 7;
+      if (slot < 3) {
+        render_focus_ring_rect(it, ly.cx, ly.slot3_y(slot), ly.slot3_card_w, ly.slot3_h, col_white, theme_primary);
+      } else {
+        const int m_idx = (slot - 3) % 4;
+        const int stride = (SCREEN_W < 380) ? 56 : scale_x(68);
+        const int fx = ly.cx + static_cast<int>((static_cast<float>(m_idx) - 1.5f) * static_cast<float>(stride));
+        render_focus_ring_circle(it, fx, ly.app_dock_y, ly.dock_r, col_white, theme_primary);
+      }
+    }
+  } else if (page == 5 || page == 9) {
+    const int m_idx = f_idx % 4;
+    const int stride = (SCREEN_W < 380) ? 56 : scale_x(68);
+    const int fx = ly.cx + static_cast<int>((static_cast<float>(m_idx) - 1.5f) * static_cast<float>(stride));
+    render_focus_ring_circle(it, fx, ly.app_dock_y, ly.dock_r, col_white, theme_primary);
+  } else if (page == 7) {
+    // TV Remote D-Pad & Action Focus
+    const int slot = f_idx % 8;
+    if (slot == 0) render_focus_ring_circle(it, ly.cx - scale_x(108), scale_y(118), scale_s(24), col_white, theme_primary);
+    else if (slot == 1) render_focus_ring_circle(it, ly.cx, scale_y(158), scale_s(24), col_white, theme_primary);
+    else if (slot == 2) render_focus_ring_circle(it, ly.cx - scale_x(68), scale_y(226), scale_s(24), col_white, theme_primary);
+    else if (slot == 3) render_focus_ring_circle(it, ly.cx, scale_y(226), scale_s(32), col_white, theme_primary);
+    else if (slot == 4) render_focus_ring_circle(it, ly.cx + scale_x(68), scale_y(226), scale_s(24), col_white, theme_primary);
+    else if (slot == 5) render_focus_ring_circle(it, ly.cx, scale_y(294), scale_s(24), col_white, theme_primary);
+    else if (slot == 6) render_focus_ring_circle(it, ly.cx - scale_x(82), scale_y(352), scale_s(24), col_white, theme_primary);
+    else render_focus_ring_circle(it, ly.cx + scale_x(82), scale_y(352), scale_s(24), col_white, theme_primary);
   }
 }
 }  // namespace latter_ui

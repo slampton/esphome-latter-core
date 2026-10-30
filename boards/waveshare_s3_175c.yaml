@@ -25,18 +25,24 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
+  sendspin_buffer_size: "196608"
+  announcement_buffer_size: "65536"
 
 esphome:
   build_flags:
     - "-DLATTER_SCREEN_W=466"
     - "-DLATTER_SCREEN_H=466"
     - "-DLATTER_ROUND_DISPLAY=1"
+    - "-DLATTER_HAS_DISPLAY=1"
+    - "-DLATTER_HAS_TOUCH=1"
+    - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=1"
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
-    - "-DLATTER_HAS_TOUCH=1"
     - "-DLATTER_PANEL_IPS=0"
+    - "-DLATTER_CHIP_P4=0"
+    - "-DLATTER_PSRAM_MB=8"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -267,6 +273,20 @@ script:
           gpio_hold_dis(GPIO_NUM_2);
           gpio_hold_dis(GPIO_NUM_46);
           gpio_hold_dis(GPIO_NUM_12);
+          id(es8311_dac).set_volume(0.90f);
+          id(es8311_dac).set_mute_on();
+
+  - id: hal_set_dac_mute
+    mode: restart
+    parameters:
+      muted: bool
+    then:
+      - lambda: |-
+          if (muted) {
+            id(es8311_dac).set_mute_on();
+          } else {
+            id(es8311_dac).set_mute_off();
+          }
 
   - id: hal_init_pmu_irq
     mode: restart

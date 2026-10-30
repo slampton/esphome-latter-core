@@ -1,0 +1,110 @@
+# ==============================================================================
+# Latter Core Module: Display Image & Backlight Pipeline (modules/display_pipeline.yaml)
+# Provides RGB565 Sendspin/Online-Image transcoders (artwork, wallpaper, camera)
+# and perceptual-gamma backlight brightness control for display-equipped boards.
+# ==============================================================================
+
+substitutions:
+  art_resize: "${screen_w}x${screen_h}"
+  initial_art_url: "http://127.0.0.1:8123/api/latter/artwork/idle.jpg"
+
+http_request:
+  id: http_client
+  verify_ssl: false
+  timeout: 60s
+
+image:
+  - platform: sendspin
+    id: album_slot
+    format: JPEG
+    type: RGB565
+    resize: ${art_resize}
+    source: album
+    current_image:
+      id: album_art
+    on_image_display:
+      - script.execute: throttled_disp_update
+
+  - platform: online_image
+    id: remote_album_art
+    format: JPEG
+    buffer_size: 65536
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+      - script.execute: throttled_disp_update
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'id(current_loaded_art_url) = "";'
+      - script.execute: sync_wake_word_state
+
+  - platform: online_image
+    id: home_wallpaper_art
+    format: JPEG
+    buffer_size: 65536
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: |-
+          id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;
+          if (id(display_power_state) == 0 && id(gui_page) == 1) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'id(current_loaded_wallpaper_url) = "";'
+      - script.execute: sync_wake_word_state
+
+  - platform: online_image
+    id: camera_snapshot_art
+    format: JPEG
+    buffer_size: 65536
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: |-
+          latter_ui::cam_download_in_progress() = false;
+          latter_ui::last_cam_live_fetch_ms() = millis();
+          id(current_loaded_camera_url) = id(notif_camera_url);
+          if (id(display_power_state) == 0 &&
+              (id(notif_active) || (id(gui_page) == 8 && (id(stuff_subpage) == 9 || id(stuff_subpage) == 12)))) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: |-
+          latter_ui::cam_download_in_progress() = false;
+          latter_ui::last_cam_live_fetch_ms() = millis();
+          id(current_loaded_camera_url) = "";
+      - script.execute: sync_wake_word_state
+
+output:
+  - platform: template
+    id: backlight_brightness
+    type: float
+    write_action:
+      - lambda: |-
+          if (state <= 0.01f) {
+            latter_ui::hal_set_display_brightness(&id(disp1), 0);
+          } else {
+            // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
+            float clamped = std::max(0.0f, std::min(1.0f, state));
+            float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
+            uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
+            latter_ui::hal_set_display_brightness(&id(disp1), bri_byte);
+          }
+
+light:
+  - platform: monochromatic
+    id: display_brightness
+    name: "Display"
+    entity_category: config
+    output: backlight_brightness
+    default_transition_length: 0s
+    initial_state:
+      brightness: 90%
+    restore_mode: ALWAYS_ON

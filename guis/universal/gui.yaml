@@ -442,7 +442,7 @@ display:
             if (id(game_sound_switch).state) {
               id(route_i2s_to_spk).execute();
               id(speaker_enable).turn_on();
-              id(es8311_dac).set_mute_off();
+              id(hal_set_dac_mute).execute(false);
             }
           }
           if (latter_ui::pending_game_sfx() > 0) {
@@ -700,6 +700,12 @@ display:
                                  !(id(gui_page) == 8 && id(stuff_subpage) > 0 && !tools_direct_root) &&
                                  !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
+      if (!id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
+          id(va_status_text).empty() && id(display_power_state) == 0 &&
+          !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
+        latter_ui::render_active_focus_overlay(it, id(gui_page), prof_sub, millis(), id(theme_primary), id(col_white));
+      }
+
       if (show_top_level_back) {
         latter_ui::render_home_indicator_bar(it, cx, latter_ui::layout().home_bar_y);
       }
@@ -754,6 +760,7 @@ touchscreen:
             }
 
             auto &tg_init = latter_ui::touch_gesture();
+            latter_ui::clear_ui_focus();
             tg_init.start_x = touch.x;
             tg_init.start_y = touch.y;
             tg_init.last_x = touch.x;

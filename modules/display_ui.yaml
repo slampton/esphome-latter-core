@@ -1,8 +1,9 @@
 # ==============================================================================
 # Latter Core Umbrella Module: Display UI (modules/display_ui.yaml)
-# Includes the GUI-agnostic Latter Client Contract + Default Pocket/Watch GUI Shell
+# Includes the GUI-agnostic Latter Client Contract + Display Pipeline + Universal GUI Shell
 # ==============================================================================
 
 packages:
-  latter_client: !include latter_client.yaml
-  latter_gui:    !include ../guis/universal/gui.yaml
+  latter_client:   !include latter_client.yaml
+  latter_pipeline: !include display_pipeline.yaml
+  latter_gui:      !include ../guis/universal/gui.yaml
