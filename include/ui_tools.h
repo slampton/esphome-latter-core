@@ -2580,7 +2580,8 @@ inline bool &cam_download_in_progress() {
 inline int parse_cameras_summary_list(
     const std::string &raw,
     std::string out_ids[MAX_CAMERA_SLOTS],
-    std::string out_names[MAX_CAMERA_SLOTS]) {
+    std::string out_names[MAX_CAMERA_SLOTS],
+    std::string out_urls[MAX_CAMERA_SLOTS] = nullptr) {
   if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
     return 0;
   }
@@ -2591,12 +2592,22 @@ inline int parse_cameras_summary_list(
     std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
     pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
     if (tok.empty()) continue;
-    size_t bar = tok.find('|');
-    std::string cid = (bar == std::string::npos) ? tok : tok.substr(0, bar);
-    std::string cnm = (bar == std::string::npos) ? tok : tok.substr(bar + 1);
+    size_t p1 = tok.find('|');
+    if (p1 == std::string::npos) {
+      out_ids[idx] = tok;
+      out_names[idx] = tok;
+      if (out_urls != nullptr) out_urls[idx] = "";
+      idx++;
+      continue;
+    }
+    size_t p2 = tok.find('|', p1 + 1);
+    std::string cid = tok.substr(0, p1);
+    std::string cnm = (p2 == std::string::npos) ? tok.substr(p1 + 1) : tok.substr(p1 + 1, p2 - p1 - 1);
+    std::string curl = (p2 == std::string::npos) ? "" : tok.substr(p2 + 1);
     if (!cid.empty()) {
       out_ids[idx] = cid;
       out_names[idx] = cnm.empty() ? cid : cnm;
+      if (out_urls != nullptr) out_urls[idx] = curl;
       idx++;
     }
   }
@@ -2634,37 +2645,33 @@ inline std::string build_carousel_camera_url(
     const char *art_shape,
     const std::string &cameras_summary,
     uint32_t now_ms) {
-  std::string target_ent = resolve_active_carousel_camera_id(cameras_summary, base_cam_url);
-  auto extract_origin = [](const std::string &u) -> std::string {
-    if (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0) {
-      size_t p = u.find('/', 8);
-      if (p != std::string::npos) return u.substr(0, p);
+  (void)fallback_wp_url;
+  (void)fallback_art_url;
+  (void)device_name;
+  (void)screen_w;
+  (void)screen_h;
+  (void)art_shape;
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], urls[MAX_CAMERA_SLOTS];
+  int cnt = parse_cameras_summary_list(cameras_summary, ids, names, urls);
+  std::string chosen_url = "";
+  if (cnt > 0) {
+    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
+      cam_carousel_idx() = 0;
     }
-    return "";
-  };
-  std::string orig = extract_origin(base_cam_url);
-  if (orig.empty()) orig = extract_origin(fallback_wp_url);
-  if (orig.empty()) orig = extract_origin(fallback_art_url);
-  if (orig.empty() || target_ent.empty()) {
-    if (!base_cam_url.empty() && base_cam_url != "none" && base_cam_url != "unknown") {
-      size_t vpos = base_cam_url.find("&v=");
-      std::string prefix = (vpos != std::string::npos) ? base_cam_url.substr(0, vpos) : base_cam_url;
-      return prefix + "&v=" + std::to_string(now_ms);
-    }
+    chosen_url = urls[cam_carousel_idx()];
+  }
+  if (chosen_url.empty() && !base_cam_url.empty() &&
+      base_cam_url != "none" && base_cam_url != "unknown" && base_cam_url != "unavailable") {
+    chosen_url = base_cam_url;
+  }
+  if (chosen_url.empty()) {
     return "";
   }
-  std::string slug = (device_name && device_name[0]) ? device_name : "esphome_device";
-  for (char &c : slug) {
-    if (c == '-') c = '_';
+  if (cam_landscape_mode() && chosen_url.find("&rot=") == std::string::npos) {
+    chosen_url += "&rot=90";
   }
-  std::string rot_q = cam_landscape_mode() ? "&rot=90" : "";
-  return orig + "/api/latter/camera/" + slug +
-         "?entity_id=" + target_ent +
-         "&w=" + (screen_w ? screen_w : "466") +
-         "&h=" + (screen_h ? screen_h : "466") +
-         "&shape=" + (art_shape ? art_shape : "circle") +
-         rot_q +
-         "&v=" + std::to_string(now_ms);
+  chosen_url += "&ts=" + std::to_string(now_ms);
+  return chosen_url;
 }
 
 template<typename DisplayT, typename CamImgT, typename FontSmallT>

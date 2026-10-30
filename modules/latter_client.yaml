@@ -3755,7 +3755,7 @@ script:
       - delay: 40ms
       - if:
           condition:
-            lambda: 'return !latter_ui::cal_detail_location().empty();'
+            lambda: 'return !latter_ui::cal_detail_location().empty() && !latter_ui::cal_detail_map_url().empty();'
           then:
             - if:
                 condition:
@@ -3764,24 +3764,7 @@ script:
                   - micro_wake_word.stop:
                   - delay: 20ms
             - lambda: |-
-                std::string base_map_u = latter_ui::cal_detail_map_url();
-                if (base_map_u.empty()) {
-                  const std::string &w_url = id(ha_latter_wallpaper_url).state;
-                  const std::string &c_url = id(ha_latter_camera_snapshot_url).state;
-                  const std::string &a_url = id(ha_target_art_url).state;
-                  auto extract_origin = [](const std::string &u) -> std::string {
-                    if (u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0) {
-                      size_t p = u.find('/', 8);
-                      if (p != std::string::npos) return u.substr(0, p);
-                    }
-                    return "";
-                  };
-                  std::string orig = extract_origin(c_url);
-                  if (orig.empty()) orig = extract_origin(w_url);
-                  if (orig.empty()) orig = extract_origin(a_url);
-                  base_map_u = orig + "/api/latter/map/${name}?w=${screen_w}&h=${screen_h}&shape=${art_shape}&q=" +
-                               latter_ui::url_encode_query(latter_ui::cal_detail_location());
-                }
+                const std::string &base_map_u = latter_ui::cal_detail_map_url();
                 id(notif_camera_url) = base_map_u +
                                        "&z=" + to_string(latter_ui::cal_map_zoom()) +
                                        "&pan_x=" + to_string(latter_ui::cal_map_pan_x()) +

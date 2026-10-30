@@ -10,8 +10,8 @@ substitutions:
 
 http_request:
   id: http_client
-  verify_ssl: false
-  timeout: 60s
+  verify_ssl: true
+  timeout: 15s
 
 image:
   - platform: sendspin
