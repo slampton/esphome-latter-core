@@ -3158,24 +3158,36 @@ touchscreen:
                 return;
               }
 
-              // (b) Bottom Segmented Mode Bar Horizontal Swipe -> Slide 4-Icon Conveyor Window (or step <=4 categories)
+              // (b) Bottom Segmented Mode Bar Horizontal Swipe -> Slide 4-Icon Conveyor Window & Keep Active Selector Visible
               if (gest.start_y >= dock_top_y && std::abs(dx) >= 24 && std::abs(dx) > std::abs(dy)) {
                 std::string cats[8];
                 int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
+                int cur_i = 0;
+                for (int i = 0; i < cat_cnt; i++) {
+                  if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
+                }
                 if (cat_cnt > 4) {
                   int cur_win = latter_ui::get_mode_bar_start_index(cat_cnt, latter_ui::area_cat_dock_page());
-                  int next_win = std::max(0, std::min(cat_cnt - 4, cur_win + ((dx < 0) ? 2 : -2)));
+                  int next_win = std::max(0, std::min(cat_cnt - 4, cur_win + ((dx < 0) ? 1 : -1)));
+                  int next_i = cur_i;
                   if (next_win != cur_win) {
                     latter_ui::area_cat_dock_page() = next_win;
-                    latter_ui::schedule_disp_update(&id(disp1));
+                    if (next_i < next_win) next_i = next_win;
+                    else if (next_i > next_win + 3) next_i = next_win + 3;
+                  } else {
+                    next_i = std::max(0, std::min(cat_cnt - 1, cur_i + ((dx < 0) ? 1 : -1)));
+                    latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), next_i, cat_cnt);
                   }
+                  if (next_i != cur_i) {
+                    id(area_domain_filter) = cats[next_i];
+                    id(area_browse_mode) = "entities";
+                    id(area_browse_page) = 1;
+                    id(fetch_area_browse).execute();
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
                 } else if (cat_cnt > 1) {
-                  int cur_i = 0;
-                  for (int i = 0; i < cat_cnt; i++) {
-                    if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
-                  }
                   int next_i = (dx < 0) ? ((cur_i + 1) % cat_cnt) : ((cur_i + cat_cnt - 1) % cat_cnt);
                   id(area_domain_filter) = cats[next_i];
                   id(area_browse_mode) = "entities";
@@ -3885,7 +3897,7 @@ touchscreen:
                   std::string s_id   = (start_card == 0) ? id(area_slot_1_id)   : (start_card == 1) ? id(area_slot_2_id)   : id(area_slot_3_id);
                   bool &s_act        = (start_card == 0) ? id(area_slot_1_active) : (start_card == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
                   int  &s_lvl        = (start_card == 0) ? id(area_slot_1_level)  : (start_card == 1) ? id(area_slot_2_level)  : id(area_slot_3_level);
-                  if (!s_id.empty()) {
+                  if ( !s_id.empty()) {
                     int pct = latter_ui::layout().area_slider_pct(tp.x);
                     s_act = true;
                     s_lvl = pct;
@@ -3895,6 +3907,44 @@ touchscreen:
                     id(area_action_feedback) = latter_ui::strip_trailing_paren_state(s_name) + ": " + to_string(pct) + "%";
                     id(area_feedback_timer) = now_rel;
                     id(execute_area_action).execute();
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  }
+                } else if (id(area_subpage) == 0 && !is_card_slider_drag &&
+                           std::abs(tp.x - gest.start_x) >= 24 &&
+                           std::abs(tp.x - gest.start_x) > std::abs(tp.y - gest.start_y)) {
+                  int dx_rel = tp.x - gest.start_x;
+                  std::string cats[8];
+                  int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
+                  int cur_i = 0;
+                  for (int i = 0; i < cat_cnt; i++) {
+                    if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
+                  }
+                  if (gest.start_y >= dock_top_y && cat_cnt > 4) {
+                    int cur_win = latter_ui::get_mode_bar_start_index(cat_cnt, latter_ui::area_cat_dock_page());
+                    int next_win = std::max(0, std::min(cat_cnt - 4, cur_win + ((dx_rel < 0) ? 1 : -1)));
+                    int next_i = cur_i;
+                    if (next_win != cur_win) {
+                      latter_ui::area_cat_dock_page() = next_win;
+                      if (next_i < next_win) next_i = next_win;
+                      else if (next_i > next_win + 3) next_i = next_win + 3;
+                    } else {
+                      next_i = std::max(0, std::min(cat_cnt - 1, cur_i + ((dx_rel < 0) ? 1 : -1)));
+                      latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), next_i, cat_cnt);
+                    }
+                    if (next_i != cur_i) {
+                      id(area_domain_filter) = cats[next_i];
+                      id(area_browse_mode) = "entities";
+                      id(area_browse_page) = 1;
+                      id(fetch_area_browse).execute();
+                    }
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  } else if (cat_cnt > 1) {
+                    int next_i = (dx_rel < 0) ? ((cur_i + 1) % cat_cnt) : ((cur_i + cat_cnt - 1) % cat_cnt);
+                    id(area_domain_filter) = cats[next_i];
+                    latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), next_i, cat_cnt);
+                    id(area_browse_mode) = "entities";
+                    id(area_browse_page) = 1;
+                    id(fetch_area_browse).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 } else if (gest.max_travel < 30) {
@@ -3926,11 +3976,29 @@ touchscreen:
                     latter_ui::get_mode_bar_window_xs(cat_cnt, latter_ui::area_cat_dock_page(), latter_ui::SCREEN_CX, win_xs, has_l, has_r);
                     int start_idx = latter_ui::get_mode_bar_start_index(cat_cnt, latter_ui::area_cat_dock_page());
                     int vis_count = std::min(4, cat_cnt - start_idx);
+                    int cur_i = 0;
+                    for (int i = 0; i < cat_cnt; i++) {
+                      if (cats[i] == id(area_domain_filter)) { cur_i = i; break; }
+                    }
                     if (has_l && vis_count > 0 && tp.x < win_xs[0] - latter_ui::layout().dock_r) {
-                      latter_ui::area_cat_dock_page() = std::max(0, start_idx - 1);
+                      int next_win = std::max(0, start_idx - 1);
+                      latter_ui::area_cat_dock_page() = next_win;
+                      if (cur_i > next_win + 3) {
+                        id(area_domain_filter) = cats[next_win + 3];
+                        id(area_browse_mode) = "entities";
+                        id(area_browse_page) = 1;
+                        id(fetch_area_browse).execute();
+                      }
                       latter_ui::schedule_disp_update(&id(disp1));
                     } else if (has_r && vis_count > 0 && tp.x > win_xs[vis_count - 1] + latter_ui::layout().dock_r) {
-                      latter_ui::area_cat_dock_page() = std::min(cat_cnt - 4, start_idx + 1);
+                      int next_win = std::min(cat_cnt - 4, start_idx + 1);
+                      latter_ui::area_cat_dock_page() = next_win;
+                      if (cur_i < next_win) {
+                        id(area_domain_filter) = cats[next_win];
+                        id(area_browse_mode) = "entities";
+                        id(area_browse_page) = 1;
+                        id(fetch_area_browse).execute();
+                      }
                       latter_ui::schedule_disp_update(&id(disp1));
                     } else {
                       int best_i = -1;

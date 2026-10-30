@@ -201,7 +201,7 @@ inline void render_area_control_page(
                              : -1;
     render_in_app_mode_bar_track(it, cx, win_xs, vis_count, active_vis_idx,
                                  has_l, has_r, cat_count, active_global_idx,
-                                 theme_primary, col_white);
+                                 theme_primary, col_white, start_idx);
 
     const int ICON_Y   = layout().app_dock_y;
     const int left_cx  = win_xs[0];

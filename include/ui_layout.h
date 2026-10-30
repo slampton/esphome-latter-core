@@ -440,7 +440,13 @@ inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count
     win_start = 0;
     return;
   }
-  win_start = std::max(0, std::min(total_count - 4, active_idx - 1));
+  win_start = get_mode_bar_start_index(total_count, win_start);
+  if (active_idx < win_start) {
+    win_start = active_idx;
+  } else if (active_idx >= win_start + 4) {
+    win_start = active_idx - 3;
+  }
+  win_start = std::max(0, std::min(total_count - 4, win_start));
 }
 
 inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[4],
@@ -576,12 +582,14 @@ template <typename DisplayT>
 inline void render_in_app_mode_bar_track(
     DisplayT &it, int cx, const int *win_xs, int vis_count, int active_vis_idx,
     bool has_left_arrow, bool has_right_arrow, int total_count, int active_global_idx,
-    esphome::Color theme_primary, esphome::Color col_white) {
+    esphome::Color theme_primary, esphome::Color col_white, int explicit_win_start = -1) {
   using esphome::Color;
   if (vis_count <= 0) return;
 
   const uint32_t now_ms = esphome::millis();
-  const int win_start_idx = (active_vis_idx >= 0) ? (active_global_idx - active_vis_idx) : 0;
+  const int win_start_idx = (explicit_win_start >= 0)
+                                ? explicit_win_start
+                                : ((active_vis_idx >= 0) ? (active_global_idx - active_vis_idx) : 0);
   float anim_start  = mode_bar_anim().step_window(win_start_idx, now_ms);
   float anim_active = mode_bar_anim().step_active(active_global_idx, now_ms);
 
@@ -627,12 +635,22 @@ inline void render_in_app_mode_bar_track(
   }
 
   // 3. Smoothly Gliding Active Slot Capsule Highlight inside the track
-  if (rel_active >= -0.35f && rel_active <= static_cast<float>(vis_count - 1) + 0.35f) {
+  if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
     int abx = left_cx + static_cast<int>(std::roundf(rel_active * static_cast<float>(stride)));
-    abx = std::max(left_cx, std::min(right_cx, abx));
-    it.filled_circle(abx, by, dr - 1, cap_bg);
-    it.circle(abx, by, dr, theme_primary);
-    it.circle(abx, by, dr - 1, theme_primary);
+    if (abx >= left_cx - scale_x(16) && abx <= right_cx + scale_x(16)) {
+      float ring_alpha = 1.0f;
+      if (rel_active < 0.0f) {
+        ring_alpha = std::max(0.20f, 1.0f + rel_active * 1.6f);
+      } else if (rel_active > static_cast<float>(vis_count - 1)) {
+        ring_alpha = std::max(0.20f, 1.0f - (rel_active - static_cast<float>(vis_count - 1)) * 1.6f);
+      }
+      Color ring_col(static_cast<uint8_t>(16 + (theme_primary.r - 16) * ring_alpha),
+                     static_cast<uint8_t>(20 + (theme_primary.g - 20) * ring_alpha),
+                     static_cast<uint8_t>(27 + (theme_primary.b - 27) * ring_alpha));
+      it.filled_circle(abx, by, dr - 1, cap_bg);
+      it.circle(abx, by, dr, ring_col);
+      it.circle(abx, by, dr - 1, ring_col);
+    }
   }
 
   // 4. Outer Left '<' and Right '>' Conveyor Chevrons when total_count > 4
