@@ -417,6 +417,22 @@ display:
               id(font_date), id(font_small), id(col_bg), id(col_white),
               id(col_black), id(col_gold), id(col_cyan), id(col_red),
               id(col_green), id(col_magenta), id(col_orange), id(col_dark_gray));
+        } else if (id(active_game) == 5) {
+          render_game_2048(
+              it, cx, cy, millis(), game_just_entered,
+              id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
+              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
+              id(col_bg), id(col_white), id(col_gold), id(col_cyan),
+              id(col_green), id(col_orange), id(col_red), id(col_magenta),
+              id(col_slate), id(col_dark_gray));
+        } else if (id(active_game) == 6) {
+          render_game_memory(
+              it, cx, cy, millis(), game_just_entered,
+              id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
+              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
+              id(col_bg), id(col_white), id(col_gold), id(col_cyan),
+              id(col_green), id(col_orange), id(col_red), id(col_magenta),
+              id(col_slate), id(col_dark_gray));
         }
         if (id(active_game) > 0) {
           if (game_just_entered) {
@@ -1721,10 +1737,17 @@ touchscreen:
                   }
                   return;
                 }
-                if (touch.y >= 376) return;
+                if (touch.y >= latter_ui::layout().back_y - latter_ui::scale_y(36)) return;
+                if (id(active_game) == 5) {
+                  // 2048 uses directional swipe in on_update/on_release or release-tap
+                  return;
+                }
                 id(marble_touch_x) = touch.x;
                 id(marble_touch_y) = touch.y;
                 id(game_btn_pressed) = true;
+                if (id(active_game) == 6) {
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
               }
             } else if (id(gui_page) == 4) {
               static uint32_t last_sys_action_tap = 0;
@@ -3037,7 +3060,7 @@ touchscreen:
               }
             }
 
-            // 4. GAMES LAUNCHER (PAGE 3, active_game == 0) HORIZONTAL CAROUSEL SWIPE
+            // 4. GAMES LAUNCHER (PAGE 3, active_game == 0) HORIZONTAL CAROUSEL SWIPE & 2048 4-WAY SWIPE
             if (id(gui_page) == 3 && id(active_game) == 0 && !id(menu_scroll_active) && gest.start_y < latter_ui::scale_y(410)) {
               if (std::abs(dx) >= 26 && std::abs(dx) > std::abs(dy)) {
                 gest.swipe_committed = true;
@@ -3045,10 +3068,22 @@ touchscreen:
                 int dir = (dx < 0) ? 1 : -1;
                 id(menu_scroll_active) = true;
                 id(menu_scroll_dir) = dir;
-                id(menu_scroll_target_page) = step_wrap(id(game_carousel_idx), dir, 4);
+                id(menu_scroll_target_page) = step_wrap(id(game_carousel_idx), dir, 6);
                 id(menu_scroll_step) = 0;
                 ESP_LOGI("touch", "Games Carousel Swipe (dx=%d) -> game=%d", dx, id(menu_scroll_target_page));
                 id(menu_scroll_transition).execute();
+                return;
+              }
+            } else if (id(gui_page) == 3 && id(active_game) == 5 && gest.start_y < latter_ui::layout().back_y - latter_ui::scale_y(36)) {
+              if (std::abs(dx) >= 24 || std::abs(dy) >= 24) {
+                gest.swipe_committed = true;
+                gest.last_swipe_ms = now_u;
+                if (std::abs(dx) > std::abs(dy)) {
+                  latter_ui::game_2048_pending_dir() = (dx > 0) ? 2 : 4;
+                } else {
+                  latter_ui::game_2048_pending_dir() = (dy > 0) ? 3 : 1;
+                }
+                latter_ui::schedule_disp_update(&id(disp1));
                 return;
               }
             }
@@ -3615,24 +3650,43 @@ touchscreen:
                     }
                   }
                 }
+              } else if (!gest.swipe_committed && id(gui_page) == 3 && id(active_game) == 5) {
+                if (gest.last_y < latter_ui::layout().back_y - latter_ui::scale_y(36)) {
+                  if (std::abs(dx) >= 18 || std::abs(dy) >= 18) {
+                    if (std::abs(dx) > std::abs(dy)) {
+                      latter_ui::game_2048_pending_dir() = (dx > 0) ? 2 : 4;
+                    } else {
+                      latter_ui::game_2048_pending_dir() = (dy > 0) ? 3 : 1;
+                    }
+                  } else {
+                    id(marble_touch_x) = gest.last_x;
+                    id(marble_touch_y) = gest.last_y;
+                    id(game_btn_pressed) = true;
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
               } else if (!gest.swipe_committed && id(gui_page) == 3 && id(active_game) == 0 && !id(menu_scroll_active)) {
-                if (gest.start_y < 410 && std::abs(dx) >= 22 && std::abs(dx) > std::abs(dy)) {
+                if (gest.start_y < latter_ui::scale_y(410) && std::abs(dx) >= 22 && std::abs(dx) > std::abs(dy)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   int dir = (dx < 0) ? 1 : -1;
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = dir;
-                  id(menu_scroll_target_page) = step_wrap(id(game_carousel_idx), dir, 4);
+                  id(menu_scroll_target_page) = step_wrap(id(game_carousel_idx), dir, 6);
                   id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
-                } else if (gest.max_travel < 30) {
+                } else if (gest.max_travel < latter_ui::scale_s(30)) {
                   const int g_btn_y = latter_ui::layout().app_dock_y;
-                  if (gest.last_x >= latter_ui::SCREEN_CX - 125 && gest.last_x <= latter_ui::SCREEN_CX - 55 &&
-                      gest.last_y >= g_btn_y - 34 && gest.last_y <= g_btn_y + 34) {
+                  if (gest.last_x >= latter_ui::SCREEN_CX - latter_ui::scale_x(125) &&
+                      gest.last_x <= latter_ui::SCREEN_CX - latter_ui::scale_x(55) &&
+                      gest.last_y >= g_btn_y - latter_ui::scale_y(34) &&
+                      gest.last_y <= g_btn_y + latter_ui::scale_y(34)) {
                     id(game_sound_switch).toggle();
                     latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (gest.last_x >= latter_ui::SCREEN_CX - 140 && gest.last_x < latter_ui::SCREEN_CX + 140 &&
-                             gest.last_y >= 130 && gest.last_y <= g_btn_y + 34) {
+                  } else if (gest.last_x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) &&
+                             gest.last_x < latter_ui::SCREEN_CX + latter_ui::scale_x(140) &&
+                             gest.last_y >= latter_ui::scale_y(130) &&
+                             gest.last_y <= g_btn_y + latter_ui::scale_y(34)) {
                     id(active_game) = id(game_carousel_idx) + 1;
                     id(mp_idle_debounce).stop();
                     if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) {

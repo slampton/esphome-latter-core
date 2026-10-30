@@ -757,7 +757,7 @@ inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_t
     bool en = (app_id == 2 && show_music) ||
               (app_id == 6 && show_area) ||
               (app_id == 7 && show_remote && has_any_configured_remote()) ||
-              (app_id == 3 && show_games && (LATTER_HAS_IMU != 0)) ||
+              (app_id == 3 && show_games) ||
               (app_id == 8 && show_tools) ||
               (app_id == 9 && show_alarm) ||
               (app_id == 12) ||

@@ -124,6 +124,14 @@ inline void compute_3d_game_tilt(
   } else {
     out_pitch_delta = clean_pitch - zero_pitch;
   }
+
+  // Touch-drag virtual tilt fallback (always active on non-IMU displays, or when dragging on IMU displays)
+  if (touch_gesture().active && touch_gesture().last_y < scale_y(376) &&
+      (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(10))) {
+    float span = static_cast<float>(std::max(110, scale_s(160)));
+    out_roll_delta = std::max(-35.0f, std::min(35.0f, ((touch_gesture().last_x - SCREEN_CX) / span) * 28.0f));
+    out_pitch_delta = std::max(-35.0f, std::min(35.0f, ((SCREEN_CY - touch_gesture().last_y) / span) * 28.0f));
+  }
 }
 
 // Shared non-blocking arcade sound effect trigger (0 = none, 1..4 = chomp, 5 = level/wave clear,
@@ -497,13 +505,14 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE (Bottom Scorekeeper & Center Hole drawn first so marbles roll over)
   // ==========================================================================
   (void)theme_primary; (void)col_gray;
-  // Subtle horizontal bottom cushion wall at y = 374 + Score at y = 392 + "< Back" at y = 426
-  it.line(82, 374, 384, 374, col_slate * 0.45f);
-  it.line(84, 375, 382, 375, col_dark_gray);
+  // Subtle horizontal bottom cushion wall + Score + "< Exit" aligned to layout().back_y
+  const int hud_y = layout().back_y - scale_y(34);
+  it.line(cx - 151, 374, cx + 151, 374, col_slate * 0.45f);
+  it.line(cx - 149, 375, cx + 149, 375, col_dark_gray);
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d", wave_num, sunk_count, time_remaining, game_score);
-  it.print(cx, 392, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
-  render_back_button(it, cx, font_small, 426, "Exit");
+  it.print(cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // Center Hole Target with Swirling Event Horizon
   it.circle(cx, cy, 34, col_dark_gray);
@@ -755,10 +764,21 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // EMA-smoothed Player Aim Reticle (centered around target_base_y = 112 so neutral posture aims at target level)
   float raw_ax = static_cast<float>(cx) + roll_delta * 6.8f;
   float raw_ay = target_base_y - pitch_delta * 6.8f;
-  if (raw_ax < 60.0f) raw_ax = 60.0f; else if (raw_ax > 406.0f) raw_ax = 406.0f;
+  if (touch_gesture().active && touch_gesture().last_y < layout().back_y - scale_y(42) &&
+      (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(8))) {
+    raw_ax = static_cast<float>(touch_gesture().last_x);
+    raw_ay = static_cast<float>(touch_gesture().last_y);
+  }
+  if (raw_ax < static_cast<float>(cx - 173)) raw_ax = static_cast<float>(cx - 173);
+  else if (raw_ax > static_cast<float>(cx + 173)) raw_ax = static_cast<float>(cx + 173);
   if (raw_ay < 48.0f) raw_ay = 48.0f; else if (raw_ay > 280.0f) raw_ay = 280.0f;
-  smooth_ax += (raw_ax - smooth_ax) * 0.45f;
-  smooth_ay += (raw_ay - smooth_ay) * 0.45f;
+  if (LATTER_HAS_IMU == 0 && touch_gesture().active) {
+    smooth_ax = raw_ax;
+    smooth_ay = raw_ay;
+  } else {
+    smooth_ax += (raw_ax - smooth_ax) * 0.45f;
+    smooth_ay += (raw_ay - smooth_ay) * 0.45f;
+  }
 
   const int round_goal = 20 + std::min(5, round_num - 1) * 4;
 
@@ -1014,8 +1034,8 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "R%d  •  %d Arr  •  %s  •  %d", round_num, arrows_left, wind_buf, arch_score);
-  it.print(cx, 392, font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
-  render_back_button(it, cx, font_small, 426, "Exit");
+  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 8. Round Over Summary Modal
   if (round_over) {
@@ -1242,6 +1262,10 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // At y = 356 (dy = 123 from cy = 233), r = 208 arena chord half-width is 167px.
   // Clamping paddle center within cx +/- 136 keeps the entire 58px capsule inside the dome.
   float raw_target_x = (float)cx + roll_delta * 8.4f;
+  if (touch_gesture().active && touch_gesture().last_y < layout().back_y - scale_y(38) &&
+      (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(8))) {
+    raw_target_x = static_cast<float>(touch_gesture().last_x);
+  }
   if (raw_target_x < (float)(cx - 136)) raw_target_x = (float)(cx - 136);
   if (raw_target_x > (float)(cx + 136)) raw_target_x = (float)(cx + 136);
   smooth_paddle_x += (raw_target_x - smooth_paddle_x) * 0.34f;
@@ -1505,8 +1529,8 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   } else {
     snprintf(bo_hud, sizeof(bo_hud), "W%d  •  Balls:%d  •  Brk:%d  •  %d", wave_num, lives_left, bricks_remaining, bo_score);
   }
-  it.print(cx, 392, font_small, col_gold, esphome::display::TextAlign::CENTER, bo_hud);
-  render_back_button(it, cx, font_small, 426, "Exit");
+  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, bo_hud);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 3. Draw 18-Brick Dome Formation (with Multi-Hit Armor & Crack States)
   for (int b = 0; b < NUM_BRICKS; b++) {
@@ -2086,14 +2110,14 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE
   // ==========================================================================
 
-  // 1. Play Bowl Rim, Bottom Wall (y = 374), Scorekeeper HUD (y = 392) & "< Back" (y = 426)
+  // 1. Play Bowl Rim, Bottom Wall (y = 374), Scorekeeper HUD & "< Exit"
   it.circle(cx, cy, 208, col_dark_gray);
-  it.line(82, 374, 384, 374, col_dark_gray);
+  it.line(cx - 151, 374, cx + 151, 374, col_dark_gray);
   char t_buf[56];
   snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
            level_num, treats_left, treat_score, high_score_chomp);
-  it.print(cx, 392, font_small, col_gold, esphome::display::TextAlign::CENTER, t_buf);
-  render_back_button(it, cx, font_small, 426, "Exit");
+  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, t_buf);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 2. Render Remaining Uneaten Treats on the Plate
   float t_bob = now_ms * 0.0045f;
@@ -2138,7 +2162,430 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
 }
 // ==============================================================================
-// SECTION 19: GAMES SUITE CAROUSEL LAUNCHER (PAGE 3, STATE 0 — 4 GAMES)
+// SECTION 18B: TOUCH-NATIVE MINI-GAMES (2048 & MEMORY MATCH)
+// ==============================================================================
+
+inline int &high_score_2048() {
+  static int hs = 0;
+  return hs;
+}
+
+inline int &high_score_memory() {
+  static int hs = 0;
+  return hs;
+}
+
+// 1 = Up, 2 = Right, 3 = Down, 4 = Left
+inline int &game_2048_pending_dir() {
+  static int dir = 0;
+  return dir;
+}
+
+template<typename DisplayT, typename FontBigT, typename FontSmallT>
+inline void render_game_2048(DisplayT &it, int cx, int cy, uint32_t now_ms,
+                             bool game_just_entered, float &marble_touch_x, float &marble_touch_y,
+                             bool &game_btn_pressed,
+                             FontBigT *font_date, FontSmallT *font_small,
+                             esphome::Color theme_primary, esphome::Color theme_secondary,
+                             esphome::Color col_bg, esphome::Color col_white,
+                             esphome::Color col_gold, esphome::Color col_cyan,
+                             esphome::Color col_green, esphome::Color col_orange,
+                             esphome::Color col_red, esphome::Color col_magenta,
+                             esphome::Color col_slate, esphome::Color col_dark_gray) {
+  static int grid[4][4];
+  static int score_2048 = 0;
+  static bool game_over = false;
+  static bool won_2048 = false;
+  static uint32_t rng_state = 0x2048CAFEU;
+
+  auto next_rng = [&]() -> uint32_t {
+    rng_state ^= (rng_state << 13) ^ (now_ms & 0xFFFFU);
+    rng_state ^= (rng_state >> 17);
+    rng_state ^= (rng_state << 5);
+    return rng_state;
+  };
+
+  auto spawn_tile = [&]() {
+    int empty_r[16], empty_c[16], n_empty = 0;
+    for (int r = 0; r < 4; r++) {
+      for (int c = 0; c < 4; c++) {
+        if (grid[r][c] == 0) {
+          empty_r[n_empty] = r;
+          empty_c[n_empty] = c;
+          n_empty++;
+        }
+      }
+    }
+    if (n_empty > 0) {
+      int pick = static_cast<int>(next_rng() % static_cast<uint32_t>(n_empty));
+      grid[empty_r[pick]][empty_c[pick]] = ((next_rng() % 10U) == 0U) ? 4 : 2;
+    }
+  };
+
+  auto has_moves = [&]() -> bool {
+    for (int r = 0; r < 4; r++) {
+      for (int c = 0; c < 4; c++) {
+        if (grid[r][c] == 0) return true;
+        if (r < 3 && grid[r][c] == grid[r + 1][c]) return true;
+        if (c < 3 && grid[r][c] == grid[r][c + 1]) return true;
+      }
+    }
+    return false;
+  };
+
+  auto reset_board = [&]() {
+    for (int r = 0; r < 4; r++) {
+      for (int c = 0; c < 4; c++) grid[r][c] = 0;
+    }
+    score_2048 = 0;
+    game_over = false;
+    won_2048 = false;
+    game_2048_pending_dir() = 0;
+    spawn_tile();
+    spawn_tile();
+  };
+
+  if (game_just_entered) {
+    reset_board();
+  }
+
+  const int tile_sz = (SCREEN_W < 380) ? 50 : scale_s(62);
+  const int gap = (SCREEN_W < 380) ? 5 : scale_s(6);
+  const int board_sz = 4 * tile_sz + 5 * gap;
+  const int board_x = cx - board_sz / 2;
+  const int board_y = cy - scale_y(20) - board_sz / 2;
+
+  int move_dir = game_2048_pending_dir();
+  game_2048_pending_dir() = 0;
+
+  if (marble_touch_x >= 0.0f || game_btn_pressed) {
+    float tx = marble_touch_x;
+    float ty = marble_touch_y;
+    marble_touch_x = -1.0f;
+    game_btn_pressed = false;
+    if (game_over) {
+      reset_board();
+    } else if (move_dir == 0 && tx >= 0.0f && ty < static_cast<float>(layout().back_y - scale_y(36))) {
+      // Tap-quadrant fallback around board center
+      float dx = tx - static_cast<float>(cx);
+      float dy = ty - static_cast<float>(board_y + board_sz / 2);
+      if (std::fabs(dx) > 18.0f || std::fabs(dy) > 18.0f) {
+        if (std::fabs(dx) > std::fabs(dy)) {
+          move_dir = (dx > 0.0f) ? 2 : 4;
+        } else {
+          move_dir = (dy > 0.0f) ? 3 : 1;
+        }
+      }
+    }
+  }
+
+  if (move_dir >= 1 && move_dir <= 4 && !game_over) {
+    bool moved = false;
+    bool merged_any = false;
+    for (int i = 0; i < 4; i++) {
+      int line[4] = {0, 0, 0, 0};
+      int wp = 0;
+      for (int j = 0; j < 4; j++) {
+        int r = (move_dir == 1) ? j : (move_dir == 3) ? (3 - j) : i;
+        int c = (move_dir == 4) ? j : (move_dir == 2) ? (3 - j) : i;
+        if (grid[r][c] != 0) line[wp++] = grid[r][c];
+      }
+      int out[4] = {0, 0, 0, 0};
+      int op = 0;
+      for (int j = 0; j < wp; j++) {
+        if (j + 1 < wp && line[j] == line[j + 1]) {
+          int nv = line[j] * 2;
+          out[op++] = nv;
+          score_2048 += nv;
+          if (nv >= 2048) won_2048 = true;
+          merged_any = true;
+          j++;
+        } else {
+          out[op++] = line[j];
+        }
+      }
+      for (int j = 0; j < 4; j++) {
+        int r = (move_dir == 1) ? j : (move_dir == 3) ? (3 - j) : i;
+        int c = (move_dir == 4) ? j : (move_dir == 2) ? (3 - j) : i;
+        if (grid[r][c] != out[j]) {
+          moved = true;
+          grid[r][c] = out[j];
+        }
+      }
+    }
+    if (moved) {
+      if (score_2048 > high_score_2048()) {
+        high_score_2048() = score_2048;
+      }
+      spawn_tile();
+      if (!has_moves()) {
+        game_over = true;
+        pending_game_sfx() = 14;
+      } else {
+        pending_game_sfx() = won_2048 ? 5 : (merged_any ? 10 : 11);
+      }
+    }
+  }
+
+  // Render Board Container
+  render_modern_card(it, board_x, board_y, board_sz, board_sz,
+                     esphome::Color(18, 22, 30), col_slate * 0.45f, scale_s(14));
+
+  auto tile_bg_color = [&](int val) -> esphome::Color {
+    if (val == 0) return esphome::Color(28, 34, 44);
+    if (val == 2) return esphome::Color(52, 64, 82);
+    if (val == 4) return esphome::Color(68, 86, 112);
+    if (val == 8) return col_orange * 0.85f;
+    if (val == 16) return col_orange;
+    if (val == 32) return col_red * 0.88f;
+    if (val == 64) return col_red;
+    if (val == 128) return col_cyan * 0.78f;
+    if (val == 256) return col_cyan;
+    if (val == 512) return col_green * 0.85f;
+    if (val == 1024) return col_magenta;
+    return col_gold;
+  };
+
+  for (int r = 0; r < 4; r++) {
+    for (int c = 0; c < 4; c++) {
+      int tx = board_x + gap + c * (tile_sz + gap);
+      int ty = board_y + gap + r * (tile_sz + gap);
+      int val = grid[r][c];
+      esphome::Color tc = tile_bg_color(val);
+      esphome::Color bc = (val >= 2048) ? col_white : (val > 0 ? tc * 1.25f : esphome::Color(36, 44, 56));
+      render_modern_card(it, tx, ty, tile_sz, tile_sz, tc, bc, scale_s(8));
+      if (val > 0) {
+        char v_str[12];
+        snprintf(v_str, sizeof(v_str), "%d", val);
+        esphome::Color fg = (val >= 2048) ? col_bg : col_white;
+        if (val < 100) {
+          it.print(tx + tile_sz / 2, ty + tile_sz / 2, font_date, fg, esphome::display::TextAlign::CENTER, v_str);
+        } else {
+          it.print(tx + tile_sz / 2, ty + tile_sz / 2, font_small, fg, esphome::display::TextAlign::CENTER, v_str);
+        }
+      }
+    }
+  }
+
+  char hud_buf[64];
+  snprintf(hud_buf, sizeof(hud_buf), "2048  •  Score: %d  •  Best: %d", score_2048, high_score_2048());
+  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
+
+  if (game_over) {
+    render_modern_card(it, cx - scale_x(126), cy - scale_y(66), scale_x(252), scale_y(116),
+                       col_bg, won_2048 ? col_gold : theme_secondary, scale_s(16));
+    it.print(cx, cy - scale_y(38), font_date, won_2048 ? col_gold : col_red,
+             esphome::display::TextAlign::CENTER, won_2048 ? "2048 MASTER!" : "NO MOVES LEFT");
+    char sc_str[32];
+    snprintf(sc_str, sizeof(sc_str), "Score: %d", score_2048);
+    it.print(cx, cy - scale_y(6), font_small, col_white, esphome::display::TextAlign::CENTER, sc_str);
+    it.print(cx, cy + scale_y(24), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+  }
+  (void)theme_primary;
+}
+
+template<typename DisplayT, typename FontBigT, typename FontSmallT>
+inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
+                               bool game_just_entered, float &marble_touch_x, float &marble_touch_y,
+                               bool &game_btn_pressed,
+                               FontBigT *font_date, FontSmallT *font_small,
+                               esphome::Color theme_primary, esphome::Color theme_secondary,
+                               esphome::Color col_bg, esphome::Color col_white,
+                               esphome::Color col_gold, esphome::Color col_cyan,
+                               esphome::Color col_green, esphome::Color col_orange,
+                               esphome::Color col_red, esphome::Color col_magenta,
+                               esphome::Color col_slate, esphome::Color col_dark_gray) {
+  static int cards[16];
+  static bool matched[16];
+  static int first_pick = -1;
+  static int second_pick = -1;
+  static uint32_t mismatch_until_ms = 0;
+  static int mem_score = 0;
+  static int round_num = 1;
+  static int streak_mult = 1;
+  static int pairs_found = 0;
+  static uint32_t rng_seed = 0xA55A2026U;
+
+  auto shuffle_deck = [&]() {
+    for (int i = 0; i < 16; i++) {
+      cards[i] = i / 2;
+      matched[i] = false;
+    }
+    for (int i = 15; i > 0; i--) {
+      rng_seed ^= (rng_seed << 13) ^ (now_ms & 0xFFFFU);
+      rng_seed ^= (rng_seed >> 17);
+      rng_seed ^= (rng_seed << 5);
+      int j = static_cast<int>(rng_seed % static_cast<uint32_t>(i + 1));
+      int tmp = cards[i];
+      cards[i] = cards[j];
+      cards[j] = tmp;
+    }
+    first_pick = -1;
+    second_pick = -1;
+    mismatch_until_ms = 0;
+    pairs_found = 0;
+    streak_mult = 1;
+  };
+
+  if (game_just_entered) {
+    mem_score = 0;
+    round_num = 1;
+    shuffle_deck();
+  }
+
+  if (mismatch_until_ms > 0U && now_ms >= mismatch_until_ms) {
+    first_pick = -1;
+    second_pick = -1;
+    mismatch_until_ms = 0U;
+  }
+
+  const int card_sz = (SCREEN_W < 380) ? 50 : scale_s(62);
+  const int gap = (SCREEN_W < 380) ? 5 : scale_s(6);
+  const int board_sz = 4 * card_sz + 5 * gap;
+  const int board_x = cx - board_sz / 2;
+  const int board_y = cy - scale_y(20) - board_sz / 2;
+
+  if (marble_touch_x >= 0.0f || game_btn_pressed) {
+    int tx = static_cast<int>(marble_touch_x);
+    int ty = static_cast<int>(marble_touch_y);
+    marble_touch_x = -1.0f;
+    game_btn_pressed = false;
+
+    if (mismatch_until_ms > 0U) {
+      // Fast-clear mismatch on next tap so rapid players never wait
+      first_pick = -1;
+      second_pick = -1;
+      mismatch_until_ms = 0U;
+    }
+
+    for (int idx = 0; idx < 16; idx++) {
+      int r = idx / 4;
+      int c = idx % 4;
+      int cx_card = board_x + gap + c * (card_sz + gap);
+      int cy_card = board_y + gap + r * (card_sz + gap);
+      if (tx >= cx_card && tx <= cx_card + card_sz && ty >= cy_card && ty <= cy_card + card_sz) {
+        if (!matched[idx] && idx != first_pick && second_pick == -1) {
+          if (first_pick == -1) {
+            first_pick = idx;
+            pending_game_sfx() = 11;
+          } else {
+            second_pick = idx;
+            if (cards[first_pick] == cards[second_pick]) {
+              matched[first_pick] = true;
+              matched[second_pick] = true;
+              first_pick = -1;
+              second_pick = -1;
+              pairs_found++;
+              mem_score += 120 * streak_mult;
+              streak_mult = std::min(4, streak_mult + 1);
+              if (mem_score > high_score_memory()) {
+                high_score_memory() = mem_score;
+              }
+              if (pairs_found >= 8) {
+                mem_score += round_num * 250;
+                if (mem_score > high_score_memory()) {
+                  high_score_memory() = mem_score;
+                }
+                round_num++;
+                pending_game_sfx() = 5;
+                shuffle_deck();
+              } else {
+                pending_game_sfx() = 9;
+              }
+            } else {
+              streak_mult = 1;
+              mismatch_until_ms = now_ms + 620U;
+              pending_game_sfx() = 13;
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  auto draw_card_symbol = [&](int sym, int scx, int scy, int r_sym) {
+    if (sym == 0) {
+      // Gold Star / Sunburst
+      it.filled_circle(scx, scy, r_sym / 2, col_gold);
+      for (int a = 0; a < 8; a++) {
+        float ang = a * 0.785398f;
+        it.line(scx, scy, scx + static_cast<int>(fast_cos(ang) * r_sym),
+                scy + static_cast<int>(fast_sin(ang) * r_sym), col_gold);
+      }
+    } else if (sym == 1) {
+      // Crimson Heart
+      int hr = std::max(4, r_sym / 2);
+      it.filled_circle(scx - hr + 1, scy - hr / 2, hr, col_red);
+      it.filled_circle(scx + hr - 1, scy - hr / 2, hr, col_red);
+      it.filled_triangle(scx - r_sym, scy - 1, scx + r_sym, scy - 1, scx, scy + r_sym, col_red);
+    } else if (sym == 2) {
+      // Cyan Diamond
+      it.filled_triangle(scx, scy - r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan);
+      it.filled_triangle(scx, scy + r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan * 0.8f);
+    } else if (sym == 3) {
+      // Emerald Clover / Plus
+      int bw = std::max(4, r_sym / 2);
+      it.filled_rectangle(scx - bw, scy - r_sym, bw * 2, r_sym * 2, col_green);
+      it.filled_rectangle(scx - r_sym, scy - bw, r_sym * 2, bw * 2, col_green);
+    } else if (sym == 4) {
+      // Magenta Crown
+      it.filled_rectangle(scx - r_sym, scy + r_sym / 3, r_sym * 2, r_sym / 2, col_magenta);
+      it.filled_triangle(scx - r_sym, scy + r_sym / 3, scx - r_sym, scy - r_sym / 2, scx - r_sym / 3, scy + r_sym / 3, col_magenta);
+      it.filled_triangle(scx - r_sym / 2, scy + r_sym / 3, scx, scy - r_sym, scx + r_sym / 2, scy + r_sym / 3, col_magenta);
+      it.filled_triangle(scx + r_sym / 3, scy + r_sym / 3, scx + r_sym, scy - r_sym / 2, scx + r_sym, scy + r_sym / 3, col_magenta);
+    } else if (sym == 5) {
+      // Orange Lightning Bolt
+      it.filled_triangle(scx + 3, scy - r_sym, scx - r_sym + 2, scy + 2, scx + 2, scy + 2, col_orange);
+      it.filled_triangle(scx - 2, scy - 2, scx + r_sym - 2, scy - 2, scx - 3, scy + r_sym, col_orange);
+    } else if (sym == 6) {
+      // White Target Bullseye
+      it.filled_circle(scx, scy, r_sym, col_white);
+      it.filled_circle(scx, scy, (r_sym * 2) / 3, col_bg);
+      it.filled_circle(scx, scy, r_sym / 3, theme_primary);
+    } else {
+      // Emerald/Gold Shield Crest
+      it.filled_rectangle(scx - r_sym + 2, scy - r_sym + 2, (r_sym - 2) * 2, r_sym, theme_secondary);
+      it.filled_triangle(scx - r_sym + 2, scy + 2, scx + r_sym - 2, scy + 2, scx, scy + r_sym, theme_secondary);
+      it.filled_circle(scx, scy, std::max(2, r_sym / 3), col_gold);
+    }
+  };
+
+  render_modern_card(it, board_x, board_y, board_sz, board_sz,
+                     esphome::Color(18, 22, 30), col_slate * 0.45f, scale_s(14));
+
+  for (int idx = 0; idx < 16; idx++) {
+    int r = idx / 4;
+    int c = idx % 4;
+    int tx = board_x + gap + c * (card_sz + gap);
+    int ty = board_y + gap + r * (card_sz + gap);
+    bool is_open = matched[idx] || (idx == first_pick) || (idx == second_pick);
+    esphome::Color bg_c = matched[idx] ? esphome::Color(24, 38, 34)
+                        : (is_open ? esphome::Color(36, 44, 58) : esphome::Color(28, 34, 46));
+    esphome::Color brd_c = matched[idx] ? col_green * 0.7f
+                         : (is_open ? col_gold : theme_primary * 0.55f);
+    render_modern_card(it, tx, ty, card_sz, card_sz, bg_c, brd_c, scale_s(8));
+    int scx = tx + card_sz / 2;
+    int scy = ty + card_sz / 2;
+    if (is_open) {
+      draw_card_symbol(cards[idx], scx, scy, std::max(8, card_sz / 3 - 2));
+    } else {
+      it.filled_circle(scx, scy, std::max(3, card_sz / 8), theme_primary * 0.55f);
+    }
+  }
+
+  char hud_buf[64];
+  snprintf(hud_buf, sizeof(hud_buf), "R%d  •  Pairs: %d/8  •  %dx  •  %d",
+           round_num, pairs_found, streak_mult, mem_score);
+  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  render_back_button(it, cx, font_small, layout().back_y, "Exit");
+  (void)font_date;
+  (void)col_dark_gray;
+}
+
+// ==============================================================================
+// SECTION 19: GAMES SUITE CAROUSEL LAUNCHER (PAGE 3, STATE 0 — 6 GAMES)
 // ==============================================================================
 
 template<typename DisplayT, typename FontTitleT, typename FontBoldT, typename FontSmallT>
@@ -2158,7 +2605,7 @@ inline void render_games_launcher(
   using esphome::Color;
   using esphome::display::TextAlign;
 
-  if (game_carousel_idx < 0 || game_carousel_idx >= 4) {
+  if (game_carousel_idx < 0 || game_carousel_idx >= 6) {
     game_carousel_idx = 0;
   }
 
@@ -2234,11 +2681,9 @@ inline void render_games_launcher(
           render_breakout_brick(it, bx, by, b_w, b_h, bc, hc, hp, hp, col_white);
         }
       }
-      // Drop paddle to icon_y + 42 (bottom at +46, matching Archery/Chomp/Marbles bottom alignment!)
       int pad_x = icon_x - 6, pad_y = icon_y + 42, pad_w = 44, pad_h = 8;
       render_breakout_paddle(it, pad_x, pad_y, pad_w, pad_h, theme_primary, col_white);
 
-      // 5-stage ascending comet trail from the lowered paddle up toward the shattering brick
       int ball_x = icon_x + 10, ball_y = icon_y + 7;
       it.filled_circle(pad_x + 3,  pad_y - 7,  2, Color(50, 40, 14));
       it.filled_circle(pad_x + 6,  pad_y - 14, 2, Color(85, 68, 20));
@@ -2248,7 +2693,7 @@ inline void render_games_launcher(
       it.circle(ball_x, ball_y, 5, col_white);
       it.filled_circle(ball_x - 2, ball_y - 2, 1, col_white);
 
-    } else if (g_idx >= 3) {
+    } else if (g_idx == 3) {
       // GAME 3: CHOMP FOR KIDS — Roaming Cookie-Monster Friend Chasing Scattered Treats
       render_chomp_treat(it, icon_x + 30, icon_y - 22, 0,
                          col_white, col_red, col_gold, col_cyan,
@@ -2263,6 +2708,29 @@ inline void render_games_launcher(
                            true, false, false, 0,
                            col_white, col_black, col_gold,
                            col_red, col_magenta, col_dark_gray);
+
+    } else if (g_idx == 4) {
+      // GAME 4: 2048 — 2x2 Beveled Number Tiles (2, 16, 64, 2048)
+      render_modern_card(it, icon_x - 48, icon_y - 48, 96, 96, Color(18, 22, 30), col_slate, 12);
+      render_modern_card(it, icon_x - 42, icon_y - 42, 40, 40, Color(52, 64, 82), col_slate, 7);
+      it.print(icon_x - 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "2");
+      render_modern_card(it, icon_x + 2, icon_y - 42, 40, 40, col_orange, col_white, 7);
+      it.print(icon_x + 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "16");
+      render_modern_card(it, icon_x - 42, icon_y + 2, 40, 40, col_red, col_white, 7);
+      it.print(icon_x - 22, icon_y + 22, font_small, col_white, TextAlign::CENTER, "64");
+      render_modern_card(it, icon_x + 2, icon_y + 2, 40, 40, col_gold, col_white, 7);
+      it.print(icon_x + 22, icon_y + 22, font_small, col_bg, TextAlign::CENTER, "2K");
+
+    } else {
+      // GAME 5: MEMORY MATCH — 2x2 Flipped & Face-Down Matching Cards
+      render_modern_card(it, icon_x - 44, icon_y - 44, 40, 40, Color(36, 44, 58), col_gold, 8);
+      it.filled_circle(icon_x - 24, icon_y - 24, 9, col_gold);
+      render_modern_card(it, icon_x + 4, icon_y - 44, 40, 40, Color(28, 34, 46), theme_primary, 8);
+      it.filled_circle(icon_x + 24, icon_y - 24, 5, theme_primary);
+      render_modern_card(it, icon_x - 44, icon_y + 4, 40, 40, Color(28, 34, 46), theme_primary, 8);
+      it.filled_circle(icon_x - 24, icon_y + 24, 5, theme_primary);
+      render_modern_card(it, icon_x + 4, icon_y + 4, 40, 40, Color(36, 44, 58), col_gold, 8);
+      it.filled_circle(icon_x + 24, icon_y + 24, 9, col_gold);
     }
   };
 
@@ -2275,55 +2743,57 @@ inline void render_games_launcher(
     } else if (g_idx == 2) {
       title = "BREAKOUT";
       score = high_score_breakout;
-    } else if (g_idx >= 3) {
+    } else if (g_idx == 3) {
       title = "CHOMP FOR KIDS";
       score = high_score_chomp;
+    } else if (g_idx == 4) {
+      title = "2048";
+      score = high_score_2048();
+    } else if (g_idx >= 5) {
+      title = "MEMORY MATCH";
+      score = high_score_memory();
     }
 
-    if (icon_y >= 40 && icon_y <= 380) {
-      draw_game_icon(g_idx, icon_x, icon_y);
-    }
-    if (title_y >= 140 && title_y <= 335) {
-      it.print(text_center_x, title_y, font_btn_bold, col_white, TextAlign::CENTER, title);
-    }
-    if (score_y >= 140 && score_y <= 335) {
-      const char *lbl_str = "HIGH SCORE:";
-      char val_str[20];
-      if (score <= 0) {
-        snprintf(val_str, sizeof(val_str), "--");
-      } else if (score >= 1000000) {
-        snprintf(val_str, sizeof(val_str), "%d,%03d,%03d", score / 1000000, (score / 1000) % 1000, score % 1000);
-      } else if (score >= 1000) {
-        snprintf(val_str, sizeof(val_str), "%d,%03d", score / 1000, score % 1000);
-      } else {
-        snprintf(val_str, sizeof(val_str), "%d", score);
-      }
+    draw_game_icon(g_idx, icon_x, icon_y);
+    it.print(text_center_x, title_y, font_btn_bold, col_white, TextAlign::CENTER, title);
 
-      int w_lbl = 0, w_val = 0, x_off = 0, base = 0, th = 0;
-      font_small->measure(lbl_str, &w_lbl, &x_off, &base, &th);
-      font_small->measure(val_str, &w_val, &x_off, &base, &th);
-      const int gap_px = 8;
-      int start_x = text_center_x - (w_lbl + gap_px + w_val) / 2;
-
-      it.print(start_x, score_y, font_small, col_gold, TextAlign::CENTER_LEFT, lbl_str);
-      it.print(start_x + w_lbl + gap_px, score_y, font_small, col_white, TextAlign::CENTER_LEFT, val_str);
+    const char *lbl_str = "HIGH SCORE:";
+    char val_str[20];
+    if (score <= 0) {
+      snprintf(val_str, sizeof(val_str), "--");
+    } else if (score >= 1000000) {
+      snprintf(val_str, sizeof(val_str), "%d,%03d,%03d", score / 1000000, (score / 1000) % 1000, score % 1000);
+    } else if (score >= 1000) {
+      snprintf(val_str, sizeof(val_str), "%d,%03d", score / 1000, score % 1000);
+    } else {
+      snprintf(val_str, sizeof(val_str), "%d", score);
     }
+
+    int w_lbl = 0, w_val = 0, x_off = 0, base = 0, th = 0;
+    font_small->measure(lbl_str, &w_lbl, &x_off, &base, &th);
+    font_small->measure(val_str, &w_val, &x_off, &base, &th);
+    const int gap_px = scale_x(8);
+    int start_x = text_center_x - (w_lbl + gap_px + w_val) / 2;
+
+    it.print(start_x, score_y, font_small, col_gold, TextAlign::CENTER_LEFT, lbl_str);
+    it.print(start_x + w_lbl + gap_px, score_y, font_small, col_white, TextAlign::CENTER_LEFT, val_str);
   };
 
   const bool compact_w   = (SCREEN_W < 380);
-  const int icon_cx      = compact_w ? cx  : (cx - 118);
-  const int card_cy      = compact_w ? 158 : 194;
-  const int text_cx      = compact_w ? cx  : (cx + 57);
-  const int base_title_y = compact_w ? 242 : 176;
-  const int base_score_y = compact_w ? 274 : 216;
-  const int pips_y       = compact_w ? 314 : 282;
+  const int icon_cx      = compact_w ? cx  : (cx - scale_x(118));
+  const int card_cy      = compact_w ? 158 : scale_y(194);
+  const int text_cx      = compact_w ? cx  : (cx + scale_x(57));
+  const int base_title_y = compact_w ? 242 : scale_y(176);
+  const int base_score_y = compact_w ? 274 : scale_y(216);
+  const int pips_y       = compact_w ? 314 : scale_y(282);
   const int btn_row_y    = layout().app_dock_y;
 
   if (menu_scroll_active) {
     int step = std::max(0, std::min(4, menu_scroll_step));
-    int offset = SHARED_SCROLL_EASE_252[step];
+    int offset = scale_x(SHARED_SCROLL_EASE_252[step]);
+    int full_span = scale_x(252);
     int out_dx = -menu_scroll_dir * offset;
-    int in_dx  = menu_scroll_dir * (252 - offset);
+    int in_dx  = menu_scroll_dir * (full_span - offset);
 
     draw_game_card(game_carousel_idx, icon_cx + out_dx, card_cy, text_cx + out_dx, base_title_y, base_score_y);
     draw_game_card(menu_scroll_target_page, icon_cx + in_dx, card_cy, text_cx + in_dx, base_title_y, base_score_y);
@@ -2331,17 +2801,18 @@ inline void render_games_launcher(
     draw_game_card(game_carousel_idx, icon_cx, card_cy, text_cx, base_title_y, base_score_y);
   }
 
-  it.print(cx, compact_w ? 64 : 84, font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
+  it.print(cx, compact_w ? 64 : scale_y(84), font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
 
   int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
-  render_dock_page_pips(it, cx, pips_y, 4, active_pip, col_white, Color(95, 112, 134));
+  render_dock_page_pips(it, cx, pips_y, 6, active_pip, col_white, Color(95, 112, 134));
 
-  render_pill_button(it, cx - 19, cx + 91, btn_row_y, 22, theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
+  render_pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22), theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
 
-  const int spk_x = cx - 91, spk_y = btn_row_y;
-  it.filled_circle(spk_x, spk_y, 22, col_dark_gray);
-  it.circle(spk_x, spk_y, 22, game_sound_on ? theme_secondary : col_slate);
-  it.circle(spk_x, spk_y, 21, game_sound_on ? theme_secondary : col_slate);
+  const int spk_x = cx - scale_x(91), spk_y = btn_row_y;
+  const int spk_r = scale_s(22);
+  it.filled_circle(spk_x, spk_y, spk_r, col_dark_gray);
+  it.circle(spk_x, spk_y, spk_r, game_sound_on ? theme_secondary : col_slate);
+  it.circle(spk_x, spk_y, spk_r - 1, game_sound_on ? theme_secondary : col_slate);
   Color spk_c = game_sound_on ? col_white : col_slate;
   // Speaker body & cone
   it.filled_rectangle(spk_x - 9, spk_y - 4, 5, 9, spk_c);
