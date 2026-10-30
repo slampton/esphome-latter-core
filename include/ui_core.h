@@ -1313,6 +1313,11 @@ inline void schedule_anim_disp_update(DispT *disp) {
   DisplayUpdateScheduler::request_anim_ptr(disp);
 }
 
+template<typename DispT>
+inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
 // Converts a linear media_player volume (0.0 .. 1.0) into the exact dB attenuation
 // used by ESPHome's SourceSpeaker::set_volume (-20 * log10(volume)) so un-ducking
 // media_mixing_input after an alert or Voice Assistant session restores the exact

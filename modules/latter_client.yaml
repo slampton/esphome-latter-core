@@ -1622,7 +1622,7 @@ select:
       - lambda: |-
           id(power_profile_select).publish_state(x);
           if (millis() <= 2500 || x == "Custom") return;
-          auto set_sel = [](esphome::template_::TemplateSelect *sel, const char *opt) {
+          auto set_sel = [](auto *sel, const char *opt) {
             if (sel != nullptr) {
               auto call = sel->make_call();
               call.set_option(opt);
