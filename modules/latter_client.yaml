@@ -1622,48 +1622,46 @@ select:
       - lambda: |-
           id(power_profile_select).publish_state(x);
           if (millis() <= 2500 || x == "Custom") return;
-          auto set_sel = [](auto *sel, const char *opt) {
-            if (sel != nullptr) {
-              auto call = sel->make_call();
-              call.set_option(opt);
-              call.perform();
-            }
+          auto set_sel = [](auto &sel, const char *opt) {
+            auto call = sel.make_call();
+            call.set_option(opt);
+            call.perform();
           };
           if (x == "Pocket Carry") {
-            set_sel(&id(va_wake_word_mode), "Docked Only");
-            set_sel(&id(tap_wake_mode), "Docked Only");
-            set_sel(&id(pickup_wake_mode), "Docked Only");
-            set_sel(&id(display_off_timeout), "30s");
-            set_sel(&id(screensaver_docked_timeout), "1 min");
-            set_sel(&id(hibernate_timeout_mode), "15 min");
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Docked Only");
+            set_sel(id(pickup_wake_mode), "Docked Only");
+            set_sel(id(display_off_timeout), "30s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "15 min");
           } else if (x == "Handheld Roaming") {
-            set_sel(&id(va_wake_word_mode), "Docked Only");
-            set_sel(&id(tap_wake_mode), "Always On");
-            set_sel(&id(pickup_wake_mode), "Always On");
-            set_sel(&id(display_off_timeout), "30s");
-            set_sel(&id(screensaver_docked_timeout), "1 min");
-            set_sel(&id(hibernate_timeout_mode), "30 min");
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Always On");
+            set_sel(id(display_off_timeout), "30s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "30 min");
           } else if (x == "Wearable Watch") {
-            set_sel(&id(va_wake_word_mode), "Docked Only");
-            set_sel(&id(tap_wake_mode), "Always On");
-            set_sel(&id(pickup_wake_mode), "Always On");
-            set_sel(&id(display_off_timeout), "15s");
-            set_sel(&id(screensaver_docked_timeout), "1 min");
-            set_sel(&id(hibernate_timeout_mode), "15 min");
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Always On");
+            set_sel(id(display_off_timeout), "15s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "15 min");
           } else if (x == "Living Room Tabletop") {
-            set_sel(&id(va_wake_word_mode), "Always On");
-            set_sel(&id(tap_wake_mode), "Always On");
-            set_sel(&id(pickup_wake_mode), "Always On");
-            set_sel(&id(display_off_timeout), "1 min");
-            set_sel(&id(screensaver_docked_timeout), "5 min");
-            set_sel(&id(hibernate_timeout_mode), "Disabled");
+            set_sel(id(va_wake_word_mode), "Always On");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Always On");
+            set_sel(id(display_off_timeout), "1 min");
+            set_sel(id(screensaver_docked_timeout), "5 min");
+            set_sel(id(hibernate_timeout_mode), "Disabled");
           } else if (x == "Always-On Wall / Desk") {
-            set_sel(&id(va_wake_word_mode), "Always On");
-            set_sel(&id(tap_wake_mode), "Always On");
-            set_sel(&id(pickup_wake_mode), "Disabled");
-            set_sel(&id(display_off_timeout), "Never");
-            set_sel(&id(screensaver_docked_timeout), "5 min");
-            set_sel(&id(hibernate_timeout_mode), "Disabled");
+            set_sel(id(va_wake_word_mode), "Always On");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Disabled");
+            set_sel(id(display_off_timeout), "Never");
+            set_sel(id(screensaver_docked_timeout), "5 min");
+            set_sel(id(hibernate_timeout_mode), "Disabled");
           }
 
   - platform: template
