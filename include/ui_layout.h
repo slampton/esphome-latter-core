@@ -308,34 +308,46 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), (bri_byte > 0) ? 1 : 0);
 #endif
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
-  static bool ledc_inited = false;
-  if (!ledc_inited) {
+#if defined(LATTER_BACKLIGHT_INVERTED) && LATTER_BACKLIGHT_INVERTED
+  // P4-4B active-low backlight boost controller: 200Hz PWM, max_power capped at 80% (duty >= 51)
+  const uint8_t scaled_bri = (bri_byte == 0) ? 0 : static_cast<uint8_t>(25 + (static_cast<uint16_t>(bri_byte) * 179U) / 255U);
+  const uint8_t hw_duty = (scaled_bri == 0) ? 255 : static_cast<uint8_t>(255 - scaled_bri);
+  const uint32_t pwm_freq_hz = 200;
+  const int gpio_on_lvl = 0;
+  const int gpio_off_lvl = 1;
+#else
+  const uint8_t hw_duty = bri_byte;
+  const uint32_t pwm_freq_hz = 2000;
+  const int gpio_on_lvl = 1;
+  const int gpio_off_lvl = 0;
+#endif
+  static bool ledc_timer_inited = false;
+  if (!ledc_timer_inited) {
     ledc_timer_config_t ledc_timer = {};
     ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
     ledc_timer.duty_resolution = LEDC_TIMER_8_BIT;
     ledc_timer.timer_num = LEDC_TIMER_0;
-    ledc_timer.freq_hz = 5000;
+    ledc_timer.freq_hz = pwm_freq_hz;
     ledc_timer.clk_cfg = LEDC_AUTO_CLK;
     if (ledc_timer_config(&ledc_timer) == ESP_OK) {
-      ledc_channel_config_t ledc_channel = {};
-      ledc_channel.gpio_num = LATTER_BACKLIGHT_PIN;
-      ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
-      ledc_channel.channel = LEDC_CHANNEL_0;
-      ledc_channel.intr_type = LEDC_INTR_DISABLE;
-      ledc_channel.timer_sel = LEDC_TIMER_0;
-      ledc_channel.duty = bri_byte;
-      ledc_channel.hpoint = 0;
-      if (ledc_channel_config(&ledc_channel) == ESP_OK) {
-        ledc_inited = true;
-      }
+      ledc_timer_inited = true;
     }
   }
-  if (ledc_inited) {
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, bri_byte);
+  if (ledc_timer_inited) {
+    ledc_channel_config_t ledc_channel = {};
+    ledc_channel.gpio_num = LATTER_BACKLIGHT_PIN;
+    ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+    ledc_channel.channel = LEDC_CHANNEL_0;
+    ledc_channel.intr_type = LEDC_INTR_DISABLE;
+    ledc_channel.timer_sel = LEDC_TIMER_0;
+    ledc_channel.duty = hw_duty;
+    ledc_channel.hpoint = 0;
+    ledc_channel_config(&ledc_channel);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, hw_duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
   } else {
     gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? 1 : 0);
+    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? gpio_on_lvl : gpio_off_lvl);
   }
 #endif
 #if !defined(LATTER_BACKLIGHT_PIN)
@@ -349,7 +361,6 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   (void)disp;
 #endif
 }
-
 }  // namespace latter_ui
 
 
