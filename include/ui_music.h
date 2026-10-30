@@ -111,7 +111,8 @@ inline void render_music_now_playing(
   }
 
   const esphome::Color glass_bg = rendered_art
-      ? sample_image_ambient_tint(is_remote ? remote_art : local_art, esphome::Color(20, 25, 34))
+      ? (is_remote ? sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34))
+                   : sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34)))
       : esphome::Color(22, 27, 36);
   const esphome::Color glass_brd(62, 74, 92);
 
