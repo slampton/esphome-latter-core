@@ -56,7 +56,7 @@ esphome:
             id(sleep_start_time) = millis();
             id(is_hibernating) = false;
             id(display_power_state) = 0; // ACTIVE
-            esphome::voice_assistant::ensure_wake_words_restored(id(va));
+            esphome::voice_assistant::ensure_wake_words_restored(id(mww));
 
     - priority: -100
       then:
@@ -156,7 +156,7 @@ api:
       - lambda: |-
           latter_ui::link_state().ha_connected = true;
           latter_ui::link_state().last_ha_connect_ms = millis();
-          esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
+          esphome::voice_assistant::on_api_client_authenticated(id(va), id(mww), client_info, client_address);
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
@@ -1418,7 +1418,7 @@ select:
     set_action:
       - lambda: |-
           id(va_active_wake_word).publish_state(x);
-          esphome::voice_assistant::set_primary_wake_word_by_label(id(va), x);
+          esphome::voice_assistant::set_primary_wake_word_by_label(id(mww), x);
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: apply_wake_word_sensitivities
       - script.execute: sync_wake_word_state

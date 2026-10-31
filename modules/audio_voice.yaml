@@ -201,7 +201,7 @@ voice_assistant:
   on_client_connected:
     then:
       - delay: 200ms
-      - lambda: 'esphome::voice_assistant::ensure_wake_words_restored(id(va));'
+      - lambda: 'esphome::voice_assistant::ensure_wake_words_restored(id(mww));'
       - script.execute: apply_wake_word_sensitivities
       - script.execute: sync_wake_word_state
   on_listening:
@@ -640,7 +640,7 @@ script:
                 then:
                   - lambda: |-
                       id(hal_set_audio_codecs_standby).execute(false);
-                      esphome::voice_assistant::ensure_wake_words_restored(id(va));
+                      esphome::voice_assistant::ensure_wake_words_restored(id(mww));
                   - script.execute: route_i2s_to_mic
                   - script.wait: route_i2s_to_mic
                   - delay: 25ms

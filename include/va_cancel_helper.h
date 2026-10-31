@@ -3,8 +3,10 @@
 #include "esphome/core/version.h"
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
-static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0),
-              "va_cancel_helper.h requires ESPHome 2026.10.0 or newer.");
+static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0) &&
+              ESPHOME_VERSION_CODE < VERSION_CODE(2027, 1, 0),
+              "va_cancel_helper.h Rob<> private-member bridge is validated for ESPHome 2026.10.x-2026.12.x; "
+              "verify VoiceAssistant private member layout before bumping the upper version bound.");
 #endif
 #ifdef USE_ESP32
 #include <esp_sleep.h>
@@ -29,63 +31,11 @@ struct Rob {
   friend typename Tag::type get(Tag) { return M; }
 };
 
-struct VA_ClearBuffers_Tag {
-  typedef void (esphome::voice_assistant::VoiceAssistant::*type)();
-  friend type get(VA_ClearBuffers_Tag);
-};
-template struct Rob<VA_ClearBuffers_Tag, &esphome::voice_assistant::VoiceAssistant::clear_buffers_>;
-
 struct VA_SetState_Tag {
   typedef void (esphome::voice_assistant::VoiceAssistant::*type)(esphome::voice_assistant::State, esphome::voice_assistant::State);
   friend type get(VA_SetState_Tag);
 };
 template struct Rob<VA_SetState_Tag, &esphome::voice_assistant::VoiceAssistant::set_state_>;
-
-#ifdef USE_SPEAKER
-struct VA_BufSize_Tag {
-  typedef size_t esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_BufSize_Tag);
-};
-template struct Rob<VA_BufSize_Tag, &esphome::voice_assistant::VoiceAssistant::speaker_buffer_size_>;
-
-struct VA_BufIndex_Tag {
-  typedef size_t esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_BufIndex_Tag);
-};
-template struct Rob<VA_BufIndex_Tag, &esphome::voice_assistant::VoiceAssistant::speaker_buffer_index_>;
-
-struct VA_BytesReceived_Tag {
-  typedef size_t esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_BytesReceived_Tag);
-};
-template struct Rob<VA_BytesReceived_Tag, &esphome::voice_assistant::VoiceAssistant::speaker_bytes_received_>;
-
-struct VA_WaitForStreamEnd_Tag {
-  typedef bool esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_WaitForStreamEnd_Tag);
-};
-template struct Rob<VA_WaitForStreamEnd_Tag, &esphome::voice_assistant::VoiceAssistant::wait_for_stream_end_>;
-
-struct VA_StreamEnded_Tag {
-  typedef bool esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_StreamEnded_Tag);
-};
-template struct Rob<VA_StreamEnded_Tag, &esphome::voice_assistant::VoiceAssistant::stream_ended_>;
-#endif
-
-#ifdef USE_MEDIA_PLAYER
-struct VA_StartedStreamingTts_Tag {
-  typedef bool esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_StartedStreamingTts_Tag);
-};
-template struct Rob<VA_StartedStreamingTts_Tag, &esphome::voice_assistant::VoiceAssistant::started_streaming_tts_>;
-#endif
-
-struct VA_Continuous_Tag {
-  typedef bool esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_Continuous_Tag);
-};
-template struct Rob<VA_Continuous_Tag, &esphome::voice_assistant::VoiceAssistant::continuous_>;
 
 struct VA_ContinueConversation_Tag {
   typedef bool esphome::voice_assistant::VoiceAssistant::*type;
@@ -101,14 +51,6 @@ struct VA_MicSource_Tag {
 template struct Rob<VA_MicSource_Tag, &esphome::voice_assistant::VoiceAssistant::mic_source_>;
 #endif
 
-#ifdef USE_MICRO_WAKE_WORD
-struct VA_MicroWakeWord_Tag {
-  typedef esphome::micro_wake_word::MicroWakeWord *esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_MicroWakeWord_Tag);
-};
-template struct Rob<VA_MicroWakeWord_Tag, &esphome::voice_assistant::VoiceAssistant::micro_wake_word_>;
-#endif
-
 struct VA_ApiClient_Tag {
   typedef esphome::api::APIConnection *esphome::voice_assistant::VoiceAssistant::*type;
   friend type get(VA_ApiClient_Tag);
@@ -118,38 +60,17 @@ template struct Rob<VA_ApiClient_Tag, &esphome::voice_assistant::VoiceAssistant:
 namespace esphome {
 namespace voice_assistant {
 
-struct ComponentTimeoutAccessor : public esphome::Component {
-  static void cancel_va_speaker_timeout(esphome::Component *comp) {
-    if (comp != nullptr) {
-      static_cast<ComponentTimeoutAccessor *>(comp)->cancel_timeout("speaker-timeout");
-    }
-  }
-};
-
-// Disarms VoiceAssistant's 10s "speaker-timeout" watchdog and clears continue_conversation_
-// so LLM responses buffered in announcement_mixing_input's 15s PSRAM ring buffer never
-// re-open the microphone mid-sentence, while letting VoiceAssistant's native "playing"
-// completion timer transition cleanly to IDLE and fire on_end.
+// Clears continue_conversation_ so LLM responses buffered in announcement_mixing_input's
+// 15s PSRAM ring buffer never re-open the microphone mid-sentence while playing out.
 inline void disarm_va_speaker_timeout(VoiceAssistant *va) {
   if (va != nullptr) {
     va->*get(VA_ContinueConversation_Tag()) = false;
   }
-  ComponentTimeoutAccessor::cancel_va_speaker_timeout(va);
 }
 
-// Resets per-utterance stream/buffer tracking flags and disarms any leftover speaker timeouts.
+// Resets per-utterance continuation state on VoiceAssistant.
 inline void reset_va_session_state(VoiceAssistant *va) {
   if (va != nullptr) {
-#ifdef USE_SPEAKER
-    va->*get(VA_BufSize_Tag()) = 0;
-    va->*get(VA_BufIndex_Tag()) = 0;
-    va->*get(VA_BytesReceived_Tag()) = 0;
-    va->*get(VA_WaitForStreamEnd_Tag()) = false;
-    va->*get(VA_StreamEnded_Tag()) = false;
-#endif
-#ifdef USE_MEDIA_PLAYER
-    va->*get(VA_StartedStreamingTts_Tag()) = false;
-#endif
     disarm_va_speaker_timeout(va);
   }
 }
@@ -173,12 +94,7 @@ inline void abort_voice_assistant(VoiceAssistant *va) {
     stop_va_microphone(va);
     va->request_stop();
     va->reset_conversation_id();
-
     reset_va_session_state(va);
-    va->*get(VA_Continuous_Tag()) = false;
-    va->*get(VA_ContinueConversation_Tag()) = false;
-
-    (va->*get(VA_ClearBuffers_Tag()))();
     (va->*get(VA_SetState_Tag()))(State::IDLE, State::IDLE);
   }
 
@@ -233,12 +149,10 @@ inline void save_wake_words_to_nvs(const std::string &w1, const std::string &w2 
   ESP_LOGI("va_nvs", "Saved wake words to NVS: ww1='%s', ww2='%s'", w1.c_str(), w2.c_str());
 }
 
-// Restores both Wake Word 1 and Wake Word 2 from NVS on boot
-inline void ensure_wake_words_restored(VoiceAssistant *va, bool force = false) {
-  if ((wake_words_restored_flag() && !force) || va == nullptr) return;
 #ifdef USE_MICRO_WAKE_WORD
-  auto *mww = va->*get(VA_MicroWakeWord_Tag());
-  if (mww == nullptr) return;
+// Restores both Wake Word 1 and Wake Word 2 from NVS on boot
+inline void ensure_wake_words_restored(esphome::micro_wake_word::MicroWakeWord *mww, bool force = false) {
+  if ((wake_words_restored_flag() && !force) || mww == nullptr) return;
   wake_words_restored_flag() = true;
 
   std::string w1 = "okay_nabu";
@@ -274,33 +188,13 @@ inline void ensure_wake_words_restored(VoiceAssistant *va, bool force = false) {
     mww->get_wake_words().front()->enable();
     last_persisted_ww1() = mww->get_wake_words().front()->get_id();
   }
-#endif
-}
-
-// Called synchronously from `api: on_client_connected:` inside APIConnection::complete_authentication_()
-inline void on_api_client_authenticated(VoiceAssistant *va,
-                                        const std::string &client_info,
-                                        const std::string &client_address) {
-  (void)client_address;
-  if (va == nullptr) return;
-  ensure_wake_words_restored(va);
-  if (client_info.find("Home Assistant") != std::string::npos) {
-    if (va->get_api_connection() != nullptr) {
-      ESP_LOGI("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%s)",
-               client_address.c_str());
-      va->*get(VA_ApiClient_Tag()) = nullptr;
-    }
-  }
 }
 
 // Polls mww->get_wake_words() once per second to detect when Home Assistant updates
 // Wake Word 1 or Wake Word 2 via on_set_configuration, persisting both slots to NVS.
-inline bool poll_and_persist_wake_words(VoiceAssistant *va) {
-  if (va == nullptr) return false;
-  ensure_wake_words_restored(va);
-#ifdef USE_MICRO_WAKE_WORD
-  auto *mww = va->*get(VA_MicroWakeWord_Tag());
+inline bool poll_and_persist_wake_words(esphome::micro_wake_word::MicroWakeWord *mww) {
   if (mww == nullptr) return false;
+  ensure_wake_words_restored(mww);
 
   std::string cur_w1 = "no_wake_word";
   std::string cur_w2 = "";
@@ -324,9 +218,31 @@ inline bool poll_and_persist_wake_words(VoiceAssistant *va) {
     }
     return true;
   }
-#endif
   return false;
 }
+#endif
+
+// Called synchronously from `api: on_client_connected:` inside APIConnection::complete_authentication_()
+inline void on_api_client_authenticated(VoiceAssistant *va,
+#ifdef USE_MICRO_WAKE_WORD
+                                        esphome::micro_wake_word::MicroWakeWord *mww,
+#endif
+                                        const std::string &client_info,
+                                        const std::string &client_address) {
+  (void)client_address;
+#ifdef USE_MICRO_WAKE_WORD
+  ensure_wake_words_restored(mww);
+#endif
+  if (va == nullptr) return;
+  if (client_info.find("Home Assistant") != std::string::npos) {
+    if (va->get_api_connection() != nullptr) {
+      ESP_LOGI("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%s)",
+               client_address.c_str());
+      va->*get(VA_ApiClient_Tag()) = nullptr;
+    }
+  }
+}
+
 inline const char *wake_word_id_to_label(const std::string &id_str) {
   if (id_str == "hey_luna") return "Hey Luna";
   if (id_str == "hey_jarvis") return "Hey Jarvis";
@@ -343,12 +259,10 @@ inline const char *wake_word_label_to_id(const std::string &label) {
   return "okay_nabu";
 }
 
-inline void set_primary_wake_word_by_label(VoiceAssistant *va, const std::string &label) {
-  if (va == nullptr) return;
-  const std::string target_id = wake_word_label_to_id(label);
 #ifdef USE_MICRO_WAKE_WORD
-  auto *mww = va->*get(VA_MicroWakeWord_Tag());
+inline void set_primary_wake_word_by_label(esphome::micro_wake_word::MicroWakeWord *mww, const std::string &label) {
   if (mww == nullptr) return;
+  const std::string target_id = wake_word_label_to_id(label);
   std::string cur_w2 = last_persisted_ww2();
   if (cur_w2 == target_id) cur_w2 = "";
 
@@ -364,8 +278,8 @@ inline void set_primary_wake_word_by_label(VoiceAssistant *va, const std::string
   if (mww->is_running()) {
     mww->stop();
   }
-#endif
 }
+#endif
 // Cleanly sends ESPHome DisconnectRequest + TCP FIN to all connected API clients
 // before the AXP2101 cuts the 3.3V power rail in Hibernate (enter_deep_sleep).
 // Prevents Home Assistant from staying stuck on a half-open ("zombie") TCP socket

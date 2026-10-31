@@ -266,7 +266,7 @@ interval:
           id(hal_poll_pmu_1s).execute();
 
           // 2. On-Board Wake Word (micro_wake_word) Power & Bus Supervisor
-          const bool ww_changed = esphome::voice_assistant::poll_and_persist_wake_words(id(va));
+          const bool ww_changed = esphome::voice_assistant::poll_and_persist_wake_words(id(mww));
           static bool ww_model_initialized = false;
           if (!ww_model_initialized && millis() > 12000U && id(wifi_ctrl).is_connected()) {
             ww_model_initialized = true;
