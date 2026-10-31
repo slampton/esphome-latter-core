@@ -63,7 +63,6 @@ esphome:
         - safe_mode.mark_successful:
         - script.execute: hal_init_pmu_irq
         - lambda: |-
-            esphome::voice_assistant::install_sendspin_mono_downmixer(id(sendspin_source));
             latter_ui::seed_standalone_remote_slots(
                 "${remote_1_entity}", "${remote_1_name}",
                 "${remote_2_entity}", "${remote_2_name}",
@@ -2755,6 +2754,7 @@ sensor:
                 latter_ui::remote_vol_pct() = (int)std::round(x * 100.0f);
                 if (id(active_speaker_entity) == "${local_player_id}") {
                   id(latter_media_player).volume = x;
+                  id(physical_speaker).set_volume(std::clamp(x, 0.10f, 1.0f));
                 }
               }
             }
@@ -3827,12 +3827,16 @@ script:
                       then:
                         - mixer_speaker.apply_ducking:
                             id: media_mixing_input
-                            decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
-                            duration: 0.5s
+                            decibel_reduction: 0
+                            duration: 0.2s
                         - mixer_speaker.apply_ducking:
                             id: announcement_mixing_input
                             decibel_reduction: 50
                             duration: 0.1s
+                        - lambda: |-
+                            float v = id(latter_media_player).volume;
+                            if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                            id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
                   # Dispatch play via latter.media_command so it never double-triggers with the media_play interceptor
                   - homeassistant.action:
                       action: latter.media_command
@@ -3886,12 +3890,6 @@ script:
                      (id(ha_target_art_url).state != "unavailable") &&
                      (id(ha_target_art_url).state != id(current_loaded_art_url));
           then:
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
             - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
             - online_image.set_url:
                 id: remote_album_art
@@ -3913,12 +3911,6 @@ script:
                      (id(ha_latter_wallpaper_url).state != "unavailable") &&
                      (id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url));
           then:
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
             - lambda: 'id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;'
             - online_image.set_url:
                 id: home_wallpaper_art
@@ -3956,12 +3948,6 @@ script:
           condition:
             lambda: 'return !latter_ui::cal_detail_location().empty() && !latter_ui::cal_detail_map_url().empty();'
           then:
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
             - lambda: |-
                 const std::string &base_map_u = latter_ui::cal_detail_map_url();
                 id(notif_camera_url) = base_map_u +
@@ -4009,12 +3995,6 @@ script:
             lambda: 'return !id(notif_camera_url).empty();'
           then:
             - lambda: 'latter_ui::cam_download_in_progress() = true;'
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
             - online_image.set_url:
                 id: camera_snapshot_art
                 url: !lambda 'return id(notif_camera_url);'
@@ -4134,12 +4114,6 @@ script:
                      (id(notif_camera_url) != "unknown") &&
                      (id(notif_camera_url) != "unavailable");
           then:
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
             - online_image.set_url:
                 id: camera_snapshot_art
                 url: !lambda 'return id(notif_camera_url);'
@@ -4293,6 +4267,8 @@ script:
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::min(1.00f, cur + step);
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
+                id(physical_speaker).set_volume(new_vol);
+                id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
             - homeassistant.action:
                 action: latter.media_volume
@@ -4317,6 +4293,8 @@ script:
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::max(0.10f, cur - step);
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
+                id(physical_speaker).set_volume(new_vol);
+                id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
             - homeassistant.action:
                 action: latter.media_volume
@@ -4354,10 +4332,14 @@ script:
                   - script.stop: mp_idle_debounce
                   - script.execute: route_i2s_to_spk
                   - switch.turn_on: speaker_enable
-                  - lambda: 'id(hal_set_dac_mute).execute(false);'
+                  - lambda: |-
+                      float v = id(latter_media_player).volume;
+                      if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                      id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                      id(hal_set_dac_mute).execute(false);
                   - mixer_speaker.apply_ducking:
                       id: media_mixing_input
-                      decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                      decibel_reduction: 0
                       duration: 0.2s
             - homeassistant.action:
                 action: latter.media_command
@@ -4785,10 +4767,14 @@ script:
             - script.stop: mp_idle_debounce
             - script.execute: route_i2s_to_spk
             - switch.turn_on: speaker_enable
-            - lambda: 'id(hal_set_dac_mute).execute(false);'
+            - lambda: |-
+                float v = id(latter_media_player).volume;
+                if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                id(hal_set_dac_mute).execute(false);
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
-                decibel_reduction: !lambda 'float v = id(latter_media_player).volume; return (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));'
+                decibel_reduction: 0
                 duration: 0.2s
       - homeassistant.action:
           action: latter.media_command

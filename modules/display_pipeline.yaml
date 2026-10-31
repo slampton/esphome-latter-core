@@ -28,7 +28,7 @@ image:
   - platform: online_image
     id: remote_album_art
     format: JPEG
-    buffer_size: 65536
+    buffer_size: 16384
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"
@@ -43,7 +43,7 @@ image:
   - platform: online_image
     id: home_wallpaper_art
     format: JPEG
-    buffer_size: 65536
+    buffer_size: 16384
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"
@@ -61,7 +61,7 @@ image:
   - platform: online_image
     id: camera_snapshot_art
     format: JPEG
-    buffer_size: 65536
+    buffer_size: 16384
     type: RGB565
     resize: ${art_resize}
     url: "${initial_art_url}"

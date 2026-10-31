@@ -283,8 +283,6 @@ interval:
                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                                  id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                  (id(active_game) > 0) ||
-                                 (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
-                                 latter_ui::cam_download_in_progress() ||
                                  latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
                                  id(is_hibernating) || id(ota_in_progress) ||
                                  !id(wifi_ctrl).is_connected();
@@ -321,10 +319,11 @@ interval:
             id(mp_idle_debounce).stop();
             id(route_i2s_to_spk).execute();
             id(speaker_enable).turn_on();
-            id(hal_set_dac_mute).execute(false);
             float v = id(latter_media_player).volume;
-            float db = (std::isnan(v) || v <= 0.05f) ? 26.0f : (v >= 1.0f ? 0.0f : -20.0f * std::log10(v));
-            id(media_mixing_input).apply_ducking(db, 100);
+            if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+            id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+            id(hal_set_dac_mute).execute(false);
+            id(media_mixing_input).apply_ducking(0.0f, 100);
           }
 
           // 5. [PROF:*] Flight Recorder Power & Heap Telemetry
