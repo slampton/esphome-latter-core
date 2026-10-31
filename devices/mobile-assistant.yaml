@@ -91,7 +91,7 @@ improv_ble:
   wifi_timeout: 5s
 
 safe_mode:
-  boot_is_good_after: 5s
+  boot_is_good_after: 60s
 
 packages:
   hal: !include ../boards/waveshare_s3_216.yaml

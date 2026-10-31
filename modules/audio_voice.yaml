@@ -83,16 +83,25 @@ media_player:
             duration: 0.1s
         - mixer_speaker.apply_ducking:
             id: announcement_mixing_input
-            decibel_reduction: 0
-            duration: 0.1s
+            decibel_reduction: !lambda |-
+              float v = id(alert_volume).state;
+              if (std::isnan(v) || v <= 0.0f) v = 80.0f;
+              if (v > 100.0f) v = 100.0f;
+              if (v < 20.0f) v = 20.0f;
+              return (100.0f - v) * 0.25f;
+            duration: 0.05s
         - script.execute: route_i2s_to_spk
+        - script.wait: route_i2s_to_spk
         - switch.turn_on: speaker_enable
         - lambda: |-
-            id(physical_speaker).set_volume(0.90f);
+            float av = id(alert_volume).state;
+            if (std::isnan(av) || av <= 0.0f) av = 80.0f;
+            float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+            id(physical_speaker).set_volume(spk_v);
             id(hal_set_dac_mute).execute(false);
+            id(va_tts_received) = true;
             if (id(va_active)) {
               id(va_vad_active) = false;
-              id(va_tts_received) = true;
               id(va_status_text) = "Responding...";
             }
         - script.execute: throttled_disp_update
@@ -152,7 +161,7 @@ media_player:
       then:
         - if:
             condition:
-              lambda: 'return id(va_active) && id(va_tts_received);'
+              lambda: 'return id(va_active) || id(va_tts_received) || !id(va_status_text).empty();'
             then:
               - script.execute: va_tts_drain_and_finish
         - lambda: |-
@@ -345,16 +354,27 @@ voice_assistant:
                 duration: 0.1s
             - mixer_speaker.apply_ducking:
                 id: announcement_mixing_input
-                decibel_reduction: 0
-                duration: 0.1s
+                decibel_reduction: !lambda |-
+                  float v = id(alert_volume).state;
+                  if (std::isnan(v) || v <= 0.0f) v = 80.0f;
+                  if (v > 100.0f) v = 100.0f;
+                  if (v < 20.0f) v = 20.0f;
+                  return (100.0f - v) * 0.25f;
+                duration: 0.05s
             - script.stop: screen_sleep_timer
             - script.execute: route_i2s_to_spk
+            - script.wait: route_i2s_to_spk
             - lambda: |-
-                id(physical_speaker).set_volume(0.90f);
+                float av = id(alert_volume).state;
+                if (std::isnan(av) || av <= 0.0f) av = 80.0f;
+                float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+                id(physical_speaker).set_volume(spk_v);
                 id(hal_set_dac_mute).execute(false);
                 id(va_vad_active) = false;
                 id(va_tts_received) = true;
-                id(va_status_text) = "Responding...";
+                if (id(va_active)) {
+                  id(va_status_text) = "Responding...";
+                }
                 ESP_LOGI("va", "Status: Responding (Streaming TTS)...");
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
@@ -366,27 +386,41 @@ voice_assistant:
           duration: 0.1s
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: 0
-          duration: 0.1s
+          decibel_reduction: !lambda |-
+            float v = id(alert_volume).state;
+            if (std::isnan(v) || v <= 0.0f) v = 80.0f;
+            if (v > 100.0f) v = 100.0f;
+            if (v < 20.0f) v = 20.0f;
+            return (100.0f - v) * 0.25f;
+          duration: 0.05s
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
+      - script.wait: route_i2s_to_spk
       - lambda: |-
-          id(physical_speaker).set_volume(0.90f);
+          float av = id(alert_volume).state;
+          if (std::isnan(av) || av <= 0.0f) av = 80.0f;
+          float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+          id(physical_speaker).set_volume(spk_v);
           id(hal_set_dac_mute).execute(false);
           id(va_vad_active) = false;
           id(va_tts_received) = true;
-          id(va_status_text) = "Responding...";
+          if (id(va_active)) {
+            id(va_status_text) = "Responding...";
+          }
           ESP_LOGI("va", "Status: Responding (TTS)...");
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_end:
     then:
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
+      - script.wait: route_i2s_to_spk
       - lambda: 'id(hal_set_dac_mute).execute(false);'
       - lambda: |-
           id(va_vad_active) = false;
           id(va_tts_received) = true;
-          id(va_status_text) = "Responding...";
+          if (id(va_active)) {
+            id(va_status_text) = "Responding...";
+          }
           ESP_LOGI("va", "TTS URL ready: %s", x.c_str());
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_error:
@@ -491,7 +525,7 @@ voice_assistant:
           timeout: 25s
       - if:
           condition:
-            lambda: 'return id(va_active);'
+            lambda: 'return id(va_active) || id(va_tts_received) || !id(va_status_text).empty();'
           then:
             - script.execute: va_tts_drain_and_finish
 
@@ -512,33 +546,38 @@ script:
                   lambda: |-
                     return ((id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
                             (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) ||
-                           !id(va_active);
+                           (!id(va_active) && !id(va_tts_received));
                 timeout: 90s
       # 2. Wait for announcement_mixing_input's PSRAM ring buffer to finish playing out (D2: derived announcement_buffer_s + 1s)
       - if:
           condition:
-            lambda: 'return id(va_tts_received) && id(va_active) && id(announcement_mixing_input).is_running();'
+            lambda: 'return (id(va_tts_received) || id(va_active)) && id(announcement_mixing_input).is_running();'
           then:
             - wait_until:
                 condition:
-                  lambda: 'return !id(announcement_mixing_input).is_running() || !id(va_active);'
+                  lambda: 'return !id(announcement_mixing_input).is_running() || (!id(va_active) && !id(va_tts_received));'
                 timeout: !lambda 'return (${announcement_buffer_s} + 1) * 1000;'
       # 3. Let the final ~250ms of TTS audio inside physical_speaker's hardware DMA buffer finish playing
       - if:
           condition:
-            lambda: 'return id(va_tts_received) && id(va_active);'
+            lambda: 'return id(va_tts_received) || id(va_active);'
           then:
             - delay: 250ms
             - speaker.stop: announcement_mixing_input
       # 4. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
-          esphome::voice_assistant::abort_voice_assistant(id(va));
+          const bool was_va_session = id(va_active);
+          if (was_va_session) {
+            esphome::voice_assistant::abort_voice_assistant(id(va));
+          }
           id(va_vad_active) = false;
           id(va_status_text) = "";
           id(va_tts_received) = false;
           id(va_active) = false;
-          id(gui_page) = id(return_page);
+          if (was_va_session) {
+            id(gui_page) = id(return_page);
+          }
           if (id(display_power_state) == 2 && !id(usb_connected).state &&
               id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
             latter_ui::hal_set_wifi_power_save(1);

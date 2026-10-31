@@ -460,15 +460,17 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   }
 #endif
 #if !defined(LATTER_BACKLIGHT_PIN)
-  if constexpr (requires(DispT *d, uint8_t b) { d->set_brightness(b); }) {
-    if (disp != nullptr) disp->set_brightness(bri_byte);
-  } else {
-    (void)disp;
-    (void)bri_byte;
-  }
+  static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
+                "Display driver lacks set_brightness() and no LATTER_BACKLIGHT_PIN is defined");
+  if (disp != nullptr) disp->set_brightness(bri_byte);
 #else
   (void)disp;
 #endif
+}
+
+template <typename DispT>
+inline void hal_set_display_brightness(DispT *const *disp_pp, uint8_t bri) {
+  if (disp_pp != nullptr) hal_set_display_brightness(*disp_pp, bri);
 }
 
 // =============================================================================
@@ -941,7 +943,9 @@ inline void handle_ota_progress(DispT *const *disp_ptr, float raw_pct, int &ota_
 
 template<typename DispT>
 inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress_pct) {
-  ota_progress_pct = 100;
+  if (ota_in_progress) {
+    ota_progress_pct = 100;
+  }
   if (disp != nullptr) {
     disp->update();
     disp->start_poller();
@@ -952,6 +956,34 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
 template<typename DispT>
 inline void handle_ota_end(DispT *const *disp_ptr, bool &ota_in_progress, int &ota_progress_pct) {
   if (disp_ptr != nullptr) handle_ota_end(*disp_ptr, ota_in_progress, ota_progress_pct);
+}
+
+template<typename DispT>
+inline void handle_ota_error(DispT *disp, bool &ota_in_progress, int &ota_progress_pct,
+                             bool &notif_active, std::string &notif_title, std::string &notif_message,
+                             std::string &notif_priority, uint32_t &notif_duration_ms,
+                             uint32_t &notif_start_ms, uint32_t now_m) {
+  ota_in_progress = false;
+  ota_progress_pct = 0;
+  notif_title = "Update failed";
+  notif_message = "Firmware update interrupted";
+  notif_priority = "warning";
+  notif_duration_ms = 5000U;
+  notif_start_ms = now_m;
+  notif_active = true;
+  handle_ota_end(disp, ota_in_progress, ota_progress_pct);
+}
+
+template<typename DispT>
+inline void handle_ota_error(DispT *const *disp_ptr, bool &ota_in_progress, int &ota_progress_pct,
+                             bool &notif_active, std::string &notif_title, std::string &notif_message,
+                             std::string &notif_priority, uint32_t &notif_duration_ms,
+                             uint32_t &notif_start_ms, uint32_t now_m) {
+  if (disp_ptr != nullptr) {
+    handle_ota_error(*disp_ptr, ota_in_progress, ota_progress_pct,
+                     notif_active, notif_title, notif_message,
+                     notif_priority, notif_duration_ms, notif_start_ms, now_m);
+  }
 }
 
 }  // namespace latter_ui

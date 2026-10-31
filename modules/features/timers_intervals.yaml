@@ -302,7 +302,8 @@ interval:
             }
 
             // 2. Edge-triggered scheduled alarms check (45s window within target minute)
-            if (now.second < 45 && now.minute != id(alarm_last_fired_min)) {
+            const uint32_t em = static_cast<uint32_t>(now.timestamp / 60);
+            if (now.second < 45 && em != id(alarm_last_fired_epoch_min)) {
               auto check_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec, int a_num) -> bool {
                 if (!a_en) return false;
                 if (now.hour != a_hr || now.minute != a_min) return false;
@@ -336,7 +337,7 @@ interval:
                 if (id(va_active) || !id(va_status_text).empty()) {
                   id(cancel_voice_assistant).execute();
                 }
-                id(alarm_last_fired_min) = now.minute;
+                id(alarm_last_fired_epoch_min) = em;
                 id(alarm_ringing) = true;
                 id(alarm_ringing_idx) = trig_idx;
                 id(wake_to_active_state).execute();

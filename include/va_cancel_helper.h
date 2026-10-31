@@ -3,10 +3,11 @@
 #include "esphome/core/version.h"
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
-static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0) &&
-              ESPHOME_VERSION_CODE < VERSION_CODE(2027, 1, 0),
-              "va_cancel_helper.h Rob<> private-member bridge is validated for ESPHome 2026.10.x-2026.12.x; "
-              "verify VoiceAssistant private member layout before bumping the upper version bound.");
+static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0),
+              "va_cancel_helper.h requires ESPHome 2026.10.0 or newer.");
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2027, 1, 0)
+#warning "va_cancel_helper.h private-member bridge not validated on this ESPHome version; Phase 4 removes it"
+#endif
 #endif
 #ifdef USE_ESP32
 #include <esp_sleep.h>

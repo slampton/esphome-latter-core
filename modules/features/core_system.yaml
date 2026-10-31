@@ -15,7 +15,6 @@ esphome:
 
     - priority: -100
       then:
-        - safe_mode.mark_successful:
         - script.execute: hal_init_pmu_irq
         - lambda: |-
             latter_ui::seed_standalone_remote_slots(
@@ -385,7 +384,6 @@ ota:
       then:
         - script.stop: screen_sleep_timer
         - lambda: |-
-            id(hal_release_deep_sleep_holds).execute();
             latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
                                         id(sleep_start_time), id(display_power_state));
         - component.update: disp1
@@ -395,6 +393,22 @@ ota:
     on_end:
       then:
         - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+    on_error:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: screen_sleep_timer
+    on_abort:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: screen_sleep_timer
 
   - platform: http_request
     id: ota_http
@@ -402,7 +416,6 @@ ota:
       then:
         - script.stop: screen_sleep_timer
         - lambda: |-
-            id(hal_release_deep_sleep_holds).execute();
             latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
                                         id(sleep_start_time), id(display_power_state));
         - component.update: disp1
@@ -412,6 +425,22 @@ ota:
     on_end:
       then:
         - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+    on_error:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: screen_sleep_timer
+    on_abort:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: screen_sleep_timer
 
 time:
   - platform: homeassistant
@@ -1267,10 +1296,10 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
-  - id: alarm_last_fired_min
-    type: int
+  - id: alarm_last_fired_epoch_min
+    type: uint32_t
     restore_value: no
-    initial_value: '-1'
+    initial_value: '0'
   - id: return_page
     type: int
     restore_value: no
