@@ -1156,6 +1156,40 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
   }
 }
 
+template<typename DisplayT>
+inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
+                                 const uint16_t *row_buf) {
+#if defined(LATTER_DSI_IRAM_SAFE)
+  // On ESPHome's MipiDsi driver (ESP32-P4 MIPI-DSI), MipiDsi::draw_pixels_at() bypasses
+  // the software draw buffer (this->buffer_) and pushes directly to the hardware DPI
+  // frontbuffer via esp_lcd_panel_draw_bitmap(), which is then overwritten by the empty
+  // software buffer flush at the end of MipiDsi::update(), causing 1Hz screen flickering.
+  // Plotting runs into the software buffer via draw_pixel_at/horizontal_line ensures the
+  // artwork and HUD composite cleanly into buffer_ before the single atomic DMA2D flush.
+  int i = 0;
+  while (i < span_w) {
+    const uint16_t p = row_buf[i];
+    int run = 1;
+    while (i + run < span_w && row_buf[i + run] == p) {
+      run++;
+    }
+    const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
+    const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
+    const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
+    const esphome::Color c(r, g, b);
+    if (run == 1) {
+      it.draw_pixel_at(start_x + i, y, c);
+    } else {
+      it.horizontal_line(start_x + i, y, run, c);
+    }
+    i += run;
+  }
+#else
+  it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
+                    esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+#endif
+}
+
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
 // smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
 template<typename DisplayT, typename ImageT>
@@ -1214,8 +1248,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         row_buf[i] = src_row[sx];
       }
       dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-      it.draw_pixels_at(draw_x0, py, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
-                        esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf);
     }
 
     // Crisp top-lit specular glass frame around the centered Standard album art square
@@ -1251,13 +1284,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
       if (mul_q3 >= 8) {
-        it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(src_row + start_x),
-                          esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x);
       } else {
         std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
         dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-        it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
-                          esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+        blit_rgb565_scanline(it, start_x, y, span_w, row_buf);
       }
     }
   } else {
@@ -1272,25 +1303,30 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     const int src_y0_fp = std::max(0, ((src_h << 12) - vis_src_h_fp) / 2);
 
     int curr_y = src_y0_fp;
+    int prev_sy = -1;
+    int prev_mul_q3 = -1;
     for (int y = start_y; y < end_y; y++) {
       int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
       curr_y += step_fp;
       int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
-      const uint16_t *src_row = src_data + sy * src_w;
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
       int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
-      int curr_x = src_x0_fp + start_x * step_fp;
-      for (int i = 0; i < span_w; i++) {
-        int sx = std::min(src_w - 1, curr_x >> 12);
-        curr_x += step_fp;
-        row_buf[i] = src_row[sx];
+      if (LATTER_ROUND_DISPLAY || sy != prev_sy || mul_q3 != prev_mul_q3) {
+        const uint16_t *src_row = src_data + sy * src_w;
+        int curr_x = src_x0_fp + start_x * step_fp;
+        for (int i = 0; i < span_w; i++) {
+          int sx = std::min(src_w - 1, curr_x >> 12);
+          curr_x += step_fp;
+          row_buf[i] = src_row[sx];
+        }
+        dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+        prev_sy = sy;
+        prev_mul_q3 = mul_q3;
       }
-      dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-      it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
-                        esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+      blit_rgb565_scanline(it, start_x, y, span_w, row_buf);
     }
   }
 
