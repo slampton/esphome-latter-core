@@ -194,6 +194,9 @@ display:
       standby_black_flushed = false;
 
       auto now = id(ha_time).now();
+      if (!now.is_valid()) {
+        now = id(sntp_time).now();
+      }
 
       // ==========================================
       // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER (Highest Priority)
@@ -812,6 +815,9 @@ touchscreen:
                 if (touch.y >= latter_ui::scale_y(268) && touch.y <= latter_ui::scale_y(324) &&
                     touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
                   auto now = id(ha_time).now();
+      if (!now.is_valid()) {
+        now = id(sntp_time).now();
+      }
                   if (now.is_valid()) {
                     id(alarm_snooze_until) = now.timestamp + 300;
                   } else {

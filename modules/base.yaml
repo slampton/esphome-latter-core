@@ -23,6 +23,7 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
+  api_reboot_timeout: "0s"
   sendspin_buffer_size: "196608"
   announcement_buffer_size: "65536"
   active_media_sensor: "sensor.${device_slug}_active_media"
@@ -41,6 +42,7 @@ substitutions:
   remote_4_name: ""
 
 api:
+  reboot_timeout: ${api_reboot_timeout}
   actions:
     - action: latter_ping
       id: latter_ping_action
@@ -50,6 +52,8 @@ api:
 time:
   - platform: homeassistant
     id: ha_time
+  - platform: sntp
+    id: sntp_time
 
 text_sensor:
   - platform: template

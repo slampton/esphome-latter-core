@@ -58,6 +58,7 @@ update:
 wifi:
   id: wifi_ctrl
   fast_connect: true
+  reboot_timeout: 0s
 
 esp32_ble:
   id: ble_ctrl

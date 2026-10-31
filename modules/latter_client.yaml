@@ -21,6 +21,7 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
+  api_reboot_timeout: "0s"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
   sun_entity: "sun.sun"
   moon_entity: "sensor.moon_phase"
@@ -148,12 +149,26 @@ esphome:
         - script.execute: screen_sleep_timer
 
 api:
+  reboot_timeout: ${api_reboot_timeout}
   encryption:
   outgoing_connection:
   on_client_connected:
     then:
       - lambda: |-
+          latter_ui::link_state().ha_connected = true;
+          latter_ui::link_state().last_ha_connect_ms = millis();
           esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
+          if (id(display_power_state) == 0 && !id(is_hibernating)) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+  on_client_disconnected:
+    then:
+      - lambda: |-
+          latter_ui::link_state().ha_connected = false;
+          latter_ui::link_state().last_ha_disconnect_ms = millis();
+          if (id(display_power_state) == 0 && !id(is_hibernating)) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
   actions:
     - action: latter_ping
       id: latter_ping_action
@@ -172,6 +187,8 @@ api:
 
     - action: set_browse_slots
       variables:
+        contract: int
+        slots: string
         mode: string
         page: int
         total_pages: int
@@ -200,46 +217,79 @@ api:
       then:
         - lambda: |-
             (void)has_prev; (void)has_next;
+            latter_ui::BrowseSlotItem v3_items[5];
+            bool use_v3 = (contract >= 3 && !slots.empty());
+            if (use_v3) {
+              latter_ui::parse_v3_slots_payload(slots, v3_items, 5);
+            }
+            const std::string &n1 = use_v3 ? v3_items[0].name : s1_name;
+            const std::string &i1 = use_v3 ? v3_items[0].id   : s1_id;
+            const std::string &t1 = use_v3 ? v3_items[0].type : s1_type;
+            const bool a1         = use_v3 ? v3_items[0].active : s1_active;
+            const int l1          = use_v3 ? v3_items[0].level  : -1;
+            const std::string &n2 = use_v3 ? v3_items[1].name : s2_name;
+            const std::string &i2 = use_v3 ? v3_items[1].id   : s2_id;
+            const std::string &t2 = use_v3 ? v3_items[1].type : s2_type;
+            const bool a2         = use_v3 ? v3_items[1].active : s2_active;
+            const int l2          = use_v3 ? v3_items[1].level  : -1;
+            const std::string &n3 = use_v3 ? v3_items[2].name : s3_name;
+            const std::string &i3 = use_v3 ? v3_items[2].id   : s3_id;
+            const std::string &t3 = use_v3 ? v3_items[2].type : s3_type;
+            const bool a3         = use_v3 ? v3_items[2].active : s3_active;
+            const int l3          = use_v3 ? v3_items[2].level  : -1;
+            const std::string &n4 = use_v3 ? v3_items[3].name : s4_name;
+            const std::string &i4 = use_v3 ? v3_items[3].id   : s4_id;
+            const std::string &t4 = use_v3 ? v3_items[3].type : s4_type;
+            const bool a4         = use_v3 ? v3_items[3].active : s4_active;
+            const int l4          = use_v3 ? v3_items[3].level  : -1;
+            const std::string &n5 = use_v3 ? v3_items[4].name : s5_name;
+            const std::string &i5 = use_v3 ? v3_items[4].id   : s5_id;
+            const std::string &t5 = use_v3 ? v3_items[4].type : s5_type;
+            const bool a5         = use_v3 ? v3_items[4].active : s5_active;
+            const int l5          = use_v3 ? v3_items[4].level  : -1;
+
             if (mode == "area_areas" || mode == "areas") {
               id(area_list_page) = page;
               id(area_list_total_pages) = total_pages;
-              id(area_list_1_name) = s1_name; id(area_list_1_id) = s1_id; id(area_list_1_active) = s1_active;
-              id(area_list_2_name) = s2_name; id(area_list_2_id) = s2_id; id(area_list_2_active) = s2_active;
-              id(area_list_3_name) = s3_name; id(area_list_3_id) = s3_id; id(area_list_3_active) = s3_active;
-              id(area_list_4_name) = s4_name; id(area_list_4_id) = s4_id; id(area_list_4_active) = s4_active;
-              id(area_list_5_name) = s5_name; id(area_list_5_id) = s5_id; id(area_list_5_active) = s5_active;
+              id(area_list_1_name) = n1; id(area_list_1_id) = i1; id(area_list_1_active) = a1;
+              id(area_list_2_name) = n2; id(area_list_2_id) = i2; id(area_list_2_active) = a2;
+              id(area_list_3_name) = n3; id(area_list_3_id) = i3; id(area_list_3_active) = a3;
+              id(area_list_4_name) = n4; id(area_list_4_id) = i4; id(area_list_4_active) = a4;
+              id(area_list_5_name) = n5; id(area_list_5_id) = i5; id(area_list_5_active) = a5;
             } else if (mode == "calendar_agenda") {
               id(cal_browse_page) = page;
               id(cal_browse_total_pages) = total_pages;
-              id(cal_slot_1_name) = s1_name; id(cal_slot_1_id) = s1_id; id(cal_slot_1_active) = s1_active;
-              id(cal_slot_2_name) = s2_name; id(cal_slot_2_id) = s2_id; id(cal_slot_2_active) = s2_active;
-              id(cal_slot_3_name) = s3_name; id(cal_slot_3_id) = s3_id; id(cal_slot_3_active) = s3_active;
-              id(cal_slot_4_name) = s4_name; id(cal_slot_4_id) = s4_id; id(cal_slot_4_active) = s4_active;
-              id(cal_slot_5_name) = s5_name; id(cal_slot_5_id) = s5_id; id(cal_slot_5_active) = s5_active;
+              id(cal_slot_1_name) = n1; id(cal_slot_1_id) = i1; id(cal_slot_1_active) = a1;
+              id(cal_slot_2_name) = n2; id(cal_slot_2_id) = i2; id(cal_slot_2_active) = a2;
+              id(cal_slot_3_name) = n3; id(cal_slot_3_id) = i3; id(cal_slot_3_active) = a3;
+              id(cal_slot_4_name) = n4; id(cal_slot_4_id) = i4; id(cal_slot_4_active) = a4;
+              id(cal_slot_5_name) = n5; id(cal_slot_5_id) = i5; id(cal_slot_5_active) = a5;
             } else if (mode == "entities" || mode == "home") {
               id(area_browse_mode) = "entities";
               id(area_browse_page) = page;
               id(area_browse_total_pages) = total_pages;
-              id(area_slot_1_name) = s1_name; id(area_slot_1_id) = s1_id; id(area_slot_1_type) = s1_type; id(area_slot_1_active) = s1_active; id(area_slot_1_level) = -1;
-              id(area_slot_2_name) = s2_name; id(area_slot_2_id) = s2_id; id(area_slot_2_type) = s2_type; id(area_slot_2_active) = s2_active; id(area_slot_2_level) = -1;
-              id(area_slot_3_name) = s3_name; id(area_slot_3_id) = s3_id; id(area_slot_3_type) = s3_type; id(area_slot_3_active) = s3_active; id(area_slot_3_level) = -1;
-              id(area_slot_4_name) = s4_name; id(area_slot_4_id) = s4_id; id(area_slot_4_type) = s4_type; id(area_slot_4_active) = s4_active; id(area_slot_4_level) = -1;
-              id(area_slot_5_name) = s5_name; id(area_slot_5_id) = s5_id; id(area_slot_5_type) = s5_type; id(area_slot_5_active) = s5_active; id(area_slot_5_level) = -1;
+              id(area_slot_1_name) = n1; id(area_slot_1_id) = i1; id(area_slot_1_type) = t1; id(area_slot_1_active) = a1; id(area_slot_1_level) = l1;
+              id(area_slot_2_name) = n2; id(area_slot_2_id) = i2; id(area_slot_2_type) = t2; id(area_slot_2_active) = a2; id(area_slot_2_level) = l2;
+              id(area_slot_3_name) = n3; id(area_slot_3_id) = i3; id(area_slot_3_type) = t3; id(area_slot_3_active) = a3; id(area_slot_3_level) = l3;
+              id(area_slot_4_name) = n4; id(area_slot_4_id) = i4; id(area_slot_4_type) = t4; id(area_slot_4_active) = a4; id(area_slot_4_level) = l4;
+              id(area_slot_5_name) = n5; id(area_slot_5_id) = i5; id(area_slot_5_type) = t5; id(area_slot_5_active) = a5; id(area_slot_5_level) = l5;
             } else {
               if (millis() - latter_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
                 id(music_browse_page) = page;
               }
               id(music_browse_total_pages) = total_pages;
-              id(slot_1_name) = s1_name; id(slot_1_id) = s1_id; id(slot_1_type) = s1_type; id(slot_1_active) = s1_active;
-              id(slot_2_name) = s2_name; id(slot_2_id) = s2_id; id(slot_2_type) = s2_type; id(slot_2_active) = s2_active;
-              id(slot_3_name) = s3_name; id(slot_3_id) = s3_id; id(slot_3_type) = s3_type; id(slot_3_active) = s3_active;
-              id(slot_4_name) = s4_name; id(slot_4_id) = s4_id; id(slot_4_type) = s4_type; id(slot_4_active) = s4_active;
-              id(slot_5_name) = s5_name; id(slot_5_id) = s5_id; id(slot_5_type) = s5_type; id(slot_5_active) = s5_active;
+              id(slot_1_name) = n1; id(slot_1_id) = i1; id(slot_1_type) = t1; id(slot_1_active) = a1;
+              id(slot_2_name) = n2; id(slot_2_id) = i2; id(slot_2_type) = t2; id(slot_2_active) = a2;
+              id(slot_3_name) = n3; id(slot_3_id) = i3; id(slot_3_type) = t3; id(slot_3_active) = a3;
+              id(slot_4_name) = n4; id(slot_4_id) = i4; id(slot_4_type) = t4; id(slot_4_active) = a4;
+              id(slot_5_name) = n5; id(slot_5_id) = i5; id(slot_5_type) = t5; id(slot_5_active) = a5;
             }
             latter_ui::schedule_disp_update(&id(disp1));
 
     - action: set_area_slots
       variables:
+        contract: int
+        slots: string
         mode: string
         page: int
         total_pages: int
@@ -273,14 +323,39 @@ api:
       then:
         - lambda: |-
             (void)has_prev; (void)has_next;
+            latter_ui::BrowseSlotItem v3_items[5];
+            bool use_v3 = (contract >= 3 && !slots.empty());
+            if (use_v3) {
+              latter_ui::parse_v3_slots_payload(slots, v3_items, 5);
+            }
             id(area_browse_mode) = mode;
             id(area_browse_page) = page;
             id(area_browse_total_pages) = total_pages;
-            id(area_slot_1_name) = s1_name; id(area_slot_1_id) = s1_id; id(area_slot_1_type) = s1_type; id(area_slot_1_active) = s1_active; id(area_slot_1_level) = s1_level;
-            id(area_slot_2_name) = s2_name; id(area_slot_2_id) = s2_id; id(area_slot_2_type) = s2_type; id(area_slot_2_active) = s2_active; id(area_slot_2_level) = s2_level;
-            id(area_slot_3_name) = s3_name; id(area_slot_3_id) = s3_id; id(area_slot_3_type) = s3_type; id(area_slot_3_active) = s3_active; id(area_slot_3_level) = s3_level;
-            id(area_slot_4_name) = s4_name; id(area_slot_4_id) = s4_id; id(area_slot_4_type) = s4_type; id(area_slot_4_active) = s4_active; id(area_slot_4_level) = s4_level;
-            id(area_slot_5_name) = s5_name; id(area_slot_5_id) = s5_id; id(area_slot_5_type) = s5_type; id(area_slot_5_active) = s5_active; id(area_slot_5_level) = s5_level;
+            id(area_slot_1_name) = use_v3 ? v3_items[0].name : s1_name;
+            id(area_slot_1_id)   = use_v3 ? v3_items[0].id   : s1_id;
+            id(area_slot_1_type) = use_v3 ? v3_items[0].type : s1_type;
+            id(area_slot_1_active) = use_v3 ? v3_items[0].active : s1_active;
+            id(area_slot_1_level)  = use_v3 ? v3_items[0].level  : s1_level;
+            id(area_slot_2_name) = use_v3 ? v3_items[1].name : s2_name;
+            id(area_slot_2_id)   = use_v3 ? v3_items[1].id   : s2_id;
+            id(area_slot_2_type) = use_v3 ? v3_items[1].type : s2_type;
+            id(area_slot_2_active) = use_v3 ? v3_items[1].active : s2_active;
+            id(area_slot_2_level)  = use_v3 ? v3_items[1].level  : s2_level;
+            id(area_slot_3_name) = use_v3 ? v3_items[2].name : s3_name;
+            id(area_slot_3_id)   = use_v3 ? v3_items[2].id   : s3_id;
+            id(area_slot_3_type) = use_v3 ? v3_items[2].type : s3_type;
+            id(area_slot_3_active) = use_v3 ? v3_items[2].active : s3_active;
+            id(area_slot_3_level)  = use_v3 ? v3_items[2].level  : s3_level;
+            id(area_slot_4_name) = use_v3 ? v3_items[3].name : s4_name;
+            id(area_slot_4_id)   = use_v3 ? v3_items[3].id   : s4_id;
+            id(area_slot_4_type) = use_v3 ? v3_items[3].type : s4_type;
+            id(area_slot_4_active) = use_v3 ? v3_items[3].active : s4_active;
+            id(area_slot_4_level)  = use_v3 ? v3_items[3].level  : s4_level;
+            id(area_slot_5_name) = use_v3 ? v3_items[4].name : s5_name;
+            id(area_slot_5_id)   = use_v3 ? v3_items[4].id   : s5_id;
+            id(area_slot_5_type) = use_v3 ? v3_items[4].type : s5_type;
+            id(area_slot_5_active) = use_v3 ? v3_items[4].active : s5_active;
+            id(area_slot_5_level)  = use_v3 ? v3_items[4].level  : s5_level;
             latter_ui::schedule_disp_update(&id(disp1));
 
     - action: set_timer
@@ -387,6 +462,14 @@ ota:
 time:
   - platform: homeassistant
     id: ha_time
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::record_ambient_frame_ms(0);
+            }
+  - platform: sntp
+    id: sntp_time
     on_time_sync:
       then:
         - lambda: |-
@@ -2399,6 +2482,9 @@ interval:
           // ALARM ENGINE: SCHEDULE EVALUATION & SNOOZE CHECK
           // ------------------------------------------------------------------
           auto now = id(ha_time).now();
+          if (!now.is_valid()) {
+            now = id(sntp_time).now();
+          }
           if (now.is_valid()) {
             uint32_t now_epoch = now.timestamp;
 
@@ -2413,8 +2499,8 @@ interval:
               return;
             }
 
-            // 2. Regular scheduled alarms check (on second == 0)
-            if (now.second == 0 && now.minute != id(alarm_last_fired_min)) {
+            // 2. Edge-triggered scheduled alarms check (45s window within target minute)
+            if (now.second < 45 && now.minute != id(alarm_last_fired_min)) {
               auto check_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec, int a_num) -> bool {
                 if (!a_en) return false;
                 if (now.hour != a_hr || now.minute != a_min) return false;
@@ -2734,7 +2820,7 @@ text_sensor:
   # --------------------------------------------------------------------------
   - platform: homeassistant
     id: ha_sun_state
-    entity_id: sun.sun
+    entity_id: ${sun_entity}
     internal: true
     on_value:
       then:
@@ -3395,6 +3481,126 @@ text_sensor:
               prev_s_album = x;
               if (id(active_speaker_entity) == "${local_player_id}") {
                 id(throttled_disp_update).execute();
+              }
+            }
+
+  # --------------------------------------------------------------------------
+  # Protocol v3 Atomic Snapshot Payloads (\x1f-delimited, revision-guarded)
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_area_ctx_blob
+    entity_id: ${area_context_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_area_ctx_payload(x, latter_ui::area_ctx_state(), latter_ui::whole_home_state())) {
+              const auto &st = latter_ui::area_ctx_state();
+              if (!st.area_name.empty()) {
+                id(active_area_name) = st.area_name;
+                latter_ui::latter_area_label() = st.area_name;
+              }
+              if (!st.area_id.empty() && st.area_id != id(active_area_id)) {
+                id(active_area_id) = st.area_id;
+                id(area_browse_page) = 1;
+                latter_ui::area_cat_dock_page() = 0;
+              }
+              if (!st.available_domains.empty()) {
+                latter_ui::area_available_domains_csv() = st.available_domains;
+              }
+              if (!st.dock_apps.empty()) {
+                latter_ui::latter_dock_order_csv() = st.dock_apps;
+              }
+              if (!st.alarm_entity.empty() && st.alarm_entity != "none") {
+                id(area_alarm_entity) = st.alarm_entity;
+              }
+              if (!st.alarm_state.empty()) {
+                id(area_alarm_state) = st.alarm_state;
+              }
+              if (!st.site_id.empty()) {
+                latter_ui::latter_site_id() = st.site_id;
+              }
+              latter_ui::latter_vpn_enabled() = st.vpn_enabled;
+              latter_ui::latter_vpn_client_ip() = st.vpn_client_ip;
+              latter_ui::latter_ble_proxy() = st.ble_closest_proxy;
+              latter_ui::cam_listen_active() = (st.doorbell_talk_state == "listening");
+              if (id(display_power_state) == 0 && !id(is_hibernating)) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_active_media_blob
+    entity_id: ${active_media_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_media_payload(x, latter_ui::media_state())) {
+              const auto &ms = latter_ui::media_state();
+              if (!ms.media_type.empty()) {
+                id(active_playback_media_type) = ms.media_type;
+              }
+              if (ms.position >= 0.0f) {
+                id(music_pos_base) = ms.position;
+                id(music_pos_sync_time) = millis();
+              }
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2)) {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_remote_cfg_blob
+    entity_id: ${remote_config_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_remote_payload(x, latter_ui::remote_state())) {
+              const auto &rs = latter_ui::remote_state();
+              latter_ui::parse_latter_remote_slots_summary(
+                  rs.slots_summary,
+                  "${remote_1_entity}", "${remote_1_name}",
+                  "${remote_2_entity}", "${remote_2_name}",
+                  "${remote_3_entity}", "${remote_3_name}",
+                  "${remote_4_entity}", "${remote_4_name}");
+              id(active_remote_slot) = latter_ui::resolve_active_remote_slot(rs.active_slot);
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 7) && millis() > 3000) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_weather_blob
+    entity_id: ${weather_forecast_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_weather_payload(x, latter_ui::weather_state())) {
+              if (id(display_power_state) == 0 && !id(is_hibernating)) {
+                latter_ui::weather_sim_dirty() = true;
+                latter_ui::record_ambient_frame_ms(0);
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_calendar_blob
+    entity_id: ${calendar_agenda_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_calendar_payload(x, latter_ui::calendar_state())) {
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(tools_subpage) == 9))) {
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
 

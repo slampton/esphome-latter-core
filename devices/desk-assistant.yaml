@@ -28,6 +28,7 @@ substitutions:
   default_battery_timeout: "Never"
   default_docked_timeout: "5 min"
   default_hibernate_timeout: "Disabled"
+  api_reboot_timeout: "15min"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/desk-assistant.yaml@main

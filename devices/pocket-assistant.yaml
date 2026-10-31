@@ -59,6 +59,7 @@ wifi:
   id: wifi_ctrl
   fast_connect: true
   power_save_mode: LIGHT
+  reboot_timeout: 0s
   on_connect:
     then:
       - delay: 5s

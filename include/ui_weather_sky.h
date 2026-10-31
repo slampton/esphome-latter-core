@@ -1763,38 +1763,40 @@ inline void render_weather_page(
       }
     };
 
-    char hi_str[16], lo_str[16];
-    if (!std::isnan(hi_val)) snprintf(hi_str, sizeof(hi_str), "%.0f°", hi_val);
-    else snprintf(hi_str, sizeof(hi_str), "--°");
-    if (!std::isnan(lo_val)) snprintf(lo_str, sizeof(lo_str), "%.0f°", lo_val);
-    else snprintf(lo_str, sizeof(lo_str), "--°");
+    if (!std::isnan(hi_val) || !std::isnan(lo_val)) {
+      char hi_str[16], lo_str[16];
+      if (!std::isnan(hi_val)) snprintf(hi_str, sizeof(hi_str), "%.0f°", hi_val);
+      else snprintf(hi_str, sizeof(hi_str), "--°");
+      if (!std::isnan(lo_val)) snprintf(lo_str, sizeof(lo_str), "%.0f°", lo_val);
+      else snprintf(lo_str, sizeof(lo_str), "--°");
 
-    int w_hi = 0, w_lo = 0;
-    if (large_cur && font_chrono_time != nullptr) {
-      font_chrono_time->measure(hi_str, &w_hi, &x_off, &base, &th);
-      font_chrono_time->measure(lo_str, &w_lo, &x_off, &base, &th);
-    } else {
-      font_date->measure(hi_str, &w_hi, &x_off, &base, &th);
-      font_date->measure(lo_str, &w_lo, &x_off, &base, &th);
-    }
-    const int total_hilo_w = 14 + 10 + w_hi + 32 + 14 + 10 + w_lo;
-    const int hilo_left = cx - (total_hilo_w / 2);
-    const int up_arr_x = hilo_left + 7;
-    const int hi_txt_x = hilo_left + 14 + 10;
-    const int dn_arr_x = hi_txt_x + w_hi + 32 + 7;
-    const int lo_txt_x = dn_arr_x + 7 + 10;
+      int w_hi = 0, w_lo = 0;
+      if (large_cur && font_chrono_time != nullptr) {
+        font_chrono_time->measure(hi_str, &w_hi, &x_off, &base, &th);
+        font_chrono_time->measure(lo_str, &w_lo, &x_off, &base, &th);
+      } else {
+        font_date->measure(hi_str, &w_hi, &x_off, &base, &th);
+        font_date->measure(lo_str, &w_lo, &x_off, &base, &th);
+      }
+      const int total_hilo_w = 14 + 10 + w_hi + 32 + 14 + 10 + w_lo;
+      const int hilo_left = cx - (total_hilo_w / 2);
+      const int up_arr_x = hilo_left + 7;
+      const int hi_txt_x = hilo_left + 14 + 10;
+      const int dn_arr_x = hi_txt_x + w_hi + 32 + 7;
+      const int lo_txt_x = dn_arr_x + 7 + 10;
 
-    draw_temp_arrow_glyph(up_arr_x, hilo_y, true,  icon_c);
-    if (large_cur && font_chrono_time != nullptr) {
-      it.print(hi_txt_x, hilo_y, font_chrono_time, col_white, TextAlign::CENTER_LEFT, hi_str);
-    } else {
-      it.print(hi_txt_x, hilo_y, font_date, col_white, TextAlign::CENTER_LEFT, hi_str);
-    }
-    draw_temp_arrow_glyph(dn_arr_x, hilo_y, false, icon_c);
-    if (large_cur && font_chrono_time != nullptr) {
-      it.print(lo_txt_x, hilo_y, font_chrono_time, col_slate, TextAlign::CENTER_LEFT, lo_str);
-    } else {
-      it.print(lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
+      draw_temp_arrow_glyph(up_arr_x, hilo_y, true,  icon_c);
+      if (large_cur && font_chrono_time != nullptr) {
+        it.print(hi_txt_x, hilo_y, font_chrono_time, col_white, TextAlign::CENTER_LEFT, hi_str);
+      } else {
+        it.print(hi_txt_x, hilo_y, font_date, col_white, TextAlign::CENTER_LEFT, hi_str);
+      }
+      draw_temp_arrow_glyph(dn_arr_x, hilo_y, false, icon_c);
+      if (large_cur && font_chrono_time != nullptr) {
+        it.print(lo_txt_x, hilo_y, font_chrono_time, col_slate, TextAlign::CENTER_LEFT, lo_str);
+      } else {
+        it.print(lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
+      }
     }
 
     const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
