@@ -88,13 +88,13 @@ inline int &light_insp_kelvin() { static int k = 3500; return k; }
 inline int &light_insp_bri_pct() { static int b = 80; return b; }
 inline std::string &area_color_hex_param() { static std::string s = "#FFAA55"; return s; }
 
-// Whole-Home Hub State & Built-In Demo Simulator State (Page 9, Tabs 0..3)
-inline int &whole_home_tab() { static int t = 0; return t; } // 0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum
-inline int &sim_thermostat_target_f() { static int tf = 71; return tf; }
-inline std::string &sim_thermostat_mode() { static std::string m = "auto"; return m; } // "heat", "cool", "auto", "off"
-inline bool &sim_garage_open() { static bool o = false; return o; }
-inline bool &sim_front_door_locked() { static bool l = true; return l; }
-inline std::string &sim_vacuum_state() { static std::string v = "Docked"; return v; } // "Cleaning", "Paused", "Docked"
+// Whole-Home Hub State (Page 9, Tabs 0..3) — backed by WholeHomeState in latter_state.h (tri-state, no demo defaults)
+inline int &whole_home_tab() { return whole_home_state().tab; } // 0=Alarm, 1=Thermostat, 2=Garage/Locks, 3=Vacuum
+inline int &sim_thermostat_target_f() { return whole_home_state().thermostat_target_f; }
+inline std::string &sim_thermostat_mode() { return whole_home_state().thermostat_mode; }
+inline GarageState &wh_garage_state() { return whole_home_state().garage_state; }
+inline LockState &wh_lock_state() { return whole_home_state().lock_state; }
+inline std::string &sim_vacuum_state() { return whole_home_state().vacuum_state; }
 
 inline const char *map_area_default_label_to_domain(const std::string &opt) {
   if (opt == "Lights") return "light";
@@ -706,12 +706,12 @@ inline void render_security_alarm_page(
   const int tab = whole_home_tab();
 
   if (tab == 0) {
-    // TAB 0: HOME SECURITY ALARM
+    // TAB 0: HOME SECURITY ALARM (Tri-state: unknown/unconfigured never claims "Disarmed" or "Ready (Demo)")
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
 
-    std::string st_lbl = "Status: Ready (Demo)";
-    Color st_col = col_green;
-    if (!alarm_entity.empty() && alarm_entity != "none") {
+    std::string st_lbl = "Status: Unknown";
+    Color st_col = col_slate;
+    if (!alarm_state.empty() && alarm_state != "none" && alarm_state != "unknown" && alarm_state != "unavailable") {
       if (alarm_state == "disarmed") { st_lbl = "Status: Disarmed"; st_col = col_green; }
       else if (alarm_state == "armed_home") { st_lbl = "Status: Armed Home"; st_col = col_gold; }
       else if (alarm_state == "armed_away") { st_lbl = "Status: Armed Away"; st_col = col_red; }
@@ -719,15 +719,11 @@ inline void render_security_alarm_page(
       else if (alarm_state == "arming" || alarm_state == "pending") { st_lbl = "Status: Arming..."; st_col = col_gold; }
       else if (alarm_state == "triggered") { st_lbl = "ALARM TRIGGERED!"; st_col = col_red; }
       else { st_lbl = "Status: " + alarm_state; st_col = theme_secondary; }
-    } else if (!alarm_state.empty() && alarm_state != "none") {
-      if (alarm_state == "disarmed") { st_lbl = "Status: Disarmed"; st_col = col_green; }
-      else if (alarm_state == "armed_home") { st_lbl = "Status: Armed Home"; st_col = col_gold; }
-      else if (alarm_state == "armed_away") { st_lbl = "Status: Armed Away"; st_col = col_red; }
     }
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : st_lbl.c_str());
 
-    bool is_disarmed = (alarm_state == "disarmed" || alarm_state.empty() || alarm_state == "none");
+    bool is_disarmed = (alarm_state == "disarmed");
     bool is_home     = (alarm_state == "armed_home" || alarm_state == "armed_night");
     bool is_away     = (alarm_state == "armed_away");
 
@@ -748,8 +744,17 @@ inline void render_security_alarm_page(
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
     char sub_t[48];
     const std::string &m = sim_thermostat_mode();
-    const char *m_lbl = (m == "heat") ? "Heating" : ((m == "cool") ? "Cooling" : ((m == "off") ? "System Off" : "Auto Climate"));
-    snprintf(sub_t, sizeof(sub_t), "%s  •  Indoor 70°", m_lbl);
+    const char *m_lbl = m.empty() ? "Mode: Unknown"
+                      : (m == "heat") ? "Heating"
+                      : (m == "cool") ? "Cooling"
+                      : (m == "off")  ? "System Off"
+                      : "Auto Climate";
+    float cur_f = whole_home_state().thermostat_current_f;
+    if (!std::isnan(cur_f) && cur_f > 20.0f) {
+      snprintf(sub_t, sizeof(sub_t), "%s  •  Indoor %.0f°", m_lbl, cur_f);
+    } else {
+      snprintf(sub_t, sizeof(sub_t), "%s", m_lbl);
+    }
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : sub_t);
 
@@ -774,7 +779,11 @@ inline void render_security_alarm_page(
     it.vertical_line(plus_x + 1, hero_y - gl_s, gl_s * 2 + 1, col_white);
 
     char t_val[16];
-    snprintf(t_val, sizeof(t_val), "%d°", sim_thermostat_target_f());
+    if (sim_thermostat_target_f() > 0) {
+      snprintf(t_val, sizeof(t_val), "%d°", sim_thermostat_target_f());
+    } else {
+      snprintf(t_val, sizeof(t_val), "—°");
+    }
     it.print(cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
 
     const int M_XS[4] = {cx - scale_x(129), cx - scale_x(43), cx + scale_x(43), cx + scale_x(129)};
@@ -793,24 +802,30 @@ inline void render_security_alarm_page(
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle");
 
-    bool g_open = sim_garage_open();
+    GarageState gs = wh_garage_state();
+    Color g_bg  = (gs == GarageState::OPEN) ? Color(40, 24, 18) : ((gs == GarageState::CLOSED) ? card_bg_on : card_bg_off);
+    Color g_brd = (gs == GarageState::OPEN) ? col_gold : ((gs == GarageState::CLOSED) ? col_green : card_brd_off);
+    const char *g_lbl = (gs == GarageState::OPEN)   ? "Garage: Open (Close)"
+                      : (gs == GarageState::CLOSED) ? "Garage: Closed (Open)"
+                      : "Garage: Unknown";
     render_modern_card(it, cx, scale_y(156), 308, 72, 16,
-                       g_open ? Color(40, 24, 18) : card_bg_on,
-                       g_open ? col_gold : col_green,
-                       g_open ? "Garage: Open (Close)" : "Garage: Closed (Open)",
-                       col_white, font_small);
+                       g_bg, g_brd, g_lbl,
+                       (gs == GarageState::UNKNOWN) ? col_slate : col_white, font_small);
 
-    bool d_locked = sim_front_door_locked();
+    LockState ls = wh_lock_state();
+    Color l_bg  = (ls == LockState::LOCKED) ? Color(18, 36, 26) : ((ls == LockState::UNLOCKED) ? Color(40, 18, 22) : card_bg_off);
+    Color l_brd = (ls == LockState::LOCKED) ? col_green : ((ls == LockState::UNLOCKED) ? col_red : card_brd_off);
+    const char *l_lbl = (ls == LockState::LOCKED)   ? "Front Door: Locked"
+                      : (ls == LockState::UNLOCKED) ? "Front Door: Unlocked"
+                      : "Front Door: Unknown";
     render_modern_card(it, cx, scale_y(256), 308, 72, 16,
-                       d_locked ? Color(18, 36, 26) : Color(40, 18, 22),
-                       d_locked ? col_green : col_red,
-                       d_locked ? "Front Door: Locked" : "Front Door: Unlocked",
-                       col_white, font_small);
+                       l_bg, l_brd, l_lbl,
+                       (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
 
   } else {
     // TAB 3: ROBOT VACUUM
     it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
-    std::string v_st = "Status: " + sim_vacuum_state();
+    std::string v_st = sim_vacuum_state().empty() ? "Status: Unknown" : ("Status: " + sim_vacuum_state());
     it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : v_st.c_str());
 

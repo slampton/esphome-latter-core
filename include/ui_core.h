@@ -18,6 +18,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include "latter_state.h"
 
 namespace latter_ui {
 
@@ -913,6 +914,21 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
     }
   }
 #endif
+}
+
+// Subtle top-bezel HA link-off indicator glyph rendered when Home Assistant API is disconnected
+template <typename DisplayT>
+inline void render_link_state_indicator(DisplayT &it, int cx, uint32_t now_ms,
+                                        esphome::Color warn_c, esphome::Color bg_c) {
+  if (link_state().ha_connected || now_ms < 8000U) return;
+  const int gy = scale_y(14);
+  // Compact 13x7 link-broken pill + diagonal slash
+  it.filled_circle(cx - 4, gy, 3, warn_c);
+  it.filled_circle(cx + 4, gy, 3, warn_c);
+  it.filled_circle(cx - 4, gy, 1, bg_c);
+  it.filled_circle(cx + 4, gy, 1, bg_c);
+  it.line(cx - 5, gy + 4, cx + 5, gy - 4, bg_c);
+  it.line(cx - 4, gy + 4, cx + 5, gy - 3, warn_c);
 }
 
 // Universal Reusable 3-Tap Feathered Line, 60-Segment Ring Gauge & Auto-Scaling Sparkline Primitives

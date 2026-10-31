@@ -2897,11 +2897,13 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (!x.empty() && x != "unknown" && x != "unavailable") {
+            if (!x.empty() && x != "none" && x != "unknown" && x != "unavailable") {
               latter_ui::sim_thermostat_mode() = x;
-              if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
+            } else {
+              latter_ui::sim_thermostat_mode() = "";
+            }
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2912,11 +2914,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (!x.empty() && x != "unknown" && x != "unavailable") {
-              latter_ui::sim_front_door_locked() = (x == "locked");
-              if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
+            latter_ui::wh_lock_state() = latter_ui::parse_lock_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2927,11 +2927,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (!x.empty() && x != "unknown" && x != "unavailable") {
-              latter_ui::sim_garage_open() = (x == "open" || x == "opening");
-              if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
+            latter_ui::wh_garage_state() = latter_ui::parse_garage_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant
@@ -2942,14 +2940,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (!x.empty() && x != "unknown" && x != "unavailable") {
-              if (x == "cleaning") latter_ui::sim_vacuum_state() = "Cleaning";
-              else if (x == "paused") latter_ui::sim_vacuum_state() = "Paused";
-              else if (x == "returning") latter_ui::sim_vacuum_state() = "Returning";
-              else latter_ui::sim_vacuum_state() = "Docked";
-              if (id(display_power_state) == 0 && id(gui_page) == 9) {
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
+            latter_ui::sim_vacuum_state() = latter_ui::normalize_vacuum_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
             }
 
   - platform: homeassistant

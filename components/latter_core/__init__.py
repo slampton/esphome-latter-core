@@ -22,6 +22,7 @@ CONFIG_SCHEMA = cv.Schema(
 
 CORE_HEADERS: tuple[str, ...] = (
     "va_cancel_helper.h",
+    "latter_state.h",
     "ui_core.h",
     "ui_layout.h",
     "ui_ambient_va.h",
