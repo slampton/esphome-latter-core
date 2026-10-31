@@ -517,6 +517,11 @@ inline uint32_t &last_ambient_anim_ms() {
   return ts;
 }
 
+inline uint32_t &last_frame_duration_ms() {
+  static uint32_t dur_ms = 0;
+  return dur_ms;
+}
+
 inline uint32_t &last_screensaver_draw_ms() {
   return last_ambient_anim_ms();
 }
@@ -525,10 +530,26 @@ inline void record_ambient_frame_ms(uint32_t now_ms) {
   last_ambient_anim_ms() = now_ms;
 }
 
+inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
+  const uint32_t frame_ms = last_frame_duration_ms();
+  if (!mww_running) {
+    return (frame_ms > 42U) ? std::min<uint32_t>(110U, frame_ms) : 42U;
+  }
+  if (frame_ms >= 85U) {
+    return std::min<uint32_t>(260U, frame_ms + 95U);
+  }
+  return std::max<uint32_t>(65U, frame_ms + 35U);
+}
+
 inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
                                      bool va_busy = false, bool alert_busy = false) {
   if (va_busy) return false;
-  const uint32_t min_gap = alert_busy ? 120U : (local_audio_busy ? 88U : 42U);
+  const uint32_t frame_ms = last_frame_duration_ms();
+  const uint32_t audio_idle_gap =
+      (frame_ms >= 85U) ? std::min<uint32_t>(380U, frame_ms * 2U)
+                        : std::max<uint32_t>(88U, frame_ms + 60U);
+  const uint32_t idle_gap = std::max<uint32_t>(42U, frame_ms);
+  const uint32_t min_gap = alert_busy ? 120U : (local_audio_busy ? audio_idle_gap : idle_gap);
   return (now_ms - last_ambient_anim_ms() >= min_gap);
 }
 
@@ -1287,12 +1308,14 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
       const uint16_t *src_row = src_data + y * SCREEN_W;
+      // On dimmed scrim rows (mul_q3 <= 4), 1-LSB neighbor differences shift to identical RGB values
+      const uint16_t tol_mask = (mul_q3 <= 4) ? 0xF7DEU : 0xFFFFU;
       int x = start_x;
       while (x <= end_x) {
         uint16_t p = src_row[x];
         int run_start = x;
         x++;
-        while (x <= end_x && src_row[x] == p) {
+        while (x <= end_x && (src_row[x] == p || ((src_row[x] ^ p) & tol_mask) == 0U)) {
           x++;
         }
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
@@ -1333,6 +1356,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       curr_y += step_fp;
       int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
       const uint16_t *src_row = src_data + sy * src_w;
+      const uint16_t tol_mask = (mul_q3 <= 4) ? 0xF7DEU : 0xFFFFU;
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
@@ -1342,7 +1366,9 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         uint16_t p = src_row[sx];
         int run_start = x;
         x++;
-        while (x <= end_x && src_row[std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12)] == p) {
+        while (x <= end_x) {
+          uint16_t np = src_row[std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12)];
+          if (np != p && ((np ^ p) & tol_mask) != 0U) break;
           x++;
         }
         uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
@@ -1509,27 +1535,71 @@ inline std::string sanitize_utf8_for_font(const std::string &str) {
 
 template<typename FontT>
 inline std::string fit_text_to_width_font(const std::string &raw_str, int max_w, FontT *font) {
+  if (raw_str.empty() || font == nullptr) return "";
+
+  // 16-Entry Memoization Ring Cache: turns repeated per-frame UTF-8 sanitization + font->measure()
+  // calls into O(1) cache hits across 20 FPS ambient/UI redraws.
+  struct FitCacheEntry {
+    const void *font_ptr = nullptr;
+    int max_w = 0;
+    size_t raw_len = 0;
+    uint32_t fnv_hash = 0;
+    std::string raw_key;
+    std::string fitted;
+  };
+  static FitCacheEntry cache[16];
+  static uint8_t next_slot = 0;
+
+  uint32_t h = 2166136261U;
+  for (unsigned char ch : raw_str) {
+    h = (h ^ ch) * 16777619U;
+  }
+  const void *fptr = static_cast<const void *>(font);
+  for (int i = 0; i < 16; i++) {
+    const auto &e = cache[i];
+    if (e.font_ptr == fptr && e.max_w == max_w && e.raw_len == raw_str.size() &&
+        e.fnv_hash == h && e.raw_key == raw_str) {
+      return e.fitted;
+    }
+  }
+
   std::string str = sanitize_utf8_for_font(raw_str);
-  if (str.empty() || font == nullptr) return "";
+  if (str.empty()) return "";
   int w = 0, x_off = 0, base = 0, text_h = 0;
   font->measure(str.c_str(), &w, &x_off, &base, &text_h);
-  if (w <= max_w) return str;
-
-  std::string cur = str;
-  if (cur.length() > 32) {
-    while (cur.length() > 30) {
+  std::string result;
+  if (w <= max_w) {
+    result = str;
+  } else {
+    std::string cur = str;
+    if (cur.length() > 32) {
+      while (cur.length() > 30) {
+        while (!cur.empty() && (static_cast<unsigned char>(cur.back()) & 0xC0) == 0x80) cur.pop_back();
+        if (!cur.empty()) cur.pop_back();
+      }
+    }
+    result = "..";
+    while (!cur.empty()) {
+      std::string test_str = cur + "..";
+      font->measure(test_str.c_str(), &w, &x_off, &base, &text_h);
+      if (w <= max_w) {
+        result = test_str;
+        break;
+      }
       while (!cur.empty() && (static_cast<unsigned char>(cur.back()) & 0xC0) == 0x80) cur.pop_back();
       if (!cur.empty()) cur.pop_back();
     }
   }
-  while (!cur.empty()) {
-    std::string test_str = cur + "..";
-    font->measure(test_str.c_str(), &w, &x_off, &base, &text_h);
-    if (w <= max_w) return test_str;
-    while (!cur.empty() && (static_cast<unsigned char>(cur.back()) & 0xC0) == 0x80) cur.pop_back();
-    if (!cur.empty()) cur.pop_back();
-  }
-  return "..";
+
+  auto &slot = cache[next_slot & 15U];
+  next_slot = static_cast<uint8_t>((next_slot + 1U) & 15U);
+  slot.font_ptr = fptr;
+  slot.max_w = max_w;
+  slot.raw_len = raw_str.size();
+  slot.fnv_hash = h;
+  slot.raw_key = raw_str;
+  slot.fitted = result;
+  return result;
 }
 
 inline bool is_newer_semver(const std::string &lat_str, const std::string &cur_str) {
@@ -1734,12 +1804,13 @@ struct DisplayUpdateScheduler : public esphome::Component {
     if (disp != nullptr && !screen_is_off_standby()) {
       uint32_t now_m = esphome::millis();
       uint32_t elapsed = now_m - last_disp_update_ms();
-      uint32_t delay_ms = (elapsed < 38U) ? (38U - elapsed) : 0U;
+      const uint32_t min_idle = std::min<uint32_t>(85U, std::max<uint32_t>(38U, last_frame_duration_ms() / 2U));
+      uint32_t delay_ms = (elapsed < min_idle) ? (min_idle - elapsed) : 0U;
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          "async_draw", delay_ms, [disp]() {
+          "async_draw", delay_ms, [disp, min_idle]() {
             if (screen_is_off_standby()) return;
-            if (esphome::millis() - last_disp_update_ms() < 32U) return;
+            if (esphome::millis() - last_disp_update_ms() < (min_idle - 6U)) return;
             disp->update();
           });
     }
@@ -1844,15 +1915,17 @@ struct FrameProfileScope {
   int pwr = 0;
 
   FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
-    if (profiler_enabled()) {
-      t0_us = prof_now_us();
-    }
+    t0_us = prof_now_us();
   }
 
   ~FrameProfileScope() {
     if (t0_us == 0) return;
     uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
     uint32_t now_m = esphome::millis();
+    last_frame_duration_ms() = render_us / 1000U;
+    last_disp_update_ms() = now_m;
+    last_ambient_anim_ms() = now_m;
+    if (!profiler_enabled()) return;
     auto &fr = flight_recorder();
     uint32_t dt_ms = (fr.last_frame_ms > 0 && now_m >= fr.last_frame_ms) ? (now_m - fr.last_frame_ms) : 0U;
     fr.last_frame_ms = now_m;

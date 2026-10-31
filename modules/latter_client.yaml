@@ -2248,24 +2248,26 @@ interval:
     then:
       - lambda: |-
           // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
-          // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms() (>= 42ms gap)
+          // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms()
           if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 8 && !id(va_active) && id(va_status_text).empty()) {
             if ((id(tools_subpage) == 3 && id(stopwatch_running)) ||
                 (id(tools_subpage) == 4 && latter_ui::dice_state().anim_active) ||
                 (id(tools_subpage) == 7) ||
                 (id(tools_subpage) == 8 && latter_ui::coin_state().anim_active)) {
-              if (millis() - latter_ui::last_ambient_anim_ms() >= 42U) {
-                latter_ui::schedule_disp_update(&id(disp1));
+              const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
+              if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
                 latter_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
               }
             }
           }
 
           // 20 FPS high-refresh physics loop exclusively for active games (coalesced against 1s timer)
           if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 3 && id(active_game) > 0 && !id(va_active) && id(va_status_text).empty()) {
-            if (millis() - latter_ui::last_ambient_anim_ms() >= 42U) {
-              latter_ui::schedule_disp_update(&id(disp1));
+            const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
+            if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
               latter_ui::record_ambient_frame_ms(millis());
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
@@ -2294,24 +2296,33 @@ interval:
             const uint32_t va_min_gap = (id(va_tts_received) || tts_audio_active) ? 110U : 42U;
             if (now_va_ms - last_va_anim_time >= va_min_gap) {
               last_va_anim_time = now_va_ms;
-              latter_ui::schedule_disp_update(&id(disp1));
               latter_ui::record_ambient_frame_ms(millis());
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
           // Dynamic Atmospheric Motion Wallpaper with Universal Audio-Aware Cadence
           // - Unlocks full 20 FPS (50ms) when local music is idle for rain, snow, lightning, and night starfield
-          // - Paces smoothly at ~13.3 FPS (75ms) when local Sendspin music is playing
-          // - Static daytime weather conditions run on the default 1s display refresh with near-zero CPU load
+          // - Paces smoothly when local Sendspin music or MicroWakeWord is running
+          // - Static daytime weather conditions or custom wallpapers run on the default 1s display refresh with near-zero CPU load
           const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
-          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && (id(gui_page) == 1 && id(home_subpage) == 0 && (id(home_weather_bg_switch).state || weather_sim_active || latter_ui::is_wake_greeting_fading(millis(), id(home_wake_greeting_switch).state) || latter_ui::is_home_activity_carousel_animating(millis()))) && !id(va_active) && id(va_status_text).empty()) {
+          const bool custom_wp_loaded = !weather_sim_active &&
+                                        !id(ha_latter_wallpaper_url).state.empty() &&
+                                        id(ha_latter_wallpaper_url).state != "none" &&
+                                        (id(ha_latter_wallpaper_url).state == id(current_loaded_wallpaper_url));
+          const bool weather_canvas_visible = (id(home_weather_bg_switch).state && !custom_wp_loaded) || weather_sim_active;
+          const uint32_t now_w_ms = millis();
+          const bool ui_overlay_animating =
+              latter_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
+              latter_ui::is_home_activity_carousel_animating(now_w_ms);
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 &&
+              (id(gui_page) == 1 && id(home_subpage) == 0 && (weather_canvas_visible || ui_overlay_animating)) &&
+              !id(va_active) && id(va_status_text).empty()) {
             static uint32_t last_cond_eval_time = 0;
             static bool cached_has_motion = false;
-            uint32_t now_w_ms = millis();
+            static bool cached_high_rate = false;
             const bool sim_just_changed = latter_ui::weather_sim_dirty() ||
-                                          (latter_ui::last_ambient_anim_ms() == 0U) ||
-                                          latter_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
-                                          latter_ui::is_home_activity_carousel_animating(now_w_ms);
+                                          (latter_ui::last_ambient_anim_ms() == 0U);
 
             if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
               latter_ui::weather_sim_dirty() = false;
@@ -2321,21 +2332,29 @@ interval:
               const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
               apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
-              cached_has_motion = (sun_ok || weather_sim_active) &&
+              cached_has_motion = weather_canvas_visible && (sun_ok || weather_sim_active) &&
                                   latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
+              cached_high_rate  = weather_canvas_visible && (sun_ok || weather_sim_active) &&
+                                  latter_ui::is_high_rate_weather_motion(c_cond, is_night_time, now_w_ms);
             }
 
             const bool touch_busy = latter_ui::touch_gesture().active ||
                                     (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
-            if (!touch_busy && (sim_just_changed || cached_has_motion)) {
+            if (!touch_busy && (sim_just_changed || ui_overlay_animating || cached_has_motion)) {
               const bool audio_or_mww_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                   id(mww).is_running();
-              if (sim_just_changed || latter_ui::should_step_ambient_anim(now_w_ms, audio_or_mww_busy,
-                                                      id(va_active) || !id(va_status_text).empty(),
-                                                      id(alarm_ringing) || id(timer_ringing))) {
+              const bool slow_cloud_drift_only =
+                  cached_has_motion && !cached_high_rate && !ui_overlay_animating && !LATTER_HAS_IMU;
+              const uint32_t drift_min_gap = audio_or_mww_busy ? 320U : 220U;
+              const bool drift_ready = !slow_cloud_drift_only ||
+                                       (now_w_ms - latter_ui::last_ambient_anim_ms() >= drift_min_gap);
+              if (sim_just_changed || (drift_ready && latter_ui::should_step_ambient_anim(
+                                                          now_w_ms, audio_or_mww_busy,
+                                                          id(va_active) || !id(va_status_text).empty(),
+                                                          id(alarm_ringing) || id(timer_ringing)))) {
+                latter_ui::record_ambient_frame_ms(now_w_ms);
                 latter_ui::schedule_disp_update(&id(disp1));
-                latter_ui::record_ambient_frame_ms(millis());
               }
             }
           }

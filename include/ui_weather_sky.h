@@ -311,7 +311,24 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
   float inv_hw = 1.0f / static_cast<float>(half_w);
   float phase_seed = static_cast<float>((bx / 13) & 7) * 0.85f;
 
-  for (int dx = -half_w; dx <= half_w; dx += 2) {
+  static constexpr int kColStep = (SCREEN_W > 520) ? 3 : 2;
+  static constexpr int kMaxCols = 168;
+  struct CumulusCol {
+    int16_t x;
+    int16_t y_top;
+    int16_t y_c1;
+    int16_t y_c2;
+    int16_t y_c3;
+    int16_t y_mid_b;
+    int16_t y_bot;
+    uint8_t top_band; // 0 = empty, 1 = col_rim, 2 = col_crest
+  };
+  CumulusCol cols[kMaxCols];
+  int n_cols = 0;
+  int min_y = SCREEN_H;
+  int max_y = 0;
+
+  for (int dx = -half_w; dx <= half_w && n_cols < kMaxCols; dx += kColStep) {
     int x = bx + dx;
 #if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(x, 5);
@@ -319,7 +336,7 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
     int y_min = SCREEN_CY - max_dy;
     int y_max = SCREEN_CY + max_dy;
 #else
-    if (x < 5 || x + 1 >= SCREEN_W - 5) continue;
+    if (x < 5 || x + kColStep >= SCREEN_W - 5) continue;
     int y_min = 5;
     int y_max = SCREEN_H - 6;
 #endif
@@ -337,7 +354,9 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
 
     float dome = fmaxf(fmaxf(t0, t1), fmaxf(t2, fmaxf(t3, t4)));
     float ripple = 0.08f * fast_sin(u * 9.5f + phase_seed) * env;
-    float h_top_f = (14.0f + 40.0f * dome + 36.0f * ripple) * scale * sqrtf(env);
+    float s0 = 0.5f * (1.0f + env);
+    float sqrt_env = 0.5f * (s0 + env / s0);
+    float h_top_f = (14.0f + 40.0f * dome + 36.0f * ripple) * scale * sqrt_env;
 
     // Billowing, rounded multi-lobe underside (eliminates flat horizontal bottom lines!)
     float bot_lobes = 0.55f + 0.45f * std::fabs(fast_cos(u * 4.2f + phase_seed * 0.7f));
@@ -353,31 +372,96 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
     int y_c1 = y_top + std::max(2, span / 6);
     int y_c2 = y_top + (span * 46) / 100;
     int y_c3 = y_top + (span * 76) / 100;
-
     bool sunlit_slope = (u > -0.45f && dome > 0.32f);
-    esphome::Color top_c = sunlit_slope ? col_rim : col_crest;
 
-    if (x >= 5 && x + 1 < SCREEN_W - 5) {
-      it.filled_rectangle(x, y_top, 2, y_c1 - y_top, top_c);
-      it.filled_rectangle(x, y_c1,  2, y_c2 - y_c1,  col_crest);
-      it.filled_rectangle(x, y_c2,  2, y_c3 - y_c2,  col_high);
-      it.vertical_line(x,     y_c3, y_bot - y_c3 + 1, col_body);
-      it.vertical_line(x + 1, y_c3, y_bot - y_c3 + 1, col_shadow);
+    if (x >= 5 && x + kColStep <= SCREEN_W - 5) {
+      CumulusCol &c = cols[n_cols++];
+      c.x = static_cast<int16_t>(x);
+      c.y_top = static_cast<int16_t>(y_top);
+      c.y_c1 = static_cast<int16_t>(y_c1);
+      c.y_c2 = static_cast<int16_t>(y_c2);
+      c.y_c3 = static_cast<int16_t>(y_c3);
+      c.y_mid_b = static_cast<int16_t>((y_c3 + y_bot) >> 1);
+      c.y_bot = static_cast<int16_t>(y_bot);
+      c.top_band = sunlit_slope ? 1 : 2;
+      if (y_top < min_y) min_y = y_top;
+      if (y_bot > max_y) max_y = y_bot;
+    }
+  }
+
+  if (n_cols <= 0 || min_y > max_y) return;
+  const esphome::Color palette[6] = {
+      esphome::Color(0, 0, 0), col_rim, col_crest, col_high, col_body, col_shadow};
+
+  // Row-major scanline rasterizer: merges contiguous horizontal cloud bands into single horizontal_line spans
+  for (int y = min_y; y <= max_y; y++) {
+    int i = 0;
+    while (i < n_cols) {
+      const CumulusCol &c = cols[i];
+      uint8_t band = 0;
+      if (y >= c.y_top && y <= c.y_bot) {
+        if (y < c.y_c1) band = c.top_band;
+        else if (y < c.y_c2) band = 2;
+        else if (y < c.y_c3) band = 3;
+        else if (y <= c.y_mid_b) band = 4;
+        else band = 5;
+      }
+      if (band == 0) {
+        i++;
+        continue;
+      }
+      int run_x0 = c.x;
+      int run_end = c.x + kColStep;
+      i++;
+      while (i < n_cols) {
+        const CumulusCol &nc = cols[i];
+        if (nc.x != run_end) break;
+        uint8_t nband = 0;
+        if (y >= nc.y_top && y <= nc.y_bot) {
+          if (y < nc.y_c1) nband = nc.top_band;
+          else if (y < nc.y_c2) nband = 2;
+          else if (y < nc.y_c3) nband = 3;
+          else if (y <= nc.y_mid_b) nband = 4;
+          else nband = 5;
+        }
+        if (nband != band) break;
+        run_end += kColStep;
+        i++;
+      }
+      it.horizontal_line(run_x0, y, run_end - run_x0, palette[band]);
     }
   }
 }
 
 // Reusable Undulating Wispy Cloud Veil / Tendril Primitive:
-// Shared by Clear Day, Cloudy/Overcast, and Fog & Mist (uses fast vertical_line spans).
+// Shared by Clear Day, Cloudy/Overcast, and Fog & Mist (row-major horizontal_line scanlines).
 template<typename DisplayT>
 inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int half_w,
                                     float phase, int seed_id,
                                     esphome::Color c_crest, esphome::Color c_body,
                                     esphome::Color c_base, int cy) {
   if (half_w <= 10) return;
+  if (SCREEN_W > 520) {
+    base_y = scale_y(base_y);
+  }
   float inv_hw = 1.0f / static_cast<float>(half_w);
 
-  for (int x = center_x - half_w; x <= center_x + half_w; x += 3) {
+  static constexpr int kVeilStep = (SCREEN_W > 520) ? 4 : 3;
+  static constexpr int kMaxVeilCols = 180;
+  struct VeilCol {
+    int16_t x;
+    int16_t w;
+    int16_t y_top;
+    int16_t y_mid1;
+    int16_t y_mid2;
+    int16_t y_bot;
+  };
+  VeilCol cols[kMaxVeilCols];
+  int n_cols = 0;
+  int min_y = SCREEN_H;
+  int max_y = 0;
+
+  for (int x = center_x - half_w; x <= center_x + half_w && n_cols < kMaxVeilCols; x += kVeilStep) {
 #if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(x, 6);
     if (max_dy <= 10) continue;
@@ -385,7 +469,7 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
     int y_max = cy + max_dy;
 #else
     (void)cy;
-    if (x < 6 || x >= SCREEN_W - 6) continue;
+    if (x < 6 || x + kVeilStep >= SCREEN_W - 6) continue;
     int y_min = 6;
     int y_max = SCREEN_H - 7;
 #endif
@@ -413,11 +497,51 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
     int y_mid1 = y_top + ((y_bot - y_top) / 3);
     int y_mid2 = y_top + (((y_bot - y_top) * 2) / 3);
 
-    it.vertical_line(x, y_top,  y_mid1 - y_top + 1,  c_crest);
-    it.vertical_line(x, y_mid1, y_mid2 - y_mid1 + 1, c_body);
-    it.vertical_line(x, y_mid2, y_bot - y_mid2 + 1,  c_base);
-    if (eff_taper > 0.32f && x + 1 < SCREEN_W - 6) {
-      it.vertical_line(x + 1, y_top + 1, y_mid2 - y_top, c_body);
+    VeilCol &vc = cols[n_cols++];
+    vc.x = static_cast<int16_t>(x);
+    vc.w = static_cast<int16_t>((eff_taper > 0.32f) ? kVeilStep : std::max(1, kVeilStep - 1));
+    vc.y_top = static_cast<int16_t>(y_top);
+    vc.y_mid1 = static_cast<int16_t>(y_mid1);
+    vc.y_mid2 = static_cast<int16_t>(y_mid2);
+    vc.y_bot = static_cast<int16_t>(y_bot);
+    if (y_top < min_y) min_y = y_top;
+    if (y_bot > max_y) max_y = y_bot;
+  }
+
+  if (n_cols <= 0 || min_y > max_y) return;
+  const esphome::Color veil_pal[4] = {esphome::Color(0, 0, 0), c_crest, c_body, c_base};
+
+  for (int y = min_y; y <= max_y; y++) {
+    int i = 0;
+    while (i < n_cols) {
+      const VeilCol &vc = cols[i];
+      uint8_t band = 0;
+      if (y >= vc.y_top && y <= vc.y_bot) {
+        if (y <= vc.y_mid1) band = 1;
+        else if (y <= vc.y_mid2) band = 2;
+        else band = 3;
+      }
+      if (band == 0) {
+        i++;
+        continue;
+      }
+      int run_x0 = vc.x;
+      int run_end = vc.x + vc.w;
+      i++;
+      while (i < n_cols) {
+        const VeilCol &nvc = cols[i];
+        if (nvc.x > run_end) break;
+        uint8_t nband = 0;
+        if (y >= nvc.y_top && y <= nvc.y_bot) {
+          if (y <= nvc.y_mid1) nband = 1;
+          else if (y <= nvc.y_mid2) nband = 2;
+          else nband = 3;
+        }
+        if (nband != band) break;
+        run_end = std::max(run_end, static_cast<int>(nvc.x + nvc.w));
+        i++;
+      }
+      it.horizontal_line(run_x0, y, run_end - run_x0, veil_pal[band]);
     }
   }
 }
@@ -794,6 +918,35 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
     return is_night_meteor_active(now_ms);
   }
   if (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday")) {
+    return is_clear_day_flock_active(now_ms);
+  }
+  return false;
+}
+
+// Distinguishes fast particle/celestial animations (rain, snow, storm, wind, active bird/meteor pass)
+// from slow atmospheric cloud/fog drift (~5-6 px/sec) so stationary high-DPI displays never waste
+// CPU/PSRAM bandwidth redrawing sub-pixel cloud positions at 20 FPS while MicroWakeWord is listening.
+inline bool is_high_rate_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0) {
+  if (cond.find("rain") != std::string::npos ||
+      cond.find("pouring") != std::string::npos ||
+      cond.find("drizzle") != std::string::npos ||
+      cond.find("snow") != std::string::npos ||
+      cond.find("sleet") != std::string::npos ||
+      cond.find("hail") != std::string::npos ||
+      cond.find("lightning") != std::string::npos ||
+      cond.find("thunder") != std::string::npos ||
+      cond.find("wind") != std::string::npos ||
+      cond.find("breez") != std::string::npos) {
+    return true;
+  }
+  const bool is_partly = (cond.find("partly") != std::string::npos ||
+                          cond.find("mostlysunny") != std::string::npos ||
+                          cond.find("partlysunny") != std::string::npos);
+  if (is_night && (cond == "clear-night" || cond == "clearnight" ||
+                   cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly)) {
+    return is_night_meteor_active(now_ms);
+  }
+  if (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday" || is_partly)) {
     return is_clear_day_flock_active(now_ms);
   }
   return false;
