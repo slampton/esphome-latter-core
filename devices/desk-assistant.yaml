@@ -21,6 +21,8 @@ substitutions:
   font_micro_size: "20"
   font_games_size: "56"
   art_shape: "square"
+  art_resize: "720x720"
+  sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Always-On Wall / Desk"
   default_pickup_wake: "Disabled"

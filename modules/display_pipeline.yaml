@@ -5,8 +5,6 @@
 # ==============================================================================
 
 substitutions:
-  art_resize: "${screen_w}x${screen_h}"
-  sendspin_art_resize: "${art_resize}"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
 
 http_request:

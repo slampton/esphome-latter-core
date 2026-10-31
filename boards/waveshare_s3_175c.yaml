@@ -11,6 +11,7 @@ substitutions:
   font_micro_size: "14"
   font_games_size: "38"
   art_resize: "466x466"
+  sendspin_art_resize: "466x466"
   art_shape: "circle"
   default_start_app: "Home"
   default_clock_face: "Modern Roman (Analog)"

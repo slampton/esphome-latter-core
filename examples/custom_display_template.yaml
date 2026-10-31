@@ -18,6 +18,8 @@ substitutions:
   screen_w: "480"
   screen_h: "480"
   art_shape: "square"
+  art_resize: "480x480"
+  sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Handheld Roaming"
   default_pickup_wake: "Always On"
