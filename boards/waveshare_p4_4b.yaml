@@ -39,6 +39,8 @@ substitutions:
 
 esphome:
   build_flags:
+    - '-DLATTER_BOARD_ID=\"waveshare_p4_4b\"'
+    - "-DLATTER_BLE_MINOR=5"
     - "-DLATTER_SCREEN_W=720"
     - "-DLATTER_SCREEN_H=720"
     - "-DLATTER_ROUND_DISPLAY=0"

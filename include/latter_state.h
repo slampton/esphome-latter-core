@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+#include "latter_protocol.h"
+
 namespace latter_ui {
 
 enum class LockState : uint8_t {
@@ -42,6 +44,7 @@ struct WholeHomeState {
 };
 
 struct AreaContextState {
+  uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string area_id = "";
   std::string area_name = "";
@@ -59,6 +62,10 @@ struct AreaContextState {
   int covers_open = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "";
+  std::string thermostat_entity = "";
+  std::string lock_entity = "";
+  std::string garage_entity = "";
+  std::string vacuum_entity = "";
   std::string camera_snapshot_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
@@ -73,6 +80,7 @@ struct AreaContextState {
 };
 
 struct MediaState {
+  uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string state = "idle";
   std::string title = "";
@@ -80,6 +88,7 @@ struct MediaState {
   std::string album = "";
   float duration = 0.0f;
   float position = 0.0f;
+  uint32_t position_updated_at = 0;
   float volume = 0.5f;
   std::string media_type = "music";
   int supported_features = 0;
@@ -89,9 +98,11 @@ struct MediaState {
   std::string last_speaker = "";
   std::string local_speaker = "";
   std::string volume_entity = "";
+  bool is_local = false;
 };
 
 struct RemoteState {
+  uint32_t epoch = 0;
   uint32_t rev = 0;
   int active_slot = 0;
   int configured_count = 0;
@@ -99,6 +110,7 @@ struct RemoteState {
 };
 
 struct WeatherState {
+  uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string condition = "";
   float temperature = NAN;
@@ -111,6 +123,7 @@ struct WeatherState {
 };
 
 struct CalendarState {
+  uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string summary = "";
   int count = 0;
@@ -238,12 +251,31 @@ inline bool v3_parse_bool(std::string_view sv) {
   return (sv == "1" || sv == "true" || sv == "True" || sv == "on");
 }
 
-inline bool apply_if_newer(uint32_t &cur_rev, uint32_t incoming_rev) {
-  if (incoming_rev == 0 || incoming_rev >= cur_rev) {
-    cur_rev = incoming_rev;
+inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_epoch, uint32_t in_rev) {
+  if (in_epoch == 0 || in_rev == 0) return false;
+  if (in_epoch != cur_epoch) {
+    cur_epoch = in_epoch;
+    cur_rev = in_rev;
+    return true;
+  }
+  if (in_rev > cur_rev) {
+    cur_rev = in_rev;
     return true;
   }
   return false;
+}
+
+inline void reset_all_v3_rev_guards() {
+  area_ctx_state().epoch = 0;
+  area_ctx_state().rev = 0;
+  media_state().epoch = 0;
+  media_state().rev = 0;
+  remote_state().epoch = 0;
+  remote_state().rev = 0;
+  weather_state().epoch = 0;
+  weather_state().rev = 0;
+  calendar_state().epoch = 0;
+  calendar_state().rev = 0;
 }
 
 inline LockState parse_lock_state_str(std::string_view sv) {
@@ -267,132 +299,148 @@ inline std::string normalize_vacuum_state_str(std::string_view sv) {
   return std::string(sv);
 }
 
-// Parse Protocol v3 area_context payload ("v3\x1f<rev>\x1f...")
+// Parse Protocol v3 area_context payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_area_ctx_payload(std::string_view payload, AreaContextState &st, WholeHomeState &wh) {
-  std::string_view f[42];
-  size_t n = v3_split_fields(payload, f, 42, '\x1f');
-  if (n < 40 || f[0] != "v3") return false;
-  uint32_t rev = v3_parse_u32(f[1], 0);
-  if (!apply_if_newer(st.rev, rev)) return false;
+  constexpr size_t kCount = static_cast<size_t>(AreaCtxField::COUNT);
+  std::string_view f[kCount];
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kCount || f[static_cast<size_t>(AreaCtxField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
-  st.area_id           = std::string(f[2]);
-  st.area_name         = std::string(f[3]);
-  st.site_id           = std::string(f[4]);
-  st.vpn_enabled       = v3_parse_bool(f[5]);
-  st.vpn_client_ip     = std::string(f[6]);
-  st.ble_closest_proxy = std::string(f[7]);
-  st.dock_apps         = std::string(f[8]);
-  st.wallpaper_url     = std::string(f[9]);
-  st.theme_color_hex   = std::string(f[10]);
-  st.available_domains = std::string(f[11]);
-  st.area_temp         = v3_parse_float(f[12], NAN);
-  st.area_humidity     = v3_parse_float(f[13], NAN);
-  st.lights_on         = v3_parse_int(f[14], 0);
-  st.covers_open       = v3_parse_int(f[15], 0);
-  st.alarm_entity      = std::string(f[16]);
-  st.alarm_state       = std::string(f[17]);
+  st.area_id           = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ID)]);
+  st.area_name         = std::string(f[static_cast<size_t>(AreaCtxField::AREA_NAME)]);
+  st.site_id           = std::string(f[static_cast<size_t>(AreaCtxField::SITE_ID)]);
+  st.vpn_enabled       = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::VPN_ENABLED)]);
+  st.vpn_client_ip     = std::string(f[static_cast<size_t>(AreaCtxField::VPN_CLIENT_IP)]);
+  st.ble_closest_proxy = std::string(f[static_cast<size_t>(AreaCtxField::BLE_CLOSEST_PROXY)]);
+  st.dock_apps         = std::string(f[static_cast<size_t>(AreaCtxField::DOCK_APPS)]);
+  st.wallpaper_url     = std::string(f[static_cast<size_t>(AreaCtxField::WALLPAPER_URL)]);
+  st.theme_color_hex   = std::string(f[static_cast<size_t>(AreaCtxField::THEME_COLOR_HEX)]);
+  st.available_domains = std::string(f[static_cast<size_t>(AreaCtxField::AVAILABLE_DOMAINS)]);
+  st.area_temp         = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_TEMP)], NAN);
+  st.area_humidity     = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_HUMIDITY)], NAN);
+  st.lights_on         = v3_parse_int(f[static_cast<size_t>(AreaCtxField::LIGHTS_ON)], 0);
+  st.covers_open       = v3_parse_int(f[static_cast<size_t>(AreaCtxField::COVERS_OPEN)], 0);
+  st.alarm_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_ENTITY)]);
+  st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
+  st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
 
-  std::string_view th_mode = f[19];
+  std::string_view th_mode = f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)];
   if (th_mode != "none" && th_mode != "unknown" && th_mode != "unavailable") {
     wh.thermostat_mode = std::string(th_mode);
   } else {
     wh.thermostat_mode = "";
   }
-  float th_temp = v3_parse_float(f[20], NAN);
+  float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
   if (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f) {
     wh.thermostat_target_f = static_cast<int>(std::round(th_temp));
   }
-  wh.thermostat_current_f = v3_parse_float(f[21], NAN);
-  wh.lock_state           = parse_lock_state_str(f[23]);
-  wh.garage_state         = parse_garage_state_str(f[25]);
-  wh.vacuum_state         = normalize_vacuum_state_str(f[27]);
+  wh.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
+  st.lock_entity          = std::string(f[static_cast<size_t>(AreaCtxField::LOCK_ENTITY)]);
+  wh.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);
+  st.garage_entity        = std::string(f[static_cast<size_t>(AreaCtxField::GARAGE_ENTITY)]);
+  wh.garage_state         = parse_garage_state_str(f[static_cast<size_t>(AreaCtxField::GARAGE_STATE)]);
+  st.vacuum_entity        = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
+  wh.vacuum_state         = normalize_vacuum_state_str(f[static_cast<size_t>(AreaCtxField::VACUUM_STATE)]);
 
-  st.camera_snapshot_url      = std::string(f[28]);
-  st.cameras_summary          = std::string(f[29]);
-  st.doorbell_talk_state      = std::string(f[30]);
-  st.intercom_targets_summary = std::string(f[31]);
-  // f[32] reserved (retired custom_bindings_summary)
-  st.alert_id                 = v3_parse_int(f[33], st.alert_id);
-  st.alert_title              = std::string(f[34]);
-  st.alert_message            = std::string(f[35]);
-  st.alert_priority           = std::string(f[36]);
-  st.alert_duration           = v3_parse_int(f[37], 10);
-  st.alert_chime              = v3_parse_bool(f[38]);
-  st.alert_camera_url         = std::string(f[39]);
+  st.camera_snapshot_url      = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_SNAPSHOT_URL)]);
+  st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
+  st.doorbell_talk_state      = std::string(f[static_cast<size_t>(AreaCtxField::DOORBELL_TALK_STATE)]);
+  st.intercom_targets_summary = std::string(f[static_cast<size_t>(AreaCtxField::INTERCOM_TARGETS_SUMMARY)]);
+  st.alert_id                 = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_ID)], st.alert_id);
+  st.alert_title              = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_TITLE)]);
+  st.alert_message            = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_MESSAGE)]);
+  st.alert_priority           = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_PRIORITY)]);
+  st.alert_duration           = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_DURATION)], 10);
+  st.alert_chime              = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::ALERT_CHIME)]);
+  st.alert_camera_url         = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_URL)]);
   return true;
 }
 
-// Parse Protocol v3 active_media payload ("v3\x1f<rev>\x1f...")
+// Parse Protocol v3 active_media payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_media_payload(std::string_view payload, MediaState &st) {
-  std::string_view f[18];
-  size_t n = v3_split_fields(payload, f, 18, '\x1f');
-  if (n < 14 || f[0] != "v3") return false;
-  uint32_t rev = v3_parse_u32(f[1], 0);
-  if (!apply_if_newer(st.rev, rev)) return false;
+  constexpr size_t kCount = static_cast<size_t>(MediaField::COUNT);
+  std::string_view f[kCount];
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kCount || f[static_cast<size_t>(MediaField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(MediaField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(MediaField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
-  st.state              = std::string(f[2]);
-  st.title              = std::string(f[3]);
-  st.artist             = std::string(f[4]);
-  st.album              = std::string(f[5]);
-  st.duration           = v3_parse_float(f[6], 0.0f);
-  st.position           = v3_parse_float(f[7], 0.0f);
-  st.volume             = v3_parse_float(f[8], st.volume);
-  st.media_type         = std::string(f[9]);
-  st.supported_features = v3_parse_int(f[10], 0);
-  st.art_url            = std::string(f[11]);
-  st.active_speaker     = std::string(f[12]);
-  st.speaker_name       = std::string(f[13]);
-  if (n > 14) st.last_speaker  = std::string(f[14]);
-  if (n > 15) st.local_speaker = std::string(f[15]);
-  if (n > 16) st.volume_entity = std::string(f[16]);
+  st.state               = std::string(f[static_cast<size_t>(MediaField::STATE)]);
+  st.title               = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
+  st.artist              = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
+  st.album               = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
+  st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
+  st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
+  st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
+  float raw_vol          = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], st.volume);
+  st.volume              = (raw_vol > 1.0f) ? (raw_vol * 0.01f) : raw_vol;
+  st.media_type          = std::string(f[static_cast<size_t>(MediaField::MEDIA_TYPE)]);
+  st.supported_features  = v3_parse_int(f[static_cast<size_t>(MediaField::SUPPORTED_FEATURES)], 0);
+  st.art_url             = std::string(f[static_cast<size_t>(MediaField::ART_URL)]);
+  st.active_speaker      = std::string(f[static_cast<size_t>(MediaField::ACTIVE_SPEAKER)]);
+  st.speaker_name        = std::string(f[static_cast<size_t>(MediaField::SPEAKER_NAME)]);
+  st.last_speaker        = std::string(f[static_cast<size_t>(MediaField::LAST_SPEAKER)]);
+  st.local_speaker       = std::string(f[static_cast<size_t>(MediaField::LOCAL_SPEAKER)]);
+  st.volume_entity       = std::string(f[static_cast<size_t>(MediaField::VOLUME_ENTITY)]);
+  st.is_local            = v3_parse_bool(f[static_cast<size_t>(MediaField::IS_LOCAL)]);
   return true;
 }
 
-// Parse Protocol v3 remote_config payload ("v3\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
+// Parse Protocol v3 remote_config payload ("v3\x1f<epoch>\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
 inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st) {
-  std::string_view f[6];
-  size_t n = v3_split_fields(payload, f, 6, '\x1f');
-  if (n < 5 || f[0] != "v3") return false;
-  uint32_t rev = v3_parse_u32(f[1], 0);
-  if (!apply_if_newer(st.rev, rev)) return false;
+  constexpr size_t kCount = static_cast<size_t>(RemoteField::COUNT);
+  std::string_view f[kCount];
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kCount || f[static_cast<size_t>(RemoteField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(RemoteField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(RemoteField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
-  int slot_1based     = v3_parse_int(f[2], 1);
+  int slot_1based     = v3_parse_int(f[static_cast<size_t>(RemoteField::ACTIVE_SLOT)], 1);
   st.active_slot      = (slot_1based > 0) ? (slot_1based - 1) : 0;
-  st.configured_count = v3_parse_int(f[3], 0);
-  st.slots_summary    = std::string(f[4]);
+  st.configured_count = v3_parse_int(f[static_cast<size_t>(RemoteField::CONFIGURED_COUNT)], 0);
+  st.slots_summary    = std::string(f[static_cast<size_t>(RemoteField::SLOTS_SUMMARY)]);
   return true;
 }
 
-// Parse Protocol v3 weather payload ("v3\x1f<rev>\x1f<cond>\x1f<temp>\x1f<hum>\x1f<ws>\x1f<wb>\x1f<hi>\x1f<lo>\x1f<forecast_5d>")
+// Parse Protocol v3 weather payload ("v3\x1f<epoch>\x1f<rev>\x1f<cond>\x1f<temp>\x1f<hum>\x1f<ws>\x1f<wb>\x1f<hi>\x1f<lo>\x1f<forecast_5d>")
 inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st) {
-  std::string_view f[11];
-  size_t n = v3_split_fields(payload, f, 11, '\x1f');
-  if (n < 10 || f[0] != "v3") return false;
-  uint32_t rev = v3_parse_u32(f[1], 0);
-  if (!apply_if_newer(st.rev, rev)) return false;
+  constexpr size_t kCount = static_cast<size_t>(WeatherField::COUNT);
+  std::string_view f[kCount];
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kCount || f[static_cast<size_t>(WeatherField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(WeatherField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(WeatherField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
-  st.condition    = std::string(f[2]);
-  st.temperature  = v3_parse_float(f[3], NAN);
-  st.humidity     = v3_parse_float(f[4], NAN);
-  st.wind_speed   = v3_parse_float(f[5], NAN);
-  st.wind_bearing = v3_parse_float(f[6], NAN);
-  st.high         = v3_parse_float(f[7], NAN);
-  st.low          = v3_parse_float(f[8], NAN);
-  st.forecast_5d  = std::string(f[9]);
+  st.condition    = std::string(f[static_cast<size_t>(WeatherField::CONDITION)]);
+  st.temperature  = v3_parse_float(f[static_cast<size_t>(WeatherField::TEMPERATURE)], NAN);
+  st.humidity     = v3_parse_float(f[static_cast<size_t>(WeatherField::HUMIDITY)], NAN);
+  st.wind_speed   = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_SPEED)], NAN);
+  st.wind_bearing = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_BEARING)], NAN);
+  st.high         = v3_parse_float(f[static_cast<size_t>(WeatherField::HIGH)], NAN);
+  st.low          = v3_parse_float(f[static_cast<size_t>(WeatherField::LOW)], NAN);
+  st.forecast_5d  = std::string(f[static_cast<size_t>(WeatherField::FORECAST_5D)]);
   return true;
 }
 
-// Parse Protocol v3 calendar payload ("v3\x1f<rev>\x1f<summary>\x1f<count>\x1f<next_event>")
+// Parse Protocol v3 calendar payload ("v3\x1f<epoch>\x1f<rev>\x1f<summary>\x1f<count>\x1f<next_event>")
 inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st) {
-  std::string_view f[6];
-  size_t n = v3_split_fields(payload, f, 6, '\x1f');
-  if (n < 5 || f[0] != "v3") return false;
-  uint32_t rev = v3_parse_u32(f[1], 0);
-  if (!apply_if_newer(st.rev, rev)) return false;
+  constexpr size_t kCount = static_cast<size_t>(CalendarField::COUNT);
+  std::string_view f[kCount];
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kCount || f[static_cast<size_t>(CalendarField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(CalendarField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(CalendarField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
-  st.summary    = std::string(f[2]);
-  st.count      = v3_parse_int(f[3], 0);
-  st.next_event = std::string(f[4]);
+  st.summary    = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
+  st.count      = v3_parse_int(f[static_cast<size_t>(CalendarField::COUNT)], 0);
+  st.next_event = std::string(f[static_cast<size_t>(CalendarField::NEXT_EVENT)]);
   return true;
 }
 

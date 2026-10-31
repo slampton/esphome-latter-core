@@ -110,10 +110,24 @@ api:
       - lambda: |-
           latter_ui::link_state().ha_connected = true;
           latter_ui::link_state().last_ha_connect_ms = millis();
+          if (client_info.find("Home Assistant") != std::string::npos) {
+            latter_ui::reset_all_v3_rev_guards();
+          }
           esphome::voice_assistant::on_api_client_authenticated(id(va), id(mww), client_info, client_address);
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
+      - if:
+          condition:
+            lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
+          then:
+            - homeassistant.action:
+                action: latter.device_hello
+                data:
+                  target_device: "${name}"
+                  contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
+                  boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
+                  manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
   on_client_disconnected:
     then:
       - lambda: |-

@@ -31,6 +31,8 @@ substitutions:
 
 esphome:
   build_flags:
+    - '-DLATTER_BOARD_ID=\"waveshare_s3_175c\"'
+    - "-DLATTER_BLE_MINOR=1"
     - "-DLATTER_SCREEN_W=466"
     - "-DLATTER_SCREEN_H=466"
     - "-DLATTER_ROUND_DISPLAY=1"

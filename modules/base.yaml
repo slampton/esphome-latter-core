@@ -43,6 +43,20 @@ substitutions:
 
 api:
   reboot_timeout: ${api_reboot_timeout}
+  on_client_connected:
+    then:
+      - if:
+          condition:
+            lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
+          then:
+            - lambda: 'latter_ui::reset_all_v3_rev_guards();'
+            - homeassistant.action:
+                action: latter.device_hello
+                data:
+                  target_device: "${name}"
+                  contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
+                  boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
+                  manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
   actions:
     - action: latter_ping
       id: latter_ping_action

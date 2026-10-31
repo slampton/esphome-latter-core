@@ -11,6 +11,17 @@
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <esp_random.h>
+#endif
+
+#ifndef LATTER_BOARD_ID
+#define LATTER_BOARD_ID "generic_esp32"
+#endif
+#ifndef LATTER_BLE_MINOR
+#define LATTER_BLE_MINOR 1
+#endif
+#ifndef LATTER_SLOT_COUNT
+#define LATTER_SLOT_COUNT 5
 #endif
 
 #if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && defined(LATTER_DSI_IRAM_SAFE)
@@ -87,6 +98,17 @@ inline constexpr HardwareCapabilities caps() {
   return HardwareCapabilities{};
 }
 
+inline uint32_t device_boot_id() {
+  static uint32_t s_boot_id = 0;
+  if (s_boot_id == 0) {
+#ifdef USE_ESP32
+    s_boot_id = esp_random() & 0x7FFFFFFFU;
+#endif
+    if (s_boot_id == 0) s_boot_id = 1U;
+  }
+  return s_boot_id;
+}
+
 inline std::string build_hardware_manifest_json() {
   const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
   const char *profile = (!LATTER_HAS_DISPLAY)
@@ -95,18 +117,23 @@ inline std::string build_hardware_manifest_json() {
                                    ? "wearable_display"
                                    : (LATTER_IS_STATIONARY ? "stationary_display" : "mobile_display"));
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
-  char buf[288];
+  char buf[512];
   std::snprintf(buf, sizeof(buf),
-                "{\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
+                "{\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\","
+                "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
                 "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
-                "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d}",
+                "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
+                "\"slot_count\":%d,\"max_payload_bytes\":2048,"
+                "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d}}",
+                kProtocolContractVersion, LATTER_BOARD_ID,
                 SCREEN_W, SCREEN_H, shape, profile,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
                 (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
-                (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB);
+                (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
+                (int)LATTER_SLOT_COUNT, (int)LATTER_BLE_MINOR);
   return std::string(buf);
 }
 

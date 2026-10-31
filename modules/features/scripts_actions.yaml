@@ -957,7 +957,7 @@ script:
           action: latter.set_active_area
           data:
             target_device: "${name}"
-            area: !lambda 'return id(active_area_id).c_str();'
+            area_id: !lambda 'return id(active_area_id).c_str();'
             handoff_media: !lambda 'return id(area_handoff_media_switch).state ? "true" : "false";'
       - script.execute: fetch_area_browse
 
