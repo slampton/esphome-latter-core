@@ -2,7 +2,7 @@
 
 substitutions:
   device_slug: "latter_device"
-  version: "2.2.0"
+  version: "2.2.1"
   screen_w: "466"
   screen_h: "466"
   font_time_size: "77"

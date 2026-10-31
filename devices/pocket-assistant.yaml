@@ -10,7 +10,7 @@ substitutions:
   name: "pocket-assistant"
   device_slug: "pocket_assistant"
   friendly_name: "Pocket Assistant"
-  version: "2.2.0"
+  version: "2.2.1"
   screen_w: "466"
   screen_h: "466"
   art_shape: "circle"
@@ -21,6 +21,7 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
+  api_reboot_timeout: "0s"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/pocket-assistant.yaml@main

@@ -10,7 +10,7 @@ substitutions:
   name: "desk-assistant"
   device_slug: "desk_assistant"
   friendly_name: "Desk Assistant"
-  version: "2.2.0"
+  version: "2.2.1"
   screen_w: "720"
   screen_h: "720"
   font_time_size: "112"

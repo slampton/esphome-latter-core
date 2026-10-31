@@ -10,7 +10,7 @@ substitutions:
   name: "wrist-assist"
   device_slug: "wrist_assist"
   friendly_name: "Wrist Assist"
-  version: "2.2.0"
+  version: "2.2.1"
   screen_w: "410"
   screen_h: "502"
   art_shape: "square"
@@ -21,6 +21,7 @@ substitutions:
   default_battery_timeout: "15s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "15 min"
+  api_reboot_timeout: "0s"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/wrist-assist.yaml@main

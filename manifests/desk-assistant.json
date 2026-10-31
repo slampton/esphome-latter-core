@@ -1,6 +1,6 @@
 {
   "name": "Latter — Desk Assistant (P4 4B)",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "home_assistant_domain": "esphome",
   "new_install_prompt_erase": true,
   "builds": [
@@ -9,7 +9,7 @@
       "ota": {
         "path": "../firmware/desk-assistant.ota.bin",
         "md5": "00000000000000000000000000000000",
-        "summary": "Latter OS v2.2.0 for Latter — Desk Assistant (P4 4B)"
+        "summary": "Latter OS v2.2.1 for Latter — Desk Assistant (P4 4B)"
       },
       "parts": [
         {

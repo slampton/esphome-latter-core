@@ -1,6 +1,6 @@
 {
   "name": "Latter — Pocket Assistant (1.75C)",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "home_assistant_domain": "esphome",
   "new_install_prompt_erase": true,
   "builds": [
@@ -9,7 +9,7 @@
       "ota": {
         "path": "../firmware/pocket-assistant.ota.bin",
         "md5": "00000000000000000000000000000000",
-        "summary": "Latter OS v2.2.0 for Latter — Pocket Assistant (1.75C)"
+        "summary": "Latter OS v2.2.1 for Latter — Pocket Assistant (1.75C)"
       },
       "parts": [
         {
