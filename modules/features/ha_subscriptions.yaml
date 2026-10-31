@@ -1096,5 +1096,5 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 300s
     lambda: |-
-      return latter_ui::build_hardware_manifest_json();
+      return latter_ui::build_hardware_manifest_state_json();
 

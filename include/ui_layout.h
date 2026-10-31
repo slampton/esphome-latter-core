@@ -119,14 +119,14 @@ inline std::string build_hardware_manifest_json() {
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
   char buf[512];
   std::snprintf(buf, sizeof(buf),
-                "{\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\","
+                "{\"v\":2,\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\",\"boot_id\":%lu,"
                 "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
                 "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
                 "\"slot_count\":%d,\"max_payload_bytes\":2048,"
                 "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d}}",
-                kProtocolContractVersion, LATTER_BOARD_ID,
+                kProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
                 SCREEN_W, SCREEN_H, shape, profile,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
                 (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
@@ -134,6 +134,28 @@ inline std::string build_hardware_manifest_json() {
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
                 (int)LATTER_SLOT_COUNT, (int)LATTER_BLE_MINOR);
+  return std::string(buf);
+}
+
+// Compact <=230-byte Hardware Manifest v2 state for Home Assistant's 255-char entity state limit
+inline std::string build_hardware_manifest_state_json() {
+  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
+  const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
+  char buf[256];
+  std::snprintf(buf, sizeof(buf),
+                "{\"v\":2,\"contract\":%d,\"board\":\"%s\","
+                "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
+                "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
+                "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
+                "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,\"minor\":%d}",
+                kProtocolContractVersion, LATTER_BOARD_ID,
+                SCREEN_W, SCREEN_H, shape,
+                (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
+                (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
+                (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
+                (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
+                (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
+                (int)LATTER_BLE_MINOR);
   return std::string(buf);
 }
 

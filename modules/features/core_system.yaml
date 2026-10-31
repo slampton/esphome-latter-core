@@ -32,7 +32,7 @@ esphome:
             id(current_loaded_wallpaper_url) = "";
             id(current_loaded_camera_url) = "";
             id(hal_set_dac_mute).execute(true);
-            id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_json());
+            id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_state_json());
         - script.execute: route_i2s_to_mic
         - switch.turn_off: speaker_enable
         - script.execute: apply_default_start_page
