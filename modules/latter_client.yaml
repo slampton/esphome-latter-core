@@ -105,7 +105,7 @@ esphome:
             if (!LATTER_HAS_IMU && !id(home_dock_games_switch).state) {
               id(home_dock_games_switch).publish_state(true);
             }
-            esphome::voice_assistant::ensure_wake_words_restored(id(va), true);
+            esphome::voice_assistant::ensure_wake_words_restored(id(mww), true);
             id(va_active_wake_word).publish_state(
                 esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
             #if !LATTER_HAS_IMU
