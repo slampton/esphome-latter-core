@@ -635,7 +635,7 @@ script:
           }
           id(hal_set_imu_power_mode).execute(0x01);
           if (id(gui_page) == 2 &&
-              id(active_speaker_entity) != "${local_player_id}" &&
+              (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
               !id(ha_target_art_url).state.empty() &&
               id(ha_target_art_url).state != "none" &&
               id(ha_target_art_url).state != id(current_loaded_art_url)) {

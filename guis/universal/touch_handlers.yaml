@@ -390,7 +390,7 @@ script:
                   id(music_overlay_mode) = 0;
                   id(music_hud_active) = true;
                   id(music_hud_timer) = now_hm;
-                  if (id(active_speaker_entity) != "${local_player_id}" &&
+                  if ((id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
                       id(ha_target_art_url).state != id(current_loaded_art_url)) {
                     id(fetch_remote_art_debounced).execute();
                   }
@@ -2652,7 +2652,7 @@ script:
                       } else if (id(gui_page) == 2) {
                         id(music_hud_active) = true;
                         id(music_hud_timer) = now_rel;
-                        if (id(active_speaker_entity) != "${local_player_id}" &&
+                        if ((id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
                             id(ha_target_art_url).state != id(current_loaded_art_url)) {
                           id(fetch_remote_art_debounced).execute();
                         }
@@ -2755,6 +2755,9 @@ script:
                       else if (slot_idx == 3 && !id(slot_4_name).empty()) { picked_id = id(slot_4_id); picked_name = id(slot_4_name); }
                       else if (slot_idx == 4 && !id(slot_5_name).empty()) { picked_id = id(slot_5_id); picked_name = id(slot_5_name); }
                       if (!picked_id.empty()) {
+                        if (picked_id == "${local_player_id}" || picked_id == "${local_player_id}_music") {
+                          picked_id = "${local_player_id}";
+                        }
                         id(target_speaker_id) = picked_id;
                         id(target_speaker_name) = picked_name;
                         id(music_overlay_mode) = 4;

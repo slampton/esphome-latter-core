@@ -758,24 +758,27 @@ text_sensor:
         - lambda: |-
             if (!x.empty() && x != "unknown" && x != "unavailable") {
               if (x.rfind("media_player.", 0) == 0) {
-                id(active_speaker_entity) = x;
-                if (x == "${local_player_id}") {
+                if (x == "${local_player_id}" || x == "${local_player_id}_music") {
+                  id(active_speaker_entity) = "${local_player_id}";
                   id(active_speaker_name) = "${friendly_name}";
-                } else if (!id(ha_active_speaker_name).state.empty() &&
-                           id(ha_active_speaker_name).state != "unknown" &&
-                           id(ha_active_speaker_name).state != "unavailable" &&
-                           id(ha_active_speaker_name).state != "None") {
-                  id(active_speaker_name) = id(ha_active_speaker_name).state;
                 } else {
-                  std::string s = x;
-                  size_t dot = s.find('.');
-                  if (dot != std::string::npos) s = s.substr(dot + 1);
-                  bool cap = true;
-                  for (size_t i = 0; i < s.length(); i++) {
-                    if (s[i] == '_') { s[i] = ' '; cap = true; }
-                    else if (cap) { s[i] = toupper(s[i]); cap = false; }
+                  id(active_speaker_entity) = x;
+                  if (!id(ha_active_speaker_name).state.empty() &&
+                      id(ha_active_speaker_name).state != "unknown" &&
+                      id(ha_active_speaker_name).state != "unavailable" &&
+                      id(ha_active_speaker_name).state != "None") {
+                    id(active_speaker_name) = id(ha_active_speaker_name).state;
+                  } else {
+                    std::string s = x;
+                    size_t dot = s.find('.');
+                    if (dot != std::string::npos) s = s.substr(dot + 1);
+                    bool cap = true;
+                    for (size_t i = 0; i < s.length(); i++) {
+                      if (s[i] == '_') { s[i] = ' '; cap = true; }
+                      else if (cap) { s[i] = toupper(s[i]); cap = false; }
+                    }
+                    id(active_speaker_name) = s;
                   }
-                  id(active_speaker_name) = s;
                 }
               } else {
                 ESP_LOGW("ui", "Rejecting non-media_player speaker '%s', defaulting to local player", x.c_str());
@@ -791,7 +794,7 @@ text_sensor:
               lambda: |-
                 return (id(display_power_state) == 0) &&
                        (id(gui_page) == 2) &&
-                       (x != "${local_player_id}") &&
+                       (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
                        !id(ha_target_art_url).state.empty() &&
                        (id(ha_target_art_url).state != "none") &&
                        (id(ha_target_art_url).state != id(current_loaded_art_url));
@@ -887,7 +890,7 @@ text_sensor:
                     lambda: |-
                       return (id(display_power_state) == 0) &&
                              (id(gui_page) == 2) &&
-                             (id(active_speaker_entity) != "${local_player_id}") &&
+                             (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
                              (x != id(current_loaded_art_url));
                   then:
                     - script.execute: fetch_remote_art_debounced

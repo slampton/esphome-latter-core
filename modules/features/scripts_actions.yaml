@@ -269,7 +269,7 @@ script:
               return (id(gui_page) == 2) &&
                      (id(display_power_state) == 0) &&
                      !id(va_active) && id(va_status_text).empty() &&
-                     (id(active_speaker_entity) != "${local_player_id}") &&
+                     (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
                      !id(ha_target_art_url).state.empty() &&
                      (id(ha_target_art_url).state != "none") &&
                      (id(ha_target_art_url).state != "unknown") &&
@@ -521,19 +521,11 @@ script:
   - id: throttled_disp_update
     mode: restart
     then:
-      - delay: 120ms
+      - delay: 140ms
       - if:
           condition:
             lambda: |-
-              static uint32_t last_throttled_draw = 0;
-              uint32_t now = millis();
-              if (now - last_throttled_draw < 200) return false;
-              if (now - latter_ui::last_page2_draw_ms() < 250) return false;
-              if (id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active)) {
-                last_throttled_draw = now;
-                return true;
-              }
-              return false;
+              return id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active);
           then:
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 

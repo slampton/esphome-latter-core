@@ -86,18 +86,28 @@ inline void render_music_now_playing(
   bool apply_scrim = always_visible || music_hud_active;
   bool has_art = false;
   bool rendered_art = false;
+  bool used_remote_art = false;
+  const bool remote_art_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
+                                 current_loaded_art_url == ha_target_art_url &&
+                                 remote_art && remote_art->get_width() > 0);
+  const bool local_art_ready = (local_art && local_art->get_width() > 0);
   if (is_remote) {
-    if (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-        current_loaded_art_url == ha_target_art_url && remote_art && remote_art->get_width() > 0) {
+    if (remote_art_ready) {
       has_art = true;
+      used_remote_art = true;
       rendered_art = render_album_art_canvas(
           it, remote_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
     }
   } else {
-    if (local_art && local_art->get_width() > 0) {
+    if (local_art_ready) {
       has_art = true;
       rendered_art = render_album_art_canvas(
           it, local_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
+    } else if (remote_art_ready) {
+      has_art = true;
+      used_remote_art = true;
+      rendered_art = render_album_art_canvas(
+          it, remote_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
     }
   }
 
@@ -111,8 +121,8 @@ inline void render_music_now_playing(
   }
 
   const esphome::Color glass_bg = rendered_art
-      ? (is_remote ? sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34))
-                   : sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34)))
+      ? (used_remote_art ? sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34))
+                         : sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34)))
       : esphome::Color(22, 27, 36);
   const esphome::Color glass_brd(62, 74, 92);
 
@@ -343,15 +353,21 @@ inline void render_music_menus(
   const esphome::Color card_brd(56, 68, 84);
 
   if (!menu_scroll_active) {
+    const bool rem_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
+                            current_loaded_art_url == ha_target_art_url &&
+                            remote_art != nullptr && remote_art->get_width() > 0);
+    const bool loc_ready = (local_art != nullptr && local_art->get_width() > 0);
     if (is_rem) {
-      if (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-          current_loaded_art_url == ha_target_art_url && remote_art != nullptr && remote_art->get_width() > 0) {
+      if (rem_ready) {
         render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
         card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
       }
-    } else if (local_art != nullptr && local_art->get_width() > 0) {
+    } else if (loc_ready) {
       render_album_art_canvas(it, local_art, cx, false, false, true, false, 2);
       card_bg = sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34));
+    } else if (rem_ready) {
+      render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
+      card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
     }
   }
 
