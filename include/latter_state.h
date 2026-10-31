@@ -430,4 +430,10 @@ inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem
   return valid_cnt;
 }
 
+// Overload for ESPHome 2026.10+ api action string parameters (esphome::StringRef)
+template <typename StrT, typename = decltype(std::declval<const StrT &>().c_str())>
+inline size_t parse_v3_slots_payload(const StrT &slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
+  return parse_v3_slots_payload(std::string_view(slots_blob.c_str(), slots_blob.size()), out_slots, max_slots);
+}
+
 }  // namespace latter_ui

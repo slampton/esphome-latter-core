@@ -219,7 +219,7 @@ api:
             latter_ui::BrowseSlotItem v3_items[5];
             bool use_v3 = (contract >= 3 && !slots.empty());
             if (use_v3) {
-              latter_ui::parse_v3_slots_payload(slots, v3_items, 5);
+              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
             }
             const std::string &n1 = use_v3 ? v3_items[0].name : s1_name;
             const std::string &i1 = use_v3 ? v3_items[0].id   : s1_id;
@@ -325,7 +325,7 @@ api:
             latter_ui::BrowseSlotItem v3_items[5];
             bool use_v3 = (contract >= 3 && !slots.empty());
             if (use_v3) {
-              latter_ui::parse_v3_slots_payload(slots, v3_items, 5);
+              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
             }
             id(area_browse_mode) = mode;
             id(area_browse_page) = page;
