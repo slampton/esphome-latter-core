@@ -111,7 +111,7 @@ void test_all_five_domain_parsers() {
   // Calendar Agenda (COUNT = 6)
   std::vector<std::string> cal_t(static_cast<size_t>(latter_ui::CalendarField::COUNT), "");
   cal_t[static_cast<size_t>(latter_ui::CalendarField::SUMMARY)] = "Today|14:00|Architecture Review";
-  cal_t[static_cast<size_t>(latter_ui::CalendarField::COUNT)] = "1";
+  cal_t[static_cast<size_t>(latter_ui::CalendarField::EVENT_COUNT)] = "1";
   cal_t[static_cast<size_t>(latter_ui::CalendarField::NEXT_EVENT)] = "Architecture Review (14:00)";
   assert(latter_ui::parse_v3_calendar_payload(build_v3_packet(10, 1, cal_t)));
   assert(latter_ui::calendar_state().count == 1);

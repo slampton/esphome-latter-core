@@ -120,7 +120,7 @@ enum class CalendarField : size_t {
   HEADER_EPOCH = 1,
   HEADER_REV = 2,
   SUMMARY = 3,  // summary (records)
-  COUNT = 4,  // count (u16)
+  EVENT_COUNT = 4,  // count (u16)
   NEXT_EVENT = 5,  // next_event (string)
   COUNT = 6
 };

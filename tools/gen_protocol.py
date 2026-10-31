@@ -41,13 +41,22 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
         enum_name = dom["cpp_enum_name"]
         fields = dom["fields"]
         max_idx = max(int(f["index"]) for f in fields)
+        seen_enums: set[str] = {"COUNT"}
         lines.append(f"// Domain: {dom_key} (sensor.<device>_{dom['entity_suffix']})")
         lines.append(f"enum class {enum_name} : size_t {{")
         for hf in header_fields:
-            lines.append(f"  {hf['cpp_enum']} = {hf['index']},")
+            ident = str(hf["cpp_enum"])
+            if ident in seen_enums:
+                raise ValueError(f"Duplicate enum identifier '{ident}' in {enum_name}")
+            seen_enums.add(ident)
+            lines.append(f"  {ident} = {hf['index']},")
         for f in fields:
+            ident = str(f["cpp_enum"])
+            if ident in seen_enums:
+                raise ValueError(f"Duplicate enum identifier '{ident}' in {enum_name}")
+            seen_enums.add(ident)
             lines.append(
-                f"  {f['cpp_enum']} = {f['index']},  // {f['name']} ({f['type']})"
+                f"  {ident} = {f['index']},  // {f['name']} ({f['type']})"
             )
         lines.append(f"  COUNT = {max_idx + 1}")
         lines.append("};")

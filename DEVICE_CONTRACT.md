@@ -123,7 +123,7 @@ Upcoming calendar agenda events and next-event headline.
 | Index | Field | C++ Enum | Type | Description |
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `summary` | `CalendarField::SUMMARY` | `records` | 0x1E-joined time|title|location|all_day agenda records |
-| `4` | `count` | `CalendarField::COUNT` | `u16` | Number of upcoming agenda events |
+| `4` | `count` | `CalendarField::EVENT_COUNT` | `u16` | Number of upcoming agenda events |
 | `5` | `next_event` | `CalendarField::NEXT_EVENT` | `string` | Headline summary of the next upcoming event |
 
 ## 3. ESPHome Device Actions (`esphome.<node>_<action>`)

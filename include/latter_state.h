@@ -439,7 +439,7 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
 
   st.summary    = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
-  st.count      = v3_parse_int(f[static_cast<size_t>(CalendarField::COUNT)], 0);
+  st.count      = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
   st.next_event = std::string(f[static_cast<size_t>(CalendarField::NEXT_EVENT)]);
   return true;
 }
