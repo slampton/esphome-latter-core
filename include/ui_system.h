@@ -430,7 +430,7 @@ inline void render_system_page(
     }
 
     if (std::isnan(wifi_sig)) {
-      snprintf(buf, sizeof(buf), "-- dBm  •  BLE: %s", ble_active ? "Active" : "Off");
+      snprintf(buf, sizeof(buf), "%s dBm  •  BLE: %s", kUnknownGlyph, ble_active ? "Active" : "Off");
     } else {
       snprintf(buf, sizeof(buf), "%.0f dBm  •  BLE: %s", wifi_sig, ble_active ? "Active" : "Off");
     }

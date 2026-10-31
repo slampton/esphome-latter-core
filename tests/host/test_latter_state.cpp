@@ -91,11 +91,20 @@ void test_all_five_domain_parsers() {
   media_t[static_cast<size_t>(latter_ui::MediaField::DURATION)] = "413";
   media_t[static_cast<size_t>(latter_ui::MediaField::POSITION)] = "120";
   media_t[static_cast<size_t>(latter_ui::MediaField::POSITION_UPDATED_AT)] = "1761900100";
+  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "65";
   media_t[static_cast<size_t>(latter_ui::MediaField::IS_LOCAL)] = "1";
   assert(latter_ui::parse_v3_media_payload(build_v3_packet(10, 1, media_t)));
   assert(latter_ui::media_state().title == "Time");
   assert(latter_ui::media_state().position_updated_at == 1761900100u);
+  assert(latter_ui::media_state().has_volume);
+  assert(std::abs(latter_ui::media_state().volume - 0.65f) < 0.001f);
   assert(latter_ui::media_state().is_local);
+
+  // Empty volume field preserves previous volume and marks has_volume = false
+  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "";
+  assert(latter_ui::parse_v3_media_payload(build_v3_packet(10, 2, media_t)));
+  assert(!latter_ui::media_state().has_volume);
+  assert(std::abs(latter_ui::media_state().volume - 0.65f) < 0.001f);
 
   // Weather Forecast (COUNT = 11)
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");

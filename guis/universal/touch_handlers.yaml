@@ -251,7 +251,7 @@ script:
                 if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                   last_home_tap = now_hm;
                   std::string s_state = id(ha_sun_state).state;
-                  std::string cond = id(ha_weather_condition).state;
+                  std::string cond = latter_ui::weather_state().condition;
                   bool is_night = (s_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" || (cond.find("night") != std::string::npos));
                   latter_ui::apply_weather_sim_override(id(weather_sim_condition).current_option(), cond, is_night);
                   id(sky_weather_subpage) = is_night ? 3 : 2;
@@ -285,13 +285,14 @@ script:
               }
 
               latter_ui::HomeActivityItem act_items[8];
-              bool is_rem_h = (id(active_speaker_entity) != "${local_player_id}");
+              const auto &ms_hm = latter_ui::media_state();
+              bool is_rem_h = !ms_hm.is_local;
               bool loc_play_h = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, id(ha_target_state).state, now_hm);
+              bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, ms_hm.state, now_hm);
               std::string m_title_h = (is_rem_h || id(track_title).state.empty() || id(track_title).state == "None")
-                                          ? id(ha_track_title).state : id(track_title).state;
+                                          ? ms_hm.title : id(track_title).state;
               std::string m_artist_h = (is_rem_h || id(track_artist).state.empty() || id(track_artist).state == "None")
-                                           ? id(ha_track_artist).state : id(track_artist).state;
+                                           ? ms_hm.artist : id(track_artist).state;
               auto now_t_hm = id(ha_time).now();
               int act_count = latter_ui::collect_home_activities(
                   now_hm, id(is_24h_format),
@@ -304,7 +305,7 @@ script:
                   act_items,
                   now_t_hm.is_valid() ? now_t_hm.hour : -1,
                   now_t_hm.is_valid() ? now_t_hm.minute : -1,
-                  id(ha_calendar_agenda_raw).state);
+                  latter_ui::calendar_state().summary);
 
               auto handle_activity_item_action = [&](int item_i, bool is_inline_btn) {
                 int kind = act_items[item_i].kind;
@@ -362,7 +363,7 @@ script:
                         rem_items,
                         now_t_hm.is_valid() ? now_t_hm.hour : -1,
                         now_t_hm.is_valid() ? now_t_hm.minute : -1,
-                        id(ha_calendar_agenda_raw).state);
+                        latter_ui::calendar_state().summary);
                     if (rem_cnt < 2) {
                       id(home_subpage) = 0;
                       latter_ui::home_activity_overlay_page() = 0;
@@ -390,8 +391,8 @@ script:
                   id(music_overlay_mode) = 0;
                   id(music_hud_active) = true;
                   id(music_hud_timer) = now_hm;
-                  if ((id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
-                      id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                  if ((!ms_hm.is_local || id(album_art).get_width() == 0) &&
+                      ms_hm.art_url != id(current_loaded_art_url)) {
                     id(fetch_remote_art_debounced).execute();
                   }
                 } else if (kind == 4) {
@@ -538,9 +539,10 @@ script:
                   uint32_t now_pp = millis();
                   if (now_pp - last_pp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_pp_tap = now_pp;
-                    bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
+                    const auto &ms_pp = latter_ui::media_state();
+                    bool is_remote = !ms_pp.is_local;
                     bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-                    bool is_playing = latter_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, now_pp);
+                    bool is_playing = latter_ui::is_music_playing_effective(is_remote, local_playing, ms_pp.state, now_pp);
                     id(music_action_feedback) = is_playing ? "Pausing..." : "Playing...";
                     id(music_feedback_timer) = now_pp;
                     id(music_hud_timer) = now_pp;
@@ -588,7 +590,7 @@ script:
                     last_vol_up_tap = now_vol_tap;
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
-                    bool is_rem_vol = (id(active_speaker_entity) != "${local_player_id}");
+                    bool is_rem_vol = !latter_ui::media_state().is_local;
                     if (is_rem_vol) {
                       id(music_action_feedback) = "Volume +";
                     } else {
@@ -609,7 +611,7 @@ script:
                     last_vol_dn_tap = now_vol_tap;
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
-                    bool is_rem_vol = (id(active_speaker_entity) != "${local_player_id}");
+                    bool is_rem_vol = !latter_ui::media_state().is_local;
                     if (is_rem_vol) {
                       id(music_action_feedback) = "Volume -";
                     } else {
@@ -875,12 +877,13 @@ script:
                     return;
                   }
                 } else {
-                  bool is_remote = (id(target_speaker_id) != "${local_player_id}");
+                  const auto &ms_sh = latter_ui::media_state();
+                  bool is_remote = !ms_sh.is_local && !ms_sh.local_speaker.empty();
                   if (is_remote) {
                     if (in_sheet_x && touch.y >= latter_ui::scale_y(114) && touch.y < latter_ui::scale_y(180)) {
                       if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                         last_sheet_tap = now_sheet;
-                        id(target_speaker_id) = "${local_player_id}";
+                        id(target_speaker_id) = ms_sh.local_speaker;
                         id(target_speaker_name) = "${friendly_name}";
                         id(speaker_transfer_to_target).execute();
                       }
@@ -912,6 +915,7 @@ script:
               } else if (id(music_overlay_mode) == 6) {
                 static uint32_t last_insp_tap = 0;
                 uint32_t now_in = millis();
+                const auto &ms_in = latter_ui::media_state();
                 if (latter_ui::is_back_button(touch)) {
                   if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_insp_tap = now_in;
@@ -926,9 +930,9 @@ script:
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
                   if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_insp_tap = now_in;
-                    bool is_rem = (id(active_speaker_entity) != "${local_player_id}");
+                    bool is_rem = !ms_in.is_local;
                     std::string alb = (is_rem || id(track_album).state.empty() || id(track_album).state == "None")
-                                          ? id(ha_track_album).state : id(track_album).state;
+                                          ? ms_in.album : id(track_album).state;
                     id(selected_category_mode) = "current_album_tracks";
                     id(selected_category_title) = (alb.empty() || alb == "None") ? "ALBUM TRACKS" : alb;
                     id(drilldown_album_id) = alb;
@@ -945,7 +949,7 @@ script:
                 if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(284)) {
                   if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
                     last_insp_tap = now_in;
-                    float dur = id(ha_media_duration).state;
+                    float dur = ms_in.duration;
                     float cur_pos = id(music_pos_base);
                     if (id(music_pos_sync_time) > 0) {
                       cur_pos += static_cast<float>(now_in - id(music_pos_sync_time)) * 0.001f;
@@ -976,13 +980,13 @@ script:
                   if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_insp_tap = now_in;
                     bool is_bio = (touch.x >= latter_ui::SCREEN_CX);
-                    bool is_rem = (id(active_speaker_entity) != "${local_player_id}");
+                    bool is_rem = !ms_in.is_local;
                     std::string t_name = (is_rem || id(track_title).state.empty() || id(track_title).state == "None")
-                                             ? id(ha_track_title).state : id(track_title).state;
+                                             ? ms_in.title : id(track_title).state;
                     std::string ar_name = (is_rem || id(track_artist).state.empty() || id(track_artist).state == "None")
-                                              ? id(ha_track_artist).state : id(track_artist).state;
+                                              ? ms_in.artist : id(track_artist).state;
                     std::string al_name = (is_rem || id(track_album).state.empty() || id(track_album).state == "None")
-                                              ? id(ha_track_album).state : id(track_album).state;
+                                              ? ms_in.album : id(track_album).state;
                     id(drilldown_album_id) = t_name + "|" + ar_name + "|" + al_name;
                     id(selected_category_mode) = is_bio ? "bio" : "lyrics";
                     id(selected_category_title) = is_bio ? "BIO" : "LYRICS";
@@ -1995,7 +1999,7 @@ script:
                   last_tools_tap = now_tools;
                   if (latter_ui::intercom_live_call_mode()) {
                     std::string t_ids[5], t_lbls[5];
-                    int cnt = latter_ui::parse_intercom_targets_list(id(ha_latter_intercom_targets_summary).state, t_ids, t_lbls);
+                    int cnt = latter_ui::parse_intercom_targets_list(latter_ui::area_ctx_state().intercom_targets_summary, t_ids, t_lbls);
                     if (slot_idx == 4 && cnt < 5) {
                       id(cam_intercom_action) = "unlock_door";
                       id(cam_intercom_message) = "";
@@ -2477,7 +2481,7 @@ script:
               } else if (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open() &&
                          std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
-                int c_total = latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, c_ids, c_names);
+                int c_total = latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, c_ids, c_names);
                 if (c_total > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_u;
@@ -2612,8 +2616,9 @@ script:
                       } else if (id(gui_page) == 2) {
                         id(music_hud_active) = true;
                         id(music_hud_timer) = now_rel;
-                        if ((id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
-                            id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                        const auto &ms_dk = latter_ui::media_state();
+                        if ((!ms_dk.is_local || id(album_art).get_width() == 0) &&
+                            ms_dk.art_url != id(current_loaded_art_url)) {
                           id(fetch_remote_art_debounced).execute();
                         }
                       } else if (id(gui_page) == 6) {
@@ -2715,9 +2720,6 @@ script:
                       else if (slot_idx == 3 && !id(slot_4_name).empty()) { picked_id = id(slot_4_id); picked_name = id(slot_4_name); }
                       else if (slot_idx == 4 && !id(slot_5_name).empty()) { picked_id = id(slot_5_id); picked_name = id(slot_5_name); }
                       if (!picked_id.empty()) {
-                        if (picked_id == "${local_player_id}" || picked_id == "${local_player_id}_music") {
-                          picked_id = "${local_player_id}";
-                        }
                         id(target_speaker_id) = picked_id;
                         id(target_speaker_name) = picked_name;
                         id(music_overlay_mode) = 4;
@@ -3554,7 +3556,7 @@ script:
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 12 &&
                          gest.max_travel < 30 && gest.last_y < latter_ui::scale_y(404)) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
-                int c_total = latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, c_ids, c_names);
+                int c_total = latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, c_ids, c_names);
                 if (latter_ui::cam_quick_reply_open()) {
                   int q_row = latter_ui::get_5slot_index(tp, latter_ui::SCREEN_CX - 148, latter_ui::SCREEN_CX + 148);
                   if (q_row == 0) {

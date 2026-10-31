@@ -2785,7 +2785,7 @@ inline void render_games_launcher(
     const char *lbl_str = "HIGH SCORE:";
     char val_str[20];
     if (score <= 0) {
-      snprintf(val_str, sizeof(val_str), "--");
+      snprintf(val_str, sizeof(val_str), "%s", kUnknownGlyph);
     } else if (score >= 1000000) {
       snprintf(val_str, sizeof(val_str), "%d,%03d,%03d", score / 1000000, (score / 1000) % 1000, score % 1000);
     } else if (score >= 1000) {

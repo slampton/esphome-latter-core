@@ -103,7 +103,7 @@ script:
               latter_ui::whole_home_tab() = f_idx % 5;
             } else if (id(gui_page) == 8 && id(tools_subpage) == 12) {
               std::string cam_ids[latter_ui::MAX_CAMERA_SLOTS], cam_names[latter_ui::MAX_CAMERA_SLOTS];
-              int c_cnt = std::max(1, latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, cam_ids, cam_names));
+              int c_cnt = std::max(1, latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, cam_ids, cam_names));
               latter_ui::cam_carousel_idx() = (latter_ui::cam_carousel_idx() + step + c_cnt) % c_cnt;
               id(fetch_on_demand_camera).execute();
             }
@@ -163,8 +163,9 @@ script:
     mode: restart
     then:
       - lambda: |-
+          const auto &ms = latter_ui::media_state();
           bool local_active = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          bool remote_active = (!id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}") && (id(ha_target_state).state == "playing"));
+          bool remote_active = (!id(active_speaker_entity).empty() && !ms.is_local && (ms.state == "playing"));
           if (local_active || remote_active) {
             id(va_resume_music_after) = true;
           }
@@ -203,7 +204,7 @@ script:
                 ESP_LOGI("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)", id(active_speaker_entity).c_str(), id(va_was_cancelled));
             - if:
                 condition:
-                  lambda: 'return !id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}");'
+                  lambda: 'return !id(active_speaker_entity).empty() && !latter_ui::media_state().is_local;'
                 then:
                   - lambda: |-
                       id(va_was_cancelled) = false;
@@ -269,7 +270,7 @@ script:
       - if:
           condition:
             lambda: |-
-              return (id(active_speaker_entity) != "${local_player_id}") &&
+              return !latter_ui::media_state().is_local &&
                      (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           then:
             - wait_until:
@@ -280,20 +281,21 @@ script:
       - if:
           condition:
             lambda: |-
+              const auto &ms = latter_ui::media_state();
               return (id(gui_page) == 2) &&
                      (id(display_power_state) == 0) &&
                      !id(va_active) && id(va_status_text).empty() &&
-                     (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
-                     !id(ha_target_art_url).state.empty() &&
-                     (id(ha_target_art_url).state != "none") &&
-                     (id(ha_target_art_url).state != "unknown") &&
-                     (id(ha_target_art_url).state != "unavailable") &&
-                     (id(ha_target_art_url).state != id(current_loaded_art_url));
+                     (!ms.is_local || id(album_art).get_width() == 0) &&
+                     !ms.art_url.empty() &&
+                     (ms.art_url != "none") &&
+                     (ms.art_url != "unknown") &&
+                     (ms.art_url != "unavailable") &&
+                     (ms.art_url != id(current_loaded_art_url));
           then:
-            - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+            - lambda: 'id(current_loaded_art_url) = latter_ui::media_state().art_url;'
             - online_image.set_url:
                 id: remote_album_art
-                url: !lambda 'return id(ha_target_art_url).state;'
+                url: !lambda 'return latter_ui::media_state().art_url;'
 
   - id: fetch_wallpaper_debounced
     mode: restart
@@ -302,19 +304,20 @@ script:
       - if:
           condition:
             lambda: |-
+              const auto &ac = latter_ui::area_ctx_state();
               return (id(display_power_state) == 0) &&
                      !id(va_active) && id(va_status_text).empty() &&
                      (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                     !id(ha_latter_wallpaper_url).state.empty() &&
-                     (id(ha_latter_wallpaper_url).state != "none") &&
-                     (id(ha_latter_wallpaper_url).state != "unknown") &&
-                     (id(ha_latter_wallpaper_url).state != "unavailable") &&
-                     (id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url));
+                     !ac.wallpaper_url.empty() &&
+                     (ac.wallpaper_url != "none") &&
+                     (ac.wallpaper_url != "unknown") &&
+                     (ac.wallpaper_url != "unavailable") &&
+                     (ac.wallpaper_url != id(current_loaded_wallpaper_url));
           then:
-            - lambda: 'id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;'
+            - lambda: 'id(current_loaded_wallpaper_url) = latter_ui::area_ctx_state().wallpaper_url;'
             - online_image.set_url:
                 id: home_wallpaper_art
-                url: !lambda 'return id(ha_latter_wallpaper_url).state;'
+                url: !lambda 'return latter_ui::area_ctx_state().wallpaper_url;'
 
   - id: fetch_calendar_browse
     mode: restart
@@ -374,12 +377,13 @@ script:
       - delay: 15ms
       - lambda: |-
           latter_ui::last_cam_live_fetch_ms() = millis();
+          const auto &ac = latter_ui::area_ctx_state();
           id(notif_camera_url) = latter_ui::build_carousel_camera_url(
-              id(ha_latter_camera_snapshot_url).state,
-              id(ha_latter_wallpaper_url).state,
-              id(ha_target_art_url).state,
+              ac.camera_snapshot_url,
+              ac.wallpaper_url,
+              latter_ui::media_state().art_url,
               "${name}", "${screen_w}", "${screen_h}", "${art_shape}",
-              id(ha_latter_cameras_summary).state,
+              ac.cameras_summary,
               millis());
       - if:
           condition:
@@ -399,9 +403,10 @@ script:
             target_device: "${name}"
             action: !lambda 'return id(cam_intercom_action).c_str();'
             camera_entity: !lambda |-
+              const auto &ac = latter_ui::area_ctx_state();
               return latter_ui::resolve_active_carousel_camera_id(
-                  id(ha_latter_cameras_summary).state,
-                  id(ha_latter_camera_snapshot_url).state).c_str();
+                  ac.cameras_summary,
+                  ac.camera_snapshot_url).c_str();
             camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
             message: !lambda 'return id(cam_intercom_message).c_str();'
             anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
@@ -640,7 +645,7 @@ script:
       - delay: 0ms
       - if:
           condition:
-            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+            lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
@@ -666,7 +671,7 @@ script:
       - delay: 0ms
       - if:
           condition:
-            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+            lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
@@ -691,14 +696,15 @@ script:
       - if:
           condition:
             lambda: |-
-              bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
+              const auto &ms = latter_ui::media_state();
+              bool is_remote = !ms.is_local;
               bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              return latter_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, millis());
+              return latter_ui::is_music_playing_effective(is_remote, local_playing, ms.state, millis());
           then:
             - lambda: 'latter_ui::set_remote_play_override(false, millis());'
             - if:
                 condition:
-                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                  lambda: 'return latter_ui::media_state().is_local;'
                 then:
                   - media_player.pause: latter_media_player
             - homeassistant.action:
@@ -710,7 +716,7 @@ script:
             - lambda: 'latter_ui::set_remote_play_override(true, millis());'
             - if:
                 condition:
-                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                  lambda: 'return latter_ui::media_state().is_local;'
                 then:
                   - script.stop: mp_idle_debounce
                   - script.execute: route_i2s_to_spk
@@ -742,7 +748,7 @@ script:
           id(music_hud_timer) = millis();
       - if:
           condition:
-            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+            lambda: 'return latter_ui::media_state().is_local;'
           then:
             - media_player.pause: latter_media_player
       - homeassistant.action:
@@ -761,9 +767,10 @@ script:
           id(track_title).publish_state("");
           id(track_artist).publish_state("");
           id(track_album).publish_state("");
-          id(ha_track_title).publish_state("Idle");
-          id(ha_track_artist).publish_state("None");
-          id(ha_track_album).publish_state("None");
+          auto &ms = latter_ui::media_state();
+          ms.title = "";
+          ms.artist = "";
+          ms.album = "";
           id(music_pos_base) = 0.0f;
           id(music_pos_sync_time) = 0;
           id(current_loaded_art_url) = "";
@@ -774,7 +781,7 @@ script:
           id(music_hud_timer) = millis();
       - if:
           condition:
-            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+            lambda: 'return latter_ui::media_state().is_local;'
           then:
             - media_player.stop: latter_media_player
       - online_image.release: remote_album_art
@@ -859,7 +866,7 @@ script:
           if (dir < 0) {
             new_pos = std::max(0.0f, cur_pos - step_sec);
           } else {
-            float dur = id(ha_media_duration).state;
+            float dur = latter_ui::media_state().duration;
             new_pos = (!std::isnan(dur) && dur > 0.0f) ? std::min(dur, cur_pos + step_sec) : (cur_pos + step_sec);
           }
           id(music_pos_base) = new_pos;
@@ -1002,7 +1009,10 @@ script:
             id(music_action_feedback) = "Invalid Speaker";
           }
           id(music_feedback_timer) = millis();
-          if (id(active_speaker_entity) == "${local_player_id}") {
+          const std::string &loc_spk = latter_ui::media_state().local_speaker;
+          const bool new_is_local = (!loc_spk.empty() && id(active_speaker_entity) == loc_spk);
+          latter_ui::media_state().is_local = new_is_local;
+          if (new_is_local) {
             id(current_loaded_art_url) = "";
           }
           id(music_overlay_mode) = 0;
@@ -1017,7 +1027,7 @@ script:
             transfer_queue: !lambda 'return transfer_queue;'
       - if:
           condition:
-            lambda: 'return (id(active_speaker_entity) != "${local_player_id}");'
+            lambda: 'return !latter_ui::media_state().is_local;'
           then:
             - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
@@ -1073,9 +1083,12 @@ script:
           data:
             entity_id: !lambda 'return id(target_speaker_id).c_str();'
       - lambda: |-
-          if (id(target_speaker_id) == id(active_speaker_entity) || id(target_speaker_id) == "${local_player_id}") {
-            id(active_speaker_entity) = "${local_player_id}";
+          const std::string &loc_spk = latter_ui::media_state().local_speaker;
+          if (id(target_speaker_id) == id(active_speaker_entity) ||
+              (!loc_spk.empty() && id(target_speaker_id) == loc_spk)) {
+            id(active_speaker_entity) = loc_spk;
             id(active_speaker_name) = "${friendly_name}";
+            latter_ui::media_state().is_local = !loc_spk.empty();
             id(current_loaded_art_url) = "";
           }
           id(music_overlay_mode) = 0;
@@ -1116,7 +1129,8 @@ script:
             id(selected_slot_type) = id(slot_5_type);
           }
           if (id(active_speaker_entity).empty() || id(active_speaker_entity) == "None") {
-            id(active_speaker_entity) = "${local_player_id}";
+            id(active_speaker_entity) = latter_ui::media_state().local_speaker;
+            latter_ui::media_state().is_local = !latter_ui::media_state().local_speaker.empty();
           }
           if (id(selected_category_mode) == "artist") {
             id(selected_slot_type) = "artist";
@@ -1145,7 +1159,7 @@ script:
           id(music_hud_timer) = millis();
       - if:
           condition:
-            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+            lambda: 'return latter_ui::media_state().is_local;'
           then:
             - script.stop: mp_idle_debounce
             - script.execute: route_i2s_to_spk
@@ -1253,7 +1267,7 @@ script:
                   lambda: |-
                     return !id(va_resume_music_after) &&
                            ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                            (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
+                            (!id(active_speaker_entity).empty() && latter_ui::media_state().state == "playing"));
                 then:
                   - script.execute: pause_all_music
                   - delay: 160ms
@@ -1370,7 +1384,7 @@ script:
     then:
       - if:
           condition:
-            lambda: 'return !id(ha_latter_remote_slots_summary).state.empty();'
+            lambda: 'return !latter_ui::remote_state().slots_summary.empty();'
           then:
             - homeassistant.action:
                 action: latter.remote_action
@@ -1412,7 +1426,7 @@ script:
       - if:
           condition:
             lambda: |-
-              const std::string &sum = id(ha_latter_remote_slots_summary).state;
+              const std::string &sum = latter_ui::remote_state().slots_summary;
               return !sum.empty() && sum != "unknown" && sum != "unavailable" && sum != "none" && sum != "NONE";
           then:
             - homeassistant.action:

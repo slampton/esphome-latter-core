@@ -15,6 +15,8 @@
 
 namespace latter_ui {
 
+inline constexpr const char *kUnknownGlyph = "—";
+
 enum class LockState : uint8_t {
   UNKNOWN  = 0,
   UNLOCKED = 1,
@@ -90,6 +92,7 @@ struct MediaState {
   float position = 0.0f;
   uint32_t position_updated_at = 0;
   float volume = 0.5f;
+  bool has_volume = false;
   std::string media_type = "music";
   int supported_features = 0;
   std::string art_url = "";
@@ -376,8 +379,13 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st) {
   st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
   st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
   st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
-  float raw_vol          = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], st.volume);
-  st.volume              = (raw_vol > 1.0f) ? (raw_vol * 0.01f) : raw_vol;
+  float raw_vol          = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
+  if (!std::isnan(raw_vol)) {
+    st.volume     = (raw_vol > 1.0f) ? (raw_vol * 0.01f) : raw_vol;
+    st.has_volume = true;
+  } else {
+    st.has_volume = false;
+  }
   st.media_type          = std::string(f[static_cast<size_t>(MediaField::MEDIA_TYPE)]);
   st.supported_features  = v3_parse_int(f[static_cast<size_t>(MediaField::SUPPORTED_FEATURES)], 0);
   st.art_url             = std::string(f[static_cast<size_t>(MediaField::ART_URL)]);

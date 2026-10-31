@@ -631,7 +631,7 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
       it.strftime(cx + drift_x, cy + scale_y(48) + drift_y, font_small, esphome::Color(90, 102, 118),
                   esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     } else {
-      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
     }
     return;
   }

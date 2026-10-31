@@ -1107,7 +1107,8 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     it.print(cx, scale_y(75), font_small, pulse ? col_red : col_white,
              esphome::display::TextAlign::CENTER, "ALARM RINGING");
 
-    char cur_t_buf[16] = "--:--";
+    char cur_t_buf[16];
+    snprintf(cur_t_buf, sizeof(cur_t_buf), "%s", kUnknownGlyph);
     char ampm_buf[8] = "";
     if (now.is_valid()) {
       format_time_hhmm(now.hour, now.minute, is_24h_format, cur_t_buf, sizeof(cur_t_buf), ampm_buf);

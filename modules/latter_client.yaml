@@ -24,7 +24,6 @@ substitutions:
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
   sun_entity: "sun.sun"
   moon_entity: "sensor.moon_phase"
-  local_player_id: "media_player.${device_slug}"
   firmware_update_entity: "update.${device_slug}_project_firmware"
   active_media_sensor: "sensor.${device_slug}_active_media"
   weather_entity: "sensor.${device_slug}_weather_forecast"

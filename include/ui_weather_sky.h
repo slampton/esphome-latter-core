@@ -549,9 +549,9 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
 // 6. Weather Suite Formatters, Simulation Override & Forecast Glyph Engine
 // ------------------------------------------------------------------------------
 inline std::string format_iso_time(const std::string &iso_str, bool is_24h) {
-  if (iso_str.empty() || iso_str == "unknown" || iso_str == "unavailable") return "--:--";
+  if (iso_str.empty() || iso_str == "unknown" || iso_str == "unavailable") return kUnknownGlyph;
   int yr = 0, mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
-  if (sscanf(iso_str.c_str(), "%d-%d-%dT%d:%d:%d", &yr, &mo, &dy, &hr, &mn, &sc) < 5) return "--:--";
+  if (sscanf(iso_str.c_str(), "%d-%d-%dT%d:%d:%d", &yr, &mo, &dy, &hr, &mn, &sc) < 5) return kUnknownGlyph;
   int y = yr - (mo <= 2 ? 1 : 0);
   int era = (y >= 0 ? y : y - 399) / 400;
   int yoe = y - era * 400;
@@ -1854,7 +1854,7 @@ inline void render_weather_page(
     // 2. Hero Temperature at y = 120 (top at y = 92) & Condition at y = 182 (unchanged)
     char temp_num[16];
     if (!std::isnan(weather_temp)) snprintf(temp_num, sizeof(temp_num), "%.0f", weather_temp);
-    else snprintf(temp_num, sizeof(temp_num), "--");
+    else snprintf(temp_num, sizeof(temp_num), "%s", kUnknownGlyph);
     int w_num = 0, x_off = 0, base = 0, th = 0;
     font_time->measure(temp_num, &w_num, &x_off, &base, &th);
     const int num_cx = cx - 5;
@@ -1919,9 +1919,9 @@ inline void render_weather_page(
     if (!std::isnan(hi_val) || !std::isnan(lo_val)) {
       char hi_str[16], lo_str[16];
       if (!std::isnan(hi_val)) snprintf(hi_str, sizeof(hi_str), "%.0f°", hi_val);
-      else snprintf(hi_str, sizeof(hi_str), "--°");
+      else snprintf(hi_str, sizeof(hi_str), "%s°", kUnknownGlyph);
       if (!std::isnan(lo_val)) snprintf(lo_str, sizeof(lo_str), "%.0f°", lo_val);
-      else snprintf(lo_str, sizeof(lo_str), "--°");
+      else snprintf(lo_str, sizeof(lo_str), "%s°", kUnknownGlyph);
 
       int w_hi = 0, w_lo = 0;
       if (large_cur && font_chrono_time != nullptr) {
@@ -1980,7 +1980,7 @@ inline void render_weather_page(
     draw_droplet_outline(drop_x, tele_y, icon_c);
     char hum_str[20];
     if (!std::isnan(weather_humidity)) snprintf(hum_str, sizeof(hum_str), "%.0f%%", weather_humidity);
-    else snprintf(hum_str, sizeof(hum_str), "--%%");
+    else snprintf(hum_str, sizeof(hum_str), "%s%%", kUnknownGlyph);
     if (large_cur) {
       it.print(drop_x + 18, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
     } else {
@@ -2028,7 +2028,7 @@ inline void render_weather_page(
         snprintf(wind_str, sizeof(wind_str), "%.0f mph", std::roundf(weather_wind_speed));
       }
     } else {
-      snprintf(wind_str, sizeof(wind_str), "-- mph");
+      snprintf(wind_str, sizeof(wind_str), "%s mph", kUnknownGlyph);
     }
     if (large_cur) {
       it.print(w_icon_x + 20, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);

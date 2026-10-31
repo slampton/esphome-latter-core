@@ -112,6 +112,7 @@ api:
           latter_ui::link_state().last_ha_connect_ms = millis();
           if (client_info.find("Home Assistant") != std::string::npos) {
             latter_ui::reset_all_v3_rev_guards();
+            id(last_seen_alert_id) = -1;
           }
           esphome::voice_assistant::on_api_client_authenticated(id(va), id(mww), client_info, client_address);
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
@@ -311,8 +312,11 @@ api:
         duration: int
         chime: bool
         camera_url: string
+        alert_id: int
       then:
         - lambda: |-
+            if (alert_id > 0 && alert_id <= id(last_seen_alert_id)) return;
+            if (alert_id > 0) id(last_seen_alert_id) = alert_id;
             id(notif_title) = std::string(title).empty() ? "Notification" : std::string(title);
             id(notif_message) = std::string(message);
             id(notif_priority) = std::string(priority).empty() ? "normal" : std::string(priority);
@@ -496,7 +500,7 @@ globals:
   - id: active_speaker_entity
     type: std::string
     restore_value: no
-    initial_value: '"${local_player_id}"'
+    initial_value: '""'
   - id: active_speaker_name
     type: std::string
     restore_value: no
@@ -533,7 +537,7 @@ globals:
   - id: slot_1_id
     type: std::string
     restore_value: no
-    initial_value: '"${local_player_id}"'
+    initial_value: '""'
   - id: slot_1_type
     type: std::string
     restore_value: no

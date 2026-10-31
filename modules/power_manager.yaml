@@ -311,23 +311,7 @@ interval:
             va_stuck_since_ms = 0;
           }
 
-          // 4. Local Speaker Hardware-Mute Guard
-          if ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-              !id(speaker_enable).state && !id(va_active) && !id(va_tts_received) &&
-              !id(va_resume_music_after) && !id(boot_button).state &&
-              !id(is_hibernating) && (millis() > 5000U)) {
-            ESP_LOGI("audio", "Local player is PLAYING with speaker_enable OFF -> routing I2S to speaker & unmuting DAC");
-            id(mp_idle_debounce).stop();
-            id(route_i2s_to_spk).execute();
-            id(speaker_enable).turn_on();
-            float v = id(latter_media_player).volume;
-            if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-            id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
-            id(hal_set_dac_mute).execute(false);
-            id(media_mixing_input).apply_ducking(0.0f, 100);
-          }
-
-          // 5. [PROF:*] Flight Recorder Power & Heap Telemetry
+          // 4. [PROF:*] Flight Recorder Power & Heap Telemetry
           uint32_t now_1s_ms = millis();
           static uint32_t last_prof_10s_ms = 0;
           static int last_prof_pwr_state = -1;
@@ -635,18 +619,20 @@ script:
             id(speaker_enable).turn_on();
           }
           id(hal_set_imu_power_mode).execute(0x01);
+          const std::string &art_u = latter_ui::media_state().art_url;
           if (id(gui_page) == 2 &&
-              (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
-              !id(ha_target_art_url).state.empty() &&
-              id(ha_target_art_url).state != "none" &&
-              id(ha_target_art_url).state != id(current_loaded_art_url)) {
+              (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
+              !art_u.empty() &&
+              art_u != "none" &&
+              art_u != id(current_loaded_art_url)) {
             id(fetch_remote_art_debounced).execute();
           }
-          if (!id(ha_latter_wallpaper_url).state.empty() &&
-              id(ha_latter_wallpaper_url).state != "none" &&
-              id(ha_latter_wallpaper_url).state != "unknown" &&
-              id(ha_latter_wallpaper_url).state != "unavailable" &&
-              id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url)) {
+          const std::string &wp_u = latter_ui::area_ctx_state().wallpaper_url;
+          if (!wp_u.empty() &&
+              wp_u != "none" &&
+              wp_u != "unknown" &&
+              wp_u != "unavailable" &&
+              wp_u != id(current_loaded_wallpaper_url)) {
             id(fetch_wallpaper_debounced).execute();
           }
       - script.execute: sync_display_brightness

@@ -323,7 +323,7 @@ template<typename DisplayT, typename FontDateT, typename FontSmallT, typename Fo
 inline void render_music_menus(
     DisplayT &it, int cx, int music_overlay_mode,
     const std::string &active_speaker_entity, const std::string &active_speaker_name,
-    const char *local_player_id,
+    bool is_rem,
     const std::string &selected_category_mode, const std::string &selected_category_title,
     int music_category_page, int music_browse_page, int music_browse_total_pages,
     bool menu_scroll_active, int menu_scroll_step, int menu_scroll_dir, int menu_scroll_target_page,
@@ -348,7 +348,6 @@ inline void render_music_menus(
   };
 
   (void)font_date;
-  const bool is_rem = (active_speaker_entity != local_player_id);
   esphome::Color card_bg(22, 27, 36);
   const esphome::Color card_brd(56, 68, 84);
 
@@ -561,7 +560,7 @@ inline void render_music_menus(
     bool is_current = (target_speaker_id == active_speaker_entity);
     if (is_current) {
       it.print(cx, layout().sub_hdr_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Currently Controlling");
-      bool is_remote_target = (target_speaker_id != local_player_id);
+      bool is_remote_target = is_rem && !media_state().local_speaker.empty();
       if (is_remote_target) {
         render_modern_card(it, cx, scale_y(142), 276, 44, 12, card_bg, card_brd, "Transfer to Local", col_white, font_small);
         render_modern_card(it, cx, scale_y(205), 276, 44, 12, card_bg, card_brd, "Unjoin Audio",      col_white, font_small);
@@ -612,7 +611,7 @@ inline void render_music_menus(
       snprintf(time_buf, sizeof(time_buf), "%02d:%02d  /  %02d:%02d   (%d%%)",
                el_s / 60, el_s % 60, tot_s / 60, tot_s % 60, static_cast<int>(prog * 100.0f));
     } else {
-      snprintf(time_buf, sizeof(time_buf), "%02d:%02d  /  --:--", el_s / 60, el_s % 60);
+      snprintf(time_buf, sizeof(time_buf), "%02d:%02d  /  %s", el_s / 60, el_s % 60, kUnknownGlyph);
     }
     it.print(cx, scale_y(196), font_small, col_white, esphome::display::TextAlign::CENTER, time_buf);
 

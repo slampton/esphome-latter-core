@@ -91,9 +91,9 @@ interval:
           // - Static daytime weather conditions or custom wallpapers run on the default 1s display refresh with near-zero CPU load
           const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
           const bool custom_wp_loaded = !weather_sim_active &&
-                                        !id(ha_latter_wallpaper_url).state.empty() &&
-                                        id(ha_latter_wallpaper_url).state != "none" &&
-                                        (id(ha_latter_wallpaper_url).state == id(current_loaded_wallpaper_url));
+                                        !latter_ui::area_ctx_state().wallpaper_url.empty() &&
+                                        latter_ui::area_ctx_state().wallpaper_url != "none" &&
+                                        (latter_ui::area_ctx_state().wallpaper_url == id(current_loaded_wallpaper_url));
           const bool weather_canvas_visible = (id(home_weather_bg_switch).state && !custom_wp_loaded) || weather_sim_active;
           const uint32_t now_w_ms = millis();
           const bool ui_overlay_animating =
@@ -111,7 +111,7 @@ interval:
             if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
               latter_ui::weather_sim_dirty() = false;
               last_cond_eval_time = now_w_ms;
-              std::string c_cond = id(ha_weather_condition).state;
+              std::string c_cond = latter_ui::weather_state().condition;
               std::string s_sun = id(ha_sun_state).state;
               const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));

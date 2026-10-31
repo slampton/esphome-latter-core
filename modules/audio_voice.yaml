@@ -143,13 +143,14 @@ media_player:
                   id(display_power_state) = 0;
                   id(disp1).start_poller();
                   id(hal_set_imu_power_mode).execute(0x01);
+                  const std::string &art_u = latter_ui::media_state().art_url;
                   if (id(gui_page) == 2 &&
-                      (id(active_speaker_entity) != "${local_player_id}" || id(album_art).get_width() == 0) &&
-                      !id(ha_target_art_url).state.empty() &&
-                      id(ha_target_art_url).state != "none" &&
-                      id(ha_target_art_url).state != "unknown" &&
-                      id(ha_target_art_url).state != "unavailable" &&
-                      id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                      (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
+                      !art_u.empty() &&
+                      art_u != "none" &&
+                      art_u != "unknown" &&
+                      art_u != "unavailable" &&
+                      art_u != id(current_loaded_art_url)) {
                     id(fetch_remote_art_debounced).execute();
                   }
               - light.turn_on: display_brightness
@@ -241,7 +242,7 @@ voice_assistant:
             lambda: |-
               return !id(va_resume_music_after) &&
                      ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                      (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
+                      (!id(active_speaker_entity).empty() && latter_ui::media_state().state == "playing"));
           then:
             - script.execute: pause_all_music
             - delay: 150ms

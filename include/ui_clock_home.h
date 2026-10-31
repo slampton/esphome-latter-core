@@ -82,7 +82,7 @@ inline void render_clock_page(
 #endif
 #endif
     if (!now.is_valid()) {
-      it.print(cx, cy - scale_y(8), font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx, cy - scale_y(8), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
       return;
     }
     it.strftime(cx, cy - scale_y(82), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
@@ -127,9 +127,9 @@ inline void render_clock_page(
 
   if (!now.is_valid()) {
     if (is_ring_digital) {
-      it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
     } else {
-      it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, "--:--");
+      it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
       it.filled_circle(cx, cy, 7, col_white);
       it.filled_circle(cx, cy, 4, col_red);
       it.filled_circle(cx, cy, 2, col_dark_gray);
@@ -1007,8 +1007,9 @@ inline void render_home_page(
     it.print(cx, z_date_y, font_date, fg_home_white, TextAlign::CENTER, date_bar);
   }
 
-  // ZONE 2: Hero Digital Clock (77pt Roboto, "--:--" until time syncs, Tap -> Clock)
-  char time_str[16] = "--:--";
+  // ZONE 2: Hero Digital Clock (77pt Roboto, kUnknownGlyph until time syncs, Tap -> Clock)
+  char time_str[16];
+  snprintf(time_str, sizeof(time_str), "%s", kUnknownGlyph);
   if (now.is_valid()) {
     format_time_hhmm(now.hour, now.minute, is_24h_format, time_str, sizeof(time_str));
   }

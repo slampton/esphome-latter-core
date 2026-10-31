@@ -134,7 +134,7 @@ Upcoming calendar agenda events and next-event headline.
 | `ui_input` | `command: string` | Remote hardware navigation/input command (up|down|left|right|select|back|home|wake|sleep) |
 | `set_browse_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots to the device |
 | `set_area_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated Area/Site entity control slots to the device |
-| `show_notification` | `title: string`, `message: string`, `priority: string`, `duration_s: int`, `chime: string` | Wake display, show an on-screen alert banner, and optionally play an RTTTL chime or camera preview |
+| `show_notification` | `alert_id: int`, `title: string`, `message: string`, `priority: string`, `duration_s: int`, `chime: string` | Wake display, show an on-screen alert banner, and optionally play an RTTTL chime or camera preview |
 
 ## 4. Outbound Home Assistant Services (`latter.<service>`)
 

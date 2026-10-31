@@ -18,7 +18,7 @@ font:
     id: font_chrono_time
     size: ${font_chrono_size}
     glyphs:
-      - '0123456789:.- sAMP°%'
+      - '0123456789:.- sAMP°%—'
   - file: "gfonts://Roboto"
     id: font_micro
     size: ${font_micro_size}
@@ -28,7 +28,7 @@ font:
     id: font_time
     size: ${font_time_size}
     glyphs:
-      - '0123456789:.- °%'
+      - '0123456789:.- °%—'
   - file: "gfonts://Roboto"
     id: font_date
     size: ${font_date_size}
@@ -275,15 +275,19 @@ display:
       // ==========================================
       } else if (id(gui_page) == 1) {
         uint32_t now_h_ms = millis();
-        bool is_rem_h = (id(active_speaker_entity) != "${local_player_id}");
+        const auto &ms_h = latter_ui::media_state();
+        const auto &ws_h = latter_ui::weather_state();
+        const auto &ac_h = latter_ui::area_ctx_state();
+        const auto &cs_h = latter_ui::calendar_state();
+        bool is_rem_h = !ms_h.is_local;
         bool loc_play_h = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-        bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, id(ha_target_state).state, now_h_ms);
+        bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, ms_h.state, now_h_ms);
         std::string m_title_h = (is_rem_h || id(track_title).state.empty() || id(track_title).state == "None")
-                                    ? id(ha_track_title).state : id(track_title).state;
+                                    ? ms_h.title : id(track_title).state;
         std::string m_artist_h = (is_rem_h || id(track_artist).state.empty() || id(track_artist).state == "None")
-                                     ? id(ha_track_artist).state : id(track_artist).state;
-        float eff_w_temp_h = id(ha_weather_temperature).state;
-        std::string eff_w_cond_h = id(ha_weather_condition).state;
+                                     ? ms_h.artist : id(track_artist).state;
+        float eff_w_temp_h = ws_h.temperature;
+        std::string eff_w_cond_h = ws_h.condition;
         bool eff_show_w_bg = id(home_weather_bg_switch).state ||
                              (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
         latter_ui::render_home_page(
@@ -306,8 +310,8 @@ display:
             id(col_bg), id(col_black), id(col_white), id(col_slate),
             id(col_dark_gray), id(col_gold), id(col_green),
             id(home_wake_greeting_switch).state, id(home_dock_area_switch).state,
-            id(home_wallpaper_art), id(ha_latter_wallpaper_url).state,
-            id(current_loaded_wallpaper_url), id(ha_calendar_agenda_raw).state,
+            id(home_wallpaper_art), ac_h.wallpaper_url,
+            id(current_loaded_wallpaper_url), cs_h.summary,
             id(home_dock_alarm_switch).state, id(area_alarm_state), id(font_micro));
 
       // ==========================================
@@ -316,31 +320,32 @@ display:
       } else if (id(gui_page) == 2) {
         uint32_t now_p2_ms = millis();
         latter_ui::last_page2_draw_ms() = now_p2_ms;
+        const auto &ms_p2 = latter_ui::media_state();
+        bool is_remote = !ms_p2.is_local;
+        bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+        bool is_playing = latter_ui::is_music_playing_effective(
+            is_remote, local_playing, ms_p2.state, now_p2_ms);
         if (id(music_overlay_mode) == 0) {
-          bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
-          bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          bool is_playing = latter_ui::is_music_playing_effective(
-              is_remote, local_playing, id(ha_target_state).state, now_p2_ms);
           latter_ui::render_music_now_playing(
               it, cx, cy, now_p2_ms,
               id(music_fullscreen_art_mode).current_option().c_str(),
               id(music_overlay_style).current_option().c_str(),
               id(music_hud_active), is_remote, is_playing,
               id(album_art), id(remote_album_art),
-              id(ha_target_art_url).state, id(current_loaded_art_url),
+              ms_p2.art_url, id(current_loaded_art_url),
               id(active_speaker_name), "${friendly_name}",
               id(music_action_feedback), id(music_feedback_timer),
               id(active_playback_media_type),
               id(music_show_speaker_shortcut).state, id(music_show_library_shortcut).state,
-              id(ha_media_duration).state, id(music_pos_base), id(music_pos_sync_time),
+              ms_p2.duration, id(music_pos_base), id(music_pos_sync_time),
               id(track_title).state, id(track_artist).state, id(track_album).state,
-              id(ha_track_title).state, id(ha_track_artist).state, id(ha_track_album).state,
+              ms_p2.title, ms_p2.artist, ms_p2.album,
               id(font_small), id(font_micro), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_black), id(col_white), id(col_gray), id(col_dark_gray));
         } else {
           latter_ui::render_music_menus(
               it, cx, id(music_overlay_mode),
-              id(active_speaker_entity), id(active_speaker_name), "${local_player_id}",
+              id(active_speaker_entity), id(active_speaker_name), is_remote,
               id(selected_category_mode), id(selected_category_title),
               id(music_category_page), id(music_browse_page), id(music_browse_total_pages),
               id(menu_scroll_active), id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
@@ -353,17 +358,13 @@ display:
               id(font_date), id(font_small), id(font_micro),
               id(theme_primary), id(theme_secondary), id(col_bg), id(col_black),
               id(col_white), id(col_slate), id(col_dark_gray),
-              now_p2_ms,
-              latter_ui::is_music_playing_effective(
-                  id(active_speaker_entity) != "${local_player_id}",
-                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
-                  id(ha_target_state).state, now_p2_ms),
-              id(ha_media_duration).state, id(music_pos_base), id(music_pos_sync_time),
-              (id(active_speaker_entity) != "${local_player_id}" || id(track_title).state.empty() || id(track_title).state == "None") ? id(ha_track_title).state : id(track_title).state,
-              (id(active_speaker_entity) != "${local_player_id}" || id(track_artist).state.empty() || id(track_artist).state == "None") ? id(ha_track_artist).state : id(track_artist).state,
-              (id(active_speaker_entity) != "${local_player_id}" || id(track_album).state.empty() || id(track_album).state == "None") ? id(ha_track_album).state : id(track_album).state,
+              now_p2_ms, is_playing,
+              ms_p2.duration, id(music_pos_base), id(music_pos_sync_time),
+              (is_remote || id(track_title).state.empty() || id(track_title).state == "None") ? ms_p2.title : id(track_title).state,
+              (is_remote || id(track_artist).state.empty() || id(track_artist).state == "None") ? ms_p2.artist : id(track_artist).state,
+              (is_remote || id(track_album).state.empty() || id(track_album).state == "None") ? ms_p2.album : id(track_album).state,
               id(album_art), id(remote_album_art),
-              id(ha_target_art_url).state, id(current_loaded_art_url));
+              ms_p2.art_url, id(current_loaded_art_url));
         }
 
       // ==========================================
@@ -496,11 +497,7 @@ display:
       // PAGE 5: SKY & WEATHER SUITE
       // ==========================================
       } else if (id(gui_page) == 5) {
-        float eff_w_temp = id(ha_weather_temperature).state;
-        float eff_w_hum  = id(ha_weather_humidity).state;
-        float eff_w_spd  = id(ha_weather_wind_speed).state;
-        float eff_w_brg  = id(ha_weather_wind_bearing).state;
-        std::string eff_w_cond = id(ha_weather_condition).state;
+        const auto &ws = latter_ui::weather_state();
         #if LATTER_PANEL_IPS
         const Color eff_warm_gold(255, 178, 28);
         #else
@@ -509,9 +506,9 @@ display:
         latter_ui::render_weather_page(
             it, cx, cy, millis(), id(sky_weather_subpage), now, id(is_24h_format),
             std::string(id(weather_sim_condition).current_option()),
-            eff_w_temp, id(ha_weather_high).state, id(ha_weather_low).state,
-            eff_w_hum, eff_w_spd, eff_w_brg,
-            eff_w_cond, id(ha_weather_forecast_5d).state,
+            ws.temperature, ws.high, ws.low,
+            ws.humidity, ws.wind_speed, ws.wind_bearing,
+            ws.condition, ws.forecast_5d,
             id(ha_sun_state).state, id(ha_sun_elevation).state, id(ha_sun_azimuth).state,
             id(ha_sun_next_rising).state, id(ha_sun_next_setting).state,
             id(ha_moon_phase).state,
@@ -526,9 +523,10 @@ display:
       // ==========================================
       } else if (id(gui_page) == 6) {
         const bool is_area_picker = (id(area_subpage) == 1);
+        const auto &ac = latter_ui::area_ctx_state();
         latter_ui::render_area_control_page(
             it, cx, millis(), id(area_subpage), is_area_picker ? "areas" : "entities", id(area_domain_filter),
-            id(active_area_name), id(ha_area_temperature).state, id(ha_area_humidity).state,
+            id(active_area_name), ac.area_temp, ac.area_humidity,
             id(area_alarm_entity), id(area_alarm_state),
             is_area_picker ? id(area_list_page) : id(area_browse_page),
             is_area_picker ? id(area_list_total_pages) : id(area_browse_total_pages),
@@ -628,7 +626,7 @@ display:
               id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
         } else if (id(tools_subpage) == 9) {
           latter_ui::render_tool_calendar(
-              it, cx, id(ha_calendar_agenda_raw).state,
+              it, cx, latter_ui::calendar_state().summary,
               id(cal_browse_page), id(cal_browse_total_pages),
               id(cal_slot_1_name), id(cal_slot_1_active),
               id(cal_slot_2_name), id(cal_slot_2_active),
@@ -643,13 +641,14 @@ display:
               it, cx, millis(), id(intercom_feedback_str), id(intercom_feedback_ms),
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_white), id(col_slate),
-              id(ha_latter_intercom_targets_summary).state);
+              latter_ui::area_ctx_state().intercom_targets_summary);
         } else if (id(tools_subpage) == 12) {
+          const auto &ac_cam = latter_ui::area_ctx_state();
           latter_ui::render_tool_camera(
-              it, cx, cy, id(camera_snapshot_art), id(ha_latter_camera_snapshot_url).state,
+              it, cx, cy, id(camera_snapshot_art), ac_cam.camera_snapshot_url,
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_slate),
-              id(ha_latter_cameras_summary).state, id(ha_latter_doorbell_talk_state).state,
+              ac_cam.cameras_summary, ac_cam.doorbell_talk_state,
               millis());
         }
       } else if (id(gui_page) == 9) {

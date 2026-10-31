@@ -32,7 +32,7 @@ image:
     resize: ${art_resize}
     url: "${initial_art_url}"
     on_download_finished:
-      - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+      - lambda: 'id(current_loaded_art_url) = latter_ui::media_state().art_url;'
       - script.execute: throttled_disp_update
       - script.execute: sync_wake_word_state
     on_error:
@@ -48,7 +48,7 @@ image:
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
-          id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;
+          id(current_loaded_wallpaper_url) = latter_ui::area_ctx_state().wallpaper_url;
           if (id(display_power_state) == 0 && id(gui_page) == 1) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
