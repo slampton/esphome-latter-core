@@ -1,0 +1,1336 @@
+# Latter Client Feature Package: Core System, Boot, API, OTA, Time & Globals
+
+esphome:
+  on_boot:
+    - priority: 800
+      then:
+        - lambda: |-
+            uint32_t cal_val = latter_ui::hal_calibrate_rtc();
+            ESP_LOGI("rtc_cal", "Hardware RTC slow clock calibrated: %lu (Q19.12)", (unsigned long)cal_val);
+            id(hal_release_deep_sleep_holds).execute();
+            id(sleep_start_time) = millis();
+            id(is_hibernating) = false;
+            id(display_power_state) = 0; // ACTIVE
+            esphome::voice_assistant::ensure_wake_words_restored(id(mww));
+
+    - priority: -100
+      then:
+        - safe_mode.mark_successful:
+        - script.execute: hal_init_pmu_irq
+        - lambda: |-
+            latter_ui::seed_standalone_remote_slots(
+                "${remote_1_entity}", "${remote_1_name}",
+                "${remote_2_entity}", "${remote_2_name}",
+                "${remote_3_entity}", "${remote_3_name}",
+                "${remote_4_entity}", "${remote_4_name}");
+            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
+        - media_player.pause: latter_media_player
+        - online_image.release: remote_album_art
+        - online_image.release: home_wallpaper_art
+        - online_image.release: camera_snapshot_art
+        - lambda: |-
+            id(current_loaded_art_url) = "";
+            id(current_loaded_wallpaper_url) = "";
+            id(current_loaded_camera_url) = "";
+            id(hal_set_dac_mute).execute(true);
+            id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_json());
+        - script.execute: route_i2s_to_mic
+        - switch.turn_off: speaker_enable
+        - script.execute: apply_default_start_page
+        - script.execute: apply_theme_preset
+        - lambda: |-
+            #if !LATTER_ROUND_DISPLAY
+            static bool non_round_clock_seeded = false;
+            if (!non_round_clock_seeded) {
+              non_round_clock_seeded = true;
+              if (id(clock_face_style).current_option() == "Modern Roman (Analog)") {
+                auto call = id(clock_face_style).make_call();
+                call.set_option("Minimal Digital");
+                call.perform();
+              }
+            }
+            #endif
+            id(clock_face_digital) = (id(clock_face_style).current_option() != "Modern Roman (Analog)");
+            id(is_24h_format) = (id(time_format_select).current_option() == "24-Hour");
+        - component.update: batt_level
+        - lambda: |-
+            if (!id(ble_area_beacon_switch).state) {
+              id(ble_area_beacon_switch).publish_state(true);
+            }
+            if (!LATTER_HAS_IMU && !id(home_dock_games_switch).state) {
+              id(home_dock_games_switch).publish_state(true);
+            }
+            esphome::voice_assistant::ensure_wake_words_restored(id(mww), true);
+            id(va_active_wake_word).publish_state(
+                esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
+            #if !LATTER_HAS_IMU
+            if (id(tap_wake_mode).current_option() == "Docked Only") {
+              id(tap_wake_mode).publish_state("Always On");
+            }
+            if (id(pickup_wake_mode).current_option() != "Disabled") {
+              id(pickup_wake_mode).publish_state("Disabled");
+            }
+            #endif
+            #if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
+            if (id(hibernate_timeout_mode).current_option() == "15 min") {
+              id(hibernate_timeout_mode).publish_state("Disabled");
+            }
+            #elif !LATTER_HAS_IMU
+            // Self-heal battery-powered non-IMU boards (Remote Assistant) if a previous boot seeded "Disabled"
+            if (id(hibernate_timeout_mode).current_option() == "Disabled") {
+              auto call = id(hibernate_timeout_mode).make_call();
+              call.set_option("15 min");
+              call.perform();
+            }
+            #endif
+            if (latter_ui::is_wearable_form_factor()) {
+              static bool watch_pwr_seeded = false;
+              if (!watch_pwr_seeded) {
+                watch_pwr_seeded = true;
+                if (id(pickup_wake_mode).current_option() == "Always On") {
+                  id(pickup_wake_mode).publish_state("Docked Only");
+                }
+                if (id(display_off_timeout).current_option() == "30s") {
+                  id(display_off_timeout).publish_state("15s");
+                }
+                if (id(hibernate_timeout_mode).current_option() == "15 min") {
+                  id(hibernate_timeout_mode).publish_state("5 min");
+                }
+              }
+            }
+        - script.execute: apply_wake_word_sensitivities
+        - script.execute: sync_display_brightness
+        - script.execute: screen_sleep_timer
+
+api:
+  reboot_timeout: ${api_reboot_timeout}
+  encryption:
+  outgoing_connection:
+  on_client_connected:
+    then:
+      - lambda: |-
+          latter_ui::link_state().ha_connected = true;
+          latter_ui::link_state().last_ha_connect_ms = millis();
+          esphome::voice_assistant::on_api_client_authenticated(id(va), id(mww), client_info, client_address);
+          if (id(display_power_state) == 0 && !id(is_hibernating)) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+  on_client_disconnected:
+    then:
+      - lambda: |-
+          latter_ui::link_state().ha_connected = false;
+          latter_ui::link_state().last_ha_disconnect_ms = millis();
+          if (id(display_power_state) == 0 && !id(is_hibernating)) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+  actions:
+    - action: latter_ping
+      id: latter_ping_action
+      then:
+        - logger.log: "Latter companion connected"
+
+    - action: ui_input
+      variables:
+        action: string
+        delta: int
+      then:
+        - script.execute:
+            id: ui_input_event
+            action: !lambda 'return action;'
+            delta: !lambda 'return delta;'
+
+    - action: set_browse_slots
+      variables:
+        contract: int
+        slots: string
+        mode: string
+        page: int
+        total_pages: int
+        has_prev: bool
+        has_next: bool
+        s1_name: string
+        s1_id: string
+        s1_type: string
+        s1_active: bool
+        s2_name: string
+        s2_id: string
+        s2_type: string
+        s2_active: bool
+        s3_name: string
+        s3_id: string
+        s3_type: string
+        s3_active: bool
+        s4_name: string
+        s4_id: string
+        s4_type: string
+        s4_active: bool
+        s5_name: string
+        s5_id: string
+        s5_type: string
+        s5_active: bool
+      then:
+        - lambda: |-
+            (void)has_prev; (void)has_next;
+            latter_ui::BrowseSlotItem v3_items[5];
+            bool use_v3 = (contract >= 3 && !slots.empty());
+            if (use_v3) {
+              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
+            }
+            const std::string &n1 = use_v3 ? v3_items[0].name : s1_name;
+            const std::string &i1 = use_v3 ? v3_items[0].id   : s1_id;
+            const std::string &t1 = use_v3 ? v3_items[0].type : s1_type;
+            const bool a1         = use_v3 ? v3_items[0].active : s1_active;
+            const int l1          = use_v3 ? v3_items[0].level  : -1;
+            const std::string &n2 = use_v3 ? v3_items[1].name : s2_name;
+            const std::string &i2 = use_v3 ? v3_items[1].id   : s2_id;
+            const std::string &t2 = use_v3 ? v3_items[1].type : s2_type;
+            const bool a2         = use_v3 ? v3_items[1].active : s2_active;
+            const int l2          = use_v3 ? v3_items[1].level  : -1;
+            const std::string &n3 = use_v3 ? v3_items[2].name : s3_name;
+            const std::string &i3 = use_v3 ? v3_items[2].id   : s3_id;
+            const std::string &t3 = use_v3 ? v3_items[2].type : s3_type;
+            const bool a3         = use_v3 ? v3_items[2].active : s3_active;
+            const int l3          = use_v3 ? v3_items[2].level  : -1;
+            const std::string &n4 = use_v3 ? v3_items[3].name : s4_name;
+            const std::string &i4 = use_v3 ? v3_items[3].id   : s4_id;
+            const std::string &t4 = use_v3 ? v3_items[3].type : s4_type;
+            const bool a4         = use_v3 ? v3_items[3].active : s4_active;
+            const int l4          = use_v3 ? v3_items[3].level  : -1;
+            const std::string &n5 = use_v3 ? v3_items[4].name : s5_name;
+            const std::string &i5 = use_v3 ? v3_items[4].id   : s5_id;
+            const std::string &t5 = use_v3 ? v3_items[4].type : s5_type;
+            const bool a5         = use_v3 ? v3_items[4].active : s5_active;
+            const int l5          = use_v3 ? v3_items[4].level  : -1;
+
+            if (mode == "area_areas" || mode == "areas") {
+              id(area_list_page) = page;
+              id(area_list_total_pages) = total_pages;
+              id(area_list_1_name) = n1; id(area_list_1_id) = i1; id(area_list_1_active) = a1;
+              id(area_list_2_name) = n2; id(area_list_2_id) = i2; id(area_list_2_active) = a2;
+              id(area_list_3_name) = n3; id(area_list_3_id) = i3; id(area_list_3_active) = a3;
+              id(area_list_4_name) = n4; id(area_list_4_id) = i4; id(area_list_4_active) = a4;
+              id(area_list_5_name) = n5; id(area_list_5_id) = i5; id(area_list_5_active) = a5;
+            } else if (mode == "calendar_agenda") {
+              id(cal_browse_page) = page;
+              id(cal_browse_total_pages) = total_pages;
+              id(cal_slot_1_name) = n1; id(cal_slot_1_id) = i1; id(cal_slot_1_active) = a1;
+              id(cal_slot_2_name) = n2; id(cal_slot_2_id) = i2; id(cal_slot_2_active) = a2;
+              id(cal_slot_3_name) = n3; id(cal_slot_3_id) = i3; id(cal_slot_3_active) = a3;
+              id(cal_slot_4_name) = n4; id(cal_slot_4_id) = i4; id(cal_slot_4_active) = a4;
+              id(cal_slot_5_name) = n5; id(cal_slot_5_id) = i5; id(cal_slot_5_active) = a5;
+            } else if (mode == "entities" || mode == "home") {
+              id(area_browse_mode) = "entities";
+              id(area_browse_page) = page;
+              id(area_browse_total_pages) = total_pages;
+              id(area_slot_1_name) = n1; id(area_slot_1_id) = i1; id(area_slot_1_type) = t1; id(area_slot_1_active) = a1; id(area_slot_1_level) = l1;
+              id(area_slot_2_name) = n2; id(area_slot_2_id) = i2; id(area_slot_2_type) = t2; id(area_slot_2_active) = a2; id(area_slot_2_level) = l2;
+              id(area_slot_3_name) = n3; id(area_slot_3_id) = i3; id(area_slot_3_type) = t3; id(area_slot_3_active) = a3; id(area_slot_3_level) = l3;
+              id(area_slot_4_name) = n4; id(area_slot_4_id) = i4; id(area_slot_4_type) = t4; id(area_slot_4_active) = a4; id(area_slot_4_level) = l4;
+              id(area_slot_5_name) = n5; id(area_slot_5_id) = i5; id(area_slot_5_type) = t5; id(area_slot_5_active) = a5; id(area_slot_5_level) = l5;
+            } else {
+              if (millis() - latter_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
+                id(music_browse_page) = page;
+              }
+              id(music_browse_total_pages) = total_pages;
+              id(slot_1_name) = n1; id(slot_1_id) = i1; id(slot_1_type) = t1; id(slot_1_active) = a1;
+              id(slot_2_name) = n2; id(slot_2_id) = i2; id(slot_2_type) = t2; id(slot_2_active) = a2;
+              id(slot_3_name) = n3; id(slot_3_id) = i3; id(slot_3_type) = t3; id(slot_3_active) = a3;
+              id(slot_4_name) = n4; id(slot_4_id) = i4; id(slot_4_type) = t4; id(slot_4_active) = a4;
+              id(slot_5_name) = n5; id(slot_5_id) = i5; id(slot_5_type) = t5; id(slot_5_active) = a5;
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+
+    - action: set_area_slots
+      variables:
+        contract: int
+        slots: string
+        mode: string
+        page: int
+        total_pages: int
+        has_prev: bool
+        has_next: bool
+        s1_name: string
+        s1_id: string
+        s1_type: string
+        s1_active: bool
+        s1_level: int
+        s2_name: string
+        s2_id: string
+        s2_type: string
+        s2_active: bool
+        s2_level: int
+        s3_name: string
+        s3_id: string
+        s3_type: string
+        s3_active: bool
+        s3_level: int
+        s4_name: string
+        s4_id: string
+        s4_type: string
+        s4_active: bool
+        s4_level: int
+        s5_name: string
+        s5_id: string
+        s5_type: string
+        s5_active: bool
+        s5_level: int
+      then:
+        - lambda: |-
+            (void)has_prev; (void)has_next;
+            latter_ui::BrowseSlotItem v3_items[5];
+            bool use_v3 = (contract >= 3 && !slots.empty());
+            if (use_v3) {
+              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
+            }
+            id(area_browse_mode) = mode;
+            id(area_browse_page) = page;
+            id(area_browse_total_pages) = total_pages;
+            id(area_slot_1_name) = use_v3 ? v3_items[0].name : s1_name;
+            id(area_slot_1_id)   = use_v3 ? v3_items[0].id   : s1_id;
+            id(area_slot_1_type) = use_v3 ? v3_items[0].type : s1_type;
+            id(area_slot_1_active) = use_v3 ? v3_items[0].active : s1_active;
+            id(area_slot_1_level)  = use_v3 ? v3_items[0].level  : s1_level;
+            id(area_slot_2_name) = use_v3 ? v3_items[1].name : s2_name;
+            id(area_slot_2_id)   = use_v3 ? v3_items[1].id   : s2_id;
+            id(area_slot_2_type) = use_v3 ? v3_items[1].type : s2_type;
+            id(area_slot_2_active) = use_v3 ? v3_items[1].active : s2_active;
+            id(area_slot_2_level)  = use_v3 ? v3_items[1].level  : s2_level;
+            id(area_slot_3_name) = use_v3 ? v3_items[2].name : s3_name;
+            id(area_slot_3_id)   = use_v3 ? v3_items[2].id   : s3_id;
+            id(area_slot_3_type) = use_v3 ? v3_items[2].type : s3_type;
+            id(area_slot_3_active) = use_v3 ? v3_items[2].active : s3_active;
+            id(area_slot_3_level)  = use_v3 ? v3_items[2].level  : s3_level;
+            id(area_slot_4_name) = use_v3 ? v3_items[3].name : s4_name;
+            id(area_slot_4_id)   = use_v3 ? v3_items[3].id   : s4_id;
+            id(area_slot_4_type) = use_v3 ? v3_items[3].type : s4_type;
+            id(area_slot_4_active) = use_v3 ? v3_items[3].active : s4_active;
+            id(area_slot_4_level)  = use_v3 ? v3_items[3].level  : s4_level;
+            id(area_slot_5_name) = use_v3 ? v3_items[4].name : s5_name;
+            id(area_slot_5_id)   = use_v3 ? v3_items[4].id   : s5_id;
+            id(area_slot_5_type) = use_v3 ? v3_items[4].type : s5_type;
+            id(area_slot_5_active) = use_v3 ? v3_items[4].active : s5_active;
+            id(area_slot_5_level)  = use_v3 ? v3_items[4].level  : s5_level;
+            latter_ui::schedule_disp_update(&id(disp1));
+
+    - action: set_timer
+      variables:
+        seconds: int
+      then:
+        - lambda: |-
+            if (seconds > 0) {
+              uint32_t now_t = millis();
+              int slot = latter_ui::upsert_voice_timer_slot("ha_action", "", seconds, seconds, true, now_t);
+              latter_ui::timer_view_slot() = slot + 1;
+              latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+              id(timer_ringing) = false;
+              id(gui_page) = 8;
+              id(tools_subpage) = 1;
+              id(wake_to_active_state).execute();
+              latter_ui::schedule_disp_update(&id(disp1));
+              ESP_LOGI("timer", "Voice/HA Timer started for %d seconds in slot %d", (int)seconds, slot + 1);
+            }
+
+    - action: cancel_timer
+      then:
+        - lambda: |-
+            auto *slots = latter_ui::timer_slots();
+            for (int i = 0; i < 3; i++) {
+              slots[i].running = false;
+              slots[i].paused = false;
+              slots[i].remaining_sec = slots[i].duration_sec;
+            }
+            latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+            id(timer_ringing) = false;
+            id(stop_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            ESP_LOGI("timer", "Voice/HA Timers cancelled");
+
+    - action: show_notification
+      variables:
+        title: string
+        message: string
+        priority: string
+        duration: int
+        chime: bool
+        camera_url: string
+      then:
+        - lambda: |-
+            id(notif_title) = std::string(title).empty() ? "Notification" : std::string(title);
+            id(notif_message) = std::string(message);
+            id(notif_priority) = std::string(priority).empty() ? "normal" : std::string(priority);
+            int dur_s = (duration > 0) ? duration : 10;
+            if (dur_s < 3) dur_s = 3;
+            if (dur_s > 60) dur_s = 60;
+            id(notif_duration_ms) = static_cast<uint32_t>(dur_s) * 1000U;
+            id(notif_start_ms) = millis();
+            id(notif_camera_url) = std::string(camera_url);
+            id(notif_active) = true;
+            id(wake_to_active_state).execute();
+            if (chime && !id(va_active) && !id(va_tts_received)) {
+              int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
+              id(play_game_sfx).execute(sfx);
+            }
+            if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
+                id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+              id(fetch_camera_snapshot).execute();
+            } else {
+              id(current_loaded_camera_url) = "";
+              id(camera_snapshot_art).release();
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+
+ota:
+  - platform: esphome
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        - lambda: |-
+            id(hal_release_deep_sleep_holds).execute();
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
+    on_end:
+      then:
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+
+  - platform: http_request
+    id: ota_http
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        - lambda: |-
+            id(hal_release_deep_sleep_holds).execute();
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
+    on_end:
+      then:
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::record_ambient_frame_ms(0);
+            }
+  - platform: sntp
+    id: sntp_time
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::record_ambient_frame_ms(0);
+            }
+
+
+globals:
+  - id: hud_wake_finger_released
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  - id: drilldown_artist_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_album_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_parent_mode
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: drilldown_artist_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: drilldown_album_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: active_playback_media_type
+    type: std::string
+    restore_value: no
+    initial_value: '"music"'
+  - id: music_overlay_mode
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Player, 1 = Speakers, 2 = Library Categories, 3 = Item Browser, 4 = Speaker Action Sheet, 5 = Music Hub
+  - id: music_direct_nav
+    type: bool
+    restore_value: no
+    initial_value: 'false' # true when entered Speakers (1) or Library (2) via overlay shortcuts
+  - id: music_hud_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: music_hud_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: display_menu_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: system_dashboard_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: music_category_page
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 to 2
+  - id: selected_category_mode
+    type: std::string
+    restore_value: no
+    initial_value: '"speakers"'
+  - id: selected_category_title
+    type: std::string
+    restore_value: no
+    initial_value: '"SPEAKERS"'
+  - id: music_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: music_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: active_speaker_entity
+    type: std::string
+    restore_value: no
+    initial_value: '"${local_player_id}"'
+  - id: active_speaker_name
+    type: std::string
+    restore_value: no
+    initial_value: '"${friendly_name}"'
+  - id: last_speaker_entity
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: target_speaker_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: target_speaker_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: selected_slot_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+
+  - id: slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '"${friendly_name}"'
+  - id: slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '"${local_player_id}"'
+  - id: slot_1_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_2_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_3_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_4_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: slot_5_type
+    type: std::string
+    restore_value: no
+    initial_value: '"player"'
+  - id: slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_subpage
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Area Entities (3-Card Sliders), 1 = Area Switcher, 2 = Light Color & Kelvin Inspector
+  - id: area_browse_mode
+    type: std::string
+    restore_value: no
+    initial_value: '"entities"'
+  - id: area_domain_filter
+    type: std::string
+    restore_value: no
+    initial_value: '"all"'
+  - id: area_alarm_entity
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_alarm_state
+    type: std::string
+    restore_value: no
+    initial_value: '"disarmed"'
+  - id: area_alarm_service
+    type: std::string
+    restore_value: no
+    initial_value: '"alarm_control_panel.alarm_disarm"'
+  - id: area_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: area_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: area_list_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: area_list_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: area_list_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_list_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_list_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_list_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_list_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_list_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: active_area_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: active_area_name
+    type: std::string
+    restore_value: no
+    initial_value: '"Area Control"'
+  - id: area_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: area_target_entity_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_target_action
+    type: std::string
+    restore_value: no
+    initial_value: '"toggle"'
+  - id: area_target_level
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: area_target_code
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '"Tap Header for Areas"'
+  - id: area_slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_1_type
+    type: std::string
+    restore_value: no
+    initial_value: '"text"'
+  - id: area_slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_slot_1_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: area_slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_2_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_slot_2_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: area_slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_3_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_slot_3_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: area_slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_4_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_slot_4_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: area_slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_5_type
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: area_slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: area_slot_5_level
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: current_loaded_art_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: current_loaded_wallpaper_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_browse_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: cal_browse_total_pages
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: cal_slot_1_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_1_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_2_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_2_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_3_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_3_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_4_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_4_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_5_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_5_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: cal_slot_1_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_2_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_3_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_4_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_slot_5_id
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cal_quick_summary
+    type: std::string
+    restore_value: no
+    initial_value: '"Reminder"'
+  - id: cal_quick_in_minutes
+    type: int
+    restore_value: no
+    initial_value: '15'
+  - id: cal_quick_duration_minutes
+    type: int
+    restore_value: no
+    initial_value: '30'
+  - id: intercom_message_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: intercom_feedback_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: intercom_feedback_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: cam_intercom_action
+    type: std::string
+    restore_value: no
+    initial_value: '"listen_toggle"'
+  - id: cam_intercom_message
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: cam_intercom_anc_str
+    type: std::string
+    restore_value: no
+    initial_value: '"ultra"'
+  - id: cam_intercom_status_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: macro_target_slot
+    type: std::string
+    restore_value: no
+    initial_value: '"macro_1"'
+  - id: macro_feedback_str
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: macro_feedback_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: notif_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: notif_title
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_message
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_priority
+    type: std::string
+    restore_value: no
+    initial_value: '"normal"'
+  - id: notif_camera_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: current_loaded_camera_url
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: notif_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: notif_duration_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '10000'
+  - id: last_seen_alert_id
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: music_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: music_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: system_menu_mode
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: ota_in_progress
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ota_progress_pct
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: update_check_state
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Idle, 1 = Checking..., 2 = Checked
+  - id: update_check_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: music_pos_base
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: music_pos_sync_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: music_skip_burst_count
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: music_skip_last_tap_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: marble_touch_x
+    type: float
+    restore_value: no
+    initial_value: '-1.0'
+  - id: marble_touch_y
+    type: float
+    restore_value: no
+    initial_value: '-1.0'
+  - id: game_carousel_idx
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: active_game
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: high_score_marbles
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_archery
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_breakout
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: high_score_chomp
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: clock_face_digital
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: custom_theme_rgb
+    type: uint32_t
+    restore_value: yes
+    initial_value: '0x3898FF'
+  - id: is_24h_format
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: game_btn_pressed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: gui_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: home_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: home_activity_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  
+  - id: sky_weather_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: remote_subpage
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: tools_subpage
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Launcher, 1 = Timers, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip, 9 = Calendar, 10 = Intercom, 11 = Macros, 12 = Cameras
+  - id: tools_menu_page
+    type: int
+    restore_value: no
+    initial_value: '0' # 0 = Page 1 (6 icons), 1 = Page 2 (6 icons)
+  - id: remote_action_feedback
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: remote_feedback_timer
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: active_remote_slot
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: remote_latter_cmd
+    type: std::string
+    restore_value: no
+    initial_value: '"select"'
+  - id: remote_latter_act
+    type: std::string
+    restore_value: no
+    initial_value: '"command"'
+  - id: remote_latter_slot_num
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: audio_menu_parent_page
+    type: int
+    restore_value: no
+    initial_value: '4'
+  - id: timer_duration_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+  - id: timer_remaining_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+  - id: timer_target_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: timer_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: timer_paused
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: timer_ringing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_timer_name
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: last_detected_wake_word
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: find_my_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: find_my_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: alarm1_hour
+    type: int
+    restore_value: yes
+    initial_value: '7'
+  - id: alarm1_minute
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: alarm1_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm1_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '1'
+  - id: alarm2_hour
+    type: int
+    restore_value: yes
+    initial_value: '8'
+  - id: alarm2_minute
+    type: int
+    restore_value: yes
+    initial_value: '30'
+  - id: alarm2_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm2_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '2'
+  - id: alarm3_hour
+    type: int
+    restore_value: yes
+    initial_value: '9'
+  - id: alarm3_minute
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: alarm3_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: alarm3_recurrence
+    type: int
+    restore_value: yes
+    initial_value: '2'
+  - id: alarm_edit_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_ringing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: alarm_ringing_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_snooze_until
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: alarm_last_fired_min
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: return_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: va_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_status_text
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: va_tts_received
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_vad_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: stopwatch_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: stopwatch_start_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: stopwatch_elapsed_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: stopwatch_lap_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: va_resume_music_after
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: va_was_cancelled
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+
+  - id: menu_scroll_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: menu_scroll_dir
+    type: int
+    restore_value: no
+    initial_value: '1' # 1 = down (content slides up), -1 = up (content slides down)
+  - id: menu_scroll_target_page
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: menu_scroll_step
+    type: int
+    restore_value: no
+    initial_value: '0'
+

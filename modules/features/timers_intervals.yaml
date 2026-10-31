@@ -1,0 +1,350 @@
+# Latter Client Feature Package: High-Refresh Animation & Background Intervals
+
+interval:
+  - interval: 5min
+    then:
+      - script.execute: sync_display_brightness
+  - interval: 60min
+    then:
+      - lambda: |-
+          // Priority 1: Periodic thermal drift compensation for RTC slow clock
+          uint32_t cal_val = latter_ui::hal_calibrate_rtc();
+          ESP_LOGD("rtc_cal", "Periodic RTC slow clock calibration: %lu", (unsigned long)cal_val);
+
+  - interval: 50ms
+    then:
+      - lambda: |-
+          // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
+          // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms()
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 8 && !id(va_active) && id(va_status_text).empty()) {
+            if ((id(tools_subpage) == 3 && id(stopwatch_running)) ||
+                (id(tools_subpage) == 4 && latter_ui::dice_state().anim_active) ||
+                (id(tools_subpage) == 7) ||
+                (id(tools_subpage) == 8 && latter_ui::coin_state().anim_active)) {
+              const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
+              if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
+                latter_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+          }
+
+          // 20 FPS high-refresh physics & audio loop exclusively for active games (coalesced against 1s timer)
+          static int s_prev_audio_game = 0;
+          const int cur_audio_game = (id(gui_page) == 3) ? id(active_game) : 0;
+          if (cur_audio_game != s_prev_audio_game) {
+            s_prev_audio_game = cur_audio_game;
+            if (cur_audio_game > 0 && id(game_sound_switch).state) {
+              id(route_i2s_to_spk).execute();
+              id(speaker_enable).turn_on();
+              id(hal_set_dac_mute).execute(false);
+            }
+          }
+          if (cur_audio_game > 0 && latter_ui::pending_game_sfx() > 0) {
+            int sfx = latter_ui::pending_game_sfx();
+            latter_ui::pending_game_sfx() = 0;
+            if (id(game_sound_switch).state) {
+              id(play_game_sfx).execute(sfx);
+            }
+          }
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 && id(gui_page) == 3 && id(active_game) > 0 && !id(va_active) && id(va_status_text).empty()) {
+            const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
+            if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
+              latter_ui::record_ambient_frame_ms(millis());
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // 20 FPS Audio-Aware Fluid Voice Assistant Loop (All 5 Profiles):
+          // - Listening & Thinking: Full 20 FPS (42ms cadence, coalesced with 50ms timer)
+          // - Speaking (TTS FLAC playback): 75ms (~13.3 FPS, matching should_step_ambient_anim audio cadence)
+          if (id(va_active) || !id(va_status_text).empty()) {
+            static uint32_t last_va_anim_time = 0;
+            static bool prev_tts_active = false;
+            uint32_t now_va_ms = millis();
+
+            const bool tts_audio_active =
+                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                id(announcement_mixing_input).is_running();
+            if (id(va_active) && id(va_tts_received) && tts_audio_active) {
+              esphome::voice_assistant::disarm_va_speaker_timeout(id(va));
+            }
+
+            // Smooth state transition: reserve 1 quiet tick when speech starts so DAC unmutes cleanly
+            if (id(va_tts_received) != prev_tts_active) {
+              prev_tts_active = id(va_tts_received);
+              last_va_anim_time = now_va_ms;
+              return;
+            }
+
+            const uint32_t va_min_gap = (id(va_tts_received) || tts_audio_active) ? 110U : 42U;
+            if (now_va_ms - last_va_anim_time >= va_min_gap) {
+              last_va_anim_time = now_va_ms;
+              latter_ui::record_ambient_frame_ms(millis());
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Dynamic Atmospheric Motion Wallpaper with Universal Audio-Aware Cadence
+          // - Unlocks full 20 FPS (50ms) when local music is idle for rain, snow, lightning, and night starfield
+          // - Paces smoothly when local Sendspin music or MicroWakeWord is running
+          // - Static daytime weather conditions or custom wallpapers run on the default 1s display refresh with near-zero CPU load
+          const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
+          const bool custom_wp_loaded = !weather_sim_active &&
+                                        !id(ha_latter_wallpaper_url).state.empty() &&
+                                        id(ha_latter_wallpaper_url).state != "none" &&
+                                        (id(ha_latter_wallpaper_url).state == id(current_loaded_wallpaper_url));
+          const bool weather_canvas_visible = (id(home_weather_bg_switch).state && !custom_wp_loaded) || weather_sim_active;
+          const uint32_t now_w_ms = millis();
+          const bool ui_overlay_animating =
+              latter_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
+              latter_ui::is_home_activity_carousel_animating(now_w_ms);
+          if (id(display_brightness).current_values.is_on() && id(display_power_state) == 0 &&
+              (id(gui_page) == 1 && id(home_subpage) == 0 && (weather_canvas_visible || ui_overlay_animating)) &&
+              !id(va_active) && id(va_status_text).empty()) {
+            static uint32_t last_cond_eval_time = 0;
+            static bool cached_has_motion = false;
+            static bool cached_high_rate = false;
+            const bool sim_just_changed = latter_ui::weather_sim_dirty() ||
+                                          (latter_ui::last_ambient_anim_ms() == 0U);
+
+            if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
+              latter_ui::weather_sim_dirty() = false;
+              last_cond_eval_time = now_w_ms;
+              std::string c_cond = id(ha_weather_condition).state;
+              std::string s_sun = id(ha_sun_state).state;
+              const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
+              bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
+              apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
+              cached_has_motion = weather_canvas_visible && (sun_ok || weather_sim_active) &&
+                                  latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
+              cached_high_rate  = weather_canvas_visible && (sun_ok || weather_sim_active) &&
+                                  latter_ui::is_high_rate_weather_motion(c_cond, is_night_time, now_w_ms);
+            }
+
+            const bool touch_busy = latter_ui::touch_gesture().active ||
+                                    (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
+            if (!touch_busy && (sim_just_changed || ui_overlay_animating || cached_has_motion)) {
+              const bool audio_or_mww_busy =
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  id(mww).is_running();
+              const bool slow_cloud_drift_only =
+                  cached_has_motion && !cached_high_rate && !ui_overlay_animating && !LATTER_HAS_IMU;
+              const uint32_t drift_min_gap = audio_or_mww_busy ? 320U : 220U;
+              const bool drift_ready = !slow_cloud_drift_only ||
+                                       (now_w_ms - latter_ui::last_ambient_anim_ms() >= drift_min_gap);
+              if (sim_just_changed || (drift_ready && latter_ui::should_step_ambient_anim(
+                                                          now_w_ms, audio_or_mww_busy,
+                                                          id(va_active) || !id(va_status_text).empty(),
+                                                          id(alarm_ringing) || id(timer_ringing)))) {
+                latter_ui::record_ambient_frame_ms(now_w_ms);
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+          }
+
+  - interval: 250ms
+    then:
+      - lambda: |-
+          // ------------------------------------------------------------------
+          // 3-SLOT COUNTDOWN TIMER TICK & ALERT TRIGGER
+          // ------------------------------------------------------------------
+          if (id(timer_running)) {
+            uint32_t now_ms = millis();
+            auto *slots = latter_ui::timer_slots();
+            bool any_expired = false;
+            std::string exp_name = "";
+            bool sec_changed = false;
+
+            for (int i = 0; i < 3; i++) {
+              if (!slots[i].running) continue;
+              if (now_ms >= slots[i].target_ms) {
+                slots[i].running = false;
+                slots[i].paused = false;
+                slots[i].remaining_sec = slots[i].duration_sec; // Preserve duration for 1-tap reuse!
+                exp_name = slots[i].name;
+                any_expired = true;
+              } else {
+                int rem = static_cast<int>((slots[i].target_ms - now_ms + 999U) / 1000U);
+                if (rem != slots[i].remaining_sec) {
+                  slots[i].remaining_sec = rem;
+                  sec_changed = true;
+                }
+              }
+            }
+
+            latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+
+            if (any_expired) {
+              if (id(va_active) || !id(va_status_text).empty()) {
+                id(cancel_voice_assistant).execute();
+              }
+              if (id(home_subpage) == 2) {
+                id(home_subpage) = 0;
+              }
+              id(va_timer_name) = exp_name;
+              id(timer_ringing) = true;
+              id(wake_to_active_state).execute();
+              id(play_alarm_sound).execute();
+              ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
+            } else if (sec_changed) {
+              if (!id(va_active) && id(va_status_text).empty()) {
+                if (((id(gui_page) == 8 && id(tools_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+              }
+            }
+          }
+
+          // 60-second safety auto-stop for Find My Pocket Assistant beacon
+          if (id(find_my_active) && (millis() - id(find_my_start_ms) >= 60000U)) {
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+          }
+
+          // Camera Carousel Auto-Live Frame Refresh (every 2200ms while viewing Camera App)
+          if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12 &&
+              !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
+              !id(va_active) && id(va_status_text).empty()) {
+            uint32_t now_cam_ms = millis();
+            if (!latter_ui::cam_intercom_status().empty() && id(cam_intercom_status_ms) > 0 &&
+                (now_cam_ms - id(cam_intercom_status_ms) > 2500U)) {
+              latter_ui::cam_intercom_status() = "";
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+            if (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (latter_ui::SCREEN_W != latter_ui::SCREEN_H)) {
+              float ax = id(accel_x).state;
+              float ay = id(accel_y).state;
+              if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
+                bool want_land = (std::abs(ax) > 0.68f && std::abs(ay) < 0.42f);
+                bool want_port = (std::abs(ay) > 0.68f && std::abs(ax) < 0.42f);
+                if ((want_land && !latter_ui::cam_landscape_mode()) ||
+                    (want_port && latter_ui::cam_landscape_mode())) {
+                  latter_ui::cam_landscape_mode() = want_land;
+                  id(camera_snapshot_art).release();
+                  id(fetch_on_demand_camera).execute();
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+              }
+            }
+            #if defined(CONFIG_IDF_TARGET_ESP32P4)
+            const uint32_t kCamRefreshMs = 500U;
+            #else
+            const uint32_t kCamRefreshMs = 900U;
+            #endif
+            const uint32_t elapsed_cam_ms = now_cam_ms - latter_ui::last_cam_live_fetch_ms();
+            if ((!latter_ui::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
+                (elapsed_cam_ms >= 4500U)) {
+              latter_ui::last_cam_live_fetch_ms() = now_cam_ms;
+              id(fetch_on_demand_camera).execute();
+            }
+          }
+
+          // Auto-timeout & critical pulse refresh for active Latter push notifications / camera popups
+          if (id(notif_active)) {
+            if (millis() - id(notif_start_ms) >= id(notif_duration_ms)) {
+              id(dismiss_notification).execute();
+            } else if (id(notif_priority) == "critical" && id(display_power_state) == 0 &&
+                       !id(va_active) && id(va_status_text).empty()) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Periodic display refresh during active alarm, timer, or Find My Device ringing
+          if ((id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) && id(display_power_state) == 0) {
+            if (!id(va_active) && id(va_status_text).empty()) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Active Update Check state transition refresh (Page 4, Mode 5)
+          if (id(gui_page) == 4 && id(system_menu_mode) == 5 && id(update_check_state) > 0 && !id(va_active) && id(va_status_text).empty()) {
+            uint32_t dt_upd = millis() - id(update_check_timer);
+            if ((id(update_check_state) == 1 && dt_upd > 1500U) || (id(update_check_state) == 2 && dt_upd > 3500U)) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+          // Music Overlay HUD Auto-Dismissal (5.0s timeout in Full Screen / Letterbox)
+          if (id(gui_page) == 2 && id(music_overlay_mode) == 0 && id(music_hud_active)) {
+            if (millis() - id(music_hud_timer) >= 5000U) {
+              id(music_hud_active) = false;
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
+
+
+  - interval: 1s
+    then:
+      - lambda: |-
+          // ------------------------------------------------------------------
+          // ALARM ENGINE: SCHEDULE EVALUATION & SNOOZE CHECK
+          // ------------------------------------------------------------------
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) {
+            now = id(sntp_time).now();
+          }
+          if (now.is_valid()) {
+            uint32_t now_epoch = now.timestamp;
+
+            // 1. Snooze expiration check
+            if (id(alarm_snooze_until) > 0 && now_epoch >= id(alarm_snooze_until)) {
+              id(alarm_snooze_until) = 0;
+              id(alarm_ringing) = true;
+              id(wake_to_active_state).execute();
+              id(play_alarm_sound).execute();
+              latter_ui::schedule_disp_update(&id(disp1));
+              ESP_LOGI("alarm", "Snoozed alarm firing now!");
+              return;
+            }
+
+            // 2. Edge-triggered scheduled alarms check (45s window within target minute)
+            if (now.second < 45 && now.minute != id(alarm_last_fired_min)) {
+              auto check_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec, int a_num) -> bool {
+                if (!a_en) return false;
+                if (now.hour != a_hr || now.minute != a_min) return false;
+                // Recurrence: 0=Daily, 1=Weekdays, 2=Weekends, 3=Once
+                // ESPHome ESPTime::day_of_week: 1=SUN, 2=MON, ..., 6=FRI, 7=SAT
+                if (a_rec == 1) { // Weekdays
+                  if (now.day_of_week < 2 || now.day_of_week > 6) return false;
+                } else if (a_rec == 2) { // Weekends
+                  if (now.day_of_week != 1 && now.day_of_week != 7) return false;
+                }
+                return true;
+              };
+
+              bool triggered = false;
+              int trig_idx = 0;
+              if (check_alarm(id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence), 1)) {
+                triggered = true;
+                trig_idx = 1;
+                if (id(alarm1_recurrence) == 3) id(alarm1_enabled) = false; // Once: auto-disable
+              } else if (check_alarm(id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence), 2)) {
+                triggered = true;
+                trig_idx = 2;
+                if (id(alarm2_recurrence) == 3) id(alarm2_enabled) = false; // Once: auto-disable
+              } else if (check_alarm(id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence), 3)) {
+                triggered = true;
+                trig_idx = 3;
+                if (id(alarm3_recurrence) == 3) id(alarm3_enabled) = false; // Once: auto-disable
+              }
+
+              if (triggered) {
+                if (id(va_active) || !id(va_status_text).empty()) {
+                  id(cancel_voice_assistant).execute();
+                }
+                id(alarm_last_fired_min) = now.minute;
+                id(alarm_ringing) = true;
+                id(alarm_ringing_idx) = trig_idx;
+                id(wake_to_active_state).execute();
+                id(play_alarm_sound).execute();
+                latter_ui::schedule_disp_update(&id(disp1));
+                ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", trig_idx);
+              }
+            }
+          }
+
+

@@ -1,0 +1,855 @@
+# Latter Client Feature Package: UI Template Controls (Select, Button, Switch, Number)
+
+select:
+  - platform: template
+    name: "Voice: Wake Word Mode"
+    id: va_wake_word_mode
+    icon: "mdi:account-tie-voice"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Docked Only"
+    options:
+      - "Docked Only"
+      - "Always On"
+      - "Disabled"
+    set_action:
+      - lambda: |-
+          id(va_wake_word_mode).publish_state(x);
+          latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: sync_wake_word_state
+      - script.execute: mp_idle_debounce
+
+  - platform: template
+    name: "Voice: Active Wake Word"
+    id: va_active_wake_word
+    icon: "mdi:account-voice"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Okay Nabu"
+    options:
+      - "Okay Nabu"
+      - "Hey Luna"
+      - "Hey Jarvis"
+      - "Hey Mycroft"
+      - "Alexa"
+    set_action:
+      - lambda: |-
+          id(va_active_wake_word).publish_state(x);
+          esphome::voice_assistant::set_primary_wake_word_by_label(id(mww), x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+      - script.execute: sync_wake_word_state
+
+  - platform: template
+    name: "Voice: Sensitivity (Okay Nabu)"
+    id: ww_sens_okay_nabu
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_okay_nabu).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Luna)"
+    id: ww_sens_hey_luna
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_luna).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Jarvis)"
+    id: ww_sens_hey_jarvis
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_jarvis).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Hey Mycroft)"
+    id: ww_sens_hey_mycroft
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_hey_mycroft).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Sensitivity (Alexa)"
+    id: ww_sens_alexa
+    icon: "mdi:microphone-settings"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Moderately sensitive"
+    options:
+      - "Slightly sensitive"
+      - "Moderately sensitive"
+      - "Very sensitive"
+    set_action:
+      - lambda: |-
+          id(ww_sens_alexa).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: apply_wake_word_sensitivities
+
+  - platform: template
+    name: "Voice: Visual Profile"
+    id: va_visual_profile
+    icon: "mdi:palette-swatch-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Nebula"
+    options:
+      - "Nebula"
+      - "Solaris"
+      - "Jarvis"
+      - "Alexa"
+      - "Gemini"
+    set_action:
+      - lambda: |-
+          id(va_visual_profile).publish_state(x);
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Weather: Condition Simulation"
+    id: weather_sim_condition
+    icon: "mdi:weather-partly-cloudy"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Live (Home Assistant)"
+    options:
+      - "Live (Home Assistant)"
+      - "Clear Night"
+      - "Sunny / Clear Day"
+      - "Partly Cloudy (Day)"
+      - "Partly Cloudy (Night)"
+      - "Cloudy / Overcast (Day)"
+      - "Cloudy / Overcast (Night)"
+      - "Fog / Mist (Day)"
+      - "Fog / Mist (Night)"
+      - "Rainy (Day)"
+      - "Rainy (Night)"
+      - "Pouring / Heavy Rain"
+      - "Snow (Day)"
+      - "Snow (Night)"
+      - "Thunderstorm (Day)"
+      - "Thunderstorm (Night)"
+      - "Windy"
+    set_action:
+      - lambda: |-
+          id(weather_sim_condition).publish_state(x);
+          if (x != "Live (Home Assistant)" && !id(home_weather_bg_switch).state) {
+            id(home_weather_bg_switch).turn_on();
+          }
+          latter_ui::clear_day_epoch_initialized() = false;
+          latter_ui::night_meteor_epoch_initialized() = false;
+          latter_ui::weather_sim_dirty() = true;
+          latter_ui::record_ambient_frame_ms(0);
+          latter_ui::schedule_disp_update(&id(disp1));
+  - platform: template
+    name: "Sleep & Wake: Power Profile"
+    id: power_profile_select
+    icon: "mdi:battery-charging-wireless"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_power_profile}
+    options:
+      - "Pocket Carry"
+      - "Handheld Roaming"
+      - "Wearable Watch"
+      - "Living Room Tabletop"
+      - "Always-On Wall / Desk"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(power_profile_select).publish_state(x);
+          if (millis() <= 2500 || x == "Custom") {
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          latter_ui::applying_power_profile() = true;
+          auto set_sel = [](auto *sel, const char *opt) {
+            if (sel != nullptr && sel->current_option() != opt) {
+              auto call = sel->make_call();
+              call.set_option(opt);
+              call.perform();
+            }
+          };
+          if (x == "Pocket Carry") {
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Docked Only");
+            set_sel(id(pickup_wake_mode), "Docked Only");
+            set_sel(id(display_off_timeout), "30s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "15 min");
+          } else if (x == "Handheld Roaming") {
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Always On");
+            set_sel(id(display_off_timeout), "30s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "30 min");
+          } else if (x == "Wearable Watch") {
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Always On");
+            set_sel(id(display_off_timeout), "15s");
+            set_sel(id(screensaver_docked_timeout), "1 min");
+            set_sel(id(hibernate_timeout_mode), "15 min");
+          } else if (x == "Living Room Tabletop") {
+            set_sel(id(va_wake_word_mode), "Docked Only");
+            set_sel(id(tap_wake_mode), "Docked Only");
+            set_sel(id(pickup_wake_mode), "Disabled");
+            set_sel(id(display_off_timeout), "30s");
+            set_sel(id(screensaver_docked_timeout), "5 min");
+            set_sel(id(hibernate_timeout_mode), "15 min");
+          } else if (x == "Always-On Wall / Desk") {
+            set_sel(id(va_wake_word_mode), "Always On");
+            set_sel(id(tap_wake_mode), "Always On");
+            set_sel(id(pickup_wake_mode), "Disabled");
+            set_sel(id(display_off_timeout), "Never");
+            set_sel(id(screensaver_docked_timeout), "5 min");
+            set_sel(id(hibernate_timeout_mode), "Disabled");
+          }
+          latter_ui::applying_power_profile() = false;
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Sleep & Wake: Screensaver Style"
+    id: screensaver_style_select
+    icon: "mdi:weather-night"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_screensaver_style}
+    options:
+      - "Ambient Clock"
+      - "Aurora Borealis"
+      - "Starfield"
+      - "Matrix Rain"
+      - "Fireworks"
+    set_action:
+      - lambda: |-
+          if (id(display_power_state) == 1) {
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+
+  - platform: template
+    name: "Music: Album Art Style"
+    id: music_fullscreen_art_mode
+    icon: "mdi:image-size-select-actual"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_art_mode}
+    options:
+      - "Full Screen"
+      - "Letterbox"
+      - "Standard"
+    set_action:
+      - lambda: |-
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Music: Album Sort Order"
+    id: music_album_sort_order
+    icon: "mdi:sort-alphabetical-variant"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_album_sort}
+    options:
+      - "Alphabetical"
+      - "Newest on Top"
+      - "Oldest on Top"
+    set_action:
+      - lambda: |-
+          id(music_album_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Artist Album Sort Order"
+    id: music_artist_album_sort_order
+    icon: "mdi:sort-calendar-ascending"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_artist_album_sort}
+    options:
+      - "Oldest on Top"
+      - "Newest on Top"
+      - "Alphabetical"
+    set_action:
+      - lambda: |-
+          id(music_artist_album_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Podcast Sort Order"
+    id: music_podcast_sort_order
+    icon: "mdi:sort-clock-descending-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_podcast_sort}
+    options:
+      - "Newest on Top"
+      - "Oldest on Top"
+    set_action:
+      - lambda: |-
+          id(music_podcast_sort_order).publish_state(x);
+
+  - platform: template
+    name: "Music: Overlay Style"
+    id: music_overlay_style
+    icon: "mdi:television-guide"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Art + Metadata"
+    options:
+      - "Art Only"
+      - "Art + Metadata"
+      - "Always Visible"
+    set_action:
+      - lambda: |-
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  
+  - platform: template
+    name: "Display: Color Profile"
+    id: theme_palette_select
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Steel Blue"
+    options:
+      - "Steel Blue"
+      - "Pink"
+      - "Blue"
+      - "Green"
+      - "Custom"
+    set_action:
+      - lambda: |-
+          id(theme_palette_select).publish_state(x);
+      - script.execute: apply_theme_preset
+  - platform: template
+    name: "Display: Auto Brightness Mode"
+    id: auto_brightness_mode
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Sun Synchronized"
+    options:
+      - "Disabled"
+      - "Sun Synchronized"
+      - "Time Schedule"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Day Brightness"
+    id: day_brightness_preset
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "90%"
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Night Brightness"
+    id: night_brightness_preset
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "70%"
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    set_action:
+      - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Manual Brightness"
+    id: display_brightness_preset
+    entity_category: config
+    options:
+      - "60%"
+      - "70%"
+      - "80%"
+      - "90%"
+      - "100%"
+    initial_option: "90%"
+    restore_value: true
+    optimistic: true
+    set_action:
+      - script.execute: sync_display_brightness
+  # --------------------------------------------------------------------------
+  # ⚙️ Application Preferences & Power Management Selectors
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Display: Clock Face"
+    id: clock_face_style
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_clock_face}
+    options:
+      - "Minimal Digital"
+      - "Modern Roman (Analog)"
+      - "Modern Digital (Bold)"
+    set_action:
+      - lambda: |-
+          id(clock_face_digital) = (x != "Modern Roman (Analog)");
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Display: Time Format"
+    id: time_format_select
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "12-Hour (AM/PM)"
+    options:
+      - "12-Hour (AM/PM)"
+      - "24-Hour"
+    set_action:
+      - lambda: |-
+          id(is_24h_format) = (x == "24-Hour");
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Display: Start Screen"
+    id: default_start_app
+    icon: "mdi:home-clock-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: ${default_start_app}
+    options:
+      - "Home"
+      - "Clock"
+    set_action:
+      - lambda: |-
+          id(default_start_app).publish_state(x);
+          if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Area: Default Category"
+    id: area_default_category_select
+    icon: "mdi:Sofa-outline"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Scenes"
+    options:
+      - "Scenes"
+      - "Lights"
+      - "Blinds & Curtains"
+      - "Fans"
+      - "Switches"
+      - "Climate"
+      - "Media"
+      - "All Devices"
+    set_action:
+      - lambda: |-
+          id(area_default_category_select).publish_state(x);
+          if (id(display_power_state) == 0 && id(gui_page) == 6 && millis() > 3000) {
+            id(area_domain_filter) = latter_ui::resolve_preferred_area_category(
+                x, id(area_show_all_category_switch).state);
+            id(area_browse_page) = 1;
+            id(fetch_area_browse).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+
+button:
+  - platform: restart
+    name: "Internal Restart"
+    id: internal_restart
+    internal: true
+
+  - platform: template
+    name: "Actions: Restart Device"
+    id: restart_button
+    entity_category: diagnostic
+    on_press:
+      - light.turn_off: display_brightness
+      - component.update: disp1
+      - delay: 100ms
+      - button.press: internal_restart
+
+
+
+  - platform: template
+    name: "Actions: Trigger Voice Assistant"
+    id: trigger_va_button
+    on_press:
+      - script.execute: toggle_voice_assistant
+
+  - platform: template
+    name: "Actions: Find My Device"
+    id: find_my_button
+    icon: "mdi:radar"
+    on_press:
+      - lambda: |-
+          if (!id(find_my_active)) {
+            if (id(va_active) || !id(va_status_text).empty()) {
+              id(cancel_voice_assistant).execute();
+            }
+            id(find_my_active) = true;
+            id(find_my_start_ms) = millis();
+            id(wake_to_active_state).execute();
+            id(play_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+          } else {
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+          }
+
+
+switch:
+  # --------------------------------------------------------------------------
+  # �� Active App Deck Switches (Dynamic Skip-Routing)
+  # --------------------------------------------------------------------------
+  
+
+  - platform: template
+    name: "Home: Weather Background"
+    id: home_weather_bg_switch
+    icon: "mdi:weather-partly-cloudy"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Wake Greeting"
+    id: home_wake_greeting_switch
+    icon: "mdi:hand-wave-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Area"
+    id: home_dock_area_switch
+    icon: "mdi:home-lightning-bolt-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Area: Media Handoff"
+    id: area_handoff_media_switch
+    icon: "mdi:cast-audio"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Area: Show All Category"
+    id: area_show_all_category_switch
+    icon: "mdi:view-grid-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "System: Telemetry Profiler"
+    id: telemetry_profiler_switch
+    icon: "mdi:chart-timeline-variant-shimmer"
+    entity_category: diagnostic
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(true);
+          latter_ui::profiler_enabled() = true;
+          auto &fr = latter_ui::flight_recorder();
+          fr.window_frames = 0;
+          fr.window_render_us = 0;
+          fr.max_render_us = 0;
+          fr.slow_frames = 0;
+          fr.last_summary_ms = millis();
+          ESP_LOGI("PROF", "[PROF:START] 10-Minute Flight Recorder ENABLED for '${name}' (screen=%dx%d)",
+                   latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+          latter_ui::log_power_and_mem_profile(
+              "PROFILER_ON", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
+              id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
+              id(mww).is_running(), id(va_active),
+              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+              id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+    turn_off_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(false);
+          latter_ui::log_power_and_mem_profile(
+              "PROFILER_OFF", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
+              id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
+              id(mww).is_running(), id(va_active),
+              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+              id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+          latter_ui::profiler_enabled() = false;
+          ESP_LOGI("PROF", "[PROF:STOP] Flight Recorder DISABLED");
+
+  - platform: template
+    name: "Area: BLE Presence Beacon"
+    id: ble_area_beacon_switch
+    icon: "mdi:bluetooth-audio"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - lambda: |-
+          id(ble_area_beacon_switch).publish_state(true);
+          if (id(display_power_state) == 0 && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+            id(ble_ctrl).enable();
+          }
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
+    turn_off_action:
+      - lambda: |-
+          id(ble_area_beacon_switch).publish_state(false);
+          if (id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
+            id(ble_ctrl).disable();
+          }
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
+
+
+  - platform: template
+    name: "Home: Shortcut Music"
+    id: home_dock_music_switch
+    icon: "mdi:music"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Remote"
+    id: home_dock_remote_switch
+    icon: "mdi:remote-tv"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Tools"
+    id: home_dock_tools_switch
+    icon: "mdi:toolbox-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Games"
+    id: home_dock_games_switch
+    icon: "mdi:gamepad-variant-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Shortcut Alarm"
+    id: home_dock_alarm_switch
+    icon: "mdi:shield-home"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  
+
+  - platform: template
+    name: "Sound: Game Sound Effects"
+    id: game_sound_switch
+    icon: "mdi:gamepad-variant-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Voice: Wake Screen on Assist"
+    id: va_wake_screen_switch
+    icon: "mdi:television-ambient-light"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "Music: Show Speaker Shortcut"
+    id: music_show_speaker_shortcut
+    icon: "mdi:speaker"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
+    on_turn_off:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
+
+  - platform: template
+    name: "Music: Show Library Shortcut"
+    id: music_show_library_shortcut
+    icon: "mdi:bookshelf"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
+    on_turn_off:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
+
+
+number:
+  
+  - platform: template
+    name: "Display: Day Start Hour"
+    id: day_start_hour
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 7
+    min_value: 0
+    max_value: 23
+    step: 1
+    unit_of_measurement: "h"
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+
+  - platform: template
+    name: "Display: Night Start Hour"
+    id: night_start_hour
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 23
+    step: 1
+    unit_of_measurement: "h"
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+
+
+

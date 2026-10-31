@@ -1209,6 +1209,37 @@ inline int compute_art_row_scale_q3(int y, bool apply_scrim, bool show_metadata,
   return 8;
 }
 
+inline constexpr uint16_t scale_rgb565_q3(uint16_t p, int mul_q3) {
+  if (mul_q3 >= 8) return p;
+  if (mul_q3 == 4) return static_cast<uint16_t>((p & 0xF7DEU) >> 1);
+  if (mul_q3 == 2) return static_cast<uint16_t>(dim_rgb565_pair_25pct(p));
+  uint16_t r = static_cast<uint16_t>((((p >> 11) & 0x1FU) * mul_q3) >> 3);
+  uint16_t g = static_cast<uint16_t>((((p >> 5)  & 0x3FU) * mul_q3) >> 3);
+  uint16_t b = static_cast<uint16_t>((( p        & 0x1FU) * mul_q3) >> 3);
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
+inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
+  if (mul_q3 >= 8 || span_w <= 0) return;
+  if (mul_q3 == 4 || mul_q3 == 2) {
+    int i = 0;
+    for (; i + 1 < span_w; i += 2) {
+      uint32_t pair = static_cast<uint32_t>(row_buf[i]) |
+                      (static_cast<uint32_t>(row_buf[i + 1]) << 16);
+      uint32_t dimmed = (mul_q3 == 4) ? dim_rgb565_pair_50pct(pair) : dim_rgb565_pair_25pct(pair);
+      row_buf[i]     = static_cast<uint16_t>(dimmed & 0xFFFFU);
+      row_buf[i + 1] = static_cast<uint16_t>(dimmed >> 16);
+    }
+    if (i < span_w) {
+      row_buf[i] = scale_rgb565_q3(row_buf[i], mul_q3);
+    }
+    return;
+  }
+  for (int i = 0; i < span_w; i++) {
+    row_buf[i] = scale_rgb565_q3(row_buf[i], mul_q3);
+  }
+}
+
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
 // smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
 template<typename DisplayT, typename ImageT>
@@ -1221,6 +1252,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   int src_w = target_art->get_width();
   int src_h = target_art->get_height();
   if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
+  static uint16_t row_buf[SCREEN_W];
 
   if (is_standard) {
     const int std_size = STD_ART_SIZE;
@@ -1247,35 +1279,27 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       }
       int x_start = dx_clip;
       int x_end   = std_size - 1 - dx_clip;
-      const uint16_t *src_row = src_data + sy * src_w;
-      int x = x_start;
-      while (x <= x_end) {
-        uint16_t p = src_row[(x * step_x) >> 12];
-        int run_start = x;
-        x++;
-        while (x <= x_end && src_row[(x * step_x) >> 12] == p) {
-          x++;
-        }
-        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
-        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
-        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 == 4) {
-          r >>= 1; g >>= 1; b >>= 1;
-        } else if (mul_q3 == 2) {
-          r >>= 2; g >>= 2; b >>= 2;
-        } else if (mul_q3 < 8) {
-          r = static_cast<uint8_t>((r * mul_q3) >> 3);
-          g = static_cast<uint8_t>((g * mul_q3) >> 3);
-          b = static_cast<uint8_t>((b * mul_q3) >> 3);
-        }
-        esphome::Color col(r, g, b);
-        int run_len = x - run_start;
-        if (run_len > 1) {
-          it.horizontal_line(x0 + run_start, py, run_len, col);
-        } else {
-          it.draw_pixel_at(x0 + run_start, py, col);
-        }
+      int draw_x0 = x0 + x_start;
+      int draw_x1 = x0 + x_end;
+      if (draw_x0 < 0) {
+        x_start += -draw_x0;
+        draw_x0 = 0;
       }
+      if (draw_x1 >= SCREEN_W) {
+        x_end -= (draw_x1 - (SCREEN_W - 1));
+      }
+      int span_w = x_end - x_start + 1;
+      if (span_w <= 0 || span_w > SCREEN_W) continue;
+      const uint16_t *src_row = src_data + sy * src_w;
+      int curr_x = x_start * step_x;
+      for (int i = 0; i < span_w; i++) {
+        int sx = std::min(src_w - 1, curr_x >> 12);
+        curr_x += step_x;
+        row_buf[i] = src_row[sx];
+      }
+      dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+      it.draw_pixels_at(draw_x0, py, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
+                        esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
     }
 
     // Crisp top-lit specular glass frame around the centered Standard album art square
@@ -1307,36 +1331,17 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
+      int span_w = end_x - start_x + 1;
+      if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
-      // On dimmed scrim rows (mul_q3 <= 4), 1-LSB neighbor differences shift to identical RGB values
-      const uint16_t tol_mask = (mul_q3 <= 4) ? 0xF7DEU : 0xFFFFU;
-      int x = start_x;
-      while (x <= end_x) {
-        uint16_t p = src_row[x];
-        int run_start = x;
-        x++;
-        while (x <= end_x && (src_row[x] == p || ((src_row[x] ^ p) & tol_mask) == 0U)) {
-          x++;
-        }
-        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
-        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
-        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 == 4) {
-          r >>= 1; g >>= 1; b >>= 1;
-        } else if (mul_q3 == 2) {
-          r >>= 2; g >>= 2; b >>= 2;
-        } else if (mul_q3 < 8) {
-          r = static_cast<uint8_t>((r * mul_q3) >> 3);
-          g = static_cast<uint8_t>((g * mul_q3) >> 3);
-          b = static_cast<uint8_t>((b * mul_q3) >> 3);
-        }
-        esphome::Color col(r, g, b);
-        int run_len = x - run_start;
-        if (run_len > 1) {
-          it.horizontal_line(run_start, y, run_len, col);
-        } else {
-          it.draw_pixel_at(run_start, y, col);
-        }
+      if (mul_q3 >= 8) {
+        it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(src_row + start_x),
+                          esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
+      } else {
+        std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
+        dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+        it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
+                          esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
       }
     }
   } else {
@@ -1356,41 +1361,20 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       curr_y += step_fp;
       int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
       const uint16_t *src_row = src_data + sy * src_w;
-      const uint16_t tol_mask = (mul_q3 <= 4) ? 0xF7DEU : 0xFFFFU;
       int hw = circle_half_span(y, 0);
       int start_x = std::max(0, cx - hw);
       int end_x = std::min(SCREEN_W - 1, cx + hw);
-      int x = start_x;
-      while (x <= end_x) {
-        int sx = std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12);
-        uint16_t p = src_row[sx];
-        int run_start = x;
-        x++;
-        while (x <= end_x) {
-          uint16_t np = src_row[std::min(src_w - 1, (src_x0_fp + x * step_fp) >> 12)];
-          if (np != p && ((np ^ p) & tol_mask) != 0U) break;
-          x++;
-        }
-        uint8_t r = static_cast<uint8_t>((p & 0xF800) >> 8);
-        uint8_t g = static_cast<uint8_t>((p & 0x07E0) >> 3);
-        uint8_t b = static_cast<uint8_t>((p & 0x001F) << 3);
-        if (mul_q3 == 4) {
-          r >>= 1; g >>= 1; b >>= 1;
-        } else if (mul_q3 == 2) {
-          r >>= 2; g >>= 2; b >>= 2;
-        } else if (mul_q3 < 8) {
-          r = static_cast<uint8_t>((r * mul_q3) >> 3);
-          g = static_cast<uint8_t>((g * mul_q3) >> 3);
-          b = static_cast<uint8_t>((b * mul_q3) >> 3);
-        }
-        esphome::Color col(r, g, b);
-        int run_len = x - run_start;
-        if (run_len > 1) {
-          it.horizontal_line(run_start, y, run_len, col);
-        } else {
-          it.draw_pixel_at(run_start, y, col);
-        }
+      int span_w = end_x - start_x + 1;
+      if (span_w <= 0) continue;
+      int curr_x = src_x0_fp + start_x * step_fp;
+      for (int i = 0; i < span_w; i++) {
+        int sx = std::min(src_w - 1, curr_x >> 12);
+        curr_x += step_fp;
+        row_buf[i] = src_row[sx];
       }
+      dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+      it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
+                        esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
     }
   }
 

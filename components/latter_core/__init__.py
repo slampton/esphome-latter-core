@@ -25,6 +25,7 @@ CORE_HEADERS: tuple[str, ...] = (
     "latter_state.h",
     "ui_core.h",
     "ui_layout.h",
+    "ui_touch_router.h",
     "ui_ambient_va.h",
     "ui_weather_sky.h",
     "ui_games.h",

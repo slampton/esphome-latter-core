@@ -1,0 +1,1069 @@
+# Latter Client Feature Package: Home Assistant Sensor, Binary Sensor & Text Sensor Subscriptions
+
+sensor:
+  # --------------------------------------------------------------------------
+  - platform: template
+    name: "Timer Remaining"
+    id: timer_remaining_sensor
+    update_interval: 30s
+    filters:
+      - delta: 1.0
+    lambda: |-
+      if (!id(timer_running) && !id(timer_paused)) return {};
+      return (float)id(timer_remaining_sec);
+    unit_of_measurement: "s"
+    entity_category: diagnostic
+    icon: "mdi:timer-outline"
+
+  # ��️ Sky & Weather Suite Sensors
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_sun_elevation
+    entity_id: ${sun_entity}
+    attribute: elevation
+    internal: true
+
+  - platform: homeassistant
+    id: ha_sun_azimuth
+    entity_id: ${sun_entity}
+    attribute: azimuth
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_temperature
+    entity_id: ${weather_forecast_sensor}
+    attribute: temperature
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::record_ambient_frame_ms(0);
+            }
+
+  - platform: homeassistant
+    id: ha_weather_humidity
+    entity_id: ${weather_forecast_sensor}
+    attribute: humidity
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_speed
+    entity_id: ${weather_forecast_sensor}
+    attribute: wind_speed
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_wind_bearing
+    entity_id: ${weather_forecast_sensor}
+    attribute: wind_bearing
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_high
+    entity_id: ${weather_forecast_sensor}
+    attribute: high
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_low
+    entity_id: ${weather_forecast_sensor}
+    attribute: low
+    internal: true
+
+  - platform: homeassistant
+    id: ha_area_temperature
+    entity_id: ${area_context_sensor}
+    attribute: area_temp
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 6) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_area_humidity
+    entity_id: ${area_context_sensor}
+    attribute: area_humidity
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 6) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_wh_thermostat_temp
+    entity_id: ${area_context_sensor}
+    attribute: thermostat_temp
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 40.0f && x <= 100.0f) {
+              latter_ui::sim_thermostat_target_f() = static_cast<int>(std::round(x));
+              if (id(display_power_state) == 0 && id(gui_page) == 9) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_alert_duration
+    entity_id: ${area_context_sensor}
+    attribute: alert_duration
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_id
+    entity_id: ${area_context_sensor}
+    attribute: alert_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (std::isnan(x)) return;
+            int aid = static_cast<int>(std::round(x));
+            if (id(last_seen_alert_id) < 0) {
+              // Seed initial alert_id at boot without re-firing old historical alert
+              id(last_seen_alert_id) = aid;
+              return;
+            }
+            if (aid > id(last_seen_alert_id)) {
+              id(last_seen_alert_id) = aid;
+              // If show_notification API action already triggered within the last 1500ms, skip duplicate state trigger
+              if (id(notif_active) && (millis() - id(notif_start_ms) < 1500U)) return;
+              id(notif_title) = id(ha_latter_alert_title).state.empty() ? "Notification" : id(ha_latter_alert_title).state;
+              id(notif_message) = id(ha_latter_alert_message).state;
+              id(notif_priority) = id(ha_latter_alert_priority).state.empty() ? "normal" : id(ha_latter_alert_priority).state;
+              float dur_f = id(ha_latter_alert_duration).state;
+              int dur_s = (!std::isnan(dur_f) && dur_f > 0.0f) ? static_cast<int>(dur_f) : 10;
+              if (dur_s < 3) dur_s = 3;
+              if (dur_s > 60) dur_s = 60;
+              id(notif_duration_ms) = static_cast<uint32_t>(dur_s) * 1000U;
+              id(notif_start_ms) = millis();
+              id(notif_camera_url) = id(ha_latter_alert_camera_url).state;
+              id(notif_active) = true;
+              id(wake_to_active_state).execute();
+              std::string chime_st = id(ha_latter_alert_chime).state;
+              bool play_chime = (chime_st.empty() || chime_st == "True" || chime_st == "true" || chime_st == "1");
+              if (play_chime && !id(va_active) && !id(va_tts_received)) {
+                int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
+                id(play_game_sfx).execute(sfx);
+              }
+              if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
+                  id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+                id(fetch_camera_snapshot).execute();
+              } else {
+                id(current_loaded_camera_url) = "";
+                id(camera_snapshot_art).release();
+              }
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_active_remote_slot
+    entity_id: ${remote_config_sensor}
+    attribute: active_slot
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 1.0f && x <= 10.0f) {
+              id(active_remote_slot) = static_cast<int>(x) - 1;
+              if (id(display_power_state) == 0 && id(gui_page) == 7) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+
+
+
+  - platform: homeassistant
+    id: ha_media_duration
+    entity_id: ${active_media_sensor}
+    attribute: duration
+
+  - platform: homeassistant
+    id: ha_media_position
+    entity_id: ${active_media_sensor}
+    attribute: position
+    on_value:
+      then:
+        - lambda: |-
+            id(music_pos_base) = x;
+            id(music_pos_sync_time) = millis();
+
+  - platform: homeassistant
+    id: ha_target_volume
+    entity_id: ${active_media_sensor}
+    attribute: volume
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 0.0f && x <= 1.0f) {
+              if (millis() - latter_ui::last_local_vol_tap_ms() > 3000U) {
+                latter_ui::remote_vol_pct() = (int)std::round(x * 100.0f);
+                if (id(active_speaker_entity) == "${local_player_id}") {
+                  id(latter_media_player).volume = x;
+                  id(physical_speaker).set_volume(std::clamp(x, 0.10f, 1.0f));
+                }
+              }
+            }
+
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    id: latter_wifi_signal
+    update_interval: 60s
+
+
+
+
+binary_sensor:
+  - platform: template
+    name: "Timer Active"
+    id: timer_active_binary_sensor
+    lambda: 'return id(timer_running);'
+    entity_category: diagnostic
+    icon: "mdi:timer-sand"
+
+  - platform: template
+    name: "Alarm Ringing"
+    id: alarm_ringing_binary_sensor
+    lambda: 'return id(alarm_ringing) || id(timer_ringing);'
+    entity_category: diagnostic
+    icon: "mdi:alarm-bell"
+  - id: !extend boot_button
+    on_press:
+      then:
+        - lambda: |-
+            static uint32_t last_btn_press = 0;
+            uint32_t now = millis();
+            if (now - last_btn_press < 150) return;
+            last_btn_press = now;
+        - if:
+            condition:
+              lambda: 'return id(find_my_active) || id(timer_ringing) || id(alarm_ringing) || id(notif_active);'
+            then:
+              - lambda: |-
+                  if (id(notif_active)) {
+                    id(dismiss_notification).execute();
+                    return;
+                  }
+                  id(find_my_active) = false;
+                  id(timer_ringing) = false;
+                  id(alarm_ringing) = false;
+                  id(stop_alarm_sound).execute();
+                  id(sync_display_brightness).execute();
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  id(screen_sleep_timer).execute();
+            else:
+              - if:
+                  condition:
+                    lambda: 'return id(active_game) > 0;'
+                  then:
+                    - lambda: 'id(game_btn_pressed) = true;'
+                  else:
+                    - script.execute: toggle_voice_assistant
+
+text_sensor:
+  # --------------------------------------------------------------------------
+  # ��️ Sky & Weather Suite Text Sensors
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_sun_state
+    entity_id: ${sun_entity}
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_display_brightness
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::weather_sim_dirty() = true;
+              latter_ui::record_ambient_frame_ms(0);
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_sun_next_rising
+    entity_id: ${sun_entity}
+    attribute: next_rising
+    internal: true
+
+  - platform: homeassistant
+    id: ha_sun_next_setting
+    entity_id: ${sun_entity}
+    attribute: next_setting
+    internal: true
+
+  - platform: homeassistant
+    id: ha_moon_phase
+    entity_id: ${moon_entity}
+    internal: true
+
+  - platform: homeassistant
+    id: ha_weather_condition
+    entity_id: ${weather_forecast_sensor}
+    attribute: condition
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && !id(is_hibernating)) {
+              latter_ui::weather_sim_dirty() = true;
+              latter_ui::record_ambient_frame_ms(0);
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_area_context_name
+    entity_id: ${area_context_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_area_name) = x;
+              latter_ui::latter_area_label() = x;
+              if (id(display_power_state) == 0 && (id(gui_page) == 6 || (id(gui_page) == 4 && id(system_menu_mode) == 8))) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_area_context_area_id
+    entity_id: ${area_context_sensor}
+    attribute: area_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != id(active_area_id)) {
+              id(active_area_id) = x;
+              id(area_browse_page) = 1;
+              latter_ui::area_cat_dock_page() = 0;
+              if (id(display_power_state) == 0 && id(gui_page) == 6) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_area_available_domains
+    entity_id: ${area_context_sensor}
+    attribute: available_domains
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              bool changed = (x != latter_ui::area_available_domains_csv());
+              latter_ui::area_available_domains_csv() = x;
+              std::string valid_cat = latter_ui::resolve_preferred_area_category(
+                  std::string(id(area_default_category_select).current_option()),
+                  id(area_show_all_category_switch).state);
+              std::string cats[8];
+              int cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
+              bool cur_ok = false;
+              int act_idx = 0;
+              for (int i = 0; i < cnt; i++) {
+                if (cats[i] == id(area_domain_filter)) { cur_ok = true; act_idx = i; break; }
+              }
+              if (!cur_ok && !valid_cat.empty()) {
+                id(area_domain_filter) = valid_cat;
+                for (int i = 0; i < cnt; i++) {
+                  if (cats[i] == valid_cat) { act_idx = i; break; }
+                }
+                if (id(gui_page) == 6 && id(area_subpage) == 0) {
+                  id(area_browse_page) = 1;
+                  id(fetch_area_browse).execute();
+                }
+              }
+              latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), act_idx, cnt);
+              if (changed && id(display_power_state) == 0 && id(gui_page) == 6) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_dock_apps
+    entity_id: ${area_context_sensor}
+    attribute: dock_apps
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              latter_ui::latter_dock_order_csv() = x;
+              latter_ui::home_dock_page() = 0;
+              if (id(display_power_state) == 0 && id(gui_page) == 1) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_area_alarm_entity
+    entity_id: ${area_context_sensor}
+    attribute: alarm_entity
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != "none") {
+              id(area_alarm_entity) = x;
+            }
+
+  - platform: homeassistant
+    id: ha_area_alarm_state
+    entity_id: ${area_context_sensor}
+    attribute: alarm_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(area_alarm_state) = x;
+              if (id(display_power_state) == 0 && (id(gui_page) == 6 || id(gui_page) == 9 || id(gui_page) == 1)) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_wh_thermostat_state
+    entity_id: ${area_context_sensor}
+    attribute: thermostat_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "none" && x != "unknown" && x != "unavailable") {
+              latter_ui::sim_thermostat_mode() = x;
+            } else {
+              latter_ui::sim_thermostat_mode() = "";
+            }
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_wh_lock_state
+    entity_id: ${area_context_sensor}
+    attribute: lock_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::wh_lock_state() = latter_ui::parse_lock_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_wh_garage_state
+    entity_id: ${area_context_sensor}
+    attribute: garage_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::wh_garage_state() = latter_ui::parse_garage_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_wh_vacuum_state
+    entity_id: ${area_context_sensor}
+    attribute: vacuum_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::sim_vacuum_state() = latter_ui::normalize_vacuum_state_str(x);
+            if (id(display_power_state) == 0 && id(gui_page) == 9) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_alert_title
+    entity_id: ${area_context_sensor}
+    attribute: alert_title
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_message
+    entity_id: ${area_context_sensor}
+    attribute: alert_message
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_priority
+    entity_id: ${area_context_sensor}
+    attribute: alert_priority
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_chime
+    entity_id: ${area_context_sensor}
+    attribute: alert_chime
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_alert_camera_url
+    entity_id: ${area_context_sensor}
+    attribute: alert_camera_url
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_site_id
+    entity_id: ${area_context_sensor}
+    attribute: site_id
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              latter_ui::latter_site_id() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_vpn_enabled
+    entity_id: ${area_context_sensor}
+    attribute: vpn_enabled
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::latter_vpn_enabled() = (x == "True" || x == "true" || x == "1");
+
+  - platform: homeassistant
+    id: ha_latter_vpn_client_ip
+    entity_id: ${area_context_sensor}
+    attribute: vpn_client_ip
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              latter_ui::latter_vpn_client_ip() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_ble_closest_proxy
+    entity_id: ${area_context_sensor}
+    attribute: ble_closest_proxy
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x != "unknown" && x != "unavailable") {
+              latter_ui::latter_ble_proxy() = x;
+            }
+
+  - platform: homeassistant
+    id: ha_latter_theme_color_hex
+    entity_id: ${area_context_sensor}
+    attribute: theme_color_hex
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (x.size() == 7 && x[0] == '#') {
+              uint32_t new_rgb = latter_ui::parse_hex_rgb(x, id(custom_theme_rgb));
+              if (new_rgb != id(custom_theme_rgb)) {
+                id(custom_theme_rgb) = new_rgb;
+                if (id(theme_palette_select).current_option() == "Custom") {
+                  id(apply_theme_preset).execute();
+                }
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_latter_camera_snapshot_url
+    entity_id: ${area_context_sensor}
+    attribute: camera_snapshot_url
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_cameras_summary
+    entity_id: ${area_context_sensor}
+    attribute: cameras_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_doorbell_talk_state
+    entity_id: ${area_context_sensor}
+    attribute: doorbell_talk_state
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::cam_listen_active() = (x == "listening");
+            if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_latter_intercom_targets_summary
+    entity_id: ${area_context_sensor}
+    attribute: intercom_targets_summary
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_custom_bindings_summary
+    entity_id: ${area_context_sensor}
+    attribute: custom_bindings_summary
+    internal: true
+
+  - platform: homeassistant
+    id: ha_latter_wallpaper_url
+    entity_id: ${area_context_sensor}
+    attribute: wallpaper_url
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x.empty() || x == "none" || x == "unknown" || x == "unavailable");'
+            then:
+              - script.stop: fetch_wallpaper_debounced
+              - lambda: 'id(current_loaded_wallpaper_url) = "";'
+              - online_image.release: home_wallpaper_art
+              - lambda: |-
+                  if (id(display_power_state) == 0 && id(gui_page) == 1) {
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  }
+            else:
+              - if:
+                  condition:
+                    lambda: 'return (id(display_power_state) == 0) && (x != id(current_loaded_wallpaper_url));'
+                  then:
+                    - script.execute: fetch_wallpaper_debounced
+
+  - platform: homeassistant
+    id: ha_calendar_agenda_raw
+    entity_id: ${calendar_agenda_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(tools_subpage) == 9))) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_weather_forecast_5d
+    entity_id: ${weather_forecast_sensor}
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            // Standalone Mode Fallback: If `${weather_entity}` points directly to a native
+            // Home Assistant `weather.*` entity (whose main `.state` is "sunny", "rainy", etc.
+            // rather than Latter's "MON:72:55:sunny;..." 5-day summary), mirror `.state` into
+            // `ha_weather_condition` so the 20 FPS Sky & Weather engine works without ha-latter!
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x.find(':') == std::string::npos) {
+              if (id(ha_weather_condition).state != x) {
+                id(ha_weather_condition).publish_state(x);
+              }
+            }
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: latter_ip_address
+  - platform: template
+    name: "Firmware Version"
+    id: latter_firmware_version
+    icon: "mdi:tag-outline"
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: 'return std::string("${version}");'
+  - platform: homeassistant
+    id: ha_firmware_latest_version
+    entity_id: ${firmware_update_entity}
+    attribute: latest_version
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+  - platform: homeassistant
+    id: ha_firmware_release_summary
+    entity_id: ${firmware_update_entity}
+    attribute: release_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (id(display_power_state) == 0 && id(gui_page) == 4 && id(system_menu_mode) == 5) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+  # �� Universal Remote Control Slots Summary (Dynamic from Latter v1.0.3+)
+  - platform: homeassistant
+    id: ha_latter_remote_slots_summary
+    entity_id: ${remote_config_sensor}
+    attribute: slots_summary
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            latter_ui::parse_latter_remote_slots_summary(
+                x,
+                "${remote_1_entity}", "${remote_1_name}",
+                "${remote_2_entity}", "${remote_2_name}",
+                "${remote_3_entity}", "${remote_3_name}",
+                "${remote_4_entity}", "${remote_4_name}");
+            id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
+            latter_ui::home_dock_page() = 0;
+            if (!latter_ui::has_any_configured_remote() && id(gui_page) == 7) {
+              id(gui_page) = 1;
+              id(remote_subpage) = 0;
+            }
+            if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 7) && millis() > 3000) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+
+  - platform: homeassistant
+    id: ha_active_speaker_name
+    entity_id: ${active_media_sensor}
+    attribute: speaker_name
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable" && x != "None") {
+              if (id(active_speaker_entity) != "${local_player_id}") {
+                id(active_speaker_name) = x;
+                if (id(display_power_state) == 0 && id(gui_page) == 2) {
+                  id(throttled_disp_update).execute();
+                }
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_active_speaker_sync
+    entity_id: ${active_media_sensor}
+    attribute: active_speaker
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              if (x.rfind("media_player.", 0) == 0) {
+                id(active_speaker_entity) = x;
+                if (x == "${local_player_id}") {
+                  id(active_speaker_name) = "${friendly_name}";
+                } else if (!id(ha_active_speaker_name).state.empty() &&
+                           id(ha_active_speaker_name).state != "unknown" &&
+                           id(ha_active_speaker_name).state != "unavailable" &&
+                           id(ha_active_speaker_name).state != "None") {
+                  id(active_speaker_name) = id(ha_active_speaker_name).state;
+                } else {
+                  std::string s = x;
+                  size_t dot = s.find('.');
+                  if (dot != std::string::npos) s = s.substr(dot + 1);
+                  bool cap = true;
+                  for (size_t i = 0; i < s.length(); i++) {
+                    if (s[i] == '_') { s[i] = ' '; cap = true; }
+                    else if (cap) { s[i] = toupper(s[i]); cap = false; }
+                  }
+                  id(active_speaker_name) = s;
+                }
+              } else {
+                ESP_LOGW("ui", "Rejecting non-media_player speaker '%s', defaulting to local player", x.c_str());
+                id(active_speaker_entity) = "${local_player_id}";
+                id(active_speaker_name) = "${friendly_name}";
+              }
+              if (id(display_power_state) == 0 && id(gui_page) == 2) {
+                id(throttled_disp_update).execute();
+              }
+            }
+        - if:
+            condition:
+              lambda: |-
+                return (id(display_power_state) == 0) &&
+                       (id(gui_page) == 2) &&
+                       (x != "${local_player_id}") &&
+                       !id(ha_target_art_url).state.empty() &&
+                       (id(ha_target_art_url).state != "none") &&
+                       (id(ha_target_art_url).state != id(current_loaded_art_url));
+            then:
+              - script.execute: fetch_remote_art_debounced
+
+  - platform: homeassistant
+    id: ha_target_state
+    entity_id: ${active_media_sensor}
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_state = "";
+            if (x != prev_state) {
+              prev_state = x;
+              if (id(active_speaker_entity) != "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_track_title
+    entity_id: ${active_media_sensor}
+    attribute: title
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_title = "";
+            id(music_action_feedback) = "";
+            if (x != prev_title) {
+              prev_title = x;
+              if (!x.empty() && x != "Idle" && x != "None" && x != "unknown" && x != "unavailable") {
+                latter_ui::music_queue_cleared() = false;
+              }
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_track_artist
+    entity_id: ${active_media_sensor}
+    attribute: artist
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_artist = "";
+            if (x != prev_artist) {
+              prev_artist = x;
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_track_album
+    entity_id: ${active_media_sensor}
+    attribute: album
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_album = "";
+            if (x != prev_album) {
+              prev_album = x;
+              id(throttled_disp_update).execute();
+            }
+
+  - platform: homeassistant
+    id: ha_target_media_type
+    entity_id: ${active_media_sensor}
+    attribute: media_type
+    on_value:
+      then:
+        - lambda: |-
+            if (!x.empty() && x != "unknown" && x != "unavailable") {
+              id(active_playback_media_type) = x;
+            }
+        - script.execute: throttled_disp_update
+
+  - platform: homeassistant
+    id: ha_target_art_url
+    entity_id: ${active_media_sensor}
+    attribute: art_url
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x.empty() || x == "none" || x == "unknown" || x == "unavailable");'
+            then:
+              - script.stop: fetch_remote_art_debounced
+              - lambda: 'id(current_loaded_art_url) = "";'
+              - online_image.release: remote_album_art
+              - script.execute: throttled_disp_update
+            else:
+              - if:
+                  condition:
+                    lambda: |-
+                      return (id(display_power_state) == 0) &&
+                             (id(gui_page) == 2) &&
+                             (id(active_speaker_entity) != "${local_player_id}") &&
+                             (x != id(current_loaded_art_url));
+                  then:
+                    - script.execute: fetch_remote_art_debounced
+
+  - platform: sendspin
+    type: artist
+    name: "Now Playing Artist"
+    id: track_artist
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_artist = "";
+            if (x != prev_s_artist) {
+              prev_s_artist = x;
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+  - platform: sendspin
+    type: title
+    name: "Now Playing Title"
+    id: track_title
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_title = "";
+            if (x != prev_s_title) {
+              prev_s_title = x;
+              if (!x.empty() && x != "Idle" && x != "None") {
+                latter_ui::music_queue_cleared() = false;
+              }
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+  - platform: sendspin
+    type: album
+    name: "Now Playing Album"
+    id: track_album
+    on_value:
+      then:
+        - lambda: |-
+            static std::string prev_s_album = "";
+            if (x != prev_s_album) {
+              prev_s_album = x;
+              if (id(active_speaker_entity) == "${local_player_id}") {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+  # --------------------------------------------------------------------------
+  # Protocol v3 Atomic Snapshot Payloads (\x1f-delimited, revision-guarded)
+  # --------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_area_ctx_blob
+    entity_id: ${area_context_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_area_ctx_payload(x, latter_ui::area_ctx_state(), latter_ui::whole_home_state())) {
+              const auto &st = latter_ui::area_ctx_state();
+              if (!st.area_name.empty()) {
+                id(active_area_name) = st.area_name;
+                latter_ui::latter_area_label() = st.area_name;
+              }
+              if (!st.area_id.empty() && st.area_id != id(active_area_id)) {
+                id(active_area_id) = st.area_id;
+                id(area_browse_page) = 1;
+                latter_ui::area_cat_dock_page() = 0;
+              }
+              if (!st.available_domains.empty()) {
+                latter_ui::area_available_domains_csv() = st.available_domains;
+              }
+              if (!st.dock_apps.empty()) {
+                latter_ui::latter_dock_order_csv() = st.dock_apps;
+              }
+              if (!st.alarm_entity.empty() && st.alarm_entity != "none") {
+                id(area_alarm_entity) = st.alarm_entity;
+              }
+              if (!st.alarm_state.empty()) {
+                id(area_alarm_state) = st.alarm_state;
+              }
+              if (!st.site_id.empty()) {
+                latter_ui::latter_site_id() = st.site_id;
+              }
+              latter_ui::latter_vpn_enabled() = st.vpn_enabled;
+              latter_ui::latter_vpn_client_ip() = st.vpn_client_ip;
+              latter_ui::latter_ble_proxy() = st.ble_closest_proxy;
+              latter_ui::cam_listen_active() = (st.doorbell_talk_state == "listening");
+              if (id(display_power_state) == 0 && !id(is_hibernating)) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_active_media_blob
+    entity_id: ${active_media_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_media_payload(x, latter_ui::media_state())) {
+              const auto &ms = latter_ui::media_state();
+              if (!ms.media_type.empty()) {
+                id(active_playback_media_type) = ms.media_type;
+              }
+              if (ms.position >= 0.0f) {
+                id(music_pos_base) = ms.position;
+                id(music_pos_sync_time) = millis();
+              }
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2)) {
+                id(throttled_disp_update).execute();
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_remote_cfg_blob
+    entity_id: ${remote_config_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_remote_payload(x, latter_ui::remote_state())) {
+              const auto &rs = latter_ui::remote_state();
+              latter_ui::parse_latter_remote_slots_summary(
+                  rs.slots_summary,
+                  "${remote_1_entity}", "${remote_1_name}",
+                  "${remote_2_entity}", "${remote_2_name}",
+                  "${remote_3_entity}", "${remote_3_name}",
+                  "${remote_4_entity}", "${remote_4_name}");
+              id(active_remote_slot) = latter_ui::resolve_active_remote_slot(rs.active_slot);
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 7) && millis() > 3000) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_weather_blob
+    entity_id: ${weather_forecast_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_weather_payload(x, latter_ui::weather_state())) {
+              if (id(display_power_state) == 0 && !id(is_hibernating)) {
+                latter_ui::weather_sim_dirty() = true;
+                latter_ui::record_ambient_frame_ms(0);
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: homeassistant
+    id: ha_calendar_blob
+    entity_id: ${calendar_agenda_sensor}
+    attribute: payload
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (latter_ui::parse_v3_calendar_payload(x, latter_ui::calendar_state())) {
+              if (id(display_power_state) == 0 && (id(gui_page) == 1 || (id(gui_page) == 8 && id(tools_subpage) == 9))) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
+
+  - platform: template
+    name: "System: Hardware Manifest"
+    id: latter_hardware_manifest
+    icon: "mdi:chip"
+    entity_category: diagnostic
+    update_interval: 300s
+    lambda: |-
+      return latter_ui::build_hardware_manifest_json();
+

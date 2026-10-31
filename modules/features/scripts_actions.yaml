@@ -1,0 +1,1483 @@
+# Latter Client Feature Package: Core Runtime Scripts & Action Handlers
+
+script:
+  - id: ui_input_event
+    mode: queued
+    parameters:
+      action: string
+      delta: int
+    then:
+      - lambda: |-
+          uint32_t now_in = millis();
+          if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
+            id(wake_to_active_state).execute();
+            return;
+          }
+          id(screen_sleep_timer).execute();
+          latter_ui::activate_ui_focus(now_in);
+          if (id(va_active) || !id(va_status_text).empty()) {
+            id(cancel_voice_assistant).execute();
+            return;
+          }
+          if (id(notif_active)) {
+            id(dismiss_notification).execute();
+            return;
+          }
+          if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
+            id(alarm_ringing) = false;
+            id(timer_ringing) = false;
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          std::string act = action;
+          for (char &c : act) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+          int step = delta;
+          if (step == 0) {
+            if (act == "next" || act == "right" || act == "down" || act == "cw") step = 1;
+            else if (act == "prev" || act == "left" || act == "up" || act == "ccw") step = -1;
+          }
+          if (act == "home") {
+            if (id(gui_page) == 8 && id(tools_subpage) == 12) {
+              if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
+                id(stop_doorbell_call).execute();
+              }
+              id(camera_snapshot_art).release();
+              id(current_loaded_camera_url) = "";
+            }
+            id(gui_page) = 1;
+            id(home_subpage) = 0;
+            id(active_game) = 0;
+            id(tools_subpage) = 0;
+            id(area_subpage) = 0;
+            id(remote_subpage) = 0;
+            id(music_overlay_mode) = 0;
+            id(system_menu_mode) = 0;
+            latter_ui::ui_focus_index() = 0;
+            id(sync_wake_word_state).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          if (act == "back") {
+            if (id(gui_page) == 8 && id(tools_subpage) > 0) {
+              if (id(tools_subpage) == 12) {
+                if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
+                  id(stop_doorbell_call).execute();
+                }
+                id(camera_snapshot_art).release();
+                id(current_loaded_camera_url) = "";
+              }
+              if (latter_ui::tools_direct_home()) {
+                latter_ui::tools_direct_home() = false;
+                id(tools_subpage) = 0;
+                id(gui_page) = 1;
+              } else {
+                id(tools_subpage) = 0;
+              }
+            } else if (id(gui_page) == 3 && id(active_game) > 0) {
+              id(active_game) = 0;
+            } else if (id(gui_page) == 2 && id(music_overlay_mode) > 0) {
+              id(music_overlay_mode) = 0;
+            } else if (id(gui_page) == 4 && id(system_menu_mode) > 0) {
+              id(system_menu_mode) = 0;
+            } else if (id(gui_page) == 6 && id(area_subpage) > 0) {
+              id(area_subpage) = 0;
+            } else if (id(gui_page) == 7 && id(remote_subpage) > 0) {
+              id(remote_subpage) = 0;
+            } else {
+              id(gui_page) = 1;
+              id(home_subpage) = 0;
+            }
+            latter_ui::ui_focus_index() = 0;
+            id(sync_wake_word_state).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          if (step != 0) {
+            int &f_idx = latter_ui::ui_focus_index();
+            f_idx = std::max(0, f_idx + step);
+            if (id(gui_page) == 5) {
+              id(sky_weather_subpage) = f_idx % 4;
+            } else if (id(gui_page) == 9) {
+              latter_ui::whole_home_tab() = f_idx % 5;
+            } else if (id(gui_page) == 8 && id(tools_subpage) == 12) {
+              std::string cam_ids[latter_ui::MAX_CAMERA_SLOTS], cam_names[latter_ui::MAX_CAMERA_SLOTS];
+              int c_cnt = std::max(1, latter_ui::parse_cameras_summary_list(id(ha_latter_cameras_summary).state, cam_ids, cam_names));
+              latter_ui::cam_carousel_idx() = (latter_ui::cam_carousel_idx() + step + c_cnt) % c_cnt;
+              id(fetch_on_demand_camera).execute();
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+          if (act == "select" || act == "ok" || act == "click") {
+            const int f_idx = std::max(0, latter_ui::ui_focus_index());
+            if (id(gui_page) == 1) {
+              const int dock_map[6] = {2, 8, 6, 7, 3, 4};
+              id(gui_page) = dock_map[f_idx % 6];
+              latter_ui::ui_focus_index() = 0;
+              if (id(gui_page) == 6) id(fetch_area_browse).execute();
+            } else if (id(gui_page) == 2) {
+              if (id(music_overlay_mode) == 0) {
+                const int m_act = f_idx % 5;
+                if (m_act == 0) id(music_prev_track).execute();
+                else if (m_act == 1) id(toggle_ha_music).execute();
+                else if (m_act == 2) id(music_next_track).execute();
+                else if (m_act == 3) { id(music_overlay_mode) = 2; id(selected_category_mode) = "favorites"; id(fetch_music_browse).execute(); }
+                else { id(music_overlay_mode) = 3; id(selected_category_mode) = "speakers"; id(fetch_music_browse).execute(); }
+              } else {
+                id(play_music_slot).execute((f_idx % 5) + 1);
+              }
+            } else if (id(gui_page) == 3 && id(active_game) == 0) {
+              id(active_game) = (f_idx % 6) + 1;
+            } else if (id(gui_page) == 6 && id(area_subpage) == 0) {
+              const int slot = f_idx % 7;
+              if (slot == 0 && !id(area_slot_1_id).empty()) { id(area_target_entity_id) = id(area_slot_1_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
+              else if (slot == 1 && !id(area_slot_2_id).empty()) { id(area_target_entity_id) = id(area_slot_2_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
+              else if (slot == 2 && !id(area_slot_3_id).empty()) { id(area_target_entity_id) = id(area_slot_3_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
+            } else if (id(gui_page) == 7) {
+              const int key_map[8] = {9, 0, 2, 4, 3, 1, 5, 6};
+              id(remote_send_key).execute(key_map[f_idx % 8], id(active_remote_slot));
+            } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
+              id(tools_subpage) = (id(tools_menu_page) * 6) + (f_idx % 6) + 1;
+              if (id(tools_subpage) == 12) id(fetch_on_demand_camera).execute();
+            }
+            id(sync_wake_word_state).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+  - id: pause_all_music
+    mode: restart
+    then:
+      - lambda: |-
+          bool local_active = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          bool remote_active = (!id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}") && (id(ha_target_state).state == "playing"));
+          if (local_active || remote_active) {
+            id(va_resume_music_after) = true;
+          }
+          ESP_LOGI("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d", local_active, remote_active, id(va_resume_music_after));
+      - if:
+          condition:
+            lambda: 'return id(va_resume_music_after);'
+          then:
+            - media_player.pause: latter_media_player
+            - speaker.stop: media_mixing_input
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: 50
+                duration: 0.1s
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "pause"
+
+  - id: resume_music_after_va
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(alarm_ringing) || id(timer_ringing) || id(find_my_active);'
+          then:
+            - script.stop: resume_music_after_va
+      - if:
+          condition:
+            lambda: 'return id(va_resume_music_after);'
+          then:
+            - script.execute: mp_idle_debounce
+            - lambda: |-
+                id(va_resume_music_after) = false;
+                ESP_LOGI("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)", id(active_speaker_entity).c_str(), id(va_was_cancelled));
+            - if:
+                condition:
+                  lambda: 'return !id(active_speaker_entity).empty() && (id(active_speaker_entity) != "${local_player_id}");'
+                then:
+                  - lambda: |-
+                      id(va_was_cancelled) = false;
+                      if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                        id(ble_ctrl).enable();
+                      }
+                  - homeassistant.action:
+                      action: latter.media_command
+                      data:
+                        target_device: "${name}"
+                        command: "play"
+                  - lambda: 'id(hal_set_dac_mute).execute(true);'
+                  - script.execute: route_i2s_to_mic
+                  - script.execute: sync_wake_word_state
+                else:
+                  - script.execute: route_i2s_to_spk
+                  - switch.turn_on: speaker_enable
+                  - if:
+                      condition:
+                        lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
+                      then:
+                        - mixer_speaker.apply_ducking:
+                            id: media_mixing_input
+                            decibel_reduction: 0
+                            duration: 0.2s
+                        - mixer_speaker.apply_ducking:
+                            id: announcement_mixing_input
+                            decibel_reduction: 50
+                            duration: 0.1s
+                        - lambda: |-
+                            float v = id(latter_media_player).volume;
+                            if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                            id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                  # Dispatch play via latter.media_command so it never double-triggers with the media_play interceptor
+                  - homeassistant.action:
+                      action: latter.media_command
+                      data:
+                        target_device: "${name}"
+                        command: "play"
+                  # If VA was terminated early, keep speaker DAC muted for 700ms while Sendspin
+                  # handshakes so any residual TTS audio inside physical_speaker's 1000ms buffer
+                  # drains completely silently instead of playing a 0.4s burst before music starts
+                  - if:
+                      condition:
+                        lambda: 'return id(va_was_cancelled);'
+                      then:
+                        - lambda: 'id(va_was_cancelled) = false;'
+                        - delay: 700ms
+                  - lambda: 'id(hal_set_dac_mute).execute(false);'
+          else:
+            - lambda: |-
+                id(va_was_cancelled) = false;
+                if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                  id(ble_ctrl).enable();
+                }
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
+            - script.execute: route_i2s_to_mic
+            - script.execute: sync_wake_word_state
+  - id: fetch_remote_art_debounced
+    mode: restart
+    then:
+      - delay: 650ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(active_speaker_entity) != "${local_player_id}") &&
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          then:
+            - wait_until:
+                condition:
+                  lambda: 'return id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING;'
+                timeout: 2500ms
+            - delay: 250ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(gui_page) == 2) &&
+                     (id(display_power_state) == 0) &&
+                     !id(va_active) && id(va_status_text).empty() &&
+                     (id(active_speaker_entity) != "${local_player_id}") &&
+                     !id(ha_target_art_url).state.empty() &&
+                     (id(ha_target_art_url).state != "none") &&
+                     (id(ha_target_art_url).state != "unknown") &&
+                     (id(ha_target_art_url).state != "unavailable") &&
+                     (id(ha_target_art_url).state != id(current_loaded_art_url));
+          then:
+            - lambda: 'id(current_loaded_art_url) = id(ha_target_art_url).state;'
+            - online_image.set_url:
+                id: remote_album_art
+                url: !lambda 'return id(ha_target_art_url).state;'
+
+  - id: fetch_wallpaper_debounced
+    mode: restart
+    then:
+      - delay: 500ms
+      - if:
+          condition:
+            lambda: |-
+              return (id(display_power_state) == 0) &&
+                     !id(va_active) && id(va_status_text).empty() &&
+                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     !id(ha_latter_wallpaper_url).state.empty() &&
+                     (id(ha_latter_wallpaper_url).state != "none") &&
+                     (id(ha_latter_wallpaper_url).state != "unknown") &&
+                     (id(ha_latter_wallpaper_url).state != "unavailable") &&
+                     (id(ha_latter_wallpaper_url).state != id(current_loaded_wallpaper_url));
+          then:
+            - lambda: 'id(current_loaded_wallpaper_url) = id(ha_latter_wallpaper_url).state;'
+            - online_image.set_url:
+                id: home_wallpaper_art
+                url: !lambda 'return id(ha_latter_wallpaper_url).state;'
+
+  - id: fetch_calendar_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.calendar_fetch
+          data:
+            target_device: "${name}"
+            days: "30"
+            page: !lambda 'return to_string(id(cal_browse_page));'
+            page_size: "5"
+
+  - id: create_calendar_quick_event
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.calendar_create_event
+          data:
+            target_device: "${name}"
+            summary: !lambda 'return id(cal_quick_summary).c_str();'
+            in_minutes: !lambda 'return to_string(id(cal_quick_in_minutes));'
+            duration_minutes: !lambda 'return to_string(id(cal_quick_duration_minutes));'
+      - delay: 650ms
+      - script.execute: fetch_calendar_browse
+
+  - id: fetch_calendar_map_snapshot
+    mode: restart
+    then:
+      - delay: 40ms
+      - if:
+          condition:
+            lambda: 'return !latter_ui::cal_detail_location().empty() && !latter_ui::cal_detail_map_url().empty();'
+          then:
+            - lambda: |-
+                const std::string &base_map_u = latter_ui::cal_detail_map_url();
+                id(notif_camera_url) = base_map_u +
+                                       "&z=" + to_string(latter_ui::cal_map_zoom()) +
+                                       "&pan_x=" + to_string(latter_ui::cal_map_pan_x()) +
+                                       "&pan_y=" + to_string(latter_ui::cal_map_pan_y());
+                ESP_LOGI("cal_map", "Fetching Calendar Map Snapshot: %s", id(notif_camera_url).c_str());
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: send_intercom_broadcast
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.intercom_broadcast
+          data:
+            target_device: "${name}"
+            message: !lambda 'return id(intercom_message_str).c_str();'
+
+  - id: trigger_latter_macro
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.trigger_binding
+          data:
+            target_device: "${name}"
+            slot: !lambda 'return id(macro_target_slot).c_str();'
+
+  - id: fetch_on_demand_camera
+    mode: restart
+    then:
+      - delay: 15ms
+      - lambda: |-
+          latter_ui::last_cam_live_fetch_ms() = millis();
+          id(notif_camera_url) = latter_ui::build_carousel_camera_url(
+              id(ha_latter_camera_snapshot_url).state,
+              id(ha_latter_wallpaper_url).state,
+              id(ha_target_art_url).state,
+              "${name}", "${screen_w}", "${screen_h}", "${art_shape}",
+              id(ha_latter_cameras_summary).state,
+              millis());
+      - if:
+          condition:
+            lambda: 'return !id(notif_camera_url).empty();'
+          then:
+            - lambda: 'latter_ui::cam_download_in_progress() = true;'
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: send_doorbell_intercom_cmd
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.doorbell_intercom
+          data:
+            target_device: "${name}"
+            action: !lambda 'return id(cam_intercom_action).c_str();'
+            camera_entity: !lambda |-
+              return latter_ui::resolve_active_carousel_camera_id(
+                  id(ha_latter_cameras_summary).state,
+                  id(ha_latter_camera_snapshot_url).state).c_str();
+            camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
+            message: !lambda 'return id(cam_intercom_message).c_str();'
+            anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
+
+  - id: start_doorbell_call
+    mode: restart
+    then:
+      - lambda: |-
+          latter_ui::cam_call_active() = true;
+          latter_ui::cam_listen_active() = true;
+          latter_ui::cam_intercom_status() = "2-WAY CALL (ANC)";
+          id(cam_intercom_status_ms) = millis();
+          id(cam_intercom_action) = "listen_start";
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: send_doorbell_intercom_cmd
+      - delay: 350ms
+      - if:
+          condition:
+            lambda: 'return latter_ui::cam_call_active() && id(va).get_api_connection() != nullptr;'
+          then:
+            - script.execute: start_doorbell_ptt
+
+  - id: stop_doorbell_call
+    mode: restart
+    then:
+      - script.stop: rearm_doorbell_duplex_mic
+      - script.stop: start_doorbell_ptt
+      - lambda: |-
+          latter_ui::cam_call_active() = false;
+          latter_ui::cam_intercom_ptt_active() = false;
+          latter_ui::cam_listen_active() = false;
+          latter_ui::cam_intercom_status() = "CALL ENDED";
+          id(cam_intercom_status_ms) = millis();
+          id(cam_intercom_action) = "listen_stop";
+          esphome::voice_assistant::abort_voice_assistant(id(va));
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: send_doorbell_intercom_cmd
+      - media_player.stop: latter_media_player
+      - script.execute: mp_idle_debounce
+
+  - id: rearm_doorbell_duplex_mic
+    mode: restart
+    then:
+      - delay: 2800ms
+      - if:
+          condition:
+            lambda: |-
+              return latter_ui::cam_call_active() &&
+                     (id(gui_page) == 8 && id(tools_subpage) == 12) &&
+                     (id(display_power_state) == 0);
+          then:
+            - script.execute: start_doorbell_ptt
+
+  - id: start_doorbell_ptt
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(va).get_api_connection() == nullptr;'
+          then:
+            - lambda: |-
+                if (!latter_ui::cam_call_active()) {
+                  latter_ui::cam_quick_reply_open() = true;
+                }
+                latter_ui::schedule_disp_update(&id(disp1));
+            - script.stop: start_doorbell_ptt
+      - if:
+          condition:
+            lambda: 'return latter_ui::cam_listen_active();'
+          then:
+            - lambda: |-
+                latter_ui::cam_listen_active() = false;
+                id(cam_intercom_action) = "listen_stop";
+            - script.execute: send_doorbell_intercom_cmd
+            - media_player.stop: latter_media_player
+      - if:
+          condition:
+            micro_wake_word.is_running:
+          then:
+            - micro_wake_word.stop:
+            - delay: 20ms
+      - lambda: |-
+          latter_ui::cam_intercom_ptt_active() = true;
+          latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
+          id(cam_intercom_status_ms) = millis();
+          latter_ui::schedule_disp_update(&id(disp1));
+      - script.execute: route_i2s_to_mic
+      - script.wait: route_i2s_to_mic
+      - voice_assistant.start:
+
+  - id: fetch_camera_snapshot
+    mode: restart
+    then:
+      - delay: 80ms
+      - if:
+          condition:
+            lambda: |-
+              return id(notif_active) &&
+                     !id(notif_camera_url).empty() &&
+                     (id(notif_camera_url) != "none") &&
+                     (id(notif_camera_url) != "unknown") &&
+                     (id(notif_camera_url) != "unavailable");
+          then:
+            - online_image.set_url:
+                id: camera_snapshot_art
+                url: !lambda 'return id(notif_camera_url);'
+
+  - id: dismiss_notification
+    mode: restart
+    then:
+      - script.stop: fetch_camera_snapshot
+      - lambda: |-
+          id(notif_active) = false;
+          id(notif_camera_url) = "";
+          id(current_loaded_camera_url) = "";
+      - online_image.release: camera_snapshot_art
+      - script.execute: mp_idle_debounce
+      - script.execute: sync_wake_word_state
+      - script.execute: screen_sleep_timer
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: throttled_disp_update
+    mode: restart
+    then:
+      - delay: 120ms
+      - if:
+          condition:
+            lambda: |-
+              static uint32_t last_throttled_draw = 0;
+              uint32_t now = millis();
+              if (now - last_throttled_draw < 200) return false;
+              if (now - latter_ui::last_page2_draw_ms() < 250) return false;
+              if (id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active)) {
+                last_throttled_draw = now;
+                return true;
+              }
+              return false;
+          then:
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: apply_theme_preset
+    mode: restart
+    then:
+      - lambda: |-
+          std::string p = std::string(id(theme_palette_select).current_option());
+          #if LATTER_PANEL_IPS
+          const bool is_ips_lcd = true;
+          #else
+          const bool is_ips_lcd = false;
+          #endif
+          id(theme_secondary) = is_ips_lcd ? Color(224, 232, 242) : Color(192, 192, 192);
+          if (is_ips_lcd) {
+            id(col_gold) = Color(255, 188, 20);
+            id(col_warm_gold) = Color(255, 160, 16);
+            id(col_orange) = Color(255, 112, 20);
+            id(col_red) = Color(242, 60, 50);
+            id(col_green) = Color(56, 206, 110);
+          }
+          if (p == "Custom") {
+            latter_ui::apply_custom_rgb_harmony(id(custom_theme_rgb), id(theme_primary), id(theme_secondary));
+          } else if (p == "Pink") {
+            id(theme_primary) = is_ips_lcd ? Color(236, 128, 162) : Color(168, 120, 132);
+          } else if (p == "Green") {
+            id(theme_primary) = is_ips_lcd ? Color(68, 196, 122)  : Color(66, 116, 83);
+          } else if (p == "Blue") {
+            id(theme_primary) = is_ips_lcd ? Color(56, 156, 244)  : Color(69, 110, 138);
+          } else {
+            id(theme_primary) = is_ips_lcd ? Color(88, 184, 238)  : Color(107, 142, 158);
+          }
+          if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
+
+  - id: save_custom_color_to_latter
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.save_custom_color
+          data:
+            target_device: "${name}"
+            hex_color: !lambda |-
+              char buf[12];
+              snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(id(custom_theme_rgb) & 0xFFFFFFUL));
+              return std::string(buf);
+
+  - id: sync_display_brightness
+    mode: restart
+    then:
+      - lambda: |-
+          auto parse_bri = [](const std::string& opt) -> float {
+            if (opt == "60%") return 0.60f;
+            if (opt == "70%") return 0.70f;
+            if (opt == "80%") return 0.80f;
+            if (opt == "90%") return 0.90f;
+            if (opt == "100%") return 1.00f;
+            return 0.90f;
+          };
+
+          float b_target = 0.90f;
+          std::string mode = id(auto_brightness_mode).current_option();
+
+          if (mode == "Sun Synchronized") {
+            std::string sun = id(ha_sun_state).state;
+            bool is_night = (sun == "below_horizon");
+            std::string opt = is_night ? id(night_brightness_preset).current_option()
+                                       : id(day_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          } else if (mode == "Time Schedule") {
+            auto now = id(ha_time).now();
+            int day_h = (int)id(day_start_hour).state;
+            int night_h = (int)id(night_start_hour).state;
+            bool is_day = true;
+            if (now.is_valid()) {
+              if (day_h < night_h) {
+                is_day = (now.hour >= day_h && now.hour < night_h);
+              } else {
+                is_day = (now.hour >= day_h || now.hour < night_h);
+              }
+            }
+            std::string opt = is_day ? id(day_brightness_preset).current_option()
+                                     : id(night_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          } else {
+            std::string opt = id(display_brightness_preset).current_option();
+            b_target = parse_bri(opt);
+          }
+
+          if ((id(gui_page) == 8 && id(tools_subpage) == 5) || id(find_my_active)) {
+            b_target = 1.00f;
+          }
+
+          if (id(display_power_state) == 0) {
+            id(display_brightness).turn_on().set_brightness(b_target).perform();
+          } else if (id(display_power_state) == 1) {
+            id(display_brightness).turn_on().set_brightness(0.60f).perform();
+          }
+
+  - id: apply_default_start_page
+    then:
+      - lambda: |-
+          auto def_app = id(default_start_app).current_option();
+          id(gui_page) = (def_app == "Clock") ? 0 : 1;
+  - id: music_vol_up
+    mode: restart
+    then:
+      - delay: 0ms
+      - if:
+          condition:
+            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+          then:
+            - lambda: |-
+                float step = id(volume_step_size).state / 100.0f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                latter_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(latter_media_player).volume;
+                if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
+                float new_vol = std::min(1.00f, cur + step);
+                id(latter_media_player).make_call().set_volume(new_vol).perform();
+                id(physical_speaker).set_volume(new_vol);
+                id(media_mixing_input).apply_ducking(0.0f, 0);
+          else:
+            - homeassistant.action:
+                action: latter.media_volume
+                data:
+                  target_device: "${name}"
+                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+                  action: "up"
+
+  - id: music_vol_down
+    mode: restart
+    then:
+      - delay: 0ms
+      - if:
+          condition:
+            lambda: 'return id(active_speaker_entity) == "${local_player_id}";'
+          then:
+            - lambda: |-
+                float step = id(volume_step_size).state / 100.0f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                latter_ui::last_local_vol_tap_ms() = millis();
+                float cur = id(latter_media_player).volume;
+                if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
+                float new_vol = std::max(0.10f, cur - step);
+                id(latter_media_player).make_call().set_volume(new_vol).perform();
+                id(physical_speaker).set_volume(new_vol);
+                id(media_mixing_input).apply_ducking(0.0f, 0);
+          else:
+            - homeassistant.action:
+                action: latter.media_volume
+                data:
+                  target_device: "${name}"
+                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+                  action: "down"
+  - id: toggle_ha_music
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              bool is_remote = (id(active_speaker_entity) != "${local_player_id}");
+              bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              return latter_ui::is_music_playing_effective(is_remote, local_playing, id(ha_target_state).state, millis());
+          then:
+            - lambda: 'latter_ui::set_remote_play_override(false, millis());'
+            - if:
+                condition:
+                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                then:
+                  - media_player.pause: latter_media_player
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "pause"
+          else:
+            - lambda: 'latter_ui::set_remote_play_override(true, millis());'
+            - if:
+                condition:
+                  lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+                then:
+                  - script.stop: mp_idle_debounce
+                  - script.execute: route_i2s_to_spk
+                  - switch.turn_on: speaker_enable
+                  - lambda: |-
+                      float v = id(latter_media_player).volume;
+                      if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                      id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                      id(hal_set_dac_mute).execute(false);
+                  - mixer_speaker.apply_ducking:
+                      id: media_mixing_input
+                      decibel_reduction: 0
+                      duration: 0.2s
+            - homeassistant.action:
+                action: latter.media_command
+                data:
+                  target_device: "${name}"
+                  command: "play"
+
+  - id: stop_ha_music
+    mode: restart
+    then:
+      - lambda: |-
+          latter_ui::set_remote_play_override(false, millis());
+          id(music_action_feedback) = "Playback Stopped";
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - media_player.pause: latter_media_player
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "pause"
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: clear_ha_music_queue
+    mode: restart
+    then:
+      - lambda: |-
+          latter_ui::set_remote_play_override(false, millis());
+          latter_ui::music_queue_cleared() = true;
+          id(track_title).publish_state("");
+          id(track_artist).publish_state("");
+          id(track_album).publish_state("");
+          id(ha_track_title).publish_state("Idle");
+          id(ha_track_artist).publish_state("None");
+          id(ha_track_album).publish_state("None");
+          id(music_pos_base) = 0.0f;
+          id(music_pos_sync_time) = 0;
+          id(current_loaded_art_url) = "";
+          id(music_action_feedback) = "Queue Cleared";
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - media_player.stop: latter_media_player
+      - online_image.release: remote_album_art
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "clear_queue"
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: music_next_track
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Next Track >>";
+          id(music_feedback_timer) = millis();
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "next"
+
+  - id: music_prev_track
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "<< Prev Track";
+          id(music_feedback_timer) = millis();
+          id(music_pos_base) = 0.0f;
+          id(music_pos_sync_time) = millis();
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "previous"
+
+  - id: music_seek_relative
+    mode: restart
+    parameters:
+      dir: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          uint32_t now_ms = millis();
+          if (now_ms - id(music_skip_last_tap_ms) < 1000) {
+            id(music_skip_burst_count)++;
+          } else {
+            id(music_skip_burst_count) = 1;
+          }
+          id(music_skip_last_tap_ms) = now_ms;
+
+          float step_sec = 10.0f;
+          const char *label = "-10s Replay";
+          if (dir < 0) {
+            switch (id(music_skip_burst_count)) {
+              case 1: step_sec = 10.0f; label = "-10s Replay"; break;
+              case 2: step_sec = 30.0f; label = "-30s Replay"; break;
+              case 3: step_sec = 60.0f; label = "-1m Replay"; break;
+              case 4: step_sec = 120.0f; label = "-2m Replay"; break;
+              default: step_sec = 300.0f; label = "-5m Replay"; break;
+            }
+          } else {
+            switch (id(music_skip_burst_count)) {
+              case 1: step_sec = 30.0f; label = "+30s Skip"; break;
+              case 2: step_sec = 60.0f; label = "+1m Skip"; break;
+              case 3: step_sec = 120.0f; label = "+2m Skip"; break;
+              case 4: step_sec = 300.0f; label = "+5m Skip"; break;
+              default: step_sec = 600.0f; label = "+10m Skip"; break;
+            }
+          }
+
+          id(music_action_feedback) = label;
+          id(music_feedback_timer) = now_ms;
+
+          float cur_pos = id(music_pos_base);
+          if (id(music_pos_sync_time) > 0) {
+            cur_pos += (float)(now_ms - id(music_pos_sync_time)) / 1000.0f;
+          }
+          float new_pos = 0.0f;
+          if (dir < 0) {
+            new_pos = std::max(0.0f, cur_pos - step_sec);
+          } else {
+            float dur = id(ha_media_duration).state;
+            new_pos = (!std::isnan(dur) && dur > 0.0f) ? std::min(dur, cur_pos + step_sec) : (cur_pos + step_sec);
+          }
+          id(music_pos_base) = new_pos;
+          id(music_pos_sync_time) = now_ms;
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "seek"
+            seek_position: !lambda |-
+              float cur_pos = id(music_pos_base);
+              return to_string((int)std::max(0.0f, cur_pos));
+
+  - id: music_seek_absolute
+    mode: restart
+    then:
+      - delay: 0ms
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "seek"
+            seek_position: !lambda |-
+              float cur_pos = id(music_pos_base);
+              return to_string((int)std::max(0.0f, cur_pos));
+  - id: fetch_music_browse
+    mode: restart
+    then:
+      - lambda: 'latter_ui::last_music_page_req_ms() = millis();'
+      - delay: 55ms
+      - homeassistant.action:
+          action: latter.music_browse
+          data:
+            target_device: "${name}"
+            mode: !lambda 'return id(selected_category_mode).c_str();'
+            page: !lambda 'return to_string(id(music_browse_page));'
+            page_size: "5"
+            search: !lambda |-
+              if (id(selected_category_mode) == "artist_albums") {
+                return id(drilldown_artist_name).c_str();
+              } else if (id(selected_category_mode) == "current_album_tracks" || id(selected_category_mode) == "album_tracks" ||
+                         id(selected_category_mode) == "podcast_episodes" || id(selected_category_mode) == "lyrics" ||
+                         id(selected_category_mode) == "bio") {
+                return id(drilldown_album_id).c_str();
+              }
+              return "";
+            speaker: !lambda 'return id(active_speaker_entity).c_str();'
+            last_speaker: !lambda 'return id(last_speaker_entity).c_str();'
+            album_sort: !lambda |-
+              auto sort = id(music_album_sort_order).current_option();
+              if (sort == "Newest on Top") return "year_desc";
+              if (sort == "Oldest on Top") return "year";
+              return "name";
+            artist_album_sort: !lambda |-
+              auto sort = id(music_artist_album_sort_order).current_option();
+              if (sort == "Alphabetical") return "name";
+              if (sort == "Newest on Top") return "year_desc";
+              return "year";
+            podcast_sort: !lambda |-
+              auto sort = id(music_podcast_sort_order).current_option();
+              if (sort == "Oldest on Top") return "oldest";
+              return "newest";
+
+  - id: fetch_area_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.area_browse
+          data:
+            target_device: "${name}"
+            mode: "entities"
+            area_id: !lambda 'return id(active_area_id).c_str();'
+            domain_filter: !lambda 'return id(area_domain_filter).c_str();'
+            page: !lambda 'return to_string(id(area_browse_page));'
+            page_size: "3"
+            handoff_media: !lambda 'return id(area_handoff_media_switch).state ? "true" : "false";'
+
+  - id: fetch_area_list_browse
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.area_browse
+          data:
+            target_device: "${name}"
+            mode: "areas"
+            area_id: !lambda 'return id(active_area_id).c_str();'
+            page: !lambda 'return to_string(id(area_list_page));'
+            page_size: "5"
+            handoff_media: "false"
+
+  - id: select_active_area_latter
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.set_active_area
+          data:
+            target_device: "${name}"
+            area: !lambda 'return id(active_area_id).c_str();'
+            handoff_media: !lambda 'return id(area_handoff_media_switch).state ? "true" : "false";'
+      - script.execute: fetch_area_browse
+
+  - id: execute_alarm_action
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.area_action
+          data:
+            target_device: "${name}"
+            action: !lambda 'return id(area_alarm_service).c_str();'
+
+  - id: execute_area_action
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.area_action
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(area_target_entity_id).c_str();'
+            action: !lambda 'return id(area_target_action).c_str();'
+            level: !lambda 'return to_string(id(area_target_level));'
+            area_id: !lambda 'return id(active_area_id).c_str();'
+            code: !lambda 'return id(area_target_code).c_str();'
+
+  - id: activate_selected_speaker
+    mode: restart
+    parameters:
+      prefix: string
+      transfer_queue: string
+    then:
+      - lambda: |-
+          if (id(target_speaker_id).rfind("media_player.", 0) == 0) {
+            if (id(active_speaker_entity) != id(target_speaker_id) && !id(active_speaker_entity).empty()) {
+              id(last_speaker_entity) = id(active_speaker_entity);
+            }
+            id(active_speaker_entity) = id(target_speaker_id);
+            id(active_speaker_name) = id(target_speaker_name);
+            id(music_action_feedback) = prefix + id(target_speaker_name);
+          } else {
+            ESP_LOGW("ui", "Rejecting non-media_player target: %s", id(target_speaker_id).c_str());
+            id(music_action_feedback) = "Invalid Speaker";
+          }
+          id(music_feedback_timer) = millis();
+          if (id(active_speaker_entity) == "${local_player_id}") {
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+          id(music_direct_nav) = false;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - homeassistant.action:
+          action: latter.set_active_speaker
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            transfer_queue: !lambda 'return transfer_queue;'
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) != "${local_player_id}");'
+          then:
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
+            - switch.turn_off: speaker_enable
+            - script.execute: fetch_remote_art_debounced
+          else:
+            - online_image.release: remote_album_art
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: speaker_transfer_to_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - script.execute:
+          id: activate_selected_speaker
+          prefix: "Transferring -> "
+          transfer_queue: "true"
+
+  - id: speaker_control_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - script.execute:
+          id: activate_selected_speaker
+          prefix: "Controlling: "
+          transfer_queue: "false"
+
+  - id: speaker_join_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Joining -> " + id(target_speaker_name);
+          id(music_feedback_timer) = millis();
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - homeassistant.action:
+          action: media_player.join
+          data:
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            group_members: !lambda 'return id(target_speaker_id).c_str();'
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: speaker_unjoin_target
+    mode: restart
+    then:
+      - delay: 0ms
+      - lambda: |-
+          id(music_action_feedback) = "Unjoining -> " + id(target_speaker_name);
+          id(music_feedback_timer) = millis();
+      - homeassistant.action:
+          action: media_player.unjoin
+          data:
+            entity_id: !lambda 'return id(target_speaker_id).c_str();'
+      - lambda: |-
+          if (id(target_speaker_id) == id(active_speaker_entity) || id(target_speaker_id) == "${local_player_id}") {
+            id(active_speaker_entity) = "${local_player_id}";
+            id(active_speaker_name) = "${friendly_name}";
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+      - homeassistant.action:
+          action: latter.set_active_speaker
+          data:
+            target_device: "${name}"
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            transfer_queue: "false"
+      - online_image.release: remote_album_art
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+  - id: play_music_slot
+    mode: restart
+    parameters:
+      slot: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          if (slot == 1) {
+            id(selected_slot_name) = id(slot_1_name);
+            id(selected_slot_id)   = id(slot_1_id);
+            id(selected_slot_type) = id(slot_1_type);
+          } else if (slot == 2) {
+            id(selected_slot_name) = id(slot_2_name);
+            id(selected_slot_id)   = id(slot_2_id);
+            id(selected_slot_type) = id(slot_2_type);
+          } else if (slot == 3) {
+            id(selected_slot_name) = id(slot_3_name);
+            id(selected_slot_id)   = id(slot_3_id);
+            id(selected_slot_type) = id(slot_3_type);
+          } else if (slot == 4) {
+            id(selected_slot_name) = id(slot_4_name);
+            id(selected_slot_id)   = id(slot_4_id);
+            id(selected_slot_type) = id(slot_4_type);
+          } else {
+            id(selected_slot_name) = id(slot_5_name);
+            id(selected_slot_id)   = id(slot_5_id);
+            id(selected_slot_type) = id(slot_5_type);
+          }
+          if (id(active_speaker_entity).empty() || id(active_speaker_entity) == "None") {
+            id(active_speaker_entity) = "${local_player_id}";
+          }
+          if (id(selected_category_mode) == "artist") {
+            id(selected_slot_type) = "artist";
+          } else if (id(selected_category_mode) == "album" || id(selected_category_mode) == "artist_albums") {
+            id(selected_slot_type) = "album";
+          } else if (id(selected_category_mode) == "podcast_episodes") {
+            id(selected_slot_type) = "podcast_episode";
+          } else if (id(selected_slot_type).empty()) {
+            id(selected_slot_type) = "music";
+          }
+          id(music_action_feedback) = "Playing: " + id(selected_slot_name);
+          id(music_feedback_timer) = millis();
+          latter_ui::set_remote_play_override(true, millis());
+          if (id(selected_category_mode) == "podcast_episodes") {
+            id(active_playback_media_type) = "podcast";
+          } else if (id(selected_category_mode) == "audiobook") {
+            id(active_playback_media_type) = "audiobook";
+          } else {
+            id(active_playback_media_type) = "music";
+          }
+          if (!id(active_speaker_entity).empty()) {
+            id(current_loaded_art_url) = "";
+          }
+          id(music_overlay_mode) = 0;
+          id(music_hud_active) = true;
+          id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return (id(active_speaker_entity) == "${local_player_id}");'
+          then:
+            - script.stop: mp_idle_debounce
+            - script.execute: route_i2s_to_spk
+            - switch.turn_on: speaker_enable
+            - lambda: |-
+                float v = id(latter_media_player).volume;
+                if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                id(hal_set_dac_mute).execute(false);
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: 0
+                duration: 0.2s
+      - homeassistant.action:
+          action: latter.media_command
+          data:
+            target_device: "${name}"
+            command: "play_media"
+            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
+            media_id: !lambda 'return id(selected_slot_id).c_str();'
+            media_type: !lambda 'return id(selected_slot_type).c_str();'
+            enqueue: "replace"
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: mp_idle_debounce
+    mode: restart
+    then:
+      - delay: 3s
+      - if:
+          condition:
+            lambda: |-
+              return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
+                     !id(va).is_running() &&
+                     !id(va_active) &&
+                     !id(va_tts_received) &&
+                     !id(announcement_mixing_input).is_running() &&
+                     !latter_ui::cam_call_active() &&
+                     !latter_ui::cam_listen_active() &&
+                     !id(alarm_ringing) &&
+                     !id(timer_ringing) &&
+                     !id(find_my_active) &&
+                     (id(active_game) == 0);
+          then:
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
+            - switch.turn_off: speaker_enable
+            - script.execute: route_i2s_to_mic
+            - script.execute: sync_wake_word_state
+            - lambda: |-
+                if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
+                  ESP_LOGI("ble", "Local audio idle: re-enabling BLE Presence Beacon");
+                  id(ble_ctrl).enable();
+                }
+                auto ww_mode = id(va_wake_word_mode).current_option();
+                const bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
+                if (!ww_act) {
+                  id(hal_set_audio_codecs_standby).execute(true);
+                }
+                if (id(display_power_state) == 2 && !id(usb_connected).state) {
+                  if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
+                  latter_ui::hal_set_wifi_power_save(2);
+                }
+
+  - id: toggle_voice_assistant
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(va_active) || !id(va_status_text).empty();'
+          then:
+            - script.execute: cancel_voice_assistant
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(va).get_api_connection() == nullptr;'
+                then:
+                  - logger.log:
+                      level: WARN
+                      format: "Assist pipeline not connected to Home Assistant yet; ignoring PTT press"
+                  - script.stop: toggle_voice_assistant
+            - lambda: |-
+                latter_ui::hal_set_wifi_power_save(0);
+                id(hal_set_audio_codecs_standby).execute(false);
+                // If waking from screen-off or standby, honor Assist Screen Wake preference
+                if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
+                  if (id(va_wake_screen_switch).state) {
+                    id(wake_to_active_state).execute();
+                  }
+                } else {
+                  id(screen_sleep_timer).execute();
+                }
+                if (!id(va_active)) {
+                  id(return_page) = id(gui_page);
+                  id(va_active) = true;
+                }
+                id(va_tts_received) = false;
+            - if:
+                condition:
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+                  - delay: 20ms
+            - if:
+                condition:
+                  lambda: |-
+                    return !id(va_resume_music_after) &&
+                           ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                            (!id(active_speaker_entity).empty() && id(ha_target_state).state == "playing"));
+                then:
+                  - script.execute: pause_all_music
+                  - delay: 160ms
+            - script.execute: route_i2s_to_mic
+            - script.wait: route_i2s_to_mic
+            - voice_assistant.start:
+
+  - id: cancel_voice_assistant
+    mode: restart
+    then:
+      - script.stop: va_tts_drain_and_finish
+      - script.stop: mp_idle_debounce
+      - lambda: |-
+          id(va_was_cancelled) = true;
+          id(va_status_text) = "";
+          id(va_tts_received) = false;
+          id(va_vad_active) = false;
+          id(va_active) = false;
+          id(gui_page) = id(return_page);
+          latter_ui::schedule_disp_update(&id(disp1));
+      - lambda: 'id(hal_set_dac_mute).execute(true);'
+      - mixer_speaker.apply_ducking:
+          id: announcement_mixing_input
+          decibel_reduction: 50
+          duration: 0.05s
+      - if:
+          condition:
+            lambda: |-
+              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          then:
+            - media_player.stop:
+                id: latter_media_player
+                announcement: true
+      - speaker.stop: announcement_mixing_input
+      - voice_assistant.stop:
+      - wait_until:
+          condition:
+            lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_IDLE;'
+          timeout: 450ms
+      - script.stop: mp_idle_debounce
+      - lambda: |-
+          esphome::voice_assistant::abort_voice_assistant(id(va));
+          id(va_was_cancelled) = true;
+          id(va_status_text) = "";
+          id(va_tts_received) = false;
+          id(va_vad_active) = false;
+          id(va_active) = false;
+          id(gui_page) = id(return_page);
+          if (id(display_power_state) == 2 && !id(usb_connected).state &&
+              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
+            latter_ui::hal_set_wifi_power_save(1);
+          }
+      - delay: 25ms
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - delay: 160ms
+      - script.execute: resume_music_after_va
+      - script.execute: screen_sleep_timer
+  - id: trigger_firmware_update
+    mode: restart
+    then:
+      - update.perform:
+          id: latter_firmware_update
+      - lambda: |-
+          id(system_menu_mode) = 5;
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  - id: check_firmware_update
+    mode: restart
+    then:
+      - update.check:
+          id: latter_firmware_update
+
+
+  - id: menu_scroll_transition
+    mode: restart
+    then:
+      - lambda: |-
+          // Frame 1: Render 35% eased frame (SHARED_SCROLL_EASE_*[2])
+          id(menu_scroll_step) = 2;
+          latter_ui::schedule_disp_update(&id(disp1));
+      - delay: 16ms
+      - lambda: |-
+          // Frame 2: Render 85% eased frame (SHARED_SCROLL_EASE_*[3])
+          id(menu_scroll_step) = 3;
+          latter_ui::schedule_disp_update(&id(disp1));
+      - delay: 16ms
+      - lambda: |-
+          // Frame 3: Commit target page, release scroll lock, and render settled frame
+          id(menu_scroll_active) = false;
+          if (id(gui_page) == 4 && id(system_menu_mode) == 1) {
+            id(sleep_menu_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 4 && id(system_menu_mode) == 2) {
+            id(display_menu_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 4 && id(system_menu_mode) == 0) {
+            id(system_dashboard_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 2 && id(music_overlay_mode) == 2) {
+            id(music_category_page) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 3 && id(active_game) == 0) {
+            id(game_carousel_idx) = id(menu_scroll_target_page);
+          } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
+            id(tools_menu_page) = id(menu_scroll_target_page);
+          }
+          id(menu_scroll_step) = 0;
+          latter_ui::schedule_disp_update(&id(disp1));
+
+  # ==============================================================================
+  # �� UNIVERSAL TV & MEDIA REMOTE COMMAND SCRIPTS (MULTI-DEVICE & MULTI-PROTOCOL)
+  # ==============================================================================
+  - id: remote_select_slot_latter
+    mode: restart
+    parameters:
+      slot_num: int
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(ha_latter_remote_slots_summary).state.empty();'
+          then:
+            - homeassistant.action:
+                action: latter.remote_action
+                data:
+                  target_device: "${name}"
+                  slot: !lambda 'return to_string(slot_num);'
+                  action: "select_slot"
+
+  - id: remote_send_key
+    mode: restart
+    parameters:
+      key_idx: int
+      target_slot: int
+    then:
+      - delay: 0ms
+      - lambda: |-
+          int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0)
+                                             : latter_ui::resolve_active_remote_slot(target_slot);
+          id(remote_latter_slot_num) = res_slot + 1;
+
+          static constexpr const char *kCanonicalCmds[10] = {
+            "up", "down", "left", "right", "select",
+            "back", "home", "volume_up", "volume_down", "toggle"
+          };
+          static constexpr const char *kFeedback[10] = {
+            "Up", "Down", "Left", "Right", "Select",
+            "Back", "Home", "Vol +", "Vol -", "Toggle Power"
+          };
+          int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
+          id(remote_latter_act) = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
+          id(remote_latter_cmd) = kCanonicalCmds[k];
+          const std::string *t_names = latter_ui::remote_slots_name();
+          if (k == 9 && !t_names[res_slot].empty()) {
+            id(remote_action_feedback) = "Power: " + t_names[res_slot];
+          } else {
+            id(remote_action_feedback) = kFeedback[k];
+          }
+          id(remote_feedback_timer) = millis();
+      - if:
+          condition:
+            lambda: |-
+              const std::string &sum = id(ha_latter_remote_slots_summary).state;
+              return !sum.empty() && sum != "unknown" && sum != "unavailable" && sum != "none" && sum != "NONE";
+          then:
+            - homeassistant.action:
+                action: latter.remote_action
+                data:
+                  target_device: "${name}"
+                  slot: !lambda 'return to_string(id(remote_latter_slot_num));'
+                  action: !lambda 'return id(remote_latter_act);'
+                  command: !lambda 'return id(remote_latter_cmd);'
+          else:
+            # Standalone ESPHome Fallback (when ha-latter is not installed and remote_1..4_entity are used)
+            - if:
+                condition:
+                  lambda: |-
+                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                    return latter_ui::is_configured_remote_slot(latter_ui::remote_slots_ent()[idx]);
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return id(remote_latter_act) == "toggle";'
+                      then:
+                        - homeassistant.action:
+                            action: homeassistant.toggle
+                            data:
+                              entity_id: !lambda |-
+                                int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                return latter_ui::remote_slots_ent()[idx].c_str();
+                      else:
+                        - if:
+                            condition:
+                              lambda: 'return id(remote_latter_act) == "volume_up";'
+                            then:
+                              - homeassistant.action:
+                                  action: !lambda |-
+                                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                    return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
+                                        ? "media_player.volume_up" : "remote.send_command";
+                                  data:
+                                    entity_id: !lambda |-
+                                      int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                      return latter_ui::remote_slots_ent()[idx].c_str();
+                                    command: "volume_up"
+                            else:
+                              - if:
+                                  condition:
+                                    lambda: 'return id(remote_latter_act) == "volume_down";'
+                                  then:
+                                    - homeassistant.action:
+                                        action: !lambda |-
+                                          int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                          return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
+                                              ? "media_player.volume_down" : "remote.send_command";
+                                        data:
+                                          entity_id: !lambda |-
+                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                            return latter_ui::remote_slots_ent()[idx].c_str();
+                                          command: "volume_down"
+                                  else:
+                                    - homeassistant.action:
+                                        action: remote.send_command
+                                        data:
+                                          entity_id: !lambda |-
+                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
+                                            return latter_ui::remote_slots_ent()[idx].c_str();
+                                          command: !lambda 'return id(remote_latter_cmd);'
