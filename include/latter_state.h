@@ -63,7 +63,6 @@ struct AreaContextState {
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
   std::string intercom_targets_summary = "";
-  std::string custom_bindings_summary = "";
   int alert_id = -1;
   std::string alert_title = "";
   std::string alert_message = "";
@@ -272,61 +271,54 @@ inline std::string normalize_vacuum_state_str(std::string_view sv) {
 inline bool parse_v3_area_ctx_payload(std::string_view payload, AreaContextState &st, WholeHomeState &wh) {
   std::string_view f[42];
   size_t n = v3_split_fields(payload, f, 42, '\x1f');
-  if (n < 39 || f[0] != "v3") return false;
+  if (n < 40 || f[0] != "v3") return false;
   uint32_t rev = v3_parse_u32(f[1], 0);
   if (!apply_if_newer(st.rev, rev)) return false;
 
-  st.area_id          = std::string(f[2]);
-  st.area_name        = std::string(f[3]);
-  st.site_id          = std::string(f[4]);
-  st.vpn_enabled      = v3_parse_bool(f[5]);
-  st.vpn_client_ip    = std::string(f[6]);
+  st.area_id           = std::string(f[2]);
+  st.area_name         = std::string(f[3]);
+  st.site_id           = std::string(f[4]);
+  st.vpn_enabled       = v3_parse_bool(f[5]);
+  st.vpn_client_ip     = std::string(f[6]);
   st.ble_closest_proxy = std::string(f[7]);
-  st.dock_apps        = std::string(f[8]);
-  st.wallpaper_url    = std::string(f[9]);
-  st.theme_color_hex  = std::string(f[10]);
+  st.dock_apps         = std::string(f[8]);
+  st.wallpaper_url     = std::string(f[9]);
+  st.theme_color_hex   = std::string(f[10]);
+  st.available_domains = std::string(f[11]);
+  st.area_temp         = v3_parse_float(f[12], NAN);
+  st.area_humidity     = v3_parse_float(f[13], NAN);
+  st.lights_on         = v3_parse_int(f[14], 0);
+  st.covers_open       = v3_parse_int(f[15], 0);
+  st.alarm_entity      = std::string(f[16]);
+  st.alarm_state       = std::string(f[17]);
 
-  // Support both 39-field and 40-field (with available_domains at f[11]) layouts
-  size_t off = (n >= 40) ? 1 : 0;
-  if (off == 1) {
-    st.available_domains = std::string(f[11]);
-  }
-  st.area_temp        = v3_parse_float(f[11 + off], NAN);
-  st.area_humidity    = v3_parse_float(f[12 + off], NAN);
-  st.lights_on        = v3_parse_int(f[13 + off], 0);
-  st.covers_open      = v3_parse_int(f[14 + off], 0);
-  st.alarm_entity     = std::string(f[15 + off]);
-  st.alarm_state      = std::string(f[16 + off]);
-
-  std::string_view th_mode = f[18 + off];
+  std::string_view th_mode = f[19];
   if (th_mode != "none" && th_mode != "unknown" && th_mode != "unavailable") {
     wh.thermostat_mode = std::string(th_mode);
   } else {
     wh.thermostat_mode = "";
   }
-  float th_temp = v3_parse_float(f[19 + off], NAN);
+  float th_temp = v3_parse_float(f[20], NAN);
   if (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f) {
     wh.thermostat_target_f = static_cast<int>(std::round(th_temp));
   }
-  wh.thermostat_current_f = v3_parse_float(f[20 + off], NAN);
-  wh.lock_state           = parse_lock_state_str(f[22 + off]);
-  wh.garage_state         = parse_garage_state_str(f[24 + off]);
-  wh.vacuum_state         = normalize_vacuum_state_str(f[26 + off]);
+  wh.thermostat_current_f = v3_parse_float(f[21], NAN);
+  wh.lock_state           = parse_lock_state_str(f[23]);
+  wh.garage_state         = parse_garage_state_str(f[25]);
+  wh.vacuum_state         = normalize_vacuum_state_str(f[27]);
 
-  st.camera_snapshot_url      = std::string(f[27 + off]);
-  st.cameras_summary          = std::string(f[28 + off]);
-  st.doorbell_talk_state      = std::string(f[29 + off]);
-  st.intercom_targets_summary = std::string(f[30 + off]);
-  st.custom_bindings_summary  = std::string(f[31 + off]);
-  st.alert_id                 = v3_parse_int(f[32 + off], st.alert_id);
-  st.alert_title              = std::string(f[33 + off]);
-  st.alert_message            = std::string(f[34 + off]);
-  st.alert_priority           = std::string(f[35 + off]);
-  st.alert_duration           = v3_parse_int(f[36 + off], 10);
-  st.alert_chime              = v3_parse_bool(f[37 + off]);
-  if (38 + off < n) {
-    st.alert_camera_url       = std::string(f[38 + off]);
-  }
+  st.camera_snapshot_url      = std::string(f[28]);
+  st.cameras_summary          = std::string(f[29]);
+  st.doorbell_talk_state      = std::string(f[30]);
+  st.intercom_targets_summary = std::string(f[31]);
+  // f[32] reserved (retired custom_bindings_summary)
+  st.alert_id                 = v3_parse_int(f[33], st.alert_id);
+  st.alert_title              = std::string(f[34]);
+  st.alert_message            = std::string(f[35]);
+  st.alert_priority           = std::string(f[36]);
+  st.alert_duration           = v3_parse_int(f[37], 10);
+  st.alert_chime              = v3_parse_bool(f[38]);
+  st.alert_camera_url         = std::string(f[39]);
   return true;
 }
 

@@ -1,20 +1,9 @@
 # ==============================================================================
-# Latter Core Module: Headless Area Control & Outbound Binding Helper (modules/area_control.yaml)
-# Provides outbound action scripts for triggering bindings and area actions
+# Latter Core Module: Headless Area Control Helper (modules/area_control.yaml)
+# Provides outbound action script for triggering area actions
 # ==============================================================================
 
 script:
-  - id: trigger_latter_binding
-    mode: queued
-    parameters:
-      slot_id: string
-    then:
-      - homeassistant.action:
-          action: latter.trigger_binding
-          data:
-            target_device: "${name}"
-            slot: !lambda 'return slot_id;'
-
   - id: execute_latter_area_action
     mode: queued
     parameters:

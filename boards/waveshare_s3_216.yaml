@@ -196,6 +196,7 @@ binary_sensor:
       inverted: true
     name: "Boot Button"
     id: boot_button
+    entity_category: diagnostic
 
 display:
   - platform: mipi_spi

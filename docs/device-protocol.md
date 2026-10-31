@@ -68,33 +68,23 @@ Publish a template text sensor named **`System: Hardware Manifest`**, which beco
 
 Latter pushes paginated lists through these: music library pages, area pickers, calendar pages, lyrics, and area entity cards. `set_area_slots` is the same as `set_browse_slots` plus a slider level per slot. If a device has only `set_browse_slots`, Latter uses it for everything and leaves out levels.
 
-Latter inspects the action's schema to decide what to send:
-
-**Positional form.** Used when the action declares `s<N>_name` fields:
+Both actions declare the 5-variable Protocol v3 packed schema:
 
 | Variable | Type | Notes |
 | :--- | :--- | :--- |
+| `contract` | int | Always `3` for Protocol v3 |
 | `mode` | string | Which list this is. See below. |
-| `page`, `total_pages` | int | |
-| `has_prev`, `has_next` | bool | |
-| `s<N>_name` | string | Up to 64 characters |
-| `s<N>_id` | string | Up to 255 characters. Pass it back in outbound calls. |
-| `s<N>_type` | string | Up to 32 characters |
-| `s<N>_active` | bool | For example, the speaker that's currently playing |
-| `s<N>_level` | int | `set_area_slots` only. 0–100, or −1 for entities without a slider. |
+| `page` | int | 1-based page number |
+| `total_pages` | int | Total number of pages |
+| `slots` | string | Packed slot records separated by `\x1e`, with fields separated by `\x1f` |
 
-- **Slots:** declare 1 to 20. Latter counts the `s<N>_name` fields and sizes each page to match. The reference firmware declares 5.
-- **Empty slots** are sent as blank strings.
-
-**Packed form.** Used when the action declares a `slots` string variable. Latter sends `contract: 3`, `mode`, `page`, `total`, and `slots`. In `slots`, records are separated by `\x1e` and fields by `\x1f`:
+In `slots`, records are separated by `\x1e` and fields by `\x1f`:
 
 ```text
 name \x1f id \x1f type \x1f active(0|1) \x1f level(-1..100) \x1e name \x1f id ...
 ```
 
-The reference firmware declares both forms. It reads the packed `slots` when `contract >= 3`, and the positional fields otherwise. The parser is `latter_ui::parse_v3_slots_payload()` in [`ui_core.h`](../include/ui_core.h).
-
-<!-- TODO(sean): verify the packed path end-to-end. HA's ESPHome service schema marks every declared variable as Required. A call carrying only contract/mode/page/total/slots, where `total` is not a declared variable, may be rejected. -->
+The parser is `latter_ui::parse_v3_slots_payload()` in [`ui_core.h`](../include/ui_core.h).
 
 **`mode` values the reference firmware routes on:**
 
@@ -138,7 +128,6 @@ Subscribe with `platform: homeassistant`. Attribute names are listed in the [ent
 | `sensor.<slug>_calendar_agenda` state | `LABEL\|summary;…`, up to 5 entries. `LABEL` is one of `TODAY`, `TOM`, a weekday (`FRI`), or a date (`NOV 08`). |
 | `remote_config` → `slots_summary` | `N:Name:remote_entity:media_player_entity:state;…`, up to 10 entries. `NONE` if there are none. |
 | `area_context` → `cameras_summary` | `entity_id\|Name\|signed_snapshot_url;…`, up to 10 entries. `NONE` if there are none. |
-| `area_context` → `custom_bindings_summary` | `slot\|Name\|action;…`, up to 30 entries. `NONE` if there are none. |
 | `area_context` → `intercom_targets_summary` | `target\|Label;…`, up to 10 entries. The first is always `all\|Call All Areas`. Other entries are device slugs or `sip:` URIs. |
 | `area_context` → `available_domains`, `dock_apps` | Comma-separated lists |
 | `area_context` → `alert_id` | Integer that increments on every notification |
@@ -171,7 +160,6 @@ The device calls `latter.*` services with `homeassistant.action`. Always pass `t
 | `latter.media_command`, `latter.media_volume` | Transport and volume |
 | `latter.set_active_speaker` | Speaker picker, with optional queue transfer |
 | `latter.remote_action` | Remote keys |
-| `latter.trigger_binding` | Macro buttons |
 | `latter.calendar_fetch`, `latter.calendar_create_event` | Calendar page and quick-add |
 | `latter.intercom_broadcast`, `latter.doorbell_intercom` | Intercom and doorbell |
 | `latter.save_custom_color` | Color picker |

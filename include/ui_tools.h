@@ -191,11 +191,6 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     it.line(ix + 10, iy, ix + 8, iy + 5, col_white);
     it.line(ix + 11, iy - 8, ix + 14, iy, theme_secondary);
     it.line(ix + 14, iy, ix + 11, iy + 8, theme_secondary);
-  } else if (app_id == 11) {
-    // 11. Macros (Quick Actions): Sculpted High-Voltage Lightning Bolt inside 2px Badge Ring
-    it.circle(ix, iy, 14, theme_secondary);
-    it.filled_triangle(ix + 2, iy - 10, ix - 7, iy + 1, ix + 1, iy + 1, col_white);
-    it.filled_triangle(ix - 1, iy - 1, ix + 7, iy - 1, ix - 2, iy + 10, col_white);
   } else if (app_id == 12) {
     // 12. Camera (Doorbell / Security Peephole): Sculpted Camera Body, Top Prism & Dual-Ring Lens
     it.filled_rectangle(ix - 13, iy - 8, 26, 19, col_white);
@@ -260,8 +255,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
         render_tool_launcher_card(it, col_right_x, y1, 10, "Intercom",  font_small, theme_secondary, col_white);
       }
       if (y2 >= min_vis_y && y2 <= max_vis_y) {
-        render_tool_launcher_card(it, col_left_x,  y2, 11, "Macros",    font_small, theme_secondary, col_white);
-        render_tool_launcher_card(it, col_right_x, y2, 12, "Camera",    font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_left_x,  y2, 12, "Camera",    font_small, theme_secondary, col_white);
       }
     }
 #else
@@ -281,14 +275,11 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
     } else {
       if (y0 >= min_vis_y && y0 <= max_vis_y) {
         render_tool_launcher_card(it, col_left_x,  y0, 10, "Intercom",  font_small, theme_secondary, col_white);
-        render_tool_launcher_card(it, col_right_x, y0, 11, "Macros",    font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y0, 12, "Camera",    font_small, theme_secondary, col_white);
       }
       if (y1 >= min_vis_y && y1 <= max_vis_y) {
-        render_tool_launcher_card(it, col_left_x,  y1, 12, "Camera",    font_small, theme_secondary, col_white);
-        render_tool_launcher_card(it, col_right_x, y1, 4,  "Dice Roll", font_small, theme_secondary, col_white);
-      }
-      if (y2 >= min_vis_y && y2 <= max_vis_y) {
-        render_tool_launcher_card(it, col_left_x,  y2, 8,  "Coin Flip", font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_left_x,  y1, 4,  "Dice Roll", font_small, theme_secondary, col_white);
+        render_tool_launcher_card(it, col_right_x, y1, 8,  "Coin Flip", font_small, theme_secondary, col_white);
       }
     }
 #endif
@@ -2408,103 +2399,6 @@ inline void render_tool_intercom(
     }
   }
   (void)col_slate;
-  render_back_button(it, cx, font_small, 426, "< Back");
-}
-
-static constexpr int MAX_MACRO_ITEMS = 30;
-
-inline int &macro_browse_page() {
-  static int pg = 0;
-  return pg;
-}
-
-inline int parse_custom_bindings_list(
-    const std::string &raw,
-    std::string out_slots[MAX_MACRO_ITEMS],
-    std::string out_names[MAX_MACRO_ITEMS],
-    std::string out_actions[MAX_MACRO_ITEMS]) {
-  if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
-    return 0;
-  }
-  size_t pos = 0;
-  int idx = 0;
-  while (pos < raw.size() && idx < MAX_MACRO_ITEMS) {
-    size_t semi = raw.find(';', pos);
-    std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
-    pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
-    if (tok.empty()) continue;
-    size_t p1 = tok.find('|');
-    if (p1 == std::string::npos) continue;
-    size_t p2 = tok.find('|', p1 + 1);
-    std::string s_id = tok.substr(0, p1);
-    std::string s_nm = (p2 == std::string::npos) ? tok.substr(p1 + 1) : tok.substr(p1 + 1, p2 - p1 - 1);
-    std::string s_ac = (p2 == std::string::npos) ? "toggle" : tok.substr(p2 + 1);
-    if (!s_id.empty()) {
-      out_slots[idx] = s_id;
-      out_names[idx] = s_nm.empty() ? s_id : s_nm;
-      out_actions[idx] = s_ac.empty() ? "toggle" : s_ac;
-      idx++;
-    }
-  }
-  return idx;
-}
-
-template<typename DisplayT, typename FontSmallT>
-inline void render_tool_macros(
-    DisplayT &it, int cx, uint32_t now_ms,
-    const std::string &bindings_summary,
-    const std::string &feedback_str, uint32_t feedback_ms,
-    FontSmallT *font_small,
-    esphome::Color theme_primary, esphome::Color theme_secondary,
-    esphome::Color col_white, esphome::Color col_slate) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  std::string slots[MAX_MACRO_ITEMS], names[MAX_MACRO_ITEMS], acts[MAX_MACRO_ITEMS];
-  int total_items = parse_custom_bindings_list(bindings_summary, slots, names, acts);
-  int total_pages = std::max(1, (total_items + 4) / 5);
-  if (macro_browse_page() < 0 || macro_browse_page() >= total_pages) {
-    macro_browse_page() = 0;
-  }
-  int cur_page = macro_browse_page();
-
-  const bool show_fb = (!feedback_str.empty() && (now_ms - feedback_ms < 2200U));
-  if (show_fb) {
-    std::string fit_fb = fit_text_to_width_font(feedback_str, scale_x(280), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
-  } else if (total_pages > 1) {
-    char hdr_buf[32];
-    snprintf(hdr_buf, sizeof(hdr_buf), "MACROS  %d/%d", cur_page + 1, total_pages);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
-  } else {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MACROS");
-  }
-
-  const Color card_bg(22, 27, 36);
-  const Color card_brd(52, 62, 78);
-
-  if (total_items == 0) {
-    render_modern_card(it, cx, scale_y(222), 304, 54, 14, Color(16, 20, 27), Color(44, 52, 66),
-                       "Pin entities in Latter Studio", col_slate, font_small);
-  } else {
-    int start_idx = cur_page * 5;
-    int vis_count = std::min(5, total_items - start_idx);
-    for (int i = 0; i < vis_count; i++) {
-      int y_mid = layout().slot5_y(i);
-      int item_idx = start_idx + i;
-      const int m_left = layout().list_card_left;
-      render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_triangle(m_left + 16, y_mid - 7, m_left + 9, y_mid + 1, m_left + 15, y_mid + 1, theme_primary);
-      it.filled_triangle(m_left + 13, y_mid - 1, m_left + 20, y_mid - 1, m_left + 12, y_mid + 7, theme_secondary);
-      std::string fit_lbl = fit_text_to_width_font(names[item_idx], layout().list_card_w - 46, font_small);
-      it.print(m_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_lbl.c_str());
-    }
-    if (total_pages > 1) {
-      render_vertical_page_pips(it, cur_page > 0, cur_page + 1 < total_pages,
-                                Color(0, 0, 0), theme_secondary, col_slate);
-    }
-  }
-
   render_back_button(it, cx, font_small, 426, "< Back");
 }
 

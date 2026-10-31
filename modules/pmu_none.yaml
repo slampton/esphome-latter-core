@@ -24,6 +24,7 @@ sensor:
     id: batt_level
     unit_of_measurement: "%"
     device_class: battery
+    entity_category: diagnostic
     accuracy_decimals: 0
     update_interval: 60s
     lambda: 'return 100.0f;'
@@ -33,6 +34,7 @@ sensor:
     id: batt_voltage
     unit_of_measurement: "V"
     device_class: voltage
+    entity_category: diagnostic
     accuracy_decimals: 2
     update_interval: 120s
     lambda: 'return 5.00f;'

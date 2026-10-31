@@ -2028,31 +2028,6 @@ script:
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
-              } else if (id(tools_subpage) == 11) {
-                if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
-                    id(tools_subpage) = 0;
-                    latter_ui::schedule_disp_update(&id(disp1));
-                  }
-                  return;
-                }
-                std::string m_slots[latter_ui::MAX_MACRO_ITEMS], m_names[latter_ui::MAX_MACRO_ITEMS], m_acts[latter_ui::MAX_MACRO_ITEMS];
-                int m_total = latter_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
-                int m_pages = std::max(1, (m_total + 4) / 5);
-                if (m_pages > 1 && latter_ui::is_right_chevron_zone(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    int delta = (touch.y < 220) ? -1 : 1;
-                    int next_pg = std::max(0, std::min(m_pages - 1, latter_ui::macro_browse_page() + delta));
-                    if (next_pg != latter_ui::macro_browse_page()) {
-                      last_tools_tap = now_tools;
-                      latter_ui::macro_browse_page() = next_pg;
-                      latter_ui::schedule_disp_update(&id(disp1));
-                    }
-                  }
-                  return;
-                }
-                return;
               } else if (id(tools_subpage) == 12) {
                 if (latter_ui::is_back_button(touch)) {
                   if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
@@ -2473,7 +2448,7 @@ script:
               }
             }
 
-            // 8. TOOLS SUITE (PAGE 8) LAUNCHER (subpage 0), CALENDAR (subpage 9) & MACROS (subpage 11) VERTICAL SWIPE
+            // 8. TOOLS SUITE (PAGE 8) LAUNCHER (subpage 0) & CALENDAR (subpage 9) VERTICAL SWIPE
             if (id(gui_page) == 8 && !id(menu_scroll_active) && gest.start_y < latter_ui::scale_y(404)) {
               if (id(tools_subpage) == 0 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
@@ -2511,21 +2486,6 @@ script:
                   id(camera_snapshot_art).release();
                   id(fetch_on_demand_camera).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
-                }
-                return;
-              } else if (id(tools_subpage) == 11 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
-                std::string m_slots[latter_ui::MAX_MACRO_ITEMS], m_names[latter_ui::MAX_MACRO_ITEMS], m_acts[latter_ui::MAX_MACRO_ITEMS];
-                int m_total = latter_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
-                int m_pages = std::max(1, (m_total + 4) / 5);
-                if (m_pages > 1) {
-                  gest.swipe_committed = true;
-                  gest.last_swipe_ms = now_u;
-                  int delta = (dy < 0) ? 1 : -1;
-                  int next_pg = std::max(0, std::min(m_pages - 1, latter_ui::macro_browse_page() + delta));
-                  if (next_pg != latter_ui::macro_browse_page()) {
-                    latter_ui::macro_browse_page() = next_pg;
-                    latter_ui::schedule_disp_update(&id(disp1));
-                  }
                 }
                 return;
               }
@@ -3341,16 +3301,24 @@ script:
                           id(area_action_feedback) = clean_lbl + ": " + to_string(pct) + "%";
                         } else {
                           s_act = !s_act;
-                          id(area_target_action) = "toggle";
                           id(area_target_level) = s_act ? 100 : 0;
-                          if (s_type == "scene" || s_type == "script") {
+                          if (s_type == "lock") {
+                            id(area_target_action) = s_act ? "lock" : "unlock";
+                            id(area_action_feedback) = clean_lbl + (s_act ? ": Locked" : ": Unlocked");
+                          } else if (s_type == "alarm_control_panel") {
+                            id(area_target_action) = s_act ? "arm_home" : "disarm";
+                            id(area_action_feedback) = clean_lbl + (s_act ? ": Armed Home" : ": Disarmed");
+                          } else if (s_type == "scene" || s_type == "script") {
                             s_act = true;
+                            id(area_target_action) = "toggle";
                             id(area_action_feedback) = "Activated: " + clean_lbl;
                           } else if (s_type == "cover") {
                             s_lvl = s_act ? 100 : 0;
+                            id(area_target_action) = "toggle";
                             id(area_action_feedback) = clean_lbl + (s_act ? ": Open" : ": Closed");
                           } else {
                             if (s_act && s_lvl <= 0) s_lvl = 100;
+                            id(area_target_action) = "toggle";
                             id(area_action_feedback) = clean_lbl + (s_act ? ": On" : ": Off");
                           }
                         }
@@ -3474,7 +3442,7 @@ script:
                         static constexpr int P0_MAP[3][2] = {{1, 2}, {3, 7}, {5, 6}};
                         target_subpage = P0_MAP[row][col];
                       } else {
-                        static constexpr int P1_MAP[3][2] = {{4, 8}, {9, 10}, {11, 12}};
+                        static constexpr int P1_MAP[3][2] = {{4, 8}, {9, 10}, {12, 0}};
                         target_subpage = P1_MAP[row][col];
                       }
                       #else
@@ -3482,7 +3450,7 @@ script:
                         static constexpr int P0_MAP[3][2] = {{1, 2}, {3, 5}, {6, 9}};
                         target_subpage = P0_MAP[row][col];
                       } else {
-                        static constexpr int P1_MAP[3][2] = {{10, 11}, {12, 4}, {8, 0}};
+                        static constexpr int P1_MAP[3][2] = {{10, 12}, {4, 8}, {0, 0}};
                         target_subpage = P1_MAP[row][col];
                       }
                       #endif
@@ -3497,8 +3465,6 @@ script:
                           latter_ui::cal_quick_add_open() = false;
                           id(cal_browse_page) = 1;
                           id(fetch_calendar_browse).execute();
-                        } else if (id(tools_subpage) == 11) {
-                          latter_ui::macro_browse_page() = 0;
                         } else if (id(tools_subpage) == 12) {
                           id(fetch_on_demand_camera).execute();
                         }
@@ -3673,21 +3639,6 @@ script:
                 } else {
                   id(fetch_on_demand_camera).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
-                }
-              } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 11 &&
-                         gest.max_travel < 30 && gest.last_y >= latter_ui::scale_y(80) && gest.last_y < latter_ui::scale_y(404)) {
-                int slot_idx = latter_ui::get_5slot_index(tp, latter_ui::SCREEN_CX - 145, latter_ui::SCREEN_CX + 145);
-                if (slot_idx >= 0 && slot_idx <= 4) {
-                  std::string m_slots[latter_ui::MAX_MACRO_ITEMS], m_names[latter_ui::MAX_MACRO_ITEMS], m_acts[latter_ui::MAX_MACRO_ITEMS];
-                  int m_total = latter_ui::parse_custom_bindings_list(id(ha_latter_custom_bindings_summary).state, m_slots, m_names, m_acts);
-                  int item_idx = latter_ui::macro_browse_page() * 5 + slot_idx;
-                  if (item_idx >= 0 && item_idx < m_total) {
-                    id(macro_target_slot) = m_slots[item_idx];
-                    id(macro_feedback_str) = std::string("Triggered: ") + m_names[item_idx];
-                    id(macro_feedback_ms) = now_rel;
-                    id(trigger_latter_macro).execute();
-                    latter_ui::schedule_disp_update(&id(disp1));
-                  }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 9 &&
                          latter_ui::cal_detail_mode() == 0 && !latter_ui::cal_quick_add_open() &&

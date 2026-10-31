@@ -209,6 +209,7 @@ binary_sensor:
       ignore_strapping_warning: true
     name: "Boot Button"
     id: boot_button
+    entity_category: diagnostic
 
 
 # 1.75" 466x466 Circular AMOLED Display (CO5300 over 80MHz Quad-SPI)

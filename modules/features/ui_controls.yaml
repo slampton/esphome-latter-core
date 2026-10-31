@@ -537,6 +537,7 @@ button:
   - platform: template
     name: "Actions: Trigger Voice Assistant"
     id: trigger_va_button
+    entity_category: config
     on_press:
       - script.execute: toggle_voice_assistant
 
@@ -544,6 +545,7 @@ button:
     name: "Actions: Find My Device"
     id: find_my_button
     icon: "mdi:radar"
+    entity_category: config
     on_press:
       - lambda: |-
           if (!id(find_my_active)) {

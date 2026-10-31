@@ -644,12 +644,6 @@ display:
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_white), id(col_slate),
               id(ha_latter_intercom_targets_summary).state);
-        } else if (id(tools_subpage) == 11) {
-          latter_ui::render_tool_macros(
-              it, cx, millis(), id(ha_latter_custom_bindings_summary).state,
-              id(macro_feedback_str), id(macro_feedback_ms),
-              id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_white), id(col_slate));
         } else if (id(tools_subpage) == 12) {
           latter_ui::render_tool_camera(
               it, cx, cy, id(camera_snapshot_art), id(ha_latter_camera_snapshot_url).state,

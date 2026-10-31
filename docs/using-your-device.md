@@ -20,7 +20,7 @@
 | **Whole-Home Hub** | Tabs for Alarm, Thermostat, Garage & Locks, and Vacuum |
 | **Remote** | D-pad, Home, Back, volume, and a device list with master power. Up to 10 remotes. |
 | **Sky & Weather** | Current conditions, 5-day forecast, sun, and moon. Animated effects: clouds, fog, 3-layer rain, snow, storms with lightning, and the occasional meteor at night. |
-| **Tools** | Timers (3), alarms (3, with daily, weekday, weekend, or one-time repeats and a 5-minute snooze), stopwatch, calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, camera (carousel, live snapshot, doorbell call), macros, dice, coin flip, flashlight, and a level (IMU boards only) |
+| **Tools** | Timers (3), alarms (3, with daily, weekday, weekend, or one-time repeats and a 5-minute snooze), stopwatch, calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, camera (carousel, live snapshot, doorbell call), dice, coin flip, flashlight, and a level (IMU boards only) |
 | **Games** | Marbles, Archery, Breakout, Chomp, 2048, Memory Match. On IMU boards the first four are tilt-controlled, with touch-drag as a fallback. On boards without an IMU, touch steering is always used. |
 | **Settings** | Device status, sleep and wake, display, audio, voice, and firmware update |
 

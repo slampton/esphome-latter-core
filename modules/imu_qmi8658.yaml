@@ -47,6 +47,7 @@ sensor:
     name: "IMU Temperature"
     id: imu_temp
     entity_category: diagnostic
+    disabled_by_default: true
     filters:
       - throttle: 180s
       - delta: 1.5

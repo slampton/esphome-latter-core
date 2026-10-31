@@ -216,6 +216,7 @@ sensor:
   - platform: wifi_signal
     name: "Wi-Fi Signal"
     id: latter_wifi_signal
+    entity_category: diagnostic
     update_interval: 60s
 
 
@@ -617,12 +618,6 @@ text_sensor:
     internal: true
 
   - platform: homeassistant
-    id: ha_latter_custom_bindings_summary
-    entity_id: ${area_context_sensor}
-    attribute: custom_bindings_summary
-    internal: true
-
-  - platform: homeassistant
     id: ha_latter_wallpaper_url
     entity_id: ${area_context_sensor}
     attribute: wallpaper_url
@@ -899,6 +894,7 @@ text_sensor:
     type: artist
     name: "Now Playing Artist"
     id: track_artist
+    entity_category: diagnostic
     on_value:
       then:
         - lambda: |-
@@ -923,6 +919,7 @@ text_sensor:
     type: title
     name: "Now Playing Title"
     id: track_title
+    entity_category: diagnostic
     on_value:
       then:
         - lambda: |-
@@ -950,6 +947,7 @@ text_sensor:
     type: album
     name: "Now Playing Album"
     id: track_album
+    entity_category: diagnostic
     on_value:
       then:
         - lambda: |-

@@ -132,14 +132,28 @@ script:
               id(active_game) = (f_idx % 6) + 1;
             } else if (id(gui_page) == 6 && id(area_subpage) == 0) {
               const int slot = f_idx % 7;
-              if (slot == 0 && !id(area_slot_1_id).empty()) { id(area_target_entity_id) = id(area_slot_1_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
-              else if (slot == 1 && !id(area_slot_2_id).empty()) { id(area_target_entity_id) = id(area_slot_2_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
-              else if (slot == 2 && !id(area_slot_3_id).empty()) { id(area_target_entity_id) = id(area_slot_3_id); id(area_target_action) = "toggle"; id(execute_area_action).execute(); }
+              auto resolve_slot_action = [](const std::string &s_type, bool &s_act) -> const char * {
+                s_act = !s_act;
+                if (s_type == "lock") return s_act ? "lock" : "unlock";
+                if (s_type == "alarm_control_panel") return s_act ? "arm_home" : "disarm";
+                return "toggle";
+              };
+              if (slot == 0 && !id(area_slot_1_id).empty()) { id(area_target_entity_id) = id(area_slot_1_id); id(area_target_action) = resolve_slot_action(id(area_slot_1_type), id(area_slot_1_active)); id(execute_area_action).execute(); }
+              else if (slot == 1 && !id(area_slot_2_id).empty()) { id(area_target_entity_id) = id(area_slot_2_id); id(area_target_action) = resolve_slot_action(id(area_slot_2_type), id(area_slot_2_active)); id(execute_area_action).execute(); }
+              else if (slot == 2 && !id(area_slot_3_id).empty()) { id(area_target_entity_id) = id(area_slot_3_id); id(area_target_action) = resolve_slot_action(id(area_slot_3_type), id(area_slot_3_active)); id(execute_area_action).execute(); }
             } else if (id(gui_page) == 7) {
               const int key_map[8] = {9, 0, 2, 4, 3, 1, 5, 6};
               id(remote_send_key).execute(key_map[f_idx % 8], id(active_remote_slot));
             } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
-              id(tools_subpage) = (id(tools_menu_page) * 6) + (f_idx % 6) + 1;
+              #if LATTER_HAS_IMU
+              static constexpr int kToolsP0[6] = {1, 2, 3, 7, 5, 6};
+              static constexpr int kToolsP1[5] = {4, 8, 9, 10, 12};
+              id(tools_subpage) = (id(tools_menu_page) == 0) ? kToolsP0[f_idx % 6] : kToolsP1[f_idx % 5];
+              #else
+              static constexpr int kToolsP0[6] = {1, 2, 3, 5, 6, 9};
+              static constexpr int kToolsP1[4] = {10, 12, 4, 8};
+              id(tools_subpage) = (id(tools_menu_page) == 0) ? kToolsP0[f_idx % 6] : kToolsP1[f_idx % 4];
+              #endif
               if (id(tools_subpage) == 12) id(fetch_on_demand_camera).execute();
             }
             id(sync_wake_word_state).execute();
@@ -353,15 +367,6 @@ script:
           data:
             target_device: "${name}"
             message: !lambda 'return id(intercom_message_str).c_str();'
-
-  - id: trigger_latter_macro
-    mode: restart
-    then:
-      - homeassistant.action:
-          action: latter.trigger_binding
-          data:
-            target_device: "${name}"
-            slot: !lambda 'return id(macro_target_slot).c_str();'
 
   - id: fetch_on_demand_camera
     mode: restart

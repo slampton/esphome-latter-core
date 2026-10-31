@@ -140,7 +140,7 @@ struct UiLayout {
   int list_card_w = (SCREEN_W < 380) ? (SCREEN_W - 88) : ((SCREEN_W > 520) ? ((SCREEN_W * 276) / 466) : 276);
   int list_card_left = SCREEN_CX - (list_card_w / 2);
 
-  // 1. Adaptive 5-Slot Vertical List Geometry (System, Music, Area Picker, Calendar, Intercom, Macros)
+  // 1. Adaptive 5-Slot Vertical List Geometry (System, Music, Area Picker, Calendar, Intercom)
   int slot5_stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
   int slot5_h      = (SCREEN_H > 520) ? ((SCREEN_H * 44) / 466) : 44;
   int slot5_cy     = (SCREEN_H > 520) ? SCREEN_CY : 236;

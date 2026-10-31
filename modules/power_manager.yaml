@@ -35,6 +35,7 @@ binary_sensor:
     name: "Pickup Detected"
     id: pickup_detected
     device_class: motion
+    entity_category: diagnostic
     lambda: |-
       #if !LATTER_HAS_IMU
       return false;

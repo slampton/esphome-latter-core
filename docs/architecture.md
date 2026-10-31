@@ -59,7 +59,7 @@ A board file defines:
 | `pmu_axp2101.yaml` / `pmu_none.yaml` | Battery, USB, and crown-button handling, or stubs for mains-powered boards |
 | `imu_qmi8658.yaml` / `imu_none.yaml` | Accelerometer, tilt, and shake detection, or stubs that return constants |
 | `base.yaml` | Minimal identity, time sync, `latter_ping`, and a static hardware manifest, for headless nodes |
-| `area_control.yaml` | Area subscription plus binding and area-action scripts, for headless nodes |
+| `area_control.yaml` | Area subscription plus area-action scripts, for headless nodes |
 | `display_ui.yaml` | Convenience umbrella that bundles `latter_client.yaml` and the universal GUI. Used by `examples/custom_display_template.yaml`. |
 
 ### `guis/universal/gui.yaml`: the GUI

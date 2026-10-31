@@ -43,7 +43,7 @@ All five run the same firmware and GUI. The only per-board code is a hardware ab
 | **Whole-Home Hub** | Alarm panel, thermostat, garage and locks, vacuum |
 | **Remote** | Up to 10 TVs, streaming boxes, or AV receivers; D-pad, volume, power |
 | **Sky & Weather** | Animated rain, snow, fog, and storm effects; 5-day forecast; sun position; moon phase |
-| **Tools** | Timers, alarms, stopwatch, calculator, calendar with event maps, intercom, camera, macros, and a few small extras (12 on IMU boards) |
+| **Tools** | Timers, alarms, stopwatch, calculator, calendar with event maps, intercom, camera, and a few small extras (11 on IMU boards) |
 | **Games** | Marbles, Archery, Breakout, Chomp, 2048, Memory Match. On boards with an IMU, the first four use tilt control. |
 | **Voice** | On-device wake word (Okay Nabu, Hey Jarvis, Hey Mycroft, Alexa, Hey Luna) with Home Assistant Assist |
 

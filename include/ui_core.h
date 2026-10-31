@@ -133,7 +133,6 @@ namespace ToolsSubpage {
   static constexpr int COIN_FLIP  = 8;
   static constexpr int CALENDAR   = 9;
   static constexpr int INTERCOM   = 10;
-  static constexpr int MACROS     = 11;
   static constexpr int CAMERAS    = 12;
 }
 

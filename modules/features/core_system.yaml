@@ -141,65 +141,40 @@ api:
     - action: set_browse_slots
       variables:
         contract: int
-        slots: string
         mode: string
         page: int
         total_pages: int
-        has_prev: bool
-        has_next: bool
-        s1_name: string
-        s1_id: string
-        s1_type: string
-        s1_active: bool
-        s2_name: string
-        s2_id: string
-        s2_type: string
-        s2_active: bool
-        s3_name: string
-        s3_id: string
-        s3_type: string
-        s3_active: bool
-        s4_name: string
-        s4_id: string
-        s4_type: string
-        s4_active: bool
-        s5_name: string
-        s5_id: string
-        s5_type: string
-        s5_active: bool
+        slots: string
       then:
         - lambda: |-
-            (void)has_prev; (void)has_next;
+            (void)contract;
             latter_ui::BrowseSlotItem v3_items[5];
-            bool use_v3 = (contract >= 3 && !slots.empty());
-            if (use_v3) {
-              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
-            }
-            const std::string &n1 = use_v3 ? v3_items[0].name : s1_name;
-            const std::string &i1 = use_v3 ? v3_items[0].id   : s1_id;
-            const std::string &t1 = use_v3 ? v3_items[0].type : s1_type;
-            const bool a1         = use_v3 ? v3_items[0].active : s1_active;
-            const int l1          = use_v3 ? v3_items[0].level  : -1;
-            const std::string &n2 = use_v3 ? v3_items[1].name : s2_name;
-            const std::string &i2 = use_v3 ? v3_items[1].id   : s2_id;
-            const std::string &t2 = use_v3 ? v3_items[1].type : s2_type;
-            const bool a2         = use_v3 ? v3_items[1].active : s2_active;
-            const int l2          = use_v3 ? v3_items[1].level  : -1;
-            const std::string &n3 = use_v3 ? v3_items[2].name : s3_name;
-            const std::string &i3 = use_v3 ? v3_items[2].id   : s3_id;
-            const std::string &t3 = use_v3 ? v3_items[2].type : s3_type;
-            const bool a3         = use_v3 ? v3_items[2].active : s3_active;
-            const int l3          = use_v3 ? v3_items[2].level  : -1;
-            const std::string &n4 = use_v3 ? v3_items[3].name : s4_name;
-            const std::string &i4 = use_v3 ? v3_items[3].id   : s4_id;
-            const std::string &t4 = use_v3 ? v3_items[3].type : s4_type;
-            const bool a4         = use_v3 ? v3_items[3].active : s4_active;
-            const int l4          = use_v3 ? v3_items[3].level  : -1;
-            const std::string &n5 = use_v3 ? v3_items[4].name : s5_name;
-            const std::string &i5 = use_v3 ? v3_items[4].id   : s5_id;
-            const std::string &t5 = use_v3 ? v3_items[4].type : s5_type;
-            const bool a5         = use_v3 ? v3_items[4].active : s5_active;
-            const int l5          = use_v3 ? v3_items[4].level  : -1;
+            latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
+            const std::string &n1 = v3_items[0].name;
+            const std::string &i1 = v3_items[0].id;
+            const std::string &t1 = v3_items[0].type;
+            const bool a1         = v3_items[0].active;
+            const int l1          = v3_items[0].level;
+            const std::string &n2 = v3_items[1].name;
+            const std::string &i2 = v3_items[1].id;
+            const std::string &t2 = v3_items[1].type;
+            const bool a2         = v3_items[1].active;
+            const int l2          = v3_items[1].level;
+            const std::string &n3 = v3_items[2].name;
+            const std::string &i3 = v3_items[2].id;
+            const std::string &t3 = v3_items[2].type;
+            const bool a3         = v3_items[2].active;
+            const int l3          = v3_items[2].level;
+            const std::string &n4 = v3_items[3].name;
+            const std::string &i4 = v3_items[3].id;
+            const std::string &t4 = v3_items[3].type;
+            const bool a4         = v3_items[3].active;
+            const int l4          = v3_items[3].level;
+            const std::string &n5 = v3_items[4].name;
+            const std::string &i5 = v3_items[4].id;
+            const std::string &t5 = v3_items[4].type;
+            const bool a5         = v3_items[4].active;
+            const int l5          = v3_items[4].level;
 
             if (mode == "area_areas" || mode == "areas") {
               id(area_list_page) = page;
@@ -242,73 +217,43 @@ api:
     - action: set_area_slots
       variables:
         contract: int
-        slots: string
         mode: string
         page: int
         total_pages: int
-        has_prev: bool
-        has_next: bool
-        s1_name: string
-        s1_id: string
-        s1_type: string
-        s1_active: bool
-        s1_level: int
-        s2_name: string
-        s2_id: string
-        s2_type: string
-        s2_active: bool
-        s2_level: int
-        s3_name: string
-        s3_id: string
-        s3_type: string
-        s3_active: bool
-        s3_level: int
-        s4_name: string
-        s4_id: string
-        s4_type: string
-        s4_active: bool
-        s4_level: int
-        s5_name: string
-        s5_id: string
-        s5_type: string
-        s5_active: bool
-        s5_level: int
+        slots: string
       then:
         - lambda: |-
-            (void)has_prev; (void)has_next;
+            (void)contract;
             latter_ui::BrowseSlotItem v3_items[5];
-            bool use_v3 = (contract >= 3 && !slots.empty());
-            if (use_v3) {
-              latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
-            }
+            latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
             id(area_browse_mode) = mode;
             id(area_browse_page) = page;
             id(area_browse_total_pages) = total_pages;
-            id(area_slot_1_name) = use_v3 ? v3_items[0].name : s1_name;
-            id(area_slot_1_id)   = use_v3 ? v3_items[0].id   : s1_id;
-            id(area_slot_1_type) = use_v3 ? v3_items[0].type : s1_type;
-            id(area_slot_1_active) = use_v3 ? v3_items[0].active : s1_active;
-            id(area_slot_1_level)  = use_v3 ? v3_items[0].level  : s1_level;
-            id(area_slot_2_name) = use_v3 ? v3_items[1].name : s2_name;
-            id(area_slot_2_id)   = use_v3 ? v3_items[1].id   : s2_id;
-            id(area_slot_2_type) = use_v3 ? v3_items[1].type : s2_type;
-            id(area_slot_2_active) = use_v3 ? v3_items[1].active : s2_active;
-            id(area_slot_2_level)  = use_v3 ? v3_items[1].level  : s2_level;
-            id(area_slot_3_name) = use_v3 ? v3_items[2].name : s3_name;
-            id(area_slot_3_id)   = use_v3 ? v3_items[2].id   : s3_id;
-            id(area_slot_3_type) = use_v3 ? v3_items[2].type : s3_type;
-            id(area_slot_3_active) = use_v3 ? v3_items[2].active : s3_active;
-            id(area_slot_3_level)  = use_v3 ? v3_items[2].level  : s3_level;
-            id(area_slot_4_name) = use_v3 ? v3_items[3].name : s4_name;
-            id(area_slot_4_id)   = use_v3 ? v3_items[3].id   : s4_id;
-            id(area_slot_4_type) = use_v3 ? v3_items[3].type : s4_type;
-            id(area_slot_4_active) = use_v3 ? v3_items[3].active : s4_active;
-            id(area_slot_4_level)  = use_v3 ? v3_items[3].level  : s4_level;
-            id(area_slot_5_name) = use_v3 ? v3_items[4].name : s5_name;
-            id(area_slot_5_id)   = use_v3 ? v3_items[4].id   : s5_id;
-            id(area_slot_5_type) = use_v3 ? v3_items[4].type : s5_type;
-            id(area_slot_5_active) = use_v3 ? v3_items[4].active : s5_active;
-            id(area_slot_5_level)  = use_v3 ? v3_items[4].level  : s5_level;
+            id(area_slot_1_name) = v3_items[0].name;
+            id(area_slot_1_id)   = v3_items[0].id;
+            id(area_slot_1_type) = v3_items[0].type;
+            id(area_slot_1_active) = v3_items[0].active;
+            id(area_slot_1_level)  = v3_items[0].level;
+            id(area_slot_2_name) = v3_items[1].name;
+            id(area_slot_2_id)   = v3_items[1].id;
+            id(area_slot_2_type) = v3_items[1].type;
+            id(area_slot_2_active) = v3_items[1].active;
+            id(area_slot_2_level)  = v3_items[1].level;
+            id(area_slot_3_name) = v3_items[2].name;
+            id(area_slot_3_id)   = v3_items[2].id;
+            id(area_slot_3_type) = v3_items[2].type;
+            id(area_slot_3_active) = v3_items[2].active;
+            id(area_slot_3_level)  = v3_items[2].level;
+            id(area_slot_4_name) = v3_items[3].name;
+            id(area_slot_4_id)   = v3_items[3].id;
+            id(area_slot_4_type) = v3_items[3].type;
+            id(area_slot_4_active) = v3_items[3].active;
+            id(area_slot_4_level)  = v3_items[3].level;
+            id(area_slot_5_name) = v3_items[4].name;
+            id(area_slot_5_id)   = v3_items[4].id;
+            id(area_slot_5_type) = v3_items[4].type;
+            id(area_slot_5_active) = v3_items[4].active;
+            id(area_slot_5_level)  = v3_items[4].level;
             latter_ui::schedule_disp_update(&id(disp1));
 
     - action: set_timer
@@ -995,18 +940,6 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
-  - id: macro_target_slot
-    type: std::string
-    restore_value: no
-    initial_value: '"macro_1"'
-  - id: macro_feedback_str
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: macro_feedback_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
   - id: notif_active
     type: bool
     restore_value: no
@@ -1159,7 +1092,7 @@ globals:
   - id: tools_subpage
     type: int
     restore_value: no
-    initial_value: '0' # 0 = Launcher, 1 = Timers, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip, 9 = Calendar, 10 = Intercom, 11 = Macros, 12 = Cameras
+    initial_value: '0' # 0 = Launcher, 1 = Timers, 2 = Alarms, 3 = Stopwatch, 4 = Dice Roll, 5 = Flashlight, 6 = Calculator, 7 = Level, 8 = Coin Flip, 9 = Calendar, 10 = Intercom, 12 = Cameras
   - id: tools_menu_page
     type: int
     restore_value: no

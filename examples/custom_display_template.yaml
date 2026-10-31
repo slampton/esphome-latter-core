@@ -163,12 +163,14 @@ switch:
   - platform: gpio
     name: "Speaker Enable"
     id: speaker_enable
+    entity_category: config
     pin: { number: GPIO46, ignore_strapping_warning: true }
 
 binary_sensor:
   - platform: gpio
     id: boot_button
     name: "Boot Button"
+    entity_category: diagnostic
     pin: { number: GPIO0, mode: INPUT_PULLUP, inverted: true, ignore_strapping_warning: true }
 
 display:
