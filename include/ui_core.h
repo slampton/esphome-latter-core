@@ -1159,13 +1159,11 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
 template<typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
                                  const uint16_t *row_buf) {
-#if defined(LATTER_DSI_IRAM_SAFE)
-  // On ESPHome's MipiDsi driver (ESP32-P4 MIPI-DSI), MipiDsi::draw_pixels_at() bypasses
-  // the software draw buffer (this->buffer_) and pushes directly to the hardware DPI
-  // frontbuffer via esp_lcd_panel_draw_bitmap(), which is then overwritten by the empty
-  // software buffer flush at the end of MipiDsi::update(), causing 1Hz screen flickering.
-  // Plotting runs into the software buffer via draw_pixel_at/horizontal_line ensures the
-  // artwork and HUD composite cleanly into buffer_ before the single atomic DMA2D flush.
+  // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
+  // SPI buffer is big_endian ("[E][display.mipi_spi:220]: Unsupported color depth or bit order"),
+  // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
+  // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
+  // into each driver's software buffer with automatic endianness and RGB/BGR handling.
   int i = 0;
   while (i < span_w) {
     const uint16_t p = row_buf[i];
@@ -1184,10 +1182,6 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
     }
     i += run;
   }
-#else
-  it.draw_pixels_at(start_x, y, span_w, 1, reinterpret_cast<const uint8_t *>(row_buf),
-                    esphome::display::COLOR_ORDER_RGB, esphome::display::COLOR_BITNESS_565, false);
-#endif
 }
 
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
