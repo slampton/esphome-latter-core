@@ -13,6 +13,7 @@ substitutions:
   font_micro_size: "14"
   font_games_size: "38"
   art_resize: "${screen_w}x${screen_h}"
+  sendspin_art_resize: "${art_resize}"
   art_shape: "square"
   default_start_app: "Home"
   default_clock_face: "Minimal Digital"

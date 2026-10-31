@@ -906,6 +906,16 @@ text_sensor:
             if (x != prev_s_artist) {
               prev_s_artist = x;
               if (id(active_speaker_entity) == "${local_player_id}") {
+                if (id(display_power_state) == 0 &&
+                    id(gui_page) == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !id(ha_target_art_url).state.empty() &&
+                    id(ha_target_art_url).state != "none" &&
+                    id(ha_target_art_url).state != "unknown" &&
+                    id(ha_target_art_url).state != "unavailable" &&
+                    id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                  id(fetch_remote_art_debounced).execute();
+                }
                 id(throttled_disp_update).execute();
               }
             }
@@ -923,6 +933,16 @@ text_sensor:
                 latter_ui::music_queue_cleared() = false;
               }
               if (id(active_speaker_entity) == "${local_player_id}") {
+                if (id(display_power_state) == 0 &&
+                    id(gui_page) == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !id(ha_target_art_url).state.empty() &&
+                    id(ha_target_art_url).state != "none" &&
+                    id(ha_target_art_url).state != "unknown" &&
+                    id(ha_target_art_url).state != "unavailable" &&
+                    id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                  id(fetch_remote_art_debounced).execute();
+                }
                 id(throttled_disp_update).execute();
               }
             }
@@ -937,6 +957,16 @@ text_sensor:
             if (x != prev_s_album) {
               prev_s_album = x;
               if (id(active_speaker_entity) == "${local_player_id}") {
+                if (id(display_power_state) == 0 &&
+                    id(gui_page) == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !id(ha_target_art_url).state.empty() &&
+                    id(ha_target_art_url).state != "none" &&
+                    id(ha_target_art_url).state != "unknown" &&
+                    id(ha_target_art_url).state != "unavailable" &&
+                    id(ha_target_art_url).state != id(current_loaded_art_url)) {
+                  id(fetch_remote_art_debounced).execute();
+                }
                 id(throttled_disp_update).execute();
               }
             }

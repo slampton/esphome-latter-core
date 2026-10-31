@@ -6,6 +6,7 @@
 
 substitutions:
   art_resize: "${screen_w}x${screen_h}"
+  sendspin_art_resize: "${art_resize}"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
 
 http_request:
@@ -18,7 +19,7 @@ image:
     id: album_slot
     format: JPEG
     type: RGB565
-    resize: ${art_resize}
+    resize: ${sendspin_art_resize}
     source: album
     current_image:
       id: album_art
