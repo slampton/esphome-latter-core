@@ -68,7 +68,7 @@ inline void render_clock_page(
                                   (clock_face_opt.empty() && clock_face_digital);
 
   if (is_minimal_digital) {
-    // FACE 3: MINIMAL DIGITAL (Default on Mobile, Wrist, Remote & Desk; 3rd face on Pocket Assistant)
+    // FACE 3: MINIMAL DIGITAL (Clean Date + Giant Digital Time + AM/PM & Seconds)
     // Clean Date + Giant Digital Time + AM/PM & Seconds (no bottom progress bar, no 60-tick ring)
 #if LATTER_ROUND_DISPLAY
     it.circle(cx, cy, 230, col_dark_gray);
@@ -337,7 +337,7 @@ inline int collect_home_activities(
     }
   }
 
-  // 5. Upcoming Calendar Event (from sensor.pocket_assistant_calendar_agenda "TODAY 14:30|Dentist;...")
+  // 5. Upcoming Calendar Event (from sensor.<slug>_calendar_agenda "TODAY 14:30|Dentist;...")
   if (!calendar_agenda_raw.empty() && calendar_agenda_raw != "NONE" &&
       calendar_agenda_raw != "unknown" && calendar_agenda_raw != "unavailable" && count < 8) {
     size_t semi = calendar_agenda_raw.find(';');

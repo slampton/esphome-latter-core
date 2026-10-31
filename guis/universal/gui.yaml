@@ -133,9 +133,9 @@ display:
         if (pct > 100) pct = 100;
         if (LATTER_ROUND_DISPLAY) {
           for (int i = 0; i <= pct; i++) {
-            float rad = (static_cast<float>(i) / 100.0f) * 2.0f * PI_F - HALF_PI_F;
+            float rad = (static_cast<float>(i) / 100.0f) * 2.0f * latter_ui::PI_F - latter_ui::HALF_PI_F;
             float s = 0.0f, c = 1.0f;
-            fast_sincos(rad, s, c);
+            latter_ui::fast_sincos(rad, s, c);
             it.line(cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
                     cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
           }
@@ -205,7 +205,7 @@ display:
       // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER (Highest Priority)
       // ==========================================
       if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
-        render_alert_ringing_overlay(
+        latter_ui::render_alert_ringing_overlay(
             it, cx, cy, millis(), id(alarm_ringing), id(alarm_ringing_idx),
             id(alarm1_recurrence), id(alarm2_recurrence), now, id(is_24h_format),
             id(font_time), id(font_date), id(font_small), id(font_micro),
@@ -222,7 +222,7 @@ display:
         uint32_t now_ms = millis();
         bool is_speaking = id(va_tts_received);
         bool is_thinking = (!is_speaking && id(va_status_text) == "Thinking...");
-        render_voice_assistant_overlay(
+        latter_ui::render_voice_assistant_overlay(
             it, cx, cy, now_ms, is_speaking, is_thinking, id(va_vad_active),
             id(va_visual_profile).current_option(), C_WHITE, C_SOLARIS_GOLD);
         return;
@@ -232,7 +232,7 @@ display:
       // GLOBAL OVERLAY: LATTER PUSH NOTIFICATION & CAMERA SNAPSHOT TAKEOVER
       // ==========================================
       if (id(notif_active)) {
-        render_notification_overlay(
+        latter_ui::render_notification_overlay(
             it, cx, cy, millis(),
             id(notif_title), id(notif_message), id(notif_priority),
             id(camera_snapshot_art), id(notif_camera_url), id(current_loaded_camera_url),
@@ -248,7 +248,7 @@ display:
       // ==========================================
       if (id(display_power_state) == 1) {
         it.fill(id(col_bg));
-        render_docked_screensaver(
+        latter_ui::render_docked_screensaver(
             it, cx, cy, millis(), now, id(is_24h_format),
             id(screensaver_style_select).current_option(),
             id(font_time), id(font_small), id(col_slate), id(col_dark_gray));
@@ -261,7 +261,7 @@ display:
       // PAGE 0: WATCH FACE (ANALOG & DIGITAL)
       // ==========================================
       if (id(gui_page) == 0) {
-        render_clock_page(
+        latter_ui::render_clock_page(
             it, cx, cy, now, id(clock_face_digital), id(is_24h_format),
             batt, id(batt_charging).state,
             id(font_time), id(font_date), (latter_ui::SCREEN_W < 380) ? id(font_micro) : id(font_small),
@@ -286,7 +286,7 @@ display:
         std::string eff_w_cond_h = id(ha_weather_condition).state;
         bool eff_show_w_bg = id(home_weather_bg_switch).state ||
                              (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
-        render_home_page(
+        latter_ui::render_home_page(
             it, cx, cy, now_h_ms, id(home_subpage), id(home_activity_idx),
             now, id(is_24h_format), batt, id(batt_charging).state,
             eff_show_w_bg,
@@ -321,7 +321,7 @@ display:
           bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           bool is_playing = latter_ui::is_music_playing_effective(
               is_remote, local_playing, id(ha_target_state).state, now_p2_ms);
-          render_music_now_playing(
+          latter_ui::render_music_now_playing(
               it, cx, cy, now_p2_ms,
               id(music_fullscreen_art_mode).current_option().c_str(),
               id(music_overlay_style).current_option().c_str(),
@@ -338,7 +338,7 @@ display:
               id(font_small), id(font_micro), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_black), id(col_white), id(col_gray), id(col_dark_gray));
         } else {
-          render_music_menus(
+          latter_ui::render_music_menus(
               it, cx, id(music_overlay_mode),
               id(active_speaker_entity), id(active_speaker_name), "${local_player_id}",
               id(selected_category_mode), id(selected_category_title),
@@ -367,7 +367,7 @@ display:
         }
 
       // ==========================================
-      // PAGE 3: GAMES SUITE (LAUNCHER & 4 GAMES)
+      // PAGE 3: GAMES SUITE (LAUNCHER & 6 GAMES)
       // ==========================================
       } else if (id(gui_page) == 3) {
         static int prev_game_state = 0;
@@ -379,14 +379,14 @@ display:
 
         float roll_delta = 0.0f;
         float pitch_delta = 0.0f;
-        compute_3d_game_tilt(
+        latter_ui::compute_3d_game_tilt(
             id(accel_x).state, id(accel_y).state, id(accel_z).state,
             id(imu_roll).state, id(imu_pitch).state,
             game_just_entered && (id(active_game) > 0),
             roll_delta, pitch_delta);
 
         if (id(active_game) == 0) {
-          render_games_launcher(
+          latter_ui::render_games_launcher(
               it, cx, id(game_carousel_idx), id(menu_scroll_active),
               id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
               id(high_score_marbles), id(high_score_archery), id(high_score_breakout),
@@ -398,35 +398,35 @@ display:
               id(col_gold), id(col_cyan), id(col_green),
               id(col_orange), id(col_red), id(col_magenta), id(game_sound_switch).state);
         } else if (id(active_game) == 1) {
-          render_game_marbles(
+          latter_ui::render_game_marbles(
               it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
               id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed), id(high_score_marbles),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_gold), id(col_cyan), id(col_green),
               id(col_red), id(col_orange), id(col_magenta), id(col_slate), id(col_gray), id(col_dark_gray));
         } else if (id(active_game) == 2) {
-          render_game_archery(
+          latter_ui::render_game_archery(
               it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
               id(marble_touch_x), id(game_btn_pressed), id(high_score_archery),
               id(font_date), id(font_small), id(theme_secondary),
               id(col_bg), id(col_white), id(col_black), id(col_gold),
               id(col_cyan), id(col_red), id(col_slate), id(col_dark_gray));
         } else if (id(active_game) == 3) {
-          render_game_breakout(
+          latter_ui::render_game_breakout(
               it, cx, cy, millis(), game_just_entered, roll_delta,
               id(marble_touch_x), id(game_btn_pressed), id(high_score_breakout),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_gold), id(col_cyan),
               id(col_orange), id(col_green), id(col_red), id(col_slate), id(col_dark_gray));
         } else if (id(active_game) == 4) {
-          render_game_chomp(
+          latter_ui::render_game_chomp(
               it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
               id(marble_touch_x), id(game_btn_pressed), id(high_score_chomp),
               id(font_date), id(font_small), id(col_bg), id(col_white),
               id(col_black), id(col_gold), id(col_cyan), id(col_red),
               id(col_green), id(col_magenta), id(col_orange), id(col_dark_gray));
         } else if (id(active_game) == 5) {
-          render_game_2048(
+          latter_ui::render_game_2048(
               it, cx, cy, millis(), game_just_entered,
               id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
@@ -434,7 +434,7 @@ display:
               id(col_green), id(col_orange), id(col_red), id(col_magenta),
               id(col_slate), id(col_dark_gray));
         } else if (id(active_game) == 6) {
-          render_game_memory(
+          latter_ui::render_game_memory(
               it, cx, cy, millis(), game_just_entered,
               id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
@@ -457,7 +457,7 @@ display:
         if (vol_step_pct < 1 || vol_step_pct > 10) vol_step_pct = 5;
         uint32_t free_heap_kb = (uint32_t)(esp_get_free_heap_size() / 1024U);
 
-        render_system_page(
+        latter_ui::render_system_page(
             it, cx, millis(), "${version}",
             id(system_menu_mode), id(system_dashboard_page),
             id(sleep_menu_page), id(display_menu_page),
@@ -506,7 +506,7 @@ display:
         #else
         const Color eff_warm_gold = id(col_warm_gold);
         #endif
-        render_weather_page(
+        latter_ui::render_weather_page(
             it, cx, cy, millis(), id(sky_weather_subpage), now, id(is_24h_format),
             std::string(id(weather_sim_condition).current_option()),
             eff_w_temp, id(ha_weather_high).state, id(ha_weather_low).state,
@@ -526,7 +526,7 @@ display:
       // ==========================================
       } else if (id(gui_page) == 6) {
         const bool is_area_picker = (id(area_subpage) == 1);
-        render_area_control_page(
+        latter_ui::render_area_control_page(
             it, cx, millis(), id(area_subpage), is_area_picker ? "areas" : "entities", id(area_domain_filter),
             id(active_area_name), id(ha_area_temperature).state, id(ha_area_humidity).state,
             id(area_alarm_entity), id(area_alarm_state),
@@ -558,14 +558,14 @@ display:
             id(col_gold), id(col_green), id(col_red),
             id(area_show_all_category_switch).state);
         if (id(area_subpage) > 0) {
-          render_back_button(it, cx, id(font_small), 426, "< Back");
+          latter_ui::render_back_button(it, cx, id(font_small), 426, "< Back");
         }
 
       // ==========================================
       // PAGE 7: UNIVERSAL TV & MEDIA REMOTE CONTROL
       // ==========================================
       } else if (id(gui_page) == 7) {
-        render_tv_remote_page(
+        latter_ui::render_tv_remote_page(
             it, cx, cy, millis(), id(remote_subpage), id(active_remote_slot),
             id(remote_action_feedback), id(remote_feedback_timer),
             id(font_date), id(font_small),
@@ -577,13 +577,13 @@ display:
       // ==========================================
       } else if (id(gui_page) == 8) {
         if (id(tools_subpage) == 0) {
-          render_tools_launcher(
+          latter_ui::render_tools_launcher(
               it, cx, id(tools_menu_page), id(menu_scroll_active),
               id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_black), id(col_white));
         } else if (id(tools_subpage) == 1) {
-          render_tool_timer(
+          latter_ui::render_tool_timer(
               it, cx, cy, id(timer_running), id(timer_paused),
               id(timer_remaining_sec), id(timer_duration_sec),
               id(font_time), id(font_date), id(font_btn_bold), id(font_small),
@@ -591,7 +591,7 @@ display:
               id(col_white), id(col_slate), id(col_dark_gray), id(col_red),
               id(va_timer_name), id(font_chrono_time), id(col_gray));
         } else if (id(tools_subpage) == 2) {
-          render_tool_alarms(
+          latter_ui::render_tool_alarms(
               it, cx, now, id(is_24h_format), id(alarm_edit_idx),
               id(alarm_snooze_until), id(alarm_ringing_idx),
               id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
@@ -601,33 +601,33 @@ display:
               id(theme_primary), id(theme_secondary), id(col_black),
               id(col_white), id(col_gray), id(col_dark_gray), id(col_gold));
         } else if (id(tools_subpage) == 3) {
-          render_tool_stopwatch(
+          latter_ui::render_tool_stopwatch(
               it, cx, cy, millis(), id(stopwatch_running),
               id(stopwatch_start_time), id(stopwatch_elapsed_ms), id(stopwatch_lap_ms),
               id(font_date), id(font_small), id(col_white), id(col_silver),
               id(col_slate), id(col_dark_gray), id(col_red));
         } else if (id(tools_subpage) == 4) {
-          render_tool_dice_roll(
+          latter_ui::render_tool_dice_roll(
               it, cx, millis(), id(font_date), id(font_small),
               id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
         } else if (id(tools_subpage) == 5) {
           it.fill(id(col_white));
         } else if (id(tools_subpage) == 6) {
-          render_tool_calculator(
+          latter_ui::render_tool_calculator(
               it, cx, id(font_date), id(font_btn_bold), id(font_small),
               id(theme_primary), id(col_white), id(col_slate), id(col_dark_gray));
         } else if (id(tools_subpage) == 7) {
-          render_tool_bubble_level(
+          latter_ui::render_tool_bubble_level(
               it, cx, id(accel_x).state, id(accel_y).state, id(accel_z).state,
               id(font_date), id(font_small),
               id(theme_primary), id(theme_secondary), id(col_white),
               id(col_gray), id(col_slate), id(col_dark_gray), id(col_green));
         } else if (id(tools_subpage) == 8) {
-          render_tool_coin_flip(
+          latter_ui::render_tool_coin_flip(
               it, cx, millis(), id(font_date), id(font_small),
               id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
         } else if (id(tools_subpage) == 9) {
-          render_tool_calendar(
+          latter_ui::render_tool_calendar(
               it, cx, id(ha_calendar_agenda_raw).state,
               id(cal_browse_page), id(cal_browse_total_pages),
               id(cal_slot_1_name), id(cal_slot_1_active),
@@ -639,19 +639,19 @@ display:
               id(col_bg), id(col_black), id(col_white), id(col_slate), millis(),
               id(camera_snapshot_art));
         } else if (id(tools_subpage) == 10) {
-          render_tool_intercom(
+          latter_ui::render_tool_intercom(
               it, cx, millis(), id(intercom_feedback_str), id(intercom_feedback_ms),
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_white), id(col_slate),
               id(ha_latter_intercom_targets_summary).state);
         } else if (id(tools_subpage) == 11) {
-          render_tool_macros(
+          latter_ui::render_tool_macros(
               it, cx, millis(), id(ha_latter_custom_bindings_summary).state,
               id(macro_feedback_str), id(macro_feedback_ms),
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_white), id(col_slate));
         } else if (id(tools_subpage) == 12) {
-          render_tool_camera(
+          latter_ui::render_tool_camera(
               it, cx, cy, id(camera_snapshot_art), id(ha_latter_camera_snapshot_url).state,
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_slate),
@@ -662,7 +662,7 @@ display:
         // ==========================================
         // PAGE 9: DEDICATED HOME SECURITY ALARM APP
         // ==========================================
-        render_security_alarm_page(
+        latter_ui::render_security_alarm_page(
             it, cx, millis(), id(area_alarm_entity), id(area_alarm_state),
             id(area_action_feedback), id(area_feedback_timer),
             id(font_date), id(font_small), id(theme_primary), id(theme_secondary),

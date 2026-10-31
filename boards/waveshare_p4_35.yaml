@@ -27,7 +27,7 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
-  default_power_profile: "Living Room Tabletop"
+  default_power_profile: "Tabletop Dock"
   default_pickup_wake: "Disabled"
   default_tap_wake: "Docked Only"
   default_battery_timeout: "30s"

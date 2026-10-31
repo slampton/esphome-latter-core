@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Pocket Assistant 20 FPS Docked Screensavers & Voice Assistant Engine (ui_ambient_va.h)
+// Latter Core SDK 20 FPS Docked Screensavers & Voice Assistant Engine (ui_ambient_va.h)
 // ==============================================================================
 
 #include "ui_core.h"

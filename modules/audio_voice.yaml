@@ -245,6 +245,8 @@ voice_assistant:
           id(va_was_cancelled) = false;
           id(va_vad_active) = false;
           id(va_tts_received) = false;
+          latter_ui::va_session_state().active = true;
+          latter_ui::va_session_state().tts_received = false;
           esphome::voice_assistant::reset_va_session_state(id(va));
           if (latter_ui::cam_intercom_ptt_active()) {
             id(va_status_text) = "";

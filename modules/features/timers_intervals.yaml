@@ -115,7 +115,7 @@ interval:
               std::string s_sun = id(ha_sun_state).state;
               const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
-              apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
+              latter_ui::apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
               cached_has_motion = weather_canvas_visible && (sun_ok || weather_sim_active) &&
                                   latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
               cached_high_rate  = weather_canvas_visible && (sun_ok || weather_sim_active) &&
@@ -196,7 +196,7 @@ interval:
             }
           }
 
-          // 60-second safety auto-stop for Find My Pocket Assistant beacon
+          // 60-second safety auto-stop for Find My Device beacon
           if (id(find_my_active) && (millis() - id(find_my_start_ms) >= 60000U)) {
             id(find_my_active) = false;
             id(stop_alarm_sound).execute();

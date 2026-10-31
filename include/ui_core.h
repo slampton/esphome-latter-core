@@ -1,8 +1,8 @@
 #pragma once
 
 // ==============================================================================
-// Pocket Assistant Core UI, Fast-Math, 3D Projection & Touch Toolkit (ui_core.h)
-// Portable across circular ESPHome AMOLED displays (default 466x466)
+// Latter Core SDK UI, Fast-Math, 3D Projection & Touch Toolkit (ui_core.h)
+// Portable across circular and rectangular ESPHome displays (default 466x466)
 // Zero-exception (-fno-exceptions), zero-heap-churn embedded graphics primitives
 // ==============================================================================
 
@@ -382,10 +382,6 @@ struct ProjectedPoint {
 struct Mat3 {
   float m[3][3];
 
-  static inline Mat3 identity() {
-    return {{{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
-  }
-
   // Exact match for rotate_3d_xyz(v, rx, ry, rz) intrinsic order: Rz(rz) * Ry(ry) * Rx(rx)
   static inline Mat3 from_euler(float rx, float ry, float rz) {
     float sx, cx_r, sy, cy_r, sz, cz_r;
@@ -432,30 +428,14 @@ inline ProjectedPoint project_3d(Vec3 v, int cx, int cy, float fov = 240.0f, flo
   return {sx, sy, k, is_inside_bezel(sx, sy, cy, 4)};
 }
 
-// Deterministic Zero-RAM 2D Hash & Smooth Value Noise (0.0f .. 1.0f) for procedural shaders
+// Deterministic Zero-RAM 2D Hash (0.0f .. 1.0f) for procedural shaders
 inline float hash2d_01(int x, int y) {
   uint32_t n = static_cast<uint32_t>(x) * 374761393U + static_cast<uint32_t>(y) * 668265263U;
   n = (n ^ (n >> 13)) * 1274126177U;
   return static_cast<float>((n ^ (n >> 16)) & 0xFFFFU) * (1.0f / 65535.0f);
 }
 
-inline float value_noise_2d(float x, float y) {
-  int xi = static_cast<int>(x);
-  if (x < 0.0f && static_cast<float>(xi) != x) xi--;
-  int yi = static_cast<int>(y);
-  if (y < 0.0f && static_cast<float>(yi) != y) yi--;
-  float xf = x - static_cast<float>(xi);
-  float yf = y - static_cast<float>(yi);
-  float u = xf * xf * (3.0f - 2.0f * xf);
-  float v = yf * yf * (3.0f - 2.0f * yf);
-  float a = hash2d_01(xi, yi);
-  float b = hash2d_01(xi + 1, yi);
-  float c = hash2d_01(xi, yi + 1);
-  float d = hash2d_01(xi + 1, yi + 1);
-  return (a + (b - a) * u) + ((c - a) + (a - b - c + d) * u) * v;
-}
-
-// Fast HSV-to-RGB (h in [0..1], s in [0..1], v in [0..1]) & Saturating Additive Blend
+// Fast HSV-to-RGB (h in [0..1], s in [0..1], v in [0..1])
 inline esphome::Color hsv_to_rgb(float h, float s, float v) {
   h = h - static_cast<float>(static_cast<int>(h));
   if (h < 0.0f) h += 1.0f;
@@ -480,16 +460,6 @@ inline esphome::Color hsv_to_rgb(float h, float s, float v) {
       static_cast<uint8_t>(r * 255.0f),
       static_cast<uint8_t>(g * 255.0f),
       static_cast<uint8_t>(b * 255.0f));
-}
-
-inline esphome::Color blend_additive(esphome::Color a, esphome::Color b) {
-  int r = static_cast<int>(a.r) + static_cast<int>(b.r);
-  int g = static_cast<int>(a.g) + static_cast<int>(b.g);
-  int bl = static_cast<int>(a.b) + static_cast<int>(b.b);
-  return esphome::Color(
-      static_cast<uint8_t>(r > 255 ? 255 : r),
-      static_cast<uint8_t>(g > 255 ? 255 : g),
-      static_cast<uint8_t>(bl > 255 ? 255 : bl));
 }
 
 template<typename DisplayT>
@@ -520,10 +490,6 @@ inline uint32_t &last_ambient_anim_ms() {
 inline uint32_t &last_frame_duration_ms() {
   static uint32_t dur_ms = 0;
   return dur_ms;
-}
-
-inline uint32_t &last_screensaver_draw_ms() {
-  return last_ambient_anim_ms();
 }
 
 inline void record_ambient_frame_ms(uint32_t now_ms) {
@@ -950,56 +916,6 @@ inline void render_link_state_indicator(DisplayT &it, int cx, uint32_t now_ms,
   it.filled_circle(cx + 4, gy, 1, bg_c);
   it.line(cx - 5, gy + 4, cx + 5, gy - 4, bg_c);
   it.line(cx - 4, gy + 4, cx + 5, gy - 3, warn_c);
-}
-
-// Universal Reusable 3-Tap Feathered Line, 60-Segment Ring Gauge & Auto-Scaling Sparkline Primitives
-template <typename DisplayT>
-inline void draw_aa_line(DisplayT &it, int x0, int y0, int x1, int y1,
-                         esphome::Color core_col, esphome::Color bg_col) {
-  esphome::Color fringe = lerp_color(bg_col, core_col, 0.42f);
-  draw_glow_line(it, x0, y0, x1, y1, core_col, fringe);
-}
-
-template <typename DisplayT>
-inline void render_arc_gauge(DisplayT &it, int cx, int cy, int r, int thickness,
-                             float pct_01, esphome::Color active_col, esphome::Color track_col) {
-  if (pct_01 < 0.0f) pct_01 = 0.0f;
-  if (pct_01 > 1.0f) pct_01 = 1.0f;
-  int active_ticks = static_cast<int>(pct_01 * 60.0f + 0.5f);
-  int r_in = (r > thickness) ? (r - thickness) : 1;
-  for (int i = 0; i < 60; i++) {
-    int lut = (i + 45) % 60; // Start at 12 o'clock (top)
-    int x0 = cx + static_cast<int>(DIAL_COS[lut] * static_cast<float>(r_in));
-    int y0 = cy + static_cast<int>(DIAL_SIN[lut] * static_cast<float>(r_in));
-    int x1 = cx + static_cast<int>(DIAL_COS[lut] * static_cast<float>(r));
-    int y1 = cy + static_cast<int>(DIAL_SIN[lut] * static_cast<float>(r));
-    it.line(x0, y0, x1, y1, (i < active_ticks) ? active_col : track_col);
-  }
-}
-
-template <typename DisplayT>
-inline void render_sparkline(DisplayT &it, int x0, int y0, int w, int h,
-                             const float *samples, int count,
-                             esphome::Color line_col, esphome::Color fill_col) {
-  if (samples == nullptr || count < 2 || w <= 4 || h <= 4) return;
-  float v_min = samples[0], v_max = samples[0];
-  for (int i = 1; i < count; i++) {
-    if (samples[i] < v_min) v_min = samples[i];
-    if (samples[i] > v_max) v_max = samples[i];
-  }
-  float span = (v_max - v_min > 0.001f) ? (v_max - v_min) : 1.0f;
-  int prev_x = x0;
-  int prev_y = y0 + h - 1 - static_cast<int>(((samples[0] - v_min) / span) * static_cast<float>(h - 2));
-  for (int i = 1; i < count; i++) {
-    int cur_x = x0 + (i * (w - 1)) / (count - 1);
-    int cur_y = y0 + h - 1 - static_cast<int>(((samples[i] - v_min) / span) * static_cast<float>(h - 2));
-    if (cur_y < y0 + h - 1) {
-      it.vertical_line(cur_x, cur_y, (y0 + h - 1) - cur_y, fill_col);
-    }
-    it.line(prev_x, prev_y, cur_x, cur_y, line_col);
-    prev_x = cur_x;
-    prev_y = cur_y;
-  }
 }
 
 template <typename DisplayT>
@@ -1727,14 +1643,6 @@ inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
   return -1;
 }
 
-template<typename ValT, typename DeltaT, typename MinT, typename MaxT>
-inline auto step_clamp(ValT val, DeltaT delta, MinT min_val, MaxT max_val) {
-  auto res = val + delta;
-  if (res < min_val) return static_cast<decltype(res)>(min_val);
-  if (res > max_val) return static_cast<decltype(res)>(max_val);
-  return res;
-}
-
 inline int step_wrap(int val, int delta, int count) {
   if (count <= 0) return 0;
   int res = (val + delta) % count;
@@ -1839,17 +1747,6 @@ inline void schedule_anim_disp_update(DispT *disp) {
 template<typename DispT>
 inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
-}
-
-// Converts a linear media_player volume (0.0 .. 1.0) into the exact dB attenuation
-// used by ESPHome's SourceSpeaker::set_volume (-20 * log10(volume)) so un-ducking
-// media_mixing_input after an alert or Voice Assistant session restores the exact
-// pre-duck volume level.
-inline float volume_to_db_reduction(float vol) {
-  if (std::isnan(vol) || vol <= 0.05f) return 26.0f;
-  if (vol >= 1.0f) return 0.0f;
-  float db = -20.0f * std::log10(vol);
-  return (db < 0.0f) ? 0.0f : db;
 }
 
 inline uint32_t &last_local_vol_tap_ms() {

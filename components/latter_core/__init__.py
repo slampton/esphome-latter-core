@@ -52,8 +52,8 @@ async def to_code(config: dict[str, Any]) -> None:
         src_file = inc_dir / hdr
         if not src_file.is_file():
             src_file = repo_root / hdr
-        if src_file.is_file():
-            dst_file = Path(CORE.relative_src_path(hdr))
-            shutil.copyfile(src_file, dst_file)
-            cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
-    cg.add_global(cg.RawStatement('using namespace latter_ui;'))
+        if not src_file.is_file():
+            raise cv.Invalid(f"Missing required Latter Core header: {hdr}")
+        dst_file = Path(CORE.relative_src_path(hdr))
+        shutil.copyfile(src_file, dst_file)
+        cg.add_global(cg.RawStatement(f'#include "{hdr}"'))

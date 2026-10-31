@@ -5,7 +5,7 @@
 # Purpose:
 #   1. Copy-paste starter template for porting the full Latter C++20 UI OS
 #      (Clock faces, 20 FPS Weather, Assist, Music Assistant, Area Control,
-#      Whole-Home Hub, 4-Slot Remote, 4 Games, 12 Tools) to a new screen.
+#      Whole-Home Hub, 4-Slot Remote, 6 Games, 12 Tools) to a new screen.
 #   2. Automated CI target verifying that all C++20 headers in include/
 #      and modules/{audio_voice,power_manager,display_ui}.yaml validate cleanly.
 # ==============================================================================

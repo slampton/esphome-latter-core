@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Pocket Assistant 20 FPS Weather Motion Wallpaper, Lunar LUT & Sky Suite (ui_weather_sky.h)
+// Latter Core SDK 20 FPS Weather Motion Wallpaper, Lunar LUT & Sky Suite (ui_weather_sky.h)
 // ==============================================================================
 
 #include "ui_core.h"
@@ -1039,7 +1039,7 @@ inline void draw_tumbling_leaf_3d(DisplayT &it, Vec3 center_3d, float rx, float 
 }
 
 // Modular 3D Volumetric Atmospheric & Weather Motion Wallpaper Engine:
-// Uses Vec3, rotate_3d_xyz, and project_3d across depth layers with live IMU wrist-tilt parallax.
+// Uses Vec3, rotate_3d_xyz, and project_3d across depth layers with live IMU tilt parallax.
 template<typename DisplayT>
 inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                             const std::string &cond, bool is_night,
@@ -1065,7 +1065,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       (is_night && (cond == "clear-night" || cond == "clearnight" ||
                     cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
 
-  // Smooth EMA-damped 3D IMU wrist-tilt parallax offset (foreground shifts more than deep sky)
+  // Smooth EMA-damped 3D IMU tilt parallax offset (foreground shifts more than deep sky)
   static float par_x = 0.0f;
   static float par_y = 0.0f;
   if (!std::isnan(accel_x) && !std::isnan(accel_y)) {
@@ -1123,7 +1123,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       float sa = 0.0f, ca = 1.0f;
       fast_sincos(ang, sa, ca);
 
-      // 3D depth tier (0.30 deep background .. 1.00 foreground) for wrist-tilt parallax & magnitude
+      // 3D depth tier (0.30 deep background .. 1.00 foreground) for IMU-tilt parallax & magnitude
       float depth_u = hash2d_01(k * 23 + 5, 41);
       float par_scale = 0.20f + 0.65f * depth_u;
 
@@ -1161,7 +1161,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       }
     }
   }
-  // LAYER 1B: CELESTIAL CORNER POCKET ICON (3D GRADIENT SUN ORB / LUNAR DISC)
+  // LAYER 1B: CELESTIAL CORNER BADGE (3D GRADIENT SUN ORB / LUNAR DISC)
   if (cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
       const int m_r = scale_min(22);

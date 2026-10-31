@@ -13,6 +13,36 @@ namespace latter_ui {
 // SECTION 18: SYSTEM SETTINGS & DIAGNOSTICS ENGINE (PAGE 4)
 // =============================================================================
 
+enum class PowerProfile : uint8_t {
+  PORTABLE_CARRY = 0,
+  HANDHELD_ROAMING = 1,
+  WEARABLE_WATCH = 2,
+  TABLETOP_DOCK = 3,
+  ALWAYS_ON_STATIONARY = 4,
+  CUSTOM = 5,
+};
+
+inline PowerProfile parse_power_profile(const std::string &opt) {
+  if (opt == "Portable Carry") return PowerProfile::PORTABLE_CARRY;
+  if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
+  if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
+  if (opt == "Tabletop Dock") return PowerProfile::TABLETOP_DOCK;
+  if (opt == "Always-On Wall / Desk") return PowerProfile::ALWAYS_ON_STATIONARY;
+  return PowerProfile::CUSTOM;
+}
+
+inline const char *power_profile_short_label(const std::string &opt) {
+  switch (parse_power_profile(opt)) {
+    case PowerProfile::PORTABLE_CARRY:       return "Portable";
+    case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
+    case PowerProfile::WEARABLE_WATCH:       return "Watch";
+    case PowerProfile::TABLETOP_DOCK:        return "Tabletop";
+    case PowerProfile::ALWAYS_ON_STATIONARY: return "Wall/Desk";
+    case PowerProfile::CUSTOM:               return "Custom";
+  }
+  return opt.c_str();
+}
+
 inline std::string &latter_site_id() {
   static std::string s = "primary";
   return s;
@@ -171,12 +201,7 @@ inline void render_system_page(
     static constexpr int16_t SCROLL_EASE_315[5] = {0, 68, 170, 268, 315};
     int current_offset = compute_scroll_offset(sleep_menu_page, SCROLL_EASE_315, 315);
     char sleep_labels[10][36];
-    const char *short_p = (power_profile_opt == "Pocket Carry") ? "Pocket"
-                        : (power_profile_opt == "Handheld Roaming") ? "Roaming"
-                        : (power_profile_opt == "Wearable Watch") ? "Watch"
-                        : (power_profile_opt == "Living Room Tabletop") ? "Tabletop"
-                        : (power_profile_opt == "Always-On Wall / Desk") ? "Wall/Desk"
-                        : power_profile_opt.c_str();
+    const char *short_p = power_profile_short_label(power_profile_opt);
     snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
 #if LATTER_HAS_IMU
     snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: %s", pickup_wake_opt.c_str());

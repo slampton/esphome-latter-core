@@ -2077,23 +2077,6 @@ inline void parse_calendar_slot_meta(const std::string &slot_name, const std::st
   }
 }
 
-inline std::string url_encode_query(const std::string &raw) {
-  std::string out;
-  char hex[8];
-  for (unsigned char c : raw) {
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-        c == '-' || c == '_' || c == '.') {
-      out.push_back(static_cast<char>(c));
-    } else if (c == ' ') {
-      out.push_back('+');
-    } else {
-      snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned int>(c));
-      out += hex;
-    }
-  }
-  return out;
-}
-
 template <typename FontT>
 inline int wrap_text_lines(const std::string &text, int max_w, FontT *font,
                            std::string out_lines[], int max_lines) {
@@ -2288,7 +2271,7 @@ inline void render_tool_calendar(
   std::string names[5] = {s1_name, s2_name, s3_name, s4_name, s5_name};
   bool acts[5] = {s1_act, s2_act, s3_act, s4_act, s5_act};
 
-  // Fallback to parsing sensor.pocket_assistant_calendar_agenda ("TODAY 14:30|Dentist;...") if browse slots haven't arrived yet
+  // Fallback to parsing sensor.<slug>_calendar_agenda ("TODAY 14:30|Dentist;...") if browse slots haven't arrived yet
   if (names[0].empty() && !raw_agenda.empty() && raw_agenda != "NONE" &&
       raw_agenda != "unknown" && raw_agenda != "unavailable") {
     size_t pos = 0;
@@ -2415,7 +2398,7 @@ inline void render_tool_intercom(
       "Time to head out!",
       "Kids, come downstairs!",
       "Need a hand in here!",
-      "Movie time in Living Room!"
+      "Movie night is starting!"
     };
     for (int i = 0; i < 5; i++) {
       int y_mid = layout().slot5_y(i);
@@ -2756,7 +2739,7 @@ inline void render_tool_camera(
   }
   #if !LATTER_ROUND_DISPLAY
   if (SCREEN_W != SCREEN_H) {
-    // Direct 1-Tap [90°] Widescreen Toggle Badge on Rectangular Screens (e.g. 320x480 P4 Remote Assistant & 410x502 Wrist Assist)
+    // Direct 1-Tap [90°] Widescreen Toggle Badge on Rectangular Screens (e.g. 320x480 & 410x502)
     render_modern_card(it, SCREEN_W - 34, hdr_cy, 48, 34, 9,
                        cam_landscape_mode() ? Color(20, 42, 62) : Color(12, 16, 24),
                        cam_landscape_mode() ? theme_primary : Color(58, 68, 84),

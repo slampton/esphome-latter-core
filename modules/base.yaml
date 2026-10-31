@@ -17,7 +17,7 @@ substitutions:
   font_micro_size: "14"
   font_games_size: "38"
   default_clock_face: "Minimal Digital"
-  default_power_profile: "Pocket Carry"
+  default_power_profile: "Portable Carry"
   default_pickup_wake: "Docked Only"
   default_tap_wake: "Docked Only"
   default_battery_timeout: "30s"
