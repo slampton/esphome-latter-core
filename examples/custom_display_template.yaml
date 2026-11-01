@@ -27,6 +27,12 @@ substitutions:
   default_battery_timeout: "30s"
   default_docked_timeout: "1 min"
   default_hibernate_timeout: "30 min"
+  sendspin_buffer_size: "196608"
+  announcement_buffer_size: "65536"
+  audio_out_rate: "48000"
+  audio_out_channels: "1"
+  audio_out_bits: "16"
+  audio_in_rate: "16000"
 
   # Optional Standalone ESPHome Overrides (only needed if NOT using the ha-latter integration):
   # weather_entity: "weather.forecast_home"
@@ -124,7 +130,7 @@ audio_adc:
     i2c_id: bus_internal
     address: 0x40
     bits_per_sample: 16bit
-    sample_rate: 16000
+    sample_rate: ${audio_in_rate}
 
 microphone:
   - platform: i2s_audio
@@ -132,7 +138,7 @@ microphone:
     adc_type: external
     i2s_audio_id: i2s_input_bus
     i2s_din_pin: GPIO10
-    sample_rate: 16000
+    sample_rate: ${audio_in_rate}
     bits_per_sample: 16bit
     channel: left
 
@@ -142,7 +148,7 @@ audio_dac:
     i2c_id: bus_internal
     address: 0x18
     bits_per_sample: 16bit
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     use_mclk: true
 
 speaker:
@@ -152,7 +158,7 @@ speaker:
     i2s_dout_pin: GPIO8
     dac_type: external
     audio_dac: es8311_dac
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
@@ -200,11 +206,11 @@ script:
   - id: hal_route_i2s_to_spk
     mode: restart
     then:
-      - lambda: 'return;'
+      - lambda: 'latter_ui::hal_connect_s3_i2s_clocks_to_spk(9, 45, 16);'
   - id: hal_route_i2s_to_mic
     mode: restart
     then:
-      - lambda: 'return;'
+      - lambda: 'latter_ui::hal_connect_s3_i2s_clocks_to_mic(9, 45, 16);'
   - id: hal_release_deep_sleep_holds
     mode: restart
     then:

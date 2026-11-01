@@ -28,6 +28,10 @@ substitutions:
   default_hibernate_timeout: "15 min"
   sendspin_buffer_size: "196608"
   announcement_buffer_size: "65536"
+  audio_out_rate: "48000"
+  audio_out_channels: "1"
+  audio_out_bits: "16"
+  audio_in_rate: "16000"
 
 esphome:
   build_flags:
@@ -46,6 +50,10 @@ esphome:
     - "-DLATTER_PANEL_IPS=0"
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
+    - "-DLATTER_AUDIO_OUT_RATE=48000"
+    - "-DLATTER_AUDIO_OUT_CH=1"
+    - "-DLATTER_AUDIO_OUT_BITS=16"
+    - "-DLATTER_AUDIO_IN_RATE=16000"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -143,7 +151,7 @@ audio_adc:
     i2c_id: bus_internal
     address: 0x40
     bits_per_sample: 16bit
-    sample_rate: 16000
+    sample_rate: ${audio_in_rate}
     mic_gain: 37.5dB
 
 
@@ -153,7 +161,7 @@ microphone:
     adc_type: external
     i2s_audio_id: i2s_input_bus
     i2s_din_pin: GPIO10
-    sample_rate: 16000
+    sample_rate: ${audio_in_rate}
     bits_per_sample: 16bit
     channel: left
     pdm: false
@@ -166,7 +174,7 @@ audio_dac:
     i2c_id: bus_internal
     address: 0x18
     bits_per_sample: 16bit
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     use_mclk: true
 
 
@@ -177,7 +185,7 @@ speaker:
     i2s_dout_pin: GPIO8
     dac_type: external
     audio_dac: es8311_dac
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
@@ -257,17 +265,13 @@ script:
     mode: restart
     then:
       - lambda: |-
-          esp_rom_gpio_connect_out_signal(9, 28, false, false);   // GPIO9 -> I2S1 BCLK (signal 28)
-          esp_rom_gpio_connect_out_signal(45, 29, false, false);  // GPIO45 -> I2S1 WS (signal 29)
-          esp_rom_gpio_connect_out_signal(16, 21, false, false);  // GPIO16 -> I2S1 MCLK (signal 21)
+          latter_ui::hal_connect_s3_i2s_clocks_to_spk(9, 45, 16);
 
   - id: hal_route_i2s_to_mic
     mode: restart
     then:
       - lambda: |-
-          esp_rom_gpio_connect_out_signal(9, 26, false, false);   // GPIO9 -> I2S0 BCLK (signal 26)
-          esp_rom_gpio_connect_out_signal(45, 27, false, false);  // GPIO45 -> I2S0 WS (signal 27)
-          esp_rom_gpio_connect_out_signal(16, 23, false, false);  // GPIO16 -> I2S0 MCLK (signal 23)
+          latter_ui::hal_connect_s3_i2s_clocks_to_mic(9, 45, 16);
 
   - id: hal_release_deep_sleep_holds
     mode: restart

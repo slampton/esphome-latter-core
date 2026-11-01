@@ -23,6 +23,18 @@
 #ifndef LATTER_SLOT_COUNT
 #define LATTER_SLOT_COUNT 5
 #endif
+#ifndef LATTER_AUDIO_OUT_RATE
+#define LATTER_AUDIO_OUT_RATE 16000
+#endif
+#ifndef LATTER_AUDIO_OUT_CH
+#define LATTER_AUDIO_OUT_CH 1
+#endif
+#ifndef LATTER_AUDIO_OUT_BITS
+#define LATTER_AUDIO_OUT_BITS 16
+#endif
+#ifndef LATTER_AUDIO_IN_RATE
+#define LATTER_AUDIO_IN_RATE 16000
+#endif
 
 #if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && defined(LATTER_DSI_IRAM_SAFE)
 #include <esp_attr.h>
@@ -117,11 +129,20 @@ inline std::string build_hardware_manifest_json() {
                                    ? "wearable_display"
                                    : (LATTER_IS_STATIONARY ? "stationary_display" : "mobile_display"));
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
-  char buf[512];
+  char audio_buf[96];
+  if (LATTER_HAS_AUDIO) {
+    std::snprintf(audio_buf, sizeof(audio_buf),
+                  "{\"out_rate\":%d,\"out_ch\":%d,\"out_bits\":%d,\"in_rate\":%d}",
+                  (int)LATTER_AUDIO_OUT_RATE, (int)LATTER_AUDIO_OUT_CH,
+                  (int)LATTER_AUDIO_OUT_BITS, (int)LATTER_AUDIO_IN_RATE);
+  } else {
+    std::snprintf(audio_buf, sizeof(audio_buf), "0");
+  }
+  char buf[576];
   std::snprintf(buf, sizeof(buf),
                 "{\"v\":2,\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\",\"boot_id\":%lu,"
                 "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
-                "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
+                "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
                 "\"slot_count\":%d,\"max_payload_bytes\":2048,"
@@ -129,7 +150,7 @@ inline std::string build_hardware_manifest_json() {
                 kProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
                 SCREEN_W, SCREEN_H, shape, profile,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
-                (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
+                audio_buf, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,

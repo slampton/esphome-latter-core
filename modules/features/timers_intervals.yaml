@@ -66,9 +66,6 @@ interval:
             const bool tts_audio_active =
                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                 id(announcement_mixing_input).is_running();
-            if (id(va_active) && id(va_tts_received) && tts_audio_active) {
-              esphome::voice_assistant::disarm_va_speaker_timeout(id(va));
-            }
 
             // Smooth state transition: reserve 1 quiet tick when speech starts so DAC unmutes cleanly
             if (id(va_tts_received) != prev_tts_active) {

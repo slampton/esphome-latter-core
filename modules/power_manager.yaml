@@ -274,20 +274,20 @@ interval:
             id(apply_wake_word_sensitivities).execute();
             id(sync_wake_word_state).execute();
           } else if (millis() > 12500U && !id(va_active) && !id(va_tts_received)) {
-            auto ww_mode = id(va_wake_word_mode).current_option();
-            const bool ww_allowed = (ww_mode == "Always On") ||
-                                    (ww_mode == "Docked Only" && id(usb_connected).state);
-            const bool ww_busy = id(va).is_running() || !id(va_status_text).empty() ||
-                                 id(announcement_mixing_input).is_running() ||
-                                 id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                                 id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
-                                 (id(active_game) > 0) ||
-                                 latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                 id(is_hibernating) || id(ota_in_progress) ||
-                                 !id(wifi_ctrl).is_connected();
-            const bool should_ww_run = ww_allowed && !ww_busy;
+            const bool va_busy = id(va).is_running() || !id(va_status_text).empty() ||
+                                 id(announcement_mixing_input).is_running();
+            const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+                                    (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                    (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+            const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
+                                            (id(active_game) > 0) ||
+                                            latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+            const bool sys_busy = id(is_hibernating) || id(ota_in_progress) ||
+                                  !id(wifi_ctrl).is_connected();
+            const bool should_ww_run = latter_ui::wake_word_should_run(
+                id(va_wake_word_mode).current_option(),
+                id(usb_connected).state,
+                va_busy, media_busy, alert_or_tool_busy, sys_busy);
             if (ww_changed) {
               id(va_active_wake_word).publish_state(
                   esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));

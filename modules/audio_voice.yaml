@@ -1,9 +1,7 @@
 # Core Subsystem: Audio & Voice Assistant (Hardware I2S & Codecs defined in boards/*.yaml HAL)
 
 substitutions:
-  sendspin_buffer_size: "196608"
-  announcement_buffer_size: "65536"
-  announcement_buffer_s: "15"
+  announcement_buffer_s: "1"
 
 # ESPHome 2026.10.0+ microFLAC v0.3.0 decoder with 80MHz Octal PSRAM frame buffers
 audio:
@@ -16,7 +14,7 @@ speaker:
   - id: mixing_speaker
     platform: mixer
     output_speaker: physical_speaker
-    num_channels: 1
+    num_channels: ${audio_out_channels}
     task_stack_in_psram: true
     source_speakers:
       - id: announcement_mixing_input
@@ -25,10 +23,16 @@ speaker:
       - id: media_mixing_input
         timeout: 1500ms
 
+  - id: rtttl_resampler
+    platform: resampler
+    output_speaker: announcement_mixing_input
+    sample_rate: ${audio_out_rate}
+    task_stack_in_psram: true
+
 
 rtttl:
   id: alarm_rtttl
-  speaker: announcement_mixing_input
+  speaker: rtttl_resampler
 
 sendspin:
   id: sendspin_hub
@@ -54,18 +58,18 @@ media_player:
   - platform: speaker_source
     id: latter_media_player
     name: "Music"
-    # Tier B (D3): Request 16 kHz mono FLAC directly so server/Sendspin converts; no on-device resampler
+    # Native-Rate Audio Policy: Request the board's native output rate/channels directly so server/Sendspin converts
     announcement_pipeline:
       format: FLAC
-      num_channels: 1
-      sample_rate: 16000
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
       speaker: announcement_mixing_input
       sources:
         - http_announcement_source
     media_pipeline:
       format: FLAC
-      num_channels: 1
-      sample_rate: 16000
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
       speaker: media_mixing_input
       sources:
         - sendspin_source
@@ -83,12 +87,7 @@ media_player:
             duration: 0.1s
         - mixer_speaker.apply_ducking:
             id: announcement_mixing_input
-            decibel_reduction: !lambda |-
-              float v = id(alert_volume).state;
-              if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-              if (v > 100.0f) v = 100.0f;
-              if (v < 20.0f) v = 20.0f;
-              return (100.0f - v) * 0.25f;
+            decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
             duration: 0.05s
         - script.execute: route_i2s_to_spk
         - script.wait: route_i2s_to_spk
@@ -266,7 +265,6 @@ voice_assistant:
           id(va_tts_received) = false;
           latter_ui::va_session_state().active = true;
           latter_ui::va_session_state().tts_received = false;
-          esphome::voice_assistant::reset_va_session_state(id(va));
           if (latter_ui::cam_intercom_ptt_active()) {
             id(va_status_text) = "";
             latter_ui::schedule_disp_update(&id(disp1));
@@ -334,20 +332,29 @@ voice_assistant:
             return;
           }
           id(va_status_text) = "Thinking...";
-          // If the user asked Assist to pause/stop media (not an area light/fan or timer), do not auto-resume music
+          // Only clear va_resume_music_after when the utterance explicitly pauses/stops media playback
+          // (never on non-media commands such as "stop the fan" or "stop the timer")
           std::string utt = x;
-          for (char &c : utt) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+          for (char &c : utt) {
+            c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+            if (c == '.' || c == ',' || c == '!' || c == '?') c = ' ';
+          }
+          while (!utt.empty() && utt.front() == ' ') utt.erase(utt.begin());
+          while (!utt.empty() && utt.back() == ' ') utt.pop_back();
           const bool mentions_media = (utt.find("music") != std::string::npos ||
                                        utt.find("speaker") != std::string::npos ||
                                        utt.find("audio") != std::string::npos ||
                                        utt.find("song") != std::string::npos ||
                                        utt.find("track") != std::string::npos ||
                                        utt.find("player") != std::string::npos ||
-                                       utt.find("playing") != std::string::npos);
-          const bool mentions_timer = (utt.find("timer") != std::string::npos ||
-                                       utt.find("alarm") != std::string::npos);
-          if ((!mentions_timer && (utt.find("pause") != std::string::npos || utt.find("stop") != std::string::npos)) ||
-              (utt.find("turn off") != std::string::npos && mentions_media)) {
+                                       utt.find("playing") != std::string::npos ||
+                                       utt.find("playback") != std::string::npos);
+          const bool bare_pause_or_stop = (utt == "pause" || utt == "stop");
+          const bool media_pause_or_stop = mentions_media &&
+                                           (utt.find("pause") != std::string::npos ||
+                                            utt.find("stop") != std::string::npos ||
+                                            utt.find("turn off") != std::string::npos);
+          if (bare_pause_or_stop || media_pause_or_stop) {
             id(va_resume_music_after) = false;
             ESP_LOGI("va", "Stop/Pause media intent detected: clearing va_resume_music_after");
           }
@@ -364,12 +371,7 @@ voice_assistant:
                 duration: 0.1s
             - mixer_speaker.apply_ducking:
                 id: announcement_mixing_input
-                decibel_reduction: !lambda |-
-                  float v = id(alert_volume).state;
-                  if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-                  if (v > 100.0f) v = 100.0f;
-                  if (v < 20.0f) v = 20.0f;
-                  return (100.0f - v) * 0.25f;
+                decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
                 duration: 0.05s
             - script.stop: screen_sleep_timer
             - script.execute: route_i2s_to_spk
@@ -396,12 +398,7 @@ voice_assistant:
           duration: 0.1s
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: !lambda |-
-            float v = id(alert_volume).state;
-            if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-            if (v > 100.0f) v = 100.0f;
-            if (v < 20.0f) v = 20.0f;
-            return (100.0f - v) * 0.25f;
+          decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
           duration: 0.05s
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
@@ -544,47 +541,33 @@ script:
   - id: va_tts_drain_and_finish
     mode: restart
     then:
-      # 1. Wait for latter_media_player to finish decoding the HTTP TTS stream into announcement_mixing_input (D2: 90s ceiling)
-      - if:
+      # 1. Single bounded wait on announcement_mixing_input (<= 1s buffer_duration + 2s margin)
+      - wait_until:
           condition:
             lambda: |-
-              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          then:
-            - wait_until:
-                condition:
-                  lambda: |-
-                    return ((id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
-                            (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) ||
-                           (!id(va_active) && !id(va_tts_received));
-                timeout: 90s
-      # 2. Wait for announcement_mixing_input's PSRAM ring buffer to finish playing out (D2: derived announcement_buffer_s + 1s)
+              return (!id(announcement_mixing_input).is_running() &&
+                      id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (!id(va_active) && !id(va_tts_received));
+          timeout: !lambda 'return (${announcement_buffer_s} + 2) * 1000;'
+      - delay: 250ms
+      # 2. If VoiceAssistant automatically re-entered listening for continued_conversation / ask_question,
+      #    keep the session active and let on_listening own the next turn.
       - if:
           condition:
-            lambda: 'return (id(va_tts_received) || id(va_active)) && id(announcement_mixing_input).is_running();'
+            lambda: 'return id(va).is_running();'
           then:
-            - wait_until:
-                condition:
-                  lambda: 'return !id(announcement_mixing_input).is_running() || (!id(va_active) && !id(va_tts_received));'
-                timeout: !lambda 'return (${announcement_buffer_s} + 1) * 1000;'
-      # 3. Let the final ~250ms of TTS audio inside physical_speaker's hardware DMA buffer finish playing
-      - if:
-          condition:
-            lambda: 'return id(va_tts_received) || id(va_active);'
-          then:
-            - delay: 250ms
-            - speaker.stop: announcement_mixing_input
-      # 4. Exit the overlay and redraw return_page FIRST (before waking Sendspin FLAC streaming)
+            - script.stop: va_tts_drain_and_finish
+      # 3. Normal completion: exit the overlay without calling abort_voice_assistant(id(va)),
+      #    preserving conversation_id and native continued-conversation state.
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
           const bool was_va_session = id(va_active);
-          if (was_va_session) {
-            esphome::voice_assistant::abort_voice_assistant(id(va));
-          }
           id(va_vad_active) = false;
           id(va_status_text) = "";
           id(va_tts_received) = false;
           id(va_active) = false;
+          latter_ui::va_session_state().active = false;
+          latter_ui::va_session_state().tts_received = false;
           if (was_va_session) {
             id(gui_page) = id(return_page);
           }
@@ -594,7 +577,7 @@ script:
           }
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
-      # 4. Now smoothly restore music playback or mute & route I2S back to mic
+      # 4. Smoothly restore music playback or mute & route I2S back to mic
       - script.execute: resume_music_after_va
       - script.execute: screen_sleep_timer
   - id: route_i2s_to_spk
@@ -661,7 +644,7 @@ script:
               apply_cutoffs(id(ww_sens_alexa).current_option(), 247, 237, 224));
 
   - id: sync_wake_word_state
-    mode: single
+    mode: restart
     then:
       - if:
           condition:
@@ -669,20 +652,20 @@ script:
               // Hardware note (§5.3): All 5 flagship boards share BCLK/WS/MCLK between ES8311 DAC and ES7210/ES8311 ADC
               // (half-duplex I2S clock routing), so MWW must pause while physical_speaker is actively streaming audio.
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
-              auto ww_mode = id(va_wake_word_mode).current_option();
-              const bool mode_allowed = (ww_mode == "Always On") ||
-                                        (ww_mode == "Docked Only" && id(usb_connected).state);
-              const bool busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
-                                id(va_tts_received) || id(announcement_mixing_input).is_running() ||
-                                id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                                id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
-                                (id(active_game) > 0) ||
-                                latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                id(is_hibernating) || id(ota_in_progress) ||
-                                !id(wifi_ctrl).is_connected() || (millis() < 12000U);
-              return mode_allowed && !busy;
+              const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
+                                   id(va_tts_received) || id(announcement_mixing_input).is_running();
+              const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+                                      (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                      (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+              const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
+                                              (id(active_game) > 0) ||
+                                              latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+              const bool sys_busy = id(is_hibernating) || id(ota_in_progress) ||
+                                    !id(wifi_ctrl).is_connected() || (millis() < 12000U);
+              return latter_ui::wake_word_should_run(
+                  id(va_wake_word_mode).current_option(),
+                  id(usb_connected).state,
+                  va_busy, media_busy, alert_or_tool_busy, sys_busy);
           then:
             - if:
                 condition:
@@ -752,11 +735,7 @@ script:
           id: announcement_mixing_input
           decibel_reduction: !lambda |-
             if (id(find_my_active)) return 0.0f; // Find My Device always plays at 100% volume
-            float v = id(alert_volume).state;
-            if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-            if (v > 100.0f) v = 100.0f;
-            if (v < 20.0f) v = 20.0f;
-            return (100.0f - v) * 0.18f;
+            return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.18f);
           duration: 0.05s
       - if:
           condition:
@@ -808,12 +787,7 @@ script:
                 id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: !lambda |-
-            float v = id(alert_volume).state;
-            if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-            if (v > 100.0f) v = 100.0f;
-            if (v < 20.0f) v = 20.0f;
-            return (100.0f - v) * 0.18f;
+          decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.18f);'
           duration: 0.01s
       - rtttl.play:
           id: alarm_rtttl
@@ -914,10 +888,5 @@ number:
       then:
         - mixer_speaker.apply_ducking:
             id: announcement_mixing_input
-            decibel_reduction: !lambda |-
-              float v = x;
-              if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-              if (v > 100.0f) v = 100.0f;
-              if (v < 20.0f) v = 20.0f;
-              return (100.0f - v) * 0.18f;
+            decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(x, 0.18f);'
             duration: 0.05s

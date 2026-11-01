@@ -21,6 +21,7 @@ CONFIG_SCHEMA = cv.Schema(
 )
 
 CORE_HEADERS: tuple[str, ...] = (
+    "audio_router.h",
     "va_cancel_helper.h",
     "latter_protocol.h",
     "latter_state.h",

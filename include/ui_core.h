@@ -18,6 +18,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include "audio_router.h"
 #include "latter_state.h"
 
 namespace latter_ui {

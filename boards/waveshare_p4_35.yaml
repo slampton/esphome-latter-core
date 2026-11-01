@@ -36,6 +36,10 @@ substitutions:
   default_hibernate_timeout: "15 min"
   sendspin_buffer_size: "262144"
   announcement_buffer_size: "131072"
+  audio_out_rate: "16000"
+  audio_out_channels: "1"
+  audio_out_bits: "16"
+  audio_in_rate: "16000"
 
 esphome:
   build_flags:
@@ -56,6 +60,10 @@ esphome:
     - "-DLATTER_PSRAM_MB=32"
     - "-DLATTER_NO_PMU_IRQ_PIN=1"
     - "-DLATTER_BACKLIGHT_PIN=28"
+    - "-DLATTER_AUDIO_OUT_RATE=16000"
+    - "-DLATTER_AUDIO_OUT_CH=1"
+    - "-DLATTER_AUDIO_OUT_BITS=16"
+    - "-DLATTER_AUDIO_IN_RATE=16000"
 
 esp32:
   variant: esp32p4
@@ -135,7 +143,7 @@ audio_dac:
     i2c_id: bus_internal
     address: 0x18
     bits_per_sample: 16bit
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     use_mclk: true
 
 microphone:
@@ -144,7 +152,7 @@ microphone:
     adc_type: external
     i2s_audio_id: i2s_shared_bus
     i2s_din_pin: GPIO11
-    sample_rate: 16000
+    sample_rate: ${audio_in_rate}
     bits_per_sample: 16bit
     channel: left
 
@@ -155,7 +163,7 @@ speaker:
     i2s_dout_pin: GPIO9
     dac_type: external
     audio_dac: es8311_dac
-    sample_rate: 16000
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms

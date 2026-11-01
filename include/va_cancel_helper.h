@@ -19,12 +19,11 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0),
 // Provides clean, encapsulated lifecycle helpers for ESPHome's final VoiceAssistant
 // component, its PSRAM MixerSpeaker announcement channel, and on-board
 // micro_wake_word configuration + NVS flash persistence:
-//   1. disarm_va_speaker_timeout(va)
-//   2. reset_va_session_state(va)
-//   3. abort_voice_assistant(va)
-//   4. ensure_wake_words_restored(va) & poll_and_persist_wake_words(va)
-//   5. on_api_client_authenticated(va, client_info, client_address)
-//   6. clean_disconnect_api_before_hibernate(va)
+//   1. stop_va_microphone(va)
+//   2. abort_voice_assistant(va)
+//   3. ensure_wake_words_restored(mww) & poll_and_persist_wake_words(mww)
+//   4. on_api_client_authenticated(va, mww, client_info, client_address)
+//   5. clean_disconnect_api_before_hibernate(va)
 // ==============================================================================
 
 template<typename Tag, typename Tag::type M>
@@ -37,12 +36,6 @@ struct VA_SetState_Tag {
   friend type get(VA_SetState_Tag);
 };
 template struct Rob<VA_SetState_Tag, &esphome::voice_assistant::VoiceAssistant::set_state_>;
-
-struct VA_ContinueConversation_Tag {
-  typedef bool esphome::voice_assistant::VoiceAssistant::*type;
-  friend type get(VA_ContinueConversation_Tag);
-};
-template struct Rob<VA_ContinueConversation_Tag, &esphome::voice_assistant::VoiceAssistant::continue_conversation_>;
 
 #ifdef USE_MICROPHONE
 struct VA_MicSource_Tag {
@@ -61,22 +54,6 @@ template struct Rob<VA_ApiClient_Tag, &esphome::voice_assistant::VoiceAssistant:
 namespace esphome {
 namespace voice_assistant {
 
-// Clears continue_conversation_ so LLM responses buffered in announcement_mixing_input's
-// 15s PSRAM ring buffer never re-open the microphone mid-sentence while playing out.
-inline void disarm_va_speaker_timeout(VoiceAssistant *va) {
-  if (va != nullptr) {
-    va->*get(VA_ContinueConversation_Tag()) = false;
-  }
-}
-
-// Resets per-utterance continuation state on VoiceAssistant.
-inline void reset_va_session_state(VoiceAssistant *va) {
-  if (va != nullptr) {
-    disarm_va_speaker_timeout(va);
-  }
-}
-
-
 // Explicitly stops VoiceAssistant's internal MicrophoneSource so shared I2S buses unlock immediately
 // even when Home Assistant sends STT_END + TTS_END in a single burst without STT_VAD_END.
 inline void stop_va_microphone(VoiceAssistant *va) {
@@ -91,21 +68,20 @@ inline void stop_va_microphone(VoiceAssistant *va) {
 
 // Performs a complete, synchronous client + server VoiceAssistant session abort.
 inline void abort_voice_assistant(VoiceAssistant *va) {
+  api::APIConnection *conn = nullptr;
   if (va != nullptr) {
+    conn = va->get_api_connection();
     stop_va_microphone(va);
     va->request_stop();
     va->reset_conversation_id();
-    reset_va_session_state(va);
     (va->*get(VA_SetState_Tag()))(State::IDLE, State::IDLE);
   }
 
-  if (api::global_api_server != nullptr) {
-    for (auto &client : api::global_api_server->active_clients()) {
-      api::VoiceAssistantRequest msg;
-      msg.start = false;
-      bool sent = client->send_message(msg);
-      (void)sent;
-    }
+  if (conn != nullptr) {
+    api::VoiceAssistantRequest msg;
+    msg.start = false;
+    bool sent = conn->send_message(msg);
+    (void)sent;
   }
 }
 
