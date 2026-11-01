@@ -420,8 +420,8 @@ inline void render_music_menus(
     draw_speaker_card(layout().slot5_y(4) + list_shift, slot_5_name, slot_5_id, slot_5_active);
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     if (music_browse_total_pages > 1) {
       char spk_hdr[40];
@@ -455,8 +455,8 @@ inline void render_music_menus(
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     render_menu_header(it, cx, 48, "LIBRARY", font_small, theme_primary);
     int cur_dot_page = menu_scroll_active ? menu_scroll_target_page : music_category_page;
@@ -475,7 +475,7 @@ inline void render_music_menus(
     }
 
     auto draw_drilldown_icon = [&](int x_pos, int y_mid) {
-      for (int dy : {-4, 0, 4}) it.filled_rectangle(x_pos, y_mid + scale_y(dy), scale_x(13), 2, theme_secondary);
+      for (int dy : {-4, 0, 4}) fill_rect_row_major(it, x_pos, y_mid + scale_y(dy), scale_x(13), 2, theme_secondary);
     };
 
     auto draw_slot_card = [&](int y_mid, const std::string &name, const std::string &mtype, bool is_act) {
@@ -527,8 +527,8 @@ inline void render_music_menus(
     draw_slot_card(layout().slot5_y(4) + list_shift, slot_5_name, slot_5_type, slot_5_active);
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     if (selected_category_mode == "active_queue") {
       char q_hdr[36];
@@ -643,7 +643,7 @@ inline void render_music_menus(
     // Scrubber Track Groove (r=5 capsule) + 25%/50%/75% ticks
     it.filled_circle(bar_x0, scrub_y, 5, col_dark_gray);
     it.filled_circle(bar_x1, scrub_y, 5, col_dark_gray);
-    it.filled_rectangle(bar_x0, scrub_y - 5, bar_w, 11, col_dark_gray);
+    fill_rect_row_major(it, bar_x0, scrub_y - 5, bar_w, 11, col_dark_gray);
     it.line(bar_x0, scrub_y - 5, bar_x1, scrub_y - 5, btn_brd);
     it.line(bar_x0, scrub_y + 5, bar_x1, scrub_y + 5, btn_brd);
     for (int q = 1; q <= 3; q++) {
@@ -656,7 +656,7 @@ inline void render_music_menus(
     int knob_x = bar_x0 + static_cast<int>(prog * static_cast<float>(bar_w));
     if (knob_x > bar_x0) {
       it.filled_circle(bar_x0, scrub_y, 4, theme_primary);
-      it.filled_rectangle(bar_x0, scrub_y - 4, knob_x - bar_x0, 9, theme_primary);
+      fill_rect_row_major(it, bar_x0, scrub_y - 4, knob_x - bar_x0, 9, theme_primary);
       it.horizontal_line(bar_x0, scrub_y - 3, knob_x - bar_x0, col_white);
     }
     it.filled_circle(knob_x, scrub_y, 9, col_white);

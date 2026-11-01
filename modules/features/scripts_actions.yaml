@@ -531,9 +531,7 @@ script:
   - id: hold_disp_poller_for_sendspin_start
     mode: restart
     then:
-      - lambda: |-
-          latter_ui::disp_poller_held() = true;
-          id(disp1).stop_poller();
+      - lambda: 'latter_ui::disp_poller_held() = true;'
       - wait_until:
           condition:
             lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;'
@@ -542,7 +540,6 @@ script:
       - lambda: |-
           latter_ui::disp_poller_held() = false;
           if (id(display_power_state) == 0 && !id(ota_in_progress)) {
-            id(disp1).start_poller();
             latter_ui::schedule_disp_update(&id(disp1));
           }
 
@@ -857,6 +854,12 @@ script:
           data:
             target_device: "${name}"
             command: "next"
+      - if:
+          condition:
+            lambda: 'return latter_ui::media_state().is_local;'
+          then:
+            - delay: 140ms
+            - script.execute: hold_disp_poller_for_sendspin_start
 
   - id: music_prev_track
     mode: restart
@@ -872,6 +875,12 @@ script:
           data:
             target_device: "${name}"
             command: "previous"
+      - if:
+          condition:
+            lambda: 'return latter_ui::media_state().is_local;'
+          then:
+            - delay: 140ms
+            - script.execute: hold_disp_poller_for_sendspin_start
 
   - id: music_seek_relative
     mode: restart

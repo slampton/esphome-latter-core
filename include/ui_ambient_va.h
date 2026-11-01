@@ -699,9 +699,9 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
   const int bar_x0 = 36;
   const int bar_w  = SCREEN_W - 72;
   const int fill_w = static_cast<int>(prog * static_cast<float>(bar_w));
-  it.filled_rectangle(bar_x0, 6, bar_w, 4, esphome::Color(28, 34, 44));
+  fill_rect_row_major(it, bar_x0, 6, bar_w, 4, esphome::Color(28, 34, 44));
   if (fill_w > 0) {
-    it.filled_rectangle(bar_x0, 6, fill_w, 4, col);
+    fill_rect_row_major(it, bar_x0, 6, fill_w, 4, col);
   }
   return;
 #endif

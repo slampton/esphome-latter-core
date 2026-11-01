@@ -552,6 +552,14 @@ inline esphome::Color scale_color(esphome::Color c, float scale) {
 // ------------------------------------------------------------------------------
 // 2. Reusable Geometric & Vector UI Drawing Primitives
 // ------------------------------------------------------------------------------
+template<typename DisplayT>
+inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
+  if (w <= 0 || h <= 0) return;
+  for (int row = 0; row < h; row++) {
+    it.horizontal_line(x, y + row, w, c);
+  }
+}
+
 template<typename DisplayT, typename FontT>
 inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
                                esphome::Color border_c, esphome::Color bg_c,
@@ -563,9 +571,9 @@ inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
   it.filled_circle(x2, y_mid, r, border_c);
   it.filled_circle(x1, y_mid, ri, bg_c);
   it.filled_circle(x2, y_mid, ri, bg_c);
-  it.filled_rectangle(x1, y_mid - r,      span_w, 2,          border_c);
-  it.filled_rectangle(x1, y_mid + r - 1,  span_w, 2,          border_c);
-  it.filled_rectangle(x1, y_mid - ri,     span_w, 2 * ri + 1, bg_c);
+  fill_rect_row_major(it, x1, y_mid - r,      span_w, 2,          border_c);
+  fill_rect_row_major(it, x1, y_mid + r - 1,  span_w, 2,          border_c);
+  fill_rect_row_major(it, x1, y_mid - ri,     span_w, 2 * ri + 1, bg_c);
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     int btn_cx = (x1 + x2) / 2;
@@ -658,14 +666,14 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
   int mid_h = h - 2 * r;
   if (mid_h > 0) {
     int mid_top = mid_h / 2;
-    if (mid_top > 0) {
-      it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_top, bg_upper);
+    for (int dy = 0; dy < mid_h; dy++) {
+      int py = y0 + r + dy;
+      it.draw_pixel_at(x0, py, border_c);
+      if (w > 2) {
+        it.horizontal_line(x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
+      }
+      it.draw_pixel_at(x0 + w - 1, py, border_c);
     }
-    if (mid_h - mid_top > 0) {
-      it.filled_rectangle(x0 + 1, y0 + r + mid_top, w - 2, mid_h - mid_top, bg_c);
-    }
-    it.vertical_line(x0,         y0 + r, mid_h, border_c);
-    it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
   }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
@@ -747,14 +755,14 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
   int mid_h = h - 2 * r;
   if (mid_h > 0) {
     int mid_top = mid_h / 2;
-    if (mid_top > 0) {
-      it.filled_rectangle(x0 + 1, y0 + r, w - 2, mid_top, bg_upper);
+    for (int dy = 0; dy < mid_h; dy++) {
+      int py = y0 + r + dy;
+      it.draw_pixel_at(x0, py, border_c);
+      if (w > 2) {
+        it.horizontal_line(x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
+      }
+      it.draw_pixel_at(x0 + w - 1, py, border_c);
     }
-    if (mid_h - mid_top > 0) {
-      it.filled_rectangle(x0 + 1, y0 + r + mid_top, w - 2, mid_h - mid_top, bg_c);
-    }
-    it.vertical_line(x0,         y0 + r, mid_h, border_c);
-    it.vertical_line(x0 + w - 1, y0 + r, mid_h, border_c);
   }
 }
 
@@ -926,8 +934,8 @@ inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
   const int half_w = scale_x(54);
   const int bar_h  = (SCREEN_H > 520) ? 7 : 5;
   const int cap_r  = bar_h / 2;
-  it.filled_rectangle(cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, esphome::Color(0, 0, 0));
-  it.filled_rectangle(cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
+  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, esphome::Color(0, 0, 0));
+  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
   it.filled_circle(cx - half_w + cap_r, y_pos, cap_r, bar_col);
   it.filled_circle(cx + half_w - cap_r, y_pos, cap_r, bar_col);
 }
@@ -947,9 +955,9 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const esphome::Color col_brd   = is_dim ? esphome::Color(24, 30, 38) : esphome::Color(50, 62, 78);
 
   if (!is_dim) {
-    it.filled_rectangle(track_x0 + 1, track_y0 + 1, track_w, track_h, esphome::Color(0, 0, 0));
+    fill_rect_row_major(it, track_x0 + 1, track_y0 + 1, track_w, track_h, esphome::Color(0, 0, 0));
   }
-  it.filled_rectangle(track_x0, track_y0, track_w, track_h, col_track);
+  fill_rect_row_major(it, track_x0, track_y0, track_w, track_h, col_track);
   it.horizontal_line(track_x0 + 1, track_y0, track_w - 2, col_brd);
   it.horizontal_line(track_x0 + 1, track_y0 + track_h - 1, track_w - 2, col_brd);
   it.filled_circle(track_x0 + r_cap, y_pos, r_cap, col_track);
@@ -962,7 +970,7 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const float frac = clamped_start / max_start;
   const int thumb_x0 = track_x0 + static_cast<int>( std::roundf(frac * static_cast<float>(track_w - thumb_w)) );
 
-  it.filled_rectangle(thumb_x0, track_y0, thumb_w, track_h, col_thumb);
+  fill_rect_row_major(it, thumb_x0, track_y0, thumb_w, track_h, col_thumb);
   it.filled_circle(thumb_x0 + r_cap, y_pos, r_cap, col_thumb);
   it.filled_circle(thumb_x0 + thumb_w - r_cap, y_pos, r_cap, col_thumb);
 }
@@ -980,8 +988,8 @@ inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pag
     if (p == active_page) {
       int pw = scale_x(7);
       int ph = dot_r * 2 + 1;
-      it.filled_rectangle(px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, esphome::Color(0, 0, 0));
-      it.filled_rectangle(px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
+      fill_rect_row_major(it, px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, esphome::Color(0, 0, 0));
+      fill_rect_row_major(it, px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
       it.filled_circle(px - pw / 2, y_pos, dot_r, col_active);
       it.filled_circle(px + pw / 2, y_pos, dot_r, col_active);
     } else {
@@ -1006,7 +1014,7 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
 #endif
   const int up_y = scale_y(162);
   const int dn_y = scale_y(278);
-  it.filled_rectangle(mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
+  fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
   if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, esphome::Color(0, 0, 0), false);
   if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, esphome::Color(0, 0, 0), false);
 }
@@ -1162,6 +1170,40 @@ template<typename DisplayT>
 inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span_w,
                                       int row_h, const uint16_t *row_buf,
                                       bool skip_black = false) {
+  if (row_h == 2) {
+    const int y1 = y + 1;
+    int i = 0;
+    while (i < span_w) {
+      const uint16_t p = row_buf[i];
+      int run = 1;
+      while (i + run < span_w && row_buf[i + run] == p) {
+        run++;
+      }
+      if (skip_black && (p & 0xFFDFU) == 0U) {
+        i += run;
+        continue;
+      }
+      const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
+      const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
+      const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
+      const esphome::Color c(r, g, b);
+      const int x0 = start_x + i;
+      if (run == 1) {
+        it.draw_pixel_at(x0, y, c);
+        it.draw_pixel_at(x0, y1, c);
+      } else if (run == 2) {
+        it.draw_pixel_at(x0, y, c);
+        it.draw_pixel_at(x0 + 1, y, c);
+        it.draw_pixel_at(x0, y1, c);
+        it.draw_pixel_at(x0 + 1, y1, c);
+      } else {
+        it.horizontal_line(x0, y, run, c);
+        it.horizontal_line(x0, y1, run, c);
+      }
+      i += run;
+    }
+    return;
+  }
   for (int r_off = 0; r_off < std::max(1, row_h); r_off++) {
     const int py = y + r_off;
     int i = 0;
@@ -1185,15 +1227,6 @@ inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span
       } else if (run == 2) {
         it.draw_pixel_at(x0, py, c);
         it.draw_pixel_at(x0 + 1, py, c);
-      } else if (run == 3) {
-        it.draw_pixel_at(x0, py, c);
-        it.draw_pixel_at(x0 + 1, py, c);
-        it.draw_pixel_at(x0 + 2, py, c);
-      } else if (run == 4) {
-        it.draw_pixel_at(x0, py, c);
-        it.draw_pixel_at(x0 + 1, py, c);
-        it.draw_pixel_at(x0 + 2, py, c);
-        it.draw_pixel_at(x0 + 3, py, c);
       } else {
         it.horizontal_line(x0, py, run, c);
       }
@@ -1799,7 +1832,7 @@ inline bool &disp_poller_held() {
 struct DisplayUpdateScheduler : public esphome::Component {
   template<typename DispT>
   static void request_ptr(DispT *disp) {
-    if (disp != nullptr && !screen_is_off_standby()) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
       uint32_t now_m = esphome::millis();
       uint32_t elapsed = now_m - last_disp_update_ms();
       const uint32_t min_idle = std::min<uint32_t>(85U, std::max<uint32_t>(38U, last_frame_duration_ms() / 2U));
@@ -1807,9 +1840,8 @@ struct DisplayUpdateScheduler : public esphome::Component {
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           "async_draw", delay_ms, [disp, min_idle]() {
-            if (screen_is_off_standby()) return;
+            if (screen_is_off_standby() || disp_poller_held()) return;
             if (esphome::millis() - last_disp_update_ms() < (min_idle - 6U)) return;
-            if (!disp_poller_held()) disp->start_poller();
             disp->update();
           });
     }
@@ -1817,7 +1849,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
 
   template<typename DispT>
   static void request_anim_ptr(DispT *disp) {
-    if (disp != nullptr && !screen_is_off_standby()) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
       constexpr uint32_t kFrameMs = 18U;
 #else
@@ -1829,8 +1861,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           "async_draw", delay_ms, [disp]() {
-            if (screen_is_off_standby()) return;
-            if (!disp_poller_held()) disp->start_poller();
+            if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
           });
     }

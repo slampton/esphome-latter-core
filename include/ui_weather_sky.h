@@ -1083,7 +1083,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   const bool storm_sky_flash = is_storm && (storm_phase_ms < 95U || (storm_phase_ms >= 155U && storm_phase_ms < 255U));
   const bool storm_bolt_vis  = is_storm && (storm_phase_ms < 285U);
 
-  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Full rectangle fill on Portrait Watch 410x502)
+  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Row-major rectangle fill on non-round)
   auto fill_sky_disc = [&](esphome::Color bg_c) {
 #if LATTER_ROUND_DISPLAY
     for (int y = 5; y <= 460; y++) {
@@ -1091,7 +1091,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
     }
 #else
-    it.fill(bg_c);
+    fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
 #endif
   };
   if (storm_sky_flash) {

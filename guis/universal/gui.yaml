@@ -97,6 +97,9 @@ color:
 display:
   - id: !extend disp1
     lambda: |-
+      if (latter_ui::disp_poller_held() && !id(ota_in_progress)) {
+        return;
+      }
       latter_ui::last_disp_update_ms() = millis();
       int prof_sub = 0;
       if (id(gui_page) == 1) prof_sub = id(home_subpage);
@@ -365,10 +368,6 @@ display:
               (is_remote || id(track_album).state.empty() || id(track_album).state == "None") ? ms_p2.album : id(track_album).state,
               id(album_art), id(remote_album_art),
               ms_p2.art_url, id(current_loaded_art_url));
-        }
-        if (id(mww).is_running()) {
-          id(mww).loop();
-          if (id(mww).is_running()) id(mww).loop();
         }
 
       // ==========================================
