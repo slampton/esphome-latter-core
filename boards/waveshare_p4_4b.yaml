@@ -29,7 +29,7 @@ substitutions:
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Always-On Wall / Desk"
-  sendspin_buffer_size: "262144"
+  sendspin_buffer_size: "1048576"
   announcement_buffer_size: "131072"
   audio_out_rate: "16000"
   audio_out_channels: "1"

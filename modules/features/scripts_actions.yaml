@@ -1145,6 +1145,8 @@ script:
             lambda: |-
               return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
+                     (id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                     !id(media_mixing_input).is_running() &&
                      !id(va).is_running() &&
                      !id(va_active) &&
                      !id(va_tts_received) &&

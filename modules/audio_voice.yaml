@@ -116,6 +116,8 @@ media_player:
     on_announcement:
       then:
         - script.stop: mp_idle_debounce
+        - script.stop: sync_wake_word_state
+        - script.stop: route_i2s_to_mic
         - script.stop: screen_sleep_timer
         - mixer_speaker.apply_ducking:
             id: media_mixing_input
@@ -154,6 +156,8 @@ media_player:
                   id(sleep_start_time) = 0;
                   id(active_game) = 0;
               - script.stop: mp_idle_debounce
+              - script.stop: sync_wake_word_state
+              - script.stop: route_i2s_to_mic
               - if:
                   condition:
                     lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
@@ -175,6 +179,7 @@ media_player:
                     lambda: 'return !id(speaker_enable).state || id(mww).is_running() || id(latter_mic).is_running();'
                   then:
                     - script.execute: route_i2s_to_spk
+                    - script.wait: route_i2s_to_spk
                     - switch.turn_on: speaker_enable
               - lambda: 'id(hal_set_dac_mute).execute(false);'
               - if:
@@ -633,6 +638,8 @@ script:
   - id: route_i2s_to_spk
     mode: restart
     then:
+      - script.stop: sync_wake_word_state
+      - script.stop: route_i2s_to_mic
       - if:
           condition:
             micro_wake_word.is_running:
@@ -704,6 +711,8 @@ script:
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
               const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+                                      id(media_mixing_input).is_running() ||
+                                      (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
               const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
@@ -730,15 +739,20 @@ script:
                   - script.execute: apply_wake_word_sensitivities
                   - if:
                       condition:
-                        not:
-                          micro_wake_word.is_running:
+                        lambda: |-
+                          return !id(mww).is_running() &&
+                                 !id(va_active) && !id(va).is_running() &&
+                                 !id(media_mixing_input).is_running() &&
+                                 (id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
                       then:
                         - micro_wake_word.start:
-                  - lambda: |-
-                      ESP_LOGI("mww", "Wake word detection ARMED (ww1='%s', ww2='%s', mode='%s')",
-                               esphome::voice_assistant::last_persisted_ww1().c_str(),
-                               esphome::voice_assistant::last_persisted_ww2().c_str(),
-                               id(va_wake_word_mode).current_option().c_str());
+                        - lambda: |-
+                            ESP_LOGI("mww", "Wake word detection ARMED (ww1='%s', ww2='%s', mode='%s')",
+                                     esphome::voice_assistant::last_persisted_ww1().c_str(),
+                                     esphome::voice_assistant::last_persisted_ww2().c_str(),
+                                     id(va_wake_word_mode).current_option().c_str());
           else:
             - if:
                 condition:

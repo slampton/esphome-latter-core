@@ -10,6 +10,7 @@
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
 #include <esp_timer.h>
 #endif
 #include <cmath>
@@ -588,6 +589,40 @@ inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
   }
   uint8_t *raw = DispBufferAccessor<DispT>::get(disp);
   if (raw == nullptr) {
+    static uint8_t *s_discovered_raw = nullptr;
+    static bool s_discovery_attempted = false;
+    if (!s_discovery_attempted) {
+      s_discovery_attempted = true;
+      it.draw_pixel_at(0, 0, esphome::Color(255, 0, 0));
+      it.draw_pixel_at(1, 0, esphome::Color(0, 255, 0));
+      auto *words = reinterpret_cast<uintptr_t *>(disp);
+      constexpr size_t kWordCount = sizeof(DispT) / sizeof(uintptr_t);
+      for (size_t i = 0; i < kWordCount; i++) {
+        void *cand = reinterpret_cast<void *>(words[i]);
+        if (cand == nullptr || (words[i] & 1U) != 0U) continue;
+#ifdef USE_ESP32
+        if (!esp_ptr_external_ram(cand) && !esp_ptr_in_dram(cand)) continue;
+#endif
+        auto *p16 = reinterpret_cast<uint16_t *>(cand);
+        const uint16_t c0 = p16[0];
+        const uint16_t c1 = p16[1];
+        const bool c0_red = (c0 == 0xF800U || c0 == 0x00F8U || c0 == 0x001FU || c0 == 0x1F00U);
+        const bool c1_grn = (c1 == 0x07E0U || c1 == 0xE007U);
+        if (c0_red && c1_grn) {
+          it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
+          if (p16[0] == 0x0000U) {
+            s_discovered_raw = reinterpret_cast<uint8_t *>(cand);
+            break;
+          }
+          it.draw_pixel_at(0, 0, esphome::Color(255, 0, 0));
+        }
+      }
+      it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
+      it.draw_pixel_at(1, 0, esphome::Color(0, 0, 0));
+    }
+    raw = s_discovered_raw;
+  }
+  if (raw == nullptr) {
     active_frame_buf16() = nullptr;
     return;
   }
@@ -608,6 +643,8 @@ inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
     } else {
       active_frame_endian_mode() = 0;
     }
+    ESP_LOGI("disp_fb", "Bound direct RGB565 framebuffer: ptr=%p endian_mode=%d",
+             (void *)buf16, active_frame_endian_mode());
   }
   active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
 #if LATTER_ROUND_DISPLAY
@@ -933,13 +970,13 @@ inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
     int hw_in  = (std::abs(dy) >= r - 1) ? 0 : chord_half_span_int(r - 1, dy, true);
     esphome::Color brd_row = (dy < -r / 3) ? brd_top : ((dy > r / 3) ? brd_btm : border_c);
     if (hw_in <= 0) {
-      it.horizontal_line(cx_btn - hw_out, y, 2 * hw_out + 1, brd_row);
+      fast_hline(it, cx_btn - hw_out, y, 2 * hw_out + 1, brd_row);
     } else {
       esphome::Color fill_row = (dy == -r + 1) ? bg_spec : ((dy < -r / 4) ? bg_top : ((dy > r / 4) ? bg_btm : bg_c));
       int cap_w = std::max(1, hw_out - hw_in);
-      it.horizontal_line(cx_btn - hw_out, y, cap_w, brd_row);
-      it.horizontal_line(cx_btn - hw_in,  y, 2 * hw_in + 1, fill_row);
-      it.horizontal_line(cx_btn + hw_in + 1, y, cap_w, brd_row);
+      fast_hline(it, cx_btn - hw_out, y, cap_w, brd_row);
+      fast_hline(it, cx_btn - hw_in,  y, 2 * hw_in + 1, fill_row);
+      fast_hline(it, cx_btn + hw_in + 1, y, cap_w, brd_row);
     }
   }
 }
@@ -1024,8 +1061,8 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
 
   for (int y = pad; y <= SCREEN_H - 1 - pad; y++) {
     if (y >= y_tc && y <= y_bc) {
-      it.horizontal_line(pad, y, thick, ring_c);
-      it.horizontal_line(SCREEN_W - pad - thick, y, thick, ring_c);
+      fast_hline(it, pad, y, thick, ring_c);
+      fast_hline(it, SCREEN_W - pad - thick, y, thick, ring_c);
     } else {
       int dy = (y < y_tc) ? (y_tc - y) : (y - y_bc);
       if (dy > cr_out) continue;
@@ -1034,13 +1071,13 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
         int x0 = x_lc - dx_out;
         int x1 = x_rc + dx_out;
         if (x1 >= x0) {
-          it.horizontal_line(x0, y, x1 - x0 + 1, ring_c);
+          fast_hline(it, x0, y, x1 - x0 + 1, ring_c);
         }
       } else {
         int dx_in = chord_half_span_int(cr_in, dy, false);
         int seg = std::max(thick, dx_out - dx_in + 1);
-        it.horizontal_line(x_lc - dx_out, y, seg, ring_c);
-        it.horizontal_line(x_rc + dx_out - seg + 1, y, seg, ring_c);
+        fast_hline(it, x_lc - dx_out, y, seg, ring_c);
+        fast_hline(it, x_rc + dx_out - seg + 1, y, seg, ring_c);
       }
     }
   }
@@ -1431,7 +1468,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         row_buf[i] = src_row[sx];
       }
       dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf, true);
+      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf, false);
     }
 
     // Crisp top-lit specular glass frame around the centered Standard album art square
@@ -1439,17 +1476,17 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     const esphome::Color brd_side(56, 66, 82);
     const esphome::Color brd_btm(38, 45, 58);
     int top_in = r_std / 2 + 2;
-    it.horizontal_line(x0 + top_in, y0,                std_size - 2 * top_in, brd_top);
-    it.horizontal_line(x0 + top_in, y0 + std_size - 1, std_size - 2 * top_in, brd_btm);
+    fast_hline(it, x0 + top_in, y0,                std_size - 2 * top_in, brd_top);
+    fast_hline(it, x0 + top_in, y0 + std_size - 1, std_size - 2 * top_in, brd_btm);
     it.vertical_line(x0,                y0 + r_std, std_size - 2 * r_std, brd_side);
     it.vertical_line(x0 + std_size - 1, y0 + r_std, std_size - 2 * r_std, brd_side);
     for (int dy = 1; dy < r_std; dy++) {
       int dx_out = r_std - chord_half_span_int(r_std, r_std - dy, true);
       int dx_in  = dx_out + 1;
-      it.horizontal_line(x0 + dx_out, y0 + dy, dx_in - dx_out, brd_top);
-      it.horizontal_line(x0 + std_size - dx_in, y0 + dy, dx_in - dx_out, brd_top);
-      it.horizontal_line(x0 + dx_out, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
-      it.horizontal_line(x0 + std_size - dx_in, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
+      fast_hline(it, x0 + dx_out, y0 + dy, dx_in - dx_out, brd_top);
+      fast_hline(it, x0 + std_size - dx_in, y0 + dy, dx_in - dx_out, brd_top);
+      fast_hline(it, x0 + dx_out, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
+      fast_hline(it, x0 + std_size - dx_in, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
     }
     return true;
   }
@@ -1467,11 +1504,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
       if (mul_q3 >= 8) {
-        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, true);
+        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, false);
       } else {
         std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
         dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-        blit_rgb565_scanline(it, start_x, y, span_w, row_buf, true);
+        blit_rgb565_scanline(it, start_x, y, span_w, row_buf, false);
       }
     }
   } else {
@@ -1509,7 +1546,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         prev_sy = sy;
         prev_mul_q3 = mul_q3;
       }
-      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, true);
+      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, false);
     }
   }
 
