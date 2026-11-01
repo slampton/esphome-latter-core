@@ -727,7 +727,17 @@ inline DockSlideAnimator &mode_bar_anim() {
   return anim;
 }
 
-inline bool any_dock_anim_active() {
+inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0) {
+  if (gui_page >= 0) {
+    if (gui_page != 1 || home_subpage != 0) {
+      home_dock_anim().win_animating = false;
+      home_dock_anim().act_animating = false;
+    }
+    if (gui_page != 5 && gui_page != 6 && gui_page != 9) {
+      mode_bar_anim().win_animating = false;
+      mode_bar_anim().act_animating = false;
+    }
+  }
   return home_dock_anim().is_animating() || mode_bar_anim().is_animating();
 }
 

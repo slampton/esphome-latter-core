@@ -699,7 +699,7 @@ display:
       uint32_t end_draw_ms = millis();
       latter_ui::last_disp_update_ms() = end_draw_ms;
       latter_ui::record_ambient_frame_ms(end_draw_ms);
-      if (latter_ui::any_dock_anim_active()) {
+      if (latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage))) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
       }
 

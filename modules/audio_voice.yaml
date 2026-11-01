@@ -23,6 +23,18 @@ speaker:
       - id: media_mixing_input
         timeout: 1500ms
 
+  - id: media_resampler
+    platform: resampler
+    output_speaker: media_mixing_input
+    sample_rate: ${audio_out_rate}
+    task_stack_in_psram: true
+
+  - id: announcement_resampler
+    platform: resampler
+    output_speaker: announcement_mixing_input
+    sample_rate: ${audio_out_rate}
+    task_stack_in_psram: true
+
   - id: rtttl_resampler
     platform: resampler
     output_speaker: announcement_mixing_input
@@ -58,19 +70,19 @@ media_player:
   - platform: speaker_source
     id: latter_media_player
     name: "Music"
-    # Native-Rate Audio Policy: Request the board's native output rate/channels directly so server/Sendspin converts
+    # Sendspin streams 48000 Hz stereo FLAC; speaker_source + resampler adapt to ${audio_out_rate} mono
     announcement_pipeline:
       format: FLAC
-      num_channels: ${audio_out_channels}
-      sample_rate: ${audio_out_rate}
-      speaker: announcement_mixing_input
+      num_channels: 1
+      sample_rate: 48000
+      speaker: announcement_resampler
       sources:
         - http_announcement_source
     media_pipeline:
       format: FLAC
-      num_channels: ${audio_out_channels}
-      sample_rate: ${audio_out_rate}
-      speaker: media_mixing_input
+      num_channels: 2
+      sample_rate: 48000
+      speaker: media_resampler
       sources:
         - sendspin_source
     volume_initial: 60%
@@ -541,12 +553,18 @@ script:
   - id: va_tts_drain_and_finish
     mode: restart
     then:
-      # 1. Single bounded wait on announcement_mixing_input (<= 1s buffer_duration + 2s margin)
+      # 1a. Wait for speaker_source to finish decoding the TTS stream (up to 60s for multi-sentence responses)
       - wait_until:
           condition:
             lambda: |-
-              return (!id(announcement_mixing_input).is_running() &&
-                      id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (!id(va_active) && !id(va_tts_received));
+          timeout: 60s
+      # 1b. Bounded wait on announcement_mixing_input (<= 1s buffer_duration + 2s margin)
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(announcement_mixing_input).is_running() ||
                      (!id(va_active) && !id(va_tts_received));
           timeout: !lambda 'return (${announcement_buffer_s} + 2) * 1000;'
       - delay: 250ms
