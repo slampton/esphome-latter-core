@@ -569,6 +569,25 @@ struct DispBufferAccessor<DispT, false> : DispT {
   }
 };
 
+#if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
+struct MipiDsiBufferTag {
+  using type = uint8_t *(esphome::mipi_dsi::MipiDsi::*);
+};
+template <typename Tag, typename Tag::type M>
+struct MipiDsiBufferRob {
+  friend constexpr typename Tag::type get_mipi_dsi_buffer_member(Tag) { return M; }
+};
+constexpr MipiDsiBufferTag::type get_mipi_dsi_buffer_member(MipiDsiBufferTag);
+template struct MipiDsiBufferRob<MipiDsiBufferTag, &esphome::mipi_dsi::MipiDsi::buffer_>;
+
+template<>
+struct DispBufferAccessor<esphome::mipi_dsi::MipiDsi, true> {
+  static uint8_t *get(esphome::mipi_dsi::MipiDsi *d) {
+    return (d != nullptr) ? (d->*get_mipi_dsi_buffer_member(MipiDsiBufferTag{})) : nullptr;
+  }
+};
+#endif
+
 inline uint16_t *&active_frame_buf16() {
   static uint16_t *ptr = nullptr;
   return ptr;
@@ -588,40 +607,6 @@ inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
     return;
   }
   uint8_t *raw = DispBufferAccessor<DispT>::get(disp);
-  if (raw == nullptr) {
-    static uint8_t *s_discovered_raw = nullptr;
-    static bool s_discovery_attempted = false;
-    if (!s_discovery_attempted) {
-      s_discovery_attempted = true;
-      it.draw_pixel_at(0, 0, esphome::Color(255, 0, 0));
-      it.draw_pixel_at(1, 0, esphome::Color(0, 255, 0));
-      auto *words = reinterpret_cast<uintptr_t *>(disp);
-      constexpr size_t kWordCount = sizeof(DispT) / sizeof(uintptr_t);
-      for (size_t i = 0; i < kWordCount; i++) {
-        void *cand = reinterpret_cast<void *>(words[i]);
-        if (cand == nullptr || (words[i] & 1U) != 0U) continue;
-#ifdef USE_ESP32
-        if (!esp_ptr_external_ram(cand) && !esp_ptr_in_dram(cand)) continue;
-#endif
-        auto *p16 = reinterpret_cast<uint16_t *>(cand);
-        const uint16_t c0 = p16[0];
-        const uint16_t c1 = p16[1];
-        const bool c0_red = (c0 == 0xF800U || c0 == 0x00F8U || c0 == 0x001FU || c0 == 0x1F00U);
-        const bool c1_grn = (c1 == 0x07E0U || c1 == 0xE007U);
-        if (c0_red && c1_grn) {
-          it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
-          if (p16[0] == 0x0000U) {
-            s_discovered_raw = reinterpret_cast<uint8_t *>(cand);
-            break;
-          }
-          it.draw_pixel_at(0, 0, esphome::Color(255, 0, 0));
-        }
-      }
-      it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
-      it.draw_pixel_at(1, 0, esphome::Color(0, 0, 0));
-    }
-    raw = s_discovered_raw;
-  }
   if (raw == nullptr) {
     active_frame_buf16() = nullptr;
     return;

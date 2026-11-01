@@ -98,8 +98,8 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
     uint8_t dac_wake[2] = {0x0D, 0x01};
     bus->write(0x18, dac_wake, 2);
     if (has_es7210) {
-      uint8_t adc_wake1[2] = {0x40, 0x43};
-      uint8_t adc_wake2[2] = {0x06, 0x00};
+      uint8_t adc_wake1[2] = {0x40, 0xC3};
+      uint8_t adc_wake2[2] = {0x06, 0x04};
       bus->write(0x40, adc_wake1, 2);
       bus->write(0x40, adc_wake2, 2);
     }

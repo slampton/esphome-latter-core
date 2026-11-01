@@ -234,6 +234,9 @@ micro_wake_word:
     microphone: latter_mic
     channels: 0
     gain_factor: 2
+  prefer_internal_ram: true
+  ring_buffer_duration: 1000ms
+  task_core: 1
   task_stack_in_psram: false
   stop_after_detection: true
   vad:
@@ -647,9 +650,6 @@ script:
             - micro_wake_word.stop:
       - lambda: |-
           esphome::voice_assistant::stop_va_microphone(id(va));
-          if (id(latter_mic).is_running()) {
-            id(latter_mic).stop();
-          }
       - if:
           condition:
             lambda: 'return id(latter_mic).is_running();'

@@ -144,7 +144,7 @@ audio_adc:
     address: 0x40
     bits_per_sample: 16bit
     sample_rate: ${audio_in_rate}
-    mic_gain: 37.5dB
+    mic_gain: 24dB
 
 microphone:
   - platform: i2s_audio
