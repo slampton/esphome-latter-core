@@ -274,7 +274,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          latter_ui::hal_power_down_audio_and_imu_for_hibernate(&id(bus_internal), true, true);
+          latter_ui::hal_power_down_audio_and_imu_for_hibernate(id(bus_internal), true, true);
 
           gpio_set_direction(GPIO_NUM_46, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_46, 0);
@@ -301,7 +301,7 @@ script:
               id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
               id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
               id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence));
-          latter_ui::enter_axp2101_hibernate_or_alarm_sleep(&id(bus_internal), sec_to_alarm);
+          latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);
 
   - id: hal_set_audio_codecs_standby
     mode: restart
@@ -309,4 +309,4 @@ script:
       standby: bool
     then:
       - lambda: |-
-          latter_ui::hal_set_es8311_es7210_standby(&id(bus_internal), standby, true);
+          latter_ui::hal_set_es8311_es7210_standby(id(bus_internal), standby, true);

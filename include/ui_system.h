@@ -190,6 +190,11 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_unt
 #endif
 }
 
+template <typename I2cBusT>
+inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {
+  if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
+}
+
 inline std::string &latter_site_id() {
   static std::string s = "primary";
   return s;

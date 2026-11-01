@@ -98,6 +98,11 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
   }
 }
 
+template <typename I2cBusT>
+inline void hal_set_es8311_es7210_standby(I2cBusT *const *bus_pp, bool standby, bool has_es7210 = true) {
+  if (bus_pp != nullptr) hal_set_es8311_es7210_standby(*bus_pp, standby, has_es7210);
+}
+
 // Powers down QMI8658 IMU (0x6B), ES8311 DAC (0x18), and optional ES7210 ADC (0x40) prior to hibernate.
 template <typename I2cBusT>
 inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *bus, bool has_imu, bool has_es7210 = true) {
@@ -114,6 +119,11 @@ inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *bus, bool has_im
     uint8_t es7210_pwr[2] = {0x00, 0xFF};
     bus->write(0x40, es7210_pwr, 2);
   }
+}
+
+template <typename I2cBusT>
+inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *const *bus_pp, bool has_imu, bool has_es7210 = true) {
+  if (bus_pp != nullptr) hal_power_down_audio_and_imu_for_hibernate(*bus_pp, has_imu, has_es7210);
 }
 
 }  // namespace latter_ui
