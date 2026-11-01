@@ -1246,6 +1246,14 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
   blit_rgb565_scanline_rows(it, start_x, y, span_w, 1, row_buf, skip_black);
 }
 
+// Optional mid-frame audio pump hook (bound to micro_wake_word::loop() when running)
+// invoked at the midpoint of full-screen image renders so 210-260ms frames never exceed
+// micro_wake_word's ~200ms ring buffer capacity.
+inline void (*&mid_frame_audio_pump())() {
+  static void (*fn)() = nullptr;
+  return fn;
+}
+
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
 // smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
 template<typename DisplayT, typename ImageT>
@@ -1435,6 +1443,9 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int x0_b = std::max(0, cx - hw_btm), x1_b = std::min(SCREEN_W - 1, cx + hw_btm);
     if (x1_t > x0_t) it.horizontal_line(x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
     if (x1_b > x0_b) it.horizontal_line(x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
+  }
+  if (mid_frame_audio_pump() != nullptr) {
+    mid_frame_audio_pump()();
   }
   return true;
 }
@@ -1849,9 +1860,8 @@ struct DisplayUpdateScheduler : public esphome::Component {
       uint32_t delay_ms = (elapsed < min_idle) ? (min_idle - elapsed) : 0U;
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          "async_draw", delay_ms, [disp, min_idle]() {
+          "async_draw", delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
-            if (esphome::millis() - last_disp_update_ms() < (min_idle - 6U)) return;
             disp_explicit_update_pending() = true;
             disp->update();
           });

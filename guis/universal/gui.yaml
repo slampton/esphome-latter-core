@@ -110,6 +110,11 @@ display:
         }
       }
       latter_ui::last_disp_update_ms() = millis();
+      latter_ui::mid_frame_audio_pump() = +[]() {
+        if (id(mww).is_running()) {
+          id(mww).loop();
+        }
+      };
       int prof_sub = 0;
       if (id(gui_page) == 1) prof_sub = id(home_subpage);
       else if (id(gui_page) == 2) prof_sub = id(music_overlay_mode);
@@ -268,6 +273,10 @@ display:
       }
 
       float batt = id(batt_level).state;
+      if (id(gui_page) != 1 && id(gui_page) != 2 &&
+          !(id(gui_page) == 5 && id(sky_weather_subpage) == 0)) {
+        it.fill(id(col_bg));
+      }
 
       // ==========================================
       // PAGE 0: WATCH FACE (ANALOG & DIGITAL)

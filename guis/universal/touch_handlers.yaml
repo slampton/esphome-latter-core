@@ -198,11 +198,8 @@ script:
                   if (next_pg != id(music_browse_page)) {
                     id(music_browse_page) = next_pg;
                     latter_ui::last_music_page_req_ms() = now_touch;
-                    id(menu_scroll_active) = true;
-                    id(menu_scroll_dir) = sign;
-                    id(menu_scroll_target_page) = next_pg;
+                    id(menu_scroll_active) = false;
                     id(menu_scroll_step) = 0;
-                    id(menu_scroll_transition).execute();
                     id(fetch_music_browse).execute();
                   }
                 }
@@ -874,8 +871,8 @@ script:
                       id(menu_scroll_active) = false;
                       id(menu_scroll_step) = 0;
                       id(music_overlay_mode) = 2;
+                      latter_ui::schedule_disp_update(&id(disp1));
                     }
-                    latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 }
@@ -2702,13 +2699,10 @@ script:
                   if (next_pg != id(music_browse_page)) {
                     id(music_browse_page) = next_pg;
                     latter_ui::last_music_page_req_ms() = now_rel;
-                    id(menu_scroll_active) = true;
-                    id(menu_scroll_dir) = sign;
-                    id(menu_scroll_target_page) = next_pg;
+                    id(menu_scroll_active) = false;
                     id(menu_scroll_step) = 0;
                     ESP_LOGI("touch", "Music Flick (dy=%d, dt=%lums) -> step=%d page=%d/%d",
                              dy, (unsigned long)touch_dur_ms, delta, next_pg, id(music_browse_total_pages));
-                    id(menu_scroll_transition).execute();
                     id(fetch_music_browse).execute();
                   }
                 } else if (!id(menu_scroll_active) && gest.max_travel < latter_ui::scale_s(36) && gest.last_y < latter_ui::scale_y(404) &&
@@ -2732,7 +2726,6 @@ script:
                       if (next_pg != id(music_browse_page)) {
                         id(music_browse_page) = next_pg;
                         id(fetch_music_browse).execute();
-                        latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
                   } else if (id(music_overlay_mode) == 1) {

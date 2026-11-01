@@ -92,6 +92,9 @@ inline void render_music_now_playing(
                                  ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
                                  remote_art && remote_art->get_width() > 0);
   const bool local_art_ready = (local_art && local_art->get_width() > 0);
+  if (is_standard || is_letterbox) {
+    it.fill(col_bg);
+  }
   if (is_remote) {
     if (remote_art_ready) {
       has_art = true;
@@ -113,6 +116,9 @@ inline void render_music_now_playing(
   }
 
   if (!rendered_art) {
+    if (!is_standard && !is_letterbox) {
+      it.fill(col_bg);
+    }
     it.filled_circle(cx, art_center_y, scale_s(80), col_dark_gray);
     it.circle(cx, art_center_y, scale_s(80), is_remote ? theme_secondary : theme_primary);
     it.circle(cx, art_center_y, scale_s(64), col_bg);
@@ -353,6 +359,7 @@ inline void render_music_menus(
   const esphome::Color card_brd(56, 68, 84);
 
   (void)current_loaded_art_url;
+  bool art_drawn = false;
   if (!menu_scroll_active) {
     const bool rem_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
                             ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
@@ -360,16 +367,19 @@ inline void render_music_menus(
     const bool loc_ready = (local_art != nullptr && local_art->get_width() > 0);
     if (is_rem) {
       if (rem_ready) {
-        render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
+        art_drawn = render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
         card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
       }
     } else if (loc_ready) {
-      render_album_art_canvas(it, local_art, cx, false, false, true, false, 2);
+      art_drawn = render_album_art_canvas(it, local_art, cx, false, false, true, false, 2);
       card_bg = sample_image_ambient_tint(local_art, esphome::Color(20, 25, 34));
     } else if (rem_ready) {
-      render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
+      art_drawn = render_album_art_canvas(it, remote_art, cx, false, false, true, false, 2);
       card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
     }
+  }
+  if (!art_drawn) {
+    it.fill(col_bg);
   }
 
   const int row0_y = layout().slot5_y(0);
