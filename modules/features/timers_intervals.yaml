@@ -121,7 +121,9 @@ interval:
                   id(mww).is_running();
               const bool slow_cloud_drift_only =
                   cached_has_motion && !cached_high_rate && !ui_overlay_animating && !LATTER_HAS_IMU;
-              const uint32_t drift_min_gap = audio_or_mww_busy ? 320U : 220U;
+              const uint32_t drift_min_gap = (latter_ui::SCREEN_W > 520)
+                  ? (audio_or_mww_busy ? 450U : 320U)
+                  : (audio_or_mww_busy ? 320U : 220U);
               const bool drift_ready = !slow_cloud_drift_only ||
                                        (now_w_ms - latter_ui::last_ambient_anim_ms() >= drift_min_gap);
               if (sim_just_changed || (drift_ready && latter_ui::should_step_ambient_anim(

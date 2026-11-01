@@ -1160,7 +1160,8 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
 
 template<typename DisplayT>
 inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span_w,
-                                      int row_h, const uint16_t *row_buf) {
+                                      int row_h, const uint16_t *row_buf,
+                                      bool skip_black = false) {
   int i = 0;
   while (i < span_w) {
     const uint16_t p = row_buf[i];
@@ -1168,26 +1169,38 @@ inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span
     while (i + run < span_w && row_buf[i + run] == p) {
       run++;
     }
+    if (skip_black && p == 0x0000U) {
+      i += run;
+      continue;
+    }
     const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
     const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
     const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
     const esphome::Color c(r, g, b);
+    const int x0 = start_x + i;
     if (row_h <= 1) {
       if (run == 1) {
-        it.draw_pixel_at(start_x + i, y, c);
+        it.draw_pixel_at(x0, y, c);
+      } else if (run == 2) {
+        it.draw_pixel_at(x0, y, c);
+        it.draw_pixel_at(x0 + 1, y, c);
       } else {
-        it.horizontal_line(start_x + i, y, run, c);
+        it.horizontal_line(x0, y, run, c);
       }
     } else if (row_h == 2) {
       if (run == 1) {
-        it.draw_pixel_at(start_x + i, y, c);
-        it.draw_pixel_at(start_x + i, y + 1, c);
+        it.draw_pixel_at(x0, y, c);
+        it.draw_pixel_at(x0, y + 1, c);
+      } else if (run == 2) {
+        it.draw_pixel_at(x0, y, c);
+        it.draw_pixel_at(x0 + 1, y, c);
+        it.draw_pixel_at(x0, y + 1, c);
+        it.draw_pixel_at(x0 + 1, y + 1, c);
       } else {
-        it.horizontal_line(start_x + i, y, run, c);
-        it.horizontal_line(start_x + i, y + 1, run, c);
+        it.filled_rectangle(x0, y, run, 2, c);
       }
     } else {
-      it.filled_rectangle(start_x + i, y, run, row_h, c);
+      it.filled_rectangle(x0, y, run, row_h, c);
     }
     i += run;
   }
@@ -1195,13 +1208,13 @@ inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span
 
 template<typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
-                                 const uint16_t *row_buf) {
+                                 const uint16_t *row_buf, bool skip_black = false) {
   // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
   // SPI buffer is big_endian ("[E][display.mipi_spi:220]: Unsupported color depth or bit order"),
   // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
   // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
   // into each driver's software buffer with automatic endianness and RGB/BGR handling.
-  blit_rgb565_scanline_rows(it, start_x, y, span_w, 1, row_buf);
+  blit_rgb565_scanline_rows(it, start_x, y, span_w, 1, row_buf, skip_black);
 }
 
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
@@ -1262,7 +1275,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         row_buf[i] = src_row[sx];
       }
       dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf);
+      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf, true);
     }
 
     // Crisp top-lit specular glass frame around the centered Standard album art square
@@ -1298,11 +1311,11 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
       if (mul_q3 >= 8) {
-        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x);
+        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, true);
       } else {
         std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
         dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-        blit_rgb565_scanline(it, start_x, y, span_w, row_buf);
+        blit_rgb565_scanline(it, start_x, y, span_w, row_buf, true);
       }
     }
   } else {
@@ -1358,31 +1371,31 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
           int start_x1 = std::max(0, cx - hw1);
           int end_x1 = std::min(SCREEN_W - 1, cx + hw1);
           if (start_x == start_x1 && end_x == end_x1) {
-            blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x);
+            blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x, true);
           } else {
             int ov_start = std::max(start_x, start_x1);
             int ov_end = std::min(end_x, end_x1);
             if (start_x < ov_start) {
-              blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x);
+              blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x, true);
             }
             if (start_x1 < ov_start) {
-              blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1);
+              blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1, true);
             }
             if (ov_end >= ov_start) {
-              blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start);
+              blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start, true);
             }
             if (end_x > ov_end) {
-              blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1);
+              blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1, true);
             }
             if (end_x1 > ov_end) {
-              blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1);
+              blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1, true);
             }
           }
           y++;
           continue;
         }
       }
-      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x);
+      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, true);
     }
   }
 

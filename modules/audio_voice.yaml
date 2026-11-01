@@ -230,7 +230,7 @@ micro_wake_word:
     microphone: latter_mic
     channels: 0
     gain_factor: 2
-  task_stack_in_psram: true
+  task_stack_in_psram: false
   stop_after_detection: true
   vad:
   # At most 2 models run concurrently (enforced by ensure_wake_words_restored & poll_and_persist_wake_words).
