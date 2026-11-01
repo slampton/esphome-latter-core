@@ -1178,6 +1178,14 @@ inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span
       } else {
         it.horizontal_line(start_x + i, y, run, c);
       }
+    } else if (row_h == 2) {
+      if (run == 1) {
+        it.draw_pixel_at(start_x + i, y, c);
+        it.draw_pixel_at(start_x + i, y + 1, c);
+      } else {
+        it.horizontal_line(start_x + i, y, run, c);
+        it.horizontal_line(start_x + i, y + 1, run, c);
+      }
     } else {
       it.filled_rectangle(start_x + i, y, run, row_h, c);
     }
@@ -1346,32 +1354,28 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         int next_mul = compute_art_row_scale_q3(y + 1, apply_scrim, show_metadata, dim_level);
         if (next_sy == sy && next_mul == mul_q3) {
           curr_y += step_fp;
-          if (!LATTER_ROUND_DISPLAY) {
+          int hw1 = circle_half_span(y + 1, 0);
+          int start_x1 = std::max(0, cx - hw1);
+          int end_x1 = std::min(SCREEN_W - 1, cx + hw1);
+          if (start_x == start_x1 && end_x == end_x1) {
             blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x);
           } else {
-            int hw1 = circle_half_span(y + 1, 0);
-            int start_x1 = std::max(0, cx - hw1);
-            int end_x1 = std::min(SCREEN_W - 1, cx + hw1);
-            if (start_x == start_x1 && end_x == end_x1) {
-              blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x);
-            } else {
-              int ov_start = std::max(start_x, start_x1);
-              int ov_end = std::min(end_x, end_x1);
-              if (start_x < ov_start) {
-                blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x);
-              }
-              if (start_x1 < ov_start) {
-                blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1);
-              }
-              if (ov_end >= ov_start) {
-                blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start);
-              }
-              if (end_x > ov_end) {
-                blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1);
-              }
-              if (end_x1 > ov_end) {
-                blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1);
-              }
+            int ov_start = std::max(start_x, start_x1);
+            int ov_end = std::min(end_x, end_x1);
+            if (start_x < ov_start) {
+              blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x);
+            }
+            if (start_x1 < ov_start) {
+              blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1);
+            }
+            if (ov_end >= ov_start) {
+              blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start);
+            }
+            if (end_x > ov_end) {
+              blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1);
+            }
+            if (end_x1 > ov_end) {
+              blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1);
             }
           }
           y++;

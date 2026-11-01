@@ -87,8 +87,9 @@ inline void render_music_now_playing(
   bool has_art = false;
   bool rendered_art = false;
   bool used_remote_art = false;
+  (void)current_loaded_art_url;
   const bool remote_art_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-                                 current_loaded_art_url == ha_target_art_url &&
+                                 ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
                                  remote_art && remote_art->get_width() > 0);
   const bool local_art_ready = (local_art && local_art->get_width() > 0);
   if (is_remote) {
@@ -351,9 +352,10 @@ inline void render_music_menus(
   esphome::Color card_bg(22, 27, 36);
   const esphome::Color card_brd(56, 68, 84);
 
+  (void)current_loaded_art_url;
   if (!menu_scroll_active) {
     const bool rem_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-                            current_loaded_art_url == ha_target_art_url &&
+                            ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
                             remote_art != nullptr && remote_art->get_width() > 0);
     const bool loc_ready = (local_art != nullptr && local_art->get_width() > 0);
     if (is_rem) {
