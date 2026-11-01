@@ -1159,13 +1159,8 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
 }
 
 template<typename DisplayT>
-inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
-                                 const uint16_t *row_buf) {
-  // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
-  // SPI buffer is big_endian ("[E][display.mipi_spi:220]: Unsupported color depth or bit order"),
-  // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
-  // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
-  // into each driver's software buffer with automatic endianness and RGB/BGR handling.
+inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span_w,
+                                      int row_h, const uint16_t *row_buf) {
   int i = 0;
   while (i < span_w) {
     const uint16_t p = row_buf[i];
@@ -1177,13 +1172,28 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
     const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
     const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
     const esphome::Color c(r, g, b);
-    if (run == 1) {
-      it.draw_pixel_at(start_x + i, y, c);
+    if (row_h <= 1) {
+      if (run == 1) {
+        it.draw_pixel_at(start_x + i, y, c);
+      } else {
+        it.horizontal_line(start_x + i, y, run, c);
+      }
     } else {
-      it.horizontal_line(start_x + i, y, run, c);
+      it.filled_rectangle(start_x + i, y, run, row_h, c);
     }
     i += run;
   }
+}
+
+template<typename DisplayT>
+inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
+                                 const uint16_t *row_buf) {
+  // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
+  // SPI buffer is big_endian ("[E][display.mipi_spi:220]: Unsupported color depth or bit order"),
+  // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
+  // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
+  // into each driver's software buffer with automatic endianness and RGB/BGR handling.
+  blit_rgb565_scanline_rows(it, start_x, y, span_w, 1, row_buf);
 }
 
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
@@ -1315,7 +1325,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
         const int sx0 = src_x0_fp >> 12;
         if (step_fp == 2048 && sx0 >= 0 && (sx0 + (SCREEN_W + 1) / 2) <= src_w) {
           for (int x = 0, sx = sx0; x < SCREEN_W; x += 2, sx++) {
-            uint16_t px = src_row[sx];
+            uint16_t px = scale_rgb565_q3(src_row[sx], mul_q3);
             row_buf[x] = px;
             if (x + 1 < SCREEN_W) row_buf[x + 1] = px;
           }
@@ -1326,10 +1336,47 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
             curr_x += step_fp;
             row_buf[x] = src_row[sx];
           }
+          dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
         }
-        dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
         prev_sy = sy;
         prev_mul_q3 = mul_q3;
+      }
+      if (y + 1 < end_y) {
+        int next_sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
+        int next_mul = compute_art_row_scale_q3(y + 1, apply_scrim, show_metadata, dim_level);
+        if (next_sy == sy && next_mul == mul_q3) {
+          curr_y += step_fp;
+          if (!LATTER_ROUND_DISPLAY) {
+            blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x);
+          } else {
+            int hw1 = circle_half_span(y + 1, 0);
+            int start_x1 = std::max(0, cx - hw1);
+            int end_x1 = std::min(SCREEN_W - 1, cx + hw1);
+            if (start_x == start_x1 && end_x == end_x1) {
+              blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x);
+            } else {
+              int ov_start = std::max(start_x, start_x1);
+              int ov_end = std::min(end_x, end_x1);
+              if (start_x < ov_start) {
+                blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x);
+              }
+              if (start_x1 < ov_start) {
+                blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1);
+              }
+              if (ov_end >= ov_start) {
+                blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start);
+              }
+              if (end_x > ov_end) {
+                blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1);
+              }
+              if (end_x1 > ov_end) {
+                blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1);
+              }
+            }
+          }
+          y++;
+          continue;
+        }
       }
       blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x);
     }

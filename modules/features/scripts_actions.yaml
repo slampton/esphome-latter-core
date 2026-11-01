@@ -535,11 +535,12 @@ script:
       - if:
           condition:
             lambda: |-
-              return latter_ui::media_state().is_local &&
+              return (latter_ui::media_state().is_local ||
+                      id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      id(music_pos_sync_time) > 0 &&
-                     (millis() - id(music_pos_sync_time) < 750U);
+                     (millis() - id(music_pos_sync_time) < 900U);
           then:
-            - delay: 240ms
+            - delay: 340ms
       - if:
           condition:
             lambda: |-
