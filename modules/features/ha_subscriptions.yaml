@@ -168,7 +168,8 @@ text_sensor:
               prev_s_artist = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (id(display_power_state) == 0 &&
+                if (!x.empty() && x != "Idle" && x != "None" &&
+                    id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&
@@ -198,7 +199,8 @@ text_sensor:
               }
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (id(display_power_state) == 0 &&
+                if (!x.empty() && x != "Idle" && x != "None" &&
+                    id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&
@@ -225,7 +227,8 @@ text_sensor:
               prev_s_album = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (id(display_power_state) == 0 &&
+                if (!x.empty() && x != "Idle" && x != "None" &&
+                    id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&

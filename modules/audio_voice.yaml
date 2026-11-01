@@ -146,14 +146,24 @@ media_player:
                         float v = id(latter_media_player).volume;
                         if (std::isnan(v) || v <= 0.0f) v = 0.60f;
                         id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
-              - script.execute: route_i2s_to_spk
-              - switch.turn_on: speaker_enable
+              - if:
+                  condition:
+                    lambda: 'return !id(speaker_enable).state;'
+                  then:
+                    - script.execute: route_i2s_to_spk
+                    - switch.turn_on: speaker_enable
               - lambda: 'id(hal_set_dac_mute).execute(false);'
+              - if:
+                  condition:
+                    lambda: 'return id(display_power_state) != 0 || !id(display_brightness).remote_values.is_on();'
+                  then:
+                    - lambda: |-
+                        latter_ui::screen_is_off_standby() = false;
+                        id(display_power_state) = 0;
+                        id(disp1).start_poller();
+                        id(hal_set_imu_power_mode).execute(0x01);
+                    - light.turn_on: display_brightness
               - lambda: |-
-                  latter_ui::screen_is_off_standby() = false;
-                  id(display_power_state) = 0;
-                  id(disp1).start_poller();
-                  id(hal_set_imu_power_mode).execute(0x01);
                   const std::string &art_u = latter_ui::media_state().art_url;
                   if (id(gui_page) == 2 &&
                       (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
@@ -164,7 +174,6 @@ media_player:
                       art_u != id(current_loaded_art_url)) {
                     id(fetch_remote_art_debounced).execute();
                   }
-              - light.turn_on: display_brightness
               - script.execute: screen_sleep_timer
               - script.execute: throttled_disp_update
     on_pause:

@@ -344,7 +344,7 @@ interval:
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
               (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-              (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 4000U));
+              (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 8000U));
           latter_ui::evaluate_radio_policy(
               id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
               id(is_hibernating), id(ota_in_progress), id(display_power_state),

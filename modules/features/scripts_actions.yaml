@@ -1012,9 +1012,6 @@ script:
           const std::string &loc_spk = latter_ui::media_state().local_speaker;
           const bool new_is_local = (!loc_spk.empty() && id(active_speaker_entity) == loc_spk);
           latter_ui::media_state().is_local = new_is_local;
-          if (new_is_local) {
-            id(current_loaded_art_url) = "";
-          }
           id(music_overlay_mode) = 0;
           id(music_direct_nav) = false;
           id(music_hud_active) = true;
@@ -1031,9 +1028,7 @@ script:
           then:
             - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
-            - script.execute: fetch_remote_art_debounced
-          else:
-            - online_image.release: remote_album_art
+      - script.execute: fetch_remote_art_debounced
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
   - id: speaker_transfer_to_target
