@@ -917,7 +917,7 @@ inline void render_home_page(
 #if LATTER_ROUND_DISPLAY
         it.filled_circle(cx, cy, 228, Color(7, 13, 22));
 #else
-        fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, Color(7, 13, 22));
+        it.fill(Color(7, 13, 22));
 #endif
       }
       it.filled_circle(cel_x, cel_y, scale_min(20), is_night ? Color(22, 26, 34) : Color(42, 36, 12));

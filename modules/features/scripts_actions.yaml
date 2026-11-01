@@ -1236,9 +1236,6 @@ script:
           } else {
             id(active_playback_media_type) = "music";
           }
-          if (!id(active_speaker_entity).empty()) {
-            id(current_loaded_art_url) = "";
-          }
           id(music_overlay_mode) = 0;
           id(music_hud_active) = true;
           id(music_hud_timer) = millis();

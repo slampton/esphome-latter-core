@@ -100,6 +100,15 @@ display:
       if (latter_ui::disp_poller_held() && !id(ota_in_progress)) {
         return;
       }
+      const bool is_explicit_draw = latter_ui::disp_explicit_update_pending();
+      latter_ui::disp_explicit_update_pending() = false;
+      if (!is_explicit_draw && !id(ota_in_progress)) {
+        uint32_t now_poll = millis();
+        if ((now_poll - latter_ui::last_disp_update_end_ms() < 650U) ||
+            (latter_ui::touch_gesture().active && (now_poll - latter_ui::touch_gesture().start_ms < 1200U))) {
+          return;
+        }
+      }
       latter_ui::last_disp_update_ms() = millis();
       int prof_sub = 0;
       if (id(gui_page) == 1) prof_sub = id(home_subpage);

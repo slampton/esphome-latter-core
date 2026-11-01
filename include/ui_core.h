@@ -1819,6 +1819,16 @@ inline uint32_t &last_disp_update_ms() {
   return ts;
 }
 
+inline uint32_t &last_disp_update_end_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+inline bool &disp_explicit_update_pending() {
+  static bool p = false;
+  return p;
+}
+
 inline bool &screen_is_off_standby() {
   static bool off = false;
   return off;
@@ -1842,6 +1852,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
           "async_draw", delay_ms, [disp, min_idle]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             if (esphome::millis() - last_disp_update_ms() < (min_idle - 6U)) return;
+            disp_explicit_update_pending() = true;
             disp->update();
           });
     }
@@ -1862,6 +1873,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           "async_draw", delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
+            disp_explicit_update_pending() = true;
             disp->update();
           });
     }
@@ -1944,6 +1956,7 @@ struct FrameProfileScope {
     uint32_t now_m = esphome::millis();
     last_frame_duration_ms() = render_us / 1000U;
     last_disp_update_ms() = now_m;
+    last_disp_update_end_ms() = now_m;
     last_ambient_anim_ms() = now_m;
     if (!profiler_enabled()) return;
     auto &fr = flight_recorder();
