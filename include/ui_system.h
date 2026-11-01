@@ -43,6 +43,153 @@ inline const char *power_profile_short_label(const std::string &opt) {
   return opt.c_str();
 }
 
+struct PowerProfileSpec {
+  PowerProfile profile;
+  const char *name;
+  const char *va_wake_word_mode;
+  const char *tap_wake_mode;
+  const char *pickup_wake_mode;
+  const char *display_off_timeout;
+  const char *screensaver_docked_timeout;
+  const char *hibernate_timeout_mode;
+  bool docked_screensaver_enabled;
+};
+
+static constexpr PowerProfileSpec kPowerProfiles[] = {
+    {PowerProfile::PORTABLE_CARRY,       "Portable Carry",        "Docked Only", "Docked Only", "Docked Only", "30s",   "1 min", "15 min",   true},
+    {PowerProfile::HANDHELD_ROAMING,     "Handheld Roaming",      "Docked Only", "Always On",   "Always On",   "30s",   "1 min", "30 min",   true},
+    {PowerProfile::WEARABLE_WATCH,       "Wearable Watch",        "Docked Only", "Always On",   "Always On",   "15s",   "1 min", "15 min",   true},
+    {PowerProfile::TABLETOP_DOCK,        "Tabletop Dock",         "Docked Only", "Docked Only", "Disabled",    "30s",   "5 min", "15 min",   true},
+    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On",   "Always On",   "Disabled",    "Never", "5 min", "Disabled", true},
+};
+
+inline const PowerProfileSpec *get_power_profile_spec(PowerProfile p) {
+  for (const auto &spec : kPowerProfiles) {
+    if (spec.profile == p) return &spec;
+  }
+  return nullptr;
+}
+
+inline const PowerProfileSpec *get_power_profile_spec(const std::string &opt) {
+  return get_power_profile_spec(parse_power_profile(opt));
+}
+
+template <typename WwSelT, typename TapSelT, typename PickupSelT, typename BattToSelT,
+          typename DockToSelT, typename HibToSelT, typename DockSwT>
+inline bool apply_power_profile_spec(const std::string &opt,
+                                     WwSelT *ww_sel, TapSelT *tap_sel, PickupSelT *pickup_sel,
+                                     BattToSelT *batt_to_sel, DockToSelT *dock_to_sel,
+                                     HibToSelT *hib_to_sel, DockSwT *dock_sw) {
+  const PowerProfileSpec *spec = get_power_profile_spec(opt);
+  if (spec == nullptr) return false;
+  applying_power_profile() = true;
+  auto set_sel = [](auto *sel, const char *val) {
+    if (sel != nullptr && sel->current_option() != val) {
+      auto call = sel->make_call();
+      call.set_option(val);
+      call.perform();
+    }
+  };
+  set_sel(ww_sel, spec->va_wake_word_mode);
+  set_sel(tap_sel, spec->tap_wake_mode);
+  const char *eff_pickup = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? spec->pickup_wake_mode : "Disabled";
+  set_sel(pickup_sel, eff_pickup);
+  set_sel(batt_to_sel, spec->display_off_timeout);
+  set_sel(dock_to_sel, spec->screensaver_docked_timeout);
+  const char *eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? spec->hibernate_timeout_mode : "Disabled";
+  set_sel(hib_to_sel, eff_hib);
+  if (dock_sw != nullptr && !dock_sw->state && spec->docked_screensaver_enabled) {
+    dock_sw->turn_on();
+  }
+  applying_power_profile() = false;
+  return true;
+}
+
+template <typename PickupSelT, typename HibToSelT>
+inline void clamp_power_capabilities(PickupSelT *pickup_sel, HibToSelT *hib_to_sel) {
+  applying_power_profile() = true;
+  auto set_sel = [](auto *sel, const char *val) {
+    if (sel != nullptr && sel->current_option() != val) {
+      auto call = sel->make_call();
+      call.set_option(val);
+      call.perform();
+    }
+  };
+  if (!LATTER_HAS_IMU || LATTER_IS_STATIONARY) {
+    set_sel(pickup_sel, "Disabled");
+  }
+  if (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY) {
+    set_sel(hib_to_sel, "Disabled");
+  }
+  applying_power_profile() = false;
+}
+
+inline int32_t seconds_until_next_armed_alarm(const esphome::ESPTime &now, uint32_t snooze_until,
+                                              int a1_h, int a1_m, bool a1_en, int a1_rec,
+                                              int a2_h, int a2_m, bool a2_en, int a2_rec,
+                                              int a3_h, int a3_m, bool a3_en, int a3_rec) {
+  if (!now.is_valid()) return -1;
+  int32_t best_sec = 43201;  // > 12h sentinel
+  if (snooze_until > static_cast<uint32_t>(now.timestamp)) {
+    int32_t s_rem = static_cast<int32_t>(snooze_until - static_cast<uint32_t>(now.timestamp));
+    if (s_rem > 0 && s_rem <= 43200) best_sec = s_rem;
+  }
+  const int32_t now_tod = now.hour * 3600 + now.minute * 60 + now.second;
+  auto eval_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec) {
+    if (!a_en) return;
+    const int32_t alarm_tod = a_hr * 3600 + a_min * 60;
+    int32_t delta_sec = 0;
+    int target_dow = now.day_of_week;  // 1=SUN .. 7=SAT
+    if (alarm_tod > now_tod) {
+      delta_sec = alarm_tod - now_tod;
+    } else {
+      delta_sec = (86400 - now_tod) + alarm_tod;
+      target_dow = (now.day_of_week % 7) + 1;
+    }
+    if (delta_sec <= 0 || delta_sec > 43200) return;
+    if (a_rec == 1 && (target_dow < 2 || target_dow > 6)) return;
+    if (a_rec == 2 && (target_dow != 1 && target_dow != 7)) return;
+    if (delta_sec < best_sec) best_sec = delta_sec;
+  };
+  eval_alarm(a1_h, a1_m, a1_en, a1_rec);
+  eval_alarm(a2_h, a2_m, a2_en, a2_rec);
+  eval_alarm(a3_h, a3_m, a3_en, a3_rec);
+  return (best_sec <= 43200) ? best_sec : -1;
+}
+
+template <typename I2cBusT>
+inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_until_alarm) {
+#ifdef USE_ESP32
+#if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN) && !defined(CONFIG_IDF_TARGET_ESP32P4)
+#if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN), 1);
+#else
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN), 0);
+#endif
+#endif
+  if (sec_until_alarm > 0 && sec_until_alarm <= 43200) {
+    uint64_t wake_sec = static_cast<uint64_t>((sec_until_alarm > 90) ? (sec_until_alarm - 90) : 15);
+    ESP_LOGI("power", "Armed alarm in %lds: entering timer-wake deep sleep (wake in %llus, AXP2101 rails kept ON)",
+             (long)sec_until_alarm, (unsigned long long)wake_sec);
+    esp_sleep_enable_timer_wakeup(wake_sec * 1000000ULL);
+    esp_deep_sleep_start();
+    return;
+  }
+  if (bus != nullptr) {
+    uint8_t axp_pwr_off[2] = {0x10, 0x01};
+    auto err = bus->write(0x34, axp_pwr_off, 2);
+    if (err != esphome::i2c::ERROR_OK) {
+      ESP_LOGW("power", "AXP2101 power-off write (0x10=0x01) failed (err=%d); falling back to ESP deep sleep", (int)err);
+    }
+  }
+  esphome::delay(100);
+  esp_deep_sleep_start();
+#else
+  (void)bus;
+  (void)sec_until_alarm;
+#endif
+}
+
 inline std::string &latter_site_id() {
   static std::string s = "primary";
   return s;

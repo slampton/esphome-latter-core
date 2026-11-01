@@ -29,11 +29,6 @@ substitutions:
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Always-On Wall / Desk"
-  default_pickup_wake: "Disabled"
-  default_tap_wake: "Always On"
-  default_battery_timeout: "Never"
-  default_docked_timeout: "5 min"
-  default_hibernate_timeout: "Disabled"
   sendspin_buffer_size: "262144"
   announcement_buffer_size: "131072"
   audio_out_rate: "16000"
@@ -214,6 +209,7 @@ touchscreen:
     id: touch_screen
     display: disp1
     i2c_id: bus_internal
+    update_interval: 16ms
 
 script:
   - id: hal_route_i2s_to_spk
@@ -241,42 +237,14 @@ script:
           } else {
             id(es8311_dac).set_mute_off();
           }
-  - id: hal_init_pmu_irq
-    mode: restart
-    then:
-      - lambda: 'return;'
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
       - lambda: 'return;'
-  - id: hal_set_imu_power_mode
-    mode: restart
-    parameters:
-      ctrl7_val: int
-    then:
-      - lambda: '(void)ctrl7_val;'
   - id: hal_set_audio_codecs_standby
     mode: restart
     parameters:
       standby: bool
     then:
       - lambda: |-
-          static int last_stby = -1;
-          const int target = standby ? 1 : 0;
-          if (target == last_stby) return;
-          last_stby = target;
-          if (standby) {
-            uint8_t dac_lp[2] = {0x0D, 0xFC};
-            id(bus_internal).write(0x18, dac_lp, 2);
-            uint8_t adc_lp1[2] = {0x06, 0x7F};
-            uint8_t adc_lp2[2] = {0x40, 0xFF};
-            id(bus_internal).write(0x40, adc_lp1, 2);
-            id(bus_internal).write(0x40, adc_lp2, 2);
-          } else {
-            uint8_t dac_wake[2] = {0x0D, 0x01};
-            id(bus_internal).write(0x18, dac_wake, 2);
-            uint8_t adc_wake1[2] = {0x40, 0x43};
-            uint8_t adc_wake2[2] = {0x06, 0x00};
-            id(bus_internal).write(0x40, adc_wake1, 2);
-            id(bus_internal).write(0x40, adc_wake2, 2);
-          }
+          latter_ui::hal_set_es8311_es7210_standby(&id(bus_internal), standby, true);

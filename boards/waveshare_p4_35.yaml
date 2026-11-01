@@ -29,11 +29,6 @@ substitutions:
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Tabletop Dock"
-  default_pickup_wake: "Disabled"
-  default_tap_wake: "Docked Only"
-  default_battery_timeout: "30s"
-  default_docked_timeout: "5 min"
-  default_hibernate_timeout: "15 min"
   sendspin_buffer_size: "262144"
   announcement_buffer_size: "131072"
   audio_out_rate: "16000"
@@ -276,29 +271,13 @@ script:
           } else {
             id(es8311_dac).set_mute_off();
           }
-  - id: hal_init_pmu_irq
-    mode: restart
-    then:
-      - lambda: |-
-          uint8_t irq_en[2] = {0x41, 0x0C};
-          id(bus_internal).write(0x34, irq_en, 2);
-          uint8_t clr_all[2] = {0x48, 0xFF};
-          id(bus_internal).write(0x34, clr_all, 2);
-          clr_all[0] = 0x49;
-          id(bus_internal).write(0x34, clr_all, 2);
-          clr_all[0] = 0x4A;
-          id(bus_internal).write(0x34, clr_all, 2);
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
       - lambda: |-
-          // 1. Put ES8311 Audio Codec (0x18) into Standby/Power-Down Mode
-          uint8_t dac_sleep1[2] = {0x0D, 0xFF};
-          uint8_t dac_sleep2[2] = {0x00, 0x80};
-          id(bus_internal).write(0x18, dac_sleep1, 2);
-          id(bus_internal).write(0x18, dac_sleep2, 2);
+          latter_ui::hal_power_down_audio_and_imu_for_hibernate(&id(bus_internal), false, false);
 
-          // 2. Force Speaker Power Amplifier (GPIO53) and Backlight (GPIO28) LOW and hold
+          // Force Speaker Power Amplifier (GPIO53) and Backlight (GPIO28) LOW and hold
           latter_ui::hal_set_display_brightness(&id(disp1), 0);
           gpio_set_direction(GPIO_NUM_53, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_53, 0);
@@ -308,7 +287,7 @@ script:
           gpio_set_level(GPIO_NUM_28, 0);
           gpio_hold_en(GPIO_NUM_28);
 
-          // 3. Deselect Display CS (GPIO23 HIGH) and hold Display/Touch in Reset (GPIO27/29 LOW)
+          // Deselect Display CS (GPIO23 HIGH) and hold Display/Touch in Reset (GPIO27/29 LOW)
           gpio_set_direction(GPIO_NUM_23, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_23, 1);
           gpio_hold_en(GPIO_NUM_23);
@@ -323,32 +302,17 @@ script:
 
           global_preferences->sync();
 
-          // 4. Command AXP2101 PMIC to cut system voltage rails (<40uA Hibernate)
-          uint8_t axp_pwr_off[2] = {0x10, 0x01};
-          id(bus_internal).write(0x34, axp_pwr_off, 2);
-
-          delay(100);
-          esp_deep_sleep_start();
-  - id: hal_set_imu_power_mode
-    mode: restart
-    parameters:
-      ctrl7_val: int
-    then:
-      - lambda: '(void)ctrl7_val;'
+          int32_t sec_to_alarm = latter_ui::seconds_until_next_armed_alarm(
+              id(ha_time).now().is_valid() ? id(ha_time).now() : id(sntp_time).now(),
+              id(alarm_snooze_until),
+              id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
+              id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
+              id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence));
+          latter_ui::enter_axp2101_hibernate_or_alarm_sleep(&id(bus_internal), sec_to_alarm);
   - id: hal_set_audio_codecs_standby
     mode: restart
     parameters:
       standby: bool
     then:
       - lambda: |-
-          static int last_stby = -1;
-          const int target = standby ? 1 : 0;
-          if (target == last_stby) return;
-          last_stby = target;
-          if (standby) {
-            uint8_t dac_lp[2] = {0x0D, 0xFC};
-            id(bus_internal).write(0x18, dac_lp, 2);
-          } else {
-            uint8_t dac_wake[2] = {0x0D, 0x01};
-            id(bus_internal).write(0x18, dac_wake, 2);
-          }
+          latter_ui::hal_set_es8311_es7210_standby(&id(bus_internal), standby, false);

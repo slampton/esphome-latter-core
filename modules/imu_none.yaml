@@ -39,3 +39,11 @@ sensor:
     internal: true
     update_interval: never
     lambda: 'return 0.0f;'
+
+script:
+  - id: hal_set_imu_power_mode
+    mode: restart
+    parameters:
+      ctrl7_val: int
+    then:
+      - lambda: '(void)ctrl7_val;'

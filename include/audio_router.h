@@ -69,4 +69,51 @@ inline float alert_volume_to_ducking_db(float alert_vol_pct, float scale = 0.25f
   return (100.0f - v) * scale;
 }
 
+// Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode.
+template <typename I2cBusT>
+inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_es7210 = true) {
+  if (bus == nullptr) return;
+  static int last_stby = -1;
+  const int target = standby ? 1 : 0;
+  if (target == last_stby) return;
+  last_stby = target;
+  if (standby) {
+    uint8_t dac_lp[2] = {0x0D, 0xFC};
+    bus->write(0x18, dac_lp, 2);
+    if (has_es7210) {
+      uint8_t adc_lp1[2] = {0x06, 0x7F};
+      uint8_t adc_lp2[2] = {0x40, 0xFF};
+      bus->write(0x40, adc_lp1, 2);
+      bus->write(0x40, adc_lp2, 2);
+    }
+  } else {
+    uint8_t dac_wake[2] = {0x0D, 0x01};
+    bus->write(0x18, dac_wake, 2);
+    if (has_es7210) {
+      uint8_t adc_wake1[2] = {0x40, 0x43};
+      uint8_t adc_wake2[2] = {0x06, 0x00};
+      bus->write(0x40, adc_wake1, 2);
+      bus->write(0x40, adc_wake2, 2);
+    }
+  }
+}
+
+// Powers down QMI8658 IMU (0x6B), ES8311 DAC (0x18), and optional ES7210 ADC (0x40) prior to hibernate.
+template <typename I2cBusT>
+inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *bus, bool has_imu, bool has_es7210 = true) {
+  if (bus == nullptr) return;
+  if (has_imu) {
+    uint8_t qmi_pwr_down[2] = {0x08, 0x00};
+    bus->write(0x6B, qmi_pwr_down, 2);
+  }
+  uint8_t dac_sleep1[2] = {0x0D, 0xFF};
+  uint8_t dac_sleep2[2] = {0x00, 0x80};
+  bus->write(0x18, dac_sleep1, 2);
+  bus->write(0x18, dac_sleep2, 2);
+  if (has_es7210) {
+    uint8_t es7210_pwr[2] = {0x00, 0xFF};
+    bus->write(0x40, es7210_pwr, 2);
+  }
+}
+
 }  // namespace latter_ui

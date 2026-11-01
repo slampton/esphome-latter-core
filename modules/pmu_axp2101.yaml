@@ -151,6 +151,33 @@ button:
       - script.execute: enter_deep_sleep
 
 script:
+  - id: hal_init_pmu_irq
+    mode: restart
+    then:
+      - lambda: |-
+          #if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
+          gpio_config_t io_conf = {};
+          io_conf.pin_bit_mask = (1ULL << static_cast<uint32_t>(LATTER_PMU_IRQ_PIN));
+          io_conf.mode = GPIO_MODE_INPUT;
+          #if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
+          io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+          #else
+          io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+          #endif
+          io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+          io_conf.intr_type = GPIO_INTR_DISABLE;
+          gpio_config(&io_conf);
+          #endif
+
+          uint8_t irq_en[2] = {0x41, 0x0C};
+          id(bus_internal).write(0x34, irq_en, 2);
+          uint8_t clr_all[2] = {0x48, 0xFF};
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x49;
+          id(bus_internal).write(0x34, clr_all, 2);
+          clr_all[0] = 0x4A;
+          id(bus_internal).write(0x34, clr_all, 2);
+
   - id: hal_poll_pmu_1s
     mode: restart
     then:
@@ -203,11 +230,17 @@ script:
     then:
       - lambda: |-
           // ADR-001 Hardware-Gated 20 Hz Check for Top Crown Button (AXP2101 PEK Short/Long Press):
-          // Only queries I2C register 0x49 when PMU IRQ pin is asserted or once per 200ms on a non-draw tick.
-          static uint8_t fallback_div = 0;
+          // Strictly IRQ-only when LATTER_PMU_IRQ_PIN is defined; 200ms fallback only on boards without a wired PMU IRQ.
           const bool irq_pin_low = latter_ui::hal_pmu_irq_asserted();
-          if (irq_pin_low || (!did_ss_draw && ++fallback_div >= 4U && !id(va_active) && !id(va_tts_received))) {
-            if (!irq_pin_low) fallback_div = 0;
+          #if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
+          (void)did_ss_draw;
+          const bool should_poll = irq_pin_low;
+          #else
+          static uint8_t fallback_div = 0;
+          const bool should_poll = !did_ss_draw && (++fallback_div >= 4U) && !id(va_active) && !id(va_tts_received);
+          if (should_poll) fallback_div = 0;
+          #endif
+          if (should_poll) {
             uint8_t irq_reg = 0x49;
             uint8_t irq_val = 0;
             if (id(bus_internal).write_readv(0x34, &irq_reg, 1, &irq_val, 1) == esphome::i2c::ERROR_OK) {

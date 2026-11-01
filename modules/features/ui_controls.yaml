@@ -213,51 +213,13 @@ select:
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
-          latter_ui::applying_power_profile() = true;
-          auto set_sel = [](auto *sel, const char *opt) {
-            if (sel != nullptr && sel->current_option() != opt) {
-              auto call = sel->make_call();
-              call.set_option(opt);
-              call.perform();
-            }
-          };
-          if (prof == latter_ui::PowerProfile::PORTABLE_CARRY) {
-            set_sel(id(va_wake_word_mode), "Docked Only");
-            set_sel(id(tap_wake_mode), "Docked Only");
-            set_sel(id(pickup_wake_mode), "Docked Only");
-            set_sel(id(display_off_timeout), "30s");
-            set_sel(id(screensaver_docked_timeout), "1 min");
-            set_sel(id(hibernate_timeout_mode), "15 min");
-          } else if (prof == latter_ui::PowerProfile::HANDHELD_ROAMING) {
-            set_sel(id(va_wake_word_mode), "Docked Only");
-            set_sel(id(tap_wake_mode), "Always On");
-            set_sel(id(pickup_wake_mode), "Always On");
-            set_sel(id(display_off_timeout), "30s");
-            set_sel(id(screensaver_docked_timeout), "1 min");
-            set_sel(id(hibernate_timeout_mode), "30 min");
-          } else if (prof == latter_ui::PowerProfile::WEARABLE_WATCH) {
-            set_sel(id(va_wake_word_mode), "Docked Only");
-            set_sel(id(tap_wake_mode), "Always On");
-            set_sel(id(pickup_wake_mode), "Always On");
-            set_sel(id(display_off_timeout), "15s");
-            set_sel(id(screensaver_docked_timeout), "1 min");
-            set_sel(id(hibernate_timeout_mode), "15 min");
-          } else if (prof == latter_ui::PowerProfile::TABLETOP_DOCK) {
-            set_sel(id(va_wake_word_mode), "Docked Only");
-            set_sel(id(tap_wake_mode), "Docked Only");
-            set_sel(id(pickup_wake_mode), "Disabled");
-            set_sel(id(display_off_timeout), "30s");
-            set_sel(id(screensaver_docked_timeout), "5 min");
-            set_sel(id(hibernate_timeout_mode), "15 min");
-          } else if (prof == latter_ui::PowerProfile::ALWAYS_ON_STATIONARY) {
-            set_sel(id(va_wake_word_mode), "Always On");
-            set_sel(id(tap_wake_mode), "Always On");
-            set_sel(id(pickup_wake_mode), "Disabled");
-            set_sel(id(display_off_timeout), "Never");
-            set_sel(id(screensaver_docked_timeout), "5 min");
-            set_sel(id(hibernate_timeout_mode), "Disabled");
+          if (latter_ui::apply_power_profile_spec(
+                  x, id(va_wake_word_mode), id(tap_wake_mode), id(pickup_wake_mode),
+                  id(display_off_timeout), id(screensaver_docked_timeout),
+                  id(hibernate_timeout_mode), id(docked_screensaver_switch))) {
+            id(sync_wake_word_state).execute();
+            id(screen_sleep_timer).execute();
           }
-          latter_ui::applying_power_profile() = false;
           latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template

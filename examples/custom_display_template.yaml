@@ -22,14 +22,9 @@ substitutions:
   sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Handheld Roaming"
-  default_pickup_wake: "Always On"
-  default_tap_wake: "Always On"
-  default_battery_timeout: "30s"
-  default_docked_timeout: "1 min"
-  default_hibernate_timeout: "30 min"
   sendspin_buffer_size: "196608"
   announcement_buffer_size: "65536"
-  audio_out_rate: "48000"
+  audio_out_rate: "16000"
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
@@ -58,12 +53,16 @@ esphome:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"
     - "-DLATTER_ROUND_DISPLAY=0"
+    - "-DLATTER_HAS_DISPLAY=1"
+    - "-DLATTER_HAS_TOUCH=1"
+    - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=0"
     - "-DLATTER_IS_STATIONARY=1"
     - "-DLATTER_IS_WEARABLE=0"
-    - "-DLATTER_HAS_TOUCH=1"
     - "-DLATTER_PANEL_IPS=0"
+    - "-DLATTER_CHIP_P4=0"
+    - "-DLATTER_PSRAM_MB=8"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -228,26 +227,16 @@ script:
           } else {
             id(es8311_dac).set_mute_off();
           }
-  - id: hal_init_pmu_irq
-    mode: restart
-    then:
-      - lambda: 'return;'
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
       - lambda: 'return;'
-  - id: hal_set_imu_power_mode
-    mode: restart
-    parameters:
-      ctrl7_val: int
-    then:
-      - lambda: '(void)ctrl7_val;'
   - id: hal_set_audio_codecs_standby
     mode: restart
     parameters:
       standby: bool
     then:
-      - lambda: '(void)standby;'
+      - lambda: 'latter_ui::hal_set_es8311_es7210_standby(&id(bus_internal), standby, true);'
 
 # ==============================================================================
 # SHARED LATTER CORE OS MODULES

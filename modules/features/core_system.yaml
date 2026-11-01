@@ -5,8 +5,6 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
-            uint32_t cal_val = latter_ui::hal_calibrate_rtc();
-            ESP_LOGI("rtc_cal", "Hardware RTC slow clock calibrated: %lu (Q19.12)", (unsigned long)cal_val);
             id(hal_release_deep_sleep_holds).execute();
             id(sleep_start_time) = millis();
             id(is_hibernating) = false;
@@ -53,50 +51,19 @@ esphome:
             id(is_24h_format) = (id(time_format_select).current_option() == "24-Hour");
         - component.update: batt_level
         - lambda: |-
-            if (!id(ble_area_beacon_switch).state) {
-              id(ble_area_beacon_switch).publish_state(true);
-            }
-            if (!LATTER_HAS_IMU && !id(home_dock_games_switch).state) {
-              id(home_dock_games_switch).publish_state(true);
+            if (!id(power_profile_seeded)) {
+              id(power_profile_seeded) = true;
+              latter_ui::apply_power_profile_spec(
+                  "${default_power_profile}", id(va_wake_word_mode), id(tap_wake_mode),
+                  id(pickup_wake_mode), id(display_off_timeout),
+                  id(screensaver_docked_timeout), id(hibernate_timeout_mode),
+                  id(docked_screensaver_switch));
+            } else {
+              latter_ui::clamp_power_capabilities(id(pickup_wake_mode), id(hibernate_timeout_mode));
             }
             esphome::voice_assistant::ensure_wake_words_restored(id(mww), true);
             id(va_active_wake_word).publish_state(
                 esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
-            #if !LATTER_HAS_IMU
-            if (id(tap_wake_mode).current_option() == "Docked Only") {
-              id(tap_wake_mode).publish_state("Always On");
-            }
-            if (id(pickup_wake_mode).current_option() != "Disabled") {
-              id(pickup_wake_mode).publish_state("Disabled");
-            }
-            #endif
-            #if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
-            if (id(hibernate_timeout_mode).current_option() == "15 min") {
-              id(hibernate_timeout_mode).publish_state("Disabled");
-            }
-            #elif !LATTER_HAS_IMU
-            // Self-heal battery-powered non-IMU boards (Remote Assistant) if a previous boot seeded "Disabled"
-            if (id(hibernate_timeout_mode).current_option() == "Disabled") {
-              auto call = id(hibernate_timeout_mode).make_call();
-              call.set_option("15 min");
-              call.perform();
-            }
-            #endif
-            if (latter_ui::is_wearable_form_factor()) {
-              static bool watch_pwr_seeded = false;
-              if (!watch_pwr_seeded) {
-                watch_pwr_seeded = true;
-                if (id(pickup_wake_mode).current_option() == "Always On") {
-                  id(pickup_wake_mode).publish_state("Docked Only");
-                }
-                if (id(display_off_timeout).current_option() == "30s") {
-                  id(display_off_timeout).publish_state("15s");
-                }
-                if (id(hibernate_timeout_mode).current_option() == "15 min") {
-                  id(hibernate_timeout_mode).publish_state("5 min");
-                }
-              }
-            }
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer

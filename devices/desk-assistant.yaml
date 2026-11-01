@@ -25,11 +25,6 @@ substitutions:
   sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Always-On Wall / Desk"
-  default_pickup_wake: "Disabled"
-  default_tap_wake: "Always On"
-  default_battery_timeout: "Never"
-  default_docked_timeout: "5 min"
-  default_hibernate_timeout: "Disabled"
   api_reboot_timeout: "15min"
 
 dashboard_import:

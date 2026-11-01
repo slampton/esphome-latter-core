@@ -99,3 +99,25 @@ sensor:
         }
       }
       return delta;
+
+script:
+  - id: hal_set_imu_power_mode
+    mode: restart
+    parameters:
+      ctrl7_val: int
+    then:
+      - lambda: |-
+          static int last_ctrl7 = -1;
+          if (ctrl7_val == last_ctrl7) return;
+          last_ctrl7 = ctrl7_val;
+          if (ctrl7_val > 0) {
+            id(imu).start_poller();
+            id(motion_mag).start_poller();
+          } else {
+            id(imu).stop_poller();
+            id(motion_mag).stop_poller();
+          }
+          // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only, 0x00 = Power-Down
+          uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(ctrl7_val)};
+          id(bus_internal).write(0x6B, qmi_ctrl7, 2);
+

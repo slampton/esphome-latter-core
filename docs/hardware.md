@@ -24,7 +24,7 @@ Latter firmware supports five Waveshare boards. Purchase links are in the [devic
 | **Audio** | ES8311 + ES7210 (speaker and mic array) | ES8311 + ES7210 | ES8311 + ES7210 | ES8311 (speaker and mic) | ES8311 + ES7210 |
 | **IMU** | QMI8658 | QMI8658 | QMI8658 | — | — |
 | **Power** | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | USB / mains |
-| **Default power profile** | Pocket Carry | Handheld Roaming | Wearable Watch | Living Room Tabletop | Always-On Wall / Desk |
+| **Default power profile** | Portable Carry | Handheld Roaming | Wearable Watch | Tabletop Dock | Always-On Wall / Desk |
 | **Board file** | [`waveshare_s3_175c.yaml`](../boards/waveshare_s3_175c.yaml) | [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml) | [`waveshare_s3_206.yaml`](../boards/waveshare_s3_206.yaml) | [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml) | [`waveshare_p4_4b.yaml`](../boards/waveshare_p4_4b.yaml) |
 
 PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the listing for your exact variant.

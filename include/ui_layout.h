@@ -12,6 +12,8 @@
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include <esp_random.h>
+#include <esp_sleep.h>
+#include <esp_wifi.h>
 #endif
 
 #ifndef LATTER_BOARD_ID
@@ -417,10 +419,6 @@ inline constexpr UiLayout layout() {
   return UiLayout{};
 }
 
-inline constexpr bool is_wearable_form_factor() {
-  return (LATTER_IS_WEARABLE != 0);
-}
-
 
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
@@ -442,20 +440,9 @@ inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
   return 3;
 }
 
-// Chip-Portable RTC Slow Clock Calibration & Wi-Fi Power-Save Helpers
-// Safely guarded for ESP32-S3 and future ESP32-P4 (ESP-Hosted) targets
-inline uint32_t hal_calibrate_rtc() {
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-  extern uint32_t rtc_clk_cal(int cal_clk, uint32_t slow_clk_cycles) __asm__("rtc_clk_cal");
-  return rtc_clk_cal(0, 1024);
-#else
-  return 0;
-#endif
-}
-
+// Chip-Portable Wi-Fi Modem Power-Save & Single-Owner Radio Policy
 inline void hal_set_wifi_power_save(int mode) {
 #if defined(USE_ESP32) && (!defined(LATTER_IS_STATIONARY) || !LATTER_IS_STATIONARY)
-  extern int esp_wifi_set_ps(int type) __asm__("esp_wifi_set_ps");
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
   // On ESP32-P4 (ESP-Hosted SDIO to C6), cap at WIFI_PS_MIN_MODEM (1) so SDIO RPC stays responsive
   const int eff_mode = (mode > 0) ? 1 : 0;
@@ -464,10 +451,57 @@ inline void hal_set_wifi_power_save(int mode) {
 #endif
   static int last_ps_mode = -1;
   if (eff_mode == last_ps_mode) return;
-  last_ps_mode = eff_mode;
-  esp_wifi_set_ps(eff_mode);
+  wifi_ps_type_t ps_type = WIFI_PS_NONE;
+  if (eff_mode == 1) ps_type = WIFI_PS_MIN_MODEM;
+  else if (eff_mode >= 2) ps_type = WIFI_PS_MAX_MODEM;
+  if (esp_wifi_set_ps(ps_type) == ESP_OK) {
+    last_ps_mode = eff_mode;
+  }
 #else
   (void)mode;
+#endif
+}
+
+template <typename BleCtrlT>
+inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool ble_beacon_switch_on,
+                                  bool is_hibernating, bool ota_in_progress, int display_power_state,
+                                  bool high_tput_needed, uint32_t now_ms) {
+  if (is_hibernating || ota_in_progress) return;
+
+  // 1. BLE Presence Beacon & Bounded 5-Minute Improv Window:
+  // Keeps iBeacon advertising in every state except hibernate (including screen-off on battery)
+  // when ble_area_beacon_switch is ON so Voice Follows Me can track room changes.
+  if (ble_ctrl != nullptr) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+    const bool sdio_ready = wifi_connected && (now_ms > 8000U);
+    const bool want_ble = ble_beacon_switch_on && sdio_ready;
+#else
+    const bool improv_window = !wifi_connected && (now_ms > 15000U && now_ms < 300000U);
+    const bool want_ble = ble_beacon_switch_on || improv_window;
+#endif
+    if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
+      ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
+      ble_ctrl->enable();
+    } else if (!want_ble && ble_ctrl->is_active()) {
+      ESP_LOGI("ble", "Disabling BLE radio (BLE Presence Beacon OFF and Improv window closed)");
+      ble_ctrl->disable();
+    }
+  }
+
+  // 2. Wi-Fi Modem Sleep Policy (roaming / battery devices only)
+#if !LATTER_IS_STATIONARY
+  if (now_ms > 6000U) {
+    if (high_tput_needed) {
+      hal_set_wifi_power_save(0);
+    } else if (display_power_state == 2) {
+      hal_set_wifi_power_save(2);
+    } else {
+      hal_set_wifi_power_save(1);
+    }
+  }
+#else
+  (void)display_power_state;
+  (void)high_tput_needed;
 #endif
 }
 

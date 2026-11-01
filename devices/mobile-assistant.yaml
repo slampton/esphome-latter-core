@@ -16,11 +16,6 @@ substitutions:
   art_shape: "square"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Handheld Roaming"
-  default_pickup_wake: "Always On"
-  default_tap_wake: "Always On"
-  default_battery_timeout: "30s"
-  default_docked_timeout: "1 min"
-  default_hibernate_timeout: "30 min"
   api_reboot_timeout: "0s"
 
 dashboard_import:
@@ -61,14 +56,6 @@ wifi:
   fast_connect: true
   power_save_mode: LIGHT
   reboot_timeout: 0s
-  on_connect:
-    then:
-      - delay: 5s
-      - if:
-          condition:
-            lambda: 'return id(ble_ctrl).is_active() && !id(ble_area_beacon_switch).state;'
-          then:
-            - ble.disable:
 
 esp32_ble:
   id: ble_ctrl
@@ -87,7 +74,7 @@ esp32_ble_beacon:
   max_interval: 1000ms
 
 improv_ble:
-  authorizer: none
+  authorizer: boot_button
   wifi_timeout: 5s
 
 safe_mode:

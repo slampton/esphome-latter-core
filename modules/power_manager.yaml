@@ -30,6 +30,11 @@ globals:
     restore_value: no
     initial_value: '1' # 1..2 (Page 1 & Page 2 of Sleep & Wake Submenu)
 
+  - id: power_profile_seeded
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+
 binary_sensor:
   - platform: template
     name: "Pickup Detected"
@@ -170,7 +175,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: ${default_battery_timeout}
+    initial_option: "30s"
     options:
       - "10s"
       - "15s"
@@ -190,7 +195,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: ${default_docked_timeout}
+    initial_option: "1 min"
     options:
       - "10s"
       - "15s"
@@ -211,7 +216,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: ${default_hibernate_timeout}
+    initial_option: "15 min"
     options:
       - "5 min"
       - "10 min"
@@ -229,7 +234,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: ${default_pickup_wake}
+    initial_option: "Docked Only"
     options:
       - "Always On"
       - "Docked Only"
@@ -249,7 +254,7 @@ select:
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: ${default_tap_wake}
+    initial_option: "Docked Only"
     options:
       - "Always On"
       - "Docked Only"
@@ -328,24 +333,24 @@ interval:
                 id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
           }
 
-          // 6. BLE Presence Beacon & Improv Supervisor
-          if (!id(is_hibernating) && !id(ota_in_progress)) {
-            #if defined(CONFIG_IDF_TARGET_ESP32P4)
-            const bool sdio_ready = id(wifi_ctrl).is_connected() && (now_1s_ms > 8000U);
-            const bool want_ble = id(ble_area_beacon_switch).state && sdio_ready;
-            #else
-            const bool want_ble = id(ble_area_beacon_switch).state || (!id(wifi_ctrl).is_connected() && now_1s_ms > 15000U);
-            #endif
-            if (want_ble && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-              ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
-              id(ble_ctrl).enable();
-            } else if (!want_ble && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
-              ESP_LOGI("ble", "Disabling BLE radio (BLE Presence Beacon switch is OFF)");
-              id(ble_ctrl).disable();
-            }
-          }
+          // 6. Single-Owner Radio Policy (BLE Presence Beacon, Bounded 5-Min Improv & Wi-Fi Modem Sleep)
+          uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
+                                               latter_ui::touch_gesture().last_touch_ms);
+          const bool high_tput_needed =
+              id(usb_connected).state ||
+              id(va_active) || id(va).is_running() || id(va_tts_received) ||
+              id(announcement_mixing_input).is_running() ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
+              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+              (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 4000U));
+          latter_ui::evaluate_radio_policy(
+              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
+              id(is_hibernating), id(ota_in_progress), id(display_power_state),
+              high_tput_needed, now_1s_ms);
 
-          // 7. Dynamic QMI8658 IMU & Wi-Fi Modem Sleep Power Supervisor
+          // 7. Dynamic QMI8658 IMU Power Supervisor
           if (!id(is_hibernating) && !id(ota_in_progress) && (now_1s_ms > 6000U)) {
             #if LATTER_HAS_IMU
             auto pw_mode = id(pickup_wake_mode).current_option();
@@ -360,27 +365,6 @@ interval:
               id(hal_set_imu_power_mode).execute(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
             } else {
               id(hal_set_imu_power_mode).execute(pw_allowed ? 0x01 : 0x00);
-            }
-            #endif
-
-            #if !LATTER_IS_STATIONARY
-            uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
-                                                 latter_ui::touch_gesture().last_touch_ms);
-            const bool high_tput_needed =
-                id(usb_connected).state ||
-                id(va_active) || id(va).is_running() || id(va_tts_received) ||
-                id(announcement_mixing_input).is_running() ||
-                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
-                latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 4000U));
-            if (high_tput_needed) {
-              latter_ui::hal_set_wifi_power_save(0);
-            } else if (id(display_power_state) == 2) {
-              latter_ui::hal_set_wifi_power_save(2);
-            } else {
-              latter_ui::hal_set_wifi_power_save(1);
             }
             #endif
           }
@@ -547,10 +531,6 @@ script:
           id(disp1).stop_poller();
           id(display_brightness).turn_off().perform();
 
-          if (!id(ble_area_beacon_switch).state && id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
-            id(ble_ctrl).disable();
-          }
-
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           auto ww_mode = id(va_wake_word_mode).current_option();
           const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
@@ -569,9 +549,10 @@ script:
           const bool pickup_wake_active = (pw_mode == "Always On") ||
                                           (pw_mode == "Docked Only" && id(usb_connected).state);
           id(hal_set_imu_power_mode).execute(pickup_wake_active ? 0x01 : 0x00);
-          if (!id(usb_connected).state && !local_audio_playing) {
-            latter_ui::hal_set_wifi_power_save(2);
-          }
+          latter_ui::evaluate_radio_policy(
+              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
+              id(is_hibernating), id(ota_in_progress), id(display_power_state),
+              id(usb_connected).state || local_audio_playing, millis());
 
   - id: enter_standby_state
     mode: restart

@@ -39,10 +39,10 @@ The wake word runs on the device with [micro_wake_word](https://github.com/kahre
 
 | Profile | Wake word | Tap to wake | Pickup to wake | Screen timeout on battery | Screen timeout when docked | Hibernate after |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Pocket Carry | Docked only | Docked only | Docked only | 30 s | 1 min | 15 min |
+| Portable Carry | Docked only | Docked only | Docked only | 30 s | 1 min | 15 min |
 | Handheld Roaming | Docked only | Always | Always | 30 s | 1 min | 30 min |
 | Wearable Watch | Docked only | Always | Always | 15 s | 1 min | 15 min |
-| Living Room Tabletop | Docked only | Docked only | Off | 30 s | 5 min | 15 min |
+| Tabletop Dock | Docked only | Docked only | Off | 30 s | 5 min | 15 min |
 | Always-On Wall / Desk | Always | Always | Off | Never | 5 min | Off |
 
 A device doesn't hibernate while it's on USB power, while **Stay Awake** is on, or while music, a timer, a voice session, a game, or a call is active.

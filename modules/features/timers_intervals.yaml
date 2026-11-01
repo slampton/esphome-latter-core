@@ -4,12 +4,6 @@ interval:
   - interval: 5min
     then:
       - script.execute: sync_display_brightness
-  - interval: 60min
-    then:
-      - lambda: |-
-          // Priority 1: Periodic thermal drift compensation for RTC slow clock
-          uint32_t cal_val = latter_ui::hal_calibrate_rtc();
-          ESP_LOGD("rtc_cal", "Periodic RTC slow clock calibration: %lu", (unsigned long)cal_val);
 
   - interval: 50ms
     then:

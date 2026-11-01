@@ -316,16 +316,18 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 
 // Hardware-Trait Driven PMU IRQ & Wearable Motion Helpers (Zero hardcoded board numbers)
 inline bool hal_pmu_irq_asserted() {
+#if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
 #if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
   static int prev_lvl = 1;
   int cur_lvl = gpio_get_level(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN));
   bool rising_edge = (cur_lvl == 1 && prev_lvl == 0);
   prev_lvl = cur_lvl;
   return rising_edge;
-#elif (defined(LATTER_NO_PMU_IRQ_PIN) && LATTER_NO_PMU_IRQ_PIN) || defined(CONFIG_IDF_TARGET_ESP32P4)
-  return false;
 #else
-  return (gpio_get_level(GPIO_NUM_3) == 0);
+  return (gpio_get_level(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN)) == 0);
+#endif
+#else
+  return false;
 #endif
 }
 
