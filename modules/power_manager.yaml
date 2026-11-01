@@ -484,8 +484,8 @@ interval:
               if (latter_ui::should_step_ambient_anim(millis(), local_music_playing,
                                                       id(va_active) || !id(va_status_text).empty(),
                                                       id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
-                latter_ui::schedule_disp_update(&id(disp1));
                 latter_ui::record_ambient_frame_ms(millis());
+                latter_ui::schedule_anim_disp_update(&id(disp1));
                 did_ss_draw = true;
               }
             }

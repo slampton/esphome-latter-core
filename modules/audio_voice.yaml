@@ -186,13 +186,6 @@ media_player:
                         id(display_power_state) = 0;
                         id(hal_set_imu_power_mode).execute(0x01);
                     - light.turn_on: display_brightness
-                    - script.execute: hold_disp_poller_for_sendspin_start
-                  else:
-                    - if:
-                        condition:
-                          lambda: 'return !id(ota_in_progress);'
-                        then:
-                          - script.execute: hold_disp_poller_for_sendspin_start
               - lambda: |-
                   const std::string &art_u = latter_ui::media_state().art_url;
                   if (id(gui_page) == 2 &&
@@ -710,11 +703,7 @@ script:
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
-              const bool local_start_pending = latter_ui::media_state().is_local &&
-                                               latter_ui::remote_play_override_state() &&
-                                               (millis() - latter_ui::remote_play_override_ms() < 5000U);
               const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
-                                      local_start_pending ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
               const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||

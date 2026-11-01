@@ -90,9 +90,13 @@ output:
           if (state <= 0.01f) {
             latter_ui::hal_set_display_brightness(&id(disp1), 0);
           } else {
-            // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
             float clamped = std::max(0.0f, std::min(1.0f, state));
+            #if LATTER_PANEL_IPS
+            float hw = 255.0f * clamped;
+            #else
+            // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
             float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
+            #endif
             uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
             latter_ui::hal_set_display_brightness(&id(disp1), bri_byte);
           }

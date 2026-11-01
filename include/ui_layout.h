@@ -513,8 +513,10 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 #endif
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
 #if defined(LATTER_BACKLIGHT_INVERTED) && LATTER_BACKLIGHT_INVERTED
-  // P4-4B active-low backlight boost controller: 200Hz PWM, max_power capped at 80% (duty >= 51)
-  const uint8_t scaled_bri = (bri_byte == 0) ? 0 : static_cast<uint8_t>(25 + (static_cast<uint16_t>(bri_byte) * 179U) / 255U);
+  // P4-4B active-low backlight boost controller: 200Hz PWM, 10%..80% duty window (25..204)
+  const uint8_t scaled_bri = (bri_byte == 0)
+      ? 0
+      : static_cast<uint8_t>(25U + (static_cast<uint16_t>(bri_byte) * 179U) / 255U);
   const uint8_t hw_duty = (scaled_bri == 0) ? 255 : static_cast<uint8_t>(255 - scaled_bri);
   const uint32_t pwm_freq_hz = 200;
   const int gpio_on_lvl = 0;

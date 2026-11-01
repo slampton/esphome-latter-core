@@ -296,8 +296,8 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
   }
 
   if (menu_scroll_active) {
-    it.filled_rectangle(0, 0, SCREEN_W, scale_y(82), col_bg);
-    it.filled_rectangle(0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
+    fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), col_bg);
+    fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
   it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
   int active_page = menu_scroll_active ? menu_scroll_target_page : tools_menu_page;
@@ -1076,7 +1076,7 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
                                          esphome::Color col_red,
                                          bool find_my_active = false,
                                          const std::string &va_timer_name = "") {
-  it.fill(col_bg);
+  (void)col_bg;
   uint8_t pulse = (now_ms / 250U) % 2U;
   esphome::Color alert_color = find_my_active ? col_white : (alarm_ringing ? col_red : theme_secondary);
   esphome::Color ring_c = pulse ? alert_color : (find_my_active ? theme_secondary : esphome::Color(20, 20, 20));
@@ -1153,8 +1153,7 @@ inline void render_notification_overlay(
     esphome::Color col_slate, esphome::Color col_gold, esphome::Color col_red) {
   using esphome::Color;
   using esphome::display::TextAlign;
-
-  it.fill(col_bg);
+  (void)col_bg;
 
   const bool is_crit = (priority == "critical");
   const bool is_warn = (priority == "warning");

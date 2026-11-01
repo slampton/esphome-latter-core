@@ -49,7 +49,7 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
   int p3_b = static_cast<int>(82.0f  * b3);
 
   static constexpr int X_STEP = (SCREEN_W > 520) ? 4 : 3;
-  static constexpr int FILL_W = (SCREEN_W > 520) ? 3 : 2;
+  static constexpr int FILL_W = X_STEP;
   static constexpr int MAX_COLS = (SCREEN_W / X_STEP) + 2;
 
   struct AuroraCol {

@@ -923,35 +923,6 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
   return false;
 }
 
-// Distinguishes fast particle/celestial animations (rain, snow, storm, wind, active bird/meteor pass)
-// from slow atmospheric cloud/fog drift (~5-6 px/sec) so stationary high-DPI displays never waste
-// CPU/PSRAM bandwidth redrawing sub-pixel cloud positions at 20 FPS while MicroWakeWord is listening.
-inline bool is_high_rate_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0) {
-  if (cond.find("rain") != std::string::npos ||
-      cond.find("pouring") != std::string::npos ||
-      cond.find("drizzle") != std::string::npos ||
-      cond.find("snow") != std::string::npos ||
-      cond.find("sleet") != std::string::npos ||
-      cond.find("hail") != std::string::npos ||
-      cond.find("lightning") != std::string::npos ||
-      cond.find("thunder") != std::string::npos ||
-      cond.find("wind") != std::string::npos ||
-      cond.find("breez") != std::string::npos) {
-    return true;
-  }
-  const bool is_partly = (cond.find("partly") != std::string::npos ||
-                          cond.find("mostlysunny") != std::string::npos ||
-                          cond.find("partlysunny") != std::string::npos);
-  if (is_night && (cond == "clear-night" || cond == "clearnight" ||
-                   cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly)) {
-    return is_night_meteor_active(now_ms);
-  }
-  if (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday" || is_partly)) {
-    return is_clear_day_flock_active(now_ms);
-  }
-  return false;
-}
-
 // Draws a single articulated high-altitude bird in the Origami V-echelon formation:
 // - Because the AMOLED daytime sky `day_bg` (28, 54, 84) is a dark navy (~3% physical OLED luminance),
 //   pure black (0, 0, 0) has only 3% contrast against the sky and disappears to the eye.
@@ -1083,7 +1054,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   const bool storm_sky_flash = is_storm && (storm_phase_ms < 95U || (storm_phase_ms >= 155U && storm_phase_ms < 255U));
   const bool storm_bolt_vis  = is_storm && (storm_phase_ms < 285U);
 
-  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Full buffer fill on non-round)
+  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Row-major buffer fill on non-round)
   auto fill_sky_disc = [&](esphome::Color bg_c) {
 #if LATTER_ROUND_DISPLAY
     for (int y = 5; y <= 460; y++) {
@@ -1091,7 +1062,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
     }
 #else
-    it.fill(bg_c);
+    fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
 #endif
   };
   if (storm_sky_flash) {

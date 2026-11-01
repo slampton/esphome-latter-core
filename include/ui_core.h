@@ -498,27 +498,27 @@ inline void record_ambient_frame_ms(uint32_t now_ms) {
   last_ambient_anim_ms() = now_ms;
 }
 
+inline uint32_t &last_disp_update_end_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
 inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
-  const uint32_t frame_ms = last_frame_duration_ms();
-  if (!mww_running) {
-    return (frame_ms > 42U) ? std::min<uint32_t>(110U, frame_ms) : 42U;
-  }
-  if (frame_ms >= 85U) {
-    return std::min<uint32_t>(260U, frame_ms + 95U);
-  }
-  return std::max<uint32_t>(65U, frame_ms + 35U);
+  (void)mww_running;
+  return 42U;
 }
 
 inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
                                      bool va_busy = false, bool alert_busy = false) {
   if (va_busy) return false;
-  const uint32_t frame_ms = last_frame_duration_ms();
-  const uint32_t audio_idle_gap =
-      (frame_ms >= 85U) ? std::min<uint32_t>(380U, frame_ms * 2U)
-                        : std::max<uint32_t>(88U, frame_ms + 60U);
-  const uint32_t idle_gap = std::max<uint32_t>(42U, frame_ms);
-  const uint32_t min_gap = alert_busy ? 120U : (local_audio_busy ? audio_idle_gap : idle_gap);
-  return (now_ms - last_ambient_anim_ms() >= min_gap);
+#if LATTER_CHIP_P4
+  const uint32_t min_post_idle = local_audio_busy ? 22U : 8U;
+#else
+  const uint32_t min_post_idle = local_audio_busy ? 28U : 12U;
+#endif
+  if (now_ms - last_disp_update_end_ms() < min_post_idle) return false;
+  const uint32_t min_period = alert_busy ? 120U : (local_audio_busy ? 75U : 42U);
+  return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 
 // Standardized Dynamic Scroll Easing Constants (5-Step Cubic Eased Curve)
@@ -1167,75 +1167,6 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
 }
 
 template<typename DisplayT>
-inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span_w,
-                                      int row_h, const uint16_t *row_buf,
-                                      bool skip_black = false) {
-  if (row_h == 2) {
-    const int y1 = y + 1;
-    int i = 0;
-    while (i < span_w) {
-      const uint16_t p = row_buf[i];
-      int run = 1;
-      while (i + run < span_w && row_buf[i + run] == p) {
-        run++;
-      }
-      if (skip_black && (p & 0xFFDFU) == 0U) {
-        i += run;
-        continue;
-      }
-      const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
-      const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
-      const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
-      const esphome::Color c(r, g, b);
-      const int x0 = start_x + i;
-      if (run == 1) {
-        it.draw_pixel_at(x0, y, c);
-        it.draw_pixel_at(x0, y1, c);
-      } else if (run == 2) {
-        it.draw_pixel_at(x0, y, c);
-        it.draw_pixel_at(x0 + 1, y, c);
-        it.draw_pixel_at(x0, y1, c);
-        it.draw_pixel_at(x0 + 1, y1, c);
-      } else {
-        it.horizontal_line(x0, y, run, c);
-        it.horizontal_line(x0, y1, run, c);
-      }
-      i += run;
-    }
-    return;
-  }
-  for (int r_off = 0; r_off < std::max(1, row_h); r_off++) {
-    const int py = y + r_off;
-    int i = 0;
-    while (i < span_w) {
-      const uint16_t p = row_buf[i];
-      int run = 1;
-      while (i + run < span_w && row_buf[i + run] == p) {
-        run++;
-      }
-      if (skip_black && (p & 0xFFDFU) == 0U) {
-        i += run;
-        continue;
-      }
-      const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
-      const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
-      const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
-      const esphome::Color c(r, g, b);
-      const int x0 = start_x + i;
-      if (run == 1) {
-        it.draw_pixel_at(x0, py, c);
-      } else if (run == 2) {
-        it.draw_pixel_at(x0, py, c);
-        it.draw_pixel_at(x0 + 1, py, c);
-      } else {
-        it.horizontal_line(x0, py, run, c);
-      }
-      i += run;
-    }
-  }
-}
-
-template<typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
                                  const uint16_t *row_buf, bool skip_black = false) {
   // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
@@ -1243,15 +1174,34 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
   // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
   // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
   // into each driver's software buffer with automatic endianness and RGB/BGR handling.
-  blit_rgb565_scanline_rows(it, start_x, y, span_w, 1, row_buf, skip_black);
-}
-
-// Optional mid-frame audio pump hook (bound to micro_wake_word::loop() when running)
-// invoked at the midpoint of full-screen image renders so 210-260ms frames never exceed
-// micro_wake_word's ~200ms ring buffer capacity.
-inline void (*&mid_frame_audio_pump())() {
-  static void (*fn)() = nullptr;
-  return fn;
+  int i = 0;
+  while (i < span_w) {
+    const uint16_t p = row_buf[i];
+    int run = 1;
+    while (i + run < span_w && row_buf[i + run] == p) {
+      run++;
+    }
+    if (skip_black && (p & 0xFFDFU) == 0U) {
+      i += run;
+      continue;
+    }
+    const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
+    const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
+    const uint8_t b5 = static_cast<uint8_t>(p & 0x1FU);
+    const esphome::Color c(static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                           static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                           static_cast<uint8_t>((b5 << 3) | (b5 >> 2)));
+    const int x0 = start_x + i;
+    if (run == 1) {
+      it.draw_pixel_at(x0, y, c);
+    } else if (run == 2) {
+      it.draw_pixel_at(x0, y, c);
+      it.draw_pixel_at(x0 + 1, y, c);
+    } else {
+      it.horizontal_line(x0, y, run, c);
+    }
+    i += run;
+  }
 }
 
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
@@ -1380,57 +1330,15 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       if (span_w <= 0) continue;
       if (sy != prev_sy || mul_q3 != prev_mul_q3) {
         const uint16_t *src_row = src_data + sy * src_w;
-        const int sx0 = src_x0_fp >> 12;
-        if (step_fp == 2048 && sx0 >= 0 && (sx0 + (SCREEN_W + 1) / 2) <= src_w) {
-          for (int x = 0, sx = sx0; x < SCREEN_W; x += 2, sx++) {
-            uint16_t px = scale_rgb565_q3(src_row[sx], mul_q3);
-            row_buf[x] = px;
-            if (x + 1 < SCREEN_W) row_buf[x + 1] = px;
-          }
-        } else {
-          int curr_x = src_x0_fp;
-          for (int x = 0; x < SCREEN_W; x++) {
-            int sx = std::min(src_w - 1, curr_x >> 12);
-            curr_x += step_fp;
-            row_buf[x] = src_row[sx];
-          }
-          dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
+        int curr_x = src_x0_fp;
+        for (int x = 0; x < SCREEN_W; x++) {
+          int sx = std::min(src_w - 1, curr_x >> 12);
+          curr_x += step_fp;
+          row_buf[x] = src_row[sx];
         }
+        dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
         prev_sy = sy;
         prev_mul_q3 = mul_q3;
-      }
-      if (y + 1 < end_y) {
-        int next_sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
-        int next_mul = compute_art_row_scale_q3(y + 1, apply_scrim, show_metadata, dim_level);
-        if (next_sy == sy && next_mul == mul_q3) {
-          curr_y += step_fp;
-          int hw1 = circle_half_span(y + 1, 0);
-          int start_x1 = std::max(0, cx - hw1);
-          int end_x1 = std::min(SCREEN_W - 1, cx + hw1);
-          if (start_x == start_x1 && end_x == end_x1) {
-            blit_rgb565_scanline_rows(it, start_x, y, span_w, 2, row_buf + start_x, true);
-          } else {
-            int ov_start = std::max(start_x, start_x1);
-            int ov_end = std::min(end_x, end_x1);
-            if (start_x < ov_start) {
-              blit_rgb565_scanline(it, start_x, y, ov_start - start_x, row_buf + start_x, true);
-            }
-            if (start_x1 < ov_start) {
-              blit_rgb565_scanline(it, start_x1, y + 1, ov_start - start_x1, row_buf + start_x1, true);
-            }
-            if (ov_end >= ov_start) {
-              blit_rgb565_scanline_rows(it, ov_start, y, ov_end - ov_start + 1, 2, row_buf + ov_start, true);
-            }
-            if (end_x > ov_end) {
-              blit_rgb565_scanline(it, ov_end + 1, y, end_x - ov_end, row_buf + ov_end + 1, true);
-            }
-            if (end_x1 > ov_end) {
-              blit_rgb565_scanline(it, ov_end + 1, y + 1, end_x1 - ov_end, row_buf + ov_end + 1, true);
-            }
-          }
-          y++;
-          continue;
-        }
       }
       blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, true);
     }
@@ -1443,9 +1351,6 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int x0_b = std::max(0, cx - hw_btm), x1_b = std::min(SCREEN_W - 1, cx + hw_btm);
     if (x1_t > x0_t) it.horizontal_line(x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
     if (x1_b > x0_b) it.horizontal_line(x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
-  }
-  if (mid_frame_audio_pump() != nullptr) {
-    mid_frame_audio_pump()();
   }
   return true;
 }
@@ -1830,16 +1735,6 @@ inline uint32_t &last_disp_update_ms() {
   return ts;
 }
 
-inline uint32_t &last_disp_update_end_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
-
-inline bool &disp_explicit_update_pending() {
-  static bool p = false;
-  return p;
-}
-
 inline bool &screen_is_off_standby() {
   static bool off = false;
   return off;
@@ -1854,15 +1749,10 @@ struct DisplayUpdateScheduler : public esphome::Component {
   template<typename DispT>
   static void request_ptr(DispT *disp) {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
-      uint32_t now_m = esphome::millis();
-      uint32_t elapsed = now_m - last_disp_update_ms();
-      const uint32_t min_idle = std::min<uint32_t>(85U, std::max<uint32_t>(38U, last_frame_duration_ms() / 2U));
-      uint32_t delay_ms = (elapsed < min_idle) ? (min_idle - elapsed) : 0U;
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          "async_draw", delay_ms, [disp]() {
+          "async_draw", 0, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
-            disp_explicit_update_pending() = true;
             disp->update();
           });
     }
@@ -1877,13 +1767,13 @@ struct DisplayUpdateScheduler : public esphome::Component {
       constexpr uint32_t kFrameMs = 26U;
 #endif
       uint32_t now_m = esphome::millis();
+      const bool inside_render = (last_disp_update_ms() > last_disp_update_end_ms());
       uint32_t elapsed = now_m - last_disp_update_ms();
-      uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : 4U;
+      uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : (inside_render ? 4U : 0U);
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           "async_draw", delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
-            disp_explicit_update_pending() = true;
             disp->update();
           });
     }
@@ -1958,6 +1848,9 @@ struct FrameProfileScope {
 
   FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
     t0_us = prof_now_us();
+    uint32_t start_m = esphome::millis();
+    last_disp_update_ms() = start_m;
+    last_ambient_anim_ms() = start_m;
   }
 
   ~FrameProfileScope() {
@@ -1965,9 +1858,7 @@ struct FrameProfileScope {
     uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
     uint32_t now_m = esphome::millis();
     last_frame_duration_ms() = render_us / 1000U;
-    last_disp_update_ms() = now_m;
     last_disp_update_end_ms() = now_m;
-    last_ambient_anim_ms() = now_m;
     if (!profiler_enabled()) return;
     auto &fr = flight_recorder();
     uint32_t dt_ms = (fr.last_frame_ms > 0 && now_m >= fr.last_frame_ms) ? (now_m - fr.last_frame_ms) : 0U;

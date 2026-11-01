@@ -97,24 +97,6 @@ color:
 display:
   - id: !extend disp1
     lambda: |-
-      if (latter_ui::disp_poller_held() && !id(ota_in_progress)) {
-        return;
-      }
-      const bool is_explicit_draw = latter_ui::disp_explicit_update_pending();
-      latter_ui::disp_explicit_update_pending() = false;
-      if (!is_explicit_draw && !id(ota_in_progress)) {
-        uint32_t now_poll = millis();
-        if ((now_poll - latter_ui::last_disp_update_end_ms() < 650U) ||
-            (latter_ui::touch_gesture().active && (now_poll - latter_ui::touch_gesture().start_ms < 1200U))) {
-          return;
-        }
-      }
-      latter_ui::last_disp_update_ms() = millis();
-      latter_ui::mid_frame_audio_pump() = +[]() {
-        if (id(mww).is_running()) {
-          id(mww).loop();
-        }
-      };
       int prof_sub = 0;
       if (id(gui_page) == 1) prof_sub = id(home_subpage);
       else if (id(gui_page) == 2) prof_sub = id(music_overlay_mode);
@@ -143,8 +125,6 @@ display:
       // GLOBAL OVERLAY: OTA FIRMWARE UPDATE IN PROGRESS
       // ==========================================
       if (id(ota_in_progress)) {
-        it.fill(id(col_bg));
-
         int pct = id(ota_progress_pct);
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
@@ -160,9 +140,9 @@ display:
           const int ota_bw = std::min(280, latter_ui::SCREEN_W - 48);
           const int ota_bx = cx - (ota_bw / 2);
           const int ota_fill = (ota_bw * pct) / 100;
-          it.filled_rectangle(ota_bx, cy + 104, ota_bw, 10, id(col_dark_gray));
+          latter_ui::fill_rect_row_major(it, ota_bx, cy + 104, ota_bw, 10, id(col_dark_gray));
           if (ota_fill > 0) {
-            it.filled_rectangle(ota_bx, cy + 104, ota_fill, 10, id(theme_primary));
+            latter_ui::fill_rect_row_major(it, ota_bx, cy + 104, ota_fill, 10, id(theme_primary));
           }
         }
 
@@ -188,8 +168,6 @@ display:
       // GLOBAL OVERLAY: HIBERNATION SHUTDOWN
       // ==========================================
       if (id(is_hibernating)) {
-        it.fill(id(col_bg));
-
         if (id(hibernate_countdown_val) > 0) {
           it.print(cx, cy - 65, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
           char c_buf[16];
@@ -206,7 +184,6 @@ display:
       static bool standby_black_flushed = false;
       if (!id(display_brightness).current_values.is_on() || id(display_power_state) == 2) {
         if (!standby_black_flushed) {
-          it.fill(id(col_bg));
           standby_black_flushed = true;
         }
         return;
@@ -264,7 +241,6 @@ display:
       // GLOBAL OVERLAY: DOCKED SCREENSAVER (Mode 1)
       // ==========================================
       if (id(display_power_state) == 1) {
-        it.fill(id(col_bg));
         latter_ui::render_docked_screensaver(
             it, cx, cy, millis(), now, id(is_24h_format),
             id(screensaver_style_select).current_option(),
@@ -273,10 +249,6 @@ display:
       }
 
       float batt = id(batt_level).state;
-      if (id(gui_page) != 1 && id(gui_page) != 2 &&
-          !(id(gui_page) == 5 && id(sky_weather_subpage) == 0)) {
-        it.fill(id(col_bg));
-      }
 
       // ==========================================
       // PAGE 0: WATCH FACE (ANALOG & DIGITAL)
@@ -630,7 +602,7 @@ display:
               it, cx, millis(), id(font_date), id(font_small),
               id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
         } else if (id(tools_subpage) == 5) {
-          it.fill(id(col_white));
+          latter_ui::fill_rect_row_major(it, 0, 0, latter_ui::SCREEN_W, latter_ui::SCREEN_H, id(col_white));
         } else if (id(tools_subpage) == 6) {
           latter_ui::render_tool_calculator(
               it, cx, id(font_date), id(font_btn_bold), id(font_small),
