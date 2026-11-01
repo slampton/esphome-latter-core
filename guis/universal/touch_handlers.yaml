@@ -547,7 +547,6 @@ script:
                     id(music_feedback_timer) = now_pp;
                     id(music_hud_timer) = now_pp;
                     id(toggle_ha_music).execute();
-                    latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 }

@@ -528,6 +528,19 @@ script:
       - script.execute: screen_sleep_timer
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
+  - id: hold_disp_poller_for_sendspin_start
+    mode: restart
+    then:
+      - lambda: 'id(disp1).stop_poller();'
+      - wait_until:
+          condition:
+            lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;'
+          timeout: 1100ms
+      - lambda: |-
+          if (id(display_power_state) == 0 && !id(ota_in_progress)) {
+            id(disp1).start_poller();
+          }
+
   - id: throttled_disp_update
     mode: restart
     then:
@@ -535,16 +548,30 @@ script:
       - if:
           condition:
             lambda: |-
-              return (latter_ui::media_state().is_local ||
-                      id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                     id(music_pos_sync_time) > 0 &&
-                     (millis() - id(music_pos_sync_time) < 900U);
+              const bool local_handshake_pending =
+                  latter_ui::media_state().is_local &&
+                  latter_ui::remote_play_override_state() &&
+                  (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                  (millis() - latter_ui::remote_play_override_ms() < 1200U);
+              return local_handshake_pending ||
+                     ((latter_ui::media_state().is_local ||
+                       id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                      id(music_pos_sync_time) > 0 &&
+                      (millis() - id(music_pos_sync_time) < 900U));
           then:
-            - delay: 340ms
+            - delay: 380ms
       - if:
           condition:
             lambda: |-
-              return id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2) && !id(va_active);
+              const bool local_handshake_still_pending =
+                  latter_ui::media_state().is_local &&
+                  latter_ui::remote_play_override_state() &&
+                  (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+                  (millis() - latter_ui::remote_play_override_ms() < 1200U);
+              return !local_handshake_still_pending &&
+                     id(display_power_state) == 0 &&
+                     (id(gui_page) == 1 || id(gui_page) == 2) &&
+                     !id(va_active);
           then:
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
@@ -723,6 +750,7 @@ script:
                 data:
                   target_device: "${name}"
                   command: "pause"
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
           else:
             - lambda: 'latter_ui::set_remote_play_override(true, millis());'
             - if:
@@ -731,6 +759,7 @@ script:
                 then:
                   - script.stop: mp_idle_debounce
                   - script.execute: route_i2s_to_spk
+                  - script.wait: route_i2s_to_spk
                   - switch.turn_on: speaker_enable
                   - lambda: |-
                       float v = id(latter_media_player).volume;
@@ -746,6 +775,12 @@ script:
                 data:
                   target_device: "${name}"
                   command: "play"
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+            - if:
+                condition:
+                  lambda: 'return latter_ui::media_state().is_local;'
+                then:
+                  - script.execute: hold_disp_poller_for_sendspin_start
 
   - id: stop_ha_music
     mode: restart
@@ -1022,9 +1057,12 @@ script:
             id(music_action_feedback) = "Invalid Speaker";
           }
           id(music_feedback_timer) = millis();
-          const std::string &loc_spk = latter_ui::media_state().local_speaker;
+          auto &ms = latter_ui::media_state();
+          const std::string &loc_spk = ms.local_speaker;
           const bool new_is_local = (!loc_spk.empty() && id(active_speaker_entity) == loc_spk);
-          latter_ui::media_state().is_local = new_is_local;
+          ms.active_speaker = id(active_speaker_entity);
+          ms.speaker_name = id(active_speaker_name);
+          ms.is_local = new_is_local;
           if (new_is_local && transfer_queue == "true") {
             latter_ui::set_remote_play_override(true, millis());
           }
@@ -1038,8 +1076,17 @@ script:
           then:
             - script.stop: mp_idle_debounce
             - script.execute: route_i2s_to_spk
+            - script.wait: route_i2s_to_spk
             - switch.turn_on: speaker_enable
-            - lambda: 'id(hal_set_dac_mute).execute(false);'
+            - lambda: |-
+                float v = id(latter_media_player).volume;
+                if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                id(hal_set_dac_mute).execute(false);
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: 0
+                duration: 0.2s
       - homeassistant.action:
           action: latter.set_active_speaker
           data:
@@ -1052,13 +1099,21 @@ script:
           then:
             - lambda: 'id(hal_set_dac_mute).execute(true);'
             - switch.turn_off: speaker_enable
-      - script.execute: fetch_remote_art_debounced
+      - if:
+          condition:
+            lambda: 'return !latter_ui::media_state().is_local || transfer_queue != "true";'
+          then:
+            - script.execute: fetch_remote_art_debounced
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - if:
+          condition:
+            lambda: 'return latter_ui::media_state().is_local && transfer_queue == "true";'
+          then:
+            - script.execute: hold_disp_poller_for_sendspin_start
 
   - id: speaker_transfer_to_target
     mode: restart
     then:
-      - delay: 0ms
       - script.execute:
           id: activate_selected_speaker
           prefix: "Transferring -> "
@@ -1067,7 +1122,6 @@ script:
   - id: speaker_control_target
     mode: restart
     then:
-      - delay: 0ms
       - script.execute:
           id: activate_selected_speaker
           prefix: "Controlling: "
@@ -1124,7 +1178,6 @@ script:
     parameters:
       slot: int
     then:
-      - delay: 0ms
       - lambda: |-
           if (slot == 1) {
             id(selected_slot_name) = id(slot_1_name);
@@ -1182,6 +1235,7 @@ script:
           then:
             - script.stop: mp_idle_debounce
             - script.execute: route_i2s_to_spk
+            - script.wait: route_i2s_to_spk
             - switch.turn_on: speaker_enable
             - lambda: |-
                 float v = id(latter_media_player).volume;
@@ -1202,6 +1256,11 @@ script:
             media_type: !lambda 'return id(selected_slot_type).c_str();'
             enqueue: "replace"
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - if:
+          condition:
+            lambda: 'return latter_ui::media_state().is_local;'
+          then:
+            - script.execute: hold_disp_poller_for_sendspin_start
 
   - id: mp_idle_debounce
     mode: restart
