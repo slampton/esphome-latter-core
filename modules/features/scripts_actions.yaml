@@ -531,11 +531,19 @@ script:
   - id: throttled_disp_update
     mode: restart
     then:
-      - delay: 140ms
+      - delay: 220ms
       - if:
           condition:
             lambda: |-
-              return id(display_power_state) == 0 && id(gui_page) == 2 && !id(va_active);
+              return latter_ui::media_state().is_local &&
+                     id(music_pos_sync_time) > 0 &&
+                     (millis() - id(music_pos_sync_time) < 750U);
+          then:
+            - delay: 240ms
+      - if:
+          condition:
+            lambda: |-
+              return id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2) && !id(va_active);
           then:
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
@@ -801,6 +809,8 @@ script:
       - lambda: |-
           id(music_action_feedback) = "Next Track >>";
           id(music_feedback_timer) = millis();
+          id(music_pos_base) = 0.0f;
+          id(music_pos_sync_time) = millis();
       - homeassistant.action:
           action: latter.media_command
           data:

@@ -92,16 +92,26 @@ media_player:
     on_state:
       then:
         - lambda: |-
+            static int last_mp_state = -1;
+            static float last_mp_vol = -1.0f;
+            int cur_st = static_cast<int>(id(latter_media_player).state);
+            float v = id(latter_media_player).volume;
+            bool vol_valid = !std::isnan(v) && v > 0.0f;
+            bool state_changed = (cur_st != last_mp_state);
+            bool vol_changed = vol_valid && (last_mp_vol < 0.0f || std::fabs(v - last_mp_vol) >= 0.005f);
             if (!id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active) &&
                 !id(va_active) && !id(va_tts_received) &&
                 id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) {
-              float v = id(latter_media_player).volume;
-              if (!std::isnan(v) && v > 0.0f) {
+              if (vol_valid && (vol_changed || state_changed)) {
                 id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
               }
             }
-            if (id(gui_page) == 2) {
-              latter_ui::schedule_disp_update(&id(disp1));
+            if (state_changed || vol_changed) {
+              last_mp_state = cur_st;
+              if (vol_valid) last_mp_vol = v;
+              if (id(gui_page) == 2 && id(display_power_state) == 0 && !id(va_active)) {
+                id(throttled_disp_update).execute();
+              }
             }
     on_announcement:
       then:

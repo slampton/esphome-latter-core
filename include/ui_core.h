@@ -1310,19 +1310,27 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int end_x = std::min(SCREEN_W - 1, cx + hw);
       int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
-      if (LATTER_ROUND_DISPLAY || sy != prev_sy || mul_q3 != prev_mul_q3) {
+      if (sy != prev_sy || mul_q3 != prev_mul_q3) {
         const uint16_t *src_row = src_data + sy * src_w;
-        int curr_x = src_x0_fp + start_x * step_fp;
-        for (int i = 0; i < span_w; i++) {
-          int sx = std::min(src_w - 1, curr_x >> 12);
-          curr_x += step_fp;
-          row_buf[i] = src_row[sx];
+        if (step_fp == 2048 && src_x0_fp == 0 && (SCREEN_W / 2) <= src_w) {
+          for (int x = 0, sx = 0; x < SCREEN_W; x += 2, sx++) {
+            uint16_t px = src_row[sx];
+            row_buf[x] = px;
+            if (x + 1 < SCREEN_W) row_buf[x + 1] = px;
+          }
+        } else {
+          int curr_x = src_x0_fp;
+          for (int x = 0; x < SCREEN_W; x++) {
+            int sx = std::min(src_w - 1, curr_x >> 12);
+            curr_x += step_fp;
+            row_buf[x] = src_row[sx];
+          }
         }
-        dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+        dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
         prev_sy = sy;
         prev_mul_q3 = mul_q3;
       }
-      blit_rgb565_scanline(it, start_x, y, span_w, row_buf);
+      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x);
     }
   }
 
