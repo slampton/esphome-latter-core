@@ -1312,8 +1312,9 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       if (span_w <= 0) continue;
       if (sy != prev_sy || mul_q3 != prev_mul_q3) {
         const uint16_t *src_row = src_data + sy * src_w;
-        if (step_fp == 2048 && src_x0_fp == 0 && (SCREEN_W / 2) <= src_w) {
-          for (int x = 0, sx = 0; x < SCREEN_W; x += 2, sx++) {
+        const int sx0 = src_x0_fp >> 12;
+        if (step_fp == 2048 && sx0 >= 0 && (sx0 + (SCREEN_W + 1) / 2) <= src_w) {
+          for (int x = 0, sx = sx0; x < SCREEN_W; x += 2, sx++) {
             uint16_t px = src_row[sx];
             row_buf[x] = px;
             if (x + 1 < SCREEN_W) row_buf[x + 1] = px;

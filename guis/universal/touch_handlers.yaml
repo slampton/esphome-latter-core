@@ -495,6 +495,7 @@ script:
                   uint32_t now_hdr = millis();
                   if (now_hdr - last_hdr_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_hdr_tap = now_hdr;
+                    latter_ui::music_scroll_tap_lockout_until_ms() = now_hdr + 280U;
                     id(music_direct_nav) = false;
                     id(music_overlay_mode) = 5;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -513,6 +514,7 @@ script:
                   uint32_t now_md = millis();
                   if (now_md - last_meta_direct_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_meta_direct_tap = now_md;
+                    latter_ui::music_scroll_tap_lockout_until_ms() = now_md + 280U;
                     id(music_overlay_mode) = 6;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -555,9 +557,17 @@ script:
                   uint32_t now_sc = millis();
                   if (now_sc - last_sc_spk_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_sc_spk_tap = now_sc;
+                    latter_ui::music_scroll_tap_lockout_until_ms() = now_sc + 280U;
                     id(selected_category_mode) = "speakers";
                     id(selected_category_title) = "SPEAKERS";
+                    id(slot_1_name) = "Loading...";
+                    id(slot_1_id) = ""; id(slot_1_type) = "text";
+                    id(slot_2_name) = ""; id(slot_2_id) = "";
+                    id(slot_3_name) = ""; id(slot_3_id) = "";
+                    id(slot_4_name) = ""; id(slot_4_id) = "";
+                    id(slot_5_name) = ""; id(slot_5_id) = "";
                     id(music_browse_page) = 1;
+                    id(music_browse_total_pages) = 1;
                     id(music_direct_nav) = true;
                     id(music_overlay_mode) = 1;
                     id(fetch_music_browse).execute();
@@ -571,6 +581,7 @@ script:
                   uint32_t now_sc = millis();
                   if (now_sc - last_sc_lib_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
                     last_sc_lib_tap = now_sc;
+                    latter_ui::music_scroll_tap_lockout_until_ms() = now_sc + 280U;
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
                     id(menu_scroll_step) = 0;
@@ -2674,7 +2685,9 @@ script:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 2 &&
-                         (id(music_overlay_mode) >= 1 && id(music_overlay_mode) <= 3) && gest.start_y < latter_ui::scale_y(404)) {
+                         (id(music_overlay_mode) >= 1 && id(music_overlay_mode) <= 3) &&
+                         gest.start_context == (200 + id(music_overlay_mode)) &&
+                         gest.start_y < latter_ui::scale_y(404)) {
                 if ((id(music_overlay_mode) == 1 || id(music_overlay_mode) == 3) &&
                     std::abs(dy) >= 22 && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
                   gest.swipe_committed = true;
