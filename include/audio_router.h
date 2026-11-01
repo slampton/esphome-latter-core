@@ -73,7 +73,15 @@ inline float alert_volume_to_ducking_db(float alert_vol_pct, float scale = 0.25f
 template <typename I2cBusT>
 inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_es7210 = true) {
   if (bus == nullptr) return;
-  static int last_stby = -1;
+#if defined(LATTER_IS_STATIONARY) && LATTER_IS_STATIONARY
+  // Mains-powered stationary displays keep ES8311/ES7210 in their ESPHome setup() state continuously
+  (void)standby;
+  (void)has_es7210;
+  return;
+#else
+  // Codecs boot in active state (0) after ESPHome component setup(); initialize last_stby = 0
+  // so boot-time hal_set_audio_codecs_standby(false) never overwrites ES7210's setup() registers.
+  static int last_stby = 0;
   const int target = standby ? 1 : 0;
   if (target == last_stby) return;
   last_stby = target;
@@ -96,6 +104,7 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
       bus->write(0x40, adc_wake2, 2);
     }
   }
+#endif
 }
 
 template <typename I2cBusT>

@@ -550,13 +550,147 @@ inline esphome::Color scale_color(esphome::Color c, float scale) {
 
 
 // ------------------------------------------------------------------------------
-// 2. Reusable Geometric & Vector UI Drawing Primitives
+// 2. Reusable Geometric & Vector UI Drawing Primitives (Direct RGB565 Scanlines)
 // ------------------------------------------------------------------------------
+template<typename DispT, bool IsFinal = std::is_final_v<DispT>>
+struct DispBufferAccessor {
+  static uint8_t *get(DispT *) { return nullptr; }
+};
+
+template<typename DispT>
+struct DispBufferAccessor<DispT, false> : DispT {
+  static uint8_t *get(DispT *d) {
+    if constexpr (requires { &DispBufferAccessor::buffer_; }) {
+      return reinterpret_cast<uint8_t *>(d->*(&DispBufferAccessor::buffer_));
+    } else {
+      return nullptr;
+    }
+  }
+};
+
+inline uint16_t *&active_frame_buf16() {
+  static uint16_t *ptr = nullptr;
+  return ptr;
+}
+
+// 0 = fallback (virtual draw_pixel_at), 1 = LE RGB565 (0xF800), 2 = BE RGB565 (0x00F8),
+// 3 = LE BGR565 (0x001F), 4 = BE BGR565 (0x1F00)
+inline int &active_frame_endian_mode() {
+  static int mode = -1;
+  return mode;
+}
+
+template<typename DispT>
+inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
+  if (disp == nullptr || it.get_rotation() != esphome::display::DISPLAY_ROTATION_0_DEGREES) {
+    active_frame_buf16() = nullptr;
+    return;
+  }
+  uint8_t *raw = DispBufferAccessor<DispT>::get(disp);
+  if (raw == nullptr) {
+    active_frame_buf16() = nullptr;
+    return;
+  }
+  uint16_t *buf16 = reinterpret_cast<uint16_t *>(raw);
+  if (active_frame_endian_mode() < 0) {
+    const uint16_t orig_px0 = buf16[0];
+    it.draw_pixel_at(0, 0, esphome::Color(255, 0, 0));
+    const uint16_t red_probe = buf16[0];
+    buf16[0] = orig_px0;
+    if (red_probe == 0xF800U) {
+      active_frame_endian_mode() = 1;
+    } else if (red_probe == 0x00F8U) {
+      active_frame_endian_mode() = 2;
+    } else if (red_probe == 0x001FU) {
+      active_frame_endian_mode() = 3;
+    } else if (red_probe == 0x1F00U) {
+      active_frame_endian_mode() = 4;
+    } else {
+      active_frame_endian_mode() = 0;
+    }
+  }
+  active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
+#if LATTER_ROUND_DISPLAY
+  if (active_frame_buf16() != nullptr) {
+    it.draw_pixel_at(0, 0, esphome::Color(8, 8, 8));
+    it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
+    it.draw_pixel_at(SCREEN_W - 1, SCREEN_H - 1, esphome::Color(8, 8, 8));
+    it.draw_pixel_at(SCREEN_W - 1, SCREEN_H - 1, esphome::Color(0, 0, 0));
+  }
+#endif
+}
+
+template<typename DispT>
+inline void bind_frame_buffer(DispT *const *disp_ptr, esphome::display::Display &it) {
+  if (disp_ptr != nullptr) bind_frame_buffer(*disp_ptr, it);
+}
+
+inline uint16_t encode_hw_rgb565_raw(uint16_t p) {
+  const int mode = active_frame_endian_mode();
+  if (mode == 1) return p;
+  if (mode == 2) return __builtin_bswap16(p);
+  const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
+  return (mode == 4) ? __builtin_bswap16(bgr) : bgr;
+}
+
+inline uint16_t encode_hw_rgb565(esphome::Color c) {
+  const uint16_t p = static_cast<uint16_t>(((static_cast<uint16_t>(c.r) & 0xF8U) << 8) |
+                                           ((static_cast<uint16_t>(c.g) & 0xFCU) << 3) |
+                                           (static_cast<uint16_t>(c.b) >> 3));
+  return encode_hw_rgb565_raw(p);
+}
+
+template<typename DisplayT>
+inline void fast_pixel(DisplayT &it, int x, int y, esphome::Color c) {
+  if (x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb != nullptr) {
+    fb[y * SCREEN_W + x] = encode_hw_rgb565(c);
+    return;
+  }
+  it.draw_pixel_at(x, y, c);
+}
+
+template<typename DisplayT>
+inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
+  if (w <= 0 || y < 0 || y >= SCREEN_H) return;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (x + w > SCREEN_W) {
+    w = SCREEN_W - x;
+  }
+  if (w <= 0) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb != nullptr) {
+    const uint16_t px = encode_hw_rgb565(c);
+    uint16_t *dst = fb + y * SCREEN_W + x;
+    int i = 0;
+    if ((reinterpret_cast<uintptr_t>(dst) & 2U) != 0U) {
+      dst[0] = px;
+      i = 1;
+    }
+    const uint32_t pair = static_cast<uint32_t>(px) | (static_cast<uint32_t>(px) << 16);
+    uint32_t *dst32 = reinterpret_cast<uint32_t *>(dst + i);
+    const int pairs = (w - i) >> 1;
+    for (int p = 0; p < pairs; p++) {
+      dst32[p] = pair;
+    }
+    i += pairs << 1;
+    if (i < w) {
+      dst[i] = px;
+    }
+    return;
+  }
+  it.horizontal_line(x, y, w, c);
+}
+
 template<typename DisplayT>
 inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
   if (w <= 0 || h <= 0) return;
   for (int row = 0; row < h; row++) {
-    it.horizontal_line(x, y + row, w, c);
+    fast_hline(it, x, y + row, w, c);
   }
 }
 
@@ -635,8 +769,8 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
 
   // Single-pass scanline rounded rectangle with top-lit specular glass bevel & vertical sheen:
   int top_in = r / 2 + 2;
-  it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, brd_top);
-  it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
+  fast_hline(it, x0 + top_in, y0,         w - 2 * top_in, brd_top);
+  fast_hline(it, x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
 
   for (int dy = 1; dy < r; dy++) {
     int ry = r - dy;
@@ -650,16 +784,16 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
     esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
     esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
     if (span_in > 0) {
-      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, b_t);
-      it.horizontal_line(x0 + dx_in,  yt, span_in,        f_t);
-      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, b_t);
+      fast_hline(it, x0 + dx_out, yt, dx_in - dx_out, b_t);
+      fast_hline(it, x0 + dx_in,  yt, span_in,        f_t);
+      fast_hline(it, x0 + w - dx_in, yt, dx_in - dx_out, b_t);
 
-      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, b_b);
-      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_btm);
-      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, b_b);
+      fast_hline(it, x0 + dx_out, yb, dx_in - dx_out, b_b);
+      fast_hline(it, x0 + dx_in,  yb, span_in,        bg_btm);
+      fast_hline(it, x0 + w - dx_in, yb, dx_in - dx_out, b_b);
     } else if (span_out > 0) {
-      it.horizontal_line(x0 + dx_out, yt, span_out, b_t);
-      it.horizontal_line(x0 + dx_out, yb, span_out, b_b);
+      fast_hline(it, x0 + dx_out, yt, span_out, b_t);
+      fast_hline(it, x0 + dx_out, yb, span_out, b_b);
     }
   }
 
@@ -668,11 +802,11 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
     int mid_top = mid_h / 2;
     for (int dy = 0; dy < mid_h; dy++) {
       int py = y0 + r + dy;
-      it.draw_pixel_at(x0, py, border_c);
+      fast_pixel(it, x0, py, border_c);
       if (w > 2) {
-        it.horizontal_line(x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
+        fast_hline(it, x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
       }
-      it.draw_pixel_at(x0 + w - 1, py, border_c);
+      fast_pixel(it, x0 + w - 1, py, border_c);
     }
   }
 
@@ -723,8 +857,8 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
 
   int top_in = r / 2 + 2;
   if (w > 2 * top_in) {
-    it.horizontal_line(x0 + top_in, y0,         w - 2 * top_in, brd_top);
-    it.horizontal_line(x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
+    fast_hline(it, x0 + top_in, y0,         w - 2 * top_in, brd_top);
+    fast_hline(it, x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
   }
 
   for (int dy = 1; dy < r; dy++) {
@@ -739,16 +873,16 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
     esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
     esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
     if (span_in > 0) {
-      it.horizontal_line(x0 + dx_out, yt, dx_in - dx_out, b_t);
-      it.horizontal_line(x0 + dx_in,  yt, span_in,        f_t);
-      it.horizontal_line(x0 + w - dx_in, yt, dx_in - dx_out, b_t);
+      fast_hline(it, x0 + dx_out, yt, dx_in - dx_out, b_t);
+      fast_hline(it, x0 + dx_in,  yt, span_in,        f_t);
+      fast_hline(it, x0 + w - dx_in, yt, dx_in - dx_out, b_t);
 
-      it.horizontal_line(x0 + dx_out, yb, dx_in - dx_out, b_b);
-      it.horizontal_line(x0 + dx_in,  yb, span_in,        bg_btm);
-      it.horizontal_line(x0 + w - dx_in, yb, dx_in - dx_out, b_b);
+      fast_hline(it, x0 + dx_out, yb, dx_in - dx_out, b_b);
+      fast_hline(it, x0 + dx_in,  yb, span_in,        bg_btm);
+      fast_hline(it, x0 + w - dx_in, yb, dx_in - dx_out, b_b);
     } else if (span_out > 0) {
-      it.horizontal_line(x0 + dx_out, yt, span_out, b_t);
-      it.horizontal_line(x0 + dx_out, yb, span_out, b_b);
+      fast_hline(it, x0 + dx_out, yt, span_out, b_t);
+      fast_hline(it, x0 + dx_out, yb, span_out, b_b);
     }
   }
 
@@ -757,11 +891,11 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
     int mid_top = mid_h / 2;
     for (int dy = 0; dy < mid_h; dy++) {
       int py = y0 + r + dy;
-      it.draw_pixel_at(x0, py, border_c);
+      fast_pixel(it, x0, py, border_c);
       if (w > 2) {
-        it.horizontal_line(x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
+        fast_hline(it, x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
       }
-      it.draw_pixel_at(x0 + w - 1, py, border_c);
+      fast_pixel(it, x0 + w - 1, py, border_c);
     }
   }
 }
@@ -1169,11 +1303,46 @@ inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
 template<typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
                                  const uint16_t *row_buf, bool skip_black = false) {
+  if (span_w <= 0 || y < 0 || y >= SCREEN_H || row_buf == nullptr) return;
+  if (start_x < 0) {
+    row_buf -= start_x;
+    span_w += start_x;
+    start_x = 0;
+  }
+  if (start_x + span_w > SCREEN_W) {
+    span_w = SCREEN_W - start_x;
+  }
+  if (span_w <= 0) return;
+
   // ESPHome's MipiSpi::draw_pixels_at rejects native little-endian RGB565 buffers when the
   // SPI buffer is big_endian ("[E][display.mipi_spi:220]: Unsupported color depth or bit order"),
   // while MipiDsi::draw_pixels_at bypasses the software draw buffer (this->buffer_) entirely.
-  // Plotting run-length-grouped scanlines through draw_pixel_at/horizontal_line writes directly
-  // into each driver's software buffer with automatic endianness and RGB/BGR handling.
+  // When active_frame_buf16() is bound, write directly into the software buffer with automatic
+  // hardware endianness/RGB565 handling; otherwise fall back to draw_pixel_at/horizontal_line.
+  uint16_t *fb = active_frame_buf16();
+  if (fb != nullptr) {
+    uint16_t *dst = fb + y * SCREEN_W + start_x;
+    const int mode = active_frame_endian_mode();
+    if (!skip_black) {
+      if (mode == 1) {
+        std::memcpy(dst, row_buf, static_cast<size_t>(span_w) * sizeof(uint16_t));
+        return;
+      }
+      if (mode == 2) {
+        for (int i = 0; i < span_w; i++) {
+          dst[i] = __builtin_bswap16(row_buf[i]);
+        }
+        return;
+      }
+    }
+    for (int i = 0; i < span_w; i++) {
+      const uint16_t p = row_buf[i];
+      if (skip_black && (p & 0xFFDFU) == 0U) continue;
+      dst[i] = encode_hw_rgb565_raw(p);
+    }
+    return;
+  }
+
   int i = 0;
   while (i < span_w) {
     const uint16_t p = row_buf[i];

@@ -162,7 +162,7 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
         uint8_t cr = static_cast<uint8_t>(r > 255 ? 255 : r);
         uint8_t cg = static_cast<uint8_t>(g > 255 ? 255 : g);
         uint8_t cb = static_cast<uint8_t>(b > 255 ? 255 : b);
-        it.horizontal_line(c.x, py, FILL_W, esphome::Color(cr, cg, cb));
+        fast_hline(it, c.x, py, FILL_W, esphome::Color(cr, cg, cb));
       }
     }
   }

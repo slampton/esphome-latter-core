@@ -284,9 +284,9 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
       }
       int run_len = mx - run_start;
       if (run_len > 1) {
-        it.horizontal_line(moon_cx + run_start, py, run_len, p_col);
+        fast_hline(it, moon_cx + run_start, py, run_len, p_col);
       } else {
-        it.draw_pixel_at(moon_cx + run_start, py, p_col);
+        fast_pixel(it, moon_cx + run_start, py, p_col);
       }
     }
   }
@@ -428,7 +428,7 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
         run_end += kColStep;
         i++;
       }
-      it.horizontal_line(run_x0, y, run_end - run_x0, palette[band]);
+      fast_hline(it, run_x0, y, run_end - run_x0, palette[band]);
     }
   }
 }
@@ -541,7 +541,7 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
         run_end = std::max(run_end, static_cast<int>(nvc.x + nvc.w));
         i++;
       }
-      it.horizontal_line(run_x0, y, run_end - run_x0, veil_pal[band]);
+      fast_hline(it, run_x0, y, run_end - run_x0, veil_pal[band]);
     }
   }
 }
@@ -1059,7 +1059,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 #if LATTER_ROUND_DISPLAY
     for (int y = 5; y <= 460; y++) {
       int hw = static_cast<int>(CIRCLE_HW[y]) - 5;
-      if (hw > 0) it.horizontal_line(cx - hw, y, 2 * hw + 1, bg_c);
+      if (hw > 0) fast_hline(it, cx - hw, y, 2 * hw + 1, bg_c);
     }
 #else
     fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
@@ -1167,7 +1167,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
             int r2 = dx * dx + dy2;
             if (r2 > r2_in) {
               float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
-              it.draw_pixel_at(cel_cx + dx, py, lerp_color(sky_c, c_haze, k));
+              fast_pixel(it, cel_cx + dx, py, lerp_color(sky_c, c_haze, k));
             } else {
               float ldx = static_cast<float>(dx) + 2.2f;
               float d2_norm = (ldx * ldx + ldy2) * inv_r2_in;
@@ -1175,7 +1175,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
               esphome::Color pix_c = (u < 0.35f)
                   ? lerp_color(c_limb, c_body, u * (1.0f / 0.35f))
                   : lerp_color(c_body, c_core, (u - 0.35f) * (1.0f / 0.65f));
-              it.draw_pixel_at(cel_cx + dx, py, pix_c);
+              fast_pixel(it, cel_cx + dx, py, pix_c);
             }
           }
         }

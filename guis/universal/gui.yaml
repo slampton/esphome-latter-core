@@ -120,6 +120,7 @@ display:
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, Color(8, 8, 8));
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, id(col_bg));
       #endif
+      latter_ui::bind_frame_buffer(id(disp1), it);
 
       // ==========================================
       // GLOBAL OVERLAY: OTA FIRMWARE UPDATE IN PROGRESS
