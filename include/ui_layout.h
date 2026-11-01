@@ -1016,6 +1016,7 @@ inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progre
   ota_progress_pct = 0;
   sleep_start_time = 0;
   screen_is_off_standby() = false;
+  disp_poller_held() = true;
   display_power_state = 0;
   if (disp != nullptr) {
     disp->stop_poller();
@@ -1060,6 +1061,7 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
   if (ota_in_progress) {
     ota_progress_pct = 100;
   }
+  disp_poller_held() = false;
   if (disp != nullptr) {
     disp->update();
     disp->start_poller();

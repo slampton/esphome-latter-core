@@ -531,14 +531,19 @@ script:
   - id: hold_disp_poller_for_sendspin_start
     mode: restart
     then:
-      - lambda: 'id(disp1).stop_poller();'
+      - lambda: |-
+          latter_ui::disp_poller_held() = true;
+          id(disp1).stop_poller();
       - wait_until:
           condition:
             lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;'
           timeout: 1100ms
+      - delay: 650ms
       - lambda: |-
+          latter_ui::disp_poller_held() = false;
           if (id(display_power_state) == 0 && !id(ota_in_progress)) {
             id(disp1).start_poller();
+            latter_ui::schedule_disp_update(&id(disp1));
           }
 
   - id: throttled_disp_update
@@ -944,7 +949,6 @@ script:
     mode: restart
     then:
       - lambda: 'latter_ui::last_music_page_req_ms() = millis();'
-      - delay: 55ms
       - homeassistant.action:
           action: latter.music_browse
           data:

@@ -1162,47 +1162,43 @@ template<typename DisplayT>
 inline void blit_rgb565_scanline_rows(DisplayT &it, int start_x, int y, int span_w,
                                       int row_h, const uint16_t *row_buf,
                                       bool skip_black = false) {
-  int i = 0;
-  while (i < span_w) {
-    const uint16_t p = row_buf[i];
-    int run = 1;
-    while (i + run < span_w && row_buf[i + run] == p) {
-      run++;
-    }
-    if (skip_black && p == 0x0000U) {
+  for (int r_off = 0; r_off < std::max(1, row_h); r_off++) {
+    const int py = y + r_off;
+    int i = 0;
+    while (i < span_w) {
+      const uint16_t p = row_buf[i];
+      int run = 1;
+      while (i + run < span_w && row_buf[i + run] == p) {
+        run++;
+      }
+      if (skip_black && (p & 0xFFDFU) == 0U) {
+        i += run;
+        continue;
+      }
+      const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
+      const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
+      const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
+      const esphome::Color c(r, g, b);
+      const int x0 = start_x + i;
+      if (run == 1) {
+        it.draw_pixel_at(x0, py, c);
+      } else if (run == 2) {
+        it.draw_pixel_at(x0, py, c);
+        it.draw_pixel_at(x0 + 1, py, c);
+      } else if (run == 3) {
+        it.draw_pixel_at(x0, py, c);
+        it.draw_pixel_at(x0 + 1, py, c);
+        it.draw_pixel_at(x0 + 2, py, c);
+      } else if (run == 4) {
+        it.draw_pixel_at(x0, py, c);
+        it.draw_pixel_at(x0 + 1, py, c);
+        it.draw_pixel_at(x0 + 2, py, c);
+        it.draw_pixel_at(x0 + 3, py, c);
+      } else {
+        it.horizontal_line(x0, py, run, c);
+      }
       i += run;
-      continue;
     }
-    const uint8_t r = static_cast<uint8_t>((p >> 8) & 0xF8U);
-    const uint8_t g = static_cast<uint8_t>((p >> 3) & 0xFCU);
-    const uint8_t b = static_cast<uint8_t>((p << 3) & 0xF8U);
-    const esphome::Color c(r, g, b);
-    const int x0 = start_x + i;
-    if (row_h <= 1) {
-      if (run == 1) {
-        it.draw_pixel_at(x0, y, c);
-      } else if (run == 2) {
-        it.draw_pixel_at(x0, y, c);
-        it.draw_pixel_at(x0 + 1, y, c);
-      } else {
-        it.horizontal_line(x0, y, run, c);
-      }
-    } else if (row_h == 2) {
-      if (run == 1) {
-        it.draw_pixel_at(x0, y, c);
-        it.draw_pixel_at(x0, y + 1, c);
-      } else if (run == 2) {
-        it.draw_pixel_at(x0, y, c);
-        it.draw_pixel_at(x0 + 1, y, c);
-        it.draw_pixel_at(x0, y + 1, c);
-        it.draw_pixel_at(x0 + 1, y + 1, c);
-      } else {
-        it.filled_rectangle(x0, y, run, 2, c);
-      }
-    } else {
-      it.filled_rectangle(x0, y, run, row_h, c);
-    }
-    i += run;
   }
 }
 
@@ -1795,6 +1791,11 @@ inline bool &screen_is_off_standby() {
   return off;
 }
 
+inline bool &disp_poller_held() {
+  static bool held = false;
+  return held;
+}
+
 struct DisplayUpdateScheduler : public esphome::Component {
   template<typename DispT>
   static void request_ptr(DispT *disp) {
@@ -1808,6 +1809,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
           "async_draw", delay_ms, [disp, min_idle]() {
             if (screen_is_off_standby()) return;
             if (esphome::millis() - last_disp_update_ms() < (min_idle - 6U)) return;
+            if (!disp_poller_held()) disp->start_poller();
             disp->update();
           });
     }
@@ -1828,6 +1830,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           "async_draw", delay_ms, [disp]() {
             if (screen_is_off_standby()) return;
+            if (!disp_poller_held()) disp->start_poller();
             disp->update();
           });
     }

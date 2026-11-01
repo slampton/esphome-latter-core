@@ -366,6 +366,10 @@ display:
               id(album_art), id(remote_album_art),
               ms_p2.art_url, id(current_loaded_art_url));
         }
+        if (id(mww).is_running()) {
+          id(mww).loop();
+          if (id(mww).is_running()) id(mww).loop();
+        }
 
       // ==========================================
       // PAGE 3: GAMES SUITE (LAUNCHER & 6 GAMES)

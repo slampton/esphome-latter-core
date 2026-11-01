@@ -184,14 +184,15 @@ media_player:
                     - lambda: |-
                         latter_ui::screen_is_off_standby() = false;
                         id(display_power_state) = 0;
-                        id(disp1).start_poller();
                         id(hal_set_imu_power_mode).execute(0x01);
                     - light.turn_on: display_brightness
+                    - script.execute: hold_disp_poller_for_sendspin_start
                   else:
-                    - lambda: |-
-                        if (!id(ota_in_progress)) {
-                          id(disp1).start_poller();
-                        }
+                    - if:
+                        condition:
+                          lambda: 'return !id(ota_in_progress);'
+                        then:
+                          - script.execute: hold_disp_poller_for_sendspin_start
               - lambda: |-
                   const std::string &art_u = latter_ui::media_state().art_url;
                   if (id(gui_page) == 2 &&
