@@ -664,6 +664,7 @@ script:
                   target_device: "${name}"
                   entity_id: !lambda 'return id(active_speaker_entity).c_str();'
                   action: "up"
+                  volume_level: !lambda 'return (latter_ui::remote_vol_pct() >= 0) ? to_string(latter_ui::remote_vol_pct()) : "";'
 
   - id: music_vol_down
     mode: restart
@@ -690,6 +691,7 @@ script:
                   target_device: "${name}"
                   entity_id: !lambda 'return id(active_speaker_entity).c_str();'
                   action: "down"
+                  volume_level: !lambda 'return (latter_ui::remote_vol_pct() >= 0) ? to_string(latter_ui::remote_vol_pct()) : "";'
   - id: toggle_ha_music
     mode: restart
     then:
@@ -1012,10 +1014,21 @@ script:
           const std::string &loc_spk = latter_ui::media_state().local_speaker;
           const bool new_is_local = (!loc_spk.empty() && id(active_speaker_entity) == loc_spk);
           latter_ui::media_state().is_local = new_is_local;
+          if (new_is_local && transfer_queue == "true") {
+            latter_ui::set_remote_play_override(true, millis());
+          }
           id(music_overlay_mode) = 0;
           id(music_direct_nav) = false;
           id(music_hud_active) = true;
           id(music_hud_timer) = millis();
+      - if:
+          condition:
+            lambda: 'return latter_ui::media_state().is_local && transfer_queue == "true";'
+          then:
+            - script.stop: mp_idle_debounce
+            - script.execute: route_i2s_to_spk
+            - switch.turn_on: speaker_enable
+            - lambda: 'id(hal_set_dac_mute).execute(false);'
       - homeassistant.action:
           action: latter.set_active_speaker
           data:
@@ -1186,7 +1199,11 @@ script:
       - if:
           condition:
             lambda: |-
-              return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+              const bool local_start_pending = latter_ui::media_state().is_local &&
+                                               latter_ui::remote_play_override_state() &&
+                                               (millis() - latter_ui::remote_play_override_ms() < 5000U);
+              return !local_start_pending &&
+                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
                      !id(va).is_running() &&
                      !id(va_active) &&

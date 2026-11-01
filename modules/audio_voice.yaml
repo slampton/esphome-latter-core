@@ -86,9 +86,23 @@ media_player:
       sources:
         - sendspin_source
     volume_initial: 60%
-    volume_increment: 2%
+    volume_increment: 5%
     volume_min: 10%
     volume_max: 100%
+    on_state:
+      then:
+        - lambda: |-
+            if (!id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active) &&
+                !id(va_active) && !id(va_tts_received) &&
+                id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) {
+              float v = id(latter_media_player).volume;
+              if (!std::isnan(v) && v > 0.0f) {
+                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+              }
+            }
+            if (id(gui_page) == 2) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
     on_announcement:
       then:
         - script.stop: mp_idle_debounce
@@ -148,7 +162,7 @@ media_player:
                         id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
               - if:
                   condition:
-                    lambda: 'return !id(speaker_enable).state;'
+                    lambda: 'return !id(speaker_enable).state || id(mww).is_running() || id(latter_mic).is_running();'
                   then:
                     - script.execute: route_i2s_to_spk
                     - switch.turn_on: speaker_enable
@@ -615,7 +629,6 @@ script:
             micro_wake_word.is_running:
           then:
             - micro_wake_word.stop:
-            - delay: 20ms
       - lambda: |-
           esphome::voice_assistant::stop_va_microphone(id(va));
           if (id(latter_mic).is_running()) {
@@ -681,7 +694,11 @@ script:
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
+              const bool local_start_pending = latter_ui::media_state().is_local &&
+                                               latter_ui::remote_play_override_state() &&
+                                               (millis() - latter_ui::remote_play_override_ms() < 5000U);
               const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+                                      local_start_pending ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
               const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||

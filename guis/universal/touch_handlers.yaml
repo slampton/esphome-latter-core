@@ -588,9 +588,17 @@ script:
                     last_vol_up_tap = now_vol_tap;
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
+                    if (v_step <= 0) v_step = 5;
                     bool is_rem_vol = !latter_ui::media_state().is_local;
                     if (is_rem_vol) {
-                      id(music_action_feedback) = "Volume +";
+                      if (latter_ui::remote_vol_pct() >= 0) {
+                        int v_next = std::min(100, latter_ui::remote_vol_pct() + v_step);
+                        latter_ui::remote_vol_pct() = v_next;
+                        latter_ui::last_local_vol_tap_ms() = now_vol_tap;
+                        id(music_action_feedback) = "Volume: " + to_string(v_next) + "%";
+                      } else {
+                        id(music_action_feedback) = "Volume +";
+                      }
                     } else {
                       int v_next = std::min(100, (int)std::round(id(latter_media_player).volume * 100.0f) + v_step);
                       id(music_action_feedback) = "Volume: " + to_string(v_next) + "%";
@@ -609,9 +617,17 @@ script:
                     last_vol_dn_tap = now_vol_tap;
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
+                    if (v_step <= 0) v_step = 5;
                     bool is_rem_vol = !latter_ui::media_state().is_local;
                     if (is_rem_vol) {
-                      id(music_action_feedback) = "Volume -";
+                      if (latter_ui::remote_vol_pct() >= 0) {
+                        int v_next = std::max(0, latter_ui::remote_vol_pct() - v_step);
+                        latter_ui::remote_vol_pct() = v_next;
+                        latter_ui::last_local_vol_tap_ms() = now_vol_tap;
+                        id(music_action_feedback) = "Volume: " + to_string(v_next) + "%";
+                      } else {
+                        id(music_action_feedback) = "Volume -";
+                      }
                     } else {
                       int v_next = std::max(0, (int)std::round(id(latter_media_player).volume * 100.0f) - v_step);
                       id(music_action_feedback) = "Volume: " + to_string(v_next) + "%";

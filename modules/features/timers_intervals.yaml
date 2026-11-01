@@ -259,9 +259,9 @@ interval:
             }
           }
 
-          // Music Overlay HUD Auto-Dismissal (5.0s timeout in Full Screen / Letterbox)
+          // Music Overlay HUD Auto-Dismissal (8.0s timeout in Full Screen / Letterbox)
           if (id(gui_page) == 2 && id(music_overlay_mode) == 0 && id(music_hud_active)) {
-            if (millis() - id(music_hud_timer) >= 5000U) {
+            if (millis() - id(music_hud_timer) >= 8000U) {
               id(music_hud_active) = false;
               latter_ui::schedule_disp_update(&id(disp1));
             }
