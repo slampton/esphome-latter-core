@@ -355,7 +355,11 @@ text_sensor:
                 id(fetch_wallpaper_debounced).execute();
               }
               if (id(display_power_state) == 0 && !id(is_hibernating)) {
-                latter_ui::schedule_disp_update(&id(disp1));
+                const int gp = id(gui_page);
+                if (id(notif_active) || gp == 1 || gp == 4 || gp == 6 || gp == 9 ||
+                    (gp == 8 && (id(tools_subpage) == 10 || id(tools_subpage) == 12))) {
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
               }
             }
 
@@ -367,7 +371,20 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            std::string prev_title = latter_ui::media_state().title;
+            const auto &prev_ms = latter_ui::media_state();
+            std::string prev_title = prev_ms.title;
+            std::string prev_artist = prev_ms.artist;
+            std::string prev_album = prev_ms.album;
+            std::string prev_state = prev_ms.state;
+            std::string prev_spk = prev_ms.active_speaker;
+            std::string prev_spk_name = prev_ms.speaker_name;
+            std::string prev_art = prev_ms.art_url;
+            bool prev_is_local = prev_ms.is_local;
+            int prev_vol_pct = latter_ui::remote_vol_pct();
+            float prev_interp_pos = id(music_pos_base);
+            if (id(music_pos_sync_time) > 0 && prev_state == "playing") {
+              prev_interp_pos += static_cast<float>(millis() - id(music_pos_sync_time)) / 1000.0f;
+            }
             if (latter_ui::parse_v3_media_payload(x, latter_ui::media_state())) {
               const auto &ms = latter_ui::media_state();
               if (!ms.media_type.empty()) {
@@ -420,9 +437,23 @@ text_sensor:
               } else if (id(display_power_state) == 0 && id(gui_page) == 2 &&
                          (!ms.is_local || id(album_art).get_width() == 0) &&
                          ms.art_url != id(current_loaded_art_url)) {
-                id(fetch_remote_art_debounced).execute();
+                if (ms.art_url != prev_art || !id(fetch_remote_art_debounced).is_running()) {
+                  id(fetch_remote_art_debounced).execute();
+                }
               }
-              if (id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2)) {
+              const bool pos_jumped = (ms.position >= 0.0f) && (std::fabs(ms.position - prev_interp_pos) > 2.5f);
+              const bool media_ui_changed =
+                  (ms.title != prev_title) ||
+                  (ms.artist != prev_artist) ||
+                  (ms.album != prev_album) ||
+                  (ms.state != prev_state) ||
+                  (ms.active_speaker != prev_spk) ||
+                  (ms.speaker_name != prev_spk_name) ||
+                  (ms.art_url != prev_art) ||
+                  (ms.is_local != prev_is_local) ||
+                  (latter_ui::remote_vol_pct() != prev_vol_pct) ||
+                  pos_jumped;
+              if (media_ui_changed && id(display_power_state) == 0 && (id(gui_page) == 1 || id(gui_page) == 2)) {
                 id(throttled_disp_update).execute();
               }
             }
