@@ -6,7 +6,8 @@
 # Display: 4.0" 720x720 IPS (ST7703, 2-Lane MIPI-DSI @ 480Mbps/lane, 38MHz DPI, RST: GPIO27)
 #          TE: test point only (unrouted). PHY: esp_ldo channel 3 @ 2.5V.
 # Backlight: AP3032 boost, analog dimming GPIO26 -> 10k/100nF RC (tau ~1ms) -> FB (higher duty = dimmer),
-#            BL_EN GPIO33 (100k pull-up to 5V; LOW = boost fully off). PWM must be >= 5kHz.
+#            BL_EN GPIO33 (100k pull-up to 5V; LOW = boost fully off). PWM 20kHz (>= 5kHz required;
+#            20kHz keeps RC ripple ~4x below the vendor 5kHz and stays above camera/audible bands).
 #            Filtered analog dimming is steep: the LEDs go dark above ~30% inverted duty, so the usable
 #            window is 75..100% on-duty (25%..0% inverted duty). 0% brightness switches BL_EN off.
 # Touch:   GT911 @ 0x5D/0x14 (I2C SDA: GPIO7, SCL: GPIO8). RST GPIO23 not driven; INT on test point only.
@@ -75,7 +76,7 @@ esphome:
     - "-DLATTER_BACKLIGHT_PIN=26"
     - "-DLATTER_BACKLIGHT_EN_PIN=33"
     - "-DLATTER_BACKLIGHT_INVERTED=1"
-    - "-DLATTER_BACKLIGHT_PWM_HZ=5000"
+    - "-DLATTER_BACKLIGHT_PWM_HZ=20000"
     - "-DLATTER_BACKLIGHT_PWM_BITS=10"
     - "-DLATTER_BACKLIGHT_DUTY_MIN_PCT=75"
     - "-DLATTER_BACKLIGHT_DUTY_MAX_PCT=100"

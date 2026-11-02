@@ -68,6 +68,9 @@ esphome:
     # Fitted cell: 500mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
     - "-DLATTER_PMU_CHARGE_MA=400"
     - "-DLATTER_BACKLIGHT_PIN=28"
+    # Low-side FET (DMG1012T) PWM dimming. 20kHz / 10-bit (vendor BSP: 5kHz) avoids visible and camera flicker.
+    - "-DLATTER_BACKLIGHT_PWM_HZ=20000"
+    - "-DLATTER_BACKLIGHT_PWM_BITS=10"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
