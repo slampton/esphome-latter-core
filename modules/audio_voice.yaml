@@ -234,9 +234,6 @@ micro_wake_word:
     microphone: latter_mic
     channels: 0
     gain_factor: 2
-  prefer_internal_ram: true
-  ring_buffer_duration: 1000ms
-  task_core: 1
   task_stack_in_psram: false
   stop_after_detection: true
   vad:
@@ -748,7 +745,12 @@ script:
                                  (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
                       then:
                         - micro_wake_word.start:
+                        - wait_until:
+                            condition:
+                              lambda: 'return id(latter_mic).is_running();'
+                            timeout: 100ms
                         - lambda: |-
+                            id(hal_set_audio_codecs_standby).execute(false);
                             ESP_LOGI("mww", "Wake word detection ARMED (ww1='%s', ww2='%s', mode='%s')",
                                      esphome::voice_assistant::last_persisted_ww1().c_str(),
                                      esphome::voice_assistant::last_persisted_ww2().c_str(),

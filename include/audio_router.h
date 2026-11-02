@@ -69,23 +69,32 @@ inline float alert_volume_to_ducking_db(float alert_vol_pct, float scale = 0.25f
   return (100.0f - v) * scale;
 }
 
-// Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode.
+// Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode,
+// and re-synchronizes ES7210's state machine once I2S MCLK/LRCK clocks are active.
 template <typename I2cBusT>
 inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_es7210 = true) {
   if (bus == nullptr) return;
 #if defined(LATTER_IS_STATIONARY) && LATTER_IS_STATIONARY
-  // Mains-powered stationary displays keep ES8311/ES7210 in their ESPHome setup() state continuously
-  (void)standby;
-  (void)has_es7210;
-  return;
+  // Mains-powered stationary displays keep ES8311/ES7210 powered continuously; re-sync ES7210 CSM on wake.
+  if (standby) return;
+  if (has_es7210) {
+    uint8_t adc_wake1[2] = {0x40, 0xC3};
+    uint8_t adc_wake2[2] = {0x06, 0x04};
+    uint8_t adc_csm_rst[2] = {0x00, 0x71};
+    uint8_t adc_csm_en[2] = {0x00, 0x41};
+    bus->write(0x40, adc_wake1, 2);
+    bus->write(0x40, adc_wake2, 2);
+    bus->write(0x40, adc_csm_rst, 2);
+    bus->write(0x40, adc_csm_en, 2);
+  }
 #else
   // Codecs boot in active state (0) after ESPHome component setup(); initialize last_stby = 0
   // so boot-time hal_set_audio_codecs_standby(false) never overwrites ES7210's setup() registers.
   static int last_stby = 0;
   const int target = standby ? 1 : 0;
-  if (target == last_stby) return;
-  last_stby = target;
   if (standby) {
+    if (target == last_stby) return;
+    last_stby = target;
     uint8_t dac_lp[2] = {0x0D, 0xFC};
     bus->write(0x18, dac_lp, 2);
     if (has_es7210) {
@@ -95,13 +104,22 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
       bus->write(0x40, adc_lp2, 2);
     }
   } else {
-    uint8_t dac_wake[2] = {0x0D, 0x01};
-    bus->write(0x18, dac_wake, 2);
+    if (last_stby != 0) {
+      last_stby = 0;
+      uint8_t dac_wake[2] = {0x0D, 0x01};
+      bus->write(0x18, dac_wake, 2);
+      if (has_es7210) {
+        uint8_t adc_wake1[2] = {0x40, 0xC3};
+        uint8_t adc_wake2[2] = {0x06, 0x04};
+        bus->write(0x40, adc_wake1, 2);
+        bus->write(0x40, adc_wake2, 2);
+      }
+    }
     if (has_es7210) {
-      uint8_t adc_wake1[2] = {0x40, 0xC3};
-      uint8_t adc_wake2[2] = {0x06, 0x04};
-      bus->write(0x40, adc_wake1, 2);
-      bus->write(0x40, adc_wake2, 2);
+      uint8_t adc_csm_rst[2] = {0x00, 0x71};
+      uint8_t adc_csm_en[2] = {0x00, 0x41};
+      bus->write(0x40, adc_csm_rst, 2);
+      bus->write(0x40, adc_csm_en, 2);
     }
   }
 #endif
