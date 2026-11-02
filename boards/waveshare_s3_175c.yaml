@@ -37,6 +37,7 @@ substitutions:
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
+  imu_int1_pin: GPIO21  # QMI8658 INT1 (hardware wake-on-motion, modules/imu_qmi8658.yaml)
 
 esphome:
   build_flags:

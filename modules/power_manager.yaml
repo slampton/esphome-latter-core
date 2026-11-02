@@ -54,6 +54,13 @@ binary_sensor:
         return false;
       }
 
+      // Wake-on-Motion armed: pollers are stopped and the IMU produces no data, so the cached samples are stale.
+      if (latter_ui::imu_wom().armed) {
+        is_active = false;
+        latter_ui::raise_to_wake().reset();
+        return false;
+      }
+
       float dyn = id(motion_mag).state;
       if (isnan(dyn)) return false;
 
@@ -371,7 +378,10 @@ interval:
                                       (id(gui_page) == 8 && (id(tools_subpage) == 7 || id(tools_subpage) == 12));
               id(hal_set_imu_power_mode).execute(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
             } else {
-              id(hal_set_imu_power_mode).execute(pw_allowed ? 0x01 : 0x00);
+              // Screen off: hardware Wake-on-Motion on INT1 instead of polling; poll only during the short
+              // qualification window after a WoM event so the RaiseToWakeDetector can confirm a raise.
+              id(hal_set_imu_power_mode).execute(!pw_allowed ? 0x00
+                  : (latter_ui::imu_wom_qualifying(now_1s_ms) ? 0x01 : 0x80));
             }
             #endif
           }

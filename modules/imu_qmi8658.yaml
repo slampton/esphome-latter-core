@@ -100,6 +100,30 @@ sensor:
       }
       return delta;
 
+# QMI8658 INT1 (board HAL substitution imu_int1_pin). Push-pull while Wake-on-Motion is armed and
+# High-Z otherwise, so the pull-down holds it low. WoM toggles the line on every event, so both edges
+# are handled and STATUS1 decides whether an edge was a real event (include/hal_imu_qmi8658.h).
+binary_sensor:
+  - platform: gpio
+    id: imu_int1
+    internal: true
+    pin:
+      number: ${imu_int1_pin}
+      mode:
+        input: true
+        pulldown: true
+    on_state:
+      then:
+        - lambda: |-
+            if (!latter_ui::imu_wom().armed) return;
+            if (!latter_ui::hal_imu_wom_event(id(bus_internal))) return;
+            auto &wom = latter_ui::imu_wom();
+            wom.events++;
+            // Poll for a short window so the orientation-qualified RaiseToWakeDetector can confirm a raise.
+            wom.qualify_until_ms = (millis() + 2500U) | 1U;
+            ESP_LOGI("PROF", "[PROF:IMU] wom=event n=%u", static_cast<unsigned>(wom.events));
+            id(hal_set_imu_power_mode).execute(0x01);
+
 script:
   - id: hal_set_imu_power_mode
     mode: restart
@@ -107,10 +131,24 @@ script:
       ctrl7_val: int
     then:
       - lambda: |-
+          // 0x00 power-down, 0x01 accel, 0x03 accel + gyro (all polled), 0x80 hardware Wake-on-Motion
+          // on INT1 with polling stopped (falls back to 0x01 if the CTRL9 handshake ever fails).
           static int last_ctrl7 = -1;
-          if (ctrl7_val == last_ctrl7) return;
-          last_ctrl7 = ctrl7_val;
-          if (ctrl7_val > 0) {
+          int mode = ctrl7_val;
+          if (mode == 0x80 && latter_ui::imu_wom().failed) mode = 0x01;
+          if (mode == last_ctrl7) return;
+          last_ctrl7 = mode;
+          if (mode == 0x80) {
+            id(imu).stop_poller();
+            id(motion_mag).stop_poller();
+            float thresh = latter_ui::get_pickup_motion_threshold(false);
+            if (id(speaker_enable).state && thresh < 0.22f) thresh = 0.22f;
+            if (latter_ui::hal_imu_wom_enter(id(bus_internal), latter_ui::imu_wom_threshold_mg(thresh))) return;
+            mode = 0x01;
+            last_ctrl7 = 0x01;
+          }
+          latter_ui::hal_imu_wom_exit(id(bus_internal));
+          if (mode > 0) {
             id(imu).start_poller();
             id(motion_mag).start_poller();
           } else {
@@ -118,6 +156,6 @@ script:
             id(motion_mag).stop_poller();
           }
           // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only, 0x00 = Power-Down
-          uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(ctrl7_val)};
+          uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(mode)};
           id(bus_internal).write(0x6B, qmi_ctrl7, 2);
 

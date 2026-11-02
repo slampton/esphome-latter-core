@@ -33,7 +33,7 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 | `hal_route_i2s_to_mic` | — | Switch them to the microphone controller |
 | `hal_set_dac_mute` | `muted: bool` | Mute the codec output |
 | `hal_set_audio_codecs_standby` | `standby: bool` | Put the codecs into low-power standby, or wake them |
-| `hal_set_imu_power_mode` | `ctrl7_val: int` | IMU power mode. 0 means off. |
+| `hal_set_imu_power_mode` | `ctrl7_val: int` | IMU power mode: `0x00` off, `0x01` accelerometer, `0x03` accelerometer + gyro, `0x80` hardware wake-on-motion (no polling) |
 | `hal_init_pmu` | — | Configure the PMU at boot: mask IRQs, apply rail, TS, and charger traits (no-op in `pmu_none.yaml`) |
 | `hal_release_deep_sleep_holds` | — | Release GPIO holds at boot, and pulse touch reset if the touch driver can't |
 | `hal_enter_hardware_hibernate` | — | Hold pins and cut power. Called after the core has saved state and disconnected from the API. |
@@ -55,6 +55,7 @@ packages:
 - **Different PMU or IMU chip:** write a module that provides the same scripts and sensors.
   - PMU: `hal_init_pmu`, `hal_poll_pmu_1s`, `hal_wait_pwr_key_release`, `usb_connected`, `batt_charging`, `batt_level`, `batt_voltage`. The board file defines the PWR key itself as a GPIO `binary_sensor` with `id: pwr_key`; `pmu_axp2101.yaml` adds the short and long press handling.
   - IMU: `accel_x`, `accel_y`, `accel_z`, `imu_roll`, `imu_pitch`, `imu_temp`, `motion_mag`.
+- **QMI8658 interrupt:** set the `imu_int1_pin` substitution to the GPIO wired to the IMU's INT1. With the screen off, raise-to-wake waits on a hardware wake-on-motion interrupt instead of polling the accelerometer.
 - **Axis inversions:** keep board-specific inversions, such as `- multiply: -1.0`, in the board file, not in the module.
 
 ## 4. Build flags
