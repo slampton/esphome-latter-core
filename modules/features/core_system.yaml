@@ -1,9 +1,6 @@
 # Latter Client Feature Package: Core System, Boot, API, OTA, Time & Globals
 
 esphome:
-  # SDK revision lockstep stamp: must equal LATTER_SDK_REV in include/ui_core.h (latter-verify enforces).
-  build_flags:
-    - "-DLATTER_YAML_REV=2026110202"
   on_boot:
     - priority: 800
       then:
@@ -17,7 +14,16 @@ esphome:
 
     - priority: -100
       then:
-        - lambda: 'ESP_LOGI("latter", "Latter SDK rev %d (YAML rev %d)", (int)LATTER_SDK_REV, (int)LATTER_YAML_REV);'
+        # SDK revision lockstep stamp: LATTER_YAML_REV must equal LATTER_SDK_REV in include/ui_core.h
+        # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
+        # only main.cpp instead of invalidating the CMake cache and every object in the build.
+        - lambda: |-
+            constexpr long LATTER_YAML_REV = 2026110203L;
+            static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
+                          "Latter YAML packages and latter_core C++ headers are from different revisions. "
+                          "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
+                          "(docs/flashing.md) and rebuild.");
+            ESP_LOGI("latter", "Latter SDK rev %ld (YAML rev %ld)", (long)LATTER_SDK_REV, LATTER_YAML_REV);
         - script.execute: hal_init_pmu
         - lambda: |-
             latter_ui::seed_standalone_remote_slots(
