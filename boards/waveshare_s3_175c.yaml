@@ -280,7 +280,6 @@ touchscreen:
       mode: INPUT_PULLUP
     reset_pin: GPIO2
     touch_timeout: 120ms
-    update_interval: 16ms
     transform:
       mirror_x: true
       mirror_y: true

@@ -102,6 +102,11 @@ psram:
   speed: 200MHz
   ignore_not_found: false
 
+# Console: the USB-C port is a CH343 USB-UART bridge on UART0 (GPIO37/38). The P4's USB-Serial-JTAG
+# pins (GPIO24/25) are not wired to a USB connector, so logs and the bootloader console use UART0.
+logger:
+  hardware_uart: UART0
+
 esp_ldo:
   - channel: 3
     voltage: 2.5V
@@ -257,7 +262,6 @@ touchscreen:
       number: GPIO50
       mode: INPUT_PULLUP
     touch_timeout: 120ms
-    update_interval: 16ms
 
 script:
   - id: hal_route_i2s_to_spk

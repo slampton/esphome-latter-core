@@ -51,7 +51,6 @@ esphome:
 
 logger:
   level: INFO
-  hardware_uart: UART0
 
 update:
   - platform: http_request

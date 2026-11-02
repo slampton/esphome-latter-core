@@ -253,7 +253,6 @@ touchscreen:
       mode: INPUT_PULLUP
     reset_pin: GPIO40
     touch_timeout: 120ms
-    update_interval: 16ms
 
 script:
   - id: hal_route_i2s_to_spk

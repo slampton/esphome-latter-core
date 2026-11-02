@@ -7,6 +7,8 @@
 #          TE: test point only (unrouted). PHY: esp_ldo channel 3 @ 2.5V.
 # Backlight: AP3032 boost, analog dimming GPIO26 -> 10k/100nF RC (tau ~1ms) -> FB (higher duty = dimmer),
 #            BL_EN GPIO33 (100k pull-up to 5V; LOW = boost fully off). PWM must be >= 5kHz.
+#            Filtered analog dimming is steep: the LEDs go dark above ~30% inverted duty, so the usable
+#            window is 75..100% on-duty (25%..0% inverted duty). 0% brightness switches BL_EN off.
 # Touch:   GT911 @ 0x5D/0x14 (I2C SDA: GPIO7, SCL: GPIO8). RST GPIO23 not driven; INT on test point only.
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO9) + ES7210 ADC @ 0x40 (DIN: GPIO11), PA (NS4150B): GPIO53
 #          ES7210 mics: MIC1=FL, MIC2=FR, MIC3=AEC loopback of ES8311 output (TDM only), MIC4=NC
@@ -75,8 +77,8 @@ esphome:
     - "-DLATTER_BACKLIGHT_INVERTED=1"
     - "-DLATTER_BACKLIGHT_PWM_HZ=5000"
     - "-DLATTER_BACKLIGHT_PWM_BITS=10"
-    - "-DLATTER_BACKLIGHT_DUTY_MIN_PCT=10"
-    - "-DLATTER_BACKLIGHT_DUTY_MAX_PCT=80"
+    - "-DLATTER_BACKLIGHT_DUTY_MIN_PCT=75"
+    - "-DLATTER_BACKLIGHT_DUTY_MAX_PCT=100"
     - "-DLATTER_DSI_IRAM_SAFE=1"
     - "-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
@@ -115,6 +117,11 @@ esp32:
 psram:
   speed: 200MHz
   ignore_not_found: false
+
+# Console: the USB-C port is a CH343 USB-UART bridge on UART0 (GPIO37/38). The P4's USB-Serial-JTAG
+# pins (GPIO24/25) are not wired to a USB connector, so logs and the bootloader console use UART0.
+logger:
+  hardware_uart: UART0
 
 esp_ldo:
   - channel: 3
