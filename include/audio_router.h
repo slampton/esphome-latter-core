@@ -75,22 +75,29 @@ template <typename I2cBusT>
 inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_es7210 = true) {
   if (bus == nullptr) return;
 #if defined(LATTER_IS_STATIONARY) && LATTER_IS_STATIONARY
-  // Mains-powered stationary displays keep ES8311/ES7210 powered continuously; re-sync ES7210 CSM on wake.
+  // Mains-powered stationary displays keep ES8311/ES7210 powered continuously.
+  // Note: ESPHome's ES7210::setup() writes ES7210_POWER_ON at the end of setup(), which leaves
+  // REG40=0xC3 (analog power down) and REG4B/REG4C=0x0F (MIC1-4 bias/ADC/PGA powered down).
+  // Explicitly power on analog + MIC1-4 stages and re-sync CSM once I2S MCLK/LRCK are active.
   if (standby) return;
   if (has_es7210) {
-    uint8_t adc_wake1[2] = {0x40, 0xC3};
-    uint8_t adc_wake2[2] = {0x06, 0x04};
-    uint8_t adc_csm_rst[2] = {0x00, 0x71};
-    uint8_t adc_csm_en[2] = {0x00, 0x41};
-    bus->write(0x40, adc_wake1, 2);
-    bus->write(0x40, adc_wake2, 2);
-    bus->write(0x40, adc_csm_rst, 2);
-    bus->write(0x40, adc_csm_en, 2);
+    const uint8_t adc_wake_seq[][2] = {
+        {0x01, 0x00},  // ES7210_CLOCK_OFF_REG01: enable all ADC/MIC clocks
+        {0x06, 0x00},  // ES7210_POWER_DOWN_REG06: digital & DLL power on
+        {0x40, 0x43},  // ES7210_ANALOG_REG40: analog power on, VDDA=3.3V, VMID=5kOhm
+        {0x4B, 0x00},  // ES7210_MIC12_POWER_REG4B: MIC1/2 bias, ADC1/2, PGA1/2 on
+        {0x4C, 0x00},  // ES7210_MIC34_POWER_REG4C: MIC3/4 bias, ADC3/4, PGA3/4 on
+        {0x00, 0x71},  // ES7210_RESET_REG00: CSM reset
+        {0x00, 0x41},  // ES7210_RESET_REG00: CSM active
+    };
+    for (const auto &reg : adc_wake_seq) {
+      bus->write(0x40, reg, 2);
+    }
   }
 #else
-  // Codecs boot in active state (0) after ESPHome component setup(); initialize last_stby = 0
-  // so boot-time hal_set_audio_codecs_standby(false) never overwrites ES7210's setup() registers.
-  static int last_stby = 0;
+  // Initialize last_stby = -1 so the first wake call after ESPHome's ES7210::setup()
+  // clears REG40=0xC3 and REG4B/REG4C=0x0F and powers on MIC1-4 bias/ADC/PGA stages.
+  static int last_stby = -1;
   const int target = standby ? 1 : 0;
   if (standby) {
     if (target == last_stby) return;
@@ -98,10 +105,15 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
     uint8_t dac_lp[2] = {0x0D, 0xFC};
     bus->write(0x18, dac_lp, 2);
     if (has_es7210) {
-      uint8_t adc_lp1[2] = {0x06, 0x7F};
-      uint8_t adc_lp2[2] = {0x40, 0xFF};
-      bus->write(0x40, adc_lp1, 2);
-      bus->write(0x40, adc_lp2, 2);
+      const uint8_t adc_lp_seq[][2] = {
+          {0x4B, 0xFF},
+          {0x4C, 0xFF},
+          {0x06, 0x7F},
+          {0x40, 0xFF},
+      };
+      for (const auto &reg : adc_lp_seq) {
+        bus->write(0x40, reg, 2);
+      }
     }
   } else {
     if (last_stby != 0) {
@@ -109,10 +121,16 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
       uint8_t dac_wake[2] = {0x0D, 0x01};
       bus->write(0x18, dac_wake, 2);
       if (has_es7210) {
-        uint8_t adc_wake1[2] = {0x40, 0xC3};
-        uint8_t adc_wake2[2] = {0x06, 0x04};
-        bus->write(0x40, adc_wake1, 2);
-        bus->write(0x40, adc_wake2, 2);
+        const uint8_t adc_wake_seq[][2] = {
+            {0x01, 0x00},  // ES7210_CLOCK_OFF_REG01: enable all ADC/MIC clocks
+            {0x06, 0x00},  // ES7210_POWER_DOWN_REG06: digital & DLL power on
+            {0x40, 0x43},  // ES7210_ANALOG_REG40: analog power on, VDDA=3.3V, VMID=5kOhm
+            {0x4B, 0x00},  // ES7210_MIC12_POWER_REG4B: MIC1/2 bias, ADC1/2, PGA1/2 on
+            {0x4C, 0x00},  // ES7210_MIC34_POWER_REG4C: MIC3/4 bias, ADC3/4, PGA3/4 on
+        };
+        for (const auto &reg : adc_wake_seq) {
+          bus->write(0x40, reg, 2);
+        }
       }
     }
     if (has_es7210) {

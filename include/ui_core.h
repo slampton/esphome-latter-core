@@ -1507,6 +1507,16 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     const int src_x0_fp = std::max(0, ((src_w << 12) - vis_src_w_fp) / 2);
     const int src_y0_fp = std::max(0, ((src_h << 12) - vis_src_h_fp) / 2);
 
+    static uint16_t sx_lut[SCREEN_W];
+    static uint16_t scaled_row[SCREEN_W];
+    {
+      int curr_x = src_x0_fp;
+      for (int x = 0; x < SCREEN_W; x++) {
+        sx_lut[x] = static_cast<uint16_t>(std::min(src_w - 1, curr_x >> 12));
+        curr_x += step_fp;
+      }
+    }
+
     int curr_y = src_y0_fp;
     int prev_sy = -1;
     int prev_mul_q3 = -1;
@@ -1519,19 +1529,24 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
       int end_x = std::min(SCREEN_W - 1, cx + hw);
       int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
-      if (sy != prev_sy || mul_q3 != prev_mul_q3) {
+      if (sy != prev_sy) {
         const uint16_t *src_row = src_data + sy * src_w;
-        int curr_x = src_x0_fp;
-        for (int x = 0; x < SCREEN_W; x++) {
-          int sx = std::min(src_w - 1, curr_x >> 12);
-          curr_x += step_fp;
-          row_buf[x] = src_row[sx];
+        for (int x = start_x; x <= end_x; x++) {
+          scaled_row[x] = src_row[sx_lut[x]];
         }
-        dim_rgb565_row_in_place(row_buf, SCREEN_W, mul_q3);
         prev_sy = sy;
-        prev_mul_q3 = mul_q3;
+        prev_mul_q3 = -1;
       }
-      blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, false);
+      if (mul_q3 >= 8) {
+        blit_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, false);
+      } else {
+        if (mul_q3 != prev_mul_q3) {
+          std::memcpy(row_buf + start_x, scaled_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
+          dim_rgb565_row_in_place(row_buf + start_x, span_w, mul_q3);
+          prev_mul_q3 = mul_q3;
+        }
+        blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, false);
+      }
     }
   }
 
@@ -2061,7 +2076,8 @@ struct FrameProfileScope {
       fr.max_render_page = page;
       fr.max_render_sub = sub;
     }
-    const bool is_slow = (render_us >= 22000U);
+    static constexpr uint32_t kSlowFrameUs = (SCREEN_W * SCREEN_H > 300000) ? 110000U : 22000U;
+    const bool is_slow = (render_us >= kSlowFrameUs);
     if (is_slow) fr.slow_frames++;
 
     const bool page_changed = (page != fr.last_logged_page || sub != fr.last_logged_sub);

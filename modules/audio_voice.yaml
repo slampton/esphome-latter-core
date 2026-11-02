@@ -66,6 +66,13 @@ media_source:
 media_player:
   - platform: sendspin
     id: sendspin_group_media_player
+    on_state:
+      then:
+        - lambda: |-
+            if (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+                id(mww).is_running()) {
+              id(mww).stop();
+            }
 
   - platform: speaker_source
     id: latter_media_player
