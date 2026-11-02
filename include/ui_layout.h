@@ -219,6 +219,10 @@ struct UiLayout {
   constexpr int slot5_y(int idx_0_to_4) const {
     return slot5_cy + (idx_0_to_4 - 2) * slot5_stride;
   }
+  template <typename TouchT>
+  constexpr int hit_slot5(const TouchT &t, int x_min, int x_max) const {
+    return get_5slot_index(t, x_min, x_max);
+  }
 
   // 2. Adaptive 3-Card Area Control & Whole-Home Geometry + Unified Hit-Testers
   int area_card3_stride = (SCREEN_H > 520) ? ((SCREEN_H * 76) / 466) : 76;
@@ -412,6 +416,17 @@ struct UiLayout {
   constexpr bool hit_map_zoom_in(int tx, int ty) const {
     int r = scale_s(45);
     return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx >= map_zoom_right_x() - r);
+  }
+
+  // 10. Millimeter-Calibrated Touch Slop, Swipe & Home Pill Geometry (via LATTER_PANEL_PPI)
+  constexpr int tap_slop() const { return mm_to_px(2.1f); }
+  constexpr int swipe_min() const { return mm_to_px(3.6f); }
+  constexpr int home_zone_y() const { return is_round ? 412 : (h - mm_to_px(5.2f)); }
+  template <typename TouchT>
+  constexpr bool is_home_pill_tap(const TouchT &t) const {
+    const int pill_y = is_round ? 422 : (h - mm_to_px(2.8f));
+    const int pill_hw = std::max(scale_x(64), mm_to_px(6.5f));
+    return (t.y >= pill_y && std::abs(t.x - cx) <= pill_hw);
   }
 };
 

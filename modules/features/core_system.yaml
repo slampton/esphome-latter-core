@@ -181,8 +181,6 @@ api:
               id(area_slot_1_name) = n1; id(area_slot_1_id) = i1; id(area_slot_1_type) = t1; id(area_slot_1_active) = a1; id(area_slot_1_level) = l1;
               id(area_slot_2_name) = n2; id(area_slot_2_id) = i2; id(area_slot_2_type) = t2; id(area_slot_2_active) = a2; id(area_slot_2_level) = l2;
               id(area_slot_3_name) = n3; id(area_slot_3_id) = i3; id(area_slot_3_type) = t3; id(area_slot_3_active) = a3; id(area_slot_3_level) = l3;
-              id(area_slot_4_name) = n4; id(area_slot_4_id) = i4; id(area_slot_4_type) = t4; id(area_slot_4_active) = a4; id(area_slot_4_level) = l4;
-              id(area_slot_5_name) = n5; id(area_slot_5_id) = i5; id(area_slot_5_type) = t5; id(area_slot_5_active) = a5; id(area_slot_5_level) = l5;
             } else {
               if (millis() - latter_ui::last_music_page_req_ms() > 350U || page == id(music_browse_page)) {
                 id(music_browse_page) = page;
@@ -226,16 +224,6 @@ api:
             id(area_slot_3_type) = v3_items[2].type;
             id(area_slot_3_active) = v3_items[2].active;
             id(area_slot_3_level)  = v3_items[2].level;
-            id(area_slot_4_name) = v3_items[3].name;
-            id(area_slot_4_id)   = v3_items[3].id;
-            id(area_slot_4_type) = v3_items[3].type;
-            id(area_slot_4_active) = v3_items[3].active;
-            id(area_slot_4_level)  = v3_items[3].level;
-            id(area_slot_5_name) = v3_items[4].name;
-            id(area_slot_5_id)   = v3_items[4].id;
-            id(area_slot_5_type) = v3_items[4].type;
-            id(area_slot_5_active) = v3_items[4].active;
-            id(area_slot_5_level)  = v3_items[4].level;
             latter_ui::schedule_disp_update(&id(disp1));
 
     - action: show_notification
@@ -733,46 +721,6 @@ globals:
     restore_value: no
     initial_value: 'false'
   - id: area_slot_3_level
-    type: int
-    restore_value: no
-    initial_value: '-1'
-  - id: area_slot_4_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_4_id
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_4_type
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_4_active
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: area_slot_4_level
-    type: int
-    restore_value: no
-    initial_value: '-1'
-  - id: area_slot_5_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_5_id
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_5_type
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-  - id: area_slot_5_active
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: area_slot_5_level
     type: int
     restore_value: no
     initial_value: '-1'

@@ -2500,7 +2500,7 @@ script:
                 }
                 return;
               } else if (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open() &&
-                         std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
+                         std::abs(dx) >= std::min(28, latter_ui::layout().swipe_min()) && std::abs(dx) > std::abs(dy)) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
                 int c_total = latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, c_ids, c_names);
                 if (c_total > 1) {
@@ -2555,12 +2555,11 @@ script:
                                     !(id(gui_page) == 8 && id(tools_subpage) > 0 && !tools_direct_root) &&
                                     !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
-              const int home_pill_tap_y = LATTER_ROUND_DISPLAY ? 422 : (latter_ui::SCREEN_H - 26);
-              const bool is_home_pill_tap = (gest.max_travel < 24 &&
-                                             gest.last_y >= home_pill_tap_y &&
-                                             std::abs(gest.last_x - latter_ui::SCREEN_CX) <= 68);
+              const bool is_home_pill_tap = (gest.max_travel < std::max(24, latter_ui::layout().tap_slop()) &&
+                                             latter_ui::layout().is_home_pill_tap(tp));
               if (!gest.swipe_committed && can_swipe_home &&
-                  ((gest.start_y >= (latter_ui::SCREEN_H - 54) && dy <= -24 && std::abs(dy) > std::abs(dx)) ||
+                  ((gest.start_y >= std::min(latter_ui::SCREEN_H - 54, latter_ui::layout().home_zone_y()) &&
+                    dy <= -24 && std::abs(dy) > std::abs(dx)) ||
                    is_home_pill_tap)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_rel;
@@ -3265,7 +3264,7 @@ script:
                       }
                     }
                   } else if (id(area_subpage) == 1) {
-                    int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot_idx >= 0) {
                       std::string s_name = (slot_idx == 0) ? id(area_list_1_name) : (slot_idx == 1) ? id(area_list_2_name) : (slot_idx == 2) ? id(area_list_3_name) : (slot_idx == 3) ? id(area_list_4_name) : id(area_list_5_name);
                       std::string s_id   = (slot_idx == 0) ? id(area_list_1_id)   : (slot_idx == 1) ? id(area_list_2_id)   : (slot_idx == 2) ? id(area_list_3_id)   : (slot_idx == 3) ? id(area_list_4_id)   : id(area_list_5_id);
@@ -3289,7 +3288,7 @@ script:
                     int card_idx = latter_ui::layout().hit_area_card3(tp.x, tp.y);
                     if (card_idx >= 0) {
                       std::string s_name = (card_idx == 0) ? id(area_slot_1_name) : (card_idx == 1) ? id(area_slot_2_name) : id(area_slot_3_name);
-                      std::string s_id   = (card_idx == 0) ? id(area_slot_1_id)   : (card_idx == 1) ? id(area_slot_2_id)   : (card_idx == 2) ? id(area_slot_3_id)   : (card_idx == 3) ? id(area_slot_4_id)   : id(area_slot_5_id);
+                      std::string s_id   = (card_idx == 0) ? id(area_slot_1_id)   : (card_idx == 1) ? id(area_slot_2_id)   : id(area_slot_3_id);
                       std::string s_type = (card_idx == 0) ? id(area_slot_1_type) : (card_idx == 1) ? id(area_slot_2_type) : id(area_slot_3_type);
                       bool &s_act        = (card_idx == 0) ? id(area_slot_1_active) : (card_idx == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
                       int &s_lvl         = (card_idx == 0) ? id(area_slot_1_level)  : (card_idx == 1) ? id(area_slot_2_level)  : id(area_slot_3_level);

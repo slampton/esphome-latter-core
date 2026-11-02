@@ -7,7 +7,7 @@ substitutions:
   name: "latter-headless-node"
   device_slug: "latter_headless_node"
   friendly_name: "Latter Headless Node"
-  version: "2.2.0"
+  version: "2.2.1"
 
 esphome:
   name: ${name}

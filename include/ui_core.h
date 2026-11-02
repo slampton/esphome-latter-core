@@ -78,6 +78,9 @@ namespace latter_ui {
 #define LATTER_PANEL_IPS 0
 #endif
 #endif
+#ifndef LATTER_PANEL_PPI
+#define LATTER_PANEL_PPI 266
+#endif
 
 static constexpr int SCREEN_W = LATTER_SCREEN_W;
 static constexpr int SCREEN_H = LATTER_SCREEN_H;
@@ -86,6 +89,10 @@ static constexpr int SCREEN_CY = SCREEN_H / 2;
 static constexpr int SCREEN_R = SCREEN_W / 2;
 static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_H;
 static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
+
+inline constexpr int mm_to_px(float mm) {
+  return static_cast<int>((mm * static_cast<float>(LATTER_PANEL_PPI)) / 25.4f + 0.5f);
+}
 
 inline constexpr int scale_x(int v466) {
   return (SCREEN_W > 520) ? ((v466 * SCREEN_W + 233) / 466) : v466;
@@ -524,8 +531,6 @@ inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
 
 // Standardized Dynamic Scroll Easing Constants (5-Step Cubic Eased Curve)
 static constexpr int16_t SHARED_SCROLL_EASE_116[5] = {0, 25, 63, 99, 116}; // 2-Pill 116px shift
-static constexpr int16_t SHARED_SCROLL_EASE_174[5] = {0, 38, 95, 148, 174}; // 3-Pill 174px shift
-static constexpr int16_t SHARED_SCROLL_EASE_232[5] = {0, 50, 126, 198, 232}; // 4-Pill 232px shift
 static constexpr int16_t SHARED_SCROLL_EASE_252[5] = {0, 54, 136, 215, 252}; // 4-Card 252px shift (63px stride)
 
 

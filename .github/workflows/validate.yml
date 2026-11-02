@@ -20,11 +20,26 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome
-        run: pip install --upgrade pip esphome
+      - name: Install ESPHome 2026.10.1
+        run: pip install --upgrade pip esphome==2026.10.1
+
+      - name: Verify Protocol v3 codegen parity
+        run: python tools/gen_protocol.py --check
+
+      - name: Compile and run C++20 host unit tests
+        run: |
+          g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state
+          /tmp/test_latter_state
 
       - name: Validate Example 1 (Minimal Headless / Mixin Companion)
         run: esphome config examples/minimal_headless_companion.yaml
 
       - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)
         run: esphome config examples/custom_display_template.yaml
+
+      - name: Validate 5 Flagship Device Configs
+        run: |
+          for dev in devices/*.yaml; do
+            echo "Validating $dev..."
+            esphome config "$dev"
+          done

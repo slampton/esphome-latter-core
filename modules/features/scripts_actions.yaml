@@ -113,8 +113,24 @@ script:
           if (act == "select" || act == "ok" || act == "click") {
             const int f_idx = std::max(0, latter_ui::ui_focus_index());
             if (id(gui_page) == 1) {
-              const int dock_map[6] = {2, 8, 6, 7, 3, 4};
-              id(gui_page) = dock_map[f_idx % 6];
+              int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+              int dock_count = latter_ui::collect_home_dock_apps(
+                  id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
+                  id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
+                  dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
+              if (dock_count > 0) {
+                int start_idx = latter_ui::get_home_dock_start_index(dock_count, latter_ui::home_dock_page());
+                int vis_count = std::min(4, dock_count - start_idx);
+                int chosen_app = dock_apps[start_idx + (f_idx % std::max(1, vis_count))];
+                if (chosen_app == 12) {
+                  id(gui_page) = 8;
+                  id(tools_subpage) = 12;
+                  latter_ui::tools_direct_home() = true;
+                  id(fetch_on_demand_camera).execute();
+                } else {
+                  id(gui_page) = chosen_app;
+                }
+              }
               latter_ui::ui_focus_index() = 0;
               if (id(gui_page) == 6) id(fetch_area_browse).execute();
             } else if (id(gui_page) == 2) {

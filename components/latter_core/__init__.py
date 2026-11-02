@@ -42,7 +42,8 @@ CORE_HEADERS: tuple[str, ...] = (
 
 async def to_code(config: dict[str, Any]) -> None:
     """Copy Latter Core C++20 headers into the build src/ directory and register global includes."""
-    repo_root = Path(__file__).resolve().parent.parent.parent
+    comp_dir = Path(__file__).resolve().parent
+    repo_root = comp_dir.parent.parent
     inc_dir = repo_root / "include"
     if not inc_dir.is_dir():
         inc_dir = repo_root
@@ -51,7 +52,9 @@ async def to_code(config: dict[str, Any]) -> None:
     dst_src_dir.mkdir(parents=True, exist_ok=True)
 
     for hdr in CORE_HEADERS:
-        src_file = inc_dir / hdr
+        src_file = comp_dir / hdr
+        if not src_file.is_file():
+            src_file = inc_dir / hdr
         if not src_file.is_file():
             src_file = repo_root / hdr
         if not src_file.is_file():

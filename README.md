@@ -118,7 +118,7 @@ These are the details worth checking if you're evaluating the codebase. Each one
 
 ## Project status
 
-This is version **2.2.0**, built and maintained by one person and tested on the five devices above.
+This is version **2.2.1**, built and maintained by one person and tested on the five devices above.
 
 | Area | Status |
 | :--- | :--- |
@@ -129,8 +129,8 @@ This is version **2.2.0**, built and maintained by one person and tested on the 
 
 Known limitations:
 - **Wi-Fi setup after web flashing.** It works over Bluetooth (Improv) on the three ESP32-S3 devices. The two ESP32-P4 devices currently need ESPHome Device Builder to set Wi-Fi. → [Flashing](docs/flashing.md)
-- **CI coverage.** CI validates the two example configs with `esphome config`. Full device builds run only in the release workflow.
-- **Pinned to `main`.** Device configs pull the core from the `main` branch, so a device rebuilt later gets the latest core.
+- **CI coverage.** CI runs `tools/gen_protocol.py --check`, C++20 host unit tests, and `esphome config` across both examples and all five flagship device configs; full firmware binary compilation runs in the release workflow.
+- **Pinned to `main`.** Device configs pull the core from the `main` branch during development, and release builds pin every reference to the release tag.
 
 Bugs and feature requests: [issues](https://github.com/slampton/esphome-latter-core/issues).
 

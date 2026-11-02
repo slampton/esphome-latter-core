@@ -105,35 +105,31 @@ The parser is `latter_ui::parse_v3_slots_payload()` in [`ui_core.h`](../include/
 | `duration` | int | Seconds |
 | `chime` | bool | |
 | `camera_url` | string | A signed baseline-JPEG snapshot URL, or `none` |
+| `alert_id` | int | Monotonically incrementing notification ID for deduplication |
 
-Latter also publishes every notification on `sensor.<slug>_area_context` through the `alert_*` attributes, with an incrementing `alert_id`. A device can use either path. The reference firmware watches both and ignores duplicates that arrive within 1.5 s of each other.
+Latter also publishes every notification on `sensor.<slug>_area_context` inside its Protocol v3 `payload` attribute (`alert_id`, `alert_title`, `alert_message`, `alert_priority`, `alert_duration`, `alert_chime`, `alert_camera_url`). A device can use either path. The reference firmware watches both and deduplicates by `alert_id`.
 
 ### 3b. Optional actions in the reference firmware
 
-Latter doesn't call these. They're there for automations and other tools.
+Latter doesn't call these. They're there for automations and hardware input mixins.
 
 | Action | Variables | Behavior |
 | :--- | :--- | :--- |
-| `set_timer` | `seconds: int` | Starts or updates a timer and opens the Timers tool |
-| `cancel_timer` | — | Stops all timers |
 | `ui_input` | `action: string`, `delta: int` | Moves GUI focus. `action` is one of `home`, `back`, `select`, `next`, `prev`. |
 
 ### 3c. Sensors to subscribe to
 
-Subscribe with `platform: homeassistant`. Attribute names are listed in the [entities reference](https://github.com/slampton/ha-latter/blob/main/docs/reference/entities.md). These are the formats that need parsing:
+Subscribe with `platform: homeassistant`. Each of the 5 Latter domain sensors (`area_context`, `active_media`, `remote_config`, `weather_forecast`, `calendar_agenda`) exposes a single `payload` attribute packed with `\x1f` (`US`, `0x1F`) delimiters and prefixed by `v3\x1f<epoch>\x1f<rev>\x1f...` (defined in [`protocol/latter_v3.json`](../protocol/latter_v3.json) and generated into [`DEVICE_CONTRACT.md`](../DEVICE_CONTRACT.md) and [`include/latter_protocol.h`](../include/latter_protocol.h)):
 
-| Source | Format |
-| :--- | :--- |
-| `sensor.<slug>_weather_forecast` state | `DAY:HIGH:LOW:COND;` × 5, for example `MON:72:55:sunny;TUE:68:52:partlycloudy;…` |
-| `sensor.<slug>_calendar_agenda` state | `LABEL\|summary;…`, up to 5 entries. `LABEL` is one of `TODAY`, `TOM`, a weekday (`FRI`), or a date (`NOV 08`). |
-| `remote_config` → `slots_summary` | `N:Name:remote_entity:media_player_entity:state;…`, up to 10 entries. `NONE` if there are none. |
-| `area_context` → `cameras_summary` | `entity_id\|Name\|signed_snapshot_url;…`, up to 10 entries. `NONE` if there are none. |
-| `area_context` → `intercom_targets_summary` | `target\|Label;…`, up to 10 entries. The first is always `all\|Call All Areas`. Other entries are device slugs or `sip:` URIs. |
-| `area_context` → `available_domains`, `dock_apps` | Comma-separated lists |
-| `area_context` → `alert_id` | Integer that increments on every notification |
-| `active_media` → `position`, `duration` | Seconds. Position is pushed every 15 s while playing. Interpolate locally between updates. |
+| Sensor | Inbound Attribute | Parsed by (`include/latter_state.h`) |
+| :--- | :--- | :--- |
+| `sensor.<slug>_area_context` | `payload` | `latter_ui::ingest_area_context_payload()` (area ID/name, available domains, dock apps, cameras summary, intercom targets, whole-home entities, and `alert_*` fields) |
+| `sensor.<slug>_active_media` | `payload` | `latter_ui::ingest_active_media_payload()` (player ID/name, state, title, artist, album, signed `art_url`, volume, shuffle/repeat, position/duration) |
+| `sensor.<slug>_remote_config` | `payload` | `latter_ui::ingest_remote_config_payload()` (slot count, `slots_summary`, active slot metadata) |
+| `sensor.<slug>_weather_forecast` | `payload` | `latter_ui::ingest_weather_payload()` (condition, temperature, high/low, humidity, wind, UV, AQI, 5-day forecast, signed `wallpaper_url`) |
+| `sensor.<slug>_calendar_agenda` | `payload` | `latter_ui::ingest_calendar_payload()` (event count, `events_summary`, next event summary/location/travel/coords, signed `event_map_url`) |
 
-Image URLs, such as `art_url`, `wallpaper_url`, and `camera_snapshot_url`, are already signed. They point at Home Assistant's numeric LAN IP and return baseline JPEG at your manifest's `w`×`h`. Fetch them with ESPHome's `online_image`. → [HTTP API](https://github.com/slampton/ha-latter/blob/main/docs/reference/http-api.md)
+Image URLs (`art_url`, `wallpaper_url`, `camera_snapshot_url`, and `event_map_url`) embedded in each domain's `payload` are already HMAC-signed with day-bucketed deterministic tokens scoped to the resource and render dimensions (`w`×`h`, capped at `480×480`). Fetch them with ESPHome's `online_image`. → [HTTP API](https://github.com/slampton/ha-latter/blob/main/docs/reference/http-api.md)
 
 ---
 

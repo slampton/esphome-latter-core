@@ -2,6 +2,8 @@ name: Build & Publish 5-Device Web Installer
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
   push:
     tags:
       - "v*"
@@ -38,6 +40,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve and verify release version & pin @main refs on tagged releases
+        id: rel_meta
+        shell: bash
+        run: |
+          BASE_VER=$(sed -n 's/.*version:[[:space:]]*"\([^"]*\)".*/\1/p' modules/base.yaml | head -n1)
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION="${TAG_NAME#v}"
+            if [[ "${VERSION}" != "${BASE_VER}" ]]; then
+              echo "::error::Release tag ${TAG_NAME} (${VERSION}) does not match modules/base.yaml (${BASE_VER})"
+              exit 1
+            fi
+            find devices modules mixins examples -name '*.yaml' -exec sed -i "s/@main/@${TAG_NAME}/g; s/ref: main/ref: ${TAG_NAME}/g" {} +
+          else
+            VERSION="${BASE_VER}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Compile ${{ matrix.device.slug }} with ESPHome
         uses: docker://ghcr.io/esphome/esphome:2026.10.1
         with:
@@ -46,6 +66,7 @@ jobs:
       - name: Stage Factory, OTA Binaries & Manifest
         shell: bash
         run: |
+          VERSION="${{ steps.rel_meta.outputs.version }}"
           mkdir -p dist/firmware dist/manifests
           BUILD_DIR=".esphome/build/${{ matrix.device.slug }}/.pioenvs/${{ matrix.device.slug }}"
           cp "${BUILD_DIR}/firmware.factory.bin" "dist/firmware/${{ matrix.device.slug }}.factory.bin"
@@ -54,7 +75,7 @@ jobs:
           cat <<EOF > "dist/manifests/${{ matrix.device.slug }}.json"
           {
             "name": "${{ matrix.device.name }}",
-            "version": "2.2.0",
+            "version": "${VERSION}",
             "home_assistant_domain": "esphome",
             "new_install_prompt_erase": true,
             "builds": [
@@ -63,7 +84,7 @@ jobs:
                 "ota": {
                   "path": "../firmware/${{ matrix.device.slug }}.ota.bin",
                   "md5": "${MD5_SUM}",
-                  "summary": "Latter OS v2.2.0 for ${{ matrix.device.name }}"
+                  "summary": "Latter OS v${VERSION} for ${{ matrix.device.name }}"
                 },
                 "parts": [
                   {
@@ -92,6 +113,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all device build artifacts
         uses: actions/download-artifact@v4
@@ -100,8 +123,21 @@ jobs:
           path: _site
           merge-multiple: true
 
-      - name: Copy Web Installer UI
-        run: cp index.html _site/index.html
+      - name: Copy Web Installer UI and stamp release version
+        shell: bash
+        run: |
+          BASE_VER=$(sed -n 's/.*version:[[:space:]]*"\([^"]*\)".*/\1/p' modules/base.yaml | head -n1)
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            VERSION="${BASE_VER}"
+          fi
+          sed "s/v2\.[0-9]\+\.[0-9]\+/v${VERSION}/g" index.html > _site/index.html
+
+      - name: Fast-forward stable branch on tagged release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        shell: bash
+        run: |
+          git push origin "HEAD:refs/heads/stable" --force
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
