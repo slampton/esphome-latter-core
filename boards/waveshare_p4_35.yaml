@@ -65,6 +65,8 @@ esphome:
     - "-DLATTER_PSRAM_MB=32"
     - "-DLATTER_PWR_KEY_PIN=49"
     - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
+    # Fitted cell: 500mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
+    - "-DLATTER_PMU_CHARGE_MA=400"
     - "-DLATTER_BACKLIGHT_PIN=28"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"

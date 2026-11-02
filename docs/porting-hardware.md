@@ -86,7 +86,7 @@ Optional hardware flags:
 | `LATTER_BACKLIGHT_PIN`, `LATTER_BACKLIGHT_EN_PIN`, `LATTER_BACKLIGHT_INVERTED` | LCD panels with a PWM backlight |
 | `LATTER_BACKLIGHT_PWM_HZ`, `LATTER_BACKLIGHT_PWM_BITS`, `LATTER_BACKLIGHT_DUTY_MIN_PCT`, `LATTER_BACKLIGHT_DUTY_MAX_PCT` | Backlight PWM frequency, resolution, and usable duty window. Defaults: 2000 Hz, 8-bit, 0-100 %. Analog-dimming backlights (PWM into an RC filter on the boost converter's feedback pin) need a frequency well above the RC corner, at least 5 kHz. |
 | `LATTER_PWR_KEY_PIN`, `LATTER_PWR_KEY_ACTIVE_HIGH`, `LATTER_PWR_KEY_DEEP_SLEEP_WAKE` | The GPIO that reads the power key (for example the AXP2101 `SYS_OUT` net), its polarity, and whether it is RTC/LP-capable and can wake the chip from deep sleep. Must match the `pwr_key` binary sensor's pin. |
-| `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK`, `LATTER_PMU_CHARGE_MA` | AXP2101 traits: no NTC on TS; which DCDC and LDO rails stay on (everything else with no load is turned off); charge current from the fitted cell's capacity. Leave a trait undefined if the schematic doesn't confirm it. |
+| `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK`, `LATTER_PMU_CHARGE_MA` | AXP2101 traits: no NTC on TS; which DCDC and LDO rails stay on (everything else with no load is turned off); charge current from the fitted cell's capacity, using min(0.8C, 500 mA) rounded down to the AXP2101 step (25 mA steps up to 200 mA, then 100 mA steps). Leave a trait undefined if the schematic doesn't confirm it. |
 | `LATTER_CORNER_R` | A corner radius other than the default |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels. See [ESP32-P4](#6-esp32-p4). |
 
