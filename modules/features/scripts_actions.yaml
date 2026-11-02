@@ -254,7 +254,7 @@ script:
                         - lambda: |-
                             float v = id(latter_media_player).volume;
                             if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                            id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                            id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
                   # Dispatch play via latter.media_command so it never double-triggers with the media_play interceptor
                   - homeassistant.action:
                       action: latter.media_command
@@ -660,7 +660,7 @@ script:
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::min(1.00f, cur + step);
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
-                id(physical_speaker).set_volume(new_vol);
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
             - homeassistant.action:
@@ -687,7 +687,7 @@ script:
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
                 float new_vol = std::max(0.10f, cur - step);
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
-                id(physical_speaker).set_volume(new_vol);
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
             - homeassistant.action:

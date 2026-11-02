@@ -3,7 +3,7 @@
 esphome:
   # SDK revision lockstep stamp: must equal LATTER_SDK_REV in include/ui_core.h (latter-verify enforces).
   build_flags:
-    - "-DLATTER_YAML_REV=2026110201"
+    - "-DLATTER_YAML_REV=2026110202"
   on_boot:
     - priority: 800
       then:

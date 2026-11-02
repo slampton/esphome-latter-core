@@ -1169,6 +1169,10 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
   if (disp != nullptr) {
     disp->update();
     disp->start_poller();
+    // A successful OTA reboots immediately. Hand the panel to the new firmware in the same state as the
+    // "Restart Device" path (brightness 0 + DCS sleep / backlight off) rather than awake mid-frame;
+    // AMOLED panels left awake across an OTA reboot would not come back from their next DCS sleep.
+    hal_set_display_brightness(disp, 0);
   }
   ota_in_progress = false;
 }

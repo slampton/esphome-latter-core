@@ -65,23 +65,38 @@ inline bool wake_word_should_run(const std::string &ww_mode,
 // mixer input is never ducked). ESPHome's ES8311 volume is dB-linear: volume v -> REG32 = v * 255,
 // 0.5 dB per step, so 0.75 = 0 dB, 0.90 = +19 dB, 1.0 = +32 dB, and 1 dB = 2/255 of the scale.
 //
+// Every writer of physical_speaker's volume must use these helpers:
+//   - esphome::rtttl re-applies its gain to the speaker chain at every song start, so alarm/chime paths
+//     set the RTTTL gain to the intended DAC level before rtttl.play,
+//   - speaker_source remaps its 0..1 volume into [volume_min, volume_max] before it reaches the DAC, so
+//     music levels go through media_dac_volume().
+
+// Must match volume_min / volume_max of latter_media_player in modules/audio_voice.yaml (latter-verify).
+inline constexpr float kMediaVolumeMin = 0.10f;
+inline constexpr float kMediaVolumeMax = 1.00f;
+
+// The DAC level speaker_source applies for a media player volume.
+inline float media_dac_volume(float player_volume) {
+  if (std::isnan(player_volume)) player_volume = 0.60f;
+  if (player_volume < 0.001f) return 0.0f;
+  const float v = std::clamp(player_volume, 0.0f, 1.0f);
+  return kMediaVolumeMin + v * (kMediaVolumeMax - kMediaVolumeMin);
+}
+
 // Alarms / timers / chimes: the Alert Volume slider sets the level; at 100% the DAC sits at 0.90 and
-// each % below removes 0.18 dB (+15.4 dB at the 80% default, matching the original tuning). Never
-// below the music volume the alert interrupts.
+// each % below removes 0.18 dB (+15.4 dB at the 80% default). Never below the current music level.
 inline float alarm_output_volume(float alert_vol_pct, float media_volume) {
   float a = alert_vol_pct;
   if (std::isnan(a) || a <= 0.0f) a = 80.0f;
   a = std::clamp(a, 20.0f, 100.0f);
   const float level = 0.90f - ((100.0f - a) * 0.18f * 2.0f / 255.0f);
-  const float music = (std::isnan(media_volume) || media_volume <= 0.0f) ? 0.0f : std::min(media_volume, 1.0f);
-  return std::clamp(std::max(level, music), 0.10f, 1.0f);
+  return std::clamp(std::max(level, media_dac_volume(media_volume)), 0.10f, 1.0f);
 }
 
-// Voice replies follow the device's media volume, +3 dB, so a reply is a little louder than the
-// music it interrupts and tracks the volume the user already chose.
+// Voice replies: the music level +3 dB, so a reply is a little louder than the music it interrupts and
+// tracks the volume the user already chose.
 inline float voice_output_volume(float media_volume) {
-  const float music = (std::isnan(media_volume) || media_volume <= 0.0f) ? 0.60f : std::min(media_volume, 1.0f);
-  return std::clamp(music + (6.0f / 255.0f), 0.50f, 1.0f);
+  return std::clamp(media_dac_volume(media_volume) + (6.0f / 255.0f), 0.50f, 1.0f);
 }
 
 // Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode,

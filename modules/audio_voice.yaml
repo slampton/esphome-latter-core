@@ -110,7 +110,7 @@ media_player:
                 !id(va_active) && !id(va_tts_received) &&
                 id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) {
               if (vol_valid && (vol_changed || state_changed)) {
-                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
               }
             }
             if (state_changed || vol_changed) {
@@ -178,7 +178,7 @@ media_player:
                     - lambda: |-
                         float v = id(latter_media_player).volume;
                         if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                        id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                        id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
               - if:
                   condition:
                     lambda: 'return !id(speaker_enable).state || id(mww).is_running() || id(latter_mic).is_running();'
@@ -819,6 +819,9 @@ script:
           const float alert_v = id(find_my_active)
               ? 0.90f
               : latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+          // esphome::rtttl re-applies its gain as the speaker volume at every song start, so the gain
+          // must carry the intended DAC level (otherwise every chime plays at RTTTL's 0.6 default).
+          id(alarm_rtttl).set_gain(alert_v);
           id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
@@ -863,9 +866,14 @@ script:
             - script.execute: route_i2s_to_spk
             - switch.turn_on: speaker_enable
             - lambda: |-
-                id(physical_speaker).set_volume(
-                    latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume));
+                const float sfx_v = latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+                id(alarm_rtttl).set_gain(sfx_v);
+                id(physical_speaker).set_volume(sfx_v);
                 id(hal_set_dac_mute).execute(false);
+          else:
+            # Other audio already owns the speaker (music, a call): keep the current DAC level so the
+            # chime does not change the music volume (RTTTL applies its gain as the speaker volume).
+            - lambda: 'id(alarm_rtttl).set_gain(id(physical_speaker).get_volume());'
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
           decibel_reduction: 0
@@ -914,7 +922,7 @@ script:
             - lambda: |-
                 float v = id(latter_media_player).volume;
                 if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 0

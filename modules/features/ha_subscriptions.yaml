@@ -418,7 +418,7 @@ text_sensor:
                   latter_ui::remote_vol_pct() = static_cast<int>(std::round(ms.volume * 100.0f));
                   if (ms.is_local) {
                     id(latter_media_player).volume = ms.volume;
-                    id(physical_speaker).set_volume(std::clamp(ms.volume, 0.10f, 1.0f));
+                    id(physical_speaker).set_volume(latter_ui::media_dac_volume(ms.volume));
                   }
                 }
               }
