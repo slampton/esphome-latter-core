@@ -303,7 +303,9 @@ inline std::string normalize_vacuum_state_str(std::string_view sv) {
 }
 
 // Parse Protocol v3 area_context payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
-inline bool parse_v3_area_ctx_payload(std::string_view payload, AreaContextState &st, WholeHomeState &wh) {
+inline bool parse_v3_area_ctx_payload(std::string_view payload,
+                                      AreaContextState &st = area_ctx_state(),
+                                      WholeHomeState &wh = whole_home_state()) {
   constexpr size_t kCount = static_cast<size_t>(AreaCtxField::COUNT);
   std::string_view f[kCount];
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -363,7 +365,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload, AreaContextState
 }
 
 // Parse Protocol v3 active_media payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
-inline bool parse_v3_media_payload(std::string_view payload, MediaState &st) {
+inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = media_state()) {
   constexpr size_t kCount = static_cast<size_t>(MediaField::COUNT);
   std::string_view f[kCount];
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -399,7 +401,7 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st) {
 }
 
 // Parse Protocol v3 remote_config payload ("v3\x1f<epoch>\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
-inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st) {
+inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st = remote_state()) {
   constexpr size_t kCount = static_cast<size_t>(RemoteField::COUNT);
   std::string_view f[kCount];
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -416,7 +418,7 @@ inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st) {
 }
 
 // Parse Protocol v3 weather payload ("v3\x1f<epoch>\x1f<rev>\x1f<cond>\x1f<temp>\x1f<hum>\x1f<ws>\x1f<wb>\x1f<hi>\x1f<lo>\x1f<forecast_5d>")
-inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st) {
+inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st = weather_state()) {
   constexpr size_t kCount = static_cast<size_t>(WeatherField::COUNT);
   std::string_view f[kCount];
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -437,7 +439,7 @@ inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st)
 }
 
 // Parse Protocol v3 calendar payload ("v3\x1f<epoch>\x1f<rev>\x1f<summary>\x1f<count>\x1f<next_event>")
-inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st) {
+inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st = calendar_state()) {
   constexpr size_t kCount = static_cast<size_t>(CalendarField::COUNT);
   std::string_view f[kCount];
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);

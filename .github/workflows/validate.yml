@@ -41,5 +41,19 @@ jobs:
         run: |
           for dev in devices/*.yaml; do
             echo "Validating $dev..."
-            esphome config "$dev"
+            base_name=$(basename "$dev")
+            cat <<EOF > "devices/.ci_${base_name}"
+          external_components:
+            - source:
+                type: local
+                path: ../components
+              components: [latter_core]
+          wifi:
+            ssid: "LatterCIWiFi"
+            password: "LatterCIPassword"
+          packages:
+            device_under_test: !include ${base_name}
+          EOF
+            esphome config "devices/.ci_${base_name}"
+            rm -f "devices/.ci_${base_name}"
           done

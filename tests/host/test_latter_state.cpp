@@ -1,5 +1,6 @@
 // Host-compiled unit tests for Protocol v3 state parsers and monotonic epoch/rev guards.
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <string_view>
@@ -25,11 +26,11 @@ void test_epoch_and_rev_monotonicity() {
   assert(st.epoch == 0 && st.rev == 0);
 
   std::vector<std::string> tokens(static_cast<size_t>(latter_ui::RemoteField::COUNT), "");
-  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "1";
+  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "2";
   tokens[static_cast<size_t>(latter_ui::RemoteField::CONFIGURED_COUNT)] = "2";
   tokens[static_cast<size_t>(latter_ui::RemoteField::SLOTS_SUMMARY)] = "Apple TV\x1eremote.apple_tv";
 
-  // 1. Accept initial packet (epoch 100, rev 1)
+  // 1. Accept initial packet (epoch 100, rev 1; wire active_slot=2 -> 0-based st.active_slot=1)
   assert(latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, tokens)));
   assert(st.epoch == 100 && st.rev == 1);
   assert(st.active_slot == 1);
@@ -41,8 +42,8 @@ void test_epoch_and_rev_monotonicity() {
   assert(!latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, tokens)));
   assert(st.active_slot == 1);
 
-  // 3. Accept rev=2 in same epoch=100
-  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "2";
+  // 3. Accept rev=2 in same epoch=100 (wire active_slot=3 -> 0-based st.active_slot=2)
+  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "3";
   assert(latter_ui::parse_v3_remote_payload(build_v3_packet(100, 2, tokens)));
   assert(st.epoch == 100 && st.rev == 2);
   assert(st.active_slot == 2);
@@ -52,8 +53,8 @@ void test_epoch_and_rev_monotonicity() {
   assert(!latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, tokens)));
   assert(st.active_slot == 2);
 
-  // 5. Accept HA restart (new epoch=200 with rev=1)
-  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "0";
+  // 5. Accept HA restart (new epoch=200 with rev=1; wire active_slot=1 -> 0-based st.active_slot=0)
+  tokens[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "1";
   assert(latter_ui::parse_v3_remote_payload(build_v3_packet(200, 1, tokens)));
   assert(st.epoch == 200 && st.rev == 1);
   assert(st.active_slot == 0);
