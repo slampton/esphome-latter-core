@@ -22,6 +22,16 @@
 #include "audio_router.h"
 #include "latter_state.h"
 
+// SDK revision lockstep guard. The C++ headers arrive through external_components (refresh: 0s) while
+// the YAML packages arrive through packages:, which ESPHome refreshes only once per day unless the
+// package sets refresh: 0s. Mixing a fresh header set with stale YAML produces builds that compile
+// but behave like neither revision, so modules/features/core_system.yaml stamps LATTER_YAML_REV and
+// any mismatch fails the build. Bump both values together on every core commit.
+#define LATTER_SDK_REV 2026110201
+#if defined(LATTER_YAML_REV) && (LATTER_YAML_REV != LATTER_SDK_REV)
+#error "Latter YAML packages and latter_core C++ headers are from different revisions. ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package (docs/flashing.md) and rebuild."
+#endif
+
 namespace latter_ui {
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)

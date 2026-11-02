@@ -44,7 +44,11 @@ substitutions:
   device_slug: pocket_assistant   # friendly_name, lowercase with underscores
 
 packages:
-  latter: github://slampton/esphome-latter-core/devices/pocket-assistant.yaml@main
+  latter:
+    url: https://github.com/slampton/esphome-latter-core
+    ref: main
+    files: [devices/pocket-assistant.yaml]
+    refresh: 0s   # pull the latest YAML on every build (the shorthand github:// form caches for a day)
 
 wifi:
   ssid: !secret wifi_ssid
@@ -64,7 +68,10 @@ wifi:
 > [!IMPORTANT]
 > **Keep `device_slug` in step with `friendly_name`.** Latter names a device's Home Assistant sensors after its name in Home Assistant, and the firmware subscribes to those sensors using `device_slug`. If the two don't match, the screens stay empty.
 
-If the device was flashed with the web installer and is already on your network, Device Builder shows it under **Discovered** and offers **Adopt**. Adopting generates the same kind of config.
+If the device was flashed with the web installer and is already on your network, Device Builder shows it under **Discovered** and offers **Adopt**. Adopting generates a short `github://` package line; replace it with the long form above so the package has `refresh: 0s`.
+
+> [!WARNING]
+> **Use `refresh: 0s` on the package.** The firmware's C++ code always comes from `main`, but ESPHome caches `github://` packages for a day. Without `refresh: 0s` a build can combine new C++ code with day-old YAML. The build stops with a "different revisions" error when that happens.
 
 The first build downloads the toolchain and takes several minutes. Later builds are faster.
 
@@ -73,7 +80,7 @@ The first build downloads the toolchain and takes several minutes. Later builds 
 ## Updates
 
 - **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity. Each device also checks for updates in the background every 6 hours while it's on USB power and idle.
-- **Device Builder devices:** the core is pulled from `main` each time you build, so a rebuild picks up the latest release.
+- **Device Builder devices:** with `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
 
 ## Recovery
 
