@@ -102,8 +102,9 @@ psram:
   speed: 200MHz
   ignore_not_found: false
 
-# Console: of the two USB-C ports, the CH343 USB-UART bridge (UART0, GPIO37/38) is the serial console;
-# the other is the P4's USB 2.0 OTG port. The P4's USB-Serial-JTAG pins (GPIO24/25) only reach a header,
+# Console: of the two USB-C ports, the CH343 USB-UART bridge (UART0, GPIO37/38) is the serial console:
+# the LEFT port with the screen facing you and the ports pointing down. The right port is the P4's USB 2.0
+# OTG port (no serial device enumerates there). The P4's USB-Serial-JTAG pins (GPIO24/25) only reach a header,
 # so logs use UART0. Note: OTA updates replace the app only; the 2nd-stage bootloader keeps the console it
 # was first flashed with until the next USB (factory) flash.
 logger:
