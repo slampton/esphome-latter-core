@@ -138,7 +138,7 @@ media_player:
         - script.wait: route_i2s_to_spk
         - switch.turn_on: speaker_enable
         - lambda: |-
-            float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+            float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
             id(physical_speaker).set_volume(spk_v);
             id(hal_set_dac_mute).execute(false);
             id(va_tts_received) = true;
@@ -431,7 +431,7 @@ voice_assistant:
             - script.execute: route_i2s_to_spk
             - script.wait: route_i2s_to_spk
             - lambda: |-
-                float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+                float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
                 id(physical_speaker).set_volume(spk_v);
                 id(hal_set_dac_mute).execute(false);
                 id(va_vad_active) = false;
@@ -456,7 +456,7 @@ voice_assistant:
       - script.execute: route_i2s_to_spk
       - script.wait: route_i2s_to_spk
       - lambda: |-
-          float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+          float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
           id(physical_speaker).set_volume(spk_v);
           id(hal_set_dac_mute).execute(false);
           id(va_vad_active) = false;
@@ -818,7 +818,7 @@ script:
           // Find My Device always plays at the 0.90 ceiling; alarms/timers follow the Alert Volume model.
           const float alert_v = id(find_my_active)
               ? 0.90f
-              : latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+              : latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
           id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
@@ -864,7 +864,7 @@ script:
             - switch.turn_on: speaker_enable
             - lambda: |-
                 id(physical_speaker).set_volume(
-                    latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume));
+                    latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume));
                 id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input

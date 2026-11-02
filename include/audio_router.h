@@ -61,17 +61,27 @@ inline bool wake_word_should_run(const std::string &ww_mode,
   return mode_allowed && !va_busy && !media_busy && !alert_or_tool_busy && !sys_busy;
 }
 
-// Single loudness model for alerts (alarm/timer/chimes) and voice replies:
-//   - the Alert Volume slider (20..100%) sets the DAC level as a fraction of max_volume,
-//   - never below the music volume the alert interrupts (a reply is never quieter than the music),
-//   - the announcement mixer input itself is never ducked, so the slider is applied exactly once.
-inline float alert_output_volume(float alert_vol_pct, float media_volume, float max_volume = 0.90f) {
+// Loudness model for alerts and voice replies, applied once through the DAC volume (the announcement
+// mixer input is never ducked). ESPHome's ES8311 volume is dB-linear: volume v -> REG32 = v * 255,
+// 0.5 dB per step, so 0.75 = 0 dB, 0.90 = +19 dB, 1.0 = +32 dB, and 1 dB = 2/255 of the scale.
+//
+// Alarms / timers / chimes: the Alert Volume slider sets the level; at 100% the DAC sits at 0.90 and
+// each % below removes 0.18 dB (+15.4 dB at the 80% default, matching the original tuning). Never
+// below the music volume the alert interrupts.
+inline float alarm_output_volume(float alert_vol_pct, float media_volume) {
   float a = alert_vol_pct;
   if (std::isnan(a) || a <= 0.0f) a = 80.0f;
   a = std::clamp(a, 20.0f, 100.0f);
-  const float level = max_volume * (a / 100.0f);
+  const float level = 0.90f - ((100.0f - a) * 0.18f * 2.0f / 255.0f);
   const float music = (std::isnan(media_volume) || media_volume <= 0.0f) ? 0.0f : std::min(media_volume, 1.0f);
-  return std::clamp(std::max(level, music), 0.15f, 1.0f);
+  return std::clamp(std::max(level, music), 0.10f, 1.0f);
+}
+
+// Voice replies follow the device's media volume, +3 dB, so a reply is a little louder than the
+// music it interrupts and tracks the volume the user already chose.
+inline float voice_output_volume(float media_volume) {
+  const float music = (std::isnan(media_volume) || media_volume <= 0.0f) ? 0.60f : std::min(media_volume, 1.0f);
+  return std::clamp(music + (6.0f / 255.0f), 0.50f, 1.0f);
 }
 
 // Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode,
