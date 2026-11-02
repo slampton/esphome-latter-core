@@ -95,21 +95,66 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
     }
   }
 #else
-  // Initialize last_stby = -1 so the first wake call after ESPHome's ES7210::setup()
-  // clears REG40=0xC3 and REG4B/REG4C=0x0F and powers on MIC1-4 bias/ADC/PGA stages.
+  // Battery boards: full low-power suspend modeled on Espressif esp_codec_dev es8311_suspend() /
+  // es7210_stop(). Registers the suspend sequence changes are snapshotted while the codecs are active
+  // and restored verbatim on resume, so ESPHome's configured clocks/gains come back exactly.
+  // REG00 digital resets are omitted (a snapshot restore cannot replay a reset), and the DAC volume
+  // (REG32) is never touched because ESPHome may change it while the codecs are suspended.
   static int last_stby = -1;
+  static constexpr uint8_t kEs8311SnapRegs[] = {0x01, 0x02, 0x0D, 0x0E, 0x12, 0x14, 0x15, 0x17, 0x45};
+  static uint8_t es8311_snap[sizeof(kEs8311SnapRegs)] = {};
+  static bool es8311_snap_valid = false;
+  static constexpr uint8_t kEs7210SnapRegs[] = {0x47, 0x48, 0x49, 0x4A};
+  static uint8_t es7210_snap[sizeof(kEs7210SnapRegs)] = {};
+  static bool es7210_snap_valid = false;
+  auto snapshot = [bus](uint8_t addr, const uint8_t *regs, size_t n, uint8_t *out) -> bool {
+    for (size_t i = 0; i < n; i++) {
+      uint8_t reg = regs[i];
+      if (bus->write_readv(addr, &reg, 1, &out[i], 1) != esphome::i2c::ERROR_OK) return false;
+    }
+    return true;
+  };
   const int target = standby ? 1 : 0;
   if (standby) {
     if (target == last_stby) return;
     last_stby = target;
-    uint8_t dac_lp[2] = {0x0D, 0xFC};
-    bus->write(0x18, dac_lp, 2);
+    es8311_snap_valid = snapshot(0x18, kEs8311SnapRegs, sizeof(kEs8311SnapRegs), es8311_snap);
+    if (es8311_snap_valid) {
+      const uint8_t dac_suspend_seq[][2] = {
+          {0x17, 0x00},  // ADC volume 0
+          {0x0E, 0xFF},  // ADC/PGA analog power down
+          {0x12, 0x02},  // DAC power down
+          {0x14, 0x00},  // mic bias / PGA input off
+          {0x0D, 0xFA},  // analog power down (stage 1)
+          {0x15, 0x00},  // ADC ramp/HPF off
+          {0x02, 0x10},  // clock divider hold
+          {0x01, 0x30},  // clock manager: gate MCLK/BCLK paths
+          {0x01, 0x00},  // all codec clocks off
+          {0x45, 0x00},  // GP control off
+          {0x0D, 0xFC},  // analog power down (VMID off)
+          {0x02, 0x00},
+      };
+      for (const auto &reg : dac_suspend_seq) {
+        bus->write(0x18, reg, 2);
+      }
+    } else {
+      uint8_t dac_lp[2] = {0x0D, 0xFC};
+      bus->write(0x18, dac_lp, 2);
+    }
     if (has_es7210) {
+      es7210_snap_valid = snapshot(0x40, kEs7210SnapRegs, sizeof(kEs7210SnapRegs), es7210_snap);
+      if (es7210_snap_valid) {
+        for (uint8_t reg = 0x47; reg <= 0x4A; reg++) {
+          const uint8_t lp[2] = {reg, 0xFF};  // MIC1-4 low-power
+          bus->write(0x40, lp, 2);
+        }
+      }
       const uint8_t adc_lp_seq[][2] = {
-          {0x4B, 0xFF},
-          {0x4C, 0xFF},
-          {0x06, 0x7F},
-          {0x40, 0xFF},
+          {0x4B, 0xFF},  // MIC1/2 bias, ADC, PGA off
+          {0x4C, 0xFF},  // MIC3/4 bias, ADC, PGA off
+          {0x40, 0xC0},  // analog power down
+          {0x01, 0x7F},  // all ADC/MIC clocks off
+          {0x06, 0x07},  // digital power down
       };
       for (const auto &reg : adc_lp_seq) {
         bus->write(0x40, reg, 2);
@@ -118,9 +163,24 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *bus, bool standby, bool has_e
   } else {
     if (last_stby != 0) {
       last_stby = 0;
-      uint8_t dac_wake[2] = {0x0D, 0x01};
-      bus->write(0x18, dac_wake, 2);
+      if (es8311_snap_valid) {
+        for (size_t i = 0; i < sizeof(kEs8311SnapRegs); i++) {
+          const uint8_t reg[2] = {kEs8311SnapRegs[i], es8311_snap[i]};
+          bus->write(0x18, reg, 2);
+        }
+        es8311_snap_valid = false;
+      } else {
+        uint8_t dac_wake[2] = {0x0D, 0x01};
+        bus->write(0x18, dac_wake, 2);
+      }
       if (has_es7210) {
+        if (es7210_snap_valid) {
+          for (size_t i = 0; i < sizeof(kEs7210SnapRegs); i++) {
+            const uint8_t reg[2] = {kEs7210SnapRegs[i], es7210_snap[i]};
+            bus->write(0x40, reg, 2);
+          }
+          es7210_snap_valid = false;
+        }
         const uint8_t adc_wake_seq[][2] = {
             {0x01, 0x00},  // ES7210_CLOCK_OFF_REG01: enable all ADC/MIC clocks
             {0x06, 0x00},  // ES7210_POWER_DOWN_REG06: digital & DLL power on

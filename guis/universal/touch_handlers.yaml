@@ -18,6 +18,7 @@ script:
               if (id(hibernate_countdown_val) > 0) {
                 id(is_hibernating) = false;
                 id(hibernate_countdown_val) = 0;
+                latter_ui::note_wake_reason(latter_ui::WakeReason::TOUCH);
                 id(wake_to_active_state).execute();
               }
               return;
@@ -28,7 +29,10 @@ script:
               auto tw_mode = id(tap_wake_mode).current_option();
               if (tw_mode == "Disabled") return;
               if (tw_mode == "Docked Only" && !id(usb_connected).state) return;
+              // Wearables on battery need a double tap (sleeve/skin contact makes single touches).
+              if (!latter_ui::accept_screen_off_tap(id(usb_connected).state, now_touch)) return;
 
+              latter_ui::note_wake_reason(latter_ui::WakeReason::TOUCH);
               id(wake_to_active_state).execute();
               return;
             }

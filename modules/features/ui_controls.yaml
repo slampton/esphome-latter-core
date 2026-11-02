@@ -516,6 +516,7 @@ button:
             }
             id(find_my_active) = true;
             id(find_my_start_ms) = millis();
+            latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
             id(wake_to_active_state).execute();
             id(play_alarm_sound).execute();
             latter_ui::schedule_disp_update(&id(disp1));

@@ -112,7 +112,9 @@ interval:
 
             const bool touch_busy = latter_ui::touch_gesture().active ||
                                     (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
-            if (!touch_busy && (sim_just_changed || ui_overlay_animating || cached_has_motion)) {
+            // Battery render budget: weather motion runs on USB, and for 10 s after a wake/touch on battery.
+            const bool motion_budget_ok = latter_ui::battery_motion_allowed(id(usb_connected).state, now_w_ms);
+            if (!touch_busy && (sim_just_changed || ui_overlay_animating || (cached_has_motion && motion_budget_ok))) {
               const bool local_audio_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                   (!LATTER_CHIP_P4 && id(mww).is_running());
@@ -167,6 +169,7 @@ interval:
               }
               id(va_timer_name) = exp_name;
               id(timer_ringing) = true;
+              latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
               id(wake_to_active_state).execute();
               id(play_alarm_sound).execute();
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
@@ -277,6 +280,7 @@ interval:
             if (id(alarm_snooze_until) > 0 && now_epoch >= id(alarm_snooze_until)) {
               id(alarm_snooze_until) = 0;
               id(alarm_ringing) = true;
+              latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
               id(wake_to_active_state).execute();
               id(play_alarm_sound).execute();
               latter_ui::schedule_disp_update(&id(disp1));
@@ -323,6 +327,7 @@ interval:
                 id(alarm_last_fired_epoch_min) = em;
                 id(alarm_ringing) = true;
                 id(alarm_ringing_idx) = trig_idx;
+                latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
                 id(wake_to_active_state).execute();
                 id(play_alarm_sound).execute();
                 latter_ui::schedule_disp_update(&id(disp1));

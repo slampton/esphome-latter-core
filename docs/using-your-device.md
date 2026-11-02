@@ -47,6 +47,12 @@ The wake word runs on the device with [micro_wake_word](https://github.com/kahre
 
 A device doesn't hibernate while it's on USB power, while **Stay Awake** is on, or while music, a timer, a voice session, a game, or a call is active.
 
+How the wake inputs behave when the screen is off:
+
+- **Pickup to wake** is a raise gesture: a deliberate movement followed by the screen settling roughly face-up for a moment. Arm swing, walking, and pocket jostling don't wake the screen.
+- **Tap to wake** on a watch running on battery needs a **double tap**, so sleeve and skin contact don't wake it. On USB power, and on every other device, a single tap wakes it.
+- **Animated weather** on the Home screen runs continuously on USB power. On battery it animates for 10 seconds after you wake or touch the screen, then holds still until the next touch.
+
 ---
 
 ## Settings exposed to Home Assistant

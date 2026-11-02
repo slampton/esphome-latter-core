@@ -533,6 +533,9 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
 }
 
 template <typename DispT>
+inline void hal_panel_dcs_set_sleep(DispT *disp, bool sleep);
+
+template <typename DispT>
 inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
   gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
@@ -605,9 +608,67 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 #if !defined(LATTER_BACKLIGHT_PIN)
   static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
                 "Display driver lacks set_brightness() and no LATTER_BACKLIGHT_PIN is defined");
-  if (disp != nullptr) disp->set_brightness(bri_byte);
+  if (disp != nullptr) {
+    if (bri_byte == 0) {
+      disp->set_brightness(0);
+      hal_panel_dcs_set_sleep(disp, true);
+    } else {
+      hal_panel_dcs_set_sleep(disp, false);
+      disp->set_brightness(bri_byte);
+    }
+  }
 #else
   (void)disp;
+#endif
+}
+
+// Self-emissive (AMOLED) panels: brightness 0 alone leaves the driver IC and panel power supply running.
+// With LATTER_PANEL_DCS_SLEEP=1 (QSPI DCS panels such as CO5300), screen-off sends DISPOFF (0x28) +
+// SLPIN (0x10) and screen-on sends SLPOUT (0x11) + DISPON (0x29), using the same QSPI command framing
+// as esphome::mipi_spi (cmd 0x02, 24-bit address = DCS << 8). GRAM is retained across sleep.
+template <typename DispT>
+inline void hal_panel_dcs_set_sleep(DispT *disp, bool sleep) {
+#if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
+  if constexpr (requires(DispT *d, const uint8_t *b) {
+                  d->enable();
+                  d->disable();
+                  d->write_cmd_addr_data(size_t{8}, uint32_t{0x02}, size_t{24}, uint32_t{0}, b, size_t{0});
+                }) {
+    static bool asleep = false;
+    static uint32_t last_wake_ms = 0;
+    if (disp == nullptr || sleep == asleep || !disp->is_ready()) return;
+    auto dcs = [disp](uint8_t cmd) {
+      uint8_t dummy = cmd;
+      disp->enable();
+      disp->write_cmd_addr_data(8, 0x02, 24, static_cast<uint32_t>(cmd) << 8, &dummy, 0);
+      disp->disable();
+    };
+    if (sleep) {
+      // DCS timing: at least 120 ms between SLPOUT and SLPIN.
+      const uint32_t since_wake = esphome::millis() - last_wake_ms;
+      if (last_wake_ms != 0 && since_wake < 120U) esphome::delay(120U - since_wake);
+      dcs(0x28);
+      dcs(0x10);
+      asleep = true;
+    } else {
+      dcs(0x11);
+      esphome::delay(10);  // DCS timing: >= 5 ms after SLPOUT before the next command
+      dcs(0x29);
+      last_wake_ms = esphome::millis();
+      asleep = false;
+    }
+  } else {
+    static bool warned = false;
+    if (!warned) {
+      warned = true;
+      ESP_LOGW("power", "LATTER_PANEL_DCS_SLEEP set but the display driver exposes no QSPI command path; panel sleep disabled");
+    }
+    (void)disp;
+    (void)sleep;
+  }
+#else
+  (void)disp;
+  (void)sleep;
 #endif
 }
 

@@ -67,7 +67,13 @@ binary_sensor:
       const uint32_t active_ms = (id(display_power_state) == 0) ? 3000 : 2000;
       uint32_t now_ms = millis();
 
-      if (dyn > thresh) {
+      // Screen off: orientation-qualified raise-to-wake (motion spike + screen settles face-up).
+      // Screen on: plain motion keeps the in-hand hold alive.
+      const bool triggered = (id(display_power_state) != 0)
+          ? latter_ui::raise_to_wake().update(dyn, thresh, id(accel_x).state, id(accel_y).state,
+                                              id(accel_z).state, now_ms)
+          : (dyn > thresh);
+      if (triggered) {
         is_active = true;
         last_active_time = now_ms;
       } else if (is_active) {
@@ -95,6 +101,7 @@ binary_sensor:
                   condition:
                     lambda: 'return id(display_power_state) != 0 || !id(display_brightness).current_values.is_on();'
                   then:
+                    - lambda: 'latter_ui::note_wake_reason(latter_ui::WakeReason::RAISE);'
                     - script.execute: wake_to_active_state
                   else:
                     - if:
@@ -584,17 +591,23 @@ script:
     mode: restart
     then:
       - lambda: |-
+          if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
+            latter_ui::record_screen_wake();
+          }
           latter_ui::hal_set_wifi_power_save(0);
           latter_ui::screen_is_off_standby() = false;
           latter_ui::last_screen_wake_ms() = millis();
+          latter_ui::raise_to_wake().reset();
           id(sleep_start_time) = 0;
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
           if (id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
             id(ble_ctrl).enable();
           }
-          id(hal_set_audio_codecs_standby).execute(false);
+          // Codec power follows audio demand, not screen state: route_i2s_to_spk / sync_wake_word_state /
+          // voice entry points wake the codecs when audio actually starts.
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
+            id(hal_set_audio_codecs_standby).execute(false);
             id(speaker_enable).turn_on();
           }
           id(hal_set_imu_power_mode).execute(0x01);

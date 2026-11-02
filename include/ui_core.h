@@ -2151,5 +2151,131 @@ inline void mark_power_profile_custom_if_manual(SelT *prof_sel) {
 }
 
 // ------------------------------------------------------------------------------
+// Phase 2 Power Model: Wake Attribution, Raise-to-Wake, Double-Tap & Render Budget
+// ------------------------------------------------------------------------------
+
+// Why the screen woke. Counted always (cheap) and reported by the [PROF:*] flight recorder so a
+// day of telemetry shows which inputs keep a battery device awake.
+enum class WakeReason : uint8_t { TOUCH = 0, RAISE, CROWN, VOICE, NOTIFY, ALERT, MEDIA, OTHER, COUNT };
+
+inline const char *wake_reason_name(WakeReason r) {
+  switch (r) {
+    case WakeReason::TOUCH:  return "touch";
+    case WakeReason::RAISE:  return "raise";
+    case WakeReason::CROWN:  return "crown";
+    case WakeReason::VOICE:  return "voice";
+    case WakeReason::NOTIFY: return "notify";
+    case WakeReason::ALERT:  return "alert";
+    case WakeReason::MEDIA:  return "media";
+    default:                 return "other";
+  }
+}
+
+struct WakeStats {
+  uint32_t counts[static_cast<int>(WakeReason::COUNT)] = {};
+  WakeReason pending = WakeReason::OTHER;
+};
+
+inline WakeStats &wake_stats() {
+  static WakeStats st;
+  return st;
+}
+
+// Call immediately before executing wake_to_active_state from a specific input path.
+inline void note_wake_reason(WakeReason r) { wake_stats().pending = r; }
+
+// Called by wake_to_active_state when it actually transitions from screen-off/screensaver.
+inline void record_screen_wake() {
+  auto &ws = wake_stats();
+  const WakeReason r = ws.pending;
+  ws.pending = WakeReason::OTHER;
+  ws.counts[static_cast<int>(r)]++;
+  if (!profiler_enabled()) return;
+  ESP_LOGI("PROF", "[PROF:WAKE] reason=%s total_touch=%lu raise=%lu crown=%lu voice=%lu notify=%lu alert=%lu media=%lu other=%lu",
+           wake_reason_name(r),
+           (unsigned long)ws.counts[0], (unsigned long)ws.counts[1], (unsigned long)ws.counts[2],
+           (unsigned long)ws.counts[3], (unsigned long)ws.counts[4], (unsigned long)ws.counts[5],
+           (unsigned long)ws.counts[6], (unsigned long)ws.counts[7]);
+}
+
+// Orientation-qualified raise-to-wake (screen-off only). A deliberate motion spike must be followed
+// within 1.5 s by the screen settling within ~55 deg of face-up/face-down (|z| dominant) for 200 ms.
+// Rejects arm swing, walking and pocket jostle, where the screen stays roughly vertical (|z| small).
+struct RaiseToWakeDetector {
+  uint32_t motion_ms = 0;
+  uint32_t face_up_since_ms = 0;
+
+  void reset() {
+    motion_ms = 0;
+    face_up_since_ms = 0;
+  }
+
+  bool update(float dyn, float thresh, float ax, float ay, float az, uint32_t now_ms) {
+    if (std::isnan(dyn) || std::isnan(ax) || std::isnan(ay) || std::isnan(az)) return false;
+    if (dyn > thresh) motion_ms = (now_ms == 0) ? 1U : now_ms;
+    if (motion_ms == 0 || (now_ms - motion_ms) > 1500U) {
+      face_up_since_ms = 0;
+      return false;
+    }
+    const float horiz = sqrtf(ax * ax + ay * ay);
+    const float vert = fabsf(az);
+    const bool face_up = (vert >= 0.5f) && (vert >= horiz * 0.7f);
+    if (!face_up) {
+      face_up_since_ms = 0;
+      return false;
+    }
+    if (face_up_since_ms == 0) face_up_since_ms = (now_ms == 0) ? 1U : now_ms;
+    if ((now_ms - face_up_since_ms) >= 200U) {
+      reset();
+      return true;
+    }
+    return false;
+  }
+};
+
+inline RaiseToWakeDetector &raise_to_wake() {
+  static RaiseToWakeDetector det;
+  return det;
+}
+
+// Wearables on battery require a double tap to wake from screen-off (sleeve and skin contact
+// produce single touches all day). Docked wearables and all other devices keep single-tap wake.
+inline bool tap_wake_needs_double_tap(bool usb_on) {
+#if LATTER_IS_WEARABLE
+  return !usb_on;
+#else
+  (void)usb_on;
+  return false;
+#endif
+}
+
+// Returns true when this touch-down completes a valid wake gesture from screen-off.
+inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
+  if (!tap_wake_needs_double_tap(usb_on)) return true;
+  static uint32_t first_tap_ms = 0;
+  if (first_tap_ms == 0 || (now_ms - first_tap_ms) > 450U) {
+    first_tap_ms = (now_ms == 0) ? 1U : now_ms;
+    return false;
+  }
+  if ((now_ms - first_tap_ms) < 40U) return false;  // contact bounce
+  first_tap_ms = 0;
+  return true;
+}
+
+// Battery render budget: ambient motion (animated weather canvas) runs at full rate on USB and for
+// 10 s after the last wake or touch on battery, then the page falls back to the 1 Hz display refresh.
+inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms) {
+#if LATTER_IS_STATIONARY
+  (void)usb_on;
+  (void)now_ms;
+  return true;
+#else
+  if (usb_on) return true;
+  const uint32_t last = std::max(last_screen_wake_ms(), touch_gesture().last_touch_ms);
+  return (now_ms - last) < 10000U;
+#endif
+}
+
+// ------------------------------------------------------------------------------
 
 }  // namespace latter_ui

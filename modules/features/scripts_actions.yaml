@@ -10,6 +10,7 @@ script:
       - lambda: |-
           uint32_t now_in = millis();
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
+            latter_ui::note_wake_reason(latter_ui::WakeReason::TOUCH);
             id(wake_to_active_state).execute();
             return;
           }
@@ -509,6 +510,7 @@ script:
           latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
           id(cam_intercom_status_ms) = millis();
           latter_ui::schedule_disp_update(&id(disp1));
+          id(hal_set_audio_codecs_standby).execute(false);
       - script.execute: route_i2s_to_mic
       - script.wait: route_i2s_to_mic
       - voice_assistant.start:
@@ -1226,6 +1228,7 @@ script:
                 // If waking from screen-off or standby, honor Assist Screen Wake preference
                 if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
                   if (id(va_wake_screen_switch).state) {
+                    latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
                     id(wake_to_active_state).execute();
                   }
                 } else {

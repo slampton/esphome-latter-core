@@ -260,6 +260,7 @@ script:
             if (id(hibernate_countdown_val) > 0) {
               id(is_hibernating) = false;
               id(hibernate_countdown_val) = 0;
+              latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
               id(wake_to_active_state).execute();
             }
             return;
@@ -302,6 +303,7 @@ script:
           }
 
           if (!id(display_brightness).current_values.is_on() || id(display_power_state) != 0) {
+            latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
             id(wake_to_active_state).execute();
             return;
           }
