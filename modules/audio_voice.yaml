@@ -132,15 +132,13 @@ media_player:
             duration: 0.1s
         - mixer_speaker.apply_ducking:
             id: announcement_mixing_input
-            decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
+            decibel_reduction: 0
             duration: 0.05s
         - script.execute: route_i2s_to_spk
         - script.wait: route_i2s_to_spk
         - switch.turn_on: speaker_enable
         - lambda: |-
-            float av = id(alert_volume).state;
-            if (std::isnan(av) || av <= 0.0f) av = 80.0f;
-            float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+            float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
             id(physical_speaker).set_volume(spk_v);
             id(hal_set_dac_mute).execute(false);
             id(va_tts_received) = true;
@@ -427,15 +425,13 @@ voice_assistant:
                 duration: 0.1s
             - mixer_speaker.apply_ducking:
                 id: announcement_mixing_input
-                decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
+                decibel_reduction: 0
                 duration: 0.05s
             - script.stop: screen_sleep_timer
             - script.execute: route_i2s_to_spk
             - script.wait: route_i2s_to_spk
             - lambda: |-
-                float av = id(alert_volume).state;
-                if (std::isnan(av) || av <= 0.0f) av = 80.0f;
-                float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+                float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
                 id(physical_speaker).set_volume(spk_v);
                 id(hal_set_dac_mute).execute(false);
                 id(va_vad_active) = false;
@@ -454,15 +450,13 @@ voice_assistant:
           duration: 0.1s
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.25f);'
+          decibel_reduction: 0
           duration: 0.05s
       - script.stop: screen_sleep_timer
       - script.execute: route_i2s_to_spk
       - script.wait: route_i2s_to_spk
       - lambda: |-
-          float av = id(alert_volume).state;
-          if (std::isnan(av) || av <= 0.0f) av = 80.0f;
-          float spk_v = std::clamp((av / 100.0f) * 0.75f, 0.15f, 0.75f);
+          float spk_v = latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
           id(physical_speaker).set_volume(spk_v);
           id(hal_set_dac_mute).execute(false);
           id(va_vad_active) = false;
@@ -821,13 +815,15 @@ script:
             - script.execute: route_i2s_to_spk
             - script.wait: route_i2s_to_spk
       - lambda: |-
-          id(physical_speaker).set_volume(0.90f);
+          // Find My Device always plays at the 0.90 ceiling; alarms/timers follow the Alert Volume model.
+          const float alert_v = id(find_my_active)
+              ? 0.90f
+              : latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+          id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: !lambda |-
-            if (id(find_my_active)) return 0.0f; // Find My Device always plays at 100% volume
-            return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.18f);
+          decibel_reduction: 0
           duration: 0.05s
       - while:
           condition:
@@ -867,11 +863,12 @@ script:
             - script.execute: route_i2s_to_spk
             - switch.turn_on: speaker_enable
             - lambda: |-
-                id(physical_speaker).set_volume(0.90f);
+                id(physical_speaker).set_volume(
+                    latter_ui::alert_output_volume(id(alert_volume).state, id(latter_media_player).volume));
                 id(hal_set_dac_mute).execute(false);
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
-          decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(id(alert_volume).state, 0.18f);'
+          decibel_reduction: 0
           duration: 0.01s
       - rtttl.play:
           id: alarm_rtttl
@@ -912,14 +909,16 @@ script:
           condition:
             media_player.is_playing: latter_media_player
           then:
-            - mixer_speaker.apply_ducking:
-                id: media_mixing_input
-                decibel_reduction: 0
-                duration: 0.2s
+            # Lower the DAC to the music volume before un-ducking the music, so buffered music
+            # never plays back at alert volume.
             - lambda: |-
                 float v = id(latter_media_player).volume;
                 if (std::isnan(v) || v <= 0.0f) v = 0.60f;
                 id(physical_speaker).set_volume(std::clamp(v, 0.10f, 1.0f));
+            - mixer_speaker.apply_ducking:
+                id: media_mixing_input
+                decibel_reduction: 0
+                duration: 0.2s
           else:
             - if:
                 condition:
@@ -968,9 +967,3 @@ number:
     mode: slider
     icon: "mdi:volume-high"
     entity_category: config
-    on_value:
-      then:
-        - mixer_speaker.apply_ducking:
-            id: announcement_mixing_input
-            decibel_reduction: !lambda 'return latter_ui::alert_volume_to_ducking_db(x, 0.18f);'
-            duration: 0.05s

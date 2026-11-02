@@ -61,12 +61,17 @@ inline bool wake_word_should_run(const std::string &ww_mode,
   return mode_allowed && !va_busy && !media_busy && !alert_or_tool_busy && !sys_busy;
 }
 
-// Converts the 20..100% Alert Volume slider value into mixer decibel reduction.
-inline float alert_volume_to_ducking_db(float alert_vol_pct, float scale = 0.25f) {
-  float v = alert_vol_pct;
-  if (std::isnan(v) || v <= 0.0f) v = 80.0f;
-  v = std::clamp(v, 20.0f, 100.0f);
-  return (100.0f - v) * scale;
+// Single loudness model for alerts (alarm/timer/chimes) and voice replies:
+//   - the Alert Volume slider (20..100%) sets the DAC level as a fraction of max_volume,
+//   - never below the music volume the alert interrupts (a reply is never quieter than the music),
+//   - the announcement mixer input itself is never ducked, so the slider is applied exactly once.
+inline float alert_output_volume(float alert_vol_pct, float media_volume, float max_volume = 0.90f) {
+  float a = alert_vol_pct;
+  if (std::isnan(a) || a <= 0.0f) a = 80.0f;
+  a = std::clamp(a, 20.0f, 100.0f);
+  const float level = max_volume * (a / 100.0f);
+  const float music = (std::isnan(media_volume) || media_volume <= 0.0f) ? 0.0f : std::min(media_volume, 1.0f);
+  return std::clamp(std::max(level, music), 0.15f, 1.0f);
 }
 
 // Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode,
