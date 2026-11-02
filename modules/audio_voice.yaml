@@ -791,6 +791,7 @@ script:
   - id: play_alarm_sound
     mode: restart
     then:
+      - script.stop: stop_alarm_sound
       - script.stop: mp_idle_debounce
       - script.stop: cancel_voice_assistant
       - script.stop: va_tts_drain_and_finish
@@ -906,6 +907,14 @@ script:
   - id: stop_alarm_sound
     mode: restart
     then:
+      # Over music, silence the DAC before stopping RTTTL. Up to ~1 s of alarm samples is still queued
+      # in announcement_mixing_input plus the I2S buffer; letting that tail play after the DAC drops to
+      # music level sounded like a quiet echo of the alarm on dismiss.
+      - if:
+          condition:
+            media_player.is_playing: latter_media_player
+          then:
+            - lambda: 'id(hal_set_dac_mute).execute(true);'
       - rtttl.stop:
           id: alarm_rtttl
       - script.stop: play_alarm_sound
@@ -917,12 +926,18 @@ script:
           condition:
             media_player.is_playing: latter_media_player
           then:
-            # Lower the DAC to the music volume before un-ducking the music, so buffered music
-            # never plays back at alert volume.
+            # Drain the muted alarm tail (bounded), then lower the DAC to the music volume and unmute
+            # before un-ducking the music, so neither the tail nor buffered music plays at the wrong level.
+            - wait_until:
+                condition:
+                  lambda: 'return !id(announcement_mixing_input).is_running();'
+                timeout: 1500ms
+            - delay: 300ms
             - lambda: |-
                 float v = id(latter_media_player).volume;
                 if (std::isnan(v) || v <= 0.0f) v = 0.60f;
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                id(hal_set_dac_mute).execute(false);
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 0
