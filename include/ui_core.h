@@ -2076,7 +2076,7 @@ struct FrameProfileScope {
       fr.max_render_page = page;
       fr.max_render_sub = sub;
     }
-    static constexpr uint32_t kSlowFrameUs = (SCREEN_W * SCREEN_H > 300000) ? 110000U : 22000U;
+    static constexpr uint32_t kSlowFrameUs = (SCREEN_W * SCREEN_H > 300000) ? 110000U : 65000U;
     const bool is_slow = (render_us >= kSlowFrameUs);
     if (is_slow) fr.slow_frames++;
 
