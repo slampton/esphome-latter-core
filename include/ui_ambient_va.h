@@ -162,7 +162,14 @@ inline void render_screensaver_aurora(DisplayT &it, int cx, int cy, uint32_t now
         uint8_t cr = static_cast<uint8_t>(r > 255 ? 255 : r);
         uint8_t cg = static_cast<uint8_t>(g > 255 ? 255 : g);
         uint8_t cb = static_cast<uint8_t>(b > 255 ? 255 : b);
-        fast_hline(it, c.x, py, FILL_W, esphome::Color(cr, cg, cb));
+        const esphome::Color veil_col(cr, cg, cb);
+        fast_hline(it, c.x, py, FILL_W, veil_col);
+#if LATTER_PANEL_IPS
+        // IPS LCDs drive pixels with alternating polarity (line/dot inversion). A lit/black
+        // alternate-row pattern beats against that inversion and flickers regardless of
+        // backlight level, so IPS panels also fill the skipped row (same color, no extra math).
+        if (py + 1 <= c.col_bot) fast_hline(it, c.x, py + 1, FILL_W, veil_col);
+#endif
       }
     }
   }

@@ -68,9 +68,6 @@ esphome:
     # Fitted cell: 500mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
     - "-DLATTER_PMU_CHARGE_MA=400"
     - "-DLATTER_BACKLIGHT_PIN=28"
-    # Low-side FET (DMG1012T) PWM dimming. 20kHz / 10-bit (vendor BSP: 5kHz) avoids visible and camera flicker.
-    - "-DLATTER_BACKLIGHT_PWM_HZ=20000"
-    - "-DLATTER_BACKLIGHT_PWM_BITS=10"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
@@ -105,8 +102,10 @@ psram:
   speed: 200MHz
   ignore_not_found: false
 
-# Console: the USB-C port is a CH343 USB-UART bridge on UART0 (GPIO37/38). The P4's USB-Serial-JTAG
-# pins (GPIO24/25) are not wired to a USB connector, so logs and the bootloader console use UART0.
+# Console: of the two USB-C ports, the CH343 USB-UART bridge (UART0, GPIO37/38) is the serial console;
+# the other is the P4's USB 2.0 OTG port. The P4's USB-Serial-JTAG pins (GPIO24/25) only reach a header,
+# so logs use UART0. Note: OTA updates replace the app only; the 2nd-stage bootloader keeps the console it
+# was first flashed with until the next USB (factory) flash.
 logger:
   hardware_uart: UART0
 
