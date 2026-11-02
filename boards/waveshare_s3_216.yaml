@@ -1,11 +1,14 @@
 # ==============================================================================
 # Hardware Abstraction Layer (HAL): Waveshare ESP32-S3-Touch-AMOLED-2.16 ("Mobile Assistant")
 # SKU:     33969
-# Display: 2.16" 480x480 Square AMOLED (CO5300 over 80MHz Quad-SPI, RST: GPIO39, CS: GPIO12)
-# Touch:   CST9220 @ 0x5A (INT: GPIO11, RST: GPIO40)
+# Display: 2.16" 480x480 Square AMOLED (CO5300 over Quad-SPI, RST: GPIO39, CS: GPIO12). LCD_TE unrouted.
+# Touch:   CST9217 @ 0x5A (INT: GPIO11, RST: GPIO40) - marketed as "CST9220", driven by the cst9220 platform
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO8) + ES7210 ADC @ 0x40 (DIN: GPIO10), PA: GPIO46
 # Clocks:  MCLK: GPIO42, BCLK: GPIO9, LRCLK/WS: GPIO45
-# PMU/IMU: AXP2101 @ 0x34 (SYS_OUT: GPIO16), QMI8658 @ 0x6B, PCF85063 RTC @ 0x51, Key3: GPIO18
+# PMU:     AXP2101 @ 0x34 (AXP_IRQ NOT routed; DCDC1 = all 3V3, ALDO1 = audio A3V3, other rails unused),
+#          PWR key SYS_OUT -> GPIO16 (HIGH while pressed)
+# Other:   QMI8658 @ 0x6B (INT1: GPIO17, INT2: GPIO21), PCF85063 RTC @ 0x51 (INT: GPIO13), Key3: GPIO18,
+#          SD (CMD 1, CLK 2, D0 3, CS 41)
 # ==============================================================================
 
 substitutions:
@@ -54,8 +57,12 @@ esphome:
     - "-DLATTER_PANEL_PPI=222"
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
-    - "-DLATTER_PMU_IRQ_PIN=16"
-    - "-DLATTER_PMU_IRQ_ACTIVE_HIGH=1"
+    - "-DLATTER_PWR_KEY_PIN=16"
+    - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
+    - "-DLATTER_PWR_KEY_DEEP_SLEEP_WAKE=1"
+    - "-DLATTER_PMU_TS_DISABLE=1"
+    - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
+    - "-DLATTER_PMU_LDO_KEEP_MASK=0x001"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
@@ -203,6 +210,18 @@ binary_sensor:
     name: "Boot Button"
     id: boot_button
     entity_category: diagnostic
+
+  # PWR key state (AXP PWRON -> BSS138 -> SYS_OUT -> GPIO16, HIGH while pressed). Press timing lives
+  # in modules/pmu_axp2101.yaml. GPIO16 is an RTC GPIO, so it also arms the ext0 deep-sleep wake.
+  - platform: gpio
+    id: pwr_key
+    name: "Power Key"
+    internal: true
+    pin:
+      number: GPIO16
+      mode: INPUT
+    filters:
+      - delayed_on_off: 20ms
 
 display:
   - platform: mipi_spi

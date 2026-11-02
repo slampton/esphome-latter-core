@@ -1,14 +1,30 @@
 # ==============================================================================
-# Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-WIFI6-Touch-LCD-4B ("Desk Assistant")
-# SKU:     31416
-# SoC:     ESP32-P4NRW32 (32MB PSRAM, 32MB Flash) + ESP32-C6 Wi-Fi 6 / BLE 5 over SDIO
-# Display: 4.0" 720x720 Square IPS (ST7703 over 2-Lane MIPI-DSI, RST: GPIO27, BL: GPIO26)
-# Touch:   GT911 @ 0x5D (I2C SDA: GPIO7, SCL: GPIO8, RST: GPIO23)
-# Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO9) + ES7210 ADC @ 0x40 (DIN: GPIO11), PA: GPIO53
+# Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-86-Panel-ETH-2RO ("Desk Assistant")
+# SKU:     31570 (mainboard shared with ESP32-P4-WIFI6-Touch-LCD-4B, SKU 31416 - 4B not yet validated)
+# SoC:     ESP32-P4NRW32 (32MB PSRAM, 32MB GD25Q256 Flash) + ESP32-C6-MINI-1U (U.FL antenna) over SDIO
+# Silicon: rev1.3 AND rev3.x units ship. Binaries are NOT cross-compatible; select with p4_silicon below.
+# Display: 4.0" 720x720 IPS (ST7703, 2-Lane MIPI-DSI @ 480Mbps/lane, 38MHz DPI, RST: GPIO27)
+#          TE: test point only (unrouted). PHY: esp_ldo channel 3 @ 2.5V.
+# Backlight: AP3032 boost, analog dimming GPIO26 -> 10k/100nF RC (tau ~1ms) -> FB (higher duty = dimmer),
+#            BL_EN GPIO33 (100k pull-up to 5V; LOW = boost fully off). PWM must be >= 5kHz.
+# Touch:   GT911 @ 0x5D/0x14 (I2C SDA: GPIO7, SCL: GPIO8). RST GPIO23 not driven; INT on test point only.
+# Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO9) + ES7210 ADC @ 0x40 (DIN: GPIO11), PA (NS4150B): GPIO53
+#          ES7210 mics: MIC1=FL, MIC2=FR, MIC3=AEC loopback of ES8311 output (TDM only), MIC4=NC
 # Clocks:  MCLK: GPIO13, BCLK: GPIO12, LRCLK/WS: GPIO10
+# C6:      SDIO CLK18/CMD19/D0-D3 14-17, CHIP_PU GPIO54, C6 IO2 <-> GPIO6 (host-wake line)
+# SD:      SDMMC slot 0 (D0-D3 39-42, CLK 43, CMD 44), power P-FET gate GPIO45
+# RESERVED (bottom board - never assign in core or this HAL):
+#   IP101 Ethernet RMII: GPIO28, 29, 30, 31 (MDC), 34, 35 (TXD1, shared with BOOT), 49, 50, 51, 52 (MDIO)
+#   Relays: GPIO32, GPIO46   |   RS485: TX GPIO47, RX GPIO48
 # ==============================================================================
 
 substitutions:
+  # P4 silicon profile (one source of truth; CI publishes both variants):
+  #   rev1 -> p4_engineering_sample: "true",  p4_cpu_frequency: "360MHz"  (v1.x silicon)
+  #   rev3 -> p4_engineering_sample: "false", p4_cpu_frequency: "400MHz"  (v3.x silicon)
+  p4_silicon: "rev1"
+  p4_engineering_sample: "true"
+  p4_cpu_frequency: "360MHz"
   screen_w: "720"
   screen_h: "720"
   font_time_size: "112"
@@ -38,7 +54,7 @@ substitutions:
 
 esphome:
   build_flags:
-    - '-DLATTER_BOARD_ID=\"waveshare_p4_4b\"'
+    - '-DLATTER_BOARD_ID=\"waveshare_p4_86_panel\"'
     - "-DLATTER_BLE_MINOR=5"
     - "-DLATTER_SCREEN_W=720"
     - "-DLATTER_SCREEN_H=720"
@@ -54,10 +70,13 @@ esphome:
     - "-DLATTER_PANEL_PPI=254"
     - "-DLATTER_CHIP_P4=1"
     - "-DLATTER_PSRAM_MB=32"
-    - "-DLATTER_NO_PMU_IRQ_PIN=1"
     - "-DLATTER_BACKLIGHT_PIN=26"
     - "-DLATTER_BACKLIGHT_EN_PIN=33"
     - "-DLATTER_BACKLIGHT_INVERTED=1"
+    - "-DLATTER_BACKLIGHT_PWM_HZ=5000"
+    - "-DLATTER_BACKLIGHT_PWM_BITS=10"
+    - "-DLATTER_BACKLIGHT_DUTY_MIN_PCT=10"
+    - "-DLATTER_BACKLIGHT_DUTY_MAX_PCT=80"
     - "-DLATTER_DSI_IRAM_SAFE=1"
     - "-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
@@ -67,8 +86,9 @@ esphome:
 
 esp32:
   variant: esp32p4
-  engineering_sample: true
-  cpu_frequency: 360MHz
+  # rev1.x builds only boot rev1.x silicon and rev3.x builds only boot rev3.x silicon (see p4_silicon).
+  engineering_sample: ${p4_engineering_sample}
+  cpu_frequency: ${p4_cpu_frequency}
   flash_size: 32MB
   framework:
     type: esp-idf
@@ -189,6 +209,8 @@ switch:
     restore_mode: ALWAYS_OFF
 
 binary_sensor:
+  # BOOT key (GPIO35) is shared with IP101 RMII TXD1 on the bottom board. Valid only while
+  # Ethernet is disabled; enabling ethernet: requires moving boot_button to a template sensor.
   - platform: gpio
     pin:
       number: GPIO35
@@ -205,6 +227,8 @@ display:
     model: WAVESHARE-P4-86-PANEL
     update_interval: 1s
 
+# GT911: TP_INT is unrouted (test point TP2), so no interrupt_pin, and no reset_pin
+# (resetting with INT floating can strap the controller to 0x14).
 touchscreen:
   - platform: gt911
     id: touch_screen

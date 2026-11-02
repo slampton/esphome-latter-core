@@ -1,7 +1,9 @@
 # Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
 # Desk Assistant (v2.2 Modular Architecture)
-# Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-4B (720x720 Square Display, SKU 31416)
+# Target: Waveshare ESP32-P4-86-Panel-ETH-2RO (720x720 Square Display, SKU 31570)
+#         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_86_panel.yaml
+#         (default rev1 = v1.x engineering silicon; CI also publishes a rev3 build).
 # Framework: ESPHome 2026.10.0+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
@@ -44,7 +46,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.10.0
   project:
-    name: "slampton.desk-assistant-p4-4b"
+    name: "slampton.desk-assistant-p4-86"
     version: "${version}"
 
 logger:
@@ -56,7 +58,7 @@ update:
     id: latter_firmware_update
     name: "Project Firmware"
     icon: "mdi:cellphone-arrow-down"
-    source: "https://slampton.github.io/esphome-latter-core/manifests/desk-assistant.json"
+    source: "https://slampton.github.io/esphome-latter-core/manifests/desk-assistant-${p4_silicon}.json"
     update_interval: never
 
 wifi:
@@ -81,7 +83,7 @@ safe_mode:
   boot_is_good_after: 60s
 
 packages:
-  hal: !include ../boards/waveshare_p4_4b.yaml
+  hal: !include ../boards/waveshare_p4_86_panel.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power:       !include ../modules/power_manager.yaml
   latter_client:      !include ../modules/latter_client.yaml

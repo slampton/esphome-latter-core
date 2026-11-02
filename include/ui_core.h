@@ -322,23 +322,7 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 #endif
 }
 
-// Hardware-Trait Driven PMU IRQ & Wearable Motion Helpers (Zero hardcoded board numbers)
-inline bool hal_pmu_irq_asserted() {
-#if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
-#if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
-  static int prev_lvl = 1;
-  int cur_lvl = gpio_get_level(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN));
-  bool rising_edge = (cur_lvl == 1 && prev_lvl == 0);
-  prev_lvl = cur_lvl;
-  return rising_edge;
-#else
-  return (gpio_get_level(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN)) == 0);
-#endif
-#else
-  return false;
-#endif
-}
-
+// Hardware-Trait Driven Wearable Motion Helpers (Zero hardcoded board numbers)
 inline float get_pickup_motion_threshold(bool screen_is_active) {
 #if LATTER_IS_WEARABLE
   return screen_is_active ? 0.22f : 0.38f;

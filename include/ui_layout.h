@@ -37,6 +37,18 @@
 #ifndef LATTER_AUDIO_IN_RATE
 #define LATTER_AUDIO_IN_RATE 16000
 #endif
+#ifndef LATTER_BACKLIGHT_PWM_HZ
+#define LATTER_BACKLIGHT_PWM_HZ 2000
+#endif
+#ifndef LATTER_BACKLIGHT_PWM_BITS
+#define LATTER_BACKLIGHT_PWM_BITS 8
+#endif
+#ifndef LATTER_BACKLIGHT_DUTY_MIN_PCT
+#define LATTER_BACKLIGHT_DUTY_MIN_PCT 0
+#endif
+#ifndef LATTER_BACKLIGHT_DUTY_MAX_PCT
+#define LATTER_BACKLIGHT_DUTY_MAX_PCT 100
+#endif
 
 #if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && defined(LATTER_DSI_IRAM_SAFE)
 #include <esp_attr.h>
@@ -527,30 +539,40 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
   gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), (bri_byte > 0) ? 1 : 0);
 #endif
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
+  // Board-owned backlight PWM traits (defaults: 2 kHz, 8-bit, full 0..100% duty window).
+  // Analog-dimming backlights (PWM -> RC filter -> boost FB) need a PWM period well below the
+  // RC time constant, so boards declare LATTER_BACKLIGHT_PWM_HZ / _BITS / _DUTY_MIN_PCT / _DUTY_MAX_PCT.
+  constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
+  static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
+  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PCT >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PCT < LATTER_BACKLIGHT_DUTY_MAX_PCT &&
+                    LATTER_BACKLIGHT_DUTY_MAX_PCT <= 100,
+                "LATTER_BACKLIGHT_DUTY_MIN_PCT/_MAX_PCT must satisfy 0 <= MIN < MAX <= 100");
+  constexpr uint32_t kMaxDuty = (1UL << kPwmBits) - 1UL;
+  constexpr uint32_t kOnMin = (kMaxDuty * static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PCT)) / 100UL;
+  constexpr uint32_t kOnMax = (kMaxDuty * static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PCT)) / 100UL;
+  const uint32_t on_duty = (bri_byte == 0)
+      ? 0UL
+      : kOnMin + (((kOnMax - kOnMin) * static_cast<uint32_t>(bri_byte)) + 127UL) / 255UL;
 #if defined(LATTER_BACKLIGHT_INVERTED) && LATTER_BACKLIGHT_INVERTED
-  // P4-4B active-low backlight boost controller: 200Hz PWM, 10%..80% duty window (25..204)
-  const uint8_t scaled_bri = (bri_byte == 0)
-      ? 0
-      : static_cast<uint8_t>(25U + (static_cast<uint16_t>(bri_byte) * 179U) / 255U);
-  const uint8_t hw_duty = (scaled_bri == 0) ? 255 : static_cast<uint8_t>(255 - scaled_bri);
-  const uint32_t pwm_freq_hz = 200;
+  // Inverted (analog-dimming) backlight: higher duty = dimmer; brightness 0 parks at full duty
+  // while LATTER_BACKLIGHT_EN_PIN (if present) switches the boost converter fully off.
+  const uint32_t hw_duty = kMaxDuty - on_duty;
   const int gpio_on_lvl = 0;
   const int gpio_off_lvl = 1;
 #else
-  const uint8_t hw_duty = bri_byte;
-  const uint32_t pwm_freq_hz = 2000;
+  const uint32_t hw_duty = on_duty;
   const int gpio_on_lvl = 1;
   const int gpio_off_lvl = 0;
 #endif
   static bool ledc_timer_inited = false;
   static bool ledc_channel_inited = false;
-  static int last_hw_duty = -1;
+  static int64_t last_hw_duty = -1;
   if (!ledc_timer_inited) {
     ledc_timer_config_t ledc_timer = {};
     ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
-    ledc_timer.duty_resolution = LEDC_TIMER_8_BIT;
+    ledc_timer.duty_resolution = static_cast<ledc_timer_bit_t>(kPwmBits);
     ledc_timer.timer_num = LEDC_TIMER_0;
-    ledc_timer.freq_hz = pwm_freq_hz;
+    ledc_timer.freq_hz = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_HZ);
     ledc_timer.clk_cfg = LEDC_AUTO_CLK;
     if (ledc_timer_config(&ledc_timer) == ESP_OK) {
       ledc_timer_inited = true;
@@ -570,7 +592,7 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
         ledc_channel_inited = true;
         last_hw_duty = hw_duty;
       }
-    } else if (last_hw_duty != static_cast<int>(hw_duty)) {
+    } else if (last_hw_duty != static_cast<int64_t>(hw_duty)) {
       ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, hw_duty);
       ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
       last_hw_duty = hw_duty;

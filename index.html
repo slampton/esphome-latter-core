@@ -217,6 +217,25 @@
     color: var(--muted);
     font-size: 13px;
   }
+  .rev-picker {
+    margin-top: 12px;
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .rev-picker select {
+    max-width: 260px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+  }
+  .rev-picker .rev-hint {
+    color: var(--muted);
+    font-size: 12px;
+  }
   .btn-install {
     background: var(--accent);
     color: #ffffff;
@@ -294,6 +313,11 @@
     <div class="installer-meta">
       <h2 id="sel-title">Pocket Assistant (1.75" Round AMOLED)</h2>
       <p id="sel-desc">Target: Waveshare ESP32-S3-Touch-AMOLED-1.75C &bull; 466&times;466 Circular QSPI AMOLED</p>
+      <div class="rev-picker" id="rev-picker" hidden>
+        <label for="rev-select">ESP32-P4 chip revision</label>
+        <select id="rev-select" onchange="selectVariant(this.value)"></select>
+        <p class="rev-hint">Check the boot log line <code>chip revision: v1.x</code> or <code>v3.x</code>. A build for one revision will not boot on the other.</p>
+      </div>
     </div>
     <esp-web-install-button id="install-btn" manifest="manifests/pocket-assistant.json">
       <button slot="activate" class="btn-install" id="install-btn-label">Connect &amp; Install Pocket Assistant</button>
@@ -343,15 +367,21 @@ const DEVICES = [
     chip: "ESP32-P4 + C6",
     subtitle: "3.5\" Widescreen Handheld + Camera (320×480)",
     hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (SKU 33360)",
-    manifest: "manifests/remote-assistant.json"
+    variants: [
+      { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/remote-assistant-rev3.json" },
+      { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/remote-assistant-rev1.json" }
+    ]
   },
   {
     slug: "desk-assistant",
     title: "Desk Assistant",
     chip: "ESP32-P4 + C6",
     subtitle: "4.0\" Stationary HD Panel (720×720)",
-    hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-4B (SKU 31416)",
-    manifest: "manifests/desk-assistant.json"
+    hardware: "Waveshare ESP32-P4-86-Panel-ETH-2RO (SKU 31570)",
+    variants: [
+      { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/desk-assistant-rev1.json" },
+      { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/desk-assistant-rev3.json" }
+    ]
   }
 ];
 
@@ -375,9 +405,27 @@ function selectDevice(slug) {
   SELECTED_SLUG = dev.slug;
   document.getElementById("sel-title").textContent = `${dev.title} — ${dev.subtitle}`;
   document.getElementById("sel-desc").textContent = `Target: ${dev.hardware}`;
-  document.getElementById("install-btn").setAttribute("manifest", dev.manifest);
+  const picker = document.getElementById("rev-picker");
+  const sel = document.getElementById("rev-select");
+  if (dev.variants) {
+    sel.innerHTML = dev.variants.map(v => `<option value="${v.id}">${v.label}</option>`).join("");
+    picker.hidden = false;
+    selectVariant(dev.variants[0].id);
+  } else {
+    sel.innerHTML = "";
+    picker.hidden = true;
+    document.getElementById("install-btn").setAttribute("manifest", dev.manifest);
+  }
   document.getElementById("install-btn-label").textContent = `Connect & Install ${dev.title}`;
   renderCards();
+}
+
+function selectVariant(variantId) {
+  const dev = DEVICES.find(d => d.slug === SELECTED_SLUG);
+  if (!dev || !dev.variants) return;
+  const variant = dev.variants.find(v => v.id === variantId) || dev.variants[0];
+  document.getElementById("rev-select").value = variant.id;
+  document.getElementById("install-btn").setAttribute("manifest", variant.manifest);
 }
 
 function renderCards() {

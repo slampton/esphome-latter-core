@@ -7,6 +7,21 @@
 #include "ui_layout.h"
 #include "ui_music.h"
 
+#if defined(USE_ESP32)
+#include <driver/rtc_io.h>
+#include <soc/soc_caps.h>
+#endif
+
+#ifndef LATTER_PWR_KEY_ACTIVE_HIGH
+#define LATTER_PWR_KEY_ACTIVE_HIGH 1
+#endif
+#ifndef LATTER_PWR_KEY_DEEP_SLEEP_WAKE
+#define LATTER_PWR_KEY_DEEP_SLEEP_WAKE 0
+#endif
+#ifndef LATTER_PMU_TS_DISABLE
+#define LATTER_PMU_TS_DISABLE 0
+#endif
+
 namespace latter_ui {
 
 // =============================================================================
@@ -157,15 +172,24 @@ inline int32_t seconds_until_next_armed_alarm(const esphome::ESPTime &now, uint3
   return (best_sec <= 43200) ? best_sec : -1;
 }
 
+// Returns the PWR key pad to the digital GPIO matrix after an ext0 deep-sleep wake (the wake pad
+// stays in the RTC IO domain after wake until rtc_gpio_deinit(), which would freeze the
+// binary_sensor reading). No-op on boards without a deep-sleep-capable PWR key.
+inline void hal_release_pwr_key_wake_pad() {
+#if defined(USE_ESP32) && defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
+  const gpio_num_t pin = static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN);
+  if (rtc_gpio_is_valid_gpio(pin)) {
+    rtc_gpio_deinit(pin);
+  }
+#endif
+}
+
 template <typename I2cBusT>
 inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_until_alarm) {
 #ifdef USE_ESP32
-#if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN) && !defined(CONFIG_IDF_TARGET_ESP32P4)
-#if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
-  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN), 1);
-#else
-  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PMU_IRQ_PIN), 0);
-#endif
+#if defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_PM_SUPPORT_EXT0_WAKEUP
+  // Alarm-sleep keeps AXP2101 rails ON, so a PWR key press wakes the SoC through ext0.
+  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN), LATTER_PWR_KEY_ACTIVE_HIGH ? 1 : 0);
 #endif
   if (sec_until_alarm > 0 && sec_until_alarm <= 43200) {
     uint64_t wake_sec = static_cast<uint64_t>((sec_until_alarm > 90) ? (sec_until_alarm - 90) : 15);
@@ -193,6 +217,81 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_unt
 template <typename I2cBusT>
 inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {
   if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
+}
+
+// Canonical AXP2101 boot configuration (register map per XPowersLib AXP2101Constants.h).
+//   1. Masks every IRQ source (REG40-42) and clears latched status (REG48-4A): no supported
+//      board routes AXP_IRQ to the SoC; the PWR key is read from its own GPIO instead.
+//   2. LATTER_PMU_TS_DISABLE=1: boards with no NTC on TS -> TS is an external fixed input that does
+//      not gate the charger (REG50 = (v & 0xF0) | 0x10) and its ADC channel stops sampling (REG30 bit1).
+//   3. LATTER_PMU_DCDC_KEEP_MASK (REG80 bits0-4 = DCDC1..5) and LATTER_PMU_LDO_KEEP_MASK
+//      (bits0-7 = REG90 ALDO1-4/BLDO1-2/CPUSLDO/DLDO1, bit8 = REG91 bit0 DLDO2) only ever switch
+//      rails OFF; rails outside the mask that have no load per the schematic are disabled.
+//      Boards without a verified rail map leave both masks undefined (OTP defaults retained).
+//   4. LATTER_PMU_CHARGE_MA (100..1000): constant-charge current (REG62), set per board from the
+//      fitted cell capacity (<= 1C). Undefined = OTP default retained.
+template <typename I2cBusT>
+inline void hal_init_axp2101(I2cBusT *bus) {
+#ifdef USE_ESP32
+  if (bus == nullptr) return;
+  constexpr uint8_t kAxpAddr = 0x34;
+  auto rd = [bus](uint8_t reg, uint8_t &val) -> bool {
+    return bus->write_readv(kAxpAddr, &reg, 1, &val, 1) == esphome::i2c::ERROR_OK;
+  };
+  auto wr = [bus](uint8_t reg, uint8_t val) -> bool {
+    const uint8_t buf[2] = {reg, val};
+    return bus->write(kAxpAddr, buf, 2) == esphome::i2c::ERROR_OK;
+  };
+
+  for (uint8_t reg = 0x40; reg <= 0x42; reg++) wr(reg, 0x00);
+  for (uint8_t reg = 0x48; reg <= 0x4A; reg++) wr(reg, 0xFF);
+
+  uint8_t v = 0;
+#if LATTER_PMU_TS_DISABLE
+  if (rd(0x50, v)) wr(0x50, static_cast<uint8_t>((v & 0xF0) | 0x10));
+  if (rd(0x30, v)) wr(0x30, static_cast<uint8_t>(v & ~0x02));
+#endif
+
+#if defined(LATTER_PMU_DCDC_KEEP_MASK)
+  static_assert((LATTER_PMU_DCDC_KEEP_MASK & 0x01) != 0, "LATTER_PMU_DCDC_KEEP_MASK must keep DCDC1 (SoC 3V3)");
+  if (rd(0x80, v)) wr(0x80, static_cast<uint8_t>(v & (0xE0 | (LATTER_PMU_DCDC_KEEP_MASK & 0x1F))));
+#endif
+#if defined(LATTER_PMU_LDO_KEEP_MASK)
+  if (rd(0x90, v)) wr(0x90, static_cast<uint8_t>(v & (LATTER_PMU_LDO_KEEP_MASK & 0xFF)));
+  if (rd(0x91, v)) wr(0x91, static_cast<uint8_t>(v & (0xFE | ((LATTER_PMU_LDO_KEEP_MASK >> 8) & 0x01))));
+#endif
+
+#if defined(LATTER_PMU_CHARGE_MA)
+  static_assert(LATTER_PMU_CHARGE_MA >= 100 && LATTER_PMU_CHARGE_MA <= 1000,
+                "LATTER_PMU_CHARGE_MA must be within 100..1000 mA");
+  constexpr uint8_t kIccCode = (LATTER_PMU_CHARGE_MA <= 200)
+                                   ? static_cast<uint8_t>(LATTER_PMU_CHARGE_MA / 25)
+                                   : static_cast<uint8_t>(8 + (LATTER_PMU_CHARGE_MA - 200) / 100);
+  if (rd(0x62, v)) wr(0x62, static_cast<uint8_t>((v & 0xE0) | kIccCode));
+#endif
+
+  // Configuration snapshot for the board facts ledger / bring-up log.
+  uint8_t r62 = 0, r64 = 0, r80 = 0, r90 = 0, r91 = 0, r30 = 0, r50 = 0, r27 = 0;
+  rd(0x62, r62);
+  rd(0x64, r64);
+  rd(0x80, r80);
+  rd(0x90, r90);
+  rd(0x91, r91);
+  rd(0x30, r30);
+  rd(0x50, r50);
+  rd(0x27, r27);
+  const uint8_t icc = r62 & 0x1F;
+  const int icc_ma = (icc <= 8) ? (icc * 25) : (200 + (icc - 8) * 100);
+  ESP_LOGI("pmu", "AXP2101: ICC=%dmA (0x62=0x%02X) CV=0x%02X DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X",
+           icc_ma, r62, r64, r80, r90, r91, r30, r50, r27);
+#else
+  (void)bus;
+#endif
+}
+
+template <typename I2cBusT>
+inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
+  if (bus_pp != nullptr) hal_init_axp2101(*bus_pp);
 }
 
 inline std::string &latter_site_id() {

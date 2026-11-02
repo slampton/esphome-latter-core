@@ -34,7 +34,7 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 | `hal_set_dac_mute` | `muted: bool` | Mute the codec output |
 | `hal_set_audio_codecs_standby` | `standby: bool` | Put the codecs into low-power standby, or wake them |
 | `hal_set_imu_power_mode` | `ctrl7_val: int` | IMU power mode. 0 means off. |
-| `hal_init_pmu_irq` | — | Configure the PMU interrupt at boot |
+| `hal_init_pmu` | — | Configure the PMU at boot: mask IRQs, apply rail, TS, and charger traits (no-op in `pmu_none.yaml`) |
 | `hal_release_deep_sleep_holds` | — | Release GPIO holds at boot, and pulse touch reset if the touch driver can't |
 | `hal_enter_hardware_hibernate` | — | Hold pins and cut power. Called after the core has saved state and disconnected from the API. |
 
@@ -53,7 +53,7 @@ packages:
 ```
 
 - **Different PMU or IMU chip:** write a module that provides the same scripts and sensors.
-  - PMU: `hal_poll_pmu_1s`, `hal_poll_pmu_button_50ms(did_ss_draw: bool)`, `hal_wait_pmu_button_release`, `usb_connected`, `batt_charging`, `batt_level`, `batt_voltage`.
+  - PMU: `hal_init_pmu`, `hal_poll_pmu_1s`, `hal_wait_pwr_key_release`, `usb_connected`, `batt_charging`, `batt_level`, `batt_voltage`. The board file defines the PWR key itself as a GPIO `binary_sensor` with `id: pwr_key`; `pmu_axp2101.yaml` adds the short and long press handling.
   - IMU: `accel_x`, `accel_y`, `accel_z`, `imu_roll`, `imu_pitch`, `imu_temp`, `motion_mag`.
 - **Axis inversions:** keep board-specific inversions, such as `- multiply: -1.0`, in the board file, not in the module.
 
@@ -84,7 +84,9 @@ Optional hardware flags:
 | Flag | When |
 | :--- | :--- |
 | `LATTER_BACKLIGHT_PIN`, `LATTER_BACKLIGHT_EN_PIN`, `LATTER_BACKLIGHT_INVERTED` | LCD panels with a PWM backlight |
-| `LATTER_PMU_IRQ_PIN`, `LATTER_PMU_IRQ_ACTIVE_HIGH`, `LATTER_NO_PMU_IRQ_PIN` | The PMU interrupt pin and its polarity, or no pin at all |
+| `LATTER_BACKLIGHT_PWM_HZ`, `LATTER_BACKLIGHT_PWM_BITS`, `LATTER_BACKLIGHT_DUTY_MIN_PCT`, `LATTER_BACKLIGHT_DUTY_MAX_PCT` | Backlight PWM frequency, resolution, and usable duty window. Defaults: 2000 Hz, 8-bit, 0-100 %. Analog-dimming backlights (PWM into an RC filter on the boost converter's feedback pin) need a frequency well above the RC corner, at least 5 kHz. |
+| `LATTER_PWR_KEY_PIN`, `LATTER_PWR_KEY_ACTIVE_HIGH`, `LATTER_PWR_KEY_DEEP_SLEEP_WAKE` | The GPIO that reads the power key (for example the AXP2101 `SYS_OUT` net), its polarity, and whether it is RTC/LP-capable and can wake the chip from deep sleep. Must match the `pwr_key` binary sensor's pin. |
+| `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK`, `LATTER_PMU_CHARGE_MA` | AXP2101 traits: no NTC on TS; which DCDC and LDO rails stay on (everything else with no load is turned off); charge current from the fitted cell's capacity. Leave a trait undefined if the schematic doesn't confirm it. |
 | `LATTER_CORNER_R` | A corner radius other than the default |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels. See [ESP32-P4](#6-esp32-p4). |
 
@@ -114,8 +116,8 @@ esp32:
 - **MIPI-DSI panels:**
   - Enable `CONFIG_LCD_DSI_ISR_CACHE_SAFE`, `CONFIG_GDMA_ISR_IRAM_SAFE`, and `CONFIG_DW_GDMA_ISR_IRAM_SAFE`.
   - Add `-DLATTER_DSI_IRAM_SAFE=1` and `-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks`. This swaps in an IRAM-resident callback, so the panel keeps scanning out during OTA flash erases.
-  - See [`waveshare_p4_4b.yaml`](../boards/waveshare_p4_4b.yaml).
-- **Chip revision:** set `engineering_sample: true` only for P4 silicon earlier than revision 3.0.
+  - See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
+- **Chip revision:** P4 boards declare a silicon profile in `substitutions:` (`p4_silicon`, `p4_engineering_sample`, `p4_cpu_frequency`), with `rev1` = `true` / `360MHz` and `rev3` = `false` / `400MHz`. Builds for one revision don't boot the other, so the release workflow publishes both. See [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml).
 
 ## 7. Checklist
 
@@ -123,7 +125,7 @@ Before you call a board done, check each of these against the schematic:
 1. **Display:** bus type, reset pin, offsets, color order, inversion, mirroring.
 2. **Touch:** chip and I2C address, interrupt and reset pins. If the driver has no `reset_pin`, pulse reset in `hal_release_deep_sleep_holds`.
 3. **Audio:** two I2S controllers or one shared bus; codec addresses; amplifier enable pin.
-4. **Power:** PMU interrupt pin and polarity; which pins to hold during hibernate.
+4. **Power:** the power key pin and polarity (on Waveshare AXP2101 boards that is `SYS_OUT`, not `AXP_IRQ`, which isn't routed); the PMU rail map, TS pin, and charge current; which pins to hold during hibernate.
 5. **IMU:** whether one is present, and axis orientation.
 6. **P4 only:** LDO, SDIO and esp-hosted settings, DSI IRAM-safe flags.
 7. **Memory:** `-O2`, `SPIRAM_MALLOC_ALWAYSINTERNAL`, full-frame buffer.

@@ -1,6 +1,13 @@
 # ==============================================================================
 # Latter Core Module: AXP2101 PMIC Hardware Driver (modules/pmu_axp2101.yaml)
 # Included by boards with an AXP2101 PMU @ 0x34 (S3-1.75C, S3-2.06, S3-2.16, P4-3.5)
+#
+# Board contract:
+#   - No supported board routes AXP_IRQ to the SoC. All AXP2101 IRQs are masked at boot and the
+#     PWR key is read directly from its GPIO (SYS_OUT / PWR_KEY net) as binary_sensor `pwr_key`,
+#     defined in the board HAL with LATTER_PWR_KEY_PIN / LATTER_PWR_KEY_ACTIVE_HIGH build flags.
+#   - Optional rail / charger traits consumed by latter_ui::hal_init_axp2101() (include/ui_system.h):
+#     LATTER_PMU_TS_DISABLE, LATTER_PMU_DCDC_KEEP_MASK, LATTER_PMU_LDO_KEEP_MASK, LATTER_PMU_CHARGE_MA.
 # ==============================================================================
 
 binary_sensor:
@@ -15,6 +22,21 @@ binary_sensor:
     id: batt_charging
     device_class: battery_charging
     entity_category: diagnostic
+
+  # PWR key press timing: short press fires on release (< 1.5 s), long press fires while held (>= 1.5 s).
+  # The AXP2101 keeps its own hardware power-on and hard power-off (PWRON long hold) behavior.
+  - id: !extend pwr_key
+    on_press:
+      - script.execute: pwr_key_long_press_watch
+    on_release:
+      - if:
+          condition:
+            script.is_running: pwr_key_long_press_watch
+          then:
+            - script.stop: pwr_key_long_press_watch
+            - script.execute:
+                id: handle_crown_button_press
+                is_long: false
 
 sensor:
   - platform: template
@@ -151,32 +173,13 @@ button:
       - script.execute: enter_deep_sleep
 
 script:
-  - id: hal_init_pmu_irq
+  - id: hal_init_pmu
     mode: restart
     then:
       - lambda: |-
-          #if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
-          gpio_config_t io_conf = {};
-          io_conf.pin_bit_mask = (1ULL << static_cast<uint32_t>(LATTER_PMU_IRQ_PIN));
-          io_conf.mode = GPIO_MODE_INPUT;
-          #if defined(LATTER_PMU_IRQ_ACTIVE_HIGH) && LATTER_PMU_IRQ_ACTIVE_HIGH
-          io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-          #else
-          io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-          #endif
-          io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-          io_conf.intr_type = GPIO_INTR_DISABLE;
-          gpio_config(&io_conf);
-          #endif
-
-          uint8_t irq_en[2] = {0x41, 0x0C};
-          id(bus_internal).write(0x34, irq_en, 2);
-          uint8_t clr_all[2] = {0x48, 0xFF};
-          id(bus_internal).write(0x34, clr_all, 2);
-          clr_all[0] = 0x49;
-          id(bus_internal).write(0x34, clr_all, 2);
-          clr_all[0] = 0x4A;
-          id(bus_internal).write(0x34, clr_all, 2);
+          // Mask all AXP2101 IRQs (no IRQ line is routed), apply board rail / TS / charger traits,
+          // and log the resulting PMIC configuration for the board facts ledger.
+          latter_ui::hal_init_axp2101(id(bus_internal));
 
   - id: hal_poll_pmu_1s
     mode: restart
@@ -223,68 +226,29 @@ script:
             }
           }
 
-  - id: hal_poll_pmu_button_50ms
-    mode: restart
-    parameters:
-      did_ss_draw: bool
-    then:
-      - lambda: |-
-          // ADR-001 Hardware-Gated 20 Hz Check for Top Crown Button (AXP2101 PEK Short/Long Press):
-          // Strictly IRQ-only when LATTER_PMU_IRQ_PIN is defined; 200ms fallback only on boards without a wired PMU IRQ.
-          const bool irq_pin_low = latter_ui::hal_pmu_irq_asserted();
-          #if defined(LATTER_PMU_IRQ_PIN) && (!defined(LATTER_NO_PMU_IRQ_PIN) || !LATTER_NO_PMU_IRQ_PIN)
-          (void)did_ss_draw;
-          const bool should_poll = irq_pin_low;
-          #else
-          static uint8_t fallback_div = 0;
-          const bool should_poll = !did_ss_draw && (++fallback_div >= 4U) && !id(va_active) && !id(va_tts_received);
-          if (should_poll) fallback_div = 0;
-          #endif
-          if (should_poll) {
-            uint8_t irq_reg = 0x49;
-            uint8_t irq_val = 0;
-            if (id(bus_internal).write_readv(0x34, &irq_reg, 1, &irq_val, 1) == esphome::i2c::ERROR_OK) {
-              if (irq_val & 0x0C) {
-                id(handle_crown_button_press).execute();
-              } else if (irq_pin_low) {
-                uint8_t clr_all[2] = {0x48, 0xFF};
-                id(bus_internal).write(0x34, clr_all, 2);
-                clr_all[0] = 0x49;
-                id(bus_internal).write(0x34, clr_all, 2);
-                clr_all[0] = 0x4A;
-                id(bus_internal).write(0x34, clr_all, 2);
-              }
-            }
-          }
-
-  - id: hal_wait_pmu_button_release
+  - id: pwr_key_long_press_watch
     mode: restart
     then:
-      - lambda: |-
-          // Wait for Top Crown Button (AXP2101 PEK) to be released (up to 3.0s) so PMIC does not immediately re-power on
-          int guard = 0;
-          while (guard < 150) {
-            uint8_t clr_all[2] = {0x48, 0xFF};
-            id(bus_internal).write(0x34, clr_all, 2);
-            clr_all[0] = 0x49;
-            id(bus_internal).write(0x34, clr_all, 2);
-            clr_all[0] = 0x4A;
-            id(bus_internal).write(0x34, clr_all, 2);
+      - delay: 1500ms
+      - script.execute:
+          id: handle_crown_button_press
+          is_long: true
 
-            uint8_t irq_c = 0x49;
-            uint8_t val_c = 0;
-            if (id(bus_internal).write_readv(0x34, &irq_c, 1, &val_c, 1) == esphome::i2c::ERROR_OK) {
-              if ((val_c & 0x0C) == 0) {
-                break;
-              }
-            }
-            esp_rom_delay_us(20000);
-            guard++;
-          }
-          esp_rom_delay_us(100000);
+  - id: hal_wait_pwr_key_release
+    mode: restart
+    then:
+      # Wait (up to 3 s) for the PWR key to be released so the AXP2101 PWRON input does not
+      # immediately re-power the PMIC after the hibernate power-off write.
+      - wait_until:
+          condition:
+            binary_sensor.is_off: pwr_key
+          timeout: 3s
+      - delay: 100ms
 
   - id: handle_crown_button_press
     mode: restart
+    parameters:
+      is_long: bool
     then:
       - lambda: |-
           static uint32_t last_crown_press = 0;
@@ -292,89 +256,75 @@ script:
           if (now_c - last_crown_press < 150) return;
           last_crown_press = now_c;
 
-          uint8_t irq_reg = 0x49;
-          uint8_t irq_val = 0;
-          if (id(bus_internal).write_readv(0x34, &irq_reg, 1, &irq_val, 1) == esphome::i2c::ERROR_OK) {
-            uint8_t clr_all[2] = {0x48, 0xFF};
-            id(bus_internal).write(0x34, clr_all, 2);
-            clr_all[0] = 0x49;
-            id(bus_internal).write(0x34, clr_all, 2);
-            clr_all[0] = 0x4A;
-            id(bus_internal).write(0x34, clr_all, 2);
+          if (id(is_hibernating)) {
+            if (id(hibernate_countdown_val) > 0) {
+              id(is_hibernating) = false;
+              id(hibernate_countdown_val) = 0;
+              id(wake_to_active_state).execute();
+            }
+            return;
+          }
 
-            if (irq_val & 0x0C) {
-              if (id(is_hibernating)) {
-                if (id(hibernate_countdown_val) > 0) {
-                  id(is_hibernating) = false;
-                  id(hibernate_countdown_val) = 0;
-                  id(wake_to_active_state).execute();
-                }
-                return;
-              }
-              bool is_long = (irq_val & 0x04) != 0;
+          if (is_long) {
+            if (id(instant_crown_hibernate_switch).state) {
+              id(start_instant_hibernation).execute();
+            } else {
+              id(start_hibernation_countdown).execute();
+            }
+            return;
+          }
 
-              if (is_long) {
-                if (id(instant_crown_hibernate_switch).state) {
-                  id(start_instant_hibernation).execute();
-                } else {
-                  id(start_hibernation_countdown).execute();
-                }
-                return;
-              }
-
-              if (id(alarm_ringing)) {
-                auto now = id(ha_time).now();
-                if (now.is_valid()) {
-                  id(alarm_snooze_until) = now.timestamp + 300;
-                } else {
-                  id(alarm_snooze_until) = (millis() / 1000) + 300;
-                }
-                id(alarm_ringing) = false;
-                id(stop_alarm_sound).execute();
-                latter_ui::schedule_disp_update(&id(disp1));
-                id(screen_sleep_timer).execute();
-                return;
-              }
-              if (id(timer_ringing) || id(find_my_active) || id(notif_active)) {
-                if (id(notif_active)) {
-                  id(dismiss_notification).execute();
-                  return;
-                }
-                id(timer_ringing) = false;
-                id(find_my_active) = false;
-                id(stop_alarm_sound).execute();
-                id(sync_display_brightness).execute();
-                latter_ui::schedule_disp_update(&id(disp1));
-                id(screen_sleep_timer).execute();
-                return;
-              }
-
-              if (!id(display_brightness).current_values.is_on() || id(display_power_state) != 0) {
-                id(wake_to_active_state).execute();
-                return;
-              }
-
-              if (id(va_active) || !id(va_status_text).empty()) {
-                id(cancel_voice_assistant).execute();
-                return;
-              }
-
-              if (id(gui_page) == 8 && id(tools_subpage) == 3) {
-                id(screen_sleep_timer).execute();
-                if (!id(stopwatch_running)) {
-                  id(stopwatch_running) = true;
-                  id(stopwatch_start_time) = millis() - id(stopwatch_elapsed_ms);
-                  id(sleep_start_time) = 0;
-                  id(display_brightness).turn_on().perform();
-                } else {
-                  id(stopwatch_running) = false;
-                  id(stopwatch_elapsed_ms) = millis() - id(stopwatch_start_time);
-                }
-                latter_ui::schedule_disp_update(&id(disp1));
-                return;
-              }
-
-              id(turn_screen_off).execute();
+          if (id(alarm_ringing)) {
+            auto now = id(ha_time).now();
+            if (now.is_valid()) {
+              id(alarm_snooze_until) = now.timestamp + 300;
+            } else {
+              id(alarm_snooze_until) = (millis() / 1000) + 300;
+            }
+            id(alarm_ringing) = false;
+            id(stop_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+            return;
+          }
+          if (id(timer_ringing) || id(find_my_active) || id(notif_active)) {
+            if (id(notif_active)) {
+              id(dismiss_notification).execute();
               return;
             }
+            id(timer_ringing) = false;
+            id(find_my_active) = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+            return;
           }
+
+          if (!id(display_brightness).current_values.is_on() || id(display_power_state) != 0) {
+            id(wake_to_active_state).execute();
+            return;
+          }
+
+          if (id(va_active) || !id(va_status_text).empty()) {
+            id(cancel_voice_assistant).execute();
+            return;
+          }
+
+          if (id(gui_page) == 8 && id(tools_subpage) == 3) {
+            id(screen_sleep_timer).execute();
+            if (!id(stopwatch_running)) {
+              id(stopwatch_running) = true;
+              id(stopwatch_start_time) = millis() - id(stopwatch_elapsed_ms);
+              id(sleep_start_time) = 0;
+              id(display_brightness).turn_on().perform();
+            } else {
+              id(stopwatch_running) = false;
+              id(stopwatch_elapsed_ms) = millis() - id(stopwatch_start_time);
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+
+          id(turn_screen_off).execute();
+          return;

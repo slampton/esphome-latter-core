@@ -2,13 +2,22 @@
 # Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 ("Remote Assistant")
 # SKU:     33360
 # SoC:     ESP32-P4NRW32 (32MB PSRAM, 16MB Flash) + ESP32-C6 Wi-Fi 6 / BLE 5 over SDIO
+# Silicon: rev3.x by default (rev1.x units exist). Binaries are NOT cross-compatible; select with p4_silicon.
 # Display: 3.5" 320x480 IPS LCD (ST7796 over SPI, CLK: GPIO21, MOSI: GPIO20, CS: GPIO23, DC: GPIO26, RST: GPIO27, BL: GPIO28)
 # Touch:   FT6336 @ 0x38 (I2C SDA: GPIO7, SCL: GPIO8)
 # Audio:   ES8311 @ 0x18 (MCLK: GPIO13, BCLK: GPIO12, WS: GPIO10, DOUT: GPIO9, DIN: GPIO11, PA: GPIO53)
-# PMU:     AXP2101 @ 0x34
+# PMU:     AXP2101 @ 0x34. DCDC1 feeds every 3V3 load (P4, C6, LCD, touch, BL); ALDO1 = codec A3V3.
+#          AXP_IRQ is NOT routed. PWR key: K1 -> AXP PWRON and BSS138 -> GPIO49 (HIGH while pressed).
+# C6:      CHIP_PU GPIO54, C6 IO2 <-> GPIO6 (host-wake line). SD power P-FET gate: GPIO45.
 # ==============================================================================
 
 substitutions:
+  # P4 silicon profile (one source of truth; CI publishes both variants):
+  #   rev3 -> p4_engineering_sample: "false", p4_cpu_frequency: "400MHz"  (v3.x silicon)
+  #   rev1 -> p4_engineering_sample: "true",  p4_cpu_frequency: "360MHz"  (v1.x silicon)
+  p4_silicon: "rev3"
+  p4_engineering_sample: "false"
+  p4_cpu_frequency: "400MHz"
   screen_w: "320"
   screen_h: "480"
   font_time_size: "77"
@@ -54,7 +63,8 @@ esphome:
     - "-DLATTER_PANEL_PPI=165"
     - "-DLATTER_CHIP_P4=1"
     - "-DLATTER_PSRAM_MB=32"
-    - "-DLATTER_NO_PMU_IRQ_PIN=1"
+    - "-DLATTER_PWR_KEY_PIN=49"
+    - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
     - "-DLATTER_BACKLIGHT_PIN=28"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"
@@ -63,8 +73,9 @@ esphome:
 
 esp32:
   variant: esp32p4
-  engineering_sample: false
-  cpu_frequency: 360MHz
+  # rev1.x builds only boot rev1.x silicon and rev3.x builds only boot rev3.x silicon (see p4_silicon).
+  engineering_sample: ${p4_engineering_sample}
+  cpu_frequency: ${p4_cpu_frequency}
   flash_size: 16MB
   framework:
     type: esp-idf
@@ -187,6 +198,18 @@ binary_sensor:
     name: "Boot Button"
     id: boot_button
     entity_category: diagnostic
+
+  # PWR key state (K1 -> BSS138 inverter -> GPIO49, HIGH while pressed). Press timing lives in
+  # modules/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep.
+  - platform: gpio
+    id: pwr_key
+    name: "Power Key"
+    internal: true
+    pin:
+      number: GPIO49
+      mode: INPUT
+    filters:
+      - delayed_on_off: 20ms
 
 display:
   - platform: mipi_spi

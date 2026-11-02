@@ -474,8 +474,8 @@ interval:
   - interval: 50ms
     then:
       - lambda: |-
-          // High-refresh animation loop for active screensavers (20 FPS idle, ~13.3 FPS during Sendspin audio)
-          bool did_ss_draw = false;
+          // High-refresh animation loop for active screensavers (20 FPS idle, ~13.3 FPS during Sendspin audio).
+          // The PWR key is a GPIO binary_sensor (board HAL), so no PMU polling happens here.
           if (id(display_power_state) == 1 && !id(va_active) && id(va_status_text).empty() && !id(is_hibernating)) {
             auto s_style = id(screensaver_style_select).current_option();
             if (s_style != "Ambient Clock" && s_style != "Screen Off") {
@@ -486,11 +486,9 @@ interval:
                                                       id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
                 latter_ui::record_ambient_frame_ms(millis());
                 latter_ui::schedule_anim_disp_update(&id(disp1));
-                did_ss_draw = true;
               }
             }
           }
-          id(hal_poll_pmu_button_50ms).execute(did_ss_draw);
 
 script:
   - id: trigger_screensaver_now
@@ -718,8 +716,8 @@ script:
             - light.turn_on: display_brightness
             - script.execute: sync_display_brightness
             - component.update: disp1
-            - script.execute: hal_wait_pmu_button_release
-            - script.wait: hal_wait_pmu_button_release
+            - script.execute: hal_wait_pwr_key_release
+            - script.wait: hal_wait_pwr_key_release
             - delay: 500ms
             - lambda: |-
                 id(is_hibernating) = false;

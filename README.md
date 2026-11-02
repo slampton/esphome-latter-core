@@ -25,7 +25,7 @@ Firmware for five Waveshare ESP32 touch displays, one-line packages for ESPHome 
 | **Mobile Assistant** | [ESP32-S3-Touch-AMOLED-2.16][ws-216] | 2.16" square AMOLED, 480×480 | A handheld with more screen for album art and area controls |
 | **Wrist Assist** | [ESP32-S3-Touch-AMOLED-2.06][ws-206] | 2.06" watch AMOLED, 410×502 | Wearing it: timers, alarms, voice, and per-person presence |
 | **Remote Assistant** | [ESP32-P4-WIFI6-Touch-LCD-3.5][ws-p4-35] | 3.5" IPS, 320×480 | A couch remote for TVs and media |
-| **Desk Assistant** | [ESP32-P4-WIFI6-Touch-LCD-4B][ws-p4-4b] | 4" IPS, 720×720 | An always-on desk or wall panel |
+| **Desk Assistant** | [ESP32-P4-86-Panel-ETH-2RO][ws-p4-86] | 4" IPS, 720×720 | An always-on desk or wall panel |
 
 <sub>Some hardware links are affiliate links. Buying through them supports the project at no extra cost to you.</sub>
 
@@ -109,7 +109,7 @@ These are the details worth checking if you're evaluating the codebase. Each one
 - **Frame pacing and profiling.**
   - **Pacing:** redraw requests are merged into one redraw every 38 ms or more. Animations run at 18 ms per frame on the P4 and 26 ms on the S3. Ambient screensavers run at about 20 fps and slow down while audio plays.
   - **Profiling:** the **System: Telemetry Profiler** switch logs per-frame render times and flags any frame over 22 ms. → [`ui_core.h`](include/ui_core.h)
-- **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`ui_layout.h`](include/ui_layout.h), [`waveshare_p4_4b.yaml`](boards/waveshare_p4_4b.yaml)
+- **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`ui_layout.h`](include/ui_layout.h), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
 - **Voice doesn't fight music.** When the wake word fires, the firmware pauses music and stops its mixer input so the voice response isn't stuck behind buffered music. After the reply, it resumes only once both the media player and the announcement mixer have drained. Music never resumes over a ringing alarm or timer. → [`audio_voice.yaml`](modules/audio_voice.yaml), [`latter_client.yaml`](modules/latter_client.yaml)
 - **Shared I2S clocks on the S3 boards.** Speaker and microphone use separate I2S controllers on the same clock pins. The firmware switches the pins between them through the GPIO matrix. → [`waveshare_s3_175c.yaml`](boards/waveshare_s3_175c.yaml)
 - **Hard power-off hibernate.** On battery boards, hibernate saves preferences, disconnects from the API cleanly, puts the codecs and IMU into standby, and then has the AXP2101 cut power. The crown button powers the device back on. → [`pmu_axp2101.yaml`](modules/pmu_axp2101.yaml)
@@ -163,4 +163,4 @@ Latter is designed, tested on hardware, and maintained by Sean Lampton, a system
 [ws-216]: https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm
 [ws-206]: https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm
 [ws-p4-35]: https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-3.5.htm
-[ws-p4-4b]: https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-4b.htm
+[ws-p4-86]: https://www.waveshare.com/esp32-p4-86-panel-eth-2ro.htm

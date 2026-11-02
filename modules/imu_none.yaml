@@ -1,6 +1,6 @@
 # ==============================================================================
 # Latter Core Module: No-IMU Stub Sensors (modules/imu_none.yaml)
-# Included by boards without a physical QMI8658 IMU (Remote Assistant P4-3.5, Desk Assistant P4-4B)
+# Included by boards without a physical QMI8658 IMU (Remote Assistant P4-3.5, Desk Assistant P4-86-Panel)
 # ==============================================================================
 
 sensor:

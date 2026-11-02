@@ -20,22 +20,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # slug = published artifact/manifest name, file = devices/<file>.yaml (also the ESPHome
+        # build dir name), subs = ESPHome -s substitution overrides (P4 silicon profiles).
+        # P4 rev1.x and rev3.x binaries are not cross-compatible, so each P4 board ships both.
         device:
           - slug: pocket-assistant
+            file: pocket-assistant
             name: "Latter — Pocket Assistant (1.75C)"
             chip: "ESP32-S3"
+            subs: ""
           - slug: mobile-assistant
+            file: mobile-assistant
             name: "Latter — Mobile Assistant (2.16)"
             chip: "ESP32-S3"
+            subs: ""
           - slug: wrist-assist
+            file: wrist-assist
             name: "Latter — Wrist Assist (2.06)"
             chip: "ESP32-S3"
-          - slug: remote-assistant
-            name: "Latter — Remote Assistant (P4 3.5)"
+            subs: ""
+          - slug: remote-assistant-rev3
+            file: remote-assistant
+            name: "Latter — Remote Assistant (P4 3.5, chip rev 3.x)"
             chip: "ESP32-P4"
-          - slug: desk-assistant
-            name: "Latter — Desk Assistant (P4 4B)"
+            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
+          - slug: remote-assistant-rev1
+            file: remote-assistant
+            name: "Latter — Remote Assistant (P4 3.5, chip rev 1.x)"
             chip: "ESP32-P4"
+            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+          - slug: desk-assistant-rev1
+            file: desk-assistant
+            name: "Latter — Desk Assistant (P4 86-Panel, chip rev 1.x)"
+            chip: "ESP32-P4"
+            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+          - slug: desk-assistant-rev3
+            file: desk-assistant
+            name: "Latter — Desk Assistant (P4 86-Panel, chip rev 3.x)"
+            chip: "ESP32-P4"
+            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -61,14 +84,14 @@ jobs:
       - name: Compile ${{ matrix.device.slug }} with ESPHome
         uses: docker://ghcr.io/esphome/esphome:2026.10.1
         with:
-          args: compile devices/${{ matrix.device.slug }}.yaml
+          args: ${{ matrix.device.subs }} compile devices/${{ matrix.device.file }}.yaml
 
       - name: Stage Factory, OTA Binaries & Manifest
         shell: bash
         run: |
           VERSION="${{ steps.rel_meta.outputs.version }}"
           mkdir -p dist/firmware dist/manifests
-          BUILD_DIR=".esphome/build/${{ matrix.device.slug }}/.pioenvs/${{ matrix.device.slug }}"
+          BUILD_DIR=".esphome/build/${{ matrix.device.file }}/.pioenvs/${{ matrix.device.file }}"
           cp "${BUILD_DIR}/firmware.factory.bin" "dist/firmware/${{ matrix.device.slug }}.factory.bin"
           cp "${BUILD_DIR}/firmware.ota.bin" "dist/firmware/${{ matrix.device.slug }}.ota.bin"
           MD5_SUM=$(md5sum "dist/firmware/${{ matrix.device.slug }}.ota.bin" | awk '{print $1}')

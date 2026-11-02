@@ -6,6 +6,7 @@ esphome:
       then:
         - lambda: |-
             id(hal_release_deep_sleep_holds).execute();
+            latter_ui::hal_release_pwr_key_wake_pad();
             id(sleep_start_time) = millis();
             id(is_hibernating) = false;
             id(display_power_state) = 0; // ACTIVE
@@ -13,7 +14,7 @@ esphome:
 
     - priority: -100
       then:
-        - script.execute: hal_init_pmu_irq
+        - script.execute: hal_init_pmu
         - lambda: |-
             latter_ui::seed_standalone_remote_slots(
                 "${remote_1_entity}", "${remote_1_name}",

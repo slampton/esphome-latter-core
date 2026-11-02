@@ -1,10 +1,16 @@
 # ==============================================================================
 # Hardware Abstraction Layer (HAL): Waveshare ESP32-S3-Touch-AMOLED-2.06 ("Wrist Assist")
-# Display: 2.06" 410x502 Rectangular AMOLED (CO5300 over 80MHz Quad-SPI)
-# Touch:   FT3168 / FT63x6 @ 0x38 (INT: GPIO38, RST: GPIO9)
+# Display: 2.06" 410x502 Rectangular AMOLED (CO5300 over Quad-SPI, CLK: GPIO11, CS: GPIO12, RST: GPIO8,
+#          column offset 22). LCD_TE routed to GPIO13 (unused).
+# Touch:   FT3168 @ 0x38 (INT: GPIO38, RST: GPIO9)
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO40) + ES7210 ADC @ 0x40 (DIN: GPIO42), PA: GPIO46
+#          ES7210 MIC3 = AEC loopback of ES8311 output (TDM only)
 # Clocks:  MCLK: GPIO16, BCLK: GPIO41, LRCLK/WS: GPIO45
-# PMU/IMU: AXP2101 @ 0x34 (SYS_OUT: GPIO10), QMI8658 @ 0x6B, PCF85063 RTC @ 0x51
+# PMU:     AXP2101 @ 0x34 (AXP_IRQ NOT routed). DCDC1 = all 3V3, ALDO1 = audio A3V3,
+#          ALDO2 = panel DSI_PWR_EN (medium confidence; kept ON), ALDO3 = vibration motor supply.
+#          PWR key SYS_OUT -> GPIO10 (HIGH while pressed).
+# Other:   QMI8658 @ 0x6B (INT1: GPIO21), PCF85063 RTC @ 0x51 (INT: GPIO39), vibration motor GPIO18
+#          (MMBT3904, ALDO3), SD (CMD 1, CLK 2, D0 3, CS 17). Recommended cell: 400mAh.
 # ==============================================================================
 
 substitutions:
@@ -53,8 +59,12 @@ esphome:
     - "-DLATTER_PANEL_PPI=315"
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
-    - "-DLATTER_PMU_IRQ_PIN=10"
-    - "-DLATTER_PMU_IRQ_ACTIVE_HIGH=1"
+    - "-DLATTER_PWR_KEY_PIN=10"
+    - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
+    - "-DLATTER_PWR_KEY_DEEP_SLEEP_WAKE=1"
+    - "-DLATTER_PMU_TS_DISABLE=1"
+    - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
+    - "-DLATTER_PMU_LDO_KEEP_MASK=0x003"
     - "-DLATTER_AUDIO_OUT_RATE=16000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
@@ -211,6 +221,18 @@ binary_sensor:
     name: "Boot Button"
     id: boot_button
     entity_category: diagnostic
+
+  # PWR key state (AXP PWRON -> BSS138 -> SYS_OUT -> GPIO10, HIGH while pressed). Press timing lives
+  # in modules/pmu_axp2101.yaml. GPIO10 is an RTC GPIO, so it also arms the ext0 deep-sleep wake.
+  - platform: gpio
+    id: pwr_key
+    name: "Power Key"
+    internal: true
+    pin:
+      number: GPIO10
+      mode: INPUT
+    filters:
+      - delayed_on_off: 20ms
 
 display:
   - platform: mipi_spi

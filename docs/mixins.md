@@ -118,6 +118,7 @@ packages:
 ```
 
 - **Stream:** 640×480 at 10 fps.
+- **Boards:** the Remote Assistant (ESP32-P4-WIFI6-Touch-LCD-3.5) has the camera connector. The Desk Assistant's ESP32-P4-86-Panel-ETH-2RO has no camera connector.
 - **Requires `i2c` with `id: bus_internal`.**
 - **Requires `mipi_csi_cam`.** This mixin uses the `mipi_csi_cam` component and doesn't declare where it comes from. Your ESPHome build has to provide it.
 - **No discovery action.** This mixin doesn't register `latter_ping`, so pair it with another mixin if you want the device discovered.
