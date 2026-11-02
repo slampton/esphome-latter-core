@@ -650,12 +650,16 @@ inline void hal_panel_dcs_set_sleep(DispT *disp, bool sleep) {
       dcs(0x28);
       dcs(0x10);
       asleep = true;
+      if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=sleep");
     } else {
       dcs(0x11);
-      esphome::delay(10);  // DCS timing: >= 5 ms after SLPOUT before the next command
+      // DCS timing: the panel's internal power-up runs after SLPOUT; SH8601-class AMOLEDs (S3-2.06)
+      // ignore DISPON sent before ~120 ms and stay dark. Wait the full 120 ms before DISPON.
+      esphome::delay(120);
       dcs(0x29);
       last_wake_ms = esphome::millis();
       asleep = false;
+      if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=wake");
     }
   } else {
     static bool warned = false;

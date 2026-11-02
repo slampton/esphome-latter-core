@@ -270,6 +270,8 @@ ota:
     on_begin:
       then:
         - script.stop: screen_sleep_timer
+        # Wake the screen through the canonical light path (panel DCS wake + light state) first.
+        - light.turn_on: display_brightness
         - lambda: |-
             latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
                                         id(sleep_start_time), id(display_power_state));
@@ -302,6 +304,8 @@ ota:
     on_begin:
       then:
         - script.stop: screen_sleep_timer
+        # Wake the screen through the canonical light path (panel DCS wake + light state) first.
+        - light.turn_on: display_brightness
         - lambda: |-
             latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
                                         id(sleep_start_time), id(display_power_state));
