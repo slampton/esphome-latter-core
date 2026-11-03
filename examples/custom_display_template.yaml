@@ -28,6 +28,7 @@ substitutions:
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
+  imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion); required by modules/imu_qmi8658.yaml
 
   # Optional Standalone ESPHome Overrides (only needed if NOT using the ha-latter integration):
   # weather_entity: "weather.forecast_home"
