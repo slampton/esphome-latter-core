@@ -9,6 +9,7 @@
 
 #if defined(USE_ESP32)
 #include <driver/rtc_io.h>
+#include <esp_system.h>
 #include <soc/soc_caps.h>
 #endif
 
@@ -282,6 +283,12 @@ inline void hal_init_axp2101(I2cBusT *bus) {
   rd(0x27, r27);
   const uint8_t icc = r62 & 0x1F;
   const int icc_ma = (icc <= 8) ? (icc * 25) : (200 + (icc - 8) * 100);
+  auto &tel = pmu_telemetry();
+  rd(0x20, tel.on_src);
+  rd(0x21, tel.off_src);
+  tel.cv_reg = r64;
+  tel.icc_ma = icc_ma;
+  tel.boot_valid = true;
   ESP_LOGI("pmu", "AXP2101: ICC=%dmA (0x62=0x%02X) CV=0x%02X DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X",
            icc_ma, r62, r64, r80, r90, r91, r30, r50, r27);
 #else
@@ -294,6 +301,53 @@ inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
   if (bus_pp != nullptr) hal_init_axp2101(*bus_pp);
 }
 
+// Boot summary, re-logged to every API client a moment after it connects so an OTA log viewer sees
+// why the device last went down and came back (boot-time logs are emitted before any client exists).
+// AXP2101 REG20 / REG21 bit names follow XPowersLib (xpower_power_on/off_source_t).
+inline void log_boot_summary() {
+  uint32_t up_s = esphome::millis() / 1000U;
+  const char *rr = "unknown";
+#ifdef USE_ESP32
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: rr = "power-on"; break;
+    case ESP_RST_SW: rr = "software"; break;
+    case ESP_RST_PANIC: rr = "panic"; break;
+    case ESP_RST_INT_WDT: rr = "int-wdt"; break;
+    case ESP_RST_TASK_WDT: rr = "task-wdt"; break;
+    case ESP_RST_WDT: rr = "wdt"; break;
+    case ESP_RST_DEEPSLEEP: rr = "deep-sleep"; break;
+    case ESP_RST_BROWNOUT: rr = "brownout"; break;
+    default: break;
+  }
+#endif
+  const auto &tel = pmu_telemetry();
+  if (!tel.boot_valid) {
+    ESP_LOGI("PROF", "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s pmu=none", (long)LATTER_SDK_REV,
+             (unsigned long)up_s, rr);
+    return;
+  }
+  static const char *const kOff[8] = {"pwrkey-long", "software", "pwrkey-low", "vsys-undervolt",
+                                      "vbus-overvolt", "dcdc-undervolt", "dcdc-overvolt", "over-temp"};
+  static const char *const kOn[6] = {"pwrkey", "irq", "vbus-insert", "batt-charge", "batt-insert", "en-mode"};
+  char off_s[96] = {0};
+  char on_s[64] = {0};
+  for (int b = 0; b < 8; b++) {
+    if (tel.off_src & (1U << b)) {
+      std::strncat(off_s, off_s[0] ? "," : "", sizeof(off_s) - std::strlen(off_s) - 1);
+      std::strncat(off_s, kOff[b], sizeof(off_s) - std::strlen(off_s) - 1);
+    }
+  }
+  for (int b = 0; b < 6; b++) {
+    if (tel.on_src & (1U << b)) {
+      std::strncat(on_s, on_s[0] ? "," : "", sizeof(on_s) - std::strlen(on_s) - 1);
+      std::strncat(on_s, kOn[b], sizeof(on_s) - std::strlen(on_s) - 1);
+    }
+  }
+  ESP_LOGI("PROF",
+           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s last_off=0x%02X(%s) on=0x%02X(%s) icc=%dmA cv=0x%02X",
+           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, tel.off_src, off_s[0] ? off_s : "-", tel.on_src,
+           on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
+}
 inline std::string &latter_site_id() {
   static std::string s = "primary";
   return s;

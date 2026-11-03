@@ -29,7 +29,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110206L
+#define LATTER_SDK_REV 2026110207L
 
 namespace latter_ui {
 
@@ -2119,6 +2119,23 @@ inline void log_audio_profile(const char *event_tag, const char *detail = "") {
            event_tag, (unsigned long)va_el, detail ? detail : "");
 }
 
+// PMIC telemetry shared by the PMU module and the profiler. gauge_raw is the AXP2101 fuel gauge
+// (REG A4) before the display smoothing in pmu_axp2101.yaml, which can lag the cell by many percent.
+// on_src / off_src are REG20 / REG21 (power-on / power-off source of the previous cycle), latched at boot.
+struct PmuTelemetry {
+  int gauge_raw = -1;
+  bool boot_valid = false;
+  uint8_t on_src = 0;
+  uint8_t off_src = 0;
+  uint8_t cv_reg = 0;
+  int icc_ma = 0;
+};
+
+inline PmuTelemetry &pmu_telemetry() {
+  static PmuTelemetry t;
+  return t;
+}
+
 inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
                                       float batt_pct, float batt_v, bool spk_pa, bool mww_run,
                                       bool va_act, bool mp_play, bool ble_act, int game_id,
@@ -2129,10 +2146,10 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
                              ? ((now_m - sleep_start_ms) / 1000U)
                              : 0U;
   ESP_LOGI("PROF",
-           "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu",
+           "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) gauge=%d%% spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu",
            trigger, pwr_state, (int)usb, (int)chg,
            std::isnan(batt_pct) ? -1.0f : batt_pct,
-           std::isnan(batt_v) ? 0.0f : batt_v,
+           std::isnan(batt_v) ? 0.0f : batt_v, pmu_telemetry().gauge_raw,
            (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
            (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events);
 #ifdef USE_ESP32

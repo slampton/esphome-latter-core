@@ -70,6 +70,7 @@ sensor:
       uint8_t pct = 0;
       if (id(bus_internal).write_readv(0x34, &reg, 1, &pct, 1) == esphome::i2c::ERROR_OK) {
         if (pct <= 100) {
+          latter_ui::pmu_telemetry().gauge_raw = pct;
           // Read hardware charge status from PMU Status 2 (REG 01H)
           uint8_t reg1 = 0x01;
           uint8_t stat1 = 0;
