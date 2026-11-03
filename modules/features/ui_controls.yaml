@@ -654,6 +654,20 @@ switch:
           id(apply_power_policy).execute();
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
+  # Battery devices pause the presence beacon while the screen is off (BLE blocks automatic light sleep).
+  # Turn this on to keep continuous Area tracking at the cost of battery life. No effect when docked.
+  - platform: template
+    name: "Area: Presence Beacon While Screen Off"
+    id: ble_beacon_screen_off_switch
+    icon: "mdi:bluetooth-connect"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: 'id(apply_power_policy).execute();'
+    turn_off_action:
+      - lambda: 'id(apply_power_policy).execute();'
+
 
   - platform: template
     name: "Home: Shortcut Music"

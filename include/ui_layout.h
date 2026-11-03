@@ -505,26 +505,31 @@ inline bool radio_boost_active(uint32_t now_ms) {
 
 template <typename BleCtrlT>
 inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool ble_beacon_switch_on,
+                                  bool beacon_while_screen_off, bool on_battery,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,
                                   bool high_tput_needed, uint32_t now_ms) {
   if (is_hibernating || ota_in_progress) return;
 
   // 1. BLE Presence Beacon & Bounded 5-Minute Improv Window:
-  // Keeps iBeacon advertising in every state except hibernate (including screen-off on battery)
-  // when ble_area_beacon_switch is ON so Voice Follows Me can track room changes.
+  // The beacon (ble_area_beacon_switch) advertises while the screen is on, while docked, and on
+  // stationary devices. On battery with the screen off it pauses unless the per-device "Area: Presence
+  // Beacon While Screen Off" setting is on: the BT controller blocks automatic light sleep and costs
+  // radio time, and Voice Follows Me picks the Area up again within the dwell time after the next wake.
+  const bool beacon_paused = on_battery && (display_power_state == 2) && !beacon_while_screen_off;
+  const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused;
   if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
     const bool sdio_ready = wifi_connected && (now_ms > 8000U);
-    const bool want_ble = ble_beacon_switch_on && sdio_ready;
+    const bool want_ble = beacon_wanted && sdio_ready;
 #else
     const bool improv_window = !wifi_connected && (now_ms > 15000U && now_ms < 300000U);
-    const bool want_ble = ble_beacon_switch_on || improv_window;
+    const bool want_ble = beacon_wanted || improv_window;
 #endif
     if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
       ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
       ble_ctrl->enable();
     } else if (!want_ble && ble_ctrl->is_active()) {
-      ESP_LOGI("ble", "Disabling BLE radio (BLE Presence Beacon OFF and Improv window closed)");
+      ESP_LOGI("ble", "Disabling BLE radio (beacon %s, Improv window closed)", beacon_paused ? "paused for screen-off on battery" : "off");
       ble_ctrl->disable();
     }
   }
