@@ -29,7 +29,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110215L
+#define LATTER_SDK_REV 2026110216L
 
 namespace latter_ui {
 
@@ -2225,9 +2225,47 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
   size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;
   size_t ps_free  = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
   size_t ps_min   = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U;
-  ESP_LOGI("PROF", "[PROF:MEM] int_free=%luKB int_max_blk=%luKB psram_free=%luKB psram_min=%luKB",
-           (unsigned long)int_free, (unsigned long)int_max,
+  size_t int_min  = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t dma_free = heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL) / 1024U;
+  ESP_LOGI("PROF", "[PROF:MEM] int_free=%luKB int_max_blk=%luKB int_min=%luKB dma_free=%luKB psram_free=%luKB psram_min=%luKB",
+           (unsigned long)int_free, (unsigned long)int_max, (unsigned long)int_min, (unsigned long)dma_free,
            (unsigned long)ps_free, (unsigned long)ps_min);
+#endif
+}
+
+// On-demand memory report ("System: Log Memory Report"): heap totals per region plus every FreeRTOS
+// task with its stack location (internal RAM or PSRAM) and high-water mark (bytes never used), so
+// internal-RAM consumers can be identified on the device instead of guessed.
+inline void log_memory_report() {
+#ifdef USE_ESP32
+  auto region = [](const char *name, uint32_t caps) {
+    multi_heap_info_t hi;
+    heap_caps_get_info(&hi, caps);
+    ESP_LOGI("PROF", "[PROF:HEAP] %s free=%uKB largest=%uKB min_ever=%uKB alloc=%uKB blocks=%u/%u", name,
+             (unsigned)(hi.total_free_bytes / 1024U), (unsigned)(hi.largest_free_block / 1024U),
+             (unsigned)(hi.minimum_free_bytes / 1024U), (unsigned)(hi.total_allocated_bytes / 1024U),
+             (unsigned)hi.allocated_blocks, (unsigned)hi.free_blocks);
+  };
+  region("internal", MALLOC_CAP_INTERNAL);
+  region("dma", MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  region("psram", MALLOC_CAP_SPIRAM);
+#if configUSE_TRACE_FACILITY
+  UBaseType_t n = uxTaskGetNumberOfTasks();
+  auto *ts = static_cast<TaskStatus_t *>(heap_caps_malloc(sizeof(TaskStatus_t) * (n + 4), MALLOC_CAP_SPIRAM));
+  if (ts == nullptr) return;
+  n = uxTaskGetSystemState(ts, n + 4, nullptr);
+  unsigned int_stacks = 0;
+  for (UBaseType_t i = 0; i < n; i++) {
+    const bool ext = esp_ptr_external_ram(ts[i].pxStackBase);
+    if (!ext) int_stacks++;
+    ESP_LOGI("PROF", "[PROF:TASK] %-16s stack=%s unused=%uB prio=%u", ts[i].pcTaskName, ext ? "PSRAM" : "INT",
+             (unsigned)ts[i].usStackHighWaterMark, (unsigned)ts[i].uxCurrentPriority);
+  }
+  ESP_LOGI("PROF", "[PROF:TASK] %u tasks, %u with internal-RAM stacks", (unsigned)n, int_stacks);
+  heap_caps_free(ts);
+#else
+  ESP_LOGI("PROF", "[PROF:TASK] task list needs CONFIG_FREERTOS_USE_TRACE_FACILITY");
+#endif
 #endif
 }
 

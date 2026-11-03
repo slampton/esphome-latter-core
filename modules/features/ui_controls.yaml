@@ -485,6 +485,14 @@ button:
     internal: true
 
   - platform: template
+    name: "System: Log Memory Report"
+    id: log_memory_report_button
+    icon: "mdi:memory"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'latter_ui::log_memory_report();'
+
+  - platform: template
     name: "Actions: Restart Device"
     id: restart_button
     entity_category: diagnostic
