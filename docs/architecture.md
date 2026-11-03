@@ -103,7 +103,7 @@ The ESP Web Tools installer page and per-device manifests. The release workflow 
 
 - **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs `esphome config` on both examples for every push to `main` and `dev`.
 - **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
-  1. Compiles all five devices with the `esphome/esphome:2026.10.1` container.
+  1. Compiles all five devices with the `esphome/esphome:2026.10.2` container.
   2. Writes manifests with each OTA image's MD5.
   3. Publishes the binaries, manifests, and installer page to GitHub Pages.
 - **Device configs pull `latter_core` and the packages from `main`.** A build always uses the current `main`, even when it's triggered from a tag.
