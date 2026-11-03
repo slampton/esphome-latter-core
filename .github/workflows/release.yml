@@ -63,6 +63,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Board facts release gate (no L-confidence facts)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 tools/check_boards.py --release --check-docs
+
       - name: Resolve and verify release version & pin @main refs on tagged releases
         id: rel_meta
         shell: bash

@@ -142,4 +142,15 @@ esphome config devices/my-device.yaml    # fast schema check
 esphome compile devices/my-device.yaml   # full build
 ```
 
-If you get a new board working, a pull request adding its board file is welcome.
+### Board facts
+
+Every board also has a hardware facts file, `boards/facts/<board_id>.json` (schema: [`boards/facts/schema.json`](../boards/facts/schema.json)). It lists each routed net with its role, polarity, rail and a confidence level: **H** validated on hardware, **M** schematic or vendor code, **L** unconfirmed. Use the schematic first, vendor board-support code second, and wiki tables last, and record any disagreements in `known_doc_errata`.
+
+```bash
+python tools/check_boards.py               # cross-check facts against the board and device YAML
+python tools/check_boards.py --render-docs # regenerate the pin maps in docs/hardware.md
+```
+
+The checker fails on any GPIO the board file uses without a fact, use of a reserved or unrouted pin, `LATTER_*` flags that disagree with the facts, unknown I2C addresses, a deep-sleep wake pin that can't wake the chip, a backlight PWM below the panel's minimum, a duplicate BLE minor, or a missing release job. A tagged release also fails while any **L** fact remains.
+
+If you get a new board working, a pull request adding its board file and facts file is welcome.

@@ -26,6 +26,9 @@ jobs:
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check
 
+      - name: Check board facts ledger and generated pin maps
+        run: python tools/check_boards.py --check-docs
+
       - name: Compile and run C++20 host unit tests
         run: |
           g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state

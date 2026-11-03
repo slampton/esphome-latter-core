@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/slampton/esphome-latter-core/boards/facts/schema.json",
+  "title": "Latter Board Facts",
+  "description": "Hardware facts for one board, cross-checked against boards/<board_id>.yaml by tools/check_boards.py. Source precedence: schematic > vendor BSP code > wiki tables. Confidence: H = validated on hardware in Latter firmware, M = schematic or vendor code, L = unconfirmed (blocks a release until a bring-up log confirms it).",
+  "type": "object",
+  "required": ["board_id", "product", "latter_device", "sources", "silicon", "power", "latter_flags", "pins"],
+  "properties": {
+    "board_id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "product": {"type": "string"},
+    "sku": {"type": "string"},
+    "latter_device": {"type": "string"},
+    "ble_minor": {"type": "integer", "minimum": 1},
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "url"],
+        "properties": {
+          "kind": {"enum": ["schematic", "bsp", "wiki", "datasheet", "demo"]},
+          "url": {"type": "string"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "silicon": {
+      "type": "object",
+      "required": ["soc"],
+      "properties": {
+        "soc": {"enum": ["ESP32-S3", "ESP32-P4"]},
+        "module": {"type": "string"},
+        "revisions_seen": {"type": "array", "items": {"type": "string"}},
+        "flash_mb": {"type": "integer"},
+        "psram_mb": {"type": "integer"},
+        "max_cpu_mhz": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "coprocessor": {"type": "string"}
+      }
+    },
+    "power": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": {"enum": ["battery", "usb", "mains"]},
+        "pmu": {"type": ["string", "null"]},
+        "battery_mah": {"type": ["integer", "null"]},
+        "charge_ma": {"type": ["integer", "null"]},
+        "rails": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rail", "loads", "confidence"],
+            "properties": {
+              "rail": {"type": "string"},
+              "loads": {"type": "string"},
+              "confidence": {"enum": ["H", "M", "L"]},
+              "note": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "display": {"type": "object"},
+    "backlight": {
+      "type": ["object", "null"],
+      "properties": {
+        "type": {"enum": ["pwm_fet", "analog_fb_rc", "amoled_none"]},
+        "min_pwm_hz": {"type": "integer"}
+      }
+    },
+    "i2c_devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["address", "part"],
+        "properties": {
+          "address": {"type": "string", "pattern": "^0x[0-9a-fA-F]{2}$"},
+          "part": {"type": "string"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "latter_flags": {"type": "object", "additionalProperties": {"type": ["string", "integer"]}},
+    "pins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gpio", "role", "confidence"],
+        "properties": {
+          "gpio": {"type": "integer", "minimum": 0},
+          "role": {"type": "string"},
+          "polarity": {"type": "string"},
+          "deep_sleep_wake": {"type": "boolean"},
+          "strapping": {"type": "boolean"},
+          "shared_with": {"type": "string"},
+          "confidence": {"enum": ["H", "M", "L"]},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "known_doc_errata": {"type": "array", "items": {"type": "string"}},
+    "power_baseline": {"type": "object"}
+  }
+}

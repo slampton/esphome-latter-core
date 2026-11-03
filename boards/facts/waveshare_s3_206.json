@@ -1,0 +1,73 @@
+{
+  "board_id": "waveshare_s3_206",
+  "product": "Waveshare ESP32-S3-Touch-AMOLED-2.06",
+  "latter_device": "Wrist Assist",
+  "ble_minor": 2,
+  "sources": [
+    {"kind": "schematic", "url": "https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.06"},
+    {"kind": "wiki", "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.06"}
+  ],
+  "silicon": {"soc": "ESP32-S3", "module": "ESP32-S3R8", "revisions_seen": ["v0.2"], "flash_mb": 32, "psram_mb": 8, "max_cpu_mhz": {"all": 240}},
+  "power": {
+    "source": "battery",
+    "pmu": "AXP2101",
+    "battery_mah": 400,
+    "charge_ma": 300,
+    "rails": [
+      {"rail": "DCDC1", "loads": "3V3 system", "confidence": "H"},
+      {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M"},
+      {"rail": "ALDO2", "loads": "panel power enable (DSI_PWR_EN)", "confidence": "M", "note": "kept on (safe either way); bench-confirm by toggling ALDO2 before any gating (plan item 0.10)"},
+      {"rail": "ALDO3", "loads": "vibration motor supply", "confidence": "M"}
+    ]
+  },
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 410, "height": 502, "shape": "rect", "corner_radius": 98, "offset_x": 22, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29 is required)"},
+  "backlight": {"type": "amoled_none"},
+  "i2c_devices": [
+    {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
+    {"address": "0x18", "part": "ES8311"},
+    {"address": "0x40", "part": "ES7210", "note": "MIC3 = AEC loopback (TDM)"},
+    {"address": "0x38", "part": "FT3168", "note": "ft5x06 platform; RST pulsed at boot"},
+    {"address": "0x6b", "part": "QMI8658"},
+    {"address": "0x51", "part": "PCF85063", "note": "RTC, unused by Latter"}
+  ],
+  "latter_flags": {
+    "LATTER_SCREEN_W": 410, "LATTER_SCREEN_H": 502, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 315,
+    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1,
+    "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 1, "LATTER_PANEL_IPS": 0, "LATTER_PANEL_DCS_SLEEP": 1,
+    "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,
+    "LATTER_PWR_KEY_PIN": 10, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_PWR_KEY_DEEP_SLEEP_WAKE": 1,
+    "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x003", "LATTER_PMU_CHARGE_MA": 300
+  },
+  "pins": [
+    {"gpio": 0, "role": "boot_button", "polarity": "active_low", "strapping": true, "confidence": "H"},
+    {"gpio": 1, "role": "sd_cmd", "confidence": "M", "note": "unused"},
+    {"gpio": 2, "role": "sd_clk", "confidence": "M", "note": "unused"},
+    {"gpio": 3, "role": "sd_d0", "strapping": true, "confidence": "M", "note": "unused"},
+    {"gpio": 4, "role": "display_qspi_d0", "confidence": "H"},
+    {"gpio": 5, "role": "display_qspi_d1", "confidence": "H"},
+    {"gpio": 6, "role": "display_qspi_d2", "confidence": "H"},
+    {"gpio": 7, "role": "display_qspi_d3", "confidence": "H"},
+    {"gpio": 8, "role": "display_reset", "confidence": "H"},
+    {"gpio": 9, "role": "touch_reset", "confidence": "H", "note": "pulsed at boot by the HAL"},
+    {"gpio": 10, "role": "pwr_key", "polarity": "active_high", "deep_sleep_wake": true, "confidence": "H"},
+    {"gpio": 11, "role": "display_qspi_clk", "confidence": "H"},
+    {"gpio": 12, "role": "display_cs", "confidence": "H"},
+    {"gpio": 13, "role": "display_te", "confidence": "M", "note": "routed, unused"},
+    {"gpio": 14, "role": "i2c_scl", "confidence": "H"},
+    {"gpio": 15, "role": "i2c_sda", "confidence": "H"},
+    {"gpio": 16, "role": "i2s_mclk", "confidence": "H"},
+    {"gpio": 17, "role": "sd_cs", "confidence": "M", "note": "unused"},
+    {"gpio": 18, "role": "haptic_motor", "polarity": "active_high", "confidence": "M", "note": "MMBT3904 driver, ALDO3 supply; unused"},
+    {"gpio": 21, "role": "imu_int1", "confidence": "M", "note": "QMI8658 INT1 (wake-on-motion)"},
+    {"gpio": 38, "role": "touch_int", "polarity": "active_low", "confidence": "H"},
+    {"gpio": 39, "role": "rtc_int", "confidence": "M", "note": "PCF85063 INT, unused"},
+    {"gpio": 40, "role": "i2s_dout", "confidence": "H"},
+    {"gpio": 41, "role": "i2s_bclk", "confidence": "H"},
+    {"gpio": 42, "role": "i2s_din", "confidence": "H"},
+    {"gpio": 45, "role": "i2s_ws", "strapping": true, "confidence": "H"},
+    {"gpio": 46, "role": "speaker_pa", "polarity": "active_high", "strapping": true, "confidence": "H"}
+  ],
+  "known_doc_errata": [
+    "Waveshare's pin_config.h for this board has no IMU INT define; INT1 = GPIO21 comes from the wiki pin table."
+  ]
+}

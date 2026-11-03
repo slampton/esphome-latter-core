@@ -1,0 +1,71 @@
+{
+  "board_id": "waveshare_s3_216",
+  "product": "Waveshare ESP32-S3-Touch-AMOLED-2.16",
+  "sku": "33969",
+  "latter_device": "Mobile Assistant",
+  "ble_minor": 3,
+  "sources": [
+    {"kind": "schematic", "url": "https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.16", "note": "schematic/ESP32-S3-Touch-AMOLED-2.16-Schematic.pdf"},
+    {"kind": "wiki", "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.16"}
+  ],
+  "silicon": {"soc": "ESP32-S3", "module": "ESP32-S3R8", "revisions_seen": ["v0.2"], "flash_mb": 16, "psram_mb": 8, "max_cpu_mhz": {"all": 240}},
+  "power": {
+    "source": "battery",
+    "pmu": "AXP2101",
+    "battery_mah": 1000,
+    "charge_ma": 500,
+    "rails": [
+      {"rail": "DCDC1", "loads": "3V3 system", "confidence": "H"},
+      {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M"}
+    ]
+  },
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "te": "unrouted", "low_power": "DCS sleep"},
+  "backlight": {"type": "amoled_none"},
+  "i2c_devices": [
+    {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
+    {"address": "0x18", "part": "ES8311"},
+    {"address": "0x40", "part": "ES7210"},
+    {"address": "0x5a", "part": "CST9217", "note": "marketed as CST9220"},
+    {"address": "0x6b", "part": "QMI8658"},
+    {"address": "0x51", "part": "PCF85063", "note": "RTC, unused by Latter"}
+  ],
+  "latter_flags": {
+    "LATTER_SCREEN_W": 480, "LATTER_SCREEN_H": 480, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 222,
+    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1,
+    "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 0, "LATTER_PANEL_IPS": 0, "LATTER_PANEL_DCS_SLEEP": 1,
+    "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,
+    "LATTER_PWR_KEY_PIN": 16, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_PWR_KEY_DEEP_SLEEP_WAKE": 1,
+    "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x001", "LATTER_PMU_CHARGE_MA": 500
+  },
+  "pins": [
+    {"gpio": 0, "role": "boot_button", "polarity": "active_low", "strapping": true, "confidence": "M", "note": "unused"},
+    {"gpio": 1, "role": "sd_cmd", "confidence": "M", "note": "unused"},
+    {"gpio": 2, "role": "sd_clk", "confidence": "M", "note": "unused"},
+    {"gpio": 3, "role": "sd_d0", "strapping": true, "confidence": "M", "note": "unused"},
+    {"gpio": 4, "role": "display_qspi_d0", "confidence": "H"},
+    {"gpio": 5, "role": "display_qspi_d1", "confidence": "H"},
+    {"gpio": 6, "role": "display_qspi_d2", "confidence": "H"},
+    {"gpio": 7, "role": "display_qspi_d3", "confidence": "H"},
+    {"gpio": 8, "role": "i2s_dout", "confidence": "H"},
+    {"gpio": 9, "role": "i2s_bclk", "confidence": "H"},
+    {"gpio": 10, "role": "i2s_din", "confidence": "H"},
+    {"gpio": 11, "role": "touch_int", "polarity": "active_low", "confidence": "H"},
+    {"gpio": 12, "role": "display_cs", "confidence": "H"},
+    {"gpio": 13, "role": "rtc_int", "deep_sleep_wake": true, "confidence": "M", "note": "PCF85063 INT, unused"},
+    {"gpio": 14, "role": "i2c_scl", "confidence": "H"},
+    {"gpio": 15, "role": "i2c_sda", "confidence": "H"},
+    {"gpio": 16, "role": "pwr_key", "polarity": "active_high", "deep_sleep_wake": true, "confidence": "H"},
+    {"gpio": 17, "role": "imu_int1", "confidence": "H", "note": "QMI8658 INT1; wake-on-motion events seen in [PROF:IMU]"},
+    {"gpio": 18, "role": "key3_button", "polarity": "active_low", "confidence": "H"},
+    {"gpio": 21, "role": "imu_int2", "confidence": "M", "note": "unused"},
+    {"gpio": 38, "role": "display_qspi_clk", "confidence": "H"},
+    {"gpio": 39, "role": "display_reset", "confidence": "H"},
+    {"gpio": 40, "role": "touch_reset", "confidence": "H"},
+    {"gpio": 41, "role": "sd_cs", "confidence": "M", "note": "unused"},
+    {"gpio": 42, "role": "i2s_mclk", "confidence": "H"},
+    {"gpio": 45, "role": "i2s_ws", "strapping": true, "confidence": "H"},
+    {"gpio": 46, "role": "speaker_pa", "polarity": "active_high", "strapping": true, "confidence": "H"}
+  ],
+  "known_doc_errata": ["The touch IC is a CST9217; Waveshare markets it as CST9220."],
+  "power_baseline": {"screen_off_awake_ma": 62, "method": "overnight voltage-slope run, log viewer closed, rev 2026110211"}
+}
