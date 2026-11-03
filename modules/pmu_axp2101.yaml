@@ -213,11 +213,9 @@ script:
                   id(turn_screen_off).execute();
                 } else if (id(display_power_state) == 2) {
                   if (!vbus) id(sleep_start_time) = millis();
-                  auto pw_mode = id(pickup_wake_mode).current_option();
-                  bool pw_active = (pw_mode == "Always On") || (pw_mode == "Docked Only" && vbus);
-                  id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
                   id(sync_wake_word_state).execute();
                 }
+                id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
               }
             }
             // Critical-battery guard: VBAT (REG34/35) every 10 s on battery; hibernate cleanly when it stays

@@ -194,7 +194,7 @@ media_player:
                     - lambda: |-
                         latter_ui::screen_is_off_standby() = false;
                         id(display_power_state) = 0;
-                        id(hal_set_imu_power_mode).execute(0x01);
+                        id(apply_power_policy).execute();
                     - light.turn_on: display_brightness
               - lambda: |-
                   const std::string &art_u = latter_ui::media_state().art_url;
@@ -280,7 +280,7 @@ voice_assistant:
     then:
       - lambda: |-
           latter_ui::log_audio_profile("VA_LISTEN_START");
-          latter_ui::hal_set_wifi_power_save(0); // Ensure full-performance Wi-Fi during voice streaming
+          id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
             latter_ui::schedule_disp_update(&id(disp1));
@@ -311,7 +311,7 @@ voice_assistant:
             latter_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
             id(disp1).start_poller();
-            id(hal_set_imu_power_mode).execute(0x01);
+            id(apply_power_policy).execute();
             id(sync_display_brightness).execute();
           }
           id(va_was_cancelled) = false;
@@ -491,10 +491,8 @@ voice_assistant:
           id(va_active) = false;
           id(va_status_text) = "";
           if (id(return_page) >= 0) id(gui_page) = id(return_page);
-          if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            latter_ui::hal_set_wifi_power_save(2);
-          }
+          latter_ui::radio_boost_until_ms() = 0;
+          id(apply_power_policy).execute();
           ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
       - script.execute: resume_music_after_va
       - script.execute: mp_idle_debounce
@@ -628,10 +626,8 @@ script:
           if (was_va_session) {
             id(gui_page) = id(return_page);
           }
-          if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            latter_ui::hal_set_wifi_power_save(1);
-          }
+          latter_ui::radio_boost_until_ms() = 0;
+          id(apply_power_policy).execute();
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
       # 4. Smoothly restore music playback or mute & route I2S back to mic
@@ -772,7 +768,8 @@ script:
     mode: restart
     then:
       - lambda: |-
-          latter_ui::hal_set_wifi_power_save(0);
+          latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
+          id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
             if (id(va_wake_screen_switch).state) {

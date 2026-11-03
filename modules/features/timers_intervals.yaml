@@ -6,6 +6,7 @@ interval:
       - script.execute: sync_display_brightness
 
   - interval: 50ms
+    id: ui_anim_tick
     then:
       - lambda: |-
           // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
@@ -129,6 +130,7 @@ interval:
           }
 
   - interval: 250ms
+    id: ui_fast_tick
     then:
       - lambda: |-
           // ------------------------------------------------------------------

@@ -489,6 +489,20 @@ inline void hal_set_wifi_power_save(int mode) {
 #endif
 }
 
+// Event-declared radio demand: a voice session that is about to start (before va.is_running() is
+// true) asks for full-throughput Wi-Fi for a bounded window; apply_power_policy honours it.
+inline uint32_t &radio_boost_until_ms() {
+  static uint32_t until = 0;
+  return until;
+}
+inline void request_radio_boost(uint32_t now_ms, uint32_t duration_ms) {
+  radio_boost_until_ms() = (now_ms + duration_ms) | 1U;
+}
+inline bool radio_boost_active(uint32_t now_ms) {
+  const uint32_t until = radio_boost_until_ms();
+  return until != 0 && static_cast<int32_t>(until - now_ms) > 0;
+}
+
 template <typename BleCtrlT>
 inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool ble_beacon_switch_on,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,

@@ -255,11 +255,8 @@ select:
       - "Disabled"
     set_action:
       - lambda: |-
+          // apply_power_policy applies the new mode on its next 1 s tick (the select publishes after set_action).
           latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
-          if (id(display_power_state) != 0) {
-            bool pw_act = (x == "Always On") || (x == "Docked Only" && id(usb_connected).state);
-            id(hal_set_imu_power_mode).execute(pw_act ? 0x01 : 0x00);
-          }
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
@@ -347,44 +344,9 @@ interval:
                 id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
           }
 
-          // 6. Single-Owner Radio Policy (BLE Presence Beacon, Bounded 5-Min Improv & Wi-Fi Modem Sleep)
-          uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
-                                               latter_ui::touch_gesture().last_touch_ms);
-          const bool high_tput_needed =
-              id(usb_connected).state ||
-              id(va_active) || id(va).is_running() || id(va_tts_received) ||
-              id(announcement_mixing_input).is_running() ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
-              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-              (id(display_power_state) == 0 && (now_1s_ms - last_interact_ms < 8000U));
-          latter_ui::evaluate_radio_policy(
-              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
-              id(is_hibernating), id(ota_in_progress), id(display_power_state),
-              high_tput_needed, now_1s_ms);
-
-          // 7. Dynamic QMI8658 IMU Power Supervisor
-          if (!id(is_hibernating) && !id(ota_in_progress) && (now_1s_ms > 6000U)) {
-            #if LATTER_HAS_IMU
-            auto pw_mode = id(pickup_wake_mode).current_option();
-            const bool pw_allowed = (pw_mode == "Always On") ||
-                                    (pw_mode == "Docked Only" && id(usb_connected).state);
-            if (id(display_power_state) == 0) {
-              const bool need_gyro = (id(gui_page) == 3 && id(active_game) >= 1 && id(active_game) <= 4);
-              const bool need_accel = pw_allowed ||
-                                      (id(gui_page) == 1 && id(home_subpage) == 0) ||
-                                      (id(gui_page) == 5) ||
-                                      (id(gui_page) == 8 && (id(tools_subpage) == 7 || id(tools_subpage) == 12));
-              id(hal_set_imu_power_mode).execute(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
-            } else {
-              // Screen off: hardware Wake-on-Motion on INT1 instead of polling; poll only during the short
-              // qualification window after a WoM event so the RaiseToWakeDetector can confirm a raise.
-              id(hal_set_imu_power_mode).execute(!pw_allowed ? 0x00
-                  : (latter_ui::imu_wom_qualifying(now_1s_ms) ? 0x01 : 0x80));
-            }
-            #endif
-          }
+          // 6-7. Single power-policy owner: radio (BLE beacon / Improv / Wi-Fi modem sleep), IMU mode,
+          // screen-off tick gating and battery polling all live in script apply_power_policy.
+          id(apply_power_policy).execute();
 
           // 8. Safe Docked-Idle Background Firmware Update Check (after 3 min uptime, every 6h while on USB & idle)
           static uint32_t last_fw_check_ms = 0;
@@ -489,6 +451,7 @@ interval:
           #endif
 
   - interval: 50ms
+    id: screensaver_anim_tick
     then:
       - lambda: |-
           // High-refresh animation loop for active screensavers (20 FPS idle, ~13.3 FPS during Sendspin audio).
@@ -508,6 +471,86 @@ interval:
           }
 
 script:
+  # Single owner for every power-related actuator. The 1 s supervisor runs it, and state transitions
+  # (wake, screen off, screensaver, VA start/stop, audio idle, USB change, beacon switch) call it for an
+  # immediate re-evaluation. Event sites declare demand (state flags, radio_boost_until_ms) and never
+  # touch Wi-Fi power save, the BLE controller, the IMU mode or tick intervals directly
+  # (latter-verify enforces this).
+  - id: apply_power_policy
+    mode: restart
+    then:
+      - lambda: |-
+          const uint32_t now_p = millis();
+
+          // Radio: BLE presence beacon / bounded Improv window, and Wi-Fi modem sleep.
+          const uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
+                                                     latter_ui::touch_gesture().last_touch_ms);
+          const bool high_tput_needed =
+              id(usb_connected).state ||
+              latter_ui::radio_boost_active(now_p) ||
+              id(va_active) || id(va).is_running() || id(va_tts_received) ||
+              id(announcement_mixing_input).is_running() ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12) ||
+              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+              (id(display_power_state) == 0 && (now_p - last_interact_ms < 8000U));
+          latter_ui::evaluate_radio_policy(
+              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
+              id(is_hibernating), id(ota_in_progress), id(display_power_state),
+              high_tput_needed, now_p);
+
+          // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
+          #if LATTER_HAS_IMU
+          if (!id(is_hibernating) && !id(ota_in_progress) && (now_p > 6000U)) {
+            auto pw_mode = id(pickup_wake_mode).current_option();
+            const bool pw_allowed = (pw_mode == "Always On") ||
+                                    (pw_mode == "Docked Only" && id(usb_connected).state);
+            if (id(display_power_state) == 0) {
+              const bool need_gyro = (id(gui_page) == 3 && id(active_game) >= 1 && id(active_game) <= 4);
+              const bool need_accel = pw_allowed ||
+                                      (id(gui_page) == 1 && id(home_subpage) == 0) ||
+                                      (id(gui_page) == 5) ||
+                                      (id(gui_page) == 8 && (id(tools_subpage) == 7 || id(tools_subpage) == 12));
+              id(hal_set_imu_power_mode).execute(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
+            } else {
+              // Poll only during the short qualification window after a WoM event so the
+              // RaiseToWakeDetector can confirm a raise.
+              id(hal_set_imu_power_mode).execute(!pw_allowed ? 0x00
+                  : (latter_ui::imu_wom_qualifying(now_p) ? 0x01 : 0x80));
+            }
+          }
+          #endif
+
+          // Tick gating: with the screen off and nothing time-critical pending, nothing ticks faster than 1 s.
+          const bool alerts_pending = id(timer_running) || id(stopwatch_running) || id(find_my_active) ||
+                                      id(notif_active) || id(alarm_ringing) || id(timer_ringing);
+          const bool va_busy = id(va_active) || !id(va_status_text).empty();
+          auto gate = [](auto *tick, bool want, int8_t &state) {
+            if (state == (want ? 1 : 0)) return;
+            state = want ? 1 : 0;
+            if (want) {
+              tick->start_poller();
+            } else {
+              tick->stop_poller();
+            }
+          };
+          static int8_t ss_anim_on = -1, ui_anim_on = -1, ui_fast_on = -1;
+          gate(id(screensaver_anim_tick), id(display_power_state) == 1, ss_anim_on);
+          gate(id(ui_anim_tick), id(display_power_state) == 0 || va_busy, ui_anim_on);
+          gate(id(ui_fast_tick), id(display_power_state) != 2 || alerts_pending || va_busy, ui_fast_on);
+
+          // Battery gauge: 5 s with the screen on or docked, 60 s with the screen off.
+          #if LATTER_HAS_BATTERY
+          static int8_t batt_slow = -1;
+          const bool want_batt_slow = (id(display_power_state) == 2);
+          if (batt_slow != (want_batt_slow ? 1 : 0)) {
+            batt_slow = want_batt_slow ? 1 : 0;
+            id(batt_level).set_update_interval(want_batt_slow ? 60000 : 5000);
+            id(batt_level).start_poller();
+          }
+          #endif
+
   - id: trigger_screensaver_now
     mode: restart
     then:
@@ -523,10 +566,7 @@ script:
           id(display_power_state) = 1; // SCREENSAVER
           id(sleep_start_time) = 0;
           latter_ui::record_ambient_frame_ms(millis());
-          auto pw_mode = id(pickup_wake_mode).current_option();
-          const bool pw_active = (pw_mode == "Always On") ||
-                                 (pw_mode == "Docked Only" && id(usb_connected).state);
-          id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
+          id(apply_power_policy).execute();
           id(display_brightness).turn_on().set_brightness(0.60f).perform();
           latter_ui::schedule_disp_update(&id(disp1));
 
@@ -560,14 +600,7 @@ script:
               id(hal_set_audio_codecs_standby).execute(true);
             }
           }
-          auto pw_mode = id(pickup_wake_mode).current_option();
-          const bool pickup_wake_active = (pw_mode == "Always On") ||
-                                          (pw_mode == "Docked Only" && id(usb_connected).state);
-          id(hal_set_imu_power_mode).execute(pickup_wake_active ? 0x01 : 0x00);
-          latter_ui::evaluate_radio_policy(
-              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
-              id(is_hibernating), id(ota_in_progress), id(display_power_state),
-              id(usb_connected).state || local_audio_playing, millis());
+          id(apply_power_policy).execute();
 
   - id: enter_standby_state
     mode: restart
@@ -583,10 +616,7 @@ script:
             id(display_power_state) = 1; // SCREENSAVER
             id(sleep_start_time) = 0;
             latter_ui::record_ambient_frame_ms(millis());
-            auto pw_mode = id(pickup_wake_mode).current_option();
-            const bool pw_active = (pw_mode == "Always On") ||
-                                   (pw_mode == "Docked Only" && id(usb_connected).state);
-            id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
+            id(apply_power_policy).execute();
             id(display_brightness).turn_on().set_brightness(0.60f).perform();
             if (s_style == "Ambient Clock") {
               latter_ui::schedule_disp_update(&id(disp1));
@@ -604,23 +634,19 @@ script:
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
             latter_ui::record_screen_wake();
           }
-          latter_ui::hal_set_wifi_power_save(0);
           latter_ui::screen_is_off_standby() = false;
           latter_ui::last_screen_wake_ms() = millis();
           latter_ui::raise_to_wake().reset();
           id(sleep_start_time) = 0;
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
-          if (id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-            id(ble_ctrl).enable();
-          }
+          id(apply_power_policy).execute();  // full-throughput Wi-Fi (fresh interaction), beacon, IMU, ticks
           // Codec power follows audio demand, not screen state: route_i2s_to_spk / sync_wake_word_state /
           // voice entry points wake the codecs when audio actually starts.
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
             id(hal_set_audio_codecs_standby).execute(false);
             id(speaker_enable).turn_on();
           }
-          id(hal_set_imu_power_mode).execute(0x01);
           const std::string &art_u = latter_ui::media_state().art_url;
           if (id(gui_page) == 2 &&
               (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&

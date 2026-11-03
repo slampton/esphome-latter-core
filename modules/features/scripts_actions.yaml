@@ -225,9 +225,7 @@ script:
                 then:
                   - lambda: |-
                       id(va_was_cancelled) = false;
-                      if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-                        id(ble_ctrl).enable();
-                      }
+                      id(apply_power_policy).execute();
                   - homeassistant.action:
                       action: latter.media_command
                       data:
@@ -274,9 +272,7 @@ script:
           else:
             - lambda: |-
                 id(va_was_cancelled) = false;
-                if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-                  id(ble_ctrl).enable();
-                }
+                id(apply_power_policy).execute();
             - lambda: 'id(hal_set_dac_mute).execute(true);'
             - script.execute: route_i2s_to_mic
             - script.execute: sync_wake_word_state
@@ -1191,10 +1187,6 @@ script:
             - script.execute: route_i2s_to_mic
             - script.execute: sync_wake_word_state
             - lambda: |-
-                if (id(display_power_state) == 0 && id(ble_area_beacon_switch).state && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-                  ESP_LOGI("ble", "Local audio idle: re-enabling BLE Presence Beacon");
-                  id(ble_ctrl).enable();
-                }
                 auto ww_mode = id(va_wake_word_mode).current_option();
                 const bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && id(usb_connected).state);
                 if (!ww_act) {
@@ -1202,8 +1194,8 @@ script:
                 }
                 if (id(display_power_state) == 2 && !id(usb_connected).state) {
                   if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
-                  latter_ui::hal_set_wifi_power_save(2);
                 }
+                id(apply_power_policy).execute();  // local audio idle: beacon back, modem sleep if screen off
 
   - id: toggle_voice_assistant
     mode: restart
@@ -1223,7 +1215,8 @@ script:
                       format: "Assist pipeline not connected to Home Assistant yet; ignoring PTT press"
                   - script.stop: toggle_voice_assistant
             - lambda: |-
-                latter_ui::hal_set_wifi_power_save(0);
+                latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
+                id(apply_power_policy).execute();
                 id(hal_set_audio_codecs_standby).execute(false);
                 // If waking from screen-off or standby, honor Assist Screen Wake preference
                 if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
@@ -1300,10 +1293,8 @@ script:
           id(va_vad_active) = false;
           id(va_active) = false;
           id(gui_page) = id(return_page);
-          if (id(display_power_state) == 2 && !id(usb_connected).state &&
-              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) {
-            latter_ui::hal_set_wifi_power_save(1);
-          }
+          latter_ui::radio_boost_until_ms() = 0;
+          id(apply_power_policy).execute();
       - delay: 25ms
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms

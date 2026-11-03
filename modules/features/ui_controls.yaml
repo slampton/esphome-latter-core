@@ -646,16 +646,12 @@ switch:
     turn_on_action:
       - lambda: |-
           id(ble_area_beacon_switch).publish_state(true);
-          if (id(display_power_state) == 0 && !id(ble_ctrl).is_active() && !id(ble_ctrl).is_failed()) {
-            id(ble_ctrl).enable();
-          }
+          id(apply_power_policy).execute();
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
     turn_off_action:
       - lambda: |-
           id(ble_area_beacon_switch).publish_state(false);
-          if (id(ble_ctrl).is_active() && id(wifi_ctrl).is_connected()) {
-            id(ble_ctrl).disable();
-          }
+          id(apply_power_policy).execute();
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
 
