@@ -153,4 +153,15 @@ python tools/check_boards.py --render-docs # regenerate the pin maps in docs/har
 
 The checker fails on any GPIO the board file uses without a fact, use of a reserved or unrouted pin, `LATTER_*` flags that disagree with the facts, unknown I2C addresses, a deep-sleep wake pin that can't wake the chip, a backlight PWM below the panel's minimum, a duplicate BLE minor, or a missing release job. A tagged release also fails while any **L** fact remains.
 
+### Scaffolding and bring-up
+
+Once the facts file exists, generate a starting point and a bench probe:
+
+```bash
+python tools/new_board.py <board_id>     # boards/<id>.yaml, devices/<name>.yaml, examples/bringup/<id>.yaml
+python tools/new_board.py --bringup      # regenerate every examples/bringup/<id>.yaml from the facts
+```
+
+The scaffolder never overwrites an existing file without `--force`, and the files it writes mark every remaining decision with `TODO`. The bring-up probe has no Latter core. Flash it over USB and it logs the silicon revision, flash and PSRAM, every expected I2C device as present or missing (plus any unexpected ones), the AXP2101 state on battery boards, and an edge for every key and interrupt pin. It also pulses each output (amplifier, haptics, SD power, backlight enable) and sweeps the backlight. Attach that log to the pull request: it is the evidence that upgrades **M** and **L** facts to **H**.
+
 If you get a new board working, a pull request adding its board file and facts file is welcome.

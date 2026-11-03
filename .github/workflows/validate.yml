@@ -29,6 +29,9 @@ jobs:
       - name: Check board facts ledger and generated pin maps
         run: python tools/check_boards.py --check-docs
 
+      - name: Check generated bring-up probes
+        run: python tools/new_board.py --bringup --check
+
       - name: Compile and run C++20 host unit tests
         run: |
           g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state
@@ -39,6 +42,13 @@ jobs:
 
       - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)
         run: esphome config examples/custom_display_template.yaml
+
+      - name: Validate bring-up probes
+        run: |
+          for probe in examples/bringup/*.yaml; do
+            echo "Validating $probe..."
+            esphome config "$probe"
+          done
 
       - name: Validate 5 Flagship Device Configs
         run: |
