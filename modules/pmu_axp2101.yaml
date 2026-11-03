@@ -150,8 +150,10 @@ sensor:
     filters:
       - throttle: 120s
     lambda: |-
+      // Sampled in every power state (a 2-byte I2C read once a minute): the screen-off battery voltage is
+      // the drain metric for power work, and [PROF:POWER] reports this sensor's state.
       static float last_v = NAN;
-      if (id(va_active) || id(va_tts_received) || (id(display_power_state) == 2 && !id(usb_connected).state && !std::isnan(last_v))) {
+      if (id(va_active) || id(va_tts_received)) {
         return {};
       }
       uint8_t reg = 0x34;
