@@ -1218,6 +1218,9 @@ script:
                 latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
                 id(apply_power_policy).execute();
                 id(hal_set_audio_codecs_standby).execute(false);
+                id(va_restore_display).stop();
+                latter_ui::va_display_restore().capture(id(display_power_state),
+                    id(display_brightness).current_values.is_on(), millis(), true);
                 // If waking from screen-off or standby, honor Assist Screen Wake preference
                 if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
                   if (id(va_wake_screen_switch).state) {
@@ -1299,7 +1302,7 @@ script:
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
       - script.execute: resume_music_after_va
-      - script.execute: screen_sleep_timer
+      - script.execute: va_restore_display
   - id: trigger_firmware_update
     mode: restart
     then:

@@ -307,6 +307,9 @@ voice_assistant:
           decibel_reduction: 0
           duration: 0.1s
       - lambda: |-
+          id(va_restore_display).stop();
+          latter_ui::va_display_restore().capture(id(display_power_state),
+              id(display_brightness).current_values.is_on(), millis(), false);
           if (id(display_power_state) != 0 && id(va_wake_screen_switch).state) {
             latter_ui::screen_is_off_standby() = false;
             id(display_power_state) = 0;
@@ -497,7 +500,7 @@ voice_assistant:
       - script.execute: resume_music_after_va
       - script.execute: mp_idle_debounce
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
-      - script.execute: screen_sleep_timer
+      - script.execute: va_restore_display
   on_timer_started:
     then:
       - lambda: |-
@@ -630,9 +633,9 @@ script:
           id(apply_power_policy).execute();
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
-      # 4. Smoothly restore music playback or mute & route I2S back to mic
+      # 4. Smoothly restore music playback or mute & route I2S back to mic, then restore the display
       - script.execute: resume_music_after_va
-      - script.execute: screen_sleep_timer
+      - script.execute: va_restore_display
   - id: route_i2s_to_spk
     mode: restart
     then:
@@ -771,6 +774,9 @@ script:
           latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
+          id(va_restore_display).stop();
+          latter_ui::va_display_restore().capture(id(display_power_state),
+              id(display_brightness).current_values.is_on(), millis(), true);
           if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
             if (id(va_wake_screen_switch).state) {
               latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
@@ -788,6 +794,8 @@ script:
   - id: play_alarm_sound
     mode: restart
     then:
+      - lambda: 'latter_ui::va_display_restore().armed = false;'
+      - script.stop: va_restore_display
       - script.stop: stop_alarm_sound
       - script.stop: mp_idle_debounce
       - script.stop: cancel_voice_assistant

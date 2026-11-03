@@ -551,6 +551,32 @@ script:
           }
           #endif
 
+  # Return the display to its pre-voice-session state (see latter_ui::VaDisplayRestore).
+  - id: va_restore_display
+    mode: restart
+    then:
+      # Let a music resume settle first (turn_screen_off tears audio down when nothing is playing yet).
+      - wait_until:
+          condition:
+            lambda: 'return !id(resume_music_after_va).is_running();'
+          timeout: 4s
+      - delay: 1500ms
+      - lambda: |-
+          auto &r = latter_ui::va_display_restore();
+          const int prior = r.armed ? r.prior_state : 0;
+          const bool touched = r.touched_since_start(latter_ui::touch_gesture().last_touch_ms);
+          r.armed = false;
+          const bool alert_up = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) || id(notif_active);
+          if (alert_up || touched || prior == 0 || id(display_power_state) != 0 || id(is_hibernating)) {
+            id(screen_sleep_timer).execute();
+            return;
+          }
+          if (prior == 1) {
+            id(enter_standby_state).execute();  // screensaver if still allowed (docked, style), else off
+          } else {
+            id(turn_screen_off).execute();
+          }
+
   - id: trigger_screensaver_now
     mode: restart
     then:

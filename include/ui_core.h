@@ -29,7 +29,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110211L
+#define LATTER_SDK_REV 2026110212L
 
 namespace latter_ui {
 
@@ -2174,6 +2174,31 @@ struct CriticalBatteryGuard {
     return false;
   }
 };
+
+// Voice sessions return the display to the state it was in before the session started:
+// active -> normal timeout, screensaver -> screensaver (or off if no longer allowed), off -> off.
+// A user-initiated start (wake word / PTT) always captures; HA-initiated starts and continued-conversation
+// turns capture only if no session is armed. Touching the screen during the session keeps it active.
+struct VaDisplayRestore {
+  bool armed = false;
+  int prior_state = 0;  // 0 active, 1 screensaver, 2 off (display_power_state semantics)
+  uint32_t session_start_ms = 0;
+
+  void capture(int display_power_state, bool brightness_on, uint32_t now_ms, bool force) {
+    if (armed && !force) return;
+    armed = true;
+    prior_state = brightness_on ? display_power_state : 2;
+    session_start_ms = (now_ms == 0) ? 1U : now_ms;
+  }
+  bool touched_since_start(uint32_t last_touch_ms) const {
+    return armed && last_touch_ms != 0 && static_cast<int32_t>(last_touch_ms - session_start_ms) > 0;
+  }
+};
+
+inline VaDisplayRestore &va_display_restore() {
+  static VaDisplayRestore r;
+  return r;
+}
 
 inline CriticalBatteryGuard &critical_battery_guard() {
   static CriticalBatteryGuard g;
