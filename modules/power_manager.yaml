@@ -36,6 +36,15 @@ globals:
     initial_value: 'false'
 
 binary_sensor:
+  # Bluetooth controller state as decided by apply_power_policy (presence beacon / Improv window).
+  - platform: template
+    name: "BLE Radio Active"
+    id: ble_radio_active
+    device_class: running
+    entity_category: diagnostic
+    icon: "mdi:bluetooth"
+    lambda: 'return id(ble_ctrl).is_active();'
+
   - platform: template
     name: "Pickup Detected"
     id: pickup_detected
