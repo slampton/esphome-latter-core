@@ -94,6 +94,7 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
     advanced:
       enable_idf_experimental_features: true
       flash_chip: generic

@@ -110,7 +110,7 @@ The ESP Web Tools installer page and per-device manifests. The release workflow 
 
 ## Requirements for building
 
-- **ESPHome:** 2026.10.0 or newer. `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
+- **ESPHome:** 2026.10.2 or newer (the first release where `CONFIG_MBEDTLS_SSL_PROTO_TLS1_3`, set on every board, takes effect). `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
 - **Framework:** ESP-IDF, with C++20. The default for ESPHome 2026.10 is sufficient.
 - **PSRAM:** required on every board.
 - **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256` on every board.
