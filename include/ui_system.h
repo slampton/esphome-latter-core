@@ -197,6 +197,13 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_unt
     ESP_LOGI("power", "Armed alarm in %lds: entering timer-wake deep sleep (wake in %llus, AXP2101 rails kept ON)",
              (long)sec_until_alarm, (unsigned long long)wake_sec);
     esp_sleep_enable_timer_wakeup(wake_sec * 1000000ULL);
+#if defined(LATTER_C6_RESET_PIN) && !defined(CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
+    // Rails stay on in alarm-sleep, so the ESP32-C6 co-processor would keep running (its CHIP_PU has a
+    // pull-up). Hold CHIP_PU low through deep sleep (single-pad deep-sleep hold needs P4 rev >= 3.0);
+    // latter_release_c6_reset_hold() drops the hold at the next boot before esp_hosted resets the C6.
+    gpio_set_level(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN), 0);
+    gpio_hold_en(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN));
+#endif
     esp_deep_sleep_start();
     return;
   }
@@ -214,6 +221,16 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_unt
   (void)sec_until_alarm;
 #endif
 }
+
+#if defined(USE_ESP32) && defined(LATTER_C6_RESET_PIN)
+// Runs as a global constructor, before the FreeRTOS scheduler starts, so it precedes esp_hosted's C6
+// reset pulse on every ESPHome version (2026.10: inside Wi-Fi setup; 2026.11+: the esp_hosted init task
+// spawned from its own constructor). A held pad would latch CHIP_PU low and the C6 would never boot.
+// Harmless when no hold is set.
+__attribute__((constructor)) static void latter_release_c6_reset_hold() {
+  gpio_hold_dis(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN));
+}
+#endif
 
 template <typename I2cBusT>
 inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {

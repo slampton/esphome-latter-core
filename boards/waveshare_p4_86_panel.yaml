@@ -14,7 +14,8 @@
 #          ES7210 mics: MIC1=FL, MIC2=FR, MIC3=AEC loopback of ES8311 output (TDM only), MIC4=NC
 # Clocks:  MCLK: GPIO13, BCLK: GPIO12, LRCLK/WS: GPIO10
 # C6:      SDIO CLK18/CMD19/D0-D3 14-17, CHIP_PU GPIO54, C6 IO2 <-> GPIO6 (host-wake line)
-# SD:      SDMMC slot 0 (D0-D3 39-42, CLK 43, CMD 44), power P-FET gate GPIO45
+# SD:      SDMMC slot 0 (D0-D3 39-42, CLK 43, CMD 44), power P-FET gate GPIO45 (Waveshare P4 BSP family:
+#          active-low enable, so HIGH = SD off). Left undriven (SD powered; ~0 A with no card).
 # RESERVED (bottom board - never assign in core or this HAL):
 #   IP101 Ethernet RMII: GPIO28, 29, 30, 31 (MDC), 34, 35 (TXD1, shared with BOOT), 49, 50, 51, 52 (MDIO)
 #   Relays: GPIO32, GPIO46   |   RS485: TX GPIO47, RX GPIO48
@@ -66,6 +67,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=0"
     - "-DLATTER_HAS_BATTERY=0"
+    - "-DLATTER_C6_RESET_PIN=54"  # C6 CHIP_PU (esp32_hosted reset_pin)
     - "-DLATTER_IS_STATIONARY=1"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=1"

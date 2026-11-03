@@ -8,7 +8,9 @@
 # Audio:   ES8311 @ 0x18 (MCLK: GPIO13, BCLK: GPIO12, WS: GPIO10, DOUT: GPIO9, DIN: GPIO11, PA: GPIO53)
 # PMU:     AXP2101 @ 0x34. DCDC1 feeds every 3V3 load (P4, C6, LCD, touch, BL); ALDO1 = codec A3V3.
 #          AXP_IRQ is NOT routed. PWR key: K1 -> AXP PWRON and BSS138 -> GPIO49 (HIGH while pressed).
-# C6:      CHIP_PU GPIO54, C6 IO2 <-> GPIO6 (host-wake line). SD power P-FET gate: GPIO45.
+# C6:      CHIP_PU GPIO54 (10k pull-up, 1uF), C6 IO2 <-> GPIO6 (host-wake line).
+# SD:      power P-FET (AO3401) gate GPIO45 with a 10k pull-down: HIGH = SD off, LOW/hi-Z = SD on.
+#          Left undriven (SD powered; ~0 A with no card). Holding it HIGH would cost ~0.33 mA through the pull-down.
 # ==============================================================================
 
 substitutions:
@@ -64,6 +66,7 @@ esphome:
     - "-DLATTER_CHIP_P4=1"
     - "-DLATTER_PSRAM_MB=32"
     - "-DLATTER_PWR_KEY_PIN=49"
+    - "-DLATTER_C6_RESET_PIN=54"  # C6 CHIP_PU (esp32_hosted reset_pin; R25 10k pull-up): held low in alarm-sleep
     - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
     # Fitted cell: 500mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
     - "-DLATTER_PMU_CHARGE_MA=400"
