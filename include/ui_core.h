@@ -29,7 +29,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110209L
+#define LATTER_SDK_REV 2026110210L
 
 namespace latter_ui {
 
@@ -2136,6 +2136,49 @@ inline PmuTelemetry &pmu_telemetry() {
   return t;
 }
 
+// Critical-battery guard: on battery, hibernate cleanly before the PMIC's DCDC under-voltage cutoff
+// cuts power mid-write (Wrist: last_off=dcdc-undervolt at a displayed 60 %). Trips after
+// kCriticalSamples consecutive VBAT samples (one per kCriticalSampleMs) below LATTER_BATT_CRITICAL_MV,
+// so a single Wi-Fi TX sag never triggers it.
+#ifndef LATTER_BATT_CRITICAL_MV
+#define LATTER_BATT_CRITICAL_MV 3450
+#endif
+struct CriticalBatteryGuard {
+  static constexpr uint32_t kCriticalSampleMs = 10000U;
+  static constexpr uint8_t kCriticalSamples = 3;
+  uint32_t last_sample_ms = 0;
+  uint8_t below_count = 0;
+  bool tripped = false;
+
+  // Returns true when a VBAT sample is due.
+  bool sample_due(uint32_t now_ms) const {
+    return last_sample_ms == 0 || (now_ms - last_sample_ms) >= kCriticalSampleMs;
+  }
+  // Feeds one sample; returns true exactly once, when the guard trips.
+  bool feed(bool on_battery, int vbat_mv, uint32_t now_ms) {
+    last_sample_ms = (now_ms == 0) ? 1U : now_ms;
+    if (!on_battery || vbat_mv <= 0) {
+      below_count = 0;
+      tripped = false;
+      return false;
+    }
+    if (vbat_mv < LATTER_BATT_CRITICAL_MV) {
+      if (below_count < 255) below_count++;
+    } else {
+      below_count = 0;
+    }
+    if (!tripped && below_count >= kCriticalSamples) {
+      tripped = true;
+      return true;
+    }
+    return false;
+  }
+};
+
+inline CriticalBatteryGuard &critical_battery_guard() {
+  static CriticalBatteryGuard g;
+  return g;
+}
 inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
                                       float batt_pct, float batt_v, bool spk_pa, bool mww_run,
                                       bool va_act, bool mp_play, bool ble_act, int game_id,

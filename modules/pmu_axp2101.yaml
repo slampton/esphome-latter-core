@@ -115,16 +115,19 @@ sensor:
               last_step_ms = now_ms;
             }
           } else {
-            // Discharging on battery: monotonic non-increasing with 45s sustained-drop debounce
-            // so transient Wi-Fi/speaker load sags and charger unplug transitions never cause
-            // instant 1%-per-5s step-downs.
+            // Discharging on battery: monotonic non-increasing. Small gaps (transient Wi-Fi/speaker sags,
+            // unplug transitions) step 1% after a 45 s sustained-drop debounce. Large gaps (>= 4%) are real:
+            // after 20 s the display closes half the gap per step, so it never trails the gauge by tens of
+            // percent (the Wrist once showed 60% while the cell hit the PMIC cutoff).
             if (scaled < filtered_pct) {
               if (below_since_ms == 0) {
                 below_since_ms = now_ms;
               }
-              const uint32_t hold_ms = (filtered_pct - scaled >= 4.0f) ? 20000U : 45000U;
+              const float gap = filtered_pct - scaled;
+              const uint32_t hold_ms = (gap >= 4.0f) ? 20000U : 45000U;
               if ((now_ms - below_since_ms >= hold_ms) && (now_ms - last_step_ms >= hold_ms)) {
-                filtered_pct = std::max(filtered_pct - 1.0f, scaled);
+                const float step = (gap >= 4.0f) ? std::max(1.0f, std::floor(gap * 0.5f)) : 1.0f;
+                filtered_pct = std::max(filtered_pct - step, scaled);
                 last_step_ms = now_ms;
                 below_since_ms = now_ms;
               }
@@ -215,6 +218,23 @@ script:
                   id(hal_set_imu_power_mode).execute(pw_active ? 0x01 : 0x00);
                   id(sync_wake_word_state).execute();
                 }
+              }
+            }
+            // Critical-battery guard: VBAT (REG34/35) every 10 s on battery; hibernate cleanly when it stays
+            // below LATTER_BATT_CRITICAL_MV instead of letting the DCDC under-voltage cutoff drop power.
+            auto &guard = latter_ui::critical_battery_guard();
+            const uint32_t now_g = millis();
+            if (guard.sample_due(now_g)) {
+              uint8_t vreg = 0x34;
+              uint8_t vbuf[2] = {0, 0};
+              int vbat_mv = -1;
+              if (id(bus_internal).write_readv(0x34, &vreg, 1, vbuf, 2) == esphome::i2c::ERROR_OK) {
+                vbat_mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
+              }
+              if (guard.feed(!vbus, vbat_mv, now_g) && !id(is_hibernating) && !id(ota_in_progress)) {
+                ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT vbat=%dmV gauge=%d%% -> hibernate",
+                         vbat_mv, latter_ui::pmu_telemetry().gauge_raw);
+                id(start_instant_hibernation).execute();
               }
             }
             uint8_t reg1 = 0x01;
