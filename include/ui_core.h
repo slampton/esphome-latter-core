@@ -41,7 +41,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110234L
+#define LATTER_SDK_REV 2026110235L
 
 namespace latter_ui {
 
@@ -2800,6 +2800,8 @@ struct FbClearState {
   uint32_t hits = 0;
   uint32_t misses = 0;
   uint32_t starts = 0;  // clears issued since boot (heap check-ins at 1 and 256)
+  const char *why = nullptr;  // last reason a clear could not run (shown in [PROF:FRAME_SUM])
+  int why_err = 0;
 #if LATTER_FB_DMA_CLEAR
   async_memcpy_handle_t mcp = nullptr;
   uint16_t *pattern = nullptr;
@@ -2810,6 +2812,24 @@ struct FbClearState {
 inline FbClearState &fb_clear_state() {
   static FbClearState st;
   return st;
+}
+
+// Records why the DMA clear could not run; [PROF:FRAME_SUM] reports it until a clear succeeds.
+inline void fb_clear_fail(const char *why, int err = 0) {
+  auto &st = fb_clear_state();
+  if (st.why != why || st.why_err != err) {
+    ESP_LOGW("disp_fb", "DMA clear skipped: %s (err=%d)", why, err);
+  }
+  st.why = why;
+  st.why_err = err;
+}
+
+inline const char *fb_clear_why_err_str() {
+  static char buf[16];
+  const int err = fb_clear_state().why_err;
+  if (err == 0) return "";
+  snprintf(buf, sizeof(buf), "(%d)", err);
+  return buf;
 }
 
 #if LATTER_FB_DMA_CLEAR
@@ -2859,6 +2879,11 @@ inline bool fb_clear_init() {
     st.pattern = static_cast<uint16_t *>(heap_caps_aligned_alloc(st.align, kFbClearPatternBytes, MALLOC_CAP_SPIRAM));
   }
   st.ok = (err == ESP_OK && st.pattern != nullptr);
+  if (err != ESP_OK) {
+    fb_clear_fail("install", static_cast<int>(err));
+  } else if (st.pattern == nullptr) {
+    fb_clear_fail("pattern_alloc");
+  }
   ESP_LOGI("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u, chunks=%u)", st.ok ? "enabled" : "unavailable",
            static_cast<int>(err), static_cast<unsigned>(st.align), static_cast<unsigned>(kFbClearChunks));
   fb_clear_log_heap("after install");
@@ -2877,12 +2902,20 @@ inline void fb_clear_start() {
 #if LATTER_FB_DMA_CLEAR
   auto &st = fb_clear_state();
   st.pending_start = false;
-  if (st.active || st.fb == nullptr || !fb_clear_init()) return;
+  if (st.active) return;
+  if (st.fb == nullptr) {
+    fb_clear_fail("no_fb");
+    return;
+  }
+  if (!fb_clear_init()) return;
   const uintptr_t base = reinterpret_cast<uintptr_t>(st.fb);
   const size_t bytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
   const uintptr_t lo = (base + st.align - 1) & ~(static_cast<uintptr_t>(st.align) - 1);
   const uintptr_t hi = (base + bytes) & ~(static_cast<uintptr_t>(st.align) - 1);
-  if (hi <= lo) return;
+  if (hi <= lo) {
+    fb_clear_fail("range");
+    return;
+  }
   st.interior = reinterpret_cast<uint8_t *>(lo);
   st.interior_len = hi - lo;
   st.color_hw = frame_base_state().color_hw;
@@ -2892,7 +2925,10 @@ inline void fb_clear_start() {
     st.pattern_hw = st.color_hw;
     st.pattern_valid = true;
   }
-  if (esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+  const esp_err_t sync_err =
+      esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+  if (sync_err != ESP_OK) {
+    fb_clear_fail("msync", static_cast<int>(sync_err));
     return;
   }
   st.error = false;
@@ -2902,9 +2938,11 @@ inline void fb_clear_start() {
   while (off < st.interior_len) {
     const size_t n = std::min(kFbClearPatternBytes, st.interior_len - off);
     g_fb_clear_pending.fetch_add(1, std::memory_order_acq_rel);
-    if (esp_async_memcpy(st.mcp, st.interior + off, st.pattern, n, fb_clear_chunk_done, nullptr) != ESP_OK) {
+    const esp_err_t cp_err = esp_async_memcpy(st.mcp, st.interior + off, st.pattern, n, fb_clear_chunk_done, nullptr);
+    if (cp_err != ESP_OK) {
       g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
       st.error = true;
+      fb_clear_fail("memcpy", static_cast<int>(cp_err));
       break;
     }
     off += n;
@@ -2930,7 +2968,7 @@ inline void fb_clear_wait() {
     if (esp_timer_get_time() - t0 > 200000) {
       // A transfer that never completes: stop using DMA clears (drawing could race it).
       st.ok = false;
-      ESP_LOGW("disp_fb", "DMA clear did not complete; disabled");
+      fb_clear_fail("timeout");
       break;
     }
     esp_rom_delay_us(20);
@@ -2956,6 +2994,7 @@ inline bool fb_clear_consume(uint16_t hw) {
   for (uint16_t *q = fb; q < reinterpret_cast<uint16_t *>(st.interior); q++) *q = hw;
   for (uint16_t *q = reinterpret_cast<uint16_t *>(st.interior + st.interior_len); q < end; q++) *q = hw;
   st.hits++;
+  st.why = nullptr;
   return true;
 }
 
@@ -2967,6 +3006,7 @@ inline void fb_clear_frame_end() {
     st.ready = false;
     st.active = false;
   }
+  if (frame_base_state().has_color && (st.owner == nullptr || st.fb == nullptr)) fb_clear_fail("no_fb");
   if (!frame_base_state().has_color || st.owner == nullptr || st.fb == nullptr || st.pending_start) return;
   if (st.init_tried && !st.ok) return;
   st.pending_start = true;
@@ -3060,11 +3100,14 @@ struct FrameProfileScope {
     if (win_el >= 5000U && fr.window_frames > 0) {
       float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
       uint32_t avg_us = fr.window_render_us / fr.window_frames;
-      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu",
+      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu%s%s%s",
                (unsigned long)fr.window_frames, fps, (unsigned long)avg_us,
                (unsigned long)fr.max_render_us, fr.max_render_page, fr.max_render_sub,
                (unsigned long)fr.slow_frames, (unsigned long)fb_clear_state().hits,
-               (unsigned long)(fb_clear_state().hits + fb_clear_state().misses));
+               (unsigned long)(fb_clear_state().hits + fb_clear_state().misses),
+               fb_clear_state().why != nullptr ? " dma_off=" : "",
+               fb_clear_state().why != nullptr ? fb_clear_state().why : "",
+               fb_clear_state().why != nullptr ? fb_clear_why_err_str() : "");
       fb_clear_state().hits = 0;
       fb_clear_state().misses = 0;
       uint32_t *sect = prof_sect_us();
