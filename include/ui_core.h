@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110224L
+#define LATTER_SDK_REV 2026110225L
 
 namespace latter_ui {
 
@@ -862,6 +862,106 @@ inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Col
       err += dx;
       y1 += sy;
     }
+  }
+}
+
+// Port of Display::filled_flat_side_triangle_ (y2 == y3), drawing spans with fast_hline.
+template<typename DisplayT>
+inline void fast_filled_flat_side_triangle(DisplayT &it, int x1, int y1, int x2, int y2, int x3, int y3,
+                                           esphome::Color c) {
+  int s1_x = x1, s1_y = y1;
+  bool s1_swap = false;
+  int s1_dx = std::abs(x2 - x1), s1_dy = std::abs(y2 - y1);
+  const int s1_sx = ((x2 - x1) >= 0) ? 1 : -1;
+  const int s1_sy = ((y2 - y1) >= 0) ? 1 : -1;
+  if (s1_dy > s1_dx) {
+    std::swap(s1_dx, s1_dy);
+    s1_swap = true;
+  }
+  int s1_err = 2 * s1_dy - s1_dx;
+
+  int s2_x = x1, s2_y = y1;
+  bool s2_swap = false;
+  int s2_dx = std::abs(x3 - x1), s2_dy = std::abs(y3 - y1);
+  const int s2_sx = ((x3 - x1) >= 0) ? 1 : -1;
+  const int s2_sy = ((y3 - y1) >= 0) ? 1 : -1;
+  if (s2_dy > s2_dx) {
+    std::swap(s2_dx, s2_dy);
+    s2_swap = true;
+  }
+  int s2_err = 2 * s2_dy - s2_dx;
+
+  for (int i = 0; i <= s1_dx; i++) {
+    if (s1_x <= s2_x) {
+      fast_hline(it, s1_x, s1_y, s2_x - s1_x + 1, c);
+    } else {
+      fast_hline(it, s2_x, s2_y, s1_x - s2_x + 1, c);
+    }
+    while (s1_err >= 0) {
+      if (s1_swap) {
+        s1_x += s1_sx;
+      } else {
+        s1_y += s1_sy;
+      }
+      s1_err -= 2 * s1_dx;
+    }
+    if (s1_swap) {
+      s1_y += s1_sy;
+    } else {
+      s1_x += s1_sx;
+    }
+    s1_err += 2 * s1_dy;
+    while (s2_y != s1_y) {
+      while (s2_err >= 0) {
+        if (s2_swap) {
+          s2_x += s2_sx;
+        } else {
+          s2_y += s2_sy;
+        }
+        s2_err -= 2 * s2_dx;
+      }
+      if (s2_swap) {
+        s2_y += s2_sy;
+      } else {
+        s2_x += s2_sx;
+      }
+      s2_err += 2 * s2_dy;
+    }
+  }
+}
+
+// Same fill as Display::filled_triangle (identical pixels), drawing spans with fast_hline.
+// Upstream never terminates when all three vertices share a row and the first two (after its y
+// sort) coincide: the first edge has zero length, so its Bresenham error never goes negative and
+// the task watchdog resets the device (seen with edge-on tumbling leaves). That case is the span
+// between the two distinct x values.
+template<typename DisplayT>
+inline void fast_filled_triangle(DisplayT &it, int x1, int y1, int x2, int y2, int x3, int y3,
+                                 esphome::Color c) {
+  if (y1 > y2) {
+    std::swap(x1, x2);
+    std::swap(y1, y2);
+  }
+  if (y1 > y3) {
+    std::swap(x1, x3);
+    std::swap(y1, y3);
+  }
+  if (y2 > y3) {
+    std::swap(x2, x3);
+    std::swap(y2, y3);
+  }
+  if (y1 == y3 && x1 == x2) {
+    fast_hline(it, std::min(x1, x3), y1, std::abs(x3 - x1) + 1, c);
+    return;
+  }
+  if (y2 == y3) {
+    fast_filled_flat_side_triangle(it, x1, y1, x2, y2, x3, y3, c);
+  } else if (y1 == y2) {
+    fast_filled_flat_side_triangle(it, x3, y3, x1, y1, x2, y2, c);
+  } else {
+    const int x_temp = static_cast<int>(x1 + (static_cast<float>(y2 - y1) / static_cast<float>(y3 - y1)) * (x3 - x1));
+    fast_filled_flat_side_triangle(it, x1, y1, x2, y2, x_temp, y2, c);
+    fast_filled_flat_side_triangle(it, x3, y3, x2, y2, x_temp, y2, c);
   }
 }
 

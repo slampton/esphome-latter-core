@@ -1671,9 +1671,9 @@ inline void render_chomp_treat(DisplayT &it, int tx, int ty, int kind,
     fast_filled_circle(it, tx, ty + 1, 12, col_red);
     fast_circle(it, tx, ty + 1, 12, esphome::Color(255, 130, 130));
     // Green leafy crown at top
-    it.filled_triangle(tx - 8, ty - 8, tx, ty - 3, tx - 2, ty - 12, col_green);
-    it.filled_triangle(tx + 8, ty - 8, tx, ty - 3, tx + 2, ty - 12, col_green);
-    it.filled_triangle(tx - 4, ty - 12, tx + 4, ty - 12, tx, ty - 5, col_green);
+    fast_filled_triangle(it, tx - 8, ty - 8, tx, ty - 3, tx - 2, ty - 12, col_green);
+    fast_filled_triangle(it, tx + 8, ty - 8, tx, ty - 3, tx + 2, ty - 12, col_green);
+    fast_filled_triangle(it, tx - 4, ty - 12, tx + 4, ty - 12, tx, ty - 5, col_green);
     fast_line(it, tx, ty - 11, tx, ty - 15, col_green);
     // Golden seeds + shine
     fast_pixel(it, tx - 4, ty - 1, col_gold);
@@ -1700,8 +1700,8 @@ inline void render_chomp_treat(DisplayT &it, int tx, int ty, int kind,
     fast_line(it, tx - 2, ty + 8, tx + 2, ty + 8, col_gold);
   } else if (k == 3) {
     // 3: WRAPPED CANDY (Magenta sweet + twisted wrapper bows on left & right)
-    it.filled_triangle(tx - 9, ty, tx - 17, ty - 7, tx - 17, ty + 7, col_magenta);
-    it.filled_triangle(tx + 9, ty, tx + 17, ty - 7, tx + 17, ty + 7, col_magenta);
+    fast_filled_triangle(it, tx - 9, ty, tx - 17, ty - 7, tx - 17, ty + 7, col_magenta);
+    fast_filled_triangle(it, tx + 9, ty, tx + 17, ty - 7, tx + 17, ty + 7, col_magenta);
     fast_line(it, tx - 16, ty - 5, tx - 10, ty, col_white);
     fast_line(it, tx + 16, ty - 5, tx + 10, ty, col_white);
     fast_filled_circle(it, tx, ty, 10, col_magenta);
@@ -2544,11 +2544,11 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int hr = std::max(4, r_sym / 2);
       fast_filled_circle(it, scx - hr + 1, scy - hr / 2, hr, col_red);
       fast_filled_circle(it, scx + hr - 1, scy - hr / 2, hr, col_red);
-      it.filled_triangle(scx - r_sym, scy - 1, scx + r_sym, scy - 1, scx, scy + r_sym, col_red);
+      fast_filled_triangle(it, scx - r_sym, scy - 1, scx + r_sym, scy - 1, scx, scy + r_sym, col_red);
     } else if (sym == 2) {
       // Cyan Diamond
-      it.filled_triangle(scx, scy - r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan);
-      it.filled_triangle(scx, scy + r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan * 0.8f);
+      fast_filled_triangle(it, scx, scy - r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan);
+      fast_filled_triangle(it, scx, scy + r_sym, scx - r_sym, scy, scx + r_sym, scy, col_cyan * 0.8f);
     } else if (sym == 3) {
       // Emerald Clover / Plus
       int bw = std::max(4, r_sym / 2);
@@ -2557,13 +2557,13 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
     } else if (sym == 4) {
       // Magenta Crown
       fill_rect_row_major(it, scx - r_sym, scy + r_sym / 3, r_sym * 2, r_sym / 2, col_magenta);
-      it.filled_triangle(scx - r_sym, scy + r_sym / 3, scx - r_sym, scy - r_sym / 2, scx - r_sym / 3, scy + r_sym / 3, col_magenta);
-      it.filled_triangle(scx - r_sym / 2, scy + r_sym / 3, scx, scy - r_sym, scx + r_sym / 2, scy + r_sym / 3, col_magenta);
-      it.filled_triangle(scx + r_sym / 3, scy + r_sym / 3, scx + r_sym, scy - r_sym / 2, scx + r_sym, scy + r_sym / 3, col_magenta);
+      fast_filled_triangle(it, scx - r_sym, scy + r_sym / 3, scx - r_sym, scy - r_sym / 2, scx - r_sym / 3, scy + r_sym / 3, col_magenta);
+      fast_filled_triangle(it, scx - r_sym / 2, scy + r_sym / 3, scx, scy - r_sym, scx + r_sym / 2, scy + r_sym / 3, col_magenta);
+      fast_filled_triangle(it, scx + r_sym / 3, scy + r_sym / 3, scx + r_sym, scy - r_sym / 2, scx + r_sym, scy + r_sym / 3, col_magenta);
     } else if (sym == 5) {
       // Orange Lightning Bolt
-      it.filled_triangle(scx + 3, scy - r_sym, scx - r_sym + 2, scy + 2, scx + 2, scy + 2, col_orange);
-      it.filled_triangle(scx - 2, scy - 2, scx + r_sym - 2, scy - 2, scx - 3, scy + r_sym, col_orange);
+      fast_filled_triangle(it, scx + 3, scy - r_sym, scx - r_sym + 2, scy + 2, scx + 2, scy + 2, col_orange);
+      fast_filled_triangle(it, scx - 2, scy - 2, scx + r_sym - 2, scy - 2, scx - 3, scy + r_sym, col_orange);
     } else if (sym == 6) {
       // White Target Bullseye
       fast_filled_circle(it, scx, scy, r_sym, col_white);
@@ -2572,7 +2572,7 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
     } else {
       // Emerald/Gold Shield Crest
       fill_rect_row_major(it, scx - r_sym + 2, scy - r_sym + 2, (r_sym - 2) * 2, r_sym, theme_secondary);
-      it.filled_triangle(scx - r_sym + 2, scy + 2, scx + r_sym - 2, scy + 2, scx, scy + r_sym, theme_secondary);
+      fast_filled_triangle(it, scx - r_sym + 2, scy + 2, scx + r_sym - 2, scy + 2, scx, scy + r_sym, theme_secondary);
       fast_filled_circle(it, scx, scy, std::max(2, r_sym / 3), col_gold);
     }
   };
@@ -2669,7 +2669,7 @@ inline void render_games_launcher(
       fast_line(it, tip_x, tip_y + 5, tail_x - 8, tail_y + 10, Color(15, 18, 24));
       fast_line(it, tip_x, tip_y + 6, tail_x - 8, tail_y + 11, Color(15, 18, 24));
       fast_circle(it, tip_x, tip_y, 5, Color(180, 110, 0));
-      it.filled_triangle(tip_x - 3, tip_y + 2, tip_x + 9, tip_y - 9, tip_x + 12, tip_y - 2, col_white);
+      fast_filled_triangle(it, tip_x - 3, tip_y + 2, tip_x + 9, tip_y - 9, tip_x + 12, tip_y - 2, col_white);
       fast_line(it, tip_x, tip_y, tail_x, tail_y, Color(238, 206, 148));
       fast_line(it, tip_x, tip_y - 1, tail_x, tail_y - 1, Color(250, 228, 178));
       fast_line(it, tip_x, tip_y + 1, tail_x, tail_y + 1, Color(182, 138, 76));
@@ -2841,8 +2841,8 @@ inline void render_games_launcher(
   Color spk_c = game_sound_on ? col_white : col_slate;
   // Speaker body & cone
   fill_rect_row_major(it, spk_x - 9, spk_y - 4, 5, 9, spk_c);
-  it.filled_triangle(spk_x - 4, spk_y - 4, spk_x - 4, spk_y + 4, spk_x + 2, spk_y + 9, spk_c);
-  it.filled_triangle(spk_x - 4, spk_y - 4, spk_x + 2, spk_y + 9, spk_x + 2, spk_y - 9, spk_c);
+  fast_filled_triangle(it, spk_x - 4, spk_y - 4, spk_x - 4, spk_y + 4, spk_x + 2, spk_y + 9, spk_c);
+  fast_filled_triangle(it, spk_x - 4, spk_y - 4, spk_x + 2, spk_y + 9, spk_x + 2, spk_y - 9, spk_c);
   if (game_sound_on) {
     // Sound wave arcs
     fast_line(it, spk_x + 5, spk_y - 4, spk_x + 7, spk_y - 2, theme_primary);

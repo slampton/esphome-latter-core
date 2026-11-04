@@ -306,7 +306,7 @@ inline void render_tv_remote_page(
   // 1. HOME: Top-Left
   fast_filled_circle(it, left_fx, top_fy, f_r, col_dark_gray);
   fast_circle(it, left_fx, top_fy, f_r, col_gray);
-  it.filled_triangle(left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
+  fast_filled_triangle(it, left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
   fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
   fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), col_dark_gray);
 
@@ -346,10 +346,10 @@ inline void render_tv_remote_page(
   fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, col_gray);
 
   const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
-  it.filled_triangle(cx, dpad_cy - arr_mid - 8, cx - 10, dpad_cy - arr_mid + 8, cx + 10, dpad_cy - arr_mid + 8, col_white);
-  it.filled_triangle(cx, dpad_cy + arr_mid + 8, cx - 10, dpad_cy + arr_mid - 8, cx + 10, dpad_cy + arr_mid - 8, col_white);
-  it.filled_triangle(cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
-  it.filled_triangle(cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
+  fast_filled_triangle(it, cx, dpad_cy - arr_mid - 8, cx - 10, dpad_cy - arr_mid + 8, cx + 10, dpad_cy - arr_mid + 8, col_white);
+  fast_filled_triangle(it, cx, dpad_cy + arr_mid + 8, cx - 10, dpad_cy + arr_mid - 8, cx + 10, dpad_cy + arr_mid - 8, col_white);
+  fast_filled_triangle(it, cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
+  fast_filled_triangle(it, cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
 
   fast_filled_circle(it, cx, dpad_cy, ok_r, col_dark_gray);
   fast_circle(it, cx, dpad_cy, ok_r, theme_primary);

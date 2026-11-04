@@ -176,9 +176,9 @@ inline void render_music_now_playing(
     auto draw_skip_glyph_lut = [&](int bx, int by, int dir_sign, const char *lbl, esphome::Color c) {
       int r1 = scale_s(14), r2 = scale_s(15);
       if (dir_sign < 0) {
-        it.filled_triangle(bx - scale_s(9), by - r1, bx - 1, by - scale_s(19), bx - 1, by - scale_s(9), c);
+        fast_filled_triangle(it, bx - scale_s(9), by - r1, bx - 1, by - scale_s(19), bx - 1, by - scale_s(9), c);
       } else {
-        it.filled_triangle(bx + scale_s(9), by - r1, bx + 1, by - scale_s(19), bx + 1, by - scale_s(9), c);
+        fast_filled_triangle(it, bx + scale_s(9), by - r1, bx + 1, by - scale_s(19), bx + 1, by - scale_s(9), c);
       }
       for (int idx = 3; idx < 50; idx += 2) {
         int next_idx = std::min(50, idx + 2);
@@ -197,14 +197,14 @@ inline void render_music_now_playing(
       int py = art_center_y + oy;
       int h = scale_s(9);
       fill_rect_row_major(it, px - scale_s(9), py - h, scale_s(3), h * 2 + 1, c);
-      it.filled_triangle(px - scale_s(4), py, px + scale_s(8), py - h, px + scale_s(8), py + h, c);
+      fast_filled_triangle(it, px - scale_s(4), py, px + scale_s(8), py - h, px + scale_s(8), py + h, c);
     };
 
     auto draw_next_glyph = [&](int ox, int oy, esphome::Color c) {
       int nx = next_btn_x + ox;
       int ny = art_center_y + oy;
       int h = scale_s(9);
-      it.filled_triangle(nx + scale_s(4), ny, nx - scale_s(8), ny - h, nx - scale_s(8), ny + h, c);
+      fast_filled_triangle(it, nx + scale_s(4), ny, nx - scale_s(8), ny - h, nx - scale_s(8), ny + h, c);
       fill_rect_row_major(it, nx + scale_s(6), ny - h, scale_s(3), h * 2 + 1, c);
     };
 
@@ -235,8 +235,8 @@ inline void render_music_now_playing(
         int sx = left_flank_x + ox;
         int sy = top_fy + oy;
         fill_rect_row_major(it, sx - scale_s(8), sy - scale_s(3), scale_s(4), scale_s(7), c);
-        it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx - scale_s(4), sy + scale_s(3), sx + scale_s(1), sy + scale_s(7), c);
-        it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx + scale_s(1), sy + scale_s(7), sx + scale_s(1), sy - scale_s(7), c);
+        fast_filled_triangle(it, sx - scale_s(4), sy - scale_s(3), sx - scale_s(4), sy + scale_s(3), sx + scale_s(1), sy + scale_s(7), c);
+        fast_filled_triangle(it, sx - scale_s(4), sy - scale_s(3), sx + scale_s(1), sy + scale_s(7), sx + scale_s(1), sy - scale_s(7), c);
         fast_line(it, sx + scale_s(4), sy - scale_s(3), sx + scale_s(6), sy - scale_s(1), c);
         fast_line(it, sx + scale_s(6), sy - scale_s(1), sx + scale_s(6), sy + scale_s(1), c);
         fast_line(it, sx + scale_s(6), sy + scale_s(1), sx + scale_s(4), sy + scale_s(3), c);
@@ -267,7 +267,7 @@ inline void render_music_now_playing(
     render_glass_circle(it, cx, art_center_y, pp_r, glass_bg, theme_primary);
 
     if (!is_playing) {
-      it.filled_triangle(cx - scale_s(7), art_center_y - scale_s(14), cx - scale_s(7), art_center_y + scale_s(14), cx + scale_s(14), art_center_y, col_white);
+      fast_filled_triangle(it, cx - scale_s(7), art_center_y - scale_s(14), cx - scale_s(7), art_center_y + scale_s(14), cx + scale_s(14), art_center_y, col_white);
     } else {
       fill_rect_row_major(it, cx - scale_s(9), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
       fill_rect_row_major(it, cx + scale_s(3), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
@@ -489,7 +489,7 @@ inline void render_music_menus(
         const int dr_cx   = dr_left + (dr_w / 2);
         const int play_r  = scale_s(18);
         render_glass_circle(it, play_cx, y_mid, play_r, card_bg, theme_primary);
-        it.filled_triangle(play_cx - scale_s(3), y_mid - scale_s(6),
+        fast_filled_triangle(it, play_cx - scale_s(3), y_mid - scale_s(6),
                            play_cx - scale_s(3), y_mid + scale_s(6),
                            play_cx + scale_s(6), y_mid, theme_primary);
 
@@ -513,7 +513,7 @@ inline void render_music_menus(
         render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, border_c, nullptr, txt_c, font_small);
 
         esphome::Color icon_c = (mtype == "radio") ? theme_secondary : theme_primary;
-        it.filled_triangle(c_left + 15, y_mid - 6, c_left + 15, y_mid + 6, c_left + 25, y_mid, icon_c);
+        fast_filled_triangle(it, c_left + 15, y_mid - 6, c_left + 15, y_mid + 6, c_left + 25, y_mid, icon_c);
 
         std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 50, font_small);
         fast_print(it, c_left + 35, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());

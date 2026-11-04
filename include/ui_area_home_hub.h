@@ -245,9 +245,9 @@ inline void render_area_control_page(
         // Blinds / Curtains: Split Parted Curtain Drapes inside Window Frame
         fast_rect_outline(it, bx - 10, by - 9, 21, 19, fg_c);
         fast_hline(it, bx - 10, by - 8, 21, fg_c);
-        it.filled_triangle(bx - 9, by - 7, bx - 1, by - 7, bx - 9, by + 3, fg_c);
+        fast_filled_triangle(it, bx - 9, by - 7, bx - 1, by - 7, bx - 9, by + 3, fg_c);
         fill_rect_row_major(it, bx - 9, by + 3, 4, 6, fg_c);
-        it.filled_triangle(bx + 9, by - 7, bx + 1, by - 7, bx + 9, by + 3, fg_c);
+        fast_filled_triangle(it, bx + 9, by - 7, bx + 1, by - 7, bx + 9, by + 3, fg_c);
         fill_rect_row_major(it, bx + 6, by + 3, 4, 6, fg_c);
       } else if (cat == "fan") {
         // Fans: Traditional 4-Blade Ceiling Fan (Central Motor Hub + 4 Swept Paddle Blades)
@@ -519,11 +519,11 @@ inline void render_area_control_page(
         // CURTAINS: Split Parted Drapes with Tie-Backs & Top Curtain Rod
         fill_rect_row_major(it, gx - 12, gy - 12, 25, 2, fg_c);
         // Left drape
-        it.filled_triangle(gx - 11, gy - 10, gx - 2, gy - 10, gx - 11, gy + 3, cov_c);
+        fast_filled_triangle(it, gx - 11, gy - 10, gx - 2, gy - 10, gx - 11, gy + 3, cov_c);
         fill_rect_row_major(it, gx - 11, gy + 3, 5, 9, cov_c);
         fast_line(it, gx - 11, gy + 3, gx - 5, gy + 3, col_white);
         // Right drape
-        it.filled_triangle(gx + 11, gy - 10, gx + 2, gy - 10, gx + 11, gy + 3, cov_c);
+        fast_filled_triangle(it, gx + 11, gy - 10, gx + 2, gy - 10, gx + 11, gy + 3, cov_c);
         fill_rect_row_major(it, gx + 7, gy + 3, 5, 9, cov_c);
         fast_line(it, gx + 6, gy + 3, gx + 11, gy + 3, col_white);
       } else {
@@ -905,7 +905,7 @@ inline void render_security_alarm_page(
       fill_rect_row_major(it, tx + 6, WH_Y - 1,  5, 2, fg_c);
     } else if (i == 2) {
       // 2. Entry & Garage: Solid Pitched-Roof Garage Facade with Recessed 3-Panel Roll-Up Door
-      it.filled_triangle(bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
+      fast_filled_triangle(it, bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
       fill_rect_row_major(it, bx - 15, WH_Y - 4, 31, 2, fg_c);
       fill_rect_row_major(it, bx - 12, WH_Y - 2, 25, 14, fg_c);
       fast_hline(it, bx - 12, WH_Y - 2, 25, card_bg_off);

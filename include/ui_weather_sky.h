@@ -1107,8 +1107,8 @@ inline void draw_tumbling_leaf_3d(DisplayT &it, Vec3 center_3d, float rx, float 
   esphome::Color c_blade = scale_color(col_base, fminf(1.15f, glint));
 
   // Filled 3D leaf blade triangles + crisp outline & midrib vein
-  it.filled_triangle(p_base.x, p_base.y, p_up.x, p_up.y, p_tip.x, p_tip.y, c_blade);
-  it.filled_triangle(p_base.x, p_base.y, p_dn.x, p_dn.y, p_tip.x, p_tip.y, scale_color(c_blade, 0.85f));
+  fast_filled_triangle(it, p_base.x, p_base.y, p_up.x, p_up.y, p_tip.x, p_tip.y, c_blade);
+  fast_filled_triangle(it, p_base.x, p_base.y, p_dn.x, p_dn.y, p_tip.x, p_tip.y, scale_color(c_blade, 0.85f));
   fast_line(it, p_base.x, p_base.y, p_up.x, p_up.y, col_vein);
   fast_line(it, p_up.x,   p_up.y,   p_tip.x, p_tip.y, col_vein);
   fast_line(it, p_base.x, p_base.y, p_dn.x, p_dn.y, c_blade);

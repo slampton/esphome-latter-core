@@ -32,11 +32,11 @@ inline void render_battery_indicator(
   int bx = text_x - (compact ? (batt >= 100.0f ? 24 : 20) : (batt >= 100.0f ? 36 : 28));
   if (is_charging) {
     if (compact) {
-      it.filled_triangle(bx + 2, by - 6, bx - 2, by, bx + 1, by, col_gold);
-      it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 6, col_gold);
+      fast_filled_triangle(it, bx + 2, by - 6, bx - 2, by, bx + 1, by, col_gold);
+      fast_filled_triangle(it, bx - 1, by, bx + 2, by, bx - 2, by + 6, col_gold);
     } else {
-      it.filled_triangle(bx + 3, by - 9, bx - 3, by, bx + 1, by, col_gold);
-      it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 9, col_gold);
+      fast_filled_triangle(it, bx + 3, by - 9, bx - 3, by, bx + 1, by, col_gold);
+      fast_filled_triangle(it, bx - 1, by, bx + 2, by, bx - 2, by + 9, col_gold);
     }
   } else if (compact) {
     fill_rect_row_major(it, bx - 1, by - 6, 3, 1, col_green);
@@ -190,7 +190,7 @@ inline void render_clock_page(
       float sin_h = 0.0f, cos_h = 1.0f;
       fast_sincos(h_angle, sin_h, cos_h);
       float h_len = 88.0f * dial_scale;
-      it.filled_triangle(cx - static_cast<int>(7.0f * cos_h), cy - static_cast<int>(7.0f * sin_h),
+      fast_filled_triangle(it, cx - static_cast<int>(7.0f * cos_h), cy - static_cast<int>(7.0f * sin_h),
                          cx + static_cast<int>(7.0f * cos_h), cy + static_cast<int>(7.0f * sin_h),
                          cx + static_cast<int>(h_len * sin_h), cy - static_cast<int>(h_len * cos_h),
                          col_white);
@@ -200,7 +200,7 @@ inline void render_clock_page(
       float sin_m = 0.0f, cos_m = 1.0f;
       fast_sincos(m_angle, sin_m, cos_m);
       float m_len = 148.0f * dial_scale;
-      it.filled_triangle(cx - static_cast<int>(4.0f * cos_m), cy - static_cast<int>(4.0f * sin_m),
+      fast_filled_triangle(it, cx - static_cast<int>(4.0f * cos_m), cy - static_cast<int>(4.0f * sin_m),
                          cx + static_cast<int>(4.0f * cos_m), cy + static_cast<int>(4.0f * sin_m),
                          cx + static_cast<int>(m_len * sin_m), cy - static_cast<int>(m_len * cos_m),
                          col_slate);
@@ -514,8 +514,8 @@ inline void draw_home_activity_row_contents(
       fast_line(it, gx + 5, gy - 7, gx + 1, gy, fg_w);
       fast_line(it, gx - 1, gy, gx - 5, gy + 7, fg_w);
       fast_line(it, gx + 1, gy, gx + 5, gy + 7, fg_w);
-      it.filled_triangle(gx - 3, gy - 4, gx + 3, gy - 4, gx, gy - 1, fg_w);
-      it.filled_triangle(gx - 4, gy + 7, gx + 4, gy + 7, gx, gy + 2, fg_w);
+      fast_filled_triangle(it, gx - 3, gy - 4, gx + 3, gy - 4, gx, gy - 1, fg_w);
+      fast_filled_triangle(it, gx - 4, gy + 7, gx + 4, gy + 7, gx, gy + 2, fg_w);
     } else if (cur_act.kind == 2) {
       fill_rect_row_major(it, gx - 2, gy - 10, 5, 2, fg_w);
       fast_line(it, gx + 5, gy - 6, gx + 7, gy - 8, fg_w);
@@ -561,8 +561,8 @@ inline void draw_home_activity_row_contents(
       fast_line(it, gx,     gy, gx - 6, gy + 10, fg_w);
       fast_line(it, gx + 1, gy, gx + 7, gy + 10, fg_w);
       fast_line(it, gx,     gy, gx + 6, gy + 10, fg_w);
-      it.filled_triangle(gx - 4, gy - 6, gx + 4, gy - 6, gx, gy - 1, fg_w);
-      it.filled_triangle(gx - 5, gy + 9, gx + 5, gy + 9, gx, gy + 3, fg_w);
+      fast_filled_triangle(it, gx - 4, gy - 6, gx + 4, gy - 6, gx, gy - 1, fg_w);
+      fast_filled_triangle(it, gx - 5, gy + 9, gx + 5, gy + 9, gx, gy + 3, fg_w);
     } else if (cur_act.kind == 2) {
       fill_rect_row_major(it, gx - 3, gy - 13, 7, 2, fg_w);
       fill_rect_row_major(it, gx - 1, gy - 11, 3, 2, fg_w);
@@ -629,7 +629,7 @@ inline void draw_home_activity_row_contents(
     fill_rect_row_major(it, act_bx - 5, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
     fill_rect_row_major(it, act_bx + 3, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
   } else {
-    it.filled_triangle(act_bx - 4, gy - sym_s, act_bx - 4, gy + sym_s, act_bx + sym_s + 1, gy, fg_w);
+    fast_filled_triangle(it, act_bx - 4, gy - sym_s, act_bx - 4, gy + sym_s, act_bx + sym_s + 1, gy, fg_w);
   }
 }
 
@@ -1173,7 +1173,7 @@ inline void render_home_page(
       if (app_id == 6) {
         // Area Control (Option B): Sculpted 2-Cushion Sofa + Tall Floor Lamp Silhouette
         // 1. Floor Lamp on right (x = bx + 11, lampshade at top y = by - 14..by - 7, pole to y = by + 12)
-        it.filled_triangle(bx + 11, by - 15, bx + 6, by - 7, bx + 16, by - 7, c);
+        fast_filled_triangle(it, bx + 11, by - 15, bx + 6, by - 7, bx + 16, by - 7, c);
         fill_rect_row_major(it, bx + 8, by - 14, 7, 3, c);
         fast_vline(it, bx + 11, by - 7, 19, c);
         fast_vline(it, bx + 12, by - 7, 19, c);
@@ -1369,7 +1369,7 @@ inline void render_home_page(
         // Whole-Home Hub: Sculpted Architectural House (Cantilevered Eaves, Chimney, Negative-Space Door & 4-Pane Window)
         // 1. Right chimney stack & pitched roof with overhanging eaves
         fill_rect_row_major(it, bx + 7, by - 14, 4, 8, c);
-        it.filled_triangle(bx, by - 16, bx - 16, by - 2, bx + 16, by - 2, c);
+        fast_filled_triangle(it, bx, by - 16, bx - 16, by - 2, bx + 16, by - 2, c);
         fill_rect_row_major(it, bx - 16, by - 2, 33, 2, c);
         // 2. Solid lower house facade
         fill_rect_row_major(it, bx - 12, by, 25, 13, c);

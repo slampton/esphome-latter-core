@@ -46,9 +46,9 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fast_line(it, ix + 2, iy, ix + 9, iy + 12, col_white);
     fast_line(it, ix + 1, iy, ix + 8, iy + 12, col_white);
     // Solid filled upper sand cone, falling stream & solid lower sand mound
-    it.filled_triangle(ix - 5, iy - 7, ix + 5, iy - 7, ix, iy - 2, col_white);
+    fast_filled_triangle(it, ix - 5, iy - 7, ix + 5, iy - 7, ix, iy - 2, col_white);
     fast_line(it, ix, iy - 2, ix, iy + 4, theme_secondary);
-    it.filled_triangle(ix - 6, iy + 11, ix + 6, iy + 11, ix, iy + 4, col_white);
+    fast_filled_triangle(it, ix - 6, iy + 11, ix + 6, iy + 11, ix, iy + 4, col_white);
 
   } else if (app_id == 2) {
     // 2. Alarms: Twin solid filled bells, 2px clock bezel, angled legs & 2px hands (alarm.fill style)
@@ -111,8 +111,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
   } else if (app_id == 5) {
     // 5. Flashlight: Solid filled sculpted torch body & reflector head + 3 bold 2px light beams
     // Flared reflector head (solid filled trapezoid)
-    it.filled_triangle(ix - 9, iy - 7, ix + 9, iy - 7, ix - 5, iy - 1, col_white);
-    it.filled_triangle(ix + 9, iy - 7, ix - 5, iy - 1, ix + 5, iy - 1, col_white);
+    fast_filled_triangle(it, ix - 9, iy - 7, ix + 9, iy - 7, ix - 5, iy - 1, col_white);
+    fast_filled_triangle(it, ix + 9, iy - 7, ix - 5, iy - 1, ix + 5, iy - 1, col_white);
     // Solid filled handle barrel (separated by 2px card_bg collar groove at iy)
     fill_rect_row_major(it, ix - 5, iy + 1, 11, 14, col_white);
     fast_filled_circle(it, ix, iy + 14, 5, col_white);
@@ -165,7 +165,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fast_circle(it, ix, iy, 14, col_white);
     fast_circle(it, ix, iy, 11, theme_secondary);
     // Solid filled house emblem with negative-space center node/stem
-    it.filled_triangle(ix - 7, iy, ix + 7, iy, ix, iy - 7, col_white);
+    fast_filled_triangle(it, ix - 7, iy, ix + 7, iy, ix, iy - 7, col_white);
     fill_rect_row_major(it, ix - 5, iy, 11, 7, col_white);
     fast_filled_circle(it, ix, iy + 1, 2, card_bg);
     fast_line(it, ix, iy + 3, ix, iy + 6, card_bg);
@@ -184,8 +184,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
   } else if (app_id == 10) {
     // 10. Intercom: Solid filled megaphone horn + handle & 2 radiating acoustic wave arcs
     fill_rect_row_major(it, ix - 12, iy - 3, 5, 7, col_white);
-    it.filled_triangle(ix - 7, iy - 3, ix - 7, iy + 3, ix + 4, iy + 10, col_white);
-    it.filled_triangle(ix - 7, iy - 3, ix + 4, iy + 10, ix + 4, iy - 10, col_white);
+    fast_filled_triangle(it, ix - 7, iy - 3, ix - 7, iy + 3, ix + 4, iy + 10, col_white);
+    fast_filled_triangle(it, ix - 7, iy - 3, ix + 4, iy + 10, ix + 4, iy - 10, col_white);
     fill_rect_row_major(it, ix - 8, iy + 4, 3, 6, theme_secondary);
     fast_line(it, ix + 8, iy - 5, ix + 10, iy, col_white);
     fast_line(it, ix + 10, iy, ix + 8, iy + 5, col_white);
@@ -466,7 +466,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   fast_line(it, tail_x - (int)perp_x, tail_y - (int)perp_y, arr_base_x - (int)perp_x, arr_base_y - (int)perp_y, col_slate);
   fast_line(it, tail_x, tail_y, arr_base_x, arr_base_y, col_white);
 
-  it.filled_triangle(tip_x, tip_y, left_x, left_y, right_x, right_y, col_white);
+  fast_filled_triangle(it, tip_x, tip_y, left_x, left_y, right_x, right_y, col_white);
   fast_line(it, tip_x, tip_y, left_x, left_y, col_silver);
   fast_line(it, tip_x, tip_y, right_x, right_y, col_slate);
   fast_line(it, left_x, left_y, right_x, right_y, col_silver);
@@ -573,8 +573,8 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
           static_cast<uint8_t>(236.0f * light));
 
       // Fill opaque quad (2 triangles) + draw crisp perimeter bevel edges
-      it.filled_triangle(pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, face_col);
-      it.filled_triangle(pts[i0].x, pts[i0].y, pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, face_col);
+      fast_filled_triangle(it, pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, face_col);
+      fast_filled_triangle(it, pts[i0].x, pts[i0].y, pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, face_col);
       fast_line(it, pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, c_border);
       fast_line(it, pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, c_border);
       fast_line(it, pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, c_border);
@@ -1235,7 +1235,7 @@ inline void render_notification_overlay(
     // Bell / Camera badge icon at y = 122
     if (has_cam_url) {
       fast_rect_outline(it, cx - 14, scale_y(112), 22, 18, col_white);
-      it.filled_triangle(cx + 8, scale_y(121), cx + 15, scale_y(115), cx + 15, scale_y(127), theme_secondary);
+      fast_filled_triangle(it, cx + 8, scale_y(121), cx + 15, scale_y(115), cx + 15, scale_y(127), theme_secondary);
       fast_circle(it, cx - 3, scale_y(121), 4, accent_c);
     } else {
       fast_filled_circle(it, cx, scale_y(118), 9, accent_c);
@@ -1470,7 +1470,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
         fill_rect_row_major(it, bx + 2, y_mid - 6, 3, 13, col_black);
       } else {
         esphome::Color tri_c = s.paused ? col_black : theme_primary;
-        it.filled_triangle(bx - 4, y_mid - 7, bx - 4, y_mid + 7, bx + 7, y_mid, tri_c);
+        fast_filled_triangle(it, bx - 4, y_mid - 7, bx - 4, y_mid + 7, bx + 7, y_mid, tri_c);
       }
     }
 
@@ -2215,7 +2215,7 @@ inline void render_tool_calendar(
       // Map Pin Icon on left of button (cx - 85)
       const int pin_x = cx - scale_x(85);
       fast_filled_circle(it, pin_x, map_btn_y - 4, 5, Color(235, 52, 62));
-      it.filled_triangle(pin_x - 4, map_btn_y - 2, pin_x + 4, map_btn_y - 2, pin_x, map_btn_y + 6, Color(235, 52, 62));
+      fast_filled_triangle(it, pin_x - 4, map_btn_y - 2, pin_x + 4, map_btn_y - 2, pin_x, map_btn_y + 6, Color(235, 52, 62));
       fast_filled_circle(it, pin_x, map_btn_y - 4, 2, col_white);
     } else {
       render_modern_card(it, cx, scale_y(288), 296, 48, 12, Color(15, 18, 24), Color(34, 40, 50),
@@ -2394,7 +2394,7 @@ inline void render_tool_intercom(
     for (int i = 0; i < 5; i++) {
       int y_mid = layout().slot5_y(i);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_triangle(c_left + scale_x(14), y_mid - 4, c_left + scale_x(14), y_mid + 4, c_left + scale_x(21), y_mid, theme_primary);
+      fast_filled_triangle(it, c_left + scale_x(14), y_mid - 4, c_left + scale_x(14), y_mid + 4, c_left + scale_x(21), y_mid, theme_primary);
       fast_print(it, c_left + scale_x(32), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
     }
   }
