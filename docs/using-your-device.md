@@ -67,7 +67,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Voice** | Wake Word Mode, Active Wake Word, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist |
 | **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |
 | **Sound** | Volume Step Size, Alert Volume, Game Sound Effects |
-| **Area** | Default Category, Media Handoff, Show All Category, BLE Presence Beacon, Presence Beacon While Screen Off |
+| **Area** | Default Category, Media Handoff, Show All Category, BLE Presence Beacon, Presence Beacon Mode |
 | **Weather** | Condition Simulation, which forces any of 16 conditions so you can preview them |
 | **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
 | **Status** | Battery Level, Battery Voltage, Battery Charging, USB Power Connected, Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |

@@ -503,19 +503,40 @@ inline bool radio_boost_active(uint32_t now_ms) {
   return until != 0 && static_cast<int32_t>(until - now_ms) > 0;
 }
 
+// "Area: Presence Beacon Mode" option -> evaluate_radio_policy beacon_mode.
+inline int beacon_mode_index(const std::string &opt) {
+  if (opt == "Always") return 2;
+  if (opt == "Handheld + Screen Off") return 1;
+  return 0;  // "Handheld Only"
+}
+
 template <typename BleCtrlT>
 inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool ble_beacon_switch_on,
-                                  bool beacon_while_screen_off, bool on_battery,
+                                  int beacon_mode, bool usb_powered,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,
                                   bool high_tput_needed, uint32_t now_ms) {
   if (is_hibernating || ota_in_progress) return;
 
   // 1. BLE Presence Beacon & Bounded 5-Minute Improv Window:
-  // The beacon (ble_area_beacon_switch) advertises while the screen is on, while docked, and on
-  // stationary devices. On battery with the screen off it pauses unless the per-device "Area: Presence
-  // Beacon While Screen Off" setting is on: the BT controller blocks automatic light sleep and costs
-  // radio time, and Voice Follows Me picks the Area up again within the dwell time after the next wake.
-  const bool beacon_paused = on_battery && (display_power_state == 2) && !beacon_while_screen_off;
+  // The beacon (ble_area_beacon_switch) exists to place a device that moves between Areas. On battery
+  // devices, "Area: Presence Beacon Mode" decides when it advertises:
+  //   0 Handheld Only (default): unplugged with the screen on. Docked devices stay put (their Area was
+  //     settled while they were carried there), and Bluetooth costs ~50 KB of internal RAM that the
+  //     docked voice assistant (wake word, Sendspin) needs. On battery with the screen off it pauses:
+  //     the BT controller blocks automatic light sleep, and Voice Follows Me re-places the device within
+  //     the dwell time after the next wake.
+  //   1 Handheld + Screen Off: unplugged in any screen state.
+  //   2 Always: whenever the switch is on, docked included.
+  // Stationary (non-battery) devices advertise whenever the switch is on.
+#if LATTER_HAS_BATTERY
+  const bool beacon_context_ok = (beacon_mode == 2) ||
+                                 (!usb_powered && (beacon_mode == 1 || display_power_state != 2));
+#else
+  (void)beacon_mode;
+  (void)usb_powered;
+  const bool beacon_context_ok = true;
+#endif
+  const bool beacon_paused = ble_beacon_switch_on && !beacon_context_ok;
   // Bluetooth costs ~50 KB of internal RAM (controller + Bluedroid + 4 task stacks, measured on the S3),
   // so the beacon starts 20 s after boot, once Wi-Fi, wake word and Sendspin have finished allocating.
   const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused && (now_ms > 20000U);
@@ -531,7 +552,8 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
       ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
       ble_ctrl->enable();
     } else if (!want_ble && ble_ctrl->is_active()) {
-      ESP_LOGI("ble", "Disabling BLE radio (beacon %s, Improv window closed)", beacon_paused ? "paused for screen-off on battery" : "off");
+      ESP_LOGI("ble", "Disabling BLE radio (beacon %s, Improv window closed)",
+               !beacon_paused ? "off" : (usb_powered ? "paused while docked" : "paused for screen-off on battery"));
       ble_ctrl->disable();
     }
   }

@@ -1,6 +1,24 @@
 # Latter Client Feature Package: UI Template Controls (Select, Button, Switch, Number)
 
 select:
+  # When the BLE presence beacon advertises on battery devices (see evaluate_radio_policy). The default
+  # keeps Bluetooth off while docked, where the wake-word voice assistant needs the internal RAM, and
+  # off with the screen off on battery, where it would block automatic light sleep.
+  - platform: template
+    name: "Area: Presence Beacon Mode"
+    id: ble_beacon_mode_select
+    icon: "mdi:bluetooth-connect"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "Handheld Only"
+    options:
+      - "Handheld Only"
+      - "Handheld + Screen Off"
+      - "Always"
+    set_action:
+      - lambda: 'id(apply_power_policy).execute();'
+
   - platform: template
     name: "Voice: Wake Word Mode"
     id: va_wake_word_mode
@@ -662,19 +680,6 @@ switch:
           id(apply_power_policy).execute();
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
-  # Battery devices pause the presence beacon while the screen is off (BLE blocks automatic light sleep).
-  # Turn this on to keep continuous Area tracking at the cost of battery life. No effect when docked.
-  - platform: template
-    name: "Area: Presence Beacon While Screen Off"
-    id: ble_beacon_screen_off_switch
-    icon: "mdi:bluetooth-connect"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-    turn_on_action:
-      - lambda: 'id(apply_power_policy).execute();'
-    turn_off_action:
-      - lambda: 'id(apply_power_policy).execute();'
 
 
   - platform: template

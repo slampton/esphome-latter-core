@@ -46,7 +46,7 @@ packages:
 - **Beacon:**
   - UUID `4C415454-4552-434F-5245-000000000220`, which is the shared Latter UUID.
   - Major 1, minor 1, −59 dBm at 1 m, advertised every 500–1000 ms.
-- **Entity:** **Area: BLE Presence Beacon** switch, which turns the Bluetooth radio on and off. On battery with the screen off the beacon pauses (Bluetooth blocks automatic light sleep) unless **Area: Presence Beacon While Screen Off** is on. The **BLE Radio Active** diagnostic sensor shows the radio state.
+- **Entity:** **Area: BLE Presence Beacon** switch, which turns the Bluetooth radio on and off. On battery devices, **Area: Presence Beacon Mode** decides when it advertises: **Handheld Only** (default: unplugged with the screen on; off while docked, where Bluetooth's ~50 KB of internal RAM is needed by the wake-word voice assistant, and off with the screen off, where it would block automatic light sleep), **Handheld + Screen Off**, or **Always**. Stationary devices advertise whenever the switch is on. The **BLE Radio Active** diagnostic sensor shows the radio state.
 - **How Latter identifies the node:** by its MAC address in Home Assistant's device registry. The UUID is only a filter. So the node must be added to Home Assistant through the ESPHome integration, and **This device roams** must be checked when you add it to Latter.
 - **Existing `esp32_ble:` block:** the mixin's switch refers to `id: latter_ble_ctrl`. If your config already defines `esp32_ble:` with a different `id`, remove that `id` or change it to `latter_ble_ctrl`.
 - **Untested combination:** a beacon and `ble_proxy` on the same node.
