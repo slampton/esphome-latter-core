@@ -67,7 +67,6 @@ Mixins are ESPHome packages you add with one line. Each one also makes the devic
 | :--- | :--- | :--- |
 | [`ble_proxy`](docs/mixins.md#ble_proxy) | Active Bluetooth proxy, so this node becomes a presence scanner for its area | `github://slampton/esphome-latter-core/mixins/ble_proxy.yaml@main` |
 | [`ble_beacon`](docs/mixins.md#ble_beacon) | An iBeacon, so Latter can track which area this node is in | `github://slampton/esphome-latter-core/mixins/ble_beacon.yaml@main` |
-| [`roaming_vpn`](docs/mixins.md#roaming_vpn) | WireGuard tunnel back to Home Assistant over any Wi-Fi | `github://slampton/esphome-latter-core/mixins/roaming_vpn.yaml@main` |
 | [`diagnostics`](docs/mixins.md#diagnostics) | Uptime, Wi-Fi signal, restart button | `github://slampton/esphome-latter-core/mixins/diagnostics.yaml@main` |
 
 ```yaml
@@ -123,7 +122,7 @@ This is version **2.2.1**, built and maintained by one person and tested on the 
 | Area | Status |
 | :--- | :--- |
 | The five flagship devices, the universal GUI, audio, voice, and power | Stable |
-| `ble_proxy`, `ble_beacon`, `roaming_vpn`, and `diagnostics` mixins on your own configs | Stable, but see each mixin's [conflicts](docs/mixins.md) |
+| `ble_proxy`, `ble_beacon`, and `diagnostics` mixins on your own configs | Stable, but see each mixin's [conflicts](docs/mixins.md) |
 | `rotary_input` and `p4_camera` mixins | **Experimental** |
 | Doorbell two-way talk | **Experimental** (implemented on the Home Assistant side) |
 

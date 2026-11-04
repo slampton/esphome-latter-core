@@ -69,7 +69,7 @@ void test_epoch_and_rev_monotonicity() {
 void test_all_five_domain_parsers() {
   latter_ui::reset_all_v3_rev_guards();
 
-  // Area Context (COUNT = 40)
+  // Area Context (COUNT = 38)
   std::vector<std::string> area_t(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
   area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "office";
   area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Office";

@@ -302,8 +302,6 @@ text_sensor:
               if (!st.site_id.empty()) {
                 latter_ui::latter_site_id() = st.site_id;
               }
-              latter_ui::latter_vpn_enabled() = st.vpn_enabled;
-              latter_ui::latter_vpn_client_ip() = st.vpn_client_ip;
               latter_ui::latter_ble_proxy() = st.ble_closest_proxy;
               latter_ui::cam_listen_active() = (st.doorbell_talk_state == "listening");
               if (st.theme_color_hex.size() == 7 && st.theme_color_hex[0] == '#') {

@@ -370,16 +370,6 @@ inline std::string &latter_site_id() {
   return s;
 }
 
-inline bool &latter_vpn_enabled() {
-  static bool en = false;
-  return en;
-}
-
-inline std::string &latter_vpn_client_ip() {
-  static std::string s;
-  return s;
-}
-
 inline std::string &latter_ble_proxy() {
   static std::string s;
   return s;
@@ -741,10 +731,7 @@ inline void render_system_page(
              (unsigned long)up_d, (unsigned long)up_h, (unsigned long)up_m);
     print_info_row(116, "Uptime:", buf, col_slate);
 
-    if (latter_vpn_enabled() && !latter_vpn_client_ip().empty()) {
-      snprintf(buf, sizeof(buf), "VPN (%s)", latter_vpn_client_ip().c_str());
-      print_info_row(148, "Latter:", buf, theme_secondary);
-    } else if (!latter_site_id().empty() && latter_site_id() != "primary") {
+    if (!latter_site_id().empty() && latter_site_id() != "primary") {
       snprintf(buf, sizeof(buf), "Site: %s", latter_site_id().c_str());
       print_info_row(148, "Latter:", buf, theme_secondary);
     } else {

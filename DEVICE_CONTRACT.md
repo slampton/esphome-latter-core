@@ -23,7 +23,7 @@
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `40` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `38` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -32,40 +32,38 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `3` | `area_id` | `AreaCtxField::AREA_ID` | `string` | Active Home Assistant Area ID |
 | `4` | `area_name` | `AreaCtxField::AREA_NAME` | `string` | Friendly display name of the active Area |
 | `5` | `site_id` | `AreaCtxField::SITE_ID` | `string` | Active Site ID |
-| `6` | `vpn_enabled` | `AreaCtxField::VPN_ENABLED` | `bool` | WireGuard roaming VPN enabled flag (0 or 1) |
-| `7` | `vpn_client_ip` | `AreaCtxField::VPN_CLIENT_IP` | `string` | Assigned WireGuard client IP |
-| `8` | `ble_closest_proxy` | `AreaCtxField::BLE_CLOSEST_PROXY` | `string` | Friendly name of closest Bluetooth proxy |
-| `9` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Comma-separated Home Dock app IDs |
-| `10` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper |
-| `11` | `theme_color_hex` | `AreaCtxField::THEME_COLOR_HEX` | `string` | Active theme accent color (#RRGGBB) |
-| `12` | `available_domains` | `AreaCtxField::AVAILABLE_DOMAINS` | `csv` | Comma-separated available Area domains |
-| `13` | `area_temp` | `AreaCtxField::AREA_TEMP` | `string` | Formatted Area temperature |
-| `14` | `area_humidity` | `AreaCtxField::AREA_HUMIDITY` | `string` | Formatted Area relative humidity |
-| `15` | `lights_on` | `AreaCtxField::LIGHTS_ON` | `u16` | Count of active lights in Area |
-| `16` | `covers_open` | `AreaCtxField::COVERS_OPEN` | `u16` | Count of open covers in Area |
-| `17` | `alarm_entity` | `AreaCtxField::ALARM_ENTITY` | `entity_id` | Primary alarm control panel entity ID |
-| `18` | `alarm_state` | `AreaCtxField::ALARM_STATE` | `string` | Primary alarm state |
-| `19` | `thermostat_entity` | `AreaCtxField::THERMOSTAT_ENTITY` | `entity_id` | Primary climate entity ID |
-| `20` | `thermostat_state` | `AreaCtxField::THERMOSTAT_STATE` | `string` | Primary climate state/HVAC mode |
-| `21` | `thermostat_temp` | `AreaCtxField::THERMOSTAT_TEMP` | `f32` | Target thermostat setpoint temperature |
-| `22` | `thermostat_current_temp` | `AreaCtxField::THERMOSTAT_CURRENT_TEMP` | `f32` | Current measured thermostat temperature |
-| `23` | `lock_entity` | `AreaCtxField::LOCK_ENTITY` | `entity_id` | Primary lock entity ID |
-| `24` | `lock_state` | `AreaCtxField::LOCK_STATE` | `string` | Primary lock state |
-| `25` | `garage_entity` | `AreaCtxField::GARAGE_ENTITY` | `entity_id` | Primary garage cover entity ID |
-| `26` | `garage_state` | `AreaCtxField::GARAGE_STATE` | `string` | Primary garage cover state |
-| `27` | `vacuum_entity` | `AreaCtxField::VACUUM_ENTITY` | `entity_id` | Primary vacuum entity ID |
-| `28` | `vacuum_state` | `AreaCtxField::VACUUM_STATE` | `string` | Primary vacuum state |
-| `29` | `camera_snapshot_url` | `AreaCtxField::CAMERA_SNAPSHOT_URL` | `url` | Signed HTTP URL for primary camera snapshot |
-| `30` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|snapshot_url camera records |
-| `31` | `doorbell_talk_state` | `AreaCtxField::DOORBELL_TALK_STATE` | `string` | Doorbell talkback state |
-| `32` | `intercom_targets_summary` | `AreaCtxField::INTERCOM_TARGETS_SUMMARY` | `records` | 0x1E-joined target_id|label|kind intercom target records |
-| `33` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
-| `34` | `alert_title` | `AreaCtxField::ALERT_TITLE` | `string` | Alert banner title |
-| `35` | `alert_message` | `AreaCtxField::ALERT_MESSAGE` | `string` | Alert banner message body |
-| `36` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (info|normal|high|critical) |
-| `37` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
-| `38` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `string` | Alert RTTTL/chime preset name |
-| `39` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
+| `6` | `ble_closest_proxy` | `AreaCtxField::BLE_CLOSEST_PROXY` | `string` | Friendly name of closest Bluetooth proxy |
+| `7` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Comma-separated Home Dock app IDs |
+| `8` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper |
+| `9` | `theme_color_hex` | `AreaCtxField::THEME_COLOR_HEX` | `string` | Active theme accent color (#RRGGBB) |
+| `10` | `available_domains` | `AreaCtxField::AVAILABLE_DOMAINS` | `csv` | Comma-separated available Area domains |
+| `11` | `area_temp` | `AreaCtxField::AREA_TEMP` | `string` | Formatted Area temperature |
+| `12` | `area_humidity` | `AreaCtxField::AREA_HUMIDITY` | `string` | Formatted Area relative humidity |
+| `13` | `lights_on` | `AreaCtxField::LIGHTS_ON` | `u16` | Count of active lights in Area |
+| `14` | `covers_open` | `AreaCtxField::COVERS_OPEN` | `u16` | Count of open covers in Area |
+| `15` | `alarm_entity` | `AreaCtxField::ALARM_ENTITY` | `entity_id` | Primary alarm control panel entity ID |
+| `16` | `alarm_state` | `AreaCtxField::ALARM_STATE` | `string` | Primary alarm state |
+| `17` | `thermostat_entity` | `AreaCtxField::THERMOSTAT_ENTITY` | `entity_id` | Primary climate entity ID |
+| `18` | `thermostat_state` | `AreaCtxField::THERMOSTAT_STATE` | `string` | Primary climate state/HVAC mode |
+| `19` | `thermostat_temp` | `AreaCtxField::THERMOSTAT_TEMP` | `f32` | Target thermostat setpoint temperature |
+| `20` | `thermostat_current_temp` | `AreaCtxField::THERMOSTAT_CURRENT_TEMP` | `f32` | Current measured thermostat temperature |
+| `21` | `lock_entity` | `AreaCtxField::LOCK_ENTITY` | `entity_id` | Primary lock entity ID |
+| `22` | `lock_state` | `AreaCtxField::LOCK_STATE` | `string` | Primary lock state |
+| `23` | `garage_entity` | `AreaCtxField::GARAGE_ENTITY` | `entity_id` | Primary garage cover entity ID |
+| `24` | `garage_state` | `AreaCtxField::GARAGE_STATE` | `string` | Primary garage cover state |
+| `25` | `vacuum_entity` | `AreaCtxField::VACUUM_ENTITY` | `entity_id` | Primary vacuum entity ID |
+| `26` | `vacuum_state` | `AreaCtxField::VACUUM_STATE` | `string` | Primary vacuum state |
+| `27` | `camera_snapshot_url` | `AreaCtxField::CAMERA_SNAPSHOT_URL` | `url` | Signed HTTP URL for primary camera snapshot |
+| `28` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|snapshot_url camera records |
+| `29` | `doorbell_talk_state` | `AreaCtxField::DOORBELL_TALK_STATE` | `string` | Doorbell talkback state |
+| `30` | `intercom_targets_summary` | `AreaCtxField::INTERCOM_TARGETS_SUMMARY` | `records` | 0x1E-joined target_id|label|kind intercom target records |
+| `31` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
+| `32` | `alert_title` | `AreaCtxField::ALERT_TITLE` | `string` | Alert banner title |
+| `33` | `alert_message` | `AreaCtxField::ALERT_MESSAGE` | `string` | Alert banner message body |
+| `34` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (info|normal|high|critical) |
+| `35` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
+| `36` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `string` | Alert RTTTL/chime preset name |
+| `37` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
 
 ### `sensor.<device>_active_media` (`MediaField`, `20` total fields)
 

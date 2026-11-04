@@ -9,13 +9,12 @@ packages:
 ```
 
 > [!IMPORTANT]
-> Mixins are for **your own** ESPHome configs. The Latter firmware devices already include the beacon, VPN, and diagnostics features. Adding mixins to them causes ID and name collisions.
+> Mixins are for **your own** ESPHome configs. The Latter firmware devices already include the beacon and diagnostics features. Adding mixins to them causes ID and name collisions.
 
 | Mixin | Status | Needs |
 | :--- | :--- | :--- |
 | [`ble_proxy`](#ble_proxy) | Stable | ESP32 with Bluetooth, preferably mains-powered |
 | [`ble_beacon`](#ble_beacon) | Stable | ESP32 with Bluetooth |
-| [`roaming_vpn`](#roaming_vpn) | Stable | 4 secrets |
 | [`diagnostics`](#diagnostics) | Stable | — |
 | [`rotary_input`](#rotary_input) | Experimental | A config built on Latter Core's `latter_client.yaml` |
 | [`p4_camera`](#p4_camera) | Experimental | ESP32-P4 with an OV5647 camera |
@@ -50,37 +49,6 @@ packages:
 - **How Latter identifies the node:** by its MAC address in Home Assistant's device registry. The UUID is only a filter. So the node must be added to Home Assistant through the ESPHome integration, and **This device roams** must be checked when you add it to Latter.
 - **Existing `esp32_ble:` block:** the mixin's switch refers to `id: latter_ble_ctrl`. If your config already defines `esp32_ble:` with a different `id`, remove that `id` or change it to `latter_ble_ctrl`.
 - **Untested combination:** a beacon and `ble_proxy` on the same node.
-
-## `roaming_vpn`
-
-Brings up a WireGuard tunnel back to your network, so a portable device stays connected to Home Assistant on any Wi-Fi, including a phone hotspot.
-
-```yaml
-packages:
-  latter_vpn: github://slampton/esphome-latter-core/mixins/roaming_vpn.yaml@main
-```
-
-Required in `secrets.yaml`. **Studio → Devices → Administration → Device Roaming Identity** generates all four:
-
-```yaml
-latter_vpn_private_key: "<device private key>"
-latter_vpn_endpoint: "<your WireGuard host or IP>"
-latter_vpn_server_public_key: "<server public key>"
-latter_vpn_preshared_key: "<preshared key>"
-```
-
-Optional substitutions:
-
-| Substitution | Default |
-| :--- | :--- |
-| `latter_vpn_ip` | `10.10.10.2` |
-| `latter_vpn_netmask` | `255.255.255.0` |
-| `latter_vpn_allowed_subnet` | `10.10.10.0/24` |
-| `latter_vpn_port` | `51820` |
-
-- **Entities:** System: VPN Tunnel Connected, System: VPN Tunnel Enabled, System: VPN Latest Handshake.
-- **Keepalive:** 25 s.
-- **You still need a WireGuard server**, such as a router or the Home Assistant WireGuard add-on, with the peer config that Studio generates.
 
 ## `diagnostics`
 

@@ -51,8 +51,6 @@ struct AreaContextState {
   std::string area_id = "";
   std::string area_name = "";
   std::string site_id = "";
-  bool vpn_enabled = false;
-  std::string vpn_client_ip = "";
   std::string ble_closest_proxy = "";
   std::string dock_apps = "";
   std::string wallpaper_url = "";
@@ -317,8 +315,6 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.area_id           = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ID)]);
   st.area_name         = std::string(f[static_cast<size_t>(AreaCtxField::AREA_NAME)]);
   st.site_id           = std::string(f[static_cast<size_t>(AreaCtxField::SITE_ID)]);
-  st.vpn_enabled       = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::VPN_ENABLED)]);
-  st.vpn_client_ip     = std::string(f[static_cast<size_t>(AreaCtxField::VPN_CLIENT_IP)]);
   st.ble_closest_proxy = std::string(f[static_cast<size_t>(AreaCtxField::BLE_CLOSEST_PROXY)]);
   st.dock_apps         = std::string(f[static_cast<size_t>(AreaCtxField::DOCK_APPS)]);
   st.wallpaper_url     = std::string(f[static_cast<size_t>(AreaCtxField::WALLPAPER_URL)]);
