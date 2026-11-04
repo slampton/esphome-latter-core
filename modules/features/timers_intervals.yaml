@@ -30,8 +30,7 @@ interval:
           if (cur_audio_game != s_prev_audio_game) {
             s_prev_audio_game = cur_audio_game;
             if (cur_audio_game > 0 && id(game_sound_switch).state) {
-              id(route_i2s_to_spk).execute();
-              id(speaker_enable).turn_on();
+              id(route_i2s_to_spk).execute();  // powers the amplifier once the I2S clocks run
               id(hal_set_dac_mute).execute(false);
             }
           }

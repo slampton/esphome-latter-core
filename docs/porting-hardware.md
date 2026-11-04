@@ -17,8 +17,8 @@ The core modules refer to these IDs. Your board or device file must define each 
 | `boot_button` | `binary_sensor` | `latter_client.yaml` extends it with wake and dismiss behavior |
 | `bus_internal` | `i2c` | The bus shared by the PMU, IMU, codecs, and touch |
 | `latter_mic` | `microphone` | |
-| `physical_speaker` | `speaker` | On a single shared I2S bus, set `timeout: 500ms` |
-| `speaker_enable` | `switch` | Amplifier enable |
+| `physical_speaker` | `speaker` | Set `timeout: 4s` (longer than the 3 s idle power-down, so gaps between tracks never stop the I2S clocks under a powered amplifier) |
+| `speaker_enable` | `switch` | Amplifier enable. Only `route_i2s_to_spk` turns it on, after the I2S clocks run |
 | `wifi_ctrl` | `wifi` | Usually defined in the device file |
 | `ble_ctrl` | `esp32_ble` | Usually defined in the device file |
 | `latter_firmware_update` | `update` | Usually defined in the device file |

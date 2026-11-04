@@ -189,7 +189,10 @@ speaker:
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
-    timeout: 500ms
+    # Longer than mp_idle_debounce (3 s), so real idle always powers down in order (DAC mute ->
+    # amplifier off -> speaker stop) and the ~0.6 s gap between tracks never stops the I2S clocks
+    # under a powered amplifier (a click at every track change).
+    timeout: 4s
 
 packages:
   latter_imu: !include ../modules/imu_none.yaml

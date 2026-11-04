@@ -680,8 +680,7 @@ script:
           // Codec power follows audio demand, not screen state: route_i2s_to_spk / sync_wake_word_state /
           // voice entry points wake the codecs when audio actually starts.
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
-            id(hal_set_audio_codecs_standby).execute(false);
-            id(speaker_enable).turn_on();
+            id(route_i2s_to_spk).execute();
           }
           const std::string &art_u = latter_ui::media_state().art_url;
           if (id(gui_page) == 2 &&

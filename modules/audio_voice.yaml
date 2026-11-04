@@ -141,7 +141,6 @@ media_player:
             duration: 0.05s
         - script.execute: route_i2s_to_spk
         - script.wait: route_i2s_to_spk
-        - switch.turn_on: speaker_enable
         - lambda: |-
             float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
             id(physical_speaker).set_volume(spk_v);
@@ -190,7 +189,6 @@ media_player:
                   then:
                     - script.execute: route_i2s_to_spk
                     - script.wait: route_i2s_to_spk
-                    - switch.turn_on: speaker_enable
               - lambda: 'id(hal_set_dac_mute).execute(false);'
               - if:
                   condition:
@@ -619,6 +617,9 @@ script:
           condition:
             lambda: 'return id(va).is_running();'
           then:
+            # The next turn's microphone needs the shared I2S bus now; the idle speaker would hold
+            # it until its 4 s timeout.
+            - script.execute: route_i2s_to_mic
             - script.stop: va_tts_drain_and_finish
       # 3. Normal completion: exit the overlay without calling abort_voice_assistant(id(va)),
       #    preserving conversation_id and native continued-conversation state.
@@ -663,8 +664,24 @@ script:
                 timeout: 150ms
       - lambda: 'id(hal_set_audio_codecs_standby).execute(false);'
       - script.execute: hal_route_i2s_to_spk
+      # Amplifier sequencing (the one place the speaker path powers up). On a cold start the I2S
+      # clocks start first with the amplifier off, so the DAC output settles unamplified; then the
+      # amplifier turns on. Starting the clocks with the amplifier already on is what pops. A running
+      # speaker (music, a short gap between tracks) skips straight to the amplifier. DAC mute stays
+      # with the callers (e.g. resume_music_after_va holds it muted while a cancelled reply drains).
+      - if:
+          condition:
+            lambda: 'return !id(physical_speaker).is_running();'
+          then:
+            - lambda: |-
+                id(speaker_enable).turn_off();
+                id(physical_speaker).start();
+            - wait_until:
+                condition:
+                  lambda: 'return id(physical_speaker).is_running();'
+                timeout: 200ms
+            - delay: 30ms
       - switch.turn_on: speaker_enable
-
   - id: route_i2s_to_mic
     mode: restart
     then:
@@ -875,7 +892,7 @@ script:
             lambda: 'return !id(speaker_enable).state;'
           then:
             - script.execute: route_i2s_to_spk
-            - switch.turn_on: speaker_enable
+            - script.wait: route_i2s_to_spk
             - lambda: |-
                 const float sfx_v = latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
                 id(alarm_rtttl).set_gain(sfx_v);

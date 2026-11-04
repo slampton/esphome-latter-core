@@ -236,7 +236,7 @@ script:
                   - script.execute: sync_wake_word_state
                 else:
                   - script.execute: route_i2s_to_spk
-                  - switch.turn_on: speaker_enable
+                  - script.wait: route_i2s_to_spk
                   - if:
                       condition:
                         lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
