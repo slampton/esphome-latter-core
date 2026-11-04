@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110228L
+#define LATTER_SDK_REV 2026110229L
 
 namespace latter_ui {
 
@@ -1899,117 +1899,93 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
 
 template<typename DisplayT>
 inline bool frame_base(DisplayT &it, esphome::Color c);
-template<typename DisplayT>
-inline void frame_base_cover(DisplayT &it, int cx, esphome::Color c);
+inline void frame_base_claim();
 inline uint64_t prof_section_begin();
 inline void prof_art_end(uint64_t t0);
 
-// Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
-// smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
-template<typename DisplayT, typename ImageT>
-inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
-                                    bool is_standard, bool is_letterbox,
-                                    bool apply_scrim, bool show_metadata,
-                                    int dim_level = 0) {
-  if (target_art == nullptr) return false;
-  const uint16_t *src_data = reinterpret_cast<const uint16_t *>(target_art->get_data_start());
-  int src_w = target_art->get_width();
-  int src_h = target_art->get_height();
-  if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
-  // Frame base: full-screen modes on non-round panels cover every pixel inside the panel outline,
-  // so only the corners are painted; other modes paint the black base before drawing.
+// Horizontal extent of album art on row y: the circle on round panels; the full row elsewhere
+// (album art is never rounded to the panel's corner radius; hidden corners just aren't visible).
+inline void art_row_span(int y, int cx, int &start_x, int &end_x) {
 #if LATTER_ROUND_DISPLAY
-  frame_base(it, esphome::Color(0, 0, 0));
+  const int hw = circle_half_span(y, 0);
+  start_x = std::max(0, cx - hw);
+  end_x = std::min(SCREEN_W - 1, cx + hw);
 #else
-  if (!is_standard && !is_letterbox) {
-    frame_base_cover(it, cx, esphome::Color(0, 0, 0));
-  } else {
-    frame_base(it, esphome::Color(0, 0, 0));
-  }
+  (void)y;
+  (void)cx;
+  start_x = 0;
+  end_x = SCREEN_W - 1;
 #endif
-  struct ArtTimer {
-    uint64_t t0;
-    ~ArtTimer() { prof_art_end(t0); }
-  } art_timer{prof_section_begin()};
+}
+
+// Standard mode: the art keeps its own aspect ratio, fitted inside the STD_ART_SIZE square.
+struct ArtRect {
+  int x0, y0, w, h;
+};
+
+inline ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim) {
+  const int box = STD_ART_SIZE;
+  const int art_cy = (show_metadata || apply_scrim) ? scale_y(198) : SCREEN_CY;
+  int w = box;
+  int h = box;
+  if (src_w > src_h) {
+    h = std::max(1, (box * src_h) / src_w);
+  } else if (src_h > src_w) {
+    w = std::max(1, (box * src_w) / src_h);
+  }
+  return {cx - w / 2, art_cy - h / 2, w, h};
+}
+
+// Draws album art into the bound framebuffer (row-major, full 16-bit RGB565).
+template<typename DisplayT>
+inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, int src_h, int cx,
+                           bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata,
+                           int dim_level) {
   static uint16_t row_buf[SCREEN_W];
 
   if (is_standard) {
-    const int std_size = STD_ART_SIZE;
-    const int art_cy   = (show_metadata || apply_scrim) ? scale_y(198) : SCREEN_CY;
-    const int x0       = cx - (std_size / 2);
-    const int y0       = art_cy - (std_size / 2);
-    const int r_std    = scale_min(14);
-    const int step_x   = (src_w << 12) / std_size;
-    const int step_y   = (src_h << 12) / std_size;
-    const int mul_q3   = (dim_level >= 2) ? 2 : (apply_scrim ? 4 : 8);
-
+    const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
+    const int step_x = (src_w << 12) / r.w;
+    const int step_y = (src_h << 12) / r.h;
+    const int mul_q3 = (dim_level >= 2) ? 2 : (apply_scrim ? 4 : 8);
     int curr_y = 0;
-    for (int y = 0; y < std_size; y++) {
-      int sy = std::min(src_h - 1, curr_y >> 12);
+    for (int y = 0; y < r.h; y++) {
+      const int sy = std::min(src_h - 1, curr_y >> 12);
       curr_y += step_y;
-      int py = y0 + y;
+      const int py = r.y0 + y;
       if (py < 0 || py >= SCREEN_H) continue;
-
-      int dx_clip = 0;
-      if (y < r_std) {
-        dx_clip = r_std - chord_half_span_int(r_std, r_std - y, true);
-      } else if (y >= std_size - r_std) {
-        dx_clip = r_std - chord_half_span_int(r_std, y - (std_size - 1 - r_std), true);
-      }
-      int x_start = dx_clip;
-      int x_end   = std_size - 1 - dx_clip;
-      int draw_x0 = x0 + x_start;
-      int draw_x1 = x0 + x_end;
-      if (draw_x0 < 0) {
-        x_start += -draw_x0;
-        draw_x0 = 0;
-      }
-      if (draw_x1 >= SCREEN_W) {
-        x_end -= (draw_x1 - (SCREEN_W - 1));
-      }
-      int span_w = x_end - x_start + 1;
+      int x_start = 0;
+      int x_end = r.w - 1;
+      if (r.x0 + x_start < 0) x_start = -r.x0;
+      if (r.x0 + x_end >= SCREEN_W) x_end = SCREEN_W - 1 - r.x0;
+      const int span_w = x_end - x_start + 1;
       if (span_w <= 0 || span_w > SCREEN_W) continue;
       const uint16_t *src_row = src_data + sy * src_w;
       int curr_x = x_start * step_x;
       for (int i = 0; i < span_w; i++) {
-        int sx = std::min(src_w - 1, curr_x >> 12);
+        row_buf[i] = src_row[std::min(src_w - 1, curr_x >> 12)];
         curr_x += step_x;
-        row_buf[i] = src_row[sx];
       }
       dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
-      blit_rgb565_scanline(it, draw_x0, py, span_w, row_buf, false);
+      blit_rgb565_scanline(it, r.x0 + x_start, py, span_w, row_buf, false);
     }
-
-    // Crisp top-lit specular glass frame around the centered Standard album art square
-    const esphome::Color brd_top(88, 102, 124);
-    const esphome::Color brd_side(56, 66, 82);
-    const esphome::Color brd_btm(38, 45, 58);
-    int top_in = r_std / 2 + 2;
-    fast_hline(it, x0 + top_in, y0,                std_size - 2 * top_in, brd_top);
-    fast_hline(it, x0 + top_in, y0 + std_size - 1, std_size - 2 * top_in, brd_btm);
-    fast_vline(it, x0,                y0 + r_std, std_size - 2 * r_std, brd_side);
-    fast_vline(it, x0 + std_size - 1, y0 + r_std, std_size - 2 * r_std, brd_side);
-    for (int dy = 1; dy < r_std; dy++) {
-      int dx_out = r_std - chord_half_span_int(r_std, r_std - dy, true);
-      int dx_in  = dx_out + 1;
-      fast_hline(it, x0 + dx_out, y0 + dy, dx_in - dx_out, brd_top);
-      fast_hline(it, x0 + std_size - dx_in, y0 + dy, dx_in - dx_out, brd_top);
-      fast_hline(it, x0 + dx_out, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
-      fast_hline(it, x0 + std_size - dx_in, y0 + std_size - 1 - dy, dx_in - dx_out, brd_btm);
-    }
-    return true;
+    // Thin top-lit frame just outside the art, so every art pixel stays visible.
+    fast_hline(it, r.x0 - 1, r.y0 - 1, r.w + 2, esphome::Color(88, 102, 124));
+    fast_hline(it, r.x0 - 1, r.y0 + r.h, r.w + 2, esphome::Color(38, 45, 58));
+    fast_vline(it, r.x0 - 1, r.y0, r.h, esphome::Color(56, 66, 82));
+    fast_vline(it, r.x0 + r.w, r.y0, r.h, esphome::Color(56, 66, 82));
+    return;
   }
 
-  int start_y = is_letterbox ? scale_y(62) : 0;
-  int end_y   = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
+  const int start_y = is_letterbox ? scale_y(62) : 0;
+  const int end_y = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
 
   if (src_w == SCREEN_W && src_h == SCREEN_H) {
     for (int y = start_y; y < end_y; y++) {
-      int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
-      int hw = circle_half_span(y, 0);
-      int start_x = std::max(0, cx - hw);
-      int end_x = std::min(SCREEN_W - 1, cx + hw);
-      int span_w = end_x - start_x + 1;
+      const int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
+      int start_x = 0, end_x = 0;
+      art_row_span(y, cx, start_x, end_x);
+      const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
       if (mul_q3 >= 8) {
@@ -2022,9 +1998,9 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     }
   } else {
     // Aspect-preserving center-crop ("cover") mapping so square album art is never stretched on portrait screens
-    const int view_h  = std::max(1, end_y - start_y);
-    const int step_x  = (src_w << 12) / SCREEN_W;
-    const int step_y  = (src_h << 12) / view_h;
+    const int view_h = std::max(1, end_y - start_y);
+    const int step_x = (src_w << 12) / SCREEN_W;
+    const int step_y = (src_h << 12) / view_h;
     const int step_fp = std::min(step_x, step_y);
     const int vis_src_w_fp = SCREEN_W * step_fp;
     const int vis_src_h_fp = view_h * step_fp;
@@ -2045,13 +2021,12 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int prev_sy = -1;
     int prev_mul_q3 = -1;
     for (int y = start_y; y < end_y; y++) {
-      int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
+      const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
       curr_y += step_fp;
-      int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
-      int hw = circle_half_span(y, 0);
-      int start_x = std::max(0, cx - hw);
-      int end_x = std::min(SCREEN_W - 1, cx + hw);
-      int span_w = end_x - start_x + 1;
+      const int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
+      int start_x = 0, end_x = 0;
+      art_row_span(y, cx, start_x, end_x);
+      const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
       if (sy != prev_sy) {
         const uint16_t *src_row = src_data + sy * src_w;
@@ -2075,12 +2050,151 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   }
 
   if (is_letterbox) {
-    int hw_top = circle_half_span(start_y, 0);
-    int hw_btm = circle_half_span(end_y - 1, 0);
-    int x0_t = std::max(0, cx - hw_top), x1_t = std::min(SCREEN_W - 1, cx + hw_top);
-    int x0_b = std::max(0, cx - hw_btm), x1_b = std::min(SCREEN_W - 1, cx + hw_btm);
+    int x0_t = 0, x1_t = 0, x0_b = 0, x1_b = 0;
+    art_row_span(start_y, cx, x0_t, x1_t);
+    art_row_span(end_y - 1, cx, x0_b, x1_b);
     if (x1_t > x0_t) fast_hline(it, x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
     if (x1_b > x0_b) fast_hline(it, x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
+  }
+}
+
+// Composed album-art cache. The art only changes with the cover, art mode or overlay state, but
+// drawing it converts every pixel (hardware byte order, scaling, scrims) on every frame. The
+// finished canvas is kept in PSRAM in hardware byte order (2 entries: now-playing and menu
+// backdrop) and frames copy rows. The cover is identified by its buffer, size and a 64-point
+// pixel sample, because the image downloader reuses its buffer for the next cover.
+struct ArtCanvasCache {
+  uint16_t *px;
+  const void *data;
+  int16_t w, h;
+  uint32_t sample;
+  uint32_t mode;
+  uint32_t last_use;
+  int16_t row_x0[SCREEN_H];
+  int16_t row_len[SCREEN_H];
+};
+
+static constexpr int kArtCacheEntries = 2;
+
+inline uint32_t art_sample_hash(const uint16_t *data, int w, int h) {
+  uint32_t hash = 2166136261U ^ (static_cast<uint32_t>(w) * 31U) ^ (static_cast<uint32_t>(h) << 16);
+  const uint32_t n = static_cast<uint32_t>(w) * static_cast<uint32_t>(h);
+  for (uint32_t i = 0; i < 64; i++) {
+    const uint32_t idx = static_cast<uint32_t>((static_cast<uint64_t>(i) * (n - 1)) / 63U);
+    hash = (hash ^ data[idx]) * 16777619U;
+  }
+  return hash;
+}
+
+// Rows and columns a draw_album_art call covers (Standard includes its outside frame).
+inline void art_canvas_spans(ArtCanvasCache &e, int cx, int src_w, int src_h, bool is_standard,
+                             bool is_letterbox, bool apply_scrim, bool show_metadata) {
+  for (int y = 0; y < SCREEN_H; y++) {
+    e.row_x0[y] = 0;
+    e.row_len[y] = 0;
+  }
+  if (is_standard) {
+    const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
+    const int x0 = std::max(0, r.x0 - 1);
+    const int x1 = std::min(SCREEN_W - 1, r.x0 + r.w);
+    for (int y = std::max(0, r.y0 - 1); y <= std::min(SCREEN_H - 1, r.y0 + r.h); y++) {
+      e.row_x0[y] = static_cast<int16_t>(x0);
+      e.row_len[y] = static_cast<int16_t>(std::max(0, x1 - x0 + 1));
+    }
+    return;
+  }
+  const int start_y = is_letterbox ? scale_y(62) : 0;
+  const int end_y = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
+  for (int y = std::max(0, start_y); y < std::min(SCREEN_H, end_y); y++) {
+    int start_x = 0, end_x = 0;
+    art_row_span(y, cx, start_x, end_x);
+    e.row_x0[y] = static_cast<int16_t>(start_x);
+    e.row_len[y] = static_cast<int16_t>(std::max(0, end_x - start_x + 1));
+  }
+}
+
+template<typename DisplayT, typename ImageT>
+inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
+                                    bool is_standard, bool is_letterbox,
+                                    bool apply_scrim, bool show_metadata,
+                                    int dim_level = 0) {
+  if (target_art == nullptr) return false;
+  const uint16_t *src_data = reinterpret_cast<const uint16_t *>(target_art->get_data_start());
+  const int src_w = target_art->get_width();
+  const int src_h = target_art->get_height();
+  if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
+
+  // Frame base: full-screen art on non-round panels covers every pixel, so it is the base; other
+  // modes and round panels paint the black base first.
+#if LATTER_ROUND_DISPLAY
+  frame_base(it, esphome::Color(0, 0, 0));
+#else
+  if (!is_standard && !is_letterbox) {
+    frame_base_claim();
+  } else {
+    frame_base(it, esphome::Color(0, 0, 0));
+  }
+#endif
+  struct ArtTimer {
+    uint64_t t0;
+    ~ArtTimer() { prof_art_end(t0); }
+  } art_timer{prof_section_begin()};
+
+  uint16_t *fb = active_frame_buf16();
+  static ArtCanvasCache *entries = static_cast<ArtCanvasCache *>(
+      heap_caps_calloc(kArtCacheEntries, sizeof(ArtCanvasCache), MALLOC_CAP_SPIRAM));
+  if (fb == nullptr || entries == nullptr) {
+    draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+    return true;
+  }
+
+  const uint32_t mode = (is_standard ? 1U : 0U) | (is_letterbox ? 2U : 0U) | (apply_scrim ? 4U : 0U) |
+                        (show_metadata ? 8U : 0U) | (static_cast<uint32_t>(dim_level & 0xF) << 4) |
+                        (static_cast<uint32_t>(cx & 0xFFFF) << 8) |
+                        (static_cast<uint32_t>(active_frame_endian_mode() & 0x7) << 24);
+  const uint32_t sample = art_sample_hash(src_data, src_w, src_h);
+  static uint32_t use_seq = 0;
+  ++use_seq;
+
+  ArtCanvasCache *hit = nullptr;
+  ArtCanvasCache *victim = &entries[0];
+  for (int i = 0; i < kArtCacheEntries; i++) {
+    ArtCanvasCache &e = entries[i];
+    if (e.px != nullptr && e.data == src_data && e.w == src_w && e.h == src_h && e.sample == sample && e.mode == mode) {
+      hit = &e;
+      break;
+    }
+    if (e.last_use < victim->last_use) victim = &e;
+  }
+
+  if (hit == nullptr) {
+    if (victim->px == nullptr) {
+      victim->px = static_cast<uint16_t *>(
+          heap_caps_malloc(sizeof(uint16_t) * SCREEN_W * SCREEN_H, MALLOC_CAP_SPIRAM));
+    }
+    if (victim->px == nullptr) {
+      draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+      return true;
+    }
+    // Compose into the cache by binding it as the framebuffer (same size, stride and encoding).
+    active_frame_buf16() = victim->px;
+    draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+    active_frame_buf16() = fb;
+    art_canvas_spans(*victim, cx, src_w, src_h, is_standard, is_letterbox, apply_scrim, show_metadata);
+    victim->data = src_data;
+    victim->w = static_cast<int16_t>(src_w);
+    victim->h = static_cast<int16_t>(src_h);
+    victim->sample = sample;
+    victim->mode = mode;
+    hit = victim;
+  }
+  hit->last_use = use_seq;
+
+  for (int y = 0; y < SCREEN_H; y++) {
+    const int len = hit->row_len[y];
+    if (len <= 0) continue;
+    const size_t off = static_cast<size_t>(y) * SCREEN_W + hit->row_x0[y];
+    std::memcpy(fb + off, hit->px + off, static_cast<size_t>(len) * sizeof(uint16_t));
   }
   return true;
 }
@@ -2616,25 +2730,9 @@ inline bool frame_base(DisplayT &it, esphome::Color c) {
   return true;
 }
 
-// For a draw that will cover every pixel inside the rounded-rect panel area (full-screen album art
-// on non-round panels): paints only the corner areas outside it, then lets that draw be the base.
-template<typename DisplayT>
-inline void frame_base_cover(DisplayT &it, int cx, esphome::Color c) {
-  auto &st = frame_base_state();
-  if (st.painted) return;
-  st.painted = true;
-  for (int y = 0; y < SCREEN_H; y++) {
-    const int hw = circle_half_span(y, 0);
-    const int start_x = std::max(0, cx - hw);
-    const int end_x = std::min(SCREEN_W - 1, cx + hw);
-    if (end_x < start_x) {
-      fast_hline(it, 0, y, SCREEN_W, c);
-      continue;
-    }
-    if (start_x > 0) fast_hline(it, 0, y, start_x, c);
-    if (end_x < SCREEN_W - 1) fast_hline(it, end_x + 1, y, SCREEN_W - 1 - end_x, c);
-  }
-}
+// For a draw that covers every pixel of the frame (full-screen album art on non-round panels):
+// that draw is the base, so nothing is filled.
+inline void frame_base_claim() { frame_base_state().painted = true; }
 
 struct ProfLap {
   uint64_t t = 0;
