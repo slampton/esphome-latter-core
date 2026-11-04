@@ -516,7 +516,9 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
   // Beacon While Screen Off" setting is on: the BT controller blocks automatic light sleep and costs
   // radio time, and Voice Follows Me picks the Area up again within the dwell time after the next wake.
   const bool beacon_paused = on_battery && (display_power_state == 2) && !beacon_while_screen_off;
-  const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused;
+  // Bluetooth costs ~50 KB of internal RAM (controller + Bluedroid + 4 task stacks, measured on the S3),
+  // so the beacon starts 20 s after boot, once Wi-Fi, wake word and Sendspin have finished allocating.
+  const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused && (now_ms > 20000U);
   if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
     const bool sdio_ready = wifi_connected && (now_ms > 8000U);

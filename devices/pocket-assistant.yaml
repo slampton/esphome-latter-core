@@ -59,7 +59,9 @@ wifi:
 
 esp32_ble:
   id: ble_ctrl
-  enable_on_boot: true
+  # apply_power_policy starts Bluetooth after boot settles (beacon) or for the Improv window, so its
+  # ~50 KB internal-RAM allocation never stacks on top of Wi-Fi, wake word and Sendspin start-up.
+  enable_on_boot: false
   use_psram: true
   max_connections: 1
 

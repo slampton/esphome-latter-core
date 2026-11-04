@@ -46,15 +46,20 @@ rtttl:
   id: alarm_rtttl
   speaker: rtttl_resampler
 
+# Internal RAM is the scarce resource on the S3 boards (measured with System: Log Memory Report), so the
+# Sendspin hub's protocol, artwork and HTTP-server stacks live in PSRAM: they stay allocated whenever
+# Music Assistant is connected, even when nothing plays. The wake-word and I2S speaker tasks keep their
+# internal stacks for timing.
 sendspin:
   id: sendspin_hub
-  task_stack_in_psram: false
+  task_stack_in_psram: true
 
 
 media_source:
   - platform: audio_http
     id: http_announcement_source
     buffer_size: ${announcement_buffer_size}
+    task_stack_in_psram: true  # reader (6 KB with TLS 1.3) + decoder stacks persist after the first TTS
 
   - platform: sendspin
     id: sendspin_source
