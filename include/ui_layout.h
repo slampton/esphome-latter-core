@@ -517,7 +517,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
                                   bool high_tput_needed, uint32_t now_ms) {
   if (is_hibernating || ota_in_progress) return;
 
-  // 1. BLE Presence Beacon & Bounded 5-Minute Improv Window:
+  // 1. BLE Presence Beacon:
   // The beacon (ble_area_beacon_switch) exists to place a device that moves between Areas. On battery
   // devices, "Area: Presence Beacon Mode" decides when it advertises:
   //   0 Handheld Only (default): unplugged with the screen on. Docked devices stay put (their Area was
@@ -542,17 +542,18 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
   const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused && (now_ms > 20000U);
   if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
+    // ESP32-P4 Bluetooth runs on the C6 over SDIO (esp_hosted); wait for the link.
     const bool sdio_ready = wifi_connected && (now_ms > 8000U);
     const bool want_ble = beacon_wanted && sdio_ready;
 #else
-    const bool improv_window = !wifi_connected && (now_ms > 15000U && now_ms < 300000U);
-    const bool want_ble = beacon_wanted || improv_window;
+    (void)wifi_connected;
+    const bool want_ble = beacon_wanted;
 #endif
     if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
-      ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon / Improv)");
+      ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon)");
       ble_ctrl->enable();
     } else if (!want_ble && ble_ctrl->is_active()) {
-      ESP_LOGI("ble", "Disabling BLE radio (beacon %s, Improv window closed)",
+      ESP_LOGI("ble", "Disabling BLE radio (beacon %s)",
                !beacon_paused ? "off" : (usb_powered ? "paused while docked" : "paused for screen-off on battery"));
       ble_ctrl->disable();
     }

@@ -20,13 +20,7 @@ There are two ways to install Latter firmware:
 
 ### Connecting to Wi-Fi
 
-**Pocket, Mobile, and Wrist Assistant (ESP32-S3).** These broadcast [Improv](https://www.improv-wifi.com/) over Bluetooth until they have Wi-Fi credentials. Either way works:
-- **From Home Assistant:** if Home Assistant has Bluetooth or a Bluetooth proxy nearby, it shows **Discovered: Improv via BLE**. Click it and enter your Wi-Fi details.
-- **From a phone or laptop:** open [improv-wifi.com](https://www.improv-wifi.com/) in Chrome on Android or desktop, connect to the device, and enter your Wi-Fi details.
-
-**Remote and Desk Assistant (ESP32-P4).** The web-installer build doesn't include Wi-Fi provisioning yet. Use [Option B](#option-b-esphome-device-builder) for these boards.
-
-<!-- TODO(release): remove the P4 note above once improv_serial (or another provisioning path) ships in the P4 device configs. -->
+When flashing finishes, the installer asks for your Wi-Fi network and password and sends them to the device over the same USB cable ([Improv Serial](https://www.improv-wifi.com/serial/)). This works on all five devices. If you close the dialog, click **Connect** again with the device plugged in and choose **Configure Wi-Fi**.
 
 Once the device is on Wi-Fi, continue with [Getting started](https://github.com/slampton/ha-latter/blob/main/docs/getting-started.md#2-add-it-to-home-assistant-through-esphome).
 

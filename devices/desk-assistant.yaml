@@ -78,6 +78,9 @@ esp32_ble_beacon:
   min_interval: 500ms
   max_interval: 1000ms
 
+# Wi-Fi provisioning over the USB cable: the web installer asks for Wi-Fi right after flashing.
+improv_serial:
+
 safe_mode:
   boot_is_good_after: 60s
 

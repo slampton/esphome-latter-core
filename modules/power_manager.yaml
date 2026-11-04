@@ -36,7 +36,7 @@ globals:
     initial_value: 'false'
 
 binary_sensor:
-  # Bluetooth controller state as decided by apply_power_policy (presence beacon / Improv window).
+  # Bluetooth controller state as decided by apply_power_policy (Area presence beacon).
   - platform: template
     name: "BLE Radio Active"
     id: ble_radio_active
@@ -353,7 +353,7 @@ interval:
                 id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
           }
 
-          // 6-7. Single power-policy owner: radio (BLE beacon / Improv / Wi-Fi modem sleep), IMU mode,
+          // 6-7. Single power-policy owner: radio (BLE beacon / Wi-Fi modem sleep), IMU mode,
           // screen-off tick gating and battery polling all live in script apply_power_policy.
           id(apply_power_policy).execute();
 
@@ -491,7 +491,7 @@ script:
       - lambda: |-
           const uint32_t now_p = millis();
 
-          // Radio: BLE presence beacon / bounded Improv window, and Wi-Fi modem sleep.
+          // Radio: BLE presence beacon and Wi-Fi modem sleep.
           const uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
                                                      latter_ui::touch_gesture().last_touch_ms);
           const bool high_tput_needed =

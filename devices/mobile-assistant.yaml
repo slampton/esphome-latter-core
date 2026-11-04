@@ -59,8 +59,8 @@ wifi:
 
 esp32_ble:
   id: ble_ctrl
-  # apply_power_policy starts Bluetooth after boot settles (beacon) or for the Improv window, so its
-  # ~50 KB internal-RAM allocation never stacks on top of Wi-Fi, wake word and Sendspin start-up.
+  # Bluetooth is only the Area presence beacon (advertising, no GATT). apply_power_policy starts it after
+  # boot settles, so its ~50 KB internal-RAM allocation never stacks on Wi-Fi, wake word and Sendspin start-up.
   enable_on_boot: false
   use_psram: true
   max_connections: 1
@@ -75,9 +75,8 @@ esp32_ble_beacon:
   min_interval: 500ms
   max_interval: 1000ms
 
-improv_ble:
-  authorizer: boot_button
-  wifi_timeout: 5s
+# Wi-Fi provisioning over the USB cable: the web installer asks for Wi-Fi right after flashing.
+improv_serial:
 
 safe_mode:
   boot_is_good_after: 60s
