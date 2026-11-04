@@ -200,95 +200,188 @@ static constexpr uint8_t LUNAR_ALBEDO_45[45][45] = {
   {130,138,138,138,137,135,97,141,141,155,166,166,216,232,214,169,218,213,155,196,155,156,144,156,172,234,239,205,203,191,185,203,226,201,201,228,221,221,219,192,239,175,247,247,158},
 };
 
+// The shaded lunar disc depends only on its radius and the moon phase: the albedo LUT, limb
+// darkening and terminator penumbra are independent of position, theme and wall-clock time. The
+// disc is therefore shaded once per (radius, phase bucket) into a PSRAM RGB565 tile and blitted
+// row by row on later frames. The phase is quantised to 1/2048 of the synodic month (~21 min),
+// far below one visible pixel of terminator travel. Two tiles cover the Moon subpage disc and the
+// night-sky corner badge without thrashing.
+static constexpr int LUNAR_PHASE_BUCKETS = 2048;
+
+inline int lunar_phase_bucket(double cycle) {
+  double c = cycle - std::floor(cycle);
+  return static_cast<int>(std::lround(c * LUNAR_PHASE_BUCKETS)) % LUNAR_PHASE_BUCKETS;
+}
+
+struct LunarShade {
+  int r;
+  float penumbra;
+  float inv_2pen;
+  float r_plus_sq_inv;
+  float phase_cos;
+  bool waxing;
+  float term_sign;
+
+  LunarShade(int moon_r, double cycle) : r(moon_r) {
+    const float scale = static_cast<float>(moon_r) * (1.0f / 44.0f);
+    penumbra = 6.0f * scale;
+    inv_2pen = 1.0f / (2.0f * penumbra);
+    r_plus_sq_inv = 1.0f / static_cast<float>((moon_r + 2) * (moon_r + 2));
+    phase_cos = fast_cos(static_cast<float>(cycle * 2.0 * 3.1415926535));
+    waxing = (cycle <= 0.5);
+    term_sign = waxing ? 1.0f : -1.0f;
+  }
+};
+
+// Shades one disc row (mx = -w_line .. +w_line) into native RGB565.
+inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
+  const int moon_r = sh.r;
+  const float my_sq_f = static_cast<float>(my * my);
+  const float x_term = sh.term_sign * static_cast<float>(w_line) * sh.phase_cos;
+  const int pen_lo = static_cast<int>(floorf(x_term - sh.penumbra));
+  const int pen_hi = static_cast<int>(ceilf(x_term + sh.penumbra));
+  const int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / (2 * moon_r));
+  const int ty_45  = (moon_r == 22) ? (my + 22) : 0;
+
+  for (int mx = -w_line; mx <= w_line; mx++) {
+    uint8_t tex_u8;
+    if (moon_r == 69) {
+      tex_u8 = LUNAR_ALBEDO_139[ty_139][mx + 69];
+    } else if (moon_r == 22) {
+      tex_u8 = LUNAR_ALBEDO_45[ty_45][mx + 22];
+    } else {
+      int tx_139 = (mx + moon_r) * 138 / (2 * moon_r);
+      tex_u8 = LUNAR_ALBEDO_139[ty_139][tx_139];
+    }
+
+    float r2_norm = (static_cast<float>(mx * mx) + my_sq_f) * sh.r_plus_sq_inv;
+    float base_lum = static_cast<float>(tex_u8) * (0.86f + 0.14f * (1.0f - r2_norm));
+
+    float shadow;
+    if (mx < pen_lo) {
+      shadow = sh.waxing ? 0.0f : 1.0f;
+    } else if (mx > pen_hi) {
+      shadow = sh.waxing ? 1.0f : 0.0f;
+    } else {
+      float dist_to_term = sh.waxing ? (static_cast<float>(mx) - x_term)
+                                     : (x_term - static_cast<float>(mx));
+      if (dist_to_term >= sh.penumbra) {
+        shadow = 1.0f;
+      } else if (dist_to_term <= -sh.penumbra) {
+        shadow = 0.0f;
+      } else {
+        float t = (dist_to_term + sh.penumbra) * sh.inv_2pen;
+        shadow = t * t * (3.0f - 2.0f * t);
+      }
+    }
+
+    float dark_lum = 7.0f + base_lum * 0.055f;
+    float final_lum = base_lum * shadow + dark_lum * (1.0f - shadow);
+    uint8_t c = static_cast<uint8_t>(fminf(255.0f, final_lum));
+    uint8_t cr, cg, cb;
+    if (shadow < 0.05f) {
+      cr = static_cast<uint8_t>(c * 0.78f);
+      cg = static_cast<uint8_t>(c * 0.92f);
+      cb = static_cast<uint8_t>(fminf(255.0f, c * 1.25f));
+    } else {
+      cr = c;
+      cg = static_cast<uint8_t>(c * 0.98f);
+      cb = static_cast<uint8_t>(c * 0.94f);
+    }
+    row[mx + w_line] = static_cast<uint16_t>(((static_cast<uint16_t>(cr) & 0xF8U) << 8) |
+                                             ((static_cast<uint16_t>(cg) & 0xFCU) << 3) |
+                                             (static_cast<uint16_t>(cb) >> 3));
+  }
+}
+
+struct LunarDiscTile {
+  uint16_t *px = nullptr;  // (2r+1) x (2r+1), row-major, stride 2r+1, native RGB565
+  size_t cap_px = 0;
+  int r = -1;
+  int bucket = -1;
+  uint32_t last_use = 0;
+};
+
+// Returns a tile for (r, bucket); sets needs_shade when the tile must be (re)shaded. Returns
+// nullptr only if PSRAM is exhausted.
+inline LunarDiscTile *lunar_tile_acquire(int r, int bucket, bool &needs_shade) {
+  static LunarDiscTile tiles[2];
+  static uint32_t use_seq = 0;
+  ++use_seq;
+  needs_shade = false;
+  for (auto &t : tiles) {
+    if (t.px != nullptr && t.r == r && t.bucket == bucket) {
+      t.last_use = use_seq;
+      return &t;
+    }
+  }
+  // Prefer the tile already holding this radius (phase rollover), else the least recently used.
+  LunarDiscTile *victim = &tiles[0];
+  bool same_r = false;
+  for (auto &t : tiles) {
+    if (t.px != nullptr && t.r == r) {
+      victim = &t;
+      same_r = true;
+      break;
+    }
+  }
+  if (!same_r && tiles[1].last_use < tiles[0].last_use) victim = &tiles[1];
+
+  const size_t dia = static_cast<size_t>(2 * r + 1);
+  const size_t need = dia * dia;
+  if (victim->cap_px < need) {
+    if (victim->px != nullptr) heap_caps_free(victim->px);
+    victim->px = static_cast<uint16_t *>(heap_caps_malloc(need * sizeof(uint16_t), MALLOC_CAP_SPIRAM));
+    victim->cap_px = (victim->px != nullptr) ? need : 0;
+    if (victim->px == nullptr) {
+      victim->r = -1;
+      victim->bucket = -1;
+      return nullptr;
+    }
+  }
+  victim->r = r;
+  victim->bucket = bucket;
+  victim->last_use = use_seq;
+  needs_shade = true;
+  return victim;
+}
+
 template<typename DisplayT>
 inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r,
                               double cycle, bool /*with_tycho*/ = true) {
   if (moon_r <= 0) return;
   it.circle(moon_cx, moon_cy, moon_r + 1, esphome::Color(35, 45, 60));
-  const float scale = static_cast<float>(moon_r) * (1.0f / 44.0f);
-  const float penumbra = 6.0f * scale;
-  const float inv_2pen = 1.0f / (2.0f * penumbra);
-  const float r_plus_sq_inv = 1.0f / static_cast<float>((moon_r + 2) * (moon_r + 2));
-  const float phase_cos = fast_cos(static_cast<float>(cycle * 2.0 * 3.1415926535));
-  const bool waxing = (cycle <= 0.5);
-  const float term_sign = waxing ? 1.0f : -1.0f;
+
+  const int bucket = lunar_phase_bucket(cycle);
+  const LunarShade sh(moon_r, static_cast<double>(bucket) / LUNAR_PHASE_BUCKETS);
+  const int dia = 2 * moon_r + 1;
+  bool needs_shade = false;
+  LunarDiscTile *tile = lunar_tile_acquire(moon_r, bucket, needs_shade);
+
+  // PSRAM-exhausted fallback: shade each visible row into a single PSRAM scratch row.
+  static uint16_t *scratch = nullptr;
+  static int scratch_w = 0;
+  if (tile == nullptr && scratch_w < dia) {
+    if (scratch != nullptr) heap_caps_free(scratch);
+    scratch = static_cast<uint16_t *>(heap_caps_malloc(static_cast<size_t>(dia) * sizeof(uint16_t), MALLOC_CAP_SPIRAM));
+    scratch_w = (scratch != nullptr) ? dia : 0;
+    if (scratch == nullptr) return;
+  }
 
   for (int my = -moon_r; my <= moon_r; my++) {
-    int py = moon_cy + my;
-    if (py < 0 || py >= SCREEN_H) continue;
-    int w_line = chord_half_span_int(moon_r, my);
-    float my_sq_f = static_cast<float>(my * my);
-    float x_term = term_sign * static_cast<float>(w_line) * phase_cos;
-    int pen_lo = static_cast<int>(floorf(x_term - penumbra));
-    int pen_hi = static_cast<int>(ceilf(x_term + penumbra));
-
-    int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / (2 * moon_r));
-    int ty_45  = (moon_r == 22) ? (my + 22) : 0;
-
-    auto eval_lunar_key = [&](int mx, esphome::Color &out_col) -> uint16_t {
-      uint8_t tex_u8;
-      if (moon_r == 69) {
-        tex_u8 = LUNAR_ALBEDO_139[ty_139][mx + 69];
-      } else if (moon_r == 22) {
-        tex_u8 = LUNAR_ALBEDO_45[ty_45][mx + 22];
-      } else {
-        int tx_139 = (mx + moon_r) * 138 / (2 * moon_r);
-        tex_u8 = LUNAR_ALBEDO_139[ty_139][tx_139];
-      }
-
-      float r2_norm = (static_cast<float>(mx * mx) + my_sq_f) * r_plus_sq_inv;
-      float base_lum = static_cast<float>(tex_u8) * (0.86f + 0.14f * (1.0f - r2_norm));
-
-      float shadow;
-      if (mx < pen_lo) {
-        shadow = waxing ? 0.0f : 1.0f;
-      } else if (mx > pen_hi) {
-        shadow = waxing ? 1.0f : 0.0f;
-      } else {
-        float dist_to_term = waxing ? (static_cast<float>(mx) - x_term)
-                                    : (x_term - static_cast<float>(mx));
-        if (dist_to_term >= penumbra) {
-          shadow = 1.0f;
-        } else if (dist_to_term <= -penumbra) {
-          shadow = 0.0f;
-        } else {
-          float t = (dist_to_term + penumbra) * inv_2pen;
-          shadow = t * t * (3.0f - 2.0f * t);
-        }
-      }
-
-      float dark_lum = 7.0f + base_lum * 0.055f;
-      float final_lum = base_lum * shadow + dark_lum * (1.0f - shadow);
-      uint8_t c = static_cast<uint8_t>(fminf(255.0f, final_lum));
-      bool is_dark = (shadow < 0.05f);
-      out_col = is_dark
-          ? esphome::Color(static_cast<uint8_t>(c * 0.78f),
-                           static_cast<uint8_t>(c * 0.92f),
-                           static_cast<uint8_t>(fminf(255.0f, c * 1.25f)))
-          : esphome::Color(c,
-                           static_cast<uint8_t>(c * 0.98f),
-                           static_cast<uint8_t>(c * 0.94f));
-      return static_cast<uint16_t>((c & 0xFCU) | (is_dark ? 1U : 0U));
-    };
-
-    int mx = -w_line;
-    while (mx <= w_line) {
-      esphome::Color p_col;
-      uint16_t key = eval_lunar_key(mx, p_col);
-      int run_start = mx;
-      mx++;
-      while (mx <= w_line) {
-        esphome::Color next_col;
-        if (eval_lunar_key(mx, next_col) != key) break;
-        mx++;
-      }
-      int run_len = mx - run_start;
-      if (run_len > 1) {
-        fast_hline(it, moon_cx + run_start, py, run_len, p_col);
-      } else {
-        fast_pixel(it, moon_cx + run_start, py, p_col);
-      }
+    const int py = moon_cy + my;
+    const int w_line = chord_half_span_int(moon_r, my);
+    const bool visible = (py >= 0 && py < SCREEN_H);
+    uint16_t *row;
+    if (tile != nullptr) {
+      row = tile->px + static_cast<size_t>(my + moon_r) * dia + (moon_r - w_line);
+      if (needs_shade) shade_lunar_row(row, sh, my, w_line);  // off-screen rows too: the tile is reused
+    } else {
+      if (!visible) continue;
+      row = scratch;
+      shade_lunar_row(row, sh, my, w_line);
     }
+    if (visible) blit_rgb565_scanline(it, moon_cx - w_line, py, 2 * w_line + 1, row, false);
   }
   it.circle(moon_cx, moon_cy, moon_r, esphome::Color(45, 55, 70));
 }
