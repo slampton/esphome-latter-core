@@ -41,7 +41,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110232L
+#define LATTER_SDK_REV 2026110233L
 
 namespace latter_ui {
 
@@ -616,6 +616,7 @@ inline int &active_frame_endian_mode() {
 
 // Defined with the frame base (below): records the bound framebuffer for the between-frames DMA clear.
 inline void fb_clear_bind(esphome::Component *owner, uint16_t *fb);
+inline void fb_clear_after_update();
 
 template<typename DispT>
 inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
@@ -2619,6 +2620,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
           "async_draw", 0, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
+            fb_clear_after_update();
           });
     }
   }
@@ -2640,6 +2642,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
           "async_draw", delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
+            fb_clear_after_update();
           });
     }
   }
@@ -2747,7 +2750,7 @@ inline void frame_base_skip() { frame_base_state().painted = true; }
 // Between-frames DMA clear (ESP32-S3 / ESP32-P4). ESPHome's mipi_spi and mipi_dsi drivers finish
 // sending a frame before update() returns, so the framebuffer is idle until the next frame. Right
 // after a frame, a GDMA memory-to-memory transfer (esp_async_memcpy) fills it with the color that
-// frame used as its base, from a 64 KB PSRAM pattern; the CPU is free meanwhile. The next frame
+// frame used as its base, from a 128 KB PSRAM pattern; the CPU is free meanwhile. The next frame
 // waits for completion at its start and, if its base is the same color, skips its CPU fill.
 // Cache rules: the cleared range is written back + invalidated before the DMA starts (no dirty or
 // cached lines can overwrite or shadow the fill) and invalidated again after it completes. Only the
@@ -2769,6 +2772,7 @@ struct FbClearState {
   size_t interior_len = 0;
   uint32_t hits = 0;
   uint32_t misses = 0;
+  uint32_t starts = 0;  // clears issued since boot (heap check-ins at 1 and 256)
 #if LATTER_FB_DMA_CLEAR
   async_memcpy_handle_t mcp = nullptr;
   uint16_t *pattern = nullptr;
@@ -2782,7 +2786,18 @@ inline FbClearState &fb_clear_state() {
 }
 
 #if LATTER_FB_DMA_CLEAR
-static constexpr size_t kFbClearPatternBytes = 64 * 1024;
+// 128 KB keeps a frame to a few transfers (Mobile 4, Desk 8). The internal-RAM GDMA descriptors
+// scale with bytes, not with the transfer count, but each pooled transaction slot can hold its
+// descriptor lists, so the backlog is sized to one frame's transfers rather than padded.
+static constexpr size_t kFbClearPatternBytes = 128 * 1024;
+static constexpr size_t kFbClearFrameBytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
+static constexpr size_t kFbClearChunks = (kFbClearFrameBytes + kFbClearPatternBytes - 1) / kFbClearPatternBytes;
+
+inline void fb_clear_log_heap(const char *when) {
+  ESP_LOGI("disp_fb", "DMA clear heap %s: int_free=%uB int_max_blk=%uB", when,
+           static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+           static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+}
 
 // Outstanding DMA chunks. A plain global (DRAM): the completion ISR may run with the flash cache
 // disabled on boards with IRAM-safe GDMA ISRs, so it must not call into flash.
@@ -2797,8 +2812,9 @@ inline bool fb_clear_init() {
   auto &st = fb_clear_state();
   if (st.init_tried) return st.ok;
   st.init_tried = true;
+  fb_clear_log_heap("before install");
   async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
-  cfg.backlog = 24;
+  cfg.backlog = kFbClearChunks + 1;
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
   esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
 #else
@@ -2816,8 +2832,9 @@ inline bool fb_clear_init() {
     st.pattern = static_cast<uint16_t *>(heap_caps_aligned_alloc(st.align, kFbClearPatternBytes, MALLOC_CAP_SPIRAM));
   }
   st.ok = (err == ESP_OK && st.pattern != nullptr);
-  ESP_LOGI("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u)", st.ok ? "enabled" : "unavailable",
-           static_cast<int>(err), static_cast<unsigned>(st.align));
+  ESP_LOGI("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u, chunks=%u)", st.ok ? "enabled" : "unavailable",
+           static_cast<int>(err), static_cast<unsigned>(st.align), static_cast<unsigned>(kFbClearChunks));
+  fb_clear_log_heap("after install");
   return st.ok;
 }
 #endif
@@ -2865,7 +2882,15 @@ inline void fb_clear_start() {
     }
     off += n;
   }
+  st.starts++;
+  if (st.starts == 1 || st.starts == 256) fb_clear_log_heap(st.starts == 1 ? "after 1st clear" : "after 256 clears");
 #endif
+}
+
+// Starts a scheduled clear right after an async_draw update() so the next frame always finds one
+// (the post-frame timeout can otherwise lose the race with the next async_draw timeout).
+inline void fb_clear_after_update() {
+  if (fb_clear_state().pending_start) fb_clear_start();
 }
 
 // Frame start: no drawing may touch the framebuffer while the DMA runs.
