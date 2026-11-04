@@ -397,6 +397,177 @@ inline void cloud_span(DisplayT &it, uint16_t *fb, int x0, int y, int len, uint1
   for (int k = 0; k < len; k++) dst[k] = hw;
 }
 
+// Height profile of one cumulus column at offset dx from the cloud center (shared by the direct
+// raster and the shape cache so both use identical float math). Returns false for an empty column.
+inline bool cumulus_column_profile(int dx, float inv_hw, float scale, float phase_seed,
+                                   int &h_top, int &h_bot, bool &sunlit_slope) {
+  float u = static_cast<float>(dx) * inv_hw; // -1.0 .. +1.0
+  float env = 1.0f - u * u;
+  if (env <= 0.02f) return false;
+
+  // 5 asymmetric sculpted turret domes on top
+  float d0 = u - 0.08f;  float t0 = fmaxf(0.0f, 1.0f - d0 * d0 * 4.2f);
+  float d1 = u + 0.36f;  float t1 = fmaxf(0.0f, 1.0f - d1 * d1 * 6.2f) * 0.80f;
+  float d2 = u - 0.48f;  float t2 = fmaxf(0.0f, 1.0f - d2 * d2 * 7.5f) * 0.70f;
+  float d3 = u + 0.68f;  float t3 = fmaxf(0.0f, 1.0f - d3 * d3 * 11.5f) * 0.45f;
+  float d4 = u - 0.74f;  float t4 = fmaxf(0.0f, 1.0f - d4 * d4 * 13.5f) * 0.38f;
+
+  float dome = fmaxf(fmaxf(t0, t1), fmaxf(t2, fmaxf(t3, t4)));
+  float ripple = 0.08f * fast_sin(u * 9.5f + phase_seed) * env;
+  float s0 = 0.5f * (1.0f + env);
+  float sqrt_env = 0.5f * (s0 + env / s0);
+  float h_top_f = (14.0f + 40.0f * dome + 36.0f * ripple) * scale * sqrt_env;
+
+  // Billowing, rounded multi-lobe underside (eliminates flat horizontal bottom lines!)
+  float bot_lobes = 0.55f + 0.45f * std::fabs(fast_cos(u * 4.2f + phase_seed * 0.7f));
+  float h_bot_f = (8.0f + 14.0f * bot_lobes) * env * scale;
+
+  h_top = static_cast<int>(h_top_f);
+  h_bot = static_cast<int>(h_bot_f);
+  sunlit_slope = (u > -0.45f && dome > 0.32f);
+  return true;
+}
+
+// Cumulus shape cache (rectangular panels). A cloud is a rigid shape that only drifts: its runs
+// depend on (scale, ripple seed), not on position. Each shape's band runs are built once relative
+// to the cloud center (column index + row) and frames just fill them, clipped to the same columns
+// the direct raster keeps. Clouds clipped at the top or bottom edge use the direct raster.
+struct CloudRun {
+  int16_t y;
+  uint8_t k0;
+  uint8_t ncols;
+  uint8_t band;
+};
+
+struct CloudShape {
+  uint32_t scale_bits;
+  int16_t seed;
+  int16_t y_min;
+  int16_t y_max;
+  uint16_t count;
+  uint16_t cap;
+  uint32_t last_use;
+  CloudRun *runs;
+};
+
+static constexpr int kCloudShapeEntries = 24;
+static constexpr int kCloudScratchRuns = 3072;
+
+template<int kColStep>
+inline int cloud_build_runs(int half_w, float scale, int seed, CloudRun *out, int cap, int &y_min, int &y_max) {
+  struct Col {
+    uint8_t k;
+    int16_t y_top, y_c1, y_c2, y_c3, y_mid_b, y_bot;
+    uint8_t top_band;
+  };
+  static constexpr int kMaxCols = 168;
+  // PSRAM scratch: the render task has ~2 KB of stack headroom and render_cumulus_cloud's own
+  // column array is already on its frame.
+  static Col *cols = static_cast<Col *>(heap_caps_malloc(sizeof(Col) * kMaxCols, MALLOC_CAP_SPIRAM));
+  if (cols == nullptr) return -1;
+  int n_cols = 0;
+  const float inv_hw = 1.0f / static_cast<float>(half_w);
+  const float phase_seed = static_cast<float>(seed) * 0.85f;
+  int k = 0;
+  for (int dx = -half_w; dx <= half_w; dx += kColStep, k++) {
+    if (k >= kMaxCols) return -1;
+    int h_top = 0, h_bot = 0;
+    bool sunlit = false;
+    if (!cumulus_column_profile(dx, inv_hw, scale, phase_seed, h_top, h_bot, sunlit)) continue;
+    const int y_top = -h_top;
+    const int y_bot = h_bot;
+    const int span = y_bot - y_top;
+    if (span <= 2) continue;
+    const int y_c3 = y_top + (span * 76) / 100;
+    cols[n_cols++] = {static_cast<uint8_t>(k), static_cast<int16_t>(y_top),
+                      static_cast<int16_t>(y_top + std::max(2, span / 6)),
+                      static_cast<int16_t>(y_top + (span * 46) / 100), static_cast<int16_t>(y_c3),
+                      static_cast<int16_t>((y_c3 + y_bot) >> 1), static_cast<int16_t>(y_bot),
+                      static_cast<uint8_t>(sunlit ? 1 : 2)};
+  }
+  if (n_cols == 0) {
+    y_min = y_max = 0;
+    return 0;
+  }
+  y_min = SCREEN_H;
+  y_max = -SCREEN_H;
+  for (int i = 0; i < n_cols; i++) {
+    if (cols[i].y_top < y_min) y_min = cols[i].y_top;
+    if (cols[i].y_bot > y_max) y_max = cols[i].y_bot;
+  }
+  auto band_at = [](const Col &c, int y) -> uint8_t {
+    if (y < c.y_top || y > c.y_bot) return 0;
+    if (y < c.y_c1) return c.top_band;
+    if (y < c.y_c2) return 2;
+    if (y < c.y_c3) return 3;
+    if (y <= c.y_mid_b) return 4;
+    return 5;
+  };
+  int n = 0;
+  for (int y = y_min; y <= y_max; y++) {
+    int i = 0;
+    while (i < n_cols) {
+      const uint8_t band = band_at(cols[i], y);
+      if (band == 0) {
+        i++;
+        continue;
+      }
+      const int k0 = cols[i].k;
+      int k_end = k0 + 1;
+      i++;
+      while (i < n_cols && cols[i].k == k_end && band_at(cols[i], y) == band) {
+        k_end++;
+        i++;
+      }
+      if (n >= cap) return -1;
+      out[n++] = {static_cast<int16_t>(y), static_cast<uint8_t>(k0), static_cast<uint8_t>(k_end - k0), band};
+    }
+  }
+  return n;
+}
+
+template<int kColStep>
+inline const CloudShape *cloud_shape_get(int half_w, float scale, int seed) {
+  static CloudShape *entries = static_cast<CloudShape *>(
+      heap_caps_calloc(kCloudShapeEntries, sizeof(CloudShape), MALLOC_CAP_SPIRAM));
+  static CloudRun *scratch = static_cast<CloudRun *>(
+      heap_caps_malloc(sizeof(CloudRun) * kCloudScratchRuns, MALLOC_CAP_SPIRAM));
+  static uint32_t use_seq = 0;
+  if (entries == nullptr || scratch == nullptr) return nullptr;
+  uint32_t bits = 0;
+  std::memcpy(&bits, &scale, sizeof(bits));
+  ++use_seq;
+  CloudShape *victim = &entries[0];
+  for (int i = 0; i < kCloudShapeEntries; i++) {
+    CloudShape &e = entries[i];
+    if (e.runs != nullptr && e.scale_bits == bits && e.seed == seed) {
+      e.last_use = use_seq;
+      return &e;
+    }
+    if (e.last_use < victim->last_use) victim = &e;
+  }
+  int y_min = 0, y_max = 0;
+  const int n = cloud_build_runs<kColStep>(half_w, scale, seed, scratch, kCloudScratchRuns, y_min, y_max);
+  if (n <= 0) return nullptr;
+  if (victim->cap < n) {
+    if (victim->runs != nullptr) heap_caps_free(victim->runs);
+    victim->runs = static_cast<CloudRun *>(heap_caps_malloc(sizeof(CloudRun) * n, MALLOC_CAP_SPIRAM));
+    victim->cap = (victim->runs != nullptr) ? static_cast<uint16_t>(n) : 0;
+    if (victim->runs == nullptr) return nullptr;
+  }
+  std::memcpy(victim->runs, scratch, sizeof(CloudRun) * n);
+  victim->scale_bits = bits;
+  victim->seed = static_cast<int16_t>(seed);
+  victim->y_min = static_cast<int16_t>(y_min);
+  victim->y_max = static_cast<int16_t>(y_max);
+  victim->count = static_cast<uint16_t>(n);
+  victim->last_use = use_seq;
+  return victim;
+}
+
+inline int floor_div_int(int a, int b) { return (a >= 0) ? (a / b) : -((-a + b - 1) / b); }
+inline int ceil_div_int(int a, int b) { return -floor_div_int(-a, b); }
+
 template<typename DisplayT>
 inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool overcast_mode, bool is_night) {
   if (SCREEN_W > 520) {
@@ -416,6 +587,29 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
   float phase_seed = static_cast<float>((bx / 13) & 7) * 0.85f;
 
   static constexpr int kColStep = (SCREEN_W > 520) ? 3 : 2;
+
+#if !LATTER_ROUND_DISPLAY
+  if (const CloudShape *shape = cloud_shape_get<kColStep>(half_w, scale, (bx / 13) & 7)) {
+    if (by + shape->y_min >= 5 && by + shape->y_max <= SCREEN_H - 6) {
+      const esphome::Color pal[6] = {esphome::Color(0, 0, 0), col_rim, col_crest, col_high, col_body, col_shadow};
+      uint16_t pal_hw[6];
+      for (int k = 0; k < 6; k++) pal_hw[k] = encode_hw_rgb565(pal[k]);
+      uint16_t *fb_c = active_frame_buf16();
+      // Columns the direct raster keeps: x >= 5 and x + kColStep < SCREEN_W - 5.
+      const int x_first = bx - half_w;
+      const int k_lo = std::max(0, ceil_div_int(5 - x_first, kColStep));
+      const int k_hi = floor_div_int(SCREEN_W - 6 - kColStep - x_first, kColStep);
+      for (int i = 0; i < shape->count; i++) {
+        const CloudRun &r = shape->runs[i];
+        const int a = std::max<int>(r.k0, k_lo);
+        const int b2 = std::min<int>(r.k0 + r.ncols - 1, k_hi);
+        if (a > b2) continue;
+        cloud_span(it, fb_c, x_first + a * kColStep, by + r.y, (b2 - a + 1) * kColStep, pal_hw[r.band], pal[r.band]);
+      }
+      return;
+    }
+  }
+#endif
   static constexpr int kMaxCols = 168;
   struct CumulusCol {
     int16_t x;
@@ -445,29 +639,12 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
     int y_max = SCREEN_H - 6;
 #endif
 
-    float u = static_cast<float>(dx) * inv_hw; // -1.0 .. +1.0
-    float env = 1.0f - u * u;
-    if (env <= 0.02f) continue;
+    int h_top = 0, h_bot = 0;
+    bool sunlit_slope = false;
+    if (!cumulus_column_profile(dx, inv_hw, scale, phase_seed, h_top, h_bot, sunlit_slope)) continue;
 
-    // 5 asymmetric sculpted turret domes on top
-    float d0 = u - 0.08f;  float t0 = fmaxf(0.0f, 1.0f - d0 * d0 * 4.2f);
-    float d1 = u + 0.36f;  float t1 = fmaxf(0.0f, 1.0f - d1 * d1 * 6.2f) * 0.80f;
-    float d2 = u - 0.48f;  float t2 = fmaxf(0.0f, 1.0f - d2 * d2 * 7.5f) * 0.70f;
-    float d3 = u + 0.68f;  float t3 = fmaxf(0.0f, 1.0f - d3 * d3 * 11.5f) * 0.45f;
-    float d4 = u - 0.74f;  float t4 = fmaxf(0.0f, 1.0f - d4 * d4 * 13.5f) * 0.38f;
-
-    float dome = fmaxf(fmaxf(t0, t1), fmaxf(t2, fmaxf(t3, t4)));
-    float ripple = 0.08f * fast_sin(u * 9.5f + phase_seed) * env;
-    float s0 = 0.5f * (1.0f + env);
-    float sqrt_env = 0.5f * (s0 + env / s0);
-    float h_top_f = (14.0f + 40.0f * dome + 36.0f * ripple) * scale * sqrt_env;
-
-    // Billowing, rounded multi-lobe underside (eliminates flat horizontal bottom lines!)
-    float bot_lobes = 0.55f + 0.45f * std::fabs(fast_cos(u * 4.2f + phase_seed * 0.7f));
-    float h_bot_f = (8.0f + 14.0f * bot_lobes) * env * scale;
-
-    int y_top = by - static_cast<int>(h_top_f);
-    int y_bot = by + static_cast<int>(h_bot_f);
+    int y_top = by - h_top;
+    int y_bot = by + h_bot;
     if (y_top < y_min) y_top = y_min;
     if (y_bot > y_max) y_bot = y_max;
     int span = y_bot - y_top;
@@ -476,7 +653,6 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
     int y_c1 = y_top + std::max(2, span / 6);
     int y_c2 = y_top + (span * 46) / 100;
     int y_c3 = y_top + (span * 76) / 100;
-    bool sunlit_slope = (u > -0.45f && dome > 0.32f);
 
     if (x >= 5 && x + kColStep <= SCREEN_W - 5) {
       CumulusCol &c = cols[n_cols++];
