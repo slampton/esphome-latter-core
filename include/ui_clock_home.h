@@ -909,7 +909,6 @@ inline void render_home_page(
   const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
 
   if (use_custom_wallpaper) {
-    frame_base(it, col_bg);
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false, is_dim_backdrop ? 2 : 0);
   } else if (eff_weather_bg) {
     const int cel_x = layout().celestial_x;

@@ -112,6 +112,7 @@ inline void render_music_now_playing(
     }
   }
 
+  frame_base(it, col_bg);  // no art (the art canvas paints its own base)
   if (!rendered_art) {
     fast_filled_circle(it, cx, art_center_y, scale_s(80), col_dark_gray);
     fast_circle(it, cx, art_center_y, scale_s(80), is_remote ? theme_secondary : theme_primary);
@@ -371,6 +372,7 @@ inline void render_music_menus(
       card_bg = sample_image_ambient_tint(remote_art, esphome::Color(20, 25, 34));
     }
   }
+  frame_base(it, col_bg);  // no art backdrop (the art canvas paints its own base)
 
   const int row0_y = layout().slot5_y(0);
   const int row_s  = layout().slot5_stride;

@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110227L
+#define LATTER_SDK_REV 2026110228L
 
 namespace latter_ui {
 
@@ -1897,6 +1897,13 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
   }
 }
 
+template<typename DisplayT>
+inline bool frame_base(DisplayT &it, esphome::Color c);
+template<typename DisplayT>
+inline void frame_base_cover(DisplayT &it, int cx, esphome::Color c);
+inline uint64_t prof_section_begin();
+inline void prof_art_end(uint64_t t0);
+
 // Zero-overdraw row-major album art blitter with aspect-preserving cover/fit scaling,
 // smooth multi-step vertical gradient vignette, and rounded framed Standard mode.
 template<typename DisplayT, typename ImageT>
@@ -1909,6 +1916,21 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   int src_w = target_art->get_width();
   int src_h = target_art->get_height();
   if (src_data == nullptr || src_w <= 0 || src_h <= 0) return false;
+  // Frame base: full-screen modes on non-round panels cover every pixel inside the panel outline,
+  // so only the corners are painted; other modes paint the black base before drawing.
+#if LATTER_ROUND_DISPLAY
+  frame_base(it, esphome::Color(0, 0, 0));
+#else
+  if (!is_standard && !is_letterbox) {
+    frame_base_cover(it, cx, esphome::Color(0, 0, 0));
+  } else {
+    frame_base(it, esphome::Color(0, 0, 0));
+  }
+#endif
+  struct ArtTimer {
+    uint64_t t0;
+    ~ArtTimer() { prof_art_end(t0); }
+  } art_timer{prof_section_begin()};
   static uint16_t row_buf[SCREEN_W];
 
   if (is_standard) {
@@ -2551,11 +2573,16 @@ inline uint64_t prof_now_us() {
 // Per-section render timing. A ProfLap attributes the time since construction (or the previous
 // mark) to a section; totals are averaged per frame and logged as [PROF:SECT] with each
 // [PROF:FRAME_SUM] window. Costs nothing while the Telemetry Profiler is off.
-enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, BASE, COUNT };
+enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, BASE, ART, COUNT };
 
 inline uint32_t *prof_sect_us() {
   static uint32_t acc[static_cast<size_t>(ProfSect::COUNT)] = {};
   return acc;
+}
+
+inline uint64_t prof_section_begin() { return profiler_enabled() ? prof_now_us() : 0; }
+inline void prof_art_end(uint64_t t0) {
+  if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::ART)] += static_cast<uint32_t>(prof_now_us() - t0);
 }
 
 // Frame base. The universal GUI disables ESPHome's auto-clear, so every frame paints its background
@@ -2587,6 +2614,26 @@ inline bool frame_base(DisplayT &it, esphome::Color c) {
   it.fill(c);
   if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t0);
   return true;
+}
+
+// For a draw that will cover every pixel inside the rounded-rect panel area (full-screen album art
+// on non-round panels): paints only the corner areas outside it, then lets that draw be the base.
+template<typename DisplayT>
+inline void frame_base_cover(DisplayT &it, int cx, esphome::Color c) {
+  auto &st = frame_base_state();
+  if (st.painted) return;
+  st.painted = true;
+  for (int y = 0; y < SCREEN_H; y++) {
+    const int hw = circle_half_span(y, 0);
+    const int start_x = std::max(0, cx - hw);
+    const int end_x = std::min(SCREEN_W - 1, cx + hw);
+    if (end_x < start_x) {
+      fast_hline(it, 0, y, SCREEN_W, c);
+      continue;
+    }
+    if (start_x > 0) fast_hline(it, 0, y, start_x, c);
+    if (end_x < SCREEN_W - 1) fast_hline(it, end_x + 1, y, SCREEN_W - 1 - end_x, c);
+  }
 }
 
 struct ProfLap {
@@ -2662,8 +2709,8 @@ struct FrameProfileScope {
       for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
       if (any_sect != 0U) {
         const uint32_t n = fr.window_frames;
-        ESP_LOGI("PROF", "[PROF:SECT] avg/frame base=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
-                 (unsigned long)(sect[6] / n),
+        ESP_LOGI("PROF", "[PROF:SECT] avg/frame base=%luus art=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+                 (unsigned long)(sect[6] / n), (unsigned long)(sect[7] / n),
                  (unsigned long)(sect[0] / n), (unsigned long)(sect[1] / n), (unsigned long)(sect[2] / n),
                  (unsigned long)(sect[3] / n), (unsigned long)(sect[4] / n), (unsigned long)(sect[5] / n));
         for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) sect[i] = 0;

@@ -260,8 +260,8 @@ display:
 
       float batt = id(batt_level).state;
 
-      // Home paints its own base (its daytime weather sky replaces the black fill).
-      if (id(gui_page) != 1) {
+      // Home and Music paint their own base (Home's daytime sky, Music's full-screen art).
+      if (id(gui_page) != 1 && id(gui_page) != 2) {
         latter_ui::frame_base(it, id(col_bg));
       }
 
