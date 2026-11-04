@@ -996,6 +996,7 @@ inline void render_home_page(
   const int z_clock_y = layout().home_clock_y;
   const int z_weath_y = layout().home_weather_y;
 
+  ProfLap home_lap;
   // ZONE 1: Centered Date Header in font_date (27pt, blank until HA time syncs!)
   if (now.is_valid()) {
     char date_bar[32];
@@ -1149,6 +1150,8 @@ inline void render_home_page(
     }
     it.print(cx, greet_y, font_date, fg_c, TextAlign::CENTER, fit_greet.c_str());
   }
+
+  home_lap.mark(ProfSect::HOME_TEXT);
 
   // ZONE 5 (y = 359): Fluid 4-Icon Sliding App Dock (r = 27 / 54px diameter, 30px outer bezel buffer)
   int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -1436,6 +1439,7 @@ inline void render_home_page(
                              theme_secondary, col_gold, col_green);
   }
 #endif
+  home_lap.mark(ProfSect::HOME_DOCK);
 }
 
 }  // namespace latter_ui

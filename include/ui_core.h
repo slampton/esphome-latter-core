@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110222L
+#define LATTER_SDK_REV 2026110223L
 
 namespace latter_ui {
 
@@ -2195,6 +2195,27 @@ inline uint64_t prof_now_us() {
 #endif
 }
 
+// Per-section render timing. A ProfLap attributes the time since construction (or the previous
+// mark) to a section; totals are averaged per frame and logged as [PROF:SECT] with each
+// [PROF:FRAME_SUM] window. Costs nothing while the Telemetry Profiler is off.
+enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, COUNT };
+
+inline uint32_t *prof_sect_us() {
+  static uint32_t acc[static_cast<size_t>(ProfSect::COUNT)] = {};
+  return acc;
+}
+
+struct ProfLap {
+  uint64_t t = 0;
+  ProfLap() : t(profiler_enabled() ? prof_now_us() : 0) {}
+  void mark(ProfSect sect) {
+    if (t == 0) return;
+    const uint64_t now = prof_now_us();
+    prof_sect_us()[static_cast<size_t>(sect)] += static_cast<uint32_t>(now - t);
+    t = now;
+  }
+};
+
 struct FrameProfileScope {
   uint64_t t0_us = 0;
   int page = 0;
@@ -2247,6 +2268,16 @@ struct FrameProfileScope {
                (unsigned long)fr.window_frames, fps, (unsigned long)avg_us,
                (unsigned long)fr.max_render_us, fr.max_render_page, fr.max_render_sub,
                (unsigned long)fr.slow_frames);
+      uint32_t *sect = prof_sect_us();
+      uint32_t any_sect = 0;
+      for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
+      if (any_sect != 0U) {
+        const uint32_t n = fr.window_frames;
+        ESP_LOGI("PROF", "[PROF:SECT] avg/frame sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+                 (unsigned long)(sect[0] / n), (unsigned long)(sect[1] / n), (unsigned long)(sect[2] / n),
+                 (unsigned long)(sect[3] / n), (unsigned long)(sect[4] / n), (unsigned long)(sect[5] / n));
+        for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) sect[i] = 0;
+      }
       fr.window_frames = 0;
       fr.window_render_us = 0;
       fr.max_render_us = 0;

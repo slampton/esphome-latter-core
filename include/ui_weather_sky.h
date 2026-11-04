@@ -1129,6 +1129,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       (is_night && (cond == "clear-night" || cond == "clearnight" ||
                     cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
 
+  ProfLap lap;
+
   // Smooth EMA-damped 3D IMU tilt parallax offset (foreground shifts more than deep sky)
   static float par_x = 0.0f;
   static float par_y = 0.0f;
@@ -1173,6 +1175,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   } else if (is_fog_mist) {
     fill_sky_disc(esphome::Color(10, 15, 22));
   }
+
+  lap.mark(ProfSect::BG_SKY);
 
   // LAYER 1A: 3D CELESTIAL NIGHT STARFIELD (72-Star Fibonacci Golden-Spiral Dome + 3D Depth Parallax)
   // Guarantees uniform, gap-free star coverage across the entire 466x466 circular bezel (left, top, right, bottom)
@@ -1280,6 +1284,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   if (is_clear_or_partly_night) {
     render_night_shooting_star(it, now_ms, cy);
   }
+
+  lap.mark(ProfSect::BG_CELESTIAL);
 
   // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Mild atmospheric texture on Sunny days)
   if (is_clear_day) {
@@ -1555,6 +1561,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     render_cumulus_cloud(it, mid_rt_x, 118 + static_cast<int>(par_y * 0.52f), 0.98f, true, dark_storm_clouds);
     render_cumulus_cloud(it, fg_lt_x,  188 + static_cast<int>(par_y * 0.72f), 0.88f, false, dark_storm_clouds);
   }
+  lap.mark(ProfSect::BG_CLOUDS);
+
   // LAYER 1H: STUDIO GHIBLI / ANIME ATMOSPHERIC RAIN (Long 3-Stage Tapered Filaments + Upper-Canopy Density)
   if (cond.find("rain") != std::string::npos ||
       cond.find("pouring") != std::string::npos ||
@@ -1764,6 +1772,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       }
     }
   }
+  lap.mark(ProfSect::BG_PRECIP);
 }
 
 // Renders the 4 bottom Weather Subpage navigation icons (Current, Forecast, Sun, Moon)
