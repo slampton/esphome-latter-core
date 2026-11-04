@@ -34,79 +34,79 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
 
   if (app_id == 1) {
     // 1. Timers: 2px-stroke hourglass with solid filled upper/lower sand bulbs (SF Symbol hourglass)
-    it.filled_rectangle(ix - 11, iy - 14, 23, 2, col_white);
-    it.filled_rectangle(ix - 11, iy + 13, 23, 2, col_white);
+    fill_rect_row_major(it, ix - 11, iy - 14, 23, 2, col_white);
+    fill_rect_row_major(it, ix - 11, iy + 13, 23, 2, col_white);
     // 2px tapered glass walls
-    it.line(ix - 9, iy - 12, ix - 2, iy, col_white);
-    it.line(ix - 8, iy - 12, ix - 1, iy, col_white);
-    it.line(ix + 9, iy - 12, ix + 2, iy, col_white);
-    it.line(ix + 8, iy - 12, ix + 1, iy, col_white);
-    it.line(ix - 2, iy, ix - 9, iy + 12, col_white);
-    it.line(ix - 1, iy, ix - 8, iy + 12, col_white);
-    it.line(ix + 2, iy, ix + 9, iy + 12, col_white);
-    it.line(ix + 1, iy, ix + 8, iy + 12, col_white);
+    fast_line(it, ix - 9, iy - 12, ix - 2, iy, col_white);
+    fast_line(it, ix - 8, iy - 12, ix - 1, iy, col_white);
+    fast_line(it, ix + 9, iy - 12, ix + 2, iy, col_white);
+    fast_line(it, ix + 8, iy - 12, ix + 1, iy, col_white);
+    fast_line(it, ix - 2, iy, ix - 9, iy + 12, col_white);
+    fast_line(it, ix - 1, iy, ix - 8, iy + 12, col_white);
+    fast_line(it, ix + 2, iy, ix + 9, iy + 12, col_white);
+    fast_line(it, ix + 1, iy, ix + 8, iy + 12, col_white);
     // Solid filled upper sand cone, falling stream & solid lower sand mound
     it.filled_triangle(ix - 5, iy - 7, ix + 5, iy - 7, ix, iy - 2, col_white);
-    it.line(ix, iy - 2, ix, iy + 4, theme_secondary);
+    fast_line(it, ix, iy - 2, ix, iy + 4, theme_secondary);
     it.filled_triangle(ix - 6, iy + 11, ix + 6, iy + 11, ix, iy + 4, col_white);
 
   } else if (app_id == 2) {
     // 2. Alarms: Twin solid filled bells, 2px clock bezel, angled legs & 2px hands (alarm.fill style)
     // Twin filled bells at upper-left & upper-right (carved cleanly by outer bezel gap)
-    it.filled_circle(ix - 10, iy - 9, 4, col_white);
-    it.filled_circle(ix + 10, iy - 9, 4, col_white);
-    it.filled_circle(ix, iy + 2, 14, card_bg);
+    fast_filled_circle(it, ix - 10, iy - 9, 4, col_white);
+    fast_filled_circle(it, ix + 10, iy - 9, 4, col_white);
+    fast_filled_circle(it, ix, iy + 2, 14, card_bg);
     // 2px clock case ring
-    it.circle(ix, iy + 2, 12, col_white);
-    it.circle(ix, iy + 2, 11, col_white);
+    fast_circle(it, ix, iy + 2, 12, col_white);
+    fast_circle(it, ix, iy + 2, 11, col_white);
     // 2px bottom legs
-    it.line(ix - 8, iy + 12, ix - 11, iy + 16, col_white);
-    it.line(ix - 7, iy + 12, ix - 10, iy + 16, col_white);
-    it.line(ix + 8, iy + 12, ix + 11, iy + 16, col_white);
-    it.line(ix + 7, iy + 12, ix + 10, iy + 16, col_white);
+    fast_line(it, ix - 8, iy + 12, ix - 11, iy + 16, col_white);
+    fast_line(it, ix - 7, iy + 12, ix - 10, iy + 16, col_white);
+    fast_line(it, ix + 8, iy + 12, ix + 11, iy + 16, col_white);
+    fast_line(it, ix + 7, iy + 12, ix + 10, iy + 16, col_white);
     // 2px hands + center cap
-    it.line(ix,     iy + 2, ix,     iy - 5, col_white);
-    it.line(ix + 1, iy + 2, ix + 1, iy - 5, col_white);
-    it.line(ix,     iy + 2, ix + 5, iy + 5, col_white);
-    it.line(ix,     iy + 3, ix + 5, iy + 6, col_white);
-    it.filled_circle(ix, iy + 2, 2, col_white);
+    fast_line(it, ix,     iy + 2, ix,     iy - 5, col_white);
+    fast_line(it, ix + 1, iy + 2, ix + 1, iy - 5, col_white);
+    fast_line(it, ix,     iy + 2, ix + 5, iy + 5, col_white);
+    fast_line(it, ix,     iy + 3, ix + 5, iy + 6, col_white);
+    fast_filled_circle(it, ix, iy + 2, 2, col_white);
 
   } else if (app_id == 3) {
     // 3. Stopwatch: 2px chronometer bezel, bold top crown, angled pusher & 2px sweep hand
     // Top T-crown & angled 2 o'clock pusher
-    it.filled_rectangle(ix - 4, iy - 16, 9, 2, col_white);
-    it.filled_rectangle(ix - 1, iy - 14, 3, 4, col_white);
-    it.line(ix + 9,  iy - 8, ix + 13, iy - 12, col_white);
-    it.line(ix + 10, iy - 7, ix + 14, iy - 11, col_white);
+    fill_rect_row_major(it, ix - 4, iy - 16, 9, 2, col_white);
+    fill_rect_row_major(it, ix - 1, iy - 14, 3, 4, col_white);
+    fast_line(it, ix + 9,  iy - 8, ix + 13, iy - 12, col_white);
+    fast_line(it, ix + 10, iy - 7, ix + 14, iy - 11, col_white);
     // 2px dial ring
-    it.circle(ix, iy + 2, 12, col_white);
-    it.circle(ix, iy + 2, 11, col_white);
+    fast_circle(it, ix, iy + 2, 12, col_white);
+    fast_circle(it, ix, iy + 2, 11, col_white);
     // 4 inner cardinal ticks
-    it.line(ix, iy - 8, ix, iy - 6, theme_secondary);
-    it.line(ix, iy + 10, ix, iy + 12, theme_secondary);
-    it.line(ix - 10, iy + 2, ix - 8, iy + 2, theme_secondary);
-    it.line(ix + 8, iy + 2, ix + 10, iy + 2, theme_secondary);
+    fast_line(it, ix, iy - 8, ix, iy - 6, theme_secondary);
+    fast_line(it, ix, iy + 10, ix, iy + 12, theme_secondary);
+    fast_line(it, ix - 10, iy + 2, ix - 8, iy + 2, theme_secondary);
+    fast_line(it, ix + 8, iy + 2, ix + 10, iy + 2, theme_secondary);
     // Center arbor & 2px diagonal chrono hand
-    it.filled_circle(ix, iy + 2, 2, col_white);
-    it.line(ix,     iy + 2, ix + 6, iy - 4, col_white);
-    it.line(ix + 1, iy + 2, ix + 6, iy - 3, col_white);
+    fast_filled_circle(it, ix, iy + 2, 2, col_white);
+    fast_line(it, ix,     iy + 2, ix + 6, iy - 4, col_white);
+    fast_line(it, ix + 1, iy + 2, ix + 6, iy - 3, col_white);
 
   } else if (app_id == 4) {
     // 4. Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips (die.face.5.fill)
     int d_r = 5;
     int x0 = ix - 13, y0 = iy - 13, s = 27;
-    it.filled_rectangle(x0 + d_r, y0, s - 2 * d_r, s, col_white);
-    it.filled_rectangle(x0, y0 + d_r, s, s - 2 * d_r, col_white);
-    it.filled_circle(x0 + d_r, y0 + d_r, d_r, col_white);
-    it.filled_circle(x0 + s - 1 - d_r, y0 + d_r, d_r, col_white);
-    it.filled_circle(x0 + d_r, y0 + s - 1 - d_r, d_r, col_white);
-    it.filled_circle(x0 + s - 1 - d_r, y0 + s - 1 - d_r, d_r, col_white);
+    fill_rect_row_major(it, x0 + d_r, y0, s - 2 * d_r, s, col_white);
+    fill_rect_row_major(it, x0, y0 + d_r, s, s - 2 * d_r, col_white);
+    fast_filled_circle(it, x0 + d_r, y0 + d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + d_r, y0 + s - 1 - d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + s - 1 - d_r, d_r, col_white);
     // 5 dark negative-space pips
-    it.filled_circle(ix,     iy,     2, card_bg);
-    it.filled_circle(ix - 7, iy - 7, 2, card_bg);
-    it.filled_circle(ix + 7, iy - 7, 2, card_bg);
-    it.filled_circle(ix - 7, iy + 7, 2, card_bg);
-    it.filled_circle(ix + 7, iy + 7, 2, card_bg);
+    fast_filled_circle(it, ix,     iy,     2, card_bg);
+    fast_filled_circle(it, ix - 7, iy - 7, 2, card_bg);
+    fast_filled_circle(it, ix + 7, iy - 7, 2, card_bg);
+    fast_filled_circle(it, ix - 7, iy + 7, 2, card_bg);
+    fast_filled_circle(it, ix + 7, iy + 7, 2, card_bg);
 
   } else if (app_id == 5) {
     // 5. Flashlight: Solid filled sculpted torch body & reflector head + 3 bold 2px light beams
@@ -114,91 +114,91 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     it.filled_triangle(ix - 9, iy - 7, ix + 9, iy - 7, ix - 5, iy - 1, col_white);
     it.filled_triangle(ix + 9, iy - 7, ix - 5, iy - 1, ix + 5, iy - 1, col_white);
     // Solid filled handle barrel (separated by 2px card_bg collar groove at iy)
-    it.filled_rectangle(ix - 5, iy + 1, 11, 14, col_white);
-    it.filled_circle(ix, iy + 14, 5, col_white);
+    fill_rect_row_major(it, ix - 5, iy + 1, 11, 14, col_white);
+    fast_filled_circle(it, ix, iy + 14, 5, col_white);
     // Negative-space power button slot on handle
-    it.filled_rectangle(ix - 1, iy + 5, 3, 5, card_bg);
+    fill_rect_row_major(it, ix - 1, iy + 5, 3, 5, card_bg);
     // 3 bold 2px-thick radiating light beams
-    it.line(ix,     iy - 10, ix,     iy - 16, col_white);
-    it.line(ix + 1, iy - 10, ix + 1, iy - 16, col_white);
-    it.line(ix - 6, iy - 10, ix - 9, iy - 15, col_white);
-    it.line(ix - 5, iy - 10, ix - 8, iy - 15, col_white);
-    it.line(ix + 6, iy - 10, ix + 9, iy - 15, col_white);
-    it.line(ix + 5, iy - 10, ix + 8, iy - 15, col_white);
+    fast_line(it, ix,     iy - 10, ix,     iy - 16, col_white);
+    fast_line(it, ix + 1, iy - 10, ix + 1, iy - 16, col_white);
+    fast_line(it, ix - 6, iy - 10, ix - 9, iy - 15, col_white);
+    fast_line(it, ix - 5, iy - 10, ix - 8, iy - 15, col_white);
+    fast_line(it, ix + 6, iy - 10, ix + 9, iy - 15, col_white);
+    fast_line(it, ix + 5, iy - 10, ix + 8, iy - 15, col_white);
 
   } else if (app_id == 6) {
     // 6. Calculator: 2px rounded frame, solid filled display bar & 3x2 grid of solid keypad pills
-    it.rectangle(ix - 12, iy - 15, 25, 31, col_white);
-    it.rectangle(ix - 11, iy - 14, 23, 29, col_white);
+    fast_rect_outline(it, ix - 12, iy - 15, 25, 31, col_white);
+    fast_rect_outline(it, ix - 11, iy - 14, 23, 29, col_white);
     // Solid filled LCD display bar at top
-    it.filled_rectangle(ix - 8, iy - 11, 17, 6, col_white);
+    fill_rect_row_major(it, ix - 8, iy - 11, 17, 6, col_white);
     // 3 columns x 2 rows of solid filled keypad buttons
     for (int r = 0; r < 2; r++) {
       int ky = iy - 1 + r * 6;
-      it.filled_rectangle(ix - 8, ky, 4, 3, col_white);
-      it.filled_rectangle(ix - 2, ky, 4, 3, col_white);
-      it.filled_rectangle(ix + 4, ky, 4, 3, col_white);
+      fill_rect_row_major(it, ix - 8, ky, 4, 3, col_white);
+      fill_rect_row_major(it, ix - 2, ky, 4, 3, col_white);
+      fill_rect_row_major(it, ix + 4, ky, 4, 3, col_white);
     }
     // Bottom row: standard key + wide [=] bar
-    it.filled_rectangle(ix - 8, iy + 10, 4, 2, col_white);
-    it.filled_rectangle(ix - 2, iy + 10, 10, 2, col_white);
+    fill_rect_row_major(it, ix - 8, iy + 10, 4, 2, col_white);
+    fill_rect_row_major(it, ix - 2, iy + 10, 10, 2, col_white);
 
   } else if (app_id == 7) {
     // 7. Bubble Level: 2px outer ring, 2px cardinal crosshairs, inner ring & solid center bubble
-    it.circle(ix, iy, 14, col_white);
-    it.circle(ix, iy, 13, col_white);
-    it.circle(ix, iy, 7, theme_secondary);
-    it.filled_circle(ix, iy, 4, col_white);
+    fast_circle(it, ix, iy, 14, col_white);
+    fast_circle(it, ix, iy, 13, col_white);
+    fast_circle(it, ix, iy, 7, theme_secondary);
+    fast_filled_circle(it, ix, iy, 4, col_white);
     // 4 bold 2px outer cardinal crosshair ticks
-    it.line(ix,     iy - 17, ix,     iy - 13, col_white);
-    it.line(ix + 1, iy - 17, ix + 1, iy - 13, col_white);
-    it.line(ix,     iy + 13, ix,     iy + 17, col_white);
-    it.line(ix + 1, iy + 13, ix + 1, iy + 17, col_white);
-    it.line(ix - 17, iy,     ix - 13, iy,     col_white);
-    it.line(ix - 17, iy + 1, ix - 13, iy + 1, col_white);
-    it.line(ix + 13, iy,     ix + 17, iy,     col_white);
-    it.line(ix + 13, iy + 1, ix + 17, iy + 1, col_white);
+    fast_line(it, ix,     iy - 17, ix,     iy - 13, col_white);
+    fast_line(it, ix + 1, iy - 17, ix + 1, iy - 13, col_white);
+    fast_line(it, ix,     iy + 13, ix,     iy + 17, col_white);
+    fast_line(it, ix + 1, iy + 13, ix + 1, iy + 17, col_white);
+    fast_line(it, ix - 17, iy,     ix - 13, iy,     col_white);
+    fast_line(it, ix - 17, iy + 1, ix - 13, iy + 1, col_white);
+    fast_line(it, ix + 13, iy,     ix + 17, iy,     col_white);
+    fast_line(it, ix + 13, iy + 1, ix + 17, iy + 1, col_white);
 
   } else if (app_id == 8) {
     // 8. Coin Flip: 2px outer medallion rim, inner struck ring & solid filled Home Assistant house
-    it.circle(ix, iy, 15, col_white);
-    it.circle(ix, iy, 14, col_white);
-    it.circle(ix, iy, 11, theme_secondary);
+    fast_circle(it, ix, iy, 15, col_white);
+    fast_circle(it, ix, iy, 14, col_white);
+    fast_circle(it, ix, iy, 11, theme_secondary);
     // Solid filled house emblem with negative-space center node/stem
     it.filled_triangle(ix - 7, iy, ix + 7, iy, ix, iy - 7, col_white);
-    it.filled_rectangle(ix - 5, iy, 11, 7, col_white);
-    it.filled_circle(ix, iy + 1, 2, card_bg);
-    it.line(ix, iy + 3, ix, iy + 6, card_bg);
+    fill_rect_row_major(it, ix - 5, iy, 11, 7, col_white);
+    fast_filled_circle(it, ix, iy + 1, 2, card_bg);
+    fast_line(it, ix, iy + 3, ix, iy + 6, card_bg);
   } else if (app_id == 9) {
     // 9. Calendar: 2px rounded page frame, solid header band, twin binder rings & 3x2 date pips
-    it.rectangle(ix - 13, iy - 12, 27, 26, col_white);
-    it.rectangle(ix - 12, iy - 11, 25, 24, col_white);
-    it.filled_rectangle(ix - 12, iy - 11, 25, 6, col_white);
-    it.filled_rectangle(ix - 7, iy - 15, 3, 5, col_white);
-    it.filled_rectangle(ix + 5, iy - 15, 3, 5, col_white);
+    fast_rect_outline(it, ix - 13, iy - 12, 27, 26, col_white);
+    fast_rect_outline(it, ix - 12, iy - 11, 25, 24, col_white);
+    fill_rect_row_major(it, ix - 12, iy - 11, 25, 6, col_white);
+    fill_rect_row_major(it, ix - 7, iy - 15, 3, 5, col_white);
+    fill_rect_row_major(it, ix + 5, iy - 15, 3, 5, col_white);
     for (int r = 0; r < 2; r++) {
       for (int c = 0; c < 3; c++) {
-        it.filled_rectangle(ix - 8 + c * 7, iy - 1 + r * 6, 3, 3, (r == 0 && c == 1) ? theme_secondary : col_white);
+        fill_rect_row_major(it, ix - 8 + c * 7, iy - 1 + r * 6, 3, 3, (r == 0 && c == 1) ? theme_secondary : col_white);
       }
     }
   } else if (app_id == 10) {
     // 10. Intercom: Solid filled megaphone horn + handle & 2 radiating acoustic wave arcs
-    it.filled_rectangle(ix - 12, iy - 3, 5, 7, col_white);
+    fill_rect_row_major(it, ix - 12, iy - 3, 5, 7, col_white);
     it.filled_triangle(ix - 7, iy - 3, ix - 7, iy + 3, ix + 4, iy + 10, col_white);
     it.filled_triangle(ix - 7, iy - 3, ix + 4, iy + 10, ix + 4, iy - 10, col_white);
-    it.filled_rectangle(ix - 8, iy + 4, 3, 6, theme_secondary);
-    it.line(ix + 8, iy - 5, ix + 10, iy, col_white);
-    it.line(ix + 10, iy, ix + 8, iy + 5, col_white);
-    it.line(ix + 11, iy - 8, ix + 14, iy, theme_secondary);
-    it.line(ix + 14, iy, ix + 11, iy + 8, theme_secondary);
+    fill_rect_row_major(it, ix - 8, iy + 4, 3, 6, theme_secondary);
+    fast_line(it, ix + 8, iy - 5, ix + 10, iy, col_white);
+    fast_line(it, ix + 10, iy, ix + 8, iy + 5, col_white);
+    fast_line(it, ix + 11, iy - 8, ix + 14, iy, theme_secondary);
+    fast_line(it, ix + 14, iy, ix + 11, iy + 8, theme_secondary);
   } else if (app_id == 12) {
     // 12. Camera (Doorbell / Security Peephole): Sculpted Camera Body, Top Prism & Dual-Ring Lens
-    it.filled_rectangle(ix - 13, iy - 8, 26, 19, col_white);
-    it.filled_rectangle(ix - 5, iy - 12, 10, 4, col_white);
-    it.filled_circle(ix, iy + 1, 7, card_bg);
-    it.circle(ix, iy + 1, 5, theme_secondary);
-    it.filled_circle(ix, iy + 1, 2, col_white);
-    it.filled_circle(ix + 9, iy - 5, 1, card_bg);
+    fill_rect_row_major(it, ix - 13, iy - 8, 26, 19, col_white);
+    fill_rect_row_major(it, ix - 5, iy - 12, 10, 4, col_white);
+    fast_filled_circle(it, ix, iy + 1, 7, card_bg);
+    fast_circle(it, ix, iy + 1, 5, theme_secondary);
+    fast_filled_circle(it, ix, iy + 1, 2, col_white);
+    fast_filled_circle(it, ix + 9, iy - 5, 1, card_bg);
   }
 
   it.print(cx_card, cy_card + scale_y(22), font_small, col_white,
@@ -363,10 +363,10 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
 
   // Classic Round Chronograph Dial (Round Displays Only)
-  it.circle(cx, cy, 230, col_white);
-  it.circle(cx, cy, 228, col_silver);
-  it.circle(cx, cy, 197, col_dark_gray);
-  it.circle(cx, cy, 196, col_silver);
+  fast_circle(it, cx, cy, 230, col_white);
+  fast_circle(it, cx, cy, 228, col_silver);
+  fast_circle(it, cx, cy, 197, col_dark_gray);
+  fast_circle(it, cx, cy, 196, col_silver);
 
   // Precision Perimeter Chapter Ring via .rodata DIAL_SIN / DIAL_COS
   for (int s = 0; s < 60; s++) {
@@ -379,16 +379,16 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int y1 = cy - (int)(196.0f * t_cos);
       int x2 = cx + (int)(227.0f * t_sin);
       int y2 = cy - (int)(227.0f * t_cos);
-      it.line(x1 + (int)perp_x, y1 + (int)perp_y, x2 + (int)perp_x, y2 + (int)perp_y, col_silver);
-      it.line(x1 - (int)perp_x, y1 - (int)perp_y, x2 - (int)perp_x, y2 - (int)perp_y, col_slate);
-      it.line(x1, y1, x2, y2, col_white);
+      fast_line(it, x1 + (int)perp_x, y1 + (int)perp_y, x2 + (int)perp_x, y2 + (int)perp_y, col_silver);
+      fast_line(it, x1 - (int)perp_x, y1 - (int)perp_y, x2 - (int)perp_x, y2 - (int)perp_y, col_slate);
+      fast_line(it, x1, y1, x2, y2, col_white);
     } else {
       int x1 = cx + (int)(210.0f * t_sin);
       int y1 = cy - (int)(210.0f * t_cos);
       int x2 = cx + (int)(227.0f * t_sin);
       int y2 = cy - (int)(227.0f * t_cos);
-      it.line(x1, y1, x2, y2, col_slate);
-      it.line(x1 + 1, y1, x2 + 1, y2, col_slate);
+      fast_line(it, x1, y1, x2, y2, col_slate);
+      fast_line(it, x1 + 1, y1, x2 + 1, y2, col_slate);
     }
   }
 
@@ -421,16 +421,16 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   const int btn_rst_x = cx + 57;
   const int btn_r = 36;
 
-  it.filled_circle(btn_lap_x, btn_y, btn_r - 2, col_dark_gray);
-  it.circle(btn_lap_x, btn_y, btn_r, col_silver);
-  it.circle(btn_lap_x, btn_y, btn_r - 1, col_slate);
-  it.circle(btn_lap_x, btn_y, btn_r - 4, (stopwatch_lap_ms > 0) ? col_red : col_slate);
+  fast_filled_circle(it, btn_lap_x, btn_y, btn_r - 2, col_dark_gray);
+  fast_circle(it, btn_lap_x, btn_y, btn_r, col_silver);
+  fast_circle(it, btn_lap_x, btn_y, btn_r - 1, col_slate);
+  fast_circle(it, btn_lap_x, btn_y, btn_r - 4, (stopwatch_lap_ms > 0) ? col_red : col_slate);
   it.print(btn_lap_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "LAP");
 
-  it.filled_circle(btn_rst_x, btn_y, btn_r - 2, col_dark_gray);
-  it.circle(btn_rst_x, btn_y, btn_r, col_silver);
-  it.circle(btn_rst_x, btn_y, btn_r - 1, col_slate);
-  it.circle(btn_rst_x, btn_y, btn_r - 4, col_slate);
+  fast_filled_circle(it, btn_rst_x, btn_y, btn_r - 2, col_dark_gray);
+  fast_circle(it, btn_rst_x, btn_y, btn_r, col_silver);
+  fast_circle(it, btn_rst_x, btn_y, btn_r - 1, col_slate);
+  fast_circle(it, btn_rst_x, btn_y, btn_r - 4, col_slate);
   it.print(btn_rst_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "RESET");
 
   // Split-Second (Rattrapante) Ghost Hand via fast_sincos
@@ -438,9 +438,9 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     float lap_angle = ((stopwatch_lap_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
     float l_sin = 0.0f, l_cos = 1.0f;
     fast_sincos(lap_angle, l_sin, l_cos);
-    it.line(cx, cy, cx + (int)(154.0f * l_sin), cy - (int)(154.0f * l_cos), col_red);
-    it.line(cx + 1, cy, cx + (int)(154.0f * l_sin) + 1, cy - (int)(154.0f * l_cos), col_red);
-    it.circle(cx + (int)(158.0f * l_sin), cy - (int)(158.0f * l_cos), 4, col_red);
+    fast_line(it, cx, cy, cx + (int)(154.0f * l_sin), cy - (int)(154.0f * l_cos), col_red);
+    fast_line(it, cx + 1, cy, cx + (int)(154.0f * l_sin) + 1, cy - (int)(154.0f * l_cos), col_red);
+    fast_circle(it, cx + (int)(158.0f * l_sin), cy - (int)(158.0f * l_cos), 4, col_red);
   }
 
   // Main Central Arrow Hand (20 FPS High-Beat Sweep via fast_sincos)
@@ -462,23 +462,23 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   int right_x = arr_base_x - (int)(8.0f * perp_x);
   int right_y = arr_base_y - (int)(8.0f * perp_y);
 
-  it.line(tail_x + (int)perp_x, tail_y + (int)perp_y, arr_base_x + (int)perp_x, arr_base_y + (int)perp_y, col_silver);
-  it.line(tail_x - (int)perp_x, tail_y - (int)perp_y, arr_base_x - (int)perp_x, arr_base_y - (int)perp_y, col_slate);
-  it.line(tail_x, tail_y, arr_base_x, arr_base_y, col_white);
+  fast_line(it, tail_x + (int)perp_x, tail_y + (int)perp_y, arr_base_x + (int)perp_x, arr_base_y + (int)perp_y, col_silver);
+  fast_line(it, tail_x - (int)perp_x, tail_y - (int)perp_y, arr_base_x - (int)perp_x, arr_base_y - (int)perp_y, col_slate);
+  fast_line(it, tail_x, tail_y, arr_base_x, arr_base_y, col_white);
 
   it.filled_triangle(tip_x, tip_y, left_x, left_y, right_x, right_y, col_white);
-  it.line(tip_x, tip_y, left_x, left_y, col_silver);
-  it.line(tip_x, tip_y, right_x, right_y, col_slate);
-  it.line(left_x, left_y, right_x, right_y, col_silver);
+  fast_line(it, tip_x, tip_y, left_x, left_y, col_silver);
+  fast_line(it, tip_x, tip_y, right_x, right_y, col_slate);
+  fast_line(it, left_x, left_y, right_x, right_y, col_silver);
 
-  it.filled_circle(tail_x, tail_y, 8, col_dark_gray);
-  it.circle(tail_x, tail_y, 8, col_silver);
-  it.filled_circle(tail_x, tail_y, 3, col_silver);
+  fast_filled_circle(it, tail_x, tail_y, 8, col_dark_gray);
+  fast_circle(it, tail_x, tail_y, 8, col_silver);
+  fast_filled_circle(it, tail_x, tail_y, 3, col_silver);
 
-  it.filled_circle(cx, cy, 9, col_silver);
-  it.circle(cx, cy, 9, col_slate);
-  it.filled_circle(cx, cy, 6, col_dark_gray);
-  it.filled_circle(cx, cy, 2, col_white);
+  fast_filled_circle(it, cx, cy, 9, col_silver);
+  fast_circle(it, cx, cy, 9, col_slate);
+  fast_filled_circle(it, cx, cy, 6, col_dark_gray);
+  fast_filled_circle(it, cx, cy, 2, col_white);
 
   it.print(cx, 408, font_small, col_slate, esphome::display::TextAlign::CENTER, "< Back");
 }
@@ -550,7 +550,7 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
     }
 
     // Soft floor shadow beneath airborne cube
-    it.filled_circle(center_x + 6, center_y + 18 - hop_y1 / 2, 40, esphome::Color(16, 20, 28));
+    fast_filled_circle(it, center_x + 6, center_y + 18 - hop_y1 / 2, 40, esphome::Color(16, 20, 28));
 
     esphome::Color c_border(158, 150, 138);
     esphome::Color c_pip(25, 28, 35);
@@ -575,10 +575,10 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
       // Fill opaque quad (2 triangles) + draw crisp perimeter bevel edges
       it.filled_triangle(pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, face_col);
       it.filled_triangle(pts[i0].x, pts[i0].y, pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, face_col);
-      it.line(pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, c_border);
-      it.line(pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, c_border);
-      it.line(pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, c_border);
-      it.line(pts[i3].x, pts[i3].y, pts[i0].x, pts[i0].y, c_border);
+      fast_line(it, pts[i0].x, pts[i0].y, pts[i1].x, pts[i1].y, c_border);
+      fast_line(it, pts[i1].x, pts[i1].y, pts[i2].x, pts[i2].y, c_border);
+      fast_line(it, pts[i2].x, pts[i2].y, pts[i3].x, pts[i3].y, c_border);
+      fast_line(it, pts[i3].x, pts[i3].y, pts[i0].x, pts[i0].y, c_border);
 
       // Bilinear helper to project pips directly onto the 3D quad face (u, v in [0..1])
       auto draw_face_pip = [&](float u, float v) {
@@ -586,7 +586,7 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
                    u * v * pts[i2].x + (1.0f - u) * v * pts[i3].x;
         float py = (1.0f - u) * (1.0f - v) * pts[i0].y + u * (1.0f - v) * pts[i1].y +
                    u * v * pts[i2].y + (1.0f - u) * v * pts[i3].y;
-        it.filled_circle(static_cast<int>(px), static_cast<int>(py), 3, c_pip);
+        fast_filled_circle(it, static_cast<int>(px), static_cast<int>(py), 3, c_pip);
       };
 
       // Standard D6 pip patterns per face (f = 0..5 -> 1..6 pips)
@@ -614,36 +614,36 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
     int sy0 = y0 + 8 + shadow_extra;
 
     esphome::Color sh_col(16, 20, 28);
-    it.filled_rectangle(sx0 + cr, sy0, d_size - 2 * cr, d_size, sh_col);
-    it.filled_rectangle(sx0, sy0 + cr, d_size, d_size - 2 * cr, sh_col);
-    it.filled_circle(sx0 + cr, sy0 + cr, cr, sh_col);
-    it.filled_circle(sx0 + d_size - cr, sy0 + cr, cr, sh_col);
-    it.filled_circle(sx0 + cr, sy0 + d_size - cr, cr, sh_col);
-    it.filled_circle(sx0 + d_size - cr, sy0 + d_size - cr, cr, sh_col);
+    fill_rect_row_major(it, sx0 + cr, sy0, d_size - 2 * cr, d_size, sh_col);
+    fill_rect_row_major(it, sx0, sy0 + cr, d_size, d_size - 2 * cr, sh_col);
+    fast_filled_circle(it, sx0 + cr, sy0 + cr, cr, sh_col);
+    fast_filled_circle(it, sx0 + d_size - cr, sy0 + cr, cr, sh_col);
+    fast_filled_circle(it, sx0 + cr, sy0 + d_size - cr, cr, sh_col);
+    fast_filled_circle(it, sx0 + d_size - cr, sy0 + d_size - cr, cr, sh_col);
 
     esphome::Color body_col(248, 246, 240);
     esphome::Color border_col(182, 176, 164);
-    it.filled_rectangle(x0 + cr, y0, d_size - 2 * cr, d_size, body_col);
-    it.filled_rectangle(x0, y0 + cr, d_size, d_size - 2 * cr, body_col);
-    it.filled_circle(x0 + cr, y0 + cr, cr, body_col);
-    it.filled_circle(x0 + d_size - cr, y0 + cr, cr, body_col);
-    it.filled_circle(x0 + cr, y0 + d_size - cr, cr, body_col);
-    it.filled_circle(x0 + d_size - cr, y0 + d_size - cr, cr, body_col);
+    fill_rect_row_major(it, x0 + cr, y0, d_size - 2 * cr, d_size, body_col);
+    fill_rect_row_major(it, x0, y0 + cr, d_size, d_size - 2 * cr, body_col);
+    fast_filled_circle(it, x0 + cr, y0 + cr, cr, body_col);
+    fast_filled_circle(it, x0 + d_size - cr, y0 + cr, cr, body_col);
+    fast_filled_circle(it, x0 + cr, y0 + d_size - cr, cr, body_col);
+    fast_filled_circle(it, x0 + d_size - cr, y0 + d_size - cr, cr, body_col);
 
-    it.line(x0 + cr, y0 + 1, x0 + d_size - cr, y0 + 1, col_white);
-    it.line(x0 + 1, y0 + cr, x0 + 1, y0 + d_size - cr, col_white);
-    it.line(x0 + cr, y0 + d_size - 1, x0 + d_size - cr, y0 + d_size - 1, border_col);
-    it.line(x0 + d_size - 1, y0 + cr, x0 + d_size - 1, y0 + d_size - cr, border_col);
+    fast_line(it, x0 + cr, y0 + 1, x0 + d_size - cr, y0 + 1, col_white);
+    fast_line(it, x0 + 1, y0 + cr, x0 + 1, y0 + d_size - cr, col_white);
+    fast_line(it, x0 + cr, y0 + d_size - 1, x0 + d_size - cr, y0 + d_size - 1, border_col);
+    fast_line(it, x0 + d_size - 1, y0 + cr, x0 + d_size - 1, y0 + d_size - cr, border_col);
 
     const int pr = 9;
     const int p_dist = 34;
     esphome::Color pip_c(25, 28, 35);
     esphome::Color pip_rim(85, 92, 105);
     auto draw_pip = [&](int px, int py) {
-      it.filled_circle(px, py, pr, pip_c);
-      it.draw_pixel_at(px + 4, py + 5, pip_rim);
-      it.draw_pixel_at(px + 5, py + 4, pip_rim);
-      it.draw_pixel_at(px + 3, py + 6, pip_rim);
+      fast_filled_circle(it, px, py, pr, pip_c);
+      fast_pixel(it, px + 4, py + 5, pip_rim);
+      fast_pixel(it, px + 5, py + 4, pip_rim);
+      fast_pixel(it, px + 3, py + 6, pip_rim);
     };
 
     bool p_center = (val == 1 || val == 3 || val == 5);
@@ -727,21 +727,21 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
     int y1 = level_cy - (int)(DIAL_COS[i] * (float)(outer_r - 8));
     int x2 = cx + (int)(DIAL_SIN[i] * (float)outer_r);
     int y2 = level_cy - (int)(DIAL_COS[i] * (float)outer_r);
-    it.line(x1, y1, x2, y2, col_gray);
+    fast_line(it, x1, y1, x2, y2, col_gray);
   }
 
-  it.circle(cx, level_cy, outer_r, col_slate);
-  it.circle(cx, level_cy, outer_r - 1, col_dark_gray);
-  it.circle(cx, level_cy, 82, col_gray);
-  it.circle(cx, level_cy, 30, ring_c);
-  it.circle(cx, level_cy, 29, ring_c);
+  fast_circle(it, cx, level_cy, outer_r, col_slate);
+  fast_circle(it, cx, level_cy, outer_r - 1, col_dark_gray);
+  fast_circle(it, cx, level_cy, 82, col_gray);
+  fast_circle(it, cx, level_cy, 30, ring_c);
+  fast_circle(it, cx, level_cy, 29, ring_c);
 
   // Cardinal Crosshairs
-  it.line(cx - 168, level_cy, cx - 36, level_cy, ring_c);
-  it.line(cx + 36, level_cy, cx + 168, level_cy, ring_c);
-  it.line(cx, level_cy - 168, cx, level_cy - 36, ring_c);
-  it.line(cx, level_cy + 36, cx, level_cy + 168, ring_c);
-  it.filled_circle(cx, level_cy, 2, ring_c);
+  fast_line(it, cx - 168, level_cy, cx - 36, level_cy, ring_c);
+  fast_line(it, cx + 36, level_cy, cx + 168, level_cy, ring_c);
+  fast_line(it, cx, level_cy - 168, cx, level_cy - 36, ring_c);
+  fast_line(it, cx, level_cy + 36, cx, level_cy + 168, ring_c);
+  fast_filled_circle(it, cx, level_cy, 2, ring_c);
 
   // Spirit Level Bubble Position (clamped inside outer vial r = 138)
   float fbx = (float)cx - smooth_r_deg * 15.0f;
@@ -758,13 +758,13 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
   int by = (int)fby;
 
   // 3D Glass Spirit Bubble (r = 22: Shadow, Meniscus Rim, Dual Specular Highlights)
-  it.filled_circle(bx + 2, by + 3, 22, esphome::Color(12, 16, 22));
+  fast_filled_circle(it, bx + 2, by + 3, 22, esphome::Color(12, 16, 22));
   esphome::Color bub_fill = is_level ? col_green : theme_secondary;
-  it.filled_circle(bx, by, 22, bub_fill);
-  it.circle(bx, by, 22, col_white);
-  it.circle(bx, by, 20, col_white);
-  it.filled_circle(bx - 7, by - 7, 4, col_white);
-  it.filled_circle(bx + 8, by + 8, 2, col_white);
+  fast_filled_circle(it, bx, by, 22, bub_fill);
+  fast_circle(it, bx, by, 22, col_white);
+  fast_circle(it, bx, by, 20, col_white);
+  fast_filled_circle(it, bx - 7, by - 7, 4, col_white);
+  fast_filled_circle(it, bx + 8, by + 8, 2, col_white);
 
   render_back_button(it, cx, font_small, 426, "< BACK");
 }
@@ -843,7 +843,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     if (lut_idx < 0) lut_idx = 0;
     if (lut_idx > 465) lut_idx = 465;
     int sdx = (sh_rx * CIRCLE_HW[lut_idx]) / 233;
-    it.horizontal_line(cx - sdx, sh_base_y + sdy, 2 * sdx + 1, esphome::Color(12, 16, 22));
+    fast_hline(it, cx - sdx, sh_base_y + sdy, 2 * sdx + 1, esphome::Color(12, 16, 22));
   }
 
   // All-Silver Struck Medallion Palette (Zero Blue — Pure 3D Engraved Silver Quarter / Dollar)
@@ -869,7 +869,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     esphome::Color ec = (dy >= b_outer + edge_h - 1)
                             ? col_rim_dark
                             : (is_edge_flash ? esphome::Color(195, 206, 222) : col_rim_mid);
-    it.horizontal_line(cx - dx_outer, coin_cy + dy, 2 * dx_outer + 1, ec);
+    fast_hline(it, cx - dx_outer, coin_cy + dy, 2 * dx_outer + 1, ec);
   }
 
   // 3. 3D Brushed-Silver Coin Field (Recessed Satin Pewter-Silver Field so Raised Relief Pops!)
@@ -886,23 +886,23 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     uint8_t sr = static_cast<uint8_t>(fminf(248.0f, sheen * 0.96f));
     uint8_t sg = static_cast<uint8_t>(fminf(250.0f, sheen * 0.99f));
     uint8_t sb = static_cast<uint8_t>(fminf(255.0f, sheen * 1.04f));
-    it.horizontal_line(cx - dx_outer, coin_cy + dy, 2 * dx_outer + 1, esphome::Color(sr, sg, sb));
+    fast_hline(it, cx - dx_outer, coin_cy + dy, 2 * dx_outer + 1, esphome::Color(sr, sg, sb));
 
-    it.draw_pixel_at(cx - dx_outer, coin_cy + dy, col_rim_dark);
-    it.draw_pixel_at(cx + dx_outer, coin_cy + dy, col_rim_dark);
+    fast_pixel(it, cx - dx_outer, coin_cy + dy, col_rim_dark);
+    fast_pixel(it, cx + dx_outer, coin_cy + dy, col_rim_dark);
     if (dx_outer > 4) {
-      it.draw_pixel_at(cx - dx_outer + 1, coin_cy + dy, col_bevel_hi);
-      it.draw_pixel_at(cx - dx_outer + 2, coin_cy + dy, col_bevel_hi);
-      it.draw_pixel_at(cx + dx_outer - 1, coin_cy + dy, col_rim_mid);
-      it.draw_pixel_at(cx + dx_outer - 2, coin_cy + dy, col_rim_mid);
+      fast_pixel(it, cx - dx_outer + 1, coin_cy + dy, col_bevel_hi);
+      fast_pixel(it, cx - dx_outer + 2, coin_cy + dy, col_bevel_hi);
+      fast_pixel(it, cx + dx_outer - 1, coin_cy + dy, col_rim_mid);
+      fast_pixel(it, cx + dx_outer - 2, coin_cy + dy, col_rim_mid);
     }
     if (dx_outer > 11 && !is_edge_flash) {
       esphome::Color dish_l = (dy < 0) ? col_groove_sh : col_bevel_hi;
       esphome::Color dish_r = (dy < 0) ? col_bevel_hi  : col_groove_sh;
-      it.draw_pixel_at(cx - dx_outer + 8, coin_cy + dy, dish_l);
-      it.draw_pixel_at(cx - dx_outer + 9, coin_cy + dy, dish_l);
-      it.draw_pixel_at(cx + dx_outer - 8, coin_cy + dy, dish_r);
-      it.draw_pixel_at(cx + dx_outer - 9, coin_cy + dy, dish_r);
+      fast_pixel(it, cx - dx_outer + 8, coin_cy + dy, dish_l);
+      fast_pixel(it, cx - dx_outer + 9, coin_cy + dy, dish_l);
+      fast_pixel(it, cx + dx_outer - 8, coin_cy + dy, dish_r);
+      fast_pixel(it, cx + dx_outer - 9, coin_cy + dy, dish_r);
     }
   }
 
@@ -914,14 +914,14 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     if (lut_x > 465) lut_x = 465;
     int y_rim = coin_cy + (b_outer * CIRCLE_HW[lut_x]) / 233;
     esphome::Color reed_c = ((rx_off / reed_step) & 1) ? col_bevel_hi : col_rim_dark;
-    it.line(cx + rx_off, y_rim + 1, cx + rx_off, y_rim + edge_h - 1, reed_c);
+    fast_line(it, cx + rx_off, y_rim + 1, cx + rx_off, y_rim + edge_h - 1, reed_c);
   }
 
   if (scale_y >= 0.96f && !coin_anim_active) {
-    it.circle(cx, coin_cy, r_outer, col_rim_dark);
-    it.circle(cx, coin_cy, r_outer - 1, col_bevel_hi);
-    it.circle(cx, coin_cy, r_outer - 8, col_groove_sh);
-    it.circle(cx, coin_cy, r_outer - 9, col_bevel_hi);
+    fast_circle(it, cx, coin_cy, r_outer, col_rim_dark);
+    fast_circle(it, cx, coin_cy, r_outer - 1, col_bevel_hi);
+    fast_circle(it, cx, coin_cy, r_outer - 8, col_groove_sh);
+    fast_circle(it, cx, coin_cy, r_outer - 9, col_bevel_hi);
   }
 
   // 4. Enlarged (+30%) All-Silver 3D Struck Bas-Relief Home Assistant Emblem & Quarter Lettering
@@ -945,8 +945,8 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
         cur_hw = (dy_b < 5 && scale_y > 0.75f) ? (hw - (5 - dy_b)) : hw;
       }
       if (cur_hw > 0) {
-        it.horizontal_line(hx - cur_hw + 2, y + 2, 2 * cur_hw + 2, col_relief_shadow);
-        it.horizontal_line(hx - cur_hw - 2, y - 1, 2 * cur_hw + 1, col_relief_hi);
+        fast_hline(it, hx - cur_hw + 2, y + 2, 2 * cur_hw + 2, col_relief_shadow);
+        fast_hline(it, hx - cur_hw - 2, y - 1, 2 * cur_hw + 1, col_relief_hi);
       }
     }
 
@@ -964,9 +964,9 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       if (cur_hw > 0) {
         float rel_u = static_cast<float>(y - y_top) / static_cast<float>(y_bot - y_top + 1);
         uint8_t rl = static_cast<uint8_t>(232.0f - rel_u * 26.0f);
-        it.horizontal_line(hx - cur_hw, y, 2 * cur_hw + 1, esphome::Color(rl, static_cast<uint8_t>(rl + 2), static_cast<uint8_t>(fminf(255.0f, rl + 7.0f))));
-        it.draw_pixel_at(hx - cur_hw, y, col_groove_sh);
-        it.draw_pixel_at(hx + cur_hw, y, col_relief_shadow);
+        fast_hline(it, hx - cur_hw, y, 2 * cur_hw + 1, esphome::Color(rl, static_cast<uint8_t>(rl + 2), static_cast<uint8_t>(fminf(255.0f, rl + 7.0f))));
+        fast_pixel(it, hx - cur_hw, y, col_groove_sh);
+        fast_pixel(it, hx + cur_hw, y, col_relief_shadow);
       }
     }
 
@@ -974,12 +974,12 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       int eye_dx = static_cast<int>(26.0f * z_zoom);
       int eye_y = hy + static_cast<int>(7.0f * scale_y * z_zoom);
       int eye_r = std::max(2, static_cast<int>(8.0f * scale_y * z_zoom));
-      it.filled_circle(hx - eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
-      it.filled_circle(hx + eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
-      it.filled_circle(hx - eye_dx, eye_y, eye_r, col_relief_shadow);
-      it.filled_circle(hx + eye_dx, eye_y, eye_r, col_relief_shadow);
-      it.filled_circle(hx - eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
-      it.filled_circle(hx + eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
+      fast_filled_circle(it, hx - eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
+      fast_filled_circle(it, hx + eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
+      fast_filled_circle(it, hx - eye_dx, eye_y, eye_r, col_relief_shadow);
+      fast_filled_circle(it, hx + eye_dx, eye_y, eye_r, col_relief_shadow);
+      fast_filled_circle(it, hx - eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
+      fast_filled_circle(it, hx + eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
 
       int smile_top_y = hy + static_cast<int>(22.0f * scale_y * z_zoom);
       int smile_mid_y = hy + static_cast<int>(28.0f * scale_y * z_zoom);
@@ -988,10 +988,10 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
 
       for (int y = smile_top_y; y <= smile_mid_y; y++) {
         for (int t = -2; t <= 1; t++) {
-          it.draw_pixel_at(hx - smile_hw + t + 1, y + 1, col_relief_hi);
-          it.draw_pixel_at(hx + smile_hw + t + 1, y + 1, col_relief_hi);
-          it.draw_pixel_at(hx - smile_hw + t, y, col_relief_shadow);
-          it.draw_pixel_at(hx + smile_hw + t, y, col_relief_shadow);
+          fast_pixel(it, hx - smile_hw + t + 1, y + 1, col_relief_hi);
+          fast_pixel(it, hx + smile_hw + t + 1, y + 1, col_relief_hi);
+          fast_pixel(it, hx - smile_hw + t, y, col_relief_shadow);
+          fast_pixel(it, hx + smile_hw + t, y, col_relief_shadow);
         }
       }
       for (int i = 0; i <= 32; i++) {
@@ -999,9 +999,9 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
         int sx = hx - static_cast<int>(smile_hw * fast_cos(sa));
         int sy = smile_mid_y + static_cast<int>((smile_bot_y - smile_mid_y) * fast_sin(sa));
         for (int t = -1; t <= 1; t++) {
-          it.draw_pixel_at(sx + 1, sy + t + 1, col_relief_hi);
-          it.draw_pixel_at(sx, sy + t, col_relief_shadow);
-          it.draw_pixel_at(sx + t, sy, col_relief_shadow);
+          fast_pixel(it, sx + 1, sy + t + 1, col_relief_hi);
+          fast_pixel(it, sx, sy + t, col_relief_shadow);
+          fast_pixel(it, sx + t, sy, col_relief_shadow);
         }
       }
 
@@ -1027,22 +1027,22 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       int branch_drop = static_cast<int>(29.0f * scale_y * z_zoom);
 
       for (int w = -line_hw; w <= line_hw; w++) {
-        it.line(hx + w + 2, top_node_y + 1, hx + w + 2, y_bot, col_relief_hi);
-        it.line(hx + w + 2, right_node_y + branch_drop + 1, right_node_x + w + 2, right_node_y + 1, col_relief_hi);
-        it.line(hx + w + 2, left_node_y + branch_drop + 1, left_node_x + w + 2, left_node_y + 1, col_relief_hi);
+        fast_line(it, hx + w + 2, top_node_y + 1, hx + w + 2, y_bot, col_relief_hi);
+        fast_line(it, hx + w + 2, right_node_y + branch_drop + 1, right_node_x + w + 2, right_node_y + 1, col_relief_hi);
+        fast_line(it, hx + w + 2, left_node_y + branch_drop + 1, left_node_x + w + 2, left_node_y + 1, col_relief_hi);
       }
-      it.filled_circle(hx + 2, top_node_y + 2, node_r, col_relief_hi);
-      it.filled_circle(right_node_x + 2, right_node_y + 2, node_r, col_relief_hi);
-      it.filled_circle(left_node_x + 2, left_node_y + 2, node_r, col_relief_hi);
+      fast_filled_circle(it, hx + 2, top_node_y + 2, node_r, col_relief_hi);
+      fast_filled_circle(it, right_node_x + 2, right_node_y + 2, node_r, col_relief_hi);
+      fast_filled_circle(it, left_node_x + 2, left_node_y + 2, node_r, col_relief_hi);
 
       for (int w = -line_hw; w <= line_hw; w++) {
-        it.line(hx + w, top_node_y, hx + w, y_bot, col_relief_shadow);
-        it.line(hx + w, right_node_y + branch_drop, right_node_x + w, right_node_y, col_relief_shadow);
-        it.line(hx + w, left_node_y + branch_drop, left_node_x + w, left_node_y, col_relief_shadow);
+        fast_line(it, hx + w, top_node_y, hx + w, y_bot, col_relief_shadow);
+        fast_line(it, hx + w, right_node_y + branch_drop, right_node_x + w, right_node_y, col_relief_shadow);
+        fast_line(it, hx + w, left_node_y + branch_drop, left_node_x + w, left_node_y, col_relief_shadow);
       }
-      it.filled_circle(hx, top_node_y, node_r, col_relief_shadow);
-      it.filled_circle(right_node_x, right_node_y, node_r, col_relief_shadow);
-      it.filled_circle(left_node_x, left_node_y, node_r, col_relief_shadow);
+      fast_filled_circle(it, hx, top_node_y, node_r, col_relief_shadow);
+      fast_filled_circle(it, right_node_x, right_node_y, node_r, col_relief_shadow);
+      fast_filled_circle(it, left_node_x, left_node_y, node_r, col_relief_shadow);
 
       if (scale_y > 0.76f) {
         int ty = coin_cy + static_cast<int>(74.0f * scale_y * z_zoom);
@@ -1086,10 +1086,10 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     // High-visibility expanding radar rings (scaled to SCREEN_MIN_R so they never clip on 320x480)
     const uint32_t max_span = static_cast<uint32_t>(std::max(60, SCREEN_MIN_R - 76));
     int radar_r = 50 + static_cast<int>((now_ms / 8U) % max_span);
-    it.circle(cx, cy, radar_r, theme_primary);
-    it.circle(cx, cy, radar_r + 1, pulse ? col_white : theme_secondary);
+    fast_circle(it, cx, cy, radar_r, theme_primary);
+    fast_circle(it, cx, cy, radar_r + 1, pulse ? col_white : theme_secondary);
     int radar_r2 = 50 + static_cast<int>(((now_ms / 8U) + (max_span / 2U)) % max_span);
-    it.circle(cx, cy, radar_r2, theme_secondary);
+    fast_circle(it, cx, cy, radar_r2, theme_secondary);
 
     it.print(cx, scale_y(75), font_small, pulse ? col_white : theme_secondary,
              esphome::display::TextAlign::CENTER, "LOCATING DEVICE");
@@ -1234,14 +1234,14 @@ inline void render_notification_overlay(
 
     // Bell / Camera badge icon at y = 122
     if (has_cam_url) {
-      it.rectangle(cx - 14, scale_y(112), 22, 18, col_white);
+      fast_rect_outline(it, cx - 14, scale_y(112), 22, 18, col_white);
       it.filled_triangle(cx + 8, scale_y(121), cx + 15, scale_y(115), cx + 15, scale_y(127), theme_secondary);
-      it.circle(cx - 3, scale_y(121), 4, accent_c);
+      fast_circle(it, cx - 3, scale_y(121), 4, accent_c);
     } else {
-      it.filled_circle(cx, scale_y(118), 9, accent_c);
-      it.filled_rectangle(cx - 9, scale_y(118), 19, 8, accent_c);
-      it.filled_rectangle(cx - 12, scale_y(118) + 8, 25, 2, col_white);
-      it.filled_circle(cx, scale_y(118) + 12, 3, col_white);
+      fast_filled_circle(it, cx, scale_y(118), 9, accent_c);
+      fill_rect_row_major(it, cx - 9, scale_y(118), 19, 8, accent_c);
+      fill_rect_row_major(it, cx - 12, scale_y(118) + 8, 25, 2, col_white);
+      fast_filled_circle(it, cx, scale_y(118) + 12, 3, col_white);
     }
 
     it.print(cx, scale_y(168), font_date, col_white, TextAlign::CENTER, fit_title.c_str());
@@ -1443,7 +1443,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
 
       // Left vertical status accent stripe (4px wide)
       esphome::Color bar_c = s.running ? theme_primary : (s.paused ? theme_secondary : esphome::Color(52, 62, 76));
-      it.filled_rectangle(t_left + 11, y_mid - 21, 4, 42, bar_c);
+      fill_rect_row_major(it, t_left + 11, y_mid - 21, 4, 42, bar_c);
 
       // Top Row: Bold MM:SS Time
       int disp_sec = is_act ? s.remaining_sec : s.duration_sec;
@@ -1462,12 +1462,12 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
       it.print(t_left + 27, y_mid + 18, font_small, sub_c, esphome::display::TextAlign::CENTER_LEFT, lbl.c_str());
 
       // Subtle vertical separator at t_div_x
-      it.line(t_div_x, y_mid - 22, t_div_x, y_mid + 22, esphome::Color(42, 50, 64));
-      it.filled_circle(bx, y_mid, 18, is_act ? theme_primary : esphome::Color(30, 36, 48));
-      it.circle(bx, y_mid, 18, is_act ? col_white : theme_secondary);
+      fast_line(it, t_div_x, y_mid - 22, t_div_x, y_mid + 22, esphome::Color(42, 50, 64));
+      fast_filled_circle(it, bx, y_mid, 18, is_act ? theme_primary : esphome::Color(30, 36, 48));
+      fast_circle(it, bx, y_mid, 18, is_act ? col_white : theme_secondary);
       if (s.running) {
-        it.filled_rectangle(bx - 5, y_mid - 6, 3, 13, col_black);
-        it.filled_rectangle(bx + 2, y_mid - 6, 3, 13, col_black);
+        fill_rect_row_major(it, bx - 5, y_mid - 6, 3, 13, col_black);
+        fill_rect_row_major(it, bx + 2, y_mid - 6, 3, 13, col_black);
       } else {
         esphome::Color tri_c = s.paused ? col_black : theme_primary;
         it.filled_triangle(bx - 4, y_mid - 7, bx - 4, y_mid + 7, bx + 7, y_mid, tri_c);
@@ -1576,7 +1576,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
 
       // Left vertical status accent stripe (4px wide)
       esphome::Color bar_c = en ? theme_primary : esphome::Color(38, 44, 54);
-      it.filled_rectangle(a_left + 11, y_mid - 21, 4, 42, bar_c);
+      fill_rect_row_major(it, a_left + 11, y_mid - 21, 4, 42, bar_c);
 
       // Top Row: Bold Time + AM/PM
       char t_buf[16];
@@ -1598,17 +1598,17 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
                esphome::display::TextAlign::CENTER_LEFT, REC_LABELS[rec & 3]);
 
       // Subtle vertical separator between Edit Zone (left) and Toggle Switch (right)
-      it.line(a_div_x, y_mid - 22, a_div_x, y_mid + 22, border_c);
+      fast_line(it, a_div_x, y_mid - 22, a_div_x, y_mid + 22, border_c);
 
       // Centered Modern Toggle Switch
       const int sw_l = a_div_x + 32;
       const int sw_r = a_div_x + 58;
       esphome::Color sw_bg = en ? theme_primary : esphome::Color(42, 48, 58);
-      it.filled_circle(sw_l, y_mid, 12, sw_bg);
-      it.filled_circle(sw_r, y_mid, 12, sw_bg);
-      it.filled_rectangle(sw_l, y_mid - 12, 26, 25, sw_bg);
+      fast_filled_circle(it, sw_l, y_mid, 12, sw_bg);
+      fast_filled_circle(it, sw_r, y_mid, 12, sw_bg);
+      fill_rect_row_major(it, sw_l, y_mid - 12, 26, 25, sw_bg);
       int knob_x = en ? sw_r : sw_l;
-      it.filled_circle(knob_x, y_mid, 9, en ? col_white : esphome::Color(180, 186, 196));
+      fast_filled_circle(it, knob_x, y_mid, 9, en ? col_white : esphome::Color(180, 186, 196));
     };
 
     draw_modern_alarm_card(layout().tool_card3_y(0), alarm1_hour, alarm1_minute, alarm1_enabled, alarm1_recurrence, 1);
@@ -1646,10 +1646,10 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     const int rec_y = scale_y(316);
     render_modern_card(it, cx, rec_y, 264, 46, 12, card_bg, card_brd,
                        REC_NAMES[cur_rec & 3], col_white, font_small);
-    it.line(cx - scale_x(115), rec_y, cx - scale_x(109), rec_y - 6, theme_secondary);
-    it.line(cx - scale_x(115), rec_y, cx - scale_x(109), rec_y + 6, theme_secondary);
-    it.line(cx + scale_x(115), rec_y, cx + scale_x(109), rec_y - 6, theme_secondary);
-    it.line(cx + scale_x(115), rec_y, cx + scale_x(109), rec_y + 6, theme_secondary);
+    fast_line(it, cx - scale_x(115), rec_y, cx - scale_x(109), rec_y - 6, theme_secondary);
+    fast_line(it, cx - scale_x(115), rec_y, cx - scale_x(109), rec_y + 6, theme_secondary);
+    fast_line(it, cx + scale_x(115), rec_y, cx + scale_x(109), rec_y - 6, theme_secondary);
+    fast_line(it, cx + scale_x(115), rec_y, cx + scale_x(109), rec_y + 6, theme_secondary);
   }
 
   render_back_button(it, cx, font_small, 426, "< Back");
@@ -1672,7 +1672,7 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
     it.print(cx + scale_x(129), scale_y(74), font_date, col_white, esphome::display::TextAlign::RIGHT, calc_entry.c_str());
   }
 
-  it.line(cx - scale_x(151), scale_y(98), cx + scale_x(151), scale_y(98), esphome::Color(50, 58, 72));
+  fast_line(it, cx - scale_x(151), scale_y(98), cx + scale_x(151), scale_y(98), esphome::Color(50, 58, 72));
 
   // Expanded 5x4 keypad grid (adaptive horizontal stride centered on cx, 56px base vertical stride)
   static constexpr int BASE_ROWS_Y[5] = {131, 187, 243, 299, 355};
@@ -1693,17 +1693,17 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
     const int kr = scale_s(9);
     int x0 = kx - kw / 2;
     int y0 = ky - kh / 2;
-    it.filled_rectangle(x0 + kr, y0, kw - 2 * kr, kh, bg_c);
-    it.filled_rectangle(x0, y0 + kr, kw, kh - 2 * kr, bg_c);
-    it.filled_circle(x0 + kr, y0 + kr, kr, bg_c);
-    it.filled_circle(x0 + kw - kr, y0 + kr, kr, bg_c);
-    it.filled_circle(x0 + kr, y0 + kh - kr, kr, bg_c);
-    it.filled_circle(x0 + kw - kr, y0 + kh - kr, kr, bg_c);
+    fill_rect_row_major(it, x0 + kr, y0, kw - 2 * kr, kh, bg_c);
+    fill_rect_row_major(it, x0, y0 + kr, kw, kh - 2 * kr, bg_c);
+    fast_filled_circle(it, x0 + kr, y0 + kr, kr, bg_c);
+    fast_filled_circle(it, x0 + kw - kr, y0 + kr, kr, bg_c);
+    fast_filled_circle(it, x0 + kr, y0 + kh - kr, kr, bg_c);
+    fast_filled_circle(it, x0 + kw - kr, y0 + kh - kr, kr, bg_c);
 
-    it.line(x0 + kr, y0, x0 + kw - kr, y0, border_c);
-    it.line(x0 + kr, y0 + kh - 1, x0 + kw - kr, y0 + kh - 1, border_c);
-    it.line(x0, y0 + kr, x0, y0 + kh - kr, border_c);
-    it.line(x0 + kw - 1, y0 + kr, x0 + kw - 1, y0 + kh - kr, border_c);
+    fast_line(it, x0 + kr, y0, x0 + kw - kr, y0, border_c);
+    fast_line(it, x0 + kr, y0 + kh - 1, x0 + kw - kr, y0 + kh - 1, border_c);
+    fast_line(it, x0, y0 + kr, x0, y0 + kh - kr, border_c);
+    fast_line(it, x0 + kw - 1, y0 + kr, x0 + kw - 1, y0 + kh - kr, border_c);
 
     it.print(kx, ky, font_btn_bold, text_c, esphome::display::TextAlign::CENTER, label);
   };
@@ -2136,8 +2136,8 @@ inline void render_tool_calendar(
       const int map_hdr_w = std::min(scale_x(278), SCREEN_W - 24);
       const int map_hdr_h = scale_y(34);
       const int map_hdr_y = scale_y(24);
-      it.filled_rectangle(cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, Color(10, 14, 20));
-      it.rectangle(cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, theme_primary);
+      fill_rect_row_major(it, cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, Color(10, 14, 20));
+      fast_rect_outline(it, cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, theme_primary);
       char z_prefix[16];
       snprintf(z_prefix, sizeof(z_prefix), "z%d • ", cal_map_zoom());
       std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, font_small);
@@ -2150,22 +2150,22 @@ inline void render_tool_calendar(
       const int z_r  = scale_s(21);
       Color btn_bg(12, 16, 24);
       Color btn_ring = (cal_map_zoom() > 10) ? theme_primary : col_slate;
-      it.filled_circle(z_lx, z_by, z_r, btn_bg);
-      it.circle(z_lx, z_by, z_r, btn_ring);
-      it.circle(z_lx, z_by, z_r - 1, btn_ring);
-      it.filled_rectangle(z_lx - 8, z_by - 1, 17, 3, (cal_map_zoom() > 10) ? col_white : col_slate);
+      fast_filled_circle(it, z_lx, z_by, z_r, btn_bg);
+      fast_circle(it, z_lx, z_by, z_r, btn_ring);
+      fast_circle(it, z_lx, z_by, z_r - 1, btn_ring);
+      fill_rect_row_major(it, z_lx - 8, z_by - 1, 17, 3, (cal_map_zoom() > 10) ? col_white : col_slate);
 
       // 3. Right Floating Zoom-In (+) Button
       Color btn_ring_in = (cal_map_zoom() < 18) ? theme_primary : col_slate;
       Color fg_in = (cal_map_zoom() < 18) ? col_white : col_slate;
-      it.filled_circle(z_rx, z_by, z_r, btn_bg);
-      it.circle(z_rx, z_by, z_r, btn_ring_in);
-      it.circle(z_rx, z_by, z_r - 1, btn_ring_in);
-      it.filled_rectangle(z_rx - 8, z_by - 1, 17, 3, fg_in);
-      it.filled_rectangle(z_rx - 1, z_by - 8, 3, 17, fg_in);
+      fast_filled_circle(it, z_rx, z_by, z_r, btn_bg);
+      fast_circle(it, z_rx, z_by, z_r, btn_ring_in);
+      fast_circle(it, z_rx, z_by, z_r - 1, btn_ring_in);
+      fill_rect_row_major(it, z_rx - 8, z_by - 1, 17, 3, fg_in);
+      fill_rect_row_major(it, z_rx - 1, z_by - 8, 3, 17, fg_in);
 
       // 4. Bottom Translucent Back Scrim (aligned with layout().back_y)
-      it.filled_rectangle(cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+      fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
     } else {
       it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
       render_modern_card(it, cx, scale_y(222), 304, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
@@ -2214,9 +2214,9 @@ inline void render_tool_calendar(
                          "View Map", col_white, font_small);
       // Map Pin Icon on left of button (cx - 85)
       const int pin_x = cx - scale_x(85);
-      it.filled_circle(pin_x, map_btn_y - 4, 5, Color(235, 52, 62));
+      fast_filled_circle(it, pin_x, map_btn_y - 4, 5, Color(235, 52, 62));
       it.filled_triangle(pin_x - 4, map_btn_y - 2, pin_x + 4, map_btn_y - 2, pin_x, map_btn_y + 6, Color(235, 52, 62));
-      it.filled_circle(pin_x, map_btn_y - 4, 2, col_white);
+      fast_filled_circle(it, pin_x, map_btn_y - 4, 2, col_white);
     } else {
       render_modern_card(it, cx, scale_y(288), 296, 48, 12, Color(15, 18, 24), Color(34, 40, 50),
                          "No location specified", col_slate, font_small);
@@ -2239,8 +2239,8 @@ inline void render_tool_calendar(
     for (int i = 0; i < 5; i++) {
       int y_mid = layout().slot5_y(i);
       render_modern_card(it, cx, y_mid, 296, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
-      it.filled_rectangle(c_left + 12, y_mid - 1, 9, 3, theme_primary);
-      it.filled_rectangle(c_left + 15, y_mid - 4, 3, 9, theme_primary);
+      fill_rect_row_major(it, c_left + 12, y_mid - 1, 9, 3, theme_primary);
+      fill_rect_row_major(it, c_left + 15, y_mid - 4, 3, 9, theme_primary);
       it.print(c_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
     }
     render_back_button(it, cx, font_small, 426, "< Cancel");
@@ -2294,7 +2294,7 @@ inline void render_tool_calendar(
       const int c_left = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, brd_c, nullptr, txt_c, font_small);
       if (acts[i]) {
-        it.filled_rectangle(c_left + 8, y_mid - 12, 3, 24, theme_primary);
+        fill_rect_row_major(it, c_left + 8, y_mid - 12, 3, 24, theme_primary);
       }
       std::string fit_ev = fit_text_to_width_font(names[i], layout().list_card_w - 32, font_small);
       it.print(c_left + 18, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
@@ -2375,7 +2375,7 @@ inline void render_tool_intercom(
       bool is_sip = (t_ids[i].rfind("sip:", 0) == 0);
       Color brd_c = is_sip ? theme_secondary : Color(66, 188, 106);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, col_white, font_small);
-      it.filled_circle(c_left + scale_x(18), y_mid, scale_s(6), brd_c);
+      fast_filled_circle(it, c_left + scale_x(18), y_mid, scale_s(6), brd_c);
       std::string fit_l = fit_text_to_width_font(t_lbls[i], layout().list_card_w - scale_x(46), font_small);
       it.print(c_left + scale_x(34), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
     }
@@ -2669,7 +2669,7 @@ inline void render_tool_camera(
                        "Reply", theme_secondary, font_small);
   }
 
-  it.filled_rectangle(cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+  fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
   render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 

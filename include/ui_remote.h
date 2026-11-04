@@ -251,9 +251,9 @@ inline void render_tv_remote_page(
 
       render_modern_card(it, card_cx, y_mid, card_w, 44, 12, card_bg, border_c, nullptr, text_c, font_small);
       if (is_sel) {
-        it.filled_circle(cx - scale_x(119), y_mid, scale_s(6), theme_primary);
+        fast_filled_circle(it, cx - scale_x(119), y_mid, scale_s(6), theme_primary);
       } else {
-        it.circle(cx - scale_x(119), y_mid, scale_s(5), col_slate);
+        fast_circle(it, cx - scale_x(119), y_mid, scale_s(5), col_slate);
       }
       std::string fit_lbl = fit_text_to_width_font(d_name, max_txt, font_small);
       it.print(cx - scale_x(103), y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
@@ -262,16 +262,16 @@ inline void render_tv_remote_page(
         const int p_cx = cx + scale_x(120);
         const int p_r  = scale_s(18);
         const bool is_dev_on = remote_slot_states_on()[s_idx];
-        it.filled_circle(p_cx, y_mid, p_r, card_bg);
-        it.circle(p_cx, y_mid, p_r, is_dev_on ? theme_secondary : col_red);
+        fast_filled_circle(it, p_cx, y_mid, p_r, card_bg);
+        fast_circle(it, p_cx, y_mid, p_r, is_dev_on ? theme_secondary : col_red);
         for (int i = 6; i < 54; i += 2) {
           int x1 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i]);
           int y1 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i]);
           int x2 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i + 2]);
           int y2 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i + 2]);
-          it.line(x1, y1, x2, y2, col_white);
+          fast_line(it, x1, y1, x2, y2, col_white);
         }
-        it.filled_rectangle(p_cx - 1, y_mid - scale_s(9), 3, scale_s(8), col_white);
+        fill_rect_row_major(it, p_cx - 1, y_mid - scale_s(9), 3, scale_s(8), col_white);
       }
     }
 
@@ -304,46 +304,46 @@ inline void render_tv_remote_page(
   const int f_r      = scale_s(19);
 
   // 1. HOME: Top-Left
-  it.filled_circle(left_fx, top_fy, f_r, col_dark_gray);
-  it.circle(left_fx, top_fy, f_r, col_gray);
+  fast_filled_circle(it, left_fx, top_fy, f_r, col_dark_gray);
+  fast_circle(it, left_fx, top_fy, f_r, col_gray);
   it.filled_triangle(left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
-  it.filled_rectangle(left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
-  it.filled_rectangle(left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), col_dark_gray);
+  fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
+  fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), col_dark_gray);
 
   // 2. VOL UP: Top-Right
   const int pls = scale_s(7);
   const int pth = scale_s(3);
-  it.filled_circle(right_fx, top_fy, f_r, col_dark_gray);
-  it.circle(right_fx, top_fy, f_r, col_gray);
-  it.filled_rectangle(right_fx - pls, top_fy - pth / 2, pls * 2 + 1, pth, col_white);
-  it.filled_rectangle(right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
+  fast_filled_circle(it, right_fx, top_fy, f_r, col_dark_gray);
+  fast_circle(it, right_fx, top_fy, f_r, col_gray);
+  fill_rect_row_major(it, right_fx - pls, top_fy - pth / 2, pls * 2 + 1, pth, col_white);
+  fill_rect_row_major(it, right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
 
   // 3. BACK: Bottom-Left
-  it.filled_circle(left_fx, btm_fy, f_r, col_dark_gray);
-  it.circle(left_fx, btm_fy, f_r, col_gray);
-  it.line(left_fx + scale_s(3), btm_fy - scale_s(7), left_fx - scale_s(4), btm_fy, col_white);
-  it.line(left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
-  it.line(left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
-  it.line(left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
+  fast_filled_circle(it, left_fx, btm_fy, f_r, col_dark_gray);
+  fast_circle(it, left_fx, btm_fy, f_r, col_gray);
+  fast_line(it, left_fx + scale_s(3), btm_fy - scale_s(7), left_fx - scale_s(4), btm_fy, col_white);
+  fast_line(it, left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
+  fast_line(it, left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
+  fast_line(it, left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
 
   // 4. VOL DOWN: Bottom-Right
-  it.filled_circle(right_fx, btm_fy, f_r, col_dark_gray);
-  it.circle(right_fx, btm_fy, f_r, col_gray);
-  it.filled_rectangle(right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
+  fast_filled_circle(it, right_fx, btm_fy, f_r, col_dark_gray);
+  fast_circle(it, right_fx, btm_fy, f_r, col_gray);
+  fill_rect_row_major(it, right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
 
   // Adaptive Concentric D-Pad
   const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));
   const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((SCREEN_W > 520) ?  86 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50));
   const int ok_r       = dpad_r_in - scale_s(8);
-  it.circle(cx, dpad_cy, dpad_r_out, col_gray);
-  it.circle(cx, dpad_cy, dpad_r_in, col_gray);
+  fast_circle(it, cx, dpad_cy, dpad_r_out, col_gray);
+  fast_circle(it, cx, dpad_cy, dpad_r_in, col_gray);
 
   const int d_in  = (dpad_r_in * 707) / 1000;
   const int d_out = (dpad_r_out * 707) / 1000;
-  it.line(cx + d_in, dpad_cy + d_in, cx + d_out, dpad_cy + d_out, col_gray);
-  it.line(cx - d_in, dpad_cy + d_in, cx - d_out, dpad_cy + d_out, col_gray);
-  it.line(cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, col_gray);
-  it.line(cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, col_gray);
+  fast_line(it, cx + d_in, dpad_cy + d_in, cx + d_out, dpad_cy + d_out, col_gray);
+  fast_line(it, cx - d_in, dpad_cy + d_in, cx - d_out, dpad_cy + d_out, col_gray);
+  fast_line(it, cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, col_gray);
+  fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, col_gray);
 
   const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
   it.filled_triangle(cx, dpad_cy - arr_mid - 8, cx - 10, dpad_cy - arr_mid + 8, cx + 10, dpad_cy - arr_mid + 8, col_white);
@@ -351,8 +351,8 @@ inline void render_tv_remote_page(
   it.filled_triangle(cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
   it.filled_triangle(cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
 
-  it.filled_circle(cx, dpad_cy, ok_r, col_dark_gray);
-  it.circle(cx, dpad_cy, ok_r, theme_primary);
+  fast_filled_circle(it, cx, dpad_cy, ok_r, col_dark_gray);
+  fast_circle(it, cx, dpad_cy, ok_r, theme_primary);
   it.print(cx, dpad_cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 

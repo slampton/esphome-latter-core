@@ -230,64 +230,64 @@ inline void render_area_control_page(
 
       if (cat == "scene") {
         // Lighting Scenes: Sculpted 8-Ray Sparkle Star
-        it.line(bx, by - 11, bx, by + 11, fg_c);
-        it.line(bx - 11, by, bx + 11, by, fg_c);
-        it.line(bx - 6, by - 6, bx + 6, by + 6, fg_c);
-        it.line(bx - 6, by + 6, bx + 6, by - 6, fg_c);
-        it.filled_circle(bx, by, 3, fg_c);
+        fast_line(it, bx, by - 11, bx, by + 11, fg_c);
+        fast_line(it, bx - 11, by, bx + 11, by, fg_c);
+        fast_line(it, bx - 6, by - 6, bx + 6, by + 6, fg_c);
+        fast_line(it, bx - 6, by + 6, bx + 6, by - 6, fg_c);
+        fast_filled_circle(it, bx, by, 3, fg_c);
       } else if (cat == "light") {
         // Lights: Clean Classic Sculpted Lightbulb (No Ray Lines!)
-        it.filled_circle(bx, by - 4, 8, fg_c);
-        it.filled_rectangle(bx - 5, by + 1, 11, 5, fg_c);
-        it.filled_rectangle(bx - 4, by + 7, 9, 3, fg_c);
-        it.horizontal_line(bx - 2, by + 11, 5, fg_c);
+        fast_filled_circle(it, bx, by - 4, 8, fg_c);
+        fill_rect_row_major(it, bx - 5, by + 1, 11, 5, fg_c);
+        fill_rect_row_major(it, bx - 4, by + 7, 9, 3, fg_c);
+        fast_hline(it, bx - 2, by + 11, 5, fg_c);
       } else if (cat == "cover") {
         // Blinds / Curtains: Split Parted Curtain Drapes inside Window Frame
-        it.rectangle(bx - 10, by - 9, 21, 19, fg_c);
-        it.horizontal_line(bx - 10, by - 8, 21, fg_c);
+        fast_rect_outline(it, bx - 10, by - 9, 21, 19, fg_c);
+        fast_hline(it, bx - 10, by - 8, 21, fg_c);
         it.filled_triangle(bx - 9, by - 7, bx - 1, by - 7, bx - 9, by + 3, fg_c);
-        it.filled_rectangle(bx - 9, by + 3, 4, 6, fg_c);
+        fill_rect_row_major(it, bx - 9, by + 3, 4, 6, fg_c);
         it.filled_triangle(bx + 9, by - 7, bx + 1, by - 7, bx + 9, by + 3, fg_c);
-        it.filled_rectangle(bx + 6, by + 3, 4, 6, fg_c);
+        fill_rect_row_major(it, bx + 6, by + 3, 4, 6, fg_c);
       } else if (cat == "fan") {
         // Fans: Traditional 4-Blade Ceiling Fan (Central Motor Hub + 4 Swept Paddle Blades)
         for (int dy = -13; dy <= 13; dy++) {
           for (int dx = -13; dx <= 13; dx++) {
             if (is_ceiling_fan_4blade_pixel(dx, dy)) {
-              it.draw_pixel_at(bx + dx, by + dy, fg_c);
+              fast_pixel(it, bx + dx, by + dy, fg_c);
             }
           }
         }
       } else if (cat == "switch") {
         // Switches & Outlets: Rounded Toggle Pill + Knob
-        it.filled_circle(bx - 5, by, 7, fg_c);
-        it.filled_circle(bx + 5, by, 7, fg_c);
-        it.filled_rectangle(bx - 5, by - 7, 10, 15, fg_c);
-        it.filled_circle(bx + 5, by, 4, Color(16, 20, 27));
+        fast_filled_circle(it, bx - 5, by, 7, fg_c);
+        fast_filled_circle(it, bx + 5, by, 7, fg_c);
+        fill_rect_row_major(it, bx - 5, by - 7, 10, 15, fg_c);
+        fast_filled_circle(it, bx + 5, by, 4, Color(16, 20, 27));
       } else if (cat == "climate") {
         // Area Climate: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
         int tx = bx - 2;
-        it.line(tx - 3, by - 11, tx + 3, by - 11, fg_c);
-        it.line(tx - 2, by - 12, tx + 2, by - 12, fg_c);
-        it.line(tx - 3, by - 11, tx - 3, by + 3,  fg_c);
-        it.line(tx - 2, by - 11, tx - 2, by + 3,  fg_c);
-        it.line(tx + 3, by - 11, tx + 3, by + 3,  fg_c);
-        it.line(tx + 2, by - 11, tx + 2, by + 3,  fg_c);
-        it.filled_circle(tx, by + 7, 5, fg_c);
-        it.filled_circle(tx, by + 7, 3, Color(16, 20, 27));
-        it.filled_circle(tx, by + 7, 1, fg_c);
-        it.filled_rectangle(tx - 1, by - 4, 3, 10, fg_c);
-        it.filled_rectangle(tx + 5, by - 9, 4, 2, fg_c);
-        it.filled_rectangle(tx + 5, by - 5, 3, 2, fg_c);
-        it.filled_rectangle(tx + 5, by - 1, 4, 2, fg_c);
+        fast_line(it, tx - 3, by - 11, tx + 3, by - 11, fg_c);
+        fast_line(it, tx - 2, by - 12, tx + 2, by - 12, fg_c);
+        fast_line(it, tx - 3, by - 11, tx - 3, by + 3,  fg_c);
+        fast_line(it, tx - 2, by - 11, tx - 2, by + 3,  fg_c);
+        fast_line(it, tx + 3, by - 11, tx + 3, by + 3,  fg_c);
+        fast_line(it, tx + 2, by - 11, tx + 2, by + 3,  fg_c);
+        fast_filled_circle(it, tx, by + 7, 5, fg_c);
+        fast_filled_circle(it, tx, by + 7, 3, Color(16, 20, 27));
+        fast_filled_circle(it, tx, by + 7, 1, fg_c);
+        fill_rect_row_major(it, tx - 1, by - 4, 3, 10, fg_c);
+        fill_rect_row_major(it, tx + 5, by - 9, 4, 2, fg_c);
+        fill_rect_row_major(it, tx + 5, by - 5, 3, 2, fg_c);
+        fill_rect_row_major(it, tx + 5, by - 1, 4, 2, fg_c);
       } else if (cat == "media") {
         // Area Media: Beamed Eighth Notes
-        it.filled_circle(bx - 6, by + 6, 4, fg_c);
-        it.filled_circle(bx + 5, by + 4, 4, fg_c);
-        it.filled_rectangle(bx - 3, by - 9, 2, 15, fg_c);
-        it.filled_rectangle(bx + 8, by - 11, 2, 15, fg_c);
-        it.line(bx - 3, by - 9, bx + 9, by - 11, fg_c);
-        it.line(bx - 3, by - 8, bx + 9, by - 10, fg_c);
+        fast_filled_circle(it, bx - 6, by + 6, 4, fg_c);
+        fast_filled_circle(it, bx + 5, by + 4, 4, fg_c);
+        fill_rect_row_major(it, bx - 3, by - 9, 2, 15, fg_c);
+        fill_rect_row_major(it, bx + 8, by - 11, 2, 15, fg_c);
+        fast_line(it, bx - 3, by - 9, bx + 9, by - 11, fg_c);
+        fast_line(it, bx - 3, by - 8, bx + 9, by - 10, fg_c);
       } else {
         // All Devices: 2x2 Rounded App-Tile Grid (3 Solid Squircles + 1 Framed Bottom-Right Tile)
         for (int dy = -10; dy <= 10; dy++) {
@@ -297,7 +297,7 @@ inline void render_area_control_page(
             int lx = ax - 2, ly = ay - 2; // 0..7
             if ((lx == 0 || lx == 7) && (ly == 0 || ly == 7)) continue;
             if (dx > 0 && dy > 0 && lx >= 2 && lx <= 5 && ly >= 2 && ly <= 5) continue;
-            it.draw_pixel_at(bx + dx, by + dy, fg_c);
+            fast_pixel(it, bx + dx, by + dy, fg_c);
           }
         }
       }
@@ -318,29 +318,29 @@ inline void render_area_control_page(
       // MODE 0: 300px 5-Ring HSV Color Wheel for RGB Lights (cy = scale_y(212))
       const int wheel_cy = scale_y(212);
       const float ws = (SCREEN_W > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
-      it.circle(cx, wheel_cy, scale_s(150), card_brd_off);
+      fast_circle(it, cx, wheel_cy, scale_s(150), card_brd_off);
       for (int a = 0; a < 60; a++) {
         float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
         float c_a = DIAL_COS[a];
         float s_a = DIAL_SIN[a];
-        it.filled_circle(cx + static_cast<int>(c_a * 134.0f * ws), wheel_cy + static_cast<int>(s_a * 134.0f * ws), scale_s(14), hsv_to_rgb(hue_01, 1.00f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 112.0f * ws), wheel_cy + static_cast<int>(s_a * 112.0f * ws), scale_s(13), hsv_to_rgb(hue_01, 0.82f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 90.0f * ws),  wheel_cy + static_cast<int>(s_a * 90.0f * ws),  scale_s(11), hsv_to_rgb(hue_01, 0.65f, 1.0f));
-        it.filled_circle(cx + static_cast<int>(c_a * 70.0f * ws),  wheel_cy + static_cast<int>(s_a * 70.0f * ws),  scale_s(10), hsv_to_rgb(hue_01, 0.45f, 1.0f));
+        fast_filled_circle(it, cx + static_cast<int>(c_a * 134.0f * ws), wheel_cy + static_cast<int>(s_a * 134.0f * ws), scale_s(14), hsv_to_rgb(hue_01, 1.00f, 1.0f));
+        fast_filled_circle(it, cx + static_cast<int>(c_a * 112.0f * ws), wheel_cy + static_cast<int>(s_a * 112.0f * ws), scale_s(13), hsv_to_rgb(hue_01, 0.82f, 1.0f));
+        fast_filled_circle(it, cx + static_cast<int>(c_a * 90.0f * ws),  wheel_cy + static_cast<int>(s_a * 90.0f * ws),  scale_s(11), hsv_to_rgb(hue_01, 0.65f, 1.0f));
+        fast_filled_circle(it, cx + static_cast<int>(c_a * 70.0f * ws),  wheel_cy + static_cast<int>(s_a * 70.0f * ws),  scale_s(10), hsv_to_rgb(hue_01, 0.45f, 1.0f));
       }
       Color preview_c = hsv_to_rgb(light_insp_hue_deg() / 360.0f, light_insp_sat(), 1.0f);
-      it.filled_circle(cx, wheel_cy, scale_s(44), col_black);
-      it.filled_circle(cx, wheel_cy, scale_s(39), preview_c);
-      it.circle(cx, wheel_cy, scale_s(39), col_white);
+      fast_filled_circle(it, cx, wheel_cy, scale_s(44), col_black);
+      fast_filled_circle(it, cx, wheel_cy, scale_s(39), preview_c);
+      fast_circle(it, cx, wheel_cy, scale_s(39), col_white);
 
       float rad = light_insp_hue_deg() * (PI_F / 180.0f);
       float r_sel = (70.0f + ((light_insp_sat() - 0.35f) / 0.65f) * 64.0f) * ws;
       r_sel = std::max(68.0f * ws, std::min(136.0f * ws, r_sel));
       int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
       int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-      it.filled_circle(sel_x, sel_y, scale_s(11), preview_c);
-      it.circle(sel_x, sel_y, scale_s(11), col_white);
-      it.circle(sel_x, sel_y, scale_s(12), col_black);
+      fast_filled_circle(it, sel_x, sel_y, scale_s(11), preview_c);
+      fast_circle(it, sel_x, sel_y, scale_s(11), col_white);
+      fast_circle(it, sel_x, sel_y, scale_s(12), col_black);
     } else {
       // MODE 1: White Color Temperature Slider (2700K Warm Amber <-> 6500K Cool Daylight) + Brightness Slider
       std::string fit_ln = fit_text_to_width_font(light_insp_name(), scale_x(260), font_small);
@@ -357,12 +357,12 @@ inline void render_area_control_page(
         Color band_c = lerp_color(Color(255, 168, 72), Color(185, 222, 255), t);
         int bx0 = k_bar_x0 + (b * k_bar_w) / 24;
         int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
-        it.filled_rectangle(bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
+        fill_rect_row_major(it, bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
       }
       int k_clamped = std::max(2700, std::min(6500, light_insp_kelvin()));
       int k_knob_x = k_bar_x0 + ((k_clamped - 2700) * k_bar_w) / (6500 - 2700);
-      it.filled_circle(k_knob_x, k_cy + scale_y(14), scale_s(10), col_white);
-      it.circle(k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
+      fast_filled_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(10), col_white);
+      fast_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
       char k_buf[48];
       snprintf(k_buf, sizeof(k_buf), "White Temp: %dK", k_clamped);
       it.print(cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
@@ -374,7 +374,7 @@ inline void render_area_control_page(
       int b_max_w = layout().light_bri_bar_w();
       int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        it.filled_rectangle(layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
+        fill_rect_row_major(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
@@ -395,8 +395,8 @@ inline void render_area_control_page(
       Color txt_c = is_act ? theme_primary : col_white;
       const int area_l = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, is_act ? card_bg_on : card_bg_off, brd_c, nullptr, txt_c, font_small);
-      if (is_act) it.filled_circle(area_l + 19, y_mid, 6, theme_primary);
-      else it.circle(area_l + 19, y_mid, 5, col_slate);
+      if (is_act) fast_filled_circle(it, area_l + 19, y_mid, 6, theme_primary);
+      else fast_circle(it, area_l + 19, y_mid, 5, col_slate);
       std::string fit_n = fit_text_to_width_font(name, layout().list_card_w - 54, font_small);
       it.print(area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     };
@@ -430,25 +430,25 @@ inline void render_area_control_page(
     const Color icon_c(185, 225, 255);
 
     auto draw_mini_thermometer = [&](int tx, int ty, Color c) {
-      it.rectangle(tx - 2, ty - 9, 5, 11, c);
-      it.filled_circle(tx, ty + 4, 4, c);
-      it.vertical_line(tx, ty - 4, 7, c);
-      it.horizontal_line(tx + 4, ty - 6, 3, c);
-      it.horizontal_line(tx + 4, ty - 2, 3, c);
+      fast_rect_outline(it, tx - 2, ty - 9, 5, 11, c);
+      fast_filled_circle(it, tx, ty + 4, 4, c);
+      fast_vline(it, tx, ty - 4, 7, c);
+      fast_hline(it, tx + 4, ty - 6, 3, c);
+      fast_hline(it, tx + 4, ty - 2, 3, c);
     };
 
     auto draw_mini_droplet = [&](int dx, int dy, Color c) {
-      it.line(dx, dy - 8, dx - 5, dy + 1, c);
-      it.line(dx, dy - 8, dx + 5, dy + 1, c);
+      fast_line(it, dx, dy - 8, dx - 5, dy + 1, c);
+      fast_line(it, dx, dy - 8, dx + 5, dy + 1, c);
       for (int i = 17; i < 43; i += 3) {
         int i1 = std::min(43, i + 3);
         int x0 = dx + static_cast<int>(roundf(5.2f * DIAL_SIN[i]));
         int y0 = (dy + 2) - static_cast<int>(roundf(5.2f * DIAL_COS[i]));
         int x1 = dx + static_cast<int>(roundf(5.2f * DIAL_SIN[i1]));
         int y1 = (dy + 2) - static_cast<int>(roundf(5.2f * DIAL_COS[i1]));
-        it.line(x0, y0, x1, y1, c);
+        fast_line(it, x0, y0, x1, y1, c);
       }
-      it.draw_pixel_at(dx - 2, dy + 3, c);
+      fast_pixel(it, dx - 2, dy + 3, c);
     };
 
     char t_str[16] = "", h_str[16] = "";
@@ -503,41 +503,41 @@ inline void render_area_control_page(
       // Clean Classic Sculpted Lightbulb (No Ray Lines!)
       Color bulb_c = is_on ? col_gold : fg_c;
       if (is_on) {
-        it.filled_circle(gx, gy - 4, 9, bulb_c);
-        it.filled_rectangle(gx - 5, gy + 1, 11, 5, bulb_c);
+        fast_filled_circle(it, gx, gy - 4, 9, bulb_c);
+        fill_rect_row_major(it, gx - 5, gy + 1, 11, 5, bulb_c);
       } else {
-        it.circle(gx, gy - 4, 9, bulb_c);
-        it.circle(gx, gy - 4, 8, bulb_c);
-        it.rectangle(gx - 5, gy + 2, 11, 4, bulb_c);
+        fast_circle(it, gx, gy - 4, 9, bulb_c);
+        fast_circle(it, gx, gy - 4, 8, bulb_c);
+        fast_rect_outline(it, gx - 5, gy + 2, 11, 4, bulb_c);
       }
-      it.filled_rectangle(gx - 4, gy + 7, 9, 3, fg_c);
-      it.horizontal_line(gx - 2, gy + 11, 5, fg_c);
+      fill_rect_row_major(it, gx - 4, gy + 7, 9, 3, fg_c);
+      fast_hline(it, gx - 2, gy + 11, 5, fg_c);
     } else if (dtype == "cover") {
       bool is_curt = is_curtain_entity(name, id_str);
       Color cov_c = is_on ? theme_primary : fg_c;
       if (is_curt) {
         // CURTAINS: Split Parted Drapes with Tie-Backs & Top Curtain Rod
-        it.filled_rectangle(gx - 12, gy - 12, 25, 2, fg_c);
+        fill_rect_row_major(it, gx - 12, gy - 12, 25, 2, fg_c);
         // Left drape
         it.filled_triangle(gx - 11, gy - 10, gx - 2, gy - 10, gx - 11, gy + 3, cov_c);
-        it.filled_rectangle(gx - 11, gy + 3, 5, 9, cov_c);
-        it.line(gx - 11, gy + 3, gx - 5, gy + 3, col_white);
+        fill_rect_row_major(it, gx - 11, gy + 3, 5, 9, cov_c);
+        fast_line(it, gx - 11, gy + 3, gx - 5, gy + 3, col_white);
         // Right drape
         it.filled_triangle(gx + 11, gy - 10, gx + 2, gy - 10, gx + 11, gy + 3, cov_c);
-        it.filled_rectangle(gx + 7, gy + 3, 5, 9, cov_c);
-        it.line(gx + 6, gy + 3, gx + 11, gy + 3, col_white);
+        fill_rect_row_major(it, gx + 7, gy + 3, 5, 9, cov_c);
+        fast_line(it, gx + 6, gy + 3, gx + 11, gy + 3, col_white);
       } else {
         // BLINDS / SHADES: Window Frame + Horizontal Venetian Slats + Pull Cord
-        it.rectangle(gx - 11, gy - 11, 23, 22, fg_c);
-        it.filled_rectangle(gx - 11, gy - 11, 23, 3, fg_c);
+        fast_rect_outline(it, gx - 11, gy - 11, 23, 22, fg_c);
+        fill_rect_row_major(it, gx - 11, gy - 11, 23, 3, fg_c);
         int num_slats = is_on ? 2 : 4;
         for (int s = 0; s < num_slats; s++) {
           int sy = (gy - 5) + s * 4;
-          it.horizontal_line(gx - 8, sy,     17, cov_c);
-          it.horizontal_line(gx - 8, sy + 1, 17, cov_c);
+          fast_hline(it, gx - 8, sy,     17, cov_c);
+          fast_hline(it, gx - 8, sy + 1, 17, cov_c);
         }
-        it.line(gx + 8, gy - 8, gx + 8, gy + 6, theme_secondary);
-        it.filled_circle(gx + 8, gy + 7, 2, theme_secondary);
+        fast_line(it, gx + 8, gy - 8, gx + 8, gy + 6, theme_secondary);
+        fast_filled_circle(it, gx + 8, gy + 7, 2, theme_secondary);
       }
     } else if (dtype == "fan") {
       // Traditional 4-Blade Ceiling Fan (Central Motor Hub + 4 Swept Paddle Blades)
@@ -546,41 +546,41 @@ inline void render_area_control_page(
         for (int dx = -13; dx <= 13; dx++) {
           if (is_ceiling_fan_4blade_pixel(dx, dy)) {
             int r2 = dx * dx + dy * dy;
-            it.draw_pixel_at(gx + dx, gy + dy, (r2 <= 10 && is_on) ? col_white : fan_c);
+            fast_pixel(it, gx + dx, gy + dy, (r2 <= 10 && is_on) ? col_white : fan_c);
           }
         }
       }
     } else if (dtype == "scene" || dtype == "script") {
       // Scene Sparkle Star
-      it.line(gx, gy - 11, gx, gy + 11, col_gold);
-      it.line(gx - 11, gy, gx + 11, gy, col_gold);
-      it.line(gx - 6, gy - 6, gx + 6, gy + 6, col_gold);
-      it.line(gx - 6, gy + 6, gx + 6, gy - 6, col_gold);
-      it.filled_circle(gx, gy, 3, col_white);
+      fast_line(it, gx, gy - 11, gx, gy + 11, col_gold);
+      fast_line(it, gx - 11, gy, gx + 11, gy, col_gold);
+      fast_line(it, gx - 6, gy - 6, gx + 6, gy + 6, col_gold);
+      fast_line(it, gx - 6, gy + 6, gx + 6, gy - 6, col_gold);
+      fast_filled_circle(it, gx, gy, 3, col_white);
     } else if (dtype == "climate") {
       // Sculpted Thermostat / Thermometer Bulb & Degree Ticks
       Color cl_c = is_on ? col_gold : fg_c;
-      it.rectangle(gx - 3, gy - 12, 7, 15, fg_c);
-      it.filled_circle(gx, gy + 6, 6, cl_c);
-      it.filled_rectangle(gx - 1, gy - 6, 3, 10, cl_c);
-      it.line(gx + 6, gy - 9, gx + 9, gy - 9, theme_secondary);
-      it.line(gx + 6, gy - 5, gx + 8, gy - 5, theme_secondary);
-      it.line(gx + 6, gy - 1, gx + 9, gy - 1, theme_secondary);
+      fast_rect_outline(it, gx - 3, gy - 12, 7, 15, fg_c);
+      fast_filled_circle(it, gx, gy + 6, 6, cl_c);
+      fill_rect_row_major(it, gx - 1, gy - 6, 3, 10, cl_c);
+      fast_line(it, gx + 6, gy - 9, gx + 9, gy - 9, theme_secondary);
+      fast_line(it, gx + 6, gy - 5, gx + 8, gy - 5, theme_secondary);
+      fast_line(it, gx + 6, gy - 1, gx + 9, gy - 1, theme_secondary);
     } else if (dtype == "media_player") {
       // Area Speaker Note
-      it.filled_circle(gx - 4, gy + 5, 4, theme_primary);
-      it.filled_circle(gx + 5, gy + 3, 4, theme_primary);
-      it.filled_rectangle(gx - 1, gy - 9, 2, 14, theme_primary);
-      it.filled_rectangle(gx + 8, gy - 11, 2, 14, theme_primary);
-      it.line(gx - 1, gy - 9, gx + 9, gy - 11, theme_primary);
-      it.line(gx - 1, gy - 8, gx + 9, gy - 10, theme_primary);
+      fast_filled_circle(it, gx - 4, gy + 5, 4, theme_primary);
+      fast_filled_circle(it, gx + 5, gy + 3, 4, theme_primary);
+      fill_rect_row_major(it, gx - 1, gy - 9, 2, 14, theme_primary);
+      fill_rect_row_major(it, gx + 8, gy - 11, 2, 14, theme_primary);
+      fast_line(it, gx - 1, gy - 9, gx + 9, gy - 11, theme_primary);
+      fast_line(it, gx - 1, gy - 8, gx + 9, gy - 10, theme_primary);
     } else {
       // Switch / Outlet Toggle Pill
       Color sw_c = is_on ? theme_primary : Color(52, 62, 76);
-      it.filled_circle(gx - 5, gy, 7, sw_c);
-      it.filled_circle(gx + 5, gy, 7, sw_c);
-      it.filled_rectangle(gx - 5, gy - 7, 10, 15, sw_c);
-      it.filled_circle(is_on ? (gx + 5) : (gx - 5), gy, 5, col_white);
+      fast_filled_circle(it, gx - 5, gy, 7, sw_c);
+      fast_filled_circle(it, gx + 5, gy, 7, sw_c);
+      fill_rect_row_major(it, gx - 5, gy - 7, 10, 15, sw_c);
+      fast_filled_circle(it, is_on ? (gx + 5) : (gx - 5), gy, 5, col_white);
     }
   };
 
@@ -619,13 +619,13 @@ inline void render_area_control_page(
       int fill_w = (r_slider_w * clamped_lvl) / 100;
       if (fill_w > 4) {
         int fh = r_card_h - 6;
-        it.filled_rectangle(r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
-        it.vertical_line(r_div_x + fill_w, y_mid - fh / 2 + 1, fh - 2, scale_color(col_white, 0.35f));
+        fill_rect_row_major(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
+        fast_vline(it, r_div_x + fill_w, y_mid - fh / 2 + 1, fh - 2, scale_color(col_white, 0.35f));
       }
     }
 
     draw_tall_card_icon(r_left + scale_x(32), y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
-    it.line(r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
+    fast_line(it, r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
 
     std::string clean_name = strip_trailing_paren_state(raw_name);
     const int max_t_w = (dtype == "light") ? (r_slider_w - scale_x(58)) : (r_slider_w - scale_x(20));
@@ -663,11 +663,11 @@ inline void render_area_control_page(
       int ox = layout().area_card_orb_x();
       int orb_r = scale_s(16);
       int dot_r = scale_s(4);
-      it.filled_circle(ox, y_mid, orb_r, Color(20, 24, 32));
-      it.filled_circle(ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
-      it.filled_circle(ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
-      it.filled_circle(ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
-      it.circle(ox, y_mid, orb_r, is_act ? col_white : col_slate);
+      fast_filled_circle(it, ox, y_mid, orb_r, Color(20, 24, 32));
+      fast_filled_circle(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
+      fast_filled_circle(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
+      fast_filled_circle(it, ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
+      fast_circle(it, ox, y_mid, orb_r, is_act ? col_white : col_slate);
     }
   };
 
@@ -766,17 +766,17 @@ inline void render_security_alarm_page(
     const int plus_x  = cx + scale_x(115);
     const int btn_r   = scale_s(24);
     const int gl_s    = scale_s(8);
-    it.filled_circle(minus_x, hero_y, btn_r, Color(30, 38, 52));
-    it.circle(minus_x, hero_y, btn_r, card_brd_off);
-    it.horizontal_line(minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
-    it.horizontal_line(minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
+    fast_filled_circle(it, minus_x, hero_y, btn_r, Color(30, 38, 52));
+    fast_circle(it, minus_x, hero_y, btn_r, card_brd_off);
+    fast_hline(it, minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
+    fast_hline(it, minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
 
-    it.filled_circle(plus_x, hero_y, btn_r, Color(30, 38, 52));
-    it.circle(plus_x, hero_y, btn_r, card_brd_off);
-    it.horizontal_line(plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
-    it.horizontal_line(plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
-    it.vertical_line(plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
-    it.vertical_line(plus_x + 1, hero_y - gl_s, gl_s * 2 + 1, col_white);
+    fast_filled_circle(it, plus_x, hero_y, btn_r, Color(30, 38, 52));
+    fast_circle(it, plus_x, hero_y, btn_r, card_brd_off);
+    fast_hline(it, plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
+    fast_hline(it, plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
+    fast_vline(it, plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
+    fast_vline(it, plus_x + 1, hero_y - gl_s, gl_s * 2 + 1, col_white);
 
     char t_val[16];
     if (sim_thermostat_target_f() > 0) {
@@ -866,7 +866,7 @@ inline void render_security_alarm_page(
       };
       for (int dy = -15; dy <= 15; dy++) {
         int hw = SH_HW[dy + 15];
-        it.horizontal_line(bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
+        fast_hline(it, bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
       }
       // Carve Negative-Space House (2px overhanging roof chevron + right chimney + 1px rafter gap + inner house + doorway)
       for (int dy = -8; dy <= 7; dy++) {
@@ -882,58 +882,58 @@ inline void render_security_alarm_page(
             if (ax <= 5 && !(ax <= 1 && dy >= 3)) carve = true;         // House walls with 3x5px centered doorway
           }
           if (carve) {
-            it.draw_pixel_at(bx + dx, WH_Y + dy, card_bg_off);
+            fast_pixel(it, bx + dx, WH_Y + dy, card_bg_off);
           }
         }
       }
     } else if (i == 1) {
       // 1. Thermostat: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
       int tx = bx - 2;
-      it.line(tx - 3, WH_Y - 13, tx + 3, WH_Y - 13, fg_c);
-      it.line(tx - 2, WH_Y - 14, tx + 2, WH_Y - 14, fg_c);
-      it.line(tx - 3, WH_Y - 13, tx - 3, WH_Y + 3,  fg_c);
-      it.line(tx - 2, WH_Y - 13, tx - 2, WH_Y + 3,  fg_c);
-      it.line(tx + 3, WH_Y - 13, tx + 3, WH_Y + 3,  fg_c);
-      it.line(tx + 2, WH_Y - 13, tx + 2, WH_Y + 3,  fg_c);
-      it.filled_circle(tx, WH_Y + 8, 6, fg_c);
-      it.filled_circle(tx, WH_Y + 8, 4, card_bg_off);
-      it.filled_circle(tx, WH_Y + 8, 2, fg_c);
-      it.filled_rectangle(tx - 1, WH_Y - 5, 3, 12, fg_c);
+      fast_line(it, tx - 3, WH_Y - 13, tx + 3, WH_Y - 13, fg_c);
+      fast_line(it, tx - 2, WH_Y - 14, tx + 2, WH_Y - 14, fg_c);
+      fast_line(it, tx - 3, WH_Y - 13, tx - 3, WH_Y + 3,  fg_c);
+      fast_line(it, tx - 2, WH_Y - 13, tx - 2, WH_Y + 3,  fg_c);
+      fast_line(it, tx + 3, WH_Y - 13, tx + 3, WH_Y + 3,  fg_c);
+      fast_line(it, tx + 2, WH_Y - 13, tx + 2, WH_Y + 3,  fg_c);
+      fast_filled_circle(it, tx, WH_Y + 8, 6, fg_c);
+      fast_filled_circle(it, tx, WH_Y + 8, 4, card_bg_off);
+      fast_filled_circle(it, tx, WH_Y + 8, 2, fg_c);
+      fill_rect_row_major(it, tx - 1, WH_Y - 5, 3, 12, fg_c);
       // 2px-thick degree ticks on right
-      it.filled_rectangle(tx + 6, WH_Y - 11, 5, 2, fg_c);
-      it.filled_rectangle(tx + 6, WH_Y - 6,  4, 2, fg_c);
-      it.filled_rectangle(tx + 6, WH_Y - 1,  5, 2, fg_c);
+      fill_rect_row_major(it, tx + 6, WH_Y - 11, 5, 2, fg_c);
+      fill_rect_row_major(it, tx + 6, WH_Y - 6,  4, 2, fg_c);
+      fill_rect_row_major(it, tx + 6, WH_Y - 1,  5, 2, fg_c);
     } else if (i == 2) {
       // 2. Entry & Garage: Solid Pitched-Roof Garage Facade with Recessed 3-Panel Roll-Up Door
       it.filled_triangle(bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
-      it.filled_rectangle(bx - 15, WH_Y - 4, 31, 2, fg_c);
-      it.filled_rectangle(bx - 12, WH_Y - 2, 25, 14, fg_c);
-      it.horizontal_line(bx - 12, WH_Y - 2, 25, card_bg_off);
+      fill_rect_row_major(it, bx - 15, WH_Y - 4, 31, 2, fg_c);
+      fill_rect_row_major(it, bx - 12, WH_Y - 2, 25, 14, fg_c);
+      fast_hline(it, bx - 12, WH_Y - 2, 25, card_bg_off);
       // Negative-space garage bay opening
-      it.filled_rectangle(bx - 9, WH_Y, 19, 12, card_bg_off);
+      fill_rect_row_major(it, bx - 9, WH_Y, 19, 12, card_bg_off);
       // 3 distinct raised horizontal roll-up garage door panels inside bay
-      it.filled_rectangle(bx - 7, WH_Y + 1, 15, 3, fg_c);
-      it.filled_rectangle(bx - 7, WH_Y + 5, 15, 3, fg_c);
-      it.filled_rectangle(bx - 7, WH_Y + 9, 15, 3, fg_c);
+      fill_rect_row_major(it, bx - 7, WH_Y + 1, 15, 3, fg_c);
+      fill_rect_row_major(it, bx - 7, WH_Y + 5, 15, 3, fg_c);
+      fill_rect_row_major(it, bx - 7, WH_Y + 9, 15, 3, fg_c);
     } else {
       // 3. Robot Vacuum: Solid Top-Down Smart Robot Disc, Front Bumper Seam, LiDAR Turret & Side Brushes
       // Angled front-left & front-right side-brush whiskers peeking out from under chassis
-      it.line(bx - 9, WH_Y - 9, bx - 14, WH_Y - 13, fg_c);
-      it.line(bx - 8, WH_Y - 10, bx - 12, WH_Y - 14, fg_c);
-      it.line(bx + 9, WH_Y - 9, bx + 14, WH_Y - 13, fg_c);
-      it.line(bx + 8, WH_Y - 10, bx + 12, WH_Y - 14, fg_c);
+      fast_line(it, bx - 9, WH_Y - 9, bx - 14, WH_Y - 13, fg_c);
+      fast_line(it, bx - 8, WH_Y - 10, bx - 12, WH_Y - 14, fg_c);
+      fast_line(it, bx + 9, WH_Y - 9, bx + 14, WH_Y - 13, fg_c);
+      fast_line(it, bx + 8, WH_Y - 10, bx + 12, WH_Y - 14, fg_c);
       // Solid circular robot chassis (r = 12)
-      it.filled_circle(bx, WH_Y + 1, 12, fg_c);
+      fast_filled_circle(it, bx, WH_Y + 1, 12, fg_c);
       // Negative-space curved front bumper seam across upper arc
-      it.horizontal_line(bx - 8, WH_Y - 6, 17, card_bg_off);
-      it.horizontal_line(bx - 9, WH_Y - 5, 19, card_bg_off);
-      it.line(bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, card_bg_off);
-      it.line(bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, card_bg_off);
+      fast_hline(it, bx - 8, WH_Y - 6, 17, card_bg_off);
+      fast_hline(it, bx - 9, WH_Y - 5, 19, card_bg_off);
+      fast_line(it, bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, card_bg_off);
+      fast_line(it, bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, card_bg_off);
       // Negative-space moat + raised center LiDAR laser turret dome
-      it.filled_circle(bx, WH_Y + 2, 5, card_bg_off);
-      it.filled_circle(bx, WH_Y + 2, 3, fg_c);
+      fast_filled_circle(it, bx, WH_Y + 2, 5, card_bg_off);
+      fast_filled_circle(it, bx, WH_Y + 2, 3, fg_c);
       // Rear status indicator slit
-      it.horizontal_line(bx - 3, WH_Y + 9, 7, card_bg_off);
+      fast_hline(it, bx - 3, WH_Y + 9, 7, card_bg_off);
     }
   }
 

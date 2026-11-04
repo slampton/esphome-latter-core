@@ -113,12 +113,12 @@ inline void render_music_now_playing(
   }
 
   if (!rendered_art) {
-    it.filled_circle(cx, art_center_y, scale_s(80), col_dark_gray);
-    it.circle(cx, art_center_y, scale_s(80), is_remote ? theme_secondary : theme_primary);
-    it.circle(cx, art_center_y, scale_s(64), col_bg);
-    it.circle(cx, art_center_y, scale_s(48), col_dark_gray);
-    it.circle(cx, art_center_y, scale_s(32), col_bg);
-    it.filled_circle(cx, art_center_y, scale_s(16), is_remote ? theme_secondary : theme_primary);
+    fast_filled_circle(it, cx, art_center_y, scale_s(80), col_dark_gray);
+    fast_circle(it, cx, art_center_y, scale_s(80), is_remote ? theme_secondary : theme_primary);
+    fast_circle(it, cx, art_center_y, scale_s(64), col_bg);
+    fast_circle(it, cx, art_center_y, scale_s(48), col_dark_gray);
+    fast_circle(it, cx, art_center_y, scale_s(32), col_bg);
+    fast_filled_circle(it, cx, art_center_y, scale_s(16), is_remote ? theme_secondary : theme_primary);
   }
 
   const esphome::Color glass_bg = rendered_art
@@ -186,8 +186,8 @@ inline void render_music_now_playing(
         float c1 = DIAL_COS[idx];
         float s2 = DIAL_SIN[next_idx] * (float)(-dir_sign);
         float c2 = DIAL_COS[next_idx];
-        it.line(bx + (int)(r1 * s1), by - (int)(r1 * c1), bx + (int)(r1 * s2), by - (int)(r1 * c2), c);
-        it.line(bx + (int)(r2 * s1), by - (int)(r2 * c1), bx + (int)(r2 * s2), by - (int)(r2 * c2), c);
+        fast_line(it, bx + (int)(r1 * s1), by - (int)(r1 * c1), bx + (int)(r1 * s2), by - (int)(r1 * c2), c);
+        fast_line(it, bx + (int)(r2 * s1), by - (int)(r2 * c1), bx + (int)(r2 * s2), by - (int)(r2 * c2), c);
       }
       it.print(bx, by + 1, font_micro, c, esphome::display::TextAlign::CENTER, lbl);
     };
@@ -196,7 +196,7 @@ inline void render_music_now_playing(
       int px = prev_btn_x + ox;
       int py = art_center_y + oy;
       int h = scale_s(9);
-      it.filled_rectangle(px - scale_s(9), py - h, scale_s(3), h * 2 + 1, c);
+      fill_rect_row_major(it, px - scale_s(9), py - h, scale_s(3), h * 2 + 1, c);
       it.filled_triangle(px - scale_s(4), py, px + scale_s(8), py - h, px + scale_s(8), py + h, c);
     };
 
@@ -205,7 +205,7 @@ inline void render_music_now_playing(
       int ny = art_center_y + oy;
       int h = scale_s(9);
       it.filled_triangle(nx + scale_s(4), ny, nx - scale_s(8), ny - h, nx - scale_s(8), ny + h, c);
-      it.filled_rectangle(nx + scale_s(6), ny - h, scale_s(3), h * 2 + 1, c);
+      fill_rect_row_major(it, nx + scale_s(6), ny - h, scale_s(3), h * 2 + 1, c);
     };
 
     if (is_speech_media) {
@@ -222,27 +222,27 @@ inline void render_music_now_playing(
 
     const int pls = scale_s(6);
     const int pth = scale_s(2);
-    it.filled_rectangle(right_flank_x - pls + 1, top_fy + 1, pls * 2 + 1, pth, col_black);
-    it.filled_rectangle(right_flank_x,           top_fy - pls + 1, pth, pls * 2 + 1, col_black);
-    it.filled_rectangle(right_flank_x - pls,     top_fy,     pls * 2 + 1, pth, col_white);
-    it.filled_rectangle(right_flank_x - 1,       top_fy - pls, pth, pls * 2 + 1, col_white);
+    fill_rect_row_major(it, right_flank_x - pls + 1, top_fy + 1, pls * 2 + 1, pth, col_black);
+    fill_rect_row_major(it, right_flank_x,           top_fy - pls + 1, pth, pls * 2 + 1, col_black);
+    fill_rect_row_major(it, right_flank_x - pls,     top_fy,     pls * 2 + 1, pth, col_white);
+    fill_rect_row_major(it, right_flank_x - 1,       top_fy - pls, pth, pls * 2 + 1, col_white);
 
-    it.filled_rectangle(right_flank_x - pls + 1, btm_fy + 1, pls * 2 + 1, pth, col_black);
-    it.filled_rectangle(right_flank_x - pls,     btm_fy,     pls * 2 + 1, pth, col_white);
+    fill_rect_row_major(it, right_flank_x - pls + 1, btm_fy + 1, pls * 2 + 1, pth, col_black);
+    fill_rect_row_major(it, right_flank_x - pls,     btm_fy,     pls * 2 + 1, pth, col_white);
 
     if (show_spk_shortcut) {
       auto draw_spk = [&](int ox, int oy, esphome::Color c) {
         int sx = left_flank_x + ox;
         int sy = top_fy + oy;
-        it.filled_rectangle(sx - scale_s(8), sy - scale_s(3), scale_s(4), scale_s(7), c);
+        fill_rect_row_major(it, sx - scale_s(8), sy - scale_s(3), scale_s(4), scale_s(7), c);
         it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx - scale_s(4), sy + scale_s(3), sx + scale_s(1), sy + scale_s(7), c);
         it.filled_triangle(sx - scale_s(4), sy - scale_s(3), sx + scale_s(1), sy + scale_s(7), sx + scale_s(1), sy - scale_s(7), c);
-        it.line(sx + scale_s(4), sy - scale_s(3), sx + scale_s(6), sy - scale_s(1), c);
-        it.line(sx + scale_s(6), sy - scale_s(1), sx + scale_s(6), sy + scale_s(1), c);
-        it.line(sx + scale_s(6), sy + scale_s(1), sx + scale_s(4), sy + scale_s(3), c);
-        it.line(sx + scale_s(7), sy - scale_s(6), sx + scale_s(9), sy - scale_s(2), c);
-        it.line(sx + scale_s(9), sy - scale_s(2), sx + scale_s(9), sy + scale_s(2), c);
-        it.line(sx + scale_s(9), sy + scale_s(2), sx + scale_s(7), sy + scale_s(6), c);
+        fast_line(it, sx + scale_s(4), sy - scale_s(3), sx + scale_s(6), sy - scale_s(1), c);
+        fast_line(it, sx + scale_s(6), sy - scale_s(1), sx + scale_s(6), sy + scale_s(1), c);
+        fast_line(it, sx + scale_s(6), sy + scale_s(1), sx + scale_s(4), sy + scale_s(3), c);
+        fast_line(it, sx + scale_s(7), sy - scale_s(6), sx + scale_s(9), sy - scale_s(2), c);
+        fast_line(it, sx + scale_s(9), sy - scale_s(2), sx + scale_s(9), sy + scale_s(2), c);
+        fast_line(it, sx + scale_s(9), sy + scale_s(2), sx + scale_s(7), sy + scale_s(6), c);
       };
       draw_spk(1, 1, col_black);
       draw_spk(0, 0, col_white);
@@ -252,12 +252,12 @@ inline void render_music_now_playing(
       auto draw_lib = [&](int ox, int oy, esphome::Color c) {
         int lx = left_flank_x + ox;
         int ly = btm_fy + oy;
-        it.filled_rectangle(lx - scale_s(8), ly - scale_s(7), scale_s(3), scale_s(14), c);
-        it.filled_rectangle(lx - scale_s(3), ly - scale_s(7), scale_s(3), scale_s(14), c);
-        it.line(lx + scale_s(2), ly + scale_s(6), lx + scale_s(5), ly - scale_s(7), c);
-        it.line(lx + scale_s(3), ly + scale_s(6), lx + scale_s(6), ly - scale_s(7), c);
-        it.line(lx + scale_s(5), ly + scale_s(6), lx + scale_s(8), ly - scale_s(6), c);
-        it.line(lx + scale_s(6), ly + scale_s(6), lx + scale_s(9), ly - scale_s(6), c);
+        fill_rect_row_major(it, lx - scale_s(8), ly - scale_s(7), scale_s(3), scale_s(14), c);
+        fill_rect_row_major(it, lx - scale_s(3), ly - scale_s(7), scale_s(3), scale_s(14), c);
+        fast_line(it, lx + scale_s(2), ly + scale_s(6), lx + scale_s(5), ly - scale_s(7), c);
+        fast_line(it, lx + scale_s(3), ly + scale_s(6), lx + scale_s(6), ly - scale_s(7), c);
+        fast_line(it, lx + scale_s(5), ly + scale_s(6), lx + scale_s(8), ly - scale_s(6), c);
+        fast_line(it, lx + scale_s(6), ly + scale_s(6), lx + scale_s(9), ly - scale_s(6), c);
       };
       draw_lib(1, 1, col_black);
       draw_lib(0, 0, col_white);
@@ -269,8 +269,8 @@ inline void render_music_now_playing(
     if (!is_playing) {
       it.filled_triangle(cx - scale_s(7), art_center_y - scale_s(14), cx - scale_s(7), art_center_y + scale_s(14), cx + scale_s(14), art_center_y, col_white);
     } else {
-      it.filled_rectangle(cx - scale_s(9), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
-      it.filled_rectangle(cx + scale_s(3), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
+      fill_rect_row_major(it, cx - scale_s(9), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
+      fill_rect_row_major(it, cx + scale_s(3), art_center_y - scale_s(12), scale_s(6), scale_s(24), col_white);
     }
   }
 
@@ -405,9 +405,9 @@ inline void render_music_menus(
       const int c_left = layout().list_card_left;
       render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, border_c, nullptr, txt_c, font_small);
       if (is_current) {
-        it.filled_circle(c_left + scale_x(19), y_mid, scale_s(6), theme_primary);
+        fast_filled_circle(it, c_left + scale_x(19), y_mid, scale_s(6), theme_primary);
       } else {
-        it.circle(c_left + scale_x(19), y_mid, scale_s(5), col_slate);
+        fast_circle(it, c_left + scale_x(19), y_mid, scale_s(5), col_slate);
       }
       std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - scale_x(56), font_small);
       it.print(c_left + scale_x(35), y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
@@ -594,7 +594,7 @@ inline void render_music_menus(
     const int trk_card_y = scale_y(132);
     render_modern_card(it, cx, trk_card_y, 276, 44, 12, card_bg, card_brd, "Album Tracks", col_white, font_small);
     for (int dy : {-4, 0, 4}) {
-      it.filled_rectangle(cx + scale_x(109), trk_card_y + scale_y(dy), scale_x(13), 2, theme_secondary);
+      fill_rect_row_major(it, cx + scale_x(109), trk_card_y + scale_y(dy), scale_x(13), 2, theme_secondary);
     }
 
     float cur_pos = music_pos_base;
@@ -628,40 +628,40 @@ inline void render_music_menus(
     // Left -15s Seek Button
     esphome::Color btn_brd(58, 68, 84);
     render_glass_circle(it, l_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
-    it.line(l_seek_x + 4, scrub_y - 6, l_seek_x - 2, scrub_y, col_white);
-    it.line(l_seek_x - 2, scrub_y,     l_seek_x + 4, scrub_y + 6, col_white);
-    it.line(l_seek_x - 2, scrub_y - 6, l_seek_x - 8, scrub_y, theme_secondary);
-    it.line(l_seek_x - 8, scrub_y,     l_seek_x - 2, scrub_y + 6, theme_secondary);
+    fast_line(it, l_seek_x + 4, scrub_y - 6, l_seek_x - 2, scrub_y, col_white);
+    fast_line(it, l_seek_x - 2, scrub_y,     l_seek_x + 4, scrub_y + 6, col_white);
+    fast_line(it, l_seek_x - 2, scrub_y - 6, l_seek_x - 8, scrub_y, theme_secondary);
+    fast_line(it, l_seek_x - 8, scrub_y,     l_seek_x - 2, scrub_y + 6, theme_secondary);
 
     // Right +15s Seek Button
     render_glass_circle(it, r_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
-    it.line(r_seek_x - 4, scrub_y - 6, r_seek_x + 2, scrub_y, col_white);
-    it.line(r_seek_x + 2, scrub_y,     r_seek_x - 4, scrub_y + 6, col_white);
-    it.line(r_seek_x + 2, scrub_y - 6, r_seek_x + 8, scrub_y, theme_secondary);
-    it.line(r_seek_x + 8, scrub_y,     r_seek_x + 2, scrub_y + 6, theme_secondary);
+    fast_line(it, r_seek_x - 4, scrub_y - 6, r_seek_x + 2, scrub_y, col_white);
+    fast_line(it, r_seek_x + 2, scrub_y,     r_seek_x - 4, scrub_y + 6, col_white);
+    fast_line(it, r_seek_x + 2, scrub_y - 6, r_seek_x + 8, scrub_y, theme_secondary);
+    fast_line(it, r_seek_x + 8, scrub_y,     r_seek_x + 2, scrub_y + 6, theme_secondary);
 
     // Scrubber Track Groove (r=5 capsule) + 25%/50%/75% ticks
-    it.filled_circle(bar_x0, scrub_y, 5, col_dark_gray);
-    it.filled_circle(bar_x1, scrub_y, 5, col_dark_gray);
+    fast_filled_circle(it, bar_x0, scrub_y, 5, col_dark_gray);
+    fast_filled_circle(it, bar_x1, scrub_y, 5, col_dark_gray);
     fill_rect_row_major(it, bar_x0, scrub_y - 5, bar_w, 11, col_dark_gray);
-    it.line(bar_x0, scrub_y - 5, bar_x1, scrub_y - 5, btn_brd);
-    it.line(bar_x0, scrub_y + 5, bar_x1, scrub_y + 5, btn_brd);
+    fast_line(it, bar_x0, scrub_y - 5, bar_x1, scrub_y - 5, btn_brd);
+    fast_line(it, bar_x0, scrub_y + 5, bar_x1, scrub_y + 5, btn_brd);
     for (int q = 1; q <= 3; q++) {
       int tx = bar_x0 + (bar_w * q) / 4;
-      it.line(tx, scrub_y - 8, tx, scrub_y - 6, col_slate);
-      it.line(tx, scrub_y + 6, tx, scrub_y + 8, col_slate);
+      fast_line(it, tx, scrub_y - 8, tx, scrub_y - 6, col_slate);
+      fast_line(it, tx, scrub_y + 6, tx, scrub_y + 8, col_slate);
     }
 
     // Filled Elapsed Bar + 3D Playhead Knob
     int knob_x = bar_x0 + static_cast<int>(prog * static_cast<float>(bar_w));
     if (knob_x > bar_x0) {
-      it.filled_circle(bar_x0, scrub_y, 4, theme_primary);
+      fast_filled_circle(it, bar_x0, scrub_y, 4, theme_primary);
       fill_rect_row_major(it, bar_x0, scrub_y - 4, knob_x - bar_x0, 9, theme_primary);
-      it.horizontal_line(bar_x0, scrub_y - 3, knob_x - bar_x0, col_white);
+      fast_hline(it, bar_x0, scrub_y - 3, knob_x - bar_x0, col_white);
     }
-    it.filled_circle(knob_x, scrub_y, 9, col_white);
-    it.filled_circle(knob_x, scrub_y, 6, theme_secondary);
-    it.filled_circle(knob_x, scrub_y, 2, col_black);
+    fast_filled_circle(it, knob_x, scrub_y, 9, col_white);
+    fast_filled_circle(it, knob_x, scrub_y, 6, theme_secondary);
+    fast_filled_circle(it, knob_x, scrub_y, 2, col_black);
 
     // 3. Lower Row (y_mid = 341, x = 162 / 298): Lyrics & Bio Cards (122x86, r=14)
     auto draw_inspector_tool_card = [&](int card_cx, int card_cy, bool is_bio, const char *label) {
@@ -673,19 +673,19 @@ inline void render_music_menus(
       int iy = card_cy - 13;
       if (!is_bio) {
         // Lyrics Icon: Musical Eighth Note + 3Synced Lyric Lines
-        it.filled_circle(ix - 10, iy + 4, 4, theme_primary);
-        it.filled_rectangle(ix - 7, iy - 9, 2, 13, theme_primary);
-        it.line(ix - 7, iy - 9, ix - 2, iy - 7, theme_primary);
-        it.line(ix - 7, iy - 8, ix - 2, iy - 6, theme_primary);
-        it.filled_rectangle(ix + 1, iy - 8, 14, 2, col_white);
-        it.filled_rectangle(ix + 1, iy - 2, 14, 2, col_white);
-        it.filled_rectangle(ix - 4, iy + 5, 19, 2, theme_secondary);
+        fast_filled_circle(it, ix - 10, iy + 4, 4, theme_primary);
+        fill_rect_row_major(it, ix - 7, iy - 9, 2, 13, theme_primary);
+        fast_line(it, ix - 7, iy - 9, ix - 2, iy - 7, theme_primary);
+        fast_line(it, ix - 7, iy - 8, ix - 2, iy - 6, theme_primary);
+        fill_rect_row_major(it, ix + 1, iy - 8, 14, 2, col_white);
+        fill_rect_row_major(it, ix + 1, iy - 2, 14, 2, col_white);
+        fill_rect_row_major(it, ix - 4, iy + 5, 19, 2, theme_secondary);
       } else {
         // Bio / Info Icon: Sculpted Info Circle 'i' Badge
-        it.circle(ix, iy, 13, col_white);
-        it.circle(ix, iy, 12, col_white);
-        it.filled_circle(ix, iy - 6, 2, theme_primary);
-        it.filled_rectangle(ix - 1, iy - 1, 3, 9, col_white);
+        fast_circle(it, ix, iy, 13, col_white);
+        fast_circle(it, ix, iy, 12, col_white);
+        fast_filled_circle(it, ix, iy - 6, 2, theme_primary);
+        fill_rect_row_major(it, ix - 1, iy - 1, 3, 9, col_white);
       }
 
       it.print(card_cx, card_cy + 22, font_small, col_white, esphome::display::TextAlign::CENTER, label);

@@ -224,13 +224,13 @@ inline void render_screensaver_starfield(DisplayT &it, int cx, int cy, uint32_t 
     int py = cy + static_cast<int>(stars[i].y * prev_k);
     bool is_blue = ((i % 5) == 0); // 80% crisp silver-white, 20% ice-blue accent
     if (stars[i].z > 650.0f) {
-      it.draw_pixel_at(sx, sy, esphome::Color(148, 154, 166));
+      fast_pixel(it, sx, sy, esphome::Color(148, 154, 166));
     } else if (stars[i].z > 350.0f) {
-      it.line(px, py, sx, sy, is_blue ? esphome::Color(135, 205, 250) : esphome::Color(195, 202, 212));
-      it.draw_pixel_at(sx, sy, esphome::Color(245, 250, 255));
+      fast_line(it, px, py, sx, sy, is_blue ? esphome::Color(135, 205, 250) : esphome::Color(195, 202, 212));
+      fast_pixel(it, sx, sy, esphome::Color(245, 250, 255));
     } else {
-      it.line(px, py, sx, sy, is_blue ? esphome::Color(95, 210, 255) : esphome::Color(222, 228, 238));
-      it.filled_circle(sx, sy, 1, esphome::Color(255, 255, 255));
+      fast_line(it, px, py, sx, sy, is_blue ? esphome::Color(95, 210, 255) : esphome::Color(222, 228, 238));
+      fast_filled_circle(it, sx, sy, 1, esphome::Color(255, 255, 255));
     }
   }
 }
@@ -245,22 +245,22 @@ template<typename DisplayT>
 inline void draw_matrix_katakana_glyph(DisplayT &it, int sx, int gy, uint16_t mask,
                                        esphome::Color col, bool slim_tail) {
   if (slim_tail) {
-    if (mask & 0x080) it.line(sx, gy - 3, sx, gy + 3, col);
-    else if (mask & 0x100) it.line(sx + 2, gy - 2, sx - 2, gy + 3, col);
-    else it.line(sx - 2, gy - 3, sx + 2, gy - 3, col);
-    if (mask & 0x002) it.line(sx - 2, gy, sx + 2, gy, col);
+    if (mask & 0x080) fast_line(it, sx, gy - 3, sx, gy + 3, col);
+    else if (mask & 0x100) fast_line(it, sx + 2, gy - 2, sx - 2, gy + 3, col);
+    else fast_line(it, sx - 2, gy - 3, sx + 2, gy - 3, col);
+    if (mask & 0x002) fast_line(it, sx - 2, gy, sx + 2, gy, col);
     return;
   }
-  if (mask & 0x001) it.line(sx - 3, gy - 4, sx + 3, gy - 4, col);
-  if (mask & 0x002) it.line(sx - 3, gy,     sx + 3, gy,     col);
-  if (mask & 0x004) it.line(sx - 3, gy + 4, sx + 3, gy + 4, col);
-  if (mask & 0x008) it.line(sx - 3, gy - 4, sx - 3, gy,     col);
-  if (mask & 0x010) it.line(sx - 3, gy,     sx - 3, gy + 4, col);
-  if (mask & 0x020) it.line(sx + 3, gy - 4, sx + 3, gy,     col);
-  if (mask & 0x040) it.line(sx + 3, gy,     sx + 3, gy + 4, col);
-  if (mask & 0x080) it.line(sx,     gy - 4, sx,     gy + 4, col);
-  if (mask & 0x100) it.line(sx + 3, gy - 2, sx - 3, gy + 4, col);
-  if (mask & 0x200) it.line(sx - 2, gy - 2, sx + 2, gy + 2, col);
+  if (mask & 0x001) fast_line(it, sx - 3, gy - 4, sx + 3, gy - 4, col);
+  if (mask & 0x002) fast_line(it, sx - 3, gy,     sx + 3, gy,     col);
+  if (mask & 0x004) fast_line(it, sx - 3, gy + 4, sx + 3, gy + 4, col);
+  if (mask & 0x008) fast_line(it, sx - 3, gy - 4, sx - 3, gy,     col);
+  if (mask & 0x010) fast_line(it, sx - 3, gy,     sx - 3, gy + 4, col);
+  if (mask & 0x020) fast_line(it, sx + 3, gy - 4, sx + 3, gy,     col);
+  if (mask & 0x040) fast_line(it, sx + 3, gy,     sx + 3, gy + 4, col);
+  if (mask & 0x080) fast_line(it, sx,     gy - 4, sx,     gy + 4, col);
+  if (mask & 0x100) fast_line(it, sx + 3, gy - 2, sx - 3, gy + 4, col);
+  if (mask & 0x200) fast_line(it, sx - 2, gy - 2, sx + 2, gy + 2, col);
 }
 
 template<typename DisplayT>
@@ -353,7 +353,7 @@ inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now
     if (!is_bg_stream && head_row_top <= dissolve_row) {
       int exact_hy = static_cast<int>(head_row_f * static_cast<float>(CELL_H)) + drift_y;
       if (exact_hy >= y_min && exact_hy <= y_max && head_row_f >= static_cast<float>(spawn_row)) {
-        it.filled_rectangle(sx - 4, exact_hy - 5, 9, 11, esphome::Color(0, 62, 18));
+        fill_rect_row_major(it, sx - 4, exact_hy - 5, 9, 11, esphome::Color(0, 62, 18));
       }
     }
 
@@ -498,9 +498,9 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
       int my = (hy + ty) >> 1;
 
       if (is_inside_bezel(hx, hy, cy, 5) && is_inside_bezel(tx, ty, cy, 5)) {
-        it.line(tx, ty, mx, my, esphome::Color(160, 65, 10));
+        fast_line(it, tx, ty, mx, my, esphome::Color(160, 65, 10));
         draw_glow_line(it, mx, my, hx, hy, esphome::Color(255, 235, 150), esphome::Color(220, 110, 20));
-        it.filled_circle(hx, hy, 2, esphome::Color(255, 255, 220));
+        fast_filled_circle(it, hx, hy, 2, esphome::Color(255, 255, 220));
       }
       continue;
     }
@@ -519,7 +519,7 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
     if (bp < 0.16f) {
       float fl = 1.0f - (bp * 6.25f);
       int flash_r = static_cast<int>(4.0f + bp * 90.0f);
-      it.circle(bx, by, flash_r, esphome::Color(
+      fast_circle(it, bx, by, flash_r, esphome::Color(
           static_cast<uint8_t>(255.0f * fl),
           static_cast<uint8_t>(240.0f * fl),
           static_cast<uint8_t>(185.0f * fl)));
@@ -595,21 +595,21 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
           static_cast<uint8_t>((spark_col.r * 95U) >> 8),
           static_cast<uint8_t>((spark_col.g * 95U) >> 8),
           static_cast<uint8_t>((spark_col.b * 95U) >> 8));
-      it.line(p_tail.x, p_tail.y, mx, my, tail_col);
-      it.line(mx, my, p_head.x, p_head.y, spark_col);
+      fast_line(it, p_tail.x, p_tail.y, mx, my, tail_col);
+      fast_line(it, mx, my, p_head.x, p_head.y, spark_col);
 
       if (bp < 0.58f) {
         esphome::Color tip_col(
             static_cast<uint8_t>(spark_col.r + ((255 - spark_col.r) >> 1)),
             static_cast<uint8_t>(spark_col.g + ((255 - spark_col.g) >> 1)),
             static_cast<uint8_t>(spark_col.b + ((255 - spark_col.b) >> 1)));
-        it.draw_pixel_at(p_head.x, p_head.y, tip_col);
+        fast_pixel(it, p_head.x, p_head.y, tip_col);
         if (bp < 0.36f && dir_3d.z < -0.15f) {
-          it.filled_circle(p_head.x, p_head.y, 1, tip_col);
+          fast_filled_circle(it, p_head.x, p_head.y, 1, tip_col);
         }
       } else if (bp > 0.62f && ((k + (phase_ms / 90U)) % 4 == 0)) {
         uint8_t gl = static_cast<uint8_t>(255.0f * fade);
-        it.draw_pixel_at(p_head.x, p_head.y, esphome::Color(gl, gl, static_cast<uint8_t>(gl * 0.8f)));
+        fast_pixel(it, p_head.x, p_head.y, esphome::Color(gl, gl, static_cast<uint8_t>(gl * 0.8f)));
       }
     }
   }
@@ -773,11 +773,11 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
     if (past_half) {
       int span = dx_out - dx_in + 1;
       if (dx_brd > 0 && dx_in > dx_brd) {
-        it.horizontal_line(cx + dx_brd, y, dx_in - dx_brd, col_shadow);
+        fast_hline(it, cx + dx_brd, y, dx_in - dx_brd, col_shadow);
       }
-      it.horizontal_line(cx + dx_in, y, span, col);
+      fast_hline(it, cx + dx_in, y, span, col);
       if (span >= 3) {
-        it.draw_pixel_at(cx + dx_in + (span >> 1), y, col_hi);
+        fast_pixel(it, cx + dx_in + (span >> 1), y, col_hi);
       }
     } else if (in_sweep(dx_in, dy) || in_sweep(dx_out, dy)) {
       int x0 = -1, x1 = -1;
@@ -789,12 +789,12 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
       }
       if (x0 >= 0) {
         if (dx_brd > 0 && x0 == dx_in && dx_in > dx_brd) {
-          it.horizontal_line(cx + dx_brd, y, dx_in - dx_brd, col_shadow);
+          fast_hline(it, cx + dx_brd, y, dx_in - dx_brd, col_shadow);
         }
         int span = x1 - x0 + 1;
-        it.horizontal_line(cx + x0, y, span, col);
+        fast_hline(it, cx + x0, y, span, col);
         if (span >= 3) {
-          it.draw_pixel_at(cx + x0 + (span >> 1), y, col_hi);
+          fast_pixel(it, cx + x0 + (span >> 1), y, col_hi);
         }
       }
     }
@@ -804,12 +804,12 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
       int left_max_dx = (dx_in > 0) ? -dx_in : -1;
       if (in_sweep(-dx_out, dy) && in_sweep(left_max_dx, dy)) {
         int span = left_max_dx - (-dx_out) + 1;
-        it.horizontal_line(cx - dx_out, y, span, col);
+        fast_hline(it, cx - dx_out, y, span, col);
         if (span >= 3) {
-          it.draw_pixel_at(cx - dx_out + (span >> 1), y, col_hi);
+          fast_pixel(it, cx - dx_out + (span >> 1), y, col_hi);
         }
         if (dx_brd > 0 && dx_in > dx_brd) {
-          it.horizontal_line(cx - dx_in + 1, y, dx_in - dx_brd, col_shadow);
+          fast_hline(it, cx - dx_in + 1, y, dx_in - dx_brd, col_shadow);
         }
       } else if (in_sweep(-dx_out, dy) || in_sweep(left_max_dx, dy)) {
         int x0 = 1, x1 = 0;
@@ -821,9 +821,9 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
         }
         if (x0 <= 0) {
           int span = x1 - x0 + 1;
-          it.horizontal_line(cx + x0, y, span, col);
+          fast_hline(it, cx + x0, y, span, col);
           if (span >= 3) {
-            it.draw_pixel_at(cx + x0 + (span >> 1), y, col_hi);
+            fast_pixel(it, cx + x0 + (span >> 1), y, col_hi);
           }
         }
       }
@@ -831,10 +831,10 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
   }
 
   // Rounded 12 o'clock start cap & glowing leading playhead cap along R_MID = 223
-  it.filled_circle(cx, cy - R_MID, 2, col);
+  fast_filled_circle(it, cx, cy - R_MID, 2, col);
   int tip_x = cx + static_cast<int>(roundf(static_cast<float>(R_MID) * ux));
   int tip_y = cy + static_cast<int>(roundf(static_cast<float>(R_MID) * uy));
-  it.filled_circle(tip_x, tip_y, 2, col);
+  fast_filled_circle(it, tip_x, tip_y, 2, col);
 }
 // Complete Voice Assistant Visual Engine supporting 5 pure-visual profiles (zero text):
 //   - "Nebula":  Flagship Hybrid 3D Volumetric Silk Ribbons, Spectral Waves & 3D Purple/Magenta Orb (Default)
@@ -901,7 +901,7 @@ inline void render_voice_assistant_overlay(
       } else {
         rc = c_echo_deep;
       }
-      it.circle(cx, cy, r, rc);
+      fast_circle(it, cx, cy, r, rc);
     }
 
     // 2. Continuous 360° Spinning Cyan Comets & Waves Across All 3 States:
@@ -967,8 +967,8 @@ inline void render_voice_assistant_overlay(
           int y0 = cy + static_cast<int>(static_cast<float>(r) * cy0);
           int x1 = cx + static_cast<int>(static_cast<float>(r) * sx1);
           int y1 = cy + static_cast<int>(static_cast<float>(r) * cy1);
-          it.line(x0, y0, x1, y1, seg_c);
-          it.line(x0, y0 + 1, x1, y1 + 1, seg_c);
+          fast_line(it, x0, y0, x1, y1, seg_c);
+          fast_line(it, x0, y0 + 1, x1, y1 + 1, seg_c);
         }
       }
     }
@@ -1007,22 +1007,22 @@ inline void render_voice_assistant_overlay(
 
     auto draw_glowing_capsule = [&](int bx, int by, int r, int half_h) {
       if (half_h <= 1) {
-        it.filled_circle(bx, by, r + 4, c_halo_outer);
-        it.filled_circle(bx, by, r + 2, c_halo_inner);
-        it.filled_circle(bx, by, r, col_white);
+        fast_filled_circle(it, bx, by, r + 4, c_halo_outer);
+        fast_filled_circle(it, bx, by, r + 2, c_halo_inner);
+        fast_filled_circle(it, bx, by, r, col_white);
       } else {
         int y_top = by - half_h;
         int y_bot = by + half_h;
         int h_span = 2 * half_h;
-        it.filled_circle(bx, y_top, r + 3, c_halo_outer);
-        it.filled_circle(bx, y_bot, r + 3, c_halo_outer);
-        it.filled_rectangle(bx - (r + 3), y_top, 2 * (r + 3) + 1, h_span, c_halo_outer);
-        it.filled_circle(bx, y_top, r + 1, c_halo_inner);
-        it.filled_circle(bx, y_bot, r + 1, c_halo_inner);
-        it.filled_rectangle(bx - (r + 1), y_top, 2 * (r + 1) + 1, h_span, c_halo_inner);
-        it.filled_circle(bx, y_top, r, col_white);
-        it.filled_circle(bx, y_bot, r, col_white);
-        it.filled_rectangle(bx - r, y_top, 2 * r + 1, h_span, col_white);
+        fast_filled_circle(it, bx, y_top, r + 3, c_halo_outer);
+        fast_filled_circle(it, bx, y_bot, r + 3, c_halo_outer);
+        fill_rect_row_major(it, bx - (r + 3), y_top, 2 * (r + 3) + 1, h_span, c_halo_outer);
+        fast_filled_circle(it, bx, y_top, r + 1, c_halo_inner);
+        fast_filled_circle(it, bx, y_bot, r + 1, c_halo_inner);
+        fill_rect_row_major(it, bx - (r + 1), y_top, 2 * (r + 1) + 1, h_span, c_halo_inner);
+        fast_filled_circle(it, bx, y_top, r, col_white);
+        fast_filled_circle(it, bx, y_bot, r, col_white);
+        fill_rect_row_major(it, bx - r, y_top, 2 * r + 1, h_span, col_white);
       }
     };
 
@@ -1042,7 +1042,7 @@ inline void render_voice_assistant_overlay(
             int tx = cx + static_cast<int>(orbit_r * tc);
             int ty = cy + static_cast<int>(orbit_r * ts);
             float fade = static_cast<float>(4 - tail) * 0.22f * spin_blend;
-            it.filled_circle(tx, ty, std::max(2, scale_min(11 - tail * 2)), scale_color(c_halo_inner, fade));
+            fast_filled_circle(it, tx, ty, std::max(2, scale_min(11 - tail * 2)), scale_color(c_halo_inner, fade));
           }
         }
         float s = 0.0f, c = 1.0f;
@@ -1131,7 +1131,7 @@ inline void render_voice_assistant_overlay(
           int y0 = cy - static_cast<int>(r * c0);
           int x1 = cx + static_cast<int>(r * s1);
           int y1 = cy - static_cast<int>(r * c1);
-          it.line(x0, y0, x1, y1, col);
+          fast_line(it, x0, y0, x1, y1, col);
         }
       }
     };
@@ -1140,9 +1140,9 @@ inline void render_voice_assistant_overlay(
     // RING 1 (OUTER): r = 176..196 (scaled by va_scale) — Rotates CLOCKWISE (+j_angle)
     // ------------------------------------------------------------------------
     float a_cw1 = j_angle;
-    it.circle(cx, cy, static_cast<int>(198.0f * va_scale), c_cyan_glow);
-    it.circle(cx, cy, static_cast<int>(188.0f * va_scale), c_cyan_mid);
-    it.circle(cx, cy, static_cast<int>(182.0f * va_scale), c_cyan_dim);
+    fast_circle(it, cx, cy, static_cast<int>(198.0f * va_scale), c_cyan_glow);
+    fast_circle(it, cx, cy, static_cast<int>(188.0f * va_scale), c_cyan_mid);
+    fast_circle(it, cx, cy, static_cast<int>(182.0f * va_scale), c_cyan_dim);
 
     // Thick outer segmented callout blocks modeled after reference image
     draw_hud_arc(189.0f, 195.0f, a_cw1 - 0.18f, 0.36f, c_cyan_bright);          // Top block
@@ -1162,7 +1162,7 @@ inline void render_voice_assistant_overlay(
         fast_sincos(da, ds, dc);
         int dx = cx + static_cast<int>(175.0f * va_scale * ds);
         int dy = cy - static_cast<int>(175.0f * va_scale * dc);
-        it.filled_circle(dx, dy, (i % 6 == 0) ? 2 : 1, c_cyan_mid);
+        fast_filled_circle(it, dx, dy, (i % 6 == 0) ? 2 : 1, c_cyan_mid);
       }
     }
 
@@ -1170,8 +1170,8 @@ inline void render_voice_assistant_overlay(
     // RING 2 (MID-OUTER): r = 128..160 — Rotates COUNTER-CLOCKWISE (-j_angle * 1.15f)
     // ------------------------------------------------------------------------
     float a_ccw2 = -j_angle * 1.15f;
-    it.circle(cx, cy, scale_min(160), c_cyan_dim);
-    it.circle(cx, cy, scale_min(134), c_cyan_dim);
+    fast_circle(it, cx, cy, scale_min(160), c_cyan_dim);
+    fast_circle(it, cx, cy, scale_min(134), c_cyan_dim);
 
     // Sweeping outer guide arcs on Ring 2
     draw_hud_arc(155.0f, 160.0f, a_ccw2 - 0.35f, 0.55f, c_cyan_bright);
@@ -1197,10 +1197,10 @@ inline void render_voice_assistant_overlay(
       bool active_cell = is_thinking ? (((static_cast<int>(now_ms / 45U) - b) & 3) == 0)
                                      : (energy > 0.15f && (b % 2 == 0));
       esphome::Color cell_c = active_cell ? c_cyan_ice : c_cyan_bright;
-      it.line(x0, y0, x1, y1, cell_c);
-      it.line(x1, y1, x2, y2, cell_c);
-      it.line(x2, y2, x3, y3, cell_c);
-      it.line(x3, y3, x0, y0, cell_c);
+      fast_line(it, x0, y0, x1, y1, cell_c);
+      fast_line(it, x1, y1, x2, y2, cell_c);
+      fast_line(it, x2, y2, x3, y3, cell_c);
+      fast_line(it, x3, y3, x0, y0, cell_c);
     }
 
     // Graduated Circular Dot-Array along the Right Sector of Ring 2 (r = 140 & r = 152)
@@ -1209,10 +1209,10 @@ inline void render_voice_assistant_overlay(
       float ds, dc;
       fast_sincos(da, ds, dc);
       int dot_r = (d >= 3 && d <= 8) ? 3 : 2;
-      it.filled_circle(cx + static_cast<int>(140.0f * va_scale * ds), cy - static_cast<int>(140.0f * va_scale * dc),
+      fast_filled_circle(it, cx + static_cast<int>(140.0f * va_scale * ds), cy - static_cast<int>(140.0f * va_scale * dc),
                        dot_r, (d % 3 == 0 && energy > 0.2f) ? c_cyan_ice : c_cyan_bright);
       if (d >= 4 && d <= 9) {
-        it.filled_circle(cx + static_cast<int>(151.0f * va_scale * ds), cy - static_cast<int>(151.0f * va_scale * dc),
+        fast_filled_circle(it, cx + static_cast<int>(151.0f * va_scale * ds), cy - static_cast<int>(151.0f * va_scale * dc),
                          2, c_cyan_mid);
       }
     }
@@ -1222,7 +1222,7 @@ inline void render_voice_assistant_overlay(
       float ka = a_ccw2 + 2.85f + static_cast<float>(k) * 0.095f;
       float ks, kc;
       fast_sincos(ka, ks, kc);
-      it.line(cx + static_cast<int>(122.0f * va_scale * ks), cy - static_cast<int>(122.0f * va_scale * kc),
+      fast_line(it, cx + static_cast<int>(122.0f * va_scale * ks), cy - static_cast<int>(122.0f * va_scale * kc),
               cx + static_cast<int>(132.0f * va_scale * ks), cy - static_cast<int>(132.0f * va_scale * kc), c_cyan_bright);
     }
 
@@ -1230,7 +1230,7 @@ inline void render_voice_assistant_overlay(
     // RING 3 (INNER ROTATING): r = 98..112 — Rotates CLOCKWISE (+j_angle * 0.85f)
     // ------------------------------------------------------------------------
     float a_cw3 = j_angle * 0.85f;
-    it.circle(cx, cy, scale_min(102), c_cyan_mid);
+    fast_circle(it, cx, cy, scale_min(102), c_cyan_mid);
 
     // Fine vernacular degree ticks around Ring 3
     for (int i = 0; i < 60; i++) {
@@ -1239,7 +1239,7 @@ inline void render_voice_assistant_overlay(
       fast_sincos(ta, ts, tc);
       float r0 = 102.0f * va_scale;
       float r1 = ((i % 5 == 0) ? 108.0f : 105.0f) * va_scale;
-      it.line(cx + static_cast<int>(r0 * ts), cy - static_cast<int>(r0 * tc),
+      fast_line(it, cx + static_cast<int>(r0 * ts), cy - static_cast<int>(r0 * tc),
               cx + static_cast<int>(r1 * ts), cy - static_cast<int>(r1 * tc),
               (i % 5 == 0) ? c_cyan_bright : c_cyan_dim);
     }
@@ -1250,12 +1250,12 @@ inline void render_voice_assistant_overlay(
     // RING 4 (STATIONARY CENTER RETICLE): r = 70..84 — Stationary with Voice Pulse
     // ------------------------------------------------------------------------
     int core_pulse = static_cast<int>(energy * 5.0f);
-    it.circle(cx, cy, scale_min(82), c_cyan_mid);
-    it.circle(cx, cy, scale_min(74), c_cyan_bright);
-    it.circle(cx, cy, scale_min(73), c_cyan_mid);
+    fast_circle(it, cx, cy, scale_min(82), c_cyan_mid);
+    fast_circle(it, cx, cy, scale_min(74), c_cyan_bright);
+    fast_circle(it, cx, cy, scale_min(73), c_cyan_mid);
     if (energy > 0.08f || is_thinking) {
       int inner_r = scale_min(64 - core_pulse);
-      it.circle(cx, cy, inner_r, scale_color(c_cyan_bright, 0.45f + 0.55f * energy));
+      fast_circle(it, cx, cy, inner_r, scale_color(c_cyan_bright, 0.45f + 0.55f * energy));
     }
 
     // Stationary thick cyan bezel arcs on the center ring (Top-Right, Bottom, Left)
@@ -1268,17 +1268,17 @@ inline void render_voice_assistant_overlay(
     const int r_ret_mid = scale_min(82);
     const int r_ret_in  = scale_min(68);
     const int ret_tick  = scale_min(4);
-    it.line(cx, cy - r_ret_out, cx, cy - r_ret_in, c_cyan_ice);
-    it.line(cx - ret_tick, cy - r_ret_mid, cx + ret_tick, cy - r_ret_mid, c_cyan_bright);
+    fast_line(it, cx, cy - r_ret_out, cx, cy - r_ret_in, c_cyan_ice);
+    fast_line(it, cx - ret_tick, cy - r_ret_mid, cx + ret_tick, cy - r_ret_mid, c_cyan_bright);
 
-    it.line(cx, cy + r_ret_in, cx, cy + r_ret_out, c_cyan_ice);
-    it.line(cx - ret_tick, cy + r_ret_mid, cx + ret_tick, cy + r_ret_mid, c_cyan_bright);
+    fast_line(it, cx, cy + r_ret_in, cx, cy + r_ret_out, c_cyan_ice);
+    fast_line(it, cx - ret_tick, cy + r_ret_mid, cx + ret_tick, cy + r_ret_mid, c_cyan_bright);
 
-    it.line(cx - r_ret_out, cy, cx - r_ret_in, cy, c_cyan_ice);
-    it.line(cx - r_ret_mid, cy - ret_tick, cx - r_ret_mid, cy + ret_tick, c_cyan_bright);
+    fast_line(it, cx - r_ret_out, cy, cx - r_ret_in, cy, c_cyan_ice);
+    fast_line(it, cx - r_ret_mid, cy - ret_tick, cx - r_ret_mid, cy + ret_tick, c_cyan_bright);
 
-    it.line(cx + r_ret_in, cy, cx + r_ret_out, cy, c_cyan_ice);
-    it.line(cx + r_ret_mid, cy - ret_tick, cx + r_ret_mid, cy + ret_tick, c_cyan_bright);
+    fast_line(it, cx + r_ret_in, cy, cx + r_ret_out, cy, c_cyan_ice);
+    fast_line(it, cx + r_ret_mid, cy - ret_tick, cx + r_ret_mid, cy + ret_tick, c_cyan_bright);
     return;
   }
 
@@ -1317,7 +1317,7 @@ inline void render_voice_assistant_overlay(
       // Soft 6px feathered outer plasma aura (melts into background without a hard sphere border)
       for (int b = 6; b >= 1; b--) {
         float k = static_cast<float>(7 - b) * (1.0f / 7.0f);
-        it.circle(cx, cy, core_r + b, scale_color(outer_col, k * k * 0.76f));
+        fast_circle(it, cx, cy, core_r + b, scale_color(outer_col, k * k * 0.76f));
       }
 
       // Concentric color-rippling heart stepped by 2px (cuts 30 overlapping filled_circle calls in half!)
@@ -1330,7 +1330,7 @@ inline void render_voice_assistant_overlay(
         esphome::Color ring_c = (s < 0.55f)
             ? lerp_color(outer_col, mid_col,   s * (1.0f / 0.55f))
             : lerp_color(mid_col,   inner_col, (s - 0.55f) * (1.0f / 0.45f));
-        it.filled_circle(cx, cy, r, ring_c);
+        fast_filled_circle(it, cx, cy, r, ring_c);
       }
     };
 
@@ -1374,8 +1374,8 @@ inline void render_voice_assistant_overlay(
           esphome::Color c_halo = scale_color(col_aura, depth_k * 0.78f);
 
           if (with_outer_bloom) {
-            it.line(prev_ix, prev_iy, pi.x, pi.y, c_halo);
-            it.line(prev_ox, prev_oy, po.x, po.y, c_halo);
+            fast_line(it, prev_ix, prev_iy, pi.x, pi.y, c_halo);
+            fast_line(it, prev_ox, prev_oy, po.x, po.y, c_halo);
           }
           draw_glow_line(it, prev_x, prev_y, p.x, p.y, c_main, c_halo);
         }
@@ -1385,8 +1385,8 @@ inline void render_voice_assistant_overlay(
         prev_z = v_mid.z;
       }
       if (with_outer_bloom) {
-        it.line(prev_ix, prev_iy, first_ix, first_iy, scale_color(col_aura, 0.75f));
-        it.line(prev_ox, prev_oy, first_ox, first_oy, scale_color(col_aura, 0.75f));
+        fast_line(it, prev_ix, prev_iy, first_ix, first_iy, scale_color(col_aura, 0.75f));
+        fast_line(it, prev_ox, prev_oy, first_ox, first_oy, scale_color(col_aura, 0.75f));
       }
       draw_glow_line(it, prev_x, prev_y, first_x, first_y, col_core, scale_color(col_aura, 0.80f));
     };
@@ -1440,7 +1440,7 @@ inline void render_voice_assistant_overlay(
           esphome::Color stroke_col = (edge_u < 0.28f)
               ? lerp_color(scale_color(base_col, pix_fade), scale_color(c_pink_hi, pix_fade), 0.32f * (1.0f - progress * 0.5f))
               : scale_color(base_col, pix_fade);
-          it.circle(cx, cy, r_curr, stroke_col);
+          fast_circle(it, cx, cy, r_curr, stroke_col);
         }
       }
 
@@ -1458,8 +1458,8 @@ inline void render_voice_assistant_overlay(
       float pulse = fast_sin(static_cast<float>(now_ms % 650U) * (2.0f * PI_F / 650.0f));
 
       // Subtle guide tracks from Original Thinking
-      it.circle(cx, cy, scale_min(74), esphome::Color(28, 18, 46));
-      it.circle(cx, cy, scale_min(118), esphome::Color(24, 16, 40));
+      fast_circle(it, cx, cy, scale_min(74), esphome::Color(28, 18, 46));
+      fast_circle(it, cx, cy, scale_min(118), esphome::Color(24, 16, 40));
 
       // 3 Volumetric 3D Silk Vortex Ribbons
       float vortex_r = 68.0f + 3.0f * pulse;
@@ -1495,13 +1495,13 @@ inline void render_voice_assistant_overlay(
           Vec3 v_cw = rot_cw.transform({74.0f * tc, 74.0f * ts, 0.0f});
           ProjectedPoint p_cw = project_3d(v_cw, cx, cy, 260.0f, 320.0f);
           if (tail == 0) {
-            it.line(p_cw.x - 5, p_cw.y, p_cw.x + 5, p_cw.y, c_elec_cyan);
-            it.line(p_cw.x, p_cw.y - 5, p_cw.x, p_cw.y + 5, c_elec_cyan);
-            it.filled_circle(p_cw.x, p_cw.y, 3, c_elec_cyan);
-            it.filled_circle(p_cw.x, p_cw.y, 1, c_pink_spec);
+            fast_line(it, p_cw.x - 5, p_cw.y, p_cw.x + 5, p_cw.y, c_elec_cyan);
+            fast_line(it, p_cw.x, p_cw.y - 5, p_cw.x, p_cw.y + 5, c_elec_cyan);
+            fast_filled_circle(it, p_cw.x, p_cw.y, 3, c_elec_cyan);
+            fast_filled_circle(it, p_cw.x, p_cw.y, 1, c_pink_spec);
           } else {
             float k = static_cast<float>(5 - tail) * 0.18f;
-            it.filled_circle(p_cw.x, p_cw.y, (tail <= 2) ? 2 : 1, scale_color(c_elec_cyan, k));
+            fast_filled_circle(it, p_cw.x, p_cw.y, (tail <= 2) ? 2 : 1, scale_color(c_elec_cyan, k));
           }
         }
 
@@ -1513,13 +1513,13 @@ inline void render_voice_assistant_overlay(
           Vec3 v_ccw = rot_ccw.transform({118.0f * tc, 118.0f * ts, 0.0f});
           ProjectedPoint p_ccw = project_3d(v_ccw, cx, cy, 260.0f, 320.0f);
           if (tail == 0) {
-            it.line(p_ccw.x - 6, p_ccw.y, p_ccw.x + 6, p_ccw.y, c_amethyst);
-            it.line(p_ccw.x, p_ccw.y - 6, p_ccw.x, p_ccw.y + 6, c_amethyst);
-            it.filled_circle(p_ccw.x, p_ccw.y, 4, c_neon_magenta);
-            it.filled_circle(p_ccw.x, p_ccw.y, 2, c_pink_hi);
+            fast_line(it, p_ccw.x - 6, p_ccw.y, p_ccw.x + 6, p_ccw.y, c_amethyst);
+            fast_line(it, p_ccw.x, p_ccw.y - 6, p_ccw.x, p_ccw.y + 6, c_amethyst);
+            fast_filled_circle(it, p_ccw.x, p_ccw.y, 4, c_neon_magenta);
+            fast_filled_circle(it, p_ccw.x, p_ccw.y, 2, c_pink_hi);
           } else {
             float k = static_cast<float>(5 - tail) * 0.18f;
-            it.filled_circle(p_ccw.x, p_ccw.y, (tail <= 2) ? 2 : 1, scale_color(c_neon_magenta, k));
+            fast_filled_circle(it, p_ccw.x, p_ccw.y, (tail <= 2) ? 2 : 1, scale_color(c_neon_magenta, k));
           }
         }
       }
@@ -1590,9 +1590,9 @@ inline void render_voice_assistant_overlay(
       int r_wave = scale_min(82 + static_cast<int>(prog * 132.0f));
       esphome::Color ring_c = scale_color(get_va_radiation_color(true, prog + static_cast<float>(w) * 0.33f), fade);
       esphome::Color glow_c = scale_color(ring_c, 0.45f);
-      it.circle(cx, cy, r_wave - 1, glow_c);
-      it.circle(cx, cy, r_wave, ring_c);
-      it.circle(cx, cy, r_wave + 1, glow_c);
+      fast_circle(it, cx, cy, r_wave - 1, glow_c);
+      fast_circle(it, cx, cy, r_wave, ring_c);
+      fast_circle(it, cx, cy, r_wave + 1, glow_c);
     }
 
     // Center Solar Corona & Photosphere Core matching Listening mode aesthetics
@@ -1611,15 +1611,15 @@ inline void render_voice_assistant_overlay(
       int x1 = cx + static_cast<int>((r_inner + bar_len) * ux);
       int y1 = cy + static_cast<int>((r_inner + bar_len) * uy);
 
-      it.line(x0, y0, xm, ym, c_amber);
-      it.line(xm, ym, x1, y1, (i % 4 == 0) ? c_emerald : c_gold);
+      fast_line(it, x0, y0, xm, ym, c_amber);
+      fast_line(it, xm, ym, x1, y1, (i % 4 == 0) ? c_emerald : c_gold);
     }
 
     int core_r = scale_min(27 + static_cast<int>(4.0f * breath + 5.0f * syl_env));
-    it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
-    it.filled_circle(cx, cy, core_r + 1, c_amber);
-    it.filled_circle(cx, cy, core_r - 3, c_gold);
-    it.circle(cx, cy, core_r - 5, c_warm_white);
+    fast_filled_circle(it, cx, cy, core_r + 5, c_crimson_ember);
+    fast_filled_circle(it, cx, cy, core_r + 1, c_amber);
+    fast_filled_circle(it, cx, cy, core_r - 3, c_gold);
+    fast_circle(it, cx, cy, core_r - 5, c_warm_white);
     return;
   }
   if (is_thinking) {
@@ -1641,10 +1641,10 @@ inline void render_voice_assistant_overlay(
         Vec3 v = rot.transform({rad * DIAL_SIN[i], -rad * DIAL_COS[i], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
         if (i == 0) { fx = p.x; fy = p.y; }
-        else { it.line(px, py, p.x, p.y, col); }
+        else { fast_line(it, px, py, p.x, p.y, col); }
         px = p.x; py = p.y;
       }
-      it.line(px, py, fx, fy, col);
+      fast_line(it, px, py, fx, fy, col);
     };
 
     draw_3d_meridian(66.0f,  rot1, scale_color(c_amber,   0.34f * smooth_think));
@@ -1657,7 +1657,7 @@ inline void render_voice_assistant_overlay(
         int idx = (b1 - tail * 2 + 60) % 60;
         Vec3 v = rot1.transform({66.0f * DIAL_SIN[idx], -66.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
-        it.filled_circle(p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
+        fast_filled_circle(it, p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
                          (tail == 0) ? scale_color(c_warm_white, smooth_think) : scale_color(c_gold, (6 - tail) * 0.16f * smooth_think));
       }
       int b2 = (head_2 + n * 20 + 10) % 60;
@@ -1665,7 +1665,7 @@ inline void render_voice_assistant_overlay(
         int idx = (b2 + tail * 2) % 60;
         Vec3 v = rot2.transform({94.0f * DIAL_SIN[idx], -94.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
-        it.filled_circle(p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
+        fast_filled_circle(it, p.x, p.y, (tail == 0) ? 4 : (tail <= 2 ? 2 : 1),
                          (tail == 0) ? scale_color(c_warm_white, smooth_think) : scale_color(c_emerald, (6 - tail) * 0.16f * smooth_think));
       }
       int b3 = (head_3 + n * 20 + 5) % 60;
@@ -1673,17 +1673,17 @@ inline void render_voice_assistant_overlay(
         int idx = (b3 - tail * 2 + 60) % 60;
         Vec3 v = rot3.transform({122.0f * DIAL_SIN[idx], -122.0f * DIAL_COS[idx], 0.0f});
         ProjectedPoint p = project_3d(v, cx, cy, 260.0f, 320.0f);
-        it.filled_circle(p.x, p.y, (tail == 0) ? 3 : 2,
+        fast_filled_circle(it, p.x, p.y, (tail == 0) ? 3 : 2,
                          (tail == 0) ? scale_color(c_gold, smooth_think) : scale_color(c_amber, (5 - tail) * 0.18f * smooth_think));
       }
     }
 
     float pulse = fast_sin(static_cast<float>(now_ms % 600U) * (2.0f * PI_F / 600.0f));
     int core_r = scale_min(25 + static_cast<int>(4.0f * pulse));
-    it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
-    it.filled_circle(cx, cy, core_r + 1, c_amber);
-    it.filled_circle(cx, cy, core_r - 3, c_gold);
-    it.circle(cx, cy, core_r - 5, c_warm_white);
+    fast_filled_circle(it, cx, cy, core_r + 5, c_crimson_ember);
+    fast_filled_circle(it, cx, cy, core_r + 1, c_amber);
+    fast_filled_circle(it, cx, cy, core_r - 3, c_gold);
+    fast_circle(it, cx, cy, core_r - 5, c_warm_white);
     return;
   }
 
@@ -1706,14 +1706,14 @@ inline void render_voice_assistant_overlay(
     int x1 = cx + static_cast<int>((r_inner + bar_len) * ux);
     int y1 = cy + static_cast<int>((r_inner + bar_len) * uy);
 
-    it.line(x0, y0, xm, ym, c_amber);
-    it.line(xm, ym, x1, y1, (smooth_vad > 0.25f && (i % 4 == 0)) ? c_emerald : c_gold);
+    fast_line(it, x0, y0, xm, ym, c_amber);
+    fast_line(it, xm, ym, x1, y1, (smooth_vad > 0.25f && (i % 4 == 0)) ? c_emerald : c_gold);
   }
 
   int core_r = scale_min(27 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad));
-  it.filled_circle(cx, cy, core_r + 5, c_crimson_ember);
-  it.filled_circle(cx, cy, core_r + 1, c_amber);
-  it.filled_circle(cx, cy, core_r - 3, c_gold);
-  it.circle(cx, cy, core_r - 5, c_warm_white);
+  fast_filled_circle(it, cx, cy, core_r + 5, c_crimson_ember);
+  fast_filled_circle(it, cx, cy, core_r + 1, c_amber);
+  fast_filled_circle(it, cx, cy, core_r - 3, c_gold);
+  fast_circle(it, cx, cy, core_r - 5, c_warm_white);
 }
 }  // namespace latter_ui

@@ -39,15 +39,15 @@ inline void render_battery_indicator(
       it.filled_triangle(bx - 1, by, bx + 2, by, bx - 2, by + 9, col_gold);
     }
   } else if (compact) {
-    it.filled_rectangle(bx - 1, by - 6, 3, 1, col_green);
-    it.rectangle(bx - 4, by - 5, 8, 11, col_green);
+    fill_rect_row_major(it, bx - 1, by - 6, 3, 1, col_green);
+    fast_rect_outline(it, bx - 4, by - 5, 8, 11, col_green);
     int fill_h = static_cast<int>(std::max(1.0f, std::min(7.0f, (batt / 100.0f) * 7.0f)));
-    it.filled_rectangle(bx - 2, (by + 4) - fill_h, 4, fill_h, col_green);
+    fill_rect_row_major(it, bx - 2, (by + 4) - fill_h, 4, fill_h, col_green);
   } else {
-    it.filled_rectangle(bx - 2, by - 9, 4, 2, col_green);
-    it.rectangle(bx - 5, by - 7, 10, 16, col_green);
+    fill_rect_row_major(it, bx - 2, by - 9, 4, 2, col_green);
+    fast_rect_outline(it, bx - 5, by - 7, 10, 16, col_green);
     int fill_h = static_cast<int>(std::max(1.0f, std::min(12.0f, (batt / 100.0f) * 12.0f)));
-    it.filled_rectangle(bx - 3, (by + 7) - fill_h, 6, fill_h, col_green);
+    fill_rect_row_major(it, bx - 3, (by + 7) - fill_h, 6, fill_h, col_green);
   }
 }
 
@@ -71,11 +71,11 @@ inline void render_clock_page(
     // FACE 3: MINIMAL DIGITAL (Clean Date + Giant Digital Time + AM/PM & Seconds)
     // Clean Date + Giant Digital Time + AM/PM & Seconds (no bottom progress bar, no 60-tick ring)
 #if LATTER_ROUND_DISPLAY
-    it.circle(cx, cy, 230, col_dark_gray);
+    fast_circle(it, cx, cy, 230, col_dark_gray);
     render_battery_indicator(it, cx, 348, batt, is_charging, font_small,
                              theme_primary, col_gold, col_green);
 #else
-    it.rectangle(6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
+    fast_rect_outline(it, 6, 6, SCREEN_W - 12, SCREEN_H - 12, col_dark_gray);
 #if LATTER_HAS_BATTERY
     render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_small,
                              theme_primary, col_gold, col_green);
@@ -105,9 +105,9 @@ inline void render_clock_page(
   const int r_t_in5 = static_cast<int>(212.0f * dial_scale);
   const int r_t_in1 = static_cast<int>(216.0f * dial_scale);
 
-  it.circle(cx, cy, r_outer, col_dark_gray);
-  it.circle(cx, cy, r_mid, col_slate);
-  it.circle(cx, cy, r_inner, col_dark_gray);
+  fast_circle(it, cx, cy, r_outer, col_dark_gray);
+  fast_circle(it, cx, cy, r_mid, col_slate);
+  fast_circle(it, cx, cy, r_inner, col_dark_gray);
 
   for (int i = 0; i < 60; i++) {
     if (!is_ring_digital && i == 30) continue;  // 6 o'clock pip sanctuary on Analog dial
@@ -115,7 +115,7 @@ inline void render_clock_page(
     float c = DIAL_COS[i];
     int r_in = (i % 5 == 0) ? r_t_in5 : r_t_in1;
     const esphome::Color &tick_col = (i % 5 == 0) ? col_slate : col_gray;
-    it.line(cx + static_cast<int>(r_in * s), cy - static_cast<int>(r_in * c),
+    fast_line(it, cx + static_cast<int>(r_in * s), cy - static_cast<int>(r_in * c),
             cx + static_cast<int>(r_t_out * s), cy - static_cast<int>(r_t_out * c), tick_col);
   }
 
@@ -130,9 +130,9 @@ inline void render_clock_page(
       it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
     } else {
       it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
-      it.filled_circle(cx, cy, 7, col_white);
-      it.filled_circle(cx, cy, 4, col_red);
-      it.filled_circle(cx, cy, 2, col_dark_gray);
+      fast_filled_circle(it, cx, cy, 7, col_white);
+      fast_filled_circle(it, cx, cy, 4, col_red);
+      fast_filled_circle(it, cx, cy, 2, col_dark_gray);
     }
     return;
   }
@@ -154,7 +154,7 @@ inline void render_clock_page(
       int y1 = cy - static_cast<int>(r_s_in * c_sec - w * perp_y);
       int x2 = cx + static_cast<int>(r_s_out * s_sec + w * perp_x);
       int y2 = cy - static_cast<int>(r_s_out * c_sec - w * perp_y);
-      it.line(x1, y1, x2, y2, theme_primary);
+      fast_line(it, x1, y1, x2, y2, theme_primary);
     }
 
     it.strftime(cx, cy - static_cast<int>(103.0f * dial_scale), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
@@ -213,13 +213,13 @@ inline void render_clock_page(
       int tip_y = cy - static_cast<int>(168.0f * dial_scale * cos_s);
       int tail_x = cx - static_cast<int>(30.0f * dial_scale * sin_s);
       int tail_y = cy + static_cast<int>(30.0f * dial_scale * cos_s);
-      it.line(tail_x, tail_y, tip_x, tip_y, col_red);
-      it.filled_circle(tail_x, tail_y, 4, col_red);
+      fast_line(it, tail_x, tail_y, tip_x, tip_y, col_red);
+      fast_filled_circle(it, tail_x, tail_y, 4, col_red);
     }
 
-    it.filled_circle(cx, cy, 7, col_white);
-    it.filled_circle(cx, cy, 4, col_red);
-    it.filled_circle(cx, cy, 2, col_dark_gray);
+    fast_filled_circle(it, cx, cy, 7, col_white);
+    fast_filled_circle(it, cx, cy, 4, col_red);
+    fast_filled_circle(it, cx, cy, 2, col_dark_gray);
   }
 }
 
@@ -508,103 +508,103 @@ inline void draw_home_activity_row_contents(
   int gy = row_y;
   if (is_list_row) {
     if (cur_act.kind == 1) {
-      it.filled_rectangle(gx - 6, gy - 9, 13, 2, fg_w);
-      it.filled_rectangle(gx - 6, gy + 8, 13, 2, fg_w);
-      it.line(gx - 5, gy - 7, gx - 1, gy, fg_w);
-      it.line(gx + 5, gy - 7, gx + 1, gy, fg_w);
-      it.line(gx - 1, gy, gx - 5, gy + 7, fg_w);
-      it.line(gx + 1, gy, gx + 5, gy + 7, fg_w);
+      fill_rect_row_major(it, gx - 6, gy - 9, 13, 2, fg_w);
+      fill_rect_row_major(it, gx - 6, gy + 8, 13, 2, fg_w);
+      fast_line(it, gx - 5, gy - 7, gx - 1, gy, fg_w);
+      fast_line(it, gx + 5, gy - 7, gx + 1, gy, fg_w);
+      fast_line(it, gx - 1, gy, gx - 5, gy + 7, fg_w);
+      fast_line(it, gx + 1, gy, gx + 5, gy + 7, fg_w);
       it.filled_triangle(gx - 3, gy - 4, gx + 3, gy - 4, gx, gy - 1, fg_w);
       it.filled_triangle(gx - 4, gy + 7, gx + 4, gy + 7, gx, gy + 2, fg_w);
     } else if (cur_act.kind == 2) {
-      it.filled_rectangle(gx - 2, gy - 10, 5, 2, fg_w);
-      it.line(gx + 5, gy - 6, gx + 7, gy - 8, fg_w);
-      it.circle(gx, gy + 1, 8, fg_w);
-      it.circle(gx, gy + 1, 7, fg_sec);
-      it.line(gx, gy + 1, gx + 4, gy - 3, fg_w);
-      it.draw_pixel_at(gx, gy + 1, fg_w);
+      fill_rect_row_major(it, gx - 2, gy - 10, 5, 2, fg_w);
+      fast_line(it, gx + 5, gy - 6, gx + 7, gy - 8, fg_w);
+      fast_circle(it, gx, gy + 1, 8, fg_w);
+      fast_circle(it, gx, gy + 1, 7, fg_sec);
+      fast_line(it, gx, gy + 1, gx + 4, gy - 3, fg_w);
+      fast_pixel(it, gx, gy + 1, fg_w);
     } else if (cur_act.kind == 3) {
-      it.filled_circle(gx - 4, gy + 5, 3, fg_w);
-      it.filled_circle(gx + 4, gy + 3, 3, fg_w);
-      it.filled_rectangle(gx - 2, gy - 6, 2, 11, fg_w);
-      it.filled_rectangle(gx + 5, gy - 8, 2, 11, fg_w);
-      it.line(gx - 2, gy - 6, gx + 6, gy - 8, fg_w);
-      it.line(gx - 2, gy - 5, gx + 6, gy - 7, fg_w);
+      fast_filled_circle(it, gx - 4, gy + 5, 3, fg_w);
+      fast_filled_circle(it, gx + 4, gy + 3, 3, fg_w);
+      fill_rect_row_major(it, gx - 2, gy - 6, 2, 11, fg_w);
+      fill_rect_row_major(it, gx + 5, gy - 8, 2, 11, fg_w);
+      fast_line(it, gx - 2, gy - 6, gx + 6, gy - 8, fg_w);
+      fast_line(it, gx - 2, gy - 5, gx + 6, gy - 7, fg_w);
     } else if (cur_act.kind == 5) {
-      it.rectangle(gx - 7, gy - 6, 15, 14, fg_w);
-      it.filled_rectangle(gx - 7, gy - 6, 15, 4, fg_w);
-      it.filled_rectangle(gx - 4, gy - 8, 2, 3, fg_w);
-      it.filled_rectangle(gx + 3, gy - 8, 2, 3, fg_w);
-      it.filled_rectangle(gx - 4, gy + 1, 2, 2, fg_sec);
-      it.filled_rectangle(gx,     gy + 1, 2, 2, fg_w);
-      it.filled_rectangle(gx + 4, gy + 1, 2, 2, fg_w);
+      fast_rect_outline(it, gx - 7, gy - 6, 15, 14, fg_w);
+      fill_rect_row_major(it, gx - 7, gy - 6, 15, 4, fg_w);
+      fill_rect_row_major(it, gx - 4, gy - 8, 2, 3, fg_w);
+      fill_rect_row_major(it, gx + 3, gy - 8, 2, 3, fg_w);
+      fill_rect_row_major(it, gx - 4, gy + 1, 2, 2, fg_sec);
+      fill_rect_row_major(it, gx,     gy + 1, 2, 2, fg_w);
+      fill_rect_row_major(it, gx + 4, gy + 1, 2, 2, fg_w);
     } else {
-      it.filled_circle(gx - 6, gy - 6, 2, fg_w);
-      it.filled_circle(gx + 6, gy - 6, 2, fg_w);
-      it.filled_circle(gx, gy + 1, 9, card_bg);
-      it.circle(gx, gy + 1, 8, fg_w);
-      it.line(gx - 5, gy + 8, gx - 7, gy + 10, fg_w);
-      it.line(gx + 5, gy + 8, gx + 7, gy + 10, fg_w);
-      it.line(gx, gy + 1, gx,     gy - 4, fg_w);
-      it.line(gx, gy + 1, gx + 4, gy + 3, fg_w);
+      fast_filled_circle(it, gx - 6, gy - 6, 2, fg_w);
+      fast_filled_circle(it, gx + 6, gy - 6, 2, fg_w);
+      fast_filled_circle(it, gx, gy + 1, 9, card_bg);
+      fast_circle(it, gx, gy + 1, 8, fg_w);
+      fast_line(it, gx - 5, gy + 8, gx - 7, gy + 10, fg_w);
+      fast_line(it, gx + 5, gy + 8, gx + 7, gy + 10, fg_w);
+      fast_line(it, gx, gy + 1, gx,     gy - 4, fg_w);
+      fast_line(it, gx, gy + 1, gx + 4, gy + 3, fg_w);
     }
   } else {
     // Enlarged (+35%, ~22x24px) Monochromatic Tools-Style Icons for the 68px-tall Home Live Activity Card!
     if (cur_act.kind == 1) {
-      it.filled_rectangle(gx - 9, gy - 12, 19, 2, fg_w);
-      it.filled_rectangle(gx - 9, gy + 11, 19, 2, fg_w);
-      it.line(gx - 7, gy - 10, gx - 1, gy, fg_w);
-      it.line(gx - 6, gy - 10, gx,     gy, fg_w);
-      it.line(gx + 7, gy - 10, gx + 1, gy, fg_w);
-      it.line(gx + 6, gy - 10, gx,     gy, fg_w);
-      it.line(gx - 1, gy, gx - 7, gy + 10, fg_w);
-      it.line(gx,     gy, gx - 6, gy + 10, fg_w);
-      it.line(gx + 1, gy, gx + 7, gy + 10, fg_w);
-      it.line(gx,     gy, gx + 6, gy + 10, fg_w);
+      fill_rect_row_major(it, gx - 9, gy - 12, 19, 2, fg_w);
+      fill_rect_row_major(it, gx - 9, gy + 11, 19, 2, fg_w);
+      fast_line(it, gx - 7, gy - 10, gx - 1, gy, fg_w);
+      fast_line(it, gx - 6, gy - 10, gx,     gy, fg_w);
+      fast_line(it, gx + 7, gy - 10, gx + 1, gy, fg_w);
+      fast_line(it, gx + 6, gy - 10, gx,     gy, fg_w);
+      fast_line(it, gx - 1, gy, gx - 7, gy + 10, fg_w);
+      fast_line(it, gx,     gy, gx - 6, gy + 10, fg_w);
+      fast_line(it, gx + 1, gy, gx + 7, gy + 10, fg_w);
+      fast_line(it, gx,     gy, gx + 6, gy + 10, fg_w);
       it.filled_triangle(gx - 4, gy - 6, gx + 4, gy - 6, gx, gy - 1, fg_w);
       it.filled_triangle(gx - 5, gy + 9, gx + 5, gy + 9, gx, gy + 3, fg_w);
     } else if (cur_act.kind == 2) {
-      it.filled_rectangle(gx - 3, gy - 13, 7, 2, fg_w);
-      it.filled_rectangle(gx - 1, gy - 11, 3, 2, fg_w);
-      it.line(gx + 7, gy - 7, gx + 10, gy - 10, fg_w);
-      it.line(gx + 8, gy - 6, gx + 11, gy - 9,  fg_w);
-      it.circle(gx, gy + 2, 10, fg_w);
-      it.circle(gx, gy + 2, 9,  fg_w);
-      it.line(gx,     gy + 2, gx + 5, gy - 3, fg_w);
-      it.line(gx + 1, gy + 2, gx + 5, gy - 2, fg_w);
-      it.filled_circle(gx, gy + 2, 2, fg_w);
+      fill_rect_row_major(it, gx - 3, gy - 13, 7, 2, fg_w);
+      fill_rect_row_major(it, gx - 1, gy - 11, 3, 2, fg_w);
+      fast_line(it, gx + 7, gy - 7, gx + 10, gy - 10, fg_w);
+      fast_line(it, gx + 8, gy - 6, gx + 11, gy - 9,  fg_w);
+      fast_circle(it, gx, gy + 2, 10, fg_w);
+      fast_circle(it, gx, gy + 2, 9,  fg_w);
+      fast_line(it, gx,     gy + 2, gx + 5, gy - 3, fg_w);
+      fast_line(it, gx + 1, gy + 2, gx + 5, gy - 2, fg_w);
+      fast_filled_circle(it, gx, gy + 2, 2, fg_w);
     } else if (cur_act.kind == 3) {
-      it.filled_circle(gx - 6, gy + 6, 4, fg_w);
-      it.filled_circle(gx + 5, gy + 4, 4, fg_w);
-      it.filled_rectangle(gx - 3, gy - 9,  2, 15, fg_w);
-      it.filled_rectangle(gx + 8, gy - 11, 2, 15, fg_w);
-      it.line(gx - 3, gy - 9, gx + 9, gy - 11, fg_w);
-      it.line(gx - 3, gy - 8, gx + 9, gy - 10, fg_w);
-      it.line(gx - 3, gy - 7, gx + 9, gy - 9,  fg_w);
+      fast_filled_circle(it, gx - 6, gy + 6, 4, fg_w);
+      fast_filled_circle(it, gx + 5, gy + 4, 4, fg_w);
+      fill_rect_row_major(it, gx - 3, gy - 9,  2, 15, fg_w);
+      fill_rect_row_major(it, gx + 8, gy - 11, 2, 15, fg_w);
+      fast_line(it, gx - 3, gy - 9, gx + 9, gy - 11, fg_w);
+      fast_line(it, gx - 3, gy - 8, gx + 9, gy - 10, fg_w);
+      fast_line(it, gx - 3, gy - 7, gx + 9, gy - 9,  fg_w);
     } else if (cur_act.kind == 5) {
-      it.rectangle(gx - 10, gy - 9, 21, 20, fg_w);
-      it.rectangle(gx - 9,  gy - 8, 19, 18, fg_w);
-      it.filled_rectangle(gx - 9, gy - 8, 19, 5, fg_w);
-      it.filled_rectangle(gx - 6, gy - 12, 3, 4, fg_w);
-      it.filled_rectangle(gx + 4, gy - 12, 3, 4, fg_w);
+      fast_rect_outline(it, gx - 10, gy - 9, 21, 20, fg_w);
+      fast_rect_outline(it, gx - 9,  gy - 8, 19, 18, fg_w);
+      fill_rect_row_major(it, gx - 9, gy - 8, 19, 5, fg_w);
+      fill_rect_row_major(it, gx - 6, gy - 12, 3, 4, fg_w);
+      fill_rect_row_major(it, gx + 4, gy - 12, 3, 4, fg_w);
       for (int r = 0; r < 2; r++) {
         for (int c = 0; c < 3; c++) {
-          it.filled_rectangle(gx - 6 + c * 5, gy - 1 + r * 5, 3, 3, (r == 0 && c == 1) ? fg_sec : fg_w);
+          fill_rect_row_major(it, gx - 6 + c * 5, gy - 1 + r * 5, 3, 3, (r == 0 && c == 1) ? fg_sec : fg_w);
         }
       }
     } else {
-      it.filled_circle(gx - 8, gy - 7, 3, fg_w);
-      it.filled_circle(gx + 8, gy - 7, 3, fg_w);
-      it.filled_circle(gx, gy + 2, 12, card_bg);
-      it.circle(gx, gy + 2, 10, fg_w);
-      it.circle(gx, gy + 2, 9,  fg_w);
-      it.line(gx - 6, gy + 10, gx - 9, gy + 13, fg_w);
-      it.line(gx - 5, gy + 10, gx - 8, gy + 13, fg_w);
-      it.line(gx + 6, gy + 10, gx + 9, gy + 13, fg_w);
-      it.line(gx + 5, gy + 10, gx + 8, gy + 13, fg_w);
-      it.line(gx, gy + 2, gx,     gy - 4, fg_w);
-      it.line(gx, gy + 2, gx + 4, gy + 4, fg_w);
-      it.filled_circle(gx, gy + 2, 2, fg_w);
+      fast_filled_circle(it, gx - 8, gy - 7, 3, fg_w);
+      fast_filled_circle(it, gx + 8, gy - 7, 3, fg_w);
+      fast_filled_circle(it, gx, gy + 2, 12, card_bg);
+      fast_circle(it, gx, gy + 2, 10, fg_w);
+      fast_circle(it, gx, gy + 2, 9,  fg_w);
+      fast_line(it, gx - 6, gy + 10, gx - 9, gy + 13, fg_w);
+      fast_line(it, gx - 5, gy + 10, gx - 8, gy + 13, fg_w);
+      fast_line(it, gx + 6, gy + 10, gx + 9, gy + 13, fg_w);
+      fast_line(it, gx + 5, gy + 10, gx + 8, gy + 13, fg_w);
+      fast_line(it, gx, gy + 2, gx,     gy - 4, fg_w);
+      fast_line(it, gx, gy + 2, gx + 4, gy + 4, fg_w);
+      fast_filled_circle(it, gx, gy + 2, 2, fg_w);
     }
   }
 
@@ -617,17 +617,17 @@ inline void draw_home_activity_row_contents(
   int sym_s = is_list_row ? 5 : 6;
   if (cur_act.kind == 5) {
     for (int w = -1; w <= 0; w++) {
-      it.line(act_bx - 3 + w, gy - sym_s, act_bx + 3 + w, gy, fg_w);
-      it.line(act_bx + 3 + w, gy, act_bx - 3 + w, gy + sym_s, fg_w);
+      fast_line(it, act_bx - 3 + w, gy - sym_s, act_bx + 3 + w, gy, fg_w);
+      fast_line(it, act_bx + 3 + w, gy, act_bx - 3 + w, gy + sym_s, fg_w);
     }
   } else if (cur_act.kind == 4) {
     for (int w = -1; w <= 0; w++) {
-      it.line(act_bx - sym_s + w, gy - sym_s, act_bx + sym_s + w, gy + sym_s, fg_w);
-      it.line(act_bx - sym_s + w, gy + sym_s, act_bx + sym_s + w, gy - sym_s, fg_w);
+      fast_line(it, act_bx - sym_s + w, gy - sym_s, act_bx + sym_s + w, gy + sym_s, fg_w);
+      fast_line(it, act_bx - sym_s + w, gy + sym_s, act_bx + sym_s + w, gy - sym_s, fg_w);
     }
   } else if (cur_act.is_active) {
-    it.filled_rectangle(act_bx - 5, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
-    it.filled_rectangle(act_bx + 3, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
+    fill_rect_row_major(it, act_bx - 5, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
+    fill_rect_row_major(it, act_bx + 3, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
   } else {
     it.filled_triangle(act_bx - 4, gy - sym_s, act_bx - 4, gy + sym_s, act_bx + sym_s + 1, gy, fg_w);
   }
@@ -658,13 +658,13 @@ inline void render_home_activity_card_row(
       it, pill_y, cur_act, has_dropdown_ext, is_list_row, font_small,
       card_bg, btn_bg, theme_secondary, col_white, 1.0f);
 
-  it.line(div1_x, pill_y - div_h, div1_x, pill_y + div_h, card_brd);
+  fast_line(it, div1_x, pill_y - div_h, div1_x, pill_y + div_h, card_brd);
 
   if (has_dropdown_ext) {
-    it.line(div2_x, pill_y - div_h, div2_x, pill_y + div_h, card_brd);
+    fast_line(it, div2_x, pill_y - div_h, div2_x, pill_y + div_h, card_brd);
     for (int w = -1; w <= 1; w++) {
-      it.line(drop_bx - 8, pill_y - 4 + w, drop_bx,     pill_y + 4 + w, col_white);
-      it.line(drop_bx + 8, pill_y - 4 + w, drop_bx,     pill_y + 4 + w, col_white);
+      fast_line(it, drop_bx - 8, pill_y - 4 + w, drop_bx,     pill_y + 4 + w, col_white);
+      fast_line(it, drop_bx + 8, pill_y - 4 + w, drop_bx,     pill_y + 4 + w, col_white);
     }
   }
 }
@@ -915,12 +915,12 @@ inline void render_home_page(
     if (is_dim_backdrop) {
       if (!is_night) {
 #if LATTER_ROUND_DISPLAY
-        it.filled_circle(cx, cy, 228, Color(7, 13, 22));
+        fast_filled_circle(it, cx, cy, 228, Color(7, 13, 22));
 #else
         fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, Color(7, 13, 22));
 #endif
       }
-      it.filled_circle(cel_x, cel_y, scale_min(20), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
+      fast_filled_circle(it, cel_x, cel_y, scale_min(20), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
     } else {
       double moon_cycle = 0.5;
       if (is_night) {
@@ -1091,14 +1091,14 @@ inline void render_home_page(
           it, pill_y + scale_y(IN_DY[step]), act_items[home_act_cur_idx()], true, false, font_small,
           card_bg, btn_bg, theme_secondary, col_white, IN_ALPHA[step]);
 
-      it.horizontal_line(act_x0 + scale_x(16), pill_y - act_h / 2, act_w - scale_x(32), card_brd);
-      it.horizontal_line(act_x0 + scale_x(16), pill_y + act_h / 2 - 1, act_w - scale_x(32), card_brd);
-      it.line(act_right - scale_x(108), pill_y - scale_y(23), act_right - scale_x(108), pill_y + scale_y(23), card_brd);
-      it.line(act_right - scale_x(52),  pill_y - scale_y(23), act_right - scale_x(52),  pill_y + scale_y(23), card_brd);
+      fast_hline(it, act_x0 + scale_x(16), pill_y - act_h / 2, act_w - scale_x(32), card_brd);
+      fast_hline(it, act_x0 + scale_x(16), pill_y + act_h / 2 - 1, act_w - scale_x(32), card_brd);
+      fast_line(it, act_right - scale_x(108), pill_y - scale_y(23), act_right - scale_x(108), pill_y + scale_y(23), card_brd);
+      fast_line(it, act_right - scale_x(52),  pill_y - scale_y(23), act_right - scale_x(52),  pill_y + scale_y(23), card_brd);
       const int d_bx = act_right - scale_x(26);
       for (int w = -1; w <= 1; w++) {
-        it.line(d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
-        it.line(d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
+        fast_line(it, d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
+        fast_line(it, d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
       }
 
       if (step < 3) {
@@ -1171,38 +1171,38 @@ inline void render_home_page(
         // Area Control (Option B): Sculpted 2-Cushion Sofa + Tall Floor Lamp Silhouette
         // 1. Floor Lamp on right (x = bx + 11, lampshade at top y = by - 14..by - 7, pole to y = by + 12)
         it.filled_triangle(bx + 11, by - 15, bx + 6, by - 7, bx + 16, by - 7, c);
-        it.filled_rectangle(bx + 8, by - 14, 7, 3, c);
-        it.vertical_line(bx + 11, by - 7, 19, c);
-        it.vertical_line(bx + 12, by - 7, 19, c);
-        it.horizontal_line(bx + 8, by + 12, 8, c);
+        fill_rect_row_major(it, bx + 8, by - 14, 7, 3, c);
+        fast_vline(it, bx + 11, by - 7, 19, c);
+        fast_vline(it, bx + 12, by - 7, 19, c);
+        fast_hline(it, bx + 8, by + 12, 8, c);
         // 2. Cozy 2-Cushion Sofa on left/center (bx - 15 .. bx + 5)
         // Backrest (bx - 13 .. bx + 3, y = by - 4 .. by + 4)
-        it.filled_rectangle(bx - 12, by - 4, 15, 8, c);
-        it.filled_circle(bx - 11, by - 2, 2, c);
-        it.filled_circle(bx + 1,  by - 2, 2, c);
+        fill_rect_row_major(it, bx - 12, by - 4, 15, 8, c);
+        fast_filled_circle(it, bx - 11, by - 2, 2, c);
+        fast_filled_circle(it, bx + 1,  by - 2, 2, c);
         // Left & Right Rolled Armrests + Seat Base
-        it.filled_circle(bx - 14, by + 3, 3, c);
-        it.filled_circle(bx + 4,  by + 3, 3, c);
-        it.filled_rectangle(bx - 15, by + 3, 21, 7, c);
+        fast_filled_circle(it, bx - 14, by + 3, 3, c);
+        fast_filled_circle(it, bx + 4,  by + 3, 3, c);
+        fill_rect_row_major(it, bx - 15, by + 3, 21, 7, c);
         // Sofa Feet
-        it.filled_rectangle(bx - 14, by + 10, 3, 3, c);
-        it.filled_rectangle(bx + 2,  by + 10, 3, 3, c);
+        fill_rect_row_major(it, bx - 14, by + 10, 3, 3, c);
+        fill_rect_row_major(it, bx + 2,  by + 10, 3, 3, c);
         if (!is_shadow) {
           Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           // Negative-space cushion seam & armrest crease so the sofa reads crisply at 54px!
-          it.vertical_line(bx - 5, by - 4, 8, cut_c);
-          it.horizontal_line(bx - 12, by + 4, 15, cut_c);
+          fast_vline(it, bx - 5, by - 4, 8, cut_c);
+          fast_hline(it, bx - 12, by + 4, 15, cut_c);
         }
       } else if (app_id == 2) {
         // Music: Enlarged Beamed Eighth Notes (scaled for r = 29)
-        it.filled_circle(bx - 9, by + 9, 5, c);
-        it.filled_circle(bx + 8, by + 6, 5, c);
-        it.filled_rectangle(bx - 5, by - 12, 3, 21, c);
-        it.filled_rectangle(bx + 11, by - 15, 3, 21, c);
-        it.line(bx - 5, by - 12, bx + 13, by - 15, c);
-        it.line(bx - 5, by - 11, bx + 13, by - 14, c);
-        it.line(bx - 5, by - 10, bx + 13, by - 13, c);
-        it.line(bx - 5, by - 9,  bx + 13, by - 12, c);
+        fast_filled_circle(it, bx - 9, by + 9, 5, c);
+        fast_filled_circle(it, bx + 8, by + 6, 5, c);
+        fill_rect_row_major(it, bx - 5, by - 12, 3, 21, c);
+        fill_rect_row_major(it, bx + 11, by - 15, 3, 21, c);
+        fast_line(it, bx - 5, by - 12, bx + 13, by - 15, c);
+        fast_line(it, bx - 5, by - 11, bx + 13, by - 14, c);
+        fast_line(it, bx - 5, by - 10, bx + 13, by - 13, c);
+        fast_line(it, bx - 5, by - 9,  bx + 13, by - 12, c);
       } else if (app_id == 7) {
         // Remote: Balanced 4-Segment Circular D-Pad + Center OK Dot (Slimmer 6px ring + wider moat & diagonal gaps)
         // Matches the open/filled visual weight of Music, Games, and Tools!
@@ -1228,9 +1228,9 @@ inline void render_home_page(
             for (int dx = -17; dx <= 17; dx++) {
               if (is_remote_dpad(dx, dy)) {
                 if (!is_remote_dpad(dx + 1, dy + 1)) {
-                  it.draw_pixel_at(bx + dx + 1, by + dy + 1, col_black);
+                  fast_pixel(it, bx + dx + 1, by + dy + 1, col_black);
                 }
-                it.draw_pixel_at(bx + dx, by + dy, c);
+                fast_pixel(it, bx + dx, by + dy, c);
               }
             }
           }
@@ -1258,9 +1258,9 @@ inline void render_home_page(
             for (int dx = -12; dx <= 12; dx++) {
               if (is_app_grid_4(dx, dy)) {
                 if (!is_app_grid_4(dx + 1, dy + 1)) {
-                  it.draw_pixel_at(bx + dx + 1, by + dy + 1, col_black);
+                  fast_pixel(it, bx + dx + 1, by + dy + 1, col_black);
                 }
-                it.draw_pixel_at(bx + dx, by + dy, c);
+                fast_pixel(it, bx + dx, by + dy, c);
               }
             }
           }
@@ -1311,9 +1311,9 @@ inline void render_home_page(
             for (int dx = -19; dx <= 19; dx++) {
               if (is_gamepad_filled(dx, dy)) {
                 if (!is_gamepad_filled(dx + 1, dy + 1)) {
-                  it.draw_pixel_at(bx + dx + 1, by + dy + 1, col_black);
+                  fast_pixel(it, bx + dx + 1, by + dy + 1, col_black);
                 }
-                it.draw_pixel_at(bx + dx, by + dy, c);
+                fast_pixel(it, bx + dx, by + dy, c);
               }
             }
           }
@@ -1344,43 +1344,43 @@ inline void render_home_page(
             for (int dx = -16; dx <= 16; dx++) {
               if (is_dock_gear(dx, dy)) {
                 if (!is_dock_gear(dx + 1, dy + 1)) {
-                  it.draw_pixel_at(bx + dx + 1, by + dy + 1, col_black);
+                  fast_pixel(it, bx + dx + 1, by + dy + 1, col_black);
                 }
-                it.draw_pixel_at(bx + dx, by + dy, c);
+                fast_pixel(it, bx + dx, by + dy, c);
               }
             }
           }
         }
       } else if (app_id == 12) {
         // Cameras & Doorbell Intercom: Sculpted Camera Body, Top Viewfinder Prism & Dual-Ring Lens
-        it.filled_rectangle(bx - 13, by - 7, 26, 17, c);
-        it.filled_rectangle(bx - 5, by - 11, 10, 4, c);
+        fill_rect_row_major(it, bx - 13, by - 7, 26, 17, c);
+        fill_rect_row_major(it, bx - 5, by - 11, 10, 4, c);
         if (!is_shadow) {
           Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
-          it.filled_circle(bx, by + 1, 6, cut_c);
-          it.circle(bx, by + 1, 4, c);
-          it.filled_circle(bx, by + 1, 2, c);
+          fast_filled_circle(it, bx, by + 1, 6, cut_c);
+          fast_circle(it, bx, by + 1, 4, c);
+          fast_filled_circle(it, bx, by + 1, 2, c);
         }
       } else if (app_id == 9) {
         (void)home_alarm_state;
         // Whole-Home Hub: Sculpted Architectural House (Cantilevered Eaves, Chimney, Negative-Space Door & 4-Pane Window)
         // 1. Right chimney stack & pitched roof with overhanging eaves
-        it.filled_rectangle(bx + 7, by - 14, 4, 8, c);
+        fill_rect_row_major(it, bx + 7, by - 14, 4, 8, c);
         it.filled_triangle(bx, by - 16, bx - 16, by - 2, bx + 16, by - 2, c);
-        it.filled_rectangle(bx - 16, by - 2, 33, 2, c);
+        fill_rect_row_major(it, bx - 16, by - 2, 33, 2, c);
         // 2. Solid lower house facade
-        it.filled_rectangle(bx - 12, by, 25, 13, c);
+        fill_rect_row_major(it, bx - 12, by, 25, 13, c);
         if (!is_shadow) {
           Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           // Negative-space eave shadow line separating overhanging roof from facade
-          it.horizontal_line(bx - 12, by, 25, cut_c);
+          fast_hline(it, bx - 12, by, 25, cut_c);
           // Negative-space front door on left (with tiny doorknob pip)
-          it.filled_rectangle(bx - 8, by + 3, 6, 10, cut_c);
-          it.draw_pixel_at(bx - 4, by + 8, c);
+          fill_rect_row_major(it, bx - 8, by + 3, 6, 10, cut_c);
+          fast_pixel(it, bx - 4, by + 8, c);
           // Negative-space 2x2 paned window on right
-          it.filled_rectangle(bx + 2, by + 3, 7, 6, cut_c);
-          it.vertical_line(bx + 5, by + 3, 6, c);
-          it.horizontal_line(bx + 2, by + 5, 7, c);
+          fill_rect_row_major(it, bx + 2, by + 3, 7, 6, cut_c);
+          fast_vline(it, bx + 5, by + 3, 6, c);
+          fast_hline(it, bx + 2, by + 5, 7, c);
         }
       }
     };
@@ -1413,9 +1413,9 @@ inline void render_home_page(
                       static_cast<uint8_t>(dock_fg_c.b * alpha));
       int app_id = dock_apps[g_idx];
       if (!is_dim_backdrop && alpha > 0.55f) {
-        it.circle(bx + 1, dock_y + 1, dock_r, col_black);
+        fast_circle(it, bx + 1, dock_y + 1, dock_r, col_black);
       }
-      it.circle(bx, dock_y, dock_r, slot_ring_c);
+      fast_circle(it, bx, dock_y, dock_r, slot_ring_c);
       if (!is_dim_backdrop && alpha > 0.55f) {
         draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true);
       }

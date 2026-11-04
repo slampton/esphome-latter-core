@@ -19,27 +19,27 @@ inline void render_glass_marble(DisplayT &it, int bx, int by, int br,
   if (br <= 1) return;
   // 1. Tilt-reactive drop shadow
   if (br >= 4) {
-    it.filled_circle(bx + sh_x, by + sh_y, br, esphome::Color(10, 14, 20));
+    fast_filled_circle(it, bx + sh_x, by + sh_y, br, esphome::Color(10, 14, 20));
   }
   // 2. Translucent glass sphere body
-  it.filled_circle(bx, by, br, base_col);
+  fast_filled_circle(it, bx, by, br, base_col);
   // 3. Outer dark glass rim & inner shaded refraction ring
-  it.circle(bx, by, br, esphome::Color(14, 18, 24));
+  fast_circle(it, bx, by, br, esphome::Color(14, 18, 24));
   if (br >= 6) {
     esphome::Color rim_shade(static_cast<uint8_t>((base_col.r * 170) >> 8),
                              static_cast<uint8_t>((base_col.g * 170) >> 8),
                              static_cast<uint8_t>((base_col.b * 170) >> 8));
-    it.circle(bx, by, br - 1, rim_shade);
+    fast_circle(it, bx, by, br - 1, rim_shade);
   }
   // 4. Inner Cat's-Eye ribbon swirl
   if (br >= 8) {
-    it.circle(bx - 1, by - 1, br / 2, hi_col);
-    it.line(bx - br / 3, by + br / 4, bx + br / 3, by - br / 4, hi_col);
+    fast_circle(it, bx - 1, by - 1, br / 2, hi_col);
+    fast_line(it, bx - br / 3, by + br / 4, bx + br / 3, by - br / 4, hi_col);
   }
   // 5. Primary upper-left specular window glint & lower-right internal caustic
-  it.filled_circle(bx - (br / 3), by - (br / 3), std::max(1, br / 4), esphome::Color(255, 255, 255));
+  fast_filled_circle(it, bx - (br / 3), by - (br / 3), std::max(1, br / 4), esphome::Color(255, 255, 255));
   if (br >= 10) {
-    it.filled_circle(bx + (br / 3), by + (br / 3), std::max(1, br / 6), hi_col);
+    fast_filled_circle(it, bx + (br / 3), by + (br / 3), std::max(1, br / 6), hi_col);
   }
 }
 
@@ -512,26 +512,26 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // Subtle horizontal bottom cushion wall + Score + "< Exit" aligned to layout().back_y
   const int hud_y = layout().back_y - scale_y(34);
   const int wall_hw = scale_min(151);
-  it.line(cx - wall_hw, wall_y, cx + wall_hw, wall_y, col_slate * 0.45f);
-  it.line(cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, col_dark_gray);
+  fast_line(it, cx - wall_hw, wall_y, cx + wall_hw, wall_y, col_slate * 0.45f);
+  fast_line(it, cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, col_dark_gray);
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d", wave_num, sunk_count, time_remaining, game_score);
   it.print(cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // Center Hole Target with Swirling Event Horizon
-  it.circle(cx, cy, scale_min(34), col_dark_gray);
-  it.circle(cx, cy, scale_min(30), col_slate);
-  it.circle(cx, cy, scale_min(29), col_white);
-  it.circle(cx, cy, scale_min(28), col_white);
-  it.filled_circle(cx, cy, scale_min(25), col_bg);
+  fast_circle(it, cx, cy, scale_min(34), col_dark_gray);
+  fast_circle(it, cx, cy, scale_min(30), col_slate);
+  fast_circle(it, cx, cy, scale_min(29), col_white);
+  fast_circle(it, cx, cy, scale_min(28), col_white);
+  fast_filled_circle(it, cx, cy, scale_min(25), col_bg);
 
   float swirl = static_cast<float>((now_ms / 25U) % 360U) * (PI_F / 180.0f);
   for (int s = 0; s < 4; s++) {
     float sa = swirl + static_cast<float>(s) * (PI_F * 0.5f);
     float s_sa = 0.0f, c_sa = 1.0f;
     fast_sincos(sa, s_sa, c_sa);
-    it.line(cx + static_cast<int>(c_sa * scale_min_f(26.0f)), cy + static_cast<int>(s_sa * scale_min_f(26.0f)),
+    fast_line(it, cx + static_cast<int>(c_sa * scale_min_f(26.0f)), cy + static_cast<int>(s_sa * scale_min_f(26.0f)),
             cx + static_cast<int>(c_sa * scale_min_f(32.0f)), cy + static_cast<int>(s_sa * scale_min_f(32.0f)), col_slate);
   }
 
@@ -541,19 +541,19 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int py = static_cast<int>(roundf(peg_y[p]));
     bool peg_flashing = (peg_hit_ms[p] > 0U && (now_ms - peg_hit_ms[p] < 200U));
     if (peg_flashing) {
-      it.circle(px, py, 10, col_gold);
-      it.circle(px, py, 8, col_cyan);
+      fast_circle(it, px, py, 10, col_gold);
+      fast_circle(it, px, py, 8, col_cyan);
     }
-    it.filled_circle(px + 1, py + 2, 6, esphome::Color(10, 14, 20));
-    it.filled_circle(px, py, 6, peg_flashing ? col_gold : col_slate);
-    it.circle(px, py, 6, col_white);
-    it.filled_circle(px - 1, py - 1, 2, peg_flashing ? col_white : col_cyan);
+    fast_filled_circle(it, px + 1, py + 2, 6, esphome::Color(10, 14, 20));
+    fast_filled_circle(it, px, py, 6, peg_flashing ? col_gold : col_slate);
+    fast_circle(it, px, py, 6, col_white);
+    fast_filled_circle(it, px - 1, py - 1, 2, peg_flashing ? col_white : col_cyan);
   }
 
   // Touch Pop Shockwave Ring
   if (shockwave_r >= 0.0f) {
-    it.circle(static_cast<int>(shockwave_x), static_cast<int>(shockwave_y), static_cast<int>(shockwave_r), col_gold);
-    it.circle(static_cast<int>(shockwave_x), static_cast<int>(shockwave_y), static_cast<int>(shockwave_r) + 2, col_cyan);
+    fast_circle(it, static_cast<int>(shockwave_x), static_cast<int>(shockwave_y), static_cast<int>(shockwave_r), col_gold);
+    fast_circle(it, static_cast<int>(shockwave_x), static_cast<int>(shockwave_y), static_cast<int>(shockwave_r) + 2, col_cyan);
     shockwave_r += 26.0f;
     if (shockwave_r > 190.0f) shockwave_r = -1.0f;
   }
@@ -615,9 +615,9 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // Round Over Summary Modal
   if (round_over) {
     const int mod_r = scale_min(115);
-    it.filled_circle(cx, cy, mod_r, col_bg);
-    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
+    fast_filled_circle(it, cx, cy, mod_r, col_bg);
+    fast_circle(it, cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
       it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
@@ -661,22 +661,22 @@ inline void render_archery_target(DisplayT &it, int tx, int ty, int r_outer,
   int r_gold  = std::max(3, (r_outer * 16) / 100);
 
   // Drop shadow
-  it.filled_circle(tx, ty + 3, r_outer, col_dark_gray);
+  fast_filled_circle(it, tx, ty + 3, r_outer, col_dark_gray);
   // 1. White outer ring
-  it.filled_circle(tx, ty, r_outer, col_white);
-  it.circle(tx, ty, r_outer, col_dark_gray);
+  fast_filled_circle(it, tx, ty, r_outer, col_white);
+  fast_circle(it, tx, ty, r_outer, col_dark_gray);
   // 2. Black ring
-  it.filled_circle(tx, ty, r_black, col_black);
-  it.circle(tx, ty, r_black, col_slate);
+  fast_filled_circle(it, tx, ty, r_black, col_black);
+  fast_circle(it, tx, ty, r_black, col_slate);
   // 3. Cyan/Blue ring
-  it.filled_circle(tx, ty, r_cyan, col_cyan);
-  it.circle(tx, ty, r_cyan, esphome::Color(0, 175, 205));
+  fast_filled_circle(it, tx, ty, r_cyan, col_cyan);
+  fast_circle(it, tx, ty, r_cyan, esphome::Color(0, 175, 205));
   // 4. Red ring
-  it.filled_circle(tx, ty, r_red, col_red);
-  it.circle(tx, ty, r_red, esphome::Color(180, 20, 20));
+  fast_filled_circle(it, tx, ty, r_red, col_red);
+  fast_circle(it, tx, ty, r_red, esphome::Color(180, 20, 20));
   // 5. Gold bullseye + center pin
-  it.filled_circle(tx, ty, r_gold, col_gold);
-  it.draw_pixel_at(tx, ty, col_red);
+  fast_filled_circle(it, tx, ty, r_gold, col_gold);
+  fast_pixel(it, tx, ty, col_red);
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
@@ -927,21 +927,21 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     if (!pinned[i].active) continue;
     int px = tx_i + static_cast<int>(roundf(pinned[i].dx));
     int py = ty_i + static_cast<int>(roundf(pinned[i].dy));
-    it.filled_circle(px, py, 2, col_black);
-    it.line(px, py, px - 5, py + 11, col_gold);
-    it.line(px - 5, py + 11, px - 8, py + 10, col_red);
-    it.line(px - 5, py + 11, px - 3, py + 13, col_red);
+    fast_filled_circle(it, px, py, 2, col_black);
+    fast_line(it, px, py, px - 5, py + 11, col_gold);
+    fast_line(it, px - 5, py + 11, px - 8, py + 10, col_red);
+    fast_line(it, px - 5, py + 11, px - 3, py + 13, col_red);
   }
 
   // 3. Player Aim Reticle
   int rx_i = static_cast<int>(roundf(smooth_ax));
   int ry_i = static_cast<int>(roundf(smooth_ay));
-  it.circle(rx_i, ry_i, 13, col_cyan);
-  it.line(rx_i - 17, ry_i, rx_i - 5, ry_i, col_cyan);
-  it.line(rx_i + 5, ry_i, rx_i + 17, ry_i, col_cyan);
-  it.line(rx_i, ry_i - 17, rx_i, ry_i - 5, col_cyan);
-  it.line(rx_i, ry_i + 5, rx_i, ry_i + 17, col_cyan);
-  it.draw_pixel_at(rx_i, ry_i, col_gold);
+  fast_circle(it, rx_i, ry_i, 13, col_cyan);
+  fast_line(it, rx_i - 17, ry_i, rx_i - 5, ry_i, col_cyan);
+  fast_line(it, rx_i + 5, ry_i, rx_i + 17, ry_i, col_cyan);
+  fast_line(it, rx_i, ry_i - 17, rx_i, ry_i - 5, col_cyan);
+  fast_line(it, rx_i, ry_i + 5, rx_i, ry_i + 17, col_cyan);
+  fast_pixel(it, rx_i, ry_i, col_gold);
 
   // 4. Recurve Bow at bottom of range (y = 356) angled toward crosshair
   float aim_dx = smooth_ax - static_cast<float>(cx);
@@ -965,13 +965,13 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   int right_mid_y = bow_cy + static_cast<int>(py_v * 20.0f + uy * 4.0f);
 
   // Bow limbs (gold + slate double-stroke arch)
-  it.line(bow_cx, bow_cy, left_mid_x, left_mid_y, col_gold);
-  it.line(left_mid_x, left_mid_y, left_tip_x, left_tip_y, col_gold);
-  it.line(bow_cx, bow_cy, right_mid_x, right_mid_y, col_gold);
-  it.line(right_mid_x, right_mid_y, right_tip_x, right_tip_y, col_gold);
-  it.line(bow_cx, bow_cy + 1, left_mid_x, left_mid_y + 1, col_slate);
-  it.line(bow_cx, bow_cy + 1, right_mid_x, right_mid_y + 1, col_slate);
-  it.filled_circle(bow_cx, bow_cy, 3, col_red); // Riser grip
+  fast_line(it, bow_cx, bow_cy, left_mid_x, left_mid_y, col_gold);
+  fast_line(it, left_mid_x, left_mid_y, left_tip_x, left_tip_y, col_gold);
+  fast_line(it, bow_cx, bow_cy, right_mid_x, right_mid_y, col_gold);
+  fast_line(it, right_mid_x, right_mid_y, right_tip_x, right_tip_y, col_gold);
+  fast_line(it, bow_cx, bow_cy + 1, left_mid_x, left_mid_y + 1, col_slate);
+  fast_line(it, bow_cx, bow_cy + 1, right_mid_x, right_mid_y + 1, col_slate);
+  fast_filled_circle(it, bow_cx, bow_cy, 3, col_red); // Riser grip
 
   if (!arrow_in_flight && arrows_left > 0 && !round_over) {
     // Drawn bowstring + nocked arrow ready to fire
@@ -979,13 +979,13 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int nock_y = bow_cy - static_cast<int>(uy * 14.0f);
     int tip_x  = bow_cx + static_cast<int>(ux * 18.0f);
     int tip_y  = bow_cy + static_cast<int>(uy * 18.0f);
-    it.line(left_tip_x, left_tip_y, nock_x, nock_y, col_slate);
-    it.line(right_tip_x, right_tip_y, nock_x, nock_y, col_slate);
-    it.line(nock_x, nock_y, tip_x, tip_y, col_white);
-    it.filled_circle(tip_x, tip_y, 2, col_gold);
+    fast_line(it, left_tip_x, left_tip_y, nock_x, nock_y, col_slate);
+    fast_line(it, right_tip_x, right_tip_y, nock_x, nock_y, col_slate);
+    fast_line(it, nock_x, nock_y, tip_x, tip_y, col_white);
+    fast_filled_circle(it, tip_x, tip_y, 2, col_gold);
   } else {
     // Released taut bowstring
-    it.line(left_tip_x, left_tip_y, right_tip_x, right_tip_y, col_slate);
+    fast_line(it, left_tip_x, left_tip_y, right_tip_x, right_tip_y, col_slate);
   }
 
   // 5. In-Flight Perspective Arrow (angled along velocity vector with fletching)
@@ -997,15 +997,15 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int tail_x = static_cast<int>(roundf(cur_arrow_x - arrow_dx * a_len));
     int tail_y = static_cast<int>(roundf(cur_arrow_y - arrow_dy * a_len));
 
-    it.line(tail_x, tail_y, head_x, head_y, col_gold);
-    it.line(tail_x + 1, tail_y, head_x + 1, head_y, col_white);
-    it.filled_circle(head_x, head_y, z > 0.65f ? 2 : 3, col_white);
+    fast_line(it, tail_x, tail_y, head_x, head_y, col_gold);
+    fast_line(it, tail_x + 1, tail_y, head_x + 1, head_y, col_white);
+    fast_filled_circle(it, head_x, head_y, z > 0.65f ? 2 : 3, col_white);
     // Crimson fletching feathers at tail
     int f_px = static_cast<int>(-arrow_dy * 4.0f);
     int f_py = static_cast<int>(arrow_dx * 4.0f);
-    it.line(tail_x, tail_y, tail_x + f_px - static_cast<int>(arrow_dx * 4.0f),
+    fast_line(it, tail_x, tail_y, tail_x + f_px - static_cast<int>(arrow_dx * 4.0f),
             tail_y + f_py - static_cast<int>(arrow_dy * 4.0f), col_red);
-    it.line(tail_x, tail_y, tail_x - f_px - static_cast<int>(arrow_dx * 4.0f),
+    fast_line(it, tail_x, tail_y, tail_x - f_px - static_cast<int>(arrow_dx * 4.0f),
             tail_y - f_py - static_cast<int>(arrow_dy * 4.0f), col_red);
   }
 
@@ -1049,9 +1049,9 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // 8. Round Over Summary Modal
   if (round_over) {
     const int mod_r = scale_min(115);
-    it.filled_circle(cx, cy, mod_r, col_bg);
-    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
+    fast_filled_circle(it, cx, cy, mod_r, col_bg);
+    fast_circle(it, cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
       it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
@@ -1085,36 +1085,36 @@ inline void render_breakout_brick(DisplayT &it, int cx_b, int cy_b, int w, int h
   int rx = cx_b - w / 2;
   int ry = cy_b - h / 2;
   // Subtle drop shadow beneath brick
-  it.horizontal_line(rx + 1, ry + h, w - 1, esphome::Color(12, 16, 24));
+  fast_hline(it, rx + 1, ry + h, w - 1, esphome::Color(12, 16, 24));
   // Main brick body + dark outer frame
-  it.filled_rectangle(rx, ry, w, h, body_col);
-  it.rectangle(rx, ry, w, h, esphome::Color(18, 22, 30));
+  fill_rect_row_major(it, rx, ry, w, h, body_col);
+  fast_rect_outline(it, rx, ry, w, h, esphome::Color(18, 22, 30));
   // Top and left 3D specular highlight bevel
-  it.horizontal_line(rx + 1, ry + 1, w - 2, hi_col);
-  it.line(rx + 1, ry + 1, rx + 1, ry + h - 2, hi_col);
+  fast_hline(it, rx + 1, ry + 1, w - 2, hi_col);
+  fast_line(it, rx + 1, ry + 1, rx + 1, ry + h - 2, hi_col);
   // Bottom inner shadow line
   esphome::Color sh_col = body_col * 0.58f;
-  it.horizontal_line(rx + 2, ry + h - 2, w - 3, sh_col);
+  fast_hline(it, rx + 2, ry + h - 2, w - 3, sh_col);
 
   if (max_hp >= 2) {
     if (hp >= 2) {
       // Metallic corner rivets for armored 2-hit / 3-hit bricks
-      it.draw_pixel_at(rx + 3, ry + 3, col_white);
-      it.draw_pixel_at(rx + w - 4, ry + 3, col_white);
-      it.draw_pixel_at(rx + 3, ry + h - 4, col_white);
-      it.draw_pixel_at(rx + w - 4, ry + h - 4, col_white);
+      fast_pixel(it, rx + 3, ry + 3, col_white);
+      fast_pixel(it, rx + w - 4, ry + 3, col_white);
+      fast_pixel(it, rx + 3, ry + h - 4, col_white);
+      fast_pixel(it, rx + w - 4, ry + h - 4, col_white);
       if (hp >= 3) {
         // Reinforced fortress core bar for 3-hit bricks
-        it.filled_rectangle(cx_b - 5, cy_b - 2, 10, 4, col_white);
+        fill_rect_row_major(it, cx_b - 5, cy_b - 2, 10, 4, col_white);
       } else if (max_hp == 3) {
         // First fracture line on a 3-hit brick at hp == 2
-        it.line(cx_b - 4, ry + 2, cx_b + 3, ry + h - 3, esphome::Color(20, 24, 32));
+        fast_line(it, cx_b - 4, ry + 2, cx_b + 3, ry + h - 3, esphome::Color(20, 24, 32));
       }
     } else if (hp == 1) {
       // Cracked armor fracture lines across the brick face when 1 hit remains
-      it.line(cx_b - 6, ry + 1, cx_b, cy_b, esphome::Color(16, 20, 28));
-      it.line(cx_b, cy_b, cx_b + 6, ry + h - 2, esphome::Color(16, 20, 28));
-      it.line(cx_b - 5, ry + 1, cx_b + 1, cy_b, hi_col);
+      fast_line(it, cx_b - 6, ry + 1, cx_b, cy_b, esphome::Color(16, 20, 28));
+      fast_line(it, cx_b, cy_b, cx_b + 6, ry + h - 2, esphome::Color(16, 20, 28));
+      fast_line(it, cx_b - 5, ry + 1, cx_b + 1, cy_b, hi_col);
     }
   }
 }
@@ -1129,17 +1129,17 @@ inline void render_breakout_paddle(DisplayT &it, int px, int py, int pw, int ph,
   if (body_w < 2) body_w = 2;
 
   // Drop shadow
-  it.horizontal_line(x_l, py + r + 1, body_w, esphome::Color(12, 16, 24));
+  fast_hline(it, x_l, py + r + 1, body_w, esphome::Color(12, 16, 24));
   // Seamless rounded capsule body (no internal rectangle seams)
-  it.filled_circle(x_l, py, r, pad_col);
-  it.filled_circle(x_r, py, r, pad_col);
-  it.filled_rectangle(x_l, py - r, body_w, ph + 1, pad_col);
+  fast_filled_circle(it, x_l, py, r, pad_col);
+  fast_filled_circle(it, x_r, py, r, pad_col);
+  fill_rect_row_major(it, x_l, py - r, body_w, ph + 1, pad_col);
   // Crisp white top specular edge and dark bottom bevel
-  it.horizontal_line(x_l, py - r, body_w, col_white);
-  it.horizontal_line(x_l, py + r, body_w, pad_col * 0.55f);
+  fast_hline(it, x_l, py - r, body_w, col_white);
+  fast_hline(it, x_l, py + r, body_w, pad_col * 0.55f);
   // Luminous inner energy core
   int core_w = (pw * 42) / 100;
-  it.filled_rectangle(px - core_w / 2, py - 1, core_w, 3, col_white);
+  fill_rect_row_major(it, px - core_w / 2, py - 1, core_w, 3, col_white);
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
@@ -1530,8 +1530,8 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   // 1. Subtle Upper Circular Dome Wall (r = 208 & 207 scaled)
   const int dome_r = scale_min(208);
-  it.circle(cx, cy, dome_r, col_dark_gray);
-  it.circle(cx, cy, dome_r - 1, col_slate * 0.35f);
+  fast_circle(it, cx, cy, dome_r, col_dark_gray);
+  fast_circle(it, cx, cy, dome_r - 1, col_slate * 0.35f);
 
   // 2. Bottom Scorekeeper HUD at y = 408
   int bricks_remaining = 0;
@@ -1567,7 +1567,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // 4. Draw Shattering Shrapnel Fragments & Floating Combo Popup
   if (shrapnel_ms > 0 && (now_ms - shrapnel_ms < 360U)) {
     for (int s = 0; s < 6; s++) {
-      it.filled_rectangle((int)shrapnel[s].x - 2, (int)shrapnel[s].y - 2, 4, 4, shrapnel[s].col);
+      fill_rect_row_major(it, (int)shrapnel[s].x - 2, (int)shrapnel[s].y - 2, 4, 4, shrapnel[s].col);
     }
   }
   if (popup_ms > 0 && (now_ms - popup_ms < 650U)) {
@@ -1596,20 +1596,20 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   // 6. Draw Fading Ball Comet Trail & 3D Specular Energy Ball
   if (ball_launched) {
-    it.filled_circle((int)trail_x[3], (int)trail_y[3], 2, esphome::Color(65, 52, 18));
-    it.filled_circle((int)trail_x[2], (int)trail_y[2], 3, esphome::Color(120, 95, 25));
-    it.filled_circle((int)trail_x[0], (int)trail_y[0], 4, esphome::Color(185, 145, 35));
+    fast_filled_circle(it, (int)trail_x[3], (int)trail_y[3], 2, esphome::Color(65, 52, 18));
+    fast_filled_circle(it, (int)trail_x[2], (int)trail_y[2], 3, esphome::Color(120, 95, 25));
+    fast_filled_circle(it, (int)trail_x[0], (int)trail_y[0], 4, esphome::Color(185, 145, 35));
   }
-  it.filled_circle((int)ball_x, (int)ball_y, 6, col_gold);
-  it.circle((int)ball_x, (int)ball_y, 6, col_white);
-  it.filled_circle((int)ball_x - 2, (int)ball_y - 2, 2, col_white);
+  fast_filled_circle(it, (int)ball_x, (int)ball_y, 6, col_gold);
+  fast_circle(it, (int)ball_x, (int)ball_y, 6, col_white);
+  fast_filled_circle(it, (int)ball_x - 2, (int)ball_y - 2, 2, col_white);
 
   // 7. Launch Prompt or Game Over Scoreboard Overlay
   if (round_over) {
     const int mod_r = scale_min(115);
-    it.filled_circle(cx, cy, mod_r, col_bg);
-    it.circle(cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
-    it.circle(cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
+    fast_filled_circle(it, cx, cy, mod_r, col_bg);
+    fast_circle(it, cx, cy, mod_r, is_new_high ? col_gold : theme_secondary);
+    fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
       it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
@@ -1648,76 +1648,76 @@ inline void render_chomp_treat(DisplayT &it, int tx, int ty, int kind,
                                esphome::Color col_bg) {
   int k = kind % 5;
   // Soft drop shadow beneath every treat
-  it.filled_circle(tx, ty + 3, 13, esphome::Color(14, 18, 26));
+  fast_filled_circle(it, tx, ty + 3, 13, esphome::Color(14, 18, 26));
 
   if (k == 0) {
     // 0: CHOCOLATE CHIP COOKIE (Cookie Monster's favorite!)
     esphome::Color dough(218, 162, 84);
     esphome::Color crust(168, 114, 46);
     esphome::Color chip(58, 34, 18);
-    it.filled_circle(tx, ty, 13, dough);
-    it.circle(tx, ty, 13, crust);
-    it.circle(tx, ty, 12, esphome::Color(238, 188, 112));
+    fast_filled_circle(it, tx, ty, 13, dough);
+    fast_circle(it, tx, ty, 13, crust);
+    fast_circle(it, tx, ty, 12, esphome::Color(238, 188, 112));
     // 6 chocolate chips scattered across the cookie
-    it.filled_circle(tx - 5, ty - 4, 2, chip);
-    it.filled_circle(tx + 4, ty - 5, 2, chip);
-    it.filled_circle(tx, ty + 1, 2, chip);
-    it.filled_circle(tx - 6, ty + 4, 2, chip);
-    it.filled_circle(tx + 5, ty + 4, 2, chip);
-    it.draw_pixel_at(tx - 1, ty - 7, chip);
-    it.draw_pixel_at(tx + 2, ty + 7, chip);
+    fast_filled_circle(it, tx - 5, ty - 4, 2, chip);
+    fast_filled_circle(it, tx + 4, ty - 5, 2, chip);
+    fast_filled_circle(it, tx, ty + 1, 2, chip);
+    fast_filled_circle(it, tx - 6, ty + 4, 2, chip);
+    fast_filled_circle(it, tx + 5, ty + 4, 2, chip);
+    fast_pixel(it, tx - 1, ty - 7, chip);
+    fast_pixel(it, tx + 2, ty + 7, chip);
   } else if (k == 1) {
     // 1: STRAWBERRY (Bright red berry + green leafy calyx + golden seeds)
-    it.filled_circle(tx, ty + 1, 12, col_red);
-    it.circle(tx, ty + 1, 12, esphome::Color(255, 130, 130));
+    fast_filled_circle(it, tx, ty + 1, 12, col_red);
+    fast_circle(it, tx, ty + 1, 12, esphome::Color(255, 130, 130));
     // Green leafy crown at top
     it.filled_triangle(tx - 8, ty - 8, tx, ty - 3, tx - 2, ty - 12, col_green);
     it.filled_triangle(tx + 8, ty - 8, tx, ty - 3, tx + 2, ty - 12, col_green);
     it.filled_triangle(tx - 4, ty - 12, tx + 4, ty - 12, tx, ty - 5, col_green);
-    it.line(tx, ty - 11, tx, ty - 15, col_green);
+    fast_line(it, tx, ty - 11, tx, ty - 15, col_green);
     // Golden seeds + shine
-    it.draw_pixel_at(tx - 4, ty - 1, col_gold);
-    it.draw_pixel_at(tx + 4, ty - 1, col_gold);
-    it.draw_pixel_at(tx, ty + 3, col_gold);
-    it.draw_pixel_at(tx - 5, ty + 5, col_gold);
-    it.draw_pixel_at(tx + 5, ty + 5, col_gold);
-    it.draw_pixel_at(tx, ty + 8, col_gold);
-    it.filled_circle(tx - 4, ty - 3, 2, col_white);
+    fast_pixel(it, tx - 4, ty - 1, col_gold);
+    fast_pixel(it, tx + 4, ty - 1, col_gold);
+    fast_pixel(it, tx, ty + 3, col_gold);
+    fast_pixel(it, tx - 5, ty + 5, col_gold);
+    fast_pixel(it, tx + 5, ty + 5, col_gold);
+    fast_pixel(it, tx, ty + 8, col_gold);
+    fast_filled_circle(it, tx - 4, ty - 3, 2, col_white);
   } else if (k == 2) {
     // 2: FROSTED SPRINKLE DONUT (Golden ring + pink icing + colorful sprinkles)
     esphome::Color icing(255, 110, 178);
-    it.filled_circle(tx, ty, 13, esphome::Color(215, 155, 78));
-    it.filled_circle(tx, ty, 11, icing);
-    it.circle(tx, ty, 13, esphome::Color(160, 105, 42));
+    fast_filled_circle(it, tx, ty, 13, esphome::Color(215, 155, 78));
+    fast_filled_circle(it, tx, ty, 11, icing);
+    fast_circle(it, tx, ty, 13, esphome::Color(160, 105, 42));
     // Center donut hole
-    it.filled_circle(tx, ty, 4, col_bg);
-    it.circle(tx, ty, 4, esphome::Color(180, 70, 125));
+    fast_filled_circle(it, tx, ty, 4, col_bg);
+    fast_circle(it, tx, ty, 4, esphome::Color(180, 70, 125));
     // Sprinkles
-    it.line(tx - 7, ty - 5, tx - 5, ty - 7, col_cyan);
-    it.line(tx + 5, ty - 7, tx + 7, ty - 5, col_gold);
-    it.line(tx - 8, ty + 3, tx - 6, ty + 5, col_white);
-    it.line(tx + 6, ty + 4, tx + 8, ty + 2, col_green);
-    it.line(tx - 2, ty + 8, tx + 2, ty + 8, col_gold);
+    fast_line(it, tx - 7, ty - 5, tx - 5, ty - 7, col_cyan);
+    fast_line(it, tx + 5, ty - 7, tx + 7, ty - 5, col_gold);
+    fast_line(it, tx - 8, ty + 3, tx - 6, ty + 5, col_white);
+    fast_line(it, tx + 6, ty + 4, tx + 8, ty + 2, col_green);
+    fast_line(it, tx - 2, ty + 8, tx + 2, ty + 8, col_gold);
   } else if (k == 3) {
     // 3: WRAPPED CANDY (Magenta sweet + twisted wrapper bows on left & right)
     it.filled_triangle(tx - 9, ty, tx - 17, ty - 7, tx - 17, ty + 7, col_magenta);
     it.filled_triangle(tx + 9, ty, tx + 17, ty - 7, tx + 17, ty + 7, col_magenta);
-    it.line(tx - 16, ty - 5, tx - 10, ty, col_white);
-    it.line(tx + 16, ty - 5, tx + 10, ty, col_white);
-    it.filled_circle(tx, ty, 10, col_magenta);
-    it.circle(tx, ty, 10, col_white);
+    fast_line(it, tx - 16, ty - 5, tx - 10, ty, col_white);
+    fast_line(it, tx + 16, ty - 5, tx + 10, ty, col_white);
+    fast_filled_circle(it, tx, ty, 10, col_magenta);
+    fast_circle(it, tx, ty, 10, col_white);
     // Candy swirl stripe
-    it.line(tx - 5, ty - 6, tx + 5, ty + 6, col_white);
-    it.line(tx - 4, ty - 6, tx + 6, ty + 6, esphome::Color(255, 190, 230));
-    it.filled_circle(tx - 3, ty - 3, 2, col_white);
+    fast_line(it, tx - 5, ty - 6, tx + 5, ty + 6, col_white);
+    fast_line(it, tx - 4, ty - 6, tx + 6, ty + 6, esphome::Color(255, 190, 230));
+    fast_filled_circle(it, tx - 3, ty - 3, 2, col_white);
   } else {
     // 4: GOLDEN STAR BERRY (Juicy cyan-blue berry with golden star sparkle)
-    it.filled_circle(tx, ty, 12, col_cyan);
-    it.circle(tx, ty, 12, col_white);
-    it.filled_circle(tx - 4, ty - 4, 3, col_white);
-    it.line(tx, ty - 6, tx, ty + 6, col_gold);
-    it.line(tx - 6, ty, tx + 6, ty, col_gold);
-    it.filled_circle(tx, ty, 2, col_gold);
+    fast_filled_circle(it, tx, ty, 12, col_cyan);
+    fast_circle(it, tx, ty, 12, col_white);
+    fast_filled_circle(it, tx - 4, ty - 4, 3, col_white);
+    fast_line(it, tx, ty - 6, tx, ty + 6, col_gold);
+    fast_line(it, tx - 6, ty, tx + 6, ty, col_gold);
+    fast_filled_circle(it, tx, ty, 2, col_gold);
   }
 }
 
@@ -1744,7 +1744,7 @@ inline void render_chomp_monster(DisplayT &it, int mx, int my, int mr,
   int cy_m = my + bounce_y;
 
   // 1. Drop shadow
-  it.filled_circle(mx, cy_m + 4, mr, esphome::Color(12, 16, 24));
+  fast_filled_circle(it, mx, cy_m + 4, mr, esphome::Color(12, 16, 24));
 
   // 2. Cute Rounded Teddy/Muppet Ears on upper left & right (NO horns!)
   int ear_r = (mr * 34) / 100;
@@ -1752,27 +1752,27 @@ inline void render_chomp_monster(DisplayT &it, int mx, int my, int mr,
   int ear_dx = (mr * 74) / 100;
   int ear_dy = (mr * 68) / 100;
   // Left ear
-  it.filled_circle(mx - ear_dx, cy_m - ear_dy, ear_r, fur_dark);
-  it.filled_circle(mx - ear_dx, cy_m - ear_dy, ear_r - 1, fur_main);
-  it.circle(mx - ear_dx, cy_m - ear_dy, ear_r, fur_hi);
-  it.filled_circle(mx - ear_dx + 1, cy_m - ear_dy + 1, ear_inner_r, ear_inner);
+  fast_filled_circle(it, mx - ear_dx, cy_m - ear_dy, ear_r, fur_dark);
+  fast_filled_circle(it, mx - ear_dx, cy_m - ear_dy, ear_r - 1, fur_main);
+  fast_circle(it, mx - ear_dx, cy_m - ear_dy, ear_r, fur_hi);
+  fast_filled_circle(it, mx - ear_dx + 1, cy_m - ear_dy + 1, ear_inner_r, ear_inner);
   // Right ear
-  it.filled_circle(mx + ear_dx, cy_m - ear_dy, ear_r, fur_dark);
-  it.filled_circle(mx + ear_dx, cy_m - ear_dy, ear_r - 1, fur_main);
-  it.circle(mx + ear_dx, cy_m - ear_dy, ear_r, fur_hi);
-  it.filled_circle(mx + ear_dx - 1, cy_m - ear_dy + 1, ear_inner_r, ear_inner);
+  fast_filled_circle(it, mx + ear_dx, cy_m - ear_dy, ear_r, fur_dark);
+  fast_filled_circle(it, mx + ear_dx, cy_m - ear_dy, ear_r - 1, fur_main);
+  fast_circle(it, mx + ear_dx, cy_m - ear_dy, ear_r, fur_hi);
+  fast_filled_circle(it, mx + ear_dx - 1, cy_m - ear_dy + 1, ear_inner_r, ear_inner);
 
   // 3. Fluffy Furry Head Silhouette (soft fur tufts around perimeter + main circle)
   int tuft_r = (mr * 28) / 100;
-  it.filled_circle(mx - mr + 5, cy_m - 4, tuft_r, fur_main);
-  it.filled_circle(mx + mr - 5, cy_m - 4, tuft_r, fur_main);
-  it.filled_circle(mx - mr + 7, cy_m + 10, tuft_r, fur_main);
-  it.filled_circle(mx + mr - 7, cy_m + 10, tuft_r, fur_main);
-  it.filled_circle(mx, cy_m - mr + 3, tuft_r, fur_main);
+  fast_filled_circle(it, mx - mr + 5, cy_m - 4, tuft_r, fur_main);
+  fast_filled_circle(it, mx + mr - 5, cy_m - 4, tuft_r, fur_main);
+  fast_filled_circle(it, mx - mr + 7, cy_m + 10, tuft_r, fur_main);
+  fast_filled_circle(it, mx + mr - 7, cy_m + 10, tuft_r, fur_main);
+  fast_filled_circle(it, mx, cy_m - mr + 3, tuft_r, fur_main);
 
-  it.filled_circle(mx, cy_m, mr, fur_main);
-  it.circle(mx, cy_m, mr, fur_hi);
-  it.circle(mx, cy_m, mr - 1, fur_dark);
+  fast_filled_circle(it, mx, cy_m, mr, fur_main);
+  fast_circle(it, mx, cy_m, mr, fur_hi);
+  fast_circle(it, mx, cy_m, mr - 1, fur_dark);
 
   (void)party_hat;
 
@@ -1784,10 +1784,10 @@ inline void render_chomp_monster(DisplayT &it, int mx, int my, int mr,
   int eye_r = std::max(7, (mr * 27) / 100);
   int pup_r = std::max(3, (eye_r * 48) / 100);
 
-  it.filled_circle(mx - eye_dx, eye_y, eye_r, col_white);
-  it.circle(mx - eye_dx, eye_y, eye_r, col_dark_gray);
-  it.filled_circle(mx + eye_dx, eye_y, eye_r, col_white);
-  it.circle(mx + eye_dx, eye_y, eye_r, col_dark_gray);
+  fast_filled_circle(it, mx - eye_dx, eye_y, eye_r, col_white);
+  fast_circle(it, mx - eye_dx, eye_y, eye_r, col_dark_gray);
+  fast_filled_circle(it, mx + eye_dx, eye_y, eye_r, col_white);
+  fast_circle(it, mx + eye_dx, eye_y, eye_r, col_dark_gray);
 
   // Slightly googly independent pupil offsets during chomping, or tracking the nearest treat
   int pdx_l = (int)(look_dx * (float)(eye_r - pup_r - 1));
@@ -1801,41 +1801,41 @@ inline void render_chomp_monster(DisplayT &it, int mx, int my, int mr,
     pdx_r = -pdx_l;
     pdy_r = 1;
   }
-  it.filled_circle(mx - eye_dx + pdx_l, eye_y + pdy_l, pup_r, col_black);
-  it.filled_circle(mx + eye_dx + pdx_r, eye_y + pdy_r, pup_r, col_black);
+  fast_filled_circle(it, mx - eye_dx + pdx_l, eye_y + pdy_l, pup_r, col_black);
+  fast_filled_circle(it, mx + eye_dx + pdx_r, eye_y + pdy_r, pup_r, col_black);
   // Eye specular glints
-  it.draw_pixel_at(mx - eye_dx + pdx_l - 1, eye_y + pdy_l - 1, col_white);
-  it.draw_pixel_at(mx + eye_dx + pdx_r - 1, eye_y + pdy_r - 1, col_white);
+  fast_pixel(it, mx - eye_dx + pdx_l - 1, eye_y + pdy_l - 1, col_white);
+  fast_pixel(it, mx + eye_dx + pdx_r - 1, eye_y + pdy_r - 1, col_white);
 
   // 6. Expressive Mouth (Wide-Open Hungry Cavity + Pink Tongue vs. Chomping vs. Big Muppet Smile)
   int mouth_y = cy_m + (mr * 26) / 100;
   if (is_chomping) {
     bool jaw_open = ((now_ms / 85U) & 1) != 0;
     int mr_open = jaw_open ? ((mr * 36) / 100) : ((mr * 20) / 100);
-    it.filled_circle(mx, mouth_y, mr_open, col_black);
-    it.filled_circle(mx, mouth_y + mr_open / 2, mr_open / 2, ear_inner);
+    fast_filled_circle(it, mx, mouth_y, mr_open, col_black);
+    fast_filled_circle(it, mx, mouth_y + mr_open / 2, mr_open / 2, ear_inner);
     // Flying cookie crumbs while munching!
     esphome::Color crumb(218, 162, 84);
     int c_off = (int)((now_ms / 60U) % 8U);
-    it.filled_circle(mx - mr / 2 - c_off, mouth_y - 2 + c_off / 2, 2, crumb);
-    it.filled_circle(mx + mr / 2 + c_off, mouth_y - 4 + c_off / 2, 2, crumb);
-    it.filled_circle(mx + 3, mouth_y + mr / 2 + c_off / 2, 2, crumb);
+    fast_filled_circle(it, mx - mr / 2 - c_off, mouth_y - 2 + c_off / 2, 2, crumb);
+    fast_filled_circle(it, mx + mr / 2 + c_off, mouth_y - 4 + c_off / 2, 2, crumb);
+    fast_filled_circle(it, mx + 3, mouth_y + mr / 2 + c_off / 2, 2, crumb);
   } else if (mouth_open) {
     // Big wide-open dark muppet mouth with a cute pink tongue at bottom
     int m_rad = (mr * 44) / 100;
-    it.filled_circle(mx, mouth_y + 2, m_rad, col_black);
-    it.circle(mx, mouth_y + 2, m_rad, fur_dark);
+    fast_filled_circle(it, mx, mouth_y + 2, m_rad, col_black);
+    fast_circle(it, mx, mouth_y + 2, m_rad, fur_dark);
     // Pink tongue
     int t_rad = (m_rad * 56) / 100;
-    it.filled_circle(mx, mouth_y + 2 + m_rad - t_rad - 1, t_rad, cheek_pink);
+    fast_filled_circle(it, mx, mouth_y + 2 + m_rad - t_rad - 1, t_rad, cheek_pink);
   } else {
     // Wide, friendly Sesame Street muppet smile
     int sw = (mr * 48) / 100;
-    it.filled_circle(mx, mouth_y - 2, sw, col_black);
-    it.filled_rectangle(mx - sw, mouth_y - sw - 2, sw * 2 + 1, sw, fur_main);
-    it.horizontal_line(mx - sw, mouth_y - 2, sw * 2 + 1, fur_dark);
+    fast_filled_circle(it, mx, mouth_y - 2, sw, col_black);
+    fill_rect_row_major(it, mx - sw, mouth_y - sw - 2, sw * 2 + 1, sw, fur_main);
+    fast_hline(it, mx - sw, mouth_y - 2, sw * 2 + 1, fur_dark);
     // Cute pink tongue peeking out at bottom of smile
-    it.filled_circle(mx, mouth_y + sw / 2, sw / 3, cheek_pink);
+    fast_filled_circle(it, mx, mouth_y + sw / 2, sw / 3, cheek_pink);
   }
 }
 
@@ -2136,8 +2136,8 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // ==========================================================================
 
   // 1. Play Bowl Rim, Bottom Wall, Scorekeeper HUD & "< Exit"
-  it.circle(cx, cy, scale_min(208), col_dark_gray);
-  it.line(cx - scale_min(151), bot_wall_y, cx + scale_min(151), bot_wall_y, col_dark_gray);
+  fast_circle(it, cx, cy, scale_min(208), col_dark_gray);
+  fast_line(it, cx - scale_min(151), bot_wall_y, cx + scale_min(151), bot_wall_y, col_dark_gray);
   char t_buf[56];
   snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
            level_num, treats_left, treat_score, high_score_chomp);
@@ -2166,7 +2166,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char p_msg[36];
     if (rem_cel > 1900U) {
       for (int c = 0; c < 16; c++) {
-        it.filled_circle(static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), 3, confetti[c].col);
+        fast_filled_circle(it, static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), 3, confetti[c].col);
       }
       snprintf(p_msg, sizeof(p_msg), "LEVEL %d CLEAR!", level_num);
       it.print(cx, imy - 62, font_date, col_gold, esphome::display::TextAlign::CENTER, p_msg);
@@ -2182,8 +2182,8 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int pop_x = std::max(115, std::min(351, imx));
     it.print(pop_x, pop_y, font_date, col_gold, esphome::display::TextAlign::CENTER,
              CHOMP_WORDS[chomp_word_idx]);
-    it.filled_circle(imx - 42, imy - 16, 3, col_gold);
-    it.filled_circle(imx + 42, imy - 16, 3, col_cyan);
+    fast_filled_circle(it, imx - 42, imy - 16, 3, col_gold);
+    fast_filled_circle(it, imx + 42, imy - 16, 3, col_cyan);
   }
 }
 // ==============================================================================
@@ -2533,17 +2533,17 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
   auto draw_card_symbol = [&](int sym, int scx, int scy, int r_sym) {
     if (sym == 0) {
       // Gold Star / Sunburst
-      it.filled_circle(scx, scy, r_sym / 2, col_gold);
+      fast_filled_circle(it, scx, scy, r_sym / 2, col_gold);
       for (int a = 0; a < 8; a++) {
         float ang = a * 0.785398f;
-        it.line(scx, scy, scx + static_cast<int>(fast_cos(ang) * r_sym),
+        fast_line(it, scx, scy, scx + static_cast<int>(fast_cos(ang) * r_sym),
                 scy + static_cast<int>(fast_sin(ang) * r_sym), col_gold);
       }
     } else if (sym == 1) {
       // Crimson Heart
       int hr = std::max(4, r_sym / 2);
-      it.filled_circle(scx - hr + 1, scy - hr / 2, hr, col_red);
-      it.filled_circle(scx + hr - 1, scy - hr / 2, hr, col_red);
+      fast_filled_circle(it, scx - hr + 1, scy - hr / 2, hr, col_red);
+      fast_filled_circle(it, scx + hr - 1, scy - hr / 2, hr, col_red);
       it.filled_triangle(scx - r_sym, scy - 1, scx + r_sym, scy - 1, scx, scy + r_sym, col_red);
     } else if (sym == 2) {
       // Cyan Diamond
@@ -2552,11 +2552,11 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
     } else if (sym == 3) {
       // Emerald Clover / Plus
       int bw = std::max(4, r_sym / 2);
-      it.filled_rectangle(scx - bw, scy - r_sym, bw * 2, r_sym * 2, col_green);
-      it.filled_rectangle(scx - r_sym, scy - bw, r_sym * 2, bw * 2, col_green);
+      fill_rect_row_major(it, scx - bw, scy - r_sym, bw * 2, r_sym * 2, col_green);
+      fill_rect_row_major(it, scx - r_sym, scy - bw, r_sym * 2, bw * 2, col_green);
     } else if (sym == 4) {
       // Magenta Crown
-      it.filled_rectangle(scx - r_sym, scy + r_sym / 3, r_sym * 2, r_sym / 2, col_magenta);
+      fill_rect_row_major(it, scx - r_sym, scy + r_sym / 3, r_sym * 2, r_sym / 2, col_magenta);
       it.filled_triangle(scx - r_sym, scy + r_sym / 3, scx - r_sym, scy - r_sym / 2, scx - r_sym / 3, scy + r_sym / 3, col_magenta);
       it.filled_triangle(scx - r_sym / 2, scy + r_sym / 3, scx, scy - r_sym, scx + r_sym / 2, scy + r_sym / 3, col_magenta);
       it.filled_triangle(scx + r_sym / 3, scy + r_sym / 3, scx + r_sym, scy - r_sym / 2, scx + r_sym, scy + r_sym / 3, col_magenta);
@@ -2566,14 +2566,14 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
       it.filled_triangle(scx - 2, scy - 2, scx + r_sym - 2, scy - 2, scx - 3, scy + r_sym, col_orange);
     } else if (sym == 6) {
       // White Target Bullseye
-      it.filled_circle(scx, scy, r_sym, col_white);
-      it.filled_circle(scx, scy, (r_sym * 2) / 3, col_bg);
-      it.filled_circle(scx, scy, r_sym / 3, theme_primary);
+      fast_filled_circle(it, scx, scy, r_sym, col_white);
+      fast_filled_circle(it, scx, scy, (r_sym * 2) / 3, col_bg);
+      fast_filled_circle(it, scx, scy, r_sym / 3, theme_primary);
     } else {
       // Emerald/Gold Shield Crest
-      it.filled_rectangle(scx - r_sym + 2, scy - r_sym + 2, (r_sym - 2) * 2, r_sym, theme_secondary);
+      fill_rect_row_major(it, scx - r_sym + 2, scy - r_sym + 2, (r_sym - 2) * 2, r_sym, theme_secondary);
       it.filled_triangle(scx - r_sym + 2, scy + 2, scx + r_sym - 2, scy + 2, scx, scy + r_sym, theme_secondary);
-      it.filled_circle(scx, scy, std::max(2, r_sym / 3), col_gold);
+      fast_filled_circle(it, scx, scy, std::max(2, r_sym / 3), col_gold);
     }
   };
 
@@ -2596,7 +2596,7 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
     if (is_open) {
       draw_card_symbol(cards[idx], scx, scy, std::max(8, card_sz / 3 - 2));
     } else {
-      it.filled_circle(scx, scy, std::max(3, card_sz / 8), theme_primary * 0.55f);
+      fast_filled_circle(it, scx, scy, std::max(3, card_sz / 8), theme_primary * 0.55f);
     }
   }
 
@@ -2637,18 +2637,18 @@ inline void render_games_launcher(
   auto draw_game_icon = [&](int g_idx, int icon_x, int icon_y) {
     if (g_idx == 0) {
       // GAME 0: MARBLES
-      it.filled_circle(icon_x, icon_y, 52, Color(18, 24, 28));
-      it.circle(icon_x, icon_y, 52, col_slate);
-      it.circle(icon_x, icon_y, 51, col_slate);
-      it.circle(icon_x, icon_y, 46, Color(30, 40, 48));
+      fast_filled_circle(it, icon_x, icon_y, 52, Color(18, 24, 28));
+      fast_circle(it, icon_x, icon_y, 52, col_slate);
+      fast_circle(it, icon_x, icon_y, 51, col_slate);
+      fast_circle(it, icon_x, icon_y, 46, Color(30, 40, 48));
 
-      it.filled_circle(icon_x, icon_y, 15, col_black);
-      it.circle(icon_x, icon_y, 15, Color(45, 55, 65));
-      it.circle(icon_x, icon_y, 14, Color(45, 55, 65));
+      fast_filled_circle(it, icon_x, icon_y, 15, col_black);
+      fast_circle(it, icon_x, icon_y, 15, Color(45, 55, 65));
+      fast_circle(it, icon_x, icon_y, 14, Color(45, 55, 65));
 
       for (int a = 0; a < 4; a++) {
         float sa = a * 1.570796f;
-        it.line(icon_x + static_cast<int>(fast_cos(sa) * 18.0f),
+        fast_line(it, icon_x + static_cast<int>(fast_cos(sa) * 18.0f),
                 icon_y + static_cast<int>(fast_sin(sa) * 18.0f),
                 icon_x + static_cast<int>(fast_cos(sa + 0.8f) * 40.0f),
                 icon_y + static_cast<int>(fast_sin(sa + 0.8f) * 40.0f),
@@ -2666,20 +2666,20 @@ inline void render_games_launcher(
                             col_cyan, col_red, col_gold, col_slate, col_dark_gray);
       int tip_x = icon_x + 2, tip_y = icon_y + 2;
       int tail_x = icon_x + 56, tail_y = icon_y - 36;
-      it.line(tip_x, tip_y + 5, tail_x - 8, tail_y + 10, Color(15, 18, 24));
-      it.line(tip_x, tip_y + 6, tail_x - 8, tail_y + 11, Color(15, 18, 24));
-      it.circle(tip_x, tip_y, 5, Color(180, 110, 0));
+      fast_line(it, tip_x, tip_y + 5, tail_x - 8, tail_y + 10, Color(15, 18, 24));
+      fast_line(it, tip_x, tip_y + 6, tail_x - 8, tail_y + 11, Color(15, 18, 24));
+      fast_circle(it, tip_x, tip_y, 5, Color(180, 110, 0));
       it.filled_triangle(tip_x - 3, tip_y + 2, tip_x + 9, tip_y - 9, tip_x + 12, tip_y - 2, col_white);
-      it.line(tip_x, tip_y, tail_x, tail_y, Color(238, 206, 148));
-      it.line(tip_x, tip_y - 1, tail_x, tail_y - 1, Color(250, 228, 178));
-      it.line(tip_x, tip_y + 1, tail_x, tail_y + 1, Color(182, 138, 76));
+      fast_line(it, tip_x, tip_y, tail_x, tail_y, Color(238, 206, 148));
+      fast_line(it, tip_x, tip_y - 1, tail_x, tail_y - 1, Color(250, 228, 178));
+      fast_line(it, tip_x, tip_y + 1, tail_x, tail_y + 1, Color(182, 138, 76));
       for (int f = 0; f < 9; f++) {
         int fx = tail_x - 3 - f;
         int fy = tail_y + 2 + (f * 2) / 3;
-        it.line(fx, fy - 1, fx + 3, fy - 11, Color(255, 52, 52));
-        it.line(fx, fy + 1, fx + 10, fy + 4, Color(220, 32, 32));
+        fast_line(it, fx, fy - 1, fx + 3, fy - 11, Color(255, 52, 52));
+        fast_line(it, fx, fy + 1, fx + 10, fy + 4, Color(220, 32, 32));
       }
-      it.filled_circle(tail_x + 1, tail_y - 1, 2, col_white);
+      fast_filled_circle(it, tail_x + 1, tail_y - 1, 2, col_white);
 
     } else if (g_idx == 2) {
       // GAME 2: BREAKOUT — 3D Beveled Bricks, Shattering Hit & Compact Paddle
@@ -2693,11 +2693,11 @@ inline void render_games_launcher(
           int bx = start_bx + c * (b_w + gap_x);
           int by = start_by + r * (b_h + gap_y);
           if (r == 2 && c == 2) {
-            it.filled_rectangle(bx - 10, by - 5, 5, 4, row_c[r]);
-            it.filled_rectangle(bx + 4, by - 7, 5, 4, row_hi[r]);
-            it.filled_rectangle(bx - 6, by + 3, 4, 4, row_c[r]);
-            it.filled_rectangle(bx + 5, by + 2, 5, 4, row_hi[r]);
-            it.filled_circle(bx, by, 2, col_white);
+            fill_rect_row_major(it, bx - 10, by - 5, 5, 4, row_c[r]);
+            fill_rect_row_major(it, bx + 4, by - 7, 5, 4, row_hi[r]);
+            fill_rect_row_major(it, bx - 6, by + 3, 4, 4, row_c[r]);
+            fill_rect_row_major(it, bx + 5, by + 2, 5, 4, row_hi[r]);
+            fast_filled_circle(it, bx, by, 2, col_white);
             continue;
           }
           int hp = (r == 0 && (c == 1 || c == 2)) ? 2 : 1;
@@ -2710,13 +2710,13 @@ inline void render_games_launcher(
       render_breakout_paddle(it, pad_x, pad_y, pad_w, pad_h, theme_primary, col_white);
 
       int ball_x = icon_x + 10, ball_y = icon_y + 7;
-      it.filled_circle(pad_x + 3,  pad_y - 7,  2, Color(50, 40, 14));
-      it.filled_circle(pad_x + 6,  pad_y - 14, 2, Color(85, 68, 20));
-      it.filled_circle(pad_x + 9,  pad_y - 21, 3, Color(130, 102, 28));
-      it.filled_circle(ball_x - 3, ball_y + 7, 4, Color(185, 145, 35));
-      it.filled_circle(ball_x, ball_y, 5, col_gold);
-      it.circle(ball_x, ball_y, 5, col_white);
-      it.filled_circle(ball_x - 2, ball_y - 2, 1, col_white);
+      fast_filled_circle(it, pad_x + 3,  pad_y - 7,  2, Color(50, 40, 14));
+      fast_filled_circle(it, pad_x + 6,  pad_y - 14, 2, Color(85, 68, 20));
+      fast_filled_circle(it, pad_x + 9,  pad_y - 21, 3, Color(130, 102, 28));
+      fast_filled_circle(it, ball_x - 3, ball_y + 7, 4, Color(185, 145, 35));
+      fast_filled_circle(it, ball_x, ball_y, 5, col_gold);
+      fast_circle(it, ball_x, ball_y, 5, col_white);
+      fast_filled_circle(it, ball_x - 2, ball_y - 2, 1, col_white);
 
     } else if (g_idx == 3) {
       // GAME 3: CHOMP FOR KIDS — Roaming Cookie-Monster Friend Chasing Scattered Treats
@@ -2749,13 +2749,13 @@ inline void render_games_launcher(
     } else {
       // GAME 5: MEMORY MATCH — 2x2 Flipped & Face-Down Matching Cards
       render_modern_card(it, icon_x - 44, icon_y - 44, 40, 40, Color(36, 44, 58), col_gold, 8);
-      it.filled_circle(icon_x - 24, icon_y - 24, 9, col_gold);
+      fast_filled_circle(it, icon_x - 24, icon_y - 24, 9, col_gold);
       render_modern_card(it, icon_x + 4, icon_y - 44, 40, 40, Color(28, 34, 46), theme_primary, 8);
-      it.filled_circle(icon_x + 24, icon_y - 24, 5, theme_primary);
+      fast_filled_circle(it, icon_x + 24, icon_y - 24, 5, theme_primary);
       render_modern_card(it, icon_x - 44, icon_y + 4, 40, 40, Color(28, 34, 46), theme_primary, 8);
-      it.filled_circle(icon_x - 24, icon_y + 24, 5, theme_primary);
+      fast_filled_circle(it, icon_x - 24, icon_y + 24, 5, theme_primary);
       render_modern_card(it, icon_x + 4, icon_y + 4, 40, 40, Color(36, 44, 58), col_gold, 8);
-      it.filled_circle(icon_x + 24, icon_y + 24, 9, col_gold);
+      fast_filled_circle(it, icon_x + 24, icon_y + 24, 9, col_gold);
     }
   };
 
@@ -2835,27 +2835,27 @@ inline void render_games_launcher(
 
   const int spk_x = cx - scale_x(91), spk_y = btn_row_y;
   const int spk_r = scale_s(22);
-  it.filled_circle(spk_x, spk_y, spk_r, col_dark_gray);
-  it.circle(spk_x, spk_y, spk_r, game_sound_on ? theme_secondary : col_slate);
-  it.circle(spk_x, spk_y, spk_r - 1, game_sound_on ? theme_secondary : col_slate);
+  fast_filled_circle(it, spk_x, spk_y, spk_r, col_dark_gray);
+  fast_circle(it, spk_x, spk_y, spk_r, game_sound_on ? theme_secondary : col_slate);
+  fast_circle(it, spk_x, spk_y, spk_r - 1, game_sound_on ? theme_secondary : col_slate);
   Color spk_c = game_sound_on ? col_white : col_slate;
   // Speaker body & cone
-  it.filled_rectangle(spk_x - 9, spk_y - 4, 5, 9, spk_c);
+  fill_rect_row_major(it, spk_x - 9, spk_y - 4, 5, 9, spk_c);
   it.filled_triangle(spk_x - 4, spk_y - 4, spk_x - 4, spk_y + 4, spk_x + 2, spk_y + 9, spk_c);
   it.filled_triangle(spk_x - 4, spk_y - 4, spk_x + 2, spk_y + 9, spk_x + 2, spk_y - 9, spk_c);
   if (game_sound_on) {
     // Sound wave arcs
-    it.line(spk_x + 5, spk_y - 4, spk_x + 7, spk_y - 2, theme_primary);
-    it.line(spk_x + 7, spk_y - 2, spk_x + 7, spk_y + 2, theme_primary);
-    it.line(spk_x + 7, spk_y + 2, spk_x + 5, spk_y + 4, theme_primary);
-    it.line(spk_x + 8, spk_y - 7, spk_x + 11, spk_y - 3, theme_secondary);
-    it.line(spk_x + 11, spk_y - 3, spk_x + 11, spk_y + 3, theme_secondary);
-    it.line(spk_x + 11, spk_y + 3, spk_x + 8, spk_y + 7, theme_secondary);
+    fast_line(it, spk_x + 5, spk_y - 4, spk_x + 7, spk_y - 2, theme_primary);
+    fast_line(it, spk_x + 7, spk_y - 2, spk_x + 7, spk_y + 2, theme_primary);
+    fast_line(it, spk_x + 7, spk_y + 2, spk_x + 5, spk_y + 4, theme_primary);
+    fast_line(it, spk_x + 8, spk_y - 7, spk_x + 11, spk_y - 3, theme_secondary);
+    fast_line(it, spk_x + 11, spk_y - 3, spk_x + 11, spk_y + 3, theme_secondary);
+    fast_line(it, spk_x + 11, spk_y + 3, spk_x + 8, spk_y + 7, theme_secondary);
   } else {
     // Bold crimson diagonal mute slash across speaker
-    it.line(spk_x - 11, spk_y - 10, spk_x + 10, spk_y + 11, col_red);
-    it.line(spk_x - 10, spk_y - 10, spk_x + 11, spk_y + 11, col_red);
-    it.line(spk_x - 11, spk_y - 9,  spk_x + 10, spk_y + 12, col_red);
+    fast_line(it, spk_x - 11, spk_y - 10, spk_x + 10, spk_y + 11, col_red);
+    fast_line(it, spk_x - 10, spk_y - 10, spk_x + 11, spk_y + 11, col_red);
+    fast_line(it, spk_x - 11, spk_y - 9,  spk_x + 10, spk_y + 12, col_red);
   }
 }
 }  // namespace latter_ui

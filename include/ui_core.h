@@ -13,7 +13,9 @@
 #include <esp_memory_utils.h>
 #include <esp_timer.h>
 #endif
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
@@ -29,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110219L
+#define LATTER_SDK_REV 2026110220L
 
 namespace latter_ui {
 
@@ -465,19 +467,23 @@ inline esphome::Color hsv_to_rgb(float h, float s, float v) {
       static_cast<uint8_t>(b * 255.0f));
 }
 
+// Defined with the other fast primitives below; declared here for draw_glow_line.
+template<typename DisplayT>
+inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c);
+
 template<typename DisplayT>
 inline void draw_glow_line(DisplayT &it, int x0, int y0, int x1, int y1,
                            esphome::Color core_col, esphome::Color halo_col) {
   int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
   int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
   if (dx >= dy) {
-    it.line(x0, y0 - 1, x1, y1 - 1, halo_col);
-    it.line(x0, y0 + 1, x1, y1 + 1, halo_col);
+    fast_line(it, x0, y0 - 1, x1, y1 - 1, halo_col);
+    fast_line(it, x0, y0 + 1, x1, y1 + 1, halo_col);
   } else {
-    it.line(x0 - 1, y0, x1 - 1, y1, halo_col);
-    it.line(x0 + 1, y0, x1 + 1, y1, halo_col);
+    fast_line(it, x0 - 1, y0, x1 - 1, y1, halo_col);
+    fast_line(it, x0 + 1, y0, x1 + 1, y1, halo_col);
   }
-  it.line(x0, y0, x1, y1, core_col);
+  fast_line(it, x0, y0, x1, y1, core_col);
 }
 
 // Universal Audio-Aware Ambient Animation Pacer (20 FPS Idle / ~13.3 FPS Audio-Protected):
@@ -714,6 +720,151 @@ inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphom
   }
 }
 
+// Fast equivalents of ESPHome's Display drawing primitives. Upstream filled_circle,
+// filled_rectangle, horizontal_line, vertical_line, rectangle, line and circle all end in one
+// virtual draw_pixel_at per pixel (clip check, rotation switch, store and watermark update).
+// With the software framebuffer bound, these write it directly using the same algorithms, so
+// pixel coverage is identical; otherwise they fall back to the ESPHome primitive. Clipping
+// regions are not supported (the SDK does not use them).
+template<typename DisplayT>
+inline void fast_vline(DisplayT &it, int x, int y, int h, esphome::Color c) {
+  if (h <= 0 || x < 0 || x >= SCREEN_W) return;
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (y + h > SCREEN_H) {
+    h = SCREEN_H - y;
+  }
+  if (h <= 0) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb != nullptr) {
+    const uint16_t px = encode_hw_rgb565(c);
+    uint16_t *dst = fb + y * SCREEN_W + x;
+    for (int i = 0; i < h; i++, dst += SCREEN_W) {
+      *dst = px;
+    }
+    return;
+  }
+  it.vertical_line(x, y, h, c);
+}
+
+template<typename DisplayT>
+inline void fast_rect_outline(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
+  fast_hline(it, x, y, w, c);
+  fast_hline(it, x, y + h - 1, w, c);
+  fast_vline(it, x, y, h, c);
+  fast_vline(it, x + w - 1, y, h, c);
+}
+
+// Same Bresenham walk as Display::filled_circle; each row is emitted once at its widest span
+// (later iterations on the same row are narrower subsets), removing the upstream overdraw.
+template<typename DisplayT>
+inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+  if (active_frame_buf16() == nullptr || r < 0) {
+    it.filled_circle(cx, cy, r, c);
+    return;
+  }
+  int dx = -r;
+  int dy = 0;
+  int err = 2 - 2 * r;
+  int e2;
+  int last_dy = -1;
+  do {
+    if (dy != last_dy) {
+      const int w = 2 * (-dx) + 1;
+      fast_hline(it, cx + dx, cy + dy, w, c);
+      if (dy != 0) fast_hline(it, cx + dx, cy - dy, w, c);
+      last_dy = dy;
+    }
+    e2 = err;
+    if (e2 < dy) {
+      err += ++dy * 2 + 1;
+      if (-dx == dy && e2 <= dx) {
+        e2 = 0;
+      }
+    }
+    if (e2 > dx) {
+      err += ++dx * 2 + 1;
+    }
+  } while (dx <= 0);
+}
+
+// Same Bresenham walk as Display::circle.
+template<typename DisplayT>
+inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr || r < 0) {
+    it.circle(cx, cy, r, c);
+    return;
+  }
+  const uint16_t px = encode_hw_rgb565(c);
+  auto put = [fb, px](int x, int y) {
+    if (static_cast<unsigned>(x) < static_cast<unsigned>(SCREEN_W) &&
+        static_cast<unsigned>(y) < static_cast<unsigned>(SCREEN_H)) {
+      fb[y * SCREEN_W + x] = px;
+    }
+  };
+  int dx = -r;
+  int dy = 0;
+  int err = 2 - 2 * r;
+  int e2;
+  do {
+    put(cx - dx, cy + dy);
+    put(cx + dx, cy + dy);
+    put(cx + dx, cy - dy);
+    put(cx - dx, cy - dy);
+    e2 = err;
+    if (e2 < dy) {
+      err += ++dy * 2 + 1;
+      if (-dx == dy && e2 <= dx) {
+        e2 = 0;
+      }
+    }
+    if (e2 > dx) {
+      err += ++dx * 2 + 1;
+    }
+  } while (dx <= 0);
+}
+
+// Same Bresenham walk as Display::line (endpoints inclusive); axis-aligned lines use spans.
+template<typename DisplayT>
+inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c) {
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    it.line(x1, y1, x2, y2, c);
+    return;
+  }
+  if (y1 == y2) {
+    fast_hline(it, std::min(x1, x2), y1, std::abs(x2 - x1) + 1, c);
+    return;
+  }
+  if (x1 == x2) {
+    fast_vline(it, x1, std::min(y1, y2), std::abs(y2 - y1) + 1, c);
+    return;
+  }
+  const uint16_t px = encode_hw_rgb565(c);
+  const int32_t dx = std::abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
+  const int32_t dy = -std::abs(y2 - y1), sy = y1 < y2 ? 1 : -1;
+  int32_t err = dx + dy;
+  while (true) {
+    if (static_cast<unsigned>(x1) < static_cast<unsigned>(SCREEN_W) &&
+        static_cast<unsigned>(y1) < static_cast<unsigned>(SCREEN_H)) {
+      fb[y1 * SCREEN_W + x1] = px;
+    }
+    if (x1 == x2 && y1 == y2) break;
+    const int32_t e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x1 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y1 += sy;
+    }
+  }
+}
+
 template<typename DisplayT, typename FontT>
 inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
                                esphome::Color border_c, esphome::Color bg_c,
@@ -721,10 +872,10 @@ inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
   int ri = (r > 2) ? (r - 2) : 1;
   int span_w = x2 - x1;
   // Draw end caps + single-pass interior fill + 2px top/bottom border bands (avoids 2x center rectangle overdraw!)
-  it.filled_circle(x1, y_mid, r, border_c);
-  it.filled_circle(x2, y_mid, r, border_c);
-  it.filled_circle(x1, y_mid, ri, bg_c);
-  it.filled_circle(x2, y_mid, ri, bg_c);
+  fast_filled_circle(it, x1, y_mid, r, border_c);
+  fast_filled_circle(it, x2, y_mid, r, border_c);
+  fast_filled_circle(it, x1, y_mid, ri, bg_c);
+  fast_filled_circle(it, x2, y_mid, ri, bg_c);
   fill_rect_row_major(it, x1, y_mid - r,      span_w, 2,          border_c);
   fill_rect_row_major(it, x1, y_mid + r - 1,  span_w, 2,          border_c);
   fill_rect_row_major(it, x1, y_mid - ri,     span_w, 2 * ri + 1, bg_c);
@@ -1005,21 +1156,21 @@ inline void render_scroll_chevron(DisplayT &it, int x, int y, bool is_up,
   if (shadow) {
     for (int t = 0; t < thick; t++) {
       if (is_up) {
-        it.line(x - dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
-        it.line(x + dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
+        fast_line(it, x - dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
+        fast_line(it, x + dx, y + dy_lo + 1 + t, x, y - dy_hi + 1 + t, shadow_c);
       } else {
-        it.line(x - dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
-        it.line(x + dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
+        fast_line(it, x - dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
+        fast_line(it, x + dx, y - dy_lo + 1 + t, x, y + dy_hi + 1 + t, shadow_c);
       }
     }
   }
   for (int t = 0; t < thick; t++) {
     if (is_up) {
-      it.line(x - dx, y + dy_lo + t, x, y - dy_hi + t, c);
-      it.line(x + dx, y + dy_lo + t, x, y - dy_hi + t, c);
+      fast_line(it, x - dx, y + dy_lo + t, x, y - dy_hi + t, c);
+      fast_line(it, x + dx, y + dy_lo + t, x, y - dy_hi + t, c);
     } else {
-      it.line(x - dx, y - dy_hi + t, x, y + dy_lo + t, c);
-      it.line(x + dx, y - dy_hi + t, x, y + dy_lo + t, c);
+      fast_line(it, x - dx, y - dy_hi + t, x, y + dy_lo + t, c);
+      fast_line(it, x + dx, y - dy_hi + t, x, y + dy_lo + t, c);
     }
   }
 }
@@ -1028,7 +1179,7 @@ template <typename DisplayT>
 inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Color ring_c) {
 #if LATTER_ROUND_DISPLAY
   for (int r = SCREEN_R - 10; r <= SCREEN_R - 7; r++) {
-    it.circle(cx, cy, r, ring_c);
+    fast_circle(it, cx, cy, r, ring_c);
   }
 #else
   (void)cx;
@@ -1074,12 +1225,12 @@ inline void render_link_state_indicator(DisplayT &it, int cx, uint32_t now_ms,
   if (link_state().ha_connected || now_ms < 8000U) return;
   const int gy = scale_y(14);
   // Compact 13x7 link-broken pill + diagonal slash
-  it.filled_circle(cx - 4, gy, 3, warn_c);
-  it.filled_circle(cx + 4, gy, 3, warn_c);
-  it.filled_circle(cx - 4, gy, 1, bg_c);
-  it.filled_circle(cx + 4, gy, 1, bg_c);
-  it.line(cx - 5, gy + 4, cx + 5, gy - 4, bg_c);
-  it.line(cx - 4, gy + 4, cx + 5, gy - 3, warn_c);
+  fast_filled_circle(it, cx - 4, gy, 3, warn_c);
+  fast_filled_circle(it, cx + 4, gy, 3, warn_c);
+  fast_filled_circle(it, cx - 4, gy, 1, bg_c);
+  fast_filled_circle(it, cx + 4, gy, 1, bg_c);
+  fast_line(it, cx - 5, gy + 4, cx + 5, gy - 4, bg_c);
+  fast_line(it, cx - 4, gy + 4, cx + 5, gy - 3, warn_c);
 }
 
 template <typename DisplayT>
@@ -1090,8 +1241,8 @@ inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
   const int cap_r  = bar_h / 2;
   fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, esphome::Color(0, 0, 0));
   fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
-  it.filled_circle(cx - half_w + cap_r, y_pos, cap_r, bar_col);
-  it.filled_circle(cx + half_w - cap_r, y_pos, cap_r, bar_col);
+  fast_filled_circle(it, cx - half_w + cap_r, y_pos, cap_r, bar_col);
+  fast_filled_circle(it, cx + half_w - cap_r, y_pos, cap_r, bar_col);
 }
 
 template <typename DisplayT>
@@ -1112,10 +1263,10 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
     fill_rect_row_major(it, track_x0 + 1, track_y0 + 1, track_w, track_h, esphome::Color(0, 0, 0));
   }
   fill_rect_row_major(it, track_x0, track_y0, track_w, track_h, col_track);
-  it.horizontal_line(track_x0 + 1, track_y0, track_w - 2, col_brd);
-  it.horizontal_line(track_x0 + 1, track_y0 + track_h - 1, track_w - 2, col_brd);
-  it.filled_circle(track_x0 + r_cap, y_pos, r_cap, col_track);
-  it.filled_circle(track_x0 + track_w - r_cap, y_pos, r_cap, col_track);
+  fast_hline(it, track_x0 + 1, track_y0, track_w - 2, col_brd);
+  fast_hline(it, track_x0 + 1, track_y0 + track_h - 1, track_w - 2, col_brd);
+  fast_filled_circle(it, track_x0 + r_cap, y_pos, r_cap, col_track);
+  fast_filled_circle(it, track_x0 + track_w - r_cap, y_pos, r_cap, col_track);
 
   const int min_thumb_w = (SCREEN_W > 520) ? 28 : 20;
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
@@ -1125,8 +1276,8 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const int thumb_x0 = track_x0 + static_cast<int>( std::roundf(frac * static_cast<float>(track_w - thumb_w)) );
 
   fill_rect_row_major(it, thumb_x0, track_y0, thumb_w, track_h, col_thumb);
-  it.filled_circle(thumb_x0 + r_cap, y_pos, r_cap, col_thumb);
-  it.filled_circle(thumb_x0 + thumb_w - r_cap, y_pos, r_cap, col_thumb);
+  fast_filled_circle(it, thumb_x0 + r_cap, y_pos, r_cap, col_thumb);
+  fast_filled_circle(it, thumb_x0 + thumb_w - r_cap, y_pos, r_cap, col_thumb);
 }
 
 template <typename DisplayT>
@@ -1144,11 +1295,11 @@ inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pag
       int ph = dot_r * 2 + 1;
       fill_rect_row_major(it, px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, esphome::Color(0, 0, 0));
       fill_rect_row_major(it, px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
-      it.filled_circle(px - pw / 2, y_pos, dot_r, col_active);
-      it.filled_circle(px + pw / 2, y_pos, dot_r, col_active);
+      fast_filled_circle(it, px - pw / 2, y_pos, dot_r, col_active);
+      fast_filled_circle(it, px + pw / 2, y_pos, dot_r, col_active);
     } else {
-      it.filled_circle(px + 1, y_pos + 1, dot_r, esphome::Color(0, 0, 0));
-      it.filled_circle(px,     y_pos,     dot_r, col_inactive);
+      fast_filled_circle(it, px + 1, y_pos + 1, dot_r, esphome::Color(0, 0, 0));
+      fast_filled_circle(it, px,     y_pos,     dot_r, col_inactive);
     }
   }
 }
@@ -1461,8 +1612,8 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int top_in = r_std / 2 + 2;
     fast_hline(it, x0 + top_in, y0,                std_size - 2 * top_in, brd_top);
     fast_hline(it, x0 + top_in, y0 + std_size - 1, std_size - 2 * top_in, brd_btm);
-    it.vertical_line(x0,                y0 + r_std, std_size - 2 * r_std, brd_side);
-    it.vertical_line(x0 + std_size - 1, y0 + r_std, std_size - 2 * r_std, brd_side);
+    fast_vline(it, x0,                y0 + r_std, std_size - 2 * r_std, brd_side);
+    fast_vline(it, x0 + std_size - 1, y0 + r_std, std_size - 2 * r_std, brd_side);
     for (int dy = 1; dy < r_std; dy++) {
       int dx_out = r_std - chord_half_span_int(r_std, r_std - dy, true);
       int dx_in  = dx_out + 1;
@@ -1553,8 +1704,8 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     int hw_btm = circle_half_span(end_y - 1, 0);
     int x0_t = std::max(0, cx - hw_top), x1_t = std::min(SCREEN_W - 1, cx + hw_top);
     int x0_b = std::max(0, cx - hw_btm), x1_b = std::min(SCREEN_W - 1, cx + hw_btm);
-    if (x1_t > x0_t) it.horizontal_line(x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
-    if (x1_b > x0_b) it.horizontal_line(x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
+    if (x1_t > x0_t) fast_hline(it, x0_t, start_y, x1_t - x0_t + 1, esphome::Color(68, 80, 98));
+    if (x1_b > x0_b) fast_hline(it, x0_b, end_y - 1, x1_b - x0_b + 1, esphome::Color(46, 54, 68));
   }
   return true;
 }

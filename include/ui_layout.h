@@ -964,12 +964,12 @@ inline void render_in_app_mode_bar_track(
     int x0 = left_cx - dx_cap;
     int x1 = right_cx + dx_cap;
     if (x1 > x0) {
-      it.horizontal_line(x0, py, x1 - x0 + 1, track_bg);
+      fast_hline(it, x0, py, x1 - x0 + 1, track_bg);
       if (std::abs(dy) == r_track) {
-        it.horizontal_line(left_cx, py, right_cx - left_cx + 1, track_brd);
+        fast_hline(it, left_cx, py, right_cx - left_cx + 1, track_brd);
       } else {
-        it.draw_pixel_at(x0, py, track_brd);
-        it.draw_pixel_at(x1, py, track_brd);
+        fast_pixel(it, x0, py, track_brd);
+        fast_pixel(it, x1, py, track_brd);
       }
     }
   }
@@ -984,7 +984,7 @@ inline void render_in_app_mode_bar_track(
       continue;
     }
     int mid_x = (win_xs[i] + win_xs[i + 1]) / 2;
-    it.vertical_line(mid_x, by - div_h, div_h * 2 + 1, div_col);
+    fast_vline(it, mid_x, by - div_h, div_h * 2 + 1, div_col);
   }
 
   // 3. Smoothly Gliding Active Slot Capsule Highlight inside the track
@@ -1000,9 +1000,9 @@ inline void render_in_app_mode_bar_track(
       Color ring_col(static_cast<uint8_t>(16 + (theme_primary.r - 16) * ring_alpha),
                      static_cast<uint8_t>(20 + (theme_primary.g - 20) * ring_alpha),
                      static_cast<uint8_t>(27 + (theme_primary.b - 27) * ring_alpha));
-      it.filled_circle(abx, by, dr - 1, cap_bg);
-      it.circle(abx, by, dr, ring_col);
-      it.circle(abx, by, dr - 1, ring_col);
+      fast_filled_circle(it, abx, by, dr - 1, cap_bg);
+      fast_circle(it, abx, by, dr, ring_col);
+      fast_circle(it, abx, by, dr - 1, ring_col);
     }
   }
 
@@ -1011,17 +1011,17 @@ inline void render_in_app_mode_bar_track(
   const int ch_s = scale_s(5);
   if (has_left_arrow) {
     int lx = left_cx - chev_off;
-    it.line(lx + ch_s / 2, by - ch_s, lx - ch_s / 2, by, col_white);
-    it.line(lx - ch_s / 2, by, lx + ch_s / 2, by + ch_s, col_white);
-    it.line(lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
-    it.line(lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
+    fast_line(it, lx + ch_s / 2, by - ch_s, lx - ch_s / 2, by, col_white);
+    fast_line(it, lx - ch_s / 2, by, lx + ch_s / 2, by + ch_s, col_white);
+    fast_line(it, lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
+    fast_line(it, lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
   }
   if (has_right_arrow) {
     int rx = right_cx + chev_off;
-    it.line(rx - ch_s / 2, by - ch_s, rx + ch_s / 2, by, col_white);
-    it.line(rx + ch_s / 2, by, rx - ch_s / 2, by + ch_s, col_white);
-    it.line(rx - ch_s / 2 - 1, by - ch_s, rx + ch_s / 2 - 1, by, theme_primary);
-    it.line(rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
+    fast_line(it, rx - ch_s / 2, by - ch_s, rx + ch_s / 2, by, col_white);
+    fast_line(it, rx + ch_s / 2, by, rx - ch_s / 2, by + ch_s, col_white);
+    fast_line(it, rx - ch_s / 2 - 1, by - ch_s, rx + ch_s / 2 - 1, by, theme_primary);
+    fast_line(it, rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
   }
 
   // 5. Proportional Viewport Scrollbar below the Mode Bar when total_count > 4
@@ -1066,18 +1066,18 @@ inline void clear_ui_focus() {
 
 template<typename DisplayT>
 inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r, esphome::Color accent, esphome::Color inner_hi) {
-  it.circle(cx, cy, r + 2, accent);
-  it.circle(cx, cy, r + 3, accent);
-  it.circle(cx, cy, r + 1, inner_hi);
+  fast_circle(it, cx, cy, r + 2, accent);
+  fast_circle(it, cx, cy, r + 3, accent);
+  fast_circle(it, cx, cy, r + 1, inner_hi);
 }
 
 template<typename DisplayT>
 inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h, esphome::Color accent, esphome::Color inner_hi) {
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
-  it.rectangle(x0 - 2, y0 - 2, w + 4, h + 4, accent);
-  it.rectangle(x0 - 3, y0 - 3, w + 6, h + 6, accent);
-  it.rectangle(x0 - 1, y0 - 1, w + 2, h + 2, inner_hi);
+  fast_rect_outline(it, x0 - 2, y0 - 2, w + 4, h + 4, accent);
+  fast_rect_outline(it, x0 - 3, y0 - 3, w + 6, h + 6, accent);
+  fast_rect_outline(it, x0 - 1, y0 - 1, w + 2, h + 2, inner_hi);
 }
 
 template<typename DisplayT>

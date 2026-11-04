@@ -454,10 +454,10 @@ inline void render_system_page(
     if (enabled) {
       const int c_l = layout().list_card_left + 15;
       const int c_r = cx + (layout().list_card_w / 2) - 15;
-      it.line(c_l, y_mid, c_l + 5, y_mid - 5, chv_c);
-      it.line(c_l, y_mid, c_l + 5, y_mid + 5, chv_c);
-      it.line(c_r, y_mid, c_r - 5, y_mid - 5, chv_c);
-      it.line(c_r, y_mid, c_r - 5, y_mid + 5, chv_c);
+      fast_line(it, c_l, y_mid, c_l + 5, y_mid - 5, chv_c);
+      fast_line(it, c_l, y_mid, c_l + 5, y_mid + 5, chv_c);
+      fast_line(it, c_r, y_mid, c_r - 5, y_mid - 5, chv_c);
+      fast_line(it, c_r, y_mid, c_r - 5, y_mid + 5, chv_c);
     }
   };
 
@@ -511,8 +511,8 @@ inline void render_system_page(
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
 
@@ -575,8 +575,8 @@ inline void render_system_page(
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     render_menu_header(it, cx, 48, "SLEEP & WAKE", font_small, theme_primary);
     draw_back();
@@ -616,16 +616,16 @@ inline void render_system_page(
           if (i == 3) {
             const int swatch_x = layout().sys_color_swatch_x();
             const int sw_r = scale_s(9);
-            it.filled_circle(swatch_x, y, sw_r, theme_primary);
-            it.circle(swatch_x, y, sw_r, col_white);
+            fast_filled_circle(it, swatch_x, y, sw_r, theme_primary);
+            fast_circle(it, swatch_x, y, sw_r, col_white);
           }
         }
       }
     }
 
     if (menu_scroll_active) {
-      it.filled_rectangle(0, 0, SCREEN_W, mask_top_h, col_bg);
-      it.filled_rectangle(0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
+      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
     render_menu_header(it, cx, 48, "DISPLAY", font_small, theme_primary);
     draw_back();
@@ -833,7 +833,7 @@ inline void render_system_page(
   } else if (system_menu_mode == 13) {
     const int wheel_cy = scale_y(180);
     const float ws = (SCREEN_MIN_DIM > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
-    it.circle(cx, wheel_cy, scale_s(166), card_brd_off);
+    fast_circle(it, cx, wheel_cy, scale_s(166), card_brd_off);
 
     for (int a = 0; a < 60; a++) {
       float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
@@ -842,39 +842,39 @@ inline void render_system_page(
 
       int x1 = cx + static_cast<int>(c_a * 148.0f * ws);
       int y1 = wheel_cy + static_cast<int>(s_a * 148.0f * ws);
-      it.filled_circle(x1, y1, scale_s(16), hsv_to_rgb(hue_01, 1.00f, 1.0f));
+      fast_filled_circle(it, x1, y1, scale_s(16), hsv_to_rgb(hue_01, 1.00f, 1.0f));
 
       int x2 = cx + static_cast<int>(c_a * 124.0f * ws);
       int y2 = wheel_cy + static_cast<int>(s_a * 124.0f * ws);
-      it.filled_circle(x2, y2, scale_s(14), hsv_to_rgb(hue_01, 0.84f, 1.0f));
+      fast_filled_circle(it, x2, y2, scale_s(14), hsv_to_rgb(hue_01, 0.84f, 1.0f));
 
       int x3 = cx + static_cast<int>(c_a * 101.0f * ws);
       int y3 = wheel_cy + static_cast<int>(s_a * 101.0f * ws);
-      it.filled_circle(x3, y3, scale_s(12), hsv_to_rgb(hue_01, 0.68f, 1.0f));
+      fast_filled_circle(it, x3, y3, scale_s(12), hsv_to_rgb(hue_01, 0.68f, 1.0f));
 
       int x4 = cx + static_cast<int>(c_a * 79.0f * ws);
       int y4 = wheel_cy + static_cast<int>(s_a * 79.0f * ws);
-      it.filled_circle(x4, y4, scale_s(11), hsv_to_rgb(hue_01, 0.52f, 1.0f));
+      fast_filled_circle(it, x4, y4, scale_s(11), hsv_to_rgb(hue_01, 0.52f, 1.0f));
 
       int x5 = cx + static_cast<int>(c_a * 59.0f * ws);
       int y5 = wheel_cy + static_cast<int>(s_a * 59.0f * ws);
-      it.filled_circle(x5, y5, scale_s(9), hsv_to_rgb(hue_01, 0.36f, 1.0f));
+      fast_filled_circle(it, x5, y5, scale_s(9), hsv_to_rgb(hue_01, 0.36f, 1.0f));
     }
 
-    it.filled_circle(cx, wheel_cy, scale_s(49), col_black);
-    it.filled_circle(cx, wheel_cy, scale_s(44), theme_primary);
-    it.circle(cx, wheel_cy, scale_s(44), col_white);
-    it.circle(cx, wheel_cy, scale_s(45), theme_secondary);
+    fast_filled_circle(it, cx, wheel_cy, scale_s(49), col_black);
+    fast_filled_circle(it, cx, wheel_cy, scale_s(44), theme_primary);
+    fast_circle(it, cx, wheel_cy, scale_s(44), col_white);
+    fast_circle(it, cx, wheel_cy, scale_s(45), theme_secondary);
 
     float rad = color_wheel_hue_deg() * (PI_F / 180.0f);
     float r_sel = (59.0f + ((color_wheel_sat() - 0.35f) / 0.65f) * 89.0f) * ws;
     r_sel = std::max(57.0f * ws, std::min(150.0f * ws, r_sel));
     int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
     int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-    it.filled_circle(sel_x, sel_y, scale_s(12), theme_primary);
-    it.circle(sel_x, sel_y, scale_s(12), col_white);
-    it.circle(sel_x, sel_y, scale_s(13), col_white);
-    it.circle(sel_x, sel_y, scale_s(14), col_black);
+    fast_filled_circle(it, sel_x, sel_y, scale_s(12), theme_primary);
+    fast_circle(it, sel_x, sel_y, scale_s(12), col_white);
+    fast_circle(it, sel_x, sel_y, scale_s(13), col_white);
+    fast_circle(it, sel_x, sel_y, scale_s(14), col_black);
 
     render_modern_card(it, cx, scale_y(376), 224, 38, 12, card_bg_on, theme_primary, "Save Custom Color", col_white, font_small);
     draw_back();
