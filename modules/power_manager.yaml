@@ -393,7 +393,7 @@ interval:
                 if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
                   id(stop_doorbell_call).execute();
                 }
-                id(camera_snapshot_art).release();
+                latter_ui::release_art(id(camera_snapshot_art));
               }
               id(tools_subpage) = 0;
               id(sync_display_brightness).execute();

@@ -18,7 +18,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110233L;
+            constexpr long LATTER_YAML_REV = 2026110234L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -33,9 +33,9 @@ esphome:
                 "${remote_4_entity}", "${remote_4_name}");
             id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
         - media_player.pause: latter_media_player
-        - online_image.release: remote_album_art
-        - online_image.release: home_wallpaper_art
-        - online_image.release: camera_snapshot_art
+        - lambda: 'latter_ui::release_art(id(remote_album_art));'
+        - lambda: 'latter_ui::release_art(id(home_wallpaper_art));'
+        - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
         - lambda: |-
             id(current_loaded_art_url) = "";
             id(current_loaded_wallpaper_url) = "";
@@ -273,7 +273,7 @@ api:
               id(fetch_camera_snapshot).execute();
             } else {
               id(current_loaded_camera_url) = "";
-              id(camera_snapshot_art).release();
+              latter_ui::release_art(id(camera_snapshot_art));
             }
             latter_ui::schedule_disp_update(&id(disp1));
 

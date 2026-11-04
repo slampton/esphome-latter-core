@@ -41,7 +41,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110233L
+#define LATTER_SDK_REV 2026110234L
 
 namespace latter_ui {
 
@@ -2092,6 +2092,34 @@ struct ArtCanvasCache {
 
 static constexpr int kArtCacheEntries = 2;
 
+inline ArtCanvasCache *art_canvas_entries() {
+  static ArtCanvasCache *entries = static_cast<ArtCanvasCache *>(
+      heap_caps_calloc(kArtCacheEntries, sizeof(ArtCanvasCache), MALLOC_CAP_SPIRAM));
+  return entries;
+}
+
+// Frees the composed canvases built from this image buffer (PSRAM back to the heap).
+inline void art_canvas_drop(const void *data) {
+  ArtCanvasCache *entries = art_canvas_entries();
+  if (entries == nullptr || data == nullptr) return;
+  for (int i = 0; i < kArtCacheEntries; i++) {
+    ArtCanvasCache &e = entries[i];
+    if (e.data != data) continue;
+    heap_caps_free(e.px);
+    e.px = nullptr;
+    e.data = nullptr;
+    e.last_use = 0;
+  }
+}
+
+// The one way to release a downloaded image: drops its composed canvas, then frees its pixels.
+template<typename ImageT>
+inline void release_art(ImageT *img) {
+  if (img == nullptr) return;
+  art_canvas_drop(img->get_data_start());
+  img->release();
+}
+
 inline uint32_t art_sample_hash(const uint16_t *data, int w, int h) {
   uint32_t hash = 2166136261U ^ (static_cast<uint32_t>(w) * 31U) ^ (static_cast<uint32_t>(h) << 16);
   const uint32_t n = static_cast<uint32_t>(w) * static_cast<uint32_t>(h);
@@ -2157,8 +2185,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   } art_timer{prof_section_begin()};
 
   uint16_t *fb = active_frame_buf16();
-  static ArtCanvasCache *entries = static_cast<ArtCanvasCache *>(
-      heap_caps_calloc(kArtCacheEntries, sizeof(ArtCanvasCache), MALLOC_CAP_SPIRAM));
+  ArtCanvasCache *entries = art_canvas_entries();
   if (fb == nullptr || entries == nullptr) {
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
     return true;
@@ -3227,6 +3254,37 @@ inline void log_memory_report() {
 inline bool &applying_power_profile() {
   static bool v = false;
   return v;
+}
+
+// Sendspin's artwork decode thread ("SsArt") runs at FreeRTOS priority 2, above ESPHome's resampler
+// tasks (priority 1, the same as the main loop). A cover decode (tens to hundreds of ms of CPU) then
+// starves the 48 kHz -> 16 kHz media resampler, the mixer input runs dry, and Sendspin logs "Lost sync"
+// on cover changes. Artwork decoding is best-effort with seconds of slack before its display deadline,
+// so it runs at idle priority. The thread is recreated with its client, so this runs every second.
+static constexpr UBaseType_t kSendspinArtworkPriority = 0;
+
+inline void tune_sendspin_artwork_priority() {
+#if defined(USE_ESP32)
+#if INCLUDE_xTaskGetHandle
+  static TaskHandle_t logged = nullptr;
+  TaskHandle_t h = xTaskGetHandle("SsArt");
+  if (h == nullptr) return;
+  const UBaseType_t was = uxTaskPriorityGet(h);
+  if (was <= kSendspinArtworkPriority) return;
+  vTaskPrioritySet(h, kSendspinArtworkPriority);
+  if (h != logged) {
+    logged = h;
+    ESP_LOGI("audio", "Sendspin artwork decode priority %u -> %u (media resampler runs at 1)", (unsigned) was,
+             (unsigned) kSendspinArtworkPriority);
+  }
+#else
+  static bool warned = false;
+  if (!warned) {
+    warned = true;
+    ESP_LOGW("audio", "Sendspin artwork decode priority not adjusted: INCLUDE_xTaskGetHandle is off");
+  }
+#endif
+#endif
 }
 
 template<typename SelT>

@@ -339,7 +339,7 @@ text_sensor:
                     id(fetch_camera_snapshot).execute();
                   } else {
                     id(current_loaded_camera_url) = "";
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                   }
                 }
               }
@@ -348,7 +348,7 @@ text_sensor:
                 if (!id(current_loaded_wallpaper_url).empty()) {
                   id(fetch_wallpaper_debounced).stop();
                   id(current_loaded_wallpaper_url) = "";
-                  id(home_wallpaper_art).release();
+                  latter_ui::release_art(id(home_wallpaper_art));
                 }
               } else if (id(display_power_state) == 0 && st.wallpaper_url != id(current_loaded_wallpaper_url)) {
                 id(fetch_wallpaper_debounced).execute();
@@ -431,7 +431,7 @@ text_sensor:
                 if (!id(current_loaded_art_url).empty()) {
                   id(fetch_remote_art_debounced).stop();
                   id(current_loaded_art_url) = "";
-                  id(remote_album_art).release();
+                  latter_ui::release_art(id(remote_album_art));
                 }
               } else if (id(display_power_state) == 0 && id(gui_page) == 2 &&
                          (!ms.is_local || id(album_art).get_width() == 0) &&

@@ -1907,7 +1907,7 @@ script:
                     last_tools_tap = now_tools;
                     if (latter_ui::cal_detail_mode() == 2) {
                       latter_ui::cal_detail_mode() = 1;
-                      id(camera_snapshot_art).release();
+                      latter_ui::release_art(id(camera_snapshot_art));
                       id(sync_wake_word_state).execute();
                     } else if (latter_ui::cal_detail_mode() == 1) {
                       latter_ui::cal_detail_mode() = 0;
@@ -1939,7 +1939,7 @@ script:
                       latter_ui::cal_map_pan_x() = 0;
                       latter_ui::cal_map_pan_y() = 0;
                       latter_ui::cal_detail_mode() = 2;
-                      id(camera_snapshot_art).release();
+                      latter_ui::release_art(id(camera_snapshot_art));
                       id(fetch_calendar_map_snapshot).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -2077,7 +2077,7 @@ script:
                     } else {
                       id(tools_subpage) = 0;
                     }
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                     id(sync_wake_word_state).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -2186,7 +2186,7 @@ script:
               id(music_hud_active) = false; id(remote_subpage) = 0; id(tools_subpage) = 0; id(tools_menu_page) = 0;
               id(sky_weather_subpage) = 0;
               if (was_cam_page) {
-                id(camera_snapshot_art).release();
+                latter_ui::release_art(id(camera_snapshot_art));
                 id(sync_wake_word_state).execute();
               }
               ESP_LOGI("touch", "Swipe-Up Home Bar -> Home");
@@ -2512,7 +2512,7 @@ script:
                   gest.last_swipe_ms = now_u;
                   int dir = (dx < 0) ? 1 : -1;
                   latter_ui::cam_carousel_idx() = latter_ui::step_wrap(latter_ui::cam_carousel_idx(), dir, c_total);
-                  id(camera_snapshot_art).release();
+                  latter_ui::release_art(id(camera_snapshot_art));
                   id(fetch_on_demand_camera).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -2583,7 +2583,7 @@ script:
                 id(music_hud_active) = false; id(remote_subpage) = 0; id(tools_subpage) = 0; id(tools_menu_page) = 0;
                 id(sky_weather_subpage) = 0;
                 if (was_cam_page) {
-                  id(camera_snapshot_art).release();
+                  latter_ui::release_art(id(camera_snapshot_art));
                   id(sync_wake_word_state).execute();
                 }
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -3611,7 +3611,7 @@ script:
                       id(cam_intercom_action) = "set_anc_mode";
                       id(send_doorbell_intercom_cmd).execute();
                     }
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -3622,17 +3622,17 @@ script:
                     latter_ui::cam_landscape_mode() = !latter_ui::cam_landscape_mode();
                     latter_ui::cam_intercom_status() = latter_ui::cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
                     id(cam_intercom_status_ms) = now_rel;
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   } else if (c_total > 1 && tp.x < latter_ui::SCREEN_CX - latter_ui::scale_x(55)) {
                     latter_ui::cam_carousel_idx() = latter_ui::step_wrap(latter_ui::cam_carousel_idx(), -1, c_total);
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   } else if (c_total > 1 && tp.x > latter_ui::SCREEN_CX + latter_ui::scale_x(55)) {
                     latter_ui::cam_carousel_idx() = latter_ui::step_wrap(latter_ui::cam_carousel_idx(), 1, c_total);
-                    id(camera_snapshot_art).release();
+                    latter_ui::release_art(id(camera_snapshot_art));
                     id(fetch_on_demand_camera).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   } else {

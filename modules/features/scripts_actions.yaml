@@ -44,7 +44,7 @@ script:
               if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
                 id(stop_doorbell_call).execute();
               }
-              id(camera_snapshot_art).release();
+              latter_ui::release_art(id(camera_snapshot_art));
               id(current_loaded_camera_url) = "";
             }
             id(gui_page) = 1;
@@ -66,7 +66,7 @@ script:
                 if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
                   id(stop_doorbell_call).execute();
                 }
-                id(camera_snapshot_art).release();
+                latter_ui::release_art(id(camera_snapshot_art));
                 id(current_loaded_camera_url) = "";
               }
               if (latter_ui::tools_direct_home()) {
@@ -400,12 +400,30 @@ script:
               millis());
       - if:
           condition:
-            lambda: 'return !id(notif_camera_url).empty();'
+            # The page may have closed during the delay: a fetch started now would hold the image.
+            lambda: 'return !id(notif_camera_url).empty() && id(gui_page) == 8 && id(tools_subpage) == 12;'
           then:
             - lambda: 'latter_ui::cam_download_in_progress() = true;'
             - online_image.set_url:
                 id: camera_snapshot_art
                 url: !lambda 'return id(notif_camera_url);'
+
+  # A camera download that finishes after its view closed: release it (deferred out of the
+  # online_image callback) so the snapshot and its composed canvas do not stay in PSRAM.
+  - id: release_hidden_camera
+    mode: restart
+    then:
+      - delay: 1ms
+      - if:
+          condition:
+            lambda: |-
+              return !id(notif_active) &&
+                     !(id(gui_page) == 8 && (id(tools_subpage) == 9 || id(tools_subpage) == 12));
+          then:
+            - lambda: |-
+                latter_ui::cam_download_in_progress() = false;
+                id(current_loaded_camera_url) = "";
+                latter_ui::release_art(id(camera_snapshot_art));
 
   - id: send_doorbell_intercom_cmd
     mode: restart
@@ -536,7 +554,7 @@ script:
           id(notif_active) = false;
           id(notif_camera_url) = "";
           id(current_loaded_camera_url) = "";
-      - online_image.release: camera_snapshot_art
+      - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
       - script.execute: mp_idle_debounce
       - script.execute: sync_wake_word_state
       - script.execute: screen_sleep_timer
@@ -777,7 +795,7 @@ script:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - media_player.stop: latter_media_player
-      - online_image.release: remote_album_art
+      - lambda: 'latter_ui::release_art(id(remote_album_art));'
       - homeassistant.action:
           action: latter.media_command
           data:
@@ -1091,7 +1109,7 @@ script:
             target_device: "${name}"
             entity_id: !lambda 'return id(active_speaker_entity).c_str();'
             transfer_queue: "false"
-      - online_image.release: remote_album_art
+      - lambda: 'latter_ui::release_art(id(remote_album_art));'
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   - id: play_music_slot
     mode: restart
