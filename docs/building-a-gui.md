@@ -15,7 +15,7 @@ packages:
 
 A GUI package needs three things:
 1. **A `display:` render lambda** on the board's display, `id: disp1`, added with `!extend`.
-2. **Touch handling** on the board's touchscreen, `id: touch_screen`, added with `!extend`. Leave this out on non-touch devices and drive input through `ui_input_event`. See [`rotary_input`](mixins.md#rotary_input).
+2. **Touch handling** on the board's touchscreen, `id: touch_screen`, added with `!extend`. Leave this out on non-touch devices and drive input through `ui_input_event`.
 3. **The color IDs that `latter_client.yaml` references.** It uses `theme_primary`, `theme_secondary`, `col_gold`, `col_warm_gold`, `col_orange`, `col_red`, and `col_green` in its theme presets. Define them, even if your GUI never draws with them.
 
 The universal GUI's own top-level blocks are `substitutions`, `font`, `color`, `display`, and `touchscreen`. It defines no API actions and no Home Assistant subscriptions. Those all belong to the core, which is why a GUI can be replaced cleanly.

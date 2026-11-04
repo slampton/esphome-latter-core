@@ -1,6 +1,6 @@
 # ==============================================================================
 # Latter Core Example: Minimal Headless Companion Node (examples/minimal_headless_companion.yaml)
-# Demonstrates combining Latter Core base, headless Area control, and BLE presence mixin
+# Demonstrates combining the Latter Core base with headless Area control
 # ==============================================================================
 
 substitutions:
@@ -29,4 +29,3 @@ wifi:
 packages:
   latter_base: !include ../modules/base.yaml
   latter_area: !include ../modules/area_control.yaml
-  latter_ble:  !include ../mixins/ble_beacon.yaml

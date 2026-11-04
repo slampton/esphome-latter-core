@@ -43,7 +43,7 @@ PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the li
 
 - **ESP32-P4 chip revision (Remote and Desk Assistant):** Waveshare has shipped both revision 1.x and revision 3.x P4 silicon, and a build for one won't boot on the other. The web installer offers both. Your boot log shows the revision (`chip revision: v1.3` or `v3.x`). In ESPHome Device Builder, set `p4_silicon`, `p4_engineering_sample`, and `p4_cpu_frequency` in your device file's `substitutions:` (see the board file header for the two profiles). The Desk Assistant defaults to revision 1.x and the Remote Assistant to revision 3.x.
 - **Desk Assistant (P4 86-Panel):** the ESP32-P4-86-Panel-ETH-2RO shares its mainboard with the ESP32-P4-WIFI6-Touch-LCD-4B, which hasn't been validated yet. The bottom board's Ethernet, RS485, and relay pins are reserved and not used by the firmware. The C6 module has a U.FL connector, so attach an external antenna.
-- **Remote Assistant (P4 3.5):** the board has a camera connector, but the camera isn't enabled in the default firmware. See the [`p4_camera`](mixins.md#p4_camera) mixin, which is experimental.
+- **Remote Assistant (P4 3.5):** the board has a camera connector, but the firmware doesn't use the camera.
 - **Both P4 boards:** Wi-Fi and Bluetooth run on the onboard ESP32-C6 co-processor. The firmware exposes the C6's own firmware as a separate **System: C6 Co-Processor Firmware** update entity.
 - **Wrist and Mobile Assistant:** a PCF85063 RTC is present on the board but isn't used. Time comes from Home Assistant.
 

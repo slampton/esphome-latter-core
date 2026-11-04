@@ -11,7 +11,7 @@ Firmware for five Waveshare ESP32 touch displays, one-line packages for ESPHome 
 | Repository | Runs on | Responsibility |
 | :--- | :--- | :--- |
 | **[ha-latter](https://github.com/slampton/ha-latter)** | Home Assistant | The integration and the Studio panel: entity mapping, area presence, image re-encoding, and services. **Start there** if you're setting up a device. |
-| **esphome-latter-core** (this repo) | The ESP32 | Firmware, the web installer, mixins, and the SDK. |
+| **esphome-latter-core** (this repo) | The ESP32 | Firmware, the web installer, and the SDK. |
 
 ---
 
@@ -59,25 +59,6 @@ All five run the same firmware and GUI. The only per-board code is a hardware ab
 
 ---
 
-## Add Latter to an existing ESPHome device
-
-Mixins are ESPHome packages you add with one line. Each one also makes the device discoverable by Latter.
-
-| Mixin | Adds | Line |
-| :--- | :--- | :--- |
-| [`ble_proxy`](docs/mixins.md#ble_proxy) | Active Bluetooth proxy, so this node becomes a presence scanner for its area | `github://slampton/esphome-latter-core/mixins/ble_proxy.yaml@main` |
-| [`ble_beacon`](docs/mixins.md#ble_beacon) | An iBeacon, so Latter can track which area this node is in | `github://slampton/esphome-latter-core/mixins/ble_beacon.yaml@main` |
-| [`diagnostics`](docs/mixins.md#diagnostics) | Uptime, Wi-Fi signal, restart button | `github://slampton/esphome-latter-core/mixins/diagnostics.yaml@main` |
-
-```yaml
-packages:
-  latter_proxy: github://slampton/esphome-latter-core/mixins/ble_proxy.yaml@main
-```
-
-→ [All mixins, their requirements, and known conflicts](docs/mixins.md)
-
----
-
 ## Build on Latter Core
 
 The firmware is built in four layers, so you can replace any one without touching the others:
@@ -122,8 +103,6 @@ This is version **2.2.1**, built and maintained by one person and tested on the 
 | Area | Status |
 | :--- | :--- |
 | The five flagship devices, the universal GUI, audio, voice, and power | Stable |
-| `ble_proxy`, `ble_beacon`, and `diagnostics` mixins on your own configs | Stable, but see each mixin's [conflicts](docs/mixins.md) |
-| `rotary_input` and `p4_camera` mixins | **Experimental** |
 | Doorbell two-way talk | **Experimental** (implemented on the Home Assistant side) |
 
 Known limitations:
@@ -138,7 +117,6 @@ Bugs and feature requests: [issues](https://github.com/slampton/esphome-latter-c
 | | |
 | :--- | :--- |
 | **Use** | [Hardware](docs/hardware.md) · [Flashing](docs/flashing.md) · [Using your device](docs/using-your-device.md) |
-| **Extend** | [Mixins](docs/mixins.md) |
 | **Build** | [Architecture](docs/architecture.md) · [Device protocol](docs/device-protocol.md) · [Building a GUI](docs/building-a-gui.md) · [Porting hardware](docs/porting-hardware.md) |
 
 ## Credits

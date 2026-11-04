@@ -85,13 +85,10 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 ### `components/latter_core/`
 An ESPHome external component that copies the 13 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas.
 
-### `mixins/`
-Standalone packages for your own configs. → [Mixins](mixins.md)
-
 ### `examples/`
 | File | What it shows |
 | :--- | :--- |
-| `minimal_headless_companion.yaml` | A bare ESP32-S3 dev board with `base.yaml`, `area_control.yaml`, and `ble_beacon`. No display. |
+| `minimal_headless_companion.yaml` | A bare ESP32-S3 dev board with `base.yaml` and `area_control.yaml`. No display. |
 | `custom_display_template.yaml` | A complete 480×480 board HAL with stub HAL scripts, running the full core and universal GUI. Start here when porting. |
 
 ### `manifests/` and `index.html`

@@ -37,7 +37,7 @@ jobs:
           g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state
           /tmp/test_latter_state
 
-      - name: Validate Example 1 (Minimal Headless / Mixin Companion)
+      - name: Validate Example 1 (Minimal Headless Companion)
         run: esphome config examples/minimal_headless_companion.yaml
 
       - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)

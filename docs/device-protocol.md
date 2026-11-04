@@ -23,13 +23,13 @@ An ESPHome device counts as a Latter device if it has at least one ESPHome entit
 
 Latter rescans after Home Assistant starts, on any device-registry change (immediately, and again after a 5 s debounce), and whenever ESPHome registers one of the actions above. Matching devices raise a **Discovered: Latter** config flow.
 
-**Minimum to be discovered.** All mixins include this action:
+**Minimum to be discovered.** Latter Core's `base.yaml` includes this action:
 
 ```yaml
 api:
   actions:
     - action: latter_ping
-      id: latter_ping_action   # fixed id, so multiple packages merge without conflict
+      id: latter_ping_action   # fixed id, so packages that both declare it merge without conflict
       then:
         - logger.log: "Latter companion connected"
 ```
@@ -111,7 +111,7 @@ Latter also publishes every notification on `sensor.<slug>_area_context` inside 
 
 ### 3b. Optional actions in the reference firmware
 
-Latter doesn't call these. They're there for automations and hardware input mixins.
+Latter doesn't call these. They're there for automations and custom hardware input.
 
 | Action | Variables | Behavior |
 | :--- | :--- | :--- |
