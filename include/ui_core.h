@@ -19,9 +19,16 @@
 #include <esp_cache.h>
 #include <esp_rom_sys.h>
 #include <atomic>
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+#define LATTER_FB_PPA 1
+#include <driver/ppa.h>
+#endif
 #else
 #define LATTER_FB_DMA_CLEAR 0
 #endif
+#endif
+#ifndef LATTER_FB_PPA
+#define LATTER_FB_PPA 0
 #endif
 #include <algorithm>
 #include <cmath>
@@ -41,7 +48,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110236L
+#define LATTER_SDK_REV 2026110237L
 
 namespace latter_ui {
 
@@ -2776,12 +2783,16 @@ inline void frame_base_skip() { frame_base_state().painted = true; }
 
 // Between-frames DMA clear (ESP32-S3 / ESP32-P4). ESPHome's mipi_spi and mipi_dsi drivers finish
 // sending a frame before update() returns, so the framebuffer is idle until the next frame. Right
-// after a frame, a GDMA memory-to-memory transfer (esp_async_memcpy) fills it with the color that
-// frame used as its base, from a 128 KB PSRAM pattern; the CPU is free meanwhile. The next frame
-// waits for completion at its start and, if its base is the same color, skips its CPU fill.
-// Cache rules: the cleared range is written back + invalidated before the DMA starts (no dirty or
-// cached lines can overwrite or shadow the fill) and invalidated again after it completes. Only the
-// cache-line-aligned interior is DMA-filled; the CPU writes the short head and tail. Any failure or
+// after a frame, hardware fills it with the color that frame used as its base while the CPU is free:
+//  - ESP32-P4 with a little-endian RGB565 framebuffer: the PPA's solid fill (2D-DMA). Required on
+//    boards with CONFIG_GDMA_ISR_IRAM_SAFE, where IDF's async memcpy cannot install (its internal
+//    GDMA callback is not in IRAM). The aligned interior is described to the PPA as a 128 px wide
+//    picture, so ESPHome's (unaligned) buffer allocation does not matter.
+//  - Otherwise: a GDMA memory-to-memory copy (esp_async_memcpy) from a 128 KB PSRAM pattern.
+// The next frame waits for completion at its start and, if its base is the same color, skips its
+// CPU fill. Cache rules: the cleared range is written back + invalidated before the DMA starts (no
+// dirty or cached lines can overwrite or shadow the fill) and invalidated again after it completes.
+// Only the aligned interior is DMA-filled; the CPU writes the short head and tail. Any failure or
 // color mismatch falls back to the CPU fill, so output is always identical.
 struct FbClearState {
   esphome::Component *owner = nullptr;
@@ -2806,6 +2817,12 @@ struct FbClearState {
   async_memcpy_handle_t mcp = nullptr;
   uint16_t *pattern = nullptr;
   size_t align = 64;
+#endif
+#if LATTER_FB_PPA
+  ppa_client_handle_t ppa = nullptr;
+  bool use_ppa = false;
+  bool ppa_checked = false;  // first PPA fill read back and compared
+  int64_t ppa_t0_us = 0;
 #endif
 };
 
@@ -2855,10 +2872,47 @@ static IRAM_ATTR bool fb_clear_chunk_done(async_memcpy_handle_t, async_memcpy_ev
   return false;
 }
 
+#if LATTER_FB_PPA
+// PPA fill geometry: 128 px (256 B) rows, a multiple of every L1/L2 cache line.
+static constexpr uint32_t kFbPpaRowPx = 128;
+static constexpr size_t kFbPpaRowBytes = kFbPpaRowPx * sizeof(uint16_t);
+static constexpr size_t kFbPpaMaxRows = 16383;  // 2D-DMA descriptor height field
+inline int64_t g_fb_clear_done_us = 0;          // completion time of the last PPA fill
+
+static IRAM_ATTR bool fb_clear_ppa_done(ppa_client_handle_t, ppa_event_data_t *, void *) {
+  g_fb_clear_done_us = esp_timer_get_time();
+  g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
+  return false;
+}
+#endif
+
 inline bool fb_clear_init() {
   auto &st = fb_clear_state();
   if (st.init_tried) return st.ok;
   st.init_tried = true;
+#if LATTER_FB_PPA
+  // PPA fill needs a little-endian RGB565/BGR565 framebuffer (it writes 565 words as-is).
+  const int endian = active_frame_endian_mode();
+  if (endian == 1 || endian == 3) {
+    ppa_client_config_t pcfg = {};
+    pcfg.oper_type = PPA_OPERATION_FILL;
+    pcfg.max_pending_trans_num = 1;
+    esp_err_t perr = ppa_register_client(&pcfg, &st.ppa);
+    if (perr == ESP_OK) {
+      ppa_event_callbacks_t cbs = {};
+      cbs.on_trans_done = fb_clear_ppa_done;
+      perr = ppa_client_register_event_callbacks(st.ppa, &cbs);
+    }
+    if (perr == ESP_OK) {
+      st.use_ppa = true;
+      st.align = kFbPpaRowBytes;
+      st.ok = true;
+      ESP_LOGI("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
+      return true;
+    }
+    fb_clear_fail("ppa_register", static_cast<int>(perr));
+  }
+#endif
   fb_clear_log_heap("before install");
   async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
   cfg.backlog = kFbClearChunks + 1;
@@ -2919,6 +2973,45 @@ inline void fb_clear_start() {
   st.interior = reinterpret_cast<uint8_t *>(lo);
   st.interior_len = hi - lo;
   st.color_hw = frame_base_state().color_hw;
+#if LATTER_FB_PPA
+  if (st.use_ppa) {
+    const size_t rows = st.interior_len / kFbPpaRowBytes;
+    if (rows > kFbPpaMaxRows) {
+      fb_clear_fail("ppa_rows", static_cast<int>(rows));
+      return;
+    }
+    ppa_fill_oper_config_t cfg = {};
+    cfg.out.buffer = st.interior;
+    cfg.out.buffer_size = static_cast<uint32_t>(st.interior_len);
+    cfg.out.pic_w = kFbPpaRowPx;
+    cfg.out.pic_h = static_cast<uint32_t>(rows);
+    cfg.out.fill_cm = PPA_FILL_COLOR_MODE_RGB565;
+    cfg.fill_block_w = kFbPpaRowPx;
+    cfg.fill_block_h = static_cast<uint32_t>(rows);
+    // Exact 565 -> 888 expansion so the PPA's 888 -> 565 conversion returns the same word. The word's
+    // fields go through unchanged, so a BGR565 framebuffer needs no swap.
+    const uint32_t hw = st.color_hw;
+    const uint32_t r8 = ((hw >> 11) & 0x1FU) << 3;
+    const uint32_t g8 = ((hw >> 5) & 0x3FU) << 2;
+    const uint32_t b8 = (hw & 0x1FU) << 3;
+    cfg.fill_argb_color.val = 0xFF000000U | (r8 << 16) | (g8 << 8) | b8;
+    cfg.mode = PPA_TRANS_MODE_NON_BLOCKING;
+    st.error = false;
+    st.ready = false;
+    st.active = true;
+    g_fb_clear_pending.store(1, std::memory_order_release);
+    st.ppa_t0_us = esp_timer_get_time();
+    // ppa_do_fill writes back + invalidates the target window itself.
+    const esp_err_t ppa_err = ppa_do_fill(st.ppa, &cfg);
+    if (ppa_err != ESP_OK) {
+      g_fb_clear_pending.store(0, std::memory_order_release);
+      st.error = true;
+      fb_clear_fail("ppa_fill", static_cast<int>(ppa_err));
+    }
+    st.starts++;
+    return;
+  }
+#endif
   if (!st.pattern_valid || st.pattern_hw != st.color_hw) {
     for (size_t i = 0; i < kFbClearPatternBytes / sizeof(uint16_t); i++) st.pattern[i] = st.color_hw;
     esp_cache_msync(st.pattern, kFbClearPatternBytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
@@ -2976,6 +3069,29 @@ inline void fb_clear_wait() {
   esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
   st.ready = !st.error && st.ok;
   if (!st.ready) st.active = false;
+#if LATTER_FB_PPA
+  // First PPA fill: read back 8 pixels across the interior. Any mismatch (byte order, color
+  // conversion) turns the PPA clear off for this boot and the CPU fill carries on.
+  if (st.use_ppa && st.ready && !st.ppa_checked) {
+    st.ppa_checked = true;
+    const uint16_t *px = reinterpret_cast<const uint16_t *>(st.interior);
+    const size_t n = st.interior_len / sizeof(uint16_t);
+    for (size_t i = 0; i < 8; i++) {
+      const size_t idx = (i * (n - 1)) / 7;
+      if (px[idx] != st.color_hw) {
+        ESP_LOGW("disp_fb", "PPA fill read-back mismatch at %u: expected 0x%04X, got 0x%04X; PPA clear off",
+                 static_cast<unsigned>(idx), static_cast<unsigned>(st.color_hw), static_cast<unsigned>(px[idx]));
+        st.ok = false;
+        st.ready = false;
+        st.active = false;
+        fb_clear_fail("ppa_verify", px[idx]);
+        return;
+      }
+    }
+    ESP_LOGI("disp_fb", "PPA fill verified: %u KB in %ld us", static_cast<unsigned>(st.interior_len / 1024),
+             static_cast<long>(g_fb_clear_done_us - st.ppa_t0_us));
+  }
+#endif
 #endif
 }
 
