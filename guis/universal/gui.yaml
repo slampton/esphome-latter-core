@@ -96,6 +96,8 @@ color:
 
 display:
   - id: !extend disp1
+    # Every frame paints its own background once through latter_ui::frame_base() (see ui_core.h).
+    auto_clear_enabled: false
     lambda: |-
       int prof_sub = 0;
       if (id(gui_page) == 1) prof_sub = id(home_subpage);
@@ -120,11 +122,13 @@ display:
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, Color(8, 8, 8));
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, id(col_bg));
       latter_ui::bind_frame_buffer(id(disp1), it);
+      latter_ui::frame_base_begin();
 
       // ==========================================
       // GLOBAL OVERLAY: OTA FIRMWARE UPDATE IN PROGRESS
       // ==========================================
       if (id(ota_in_progress)) {
+        latter_ui::frame_base(it, id(col_bg));
         int pct = id(ota_progress_pct);
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
@@ -168,6 +172,7 @@ display:
       // GLOBAL OVERLAY: HIBERNATION SHUTDOWN
       // ==========================================
       if (id(is_hibernating)) {
+        latter_ui::frame_base(it, id(col_bg));
         if (id(hibernate_countdown_val) > 0) {
           it.print(cx, cy - 65, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
           char c_buf[16];
@@ -183,6 +188,7 @@ display:
 
       static bool standby_black_flushed = false;
       if (!id(display_brightness).current_values.is_on() || id(display_power_state) == 2) {
+        latter_ui::frame_base_skip();  // panel off: leave the buffer; the wake frame repaints it
         if (!standby_black_flushed) {
           standby_black_flushed = true;
         }
@@ -199,6 +205,7 @@ display:
       // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER (Highest Priority)
       // ==========================================
       if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
+        latter_ui::frame_base(it, id(col_bg));
         latter_ui::render_alert_ringing_overlay(
             it, cx, cy, millis(), id(alarm_ringing), id(alarm_ringing_idx),
             id(alarm1_recurrence), id(alarm2_recurrence), now, id(is_24h_format),
@@ -213,6 +220,7 @@ display:
       // GLOBAL OVERLAY: VOICE ASSISTANT TAKEOVER
       // ==========================================
       if (id(va_active) || !id(va_status_text).empty()) {
+        latter_ui::frame_base(it, id(col_bg));
         uint32_t now_ms = millis();
         bool is_speaking = id(va_tts_received);
         bool is_thinking = (!is_speaking && id(va_status_text) == "Thinking...");
@@ -226,6 +234,7 @@ display:
       // GLOBAL OVERLAY: LATTER PUSH NOTIFICATION & CAMERA SNAPSHOT TAKEOVER
       // ==========================================
       if (id(notif_active)) {
+        latter_ui::frame_base(it, id(col_bg));
         latter_ui::render_notification_overlay(
             it, cx, cy, millis(),
             id(notif_title), id(notif_message), id(notif_priority),
@@ -241,6 +250,7 @@ display:
       // GLOBAL OVERLAY: DOCKED SCREENSAVER (Mode 1)
       // ==========================================
       if (id(display_power_state) == 1) {
+        latter_ui::frame_base(it, id(col_bg));
         latter_ui::render_docked_screensaver(
             it, cx, cy, millis(), now, id(is_24h_format),
             id(screensaver_style_select).current_option(),
@@ -249,6 +259,11 @@ display:
       }
 
       float batt = id(batt_level).state;
+
+      // Home paints its own base (its daytime weather sky replaces the black fill).
+      if (id(gui_page) != 1) {
+        latter_ui::frame_base(it, id(col_bg));
+      }
 
       // ==========================================
       // PAGE 0: WATCH FACE (ANALOG & DIGITAL)

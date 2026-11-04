@@ -833,6 +833,7 @@ inline void render_home_page(
   using esphome::display::TextAlign;
 
   if (home_subpage == 1) {
+    frame_base(it, col_bg);
     // -------------------------------------------------------------------------
     // SUBPAGE 1: HOME SETTINGS (Canonical 5-Card Template: 30px Top/Bottom Buffer, 19px Gap)
     //   - Title at y = 48 (bottom at y = 58)
@@ -908,11 +909,13 @@ inline void render_home_page(
   const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
 
   if (use_custom_wallpaper) {
+    frame_base(it, col_bg);
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false, is_dim_backdrop ? 2 : 0);
   } else if (eff_weather_bg) {
     const int cel_x = layout().celestial_x;
     const int cel_y = layout().celestial_y;
     if (is_dim_backdrop) {
+      frame_base(it, col_bg);
       if (!is_night) {
 #if LATTER_ROUND_DISPLAY
         fast_filled_circle(it, cx, cy, 228, Color(7, 13, 22));
@@ -931,6 +934,7 @@ inline void render_home_page(
                                       moon_cycle, cel_x, cel_y, true, accel_x, accel_y);
     }
   }
+  frame_base(it, col_bg);  // no wallpaper, or a wallpaper frame without a sky fill
 
   // ---------------------------------------------------------------------------
   // SUBPAGE 2: FROSTED GLASS AUTO-CENTERED LIVE ACTIVITY OVERLAY

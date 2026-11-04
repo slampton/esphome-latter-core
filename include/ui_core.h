@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110225L
+#define LATTER_SDK_REV 2026110226L
 
 namespace latter_ui {
 
@@ -1010,6 +1010,124 @@ inline bool fast_print_supported(FontT *font, const char *text) {
   return true;
 }
 
+// 1-bpp text span cache. Decoding glyph bits is most of fast_print's cost, and the same strings are
+// drawn every frame (clock, date, labels, drop shadows at +1/+1). Each (font, text) is decoded once
+// into horizontal runs relative to the text origin and kept in PSRAM (16-entry LRU, strings up to 47
+// bytes); frames then just fill the runs. Pixel coverage is identical to the per-pixel decode.
+struct TextSpan {
+  int16_t x;
+  int16_t y;
+  int16_t len;
+};
+
+struct TextCacheEntry {
+  const void *font;
+  uint32_t last_use;
+  TextSpan *spans;
+  uint16_t count;
+  uint16_t cap;
+  char text[48];
+};
+
+static constexpr int kTextCacheEntries = 16;
+static constexpr int kTextScratchSpans = 4096;
+
+inline TextCacheEntry *text_cache_entries() {
+  static TextCacheEntry *entries = static_cast<TextCacheEntry *>(
+      heap_caps_calloc(kTextCacheEntries, sizeof(TextCacheEntry), MALLOC_CAP_SPIRAM));
+  return entries;
+}
+
+inline TextSpan *text_cache_scratch() {
+  static TextSpan *scratch = static_cast<TextSpan *>(
+      heap_caps_malloc(sizeof(TextSpan) * kTextScratchSpans, MALLOC_CAP_SPIRAM));
+  return scratch;
+}
+
+// Decodes a 1-bpp string into runs relative to the text origin. Returns the run count, or -1 if the
+// scratch buffer would overflow.
+template<typename FontT>
+inline int text_decode_spans_1bpp(FontT *font, const char *text, TextSpan *out, int cap) {
+  int n = 0;
+  int x_at = 0;
+  for (const char *p = text; *p != 0;) {
+    const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    const uint8_t *data = glyph->data;
+    const int gx0 = x_at + glyph->offset_x;
+    uint8_t bitmask = 0;
+    uint8_t pixel_data = 0;
+    for (int gy = 0; gy < glyph->height; gy++) {
+      int run_start = -1;
+      for (int gx = 0; gx < glyph->width; gx++) {
+        if (bitmask == 0) {
+          pixel_data = esphome::progmem_read_byte(data++);
+          bitmask = 0x80;
+        }
+        const bool on = (pixel_data & bitmask) != 0;
+        bitmask >>= 1;
+        if (on) {
+          if (run_start < 0) run_start = gx;
+        } else if (run_start >= 0) {
+          if (n >= cap) return -1;
+          out[n++] = {static_cast<int16_t>(gx0 + run_start), static_cast<int16_t>(glyph->offset_y + gy),
+                      static_cast<int16_t>(gx - run_start)};
+          run_start = -1;
+        }
+      }
+      if (run_start >= 0) {
+        if (n >= cap) return -1;
+        out[n++] = {static_cast<int16_t>(gx0 + run_start), static_cast<int16_t>(glyph->offset_y + gy),
+                    static_cast<int16_t>(glyph->width - run_start)};
+      }
+    }
+    x_at += glyph->advance;
+  }
+  return n;
+}
+
+// Returns the cached runs for (font, text), decoding on a miss. nullptr if the text can't be cached
+// (too long, PSRAM exhausted, or more runs than the scratch buffer holds).
+template<typename FontT>
+inline const TextSpan *text_cache_get(FontT *font, const char *text, int &count) {
+  TextCacheEntry *entries = text_cache_entries();
+  TextSpan *scratch = text_cache_scratch();
+  const size_t len = std::strlen(text);
+  if (entries == nullptr || scratch == nullptr || len >= sizeof(entries[0].text)) return nullptr;
+  static uint32_t use_seq = 0;
+  ++use_seq;
+  TextCacheEntry *victim = &entries[0];
+  for (int i = 0; i < kTextCacheEntries; i++) {
+    TextCacheEntry &e = entries[i];
+    if (e.font == font && std::strcmp(e.text, text) == 0) {
+      e.last_use = use_seq;
+      count = e.count;
+      return e.spans;
+    }
+    if (e.last_use < victim->last_use) victim = &e;
+  }
+  const int n = text_decode_spans_1bpp(font, text, scratch, kTextScratchSpans);
+  if (n < 0) return nullptr;
+  if (victim->cap < n) {
+    if (victim->spans != nullptr) heap_caps_free(victim->spans);
+    victim->spans = static_cast<TextSpan *>(heap_caps_malloc(sizeof(TextSpan) * (n > 0 ? n : 1), MALLOC_CAP_SPIRAM));
+    victim->cap = (victim->spans != nullptr) ? static_cast<uint16_t>(n) : 0;
+    if (victim->spans == nullptr) {
+      victim->font = nullptr;
+      victim->text[0] = 0;
+      victim->count = 0;
+      count = n;
+      return scratch;  // draw this frame from scratch; not cached
+    }
+  }
+  if (n > 0) std::memcpy(victim->spans, scratch, sizeof(TextSpan) * n);
+  victim->font = font;
+  std::memcpy(victim->text, text, len + 1);
+  victim->count = static_cast<uint16_t>(n);
+  victim->last_use = use_seq;
+  count = n;
+  return victim->spans;
+}
+
 // Fast equivalent of Display::print(x, y, font, color, align, text, background). Same bounds
 // (Display::get_text_bounds), same glyph walk, bit unpacking and background blend as Font::print,
 // but glyph pixels are stored straight into the bound framebuffer instead of one virtual
@@ -1043,6 +1161,28 @@ inline void fast_print(DisplayT &it, int x, int y, FontT *font, esphome::Color c
                                                 static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
                                                 static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
                                                 static_cast<uint8_t>(diff_w * on + static_cast<float>(background.w))));
+    }
+  }
+
+  if (bpp == 1) {
+    int span_count = 0;
+    const TextSpan *spans = text_cache_get(font, text, span_count);
+    if (spans != nullptr) {
+      const uint16_t hw = lut[1];
+      for (int i = 0; i < span_count; i++) {
+        const int py = y_start + spans[i].y;
+        if (static_cast<unsigned>(py) >= static_cast<unsigned>(SCREEN_H)) continue;
+        int px = x_start + spans[i].x;
+        int len = spans[i].len;
+        if (px < 0) {
+          len += px;
+          px = 0;
+        }
+        if (px + len > SCREEN_W) len = SCREEN_W - px;
+        uint16_t *dst = fb + py * SCREEN_W + px;
+        for (int k = 0; k < len; k++) dst[k] = hw;
+      }
+      return;
     }
   }
 
@@ -2411,11 +2551,42 @@ inline uint64_t prof_now_us() {
 // Per-section render timing. A ProfLap attributes the time since construction (or the previous
 // mark) to a section; totals are averaged per frame and logged as [PROF:SECT] with each
 // [PROF:FRAME_SUM] window. Costs nothing while the Telemetry Profiler is off.
-enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, COUNT };
+enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, BASE, COUNT };
 
 inline uint32_t *prof_sect_us() {
   static uint32_t acc[static_cast<size_t>(ProfSect::COUNT)] = {};
   return acc;
+}
+
+// Frame base. The universal GUI disables ESPHome's auto-clear, so every frame paints its background
+// exactly once through frame_base(): pages pass black, and Home's daytime weather sky on rectangular
+// panels passes the sky color, which saves a full-screen framebuffer write (~10 ms on the S3 boards,
+// where PSRAM writes are ~45 ns per pixel). frame_base_begin() runs at the top of the display lambda;
+// frame_base_skip() marks frames that intentionally draw nothing (screen off). A frame that ends
+// without either is logged once by FrameProfileScope (it would show the previous frame's pixels).
+struct FrameBaseState {
+  bool painted = false;
+  bool warned = false;
+};
+
+inline FrameBaseState &frame_base_state() {
+  static FrameBaseState st;
+  return st;
+}
+
+inline void frame_base_begin() { frame_base_state().painted = false; }
+inline void frame_base_skip() { frame_base_state().painted = true; }
+
+// Paints the full-screen base if this frame has none yet. Returns true if it painted.
+template<typename DisplayT>
+inline bool frame_base(DisplayT &it, esphome::Color c) {
+  auto &st = frame_base_state();
+  if (st.painted) return false;
+  st.painted = true;
+  const uint64_t t0 = profiler_enabled() ? prof_now_us() : 0;
+  it.fill(c);
+  if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t0);
+  return true;
 }
 
 struct ProfLap {
@@ -2444,6 +2615,11 @@ struct FrameProfileScope {
 
   ~FrameProfileScope() {
     if (t0_us == 0) return;
+    auto &fbs = frame_base_state();
+    if (!fbs.painted && !fbs.warned) {
+      fbs.warned = true;
+      ESP_LOGW("disp", "Frame on page %d sub %d drew without frame_base(); it shows stale pixels", page, sub);
+    }
     uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
     uint32_t now_m = esphome::millis();
     last_frame_duration_ms() = render_us / 1000U;
@@ -2486,7 +2662,8 @@ struct FrameProfileScope {
       for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
       if (any_sect != 0U) {
         const uint32_t n = fr.window_frames;
-        ESP_LOGI("PROF", "[PROF:SECT] avg/frame sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+        ESP_LOGI("PROF", "[PROF:SECT] avg/frame base=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+                 (unsigned long)(sect[6] / n),
                  (unsigned long)(sect[0] / n), (unsigned long)(sect[1] / n), (unsigned long)(sect[2] / n),
                  (unsigned long)(sect[3] / n), (unsigned long)(sect[4] / n), (unsigned long)(sect[5] / n));
         for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) sect[i] = 0;
