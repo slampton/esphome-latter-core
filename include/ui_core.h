@@ -41,7 +41,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110231L
+#define LATTER_SDK_REV 2026110232L
 
 namespace latter_ui {
 
@@ -2804,10 +2804,14 @@ inline bool fb_clear_init() {
 #else
   esp_err_t err = esp_async_memcpy_install_gdma_ahb(&cfg, &st.mcp);
 #endif
-  size_t cache_align = 0;
-  if (esp_cache_get_alignment(MALLOC_CAP_SPIRAM, &cache_align) == ESP_OK && cache_align > st.align) {
-    st.align = cache_align;
-  }
+  // Cache-line alignment for esp_cache_msync on PSRAM: 64 B on every Latter board (S3 boards set
+  // CONFIG_ESP32S3_DATA_CACHE_LINE_64B; P4 boards never enable the 128 B L2 line). A larger line
+  // makes esp_cache_msync reject the range, and fb_clear_start falls back to the CPU fill.
+#if defined(CONFIG_CACHE_L2_CACHE_LINE_128B)
+  st.align = 128;
+#else
+  st.align = 64;
+#endif
   if (err == ESP_OK) {
     st.pattern = static_cast<uint16_t *>(heap_caps_aligned_alloc(st.align, kFbClearPatternBytes, MALLOC_CAP_SPIRAM));
   }
