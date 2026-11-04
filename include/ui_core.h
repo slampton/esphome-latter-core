@@ -12,6 +12,16 @@
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 #include <esp_timer.h>
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
+#define LATTER_FB_DMA_CLEAR 1
+#include <esp_async_memcpy.h>
+#include <esp_attr.h>
+#include <esp_cache.h>
+#include <esp_rom_sys.h>
+#include <atomic>
+#else
+#define LATTER_FB_DMA_CLEAR 0
+#endif
 #endif
 #include <algorithm>
 #include <cmath>
@@ -31,7 +41,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110230L
+#define LATTER_SDK_REV 2026110231L
 
 namespace latter_ui {
 
@@ -604,8 +614,12 @@ inline int &active_frame_endian_mode() {
   return mode;
 }
 
+// Defined with the frame base (below): records the bound framebuffer for the between-frames DMA clear.
+inline void fb_clear_bind(esphome::Component *owner, uint16_t *fb);
+
 template<typename DispT>
 inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
+  fb_clear_bind(nullptr, nullptr);
   if (disp == nullptr || it.get_rotation() != esphome::display::DISPLAY_ROTATION_0_DEGREES) {
     active_frame_buf16() = nullptr;
     return;
@@ -636,6 +650,7 @@ inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
              (void *)buf16, active_frame_endian_mode());
   }
   active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
+  fb_clear_bind(static_cast<esphome::Component *>(disp), active_frame_buf16());
 #if LATTER_ROUND_DISPLAY
   if (active_frame_buf16() != nullptr) {
     it.draw_pixel_at(0, 0, esphome::Color(8, 8, 8));
@@ -2590,6 +2605,12 @@ inline bool &disp_poller_held() {
 }
 
 struct DisplayUpdateScheduler : public esphome::Component {
+  // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
+  static void request_post_frame(esphome::Component *comp, void (*fn)()) {
+    if (comp == nullptr || fn == nullptr) return;
+    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout("fb_clear", 0, [fn]() { fn(); });
+  }
+
   template<typename DispT>
   static void request_ptr(DispT *disp) {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
@@ -2708,6 +2729,8 @@ inline void prof_art_end(uint64_t t0) {
 struct FrameBaseState {
   bool painted = false;
   bool warned = false;
+  bool has_color = false;    // this frame's base was a color fill (not claimed, not skipped)
+  uint16_t color_hw = 0;     // that color, hardware-encoded
 };
 
 inline FrameBaseState &frame_base_state() {
@@ -2715,8 +2738,186 @@ inline FrameBaseState &frame_base_state() {
   return st;
 }
 
-inline void frame_base_begin() { frame_base_state().painted = false; }
+inline void frame_base_begin() {
+  frame_base_state().painted = false;
+  frame_base_state().has_color = false;
+}
 inline void frame_base_skip() { frame_base_state().painted = true; }
+
+// Between-frames DMA clear (ESP32-S3 / ESP32-P4). ESPHome's mipi_spi and mipi_dsi drivers finish
+// sending a frame before update() returns, so the framebuffer is idle until the next frame. Right
+// after a frame, a GDMA memory-to-memory transfer (esp_async_memcpy) fills it with the color that
+// frame used as its base, from a 64 KB PSRAM pattern; the CPU is free meanwhile. The next frame
+// waits for completion at its start and, if its base is the same color, skips its CPU fill.
+// Cache rules: the cleared range is written back + invalidated before the DMA starts (no dirty or
+// cached lines can overwrite or shadow the fill) and invalidated again after it completes. Only the
+// cache-line-aligned interior is DMA-filled; the CPU writes the short head and tail. Any failure or
+// color mismatch falls back to the CPU fill, so output is always identical.
+struct FbClearState {
+  esphome::Component *owner = nullptr;
+  uint16_t *fb = nullptr;
+  bool init_tried = false;
+  bool ok = false;
+  bool pending_start = false;  // a post-frame start is scheduled
+  bool active = false;         // DMA issued for the current fb contents
+  bool ready = false;          // completed and cache-invalidated, waiting to be consumed
+  bool error = false;
+  uint16_t color_hw = 0;
+  uint16_t pattern_hw = 0;
+  bool pattern_valid = false;
+  uint8_t *interior = nullptr;
+  size_t interior_len = 0;
+  uint32_t hits = 0;
+  uint32_t misses = 0;
+#if LATTER_FB_DMA_CLEAR
+  async_memcpy_handle_t mcp = nullptr;
+  uint16_t *pattern = nullptr;
+  size_t align = 64;
+#endif
+};
+
+inline FbClearState &fb_clear_state() {
+  static FbClearState st;
+  return st;
+}
+
+#if LATTER_FB_DMA_CLEAR
+static constexpr size_t kFbClearPatternBytes = 64 * 1024;
+
+// Outstanding DMA chunks. A plain global (DRAM): the completion ISR may run with the flash cache
+// disabled on boards with IRAM-safe GDMA ISRs, so it must not call into flash.
+inline std::atomic<int> g_fb_clear_pending{0};
+
+static IRAM_ATTR bool fb_clear_chunk_done(async_memcpy_handle_t, async_memcpy_event_t *, void *) {
+  g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
+  return false;
+}
+
+inline bool fb_clear_init() {
+  auto &st = fb_clear_state();
+  if (st.init_tried) return st.ok;
+  st.init_tried = true;
+  async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
+  cfg.backlog = 24;
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+  esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
+#else
+  esp_err_t err = esp_async_memcpy_install_gdma_ahb(&cfg, &st.mcp);
+#endif
+  size_t cache_align = 0;
+  if (esp_cache_get_alignment(MALLOC_CAP_SPIRAM, &cache_align) == ESP_OK && cache_align > st.align) {
+    st.align = cache_align;
+  }
+  if (err == ESP_OK) {
+    st.pattern = static_cast<uint16_t *>(heap_caps_aligned_alloc(st.align, kFbClearPatternBytes, MALLOC_CAP_SPIRAM));
+  }
+  st.ok = (err == ESP_OK && st.pattern != nullptr);
+  ESP_LOGI("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u)", st.ok ? "enabled" : "unavailable",
+           static_cast<int>(err), static_cast<unsigned>(st.align));
+  return st.ok;
+}
+#endif
+
+inline void fb_clear_bind(esphome::Component *owner, uint16_t *fb) {
+  auto &st = fb_clear_state();
+  st.owner = owner;
+  st.fb = fb;
+}
+
+// Runs after update() returned (post-frame timeout): starts the DMA clear for the next frame.
+inline void fb_clear_start() {
+#if LATTER_FB_DMA_CLEAR
+  auto &st = fb_clear_state();
+  st.pending_start = false;
+  if (st.active || st.fb == nullptr || !fb_clear_init()) return;
+  const uintptr_t base = reinterpret_cast<uintptr_t>(st.fb);
+  const size_t bytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
+  const uintptr_t lo = (base + st.align - 1) & ~(static_cast<uintptr_t>(st.align) - 1);
+  const uintptr_t hi = (base + bytes) & ~(static_cast<uintptr_t>(st.align) - 1);
+  if (hi <= lo) return;
+  st.interior = reinterpret_cast<uint8_t *>(lo);
+  st.interior_len = hi - lo;
+  st.color_hw = frame_base_state().color_hw;
+  if (!st.pattern_valid || st.pattern_hw != st.color_hw) {
+    for (size_t i = 0; i < kFbClearPatternBytes / sizeof(uint16_t); i++) st.pattern[i] = st.color_hw;
+    esp_cache_msync(st.pattern, kFbClearPatternBytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    st.pattern_hw = st.color_hw;
+    st.pattern_valid = true;
+  }
+  if (esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE) != ESP_OK) {
+    return;
+  }
+  st.error = false;
+  st.ready = false;
+  st.active = true;
+  size_t off = 0;
+  while (off < st.interior_len) {
+    const size_t n = std::min(kFbClearPatternBytes, st.interior_len - off);
+    g_fb_clear_pending.fetch_add(1, std::memory_order_acq_rel);
+    if (esp_async_memcpy(st.mcp, st.interior + off, st.pattern, n, fb_clear_chunk_done, nullptr) != ESP_OK) {
+      g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
+      st.error = true;
+      break;
+    }
+    off += n;
+  }
+#endif
+}
+
+// Frame start: no drawing may touch the framebuffer while the DMA runs.
+inline void fb_clear_wait() {
+#if LATTER_FB_DMA_CLEAR
+  auto &st = fb_clear_state();
+  if (!st.active || st.ready) return;
+  const int64_t t0 = esp_timer_get_time();
+  while (g_fb_clear_pending.load(std::memory_order_acquire) > 0) {
+    if (esp_timer_get_time() - t0 > 200000) {
+      // A transfer that never completes: stop using DMA clears (drawing could race it).
+      st.ok = false;
+      ESP_LOGW("disp_fb", "DMA clear did not complete; disabled");
+      break;
+    }
+    esp_rom_delay_us(20);
+  }
+  esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+  st.ready = !st.error && st.ok;
+  if (!st.ready) st.active = false;
+#endif
+}
+
+// Inside frame_base(): true if the DMA already filled the frame with this color.
+inline bool fb_clear_consume(uint16_t hw) {
+  auto &st = fb_clear_state();
+  if (!st.ready) return false;
+  st.ready = false;
+  st.active = false;
+  if (hw != st.color_hw || st.fb == nullptr) {
+    st.misses++;
+    return false;
+  }
+  uint16_t *const fb = st.fb;
+  uint16_t *const end = fb + static_cast<size_t>(SCREEN_W) * SCREEN_H;
+  for (uint16_t *q = fb; q < reinterpret_cast<uint16_t *>(st.interior); q++) *q = hw;
+  for (uint16_t *q = reinterpret_cast<uint16_t *>(st.interior + st.interior_len); q < end; q++) *q = hw;
+  st.hits++;
+  return true;
+}
+
+// End of the display lambda: drop an unconsumed clear and schedule the next one.
+inline void fb_clear_frame_end() {
+#if LATTER_FB_DMA_CLEAR
+  auto &st = fb_clear_state();
+  if (st.ready) {
+    st.ready = false;
+    st.active = false;
+  }
+  if (!frame_base_state().has_color || st.owner == nullptr || st.fb == nullptr || st.pending_start) return;
+  if (st.init_tried && !st.ok) return;
+  st.pending_start = true;
+  // Runs after update() returns, i.e. after the panel transfer (ESPHome's loop is single-threaded).
+  DisplayUpdateScheduler::request_post_frame(st.owner, &fb_clear_start);
+#endif
+}
 
 // Paints the full-screen base if this frame has none yet. Returns true if it painted.
 template<typename DisplayT>
@@ -2724,6 +2925,9 @@ inline bool frame_base(DisplayT &it, esphome::Color c) {
   auto &st = frame_base_state();
   if (st.painted) return false;
   st.painted = true;
+  st.has_color = true;
+  st.color_hw = encode_hw_rgb565(c);
+  if (fb_clear_consume(st.color_hw)) return true;
   const uint64_t t0 = profiler_enabled() ? prof_now_us() : 0;
   it.fill(c);
   if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t0);
@@ -2752,6 +2956,7 @@ struct FrameProfileScope {
   int pwr = 0;
 
   FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
+    fb_clear_wait();
     t0_us = prof_now_us();
     uint32_t start_m = esphome::millis();
     last_disp_update_ms() = start_m;
@@ -2760,6 +2965,7 @@ struct FrameProfileScope {
 
   ~FrameProfileScope() {
     if (t0_us == 0) return;
+    fb_clear_frame_end();
     auto &fbs = frame_base_state();
     if (!fbs.painted && !fbs.warned) {
       fbs.warned = true;
@@ -2798,10 +3004,13 @@ struct FrameProfileScope {
     if (win_el >= 5000U && fr.window_frames > 0) {
       float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
       uint32_t avg_us = fr.window_render_us / fr.window_frames;
-      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu",
+      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu",
                (unsigned long)fr.window_frames, fps, (unsigned long)avg_us,
                (unsigned long)fr.max_render_us, fr.max_render_page, fr.max_render_sub,
-               (unsigned long)fr.slow_frames);
+               (unsigned long)fr.slow_frames, (unsigned long)fb_clear_state().hits,
+               (unsigned long)(fb_clear_state().hits + fb_clear_state().misses));
+      fb_clear_state().hits = 0;
+      fb_clear_state().misses = 0;
       uint32_t *sect = prof_sect_us();
       uint32_t any_sect = 0;
       for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
