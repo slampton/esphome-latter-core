@@ -31,7 +31,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110223L
+#define LATTER_SDK_REV 2026110224L
 
 namespace latter_ui {
 
@@ -865,6 +865,119 @@ inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Col
   }
 }
 
+// UTF-8 decoder matching ESPHome's unicode::extract_unicode_codepoint for well-formed text.
+// Advances p; returns 0 at the terminator.
+inline uint32_t latter_utf8_next(const char *&p) {
+  const uint8_t c0 = static_cast<uint8_t>(p[0]);
+  if (c0 == 0) return 0;
+  if (c0 < 0x80) {
+    p += 1;
+    return c0;
+  }
+  if ((c0 & 0xE0) == 0xC0 && p[1] != 0) {
+    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x1F) << 6) | (static_cast<uint8_t>(p[1]) & 0x3F);
+    p += 2;
+    return cp;
+  }
+  if ((c0 & 0xF0) == 0xE0 && p[1] != 0 && p[2] != 0) {
+    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x0F) << 12) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(p[1]) & 0x3F) << 6) |
+                        (static_cast<uint8_t>(p[2]) & 0x3F);
+    p += 3;
+    return cp;
+  }
+  if ((c0 & 0xF8) == 0xF0 && p[1] != 0 && p[2] != 0 && p[3] != 0) {
+    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x07) << 18) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(p[1]) & 0x3F) << 12) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(p[2]) & 0x3F) << 6) |
+                        (static_cast<uint8_t>(p[3]) & 0x3F);
+    p += 4;
+    return cp;
+  }
+  p += 1;  // malformed byte: skip it
+  return 0xFFFD;
+}
+
+// fast_print can render the text itself: framebuffer bound, font bpp <= 4 and every codepoint has a
+// glyph (Font::print draws a placeholder box for missing glyphs, so those strings use it.print).
+template<typename FontT>
+inline bool fast_print_supported(FontT *font, const char *text) {
+  if (active_frame_buf16() == nullptr || font == nullptr || text == nullptr) return false;
+  if (font->get_bpp() > 4) return false;
+  for (const char *p = text; *p != 0;) {
+    if (font->find_glyph(latter_utf8_next(p)) == nullptr) return false;
+  }
+  return true;
+}
+
+// Fast equivalent of Display::print(x, y, font, color, align, text, background). Same bounds
+// (Display::get_text_bounds), same glyph walk, bit unpacking and background blend as Font::print,
+// but glyph pixels are stored straight into the bound framebuffer instead of one virtual
+// draw_pixel_at each. Pixel output is identical.
+template<typename DisplayT, typename FontT>
+inline void fast_print(DisplayT &it, int x, int y, FontT *font, esphome::Color color,
+                       esphome::display::TextAlign align, const char *text,
+                       esphome::Color background = esphome::display::COLOR_OFF) {
+  if (!fast_print_supported(font, text)) {
+    it.print(x, y, font, color, align, text, background);
+    return;
+  }
+  uint16_t *fb = active_frame_buf16();
+  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
+  it.get_text_bounds(x, y, text, font, align, &x_start, &y_start, &text_w, &text_h);
+
+  const int bpp = font->get_bpp();
+  const int bpp_max = (1 << bpp) - 1;
+  // Hardware pixel per coverage level, blended exactly as Font::print does.
+  uint16_t lut[16];
+  const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
+  const float diff_g = static_cast<float>(color.g) - static_cast<float>(background.g);
+  const float diff_b = static_cast<float>(color.b) - static_cast<float>(background.b);
+  const float diff_w = static_cast<float>(color.w) - static_cast<float>(background.w);
+  for (int lv = 1; lv <= bpp_max; lv++) {
+    if (lv == bpp_max) {
+      lut[lv] = encode_hw_rgb565(color);
+    } else {
+      const float on = static_cast<float>(lv) / static_cast<float>(bpp_max);
+      lut[lv] = encode_hw_rgb565(esphome::Color(static_cast<uint8_t>(diff_r * on + static_cast<float>(background.r)),
+                                                static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
+                                                static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
+                                                static_cast<uint8_t>(diff_w * on + static_cast<float>(background.w))));
+    }
+  }
+
+  int x_at = x_start;
+  for (const char *p = text; *p != 0;) {
+    const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    const uint8_t *data = glyph->data;
+    const int gx0 = x_at + glyph->offset_x;
+    const int gy0 = y_start + glyph->offset_y;
+    uint8_t bitmask = 0;
+    uint8_t pixel_data = 0;
+    for (int gy = 0; gy < glyph->height; gy++) {
+      const int py = gy0 + gy;
+      uint16_t *row = (static_cast<unsigned>(py) < static_cast<unsigned>(SCREEN_H)) ? fb + py * SCREEN_W : nullptr;
+      for (int gx = 0; gx < glyph->width; gx++) {
+        uint8_t pixel = 0;
+        for (int bit = 0; bit < bpp; bit++) {
+          if (bitmask == 0) {
+            pixel_data = esphome::progmem_read_byte(data++);
+            bitmask = 0x80;
+          }
+          pixel <<= 1;
+          if ((pixel_data & bitmask) != 0) pixel |= 1;
+          bitmask >>= 1;
+        }
+        if (pixel != 0 && row != nullptr) {
+          const int px = gx0 + gx;
+          if (static_cast<unsigned>(px) < static_cast<unsigned>(SCREEN_W)) row[px] = lut[pixel];
+        }
+      }
+    }
+    x_at += glyph->advance;
+  }
+}
+
 template<typename DisplayT, typename FontT>
 inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
                                esphome::Color border_c, esphome::Color bg_c,
@@ -882,7 +995,7 @@ inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     int btn_cx = (x1 + x2) / 2;
-    it.print(btn_cx, y_mid, font, text_c, esphome::display::TextAlign::CENTER, label);
+    fast_print(it, btn_cx, y_mid, font, text_c, esphome::display::TextAlign::CENTER, label);
   }
 }
 
@@ -982,7 +1095,7 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
   }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    it.print(cx_card, cy_card, font, text_c, esphome::display::TextAlign::CENTER, label);
+    fast_print(it, cx_card, cy_card, font, text_c, esphome::display::TextAlign::CENTER, label);
   }
 }
 
@@ -1336,9 +1449,9 @@ inline void render_back_button(DisplayT &it, int cx, FontT *font,
     return;
   }
   const char *eff_label = (label != nullptr && std::strcmp(label, "< BACK") == 0) ? "< Back" : label;
-  it.print(cx + 1, back_lbl_y + 1, font, esphome::Color(0, 0, 0),
+  fast_print(it, cx + 1, back_lbl_y + 1, font, esphome::Color(0, 0, 0),
            esphome::display::TextAlign::CENTER, eff_label);
-  it.print(cx, back_lbl_y, font, text_col,
+  fast_print(it, cx, back_lbl_y, font, text_col,
            esphome::display::TextAlign::CENTER, eff_label);
 }
 

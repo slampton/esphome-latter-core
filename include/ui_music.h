@@ -50,7 +50,7 @@ inline void render_menu_header(DisplayT &it, int cx, int y_pos, const std::strin
   if (title.empty() || font_hdr == nullptr) return;
   int eff_y = (y_pos >= 44 && y_pos <= 52) ? layout().hdr_y : y_pos;
   std::string disp_title = fit_text_to_width_font(title, 280, font_hdr);
-  it.print(cx, eff_y, font_hdr, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
+  fast_print(it, cx, eff_y, font_hdr, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
 }
 
 template<typename DisplayT, typename LocalImageT, typename RemoteImageT,
@@ -144,8 +144,8 @@ inline void render_music_now_playing(
       render_modern_card(it, cx - pill_w / 2, hdr_y - scale_y(15), pill_w, scale_y(30), glass_bg,
                          is_feedback ? theme_primary : glass_brd, scale_s(15));
     }
-    it.print(cx + 1, hdr_y + 1, font_small, col_black, esphome::display::TextAlign::CENTER, spk_title.c_str());
-    it.print(cx, hdr_y, font_small, is_feedback ? theme_secondary : col_white, esphome::display::TextAlign::CENTER, spk_title.c_str());
+    fast_print(it, cx + 1, hdr_y + 1, font_small, col_black, esphome::display::TextAlign::CENTER, spk_title.c_str());
+    fast_print(it, cx, hdr_y, font_small, is_feedback ? theme_secondary : col_white, esphome::display::TextAlign::CENTER, spk_title.c_str());
   }
 
   if (show_controls) {
@@ -189,7 +189,7 @@ inline void render_music_now_playing(
         fast_line(it, bx + (int)(r1 * s1), by - (int)(r1 * c1), bx + (int)(r1 * s2), by - (int)(r1 * c2), c);
         fast_line(it, bx + (int)(r2 * s1), by - (int)(r2 * c1), bx + (int)(r2 * s2), by - (int)(r2 * c2), c);
       }
-      it.print(bx, by + 1, font_micro, c, esphome::display::TextAlign::CENTER, lbl);
+      fast_print(it, bx, by + 1, font_micro, c, esphome::display::TextAlign::CENTER, lbl);
     };
 
     auto draw_prev_glyph = [&](int ox, int oy, esphome::Color c) {
@@ -298,23 +298,23 @@ inline void render_music_now_playing(
     const int y_ar = scale_y(374);
     const int y_al = scale_y(395);
     if (has_shadow) {
-      it.print(cx + 1, y_t + 1, font_small, col_black, esphome::display::TextAlign::CENTER, title.c_str());
+      fast_print(it, cx + 1, y_t + 1, font_small, col_black, esphome::display::TextAlign::CENTER, title.c_str());
     }
-    it.print(cx, y_t, font_small, col_white, esphome::display::TextAlign::CENTER, title.c_str());
+    fast_print(it, cx, y_t, font_small, col_white, esphome::display::TextAlign::CENTER, title.c_str());
 
     if (!artist.empty() && artist != "None") {
       artist = fit_text_to_width_font(artist, scale_x(260), font_small);
       if (has_shadow) {
-        it.print(cx + 1, y_ar + 1, font_small, col_black, esphome::display::TextAlign::CENTER, artist.c_str());
+        fast_print(it, cx + 1, y_ar + 1, font_small, col_black, esphome::display::TextAlign::CENTER, artist.c_str());
       }
-      it.print(cx, y_ar, font_small, theme_secondary, esphome::display::TextAlign::CENTER, artist.c_str());
+      fast_print(it, cx, y_ar, font_small, theme_secondary, esphome::display::TextAlign::CENTER, artist.c_str());
     }
     if (!album.empty() && album != "None") {
       album = fit_text_to_width_font(album, scale_x(240), font_small);
       if (has_shadow) {
-        it.print(cx + 1, y_al + 1, font_small, col_black, esphome::display::TextAlign::CENTER, album.c_str());
+        fast_print(it, cx + 1, y_al + 1, font_small, col_black, esphome::display::TextAlign::CENTER, album.c_str());
       }
-      it.print(cx, y_al, font_small, esphome::Color(154, 166, 182), esphome::display::TextAlign::CENTER, album.c_str());
+      fast_print(it, cx, y_al, font_small, esphome::Color(154, 166, 182), esphome::display::TextAlign::CENTER, album.c_str());
     }
   }
 }
@@ -380,9 +380,9 @@ inline void render_music_menus(
   const int max_vis_y  = scale_y(395);
 
   if (music_overlay_mode == 5) {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "MUSIC");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "MUSIC");
     std::string spk_sub = fit_text_to_width_font(active_speaker_name, scale_x(260), font_small);
-    it.print(cx, layout().sub_hdr_y, font_small, col_white, esphome::display::TextAlign::CENTER, spk_sub.c_str());
+    fast_print(it, cx, layout().sub_hdr_y, font_small, col_white, esphome::display::TextAlign::CENTER, spk_sub.c_str());
 
     render_modern_card(it, cx, scale_y(122), 276, 44, 12, card_bg, theme_primary, "Speakers",    col_white, font_small);
     render_modern_card(it, cx, scale_y(185), 276, 44, 12, card_bg, theme_primary, "Library",     col_white, font_small);
@@ -410,7 +410,7 @@ inline void render_music_menus(
         fast_circle(it, c_left + scale_x(19), y_mid, scale_s(5), col_slate);
       }
       std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - scale_x(56), font_small);
-      it.print(c_left + scale_x(35), y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+      fast_print(it, c_left + scale_x(35), y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
     };
 
     draw_speaker_card(layout().slot5_y(0) + list_shift, slot_1_name, slot_1_id, slot_1_active);
@@ -496,12 +496,12 @@ inline void render_music_menus(
         render_modern_card(it, dr_cx, y_mid, dr_w, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
 
         std::string disp_name = fit_text_to_width_font(name, dr_w - scale_x(48), font_small);
-        it.print(dr_left + scale_x(14), y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        fast_print(it, dr_left + scale_x(14), y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
         draw_drilldown_icon(c_right - scale_x(24), y_mid);
       } else if (is_podcast_list) {
         render_modern_card(it, cx, y_mid, 276, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
         std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 58, font_small);
-        it.print(c_left + 19, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        fast_print(it, c_left + 19, y_mid, font_small, col_white, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
         draw_drilldown_icon(c_right - 26, y_mid);
       } else if (mtype == "text") {
         std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 24, font_small);
@@ -516,7 +516,7 @@ inline void render_music_menus(
         it.filled_triangle(c_left + 15, y_mid - 6, c_left + 15, y_mid + 6, c_left + 25, y_mid, icon_c);
 
         std::string disp_name = fit_text_to_width_font(name, layout().list_card_w - 50, font_small);
-        it.print(c_left + 35, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
+        fast_print(it, c_left + 35, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER_LEFT, disp_name.c_str());
       }
     };
 
@@ -537,7 +537,7 @@ inline void render_music_menus(
       } else {
         snprintf(q_hdr, sizeof(q_hdr), "QUEUE");
       }
-      it.print(cx - scale_x(48), layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, q_hdr);
+      fast_print(it, cx - scale_x(48), layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, q_hdr);
       render_modern_card(it, cx + scale_x(93), layout().hdr_y, 84, 30, 8, card_bg, theme_primary, "Clear", col_white, font_micro);
       if (music_browse_total_pages > 1) {
         draw_right_chevrons(music_browse_page > 1, music_browse_page < music_browse_total_pages);
@@ -561,7 +561,7 @@ inline void render_music_menus(
 
     bool is_current = (target_speaker_id == active_speaker_entity);
     if (is_current) {
-      it.print(cx, layout().sub_hdr_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Currently Controlling");
+      fast_print(it, cx, layout().sub_hdr_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Currently Controlling");
       bool is_remote_target = is_rem && !media_state().local_speaker.empty();
       if (is_remote_target) {
         render_modern_card(it, cx, scale_y(142), 276, 44, 12, card_bg, card_brd, "Transfer to Local", col_white, font_small);
@@ -572,7 +572,7 @@ inline void render_music_menus(
         render_modern_card(it, cx, scale_y(230), 276, 44, 12, card_bg, card_brd, "Stop Playback", col_white, font_small);
       }
     } else {
-      it.print(cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "Speaker Actions");
+      fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "Speaker Actions");
       render_modern_card(it, cx, scale_y(130), 276, 44, 12, card_bg, card_brd, "Transfer Queue",  col_white, font_small);
       render_modern_card(it, cx, scale_y(190), 276, 44, 12, card_bg, card_brd, "Control Only",    col_white, font_small);
       render_modern_card(it, cx, scale_y(250), 276, 44, 12, card_bg, card_brd, "Join Audio",      col_white, font_small);
@@ -580,7 +580,7 @@ inline void render_music_menus(
     }
   } else if (music_overlay_mode == 6) {
     std::string disp_t = cur_title.empty() ? "NOW PLAYING" : fit_text_to_width_font(cur_title, scale_x(280), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_t.c_str());
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_t.c_str());
 
     std::string sub_meta = cur_artist;
     if (!cur_album.empty() && cur_album != "None") {
@@ -588,7 +588,7 @@ inline void render_music_menus(
     }
     if (!sub_meta.empty() && sub_meta != "None") {
       sub_meta = fit_text_to_width_font(sub_meta, scale_x(275), font_small);
-      it.print(cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, sub_meta.c_str());
+      fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, sub_meta.c_str());
     }
 
     const int trk_card_y = scale_y(132);
@@ -615,7 +615,7 @@ inline void render_music_menus(
     } else {
       snprintf(time_buf, sizeof(time_buf), "%02d:%02d  /  %s", el_s / 60, el_s % 60, kUnknownGlyph);
     }
-    it.print(cx, scale_y(196), font_small, col_white, esphome::display::TextAlign::CENTER, time_buf);
+    fast_print(it, cx, scale_y(196), font_small, col_white, esphome::display::TextAlign::CENTER, time_buf);
 
     // Wide Scrubber Bar + Vector Seek Buttons (single-source layout().music_scrub_*)
     const int scrub_y  = layout().music_scrub_y;
@@ -688,7 +688,7 @@ inline void render_music_menus(
         fill_rect_row_major(it, ix - 1, iy - 1, 3, 9, col_white);
       }
 
-      it.print(card_cx, card_cy + 22, font_small, col_white, esphome::display::TextAlign::CENTER, label);
+      fast_print(it, card_cx, card_cy + 22, font_small, col_white, esphome::display::TextAlign::CENTER, label);
     };
 
     draw_inspector_tool_card(cx - scale_x(68), scale_y(341), false, "Lyrics");
@@ -707,7 +707,7 @@ inline void render_music_menus(
 
     std::string sub_h = cur_title.empty() ? cur_artist : (cur_title + " • " + cur_artist);
     sub_h = fit_text_to_width_font(sub_h, scale_x(270), font_micro);
-    it.print(cx, layout().sub_hdr_y, font_micro, col_slate, esphome::display::TextAlign::CENTER, sub_h.c_str());
+    fast_print(it, cx, layout().sub_hdr_y, font_micro, col_slate, esphome::display::TextAlign::CENTER, sub_h.c_str());
 
     render_modern_card(it, cx, scale_y(236), 324, scale_y(274), 16, card_bg, card_brd, nullptr, col_white, font_small);
 
@@ -718,7 +718,7 @@ inline void render_music_menus(
         int ly = scale_y(132 + r * 50);
         std::string fit_ln = fit_text_to_width_font(*lines[r], scale_x(300), font_small);
         esphome::Color lc = acts[r] ? theme_primary : col_white;
-        it.print(cx, ly, font_small, lc, esphome::display::TextAlign::CENTER, fit_ln.c_str());
+        fast_print(it, cx, ly, font_small, lc, esphome::display::TextAlign::CENTER, fit_ln.c_str());
       }
     }
 

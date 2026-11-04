@@ -25,9 +25,9 @@ inline void render_battery_indicator(
   snprintf(batt_str, sizeof(batt_str), "%.0f%%", batt);
   const bool compact = (SCREEN_W < 380);
   int text_x = cx + (compact ? 6 : 8);
-  it.print(text_x, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
+  fast_print(it, text_x, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
   if (!compact) {
-    it.print(text_x + 1, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
+    fast_print(it, text_x + 1, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
   }
   int bx = text_x - (compact ? (batt >= 100.0f ? 24 : 20) : (batt >= 100.0f ? 36 : 28));
   if (is_charging) {
@@ -82,17 +82,17 @@ inline void render_clock_page(
 #endif
 #endif
     if (!now.is_valid()) {
-      it.print(cx, cy - scale_y(8), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
+      fast_print(it, cx, cy - scale_y(8), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
       return;
     }
     it.strftime(cx, cy - scale_y(82), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     char sq_dig[16], sq_ap[8] = "";
     format_time_hhmm(now.hour, now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
-    it.print(cx, cy - scale_y(8), font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
+    fast_print(it, cx, cy - scale_y(8), font_time, col_white, esphome::display::TextAlign::CENTER, sq_dig);
     char sq_sec[32];
     if (is_24h_format) snprintf(sq_sec, sizeof(sq_sec), "SEC  •  %02ds", now.second);
     else snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, now.second);
-    it.print(cx, cy + scale_y(56), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
+    fast_print(it, cx, cy + scale_y(56), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sq_sec);
     return;
   }
 
@@ -127,9 +127,9 @@ inline void render_clock_page(
 
   if (!now.is_valid()) {
     if (is_ring_digital) {
-      it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
+      fast_print(it, cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
     } else {
-      it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
+      fast_print(it, cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
       fast_filled_circle(it, cx, cy, 7, col_white);
       fast_filled_circle(it, cx, cy, 4, col_red);
       fast_filled_circle(it, cx, cy, 2, col_dark_gray);
@@ -162,7 +162,7 @@ inline void render_clock_page(
     char dig_buf[16];
     char ap_str[8] = "";
     format_time_hhmm(hour, min, is_24h_format, dig_buf, sizeof(dig_buf), ap_str);
-    it.print(cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_white, esphome::display::TextAlign::CENTER, dig_buf);
+    fast_print(it, cx, cy - static_cast<int>(28.0f * dial_scale), font_time, col_white, esphome::display::TextAlign::CENTER, dig_buf);
 
     char sec_buf[32];
     if (is_24h_format) {
@@ -170,7 +170,7 @@ inline void render_clock_page(
     } else {
       snprintf(sec_buf, sizeof(sec_buf), "%s  •  %02ds", ap_str, sec);
     }
-    it.print(cx, cy + static_cast<int>(29.0f * dial_scale), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sec_buf);
+    fast_print(it, cx, cy + static_cast<int>(29.0f * dial_scale), font_small, theme_secondary, esphome::display::TextAlign::CENTER, sec_buf);
   } else {
     it.strftime(cx, cy - static_cast<int>(129.0f * dial_scale), font_date, theme_primary, esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     char time_buf[32];
@@ -181,7 +181,7 @@ inline void render_clock_page(
       if (h12 == 0) h12 = 12;
       snprintf(time_buf, sizeof(time_buf), "%d:%02d %s", h12, min, hour >= 12 ? "pm" : "am");
     }
-    it.print(cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, time_buf);
+    fast_print(it, cx, cy + static_cast<int>(72.0f * dial_scale), font_date, col_slate, esphome::display::TextAlign::CENTER, time_buf);
 
     float h_angle = ((hour % 12) + min / 60.0f + sec / 3600.0f) * (2.0f * PI_F / 12.0f);
     float m_angle = (min + sec / 60.0f) * (2.0f * PI_F / 60.0f);
@@ -609,7 +609,7 @@ inline void draw_home_activity_row_contents(
   }
 
   std::string fit_act = fit_text_to_width_font(cur_act.label, max_txt, font_small);
-  it.print(txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_act.c_str());
+  fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_act.c_str());
 
   // Inline Action Button (Play / Pause / Disarm / Open Calendar, r = btn_r at act_bx)
   render_glass_circle(it, act_bx, gy, btn_r, fg_btn, fg_sec);
@@ -839,7 +839,7 @@ inline void render_home_page(
     //   - 5 cards (w = 276, h = 44, r = 12) at y_mid = {110, 173, 236, 299, 362} (63px stride)
     //   - Top of Slot 0 = y 88 (30px below title); Bottom of Slot 4 = y 384 (31px above < BACK)
     // -------------------------------------------------------------------------
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "HOME SETTINGS");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "HOME SETTINGS");
 
     const Color card_bg_on(22, 27, 36);
     const Color card_bg_off(15, 18, 24);
@@ -944,8 +944,8 @@ inline void render_home_page(
       format_time_hhmm(now.hour, now.minute, is_24h_format, t_sub, sizeof(t_sub));
       snprintf(hdr_buf, sizeof(hdr_buf), "ACTIVE  •  %s", t_sub);
     }
-    it.print(cx + 1, layout().hdr_y + 1, font_small, col_black, TextAlign::CENTER, hdr_buf);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
+    fast_print(it, cx + 1, layout().hdr_y + 1, font_small, col_black, TextAlign::CENTER, hdr_buf);
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
 
     Color ov_bg(22, 27, 36);
     Color ov_brd(56, 68, 86);
@@ -958,7 +958,7 @@ inline void render_home_page(
     }
 
     if (act_count <= 0) {
-      it.print(cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
+      fast_print(it, cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
     } else {
       int total_pages = (act_count > 5) ? 2 : 1;
       if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;
@@ -1003,9 +1003,9 @@ inline void render_home_page(
     TimeT now_copy = now;
     now_copy.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
     if (!is_dim_backdrop) {
-      it.print(cx + 1, z_date_y + 1, font_date, col_black, TextAlign::CENTER, date_bar);
+      fast_print(it, cx + 1, z_date_y + 1, font_date, col_black, TextAlign::CENTER, date_bar);
     }
-    it.print(cx, z_date_y, font_date, fg_home_white, TextAlign::CENTER, date_bar);
+    fast_print(it, cx, z_date_y, font_date, fg_home_white, TextAlign::CENTER, date_bar);
   }
 
   // ZONE 2: Hero Digital Clock (77pt Roboto, kUnknownGlyph until time syncs, Tap -> Clock)
@@ -1015,9 +1015,9 @@ inline void render_home_page(
     format_time_hhmm(now.hour, now.minute, is_24h_format, time_str, sizeof(time_str));
   }
   if (!is_dim_backdrop) {
-    it.print(cx + 1, z_clock_y + 1, font_time, col_black, TextAlign::CENTER, time_str);
+    fast_print(it, cx + 1, z_clock_y + 1, font_time, col_black, TextAlign::CENTER, time_str);
   }
-  it.print(cx, z_clock_y, font_time, fg_home_white, TextAlign::CENTER, time_str);
+  fast_print(it, cx, z_clock_y, font_time, fg_home_white, TextAlign::CENTER, time_str);
 
   // ZONE 3: Stepped-Up Weather Summary in font_date (27pt, blank until weather or simulation arrives!)
   if (weather_ready) {
@@ -1029,9 +1029,9 @@ inline void render_home_page(
     }
     std::string fit_w = fit_text_to_width_font(std::string(w_line), 340, font_date);
     if (!is_dim_backdrop) {
-      it.print(cx + 1, z_weath_y + 1, font_date, col_black, TextAlign::CENTER, fit_w.c_str());
+      fast_print(it, cx + 1, z_weath_y + 1, font_date, col_black, TextAlign::CENTER, fit_w.c_str());
     }
-    it.print(cx, z_weath_y, font_date, fg_home_cond, TextAlign::CENTER, fit_w.c_str());
+    fast_print(it, cx, z_weath_y, font_date, fg_home_cond, TextAlign::CENTER, fit_w.c_str());
   }
 
   // TRANSIENT WAKE GREETING LATCH (8.0s Full Brightness + 2.5s Smooth Fade-Out = 10.5s Total)
@@ -1146,9 +1146,9 @@ inline void render_home_page(
     Color fg_c = lerp_color(bg_target, col_white, alpha);
     if (alpha > 0.35f) {
       Color sh_c = lerp_color(bg_target, col_black, alpha);
-      it.print(cx + 1, greet_y + 1, font_date, sh_c, TextAlign::CENTER, fit_greet.c_str());
+      fast_print(it, cx + 1, greet_y + 1, font_date, sh_c, TextAlign::CENTER, fit_greet.c_str());
     }
-    it.print(cx, greet_y, font_date, fg_c, TextAlign::CENTER, fit_greet.c_str());
+    fast_print(it, cx, greet_y, font_date, fg_c, TextAlign::CENTER, fit_greet.c_str());
   }
 
   home_lap.mark(ProfSect::HOME_TEXT);

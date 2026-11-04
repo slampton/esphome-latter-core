@@ -516,7 +516,7 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   fast_line(it, cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, col_dark_gray);
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d", wave_num, sunk_count, time_remaining, game_score);
-  it.print(cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  fast_print(it, cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // Center Hole Target with Swirling Event Horizon
@@ -597,7 +597,7 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     } else {
       snprintf(pop_buf, sizeof(pop_buf), "+%d", popup_pts);
     }
-    it.print(cx, py, font_small, popup_combo > 1 ? col_cyan : col_gold, esphome::display::TextAlign::CENTER, pop_buf);
+    fast_print(it, cx, py, font_small, popup_combo > 1 ? col_cyan : col_gold, esphome::display::TextAlign::CENTER, pop_buf);
   }
 
   // 1.5s Inter-Wave Anticipation Banner ("WAVE X CLEAR! +6s" -> "GET READY! WAVE X+1")
@@ -605,10 +605,10 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char w_buf[36];
     if (now_ms - wave_clear_ms < 1100U) {
       snprintf(w_buf, sizeof(w_buf), "WAVE %d CLEAR! +6s", wave_num - 1);
-      it.print(cx, cy - scale_y(107), font_date, col_gold, esphome::display::TextAlign::CENTER, w_buf);
+      fast_print(it, cx, cy - scale_y(107), font_date, col_gold, esphome::display::TextAlign::CENTER, w_buf);
     } else {
       snprintf(w_buf, sizeof(w_buf), "GET READY! WAVE %d", wave_num);
-      it.print(cx, cy - scale_y(107), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_buf);
+      fast_print(it, cx, cy - scale_y(107), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_buf);
     }
   }
 
@@ -620,26 +620,26 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      fast_print(it, cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       if (wave_num == 1) {
-        it.print(cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
+        fast_print(it, cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
       } else {
         char w_end[32];
         snprintf(w_end, sizeof(w_end), "WAVE %d REACHED", wave_num);
-        it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
+        fast_print(it, cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
       }
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", game_score);
-    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    fast_print(it, cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_marbles);
-    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1023,13 +1023,13 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char rb[36];
     if (now_ms - round_banner_ms < 1100U) {
       snprintf(rb, sizeof(rb), "ROUND %d CLEAR!", round_num - 1);
-      it.print(cx, cy - scale_y(8), font_date, col_gold, esphome::display::TextAlign::CENTER, rb);
+      fast_print(it, cx, cy - scale_y(8), font_date, col_gold, esphome::display::TextAlign::CENTER, rb);
     } else {
       snprintf(rb, sizeof(rb), "ROUND %d! GOAL %d", round_num, round_goal);
-      it.print(cx, cy - scale_y(8), font_date, col_cyan, esphome::display::TextAlign::CENTER, rb);
+      fast_print(it, cx, cy - scale_y(8), font_date, col_cyan, esphome::display::TextAlign::CENTER, rb);
     }
   } else if (!round_over && hit_feedback[0] != '\0' && (now_ms - feedback_timer < 1100U)) {
-    it.print(cx, cy - scale_y(8), font_date, feedback_col, esphome::display::TextAlign::CENTER, hit_feedback);
+    fast_print(it, cx, cy - scale_y(8), font_date, feedback_col, esphome::display::TextAlign::CENTER, hit_feedback);
   }
 
   // 7. Single Bottom Scorekeeper Line (Universal Clean Game Canvas Standard)
@@ -1043,7 +1043,7 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "R%d  •  %d Arr  •  %s  •  %d", round_num, arrows_left, wind_buf, arch_score);
-  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  fast_print(it, cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 8. Round Over Summary Modal
@@ -1054,22 +1054,22 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      fast_print(it, cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       char r_end[32];
       snprintf(r_end, sizeof(r_end), "ROUND %d REACHED", round_num);
-      it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, r_end);
+      fast_print(it, cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, r_end);
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", arch_score);
-    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    fast_print(it, cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_archery);
-    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1545,7 +1545,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   } else {
     snprintf(bo_hud, sizeof(bo_hud), "W%d  •  Balls:%d  •  Brk:%d  •  %d", wave_num, lives_left, bricks_remaining, bo_score);
   }
-  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, bo_hud);
+  fast_print(it, cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, bo_hud);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 3. Draw 18-Brick Dome Formation (with Multi-Hit Armor & Crack States)
@@ -1572,7 +1572,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
   if (popup_ms > 0 && (now_ms - popup_ms < 650U)) {
     int py_off = (int)((now_ms - popup_ms) * 22U / 650U);
-    it.print(popup_x, popup_y - py_off, font_small, popup_col,
+    fast_print(it, popup_x, popup_y - py_off, font_small, popup_col,
              esphome::display::TextAlign::CENTER, popup_text);
   }
   if (banner_ms > 0U) {
@@ -1583,11 +1583,11 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
     if (b_el >= 3000U) {
       banner_ms = 0U;
     } else if (b_el < 1100U) {
-      it.print(cx, 212, font_date, col_gold, esphome::display::TextAlign::CENTER, banner_text);
+      fast_print(it, cx, 212, font_date, col_gold, esphome::display::TextAlign::CENTER, banner_text);
     } else {
       char rdy_buf[32];
       snprintf(rdy_buf, sizeof(rdy_buf), "GET READY! WAVE %d", wave_num);
-      it.print(cx, 212, font_date, col_cyan, esphome::display::TextAlign::CENTER, rdy_buf);
+      fast_print(it, cx, 212, font_date, col_cyan, esphome::display::TextAlign::CENTER, rdy_buf);
     }
   }
 
@@ -1612,26 +1612,26 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
     fast_circle(it, cx, cy, mod_r - 2, is_new_high ? col_gold : theme_secondary);
 
     if (is_new_high) {
-      it.print(cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
+      fast_print(it, cx, cy - scale_y(77), font_date, col_gold, esphome::display::TextAlign::CENTER, "NEW HIGH SCORE!");
     } else {
       if (wave_num == 1) {
-        it.print(cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
+        fast_print(it, cx, cy - scale_y(77), font_date, col_red, esphome::display::TextAlign::CENTER, "GAME OVER");
       } else {
         char w_end[32];
         snprintf(w_end, sizeof(w_end), "WAVE %d REACHED", wave_num);
-        it.print(cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
+        fast_print(it, cx, cy - scale_y(77), font_date, col_cyan, esphome::display::TextAlign::CENTER, w_end);
       }
     }
 
     char score_str[32];
     snprintf(score_str, sizeof(score_str), "Score: %d", bo_score);
-    it.print(cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
+    fast_print(it, cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_breakout);
-    it.print(cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
+    fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    it.print(cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -2141,7 +2141,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   char t_buf[56];
   snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
            level_num, treats_left, treat_score, high_score_chomp);
-  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, t_buf);
+  fast_print(it, cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, t_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // 2. Render Remaining Uneaten Treats on the Plate
@@ -2169,18 +2169,18 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
         fast_filled_circle(it, static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), 3, confetti[c].col);
       }
       snprintf(p_msg, sizeof(p_msg), "LEVEL %d CLEAR!", level_num);
-      it.print(cx, imy - 62, font_date, col_gold, esphome::display::TextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - 62, font_date, col_gold, esphome::display::TextAlign::CENTER, p_msg);
     } else {
       // Quiet centered anticipation beat before the new treats pop onto the plate!
       snprintf(p_msg, sizeof(p_msg), "GET READY! LEVEL %d", level_num + 1);
-      it.print(cx, imy - 62, font_date, col_cyan, esphome::display::TextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - 62, font_date, col_cyan, esphome::display::TextAlign::CENTER, p_msg);
     }
   } else if (is_chomping) {
     static constexpr const char *CHOMP_WORDS[5] = {
         "NOM NOM!", "YUMMY!", "COOKIE!", "CHOMP!", "DELICIOUS!"};
     int pop_y = (imy > 150) ? (imy - 52) : (imy + 52);
     int pop_x = std::max(115, std::min(351, imx));
-    it.print(pop_x, pop_y, font_date, col_gold, esphome::display::TextAlign::CENTER,
+    fast_print(it, pop_x, pop_y, font_date, col_gold, esphome::display::TextAlign::CENTER,
              CHOMP_WORDS[chomp_word_idx]);
     fast_filled_circle(it, imx - 42, imy - 16, 3, col_gold);
     fast_filled_circle(it, imx + 42, imy - 16, 3, col_cyan);
@@ -2384,9 +2384,9 @@ inline void render_game_2048(DisplayT &it, int cx, int cy, uint32_t now_ms,
         snprintf(v_str, sizeof(v_str), "%d", val);
         esphome::Color fg = (val >= 2048) ? col_bg : col_white;
         if (val < 100) {
-          it.print(tx + tile_sz / 2, ty + tile_sz / 2, font_date, fg, esphome::display::TextAlign::CENTER, v_str);
+          fast_print(it, tx + tile_sz / 2, ty + tile_sz / 2, font_date, fg, esphome::display::TextAlign::CENTER, v_str);
         } else {
-          it.print(tx + tile_sz / 2, ty + tile_sz / 2, font_small, fg, esphome::display::TextAlign::CENTER, v_str);
+          fast_print(it, tx + tile_sz / 2, ty + tile_sz / 2, font_small, fg, esphome::display::TextAlign::CENTER, v_str);
         }
       }
     }
@@ -2394,18 +2394,18 @@ inline void render_game_2048(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
   char hud_buf[64];
   snprintf(hud_buf, sizeof(hud_buf), "2048  •  Score: %d  •  Best: %d", score_2048, high_score_2048());
-  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  fast_print(it, cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   if (game_over) {
     render_modern_card(it, cx - scale_x(126), cy - scale_y(66), scale_x(252), scale_y(116),
                        col_bg, won_2048 ? col_gold : theme_secondary, scale_s(16));
-    it.print(cx, cy - scale_y(38), font_date, won_2048 ? col_gold : col_red,
+    fast_print(it, cx, cy - scale_y(38), font_date, won_2048 ? col_gold : col_red,
              esphome::display::TextAlign::CENTER, won_2048 ? "2048 MASTER!" : "NO MOVES LEFT");
     char sc_str[32];
     snprintf(sc_str, sizeof(sc_str), "Score: %d", score_2048);
-    it.print(cx, cy - scale_y(6), font_small, col_white, esphome::display::TextAlign::CENTER, sc_str);
-    it.print(cx, cy + scale_y(24), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy - scale_y(6), font_small, col_white, esphome::display::TextAlign::CENTER, sc_str);
+    fast_print(it, cx, cy + scale_y(24), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
   (void)theme_primary;
 }
@@ -2603,7 +2603,7 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
   char hud_buf[64];
   snprintf(hud_buf, sizeof(hud_buf), "R%d  •  Pairs: %d/8  •  %dx  •  %d",
            round_num, pairs_found, streak_mult, mem_score);
-  it.print(cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  fast_print(it, cx, layout().back_y - scale_y(34), font_small, col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
   (void)font_date;
   (void)col_dark_gray;
@@ -2738,13 +2738,13 @@ inline void render_games_launcher(
       // GAME 4: 2048 — 2x2 Beveled Number Tiles (2, 16, 64, 2048)
       render_modern_card(it, icon_x - 48, icon_y - 48, 96, 96, Color(18, 22, 30), col_slate, 12);
       render_modern_card(it, icon_x - 42, icon_y - 42, 40, 40, Color(52, 64, 82), col_slate, 7);
-      it.print(icon_x - 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "2");
+      fast_print(it, icon_x - 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "2");
       render_modern_card(it, icon_x + 2, icon_y - 42, 40, 40, col_orange, col_white, 7);
-      it.print(icon_x + 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "16");
+      fast_print(it, icon_x + 22, icon_y - 22, font_small, col_white, TextAlign::CENTER, "16");
       render_modern_card(it, icon_x - 42, icon_y + 2, 40, 40, col_red, col_white, 7);
-      it.print(icon_x - 22, icon_y + 22, font_small, col_white, TextAlign::CENTER, "64");
+      fast_print(it, icon_x - 22, icon_y + 22, font_small, col_white, TextAlign::CENTER, "64");
       render_modern_card(it, icon_x + 2, icon_y + 2, 40, 40, col_gold, col_white, 7);
-      it.print(icon_x + 22, icon_y + 22, font_small, col_bg, TextAlign::CENTER, "2K");
+      fast_print(it, icon_x + 22, icon_y + 22, font_small, col_bg, TextAlign::CENTER, "2K");
 
     } else {
       // GAME 5: MEMORY MATCH — 2x2 Flipped & Face-Down Matching Cards
@@ -2780,7 +2780,7 @@ inline void render_games_launcher(
     }
 
     draw_game_icon(g_idx, icon_x, icon_y);
-    it.print(text_center_x, title_y, font_btn_bold, col_white, TextAlign::CENTER, title);
+    fast_print(it, text_center_x, title_y, font_btn_bold, col_white, TextAlign::CENTER, title);
 
     const char *lbl_str = "HIGH SCORE:";
     char val_str[20];
@@ -2800,8 +2800,8 @@ inline void render_games_launcher(
     const int gap_px = scale_x(8);
     int start_x = text_center_x - (w_lbl + gap_px + w_val) / 2;
 
-    it.print(start_x, score_y, font_small, col_gold, TextAlign::CENTER_LEFT, lbl_str);
-    it.print(start_x + w_lbl + gap_px, score_y, font_small, col_white, TextAlign::CENTER_LEFT, val_str);
+    fast_print(it, start_x, score_y, font_small, col_gold, TextAlign::CENTER_LEFT, lbl_str);
+    fast_print(it, start_x + w_lbl + gap_px, score_y, font_small, col_white, TextAlign::CENTER_LEFT, val_str);
   };
 
   const bool compact_w   = (SCREEN_W < 380);
@@ -2826,7 +2826,7 @@ inline void render_games_launcher(
     draw_game_card(game_carousel_idx, icon_cx, card_cy, text_cx, base_title_y, base_score_y);
   }
 
-  it.print(cx, compact_w ? 64 : scale_y(84), font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
+  fast_print(it, cx, compact_w ? 64 : scale_y(84), font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
 
   int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
   render_dock_page_pips(it, cx, pips_y, 6, active_pip, col_white, Color(95, 112, 134));

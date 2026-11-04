@@ -344,7 +344,7 @@ inline void render_area_control_page(
     } else {
       // MODE 1: White Color Temperature Slider (2700K Warm Amber <-> 6500K Cool Daylight) + Brightness Slider
       std::string fit_ln = fit_text_to_width_font(light_insp_name(), scale_x(260), font_small);
-      it.print(cx, scale_y(86), font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
+      fast_print(it, cx, scale_y(86), font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
 
       // Card 1 (y_mid = scale_y(162)): Color Temperature Gradient Slider (2700K .. 6500K)
       const int sl_card_w = layout().light_slider_card_w();
@@ -365,7 +365,7 @@ inline void render_area_control_page(
       fast_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
       char k_buf[48];
       snprintf(k_buf, sizeof(k_buf), "White Temp: %dK", k_clamped);
-      it.print(cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
+      fast_print(it, cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
 
       // Card 2 (y_mid = scale_y(258)): Brightness Fill-Slider (5% .. 100%)
       const int b_cy = scale_y(258);
@@ -378,7 +378,7 @@ inline void render_area_control_page(
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
-      it.print(cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
+      fast_print(it, cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
     }
     return;
   }
@@ -387,7 +387,7 @@ inline void render_area_control_page(
   // SUBPAGE 1 / AREAS MODE: 5-SLOT AREA SWITCHER
   // ===========================================================================
   if (area_subpage == 1 || area_browse_mode == "areas" || area_browse_mode == "area_areas") {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT AREA");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT AREA");
 
     auto draw_area_row = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
       if (name.empty() && id_str.empty()) return;
@@ -398,7 +398,7 @@ inline void render_area_control_page(
       if (is_act) fast_filled_circle(it, area_l + 19, y_mid, 6, theme_primary);
       else fast_circle(it, area_l + 19, y_mid, 5, col_slate);
       std::string fit_n = fit_text_to_width_font(name, layout().list_card_w - 54, font_small);
-      it.print(area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
+      fast_print(it, area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     };
 
     draw_area_row(layout().slot5_y(0), s1_name, s1_id, s1_act);
@@ -420,11 +420,11 @@ inline void render_area_control_page(
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
-  it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
+  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
 
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(area_action_feedback, scale_x(280), font_small);
-    it.print(cx, layout().sub_hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    fast_print(it, cx, layout().sub_hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
     const int tele_y = layout().sub_hdr_y;
     const Color icon_c(185, 225, 255);
@@ -468,20 +468,20 @@ inline void render_area_control_page(
       int total_w = 12 + 6 + w_t + 22 + 12 + 6 + w_h;
       int left_x = cx - (total_w / 2);
       draw_mini_thermometer(left_x + 5, tele_y, icon_c);
-      it.print(left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
       int drop_x = left_x + 12 + 6 + w_t + 22;
       draw_mini_droplet(drop_x + 5, tele_y, icon_c);
-      it.print(drop_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      fast_print(it, drop_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     } else if (has_t) {
       int total_w = 12 + 6 + w_t;
       int left_x = cx - (total_w / 2);
       draw_mini_thermometer(left_x + 5, tele_y, icon_c);
-      it.print(left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
     } else {
       int total_w = 12 + 6 + w_h;
       int left_x = cx - (total_w / 2);
       draw_mini_droplet(left_x + 5, tele_y, icon_c);
-      it.print(left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     }
   } else {
     const char *sub_lbl = (area_domain_filter == "scene")   ? "Lighting Scenes"
@@ -492,7 +492,7 @@ inline void render_area_control_page(
                         : (area_domain_filter == "climate") ? "Climate & Thermostats"
                         : (area_domain_filter == "media")   ? "Area Media"
                         : "Tap Header to Switch Area";
-    it.print(cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
+    fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
   }
 
   // Helper: Draw Enlarged Domain Vector Icon inside the Left 64x64 Card Well (gx = 108)
@@ -630,7 +630,7 @@ inline void render_area_control_page(
     std::string clean_name = strip_trailing_paren_state(raw_name);
     const int max_t_w = (dtype == "light") ? (r_slider_w - scale_x(58)) : (r_slider_w - scale_x(20));
     std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
-    it.print(r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
+    fast_print(it, r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     char sub_buf[40];
     if (dtype == "light") {
@@ -657,7 +657,7 @@ inline void render_area_control_page(
       snprintf(sub_buf, sizeof(sub_buf), is_act ? "On" : "Off");
     }
     Color sub_c = is_act ? theme_secondary : Color(105, 115, 130);
-    it.print(r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
+    fast_print(it, r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
     if (dtype == "light") {
       int ox = layout().area_card_orb_x();
@@ -707,7 +707,7 @@ inline void render_security_alarm_page(
 
   if (tab == 0) {
     // TAB 0: HOME SECURITY ALARM (Tri-state: unknown/unconfigured never claims "Disarmed" or "Ready (Demo)")
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
 
     std::string st_lbl = "Status: Unknown";
     Color st_col = col_slate;
@@ -720,7 +720,7 @@ inline void render_security_alarm_page(
       else if (alarm_state == "triggered") { st_lbl = "ALARM TRIGGERED!"; st_col = col_red; }
       else { st_lbl = "Status: " + alarm_state; st_col = theme_secondary; }
     }
-    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
+    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : st_lbl.c_str());
 
     bool is_disarmed = (alarm_state == "disarmed");
@@ -741,7 +741,7 @@ inline void render_security_alarm_page(
                        "Arm Away", col_white, font_date);
 
   } else if (tab == 1) {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
     char sub_t[48];
     const std::string &m = sim_thermostat_mode();
     const char *m_lbl = m.empty() ? "Mode: Unknown"
@@ -755,7 +755,7 @@ inline void render_security_alarm_page(
     } else {
       snprintf(sub_t, sizeof(sub_t), "%s", m_lbl);
     }
-    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : sub_t);
 
     const int hero_y = scale_y(156);
@@ -784,7 +784,7 @@ inline void render_security_alarm_page(
     } else {
       snprintf(t_val, sizeof(t_val), "—°");
     }
-    it.print(cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
+    fast_print(it, cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
 
     const int M_XS[4] = {cx - scale_x(129), cx - scale_x(43), cx + scale_x(43), cx + scale_x(129)};
     const char *M_NAMES[4] = {"Heat", "Cool", "Auto", "Off"};
@@ -798,8 +798,8 @@ inline void render_security_alarm_page(
     }
 
   } else if (tab == 2) {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
-    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
+    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle");
 
     GarageState gs = wh_garage_state();
@@ -824,9 +824,9 @@ inline void render_security_alarm_page(
 
   } else {
     // TAB 3: ROBOT VACUUM
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
     std::string v_st = sim_vacuum_state().empty() ? "Status: Unknown" : ("Status: " + sim_vacuum_state());
-    it.print(cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
+    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
              is_fb ? area_action_feedback.c_str() : v_st.c_str());
 
     bool is_cln = (sim_vacuum_state() == "Cleaning");

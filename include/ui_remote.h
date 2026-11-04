@@ -216,13 +216,13 @@ inline void render_tv_remote_page(
 
     if (is_fb) {
       std::string fit_fb = fit_text_to_width_font(remote_action_feedback, 280, font_small);
-      it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
+      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
     } else if (total_pages > 1) {
       char hdr_buf[32];
       snprintf(hdr_buf, sizeof(hdr_buf), "CONTROL  %d/%d", cur_page + 1, total_pages);
-      it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr_buf);
+      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr_buf);
     } else {
-      it.print(cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "CONTROL");
+      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "CONTROL");
     }
 
     const esphome::Color card_bg(22, 27, 36);
@@ -256,7 +256,7 @@ inline void render_tv_remote_page(
         fast_circle(it, cx - scale_x(119), y_mid, scale_s(5), col_slate);
       }
       std::string fit_lbl = fit_text_to_width_font(d_name, max_txt, font_small);
-      it.print(cx - scale_x(103), y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
+      fast_print(it, cx - scale_x(103), y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
 
       if (!is_primary_slot) {
         const int p_cx = cx + scale_x(120);
@@ -289,10 +289,10 @@ inline void render_tv_remote_page(
   // ---------------------------------------------------------------------------
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
   } else {
     std::string disp_title = fit_text_to_width_font(rem_name, scale_x(280), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
   }
 
   const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + scale_y(8));
@@ -353,7 +353,7 @@ inline void render_tv_remote_page(
 
   fast_filled_circle(it, cx, dpad_cy, ok_r, col_dark_gray);
   fast_circle(it, cx, dpad_cy, ok_r, theme_primary);
-  it.print(cx, dpad_cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
+  fast_print(it, cx, dpad_cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 
 }  // namespace latter_ui

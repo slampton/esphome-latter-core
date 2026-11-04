@@ -386,6 +386,17 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
   fast_circle(it, moon_cx, moon_cy, moon_r, esphome::Color(45, 55, 70));
 }
 
+// Writes one cloud band span with a pre-encoded hardware color; identical pixels to fast_hline.
+template<typename DisplayT>
+inline void cloud_span(DisplayT &it, uint16_t *fb, int x0, int y, int len, uint16_t hw, esphome::Color c) {
+  if (fb == nullptr || len <= 0 || y < 0 || y >= SCREEN_H || x0 < 0 || x0 + len > SCREEN_W) {
+    fast_hline(it, x0, y, len, c);
+    return;
+  }
+  uint16_t *dst = fb + y * SCREEN_W + x0;
+  for (int k = 0; k < len; k++) dst[k] = hw;
+}
+
 template<typename DisplayT>
 inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool overcast_mode, bool is_night) {
   if (SCREEN_W > 520) {
@@ -485,6 +496,9 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
   if (n_cols <= 0 || min_y > max_y) return;
   const esphome::Color palette[6] = {
       esphome::Color(0, 0, 0), col_rim, col_crest, col_high, col_body, col_shadow};
+  uint16_t *fb = active_frame_buf16();
+  uint16_t palette_hw[6];
+  for (int k = 0; k < 6; k++) palette_hw[k] = encode_hw_rgb565(palette[k]);
 
   // Row-major scanline rasterizer: merges contiguous horizontal cloud bands into single horizontal_line spans
   for (int y = min_y; y <= max_y; y++) {
@@ -521,7 +535,7 @@ inline void render_cumulus_cloud(DisplayT &it, int bx, int by, float scale, bool
         run_end += kColStep;
         i++;
       }
-      fast_hline(it, run_x0, y, run_end - run_x0, palette[band]);
+      cloud_span(it, fb, run_x0, y, run_end - run_x0, palette_hw[band], palette[band]);
     }
   }
 }
@@ -603,6 +617,9 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
 
   if (n_cols <= 0 || min_y > max_y) return;
   const esphome::Color veil_pal[4] = {esphome::Color(0, 0, 0), c_crest, c_body, c_base};
+  uint16_t *fb = active_frame_buf16();
+  uint16_t veil_hw[4];
+  for (int k = 0; k < 4; k++) veil_hw[k] = encode_hw_rgb565(veil_pal[k]);
 
   for (int y = min_y; y <= max_y; y++) {
     int i = 0;
@@ -634,7 +651,7 @@ inline void render_wispy_cloud_veil(DisplayT &it, int center_x, int base_y, int 
         run_end = std::max(run_end, static_cast<int>(nvc.x + nvc.w));
         i++;
       }
-      fast_hline(it, run_x0, y, run_end - run_x0, veil_pal[band]);
+      cloud_span(it, fb, run_x0, y, run_end - run_x0, veil_hw[band], veil_pal[band]);
     }
   }
 }
@@ -1922,7 +1939,7 @@ inline void render_weather_page(
     }
 
     // 1. Standard Top Header ("CURRENT" at y = 48 + divider at y = 62, matching FORECAST)
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
 
     // 2. Hero Temperature at y = 120 (top at y = 92) & Condition at y = 182 (unchanged)
     char temp_num[16];
@@ -1936,7 +1953,7 @@ inline void render_weather_page(
     const Color col_deg_silver(204, 214, 228);
     const Color col_deg_aa(120, 132, 148);
 
-    it.print(num_cx, scale_y(120), font_time, col_white, TextAlign::CENTER, temp_num);
+    fast_print(it, num_cx, scale_y(120), font_time, col_white, TextAlign::CENTER, temp_num);
 
     for (int dy = -9; dy <= 9; dy++) {
       for (int dx = -9; dx <= 9; dx++) {
@@ -1950,7 +1967,7 @@ inline void render_weather_page(
     }
 
     std::string cond_title = fit_text_to_width_font(format_weather_title(cond), scale_x(340), font_date);
-    it.print(cx, scale_y(182), font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
+    fast_print(it, cx, scale_y(182), font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
 
     float hi_val = weather_high;
     float lo_val = weather_low;
@@ -2013,15 +2030,15 @@ inline void render_weather_page(
 
       draw_temp_arrow_glyph(up_arr_x, hilo_y, true,  icon_c);
       if (large_cur && font_chrono_time != nullptr) {
-        it.print(hi_txt_x, hilo_y, font_chrono_time, col_white, TextAlign::CENTER_LEFT, hi_str);
+        fast_print(it, hi_txt_x, hilo_y, font_chrono_time, col_white, TextAlign::CENTER_LEFT, hi_str);
       } else {
-        it.print(hi_txt_x, hilo_y, font_date, col_white, TextAlign::CENTER_LEFT, hi_str);
+        fast_print(it, hi_txt_x, hilo_y, font_date, col_white, TextAlign::CENTER_LEFT, hi_str);
       }
       draw_temp_arrow_glyph(dn_arr_x, hilo_y, false, icon_c);
       if (large_cur && font_chrono_time != nullptr) {
-        it.print(lo_txt_x, hilo_y, font_chrono_time, col_slate, TextAlign::CENTER_LEFT, lo_str);
+        fast_print(it, lo_txt_x, hilo_y, font_chrono_time, col_slate, TextAlign::CENTER_LEFT, lo_str);
       } else {
-        it.print(lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
+        fast_print(it, lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
       }
     }
 
@@ -2055,9 +2072,9 @@ inline void render_weather_page(
     if (!std::isnan(weather_humidity)) snprintf(hum_str, sizeof(hum_str), "%.0f%%", weather_humidity);
     else snprintf(hum_str, sizeof(hum_str), "%s%%", kUnknownGlyph);
     if (large_cur) {
-      it.print(drop_x + 18, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
+      fast_print(it, drop_x + 18, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
     } else {
-      it.print(drop_x + 18, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, hum_str);
+      fast_print(it, drop_x + 18, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, hum_str);
     }
 
     auto draw_wind_glyph = [&](int wx, int wy, Color c) {
@@ -2104,16 +2121,16 @@ inline void render_weather_page(
       snprintf(wind_str, sizeof(wind_str), "%s mph", kUnknownGlyph);
     }
     if (large_cur) {
-      it.print(w_icon_x + 20, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);
+      fast_print(it, w_icon_x + 20, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);
     } else {
-      it.print(w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
+      fast_print(it, w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
     }
 
   } else if (sky_weather_subpage == 1) {
     // ----------------------------------------------------------------------
     // SUBPAGE 1: FORECAST (5-DAY FORECAST: PROPORTIONAL & SCALED ACROSS ALL SCREENS)
     // ----------------------------------------------------------------------
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
 
     struct DayForecast {
       std::string day;
@@ -2206,19 +2223,19 @@ inline void render_weather_page(
       std::string hi_str = d.high + "°";
       std::string lo_str = d.low + "°";
       if (large_fc) {
-        it.print(x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
+        fast_print(it, x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 56) - x_cond, font_date);
-        it.print(x_cond, ry_data, font_date, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
-        it.print(x_slash - 10, ry_data, font_date,  col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
-        it.print(x_slash,      ry_data, font_small, col_slate, TextAlign::CENTER, "/");
-        it.print(x_slash + 10, ry_data, font_date,  col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
+        fast_print(it, x_cond, ry_data, font_date, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+        fast_print(it, x_slash - 10, ry_data, font_date,  col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
+        fast_print(it, x_slash,      ry_data, font_small, col_slate, TextAlign::CENTER, "/");
+        fast_print(it, x_slash + 10, ry_data, font_date,  col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
       } else {
-        it.print(x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
+        fast_print(it, x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 42) - x_cond, font_small);
-        it.print(x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
-        it.print(x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
-        it.print(x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
-        it.print(x_slash + 8, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
+        fast_print(it, x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
+        fast_print(it, x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
+        fast_print(it, x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
+        fast_print(it, x_slash + 8, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
       }
     }
 
@@ -2226,7 +2243,7 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     // SUBPAGE 2: SUN (TRUE 1:1 HALF-CIRCLE SOLAR ARC + BALANCED SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
 
     const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : scale_y(44));
     const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
@@ -2236,8 +2253,8 @@ inline void render_weather_page(
     for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
       fast_line(it, hx, arc_cy, hx + 4, arc_cy, col_gray);
     }
-    it.print(cx - arc_rx - 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "E");
-    it.print(cx + arc_rx + 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "W");
+    fast_print(it, cx - arc_rx - 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "E");
+    fast_print(it, cx + arc_rx + 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "W");
 
     for (int a = 0; a <= 180; a += 2) {
       float rad = static_cast<float>(a) * (PI_F / 180.0f);
@@ -2249,7 +2266,7 @@ inline void render_weather_page(
 
     if (!std::isnan(sun_elevation)) {
       const char *sol_st = (sun_elevation > 0.0f) ? "Above Horizon" : "Below Horizon";
-      it.print(cx, arc_cy + 16, font_micro, sun_elevation > 0.0f ? col_warm_gold : col_slate, TextAlign::CENTER, sol_st);
+      fast_print(it, cx, arc_cy + 16, font_micro, sun_elevation > 0.0f ? col_warm_gold : col_slate, TextAlign::CENTER, sol_st);
     }
 
     if (!std::isnan(sun_elevation) && sun_elevation >= 0.0f) {
@@ -2279,11 +2296,11 @@ inline void render_weather_page(
     const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + scale_y(78));
     const int val_y  = lbl_y + scale_y(30);
 
-    it.print(cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
-    it.print(cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
+    fast_print(it, cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
+    fast_print(it, cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
 
-    it.print(cx + col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNSET");
-    it.print(cx + col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_set.c_str());
+    fast_print(it, cx + col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNSET");
+    fast_print(it, cx + col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_set.c_str());
 
   } else if (sky_weather_subpage == 3) {
     // ----------------------------------------------------------------------
@@ -2295,7 +2312,7 @@ inline void render_weather_page(
     compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                moon_phase_raw, cycle, &illum_pct, &mp_label);
 
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
 
     const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
     const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : scale_y(36));
@@ -2311,11 +2328,11 @@ inline void render_weather_page(
     char illum_buf[32];
     snprintf(illum_buf, sizeof(illum_buf), "%d%% Illumination", illum_pct);
     if (large_moon_txt) {
-      it.print(cx, phase_y, font_date, col_slate, TextAlign::CENTER, mp_label.c_str());
-      it.print(cx, illum_y, font_date, col_white, TextAlign::CENTER, illum_buf);
+      fast_print(it, cx, phase_y, font_date, col_slate, TextAlign::CENTER, mp_label.c_str());
+      fast_print(it, cx, illum_y, font_date, col_white, TextAlign::CENTER, illum_buf);
     } else {
-      it.print(cx, phase_y, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
-      it.print(cx, illum_y, font_small,    col_white, TextAlign::CENTER, illum_buf);
+      fast_print(it, cx, phase_y, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
+      fast_print(it, cx, illum_y, font_small,    col_white, TextAlign::CENTER, illum_buf);
     }
   }
 

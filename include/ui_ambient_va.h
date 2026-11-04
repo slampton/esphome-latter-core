@@ -632,11 +632,11 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
     char amb_time[16];
     if (now.is_valid()) {
       format_time_hhmm(now.hour, now.minute, is_24h, amb_time, sizeof(amb_time));
-      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, amb_time);
+      fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, amb_time);
       it.strftime(cx + drift_x, cy + scale_y(48) + drift_y, font_small, esphome::Color(90, 102, 118),
                   esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     } else {
-      it.print(cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
+      fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);
     }
     return;
   }

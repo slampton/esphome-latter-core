@@ -201,7 +201,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fast_filled_circle(it, ix + 9, iy - 5, 1, card_bg);
   }
 
-  it.print(cx_card, cy_card + scale_y(22), font_small, col_white,
+  fast_print(it, cx_card, cy_card + scale_y(22), font_small, col_white,
            esphome::display::TextAlign::CENTER, label);
 }
 
@@ -299,7 +299,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
     fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), col_bg);
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
-  it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
+  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
   int active_page = menu_scroll_active ? menu_scroll_target_page : tools_menu_page;
   render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, esphome::Color(95, 112, 134));
 }
@@ -327,12 +327,12 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     float min_prog = static_cast<float>(total_ms % 60000U) / 60000.0f;
     render_progress_arc_r224(it, cx, cy, min_prog, stopwatch_running ? col_silver : col_slate);
 
-    it.print(cx, layout().hdr_y, font_small, col_silver, esphome::display::TextAlign::CENTER,
+    fast_print(it, cx, layout().hdr_y, font_small, col_silver, esphome::display::TextAlign::CENTER,
              LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH");
 
     char main_buf[32];
     snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
-    it.print(cx, scale_y(146), font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
+    fast_print(it, cx, scale_y(146), font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
 
     if (stopwatch_lap_ms > 0) {
       int l_mins = (stopwatch_lap_ms / 60000U) % 60U;
@@ -340,9 +340,9 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int l_tenths = (stopwatch_lap_ms / 100U) % 10U;
       char lap_buf[32];
       snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
-      it.print(cx, scale_y(192), font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
+      fast_print(it, cx, scale_y(192), font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
     } else {
-      it.print(cx, scale_y(192), font_small, stopwatch_running ? col_silver : col_slate,
+      fast_print(it, cx, scale_y(192), font_small, stopwatch_running ? col_silver : col_slate,
                esphome::display::TextAlign::CENTER, stopwatch_running ? "Running" : "Ready");
     }
 
@@ -398,14 +398,14 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int t_idx = CHRONO_TICKS[i];
     int nx = cx + static_cast<int>(172.0f * DIAL_SIN[t_idx]);
     int ny = cy - static_cast<int>(172.0f * DIAL_COS[t_idx]);
-    it.print(nx, ny, font_small, col_white, esphome::display::TextAlign::CENTER, CHRONO_STRS[i]);
+    fast_print(it, nx, ny, font_small, col_white, esphome::display::TextAlign::CENTER, CHRONO_STRS[i]);
   }
 
-  it.print(cx, 132, font_small, col_silver, esphome::display::TextAlign::CENTER, "CHRONOGRAPH");
+  fast_print(it, cx, 132, font_small, col_silver, esphome::display::TextAlign::CENTER, "CHRONOGRAPH");
 
   char main_buf[32];
   snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
-  it.print(cx, 238, font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
+  fast_print(it, cx, 238, font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
 
   if (stopwatch_lap_ms > 0) {
     int l_mins = (stopwatch_lap_ms / 60000U) % 60U;
@@ -413,7 +413,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int l_tenths = (stopwatch_lap_ms / 100U) % 10U;
     char lap_buf[32];
     snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
-    it.print(cx, 274, font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
+    fast_print(it, cx, 274, font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
   }
 
   const int btn_y = cy + 99;
@@ -425,13 +425,13 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   fast_circle(it, btn_lap_x, btn_y, btn_r, col_silver);
   fast_circle(it, btn_lap_x, btn_y, btn_r - 1, col_slate);
   fast_circle(it, btn_lap_x, btn_y, btn_r - 4, (stopwatch_lap_ms > 0) ? col_red : col_slate);
-  it.print(btn_lap_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "LAP");
+  fast_print(it, btn_lap_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "LAP");
 
   fast_filled_circle(it, btn_rst_x, btn_y, btn_r - 2, col_dark_gray);
   fast_circle(it, btn_rst_x, btn_y, btn_r, col_silver);
   fast_circle(it, btn_rst_x, btn_y, btn_r - 1, col_slate);
   fast_circle(it, btn_rst_x, btn_y, btn_r - 4, col_slate);
-  it.print(btn_rst_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "RESET");
+  fast_print(it, btn_rst_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "RESET");
 
   // Split-Second (Rattrapante) Ghost Hand via fast_sincos
   if (stopwatch_lap_ms > 0) {
@@ -480,7 +480,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   fast_filled_circle(it, cx, cy, 6, col_dark_gray);
   fast_filled_circle(it, cx, cy, 2, col_white);
 
-  it.print(cx, 408, font_small, col_slate, esphome::display::TextAlign::CENTER, "< Back");
+  fast_print(it, cx, 408, font_small, col_slate, esphome::display::TextAlign::CENTER, "< Back");
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
@@ -667,11 +667,11 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
   }
 
   if (dice_anim_active) {
-    it.print(cx, 324, font_date, theme_secondary, esphome::display::TextAlign::CENTER, "ROLLING...");
+    fast_print(it, cx, 324, font_date, theme_secondary, esphome::display::TextAlign::CENTER, "ROLLING...");
   } else {
     char total_buf[32];
     snprintf(total_buf, sizeof(total_buf), "TOTAL: %d", cur_val_1 + cur_val_2);
-    it.print(cx, 324, font_date, col_white, esphome::display::TextAlign::CENTER, total_buf);
+    fast_print(it, cx, 324, font_date, col_white, esphome::display::TextAlign::CENTER, total_buf);
   }
 
   render_back_button(it, cx, font_small, 426, "< BACK");
@@ -712,7 +712,7 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
   // 1. Top Total-Tilt Degree Readout at y = 40
   char deg_buf[16];
   snprintf(deg_buf, sizeof(deg_buf), "%.1f°", total_tilt);
-  it.print(cx, 40, font_date, is_level ? col_green : col_white,
+  fast_print(it, cx, 40, font_date, is_level ? col_green : col_white,
            esphome::display::TextAlign::CENTER, deg_buf);
 
   // 2. Enlarged 324px-Diameter Bulls-Eye Spirit Vial (outer_r = 162 at level_cy = 232)
@@ -1008,10 +1008,10 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       if (scale_y > 0.76f) {
         int ty = coin_cy + static_cast<int>(74.0f * scale_y * z_zoom);
         if (!coin_anim_active) {
-          it.print(cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "HEADS");
-          it.print(cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "HEADS");
+          fast_print(it, cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "HEADS");
+          fast_print(it, cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "HEADS");
         }
-        it.print(cx, ty, font_date, esphome::Color(220, 228, 240), esphome::display::TextAlign::CENTER, "HEADS");
+        fast_print(it, cx, ty, font_date, esphome::Color(220, 228, 240), esphome::display::TextAlign::CENTER, "HEADS");
       }
     } else {
       int H_total = y_bot - y_top;
@@ -1047,10 +1047,10 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       if (scale_y > 0.76f) {
         int ty = coin_cy + static_cast<int>(74.0f * scale_y * z_zoom);
         if (!coin_anim_active) {
-          it.print(cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "TAILS");
-          it.print(cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "TAILS");
+          fast_print(it, cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "TAILS");
+          fast_print(it, cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "TAILS");
         }
-        it.print(cx, ty, font_date, esphome::Color(220, 228, 240), esphome::display::TextAlign::CENTER, "TAILS");
+        fast_print(it, cx, ty, font_date, esphome::Color(220, 228, 240), esphome::display::TextAlign::CENTER, "TAILS");
       }
     }
   }
@@ -1091,20 +1091,20 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     int radar_r2 = 50 + static_cast<int>(((now_ms / 8U) + (max_span / 2U)) % max_span);
     fast_circle(it, cx, cy, radar_r2, theme_secondary);
 
-    it.print(cx, scale_y(75), font_small, pulse ? col_white : theme_secondary,
+    fast_print(it, cx, scale_y(75), font_small, pulse ? col_white : theme_secondary,
              esphome::display::TextAlign::CENTER, "LOCATING DEVICE");
-    it.print(cx, scale_y(156), font_date, col_white,
+    fast_print(it, cx, scale_y(156), font_date, col_white,
              esphome::display::TextAlign::CENTER, "LATTER");
-    it.print(cx, scale_y(196), font_date, theme_primary,
+    fast_print(it, cx, scale_y(196), font_date, theme_primary,
              esphome::display::TextAlign::CENTER, "COMPANION");
-    it.print(cx, scale_y(244), font_small, theme_secondary,
+    fast_print(it, cx, scale_y(244), font_small, theme_secondary,
              esphome::display::TextAlign::CENTER, "Acoustic Beacon Active");
 
     (void)font_micro; (void)col_gray;
     render_modern_card(it, cx, scale_y(330), 240, 44, 12, esphome::Color(22, 27, 36), theme_primary,
                        "Tap to Dismiss", col_white, font_small);
   } else if (alarm_ringing) {
-    it.print(cx, scale_y(75), font_small, pulse ? col_red : col_white,
+    fast_print(it, cx, scale_y(75), font_small, pulse ? col_red : col_white,
              esphome::display::TextAlign::CENTER, "ALARM RINGING");
 
     char cur_t_buf[16];
@@ -1113,15 +1113,15 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     if (now.is_valid()) {
       format_time_hhmm(now.hour, now.minute, is_24h_format, cur_t_buf, sizeof(cur_t_buf), ampm_buf);
     }
-    it.print(cx, scale_y(160), font_time, col_white, esphome::display::TextAlign::CENTER, cur_t_buf);
+    fast_print(it, cx, scale_y(160), font_time, col_white, esphome::display::TextAlign::CENTER, cur_t_buf);
     if (!is_24h_format && ampm_buf[0] != 0) {
-      it.print(cx + scale_x(120), scale_y(175), font_date, theme_secondary,
+      fast_print(it, cx + scale_x(120), scale_y(175), font_date, theme_secondary,
                esphome::display::TextAlign::LEFT, ampm_buf);
     }
 
     int r_idx = (alarm_ringing_idx == 2) ? alarm2_recurrence : alarm1_recurrence;
     static constexpr const char *REC_NAMES[4] = {"Daily", "Weekdays", "Weekends", "Once"};
-    it.print(cx, scale_y(225), font_small, theme_primary,
+    fast_print(it, cx, scale_y(225), font_small, theme_primary,
              esphome::display::TextAlign::CENTER, REC_NAMES[r_idx & 3]);
 
     render_modern_card(it, cx, scale_y(295), 224, 44, 12, esphome::Color(22, 27, 36), theme_secondary,
@@ -1130,11 +1130,11 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     render_modern_card(it, cx, scale_y(364), 204, 42, 12, esphome::Color(28, 18, 22), col_red,
                        "Dismiss", col_white, font_small);
   } else {
-    it.print(cx, scale_y(75), font_small, pulse ? theme_secondary : col_white,
+    fast_print(it, cx, scale_y(75), font_small, pulse ? theme_secondary : col_white,
              esphome::display::TextAlign::CENTER, "TIMER EXPIRED");
-    it.print(cx, scale_y(170), font_time, col_white, esphome::display::TextAlign::CENTER, "00:00");
+    fast_print(it, cx, scale_y(170), font_time, col_white, esphome::display::TextAlign::CENTER, "00:00");
     std::string t_lbl = va_timer_name.empty() ? "Time is up!" : fit_text_to_width_font(va_timer_name, scale_x(260), font_small);
-    it.print(cx, scale_y(230), font_small, theme_secondary,
+    fast_print(it, cx, scale_y(230), font_small, theme_secondary,
              esphome::display::TextAlign::CENTER, t_lbl.c_str());
 
     render_modern_card(it, cx, scale_y(330), 224, 44, 12, esphome::Color(22, 27, 36), theme_primary,
@@ -1210,18 +1210,18 @@ inline void render_notification_overlay(
 
   if (cam_ready) {
     // Camera Snapshot HUD: Top title pill + bottom scrim text + Dismiss button
-    it.print(cx + 1, scale_y(52) + 1, font_date, col_black, TextAlign::CENTER, fit_title.c_str());
-    it.print(cx,     scale_y(52),     font_date, col_white, TextAlign::CENTER, fit_title.c_str());
+    fast_print(it, cx + 1, scale_y(52) + 1, font_date, col_black, TextAlign::CENTER, fit_title.c_str());
+    fast_print(it, cx,     scale_y(52),     font_date, col_white, TextAlign::CENTER, fit_title.c_str());
 
     if (!line1.empty()) {
       int y1 = line2.empty() ? scale_y(356) : scale_y(344);
-      it.print(cx + 1, y1 + 1, font_small, col_black, TextAlign::CENTER, line1.c_str());
-      it.print(cx,     y1,     font_small, col_white, TextAlign::CENTER, line1.c_str());
+      fast_print(it, cx + 1, y1 + 1, font_small, col_black, TextAlign::CENTER, line1.c_str());
+      fast_print(it, cx,     y1,     font_small, col_white, TextAlign::CENTER, line1.c_str());
     }
     if (!line2.empty()) {
       int y2 = scale_y(368);
-      it.print(cx + 1, y2 + 1, font_small, col_black, TextAlign::CENTER, line2.c_str());
-      it.print(cx,     y2,     font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
+      fast_print(it, cx + 1, y2 + 1, font_small, col_black, TextAlign::CENTER, line2.c_str());
+      fast_print(it, cx,     y2,     font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
     }
     render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, Color(18, 44, 28), Color(66, 188, 106),
                        "Answer", col_white, font_small);
@@ -1230,7 +1230,7 @@ inline void render_notification_overlay(
   } else {
     // Text Notification / Loading Camera View
     const char *hdr_lbl = is_crit ? "CRITICAL ALERT" : (is_warn ? "WARNING" : "NOTIFICATION");
-    it.print(cx, scale_y(72), font_small, accent_c, TextAlign::CENTER, hdr_lbl);
+    fast_print(it, cx, scale_y(72), font_small, accent_c, TextAlign::CENTER, hdr_lbl);
 
     // Bell / Camera badge icon at y = 122
     if (has_cam_url) {
@@ -1244,16 +1244,16 @@ inline void render_notification_overlay(
       fast_filled_circle(it, cx, scale_y(118) + 12, 3, col_white);
     }
 
-    it.print(cx, scale_y(168), font_date, col_white, TextAlign::CENTER, fit_title.c_str());
+    fast_print(it, cx, scale_y(168), font_date, col_white, TextAlign::CENTER, fit_title.c_str());
 
     if (!line1.empty()) {
-      it.print(cx, line2.empty() ? scale_y(222) : scale_y(210), font_small, theme_secondary, TextAlign::CENTER, line1.c_str());
+      fast_print(it, cx, line2.empty() ? scale_y(222) : scale_y(210), font_small, theme_secondary, TextAlign::CENTER, line1.c_str());
     }
     if (!line2.empty()) {
-      it.print(cx, scale_y(238), font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
+      fast_print(it, cx, scale_y(238), font_small, theme_secondary, TextAlign::CENTER, line2.c_str());
     }
     if (has_cam_url && !cam_ready) {
-      it.print(cx, scale_y(274), font_small, col_slate, TextAlign::CENTER, "Loading camera snapshot...");
+      fast_print(it, cx, scale_y(274), font_small, col_slate, TextAlign::CENTER, "Loading camera snapshot...");
     }
 
     render_modern_card(it, cx, scale_y(336), 216, 44, 12, Color(22, 27, 36), accent_c,
@@ -1425,7 +1425,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
     // -------------------------------------------------------------------------
     // TIMERS LANDING PAGE (3 Modern Rounded Timer Cards at y = 122, 222, 322)
     // -------------------------------------------------------------------------
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
 
     const int t_card_w = layout().tool_card3_w;
     const int t_left   = cx - (t_card_w / 2);
@@ -1449,7 +1449,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
       int disp_sec = is_act ? s.remaining_sec : s.duration_sec;
       char t_buf[16];
       snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, disp_sec % 60);
-      it.print(t_left + 25, y_mid - 2, font_chrono_time, is_act ? col_white : col_slate,
+      fast_print(it, t_left + 25, y_mid - 2, font_chrono_time, is_act ? col_white : col_slate,
                esphome::display::TextAlign::BASELINE_LEFT, t_buf);
 
       // Bottom Row: Timer Name + Status ("Chicken • Running", "Pasta • Saved", "5 Min Timer")
@@ -1459,7 +1459,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
       else if (!s.name.empty()) lbl += " • Saved";
       lbl = fit_text_to_width_font(lbl, t_div_x - (t_left + 32), font_small);
       esphome::Color sub_c = s.running ? theme_primary : (s.paused ? theme_secondary : col_gray);
-      it.print(t_left + 27, y_mid + 18, font_small, sub_c, esphome::display::TextAlign::CENTER_LEFT, lbl.c_str());
+      fast_print(it, t_left + 27, y_mid + 18, font_small, sub_c, esphome::display::TextAlign::CENTER_LEFT, lbl.c_str());
 
       // Subtle vertical separator at t_div_x
       fast_line(it, t_div_x, y_mid - 22, t_div_x, y_mid + 22, esphome::Color(42, 50, 64));
@@ -1494,19 +1494,19 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
 
   // 2. Dynamic Uppercase Timer Title ("CHICKEN", "PASTA", or "TIMER 1") in 21pt font_small at y = 48
   std::string hdr = fit_text_to_width_font(format_timer_header_upper(s_idx), scale_x(280), font_small);
-  it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr.c_str());
+  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr.c_str());
 
   int disp_sec = (s.running || s.paused) ? s.remaining_sec : s.duration_sec;
   char t_str[16];
   snprintf(t_str, sizeof(t_str), "%02d:%02d", disp_sec / 60, disp_sec % 60);
-  it.print(cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_str);
+  fast_print(it, cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_str);
 
   if (s.running) {
-    it.print(cx, scale_y(192), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Running");
+    fast_print(it, cx, scale_y(192), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Running");
   } else if (s.paused) {
-    it.print(cx, scale_y(192), font_small, theme_primary, esphome::display::TextAlign::CENTER, "Paused");
+    fast_print(it, cx, scale_y(192), font_small, theme_primary, esphome::display::TextAlign::CENTER, "Paused");
   } else {
-    it.print(cx, scale_y(192), font_small, col_slate, esphome::display::TextAlign::CENTER, s.name.empty() ? "Ready" : "Saved Preset");
+    fast_print(it, cx, scale_y(192), font_small, col_slate, esphome::display::TextAlign::CENTER, s.name.empty() ? "Ready" : "Saved Preset");
   }
 
   // 3. Hero START / PAUSE / RESUME Modern Card at y = 248 (matches Edit Alarm / Stepper card aesthetic!)
@@ -1553,7 +1553,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     // -------------------------------------------------------------------------
     // ALARMS LANDING PAGE (3 Modern Rounded Alarm Cards at y = 122, 210, 298)
     // -------------------------------------------------------------------------
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "ALARMS");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "ALARMS");
 
     static constexpr const char *REC_LABELS[4] = {"Daily", "Weekdays", "Weekends", "Once"};
 
@@ -1583,18 +1583,18 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
       char ap_buf[8] = "";
       format_time_hhmm(h, m, is_24h_format, t_buf, sizeof(t_buf), ap_buf, true);
       esphome::Color time_col = en ? col_white : col_gray;
-      it.print(a_left + 25, y_mid - 2, font_chrono_time, time_col,
+      fast_print(it, a_left + 25, y_mid - 2, font_chrono_time, time_col,
                esphome::display::TextAlign::BASELINE_LEFT, t_buf);
       if (!is_24h_format && ap_buf[0] != '\0') {
         int h12 = h % 12;
         if (h12 == 0) h12 = 12;
         int ap_x = a_left + ((h12 >= 10) ? 139 : 115);
-        it.print(ap_x, y_mid - 2, font_small, en ? theme_secondary : col_gray,
+        fast_print(it, ap_x, y_mid - 2, font_small, en ? theme_secondary : col_gray,
                  esphome::display::TextAlign::BASELINE_LEFT, ap_buf);
       }
 
       // Bottom Row: Clean Schedule Subtitle
-      it.print(a_left + 27, y_mid + 18, font_small, en ? theme_primary : col_gray,
+      fast_print(it, a_left + 27, y_mid + 18, font_small, en ? theme_primary : col_gray,
                esphome::display::TextAlign::CENTER_LEFT, REC_LABELS[rec & 3]);
 
       // Subtle vertical separator between Edit Zone (left) and Toggle Switch (right)
@@ -1615,7 +1615,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     draw_modern_alarm_card(layout().tool_card3_y(1), alarm2_hour, alarm2_minute, alarm2_enabled, alarm2_recurrence, 2);
     draw_modern_alarm_card(layout().tool_card3_y(2), alarm3_hour, alarm3_minute, alarm3_enabled, alarm3_recurrence, 3);
   } else {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
 
     int cur_h = (alarm_edit_idx == 3) ? alarm3_hour : ((alarm_edit_idx == 2) ? alarm2_hour : alarm1_hour);
     int cur_m = (alarm_edit_idx == 3) ? alarm3_minute : ((alarm_edit_idx == 2) ? alarm2_minute : alarm1_minute);
@@ -1624,12 +1624,12 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     char t_buf[16];
     char ap_buf[8] = "";
     format_time_hhmm(cur_h, cur_m, is_24h_format, t_buf, sizeof(t_buf), ap_buf);
-    it.print(cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_buf);
+    fast_print(it, cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_buf);
     if (!is_24h_format) {
       int h12 = cur_h % 12;
       if (h12 == 0) h12 = 12;
       int ap_x = (h12 >= 10) ? (cx + scale_x(107)) : (cx + scale_x(84));
-      it.print(ap_x, scale_y(151), font_small, theme_secondary, esphome::display::TextAlign::LEFT, ap_buf);
+      fast_print(it, ap_x, scale_y(151), font_small, theme_secondary, esphome::display::TextAlign::LEFT, ap_buf);
     }
 
     esphome::Color card_bg(22, 27, 36);
@@ -1666,10 +1666,10 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
   // Raised display readout: History at y = 42, Entry at y = 74 (bottom at y = 87),
   // Divider at y = 98, and Row 0 top at y = 110 -> 23px clear buffer below output!
   if (!calc_history.empty()) {
-    it.print(cx + scale_x(103), scale_y(42), font_small, col_slate, esphome::display::TextAlign::RIGHT, calc_history.c_str());
+    fast_print(it, cx + scale_x(103), scale_y(42), font_small, col_slate, esphome::display::TextAlign::RIGHT, calc_history.c_str());
   }
   if (!calc_entry.empty()) {
-    it.print(cx + scale_x(129), scale_y(74), font_date, col_white, esphome::display::TextAlign::RIGHT, calc_entry.c_str());
+    fast_print(it, cx + scale_x(129), scale_y(74), font_date, col_white, esphome::display::TextAlign::RIGHT, calc_entry.c_str());
   }
 
   fast_line(it, cx - scale_x(151), scale_y(98), cx + scale_x(151), scale_y(98), esphome::Color(50, 58, 72));
@@ -1705,7 +1705,7 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
     fast_line(it, x0, y0 + kr, x0, y0 + kh - kr, border_c);
     fast_line(it, x0 + kw - 1, y0 + kr, x0 + kw - 1, y0 + kh - kr, border_c);
 
-    it.print(kx, ky, font_btn_bold, text_c, esphome::display::TextAlign::CENTER, label);
+    fast_print(it, kx, ky, font_btn_bold, text_c, esphome::display::TextAlign::CENTER, label);
   };
 
   for (int r = 0; r < 5; r++) {
@@ -2141,7 +2141,7 @@ inline void render_tool_calendar(
       char z_prefix[16];
       snprintf(z_prefix, sizeof(z_prefix), "z%d • ", cal_map_zoom());
       std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, font_small);
-      it.print(cx, scale_y(41), font_small, col_white, TextAlign::CENTER, loc_hdr.c_str());
+      fast_print(it, cx, scale_y(41), font_small, col_white, TextAlign::CENTER, loc_hdr.c_str());
 
       // 2. Left/Right Floating Zoom Buttons (single-source layout().map_zoom_*)
       const int z_by = layout().map_zoom_y;
@@ -2167,7 +2167,7 @@ inline void render_tool_calendar(
       // 4. Bottom Translucent Back Scrim (aligned with layout().back_y)
       fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
     } else {
-      it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
+      fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
       render_modern_card(it, cx, scale_y(222), 304, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
                          "Loading OpenStreetMap...", theme_secondary, font_small);
     }
@@ -2177,7 +2177,7 @@ inline void render_tool_calendar(
 
   if (cal_detail_mode() == 1) {
     // MODE 1: EVENT DETAIL INSPECTOR (Wrapped Multi-Line Title + Time + Wrapped Location + View Map Button)
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT DETAILS");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT DETAILS");
 
     // Time Badge Pill at y = 92
     std::string fit_tm = fit_text_to_width_font(cal_detail_time(), scale_x(260), font_small);
@@ -2193,7 +2193,7 @@ inline void render_tool_calendar(
     int t_cnt = wrap_text_lines(cal_detail_title(), det_txt_w, font_small, title_lines, 3);
     int t_start_y = (t_cnt <= 1) ? title_cy : ((t_cnt == 2) ? (title_cy - scale_y(13)) : (title_cy - scale_y(26)));
     for (int i = 0; i < t_cnt; i++) {
-      it.print(cx, t_start_y + i * scale_y(26), font_small, col_white, TextAlign::CENTER, title_lines[i].c_str());
+      fast_print(it, cx, t_start_y + i * scale_y(26), font_small, col_white, TextAlign::CENTER, title_lines[i].c_str());
     }
 
     const bool has_loc = !cal_detail_location().empty();
@@ -2205,7 +2205,7 @@ inline void render_tool_calendar(
       int l_cnt = wrap_text_lines(cal_detail_location(), det_txt_w, font_small, loc_lines, 2);
       int l_start_y = (l_cnt <= 1) ? loc_cy : (loc_cy - scale_y(12));
       for (int i = 0; i < l_cnt; i++) {
-        it.print(cx, l_start_y + i * scale_y(24), font_small, theme_secondary, TextAlign::CENTER, loc_lines[i].c_str());
+        fast_print(it, cx, l_start_y + i * scale_y(24), font_small, theme_secondary, TextAlign::CENTER, loc_lines[i].c_str());
       }
 
       // Prominent "View Map" Button at y = 359
@@ -2227,7 +2227,7 @@ inline void render_tool_calendar(
   }
 
   if (cal_quick_add_open()) {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
     static constexpr const char *kQuickLabels[5] = {
       "In 15m: Quick Reminder",
       "In 30m: Check-In / Task",
@@ -2241,7 +2241,7 @@ inline void render_tool_calendar(
       render_modern_card(it, cx, y_mid, 296, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
       fill_rect_row_major(it, c_left + 12, y_mid - 1, 9, 3, theme_primary);
       fill_rect_row_major(it, c_left + 15, y_mid - 4, 3, 9, theme_primary);
-      it.print(c_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
+      fast_print(it, c_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
     }
     render_back_button(it, cx, font_small, 426, "< Cancel");
     return;
@@ -2250,13 +2250,13 @@ inline void render_tool_calendar(
   const bool show_fb = (!cal_feedback_text().empty() && now_ms > 0 && (now_ms - cal_feedback_ms() < 2200U));
   if (show_fb) {
     std::string fit_fb = fit_text_to_width_font(cal_feedback_text(), scale_x(260), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    fast_print(it, cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else if (cal_total_pages > 1) {
     char c_hdr[36];
     snprintf(c_hdr, sizeof(c_hdr), "CALENDAR %d/%d (+)", cal_page, cal_total_pages);
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, c_hdr);
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, c_hdr);
   } else {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CALENDAR  (+)");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CALENDAR  (+)");
   }
 
   std::string names[5] = {s1_name, s2_name, s3_name, s4_name, s5_name};
@@ -2297,7 +2297,7 @@ inline void render_tool_calendar(
         fill_rect_row_major(it, c_left + 8, y_mid - 12, 3, 24, theme_primary);
       }
       std::string fit_ev = fit_text_to_width_font(names[i], layout().list_card_w - 32, font_small);
-      it.print(c_left + 18, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
+      fast_print(it, c_left + 18, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
     }
   }
 
@@ -2356,7 +2356,7 @@ inline void render_tool_intercom(
   const bool show_fb = (!feedback_str.empty() && (now_ms - feedback_ms < 2200U));
   if (show_fb) {
     std::string fit_fb = fit_text_to_width_font(feedback_str, scale_x(280), font_small);
-    it.print(cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    fast_print(it, cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else {
     render_modern_card(it, cx, scale_y(44), 232, 34, 10, Color(18, 24, 34), theme_primary,
                        intercom_live_call_mode() ? "Mode: 2-Way / SIP >" : "Mode: Broadcast >",
@@ -2377,7 +2377,7 @@ inline void render_tool_intercom(
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, col_white, font_small);
       fast_filled_circle(it, c_left + scale_x(18), y_mid, scale_s(6), brd_c);
       std::string fit_l = fit_text_to_width_font(t_lbls[i], layout().list_card_w - scale_x(46), font_small);
-      it.print(c_left + scale_x(34), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
+      fast_print(it, c_left + scale_x(34), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
     }
     if (cnt < 5) {
       render_modern_card(it, cx, layout().slot5_y(4), 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
@@ -2395,7 +2395,7 @@ inline void render_tool_intercom(
       int y_mid = layout().slot5_y(i);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, card_brd, nullptr, col_white, font_small);
       it.filled_triangle(c_left + scale_x(14), y_mid - 4, c_left + scale_x(14), y_mid + 4, c_left + scale_x(21), y_mid, theme_primary);
-      it.print(c_left + scale_x(32), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
+      fast_print(it, c_left + scale_x(32), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
     }
   }
   (void)col_slate;
@@ -2575,7 +2575,7 @@ inline void render_tool_camera(
   const int anc_idx = std::max(0, std::min(2, cam_anc_mode_idx()));
 
   if (cam_quick_reply_open()) {
-    it.print(cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
     const Color card_bg(22, 27, 36);
     const Color card_brd(52, 62, 78);
     render_modern_card(it, cx, layout().slot5_y(0), 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
@@ -2627,8 +2627,8 @@ inline void render_tool_camera(
                      cur_cam_title.c_str(), col_white, font_small);
   if (cam_count > 1 && cam_intercom_status().empty()) {
     const int eff_hdr_w = scale_x(hdr_w);
-    it.print(hdr_cx - (eff_hdr_w / 2) + 12, hdr_cy, font_small, theme_secondary, TextAlign::CENTER, "<");
-    it.print(hdr_cx + (eff_hdr_w / 2) - 12, hdr_cy, font_small, theme_secondary, TextAlign::CENTER, ">");
+    fast_print(it, hdr_cx - (eff_hdr_w / 2) + 12, hdr_cy, font_small, theme_secondary, TextAlign::CENTER, "<");
+    fast_print(it, hdr_cx + (eff_hdr_w / 2) - 12, hdr_cy, font_small, theme_secondary, TextAlign::CENTER, ">");
     render_dock_page_pips(it, cx, scale_y(66), cam_count, cam_carousel_idx(), col_white, col_slate);
   }
   #if !LATTER_ROUND_DISPLAY

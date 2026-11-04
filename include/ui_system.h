@@ -504,7 +504,7 @@ inline void render_system_page(
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    it.print(cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
+    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
 
     int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
@@ -637,14 +637,14 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 4) {
-    it.print(cx, scale_y(130), font_small, theme_primary, esphome::display::TextAlign::CENTER, "RESTART?");
+    fast_print(it, cx, scale_y(130), font_small, theme_primary, esphome::display::TextAlign::CENTER, "RESTART?");
     render_modern_card(it, cx - scale_x(73), scale_y(230), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
     render_modern_card(it, cx + scale_x(73), scale_y(230), 112, 44, 12, esphome::Color(28, 18, 22), col_red, "Restart", col_white, font_small);
 
   } else if (system_menu_mode == 5) {
     render_menu_header(it, cx, 48, "UPDATE", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
-    it.print(cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
+    fast_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
     bool has_update = is_newer_semver(ha_fw_latest, version_str);
     if (update_check_state == 1) {
@@ -660,34 +660,34 @@ inline void render_system_page(
 
     if (has_update) {
       snprintf(buf, sizeof(buf), "Available: v%s", ha_fw_latest.empty() ? "2.0.x" : ha_fw_latest.c_str());
-      it.print(cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       std::string summ = ha_fw_summary;
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
       summ = fit_text_to_width_font(summ, scale_x(280), font_small);
-      it.print(cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
+      fast_print(it, cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
       draw_action_card_y(scale_y(215), "Update Now", theme_primary, theme_secondary, card_bg_on);
     } else {
       snprintf(buf, sizeof(buf), "Latest: v%s", version_str);
-      it.print(cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       if (update_check_state == 1) {
-        it.print(cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Checking Home Assistant...");
+        fast_print(it, cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Checking Home Assistant...");
         draw_action_card_y(scale_y(215), "Checking...", theme_primary, theme_secondary, card_bg_on);
       } else if (update_check_state == 2) {
-        it.print(cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "No updates available");
+        fast_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "No updates available");
         draw_action_card_y(scale_y(215), "Up to date", card_brd_on, col_white, card_bg_on);
       } else {
-        it.print(cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "Firmware is up to date");
+        fast_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER, "Firmware is up to date");
         draw_action_card_y(scale_y(215), "Check for Updates", theme_primary, col_white, card_bg_on);
       }
     }
     draw_back();
 
   } else if (system_menu_mode == 6) {
-    it.print(cx, scale_y(100), font_small, theme_primary, esphome::display::TextAlign::CENTER, "INSTALL UPDATE?");
-    it.print(cx, scale_y(145), font_small, col_white, esphome::display::TextAlign::CENTER, "Download & flash firmware");
-    it.print(cx, scale_y(175), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Keep device powered on");
+    fast_print(it, cx, scale_y(100), font_small, theme_primary, esphome::display::TextAlign::CENTER, "INSTALL UPDATE?");
+    fast_print(it, cx, scale_y(145), font_small, col_white, esphome::display::TextAlign::CENTER, "Download & flash firmware");
+    fast_print(it, cx, scale_y(175), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Keep device powered on");
     render_modern_card(it, cx - scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
     render_modern_card(it, cx + scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, theme_primary, "Install", col_white, font_small);
 
@@ -710,8 +710,8 @@ inline void render_system_page(
       int ey = scale_y(y);
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
-      it.print(info_x, ey, font_small, col_white, esphome::display::TextAlign::LEFT, lbl);
-      it.print(info_x + w_lbl + 8, ey, font_small, val_col, esphome::display::TextAlign::LEFT, val);
+      fast_print(it, info_x, ey, font_small, col_white, esphome::display::TextAlign::LEFT, lbl);
+      fast_print(it, info_x + w_lbl + 8, ey, font_small, val_col, esphome::display::TextAlign::LEFT, val);
     };
 
     bool has_update = is_newer_semver(ha_fw_latest, version_str);
