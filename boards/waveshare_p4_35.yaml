@@ -5,7 +5,7 @@
 # Silicon: rev3.x by default (rev1.x units exist). Binaries are NOT cross-compatible; select with p4_silicon.
 # Display: 3.5" 320x480 IPS LCD (ST7796 over SPI, CLK: GPIO21, MOSI: GPIO20, CS: GPIO23, DC: GPIO26, RST: GPIO27, BL: GPIO28)
 # Touch:   FT6336 @ 0x38 (I2C SDA: GPIO7, SCL: GPIO8)
-# Audio:   ES8311 @ 0x18 (MCLK: GPIO13, BCLK: GPIO12, WS: GPIO10, DOUT: GPIO9, DIN: GPIO11, PA: GPIO53)
+# Audio:   ES8311 @ 0x18 (MCLK: GPIO13, BCLK: GPIO12, WS: GPIO10, DOUT: GPIO9, DIN: GPIO11, PA: GPIO53), full duplex @ 48 kHz
 # PMU:     AXP2101 @ 0x34. DCDC1 feeds every 3V3 load (P4, C6, LCD, touch, BL); ALDO1 = codec A3V3.
 #          AXP_IRQ is NOT routed. PWR key: K1 -> AXP PWRON and BSS138 -> GPIO49 (HIGH while pressed).
 # C6:      CHIP_PU GPIO54 (10k pull-up, 1uF), C6 IO2 <-> GPIO6 (host-wake line).
@@ -44,7 +44,9 @@ substitutions:
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "true"
   announcement_buffer_size: "131072"
-  audio_out_rate: "16000"
+  # Full-duplex I2S at 48 kHz: the ES8311's DAC and ADC share one bus clock at audio_out_rate;
+  # latter_mic converts the mic to audio_in_rate (16 kHz) for micro_wake_word and voice_assistant.
+  audio_out_rate: "48000"
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
@@ -73,7 +75,7 @@ esphome:
     # Fitted cell: 500mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
     - "-DLATTER_PMU_CHARGE_MA=400"
     - "-DLATTER_BACKLIGHT_PIN=28"
-    - "-DLATTER_AUDIO_OUT_RATE=16000"
+    - "-DLATTER_AUDIO_OUT_RATE=48000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
     - "-DLATTER_AUDIO_IN_RATE=16000"
@@ -154,11 +156,14 @@ spi:
     clk_pin: GPIO21
     mosi_pin: GPIO20
 
+# One I2S port in full duplex: the ES8311's DAC (DOUT GPIO9) and ADC (DIN GPIO11) share BCLK/WS/MCLK,
+# so the microphone and speaker run at the same time at audio_out_rate and never hand the bus over.
 i2s_audio:
   - id: i2s_shared_bus
     i2s_lrclk_pin: GPIO10
     i2s_bclk_pin: GPIO12
     i2s_mclk_pin: GPIO13
+    full_duplex: true
 
 audio_dac:
   - platform: es8311
@@ -171,13 +176,18 @@ audio_dac:
 
 microphone:
   - platform: i2s_audio
-    id: latter_mic
+    id: latter_mic_i2s
     adc_type: external
     i2s_audio_id: i2s_shared_bus
     i2s_din_pin: GPIO11
-    sample_rate: ${audio_in_rate}
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
+  # Converts inside the I2S reader's data callback (no task of its own), so UI load cannot starve it.
+  - platform: resampler
+    id: latter_mic
+    microphone: latter_mic_i2s
+    sample_rate: ${audio_in_rate}
 
 speaker:
   - platform: i2s_audio

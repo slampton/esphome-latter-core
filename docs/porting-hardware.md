@@ -39,9 +39,8 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 | `hal_enter_hardware_hibernate` | — | Hold pins and cut power. Called after the core has saved state and disconnected from the API. |
 
 **Audio routing:**
-- **One full-duplex I2S bus** (the Desk; the target for every board): set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The routing scripts are no-ops. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
+- **One full-duplex I2S bus** (the Desk and the Remote; the target for every board): set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The routing scripts are no-ops. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
 - **Two I2S controllers sharing clock pins** (the S3 boards until they move to full duplex): implement the two `hal_route_*` scripts by remapping the clock pins through the GPIO matrix with `esp_rom_gpio_connect_out_signal`. See [`waveshare_s3_175c.yaml`](../boards/waveshare_s3_175c.yaml).
-- **One shared half-duplex I2S bus** (the Remote until it moves to full duplex): the routing scripts are no-ops. The core stops one direction and waits for it to release before starting the other.
 - Never put a `resampler` speaker in the output path: every source arrives at `audio_out_rate`, and the sounds come from `sounds/<audio_out_rate>/` (`python tools/gen_sounds.py` renders a new rate).
 
 ## 3. PMU and IMU modules
