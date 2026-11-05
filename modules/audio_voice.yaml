@@ -23,28 +23,13 @@ speaker:
       - id: media_mixing_input
         timeout: 1500ms
 
-  - id: media_resampler
-    platform: resampler
-    output_speaker: media_mixing_input
-    sample_rate: ${audio_out_rate}
-    task_stack_in_psram: true
 
-  - id: announcement_resampler
-    platform: resampler
-    output_speaker: announcement_mixing_input
-    sample_rate: ${audio_out_rate}
-    task_stack_in_psram: true
-
-  - id: rtttl_resampler
-    platform: resampler
-    output_speaker: announcement_mixing_input
-    sample_rate: ${audio_out_rate}
-    task_stack_in_psram: true
-
-
+# No sample-rate conversion on the device: every source is asked for ${audio_out_rate} (Sendspin's
+# sample_rate, the speaker_source pipelines' preferred format for Home Assistant, RTTTL's native 16 kHz),
+# and the mixer folds stereo to the panel's ${audio_out_channels} channel(s).
 rtttl:
   id: alarm_rtttl
-  speaker: rtttl_resampler
+  speaker: announcement_mixing_input
 
 # Internal RAM is the scarce resource on the S3 boards (measured with System: Log Memory Report), so the
 # Sendspin hub's protocol, artwork and HTTP-server stacks live in PSRAM: they stay allocated whenever
@@ -66,6 +51,7 @@ media_source:
     task_stack_in_psram: true
     decode_memory: psram
     buffer_size: ${sendspin_buffer_size}
+    sample_rate: ${audio_out_rate}  # Music Assistant converts server-side; the device never resamples
 
 
 media_player:
@@ -82,19 +68,21 @@ media_player:
   - platform: speaker_source
     id: latter_media_player
     name: "Music"
-    # Sendspin streams 48000 Hz stereo FLAC; speaker_source + resampler adapt to ${audio_out_rate} mono
+    # Both pipelines play at the mixer's ${audio_out_rate} / ${audio_out_channels}; that is also the
+    # preferred format Home Assistant transcodes announcements to. Sendspin negotiates its own format
+    # (sendspin_source sample_rate); a stereo stream is folded to mono by the mixer.
     announcement_pipeline:
       format: FLAC
-      num_channels: 1
-      sample_rate: 48000
-      speaker: announcement_resampler
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: announcement_mixing_input
       sources:
         - http_announcement_source
     media_pipeline:
       format: FLAC
-      num_channels: 2
-      sample_rate: 48000
-      speaker: media_resampler
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: media_mixing_input
       sources:
         - sendspin_source
     volume_initial: 60%

@@ -267,8 +267,6 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          latter_ui::tune_audio_task_priorities();
-
           // ------------------------------------------------------------------
           // ALARM ENGINE: SCHEDULE EVALUATION & SNOOZE CHECK
           // ------------------------------------------------------------------
