@@ -23,6 +23,7 @@ substitutions:
   default_clock_face: "Minimal Digital"
   default_power_profile: "Handheld Roaming"
   sendspin_buffer_size: "196608"
+  mww_internal_ram: "false"  # "true" only with internal-RAM headroom (P4-class boards)
   announcement_buffer_size: "65536"
   audio_out_rate: "16000"
   audio_out_channels: "1"

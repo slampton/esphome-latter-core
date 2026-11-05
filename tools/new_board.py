@@ -335,6 +335,8 @@ def render_board(facts: dict[str, Any]) -> str:
         '  audio_out_channels: "1"',
         '  audio_out_bits: "16"',
         '  audio_in_rate: "16000"',
+        # micro_wake_word arena + weights in internal RAM: only with internal-RAM headroom (P4-class)
+        f'  mww_internal_ram: "{"true" if "P4" in facts.get("silicon", {}).get("soc", "") else "false"}"',
     ]
     if pin_of(facts, "imu_int1") is not None:
         body.append(f"  imu_int1_pin: GPIO{pin_of(facts, 'imu_int1')}")
