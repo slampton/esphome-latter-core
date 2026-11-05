@@ -33,6 +33,9 @@ jobs:
       - name: Install ESPHome 2026.11.0b1
         run: pip install --upgrade pip esphome==2026.11.0b1
 
+      - name: Point remote references at this checkout
+        run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
+
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check
 
@@ -72,11 +75,6 @@ jobs:
             echo "Validating $dev..."
             base_name=$(basename "$dev")
             cat <<EOF > "devices/.ci_${base_name}"
-          external_components:
-            - source:
-                type: local
-                path: ../components
-              components: [latter_core, latter_beacon]
           wifi:
             ssid: "LatterCIWiFi"
             password: "LatterCIPassword"
@@ -120,16 +118,8 @@ jobs:
           path: ~/.cache/esphome
           key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b1
 
-      - name: Build from this checkout
-        # Sounds and the wake word model are read from this checkout (no download of our own files, so a
-        # network hiccup cannot fail the gate); the latter_core component is fetched at this exact commit.
-        env:
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          find devices modules guis boards examples -name '*.yaml' -exec sed -i \
-            -e '/package_import_url/! s#https://raw.githubusercontent.com/slampton/esphome-latter-core/main/#../#g' \
-            -e '/package_import_url/! s#github://slampton/esphome-latter-core/\([^@]*\)@main#../\1#g' \
-            -e "s/ref: main/ref: ${SHA}/g" {} +
+      - name: Point remote references at this checkout
+        run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: Compile
         run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml
