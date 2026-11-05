@@ -54,16 +54,16 @@ jobs:
           /tmp/test_latter_state
 
       - name: Validate Example 1 (Minimal Headless Companion)
-        run: esphome config examples/minimal_headless_companion.yaml
+        run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 1" config examples/minimal_headless_companion.yaml
 
       - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)
-        run: esphome config examples/custom_display_template.yaml
+        run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 2" config examples/custom_display_template.yaml
 
       - name: Validate bring-up probes
         run: |
           for probe in examples/bringup/*.yaml; do
             echo "Validating $probe..."
-            esphome config "$probe"
+            ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config $probe" config "$probe"
           done
 
       - name: Validate 5 Flagship Device Configs
@@ -83,7 +83,7 @@ jobs:
           packages:
             device_under_test: !include ${base_name}
           EOF
-            esphome config "devices/.ci_${base_name}"
+            ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config ${base_name}" config "devices/.ci_${base_name}"
             rm -f "devices/.ci_${base_name}"
           done
 
@@ -132,16 +132,7 @@ jobs:
             -e "s/ref: main/ref: ${SHA}/g" {} +
 
       - name: Compile
-        run: |
-          set -o pipefail
-          if ! esphome compile devices/${{ matrix.device }}.yaml 2>&1 | tee /tmp/compile.log; then
-            # Put the end of the log in the run's annotations, which anyone can read (job logs need
-            # repository admin rights through the API).
-            tail -n 60 /tmp/compile.log | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/%/%25/g' | tr '\n' '\r' \
-              | sed -e 's/\r/%0A/g' -e 's/^/::error title=esphome compile ${{ matrix.device }}::/'
-            echo
-            exit 1
-          fi
+        run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml
 
   promote:
     name: Fast-forward main to this commit
