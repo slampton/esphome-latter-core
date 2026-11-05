@@ -300,6 +300,9 @@ micro_wake_word:
     gain_factor: 2
   task_stack_in_psram: false
   prefer_internal_ram: ${mww_internal_ram}  # board trait: arena + weights in internal RAM where there is headroom
+  # Capture buffer (default 120 ms): track starts and art decodes can hold the inference task off for
+  # longer, which reset the buffer and dropped audio. 500 ms of 16 kHz mono is 16 KB.
+  ring_buffer_duration: 500ms
   stop_after_detection: true
   vad:
   # At most 2 models run concurrently (enforced by ensure_wake_words_restored & poll_and_persist_wake_words).
