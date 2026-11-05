@@ -37,7 +37,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.10.2
+  min_version: 2026.11.0b1
   project:
     name: "slampton.remote-assistant-p4-35"
     version: "${version}"

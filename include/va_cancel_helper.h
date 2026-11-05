@@ -3,8 +3,8 @@
 #include "esphome/core/version.h"
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
-static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 2),
-              "Latter requires ESPHome 2026.10.2 or newer (devices/*.yaml min_version).");
+static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
+              "Latter requires ESPHome 2026.11.0b1 or newer (devices/*.yaml min_version).");
 #if ESPHOME_VERSION_CODE >= VERSION_CODE(2027, 1, 0)
 #warning "va_cancel_helper.h private-member bridge not validated on this ESPHome version; Phase 4 removes it"
 #endif
@@ -54,8 +54,10 @@ template struct Rob<VA_ApiClient_Tag, &esphome::voice_assistant::VoiceAssistant:
 namespace esphome {
 namespace voice_assistant {
 
-// Explicitly stops VoiceAssistant's internal MicrophoneSource so shared I2S buses unlock immediately
-// even when Home Assistant sends STT_END + TTS_END in a single burst without STT_VAD_END.
+// Stops VoiceAssistant's internal MicrophoneSource right now, so a shared I2S bus is free for the speaker
+// path (route_i2s_to_spk) and for a synchronous abort. Since ESPHome 2026.11 the component itself stops
+// the microphone at STT_END and when STT_END + TTS_END arrive in one burst (esphome#21380, #21755), so
+// the STT callbacks no longer call this.
 inline void stop_va_microphone(VoiceAssistant *va) {
   if (va == nullptr) return;
 #ifdef USE_MICROPHONE

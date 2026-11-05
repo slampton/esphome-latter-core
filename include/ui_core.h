@@ -48,7 +48,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110239L
+#define LATTER_SDK_REV 2026110240L
 
 namespace latter_ui {
 
@@ -2640,10 +2640,15 @@ inline bool &disp_poller_held() {
 }
 
 struct DisplayUpdateScheduler : public esphome::Component {
+  // Numeric scheduler ids (ESPHome 2026.11+). Matched per component and timer type; high values keep clear
+  // of the small ids the display component's own code uses.
+  static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
+  static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
+
   // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
   static void request_post_frame(esphome::Component *comp, void (*fn)()) {
     if (comp == nullptr || fn == nullptr) return;
-    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout("fb_clear", 0, [fn]() { fn(); });
+    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(kTimeoutFbClear, 0, [fn]() { fn(); });
   }
 
   template<typename DispT>
@@ -2651,7 +2656,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          "async_draw", 0, [disp]() {
+          kTimeoutAsyncDraw, 0, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();
@@ -2673,7 +2678,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : (inside_render ? 4U : 0U);
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          "async_draw", delay_ms, [disp]() {
+          kTimeoutAsyncDraw, delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();

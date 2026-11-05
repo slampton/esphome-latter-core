@@ -18,7 +18,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110239L;
+            constexpr long LATTER_YAML_REV = 2026110240L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -79,6 +79,15 @@ esphome:
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer
 
+# Boot lines are usually logged before any API log viewer connects. Keep warnings plus the one-shot
+# display/audio/SDK status lines and replay them to every client that connects (fixed buffer, no heap).
+logger:
+  boot_log_buffer_size: 2kB
+  boot_logs:
+    disp_fb: INFO
+    audio: INFO
+    latter: INFO
+
 api:
   reboot_timeout: ${api_reboot_timeout}
   encryption:
@@ -109,6 +118,7 @@ api:
                   manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
       - delay: 3s
       - lambda: 'latter_ui::log_boot_summary();'
+      - logger.replay_boot_logs:
   on_client_disconnected:
     then:
       - lambda: |-

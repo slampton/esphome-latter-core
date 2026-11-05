@@ -20,6 +20,7 @@ substitutions:
   default_power_profile: "Portable Carry"
   api_reboot_timeout: "0s"
   sendspin_buffer_size: "196608"
+  mww_internal_ram: "false"
   announcement_buffer_size: "65536"
   audio_out_rate: "16000"
   audio_out_channels: "1"

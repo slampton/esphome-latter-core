@@ -20,8 +20,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.10.2
-        run: pip install --upgrade pip esphome==2026.10.2
+      - name: Install ESPHome 2026.11.0b1
+        run: pip install --upgrade pip esphome==2026.11.0b1
 
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check

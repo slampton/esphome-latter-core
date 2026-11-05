@@ -49,6 +49,8 @@ substitutions:
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Always-On Wall / Desk"
   sendspin_buffer_size: "1048576"
+  # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
+  mww_internal_ram: "true"
   announcement_buffer_size: "131072"
   audio_out_rate: "16000"
   audio_out_channels: "1"
@@ -133,7 +135,6 @@ esp_ldo:
 
 esp32_hosted:
   variant: esp32c6
-  active_high: true
   use_psram: true
   clk_pin: GPIO18
   cmd_pin: GPIO19

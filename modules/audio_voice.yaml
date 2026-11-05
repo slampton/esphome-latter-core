@@ -231,6 +231,7 @@ micro_wake_word:
     channels: 0
     gain_factor: 2
   task_stack_in_psram: false
+  prefer_internal_ram: ${mww_internal_ram}  # board trait: arena + weights in internal RAM where there is headroom
   stop_after_detection: true
   vad:
   # At most 2 models run concurrently (enforced by ensure_wake_words_restored & poll_and_persist_wake_words).
@@ -342,7 +343,6 @@ voice_assistant:
       - script.stop: screen_sleep_timer
       - lambda: |-
           latter_ui::log_audio_profile("VA_VAD_END");
-          esphome::voice_assistant::stop_va_microphone(id(va));
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "PROCESSING AUDIO...";
@@ -354,7 +354,6 @@ voice_assistant:
   on_stt_end:
     then:
       - script.stop: screen_sleep_timer
-      - lambda: 'esphome::voice_assistant::stop_va_microphone(id(va));'
       - script.execute: route_i2s_to_spk
       - lambda: |-
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());

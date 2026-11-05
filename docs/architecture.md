@@ -100,14 +100,14 @@ The ESP Web Tools installer page and per-device manifests. The release workflow 
 
 - **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs `esphome config` on both examples for every push to `main` and `dev`.
 - **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
-  1. Compiles all five devices with the `esphome/esphome:2026.10.2` container.
+  1. Compiles all five devices with the `esphome/esphome:2026.11.0b1` container.
   2. Writes manifests with each OTA image's MD5.
   3. Publishes the binaries, manifests, and installer page to GitHub Pages.
 - **Device configs pull `latter_core` and the packages from `main`.** A build always uses the current `main`, even when it's triggered from a tag.
 
 ## Requirements for building
 
-- **ESPHome:** 2026.10.2 or newer (the first release where `CONFIG_MBEDTLS_SSL_PROTO_TLS1_3`, set on every board, takes effect). `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
-- **Framework:** ESP-IDF, with C++20. The default for ESPHome 2026.10 is sufficient.
+- **ESPHome:** 2026.11.0b1 or newer (esp_hosted 3.0.10 on the P4 boards, `micro_wake_word` `prefer_internal_ram`, and the logger boot-log replay). `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
+- **Framework:** ESP-IDF, with C++20. The default for ESPHome 2026.11 (ESP-IDF 5.5.6) is sufficient.
 - **PSRAM:** required on every board.
 - **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256` on every board.
