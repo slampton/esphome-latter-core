@@ -33,12 +33,12 @@ HAL_SCRIPTS = (
     (
         "hal_route_i2s_to_spk",
         None,
-        "Route shared I2S clock pins to the speaker controller (no-op on a shared bus)",
+        "Route the I2S bus to the speaker (no-op on a full-duplex bus)",
     ),
     (
         "hal_route_i2s_to_mic",
         None,
-        "Route shared I2S clock pins to the microphone controller (no-op on a shared bus)",
+        "Route the I2S bus to the microphone (no-op on a full-duplex bus)",
     ),
     ("hal_set_dac_mute", ("muted", "bool"), "Mute the codec output"),
     (
@@ -331,7 +331,8 @@ def render_board(facts: dict[str, Any]) -> str:
         "substitutions:",
         f'  screen_w: "{flags.get("LATTER_SCREEN_W", "TODO")}"',
         f'  screen_h: "{flags.get("LATTER_SCREEN_H", "TODO")}"',
-        '  audio_out_rate: "16000"',
+        # Full-duplex I2S bus rate; latter_mic is a resampler microphone down to audio_in_rate
+        '  audio_out_rate: "48000"',
         '  audio_out_channels: "1"',
         '  audio_out_bits: "16"',
         '  audio_in_rate: "16000"',
@@ -365,7 +366,8 @@ def render_board(facts: dict[str, Any]) -> str:
     body += [
         "# TODO display: id disp1, full-frame PSRAM buffer (docs/porting-hardware.md section 1).",
         "# TODO touchscreen: id touch_screen, interrupt-driven if INT is routed.",
-        "# TODO audio: latter_mic, physical_speaker, speaker_enable (amplifier) and the codec components.",
+        "# TODO audio: one i2s_audio bus with full_duplex: true; latter_mic_i2s + resampler latter_mic,",
+        "#      physical_speaker (timeout: 4s), speaker_enable (amplifier) and the codecs at audio_out_rate.",
         "# TODO binary_sensor boot_button (and pwr_key on AXP2101 boards).",
         "",
         "packages:",

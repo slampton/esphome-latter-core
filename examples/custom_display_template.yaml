@@ -22,10 +22,10 @@ substitutions:
   sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Handheld Roaming"
-  sendspin_buffer_size: "196608"
+  sendspin_buffer_size: "524288"  # PSRAM; 48 kHz holds 3x the bytes per second of 16 kHz
   mww_internal_ram: "false"  # "true" only with internal-RAM headroom (P4-class boards)
   announcement_buffer_size: "65536"
-  audio_out_rate: "16000"
+  audio_out_rate: "48000"  # full-duplex I2S bus rate; latter_mic resamples to audio_in_rate
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
@@ -50,7 +50,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.10.0
+  min_version: 2026.11.0b1
   build_flags:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"
@@ -115,15 +115,13 @@ spi:
     clk_pin: GPIO38
     data_pins: [GPIO4, GPIO5, GPIO6, GPIO7]
 
+# One I2S port in full duplex: speaker (DOUT) and microphone (DIN) share BCLK/WS/MCLK at audio_out_rate.
 i2s_audio:
-  - id: i2s_input_bus
-    i2s_lrclk_pin: { number: GPIO45, allow_other_uses: true, ignore_strapping_warning: true }
-    i2s_bclk_pin:  { number: GPIO9,  allow_other_uses: true }
-    i2s_mclk_pin:  { number: GPIO16, allow_other_uses: true }
-  - id: i2s_output_bus
-    i2s_lrclk_pin: { number: GPIO45, allow_other_uses: true, ignore_strapping_warning: true }
-    i2s_bclk_pin:  { number: GPIO9,  allow_other_uses: true }
-    i2s_mclk_pin:  { number: GPIO16, allow_other_uses: true }
+  - id: i2s_shared_bus
+    i2s_lrclk_pin: { number: GPIO45, ignore_strapping_warning: true }
+    i2s_bclk_pin: GPIO9
+    i2s_mclk_pin: GPIO16
+    full_duplex: true
 
 audio_adc:
   - platform: es7210
@@ -131,17 +129,22 @@ audio_adc:
     i2c_id: bus_internal
     address: 0x40
     bits_per_sample: 16bit
-    sample_rate: ${audio_in_rate}
+    sample_rate: ${audio_out_rate}
 
 microphone:
   - platform: i2s_audio
-    id: latter_mic
+    id: latter_mic_i2s
     adc_type: external
-    i2s_audio_id: i2s_input_bus
+    i2s_audio_id: i2s_shared_bus
     i2s_din_pin: GPIO10
-    sample_rate: ${audio_in_rate}
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
+  # Wake word and voice listen at audio_in_rate (16 kHz)
+  - platform: resampler
+    id: latter_mic
+    microphone: latter_mic_i2s
+    sample_rate: ${audio_in_rate}
 
 audio_dac:
   - platform: es8311
@@ -155,7 +158,7 @@ audio_dac:
 speaker:
   - platform: i2s_audio
     id: physical_speaker
-    i2s_audio_id: i2s_output_bus
+    i2s_audio_id: i2s_shared_bus
     i2s_dout_pin: GPIO8
     dac_type: external
     audio_dac: es8311_dac
@@ -163,6 +166,7 @@ speaker:
     bits_per_sample: 16bit
     channel: left
     buffer_duration: 250ms
+    timeout: 4s  # longer than the 3 s idle power-down (see docs/porting-hardware.md)
 
 # IMU sensors included via modules/imu_qmi8658.yaml in packages below
 
@@ -207,11 +211,11 @@ script:
   - id: hal_route_i2s_to_spk
     mode: restart
     then:
-      - lambda: 'latter_ui::hal_connect_s3_i2s_clocks_to_spk(9, 45, 16);'
+      - lambda: 'return;'  # one full-duplex port: nothing to route
   - id: hal_route_i2s_to_mic
     mode: restart
     then:
-      - lambda: 'latter_ui::hal_connect_s3_i2s_clocks_to_mic(9, 45, 16);'
+      - lambda: 'return;'
   - id: hal_release_deep_sleep_holds
     mode: restart
     then:

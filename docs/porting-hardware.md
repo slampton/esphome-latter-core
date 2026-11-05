@@ -39,8 +39,8 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 | `hal_enter_hardware_hibernate` | — | Hold pins and cut power. Called after the core has saved state and disconnected from the API. |
 
 **Audio routing:**
-- **One full-duplex I2S bus** (the Desk and the Remote; the target for every board): set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The routing scripts are no-ops. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
-- **Two I2S controllers sharing clock pins** (the S3 boards until they move to full duplex): implement the two `hal_route_*` scripts by remapping the clock pins through the GPIO matrix with `esp_rom_gpio_connect_out_signal`. See [`waveshare_s3_175c.yaml`](../boards/waveshare_s3_175c.yaml).
+- **One full-duplex I2S bus** (every supported board): set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The routing scripts are no-ops. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
+- **Separate controllers per codec** (an ES8311 DAC plus an ES7210 ADC, as on the S3 boards): put both data pins on the one full-duplex bus; they share BCLK/WS/MCLK. See [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml).
 - Never put a `resampler` speaker in the output path: every source arrives at `audio_out_rate`, and the sounds come from `sounds/<audio_out_rate>/` (`python tools/gen_sounds.py` renders a new rate).
 
 ## 3. PMU and IMU modules
@@ -127,7 +127,7 @@ esp32:
 Before you call a board done, check each of these against the schematic:
 1. **Display:** bus type, reset pin, offsets, color order, inversion, mirroring.
 2. **Touch:** chip and I2C address, interrupt and reset pins. If the driver has no `reset_pin`, pulse reset in `hal_release_deep_sleep_holds`.
-3. **Audio:** two I2S controllers or one shared bus; codec addresses; amplifier enable pin.
+3. **Audio:** one full-duplex I2S bus (shared BCLK/WS/MCLK, DIN and DOUT pins); codec addresses; amplifier enable pin; whether the codecs run at 48 kHz.
 4. **Power:** the power key pin and polarity (on Waveshare AXP2101 boards that is `SYS_OUT`, not `AXP_IRQ`, which isn't routed); the PMU rail map, TS pin, and charge current; which pins to hold during hibernate.
 5. **IMU:** whether one is present, and axis orientation.
 6. **P4 only:** LDO, SDIO and esp-hosted settings, DSI IRAM-safe flags.
