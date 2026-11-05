@@ -25,6 +25,7 @@ from esphome.components.esp32 import (
 )
 from esphome.components.esp32.const import VARIANT_ESP32P4, VARIANT_ESP32S2
 import esphome.config_validation as cv
+import esphome.final_validate as fv
 from esphome.const import CONF_ID, CONF_TX_POWER, CONF_UUID
 from esphome.core import CORE, TimePeriod
 from esphome.types import ConfigType
@@ -97,7 +98,8 @@ def _final_validate(config: ConfigType) -> ConfigType:
     if variant == VARIANT_ESP32S2:
         raise cv.Invalid("latter_beacon needs Bluetooth; the ESP32-S2 has none")
     if _is_hosted():
-        if ESP32_HOSTED_DOMAIN not in CORE.config:
+        # CORE.config is not populated during final validation; the full config comes from final_validate.
+        if ESP32_HOSTED_DOMAIN not in fv.full_config.get():
             raise cv.Invalid("On the ESP32-P4, latter_beacon needs esp32_hosted (Bluetooth is on the co-processor)")
         if CONF_TX_POWER in config:
             raise cv.Invalid("tx_power is not available over esp_hosted", path=[CONF_TX_POWER])
