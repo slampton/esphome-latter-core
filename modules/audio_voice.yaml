@@ -268,6 +268,9 @@ media_player:
                   }
               - script.execute: screen_sleep_timer
               - script.execute: throttled_disp_update
+              # Playback (re)started, e.g. music resuming after a voice turn: a full-duplex bus arms the
+              # wake word again, a half-duplex bus keeps it paused.
+              - script.execute: sync_wake_word_state
     on_pause:
       then:
         - lambda: |-
@@ -1054,6 +1057,8 @@ script:
                 id: media_mixing_input
                 decibel_reduction: 0
                 duration: 0.2s
+            # The alarm paused the wake word; over music only a full-duplex bus listens again.
+            - script.execute: sync_wake_word_state
           else:
             - if:
                 condition:
