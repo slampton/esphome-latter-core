@@ -48,7 +48,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110241L
+#define LATTER_SDK_REV 2026110242L
 
 namespace latter_ui {
 

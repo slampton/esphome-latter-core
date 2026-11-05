@@ -118,7 +118,8 @@ media_player:
     on_state:
       then:
         - lambda: |-
-            if (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+            if (!latter_ui::kAudioFullDuplex &&
+                id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
                 id(mww).is_running()) {
               id(mww).stop();
             }
@@ -173,30 +174,39 @@ media_player:
             }
     on_announcement:
       then:
-        - script.stop: mp_idle_debounce
-        - script.stop: sync_wake_word_state
-        - script.stop: route_i2s_to_mic
-        - script.stop: screen_sleep_timer
-        - mixer_speaker.apply_ducking:
-            id: media_mixing_input
-            decibel_reduction: 50
-            duration: 0.1s
-        - mixer_speaker.apply_ducking:
-            id: announcement_mixing_input
-            decibel_reduction: 0
-            duration: 0.05s
-        - script.execute: route_i2s_to_spk
-        - script.wait: route_i2s_to_spk
-        - lambda: |-
-            float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
-            id(physical_speaker).set_volume(spk_v);
-            id(hal_set_dac_mute).execute(false);
-            id(va_tts_received) = true;
-            if (id(va_active)) {
-              id(va_vad_active) = false;
-              id(va_status_text) = "Responding...";
-            }
-        - script.execute: throttled_disp_update
+        # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+        - if:
+            condition:
+              lambda: 'return id(va_intercom_turn) && !latter_ui::cam_listen_active();'
+            then:
+              - media_player.stop:
+                  id: latter_media_player
+                  announcement: true
+            else:
+              - script.stop: mp_idle_debounce
+              - script.stop: sync_wake_word_state
+              - script.stop: route_i2s_to_mic
+              - script.stop: screen_sleep_timer
+              - mixer_speaker.apply_ducking:
+                  id: media_mixing_input
+                  decibel_reduction: 50
+                  duration: 0.1s
+              - mixer_speaker.apply_ducking:
+                  id: announcement_mixing_input
+                  decibel_reduction: 0
+                  duration: 0.05s
+              - script.execute: route_i2s_to_spk
+              - script.wait: route_i2s_to_spk
+              - lambda: |-
+                  float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
+                  id(physical_speaker).set_volume(spk_v);
+                  id(hal_set_dac_mute).execute(false);
+                  id(va_tts_received) = true;
+                  if (id(va_active)) {
+                    id(va_vad_active) = false;
+                    id(va_status_text) = "Responding...";
+                  }
+              - script.execute: throttled_disp_update
     on_play:
       then:
         - if:
@@ -332,10 +342,12 @@ voice_assistant:
           latter_ui::log_audio_profile("VA_LISTEN_START");
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (latter_ui::cam_intercom_ptt_active()) {
+            // A late reply from the previous intercom turn must stay dropped; only a normal turn clears it.
             latter_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
+          id(va_intercom_turn) = false;
           if (!id(va_active)) {
             id(return_page) = id(gui_page);
             id(va_active) = true;
@@ -383,6 +395,9 @@ voice_assistant:
             id(display_brightness).turn_on().perform();
             latter_ui::schedule_disp_update(&id(disp1));
           }
+      # va_busy now holds: pause the wake word for the turn (on a full-duplex bus nothing else stops it,
+      # and it would hear the reply).
+      - script.execute: sync_wake_word_state
   on_stt_vad_start:
     then:
       - script.stop: screen_sleep_timer
@@ -412,11 +427,17 @@ voice_assistant:
   on_stt_end:
     then:
       - script.stop: screen_sleep_timer
-      - script.execute: route_i2s_to_spk
+      # The reply plays here, except on an intercom turn (the speech goes to the doorbell).
+      - if:
+          condition:
+            lambda: 'return !latter_ui::cam_intercom_ptt_active() && !latter_ui::cam_call_active();'
+          then:
+            - script.execute: route_i2s_to_spk
       - lambda: |-
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
+            id(va_intercom_turn) = true;
             latter_ui::cam_intercom_ptt_active() = false;
             id(va_active) = false;
             id(va_status_text) = "";
@@ -466,10 +487,53 @@ voice_assistant:
           ESP_LOGI("va", "STT End (hidden): %s", x.c_str());
   on_intent_progress:
     then:
+      # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
       - if:
           condition:
-            lambda: 'return !x.empty();'
+            lambda: 'return id(va_intercom_turn);'
           then:
+            - media_player.stop:
+                id: latter_media_player
+                announcement: true
+          else:
+            - if:
+                condition:
+                  lambda: 'return !x.empty();'
+                then:
+                  - mixer_speaker.apply_ducking:
+                      id: media_mixing_input
+                      decibel_reduction: 50
+                      duration: 0.1s
+                  - mixer_speaker.apply_ducking:
+                      id: announcement_mixing_input
+                      decibel_reduction: 0
+                      duration: 0.05s
+                  - script.stop: screen_sleep_timer
+                  - script.execute: route_i2s_to_spk
+                  - script.wait: route_i2s_to_spk
+                  - lambda: |-
+                      float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
+                      id(physical_speaker).set_volume(spk_v);
+                      id(hal_set_dac_mute).execute(false);
+                      id(va_vad_active) = false;
+                      id(va_tts_received) = true;
+                      if (id(va_active)) {
+                        id(va_status_text) = "Responding...";
+                      }
+                      ESP_LOGI("va", "Status: Responding (Streaming TTS)...");
+                  - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+  on_tts_start:
+    then:
+      # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+      - if:
+          condition:
+            lambda: 'return id(va_intercom_turn);'
+          then:
+            - media_player.stop:
+                id: latter_media_player
+                announcement: true
+          else:
+            - lambda: 'latter_ui::log_audio_profile("VA_TTS_START");'
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 50
@@ -490,47 +554,31 @@ voice_assistant:
                 if (id(va_active)) {
                   id(va_status_text) = "Responding...";
                 }
-                ESP_LOGI("va", "Status: Responding (Streaming TTS)...");
+                ESP_LOGI("va", "Status: Responding (TTS)...");
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
-  on_tts_start:
-    then:
-      - lambda: 'latter_ui::log_audio_profile("VA_TTS_START");'
-      - mixer_speaker.apply_ducking:
-          id: media_mixing_input
-          decibel_reduction: 50
-          duration: 0.1s
-      - mixer_speaker.apply_ducking:
-          id: announcement_mixing_input
-          decibel_reduction: 0
-          duration: 0.05s
-      - script.stop: screen_sleep_timer
-      - script.execute: route_i2s_to_spk
-      - script.wait: route_i2s_to_spk
-      - lambda: |-
-          float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
-          id(physical_speaker).set_volume(spk_v);
-          id(hal_set_dac_mute).execute(false);
-          id(va_vad_active) = false;
-          id(va_tts_received) = true;
-          if (id(va_active)) {
-            id(va_status_text) = "Responding...";
-          }
-          ESP_LOGI("va", "Status: Responding (TTS)...");
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_end:
     then:
-      - script.stop: screen_sleep_timer
-      - script.execute: route_i2s_to_spk
-      - script.wait: route_i2s_to_spk
-      - lambda: 'id(hal_set_dac_mute).execute(false);'
-      - lambda: |-
-          id(va_vad_active) = false;
-          id(va_tts_received) = true;
-          if (id(va_active)) {
-            id(va_status_text) = "Responding...";
-          }
-          ESP_LOGI("va", "TTS URL ready: %s", x.c_str());
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+      - if:
+          condition:
+            lambda: 'return id(va_intercom_turn);'
+          then:
+            - media_player.stop:
+                id: latter_media_player
+                announcement: true
+          else:
+            - script.stop: screen_sleep_timer
+            - script.execute: route_i2s_to_spk
+            - script.wait: route_i2s_to_spk
+            - lambda: 'id(hal_set_dac_mute).execute(false);'
+            - lambda: |-
+                id(va_vad_active) = false;
+                id(va_tts_received) = true;
+                if (id(va_active)) {
+                  id(va_status_text) = "Responding...";
+                }
+                ESP_LOGI("va", "TTS URL ready: %s", x.c_str());
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_error:
     then:
       - script.stop: va_tts_drain_and_finish
@@ -690,23 +738,29 @@ script:
   - id: route_i2s_to_spk
     mode: restart
     then:
-      - script.stop: sync_wake_word_state
       - script.stop: route_i2s_to_mic
+      # Half-duplex bus hand-off: the microphone must release the bus before the speaker can take it.
+      # A full-duplex bus runs both at once, so the wake word keeps listening during playback.
       - if:
           condition:
-            micro_wake_word.is_running:
+            lambda: 'return !latter_ui::kAudioFullDuplex;'
           then:
-            - micro_wake_word.stop:
-      - lambda: |-
-          esphome::voice_assistant::stop_va_microphone(id(va));
-      - if:
-          condition:
-            lambda: 'return id(latter_mic).is_running();'
-          then:
-            - wait_until:
+            - script.stop: sync_wake_word_state
+            - if:
                 condition:
-                  lambda: 'return !id(latter_mic).is_running();'
-                timeout: 150ms
+                  micro_wake_word.is_running:
+                then:
+                  - micro_wake_word.stop:
+            - lambda: |-
+                esphome::voice_assistant::stop_va_microphone(id(va));
+            - if:
+                condition:
+                  lambda: 'return id(latter_mic).is_running();'
+                then:
+                  - wait_until:
+                      condition:
+                        lambda: 'return !id(latter_mic).is_running();'
+                      timeout: 150ms
       - lambda: 'id(hal_set_audio_codecs_standby).execute(false);'
       - script.execute: hal_route_i2s_to_spk
       # Amplifier sequencing (the one place the speaker path powers up). On a cold start the I2S
@@ -720,6 +774,9 @@ script:
           then:
             - lambda: |-
                 id(speaker_enable).turn_off();
+                // Start in the mixer's output format: a full-duplex speaker rejects any other.
+                id(physical_speaker).set_audio_stream_info(
+                    audio::AudioStreamInfo(${audio_out_bits}, ${audio_out_channels}, ${audio_out_rate}));
                 id(physical_speaker).start();
             - wait_until:
                 condition:
@@ -727,6 +784,8 @@ script:
                 timeout: 200ms
             - delay: 30ms
       - switch.turn_on: speaker_enable
+  # Silences the speaker path (DAC mute, amplifier off). On a half-duplex bus it also stops the speaker
+  # to free the bus for the microphone; a full-duplex speaker is left to its own idle timeout.
   - id: route_i2s_to_mic
     mode: restart
     then:
@@ -734,9 +793,14 @@ script:
       - switch.turn_off: speaker_enable
       - if:
           condition:
-            lambda: 'return id(physical_speaker).is_running();'
+            lambda: 'return !latter_ui::kAudioFullDuplex && id(physical_speaker).is_running();'
           then:
-            - lambda: 'id(physical_speaker).stop();'
+            # Stop the mixer inputs first. An input still holding audio when its output stops never
+            # drains, so it stays running and speaker_source waits on it: the next reply never plays.
+            - lambda: |-
+                id(announcement_mixing_input).stop();
+                id(sound_mixing_input).stop();
+                id(physical_speaker).stop();
             - wait_until:
                 condition:
                   lambda: 'return !id(physical_speaker).is_running();'
@@ -770,16 +834,18 @@ script:
       - if:
           condition:
             lambda: |-
-              // Hardware note (§5.3): All 5 flagship boards share BCLK/WS/MCLK between ES8311 DAC and ES7210/ES8311 ADC
-              // (half-duplex I2S clock routing), so MWW must pause while physical_speaker is actively streaming audio.
+              // On a half-duplex bus (shared BCLK/WS/MCLK, one direction at a time) MWW must pause while the speaker
+              // plays. A full-duplex bus listens during playback, so media does not pause it there.
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
-              const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+              // A full-duplex bus listens during playback; a half-duplex bus cannot.
+              const bool media_busy = !latter_ui::kAudioFullDuplex && (
+                                      id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
                                       id(media_mixing_input).is_running() ||
                                       (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                      (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+                                      (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING));
               const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                               (id(active_game) > 0) ||
                                               latter_ui::cam_call_active() || latter_ui::cam_listen_active();
@@ -798,8 +864,12 @@ script:
                   - lambda: |-
                       id(hal_set_audio_codecs_standby).execute(false);
                       esphome::voice_assistant::ensure_wake_words_restored(id(mww));
-                  - script.execute: route_i2s_to_mic
-                  - script.wait: route_i2s_to_mic
+                  - if:
+                      condition:
+                        lambda: 'return !latter_ui::kAudioFullDuplex;'
+                      then:
+                        - script.execute: route_i2s_to_mic
+                        - script.wait: route_i2s_to_mic
                   - delay: 25ms
                   - script.execute: apply_wake_word_sensitivities
                   - if:
@@ -807,10 +877,11 @@ script:
                         lambda: |-
                           return !id(mww).is_running() &&
                                  !id(va_active) && !id(va).is_running() &&
+                                 (latter_ui::kAudioFullDuplex || (
                                  !id(media_mixing_input).is_running() &&
                                  (id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                                  (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING)));
                       then:
                         - micro_wake_word.start:
                         - wait_until:

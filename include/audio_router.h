@@ -20,6 +20,16 @@
 
 namespace latter_ui {
 
+// True when the board's I2S bus runs in full duplex (i2s_audio full_duplex: true, which defines
+// USE_I2S_AUDIO_FULL_DUPLEX). The microphone and speaker then run at the same time, so the core never
+// hands the bus over: the wake word keeps listening during playback and the speaker is never stopped
+// to free the bus. Half-duplex boards keep the hand-off until they migrate.
+#ifdef USE_I2S_AUDIO_FULL_DUPLEX
+inline constexpr bool kAudioFullDuplex = true;
+#else
+inline constexpr bool kAudioFullDuplex = false;
+#endif
+
 // Routes shared BCLK, WS/LRCLK, and MCLK pins to I2S1 (ES8311 Speaker DAC) on
 // dual-codec ESP32-S3 hardware using symbolic IDF GPIO matrix signal constants.
 inline void hal_connect_s3_i2s_clocks_to_spk(uint32_t bclk_pin, uint32_t ws_pin, uint32_t mclk_pin) {
