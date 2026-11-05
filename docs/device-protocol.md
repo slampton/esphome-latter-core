@@ -45,13 +45,13 @@ The device describes itself twice. Both are built from the board's `LATTER_*` fl
 | Where | Built by | Content |
 | :--- | :--- | :--- |
 | `manifest` field of `latter.device_hello`, sent on every Home Assistant API connection | `latter_ui::build_hardware_manifest_json()` | The full manifest, including the boot health keys below |
-| Text sensor **`System: Hardware Manifest`** (`sensor.<slug>_system_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | A compact copy (≤ 230 bytes, inside Home Assistant's 255-character state limit). No `profile`, `audio` details, `beacon` block or health keys; the beacon minor is sent as `minor`. |
+| Text sensor **`System: Hardware Manifest`** (`sensor.<slug>_system_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | A compact copy (≤ 230 bytes, inside Home Assistant's 255-character state limit). No `audio` details, `beacon` block or health keys; the beacon minor is sent as `minor`. |
 
 Latter reads the sensor of the bound ESPHome device and overlays the latest `device_hello` manifest on it, so the hello wins wherever both have a key. Example hello manifest:
 
 ```json
 {"v":2,"contract":3,"fw":"2.2.1","board":"waveshare_s3_206","boot_id":123456789,
- "w":410,"h":502,"shape":"square","profile":"wearable_display",
+ "w":410,"h":502,"shape":"square",
  "display":1,"touch":1,"audio":{"out_rate":48000,"out_ch":1,"out_bits":16,"in_rate":16000},
  "mic":1,"spk":1,"imu":1,"battery":1,"stationary":0,"wearable":1,"ips":0,
  "chip":"ESP32-S3","psram_mb":8,"slot_count":5,"max_payload_bytes":2048,
@@ -64,14 +64,15 @@ Latter reads the sensor of the bound ESPHome device and overlays the latest `dev
 | `w`, `h` | The size it renders images at for this device |
 | `shape` | `circle` adds a circular mask to images. Anything else is treated as rectangular. |
 | `stationary`, `wearable` | Roaming. A device is roaming when `stationary` is `0` or `wearable` is `1`; a missing value means not roaming. Only roaming devices can use Voice Follows Me (moving the device's Home Assistant Area) and get the *No Area-assigned Bluetooth proxies* repair. At setup, `stationary: 1` also turns Bluetooth Area tracking off and pre-selects the device's current Area. |
-| `display` | `0` marks a headless node: it gets no doorbell popups and isn't a target of `latter.notify` broadcasts |
-| `profile` | `headless_node`, `mobile_display`, `stationary_display` or `wearable_display`. Latter derives it from `display`, `wearable` and `stationary` when absent (the state sensor doesn't carry it). Used for Studio labels and setup defaults; behavior that depends on roaming reads the traits above. |
+| `display` | `0` marks a headless node: it gets no doorbell popups, isn't a target of `latter.notify` broadcasts, and is left out of remote assignments. A missing value counts as having a display. |
 | `beacon` (`uuid`, `major`, `minor`), or `minor` on the sensor | Matches this device's iBeacon advertisements for Bluetooth Area tracking |
 | `audio` (`out_rate`, `out_ch`) | The sample rate and channel count of the doorbell listen stream |
 | `imu` | Studio shows the motion controls |
 | `board` | Studio's model label |
 | `sdk`, `reset`, `crash`, `rollback` | Boot health repairs (below). Hello manifest only. |
 | `slot_count`, `contract`, `fw`, `boot_id`, `chip`, `psram_mb`, `ips`, `touch`, `mic`, `spk`, `battery`, `max_payload_bytes`, `v` | Reported in diagnostics. Not used for behavior today. The `boot_id` that counts is the `boot_id` field of `latter.device_hello`. |
+
+There is no `profile` key. Latter treats a device by these traits; BLE phones, watches and tags are a separate **BLE tag** entry in Latter and send no manifest.
 
 ### Boot health and repairs
 

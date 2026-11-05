@@ -11,9 +11,11 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
+# A running build is never cancelled: it finishes and promotes, then only the newest queued push runs.
+# (Cancelling on every push would starve main whenever pushes come faster than a build.)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   validate:
