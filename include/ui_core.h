@@ -48,7 +48,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110237L
+#define LATTER_SDK_REV 2026110238L
 
 namespace latter_ui {
 
@@ -3415,32 +3415,59 @@ inline bool &applying_power_profile() {
   return v;
 }
 
-// Sendspin's artwork decode thread ("SsArt") runs at FreeRTOS priority 2, above ESPHome's resampler
-// tasks (priority 1, the same as the main loop). A cover decode (tens to hundreds of ms of CPU) then
-// starves the 48 kHz -> 16 kHz media resampler, the mixer input runs dry, and Sendspin logs "Lost sync"
-// on cover changes. Artwork decoding is best-effort with seconds of slack before its display deadline,
-// so it runs at idle priority. The thread is recreated with its client, so this runs every second.
+// Audio task priorities. ESPHome's resampler tasks (48 kHz -> 16 kHz) run at FreeRTOS priority 1, the
+// same as the main loop, while every other stage of the audio chain runs above it (Sendspin protocol 5,
+// sync 6, mixer 10, I2S speaker 19). Long main-loop work (a camera JPEG decode is ~0.8 s) or Sendspin's
+// artwork decode (priority 2) then starves the resampler, the mixer input runs dry, and Sendspin
+// hard-resyncs ("Lost sync"). So:
+//  - Sendspin's artwork decode ("SsArt") runs at idle priority: best-effort, seconds of slack.
+//  - Resamplers run at 3: above the main loop and the media decoders (2), below the rest of the chain.
+// Both tasks are recreated (client restart, stream start), so this runs on the always-on 1 s tick.
 static constexpr UBaseType_t kSendspinArtworkPriority = 0;
+static constexpr UBaseType_t kResamplerPriority = 3;
 
-inline void tune_sendspin_artwork_priority() {
+inline void tune_audio_task_priorities() {
 #if defined(USE_ESP32)
-#if INCLUDE_xTaskGetHandle
-  static TaskHandle_t logged = nullptr;
-  TaskHandle_t h = xTaskGetHandle("SsArt");
-  if (h == nullptr) return;
-  const UBaseType_t was = uxTaskPriorityGet(h);
-  if (was <= kSendspinArtworkPriority) return;
-  vTaskPrioritySet(h, kSendspinArtworkPriority);
-  if (h != logged) {
-    logged = h;
-    ESP_LOGI("audio", "Sendspin artwork decode priority %u -> %u (media resampler runs at 1)", (unsigned) was,
-             (unsigned) kSendspinArtworkPriority);
+#if configUSE_TRACE_FACILITY
+  static TaskStatus_t *ts = nullptr;
+  static UBaseType_t cap = 0;
+  static bool art_logged = false;
+  static bool resampler_logged = false;
+  UBaseType_t n = uxTaskGetNumberOfTasks();
+  if (n + 4 > cap) {
+    heap_caps_free(ts);
+    cap = n + 8;
+    ts = static_cast<TaskStatus_t *>(heap_caps_malloc(sizeof(TaskStatus_t) * cap, MALLOC_CAP_SPIRAM));
+    if (ts == nullptr) {
+      cap = 0;
+      return;
+    }
+  }
+  n = uxTaskGetSystemState(ts, cap, nullptr);
+  for (UBaseType_t i = 0; i < n; i++) {
+    const char *name = ts[i].pcTaskName;
+    const UBaseType_t base = ts[i].uxBasePriority;
+    if (strcmp(name, "SsArt") == 0 && base != kSendspinArtworkPriority) {
+      vTaskPrioritySet(ts[i].xHandle, kSendspinArtworkPriority);
+      if (!art_logged) {
+        art_logged = true;
+        ESP_LOGI("audio", "Sendspin artwork decode priority %u -> %u", (unsigned) base,
+                 (unsigned) kSendspinArtworkPriority);
+      }
+    } else if (strcmp(name, "resampler") == 0 && base < kResamplerPriority) {
+      vTaskPrioritySet(ts[i].xHandle, kResamplerPriority);
+      if (!resampler_logged) {
+        resampler_logged = true;
+        ESP_LOGI("audio", "Resampler priority %u -> %u (above the main loop)", (unsigned) base,
+                 (unsigned) kResamplerPriority);
+      }
+    }
   }
 #else
   static bool warned = false;
   if (!warned) {
     warned = true;
-    ESP_LOGW("audio", "Sendspin artwork decode priority not adjusted: INCLUDE_xTaskGetHandle is off");
+    ESP_LOGW("audio", "Audio task priorities not adjusted: CONFIG_FREERTOS_USE_TRACE_FACILITY is off");
   }
 #endif
 #endif
