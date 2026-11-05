@@ -22,14 +22,53 @@ speaker:
         timeout: 500ms
       - id: media_mixing_input
         timeout: 1500ms
+      # Chimes, alarms and game sounds (latter_sound_player): their own input, so they duck and drain
+      # independently of TTS and music.
+      - id: sound_mixing_input
+        buffer_duration: 500ms
+        timeout: 500ms
 
 
-# No sample-rate conversion on the device: every source is asked for ${audio_out_rate} (Sendspin's
-# sample_rate, the speaker_source pipelines' preferred format for Home Assistant, RTTTL's native 16 kHz),
-# and the mixer folds stereo to the panel's ${audio_out_channels} channel(s).
-rtttl:
-  id: alarm_rtttl
-  speaker: announcement_mixing_input
+# No sample-rate conversion on the device: every source arrives at ${audio_out_rate} (Sendspin's
+# sample_rate, the speaker_source pipelines' preferred format for Home Assistant, the sounds rendered
+# per rate by tools/gen_sounds.py), and the mixer folds stereo to the panel's ${audio_out_channels}
+# channel(s). On a full-duplex bus the speaker accepts no other format.
+#
+# Sounds are embedded WAV files (no decode cost) for this board's ${audio_out_rate}. ESPHome's rtttl
+# synthesizes at a fixed 16 kHz, so it cannot feed a 48 kHz mixer.
+audio_file:
+  - id: sound_alarm
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/alarm.wav
+  - id: sound_find_my
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/find_my.wav
+  - id: sound_sfx_1
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_1.wav
+  - id: sound_sfx_2
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_2.wav
+  - id: sound_sfx_3
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_3.wav
+  - id: sound_sfx_4
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_4.wav
+  - id: sound_sfx_5
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_5.wav
+  - id: sound_sfx_6
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_6.wav
+  - id: sound_sfx_7
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_7.wav
+  - id: sound_sfx_8
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_8.wav
+  - id: sound_sfx_9
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_9.wav
+  - id: sound_sfx_10
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_10.wav
+  - id: sound_sfx_11
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_11.wav
+  - id: sound_sfx_12
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_12.wav
+  - id: sound_sfx_13
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_13.wav
+  - id: sound_sfx_14
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_14.wav
 
 # Internal RAM is the scarce resource on the S3 boards (measured with System: Log Memory Report), so the
 # Sendspin hub's protocol, artwork and HTTP-server stacks live in PSRAM: they stay allocated whenever
@@ -53,8 +92,27 @@ media_source:
     buffer_size: ${sendspin_buffer_size}
     sample_rate: ${audio_out_rate}  # Music Assistant converts server-side; the device never resamples
 
+  - platform: audio_file
+    id: sound_file_source
+    task_stack_in_psram: true
+
 
 media_player:
+  # Internal player for the embedded sounds. Declared before latter_media_player: every speaker_source
+  # player applies its volume to physical_speaker at setup, and the music volume must be the one left.
+  # Each sound path sets the DAC level itself before playing.
+  - platform: speaker_source
+    id: latter_sound_player
+    internal: true
+    volume_initial: 100%
+    media_pipeline:
+      format: WAV
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: sound_mixing_input
+      sources:
+        - sound_file_source
+
   - platform: sendspin
     id: sendspin_group_media_player
     on_state:
@@ -834,15 +892,8 @@ script:
           const float alert_v = id(find_my_active)
               ? 0.90f
               : latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
-          // esphome::rtttl re-applies its gain as the speaker volume at every song start, so the gain
-          // must carry the intended DAC level (otherwise every chime plays at RTTTL's 0.6 default).
-          id(alarm_rtttl).set_gain(alert_v);
           id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
-      - mixer_speaker.apply_ducking:
-          id: announcement_mixing_input
-          decibel_reduction: 0
-          duration: 0.05s
       - while:
           condition:
             lambda: "return id(alarm_ringing) || id(timer_ringing) || id(find_my_active);"
@@ -850,19 +901,21 @@ script:
             - if:
                 condition:
                   not:
-                    rtttl.is_playing:
+                    media_player.is_playing: latter_sound_player
                 then:
-                  - rtttl.play:
-                      id: alarm_rtttl
-                      rtttl: !lambda |-
-                        if (id(find_my_active)) {
-                          return std::string("findmy:d=16,o=6,b=180:e,a,e7,a7,p,e,a,e7,a7,p,e,a,e7,a7");
-                        }
-                        return std::string("alarm:d=16,o=6,b=160:c,e,g,c7,p,c,e,g,c7,p,c,e,g,c7");
+                  - media_player.play_media:
+                      id: latter_sound_player
+                      media_url: !lambda |-
+                        return std::string(id(find_my_active) ? "audio-file://sound_find_my"
+                                                              : "audio-file://sound_alarm");
+            - wait_until:
+                condition:
+                  media_player.is_playing: latter_sound_player
+                timeout: 500ms
             - wait_until:
                 condition:
                   not:
-                    rtttl.is_playing:
+                    media_player.is_playing: latter_sound_player
                 timeout: 8s
             - delay: 800ms
 
@@ -872,8 +925,6 @@ script:
       sfx_id: int
     then:
       - script.stop: mp_idle_debounce
-      - rtttl.stop:
-          id: alarm_rtttl
       - if:
           condition:
             lambda: 'return !id(speaker_enable).state;'
@@ -882,37 +933,15 @@ script:
             - script.wait: route_i2s_to_spk
             - lambda: |-
                 const float sfx_v = latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
-                id(alarm_rtttl).set_gain(sfx_v);
                 id(physical_speaker).set_volume(sfx_v);
                 id(hal_set_dac_mute).execute(false);
-          else:
-            # Other audio already owns the speaker (music, a call): keep the current DAC level so the
-            # chime does not change the music volume (RTTTL applies its gain as the speaker volume).
-            - lambda: 'id(alarm_rtttl).set_gain(id(physical_speaker).get_volume());'
-      - mixer_speaker.apply_ducking:
-          id: announcement_mixing_input
-          decibel_reduction: 0
-          duration: 0.01s
-      - rtttl.play:
-          id: alarm_rtttl
-          rtttl: !lambda |-
-            switch (sfx_id) {
-              case 1:  return std::string("c1:d=16,o=5,b=260:g,c6,p,a,d6");
-              case 2:  return std::string("c2:d=16,o=5,b=260:d6,g,p,c6,f");
-              case 3:  return std::string("c3:d=16,o=5,b=270:f,c6,p,d6,g");
-              case 4:  return std::string("c4:d=16,o=5,b=285:g,b,d6,p,a,c6");
-              case 5:  return std::string("win:d=16,o=6,b=220:c,e,g,c7,p,g,8c7");
-              case 6:  return std::string("sink:d=32,o=6,b=280:c,e,g,16c7");
-              case 7:  return std::string("peg:d=32,o=6,b=320:a,e7");
-              case 8:  return std::string("bow:d=32,o=5,b=320:g,d6");
-              case 9:  return std::string("bull:d=16,o=6,b=260:e,g,c7,8e7");
-              case 10: return std::string("hit:d=32,o=5,b=280:a,e6");
-              case 11: return std::string("pad:d=32,o=5,b=320:f,a");
-              case 12: return std::string("brk:d=32,o=6,b=300:c,g");
-              case 13: return std::string("arm:d=32,o=5,b=320:a,e");
-              case 14: return std::string("lose:d=16,o=5,b=180:g,e,8c");
-              default: return std::string("c1:d=16,o=5,b=260:g,c6,p,a,d6");
-            }
+          # Otherwise other audio already owns the speaker (music, a call): keep its DAC level.
+      # A new sound replaces the one playing (speaker_source stops the source, then starts this one).
+      - media_player.play_media:
+          id: latter_sound_player
+          media_url: !lambda |-
+            const int n = (sfx_id >= 1 && sfx_id <= 14) ? sfx_id : 1;
+            return "audio-file://sound_sfx_" + std::to_string(n);
       - if:
           condition:
             lambda: 'return id(active_game) == 0;'
@@ -921,21 +950,16 @@ script:
   - id: stop_alarm_sound
     mode: restart
     then:
-      # Over music, silence the DAC before stopping RTTTL. Up to ~1 s of alarm samples is still queued
-      # in announcement_mixing_input plus the I2S buffer; letting that tail play after the DAC drops to
+      # Over music, silence the DAC before stopping the sound. Up to 0.5 s of alarm samples is still
+      # queued in sound_mixing_input plus the I2S buffer; letting that tail play after the DAC drops to
       # music level sounded like a quiet echo of the alarm on dismiss.
       - if:
           condition:
             media_player.is_playing: latter_media_player
           then:
             - lambda: 'id(hal_set_dac_mute).execute(true);'
-      - rtttl.stop:
-          id: alarm_rtttl
+      - media_player.stop: latter_sound_player
       - script.stop: play_alarm_sound
-      - mixer_speaker.apply_ducking:
-          id: announcement_mixing_input
-          decibel_reduction: 0
-          duration: 0.05s
       - if:
           condition:
             media_player.is_playing: latter_media_player
@@ -944,7 +968,7 @@ script:
             # before un-ducking the music, so neither the tail nor buffered music plays at the wrong level.
             - wait_until:
                 condition:
-                  lambda: 'return !id(announcement_mixing_input).is_running();'
+                  lambda: 'return !id(sound_mixing_input).is_running();'
                 timeout: 1500ms
             - delay: 300ms
             - lambda: |-

@@ -79,7 +79,7 @@ jobs:
               echo "::error::Release tag ${TAG_NAME} (${VERSION}) does not match modules/base.yaml (${BASE_VER})"
               exit 1
             fi
-            find devices modules examples -name '*.yaml' -exec sed -i "s/@main/@${TAG_NAME}/g; s/ref: main/ref: ${TAG_NAME}/g" {} +
+            find devices modules examples -name '*.yaml' -exec sed -i "s/@main/@${TAG_NAME}/g; s/ref: main/ref: ${TAG_NAME}/g; s#/esphome-latter-core/main/#/esphome-latter-core/${TAG_NAME}/#g" {} +
           else
             VERSION="${BASE_VER}"
           fi

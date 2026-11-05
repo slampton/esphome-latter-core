@@ -32,6 +32,9 @@ jobs:
       - name: Check generated bring-up probes
         run: python tools/new_board.py --bringup --check
 
+      - name: Check rendered sounds match their melodies
+        run: python tools/gen_sounds.py --check
+
       - name: Compile and run C++20 host unit tests
         run: |
           g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state

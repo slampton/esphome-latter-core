@@ -66,8 +66,8 @@ inline bool wake_word_should_run(const std::string &ww_mode,
 // 0.5 dB per step, so 0.75 = 0 dB, 0.90 = +19 dB, 1.0 = +32 dB, and 1 dB = 2/255 of the scale.
 //
 // Every writer of physical_speaker's volume must use these helpers:
-//   - esphome::rtttl re-applies its gain to the speaker chain at every song start, so alarm/chime paths
-//     set the RTTTL gain to the intended DAC level before rtttl.play,
+//   - alarm/chime/game-sound paths set the DAC level themselves before latter_sound_player plays (that
+//     player's own volume is applied only once, at setup, before latter_media_player's),
 //   - speaker_source remaps its 0..1 volume into [volume_min, volume_max] before it reaches the DAC, so
 //     music levels go through media_dac_volume().
 

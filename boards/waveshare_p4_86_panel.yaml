@@ -52,7 +52,9 @@ substitutions:
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "true"
   announcement_buffer_size: "131072"
-  audio_out_rate: "16000"
+  # Full-duplex I2S at 48 kHz: the speaker, ES8311 and ES7210 share one bus clock at audio_out_rate;
+  # latter_mic converts the mic to audio_in_rate (16 kHz) for micro_wake_word and voice_assistant.
+  audio_out_rate: "48000"
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
@@ -85,7 +87,7 @@ esphome:
     - "-DLATTER_BACKLIGHT_DUTY_MAX_PCT=100"
     - "-DLATTER_DSI_IRAM_SAFE=1"
     - "-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks"
-    - "-DLATTER_AUDIO_OUT_RATE=16000"
+    - "-DLATTER_AUDIO_OUT_RATE=48000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
     - "-DLATTER_AUDIO_IN_RATE=16000"
@@ -161,11 +163,14 @@ i2c:
     frequency: 400kHz
     scan: false
 
+# One I2S port in full duplex: the ES8311 (DOUT GPIO9) and ES7210 (DIN GPIO11) share BCLK/WS/MCLK, so
+# the microphone and speaker run at the same time at audio_out_rate and never hand the bus over.
 i2s_audio:
   - id: i2s_shared_bus
     i2s_lrclk_pin: GPIO10
     i2s_bclk_pin: GPIO12
     i2s_mclk_pin: GPIO13
+    full_duplex: true
 
 audio_adc:
   - platform: es7210
@@ -173,18 +178,23 @@ audio_adc:
     i2c_id: bus_internal
     address: 0x40
     bits_per_sample: 16bit
-    sample_rate: ${audio_in_rate}
+    sample_rate: ${audio_out_rate}
     mic_gain: 24dB
 
 microphone:
   - platform: i2s_audio
-    id: latter_mic
+    id: latter_mic_i2s
     adc_type: external
     i2s_audio_id: i2s_shared_bus
     i2s_din_pin: GPIO11
-    sample_rate: ${audio_in_rate}
+    sample_rate: ${audio_out_rate}
     bits_per_sample: 16bit
     channel: left
+  # Converts inside the I2S reader's data callback (no task of its own), so UI load cannot starve it.
+  - platform: resampler
+    id: latter_mic
+    microphone: latter_mic_i2s
+    sample_rate: ${audio_in_rate}
 
 audio_dac:
   - platform: es8311
