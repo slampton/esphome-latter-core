@@ -18,7 +18,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110252L;
+            constexpr long LATTER_YAML_REV = 2026110253L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -1230,3 +1230,47 @@ globals:
     restore_value: no
     initial_value: '0'
 
+# Memory headroom for Home Assistant history (soak tests, regressions after an update). Low-water marks
+# only fall, and the delta filters keep reports rare, so these cost almost nothing on battery boards.
+sensor:
+  - platform: template
+    name: "System: Internal RAM Low Water"
+    id: sys_int_ram_low_water
+    icon: "mdi:memory"
+    unit_of_measurement: "kB"
+    device_class: data_size
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024.0f;'
+    filters:
+      - delta: 2.0
+
+  - platform: template
+    name: "System: Internal RAM Largest Block"
+    id: sys_int_ram_largest_block
+    icon: "mdi:memory"
+    unit_of_measurement: "kB"
+    device_class: data_size
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024.0f;'
+    filters:
+      - delta: 8.0
+
+  - platform: template
+    name: "System: PSRAM Low Water"
+    id: sys_psram_low_water
+    icon: "mdi:memory"
+    unit_of_measurement: "kB"
+    device_class: data_size
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024.0f;'
+    filters:
+      - delta: 256.0
