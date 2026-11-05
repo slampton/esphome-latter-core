@@ -77,7 +77,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 300s
     lambda: |-
-      return std::string("{\"w\":0,\"h\":0,\"shape\":\"none\",\"profile\":\"headless_node\","
+      return std::string("{\"w\":0,\"h\":0,\"shape\":\"none\","
                          "\"display\":0,\"touch\":0,\"audio\":0,\"mic\":0,\"spk\":0,"
                          "\"imu\":0,\"battery\":0,\"stationary\":1,\"wearable\":0,"
                          "\"ips\":0,\"chip\":\"ESP32\",\"psram_mb\":8}");

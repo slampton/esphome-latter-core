@@ -178,12 +178,8 @@ inline bool firmware_rolled_back() {
 #endif
 }
 
-inline std::string build_hardware_manifest_json() {  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
-  const char *profile = (!LATTER_HAS_DISPLAY)
-                            ? "headless_node"
-                            : (LATTER_IS_WEARABLE
-                                   ? "wearable_display"
-                                   : (LATTER_IS_STATIONARY ? "stationary_display" : "mobile_display"));
+inline std::string build_hardware_manifest_json() {
+  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
   char audio_buf[96];
   if (LATTER_HAS_AUDIO) {
@@ -197,7 +193,7 @@ inline std::string build_hardware_manifest_json() {  const char *shape = LATTER_
   char buf[640];
   std::snprintf(buf, sizeof(buf),
                 "{\"v\":2,\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\",\"boot_id\":%lu,"
-                "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
+                "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
                 "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
@@ -205,7 +201,7 @@ inline std::string build_hardware_manifest_json() {  const char *shape = LATTER_
                 "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
                 "\"sdk\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
                 kProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
-                SCREEN_W, SCREEN_H, shape, profile,
+                SCREEN_W, SCREEN_H, shape,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
                 audio_buf, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
