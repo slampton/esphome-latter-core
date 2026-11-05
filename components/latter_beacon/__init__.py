@@ -1,14 +1,17 @@
-"""Latter presence beacon: an iBeacon driven straight through the Bluetooth controller's HCI.
+"""Latter presence beacon: an iBeacon advertised with raw HCI commands and no Bluetooth host stack.
 
 The Area presence beacon only advertises. ESPHome's esp32_ble brings the Bluedroid host for that, and on
 the ESP32-S3 Bluedroid holds tens of kilobytes of internal RAM for as long as Bluetooth is on (measured:
 ~45 KB with the beacon on, which left a Wrist at 7 KB during a voice turn). This component starts only
-the controller and sends the four HCI commands that advertising needs (reset, parameters, data, enable)
-over VHCI. No host stack is linked.
+the controller and sends the four HCI commands that advertising needs (reset, parameters, data, enable).
+No host stack is linked.
 
-It keeps esp32_ble's control surface (enable(), disable(), is_active(), is_failed()) so the power policy
-drives either one. Chips whose Bluetooth controller is on a co-processor (ESP32-P4 with esp_hosted) keep
-esp32_ble.
+One component for every Latter device, with the transport chosen at build time:
+  - chips with an on-chip Bluetooth controller (ESP32-S3, ...): ESP-IDF VHCI, controller-only build;
+  - ESP32-P4 with an esp_hosted co-processor (C6): esp_hosted's custom-stack HCI byte pipe
+    (CONFIG_ESP_HOSTED_HOST_FEAT_BT without Bluedroid/NimBLE), controller lifecycle over esp_hosted RPC.
+The state machine, commands, payload, logs and control surface (enable(), disable(), is_active(),
+is_failed()) are shared, so the power policy and troubleshooting are the same on every device.
 """
 
 from __future__ import annotations
@@ -35,6 +38,9 @@ CONF_MINOR = "minor"
 CONF_MEASURED_POWER = "measured_power"
 CONF_MIN_INTERVAL = "min_interval"
 CONF_MAX_INTERVAL = "max_interval"
+
+ESP32_HOSTED_DOMAIN = "esp32_hosted"
+DEFAULT_TX_POWER_DBM = 3
 
 latter_beacon_ns = cg.esphome_ns.namespace("latter_beacon")
 LatterBeacon = latter_beacon_ns.class_("LatterBeacon", cg.Component)
@@ -74,26 +80,31 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_MEASURED_POWER, default=-59): cv.int_range(min=-128, max=0),
             cv.Optional(CONF_MIN_INTERVAL, default="500ms"): _INTERVAL,
             cv.Optional(CONF_MAX_INTERVAL, default="1000ms"): _INTERVAL,
-            cv.Optional(CONF_TX_POWER, default="3dBm"): cv.All(
-                cv.decibel, cv.one_of(*TX_POWER_LEVELS, int=True)
-            ),
+            # On-chip controllers only (default +3 dBm); esp_hosted offers no TX power control.
+            cv.Optional(CONF_TX_POWER): cv.All(cv.decibel, cv.one_of(*TX_POWER_LEVELS, int=True)),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     _validate_intervals,
 )
 
 
-def _validate_variant(config: ConfigType) -> ConfigType:
+def _is_hosted() -> bool:
+    return get_esp32_variant() == VARIANT_ESP32P4
+
+
+def _final_validate(config: ConfigType) -> ConfigType:
     variant = get_esp32_variant()
-    if variant in (VARIANT_ESP32P4, VARIANT_ESP32S2):
-        raise cv.Invalid(
-            f"latter_beacon needs an on-chip Bluetooth controller; {variant} has none "
-            "(use esp32_ble, which supports esp_hosted)"
-        )
+    if variant == VARIANT_ESP32S2:
+        raise cv.Invalid("latter_beacon needs Bluetooth; the ESP32-S2 has none")
+    if _is_hosted():
+        if ESP32_HOSTED_DOMAIN not in CORE.config:
+            raise cv.Invalid("On the ESP32-P4, latter_beacon needs esp32_hosted (Bluetooth is on the co-processor)")
+        if CONF_TX_POWER in config:
+            raise cv.Invalid("tx_power is not available over esp_hosted", path=[CONF_TX_POWER])
     return config
 
 
-FINAL_VALIDATE_SCHEMA = _validate_variant
+FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def to_code(config: ConfigType) -> None:
@@ -108,8 +119,17 @@ async def to_code(config: ConfigType) -> None:
     cg.add(var.set_measured_power(config[CONF_MEASURED_POWER]))
     cg.add(var.set_min_interval(config[CONF_MIN_INTERVAL].total_milliseconds))
     cg.add(var.set_max_interval(config[CONF_MAX_INTERVAL].total_milliseconds))
-    cg.add(var.set_tx_power(cg.RawExpression(TX_POWER_LEVELS[config[CONF_TX_POWER]])))
+    cg.add_define("USE_LATTER_BEACON")
 
+    if _is_hosted():
+        # esp_hosted's stack-agnostic Bluetooth feature: controller lifecycle over RPC + HCI byte pipe.
+        # With neither Bluedroid nor NimBLE enabled, its adapter resolves to the custom-stack path.
+        add_idf_sdkconfig_option("CONFIG_ESP_HOSTED_HOST_FEAT_BT", True)
+        cg.add_define("USE_LATTER_BEACON_HOSTED")
+        return
+
+    tx_power = config.get(CONF_TX_POWER, DEFAULT_TX_POWER_DBM)
+    cg.add(var.set_tx_power(cg.RawExpression(TX_POWER_LEVELS[tx_power])))
     request_bluetooth()
     if "wifi" in CORE.config:
         request_software_coexistence()
@@ -119,4 +139,3 @@ async def to_code(config: ConfigType) -> None:
     add_idf_sdkconfig_option("CONFIG_BT_NIMBLE_ENABLED", False)
     # One legacy advertising set; the controller sizes its activity pool from this (default 6).
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_MAX_ACT", 2)
-    cg.add_define("USE_LATTER_BEACON")

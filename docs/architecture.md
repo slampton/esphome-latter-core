@@ -33,7 +33,7 @@ packages:
   latter_gui:         !include ../guis/universal/gui.yaml
 ```
 
-Device files also define the parts that differ per product: the `wifi` id, the `ble_ctrl` beacon (`latter_beacon` on an on-chip Bluetooth controller, `esp32_ble` + `esp32_ble_beacon` on the P4's esp_hosted co-processor) and its iBeacon minor, the update source, and default substitutions (power profile, clock face, font sizes).
+Device files also define the parts that differ per product: the `wifi` id, the `ble_ctrl` presence beacon (`latter_beacon`: raw HCI with no host stack, over VHCI on an on-chip controller or over esp_hosted on the P4) and its iBeacon minor, the update source, and default substitutions (power profile, clock face, font sizes).
 
 ---
 

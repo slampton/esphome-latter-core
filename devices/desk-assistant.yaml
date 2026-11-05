@@ -36,7 +36,7 @@ external_components:
       type: git
       url: https://github.com/slampton/esphome-latter-core
       ref: main
-    components: [latter_core]
+    components: [latter_core, latter_beacon]
     refresh: 0s
 
 latter_core:
@@ -65,12 +65,10 @@ wifi:
   fast_connect: true
   power_save_mode: NONE
 
-esp32_ble:
+# Area presence iBeacon: raw HCI to the C6's Bluetooth controller over esp_hosted (no host stack on
+# the P4). Same component as every Latter device; apply_power_policy starts it once the C6 link is up.
+latter_beacon:
   id: ble_ctrl
-  enable_on_boot: false
-
-esp32_ble_beacon:
-  type: iBeacon
   uuid: "4C415454-4552-434F-5245-000000000220"
   major: 1
   minor: 5

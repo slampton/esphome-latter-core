@@ -90,8 +90,8 @@ wifi:
   ssid: "MyHomeWiFi"
   password: "MyWiFiPassword"
 
-# Area presence iBeacon through the on-chip Bluetooth controller (no host stack). An ESP32-P4 board,
-# whose Bluetooth is on an esp_hosted co-processor, uses esp32_ble + esp32_ble_beacon instead.
+# Area presence iBeacon with raw HCI and no host stack (VHCI on an on-chip controller; on an ESP32-P4
+# it drives the esp_hosted co-processor's controller and needs esp32_hosted).
 latter_beacon:
   id: ble_ctrl
   uuid: "4C415454-4552-434F-5245-000000000220"

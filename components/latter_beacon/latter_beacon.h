@@ -1,15 +1,20 @@
 #pragma once
 
-// Latter presence beacon: an iBeacon advertised straight through the Bluetooth controller's HCI (VHCI),
-// with no Bluetooth host stack. See __init__.py for why.
+// Latter presence beacon: an iBeacon advertised with four raw HCI commands and no Bluetooth host stack.
+// Two transports, chosen at build time:
+//   - on-chip controller (ESP32-S3 and other chips with Bluetooth): ESP-IDF VHCI;
+//   - esp_hosted co-processor (ESP32-P4 + C6): esp_hosted's custom-stack HCI byte pipe.
+// Everything else (state machine, commands, payload, logs, control surface) is shared. See __init__.py.
 
 #include "esphome/core/component.h"
+#include "esphome/core/defines.h"
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 
+#ifndef USE_LATTER_BEACON_HOSTED
 #include <esp_bt.h>
+#endif
 
 namespace esphome::latter_beacon {
 
@@ -27,7 +32,9 @@ class LatterBeacon : public Component {
   void set_measured_power(int8_t power) { this->measured_power_ = power; }
   void set_min_interval(uint32_t ms) { this->min_interval_ms_ = ms; }
   void set_max_interval(uint32_t ms) { this->max_interval_ms_ = ms; }
+#ifndef USE_LATTER_BEACON_HOSTED
   void set_tx_power(esp_power_level_t level) { this->tx_power_ = level; }
+#endif
 
   /// Start the controller and advertising (asynchronous: the HCI commands finish in loop()).
   void enable();
@@ -41,9 +48,15 @@ class LatterBeacon : public Component {
  protected:
   enum class State : uint8_t { OFF, CONFIGURING, ADVERTISING };
 
+  // Transport (one implementation per build).
+  int transport_up_();
+  void transport_down_();
+  bool transport_can_send_();
+  bool transport_send_(const uint8_t *frame, uint16_t len);
+
   bool send_step_(uint8_t step);
   void fail_(const char *what, int err);
-  void shutdown_controller_();
+  void stop_(const char *log_what);
 
   std::array<uint8_t, 16> uuid_;
   uint16_t major_{1};
@@ -51,7 +64,9 @@ class LatterBeacon : public Component {
   int8_t measured_power_{-59};
   uint32_t min_interval_ms_{500};
   uint32_t max_interval_ms_{1000};
+#ifndef USE_LATTER_BEACON_HOSTED
   esp_power_level_t tx_power_{ESP_PWR_LVL_P3};
+#endif
 
   State state_{State::OFF};
   uint8_t step_{0};
