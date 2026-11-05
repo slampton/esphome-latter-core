@@ -14,6 +14,11 @@
 #include <esp_random.h>
 #include <esp_sleep.h>
 #include <esp_wifi.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
+#endif
+#ifdef USE_ESP32_CRASH_HANDLER
+#include "esphome/components/esp32/crash_handler.h"
 #endif
 
 #ifndef LATTER_BOARD_ID
@@ -135,8 +140,45 @@ inline uint32_t device_boot_id() {
   return s_boot_id;
 }
 
-inline std::string build_hardware_manifest_json() {
-  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
+// Why the device last restarted, whether ESPHome's crash handler holds a record of that crash (its
+// decoded backtrace is logged to every log client until the next restart), and whether the running
+// firmware is a rollback after an update that failed to boot. Reported in the device_hello manifest
+// so Home Assistant can raise a repair instead of the crash going unnoticed.
+inline const char *last_reset_reason() {
+#ifdef USE_ESP32
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "external";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "int-wdt";
+    case ESP_RST_TASK_WDT: return "task-wdt";
+    case ESP_RST_WDT: return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deep-sleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    default: break;
+  }
+#endif
+  return "unknown";
+}
+
+inline bool crash_record_present() {
+#ifdef USE_ESP32_CRASH_HANDLER
+  return esphome::esp32::crash_handler_has_data();
+#else
+  return false;
+#endif
+}
+
+inline bool firmware_rolled_back() {
+#ifdef USE_ESP32
+  return esp_ota_get_last_invalid_partition() != nullptr;
+#else
+  return false;
+#endif
+}
+
+inline std::string build_hardware_manifest_json() {  const char *shape = LATTER_ROUND_DISPLAY ? "circle" : "square";
   const char *profile = (!LATTER_HAS_DISPLAY)
                             ? "headless_node"
                             : (LATTER_IS_WEARABLE
@@ -152,7 +194,7 @@ inline std::string build_hardware_manifest_json() {
   } else {
     std::snprintf(audio_buf, sizeof(audio_buf), "0");
   }
-  char buf[576];
+  char buf[640];
   std::snprintf(buf, sizeof(buf),
                 "{\"v\":2,\"contract\":%d,\"fw\":\"2.2.1\",\"board\":\"%s\",\"boot_id\":%lu,"
                 "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"profile\":\"%s\","
@@ -160,7 +202,8 @@ inline std::string build_hardware_manifest_json() {
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
                 "\"slot_count\":%d,\"max_payload_bytes\":2048,"
-                "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d}}",
+                "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
+                "\"sdk\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
                 kProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
                 SCREEN_W, SCREEN_H, shape, profile,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
@@ -168,7 +211,8 @@ inline std::string build_hardware_manifest_json() {
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
-                (int)LATTER_SLOT_COUNT, (int)LATTER_BLE_MINOR);
+                (int)LATTER_SLOT_COUNT, (int)LATTER_BLE_MINOR,
+                (long)LATTER_SDK_REV, last_reset_reason(), (int)crash_record_present(), (int)firmware_rolled_back());
   return std::string(buf);
 }
 

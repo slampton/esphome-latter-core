@@ -323,24 +323,13 @@ inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
 // AXP2101 REG20 / REG21 bit names follow XPowersLib (xpower_power_on/off_source_t).
 inline void log_boot_summary() {
   uint32_t up_s = esphome::millis() / 1000U;
-  const char *rr = "unknown";
-#ifdef USE_ESP32
-  switch (esp_reset_reason()) {
-    case ESP_RST_POWERON: rr = "power-on"; break;
-    case ESP_RST_SW: rr = "software"; break;
-    case ESP_RST_PANIC: rr = "panic"; break;
-    case ESP_RST_INT_WDT: rr = "int-wdt"; break;
-    case ESP_RST_TASK_WDT: rr = "task-wdt"; break;
-    case ESP_RST_WDT: rr = "wdt"; break;
-    case ESP_RST_DEEPSLEEP: rr = "deep-sleep"; break;
-    case ESP_RST_BROWNOUT: rr = "brownout"; break;
-    default: break;
-  }
-#endif
+  const char *rr = last_reset_reason();
+  const int crash = crash_record_present() ? 1 : 0;
+  const int rollback = firmware_rolled_back() ? 1 : 0;
   const auto &tel = pmu_telemetry();
   if (!tel.boot_valid) {
-    ESP_LOGI("PROF", "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s pmu=none", (long)LATTER_SDK_REV,
-             (unsigned long)up_s, rr);
+    ESP_LOGI("PROF", "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_SDK_REV,
+             (unsigned long)up_s, rr, crash, rollback);
     return;
   }
   static const char *const kOff[8] = {"pwrkey-long", "software", "pwrkey-low", "vsys-undervolt",
@@ -361,8 +350,8 @@ inline void log_boot_summary() {
     }
   }
   ESP_LOGI("PROF",
-           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s last_off=0x%02X(%s) on=0x%02X(%s) icc=%dmA cv=0x%02X",
-           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, tel.off_src, off_s[0] ? off_s : "-", tel.on_src,
+           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) on=0x%02X(%s) icc=%dmA cv=0x%02X",
+           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", tel.on_src,
            on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
 }
 inline std::string &latter_site_id() {

@@ -98,6 +98,9 @@ jobs:
           BUILD_DIR=".esphome/build/${{ matrix.device.file }}/.pioenvs/${{ matrix.device.file }}"
           cp "${BUILD_DIR}/firmware.factory.bin" "dist/firmware/${{ matrix.device.slug }}.factory.bin"
           cp "${BUILD_DIR}/firmware.ota.bin" "dist/firmware/${{ matrix.device.slug }}.ota.bin"
+          # Debug symbols for this exact binary: decode the crash backtrace a device logs after a panic.
+          mkdir -p elf
+          cp "${BUILD_DIR}/firmware.elf" "elf/${{ matrix.device.slug }}-${VERSION}.elf"
           MD5_SUM=$(md5sum "dist/firmware/${{ matrix.device.slug }}.ota.bin" | awk '{print $1}')
           cat <<EOF > "dist/manifests/${{ matrix.device.slug }}.json"
           {
@@ -129,6 +132,19 @@ jobs:
         with:
           name: build-${{ matrix.device.slug }}
           path: dist/
+
+      - name: Upload debug symbols for ${{ matrix.device.slug }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: elf-${{ matrix.device.slug }}
+          path: elf/
+          retention-days: 90
+
+      - name: Attach debug symbols to the GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" elf/*.elf --clobber
 
   deploy_pages:
     name: Deploy Unified Web Installer to GitHub Pages
