@@ -479,6 +479,11 @@ script:
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: send_doorbell_intercom_cmd
       - media_player.stop: latter_media_player
+      # The doorbell's live audio plays on the announcement pipeline, which a plain stop leaves running:
+      # it would hold the player in ANNOUNCING (music never plays again, the wake word stays paused).
+      - media_player.stop:
+          id: latter_media_player
+          announcement: true
       - script.execute: mp_idle_debounce
 
   - id: rearm_doorbell_duplex_mic
@@ -516,6 +521,10 @@ script:
                 id(cam_intercom_action) = "listen_stop";
             - script.execute: send_doorbell_intercom_cmd
             - media_player.stop: latter_media_player
+            # Stop the doorbell's live audio too (announcement pipeline) before the talk turn.
+            - media_player.stop:
+                id: latter_media_player
+                announcement: true
       - if:
           condition:
             micro_wake_word.is_running:
