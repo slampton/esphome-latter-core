@@ -55,7 +55,7 @@ enum class AreaCtxField : size_t {
   ALERT_MESSAGE = 33,  // alert_message (string)
   ALERT_PRIORITY = 34,  // alert_priority (string)
   ALERT_DURATION = 35,  // alert_duration (u16)
-  ALERT_CHIME = 36,  // alert_chime (string)
+  ALERT_CHIME = 36,  // alert_chime (bool)
   ALERT_CAMERA_URL = 37,  // alert_camera_url (url)
   COUNT = 38
 };

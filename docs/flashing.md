@@ -5,8 +5,8 @@ There are two ways to install Latter firmware:
 | | Web installer | ESPHome Device Builder |
 | :--- | :--- | :--- |
 | **Best for** | Getting started quickly | Customizing, or the P4 devices |
-| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.10 or newer |
-| **Wi-Fi setup** | S3 devices over Bluetooth; P4 devices not yet | Your `secrets.yaml` |
+| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0b1 or newer |
+| **Wi-Fi setup** | Over the USB cable (Improv Serial), all five devices | Your `secrets.yaml` |
 | **Updates** | The **Project Firmware** update entity in Home Assistant | Rebuild in Device Builder |
 
 ---

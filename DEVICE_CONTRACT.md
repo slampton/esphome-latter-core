@@ -60,9 +60,9 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `31` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
 | `32` | `alert_title` | `AreaCtxField::ALERT_TITLE` | `string` | Alert banner title |
 | `33` | `alert_message` | `AreaCtxField::ALERT_MESSAGE` | `string` | Alert banner message body |
-| `34` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (info|normal|high|critical) |
+| `34` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (normal|warning|critical) |
 | `35` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
-| `36` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `string` | Alert RTTTL/chime preset name |
+| `36` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `bool` | 1 = play the alert chime (embedded WAV: sfx 9 for warning/critical, otherwise sfx 6), else 0 |
 | `37` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
 
 ### `sensor.<device>_active_media` (`MediaField`, `20` total fields)
@@ -129,10 +129,10 @@ Upcoming calendar agenda events and next-event headline.
 | Action | Variables | Description |
 | :--- | :--- | :--- |
 | `latter_ping` | *(none)* | No-op discovery marker action announcing Latter Protocol v3 compatibility and hardware manifest |
-| `ui_input` | `command: string` | Remote hardware navigation/input command (up|down|left|right|select|back|home|wake|sleep) |
+| `ui_input` | `action: string`, `delta: int` | Remote navigation input: action home|back|select|next|prev|left|right|up|down|cw|ccw (ok/click alias select); delta overrides the step for next/prev-style actions (0 = derive from action) |
 | `set_browse_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots to the device |
 | `set_area_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated Area/Site entity control slots to the device |
-| `show_notification` | `alert_id: int`, `title: string`, `message: string`, `priority: string`, `duration_s: int`, `chime: string` | Wake display, show an on-screen alert banner, and optionally play an RTTTL chime or camera preview |
+| `show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot; alert_id > 0 deduplicates repeats |
 
 ## 4. Outbound Home Assistant Services (`latter.<service>`)
 
@@ -150,6 +150,6 @@ Upcoming calendar agenda events and next-event headline.
 | `latter.calendar_fetch` | `target_device`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
 | `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `in_minutes`, `duration_minutes`, `description` | Create a new event on the primary configured calendar |
 | `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a voice announcement across all, occupied, follow_me, or targeted speakers |
-| `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `anc_mode` | Control two-way doorbell talkback or trigger explicit lock actions during a doorbell event |
+| `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction` | Doorbell talkback and requests. action: talk_message (push-to-talk speech transcribed on the device, spoken at the door by Home Assistant), quick_reply, listen_start|listen_stop (door audio played on the device), call_target (rings other displays with a notification; no display-to-display audio), unlock_door (unlock request to Home Assistant), set_noise_reduction. noise_reduction: strong|light|off, the noise filter preset Home Assistant applies to door audio (FFmpeg). No echo cancellation; camera is auto-refreshing snapshots |
 | `latter.save_custom_color` | `target_device`, `hex_color`, `name` | Save a custom RGB accent color from the on-device color wheel |
 | `latter.notify` | `target_device`, `title`, `message`, `priority`, `duration`, `chime`, `announce`, `camera_entity` | Deliver a visual banner, chime, optional TTS announcement, and optional camera snapshot |

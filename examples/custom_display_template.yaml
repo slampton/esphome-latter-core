@@ -5,7 +5,7 @@
 # Purpose:
 #   1. Copy-paste starter template for porting the full Latter C++20 UI OS
 #      (Clock faces, 20 FPS Weather, Assist, Music Assistant, Area Control,
-#      Whole-Home Hub, 4-Slot Remote, 6 Games, 12 Tools) to a new screen.
+#      Whole-Home Hub, up to 10 remotes, 6 Games, 11 Tools) to a new screen.
 #   2. Automated CI target verifying that all C++20 headers in include/
 #      and modules/{audio_voice,power_manager,display_ui}.yaml validate cleanly.
 # ==============================================================================
@@ -65,6 +65,11 @@ esphome:
     - "-DLATTER_PANEL_IPS=0"
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
+    # Audio traits for the hardware manifest; keep in step with the substitutions above
+    - "-DLATTER_AUDIO_OUT_RATE=48000"
+    - "-DLATTER_AUDIO_OUT_CH=1"
+    - "-DLATTER_AUDIO_OUT_BITS=16"
+    - "-DLATTER_AUDIO_IN_RATE=16000"
 
 esp32:
   board: esp32-s3-devkitc-1

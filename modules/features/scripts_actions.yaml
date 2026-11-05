@@ -260,7 +260,7 @@ script:
                         target_device: "${name}"
                         command: "play"
                   # If VA was terminated early, keep speaker DAC muted for 700ms while Sendspin
-                  # handshakes so any residual TTS audio inside physical_speaker's 1000ms buffer
+                  # handshakes so any residual TTS audio still in the speaker and mixer buffers
                   # drains completely silently instead of playing a 0.4s burst before music starts
                   - if:
                       condition:
@@ -443,7 +443,7 @@ script:
                   ac.camera_snapshot_url);
             camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
             message: !lambda 'return id(cam_intercom_message).c_str();'
-            anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
+            noise_reduction: !lambda 'return id(cam_intercom_noise_str).c_str();'
 
   - id: start_doorbell_call
     mode: restart
@@ -451,7 +451,7 @@ script:
       - lambda: |-
           latter_ui::cam_call_active() = true;
           latter_ui::cam_listen_active() = true;
-          latter_ui::cam_intercom_status() = "2-WAY CALL (ANC)";
+          latter_ui::cam_intercom_status() = "DOORBELL CALL";
           id(cam_intercom_status_ms) = millis();
           id(cam_intercom_action) = "listen_start";
           latter_ui::schedule_disp_update(&id(disp1));
@@ -466,7 +466,7 @@ script:
   - id: stop_doorbell_call
     mode: restart
     then:
-      - script.stop: rearm_doorbell_duplex_mic
+      - script.stop: rearm_doorbell_ptt
       - script.stop: start_doorbell_ptt
       - lambda: |-
           latter_ui::cam_call_active() = false;
@@ -486,7 +486,7 @@ script:
           announcement: true
       - script.execute: mp_idle_debounce
 
-  - id: rearm_doorbell_duplex_mic
+  - id: rearm_doorbell_ptt
     mode: restart
     then:
       - delay: 2800ms
@@ -533,7 +533,7 @@ script:
             - delay: 20ms
       - lambda: |-
           latter_ui::cam_intercom_ptt_active() = true;
-          latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL • LISTENING" : "SPEAK TO DOORBELL...";
+          latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "CALL • SPEAK NOW" : "SPEAK TO DOORBELL...";
           id(cam_intercom_status_ms) = millis();
           latter_ui::schedule_disp_update(&id(disp1));
           id(hal_set_audio_codecs_standby).execute(false);

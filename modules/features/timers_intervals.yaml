@@ -192,7 +192,7 @@ interval:
             id(screen_sleep_timer).execute();
           }
 
-          // Camera Carousel Auto-Live Frame Refresh (every 2200ms while viewing Camera App)
+          // Camera snapshot refresh while the Camera app is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)
           if (id(display_power_state) == 0 && id(gui_page) == 8 && id(tools_subpage) == 12 &&
               !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
               !id(va_active) && id(va_status_text).empty()) {

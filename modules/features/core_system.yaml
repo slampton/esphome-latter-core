@@ -18,7 +18,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110249L;
+            constexpr long LATTER_YAML_REV = 2026110250L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -860,10 +860,10 @@ globals:
     type: std::string
     restore_value: no
     initial_value: '""'
-  - id: cam_intercom_anc_str
+  - id: cam_intercom_noise_str
     type: std::string
     restore_value: no
-    initial_value: '"ultra"'
+    initial_value: '"strong"'
   - id: cam_intercom_status_ms
     type: uint32_t
     restore_value: no

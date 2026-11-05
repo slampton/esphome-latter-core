@@ -79,11 +79,15 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `ui_games.h` | The 6 games and the launcher |
 | `ui_ambient_va.h` | Screensavers and the voice overlay |
 | `ui_system.h` | Settings page |
-| `va_cancel_helper.h` | Voice session teardown, wake word persistence, Sendspin stereo-to-mono downmix |
+| `va_cancel_helper.h` | Voice session teardown, wake word persistence (NVS), API client release before hibernate |
+| `audio_router.h` | Full-duplex bus trait, wake word run predicate, loudness model, codec standby |
+| `latter_protocol.h` | Generated Protocol v3 constants (from `protocol/latter_v3.json`) |
+| `hal_imu_qmi8658.h` | QMI8658 hardware wake-on-motion |
+| `ui_touch_router.h` | Touch gesture routing and hit-testing |
 | `latter_state.h` | Typed per-domain state, plus allocation-free parsers for the packed (`\x1f` / `\x1e`) protocol payloads |
 
 ### `components/latter_core/`
-An ESPHome external component that copies the 13 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas.
+An ESPHome external component that copies the 17 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas.
 
 ### `examples/`
 | File | What it shows |
@@ -98,7 +102,7 @@ The ESP Web Tools installer page and per-device manifests. The release workflow 
 
 ## Build and release
 
-- **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs `esphome config` on both examples for every push to `main` and `dev`.
+- **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs on every push to `main` and `dev`: `tools/gen_protocol.py --check`, the board facts and bring-up probe checks, `tools/gen_sounds.py --check`, C++20 host unit tests, and `esphome config` on both examples and all five device configs.
 - **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
   1. Compiles all five devices with the `esphome/esphome:2026.11.0b1` container.
   2. Writes manifests with each OTA image's MD5.

@@ -2318,7 +2318,7 @@ inline int parse_intercom_targets_list(
     std::string out_ids[5],
     std::string out_labels[5]) {
   out_ids[0] = "all";
-  out_labels[0] = "Call All Areas (2-Way)";
+  out_labels[0] = "Ring All Areas";
   int idx = 1;
   if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
     return idx;
@@ -2359,7 +2359,7 @@ inline void render_tool_intercom(
     fast_print(it, cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   } else {
     render_modern_card(it, cx, scale_y(44), 232, 34, 10, Color(18, 24, 34), theme_primary,
-                       intercom_live_call_mode() ? "Mode: 2-Way / SIP >" : "Mode: Broadcast >",
+                       intercom_live_call_mode() ? "Mode: Talk >" : "Mode: Broadcast >",
                        col_white, font_small);
   }
 
@@ -2381,7 +2381,7 @@ inline void render_tool_intercom(
     }
     if (cnt < 5) {
       render_modern_card(it, cx, layout().slot5_y(4), 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
-                         "Unlock Gate / Door (DTMF)", col_white, font_small);
+                         "Unlock Gate / Door", col_white, font_small);
     }
   } else {
     static constexpr const char *kPresets[5] = {
@@ -2429,8 +2429,8 @@ inline std::string &cam_intercom_status() {
   return st;
 }
 
-inline int &cam_anc_mode_idx() {
-  static int m = 0; // 0 = Ultra ANC, 1 = Balanced, 2 = Raw
+inline int &cam_noise_idx() {
+  static int m = 0; // Noise filter preset applied by Home Assistant: 0 = strong, 1 = light, 2 = off
   return m;
 }
 
@@ -2571,15 +2571,15 @@ inline void render_tool_camera(
     cam_carousel_idx() = 0;
   }
 
-  static constexpr const char *kAncNames[3] = {"Ultra ANC", "Balanced", "Raw Audio"};
-  const int anc_idx = std::max(0, std::min(2, cam_anc_mode_idx()));
+  static constexpr const char *kNoiseNames[3] = {"Noise Filter: Strong", "Noise Filter: Light", "Noise Filter: Off"};
+  const int noise_idx = std::max(0, std::min(2, cam_noise_idx()));
 
   if (cam_quick_reply_open()) {
     fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
     const Color card_bg(22, 27, 36);
     const Color card_brd(52, 62, 78);
     render_modern_card(it, cx, layout().slot5_y(0), 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
-                       "Unlock Door / Gate (DTMF)", col_white, font_small);
+                       "Unlock Door / Gate", col_white, font_small);
     render_modern_card(it, cx, layout().slot5_y(1), 296, 44, 12, card_bg, theme_primary,
                        "Leave package at door", col_white, font_small);
     render_modern_card(it, cx, layout().slot5_y(2), 296, 44, 12, card_bg, theme_primary,
@@ -2587,10 +2587,11 @@ inline void render_tool_camera(
     render_modern_card(it, cx, layout().slot5_y(3), 296, 44, 12, card_bg, card_brd,
                        "No soliciting, thank you", col_white, font_small);
     char view_lbl[56];
-    snprintf(view_lbl, sizeof(view_lbl), "View: %s  •  %s",
-             cam_landscape_mode() ? "90° Landscape" : "Portrait", kAncNames[anc_idx]);
+    snprintf(view_lbl, sizeof(view_lbl), "%s • %s",
+             cam_landscape_mode() ? "90° View" : "Portrait", kNoiseNames[noise_idx]);
+    std::string fit_view = fit_text_to_width_font(view_lbl, layout().list_card_w - scale_x(16), font_small);
     render_modern_card(it, cx, layout().slot5_y(4), 296, 44, 12, Color(18, 28, 40), theme_secondary,
-                       view_lbl, col_white, font_small);
+                       fit_view.c_str(), col_white, font_small);
     render_back_button(it, cx, font_small, layout().back_y, "< Back", col_white);
     return;
   }
@@ -2601,13 +2602,13 @@ inline void render_tool_camera(
   if (has_frame) {
     render_album_art_canvas(it, cam_art, cx, false, false, false, false);
   } else {
-    const char *msg = has_url ? "Loading live camera feed..." : "Configure camera in Latter Studio";
+    const char *msg = has_url ? "Loading camera snapshot..." : "Configure camera in Latter Studio";
     render_modern_card(it, cx, scale_y(212), 308, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
                        msg, has_url ? theme_secondary : col_slate, font_small);
   }
 
   // 1. Top Translucent Camera Carousel Header Pill (y = 40)
-  std::string cur_cam_title = (cam_count > 0) ? names[cam_carousel_idx()] : "LIVE CAMERA";
+  std::string cur_cam_title = (cam_count > 0) ? names[cam_carousel_idx()] : "CAMERA";
   for (char &c : cur_cam_title) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   if (cam_count > 1) {
     cur_cam_title += " (" + std::to_string(cam_carousel_idx() + 1) + "/" + std::to_string(cam_count) + ")";
@@ -2615,7 +2616,7 @@ inline void render_tool_camera(
   if (!cam_intercom_status().empty()) {
     cur_cam_title = cam_intercom_status();
   } else if (cam_call_active()) {
-    cur_cam_title = "2-WAY CALL ACTIVE";
+    cur_cam_title = "DOORBELL CALL";
   }
   cur_cam_title = fit_text_to_width_font(cur_cam_title, scale_x(210), font_small);
 
@@ -2641,7 +2642,7 @@ inline void render_tool_camera(
   }
   #endif
 
-  // 2. Bottom Translucent Two-Way Doorbell Intercom Control Deck (y = 368)
+  // 2. Bottom Translucent Doorbell Control Deck: Door Audio / Call / Reply (y = 368)
   if (has_url) {
     const bool is_listening = cam_listen_active() || (doorbell_talk_state == "listening");
     const bool in_call      = cam_call_active() || cam_intercom_ptt_active() || (doorbell_talk_state == "talking");
@@ -2655,7 +2656,7 @@ inline void render_tool_camera(
                        is_listening ? "Mute" : "Audio",
                        is_listening ? col_white : theme_secondary, font_small);
 
-    // Center Hero Pill: 1-Tap Hands-Free 2-Way Call (Start Call / End Call)
+    // Center Hero Pill: Start / End the doorbell call (push-to-talk turns + door audio)
     Color call_bg  = in_call ? (pulse ? Color(145, 28, 32) : Color(92, 18, 22)) : Color(18, 44, 28);
     Color call_brd = in_call ? Color(245, 72, 72) : Color(66, 188, 106);
     render_modern_card(it, cx, deck_y, 102, 40, 12,
@@ -2663,7 +2664,7 @@ inline void render_tool_camera(
                        in_call ? "End Call" : "Start Call",
                        col_white, font_small);
 
-    // Right Pill: Quick Replies & DSP Options
+    // Right Pill: Quick Replies, Unlock Request, View & Noise Filter
     render_modern_card(it, cx + scale_x(98), deck_y, 82, 38, 11,
                        Color(12, 16, 24), Color(58, 68, 84),
                        "Reply", theme_secondary, font_small);

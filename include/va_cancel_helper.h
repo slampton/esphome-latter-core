@@ -14,11 +14,10 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #endif
 
 // ==============================================================================
-// Voice Assistant Session, Mixer & Wake Word Helpers (va_cancel_helper.h)
+// Voice Assistant Session & Wake Word Helpers (va_cancel_helper.h)
 // ==============================================================================
 // Provides clean, encapsulated lifecycle helpers for ESPHome's final VoiceAssistant
-// component, its PSRAM MixerSpeaker announcement channel, and on-board
-// micro_wake_word configuration + NVS flash persistence:
+// component and on-board micro_wake_word configuration + NVS flash persistence:
 //   1. stop_va_microphone(va)
 //   2. abort_voice_assistant(va)
 //   3. ensure_wake_words_restored(mww) & poll_and_persist_wake_words(mww)

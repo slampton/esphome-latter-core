@@ -11,7 +11,7 @@
 #            window is 75..100% on-duty (25%..0% inverted duty). 0% brightness switches BL_EN off.
 # Touch:   GT911 @ 0x5D/0x14 (I2C SDA: GPIO7, SCL: GPIO8). RST GPIO23 not driven; INT on test point only.
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO9) + ES7210 ADC @ 0x40 (DIN: GPIO11), PA (NS4150B): GPIO53
-#          ES7210 mics: MIC1=FL, MIC2=FR, MIC3=AEC loopback of ES8311 output (TDM only), MIC4=NC
+#          ES7210 mics: MIC1=FL, MIC2=FR, MIC3=AEC loopback of ES8311 output (TDM only; unused until on-device echo cancellation), MIC4=NC
 # Clocks:  MCLK: GPIO13, BCLK: GPIO12, LRCLK/WS: GPIO10
 # C6:      SDIO CLK18/CMD19/D0-D3 14-17, CHIP_PU GPIO54, C6 IO2 <-> GPIO6 (host-wake line)
 # SD:      SDMMC slot 0 (D0-D3 39-42, CLK 43, CMD 44), power P-FET gate GPIO45 (Waveshare P4 BSP family:

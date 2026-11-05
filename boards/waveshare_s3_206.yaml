@@ -4,7 +4,8 @@
 #          column offset 22). LCD_TE routed to GPIO13 (unused).
 # Touch:   FT3168 @ 0x38 (INT: GPIO38, RST: GPIO9)
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO40) + ES7210 ADC @ 0x40 (DIN: GPIO42), PA: GPIO46
-#          ES7210 MIC3 = AEC loopback of ES8311 output (TDM only)
+#          ES7210 MIC3 = AEC loopback of ES8311 output (TDM only; hardware reference, unused until
+#          on-device echo cancellation)
 # Clocks:  MCLK: GPIO16, BCLK: GPIO41, LRCLK/WS: GPIO45
 # PMU:     AXP2101 @ 0x34 (AXP_IRQ NOT routed). DCDC1 = all 3V3, ALDO1 = audio A3V3,
 #          ALDO2 = panel DSI_PWR_EN (medium confidence; kept ON), ALDO3 = vibration motor supply.

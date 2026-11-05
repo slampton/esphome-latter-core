@@ -1,6 +1,6 @@
 # Latter Core
 
-Firmware for five Waveshare ESP32 touch displays, one-line packages for ESPHome devices you already run, and an SDK for building your own device. Everything here is built on [ESPHome](https://esphome.io) and works with the [Latter](https://github.com/slampton/ha-latter) Home Assistant integration.
+Firmware for five Waveshare ESP32 touch displays, plus an SDK for building your own Latter device. Everything here is built on [ESPHome](https://esphome.io) and works with the [Latter](https://github.com/slampton/ha-latter) Home Assistant integration.
 
 [![Validate](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml/badge.svg)](https://github.com/slampton/esphome-latter-core/actions/workflows/validate.yml)
 [![Release](https://img.shields.io/github/v/release/slampton/esphome-latter-core)](https://github.com/slampton/esphome-latter-core/releases)
@@ -90,8 +90,8 @@ These are the details worth checking if you're evaluating the codebase. Each one
   - **Pacing:** redraw requests are merged into one redraw every 38 ms or more. Animations run at 18 ms per frame on the P4 and 26 ms on the S3. Ambient screensavers run at about 20 fps and slow down while audio plays.
   - **Profiling:** the **System: Telemetry Profiler** switch logs per-frame render times and flags any frame over 22 ms. → [`ui_core.h`](include/ui_core.h)
 - **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`ui_layout.h`](include/ui_layout.h), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
-- **Voice doesn't fight music.** When the wake word fires, the firmware pauses music and stops its mixer input so the voice response isn't stuck behind buffered music. After the reply, it resumes only once both the media player and the announcement mixer have drained. Music never resumes over a ringing alarm or timer. → [`audio_voice.yaml`](modules/audio_voice.yaml), [`latter_client.yaml`](modules/latter_client.yaml)
-- **Shared I2S clocks on the S3 boards.** Speaker and microphone use separate I2S controllers on the same clock pins. The firmware switches the pins between them through the GPIO matrix. → [`waveshare_s3_175c.yaml`](boards/waveshare_s3_175c.yaml)
+- **Voice doesn't fight music.** When a voice turn starts (button, tap, or the wake word while music plays on another speaker), the firmware pauses music and stops its mixer input so the voice response isn't stuck behind buffered music. The wake word itself is paused while this device plays media, because there is no on-device echo cancellation yet. After the reply, it resumes only once both the media player and the announcement mixer have drained. Music never resumes over a ringing alarm or timer. → [`audio_voice.yaml`](modules/audio_voice.yaml), [`latter_client.yaml`](modules/latter_client.yaml)
+- **Full-duplex 48 kHz audio on every board.** One I2S bus carries the DAC and the ADC on shared BCLK/WS/MCLK, so the microphone and speaker run at the same time and never hand the bus over. Music and announcements arrive at 48 kHz (no on-device output resampling); the microphone is resampled to 16 kHz for the wake word and Assist. → [`waveshare_s3_216.yaml`](boards/waveshare_s3_216.yaml), [`audio_voice.yaml`](modules/audio_voice.yaml)
 - **Hard power-off hibernate.** On battery boards, hibernate saves preferences, disconnects from the API cleanly, puts the codecs and IMU into standby, and then has the AXP2101 cut power. The crown button powers the device back on. → [`pmu_axp2101.yaml`](modules/pmu_axp2101.yaml)
 
 ---
@@ -103,7 +103,7 @@ This is version **2.2.1**, built and maintained by one person and tested on the 
 | Area | Status |
 | :--- | :--- |
 | The five flagship devices, the universal GUI, audio, voice, and power | Stable |
-| Doorbell two-way talk | **Experimental** (implemented on the Home Assistant side) |
+| Doorbell talkback | **Experimental**: push-to-talk. Your speech is transcribed and spoken at the door by Home Assistant; door audio plays on the device. Full-duplex calls with on-device echo cancellation are planned. |
 
 Known limitations:
 - **Wi-Fi setup after web flashing.** The web installer sets Wi-Fi over the USB cable (Improv Serial) on all five devices. → [Flashing](docs/flashing.md)

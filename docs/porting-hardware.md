@@ -14,7 +14,7 @@ The core modules refer to these IDs. Your board or device file must define each 
 | :--- | :--- | :--- |
 | `disp1` | `display` | Full-frame buffer in PSRAM. The GUI adds its render lambda with `!extend`. |
 | `touch_screen` | `touchscreen` | The GUI adds gesture handling with `!extend` |
-| `boot_button` | `binary_sensor` | `latter_client.yaml` extends it with wake and dismiss behavior |
+| `boot_button` | `binary_sensor` | `latter_client.yaml` extends it: wake, dismiss alerts, game button, start or stop a voice turn |
 | `bus_internal` | `i2c` | The bus shared by the PMU, IMU, codecs, and touch |
 | `latter_mic` | `microphone` | 16 kHz (`audio_in_rate`) mono. On a full-duplex bus faster than that, a `resampler` microphone over the I2S mic |
 | `physical_speaker` | `speaker` | Set `timeout: 4s` (longer than the 3 s idle power-down, so gaps between tracks never stop the I2S clocks under a powered amplifier) |
@@ -29,8 +29,8 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 
 | Script | Parameters | Purpose |
 | :--- | :--- | :--- |
-| `hal_route_i2s_to_spk` | — | Switch shared I2S clock pins to the speaker controller |
-| `hal_route_i2s_to_mic` | — | Switch them to the microphone controller |
+| `hal_route_i2s_to_spk` | — | Reserved for a board that must hand its I2S bus to the speaker. A no-op on a full-duplex bus (every supported board). |
+| `hal_route_i2s_to_mic` | — | The same, towards the microphone. A no-op on a full-duplex bus. |
 | `hal_set_dac_mute` | `muted: bool` | Mute the codec output |
 | `hal_set_audio_codecs_standby` | `standby: bool` | Put the codecs into low-power standby, or wake them |
 | `hal_set_imu_power_mode` | `ctrl7_val: int` | IMU power mode: `0x00` off, `0x01` accelerometer, `0x03` accelerometer + gyro, `0x80` hardware wake-on-motion (no polling) |

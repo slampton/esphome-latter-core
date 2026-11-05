@@ -3,7 +3,7 @@
 substitutions:
   announcement_buffer_s: "1"
 
-# ESPHome 2026.10.0+ microFLAC v0.3.0 decoder with 80MHz Octal PSRAM frame buffers
+# FLAC decoder (microFLAC) buffers in PSRAM
 audio:
   codecs:
     flac:
@@ -453,10 +453,10 @@ voice_assistant:
               id(cam_intercom_status_ms) = millis();
               id(send_doorbell_intercom_cmd).execute();
             } else {
-              latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "2-WAY CALL ACTIVE" : "";
+              latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "DOORBELL CALL" : "";
             }
             if (latter_ui::cam_call_active()) {
-              id(rearm_doorbell_duplex_mic).execute();
+              id(rearm_doorbell_ptt).execute();
             }
             latter_ui::schedule_disp_update(&id(disp1));
             return;
@@ -714,8 +714,7 @@ script:
           condition:
             lambda: 'return id(va).is_running();'
           then:
-            # The next turn's microphone needs the shared I2S bus now; the idle speaker would hold
-            # it until its 4 s timeout.
+            # Mute the speaker path and drop the amplifier before the next listening turn.
             - script.execute: route_i2s_to_mic
             - script.stop: va_tts_drain_and_finish
       # 3. Normal completion: exit the overlay without calling abort_voice_assistant(id(va)),
@@ -744,7 +743,8 @@ script:
     then:
       - script.stop: route_i2s_to_mic
       # Half-duplex bus hand-off: the microphone must release the bus before the speaker can take it.
-      # A full-duplex bus runs both at once, so the wake word keeps listening during playback.
+      # A full-duplex bus (every supported board) runs both at once and skips this; the wake word itself
+      # is paused by sync_wake_word_state while media plays.
       - if:
           condition:
             lambda: 'return !latter_ui::kAudioFullDuplex;'
