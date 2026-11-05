@@ -18,7 +18,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110258L;
+            constexpr long LATTER_YAML_REV = 2026110259L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -109,13 +109,7 @@ api:
           condition:
             lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
           then:
-            - homeassistant.action:
-                action: latter.device_hello
-                data:
-                  target_device: "${name}"
-                  contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
-                  boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
-                  manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
+            - script.execute: send_device_hello
       - delay: 3s
       - lambda: 'latter_ui::log_boot_summary();'
       - logger.replay_boot_logs:

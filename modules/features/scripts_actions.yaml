@@ -1,6 +1,27 @@
 # Latter Client Feature Package: Core Runtime Scripts & Action Handlers
 
 script:
+  # device_hello to Home Assistant (contract, boot id, hardware manifest with reset reason, crash and
+  # rollback). Home Assistant subscribes to device actions only after it authenticates and subscribes to
+  # states, so a hello sent straight from on_client_connected is dropped ("client has not subscribed to
+  # actions (yet)") and ha-latter never sees it: wait for the state subscription, then a moment more.
+  - id: send_device_hello
+    mode: restart
+    then:
+      - wait_until:
+          condition:
+            api.connected:
+              state_subscription_only: true
+          timeout: 30s
+      - delay: 1500ms
+      - homeassistant.action:
+          action: latter.device_hello
+          data:
+            target_device: "${name}"
+            contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
+            boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
+            manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
+
   - id: ui_input_event
     mode: queued
     parameters:
