@@ -48,7 +48,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110255L
+#define LATTER_SDK_REV 2026110256L
 
 namespace latter_ui {
 
@@ -3376,6 +3376,31 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
   ESP_LOGI("PROF", "[PROF:MEM] int_free=%luKB int_max_blk=%luKB int_min=%luKB dma_free=%luKB psram_free=%luKB psram_min=%luKB",
            (unsigned long)int_free, (unsigned long)int_max, (unsigned long)int_min, (unsigned long)dma_free,
            (unsigned long)ps_free, (unsigned long)ps_min);
+#endif
+}
+
+// Internal RAM low-water watch, polled every second whether or not the profiler is on: when the
+// lowest-ever internal free memory falls by 4 KB or more, log by how much and what was active in that
+// second (Bluetooth, wake word, voice turn, media, page), so the consumer behind a dip shows up in the
+// log instead of only in the low-water sensor's history.
+inline void watch_internal_low_water(bool ble_act, bool mww_run, bool va_act, bool mp_play, int page) {
+#ifdef USE_ESP32
+  static size_t last_min = 0;
+  const size_t cur_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+  if (last_min == 0) {
+    last_min = cur_min;
+    return;
+  }
+  if (cur_min + 4096U <= last_min) {
+    ESP_LOGW("PROF", "[PROF:LOWWATER] internal min %luKB -> %luKB (free=%luKB max_blk=%luKB) ble=%d mww=%d va=%d mp=%d page=%d",
+             (unsigned long)(last_min / 1024U), (unsigned long)(cur_min / 1024U),
+             (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U),
+             (unsigned long)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U),
+             (int)ble_act, (int)mww_run, (int)va_act, (int)mp_play, page);
+    last_min = cur_min;
+  }
+#else
+  (void)ble_act; (void)mww_run; (void)va_act; (void)mp_play; (void)page;
 #endif
 }
 

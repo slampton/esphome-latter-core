@@ -173,11 +173,13 @@ media_player:
             }
     on_announcement:
       then:
-        # An intercom turn's speech went to the doorbell; drop the pipeline's reply. While the user is
-        # speaking, drop anything else too (Home Assistant resuming door audio would play into the mic).
+        # While the user is speaking to the doorbell, drop any announcement (Home Assistant resuming door
+        # audio would play into the mic). A stray pipeline reply after the turn is dropped where it starts
+        # (intent progress, TTS end), not here: here it would also drop the door audio Home Assistant
+        # resumes after the message, whose announcement can start before the payload marks it listening.
         - if:
             condition:
-              lambda: 'return latter_ui::cam_intercom_ptt_active() || (id(va_intercom_turn) && !latter_ui::cam_listen_active());'
+              lambda: 'return latter_ui::cam_intercom_ptt_active();'
             then:
               - media_player.stop:
                   id: latter_media_player

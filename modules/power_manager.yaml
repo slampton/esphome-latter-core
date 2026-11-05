@@ -290,6 +290,9 @@ interval:
       - lambda: |-
           // 1. Poll Board PMU Telemetry (AXP2101 VBUS & Battery Charging or Stationary No-Op)
           id(hal_poll_pmu_1s).execute();
+          latter_ui::watch_internal_low_water(
+              id(ble_ctrl).is_active(), id(mww).is_running(), id(va).is_running(),
+              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_IDLE, id(gui_page));
 
           // 2. On-Board Wake Word (micro_wake_word) Power & Bus Supervisor
           const bool ww_changed = esphome::voice_assistant::poll_and_persist_wake_words(id(mww));
