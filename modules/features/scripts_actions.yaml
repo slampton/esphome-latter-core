@@ -434,10 +434,13 @@ script:
             target_device: "${name}"
             action: !lambda 'return id(cam_intercom_action).c_str();'
             camera_entity: !lambda |-
+              // Return the std::string itself: .c_str() of this temporary dangles once the lambda returns
+              // (the action copies the value afterwards), which sent garbage that Home Assistant rejected
+              // as invalid UTF-8 and answered by dropping the API connection.
               const auto &ac = latter_ui::area_ctx_state();
               return latter_ui::resolve_active_carousel_camera_id(
                   ac.cameras_summary,
-                  ac.camera_snapshot_url).c_str();
+                  ac.camera_snapshot_url);
             camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
             message: !lambda 'return id(cam_intercom_message).c_str();'
             anc_mode: !lambda 'return id(cam_intercom_anc_str).c_str();'
