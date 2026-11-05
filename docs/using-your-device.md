@@ -70,5 +70,5 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Area** | Default Category, Media Handoff, Show All Category, BLE Presence Beacon, Presence Beacon Mode |
 | **Weather** | Condition Simulation, which forces any of 16 conditions so you can preview them |
 | **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
-| **Status** | Battery Level, Battery Voltage, Battery Charging, USB Power Connected, Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
+| **Status** | Battery Level, Battery Voltage, Battery Charging and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
 | **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history |

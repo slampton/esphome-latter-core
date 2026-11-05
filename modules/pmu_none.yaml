@@ -1,43 +1,35 @@
 # ==============================================================================
-# Latter Core Module: Stationary / Non-PMU Power Stubs (modules/pmu_none.yaml)
-# Included by mains/5V-powered boards without a battery PMIC (Desk Assistant P4-86-Panel)
+# Latter Core Module: Mains-Powered / No-PMU Power State (modules/pmu_none.yaml)
+# Included by boards without a battery or PMIC (Desk Assistant P4-86-Panel).
+# The power-state IDs that the shared firmware reads exist here as internal components only: there is
+# no battery to report, so nothing is published to Home Assistant (no always-100% battery entity).
 # ==============================================================================
 
 binary_sensor:
+  # Always on external power: behaves as "docked" for Docked Only modes and sleep policy.
   - platform: template
-    name: "USB Power Connected"
     id: usb_connected
-    device_class: power
-    entity_category: diagnostic
+    internal: true
     lambda: 'return true;'
 
   - platform: template
-    name: "Battery Charging"
     id: batt_charging
-    device_class: battery_charging
-    entity_category: diagnostic
+    internal: true
     lambda: 'return false;'
 
 sensor:
+  # No battery: unknown (NaN), never a made-up level. Battery UI is compiled out (LATTER_HAS_BATTERY 0).
   - platform: template
-    name: "Battery Level"
     id: batt_level
-    unit_of_measurement: "%"
-    device_class: battery
-    entity_category: diagnostic
-    accuracy_decimals: 0
-    update_interval: 60s
-    lambda: 'return 100.0f;'
+    internal: true
+    update_interval: never
+    lambda: 'return NAN;'
 
   - platform: template
-    name: "Battery Voltage"
     id: batt_voltage
-    unit_of_measurement: "V"
-    device_class: voltage
-    entity_category: diagnostic
-    accuracy_decimals: 2
-    update_interval: 120s
-    lambda: 'return 5.00f;'
+    internal: true
+    update_interval: never
+    lambda: 'return NAN;'
 
 script:
   - id: hal_init_pmu
