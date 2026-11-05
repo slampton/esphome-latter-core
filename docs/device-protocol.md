@@ -10,7 +10,7 @@ The protocol has four parts:
 
 The reference implementation is [`modules/latter_client.yaml`](../modules/latter_client.yaml). The smallest working implementation is [`modules/base.yaml`](../modules/base.yaml) plus [`modules/area_control.yaml`](../modules/area_control.yaml).
 
-> ESPHome exposes an API action named `foo` on a device named `my-panel` as the Home Assistant service `esphome.my_panel_foo`. Below, `<slug>` is the device's name in Home Assistant, lowercase with underscores.
+> ESPHome exposes an API action named `foo` on a device named `my-panel` as the Home Assistant service `esphome.my_panel_foo`. Below, `<slug>` is the ESPHome node name, lowercase with underscores. Latter binds each Device to its ESPHome device ID and MAC address, and resolves `esphome.<slug>_*` from that device's ESPHome node name, never from names typed into Home Assistant.
 
 ---
 
@@ -19,7 +19,7 @@ The reference implementation is [`modules/latter_client.yaml`](../modules/latter
 An ESPHome device counts as a Latter device if it has at least one ESPHome entity **and** meets **any** of these conditions:
 - It registers at least one of the actions `latter_ping`, `set_browse_slots`, `set_area_slots`, or `show_notification`.
 - Its model or firmware version string contains `latter`.
-- An entity named `update.<slug>_project_firmware` exists.
+- The device has an `update` entity whose ID ends in `_project_firmware`.
 
 Latter rescans after Home Assistant starts, on any device-registry change (immediately, and again after a 5 s debounce), and whenever ESPHome registers one of the actions above. Matching devices raise a **Discovered: Latter** config flow.
 
@@ -40,23 +40,59 @@ api:
 
 ## 2. Hardware manifest
 
-Publish a template text sensor named **`System: Hardware Manifest`**, which becomes `sensor.<slug>_system_hardware_manifest`, with a JSON value:
+The device describes itself twice. Both are built from the board's `LATTER_*` flags in [`ui_layout.h`](../include/ui_layout.h):
+
+| Where | Built by | Content |
+| :--- | :--- | :--- |
+| `manifest` field of `latter.device_hello`, sent on every Home Assistant API connection | `latter_ui::build_hardware_manifest_json()` | The full manifest, including the boot health keys below |
+| Text sensor **`System: Hardware Manifest`** (`sensor.<slug>_system_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | A compact copy (≤ 230 bytes, inside Home Assistant's 255-character state limit). No `profile`, `audio` details, `beacon` block or health keys; the beacon minor is sent as `minor`. |
+
+Latter reads the sensor of the bound ESPHome device and overlays the latest `device_hello` manifest on it, so the hello wins wherever both have a key. Example hello manifest:
 
 ```json
-{"w":480,"h":480,"shape":"square","profile":"mobile_display",
- "display":1,"touch":1,"audio":1,"mic":1,"spk":1,"imu":1,"battery":1,
- "stationary":0,"wearable":0,"ips":0,"chip":"ESP32-S3","psram_mb":8}
+{"v":2,"contract":3,"fw":"2.2.1","board":"waveshare_s3_206","boot_id":123456789,
+ "w":410,"h":502,"shape":"square","profile":"wearable_display",
+ "display":1,"touch":1,"audio":{"out_rate":48000,"out_ch":1,"out_bits":16,"in_rate":16000},
+ "mic":1,"spk":1,"imu":1,"battery":1,"stationary":0,"wearable":1,"ips":0,
+ "chip":"ESP32-S3","psram_mb":8,"slot_count":5,"max_payload_bytes":2048,
+ "beacon":{"uuid":"4C415454-4552-434F-5245-000000000220","major":1,"minor":3},
+ "sdk":2026110253,"reset":"power-on","crash":0,"rollback":0}
 ```
 
 | Key | Used by Latter for |
 | :--- | :--- |
-| `w`, `h` | The image size it renders for this device (64–1920) |
+| `w`, `h` | The size it renders images at for this device |
 | `shape` | `circle` adds a circular mask to images. Anything else is treated as rectangular. |
-| `profile` | `headless_node`, `mobile_display`, `stationary_display`, or `wearable_display`. Applied when the config entry's profile is unset or is `mobile_display`. |
-| `slot_count` | *Optional.* The default page size when the slot action's schema can't be inspected |
-| Everything else | Reported in Studio. Not used for behavior today. |
+| `stationary`, `wearable` | Roaming. A device is roaming when `stationary` is `0` or `wearable` is `1`; a missing value means not roaming. Only roaming devices can use Voice Follows Me (moving the device's Home Assistant Area) and get the *No Area-assigned Bluetooth proxies* repair. At setup, `stationary: 1` also turns Bluetooth Area tracking off and pre-selects the device's current Area. |
+| `display` | `0` marks a headless node: it gets no doorbell popups and isn't a target of `latter.notify` broadcasts |
+| `profile` | `headless_node`, `mobile_display`, `stationary_display` or `wearable_display`. Latter derives it from `display`, `wearable` and `stationary` when absent (the state sensor doesn't carry it). Used for Studio labels and setup defaults; behavior that depends on roaming reads the traits above. |
+| `beacon` (`uuid`, `major`, `minor`), or `minor` on the sensor | Matches this device's iBeacon advertisements for Bluetooth Area tracking |
+| `audio` (`out_rate`, `out_ch`) | The sample rate and channel count of the doorbell listen stream |
+| `imu` | Studio shows the motion controls |
+| `board` | Studio's model label |
+| `sdk`, `reset`, `crash`, `rollback` | Boot health repairs (below). Hello manifest only. |
+| `slot_count`, `contract`, `fw`, `boot_id`, `chip`, `psram_mb`, `ips`, `touch`, `mic`, `spk`, `battery`, `max_payload_bytes`, `v` | Reported in diagnostics. Not used for behavior today. The `boot_id` that counts is the `boot_id` field of `latter.device_hello`. |
 
-`latter_ui::build_hardware_manifest_json()` in [`ui_layout.h`](../include/ui_layout.h) builds this from the `LATTER_*` flags. The universal firmware publishes it at boot and every 300 s.
+### Boot health and repairs
+
+Every hello reports how the device last started:
+
+| Key | Values |
+| :--- | :--- |
+| `sdk` | `LATTER_SDK_REV` of the running build |
+| `reset` | `power-on`, `external`, `software`, `deep-sleep`, `panic`, `int-wdt`, `task-wdt`, `wdt`, `brownout`, or `unknown` |
+| `crash` | `1` while ESPHome's crash handler holds a crash record. Its decoded backtrace is logged to every log client until the device restarts. |
+| `rollback` | `1` while the running firmware replaced an update that failed to boot. Stays `1` until a successful OTA. |
+
+Latter evaluates these once per boot (per `boot_id`, also across Home Assistant restarts) and raises a Home Assistant repair per Device:
+
+| Condition | Repair | Cleared when |
+| :--- | :--- | :--- |
+| `reset` is `panic`, `int-wdt`, `task-wdt` or `wdt` | **Device restarted after a crash (reason)** (warning). Open the device's logs in ESPHome Device Builder before it restarts again; the decoded backtrace is shown there, and decoding needs the build the device is running. Shows the SDK rev and the boot time. | A later boot reports a clean reset (`power-on`, `external`, `software`, `deep-sleep`) |
+| `reset` is `brownout` | **Device restarted after a brownout** (warning): the supply voltage or battery sagged | Same as above |
+| `rollback` is `1` | **Firmware update failed on Device** (error): the update didn't boot and the device went back to the previous firmware | A hello reports `rollback: 0` |
+
+`unknown` or a missing `reset` leaves the crash and brownout repairs as they are. Removing the Device removes its repairs. Latter's diagnostics download includes the last reported `sdk`, `reset`, `crash` and `rollback` per Device.
 
 ---
 
