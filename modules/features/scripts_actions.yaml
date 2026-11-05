@@ -749,7 +749,7 @@ script:
           else:
             - lambda: |-
                 latter_ui::set_remote_play_override(true, millis());
-                if (!latter_ui::kAudioFullDuplex && latter_ui::media_state().is_local && id(mww).is_running()) {  // half-duplex: the speaker needs the bus
+                if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
                   id(mww).stop();
                 }
             - homeassistant.action:
@@ -1084,7 +1084,7 @@ script:
           id(music_overlay_mode) = 0;
           id(music_hud_active) = true;
           id(music_hud_timer) = millis();
-          if (!latter_ui::kAudioFullDuplex && latter_ui::media_state().is_local && id(mww).is_running()) {  // half-duplex: the speaker needs the bus
+          if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
             id(mww).stop();
           }
       - homeassistant.action:
@@ -1176,7 +1176,7 @@ script:
           id(music_overlay_mode) = 0;
           id(music_hud_active) = true;
           id(music_hud_timer) = millis();
-          if (!latter_ui::kAudioFullDuplex && latter_ui::media_state().is_local && id(mww).is_running()) {  // half-duplex: the speaker needs the bus
+          if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
             id(mww).stop();
           }
       - homeassistant.action:

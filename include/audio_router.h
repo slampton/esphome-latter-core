@@ -16,8 +16,8 @@ namespace latter_ui {
 
 // True when the board's I2S bus runs in full duplex (i2s_audio full_duplex: true, which defines
 // USE_I2S_AUDIO_FULL_DUPLEX). The microphone and speaker then run at the same time, so the core never
-// hands the bus over: the wake word keeps listening during playback and the speaker is never stopped
-// to free the bus. Half-duplex boards keep the hand-off until they migrate.
+// hands the bus over: the speaker is never stopped to free the bus for the microphone. (Media still
+// pauses the wake word by policy until echo cancellation exists.)
 #ifdef USE_I2S_AUDIO_FULL_DUPLEX
 inline constexpr bool kAudioFullDuplex = true;
 #else

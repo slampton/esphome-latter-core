@@ -118,8 +118,7 @@ media_player:
     on_state:
       then:
         - lambda: |-
-            if (!latter_ui::kAudioFullDuplex &&
-                id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+            if (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
                 id(mww).is_running()) {
               id(mww).stop();
             }
@@ -268,8 +267,7 @@ media_player:
                   }
               - script.execute: screen_sleep_timer
               - script.execute: throttled_disp_update
-              # Playback (re)started, e.g. music resuming after a voice turn: a full-duplex bus arms the
-              # wake word again, a half-duplex bus keeps it paused.
+              # Playback (re)started, e.g. music resuming after a voice turn: pause the wake word for it.
               - script.execute: sync_wake_word_state
     on_pause:
       then:
@@ -840,14 +838,13 @@ script:
       - if:
           condition:
             lambda: |-
-              // On a half-duplex bus (shared BCLK/WS/MCLK, one direction at a time) MWW must pause while the speaker
-              // plays. A full-duplex bus listens during playback, so media does not pause it there.
+              // Media pauses the wake word on every board. A full-duplex bus could listen during playback, but without
+              // echo cancellation (roadmap: v3) the speaker drowns the mic, lyrics false-trigger it, and inference on
+              // top of 48 kHz decoding costs CPU, memory and battery.
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
-              // A full-duplex bus listens during playback; a half-duplex bus cannot.
-              const bool media_busy = !latter_ui::kAudioFullDuplex && (
-                                      id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+              const bool media_busy = (id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
                                       id(media_mixing_input).is_running() ||
                                       (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -883,11 +880,10 @@ script:
                         lambda: |-
                           return !id(mww).is_running() &&
                                  !id(va_active) && !id(va).is_running() &&
-                                 (latter_ui::kAudioFullDuplex || (
                                  !id(media_mixing_input).is_running() &&
                                  (id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                                  (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING)));
+                                 (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
                       then:
                         - micro_wake_word.start:
                         - wait_until:
@@ -1057,7 +1053,7 @@ script:
                 id: media_mixing_input
                 decibel_reduction: 0
                 duration: 0.2s
-            # The alarm paused the wake word; over music only a full-duplex bus listens again.
+            # Music continues after the alarm: keep the wake word paused for it.
             - script.execute: sync_wake_word_state
           else:
             - if:
