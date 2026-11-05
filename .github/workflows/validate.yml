@@ -76,7 +76,7 @@ jobs:
             - source:
                 type: local
                 path: ../components
-              components: [latter_core]
+              components: [latter_core, latter_beacon]
           wifi:
             ssid: "LatterCIWiFi"
             password: "LatterCIPassword"

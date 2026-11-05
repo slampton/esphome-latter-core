@@ -72,6 +72,15 @@ def is_p4(facts: dict[str, Any]) -> bool:
     return facts["silicon"]["soc"] == "ESP32-P4"
 
 
+def beacon_lines(facts: dict[str, Any], minor: int) -> list[str]:
+    """Area presence iBeacon: latter_beacon on an on-chip controller, esp32_ble on the P4 (esp_hosted)."""
+    uuid = '  uuid: "4C415454-4552-434F-5245-000000000220"'
+    if is_p4(facts):
+        return ["esp32_ble:", "  id: ble_ctrl", "  enable_on_boot: false", "",
+                "esp32_ble_beacon:", "  type: iBeacon", uuid, "  major: 1", f"  minor: {minor}"]
+    return ["latter_beacon:", "  id: ble_ctrl", uuid, "  major: 1", f"  minor: {minor}"]
+
+
 def pin_of(facts: dict[str, Any], role: str) -> int | None:
     for p in facts["pins"]:
         if p["role"] == role:
@@ -409,7 +418,7 @@ def render_device(facts: dict[str, Any]) -> str:
             "      type: git",
             "      url: https://github.com/slampton/esphome-latter-core",
             "      ref: main",
-            "    components: [latter_core]",
+            "    components: [latter_core, latter_beacon]",
             "    refresh: 0s",
             "",
             "latter_core:",
@@ -432,14 +441,7 @@ def render_device(facts: dict[str, Any]) -> str:
             "wifi:",
             "  id: wifi_ctrl",
             "",
-            "esp32_ble:",
-            "  id: ble_ctrl",
-            "",
-            "esp32_ble_beacon:",
-            "  type: iBeacon",
-            '  uuid: "4C415454-4552-434F-5245-000000000220"',
-            "  major: 1",
-            f"  minor: {minor}",
+            *beacon_lines(facts, minor),
             "",
             "packages:",
             f"  hal: !include ../boards/{bid}.yaml",

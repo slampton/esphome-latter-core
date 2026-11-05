@@ -27,7 +27,7 @@ external_components:
       type: git
       url: https://github.com/slampton/esphome-latter-core
       ref: main
-    components: [latter_core]
+    components: [latter_core, latter_beacon]
     refresh: 0s
 
 latter_core:
@@ -57,16 +57,11 @@ wifi:
   power_save_mode: LIGHT
   reboot_timeout: 0s
 
-esp32_ble:
+# Area presence iBeacon, advertised straight through the Bluetooth controller (no host stack, so
+# Bluetooth holds far less internal RAM than esp32_ble's Bluedroid). apply_power_policy starts it
+# after boot settles and stops it while docked.
+latter_beacon:
   id: ble_ctrl
-  # Bluetooth is only the Area presence beacon (advertising, no GATT). apply_power_policy starts it after
-  # boot settles, so its ~50 KB internal-RAM allocation never stacks on Wi-Fi, wake word and Sendspin start-up.
-  enable_on_boot: false
-  use_psram: true
-  max_connections: 1
-
-esp32_ble_beacon:
-  type: iBeacon
   uuid: "4C415454-4552-434F-5245-000000000220"
   major: 1
   minor: 2

@@ -43,7 +43,7 @@ external_components:
   - source:
       type: local
       path: ../components
-    components: [latter_core]
+    components: [latter_core, latter_beacon]
 
 latter_core:
 
@@ -90,9 +90,13 @@ wifi:
   ssid: "MyHomeWiFi"
   password: "MyWiFiPassword"
 
-esp32_ble:
+# Area presence iBeacon through the on-chip Bluetooth controller (no host stack). An ESP32-P4 board,
+# whose Bluetooth is on an esp_hosted co-processor, uses esp32_ble + esp32_ble_beacon instead.
+latter_beacon:
   id: ble_ctrl
-  enable_on_boot: true
+  uuid: "4C415454-4552-434F-5245-000000000220"
+  major: 1
+  minor: 9
 
 update:
   - platform: http_request

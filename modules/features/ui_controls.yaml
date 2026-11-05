@@ -4,8 +4,9 @@ select:
   # When the BLE presence beacon advertises on battery devices (see evaluate_radio_policy). The default
   # keeps Bluetooth off while docked, where the wake-word voice assistant needs the internal RAM, and
   # off with the screen off on battery, where it would block automatic light sleep. "Always" is the
-  # user's override: Bluetooth (~50 KB of internal RAM) then runs alongside the docked wake word, and
-  # measured DMA-capable RAM dropped to ~4 KB free during a voice reply on S3 boards.
+  # user's override: Bluetooth then runs alongside the docked wake word. With esp32_ble's Bluedroid host
+  # (~45 KB of internal RAM) DMA-capable RAM dropped to ~4 KB free during a voice reply on S3 boards; the
+  # S3 boards now use latter_beacon, which starts only the Bluetooth controller.
   - platform: template
     name: "Area: Presence Beacon Mode"
     id: ble_beacon_mode_select

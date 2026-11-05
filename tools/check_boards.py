@@ -239,7 +239,7 @@ def check_board(
         if facts.get("ble_minor") is not None:
             if not m or int(m.group(1)) != int(facts["ble_minor"]):
                 err(
-                    f"{dev.name} esp32_ble_beacon minor does not equal facts ble_minor {facts['ble_minor']}"
+                    f"{dev.name} beacon minor does not equal facts ble_minor {facts['ble_minor']}"
                 )
             if scan["flags"].get("LATTER_BLE_MINOR") not in (
                 None,

@@ -561,7 +561,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
   // The beacon (ble_area_beacon_switch) exists to place a device that moves between Areas. On battery
   // devices, "Area: Presence Beacon Mode" decides when it advertises:
   //   0 Handheld Only (default): unplugged with the screen on. Docked devices stay put (their Area was
-  //     settled while they were carried there), and Bluetooth costs ~50 KB of internal RAM that the
+  //     settled while they were carried there), and Bluetooth holds internal RAM that the
   //     docked voice assistant (wake word, Sendspin) needs. On battery with the screen off it pauses:
   //     the BT controller blocks automatic light sleep, and Voice Follows Me re-places the device within
   //     the dwell time after the next wake.
@@ -577,8 +577,9 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
   const bool beacon_context_ok = true;
 #endif
   const bool beacon_paused = ble_beacon_switch_on && !beacon_context_ok;
-  // Bluetooth costs ~50 KB of internal RAM (controller + Bluedroid + 4 task stacks, measured on the S3),
-  // so the beacon starts 20 s after boot, once Wi-Fi, wake word and Sendspin have finished allocating.
+  // Bluetooth holds internal RAM while on (on the S3, latter_beacon starts only the controller; esp32_ble's
+  // Bluedroid host held ~45 KB in total), so the beacon starts 20 s after boot, once Wi-Fi, wake word and
+  // Sendspin have finished allocating.
   const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused && (now_ms > 20000U);
   if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)

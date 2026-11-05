@@ -20,7 +20,7 @@ The core modules refer to these IDs. Your board or device file must define each 
 | `physical_speaker` | `speaker` | Set `timeout: 4s` (longer than the 3 s idle power-down, so gaps between tracks never stop the I2S clocks under a powered amplifier) |
 | `speaker_enable` | `switch` | Amplifier enable. Only `route_i2s_to_spk` turns it on, after the I2S clocks run |
 | `wifi_ctrl` | `wifi` | Usually defined in the device file |
-| `ble_ctrl` | `esp32_ble` | Usually defined in the device file |
+| `ble_ctrl` | `latter_beacon` (on-chip Bluetooth controller: advertising only, no host stack) or `esp32_ble` (ESP32-P4, Bluetooth on the esp_hosted co-processor) | Defined in the device file |
 | `latter_firmware_update` | `update` | Usually defined in the device file |
 
 ## 2. HAL scripts
