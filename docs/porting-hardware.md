@@ -165,4 +165,4 @@ python tools/new_board.py --bringup      # regenerate every examples/bringup/<id
 
 The scaffolder never overwrites an existing file without `--force`, and the files it writes mark every remaining decision with `TODO`. The bring-up probe has no Latter core. Flash it over USB and it logs the silicon revision, flash and PSRAM, every expected I2C device as present or missing (plus any unexpected ones), the AXP2101 state on battery boards, and an edge for every key and interrupt pin. It also pulses each output (amplifier, haptics, SD power, backlight enable) and sweeps the backlight. Attach that log to the pull request: it is the evidence that upgrades **M** and **L** facts to **H**.
 
-If you get a new board working, a pull request adding its board file and facts file is welcome.
+If you get a new board working, a pull request against `dev` adding its board file and facts file is welcome.

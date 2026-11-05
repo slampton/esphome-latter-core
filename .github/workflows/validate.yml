@@ -1,11 +1,19 @@
 name: Validate SDK & Examples
 
+# dev is the integration branch. A push to dev runs every check, compiles all five devices from that
+# exact commit, and only then fast-forwards main, the branch devices build from (packages,
+# external_components, sounds and models all reference @main). main is never ahead of a green build.
+
 on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -25,6 +33,9 @@ jobs:
 
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check
+
+      - name: Check firmware service calls and device actions against the protocol
+        run: python tools/check_protocol_usage.py
 
       - name: Check board facts ledger and generated pin maps
         run: python tools/check_boards.py --check-docs
@@ -73,3 +84,62 @@ jobs:
             esphome config "devices/.ci_${base_name}"
             rm -f "devices/.ci_${base_name}"
           done
+
+  compile:
+    name: Compile ${{ matrix.device }}
+    # Full firmware builds gate dev -> main (C++ lambdas and headers only fail at compile time).
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [pocket-assistant, mobile-assistant, wrist-assist, remote-assistant, desk-assistant]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome 2026.11.0b1
+        run: pip install --upgrade pip esphome==2026.11.0b1
+
+      - name: Restore toolchain and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            devices/.esphome
+          key: fw-${{ matrix.device }}-esphome-2026.11.0b1-${{ github.sha }}
+          restore-keys: |
+            fw-${{ matrix.device }}-esphome-2026.11.0b1-
+
+      - name: Pin @main references to this commit
+        # Remote references (latter_core component, sounds, wake word model) must build this commit, not main.
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          find devices modules guis boards examples -name '*.yaml' -exec sed -i \
+            "s/@main/@${SHA}/g; s/ref: main/ref: ${SHA}/g; s#/esphome-latter-core/main/#/esphome-latter-core/${SHA}/#g" {} +
+
+      - name: Compile
+        run: esphome compile devices/${{ matrix.device }}.yaml
+
+  promote:
+    name: Fast-forward main to this commit
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [validate, compile]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward main (refuses anything that is not a fast-forward)
+        run: git push origin "${GITHUB_SHA}:refs/heads/main"

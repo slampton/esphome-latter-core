@@ -108,7 +108,7 @@ This is version **2.2.1**, built and maintained by one person and tested on the 
 Known limitations:
 - **Wi-Fi setup after web flashing.** The web installer sets Wi-Fi over the USB cable (Improv Serial) on all five devices. → [Flashing](docs/flashing.md)
 - **CI coverage.** CI runs `tools/gen_protocol.py --check`, C++20 host unit tests, and `esphome config` across both examples and all five flagship device configs; full firmware binary compilation runs in the release workflow.
-- **Pinned to `main`.** Device configs pull the core from the `main` branch during development, and release builds pin every reference to the release tag.
+- **Pinned to `main`.** Device configs pull the core from the `main` branch during development, and release builds pin every reference to the release tag. Work lands on `dev`; CI moves `main` forward only after every check passes and all five devices compile from that commit.
 
 Bugs and feature requests: [issues](https://github.com/slampton/esphome-latter-core/issues).
 
