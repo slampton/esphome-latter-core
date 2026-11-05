@@ -3641,19 +3641,30 @@ script:
                   }
                 } else if (tp.y >= latter_ui::scale_y(342) && tp.y <= latter_ui::scale_y(398)) {
                   if (tp.x < latter_ui::SCREEN_CX - latter_ui::scale_x(48)) {
-                    // Left Pill: Door Audio On / Mute Toggle
-                    latter_ui::cam_listen_active() = !latter_ui::cam_listen_active();
-                    id(cam_intercom_action) = latter_ui::cam_listen_active() ? "listen_start" : "listen_stop";
-                    latter_ui::cam_intercom_status() = latter_ui::cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
-                    id(cam_intercom_status_ms) = now_rel;
-                    id(send_doorbell_intercom_cmd).execute();
-                    latter_ui::schedule_disp_update(&id(disp1));
-                  } else if (tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(48)) {
-                    // Center Hero Pill: Start / End the doorbell call (push-to-talk turns + door audio)
-                    if (!latter_ui::cam_call_active() && !latter_ui::cam_intercom_ptt_active()) {
-                      id(start_doorbell_call).execute();
-                    } else {
+                    if (latter_ui::cam_call_active()) {
+                      // Left Pill during a call: End Call
                       id(stop_doorbell_call).execute();
+                    } else {
+                      // Left Pill: Door Audio On / Mute Toggle
+                      latter_ui::cam_listen_active() = !latter_ui::cam_listen_active();
+                      id(cam_intercom_action) = latter_ui::cam_listen_active() ? "listen_start" : "listen_stop";
+                      latter_ui::cam_intercom_status() = latter_ui::cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
+                      id(cam_intercom_status_ms) = now_rel;
+                      id(send_doorbell_intercom_cmd).execute();
+                      if (!latter_ui::cam_listen_active()) {
+                        id(stop_doorbell_audio).execute();
+                      }
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    }
+                  } else if (tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(48)) {
+                    // Center Hero Pill: Start Call, then Talk (one push-to-talk turn), or Cancel the turn
+                    if (!latter_ui::cam_call_active()) {
+                      id(start_doorbell_call).execute();
+                    } else if (latter_ui::cam_intercom_ptt_active()) {
+                      esphome::voice_assistant::abort_voice_assistant(id(va));
+                      id(resume_doorbell_listen).execute();
+                    } else {
+                      id(start_doorbell_ptt).execute();
                     }
                   } else {
                     // Right Pill: Open Doorbell Quick Reply & Noise Filter Sheet

@@ -173,10 +173,11 @@ media_player:
             }
     on_announcement:
       then:
-        # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+        # An intercom turn's speech went to the doorbell; drop the pipeline's reply. While the user is
+        # speaking, drop anything else too (Home Assistant resuming door audio would play into the mic).
         - if:
             condition:
-              lambda: 'return id(va_intercom_turn) && !latter_ui::cam_listen_active();'
+              lambda: 'return latter_ui::cam_intercom_ptt_active() || (id(va_intercom_turn) && !latter_ui::cam_listen_active());'
             then:
               - media_player.stop:
                   id: latter_media_player
@@ -347,7 +348,7 @@ voice_assistant:
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (latter_ui::cam_intercom_ptt_active()) {
             // A late reply from the previous intercom turn must stay dropped; only a normal turn clears it.
-            latter_ui::cam_intercom_status() = "SPEAK TO DOORBELL...";
+            latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
@@ -442,22 +443,22 @@ voice_assistant:
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
             id(va_intercom_turn) = true;
-            latter_ui::cam_intercom_ptt_active() = false;
             id(va_active) = false;
             id(va_status_text) = "";
             esphome::voice_assistant::abort_voice_assistant(id(va));
-            if (!x.empty()) {
-              id(cam_intercom_action) = "talk_message";
-              id(cam_intercom_message) = x;
-              latter_ui::cam_intercom_status() = "SENT TO DOORBELL";
-              id(cam_intercom_status_ms) = millis();
-              id(send_doorbell_intercom_cmd).execute();
-            } else {
-              latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "DOORBELL CALL" : "";
+            if (x.empty()) {
+              id(resume_doorbell_listen).execute();
+              return;
             }
-            if (latter_ui::cam_call_active()) {
-              id(rearm_doorbell_ptt).execute();
-            }
+            // Home Assistant speaks it on the doorbell, then resumes the call's door audio.
+            latter_ui::cam_intercom_ptt_active() = false;
+            id(cam_intercom_action) = "talk_message";
+            id(cam_intercom_message) = x;
+            latter_ui::cam_intercom_status() = "SENT TO DOORBELL";
+            id(cam_intercom_status_ms) = millis();
+            id(send_doorbell_intercom_cmd).execute();
+            latter_ui::radio_boost_until_ms() = 0;
+            id(apply_power_policy).execute();
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
@@ -491,14 +492,19 @@ voice_assistant:
           ESP_LOGI("va", "STT End (hidden): %s", x.c_str());
   on_intent_progress:
     then:
-      # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+      # An intercom turn's speech went to the doorbell; drop the reply the pipeline started streaming
+      # (x is its URL, empty when nothing started).
       - if:
           condition:
             lambda: 'return id(va_intercom_turn);'
           then:
-            - media_player.stop:
-                id: latter_media_player
-                announcement: true
+            - if:
+                condition:
+                  lambda: 'return !x.empty();'
+                then:
+                  - media_player.stop:
+                      id: latter_media_player
+                      announcement: true
           else:
             - if:
                 condition:
@@ -528,15 +534,12 @@ voice_assistant:
                   - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
     then:
-      # An intercom turn's speech went to the doorbell; drop the pipeline's reply.
+      # An intercom turn's reply is dropped where it starts playing (intent progress, TTS end). TTS start
+      # plays nothing; stopping here would only cut the call's door audio.
       - if:
           condition:
-            lambda: 'return id(va_intercom_turn);'
+            lambda: 'return !id(va_intercom_turn);'
           then:
-            - media_player.stop:
-                id: latter_media_player
-                announcement: true
-          else:
             - lambda: 'latter_ui::log_audio_profile("VA_TTS_START");'
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
@@ -586,21 +589,32 @@ voice_assistant:
   on_error:
     then:
       - script.stop: va_tts_drain_and_finish
-      - lambda: |-
-          esphome::voice_assistant::abort_voice_assistant(id(va));
-          latter_ui::cam_intercom_ptt_active() = false;
-          id(va_vad_active) = false;
-          id(va_tts_received) = false;
-          id(va_active) = false;
-          id(va_status_text) = "";
-          if (id(return_page) >= 0) id(gui_page) = id(return_page);
-          latter_ui::radio_boost_until_ms() = 0;
-          id(apply_power_policy).execute();
-          ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
-      - script.execute: resume_music_after_va
-      - script.execute: mp_idle_debounce
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
-      - script.execute: va_restore_display
+      - if:
+          condition:
+            lambda: 'return latter_ui::cam_intercom_ptt_active();'
+          then:
+            # A push-to-talk turn that failed (usually no speech recognised): the call goes back to
+            # listening, on the camera page.
+            - lambda: |-
+                esphome::voice_assistant::abort_voice_assistant(id(va));
+                id(va_vad_active) = false;
+                ESP_LOGW("va", "Intercom turn error: %s - %s", code.c_str(), message.c_str());
+            - script.execute: resume_doorbell_listen
+          else:
+            - lambda: |-
+                esphome::voice_assistant::abort_voice_assistant(id(va));
+                id(va_vad_active) = false;
+                id(va_tts_received) = false;
+                id(va_active) = false;
+                id(va_status_text) = "";
+                if (id(return_page) >= 0) id(gui_page) = id(return_page);
+                latter_ui::radio_boost_until_ms() = 0;
+                id(apply_power_policy).execute();
+                ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
+            - script.execute: resume_music_after_va
+            - script.execute: mp_idle_debounce
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+            - script.execute: va_restore_display
   on_timer_started:
     then:
       - lambda: |-
@@ -682,6 +696,12 @@ voice_assistant:
             not:
               voice_assistant.is_running:
           timeout: 25s
+      # A push-to-talk turn that ended without a result: the call goes back to listening.
+      - if:
+          condition:
+            lambda: 'return latter_ui::cam_intercom_ptt_active() && !id(va).is_running();'
+          then:
+            - script.execute: resume_doorbell_listen
       - if:
           condition:
             lambda: 'return id(va_active) || id(va_tts_received) || !id(va_status_text).empty();'

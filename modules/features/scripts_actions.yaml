@@ -445,6 +445,7 @@ script:
             message: !lambda 'return id(cam_intercom_message).c_str();'
             noise_reduction: !lambda 'return id(cam_intercom_noise_str).c_str();'
 
+  # A doorbell call listens to the door until the user taps Talk; each tap is one push-to-talk turn.
   - id: start_doorbell_call
     mode: restart
     then:
@@ -456,17 +457,10 @@ script:
           id(cam_intercom_action) = "listen_start";
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: send_doorbell_intercom_cmd
-      - delay: 350ms
-      - if:
-          condition:
-            lambda: 'return latter_ui::cam_call_active() && id(va).get_api_connection() != nullptr;'
-          then:
-            - script.execute: start_doorbell_ptt
 
   - id: stop_doorbell_call
     mode: restart
     then:
-      - script.stop: rearm_doorbell_ptt
       - script.stop: start_doorbell_ptt
       - lambda: |-
           latter_ui::cam_call_active() = false;
@@ -478,27 +472,44 @@ script:
           esphome::voice_assistant::abort_voice_assistant(id(va));
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: send_doorbell_intercom_cmd
+      - script.execute: stop_doorbell_audio
+      - script.execute: mp_idle_debounce
+
+  # Stops the doorbell's live audio on this device. It plays on the announcement pipeline, which a plain
+  # stop (and Home Assistant's media_stop) leaves running: it would keep playing and hold the player in
+  # ANNOUNCING (music never plays again, the wake word stays paused).
+  - id: stop_doorbell_audio
+    mode: restart
+    then:
       - media_player.stop: latter_media_player
-      # The doorbell's live audio plays on the announcement pipeline, which a plain stop leaves running:
-      # it would hold the player in ANNOUNCING (music never plays again, the wake word stays paused).
       - media_player.stop:
           id: latter_media_player
           announcement: true
-      - script.execute: mp_idle_debounce
 
-  - id: rearm_doorbell_ptt
+  # Ends a push-to-talk turn that sent nothing (no speech recognised, an error, or cancelled): the call
+  # goes back to listening. A turn that sent a message resumes listening from Home Assistant once the
+  # doorbell has spoken it.
+  - id: resume_doorbell_listen
     mode: restart
     then:
-      - delay: 2800ms
+      - lambda: |-
+          latter_ui::cam_intercom_ptt_active() = false;
+          latter_ui::radio_boost_until_ms() = 0;
+          id(apply_power_policy).execute();
       - if:
           condition:
-            lambda: |-
-              return latter_ui::cam_call_active() &&
-                     (id(gui_page) == 8 && id(tools_subpage) == 12) &&
-                     (id(display_power_state) == 0);
+            lambda: 'return latter_ui::cam_call_active();'
           then:
-            - script.execute: start_doorbell_ptt
+            - lambda: |-
+                latter_ui::cam_listen_active() = true;
+                latter_ui::cam_intercom_status() = "DOORBELL CALL";
+                id(cam_intercom_status_ms) = millis();
+                id(cam_intercom_action) = "listen_start";
+            - script.execute: send_doorbell_intercom_cmd
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
+  # One push-to-talk turn of a doorbell call (the Talk pill): the device's speech becomes text that the
+  # doorbell speaks with TTS.
   - id: start_doorbell_ptt
     mode: restart
     then:
@@ -507,24 +518,13 @@ script:
             lambda: 'return id(va).get_api_connection() == nullptr;'
           then:
             - lambda: |-
-                if (!latter_ui::cam_call_active()) {
-                  latter_ui::cam_quick_reply_open() = true;
-                }
+                latter_ui::cam_intercom_status() = "NOT CONNECTED";
+                id(cam_intercom_status_ms) = millis();
                 latter_ui::schedule_disp_update(&id(disp1));
             - script.stop: start_doorbell_ptt
-      - if:
-          condition:
-            lambda: 'return latter_ui::cam_listen_active();'
-          then:
-            - lambda: |-
-                latter_ui::cam_listen_active() = false;
-                id(cam_intercom_action) = "listen_stop";
-            - script.execute: send_doorbell_intercom_cmd
-            - media_player.stop: latter_media_player
-            # Stop the doorbell's live audio too (announcement pipeline) before the talk turn.
-            - media_player.stop:
-                id: latter_media_player
-                announcement: true
+      # Silence the door audio here only: Home Assistant keeps the call in listening, so the message
+      # this turn sends resumes listening there once the doorbell has spoken it.
+      - script.execute: stop_doorbell_audio
       - if:
           condition:
             micro_wake_word.is_running:
@@ -533,7 +533,7 @@ script:
             - delay: 20ms
       - lambda: |-
           latter_ui::cam_intercom_ptt_active() = true;
-          latter_ui::cam_intercom_status() = latter_ui::cam_call_active() ? "CALL • SPEAK NOW" : "SPEAK TO DOORBELL...";
+          latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
           id(cam_intercom_status_ms) = millis();
           latter_ui::schedule_disp_update(&id(disp1));
           id(hal_set_audio_codecs_standby).execute(false);

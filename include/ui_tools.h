@@ -2559,7 +2559,6 @@ inline void render_tool_camera(
     esphome::Color theme_primary, esphome::Color theme_secondary,
     esphome::Color col_bg, esphome::Color col_white, esphome::Color col_slate,
     const std::string &cameras_summary = "",
-    const std::string &doorbell_talk_state = "idle",
     uint32_t now_ms = 0) {
   using esphome::Color;
   using esphome::display::TextAlign;
@@ -2620,7 +2619,7 @@ inline void render_tool_camera(
   }
   cur_cam_title = fit_text_to_width_font(cur_cam_title, scale_x(210), font_small);
 
-  Color hdr_brd = cam_call_active() ? Color(66, 188, 106) : (cam_intercom_ptt_active() ? Color(220, 58, 58) : theme_primary);
+  Color hdr_brd = cam_intercom_ptt_active() ? Color(220, 58, 58) : (cam_call_active() ? Color(66, 188, 106) : theme_primary);
   const int hdr_w = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? 216 : 256;
   const int hdr_cx = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? (cx - 24) : cx;
   const int hdr_cy = scale_y(40);
@@ -2642,26 +2641,33 @@ inline void render_tool_camera(
   }
   #endif
 
-  // 2. Bottom Translucent Doorbell Control Deck: Door Audio / Call / Reply (y = 368)
+  // 2. Bottom Translucent Doorbell Control Deck (y = 368)
+  //    Idle: Door Audio / Start Call / Reply.  In a call: End / Talk (Cancel while speaking) / Reply.
   if (has_url) {
-    const bool is_listening = cam_listen_active() || (doorbell_talk_state == "listening");
-    const bool in_call      = cam_call_active() || cam_intercom_ptt_active() || (doorbell_talk_state == "talking");
-    const bool pulse        = ((now_ms / 300U) % 2U) != 0;
-    const int deck_y        = scale_y(368);
+    const bool in_call  = cam_call_active();
+    const bool speaking = cam_intercom_ptt_active();
+    const bool pulse    = ((now_ms / 300U) % 2U) != 0;
+    const int deck_y    = scale_y(368);
 
-    // Left Pill: Audio / Mute Toggle
-    render_modern_card(it, cx - scale_x(98), deck_y, 82, 38, 11,
-                       is_listening ? Color(20, 42, 62) : Color(12, 16, 24),
-                       is_listening ? theme_primary : Color(58, 68, 84),
-                       is_listening ? "Mute" : "Audio",
-                       is_listening ? col_white : theme_secondary, font_small);
+    // Left Pill: Door Audio toggle, or End Call during a call
+    if (in_call) {
+      render_modern_card(it, cx - scale_x(98), deck_y, 82, 38, 11,
+                         Color(92, 18, 22), Color(245, 72, 72), "End", col_white, font_small);
+    } else {
+      const bool is_listening = cam_listen_active();
+      render_modern_card(it, cx - scale_x(98), deck_y, 82, 38, 11,
+                         is_listening ? Color(20, 42, 62) : Color(12, 16, 24),
+                         is_listening ? theme_primary : Color(58, 68, 84),
+                         is_listening ? "Mute" : "Audio",
+                         is_listening ? col_white : theme_secondary, font_small);
+    }
 
-    // Center Hero Pill: Start / End the doorbell call (push-to-talk turns + door audio)
-    Color call_bg  = in_call ? (pulse ? Color(145, 28, 32) : Color(92, 18, 22)) : Color(18, 44, 28);
-    Color call_brd = in_call ? Color(245, 72, 72) : Color(66, 188, 106);
+    // Center Hero Pill: Start Call, then Talk (one push-to-talk turn); Cancel while speaking
+    Color call_bg  = speaking ? (pulse ? Color(145, 28, 32) : Color(92, 18, 22)) : Color(18, 44, 28);
+    Color call_brd = speaking ? Color(245, 72, 72) : Color(66, 188, 106);
     render_modern_card(it, cx, deck_y, 102, 40, 12,
                        call_bg, call_brd,
-                       in_call ? "End Call" : "Start Call",
+                       !in_call ? "Start Call" : (speaking ? "Cancel" : "Talk"),
                        col_white, font_small);
 
     // Right Pill: Quick Replies, Unlock Request, View & Noise Filter

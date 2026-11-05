@@ -656,7 +656,7 @@ display:
               it, cx, cy, id(camera_snapshot_art), ac_cam.camera_snapshot_url,
               id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_slate),
-              ac_cam.cameras_summary, ac_cam.doorbell_talk_state,
+              ac_cam.cameras_summary,
               millis());
         }
       } else if (id(gui_page) == 9) {
