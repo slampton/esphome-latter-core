@@ -4,7 +4,7 @@
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
 static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
-              "Latter requires ESPHome 2026.11.0b1 or newer (devices/*.yaml min_version).");
+              "Latter requires ESPHome 2026.11.0b2 or newer (devices/*.yaml min_version).");
 #if ESPHOME_VERSION_CODE >= VERSION_CODE(2027, 1, 0)
 #warning "va_cancel_helper.h private-member bridge not validated on this ESPHome version; Phase 4 removes it"
 #endif

@@ -50,7 +50,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b1
+  min_version: 2026.11.0b2
   build_flags:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"

@@ -4,7 +4,7 @@
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (320x480 IPS LCD + Camera, SKU 33360)
 #         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_35.yaml
 #         (default rev3 = v3.x production silicon; CI also publishes a rev1 build).
-# Framework: ESPHome 2026.11.0b1+ (ESP-IDF 5.5+)
+# Framework: ESPHome 2026.11.0b2+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
 
@@ -37,7 +37,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b1
+  min_version: 2026.11.0b2
   project:
     name: "slampton.remote-assistant-p4-35"
     version: "${version}"

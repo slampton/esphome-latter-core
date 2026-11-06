@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0b1
-        run: pip install --upgrade pip esphome==2026.11.0b1
+      - name: Install ESPHome 2026.11.0b2
+        run: pip install --upgrade pip esphome==2026.11.0b2
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -105,8 +105,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0b1
-        run: pip install --upgrade pip esphome==2026.11.0b1
+      - name: Install ESPHome 2026.11.0b2
+        run: pip install --upgrade pip esphome==2026.11.0b2
 
       # ESP-IDF framework, toolchains, component mirror and its Python environment (~/.cache/esphome/idf),
       # shared by every device. The key carries the exact Python build because that environment points
@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/esphome
-          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b1
+          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b2
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"

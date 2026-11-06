@@ -86,7 +86,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Compile ${{ matrix.device.slug }} with ESPHome
-        uses: docker://ghcr.io/esphome/esphome:2026.11.0b1
+        uses: docker://ghcr.io/esphome/esphome:2026.11.0b2
         with:
           args: ${{ matrix.device.subs }} compile devices/${{ matrix.device.file }}.yaml
 
