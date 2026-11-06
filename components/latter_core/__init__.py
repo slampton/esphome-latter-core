@@ -63,3 +63,10 @@ async def to_code(config: dict[str, Any]) -> None:
         dst_file = Path(CORE.relative_src_path(hdr))
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
+
+    if "wifi" in CORE.config:
+        # Latter drives Wi-Fi modem power save through ESPHome's request_high_performance() /
+        # set_power_save_mode() (latter_ui::apply_wifi_power_policy in ui_layout.h).
+        from esphome.components import wifi
+
+        wifi.enable_runtime_power_save_control()

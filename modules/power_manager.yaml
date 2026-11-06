@@ -508,7 +508,7 @@ script:
               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
               (id(display_power_state) == 0 && (now_p - last_interact_ms < 8000U));
           latter_ui::evaluate_radio_policy(
-              id(ble_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
+              id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
               latter_ui::beacon_mode_index(id(ble_beacon_mode_select).current_option()), id(usb_connected).state,
               id(is_hibernating), id(ota_in_progress), id(display_power_state),
               high_tput_needed, now_p);

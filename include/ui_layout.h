@@ -633,27 +633,73 @@ inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
   return 3;
 }
 
-// Chip-Portable Wi-Fi Modem Power-Save & Single-Owner Radio Policy
-inline void hal_set_wifi_power_save(int mode) {
-#if defined(USE_ESP32) && (!defined(LATTER_IS_STATIONARY) || !LATTER_IS_STATIONARY)
+// Wi-Fi modem power save has one owner: ESPHome's wifi component (latter_core enables its runtime
+// power-save control). Latter sets the base mode with set_power_save_mode(): LIGHT with the screen on,
+// HIGH with it off (LIGHT on the P4, so the SDIO RPC to the C6 stays responsive). While Latter needs
+// full throughput it holds an ESPHome high-performance request; ESPHome runs NONE while any component
+// holds one and returns to the base mode when the last is released. Latter never calls esp_wifi_set_ps()
+// for this: the old direct call cached its last mode, so when ESPHome restored its configured LIGHT after
+// another component's request, a docked device stayed in power save and OTA crawled (or fell back to UDP).
+struct WifiPowerState {
+  bool hp_held{false};      // Latter's ESPHome high-performance request
+  bool base_valid{false};   // false: (re)apply the base mode on the next policy pass
+  int base{-1};             // esphome::wifi::WiFiPowerSaveMode last handed to ESPHome
+  bool pulse{false};        // holding a request for one pass so ESPHome applies a new base on release
+};
+inline WifiPowerState &wifi_power_state() {
+  static WifiPowerState s;
+  return s;
+}
+
+#ifdef USE_WIFI
+template <typename WifiT>
+inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int display_power_state) {
+#if !LATTER_IS_STATIONARY
+  if (wifi == nullptr) return;
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
-  // On ESP32-P4 (ESP-Hosted SDIO to C6), cap at WIFI_PS_MIN_MODEM (1) so SDIO RPC stays responsive
-  const int eff_mode = (mode > 0) ? 1 : 0;
+  (void)display_power_state;
+  const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #else
-  const int eff_mode = (mode < 0) ? 0 : ((mode > 2) ? 2 : mode);
+  const auto base = (display_power_state == 2) ? esphome::wifi::WIFI_POWER_SAVE_HIGH
+                                               : esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #endif
-  static int last_ps_mode = -1;
-  if (eff_mode == last_ps_mode) return;
-  wifi_ps_type_t ps_type = WIFI_PS_NONE;
-  if (eff_mode == 1) ps_type = WIFI_PS_MIN_MODEM;
-  else if (eff_mode >= 2) ps_type = WIFI_PS_MAX_MODEM;
-  if (esp_wifi_set_ps(ps_type) == ESP_OK) {
-    last_ps_mode = eff_mode;
+  auto &st = wifi_power_state();
+  bool want_hp = high_tput_needed;
+  if (st.pulse) {
+    st.pulse = false;  // the request held since the base change is released below unless still needed
+  }
+  if (!st.base_valid || st.base != static_cast<int>(base)) {
+    wifi->set_power_save_mode(base);
+    st.base = static_cast<int>(base);
+    st.base_valid = true;
+    // ESPHome applies a new base only when the last high-performance request is released: hold one for a
+    // single pass so that release happens on the next one.
+    st.pulse = true;
+    want_hp = true;
+  }
+  if (want_hp && !st.hp_held) {
+    st.hp_held = wifi->request_high_performance();
+  } else if (!want_hp && st.hp_held) {
+    wifi->release_high_performance();
+    st.hp_held = false;
   }
 #else
-  (void)mode;
+  (void)wifi;
+  (void)high_tput_needed;
+  (void)display_power_state;
 #endif
 }
+#endif
+
+// OTA blocks the main loop for the whole transfer, so ESPHome's wifi loop can't apply a request then:
+// handle_ota_begin switches the modem out of power save directly, and an OTA that fails or is aborted
+// marks the base for re-application, which hands the mode back to ESPHome on the next policy pass.
+inline void wifi_power_ota_begin() {
+#ifdef USE_ESP32
+  esp_wifi_set_ps(WIFI_PS_NONE);
+#endif
+}
+inline void wifi_power_ota_end() { wifi_power_state().base_valid = false; }
 
 // Event-declared radio demand: a voice session that is about to start (before va.is_running() is
 // true) asks for full-throughput Wi-Fi for a bounded window; apply_power_policy honours it.
@@ -676,8 +722,8 @@ inline int beacon_mode_index(const std::string &opt) {
   return 0;  // "Handheld Only"
 }
 
-template <typename BleCtrlT>
-inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool ble_beacon_switch_on,
+template <typename BleCtrlT, typename WifiT>
+inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_connected, bool ble_beacon_switch_on,
                                   int beacon_mode, bool usb_powered,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,
                                   bool high_tput_needed, uint32_t now_ms) {
@@ -726,18 +772,11 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, bool wifi_connected, bool 
     }
   }
 
-  // 2. Wi-Fi Modem Sleep Policy (roaming / battery devices only)
-#if !LATTER_IS_STATIONARY
-  if (now_ms > 6000U) {
-    if (high_tput_needed) {
-      hal_set_wifi_power_save(0);
-    } else if (display_power_state == 2) {
-      hal_set_wifi_power_save(2);
-    } else {
-      hal_set_wifi_power_save(1);
-    }
-  }
+  // 2. Wi-Fi modem sleep (roaming / battery devices only; see apply_wifi_power_policy)
+#ifdef USE_WIFI
+  if (now_ms > 6000U) apply_wifi_power_policy(wifi, high_tput_needed, display_power_state);
 #else
+  (void)wifi;
   (void)display_power_state;
   (void)high_tput_needed;
 #endif
@@ -1329,6 +1368,7 @@ inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progre
                              uint32_t &sleep_start_time, int &display_power_state) {
   ota_in_progress = true;
   stall_guard_pause(true);
+  wifi_power_ota_begin();
   ota_progress_pct = 0;
   sleep_start_time = 0;
   screen_is_off_standby() = false;
@@ -1388,6 +1428,7 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
   }
   ota_in_progress = false;
   stall_guard_pause(false);
+  wifi_power_ota_end();
 }
 
 template<typename DispT>
