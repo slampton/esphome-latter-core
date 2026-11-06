@@ -81,7 +81,7 @@ Every hello reports how the device last started:
 | Key | Values |
 | :--- | :--- |
 | `sdk` | `LATTER_SDK_REV` of the running build |
-| `reset` | `power-on`, `external`, `software`, `deep-sleep`, `panic`, `int-wdt`, `task-wdt`, `wdt`, `brownout`, or `unknown` |
+| `reset` | `power-on`, `external`, `software`, `deep-sleep`, `usb`, `panic`, `int-wdt`, `task-wdt`, `wdt`, `brownout`, or `unknown` |
 | `crash` | `1` while ESPHome's crash handler holds a crash record. Its decoded backtrace is logged to every log client until the device restarts. |
 | `rollback` | `1` while the running firmware replaced an update that failed to boot. Stays `1` until a successful OTA. |
 

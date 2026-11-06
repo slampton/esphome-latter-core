@@ -156,6 +156,7 @@ inline const char *last_reset_reason() {
     case ESP_RST_WDT: return "wdt";
     case ESP_RST_DEEPSLEEP: return "deep-sleep";
     case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_USB: return "usb";  // USB Serial/JTAG reset (e.g. after a USB flash)
     default: break;
   }
 #endif
