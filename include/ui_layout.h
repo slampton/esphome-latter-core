@@ -140,12 +140,137 @@ inline uint32_t device_boot_id() {
   return s_boot_id;
 }
 
+// ------------------------------------------------------------------------------
+// Main-loop stall guard
+// ------------------------------------------------------------------------------
+// ESPHome's task watchdog fires only when the loop task stops feeding it. A loop stuck inside one
+// operation that keeps feeding it leaves the device on Wi-Fi but deaf to the API, the buttons and the
+// display until a hard power-off. The guard is a separate FreeRTOS task that reads ESPHome's own
+// per-operation start time twice a second. An operation that runs past kStallAbortMs (OTA, which
+// blocks the loop by design, is excluded) is recorded in RTC memory and the device aborts: it reboots,
+// reports reset "stall" in the manifest, and the boot summary names the operation. Blocks of
+// kStallReportMs or more are kept as the longest block since boot and re-logged to every API client:
+// such a block usually ends while the API is down, so ESPHome's "took a long time" line is lost.
+constexpr uint32_t kStallAbortMs = 30000U;
+constexpr uint32_t kStallReportMs = 2000U;
+constexpr uint32_t kStallRecordMagic = 0x5354414CU;  // "STAL"
+
+struct StallRecord {
+  uint32_t magic;       // kStallRecordMagic when valid
+  uint32_t blocked_ms;  // how long the operation had run
+  uint32_t uptime_s;    // when it started
+  char source[40];      // ESPHome execution source / component
+};
+
+#ifdef USE_ESP32
+// Survives the abort's software reset (not a power-on); validated by magic + reset reason.
+static RTC_NOINIT_ATTR StallRecord s_stall_rtc_record;
+#endif
+
+struct StallGuardState {
+  std::atomic<bool> paused{false};
+  bool started{false};
+  StallRecord previous_boot{};  // the abort that ended the previous boot (magic 0 = none)
+  StallRecord longest{};        // longest block this boot (magic 0 = none)
+#ifdef USE_ESP32
+  portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+  StallGuardState() {
+#ifdef USE_ESP32
+    if (esp_reset_reason() == ESP_RST_PANIC && s_stall_rtc_record.magic == kStallRecordMagic) {
+      previous_boot = s_stall_rtc_record;
+      previous_boot.source[sizeof(previous_boot.source) - 1] = '\0';
+    }
+    s_stall_rtc_record.magic = 0;
+#endif
+  }
+};
+
+inline StallGuardState &stall_guard() {
+  static StallGuardState s;
+  return s;
+}
+
+inline bool previous_boot_stalled() { return stall_guard().previous_boot.magic == kStallRecordMagic; }
+
+// OTA blocks the loop for the whole transfer by design: handle_ota_begin pauses the guard and
+// handle_ota_end / handle_ota_error resume it.
+inline void stall_guard_pause(bool paused) { stall_guard().paused.store(paused, std::memory_order_relaxed); }
+
+inline void stall_current_source(char *dst, size_t n) {
+  const esphome::LogString *src = esphome::App.get_current_source();
+  esphome::Component *comp = esphome::App.get_current_component();
+  const char *src_s = (src != nullptr) ? LOG_STR_ARG(src) : nullptr;
+  const char *comp_s = (comp != nullptr) ? LOG_STR_ARG(comp->get_component_log_str()) : nullptr;
+  if (src_s != nullptr && comp_s != nullptr && std::strcmp(src_s, comp_s) != 0) {
+    std::snprintf(dst, n, "%s/%s", comp_s, src_s);
+  } else {
+    std::snprintf(dst, n, "%s", src_s != nullptr ? src_s : (comp_s != nullptr ? comp_s : "unknown"));
+  }
+}
+
+#ifdef USE_ESP32
+inline void stall_guard_task(void *) {
+  auto &g = stall_guard();
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(500));
+    if (g.paused.load(std::memory_order_relaxed)) continue;
+    const uint32_t start = esphome::App.get_loop_component_start_time();
+    const uint32_t blocked = esphome::millis() - start;
+    if (static_cast<int32_t>(blocked) < 0 || blocked < kStallReportMs) continue;
+    StallRecord rec{};
+    rec.magic = kStallRecordMagic;
+    rec.blocked_ms = blocked;
+    rec.uptime_s = start / 1000U;
+    stall_current_source(rec.source, sizeof(rec.source));
+    portENTER_CRITICAL(&g.mux);
+    if (blocked > g.longest.blocked_ms) g.longest = rec;
+    portEXIT_CRITICAL(&g.mux);
+    if (blocked >= kStallAbortMs) {
+      // No logging here: the stalled operation may hold the logger. The record is the report.
+      s_stall_rtc_record = rec;
+      esp_system_abort("Latter stall guard: main loop blocked");
+    }
+  }
+}
+#endif
+
+// Started once from on_boot. Priority sits above the loop task and below Wi-Fi / lwIP.
+inline void start_stall_guard() {
+#ifdef USE_ESP32
+  auto &g = stall_guard();
+  if (g.started) return;
+  g.started = xTaskCreate(stall_guard_task, "latter_stall", 2560, nullptr, 15, nullptr) == pdPASS;
+  if (!g.started) ESP_LOGW("latter", "Stall guard task could not start");
+#endif
+}
+
+inline void log_stall_summary() {
+  auto &g = stall_guard();
+  if (g.previous_boot.magic == kStallRecordMagic) {
+    ESP_LOGW("PROF", "[PROF:STALL] previous boot aborted: main loop blocked %lums in %s (started at uptime %lus)",
+             (unsigned long)g.previous_boot.blocked_ms, g.previous_boot.source,
+             (unsigned long)g.previous_boot.uptime_s);
+  }
+  StallRecord longest{};
+#ifdef USE_ESP32
+  portENTER_CRITICAL(&g.mux);
+  longest = g.longest;
+  portEXIT_CRITICAL(&g.mux);
+#endif
+  if (longest.magic == kStallRecordMagic) {
+    ESP_LOGW("PROF", "[PROF:STALL] longest main loop block this boot: %lums in %s (started at uptime %lus)",
+             (unsigned long)longest.blocked_ms, longest.source, (unsigned long)longest.uptime_s);
+  }
+}
+
 // Why the device last restarted, whether ESPHome's crash handler holds a record of that crash (its
 // decoded backtrace is logged to every log client until the next restart), and whether the running
 // firmware is a rollback after an update that failed to boot. Reported in the device_hello manifest
 // so Home Assistant can raise a repair instead of the crash going unnoticed.
 inline const char *last_reset_reason() {
 #ifdef USE_ESP32
+  if (previous_boot_stalled()) return "stall";  // stall guard abort (an ESP_RST_PANIC)
   switch (esp_reset_reason()) {
     case ESP_RST_POWERON: return "power-on";
     case ESP_RST_EXT: return "external";
@@ -1203,6 +1328,7 @@ template<typename DispT>
 inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progress_pct,
                              uint32_t &sleep_start_time, int &display_power_state) {
   ota_in_progress = true;
+  stall_guard_pause(true);
   ota_progress_pct = 0;
   sleep_start_time = 0;
   screen_is_off_standby() = false;
@@ -1261,6 +1387,7 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
     hal_set_display_brightness(disp, 0);
   }
   ota_in_progress = false;
+  stall_guard_pause(false);
 }
 
 template<typename DispT>

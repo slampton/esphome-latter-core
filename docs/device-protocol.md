@@ -81,15 +81,17 @@ Every hello reports how the device last started:
 | Key | Values |
 | :--- | :--- |
 | `sdk` | `LATTER_SDK_REV` of the running build |
-| `reset` | `power-on`, `external`, `software`, `deep-sleep`, `usb`, `panic`, `int-wdt`, `task-wdt`, `wdt`, `brownout`, or `unknown` |
+| `reset` | `power-on`, `external`, `software`, `deep-sleep`, `usb`, `panic`, `int-wdt`, `task-wdt`, `wdt`, `stall`, `brownout`, or `unknown` |
 | `crash` | `1` while ESPHome's crash handler holds a crash record. Its decoded backtrace is logged to every log client until the device restarts. |
 | `rollback` | `1` while the running firmware replaced an update that failed to boot. Stays `1` until a successful OTA. |
+
+`stall` means the main-loop stall guard restarted the device: one ESPHome operation ran for 30 s or longer outside an OTA (the task watchdog misses a loop that keeps feeding it). The boot summary logged to every API client names the operation (`[PROF:STALL] previous boot aborted: main loop blocked <ms> in <component/source>`), and it also logs the longest block of 2 s or more seen during the current boot.
 
 Latter evaluates these once per boot (per `boot_id`, also across Home Assistant restarts) and raises a Home Assistant repair per Device:
 
 | Condition | Repair | Cleared when |
 | :--- | :--- | :--- |
-| `reset` is `panic`, `int-wdt`, `task-wdt` or `wdt` | **Device restarted after a crash (reason)** (warning). Open the device's logs in ESPHome Device Builder before it restarts again; the decoded backtrace is shown there, and decoding needs the build the device is running. Shows the SDK rev and the boot time. | A later boot reports a clean reset (`power-on`, `external`, `software`, `deep-sleep`) |
+| `reset` is `panic`, `int-wdt`, `task-wdt`, `wdt` or `stall` | **Device restarted after a crash (reason)** (warning). Open the device's logs in ESPHome Device Builder before it restarts again; the decoded backtrace is shown there, and decoding needs the build the device is running. Shows the SDK rev and the boot time. | A later boot reports a clean reset (`power-on`, `external`, `software`, `deep-sleep`) |
 | `reset` is `brownout` | **Device restarted after a brownout** (warning): the supply voltage or battery sagged | Same as above |
 | `rollback` is `1` | **Firmware update failed on Device** (error): the update didn't boot and the device went back to the previous firmware | A hello reports `rollback: 0` |
 

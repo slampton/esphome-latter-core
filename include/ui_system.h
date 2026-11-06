@@ -322,6 +322,7 @@ inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
 // why the device last went down and came back (boot-time logs are emitted before any client exists).
 // AXP2101 REG20 / REG21 bit names follow XPowersLib (xpower_power_on/off_source_t).
 inline void log_boot_summary() {
+  log_stall_summary();
   uint32_t up_s = esphome::millis() / 1000U;
   const char *rr = last_reset_reason();
   const int crash = crash_record_present() ? 1 : 0;

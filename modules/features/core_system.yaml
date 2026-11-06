@@ -18,12 +18,13 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110260L;
+            constexpr long LATTER_YAML_REV = 2026110261L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
                           "(docs/flashing.md) and rebuild.");
             ESP_LOGI("latter", "Latter SDK rev %ld (YAML rev %ld)", (long)LATTER_SDK_REV, LATTER_YAML_REV);
+            latter_ui::start_stall_guard();
         - script.execute: hal_init_pmu
         - lambda: |-
             latter_ui::seed_standalone_remote_slots(
