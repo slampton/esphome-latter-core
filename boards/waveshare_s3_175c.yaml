@@ -27,7 +27,7 @@ substitutions:
   default_start_app: "Home"
   default_clock_face: "Modern Roman (Analog)"
   default_art_mode: "Full Screen"
-  default_screensaver_style: "Aurora Borealis"
+  default_screensaver_style: "Ambient Clock"
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"

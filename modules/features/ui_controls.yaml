@@ -680,7 +680,9 @@ switch:
     icon: "mdi:bluetooth-audio"
     entity_category: config
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    # Off out of the box: a new device doesn't advertise until presence is set up. Latter turns it on
+    # for Devices with BLE presence tracking enabled (onboarding, options, every device_hello).
+    restore_mode: RESTORE_DEFAULT_OFF
     turn_on_action:
       - lambda: |-
           id(ble_area_beacon_switch).publish_state(true);
