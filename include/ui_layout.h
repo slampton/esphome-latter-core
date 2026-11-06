@@ -16,7 +16,9 @@
 #include <esp_wifi.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
+#include <esp_attr.h>
 #endif
+#include <atomic>
 #ifdef USE_ESP32_CRASH_HANDLER
 #include "esphome/components/esp32/crash_handler.h"
 #endif
@@ -169,6 +171,9 @@ static RTC_NOINIT_ATTR StallRecord s_stall_rtc_record;
 
 struct StallGuardState {
   std::atomic<bool> paused{false};
+  // millis() when the guard last resumed: the operation that was running then (an OTA that failed or
+  // is rebooting) is measured from this point, not from its own start.
+  std::atomic<uint32_t> resumed_ms{0};
   bool started{false};
   StallRecord previous_boot{};  // the abort that ended the previous boot (magic 0 = none)
   StallRecord longest{};        // longest block this boot (magic 0 = none)
@@ -194,8 +199,13 @@ inline StallGuardState &stall_guard() {
 inline bool previous_boot_stalled() { return stall_guard().previous_boot.magic == kStallRecordMagic; }
 
 // OTA blocks the loop for the whole transfer by design: handle_ota_begin pauses the guard and
-// handle_ota_end / handle_ota_error resume it.
-inline void stall_guard_pause(bool paused) { stall_guard().paused.store(paused, std::memory_order_relaxed); }
+// handle_ota_end / handle_ota_error resume it. Those callbacks run inside the OTA component's own
+// (still blocking) operation, so a resume restarts the clock rather than counting the transfer.
+inline void stall_guard_pause(bool paused) {
+  auto &g = stall_guard();
+  if (!paused) g.resumed_ms.store(esphome::millis() | 1U, std::memory_order_relaxed);
+  g.paused.store(paused, std::memory_order_relaxed);
+}
 
 inline void stall_current_source(char *dst, size_t n) {
   const esphome::LogString *src = esphome::App.get_current_source();
@@ -215,7 +225,9 @@ inline void stall_guard_task(void *) {
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(500));
     if (g.paused.load(std::memory_order_relaxed)) continue;
-    const uint32_t start = esphome::App.get_loop_component_start_time();
+    uint32_t start = esphome::App.get_loop_component_start_time();
+    const uint32_t resumed = g.resumed_ms.load(std::memory_order_relaxed);
+    if (resumed != 0 && static_cast<int32_t>(resumed - start) > 0) start = resumed;
     const uint32_t blocked = esphome::millis() - start;
     if (static_cast<int32_t>(blocked) < 0 || blocked < kStallReportMs) continue;
     StallRecord rec{};

@@ -12,6 +12,7 @@
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 #include <esp_timer.h>
+#include <esp_wifi.h>
 #if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
 #define LATTER_FB_DMA_CLEAR 1
 #include <esp_async_memcpy.h>
@@ -48,7 +49,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110263L
+#define LATTER_SDK_REV 2026110264L
 
 namespace latter_ui {
 
@@ -3350,6 +3351,14 @@ inline CriticalBatteryGuard &critical_battery_guard() {
   static CriticalBatteryGuard g;
   return g;
 }
+// Modem power-save mode the Wi-Fi driver is actually in: 0 none, 1 min modem, 2 max modem, -1 unknown.
+inline int wifi_ps_mode_now() {
+#ifdef USE_ESP32
+  wifi_ps_type_t t;
+  if (esp_wifi_get_ps(&t) == ESP_OK) return static_cast<int>(t);
+#endif
+  return -1;
+}
 inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
                                       float batt_pct, float batt_v, bool spk_pa, bool mww_run,
                                       bool va_act, bool mp_play, bool ble_act, int game_id,
@@ -3360,12 +3369,13 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
                              ? ((now_m - sleep_start_ms) / 1000U)
                              : 0U;
   ESP_LOGI("PROF",
-           "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) gauge=%d%% spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu",
+           "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) gauge=%d%% spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu wifi_ps=%d",
            trigger, pwr_state, (int)usb, (int)chg,
            std::isnan(batt_pct) ? -1.0f : batt_pct,
            std::isnan(batt_v) ? 0.0f : batt_v, pmu_telemetry().gauge_raw,
            (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
-           (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events);
+           (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events,
+           wifi_ps_mode_now());
 #ifdef USE_ESP32
   size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U;
   size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;
