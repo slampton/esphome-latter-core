@@ -128,6 +128,18 @@ api:
       then:
         - logger.log: "Latter companion connected"
 
+    # Reset to defaults (Latter Studio / latter.reset_device). Same panel hand-off as Restart Device:
+    # AMOLED panels left awake across a reboot don't come back from their next DCS sleep.
+    - action: latter_factory_reset
+      then:
+        - logger.log:
+            level: WARN
+            format: "Reset to defaults requested by Latter: erasing saved settings and rebooting"
+        - light.turn_off: display_brightness
+        - component.update: disp1
+        - delay: 100ms
+        - button.press: internal_factory_reset
+
     - action: ui_input
       variables:
         action: string

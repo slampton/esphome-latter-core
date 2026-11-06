@@ -505,6 +505,15 @@ button:
     id: internal_restart
     internal: true
 
+  # Reset to defaults: erases the whole NVS partition (every saved setting, plus the Wi-Fi driver's
+  # cached network data and RF calibration) and reboots. Wi-Fi credentials and the API key are
+  # compiled in, so the device rejoins Home Assistant unchanged. Internal: Latter triggers it through
+  # the latter_factory_reset action (Studio "Reset to defaults" / latter.reset_device).
+  - platform: factory_reset
+    name: "Internal Factory Reset"
+    id: internal_factory_reset
+    internal: true
+
   - platform: template
     name: "System: Log Memory Report"
     id: log_memory_report_button

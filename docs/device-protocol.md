@@ -146,6 +146,10 @@ The parser is `latter_ui::parse_v3_slots_payload()` in [`ui_core.h`](../include/
 | `camera_url` | string | A signed baseline-JPEG snapshot URL, or `none` |
 | `alert_id` | int | Monotonically incrementing notification ID for deduplication |
 
+#### `latter_factory_reset`
+
+No variables. Latter calls it from Studio's **Reset to defaults** and the `latter.reset_device` service when the device settings box is checked. The reference firmware turns the panel off (same hand-off as **Restart Device**), erases the whole NVS partition and reboots. That clears every saved setting plus the Wi-Fi driver's cached network data and RF calibration. Wi-Fi credentials and the API encryption key are compiled into the firmware, so the device rejoins Home Assistant with the same identity and its Latter binding is kept. Settings come back at their defaults, including the board's default power profile.
+
 Latter also publishes every notification on `sensor.<slug>_area_context` inside its Protocol v3 `payload` attribute (`alert_id`, `alert_title`, `alert_message`, `alert_priority`, `alert_duration`, `alert_chime`, `alert_camera_url`). A device can use either path. The reference firmware watches both and deduplicates by `alert_id`.
 
 ### 3b. Optional actions in the reference firmware

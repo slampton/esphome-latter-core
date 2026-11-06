@@ -72,3 +72,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
 | **Status** | Battery Level, Battery Voltage, Battery Charging and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
 | **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history |
+
+### Reset to defaults
+
+To put every setting above back to its default, open the device in Latter Studio and choose **Reset to defaults**, or call the `latter.reset_device` service. The device erases its saved settings, including the Wi-Fi driver's cached network data and RF calibration, then restarts. Wi-Fi and pairing are compiled into the firmware, so it rejoins Home Assistant on its own and stays bound to Latter. A second checkbox also resets Latter's options for that device.
