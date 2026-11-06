@@ -75,6 +75,7 @@ The first build downloads the toolchain and takes several minutes. Later builds 
 
 - **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity. Each device also checks for updates in the background every 6 hours while it's on USB power and idle.
 - **Device Builder devices:** with `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
+- **Placement:** wireless updates need a good link. Keep docked devices at least 30 cm apart (neighbouring devices detune each other's antennas) and check the **Wi-Fi Signal** sensor: below about -70 dBm an update can slow to several minutes or stall. Update one device at a time.
 
 ## Recovery
 
