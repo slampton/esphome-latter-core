@@ -887,18 +887,19 @@ script:
 
   # Flight recorder for a reply that never reaches the speaker: the player is ANNOUNCING but the
   # announcement input never started (seen on Pocket, cured by a reboot; cause unknown). Logs at
-  # WARNING so it survives any log level.
+  # WARNING so it survives any log level. 6 s, past the gap between an announcement's chime and its
+  # message while Home Assistant renders the speech (~2.5 s); the stalled replies gave up after ~10 s.
   - id: announce_stall_check
     mode: restart
     then:
-      - delay: 2500ms
+      - delay: 6s
       - lambda: |-
           if (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) return;
           if (id(announcement_mixing_input).has_buffered_data()) return;
           auto st = [](speaker::Speaker *s) -> const char * {
             return s->is_running() ? "run" : (s->is_stopped() ? "stop" : "trans");
           };
-          ESP_LOGW("PROF", "[PROF:AUDIO_STALL] announcing 2.5s, no buffered audio: ann=%s snd=%s media=%s "
+          ESP_LOGW("PROF", "[PROF:AUDIO_STALL] announcing 6s, no buffered audio: ann=%s snd=%s media=%s "
                    "spk=%s spk_buf=%d vol=%.2f va=%d mic_mute=%d",
                    st(id(announcement_mixing_input)), st(id(sound_mixing_input)), st(id(media_mixing_input)),
                    st(id(physical_speaker)), (int) id(physical_speaker).has_buffered_data(),
