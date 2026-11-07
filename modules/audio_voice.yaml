@@ -790,6 +790,9 @@ script:
           if (was_va_session) {
             id(gui_page) = id(return_page);
           }
+          // Album art held back while the voice turn was on screen (e.g. "play ..." on a remote player):
+          // fetch it now that the overlay is gone. The script re-checks every condition itself.
+          if (id(gui_page) == 2) id(fetch_remote_art_debounced).execute();
           latter_ui::radio_boost_until_ms() = 0;
           id(apply_power_policy).execute();
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
