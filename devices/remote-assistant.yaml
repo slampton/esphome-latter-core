@@ -9,6 +9,9 @@
 # ==============================================================================
 
 substitutions:
+  # Branch of latter_core / latter_beacon. A test device that builds the package from dev sets
+  # latter_ref: dev in its own substitutions, so YAML and C++ headers come from one revision.
+  latter_ref: main
   name: "remote-assistant"
   device_slug: "remote_assistant"
   friendly_name: "Remote Assistant"
@@ -28,7 +31,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/slampton/esphome-latter-core
-      ref: main
+      ref: ${latter_ref}
     components: [latter_core, latter_beacon]
     refresh: 0s
 

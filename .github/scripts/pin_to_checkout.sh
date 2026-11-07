@@ -2,7 +2,8 @@
 # Point every remote reference to this repository at the checkout being tested, so CI validates and
 # builds exactly this commit (a new component or header is not on main until this commit is promoted):
 #   - sounds and the wake word model: read from the checkout (no download of our own files);
-#   - external components (latter_core, latter_beacon): fetched at this exact commit.
+#   - external components (latter_core, latter_beacon): fetched at this exact commit (the devices'
+#     `latter_ref: main` substitution matches the `ref: main` rewrite too).
 # The dashboard_import package_import_url keeps @main (it is metadata, not part of the build).
 #
 # Usage: .github/scripts/pin_to_checkout.sh <commit sha>
