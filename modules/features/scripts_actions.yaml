@@ -136,10 +136,7 @@ script:
             const int f_idx = std::max(0, latter_ui::ui_focus_index());
             if (id(gui_page) == 1) {
               int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-              int dock_count = latter_ui::collect_home_dock_apps(
-                  id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
-                  id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
-                  dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
+              int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
               if (dock_count > 0) {
                 int start_idx = latter_ui::get_home_dock_start_index(dock_count, latter_ui::home_dock_page());
                 int vis_count = std::min(4, dock_count - start_idx);
@@ -1028,7 +1025,6 @@ script:
             domain_filter: !lambda 'return id(area_domain_filter).c_str();'
             page: !lambda 'return to_string(id(area_browse_page));'
             page_size: "3"
-            handoff_media: !lambda 'return id(area_handoff_media_switch).state ? "true" : "false";'
 
   - id: fetch_area_list_browse
     mode: restart
@@ -1041,7 +1037,6 @@ script:
             area_id: !lambda 'return id(active_area_id).c_str();'
             page: !lambda 'return to_string(id(area_list_page));'
             page_size: "5"
-            handoff_media: "false"
 
   - id: select_active_area_latter
     mode: restart
@@ -1051,8 +1046,18 @@ script:
           data:
             target_device: "${name}"
             area_id: !lambda 'return id(active_area_id).c_str();'
-            handoff_media: !lambda 'return id(area_handoff_media_switch).state ? "true" : "false";'
       - script.execute: fetch_area_browse
+
+  # Home settings on the device: save the dock apps as the Device's Latter setting (Latter pushes it back
+  # in area_context.dock_apps, the one source for the dock).
+  - id: request_dock_apps
+    mode: restart
+    then:
+      - homeassistant.action:
+          action: latter.set_dock_apps
+          data:
+            target_device: "${name}"
+            dock_apps: !lambda 'return latter_ui::latter_dock_order_csv();'
 
   - id: execute_alarm_action
     mode: restart

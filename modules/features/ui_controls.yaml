@@ -532,8 +532,6 @@ button:
       - delay: 100ms
       - button.press: internal_restart
 
-
-
   - platform: template
     name: "Actions: Trigger Voice Assistant"
     id: trigger_va_button
@@ -565,7 +563,6 @@ button:
             latter_ui::schedule_disp_update(&id(disp1));
             id(screen_sleep_timer).execute();
           }
-
 
 switch:
   # --------------------------------------------------------------------------
@@ -600,28 +597,6 @@ switch:
     on_turn_off:
       then:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Home: Shortcut Area"
-    id: home_dock_area_switch
-    icon: "mdi:home-lightning-bolt-outline"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Area: Media Handoff"
-    id: area_handoff_media_switch
-    icon: "mdi:cast-audio"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
     name: "Area: Show All Category"
@@ -694,80 +669,6 @@ switch:
           id(apply_power_policy).execute();
           if (id(display_power_state) == 0) latter_ui::schedule_disp_update(&id(disp1));
 
-
-
-  - platform: template
-    name: "Home: Shortcut Music"
-    id: home_dock_music_switch
-    icon: "mdi:music"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Home: Shortcut Remote"
-    id: home_dock_remote_switch
-    icon: "mdi:remote-tv"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Home: Shortcut Tools"
-    id: home_dock_tools_switch
-    icon: "mdi:toolbox-outline"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Home: Shortcut Games"
-    id: home_dock_games_switch
-    icon: "mdi:gamepad-variant-outline"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  - platform: template
-    name: "Home: Shortcut Alarm"
-    id: home_dock_alarm_switch
-    icon: "mdi:shield-home"
-    entity_category: config
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    on_turn_on:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-    on_turn_off:
-      then:
-        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
-
-  
-
   - platform: template
     name: "Sound: Game Sound Effects"
     id: game_sound_switch
@@ -822,7 +723,6 @@ switch:
         - lambda: |-
             if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));
 
-
 number:
   
   - platform: template
@@ -854,6 +754,4 @@ number:
     on_value:
       then:
         - script.execute: sync_display_brightness
-
-
 

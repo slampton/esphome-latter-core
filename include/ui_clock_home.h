@@ -740,62 +740,90 @@ inline const char *resolve_wake_greeting(int hour, int minute, int day_of_year,
   return "Sleep well";
 }
 
+// Home dock: the Device's Latter `dock_apps` CSV (Protocol v3 area_context.dock_apps) is the order and the only
+// apps shown; Settings (4) is always last. Until Latter sends it, the dock shows the shared default
+// (protocol/latter_v3.json defaults.dock_apps -> kDefaultDockApps). On-device Home settings edit it through
+// latter.set_dock_apps, so Latter stays the one source.
+// Tokens: music (2), alarm (9, Whole-Home Hub), area (6), remote (7, only with a configured remote),
+// camera (12), games (3), tools (8).
 inline std::string &latter_dock_order_csv() {
   static std::string csv = "";
   return csv;
 }
 
-// Canonical Dock Order (customizable via Latter `dock_apps` CSV attribute):
-// Defaults to Music (2), Area Control (6), Remote (7), Games (3), Tools (8), Security Alarm (9), Settings (4)
-inline int collect_home_dock_apps(bool show_music, bool show_remote, bool show_tools, bool show_games,
-                                  int out_apps[8], bool show_area = true, bool show_alarm = true) {
+inline int dock_app_id_for_token(const std::string &tok) {
+  if (tok == "music") return 2;
+  if (tok == "alarm") return 9;
+  if (tok == "area") return 6;
+  if (tok == "remote") return 7;
+  if (tok == "camera") return 12;
+  if (tok == "games") return 3;
+  if (tok == "tools") return 8;
+  return -1;
+}
+
+inline const std::string &effective_dock_csv() {
+  static const std::string kDefault(kDefaultDockApps);
+  const std::string &csv = latter_dock_order_csv();
+  return (csv.empty() || csv == "unknown" || csv == "unavailable") ? kDefault : csv;
+}
+
+// Calls fn(token) for each comma-separated, trimmed, lower-cased token of csv.
+template <typename F> inline void for_each_dock_token(const std::string &csv, F fn) {
+  size_t pos = 0;
+  while (pos <= csv.size()) {
+    size_t comma = csv.find(',', pos);
+    std::string tok = csv.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+    size_t a = tok.find_first_not_of(' ');
+    size_t b = tok.find_last_not_of(' ');
+    tok = (a == std::string::npos) ? std::string() : tok.substr(a, b - a + 1);
+    for (char &c : tok) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    if (!tok.empty()) fn(tok);
+    if (comma == std::string::npos) break;
+    pos = comma + 1;
+  }
+}
+
+inline bool dock_app_listed(const char *token) {
+  bool found = false;
+  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) { if (t == token) found = true; });
+  return found;
+}
+
+// Home settings: the dock CSV with `token` shown or hidden. Returns "" when nothing may change (the dock keeps
+// at least one app besides Settings).
+inline std::string toggled_dock_csv(const char *token) {
+  std::string out;
+  bool had = false;
+  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) {
+    if (t == token) {
+      had = true;
+    } else if (dock_app_id_for_token(t) >= 0) {
+      if (!out.empty()) out += ',';
+      out += t;
+    }
+  });
+  if (!had) {
+    if (!out.empty()) out += ',';
+    out += token;
+  }
+  return out;
+}
+
+// Home settings rows (top to bottom): the dock apps the device itself can show or hide.
+static constexpr const char *kHomeSettingsDockTokens[5] = {"music", "area", "remote", "games", "tools"};
+
+inline int collect_home_dock_apps(int out_apps[8]) {
   int n = 0;
   bool added[16] = {false};
   auto try_add = [&](int app_id) {
     if (n >= 8 || app_id < 0 || app_id > 14 || added[app_id]) return;
-    bool en = (app_id == 2 && show_music) ||
-              (app_id == 6 && show_area) ||
-              (app_id == 7 && show_remote && has_any_configured_remote()) ||
-              (app_id == 3 && show_games) ||
-              (app_id == 8 && show_tools) ||
-              (app_id == 9 && show_alarm) ||
-              (app_id == 12) ||
-              (app_id == 4); // Settings is always available in the App Dock
-    if (en) {
-      added[app_id] = true;
-      out_apps[n++] = app_id;
-    }
+    if (app_id == 7 && !has_any_configured_remote()) return;
+    added[app_id] = true;
+    out_apps[n++] = app_id;
   };
-
-  const std::string &csv = latter_dock_order_csv();
-  if (!csv.empty() && csv != "unknown" && csv != "unavailable") {
-    size_t pos = 0;
-    while (pos < csv.size()) {
-      size_t comma = csv.find_first_of(",;| ", pos);
-      std::string tok = (comma == std::string::npos) ? csv.substr(pos) : csv.substr(pos, comma - pos);
-      pos = (comma == std::string::npos) ? csv.size() : (comma + 1);
-      if (tok.empty()) continue;
-      for (char &c : tok) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
-      if (tok.find("music") != std::string::npos || tok == "2") try_add(2);
-      else if (tok.find("alarm") != std::string::npos || tok.find("home") != std::string::npos || tok.find("sec") != std::string::npos || tok == "9") try_add(9);
-      else if (tok.find("area") != std::string::npos || tok == "6") try_add(6);
-      else if (tok.find("remote") != std::string::npos || tok.find("tv") != std::string::npos || tok == "7") try_add(7);
-      else if (tok.find("game") != std::string::npos || tok == "3") try_add(3);
-      else if (tok.find("cam") != std::string::npos || tok == "12") try_add(12);
-      else if (tok.find("tool") != std::string::npos || tok == "8") try_add(8);
-      else if (tok.find("setting") != std::string::npos || tok.find("sys") != std::string::npos || tok == "4") try_add(4);
-    }
-  }
-
-  // Canonical Default Home Dock Order:
-  // 1. Music (2), 2. Home (9), 3. Area (6), 4. Remote (7), 5. Games (3), 6. Tools (8), 7. Settings (4)
-  try_add(2); // 1. Music
-  try_add(9); // 2. Home (Whole-Home Hub)
-  try_add(6); // 3. Area Control
-  try_add(7); // 4. Remote Control
-  try_add(3); // 5. Games
-  try_add(8); // 6. Tools
-  try_add(4); // 7. Settings
+  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) { try_add(dock_app_id_for_token(t)); });
+  try_add(4);  // Settings is always in the dock, last.
   return n;
 }
 
@@ -806,7 +834,6 @@ inline void render_home_page(
     const TimeT &now, bool is_24h_format,
     float batt, bool is_charging,
     bool show_weather_bg,
-    bool dock_music, bool dock_remote, bool dock_tools, bool dock_games,
     const StrT &weather_sim_opt, float weather_temp,
     const std::string &weather_cond_raw, const std::string &sun_state,
     const std::string &moon_phase_raw, float accel_x, float accel_y,
@@ -821,12 +848,11 @@ inline void render_home_page(
     esphome::Color col_bg, esphome::Color col_black, esphome::Color col_white,
     esphome::Color col_slate, esphome::Color col_dark_gray,
     esphome::Color col_gold, esphome::Color col_green,
-    bool show_wake_greeting = true, bool dock_area = true,
+    bool show_wake_greeting = true,
     WallImgT *wallpaper_art = nullptr,
     const std::string &wallpaper_url = "",
     const std::string &loaded_wallpaper_url = "",
     const std::string &calendar_agenda_raw = "",
-    bool dock_alarm = true,
     const std::string &home_alarm_state = "",
     FontMicroT *font_micro = nullptr) {
   using esphome::Color;
@@ -854,21 +880,14 @@ inline void render_home_page(
       render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12, bg_c, brd_c, label, txt_c, font_small);
     };
 
+    // The five rows match kHomeSettingsDockTokens (touch_handlers.yaml toggles the same tokens).
+    static const char *const kLabels[5] = {"Music", "Area", "Remote", "Games", "Tools"};
     char buf[48];
-    snprintf(buf, sizeof(buf), "Music Icon: %s", dock_music ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(0), buf, dock_music);
-
-    snprintf(buf, sizeof(buf), "Area Icon: %s", dock_area ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(1), buf, dock_area);
-
-    snprintf(buf, sizeof(buf), "Remote Icon: %s", dock_remote ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(2), buf, dock_remote);
-
-    snprintf(buf, sizeof(buf), "Games Icon: %s", dock_games ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(3), buf, dock_games);
-
-    snprintf(buf, sizeof(buf), "Tools Icon: %s", dock_tools ? "Shown" : "Hidden");
-    draw_setting_card(layout().slot5_y(4), buf, dock_tools);
+    for (int i = 0; i < 5; i++) {
+      bool shown = dock_app_listed(kHomeSettingsDockTokens[i]);
+      snprintf(buf, sizeof(buf), "%s Icon: %s", kLabels[i], shown ? "Shown" : "Hidden");
+      draw_setting_card(layout().slot5_y(i), buf, shown);
+    }
 
     render_back_button(it, cx, font_small, layout().back_y, "< Back");
     return;
@@ -1158,7 +1177,7 @@ inline void render_home_page(
 
   // ZONE 5 (y = 359): Fluid 4-Icon Sliding App Dock (r = 27 / 54px diameter, 30px outer bezel buffer)
   int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  int dock_count = collect_home_dock_apps(dock_music, dock_remote, dock_tools, dock_games, dock_apps, dock_area, dock_alarm);
+  int dock_count = collect_home_dock_apps(dock_apps);
   if (dock_count > 0) {
     int total_dock_pages = (dock_count + 3) / 4;
     if (home_dock_page() < 0 || home_dock_page() >= total_dock_pages) {

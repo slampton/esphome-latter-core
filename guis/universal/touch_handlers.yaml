@@ -219,11 +219,12 @@ script:
                 int slot_idx = latter_ui::get_5slot_index(touch, 90, 376);
                 if (slot_idx >= 0 && slot_idx <= 4 && (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   last_home_tap = now_hm;
-                  if (slot_idx == 0) id(home_dock_music_switch).toggle();
-                  else if (slot_idx == 1) id(home_dock_area_switch).toggle();
-                  else if (slot_idx == 2) id(home_dock_remote_switch).toggle();
-                  else if (slot_idx == 3) id(home_dock_games_switch).toggle();
-                  else if (slot_idx == 4) id(home_dock_tools_switch).toggle();
+                  // Show or hide the row's app now, and save it as the Device's Latter dock setting.
+                  std::string next_csv = latter_ui::toggled_dock_csv(latter_ui::kHomeSettingsDockTokens[slot_idx]);
+                  if (!next_csv.empty()) {
+                    latter_ui::latter_dock_order_csv() = next_csv;
+                    id(request_dock_apps).execute();
+                  }
                   latter_ui::home_dock_page() = 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                   return;
@@ -2199,10 +2200,7 @@ script:
               const int dock_swipe_min = (latter_ui::SCREEN_W < 380) ? 14 : 22;
               if (std::abs(dx) >= dock_swipe_min && std::abs(dx) >= std::abs(dy)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-                int dock_count = latter_ui::collect_home_dock_apps(
-                    id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
-                    id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
-                    dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
+                int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
                 int total_pages = (dock_count + 3) / 4;
                 if (total_pages > 1) {
                   gest.swipe_committed = true;
@@ -2589,10 +2587,7 @@ script:
                 latter_ui::schedule_disp_update(&id(disp1));
               } else if (!gest.swipe_committed && id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::scale_y(320)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-                int dock_count = latter_ui::collect_home_dock_apps(
-                    id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
-                    id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
-                    dock_apps, id(home_dock_area_switch).state, id(home_dock_alarm_switch).state);
+                int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
                 int total_pages = (dock_count + 3) / 4;
 
                 const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 18 : 20;

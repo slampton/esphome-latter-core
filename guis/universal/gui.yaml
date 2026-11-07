@@ -302,8 +302,6 @@ display:
             it, cx, cy, now_h_ms, id(home_subpage), id(home_activity_idx),
             now, id(is_24h_format), batt, id(batt_charging).state,
             eff_show_w_bg,
-            id(home_dock_music_switch).state, id(home_dock_remote_switch).state,
-            id(home_dock_tools_switch).state, id(home_dock_games_switch).state,
             std::string(id(weather_sim_condition).current_option()), eff_w_temp_h,
             eff_w_cond_h, id(ha_sun_state).state, id(ha_moon_phase).state,
             id(accel_x).state, id(accel_y).state,
@@ -317,10 +315,10 @@ display:
             id(theme_primary), id(theme_secondary),
             id(col_bg), id(col_black), id(col_white), id(col_slate),
             id(col_dark_gray), id(col_gold), id(col_green),
-            id(home_wake_greeting_switch).state, id(home_dock_area_switch).state,
+            id(home_wake_greeting_switch).state,
             id(home_wallpaper_art), ac_h.wallpaper_url,
             id(current_loaded_wallpaper_url), cs_h.summary,
-            id(home_dock_alarm_switch).state, id(area_alarm_state), id(font_micro));
+            id(area_alarm_state), id(font_micro));
 
       // ==========================================
       // PAGE 2: MUSIC PLAYER & LIBRARY BROWSER

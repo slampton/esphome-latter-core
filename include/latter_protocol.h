@@ -10,6 +10,8 @@ static constexpr int kProtocolContractVersion = 3;
 static constexpr char kProtocolFieldSep = '\x1f';
 static constexpr char kProtocolRecordSep = '\x1e';
 
+static constexpr const char *kDefaultDockApps = "music,alarm,area,remote,games,tools";  // defaults.dock_apps
+
 enum class ProtocolHeaderField : size_t {
   HEADER_VERSION = 0,  // version (string)
   HEADER_EPOCH = 1,  // epoch (u32)

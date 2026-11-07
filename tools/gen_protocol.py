@@ -29,8 +29,14 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
         "static constexpr char kProtocolFieldSep = '\\x1f';",
         "static constexpr char kProtocolRecordSep = '\\x1e';",
         "",
-        "enum class ProtocolHeaderField : size_t {",
     ]
+    # Shared defaults (one definition for both repos): kDefault<Name> string constants.
+    for key, value in (schema.get("defaults") or {}).items():
+        camel = "".join(part.capitalize() for part in key.split("_"))
+        lines.append(f'static constexpr const char *kDefault{camel} = "{value}";  // defaults.{key}')
+    if schema.get("defaults"):
+        lines.append("")
+    lines.append("enum class ProtocolHeaderField : size_t {")
     for hf in header_fields:
         lines.append(f"  {hf['cpp_enum']} = {hf['index']},  // {hf['name']} ({hf['type']})")
     lines.append(f"  COUNT = {len(header_fields)}")
@@ -101,6 +107,17 @@ def build_device_contract_md(schema: dict[str, Any]) -> str:
             f"| `{hf['index']}` | `{hf['name']}` | `{hf['cpp_enum']}` | `{hf['type']}` | {hf['description']} |"
         )
     lines.append("")
+    defaults = schema.get("defaults") or {}
+    if defaults:
+        lines.append("### Shared Defaults")
+        lines.append("")
+        lines.append("Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value is set.")
+        lines.append("")
+        lines.append("| Name | Value |")
+        lines.append("| :--- | :--- |")
+        for key, value in defaults.items():
+            lines.append(f"| `{key}` | `{value}` |")
+        lines.append("")
     lines.append("## 2. Domain Payloads")
     lines.append("")
 

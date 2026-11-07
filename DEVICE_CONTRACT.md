@@ -21,6 +21,14 @@
 | `1` | `epoch` | `HEADER_EPOCH` | `u32` | Coordinator session epoch (non-zero random u31; resets rev guards on change) |
 | `2` | `rev` | `HEADER_REV` | `u32` | Per-domain monotonic revision counter (>= 1; bumped only when domain body changes) |
 
+### Shared Defaults
+
+Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value is set.
+
+| Name | Value |
+| :--- | :--- |
+| `dock_apps` | `music,alarm,area,remote,games,tools` |
+
 ## 2. Domain Payloads
 
 ### `sensor.<device>_area_context` (`AreaCtxField`, `38` total fields)
@@ -33,7 +41,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `4` | `area_name` | `AreaCtxField::AREA_NAME` | `string` | Friendly display name of the active Area |
 | `5` | `site_id` | `AreaCtxField::SITE_ID` | `string` | Active Site ID |
 | `6` | `ble_closest_proxy` | `AreaCtxField::BLE_CLOSEST_PROXY` | `string` | Friendly name of closest Bluetooth proxy |
-| `7` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Comma-separated Home Dock app IDs |
+| `7` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Home dock apps in order, and the only ones shown (music, alarm, area, remote, camera, games, tools; Settings is always last). Empty until set: the device shows defaults.dock_apps |
 | `8` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper |
 | `9` | `theme_color_hex` | `AreaCtxField::THEME_COLOR_HEX` | `string` | Active theme accent color (#RRGGBB) |
 | `10` | `available_domains` | `AreaCtxField::AVAILABLE_DOMAINS` | `csv` | Comma-separated available Area domains |
@@ -144,12 +152,13 @@ Upcoming calendar agenda events and next-event headline.
 | `latter.set_active_speaker` | `target_device`, `entity_id`, `transfer_queue` | Select the active media_player target for a Latter device |
 | `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue` | Execute transport, seek, queue, or play_media command on the active speaker |
 | `latter.media_volume` | `target_device`, `entity_id`, `action`, `volume_level` | Adjust or set volume on the active speaker or volume override target |
-| `latter.area_browse` | `target_device`, `mode`, `area_id`, `domain_filter`, `page`, `page_size`, `handoff_media` | Browse Areas, Area domains, or paginated controllable entities |
+| `latter.area_browse` | `target_device`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Areas, Area domains, or paginated controllable entities |
 | `latter.area_action` | `target_device`, `entity_id`, `area_id`, `action`, `level`, `code` | Execute an explicit domain action on an Area or specific entity |
-| `latter.set_active_area` | `target_device`, `area_id`, `handoff_media` | Set the active Area context for a Latter device |
+| `latter.set_active_area` | `target_device`, `area_id` | Set the active Area context for a Latter device (an on-device Area pick). Whether media follows is the Device's Latter setting |
 | `latter.remote_action` | `target_device`, `slot`, `action`, `command` | Send a TV/AV remote command or select active remote slot |
 | `latter.calendar_fetch` | `target_device`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
 | `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `in_minutes`, `duration_minutes`, `description` | Create a new event on the primary configured calendar |
 | `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a voice announcement across all, occupied, follow_me, or targeted speakers |
 | `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction` | Doorbell talkback and requests. action: talk_message (push-to-talk speech transcribed on the device, spoken at the door by Home Assistant), quick_reply, listen_start|listen_stop (door audio played on the device), call_target (rings other displays with a notification; no display-to-display audio), unlock_door (unlock request to Home Assistant), set_noise_reduction. noise_reduction: strong|light|off, the noise filter preset Home Assistant applies to door audio (FFmpeg). No echo cancellation; camera is auto-refreshing snapshots |
 | `latter.save_custom_color` | `target_device`, `hex_color`, `name` | Save a custom RGB accent color from the on-device color wheel |
+| `latter.set_dock_apps` | `target_device`, `dock_apps` | Save the Home dock apps chosen on the device (Home settings) as the Device's Latter dock setting |
