@@ -1252,10 +1252,31 @@ script:
             enqueue: "replace"
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
 
+  # Debounced: the ~0.6 s gap between tracks must never power the speaker path down or start the wake word.
   - id: mp_idle_debounce
     mode: restart
     then:
       - delay: 3s
+      - script.execute: media_idle_finish
+
+  # A deliberate pause (on_pause) has no gap to ride out: release the paused frames (as pause_all_music
+  # does) and finish at once, so the wake word is back within ~0.5 s instead of after the 3 s debounce.
+  - id: mp_pause_settle
+    mode: restart
+    then:
+      - script.stop: mp_idle_debounce
+      - speaker.stop: media_mixing_input
+      - wait_until:
+          condition:
+            lambda: 'return !id(media_mixing_input).is_running();'
+          timeout: 500ms
+      - script.execute: media_idle_finish
+
+  # Local audio is idle: silence and power down the speaker path in order (DAC mute, amplifier off; the
+  # speaker stops on its own timeout), hand the microphone back to the wake word, and relax power.
+  - id: media_idle_finish
+    mode: restart
+    then:
       - if:
           condition:
             lambda: |-

@@ -302,7 +302,7 @@ media_player:
             if (id(display_power_state) == 0) {
               id(screen_sleep_timer).execute();
             }
-        - script.execute: mp_idle_debounce
+        - script.execute: mp_pause_settle
     on_idle:
       then:
         - if:
