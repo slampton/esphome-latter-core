@@ -2,6 +2,8 @@
 
 The universal GUI ([`guis/universal/gui.yaml`](../guis/universal/gui.yaml)) is one consumer of the core. You can replace it with your own. This might be a different visual language, a single-purpose kiosk, or a non-touch device driven by a rotary encoder. You still get everything below it: the Latter protocol, audio and voice, power management, and the board HAL.
 
+The visual, touch and rendering rules the universal GUI follows (tokens, components, navigation, gestures, the frame pipeline, per-board adaptation and performance) are in the [Device UI design guide](device-ui-design.md). It is the canonical reference; this page covers what a replacement GUI must provide and what the core gives it.
+
 ## What stays and what you replace
 
 ```yaml
@@ -16,7 +18,7 @@ packages:
 A GUI package needs three things:
 1. **A `display:` render lambda** on the board's display, `id: disp1`, added with `!extend`.
 2. **Touch handling** on the board's touchscreen, `id: touch_screen`, added with `!extend`. Leave this out on non-touch devices and drive input through `ui_input_event`.
-3. **The color IDs that `latter_client.yaml` references.** It uses `theme_primary`, `theme_secondary`, `col_gold`, `col_warm_gold`, `col_orange`, `col_red`, and `col_green` in its theme presets. Define them, even if your GUI never draws with them.
+3. **The color IDs the core writes.** The theme preset script (`apply_theme_preset` in `modules/features/scripts_actions.yaml`, included by `latter_client.yaml`) writes `theme_primary` and `theme_secondary` when the user picks a color profile. Define them, even if your GUI never draws with them.
 
 The universal GUI's own top-level blocks are `substitutions`, `font`, `color`, `display`, and `touchscreen`. It defines no API actions and no Home Assistant subscriptions. Those all belong to the core, which is why a GUI can be replaced cleanly.
 
@@ -90,7 +92,7 @@ Everything that calls `latter.*` services already lives in `latter_client.yaml`.
 Don't call `id(disp1).update()` directly. Use the scheduler instead:
 
 ```cpp
-latter_ui::schedule_disp_update(&id(disp1));       // coalesced: at most one redraw per ≥38 ms
+latter_ui::schedule_disp_update(&id(disp1));       // coalesced: requests in one loop pass become one redraw
 latter_ui::schedule_anim_disp_update(&id(disp1));  // animation frame: 18 ms on P4, 26 ms on S3
 ```
 
@@ -102,7 +104,7 @@ Both functions accept either `DispT *` or `DispT *const *`, so the same call com
 
 ## Layout: `UiLayout` and scaling
 
-All geometry should go through [`ui_core.h`](../include/ui_core.h) and [`ui_layout.h`](../include/ui_layout.h), so one GUI works on every screen size.
+All geometry should go through [`ui_core.h`](../include/ui_core.h) and [`ui_layout.h`](../include/ui_layout.h), so one GUI works on every screen size. The layout anchors, touch constants and per-board rules are in the [Device UI design guide](device-ui-design.md#13-spacing-and-layout-anchors).
 
 | Symbol | Meaning |
 | :--- | :--- |
@@ -117,12 +119,12 @@ All geometry should go through [`ui_core.h`](../include/ui_core.h) and [`ui_layo
 
 ## Rendering on these chips
 
-What makes the universal GUI fast enough on an ESP32-S3:
-- **Draw row-major.** ESPHome's display buffer is row-major, so loop `y` on the outside and `x` on the inside. Group runs of identical pixels into `horizontal_line` calls. Avoid `it.image()` for large images; draw with the row blitter in `ui_core.h` instead.
+What makes the universal GUI fast enough on an ESP32-S3 (the full rules are in [Device UI design guide → Rendering pipeline](device-ui-design.md#5-rendering-pipeline)):
+- **Draw row-major.** ESPHome's display buffer is row-major, so loop `y` on the outside and `x` on the inside. Draw with the `fast_*` primitives in `ui_core.h`, not ESPHome's `it.*` primitives, which cost a virtual call per pixel. Don't use `it.image()`; draw images with the row blitter (`blit_rgb565_scanline`) instead.
 - **Dim without losing color.** Halve each channel by shifting (`r >>= 1; g >>= 1; b >>= 1`). Don't use packed bitmasks, which throw away color depth.
-- **Latch the full window on rectangular panels.** At the top of the render lambda, touch `(0,0)` and `(W−1,H−1)`. The panel driver then flushes the whole frame in one transfer.
+- **Latch the full window.** At the top of the render lambda, touch `(0,0)` and `(W−1,H−1)`. The panel driver then flushes the whole frame in one transfer. The universal GUI does this on every panel, round and rectangular.
 - **Use the lookup tables.** `fast_sin` and `fast_cos` use a 60-entry LUT with interpolation. Round-screen clipping uses `circle_half_span`. Keep `sinf` and `sqrtf` out of per-pixel loops.
-- **Measure.** Turn on **System: Telemetry Profiler**. `[PROF:FRAME]` logs render time per page, and frames over 22 ms are flagged.
+- **Measure.** Turn on **System: Telemetry Profiler**. `[PROF:FRAME]` logs render time per page, and slow frames are flagged `[SLOW_FRAME]`. The frame budget is in [Device UI design guide → Performance](device-ui-design.md#8-performance).
 
 ## Capability flags
 
@@ -133,6 +135,7 @@ Branch on these, not on product names. Defaults are in [`ui_core.h`](../include/
 | `LATTER_SCREEN_W`, `LATTER_SCREEN_H` | 466 | Resolution |
 | `LATTER_ROUND_DISPLAY` | 1 | Round bezel clipping |
 | `LATTER_CORNER_R` | W/2 if round, 98 if wearable, otherwise 20 | Corner radius for bezel effects |
+| `LATTER_PANEL_PPI` | 266 | Pixel density (diagonal pixels ÷ diagonal inches), used to convert millimetre touch thresholds. Every board must set it. |
 | `LATTER_HAS_DISPLAY`, `_TOUCH`, `_AUDIO`, `_IMU`, `_BATTERY` | 1 | Hardware present |
 | `LATTER_HAS_MIC`, `LATTER_HAS_SPEAKER` | = `HAS_AUDIO` | |
 | `LATTER_IS_STATIONARY`, `LATTER_IS_WEARABLE` | 0 | Form factor |

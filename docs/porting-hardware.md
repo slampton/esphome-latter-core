@@ -75,11 +75,12 @@ esphome:
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
+    - "-DLATTER_PANEL_PPI=<ppi>"   # your panel: diagonal pixels ÷ diagonal inches
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
 ```
 
-Define every capability flag explicitly, even where it matches the default. This is the set [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml) uses. Defaults are listed in [Building a GUI → Capability flags](building-a-gui.md#capability-flags).
+Define every capability flag explicitly, even where it matches the default. This is the set [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml) uses. Defaults are listed in [Building a GUI → Capability flags](building-a-gui.md#capability-flags). `LATTER_PANEL_PPI` is required: the touch thresholds are in millimetres and convert through it. Compute it as the diagonal in pixels divided by the diagonal in inches (for a round panel, the diameter). How each flag changes the UI is in [Device UI design guide → Per-board adaptation](device-ui-design.md#6-per-board-adaptation).
 
 Optional hardware flags:
 
@@ -122,7 +123,7 @@ Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its
 
 ## 5. Substitutions and sdkconfig
 
-- **Substitutions:** font sizes (`font_time_size`, `font_small_size`, and so on), `art_shape`, and power defaults (`default_power_profile`, `default_tap_wake`, ...). Copy the set from the closest existing board and adjust.
+- **Substitutions:** font sizes (`font_time_size`, `font_small_size`, and so on), `art_shape`, and power defaults (`default_power_profile`, `default_tap_wake`, ...). Copy the set from the closest existing board and adjust. The font roles and per-board sizes are in [Device UI design guide → Typography](device-ui-design.md#12-typography).
 - **sdkconfig, required on every board:**
 
 ```yaml
@@ -157,7 +158,7 @@ Before you call a board done, check each of these against the schematic:
 5. **IMU:** whether one is present, and axis orientation.
 6. **P4 only:** LDO, SDIO and esp-hosted settings, DSI IRAM-safe flags.
 7. **Memory:** `-O2`, `SPIRAM_MALLOC_ALWAYSINTERNAL`, full-frame buffer.
-8. **Layout:** walk every page with **System: Telemetry Profiler** on. Check for clipped elements and frames over 22 ms.
+8. **Layout:** walk every page with **System: Telemetry Profiler** on. Check for clipped elements and `[SLOW_FRAME]` lines; the frame budget is in [Device UI design guide → Performance](device-ui-design.md#8-performance).
 
 ## 8. Device config and validation
 

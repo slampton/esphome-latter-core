@@ -75,6 +75,7 @@ devices/     Top-level configs that combine one board, the core modules, and one
 | [Architecture](docs/architecture.md) | You want to understand how the pieces fit together |
 | [Device protocol](docs/device-protocol.md) | You're building a device that talks to Latter, with or without this SDK |
 | [Building a GUI](docs/building-a-gui.md) | You want your own interface on top of the core modules |
+| [Device UI design guide](docs/device-ui-design.md) | You're changing the on-device interface: tokens, components, navigation, touch, rendering |
 | [Porting hardware](docs/porting-hardware.md) | You want to run the firmware on a board that isn't listed |
 
 ---
@@ -84,11 +85,11 @@ devices/     Top-level configs that combine one board, the core modules, and one
 These are the details worth checking if you're evaluating the codebase. Each one links to the code.
 
 - **Row-major RGB565 blitting.** Album art and full-screen images are drawn row by row. Runs of identical 16-bit pixels are grouped into single horizontal-line calls, and scrim rows are dimmed by shifting each color channel, which keeps all 16 bits of color. → [`ui_core.h`](include/ui_core.h)
-- **Full-window flushes on non-round panels.** Each frame first touches two opposite corner pixels, so the dirty window covers the whole panel and the driver sends it in a single DMA transfer instead of several partial ones. → [`gui.yaml`](guis/universal/gui.yaml)
+- **Full-window flushes.** Each frame first touches two opposite corner pixels, so the dirty window covers the whole panel and the driver sends it in a single DMA transfer instead of several partial ones. → [`gui.yaml`](guis/universal/gui.yaml)
 - **No `sqrtf` or `sinf` in the hot path.** Trig uses a 60-entry lookup table with linear interpolation. Round-screen clipping uses a 466-entry chord table stored in flash, plus integer Newton–Raphson. → [`ui_core.h`](include/ui_core.h)
 - **Frame pacing and profiling.**
-  - **Pacing:** redraw requests are merged into one redraw every 38 ms or more. Animations run at 18 ms per frame on the P4 and 26 ms on the S3. Ambient screensavers run at about 20 fps and slow down while audio plays.
-  - **Profiling:** the **System: Telemetry Profiler** switch logs per-frame render times and flags any frame over 22 ms. → [`ui_core.h`](include/ui_core.h)
+  - **Pacing:** redraw requests made in the same loop pass are merged into one redraw. Animations run at 18 ms per frame on the P4 and 26 ms on the S3. Ambient screensavers run at about 20 fps and slow down while audio plays.
+  - **Profiling:** the **System: Telemetry Profiler** switch logs per-frame render times and flags slow frames. → [`ui_core.h`](include/ui_core.h), [Device UI design guide](docs/device-ui-design.md#8-performance)
 - **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`ui_layout.h`](include/ui_layout.h), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
 - **Voice doesn't fight music.** When a voice turn starts (button, tap, or the wake word while music plays on another speaker), the firmware pauses music and stops its mixer input so the voice response isn't stuck behind buffered music. The wake word itself is paused while this device plays media, because there is no on-device echo cancellation yet. After the reply, it resumes only once both the media player and the announcement mixer have drained. Music never resumes over a ringing alarm or timer. → [`audio_voice.yaml`](modules/audio_voice.yaml), [`latter_client.yaml`](modules/latter_client.yaml)
 - **Full-duplex 48 kHz audio on every board.** One I2S bus carries the DAC and the ADC on shared BCLK/WS/MCLK, so the microphone and speaker run at the same time and never hand the bus over. Music and announcements arrive at 48 kHz (no on-device output resampling); the microphone is resampled to 16 kHz for the wake word and Assist. → [`waveshare_s3_216.yaml`](boards/waveshare_s3_216.yaml), [`audio_voice.yaml`](modules/audio_voice.yaml)
@@ -117,7 +118,7 @@ Bugs and feature requests: [issues](https://github.com/slampton/esphome-latter-c
 | | |
 | :--- | :--- |
 | **Use** | [Hardware](docs/hardware.md) · [Flashing](docs/flashing.md) · [Using your device](docs/using-your-device.md) |
-| **Build** | [Architecture](docs/architecture.md) · [Device protocol](docs/device-protocol.md) · [Building a GUI](docs/building-a-gui.md) · [Porting hardware](docs/porting-hardware.md) |
+| **Build** | [Architecture](docs/architecture.md) · [Device protocol](docs/device-protocol.md) · [Building a GUI](docs/building-a-gui.md) · [Device UI design](docs/device-ui-design.md) · [Porting hardware](docs/porting-hardware.md) |
 
 ## Credits
 
