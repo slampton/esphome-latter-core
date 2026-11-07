@@ -69,10 +69,11 @@ inline float alarm_output_volume(float alert_vol_pct, float media_volume) {
   return std::clamp(std::max(level, media_dac_volume(media_volume)), 0.10f, 1.0f);
 }
 
-// Voice replies: the music level +3 dB, so a reply is a little louder than the music it interrupts and
+// Voice replies and announcements: the music level +9 dB (one DAC step is 1/255 = 0.5 dB). Text-to-speech
+// is mastered 6-10 dB quieter than music, so this sounds about as loud as the music it interrupts and
 // tracks the volume the user already chose.
 inline float voice_output_volume(float media_volume) {
-  return std::clamp(media_dac_volume(media_volume) + (6.0f / 255.0f), 0.50f, 1.0f);
+  return std::clamp(media_dac_volume(media_volume) + (18.0f / 255.0f), 0.50f, 1.0f);
 }
 
 // Transitions ES8311 DAC (0x18) and optional ES7210 ADC (0x40) between low-power standby and active mode,
