@@ -52,6 +52,7 @@ How the wake inputs behave when the screen is off:
 - **Pickup to wake** is a raise gesture: a deliberate movement followed by the screen settling roughly face-up for a moment. Arm swing, walking, and pocket jostling don't wake the screen.
 - **Tap to wake** on a watch running on battery needs a **double tap**, so sleeve and skin contact don't wake it. On USB power, and on every other device, a single tap wakes it.
 - **Animated weather** on the Home screen runs continuously on USB power. On battery it animates for 10 seconds after you wake or touch the screen, then holds still until the next touch.
+- **Light sleep (ESP32-S3 battery devices).** With the screen off on battery and nothing playing, listening or ringing, the processor sleeps between Wi-Fi beacons and timer ticks. It stays connected to Home Assistant, and timers and alarms still fire on time. The crown, the action button, a tap (when Tap to Wake works on battery) and a pickup (when Pickup to Wake works on battery) wake it immediately; commands from Home Assistant can take a fraction of a second longer to arrive than with the screen on.
 
 ---
 

@@ -90,6 +90,7 @@
           "role": {"type": "string"},
           "polarity": {"type": "string"},
           "deep_sleep_wake": {"type": "boolean"},
+          "light_sleep_wake": {"type": "boolean", "description": "Armed as an automatic light-sleep wake source through a LATTER_*_PIN wake trait (include/hal_power_pm.h)"},
           "strapping": {"type": "boolean"},
           "shared_with": {"type": "string"},
           "confidence": {"enum": ["H", "M", "L"]},

@@ -41,6 +41,7 @@
 #include <string>
 #include "audio_router.h"
 #include "hal_imu_qmi8658.h"
+#include "hal_power_pm.h"
 #include "latter_state.h"
 
 // SDK revision lockstep guard. The C++ headers arrive through external_components (refresh: 0s) while
@@ -49,7 +50,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110278L
+#define LATTER_SDK_REV 2026110279L
 
 namespace latter_ui {
 
@@ -3376,6 +3377,7 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
            (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
            (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events,
            wifi_ps_mode_now());
+  pm_log_profile();
 #ifdef USE_ESP32
   size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U;
   size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;

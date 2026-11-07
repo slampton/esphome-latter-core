@@ -41,6 +41,20 @@ WAKE_CAPABLE = {"ESP32-S3": set(range(22)), "ESP32-P4": set(range(16))}
 STRAPPING = {"ESP32-S3": {0, 3, 45, 46}, "ESP32-P4": {34, 35, 36, 37, 38}}
 CONFIDENCE = {"H", "M", "L"}
 ROLE_UNUSABLE = {"reserved", "unrouted"}
+# Light-sleep traits -> the facts roles they may name (include/hal_power_pm.h).
+LIGHT_SLEEP_TRAIT_ROLES = {
+    "LATTER_PWR_KEY_PIN": {"pwr_key"},
+    "LATTER_ACTION_BTN_PIN": {"boot_button", "key3_button"},
+    "LATTER_TOUCH_INT_PIN": {"touch_int"},
+    "LATTER_IMU_INT1_PIN": {"imu_int1"},
+    "LATTER_TOUCH_RST_PIN": {"touch_reset"},
+}
+LIGHT_SLEEP_WAKE_TRAITS = {
+    "LATTER_PWR_KEY_PIN",
+    "LATTER_ACTION_BTN_PIN",
+    "LATTER_TOUCH_INT_PIN",
+    "LATTER_IMU_INT1_PIN",
+}
 REQUIRED_TOP = (
     "board_id",
     "product",
@@ -199,6 +213,32 @@ def check_board(
         if pin.get("role") == "unrouted" and pin["gpio"] in scan["pins"]:
             err(f"GPIO{pin['gpio']} is unrouted per the facts but the HAL uses it")
 
+    # 5b. Light-sleep traits (include/hal_power_pm.h) name the matching net, and a board arms exactly the
+    #     pins its facts mark light_sleep_wake (only boards with power_management enable_light_sleep).
+    light_sleep = bool(re.search(r"(?m)^\s*enable_light_sleep:\s*true\b", scan["code"]))
+    armed: set[int] = set()
+    for flag, roles in LIGHT_SLEEP_TRAIT_ROLES.items():
+        value = scan["flags"].get(flag)
+        if value is None:
+            continue
+        pin = by_gpio.get(int(value))
+        if pin is None or pin.get("role") not in roles:
+            err(f"{flag}={value} does not point at a {'/'.join(sorted(roles))} net in the facts")
+            continue
+        if flag in LIGHT_SLEEP_WAKE_TRAITS:
+            armed.add(int(value))
+    marked = {p["gpio"] for p in facts.get("pins", []) if p.get("light_sleep_wake")}
+    if light_sleep:
+        for g in sorted(marked - armed):
+            err(f"GPIO{g} is marked light_sleep_wake but no LATTER_*_PIN wake trait arms it")
+        for g in sorted(armed - marked):
+            err(f"GPIO{g} is a light-sleep wake trait but the facts do not mark it light_sleep_wake")
+        imu_sub = re.search(r"(?m)^\s*imu_int1_pin:\s*GPIO(\d+)", scan["code"])
+        if imu_sub and scan["flags"].get("LATTER_IMU_INT1_PIN") != imu_sub.group(1):
+            err("LATTER_IMU_INT1_PIN must equal the imu_int1_pin substitution")
+    elif marked:
+        err("facts mark light_sleep_wake pins but the HAL does not enable light sleep")
+
     # 6. I2C devices: every address in the HAL is a known device.
     known_addrs = {d.get("address", "").lower() for d in facts.get("i2c_devices", [])}
     for addr in sorted(scan["addresses"]):
@@ -284,6 +324,8 @@ def render_docs(all_facts: dict[str, dict[str, Any]]) -> str:
             notes = pin.get("note", "")
             if pin.get("polarity"):
                 notes = f"{pin['polarity']}; {notes}" if notes else pin["polarity"]
+            if pin.get("light_sleep_wake"):
+                notes = f"{notes}; light-sleep wake" if notes else "light-sleep wake"
             if pin.get("shared_with"):
                 notes = f"{notes} (shared with {pin['shared_with']})".strip()
             lines.append(

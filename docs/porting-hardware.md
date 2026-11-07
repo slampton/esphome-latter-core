@@ -88,12 +88,37 @@ Optional hardware flags:
 | `LATTER_BACKLIGHT_PIN`, `LATTER_BACKLIGHT_EN_PIN`, `LATTER_BACKLIGHT_INVERTED` | LCD panels with a PWM backlight |
 | `LATTER_BACKLIGHT_PWM_HZ`, `LATTER_BACKLIGHT_PWM_BITS`, `LATTER_BACKLIGHT_DUTY_MIN_PCT`, `LATTER_BACKLIGHT_DUTY_MAX_PCT` | Backlight PWM frequency, resolution, and usable duty window. Defaults: 2000 Hz, 8-bit, 0-100 %. Analog-dimming backlights (PWM into an RC filter on the boost converter's feedback pin) need a frequency well above the RC corner, at least 5 kHz. |
 | `LATTER_PWR_KEY_PIN`, `LATTER_PWR_KEY_ACTIVE_HIGH`, `LATTER_PWR_KEY_DEEP_SLEEP_WAKE` | The GPIO that reads the power key (for example the AXP2101 `SYS_OUT` net), its polarity, and whether it is RTC/LP-capable and can wake the chip from deep sleep. Must match the `pwr_key` binary sensor's pin. |
+| `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN`, `LATTER_IMU_INT1_PIN` | Boards with light sleep (see below): the action button (`boot_button`), touch interrupt and QMI8658 INT1 GPIOs, armed with `LATTER_PWR_KEY_PIN` as light-sleep wake sources. `LATTER_IMU_INT1_PIN` must equal the `imu_int1_pin` substitution. Mark each pin `light_sleep_wake` in the board facts. |
+| `LATTER_TOUCH_RST_PIN` | A touch reset the HAL drives with raw `gpio_set_level` (touch platforms without `reset_pin:`), so it keeps driving in light sleep |
 | `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK`, `LATTER_PMU_CHARGE_MA` | AXP2101 traits: no NTC on TS; which DCDC and LDO rails stay on (everything else with no load is turned off); charge current from the fitted cell's capacity, using min(0.8C, 500 mA) rounded down to the AXP2101 step (25 mA steps up to 200 mA, then 100 mA steps). Leave a trait undefined if the schematic doesn't confirm it. |
 | `LATTER_PANEL_DCS_SLEEP` | Self-emissive QSPI DCS panels (for example CO5300 AMOLED) on `mipi_spi`: screen-off sends DISPOFF + SLPIN and screen-on sends SLPOUT + DISPON, instead of only setting brightness to 0 |
 | `LATTER_CORNER_R` | A corner radius other than the default |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels. See [ESP32-P4](#6-esp32-p4). |
 
 Copy the exact values from the closest existing board file.
+
+### Light sleep (ESP32-S3 battery boards)
+
+A battery board on the ESP32-S3 enables automatic light sleep in screen-off quiet:
+
+```yaml
+substitutions:
+  pm_profiling: "false"   # "true" for bench builds: per-lock and per-mode times in [PROF:PM_LOCKS]
+
+esp32:
+  framework:
+    sdkconfig_options:
+      CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"   # the wake pins arm inside the light-sleep callbacks
+
+power_management:
+  - platform: esp32_power_management
+    max_frequency: 240MHz   # the board's CPU frequency
+    min_frequency: 40MHz
+    enable_light_sleep: true
+    profiling: ${pm_profiling}
+```
+
+Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping. Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
 
 ## 5. Substitutions and sdkconfig
 

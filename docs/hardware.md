@@ -135,10 +135,10 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 
 | GPIO | Role | Notes | Conf. |
 |---:|---|---|:---:|
-| 0 | boot_button | active_low; side PTT / action button | H |
+| 0 | boot_button | active_low; side PTT / action button; light-sleep wake | H |
 | 1 | display_reset |  | H |
 | 2 | touch_reset |  | H |
-| 3 | pwr_key | active_high; AXP PWRON -> BSS138 -> SYS_OUT; ext0 wake | H |
+| 3 | pwr_key | active_high; AXP PWRON -> BSS138 -> SYS_OUT; ext0 wake; light-sleep wake | H |
 | 4 | display_qspi_d0 |  | H |
 | 5 | display_qspi_d1 |  | H |
 | 6 | display_qspi_d2 |  | H |
@@ -146,13 +146,13 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 8 | i2s_dout | ES8311 DAC | H |
 | 9 | i2s_bclk |  | H |
 | 10 | i2s_din | ES7210 ADC | H |
-| 11 | touch_int | active_low | H |
+| 11 | touch_int | active_low; light-sleep wake | H |
 | 12 | display_cs |  | H |
 | 13 | display_te | routed, unused | M |
 | 14 | i2c_scl |  | H |
 | 15 | i2c_sda |  | H |
 | 16 | i2s_mclk |  | H |
-| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); INT2 not connected | M |
+| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); INT2 not connected; light-sleep wake | M |
 | 38 | display_qspi_clk |  | H |
 | 45 | i2s_ws |  | H |
 | 46 | speaker_pa | active_high | H |
@@ -161,7 +161,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 
 | GPIO | Role | Notes | Conf. |
 |---:|---|---|:---:|
-| 0 | boot_button | active_low | H |
+| 0 | boot_button | active_low; light-sleep wake | H |
 | 1 | sd_cmd | unused | M |
 | 2 | sd_clk | unused | M |
 | 3 | sd_d0 | unused | M |
@@ -171,7 +171,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 7 | display_qspi_d3 |  | H |
 | 8 | display_reset |  | H |
 | 9 | touch_reset | pulsed at boot by the HAL | H |
-| 10 | pwr_key | active_high | H |
+| 10 | pwr_key | active_high; light-sleep wake | H |
 | 11 | display_qspi_clk |  | H |
 | 12 | display_cs |  | H |
 | 13 | display_te | routed, unused | M |
@@ -180,8 +180,8 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 16 | i2s_mclk |  | H |
 | 17 | sd_cs | unused | M |
 | 18 | haptic_motor | active_high; MMBT3904 driver, ALDO3 supply; unused | M |
-| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion) | M |
-| 38 | touch_int | active_low | H |
+| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); light-sleep wake | M |
+| 38 | touch_int | active_low; light-sleep wake | H |
 | 39 | rtc_int | PCF85063 INT, unused | M |
 | 40 | i2s_dout |  | H |
 | 41 | i2s_bclk |  | H |
@@ -204,14 +204,14 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 8 | i2s_dout |  | H |
 | 9 | i2s_bclk |  | H |
 | 10 | i2s_din |  | H |
-| 11 | touch_int | active_low | H |
+| 11 | touch_int | active_low; light-sleep wake | H |
 | 12 | display_cs |  | H |
 | 13 | rtc_int | PCF85063 INT, unused | M |
 | 14 | i2c_scl |  | H |
 | 15 | i2c_sda |  | H |
-| 16 | pwr_key | active_high | H |
-| 17 | imu_int1 | QMI8658 INT1; wake-on-motion events seen in [PROF:IMU] | H |
-| 18 | key3_button | active_low | H |
+| 16 | pwr_key | active_high; light-sleep wake | H |
+| 17 | imu_int1 | QMI8658 INT1; wake-on-motion events seen in [PROF:IMU]; light-sleep wake | H |
+| 18 | key3_button | active_low; light-sleep wake | H |
 | 21 | imu_int2 | unused | M |
 | 38 | display_qspi_clk |  | H |
 | 39 | display_reset |  | H |

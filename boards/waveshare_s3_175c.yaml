@@ -9,6 +9,8 @@
 # Clocks:  MCLK: GPIO16, BCLK: GPIO9, LRCLK/WS: GPIO45
 # PMU/IMU: AXP2101 @ 0x34 (AXP_IRQ NOT routed; DCDC1 = all 3V3, ALDO1 = audio A3V3, other rails unused),
 #          PWR key SYS_OUT -> GPIO3 (HIGH while pressed), QMI8658 @ 0x6B (INT1: GPIO21). No RTC, no SD.
+# Sleep:   automatic light sleep (power_management); wake pins PWR key GPIO3, action button GPIO0,
+#          touch INT GPIO11, IMU INT1 GPIO21.
 # ==============================================================================
 
 substitutions:
@@ -47,6 +49,9 @@ substitutions:
   audio_out_bits: "16"
   audio_in_rate: "16000"
   imu_int1_pin: GPIO21  # QMI8658 INT1 (hardware wake-on-motion, modules/imu_qmi8658.yaml)
+  # Light-sleep PM profiling (CONFIG_PM_PROFILING): per-lock and per-mode times in [PROF:PM_LOCKS].
+  # Bench builds only: set it to "true" in the device config's substitutions.
+  pm_profiling: "false"
 
 esphome:
   build_flags:
@@ -70,6 +75,10 @@ esphome:
     - "-DLATTER_PWR_KEY_PIN=3"
     - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
     - "-DLATTER_PWR_KEY_DEEP_SLEEP_WAKE=1"
+    # Light-sleep wake pins (include/hal_power_pm.h): side action button, touch INT, QMI8658 INT1
+    - "-DLATTER_ACTION_BTN_PIN=0"
+    - "-DLATTER_TOUCH_INT_PIN=11"
+    - "-DLATTER_IMU_INT1_PIN=21"
     - "-DLATTER_PMU_TS_DISABLE=1"
     - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
     - "-DLATTER_PMU_LDO_KEEP_MASK=0x001"
@@ -110,6 +119,8 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
       CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
+      # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_power_pm.h)
+      CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true
@@ -120,6 +131,16 @@ psram:
   mode: octal
   speed: 80MHz
   ignore_not_found: false
+
+# Automatic light sleep whenever no task runs and no power-management lock is held. Latter's awake lock
+# (script apply_power_policy, include/hal_power_pm.h) keeps the chip awake except in screen-off quiet on
+# battery; the clock scales down to min_frequency only while that lock is released.
+power_management:
+  - platform: esp32_power_management
+    max_frequency: 240MHz
+    min_frequency: 40MHz
+    enable_light_sleep: true
+    profiling: ${pm_profiling}
 
 
 i2c:

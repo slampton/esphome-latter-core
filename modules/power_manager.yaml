@@ -357,7 +357,8 @@ interval:
           }
 
           // 6-7. Single power-policy owner: radio (BLE beacon / Wi-Fi modem sleep), IMU mode,
-          // screen-off tick gating and battery polling all live in script apply_power_policy.
+          // screen-off tick gating, battery polling and the light-sleep awake lock all live in script
+          // apply_power_policy.
           id(apply_power_policy).execute();
 
           // 8. Safe Docked-Idle Background Firmware Update Check (after 3 min uptime, every 6h while on USB & idle)
@@ -484,10 +485,10 @@ interval:
 
 script:
   # Single owner for every power-related actuator. The 1 s supervisor runs it, and state transitions
-  # (wake, screen off, screensaver, VA start/stop, audio idle, USB change, beacon switch) call it for an
-  # immediate re-evaluation. Event sites declare demand (state flags, radio_boost_until_ms) and never
-  # touch Wi-Fi power save, the BLE controller, the IMU mode or tick intervals directly
-  # (latter-verify enforces this).
+  # (wake, screen off, screensaver, VA start/stop, audio idle, USB change, beacon switch, OTA begin) call it
+  # for an immediate re-evaluation. Event sites declare demand (state flags, radio_boost_until_ms) and never
+  # touch Wi-Fi power save, the BLE controller, the IMU mode, tick intervals, the light-sleep awake lock or
+  # the loop interval directly (latter-verify enforces this).
   - id: apply_power_policy
     mode: restart
     then:
@@ -563,6 +564,31 @@ script:
             id(batt_level).start_poller();
           }
           #endif
+
+          // Automatic light sleep (boards whose HAL declares power_management with enable_light_sleep;
+          // include/hal_power_pm.h). The awake lock keeps the chip out of light sleep except in screen-off
+          // quiet on battery; while it is released the light-sleep wake pins below arm and the main loop
+          // interval stretches. latter_ui::pm_apply is called only here (latter-verify enforces).
+          const bool audio_busy = id(speaker_enable).state || id(mww).is_running() ||
+                                  id(announcement_mixing_input).is_running() || id(mp_idle_debounce).is_running() ||
+                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+          const bool stay_awake =
+              id(display_power_state) != 2 || id(usb_connected).state || id(is_hibernating) ||
+              id(ota_in_progress) || audio_busy || va_busy || id(va).is_running() || id(va_tts_received) ||
+              latter_ui::radio_boost_active(now_p) || (id(active_game) > 0) ||
+              id(alarm_ringing) || id(timer_ringing) || id(find_my_active) || id(notif_active) ||
+              latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+          // PWR key and action button always wake; touch only where a screen-off tap wakes on battery;
+          // IMU INT1 while hardware Wake-on-Motion is armed.
+          uint32_t wake_mask = latter_ui::pm_wake_bit(latter_ui::PM_WAKE_PWR_KEY) |
+                               latter_ui::pm_wake_bit(latter_ui::PM_WAKE_ACTION_BTN);
+          auto tw_mode = id(tap_wake_mode).current_option();
+          if (tw_mode == "Always On") wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_TOUCH);
+          #if LATTER_HAS_IMU
+          if (latter_ui::imu_wom().armed) wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_IMU);
+          #endif
+          latter_ui::pm_apply(stay_awake, wake_mask);
 
   # Return the display to its pre-voice-session state (see latter_ui::VaDisplayRestore).
   - id: va_restore_display
