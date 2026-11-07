@@ -211,8 +211,8 @@ media_player:
                   }
               # Over music, the music already past the duck still plays at full level: the mixer transfer
               # buffers (~100 ms), the speaker buffer (250 ms) and I2S DMA (~60 ms), plus the 0.1 s duck ramp.
-              # Raising the DAC to the voice level before that has played made the music jump louder just
-              # before the chime (300 ms was not enough). The chime itself reaches the DAC about as late.
+              # Raising the DAC to the voice level before that has played makes the music jump louder. The
+              # chime itself reaches the DAC about as late.
               - if:
                   condition:
                     lambda: 'return id(media_mixing_input).is_running();'
@@ -559,9 +559,8 @@ voice_assistant:
                   - script.stop: screen_sleep_timer
                   - script.execute: route_i2s_to_spk
                   - script.wait: route_i2s_to_spk
+                  # The DAC rises to the voice level in on_announcement, when the reply actually plays.
                   - lambda: |-
-                      float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
-                      id(physical_speaker).set_volume(spk_v);
                       id(hal_set_dac_mute).execute(false);
                       id(va_vad_active) = false;
                       id(va_tts_received) = true;
@@ -590,9 +589,10 @@ voice_assistant:
             - script.stop: screen_sleep_timer
             - script.execute: route_i2s_to_spk
             - script.wait: route_i2s_to_spk
+            # The music ducks here, seconds before the audio arrives (an announcement's TTS start comes
+            # ~2 s before it plays). The DAC rises to the voice level in on_announcement, when it actually
+            # plays: raising it here played the not-yet-ducked music louder before the chime.
             - lambda: |-
-                float spk_v = latter_ui::voice_output_volume(id(latter_media_player).volume);
-                id(physical_speaker).set_volume(spk_v);
                 id(hal_set_dac_mute).execute(false);
                 id(va_vad_active) = false;
                 id(va_tts_received) = true;
