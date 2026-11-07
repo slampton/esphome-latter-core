@@ -33,8 +33,9 @@ substitutions:
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Portable Carry"
   # Music read-ahead (PSRAM). A handheld rides out Wi-Fi stalls of several seconds (body, metal case,
-  # a busy channel), so the S3 boards hold as much as the P4 panels: 1 MB.
-  sendspin_buffer_size: "1048576"
+  # a busy channel): 768 KB, 50% more than before. 1 MB left 303 KB of PSRAM with music, album art and an
+  # announcement, too little for a second full-screen image (camera popup, 434 KB).
+  sendspin_buffer_size: "786432"
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "false"
   # Reply and announcement read-ahead (PSRAM): most of a spoken reply, so a stall mid-reply is not heard.
