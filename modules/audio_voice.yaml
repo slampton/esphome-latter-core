@@ -875,23 +875,33 @@ script:
   # of the answer, and ended the turn after the user's first word. The muted microphone publishes
   # zeros (the wake word is paused for the turn). The reply's start muted it already (on_announcement);
   # this covers a turn that opens while a sound plays. Users answer within ~0.2 s of the reply ending,
-  # so the microphone reopens right after the speaker path is silenced.
+  # and text-to-speech pads its end with silence, so the microphone reopens as soon as the speaker is
+  # acoustically quiet (latter_ui::echo_last_loud_ms) instead of after that padding has played out of
+  # every buffer, which cut the first sound of quick answers ("horror" -> "Or").
   - id: va_echo_gate
     mode: restart
     then:
-      - lambda: 'id(latter_mic).set_mute_state(true);'
-      # The reply finishes playing: the announcement buffer (${announcement_buffer_s} s) and the I2S buffer.
+      - lambda: |-
+          id(latter_mic).set_mute_state(true);
+          latter_ui::echo_last_loud_ms().store(millis());  // quiet must be measured, not assumed
+      # The reply leaves the mixer inputs (the announcement buffer, ${announcement_buffer_s} s): what is left
+      # is the speaker buffer and DMA (~0.3 s), which hold the reply's last moment and its padding.
       - wait_until:
           condition:
             lambda: |-
               return !id(announcement_mixing_input).has_buffered_data() &&
-                     !id(sound_mixing_input).has_buffered_data() &&
-                     !id(physical_speaker).has_buffered_data();
+                     !id(sound_mixing_input).has_buffered_data();
           timeout: !lambda 'return ${announcement_buffer_s} * 1000 + 500;'
-      - delay: 40ms  # the I2S DMA descriptors still playing
-      - script.execute: route_i2s_to_mic
+      # Then 100 ms of acoustic quiet at the microphone, or the speaker drained (a noisy room).
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(physical_speaker).has_buffered_data() ||
+                     (millis() - latter_ui::echo_last_loud_ms().load()) > 100;
+          timeout: 500ms
+      - script.execute: route_i2s_to_mic  # DAC mute silences whatever padding is still buffered
       - script.wait: route_i2s_to_mic
-      - delay: 50ms  # the amplifier's power-down transient
+      - delay: 30ms  # the amplifier's power-down transient
       - lambda: 'id(latter_mic).set_mute_state(false);'
 
   # Flight recorder for a reply that never reaches the speaker: the player is ANNOUNCING but the

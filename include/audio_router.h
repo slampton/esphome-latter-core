@@ -8,9 +8,13 @@
 // ==============================================================================
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
+
+#include "esphome/core/hal.h"
 
 namespace latter_ui {
 
@@ -23,6 +27,29 @@ inline constexpr bool kAudioFullDuplex = true;
 #else
 inline constexpr bool kAudioFullDuplex = false;
 #endif
+
+// Acoustic meter for va_echo_gate: when the raw microphone last heard something loud. A follow-up turn
+// opens once the speaker has been acoustically quiet for a moment, instead of waiting for the reply's
+// trailing silence (text-to-speech pads its end) to play out of every buffer, which cut the start of
+// quick answers. Fed from the microphone task (16-bit captures only).
+inline std::atomic<uint32_t> &echo_last_loud_ms() {
+  static std::atomic<uint32_t> last{0};
+  return last;
+}
+// Mean square of a capture above -60 dBFS RMS (33 counts) is loud: the reply's echo reaches about
+// -40 dBFS at the microphone and a quiet room about -69 dBFS. A noisier room never reads quiet, and the
+// gate falls back to waiting for the speaker to drain.
+inline constexpr int64_t kEchoLoudMeanSquare = 33LL * 33LL;
+inline void echo_meter_feed(const uint8_t *data, size_t len) {
+  const size_t n = len / 2;
+  if (n == 0) return;
+  const int16_t *s = reinterpret_cast<const int16_t *>(data);
+  int64_t acc = 0;
+  for (size_t i = 0; i < n; i++) acc += static_cast<int32_t>(s[i]) * s[i];
+  if (acc / static_cast<int64_t>(n) > kEchoLoudMeanSquare) {
+    echo_last_loud_ms().store(esphome::millis(), std::memory_order_relaxed);
+  }
+}
 
 // Canonical single-source predicate for whether on-board micro_wake_word should run.
 // Shared by sync_wake_word_state (audio_voice.yaml) and the 1s supervisor (power_manager.yaml).
