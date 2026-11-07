@@ -205,10 +205,15 @@ media_player:
                   id(hal_set_dac_mute).execute(false);
                   id(va_tts_received) = true;
                   if (id(va_active)) {
+                    // A reply: the voice assistant reopens the microphone for a follow-up about one buffer
+                    // (${announcement_buffer_s} s) before the reply has finished playing, so it starts muted
+                    // and va_echo_gate unmutes it once the speaker is quiet.
+                    if (latter_ui::kAudioFullDuplex) id(latter_mic).set_mute_state(true);
                     id(va_vad_active) = false;
                     id(va_status_text) = "Responding...";
                   }
               - script.execute: throttled_disp_update
+              - script.execute: announce_stall_check
               # Outside a voice turn nothing else ends the announcement when music keeps playing.
               - if:
                   condition:
@@ -387,8 +392,8 @@ voice_assistant:
           condition:
             lambda: |-
               return latter_ui::kAudioFullDuplex &&
-                     (id(announcement_mixing_input).is_running() || id(sound_mixing_input).is_running() ||
-                      id(physical_speaker).has_buffered_data());
+                     (id(latter_mic).get_mute_state() || id(announcement_mixing_input).is_running() ||
+                      id(sound_mixing_input).is_running() || id(physical_speaker).has_buffered_data());
           then:
             - script.execute: va_echo_gate
           else:
@@ -859,7 +864,9 @@ script:
   # Full duplex only. Without it, Home Assistant's speech-to-text heard the end of the reply and the
   # amplifier switching off at the start of every continued-conversation turn, took that as the start
   # of the answer, and ended the turn after the user's first word. The muted microphone publishes
-  # zeros (the wake word is paused for the turn).
+  # zeros (the wake word is paused for the turn). The reply's start muted it already (on_announcement);
+  # this covers a turn that opens while a sound plays. Users answer within ~0.2 s of the reply ending,
+  # so the microphone reopens right after the speaker path is silenced.
   - id: va_echo_gate
     mode: restart
     then:
@@ -872,11 +879,31 @@ script:
                      !id(sound_mixing_input).has_buffered_data() &&
                      !id(physical_speaker).has_buffered_data();
           timeout: !lambda 'return ${announcement_buffer_s} * 1000 + 500;'
-      - delay: 60ms  # the I2S DMA descriptors still playing
+      - delay: 40ms  # the I2S DMA descriptors still playing
       - script.execute: route_i2s_to_mic
       - script.wait: route_i2s_to_mic
-      - delay: 150ms  # the amplifier's power-down transient
+      - delay: 50ms  # the amplifier's power-down transient
       - lambda: 'id(latter_mic).set_mute_state(false);'
+
+  # Flight recorder for a reply that never reaches the speaker: the player is ANNOUNCING but the
+  # announcement input never started (seen on Pocket, cured by a reboot; cause unknown). Logs at
+  # WARNING so it survives any log level.
+  - id: announce_stall_check
+    mode: restart
+    then:
+      - delay: 2500ms
+      - lambda: |-
+          if (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) return;
+          if (id(announcement_mixing_input).has_buffered_data()) return;
+          auto st = [](speaker::Speaker *s) -> const char * {
+            return s->is_running() ? "run" : (s->is_stopped() ? "stop" : "trans");
+          };
+          ESP_LOGW("PROF", "[PROF:AUDIO_STALL] announcing 2.5s, no buffered audio: ann=%s snd=%s media=%s "
+                   "spk=%s spk_buf=%d vol=%.2f va=%d mic_mute=%d",
+                   st(id(announcement_mixing_input)), st(id(sound_mixing_input)), st(id(media_mixing_input)),
+                   st(id(physical_speaker)), (int) id(physical_speaker).has_buffered_data(),
+                   id(physical_speaker).get_volume(), (int) id(va).is_running(),
+                   (int) id(latter_mic).get_mute_state());
 
   - id: apply_wake_word_sensitivities
     mode: restart
@@ -933,6 +960,7 @@ script:
                 then:
                   - lambda: |-
                       id(hal_set_audio_codecs_standby).execute(false);
+                      id(latter_mic).set_mute_state(false);  // never start the wake word on a gated microphone
                       esphome::voice_assistant::ensure_wake_words_restored(id(mww));
                   - if:
                       condition:
