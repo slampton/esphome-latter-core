@@ -209,14 +209,15 @@ media_player:
                     id(va_vad_active) = false;
                     id(va_status_text) = "Responding...";
                   }
-              # Over music, the music already mixed into the speaker buffer (250 ms) still plays at full
-              # level before the duck reaches the speaker: raising the DAC to the voice level at once made
-              # that music jump louder just before the chime.
+              # Over music, the music already past the duck still plays at full level: the mixer transfer
+              # buffers (~100 ms), the speaker buffer (250 ms) and I2S DMA (~60 ms), plus the 0.1 s duck ramp.
+              # Raising the DAC to the voice level before that has played made the music jump louder just
+              # before the chime (300 ms was not enough). The chime itself reaches the DAC about as late.
               - if:
                   condition:
                     lambda: 'return id(media_mixing_input).is_running();'
                   then:
-                    - delay: 300ms
+                    - delay: 500ms
               - lambda: |-
                   id(physical_speaker).set_volume(latter_ui::voice_output_volume(id(latter_media_player).volume));
                   id(hal_set_dac_mute).execute(false);
