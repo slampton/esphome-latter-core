@@ -337,7 +337,11 @@ micro_wake_word:
 
 voice_assistant:
   id: va
-  microphone: latter_mic
+  # The capture is about 6 dB too quiet for speech-to-text (speech near -30 dBFS RMS in Home
+  # Assistant's debug recordings); the wake word applies the same gain.
+  microphone:
+    microphone: latter_mic
+    gain_factor: 2
   micro_wake_word: mww
   use_wake_word: false
   media_player: latter_media_player
@@ -376,7 +380,19 @@ voice_assistant:
             - delay: 150ms
       - script.stop: mp_idle_debounce
       - script.stop: screen_sleep_timer
-      - script.execute: route_i2s_to_mic
+      # A full-duplex microphone hears the speaker. A continued-conversation turn opens while the reply's
+      # last frames are still buffered, so va_echo_gate feeds the pipeline silence until they have played
+      # and the amplifier is off. Otherwise silence the speaker path at once.
+      - if:
+          condition:
+            lambda: |-
+              return latter_ui::kAudioFullDuplex &&
+                     (id(announcement_mixing_input).is_running() || id(sound_mixing_input).is_running() ||
+                      id(physical_speaker).has_buffered_data());
+          then:
+            - script.execute: va_echo_gate
+          else:
+            - script.execute: route_i2s_to_mic
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
           decibel_reduction: 0
@@ -749,6 +765,7 @@ script:
       #    preserving conversation_id and native continued-conversation state.
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
+          id(latter_mic).set_mute_state(false);  // va_echo_gate never outlives the session
           const bool was_va_session = id(va_active);
           id(va_vad_active) = false;
           id(va_status_text) = "";
@@ -838,6 +855,28 @@ script:
                   lambda: 'return !id(physical_speaker).is_running();'
                 timeout: 150ms
       - script.execute: hal_route_i2s_to_mic
+
+  # Full duplex only. Without it, Home Assistant's speech-to-text heard the end of the reply and the
+  # amplifier switching off at the start of every continued-conversation turn, took that as the start
+  # of the answer, and ended the turn after the user's first word. The muted microphone publishes
+  # zeros (the wake word is paused for the turn).
+  - id: va_echo_gate
+    mode: restart
+    then:
+      - lambda: 'id(latter_mic).set_mute_state(true);'
+      # The reply finishes playing: the announcement buffer (${announcement_buffer_s} s) and the I2S buffer.
+      - wait_until:
+          condition:
+            lambda: |-
+              return !id(announcement_mixing_input).has_buffered_data() &&
+                     !id(sound_mixing_input).has_buffered_data() &&
+                     !id(physical_speaker).has_buffered_data();
+          timeout: !lambda 'return ${announcement_buffer_s} * 1000 + 500;'
+      - delay: 60ms  # the I2S DMA descriptors still playing
+      - script.execute: route_i2s_to_mic
+      - script.wait: route_i2s_to_mic
+      - delay: 150ms  # the amplifier's power-down transient
+      - lambda: 'id(latter_mic).set_mute_state(false);'
 
   - id: apply_wake_word_sensitivities
     mode: restart
