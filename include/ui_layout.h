@@ -671,6 +671,12 @@ inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int disp
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
   (void)display_power_state;
   const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
+#elif defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
+  // Automatic light sleep (hal_power_pm.h) already idles the CPU between Wi-Fi wakes. Max modem sleep
+  // (listen interval 3) on top of it lost ~70% of packets with ~0.6 s round trips: the Home Assistant
+  // connection dropped and could not re-handshake. Min modem sleep wakes for every DTIM beacon.
+  (void)display_power_state;
+  const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #else
   const auto base = (display_power_state == 2) ? esphome::wifi::WIFI_POWER_SAVE_HIGH
                                                : esphome::wifi::WIFI_POWER_SAVE_LIGHT;

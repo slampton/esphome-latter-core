@@ -573,7 +573,15 @@ script:
                                   id(announcement_mixing_input).is_running() || id(mp_idle_debounce).is_running() ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+          // Home Assistant link: awake until Home Assistant (a client with a state subscription; log viewers don't count) is connected, and for 60 s after it connects
+          // (entity list, state subscription and device hello run at full speed). A dropped link wakes the
+          // chip to reconnect: light sleep never runs while Home Assistant can't reach the device.
+          const bool api_connected = esphome::api::global_api_server != nullptr &&
+                                     esphome::api::global_api_server->is_connected_with_state_subscription();
+          const bool ha_link_settling =
+              !api_connected || (now_p - latter_ui::link_state().last_ha_connect_ms < 60000U);
           const bool stay_awake =
+              ha_link_settling ||
               id(display_power_state) != 2 || id(usb_connected).state || id(is_hibernating) ||
               id(ota_in_progress) || audio_busy || va_busy || id(va).is_running() || id(va_tts_received) ||
               latter_ui::radio_boost_active(now_p) || (id(active_game) > 0) ||

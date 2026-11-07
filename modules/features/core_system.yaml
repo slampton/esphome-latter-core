@@ -20,7 +20,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110280L;
+            constexpr long LATTER_YAML_REV = 2026110281L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -117,6 +117,7 @@ api:
             lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
           then:
             - script.execute: send_device_hello
+      - script.execute: apply_power_policy  # holds the light-sleep awake lock while the link settles
       - delay: 3s
       - lambda: 'latter_ui::log_boot_summary();'
       - logger.replay_boot_logs:
@@ -128,6 +129,7 @@ api:
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
+      - script.execute: apply_power_policy  # a dropped link takes the awake lock back to reconnect
   actions:
     - action: latter_ping
       id: latter_ping_action
