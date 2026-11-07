@@ -209,6 +209,12 @@ media_player:
                     id(va_status_text) = "Responding...";
                   }
               - script.execute: throttled_disp_update
+              # Outside a voice turn nothing else ends the announcement when music keeps playing.
+              - if:
+                  condition:
+                    lambda: 'return !id(va_active);'
+                  then:
+                    - script.execute: finish_announcement
     on_play:
       then:
         - if:

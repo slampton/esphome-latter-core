@@ -291,12 +291,52 @@ script:
                         - delay: 700ms
                   - lambda: 'id(hal_set_dac_mute).execute(false);'
           else:
-            - lambda: |-
-                id(va_was_cancelled) = false;
-                id(apply_power_policy).execute();
-            - lambda: 'id(hal_set_dac_mute).execute(true);'
-            - script.execute: route_i2s_to_mic
-            - script.execute: sync_wake_word_state
+            - if:
+                condition:
+                  # Music kept playing under the reply (a Home Assistant announcement over music: nothing
+                  # paused it): bring it back up instead of muting the speaker path.
+                  lambda: |-
+                    return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+                           !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);
+                then:
+                  - lambda: |-
+                      id(va_was_cancelled) = false;
+                      id(apply_power_policy).execute();
+                      float v = id(latter_media_player).volume;
+                      if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                      id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                      id(hal_set_dac_mute).execute(false);
+                  - mixer_speaker.apply_ducking:
+                      id: media_mixing_input
+                      decibel_reduction: 0
+                      duration: 0.2s
+                  - mixer_speaker.apply_ducking:
+                      id: announcement_mixing_input
+                      decibel_reduction: 50
+                      duration: 0.1s
+                  - script.execute: sync_wake_word_state
+                else:
+                  - lambda: |-
+                      id(va_was_cancelled) = false;
+                      id(apply_power_policy).execute();
+                  - lambda: 'id(hal_set_dac_mute).execute(true);'
+                  - script.execute: route_i2s_to_mic
+                  - script.execute: sync_wake_word_state
+  # A Home Assistant announcement outside a voice turn (assist_satellite.announce, TTS to the music player).
+  # When music keeps playing, the player goes from announcing back to playing, never idle, so on_idle never
+  # runs the drain and the music would stay ducked. Run it once the announcement has actually started.
+  - id: finish_announcement
+    mode: restart
+    then:
+      - wait_until:
+          condition:
+            lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;'
+          timeout: 3s
+      - if:
+          condition:
+            lambda: 'return !id(va_active);'
+          then:
+            - script.execute: va_tts_drain_and_finish
   - id: fetch_remote_art_debounced
     mode: restart
     then:
