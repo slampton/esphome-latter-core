@@ -306,10 +306,11 @@ script:
                       if (std::isnan(v) || v <= 0.0f) v = 0.60f;
                       id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
                       id(hal_set_dac_mute).execute(false);
+                  # Fade the music back in: a 0.2 s return after an announcement sounded abrupt.
                   - mixer_speaker.apply_ducking:
                       id: media_mixing_input
                       decibel_reduction: 0
-                      duration: 0.2s
+                      duration: 1s
                   - mixer_speaker.apply_ducking:
                       id: announcement_mixing_input
                       decibel_reduction: 50
