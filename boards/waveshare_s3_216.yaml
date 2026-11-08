@@ -20,8 +20,8 @@ substitutions:
   font_chrono_size: "38"
   font_date_size: "27"
   font_btn_bold_size: "26"
-  font_small_size: "21"
-  font_micro_size: "14"
+  font_small_size: "25"   # >= 2.0 mm at this panel's PPI (device-ui-design.md, accessibility)
+  font_micro_size: "17"   # >= 1.3 mm
   font_games_size: "38"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"

@@ -44,15 +44,6 @@ inline bool is_music_playing_effective(bool is_remote, bool local_playing,
   return (ha_state == "playing");
 }
 
-template<typename DisplayT, typename FontHeaderT>
-inline void render_menu_header(DisplayT &it, int cx, int y_pos, const std::string &title,
-                               FontHeaderT *font_hdr, esphome::Color theme_primary) {
-  if (title.empty() || font_hdr == nullptr) return;
-  int eff_y = (y_pos >= 44 && y_pos <= 52) ? layout().hdr_y : y_pos;
-  std::string disp_title = fit_text_to_width_font(title, 280, font_hdr);
-  fast_print(it, cx, eff_y, font_hdr, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
-}
-
 template<typename DisplayT, typename LocalImageT, typename RemoteImageT,
          typename FontSmallT, typename FontMicroT>
 inline void render_music_now_playing(
@@ -320,7 +311,7 @@ inline void render_music_menus(
     bool is_rem,
     const std::string &selected_category_mode, const std::string &selected_category_title,
     int music_category_page, int music_browse_page, int music_browse_total_pages,
-    bool menu_scroll_active, int menu_scroll_step, int menu_scroll_dir, int menu_scroll_target_page,
+    bool menu_scroll_active, int menu_scroll_dir, int menu_scroll_target_page,
     const std::string &slot_1_name, const std::string &slot_1_id, const std::string &slot_1_type, bool slot_1_active,
     const std::string &slot_2_name, const std::string &slot_2_id, const std::string &slot_2_type, bool slot_2_active,
     const std::string &slot_3_name, const std::string &slot_3_id, const std::string &slot_3_type, bool slot_3_active,
@@ -374,9 +365,9 @@ inline void render_music_menus(
   const int max_vis_y  = scale_y(395);
 
   if (music_overlay_mode == 5) {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "MUSIC");
+    render_page_header(it, cx, "MUSIC", font_small, theme_primary);
     std::string spk_sub = fit_text_to_width_font(active_speaker_name, scale_x(260), font_small);
-    fast_print(it, cx, layout().sub_hdr_y, font_small, col_white, esphome::display::TextAlign::CENTER, spk_sub.c_str());
+    render_sub_header(it, cx, spk_sub.c_str(), font_small, col_white);
 
     render_modern_card(it, cx, scale_y(122), 276, 44, 12, card_bg, theme_primary, "Speakers",    col_white, font_small);
     render_modern_card(it, cx, scale_y(185), 276, 44, 12, card_bg, theme_primary, "Library",     col_white, font_small);
@@ -386,8 +377,7 @@ inline void render_music_menus(
   } else if (music_overlay_mode == 1) {
     int list_shift = 0;
     if (menu_scroll_active) {
-      int stp = std::max(0, std::min(4, menu_scroll_step));
-      list_shift = menu_scroll_dir * scale_y(116 - SHARED_SCROLL_EASE_116[stp]);
+      list_shift = menu_scroll_dir * (scale_y(116) - menu_scroll_shift(scale_y(116)));
     }
 
     auto draw_speaker_card = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
@@ -420,19 +410,17 @@ inline void render_music_menus(
     if (music_browse_total_pages > 1) {
       char spk_hdr[40];
       snprintf(spk_hdr, sizeof(spk_hdr), "SPEAKERS  %d/%d", music_browse_page, music_browse_total_pages);
-      render_menu_header(it, cx, 48, spk_hdr, font_small, theme_primary);
+      render_page_header(it, cx, spk_hdr, font_small, theme_primary);
       draw_right_chevrons(music_browse_page > 1, music_browse_page < music_browse_total_pages);
     } else {
-      render_menu_header(it, cx, 48, "SPEAKERS", font_small, theme_primary);
+      render_page_header(it, cx, "SPEAKERS", font_small, theme_primary);
     }
 
   } else if (music_overlay_mode == 2) {
-    static constexpr int16_t SCROLL_EASE_126[5] = {0, 27, 68, 108, 126};
     const int max_shift = scale_y(126);
     int current_offset = 0;
     if (menu_scroll_active) {
-      int cur_step = std::max(0, std::min(4, menu_scroll_step));
-      int shift = scale_y(SCROLL_EASE_126[cur_step]);
+      int shift = menu_scroll_shift(max_shift);
       current_offset = (menu_scroll_dir == 1) ? shift : (max_shift - shift);
     } else {
       current_offset = (music_category_page == 2) ? max_shift : 0;
@@ -452,7 +440,7 @@ inline void render_music_menus(
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_menu_header(it, cx, 48, "LIBRARY", font_small, theme_primary);
+    render_page_header(it, cx, "LIBRARY", font_small, theme_primary);
     int cur_dot_page = menu_scroll_active ? menu_scroll_target_page : music_category_page;
 
     draw_right_chevrons(cur_dot_page == 2, cur_dot_page == 1);
@@ -464,8 +452,7 @@ inline void render_music_menus(
 
     int list_shift = 0;
     if (menu_scroll_active) {
-      int stp = std::max(0, std::min(4, menu_scroll_step));
-      list_shift = menu_scroll_dir * scale_y(116 - SHARED_SCROLL_EASE_116[stp]);
+      list_shift = menu_scroll_dir * (scale_y(116) - menu_scroll_shift(scale_y(116)));
     }
 
     auto draw_drilldown_icon = [&](int x_pos, int y_mid) {
@@ -540,22 +527,22 @@ inline void render_music_menus(
       char pg_buf[24];
       snprintf(pg_buf, sizeof(pg_buf), "  %d/%d", music_browse_page, music_browse_total_pages);
       std::string base_hdr = fit_text_to_width_font(selected_category_title, scale_x(185), font_small);
-      render_menu_header(it, cx, 48, base_hdr + pg_buf, font_small, theme_primary);
+      render_page_header(it, cx, base_hdr + pg_buf, font_small, theme_primary);
       bool wrap_list = (selected_category_mode == "artist" || selected_category_mode == "album");
       draw_right_chevrons(wrap_list || music_browse_page > 1,
                           wrap_list || music_browse_page < music_browse_total_pages);
     } else {
-      render_menu_header(it, cx, 48, selected_category_title, font_small, theme_primary);
+      render_page_header(it, cx, selected_category_title, font_small, theme_primary);
     }
 
   } else if (music_overlay_mode == 4) {
     std::string spk_title = target_speaker_name.empty() ? "SPEAKER" : target_speaker_name;
     for (char &c : spk_title) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
-    render_menu_header(it, cx, 48, spk_title, font_small, theme_primary);
+    render_page_header(it, cx, spk_title, font_small, theme_primary);
 
     bool is_current = (target_speaker_id == active_speaker_entity);
     if (is_current) {
-      fast_print(it, cx, layout().sub_hdr_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Currently Controlling");
+      render_sub_header(it, cx, "Currently Controlling", font_small, theme_secondary);
       bool is_remote_target = is_rem && !media_state().local_speaker.empty();
       if (is_remote_target) {
         render_modern_card(it, cx, scale_y(142), 276, 44, 12, card_bg, card_brd, "Transfer to Local", col_white, font_small);
@@ -566,7 +553,7 @@ inline void render_music_menus(
         render_modern_card(it, cx, scale_y(230), 276, 44, 12, card_bg, card_brd, "Stop Playback", col_white, font_small);
       }
     } else {
-      fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "Speaker Actions");
+      render_sub_header(it, cx, "Speaker Actions", font_small, col_slate);
       render_modern_card(it, cx, scale_y(130), 276, 44, 12, card_bg, card_brd, "Transfer Queue",  col_white, font_small);
       render_modern_card(it, cx, scale_y(190), 276, 44, 12, card_bg, card_brd, "Control Only",    col_white, font_small);
       render_modern_card(it, cx, scale_y(250), 276, 44, 12, card_bg, card_brd, "Join Audio",      col_white, font_small);
@@ -574,7 +561,7 @@ inline void render_music_menus(
     }
   } else if (music_overlay_mode == 6) {
     std::string disp_t = cur_title.empty() ? "NOW PLAYING" : fit_text_to_width_font(cur_title, scale_x(280), font_small);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_t.c_str());
+    render_page_header(it, cx, disp_t.c_str(), font_small, theme_primary);
 
     std::string sub_meta = cur_artist;
     if (!cur_album.empty() && cur_album != "None") {
@@ -582,7 +569,7 @@ inline void render_music_menus(
     }
     if (!sub_meta.empty() && sub_meta != "None") {
       sub_meta = fit_text_to_width_font(sub_meta, scale_x(275), font_small);
-      fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, esphome::display::TextAlign::CENTER, sub_meta.c_str());
+      render_sub_header(it, cx, sub_meta.c_str(), font_small, col_slate);
     }
 
     const int trk_card_y = scale_y(132);
@@ -697,11 +684,11 @@ inline void render_music_menus(
     } else {
       snprintf(hdr_buf, sizeof(hdr_buf), "%s", is_lyrics ? "LYRICS" : "ARTIST & ALBUM BIO");
     }
-    render_menu_header(it, cx, 48, hdr_buf, font_small, theme_primary);
+    render_page_header(it, cx, hdr_buf, font_small, theme_primary);
 
     std::string sub_h = cur_title.empty() ? cur_artist : (cur_title + " • " + cur_artist);
-    sub_h = fit_text_to_width_font(sub_h, scale_x(270), font_micro);
-    fast_print(it, cx, layout().sub_hdr_y, font_micro, col_slate, esphome::display::TextAlign::CENTER, sub_h.c_str());
+    sub_h = fit_text_to_width_font(sub_h, scale_x(270), font_small);
+    render_sub_header(it, cx, sub_h.c_str(), font_small, col_slate);
 
     render_modern_card(it, cx, scale_y(236), 324, scale_y(274), 16, card_bg, card_brd, nullptr, col_white, font_small);
 
@@ -721,7 +708,7 @@ inline void render_music_menus(
     }
   }
 
-  render_back_button(it, cx, font_small, 426, "< BACK");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 }  // namespace latter_ui

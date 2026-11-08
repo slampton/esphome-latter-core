@@ -509,14 +509,14 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE (Bottom Scorekeeper & Center Hole drawn first so marbles roll over)
   // ==========================================================================
   (void)theme_primary; (void)col_gray;
-  // Subtle horizontal bottom cushion wall + Score + "< Exit" aligned to layout().back_y
+  // Subtle horizontal bottom cushion wall + Score + "Exit" aligned to layout().back_y
   const int hud_y = layout().back_y - scale_y(34);
   const int wall_hw = scale_min(151);
   fast_line(it, cx - wall_hw, wall_y, cx + wall_hw, wall_y, col_slate * 0.45f);
   fast_line(it, cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, col_dark_gray);
   char hud_buf[56];
   snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d", wave_num, sunk_count, time_remaining, game_score);
-  fast_print(it, cx, hud_y, font_small, time_remaining < 10 ? col_red : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
+  fast_print(it, cx, hud_y, font_small, time_remaining < 10 ? col_orange : col_gold, esphome::display::TextAlign::CENTER, hud_buf);
   render_back_button(it, cx, font_small, layout().back_y, "Exit");
 
   // Center Hole Target with Swirling Event Horizon
@@ -597,7 +597,7 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     } else {
       snprintf(pop_buf, sizeof(pop_buf), "+%d", popup_pts);
     }
-    fast_print(it, cx, py, font_small, popup_combo > 1 ? col_cyan : col_gold, esphome::display::TextAlign::CENTER, pop_buf);
+    fast_print(it, cx, py, font_small, popup_combo > 1 ? col_white : col_gold, esphome::display::TextAlign::CENTER, pop_buf);
   }
 
   // 1.5s Inter-Wave Anticipation Banner ("WAVE X CLEAR! +6s" -> "GET READY! WAVE X+1")
@@ -639,7 +639,7 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_marbles);
     fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_slate, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1069,7 +1069,7 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_archery);
     fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_slate, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -1631,7 +1631,7 @@ inline void render_game_bricks(DisplayT &it, int cx, int cy, uint32_t now_ms,
     snprintf(best_str, sizeof(best_str), "Best: %d", high_score_bricks);
     fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
-    fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(42), font_small, col_slate, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
 }
 
@@ -2135,7 +2135,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // RENDERING PIPELINE
   // ==========================================================================
 
-  // 1. Play Bowl Rim, Bottom Wall, Scorekeeper HUD & "< Exit"
+  // 1. Play Bowl Rim, Bottom Wall, Scorekeeper HUD & "Exit"
   fast_circle(it, cx, cy, scale_min(208), col_dark_gray);
   fast_line(it, cx - scale_min(151), bot_wall_y, cx + scale_min(151), bot_wall_y, col_dark_gray);
   char t_buf[56];
@@ -2405,7 +2405,7 @@ inline void render_game_2048(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char sc_str[32];
     snprintf(sc_str, sizeof(sc_str), "Score: %d", score_2048);
     fast_print(it, cx, cy - scale_y(6), font_small, col_white, esphome::display::TextAlign::CENTER, sc_str);
-    fast_print(it, cx, cy + scale_y(24), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
+    fast_print(it, cx, cy + scale_y(24), font_small, col_slate, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
   }
   (void)theme_primary;
 }
@@ -2616,17 +2616,16 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
 template<typename DisplayT, typename FontTitleT, typename FontBoldT, typename FontSmallT>
 inline void render_games_launcher(
     DisplayT &it, int cx,
-    int &game_carousel_idx, bool menu_scroll_active, int menu_scroll_step,
+    int &game_carousel_idx, bool menu_scroll_active,
     int menu_scroll_dir, int menu_scroll_target_page,
     int high_score_marbles, int high_score_archery, int high_score_bricks,
     int high_score_chomp,
     FontTitleT *font_games_title, FontBoldT *font_btn_bold, FontSmallT *font_small,
     esphome::Color theme_primary, esphome::Color theme_secondary,
     esphome::Color col_bg, esphome::Color col_black, esphome::Color col_white,
-    esphome::Color col_silver, esphome::Color col_slate, esphome::Color col_dark_gray,
+    esphome::Color col_slate, esphome::Color col_dark_gray,
     esphome::Color col_gold, esphome::Color col_cyan, esphome::Color col_green,
     esphome::Color col_orange, esphome::Color col_red, esphome::Color col_magenta, bool game_sound_on = true) {
-  (void)col_silver;
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -2814,8 +2813,7 @@ inline void render_games_launcher(
   const int btn_row_y    = layout().app_dock_y;
 
   if (menu_scroll_active) {
-    int step = std::max(0, std::min(4, menu_scroll_step));
-    int offset = scale_x(SHARED_SCROLL_EASE_252[step]);
+    int offset = menu_scroll_shift(scale_x(252));
     int full_span = scale_x(252);
     int out_dx = -menu_scroll_dir * offset;
     int in_dx  = menu_scroll_dir * (full_span - offset);
@@ -2829,7 +2827,7 @@ inline void render_games_launcher(
   fast_print(it, cx, compact_w ? 64 : scale_y(84), font_games_title, theme_primary, TextAlign::CENTER, "GAMES");
 
   int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
-  render_dock_page_pips(it, cx, pips_y, 6, active_pip, col_white, Color(95, 112, 134));
+  render_dock_page_pips(it, cx, pips_y, 6, active_pip, col_white, kChromePipInactive);
 
   render_pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22), theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
 

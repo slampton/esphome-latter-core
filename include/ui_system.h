@@ -375,7 +375,7 @@ inline void render_system_page(
     DisplayT &it, int cx, uint32_t now_ms, const char *version_str,
     int system_menu_mode, int system_dashboard_page,
     int sleep_menu_page, int display_menu_page,
-    bool menu_scroll_active, int menu_scroll_step, int menu_scroll_dir, int menu_scroll_target_page,
+    bool menu_scroll_active, int menu_scroll_dir, int menu_scroll_target_page,
     int &update_check_state, uint32_t &update_check_timer,
     const std::string &ha_fw_latest, const std::string &ha_fw_summary,
     float batt, bool is_charging, float batt_v,
@@ -421,7 +421,7 @@ inline void render_system_page(
   const esphome::Color card_brd_off(34, 40, 50);
 
   auto draw_back = [&]() {
-    render_back_button(it, cx, font_small, 426, "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
   };
 
   // Multi-item cycle card (3+ options): renders squared-off modern card + subtle < > flank chevrons
@@ -466,19 +466,17 @@ inline void render_system_page(
   const int min_vis_y  = scale_y(60);
   const int max_vis_y  = scale_y(395);
 
-  auto compute_scroll_offset = [&](int cur_page, const int16_t ease_lut[5], int max_shift_466) -> int {
+  auto compute_scroll_offset = [&](int cur_page, int max_shift_466) -> int {
     const int max_shift = scale_y(max_shift_466);
     if (menu_scroll_active) {
-      int step = std::max(0, std::min(4, menu_scroll_step));
-      int shift = scale_y(ease_lut[step]);
+      int shift = menu_scroll_shift(max_shift);
       return (menu_scroll_dir == 1) ? shift : (max_shift - shift);
     }
     return (cur_page == 2) ? max_shift : 0;
   };
 
   if (system_menu_mode == 0) {
-    static constexpr int16_t SCROLL_EASE_189[5] = {0, 41, 102, 161, 189};
-    int current_offset = compute_scroll_offset(system_dashboard_page, SCROLL_EASE_189, 189);
+    int current_offset = compute_scroll_offset(system_dashboard_page, 189);
     static constexpr const char *kSysLabels[8] = {
       "Display", "Sleep & Wake", "Sound",   "Voice",
       "Music",   "Home",         "Actions", "Info"
@@ -494,14 +492,13 @@ inline void render_system_page(
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "SYSTEM");
+    render_page_header(it, cx, "SYSTEM", font_small, theme_primary);
 
     int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 1) {
-    static constexpr int16_t SCROLL_EASE_315[5] = {0, 68, 170, 268, 315};
-    int current_offset = compute_scroll_offset(sleep_menu_page, SCROLL_EASE_315, 315);
+    int current_offset = compute_scroll_offset(sleep_menu_page, 315);
     char sleep_labels[10][36];
     const char *short_p = power_profile_short_label(power_profile_opt);
     snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
@@ -557,13 +554,13 @@ inline void render_system_page(
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_menu_header(it, cx, 48, "SLEEP & WAKE", font_small, theme_primary);
+    render_page_header(it, cx, "SLEEP & WAKE", font_small, theme_primary);
     draw_back();
     int active_page = menu_scroll_active ? menu_scroll_target_page : sleep_menu_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 2) {
-    int current_offset = compute_scroll_offset(display_menu_page, SHARED_SCROLL_EASE_252, 252);
+    int current_offset = compute_scroll_offset(display_menu_page, 252);
     char disp_labels[9][36];
     snprintf(disp_labels[0], sizeof(disp_labels[0]), "Start Screen: %s",
              (default_app_opt == "Clock") ? "Clock" : "Home");
@@ -606,13 +603,13 @@ inline void render_system_page(
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_menu_header(it, cx, 48, "DISPLAY", font_small, theme_primary);
+    render_page_header(it, cx, "DISPLAY", font_small, theme_primary);
     draw_back();
     int active_page = menu_scroll_active ? menu_scroll_target_page : display_menu_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 3) {
-    render_menu_header(it, cx, 48, "ACTIONS", font_small, theme_primary);
+    render_page_header(it, cx, "ACTIONS", font_small, theme_primary);
     draw_action_card_y(layout().slot5_y(0), "Screensaver Now",   card_brd_on, col_white, card_bg_on);
 #if LATTER_HAS_BATTERY
     draw_action_card_y(layout().slot5_y(1), "Hibernate Now",     card_brd_on, col_white, card_bg_on);
@@ -631,7 +628,7 @@ inline void render_system_page(
     render_modern_card(it, cx + scale_x(73), scale_y(230), 112, 44, 12, esphome::Color(28, 18, 22), col_red, "Restart", col_white, font_small);
 
   } else if (system_menu_mode == 5) {
-    render_menu_header(it, cx, 48, "UPDATE", font_small, theme_primary);
+    render_page_header(it, cx, "UPDATE", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
     fast_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
@@ -681,7 +678,7 @@ inline void render_system_page(
     render_modern_card(it, cx + scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, theme_primary, "Install", col_white, font_small);
 
   } else if (system_menu_mode == 7) {
-    render_menu_header(it, cx, 48, "SOUND", font_small, theme_primary);
+    render_page_header(it, cx, "SOUND", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Speaker Vol: %d%%", spk_vol_pct);
     draw_cycle_card_y(layout().slot5_y(0), buf, true);
     snprintf(buf, sizeof(buf), "Alert Vol: %d%%", alert_vol_pct);
@@ -693,7 +690,7 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 8) {
-    render_menu_header(it, cx, 48, "SYSTEM INFO", font_small, theme_primary);
+    render_page_header(it, cx, "SYSTEM INFO", font_small, theme_primary);
     const int info_x = layout().sys_info_x();
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
       int ey = scale_y(y);
@@ -757,7 +754,7 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 9) {
-    render_menu_header(it, cx, 48, "MUSIC", font_small, theme_primary);
+    render_page_header(it, cx, "MUSIC", font_small, theme_primary);
     snprintf(buf, sizeof(buf), "Art: %s", art_mode_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(0), buf, true);
     snprintf(buf, sizeof(buf), "Overlay: %s", overlay_style_opt.c_str());
@@ -771,7 +768,7 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 11) {
-    render_menu_header(it, cx, 48, "VOICE", font_small, theme_primary);
+    render_page_header(it, cx, "VOICE", font_small, theme_primary);
     const bool ww_en = (va_ww_mode_opt != "Disabled");
     snprintf(buf, sizeof(buf), "Wake Mode: %s", va_ww_mode_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(0), buf, ww_en);
@@ -788,7 +785,7 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 12) {
-    render_menu_header(it, cx, 48, "SENSITIVITY", font_small, theme_primary);
+    render_page_header(it, cx, "SENSITIVITY", font_small, theme_primary);
     auto short_sens = [](const std::string &s) -> const char * {
       if (s == "Slightly sensitive") return "Low";
       if (s == "Very sensitive") return "High";

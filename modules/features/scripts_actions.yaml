@@ -1441,17 +1441,13 @@ script:
     mode: restart
     then:
       - lambda: |-
-          // Frame 1: Render 35% eased frame (SHARED_SCROLL_EASE_*[2])
-          id(menu_scroll_step) = 2;
-          latter_ui::schedule_disp_update(&id(disp1));
-      - delay: 16ms
+          // Time-based page transition: kMotionMs, ease-out cubic (the curve the dock and mode bar use).
+          // The display lambda keeps requesting animation frames while menu_scroll_active is set.
+          latter_ui::menu_scroll_start_ms() = millis();
+          latter_ui::schedule_anim_disp_update(&id(disp1));
+      - delay: !lambda 'return latter_ui::kMotionMs;'
       - lambda: |-
-          // Frame 2: Render 85% eased frame (SHARED_SCROLL_EASE_*[3])
-          id(menu_scroll_step) = 3;
-          latter_ui::schedule_disp_update(&id(disp1));
-      - delay: 16ms
-      - lambda: |-
-          // Frame 3: Commit target page, release scroll lock, and render settled frame
+          // Commit the target page, release the scroll lock and render the settled frame
           id(menu_scroll_active) = false;
           if (id(gui_page) == 4 && id(system_menu_mode) == 1) {
             id(sleep_menu_page) = id(menu_scroll_target_page);
@@ -1466,7 +1462,6 @@ script:
           } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
             id(tools_menu_page) = id(menu_scroll_target_page);
           }
-          id(menu_scroll_step) = 0;
           latter_ui::schedule_disp_update(&id(disp1));
 
   # ==============================================================================

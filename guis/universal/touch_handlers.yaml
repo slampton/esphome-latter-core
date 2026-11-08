@@ -193,7 +193,6 @@ script:
                     id(music_browse_page) = next_pg;
                     latter_ui::last_music_page_req_ms() = now_touch;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     id(fetch_music_browse).execute();
                   }
                 }
@@ -554,7 +553,6 @@ script:
                     latter_ui::music_scroll_tap_lockout_until_ms() = now_sc + 280U;
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     id(music_direct_nav) = true;
                     id(music_overlay_mode) = 2;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -705,7 +703,6 @@ script:
                   if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     id(music_direct_nav) = false;
                     id(music_overlay_mode) = 2;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -764,7 +761,6 @@ script:
                     else { id(music_overlay_mode) = 5; }
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     id(music_hud_active) = true;
                     id(music_hud_timer) = millis();
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -819,7 +815,6 @@ script:
                       id(drilldown_artist_page) = 1;
                       id(drilldown_album_page) = 1;
                       id(menu_scroll_active) = false;
-                      id(menu_scroll_step) = 0;
                       id(music_overlay_mode) = 2;
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -1023,7 +1018,6 @@ script:
                     id(system_menu_mode) = 0;
                     id(sleep_menu_page) = 1;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
@@ -2092,7 +2086,6 @@ script:
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                   id(menu_scroll_target_page) = target_pg;
-                  id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
                 }
                 return;
@@ -2108,7 +2101,6 @@ script:
                 id(menu_scroll_active) = true;
                 id(menu_scroll_dir) = dir;
                 id(menu_scroll_target_page) = latter_ui::step_wrap(id(game_carousel_idx), dir, 6);
-                id(menu_scroll_step) = 0;
                 ESP_LOGI("touch", "Games Carousel Swipe (dx=%d) -> game=%d", dx, id(menu_scroll_target_page));
                 id(menu_scroll_transition).execute();
                 return;
@@ -2141,7 +2133,6 @@ script:
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                   id(menu_scroll_target_page) = target_pg;
-                  id(menu_scroll_step) = 0;
                   ESP_LOGI("touch", "System Menu Vertical Swipe (dy=%d) -> page=%d", dy, target_pg);
                   id(menu_scroll_transition).execute();
                 }
@@ -2349,7 +2340,6 @@ script:
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = (target_pg == 1) ? 1 : -1;
                   id(menu_scroll_target_page) = target_pg;
-                  id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
                 }
                 return;
@@ -2553,7 +2543,6 @@ script:
                     id(music_browse_page) = next_pg;
                     latter_ui::last_music_page_req_ms() = now_rel;
                     id(menu_scroll_active) = false;
-                    id(menu_scroll_step) = 0;
                     ESP_LOGI("touch", "Music Flick (dy=%d, dt=%lums) -> step=%d page=%d/%d",
                              dy, (unsigned long)touch_dur_ms, delta, next_pg, id(music_browse_total_pages));
                     id(fetch_music_browse).execute();
@@ -2567,7 +2556,6 @@ script:
                       id(menu_scroll_active) = true;
                       id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                       id(menu_scroll_target_page) = target_pg;
-                      id(menu_scroll_step) = 0;
                       id(menu_scroll_transition).execute();
                     } else if (id(music_browse_total_pages) > 1) {
                       int delta = (tp.y < latter_ui::SCREEN_CY) ? -1 : 1;
@@ -2693,7 +2681,6 @@ script:
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = dir;
                   id(menu_scroll_target_page) = latter_ui::step_wrap(id(game_carousel_idx), dir, 6);
-                  id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
                 } else if (gest.max_travel < latter_ui::layout().tap_max()) {
                   const int g_btn_y = latter_ui::layout().app_dock_y;
@@ -2730,7 +2717,6 @@ script:
                     id(menu_scroll_active) = true;
                     id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                     id(menu_scroll_target_page) = target_pg;
-                    id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   }
                 } else if (gest.max_travel < latter_ui::layout().tap_max() && gest.last_y < latter_ui::scale_y(404)) {
@@ -2739,7 +2725,6 @@ script:
                     id(menu_scroll_active) = true;
                     id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                     id(menu_scroll_target_page) = target_pg;
-                    id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   } else if (id(system_menu_mode) == 0) {
                     int slot = latter_ui::layout().hit_slot5(tp, 75, 385);
@@ -3304,7 +3289,6 @@ script:
                     id(menu_scroll_active) = true;
                     id(menu_scroll_dir) = (target_pg == 1) ? 1 : -1;
                     id(menu_scroll_target_page) = target_pg;
-                    id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   } else {
                     int row = latter_ui::layout().hit_tools_row(tp.y);

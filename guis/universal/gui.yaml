@@ -57,8 +57,6 @@ color:
     hex: "6B8E9E"  # Default Soft Steel Ice Blue (Steel & Silver Palette)
   - id: theme_secondary
     hex: "C0C0C0"  # Default Brushed Silver (Steel & Silver Palette)
-  - id: col_silver
-    hex: "C0C0C0"  # Vintage Swiss brushed silver / steel
   - id: col_bg
     hex: "000000"
   - id: col_black
@@ -73,8 +71,6 @@ color:
     hex: "9E9E9E"
   - id: col_cyan
     hex: "456E8A"  # Distinctly muted vintage steel/slate blue (was electric cyan 00E5FF)
-  - id: col_light_blue
-    hex: "6B8E9E"  # Muted soft steel blue
   - id: col_green
     hex: "427453"  # Distinctly muted heritage sage/moss green (was neon 00E676)
   - id: col_orange
@@ -137,8 +133,8 @@ display:
             float rad = (static_cast<float>(i) / 100.0f) * 2.0f * latter_ui::PI_F - latter_ui::HALF_PI_F;
             float s = 0.0f, c = 1.0f;
             latter_ui::fast_sincos(rad, s, c);
-            it.line(cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
-                    cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
+            latter_ui::fast_line(it, cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
+                                 cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
           }
         } else {
           const int ota_bw = std::min(280, latter_ui::SCREEN_W - 48);
@@ -150,11 +146,11 @@ display:
           }
         }
 
-        it.print(cx, cy - 60, id(font_date), id(theme_primary), TextAlign::CENTER, "FIRMWARE UPDATE");
+        latter_ui::fast_print(it, cx, cy - 60, id(font_date), id(theme_primary), TextAlign::CENTER, "FIRMWARE UPDATE");
 
         char prog_buf[32];
         snprintf(prog_buf, sizeof(prog_buf), "%d%%", pct);
-        it.print(cx, cy + 8, id(font_time), id(col_white), TextAlign::CENTER, prog_buf);
+        latter_ui::fast_print(it, cx, cy + 8, id(font_time), id(col_white), TextAlign::CENTER, prog_buf);
 
         const char* status_msg = "Preparing flash...";
         if (pct >= 99) {
@@ -164,7 +160,7 @@ display:
         } else if (pct >= 10) {
           status_msg = "Writing flash memory...";
         }
-        it.print(cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, status_msg);
+        latter_ui::fast_print(it, cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, status_msg);
         return;
       }
 
@@ -174,14 +170,14 @@ display:
       if (id(is_hibernating)) {
         latter_ui::frame_base(it, id(col_bg));
         if (id(hibernate_countdown_val) > 0) {
-          it.print(cx, cy - 65, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
+          latter_ui::fast_print(it, cx, cy - 65, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
           char c_buf[16];
           snprintf(c_buf, sizeof(c_buf), "%d", id(hibernate_countdown_val));
-          it.print(cx, cy + 5, id(font_chrono_time), id(theme_secondary), TextAlign::CENTER, c_buf);
-          it.print(cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, "Tap screen to stay awake");
+          latter_ui::fast_print(it, cx, cy + 5, id(font_chrono_time), id(theme_secondary), TextAlign::CENTER, c_buf);
+          latter_ui::fast_print(it, cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, "Tap screen to stay awake");
         } else {
-          it.print(cx, cy - 10, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
-          it.print(cx, cy + 30, id(font_small), id(col_slate), TextAlign::CENTER, "Shutting down...");
+          latter_ui::fast_print(it, cx, cy - 10, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
+          latter_ui::fast_print(it, cx, cy + 30, id(font_small), id(col_slate), TextAlign::CENTER, "Shutting down...");
         }
         return;
       }
@@ -354,7 +350,7 @@ display:
               id(active_speaker_entity), id(active_speaker_name), is_remote,
               id(selected_category_mode), id(selected_category_title),
               id(music_category_page), id(music_browse_page), id(music_browse_total_pages),
-              id(menu_scroll_active), id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
+              id(menu_scroll_active), id(menu_scroll_dir), id(menu_scroll_target_page),
               id(slot_1_name), id(slot_1_id), id(slot_1_type), id(slot_1_active),
               id(slot_2_name), id(slot_2_id), id(slot_2_type), id(slot_2_active),
               id(slot_3_name), id(slot_3_id), id(slot_3_type), id(slot_3_active),
@@ -395,12 +391,12 @@ display:
         if (id(active_game) == 0) {
           latter_ui::render_games_launcher(
               it, cx, id(game_carousel_idx), id(menu_scroll_active),
-              id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
+              id(menu_scroll_dir), id(menu_scroll_target_page),
               id(high_score_marbles), id(high_score_archery), id(high_score_bricks),
               id(high_score_chomp),
               id(font_games_title), id(font_btn_bold), id(font_small),
               id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_black), id(col_white), id(col_silver),
+              id(col_bg), id(col_black), id(col_white),
               id(col_slate), id(col_dark_gray),
               id(col_gold), id(col_cyan), id(col_green),
               id(col_orange), id(col_red), id(col_magenta), id(game_sound_switch).state);
@@ -468,7 +464,7 @@ display:
             it, cx, millis(), "${version}",
             id(system_menu_mode), id(system_dashboard_page),
             id(sleep_menu_page), id(display_menu_page),
-            id(menu_scroll_active), id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
+            id(menu_scroll_active), id(menu_scroll_dir), id(menu_scroll_target_page),
             id(update_check_state), id(update_check_timer),
             id(ha_firmware_latest_version).state, id(ha_firmware_release_summary).state,
             batt, id(batt_charging).state, id(batt_voltage).state,
@@ -562,7 +558,7 @@ display:
             id(col_gold), id(col_green), id(col_red),
             id(area_show_all_category_switch).state);
         if (id(area_subpage) > 0) {
-          latter_ui::render_back_button(it, cx, id(font_small), 426, "< Back");
+          latter_ui::render_back_button(it, cx, id(font_small), latter_ui::layout().back_y, "< Back");
         }
 
       // ==========================================
@@ -583,7 +579,7 @@ display:
         if (id(tools_subpage) == 0) {
           latter_ui::render_tools_launcher(
               it, cx, id(tools_menu_page), id(menu_scroll_active),
-              id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
+              id(menu_scroll_dir), id(menu_scroll_target_page),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_black), id(col_white));
         } else if (id(tools_subpage) == 1) {
@@ -608,7 +604,7 @@ display:
           latter_ui::render_tool_stopwatch(
               it, cx, cy, millis(), id(stopwatch_running),
               id(stopwatch_start_time), id(stopwatch_elapsed_ms), id(stopwatch_lap_ms),
-              id(font_date), id(font_small), id(col_white), id(col_silver),
+              id(font_date), id(font_small), id(theme_primary), id(theme_secondary), id(col_white),
               id(col_slate), id(col_dark_gray), id(col_red));
         } else if (id(tools_subpage) == 4) {
           latter_ui::render_tool_dice_roll(
@@ -659,9 +655,9 @@ display:
         }
       } else if (id(gui_page) == 9) {
         // ==========================================
-        // PAGE 9: DEDICATED HOME SECURITY ALARM APP
+        // PAGE 9: WHOLE-HOME HUB (alarm, thermostat, garage & locks, vacuum)
         // ==========================================
-        latter_ui::render_security_alarm_page(
+        latter_ui::render_whole_home_page(
             it, cx, millis(), id(area_alarm_entity), id(area_alarm_state),
             id(area_action_feedback), id(area_feedback_timer),
             id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
@@ -696,7 +692,7 @@ display:
       uint32_t end_draw_ms = millis();
       latter_ui::last_disp_update_ms() = end_draw_ms;
       latter_ui::record_ambient_frame_ms(end_draw_ms);
-      if (latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage))) {
+      if (latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage)) || id(menu_scroll_active)) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
       }
 

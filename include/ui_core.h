@@ -50,7 +50,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110285L
+#define LATTER_SDK_REV 2026110286L
 
 namespace latter_ui {
 
@@ -147,6 +147,27 @@ inline constexpr float scale_min_f(float v466) {
 
 static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
+
+// Shared chrome rows (UiLayout::back_y and UiLayout::home_bar_y read these).
+static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - scale_y(28));
+static constexpr int kHomeBarY = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(11));
+
+// Chrome colors (docs/device-ui-design.md, palette): the shared chrome draws with these named
+// constants, never with literals. Palette colors (theme_primary, col_white, ...) are the GUI's
+// ESPHome color ids and arrive as arguments. latter-verify [UI COLOR TOKENS] ratchets the
+// remaining Color(r, g, b) literals per header.
+inline const esphome::Color kChromeShadow(0, 0, 0);             // 1 px drop shadows under chrome and text
+inline const esphome::Color kChromeHomePill(175, 190, 210);
+inline const esphome::Color kChromeTrack(30, 38, 50);           // scrollbar track, mode-bar slot divider
+inline const esphome::Color kChromeTrackBorder(50, 62, 78);
+inline const esphome::Color kChromeTrackDim(16, 20, 26);
+inline const esphome::Color kChromeTrackBorderDim(24, 30, 38);
+inline const esphome::Color kChromeBarTrack(16, 20, 27);        // mode-bar track and capsule, empty-state card
+inline const esphome::Color kChromeBarBorder(52, 64, 82);
+inline const esphome::Color kChromeCardBorder(38, 46, 58);      // empty-state card border
+inline const esphome::Color kChromePipInactive(95, 112, 134);
+inline const esphome::Color kChromeBackLabel(158, 158, 158);
+inline const esphome::Color kChromeGlassTint(22, 27, 36);       // ambient-tint fallback for glass cards
 
 namespace PageId {
   static constexpr int HOME       = 1;
@@ -281,8 +302,8 @@ static constexpr int16_t CIRCLE_HW[466] = {
 
 // O(1) Bezel Half-Span Lookup:
 //   - Round Display (LATTER_ROUND_DISPLAY=1, 466x466): O(1) .rodata CIRCLE_HW[c] chord lookup
-//   - Portrait Rectangle Watch (LATTER_ROUND_DISPLAY=0, 410x502): Full horizontal half-width (SCREEN_W/2)
-//     across y in [0..SCREEN_H-1] with smooth r=38px rounded watch corners at top and bottom!
+//   - Rectangular panels (LATTER_ROUND_DISPLAY=0): the full half-width (SCREEN_W/2) on every row.
+// LATTER_CORNER_R is the panel's corner radius for bezel effects: W/2 round, 98 wearable, 20 otherwise.
 #ifndef LATTER_CORNER_R
 #if LATTER_ROUND_DISPLAY
 #define LATTER_CORNER_R (LATTER_SCREEN_W / 2)
@@ -505,11 +526,9 @@ inline void draw_glow_line(DisplayT &it, int x0, int y0, int x1, int y1,
   fast_line(it, x0, y0, x1, y1, core_col);
 }
 
-// Universal Audio-Aware Ambient Animation Pacer (20 FPS Idle / ~13.3 FPS Audio-Protected):
-// Shared across all Docked Screensavers, Sky & Weather motion wallpapers, and future Home Page
-// live backgrounds. Unlocks full 20 FPS (50ms interval, 42ms coalesce guard against disp1's 1s timer)
-// whenever local audio/alerts are idle, and automatically paces at 75ms (~13.3 FPS) during active
-// local Sendspin FLAC playback so audio DMA and Octal PSRAM never contend.
+// Ambient animation pacer, shared by the docked screensavers, Sky & Weather motion wallpapers and Home's
+// live backgrounds: one step per 42 ms while local audio and alerts are idle, 75 ms while local audio
+// plays (so audio DMA and PSRAM don't contend) and 120 ms during alerts; never during a voice turn.
 inline uint32_t &last_ambient_anim_ms() {
   static uint32_t ts = 0;
   return ts;
@@ -547,9 +566,30 @@ inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
   return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 
-// Standardized Dynamic Scroll Easing Constants (5-Step Cubic Eased Curve)
-static constexpr int16_t SHARED_SCROLL_EASE_116[5] = {0, 25, 63, 99, 116}; // 2-Pill 116px shift
-static constexpr int16_t SHARED_SCROLL_EASE_252[5] = {0, 54, 136, 215, 252}; // 4-Card 252px shift (63px stride)
+// One motion system (docs/device-ui-design.md): every UI transition is time-based and eases out cubic
+// over kMotionMs: the Home dock and mode-bar slides (DockSlideAnimator, ui_layout.h) and the list and
+// carousel page transitions (script menu_scroll_transition).
+static constexpr uint32_t kMotionMs = 210U;
+
+inline float ease_out_cubic(float t) {
+  if (t <= 0.0f) return 0.0f;
+  if (t >= 1.0f) return 1.0f;
+  const float inv = 1.0f - t;
+  return 1.0f - (inv * inv * inv);
+}
+
+// List / carousel page transition: started by menu_scroll_transition, drawn while menu_scroll_active.
+inline uint32_t &menu_scroll_start_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+// How far (of span_px) the outgoing page has moved at this point of the transition.
+inline int menu_scroll_shift(int span_px) {
+  const uint32_t elapsed = esphome::millis() - menu_scroll_start_ms();
+  const float e = ease_out_cubic(static_cast<float>(elapsed) / static_cast<float>(kMotionMs));
+  return static_cast<int>(std::lround(static_cast<float>(span_px) * e));
+}
 
 
 
@@ -1497,7 +1537,7 @@ inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
 // so frosted glass cards and HUD controls subtly pick up the color palette of the underlying artwork.
 template<typename ImageT>
 inline esphome::Color sample_image_ambient_tint(ImageT *img,
-                                                esphome::Color base_bg = esphome::Color(22, 27, 36)) {
+                                                esphome::Color base_bg = kChromeGlassTint) {
   if (img == nullptr) return base_bg;
   const uint16_t *src = reinterpret_cast<const uint16_t *>(img->get_data_start());
   int w = img->get_width();
@@ -1612,12 +1652,12 @@ inline void render_link_state_indicator(DisplayT &it, int cx, uint32_t now_ms,
 }
 
 template <typename DisplayT>
-inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = 434,
-                                      esphome::Color bar_col = esphome::Color(175, 190, 210)) {
+inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = kHomeBarY,
+                                      esphome::Color bar_col = kChromeHomePill) {
   const int half_w = scale_x(54);
   const int bar_h  = (SCREEN_H > 520) ? 7 : 5;
   const int cap_r  = bar_h / 2;
-  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, esphome::Color(0, 0, 0));
+  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, kChromeShadow);
   fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
   fast_filled_circle(it, cx - half_w + cap_r, y_pos, cap_r, bar_col);
   fast_filled_circle(it, cx + half_w - cap_r, y_pos, cap_r, bar_col);
@@ -1634,11 +1674,11 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const int track_x0 = cx - (track_w / 2);
   const int track_y0 = y_pos - r_cap;
 
-  const esphome::Color col_track = is_dim ? esphome::Color(16, 20, 26) : esphome::Color(30, 38, 50);
-  const esphome::Color col_brd   = is_dim ? esphome::Color(24, 30, 38) : esphome::Color(50, 62, 78);
+  const esphome::Color col_track = is_dim ? kChromeTrackDim : kChromeTrack;
+  const esphome::Color col_brd   = is_dim ? kChromeTrackBorderDim : kChromeTrackBorder;
 
   if (!is_dim) {
-    fill_rect_row_major(it, track_x0 + 1, track_y0 + 1, track_w, track_h, esphome::Color(0, 0, 0));
+    fill_rect_row_major(it, track_x0 + 1, track_y0 + 1, track_w, track_h, kChromeShadow);
   }
   fill_rect_row_major(it, track_x0, track_y0, track_w, track_h, col_track);
   fast_hline(it, track_x0 + 1, track_y0, track_w - 2, col_brd);
@@ -1671,12 +1711,12 @@ inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pag
     if (p == active_page) {
       int pw = scale_x(7);
       int ph = dot_r * 2 + 1;
-      fill_rect_row_major(it, px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, esphome::Color(0, 0, 0));
+      fill_rect_row_major(it, px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, kChromeShadow);
       fill_rect_row_major(it, px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
       fast_filled_circle(it, px - pw / 2, y_pos, dot_r, col_active);
       fast_filled_circle(it, px + pw / 2, y_pos, dot_r, col_active);
     } else {
-      fast_filled_circle(it, px + 1, y_pos + 1, dot_r, esphome::Color(0, 0, 0));
+      fast_filled_circle(it, px + 1, y_pos + 1, dot_r, kChromeShadow);
       fast_filled_circle(it, px,     y_pos,     dot_r, col_inactive);
     }
   }
@@ -1698,26 +1738,25 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
   const int up_y = scale_y(162);
   const int dn_y = scale_y(278);
   fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
-  if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, esphome::Color(0, 0, 0), false);
-  if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, esphome::Color(0, 0, 0), false);
+  if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, false);
+  if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, false);
 }
 
-// Universal Low-Profile Back Label or Swipe-Up Home Indicator Bar
+// Back affordance (docs/device-ui-design.md, return paths): "< Back" returns to the parent, "Exit" ends a
+// game, "< Cancel" abandons an edit, and "Home" draws the home pill instead of a label. Callers pass
+// layout().back_y (latter-verify [BACK BUTTON Y]).
 template<typename DisplayT, typename FontT>
 inline void render_back_button(DisplayT &it, int cx, FontT *font,
-                               int y_pos = 426, const char *label = "< Back",
-                               esphome::Color text_col = esphome::Color(158, 158, 158)) {
-  const int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(12));
-  const int back_lbl_y = LATTER_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? (SCREEN_H - scale_y(28)) : scale_y(y_pos));
-  if (label != nullptr && std::strcmp(label, "Home") == 0) {
-    render_home_indicator_bar(it, cx, home_bar_y);
+                               int y_pos = kBackLabelY, const char *label = "< Back",
+                               esphome::Color text_col = kChromeBackLabel) {
+  const int back_lbl_y = LATTER_ROUND_DISPLAY ? y_pos : ((y_pos >= 400) ? kBackLabelY : scale_y(y_pos));
+  if (label == nullptr) return;
+  if (std::strcmp(label, "Home") == 0) {
+    render_home_indicator_bar(it, cx, kHomeBarY);
     return;
   }
-  const char *eff_label = (label != nullptr && std::strcmp(label, "< BACK") == 0) ? "< Back" : label;
-  fast_print(it, cx + 1, back_lbl_y + 1, font, esphome::Color(0, 0, 0),
-           esphome::display::TextAlign::CENTER, eff_label);
-  fast_print(it, cx, back_lbl_y, font, text_col,
-           esphome::display::TextAlign::CENTER, eff_label);
+  fast_print(it, cx + 1, back_lbl_y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, label);
+  fast_print(it, cx, back_lbl_y, font, text_col, esphome::display::TextAlign::CENTER, label);
 }
 
 struct TouchGestureState {

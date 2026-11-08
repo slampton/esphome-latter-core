@@ -2119,7 +2119,7 @@ inline void render_weather_page(
     }
 
     // 1. Standard Top Header ("CURRENT" at y = 48 + divider at y = 62, matching FORECAST)
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CURRENT");
+    render_page_header(it, cx, "CURRENT", font_small, theme_primary);
 
     // 2. Hero Temperature at y = 120 (top at y = 92) & Condition at y = 182 (unchanged)
     char temp_num[16];
@@ -2310,7 +2310,7 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     // SUBPAGE 1: FORECAST (5-DAY FORECAST: PROPORTIONAL & SCALED ACROSS ALL SCREENS)
     // ----------------------------------------------------------------------
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "FORECAST");
+    render_page_header(it, cx, "FORECAST", font_small, theme_primary);
 
     struct DayForecast {
       std::string day;
@@ -2423,7 +2423,7 @@ inline void render_weather_page(
     // ----------------------------------------------------------------------
     // SUBPAGE 2: SUN (TRUE 1:1 HALF-CIRCLE SOLAR ARC + BALANCED SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SUN");
+    render_page_header(it, cx, "SUN", font_small, theme_primary);
 
     const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : scale_y(44));
     const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
@@ -2492,7 +2492,7 @@ inline void render_weather_page(
     compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                moon_phase_raw, cycle, &illum_pct, &mp_label);
 
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "MOON");
+    render_page_header(it, cx, "MOON", font_small, theme_primary);
 
     const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
     const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : scale_y(36));

@@ -207,7 +207,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
 inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
-                                  bool menu_scroll_active, int menu_scroll_step,
+                                  bool menu_scroll_active,
                                   int menu_scroll_dir, int menu_scroll_target_page,
                                   FontBigT *font_date, FontSmallT *font_small,
                                   esphome::Color theme_primary, esphome::Color theme_secondary,
@@ -286,8 +286,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
   };
 
   if (menu_scroll_active) {
-    int step = std::min(4, menu_scroll_step);
-    int offset = scale_y(SHARED_SCROLL_EASE_252[step]);
+    int offset = menu_scroll_shift(scale_y(252));
     int full_span = scale_y(252);
     draw_page_cards(tools_menu_page, -menu_scroll_dir * offset);
     draw_page_cards(menu_scroll_target_page, menu_scroll_dir * (full_span - offset));
@@ -299,9 +298,9 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
     fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), col_bg);
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
-  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TOOLS");
+  render_page_header(it, cx, "TOOLS", font_small, theme_primary);
   int active_page = menu_scroll_active ? menu_scroll_target_page : tools_menu_page;
-  render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, esphome::Color(95, 112, 134));
+  render_vertical_page_pips(it, active_page == 1, active_page == 0, col_bg, col_white, kChromePipInactive);
 }
 
 inline bool &stopwatch_modern_digital() {
@@ -314,7 +313,8 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                   bool stopwatch_running, uint32_t stopwatch_start_time,
                                   uint32_t stopwatch_elapsed_ms, uint32_t stopwatch_lap_ms,
                                   FontBigT *font_date, FontSmallT *font_small,
-                                  esphome::Color col_white, esphome::Color col_silver,
+                                  esphome::Color theme_primary, esphome::Color theme_secondary,
+                                  esphome::Color col_white,
                                   esphome::Color col_slate, esphome::Color col_dark_gray,
                                   esphome::Color col_red) {
   uint32_t total_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
@@ -325,10 +325,9 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   // Modern Digital AMOLED Stopwatch (Always used on Square/Rectangular displays; toggleable via header tap on Round!)
   if (!LATTER_ROUND_DISPLAY || stopwatch_modern_digital()) {
     float min_prog = static_cast<float>(total_ms % 60000U) / 60000.0f;
-    render_progress_arc_r224(it, cx, cy, min_prog, stopwatch_running ? col_silver : col_slate);
+    render_progress_arc_r224(it, cx, cy, min_prog, stopwatch_running ? theme_secondary : col_slate);
 
-    fast_print(it, cx, layout().hdr_y, font_small, col_silver, esphome::display::TextAlign::CENTER,
-             LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH");
+    render_page_header(it, cx, LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH", font_small, theme_primary);
 
     char main_buf[32];
     snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
@@ -340,16 +339,16 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int l_tenths = (stopwatch_lap_ms / 100U) % 10U;
       char lap_buf[32];
       snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
-      fast_print(it, cx, scale_y(192), font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
+      fast_print(it, cx, scale_y(192), font_small, theme_primary, esphome::display::TextAlign::CENTER, lap_buf);
     } else {
-      fast_print(it, cx, scale_y(192), font_small, stopwatch_running ? col_silver : col_slate,
+      fast_print(it, cx, scale_y(192), font_small, stopwatch_running ? theme_secondary : col_slate,
                esphome::display::TextAlign::CENTER, stopwatch_running ? "Running" : "Ready");
     }
 
     const char *hero_lbl = stopwatch_running ? "PAUSE" : (total_ms > 0 ? "RESUME" : "START");
     render_modern_card(it, cx, scale_y(248), 188, 44, 12,
                        stopwatch_running ? esphome::Color(28, 36, 48) : esphome::Color(22, 27, 36),
-                       stopwatch_running ? col_silver : col_white,
+                       stopwatch_running ? theme_secondary : col_white,
                        hero_lbl, col_white, font_small);
 
     render_modern_card(it, cx - scale_x(70), scale_y(324), 124, 46, 12, esphome::Color(22, 27, 36),
@@ -358,15 +357,15 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     render_modern_card(it, cx + scale_x(70), scale_y(324), 124, 46, 12, esphome::Color(28, 20, 24), col_red,
                        "RESET", col_red, font_small);
 
-    render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back");
     return;
   }
 
   // Classic Round Chronograph Dial (Round Displays Only)
   fast_circle(it, cx, cy, 230, col_white);
-  fast_circle(it, cx, cy, 228, col_silver);
+  fast_circle(it, cx, cy, 228, theme_secondary);
   fast_circle(it, cx, cy, 197, col_dark_gray);
-  fast_circle(it, cx, cy, 196, col_silver);
+  fast_circle(it, cx, cy, 196, theme_secondary);
 
   // Precision Perimeter Chapter Ring via .rodata DIAL_SIN / DIAL_COS
   for (int s = 0; s < 60; s++) {
@@ -379,7 +378,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
       int y1 = cy - (int)(196.0f * t_cos);
       int x2 = cx + (int)(227.0f * t_sin);
       int y2 = cy - (int)(227.0f * t_cos);
-      fast_line(it, x1 + (int)perp_x, y1 + (int)perp_y, x2 + (int)perp_x, y2 + (int)perp_y, col_silver);
+      fast_line(it, x1 + (int)perp_x, y1 + (int)perp_y, x2 + (int)perp_x, y2 + (int)perp_y, theme_secondary);
       fast_line(it, x1 - (int)perp_x, y1 - (int)perp_y, x2 - (int)perp_x, y2 - (int)perp_y, col_slate);
       fast_line(it, x1, y1, x2, y2, col_white);
     } else {
@@ -401,7 +400,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     fast_print(it, nx, ny, font_small, col_white, esphome::display::TextAlign::CENTER, CHRONO_STRS[i]);
   }
 
-  fast_print(it, cx, 132, font_small, col_silver, esphome::display::TextAlign::CENTER, "CHRONOGRAPH");
+  fast_print(it, cx, 132, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "CHRONOGRAPH");
 
   char main_buf[32];
   snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
@@ -413,7 +412,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     int l_tenths = (stopwatch_lap_ms / 100U) % 10U;
     char lap_buf[32];
     snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
-    fast_print(it, cx, 274, font_small, col_red, esphome::display::TextAlign::CENTER, lap_buf);
+    fast_print(it, cx, 274, font_small, theme_primary, esphome::display::TextAlign::CENTER, lap_buf);
   }
 
   const int btn_y = cy + 99;
@@ -422,16 +421,16 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   const int btn_r = 36;
 
   fast_filled_circle(it, btn_lap_x, btn_y, btn_r - 2, col_dark_gray);
-  fast_circle(it, btn_lap_x, btn_y, btn_r, col_silver);
+  fast_circle(it, btn_lap_x, btn_y, btn_r, theme_secondary);
   fast_circle(it, btn_lap_x, btn_y, btn_r - 1, col_slate);
   fast_circle(it, btn_lap_x, btn_y, btn_r - 4, (stopwatch_lap_ms > 0) ? col_red : col_slate);
-  fast_print(it, btn_lap_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "LAP");
+  fast_print(it, btn_lap_x, btn_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "LAP");
 
   fast_filled_circle(it, btn_rst_x, btn_y, btn_r - 2, col_dark_gray);
-  fast_circle(it, btn_rst_x, btn_y, btn_r, col_silver);
+  fast_circle(it, btn_rst_x, btn_y, btn_r, theme_secondary);
   fast_circle(it, btn_rst_x, btn_y, btn_r - 1, col_slate);
   fast_circle(it, btn_rst_x, btn_y, btn_r - 4, col_slate);
-  fast_print(it, btn_rst_x, btn_y, font_small, col_silver, esphome::display::TextAlign::CENTER, "RESET");
+  fast_print(it, btn_rst_x, btn_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "RESET");
 
   // Split-Second (Rattrapante) Ghost Hand via fast_sincos
   if (stopwatch_lap_ms > 0) {
@@ -462,20 +461,20 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   int right_x = arr_base_x - (int)(8.0f * perp_x);
   int right_y = arr_base_y - (int)(8.0f * perp_y);
 
-  fast_line(it, tail_x + (int)perp_x, tail_y + (int)perp_y, arr_base_x + (int)perp_x, arr_base_y + (int)perp_y, col_silver);
+  fast_line(it, tail_x + (int)perp_x, tail_y + (int)perp_y, arr_base_x + (int)perp_x, arr_base_y + (int)perp_y, theme_secondary);
   fast_line(it, tail_x - (int)perp_x, tail_y - (int)perp_y, arr_base_x - (int)perp_x, arr_base_y - (int)perp_y, col_slate);
   fast_line(it, tail_x, tail_y, arr_base_x, arr_base_y, col_white);
 
   fast_filled_triangle(it, tip_x, tip_y, left_x, left_y, right_x, right_y, col_white);
-  fast_line(it, tip_x, tip_y, left_x, left_y, col_silver);
+  fast_line(it, tip_x, tip_y, left_x, left_y, theme_secondary);
   fast_line(it, tip_x, tip_y, right_x, right_y, col_slate);
-  fast_line(it, left_x, left_y, right_x, right_y, col_silver);
+  fast_line(it, left_x, left_y, right_x, right_y, theme_secondary);
 
   fast_filled_circle(it, tail_x, tail_y, 8, col_dark_gray);
-  fast_circle(it, tail_x, tail_y, 8, col_silver);
-  fast_filled_circle(it, tail_x, tail_y, 3, col_silver);
+  fast_circle(it, tail_x, tail_y, 8, theme_secondary);
+  fast_filled_circle(it, tail_x, tail_y, 3, theme_secondary);
 
-  fast_filled_circle(it, cx, cy, 9, col_silver);
+  fast_filled_circle(it, cx, cy, 9, theme_secondary);
   fast_circle(it, cx, cy, 9, col_slate);
   fast_filled_circle(it, cx, cy, 6, col_dark_gray);
   fast_filled_circle(it, cx, cy, 2, col_white);
@@ -674,7 +673,7 @@ inline void render_tool_dice_roll(DisplayT &it, int cx, uint32_t now_ms,
     fast_print(it, cx, 324, font_date, col_white, esphome::display::TextAlign::CENTER, total_buf);
   }
 
-  render_back_button(it, cx, font_small, 426, "< BACK");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
 inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, float az,
@@ -766,7 +765,7 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
   fast_filled_circle(it, bx - 7, by - 7, 4, col_white);
   fast_filled_circle(it, bx + 8, by + 8, 2, col_white);
 
-  render_back_button(it, cx, font_small, 426, "< BACK");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
@@ -1055,7 +1054,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     }
   }
 
-  render_back_button(it, cx, font_small, 426, "< BACK");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 // ============================================================================
 // SECTION 14: TOOLS SUITE PART 2 — GLOBAL ALERT OVERLAY, TIMER, ALARMS & CALC
@@ -1104,7 +1103,7 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
     render_modern_card(it, cx, scale_y(330), 240, 44, 12, esphome::Color(22, 27, 36), theme_primary,
                        "Tap to Dismiss", col_white, font_small);
   } else if (alarm_ringing) {
-    fast_print(it, cx, scale_y(75), font_small, pulse ? col_red : col_white,
+    fast_print(it, cx, scale_y(75), font_small, pulse ? theme_secondary : col_white,
              esphome::display::TextAlign::CENTER, "ALARM RINGING");
 
     char cur_t_buf[16];
@@ -1425,7 +1424,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
     // -------------------------------------------------------------------------
     // TIMERS LANDING PAGE (3 Modern Rounded Timer Cards at y = 122, 222, 322)
     // -------------------------------------------------------------------------
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "TIMERS");
+    render_page_header(it, cx, "TIMERS", font_small, theme_primary);
 
     const int t_card_w = layout().tool_card3_w;
     const int t_left   = cx - (t_card_w / 2);
@@ -1474,7 +1473,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
       }
     }
 
-    render_back_button(it, cx, font_small, 426, tools_direct_home() ? "Home" : "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back");
     return;
   }
 
@@ -1494,7 +1493,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
 
   // 2. Dynamic Uppercase Timer Title ("CHICKEN", "PASTA", or "TIMER 1") in 21pt font_small at y = 48
   std::string hdr = fit_text_to_width_font(format_timer_header_upper(s_idx), scale_x(280), font_small);
-  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr.c_str());
+  render_page_header(it, cx, hdr.c_str(), font_small, theme_primary);
 
   int disp_sec = (s.running || s.paused) ? s.remaining_sec : s.duration_sec;
   char t_str[16];
@@ -1531,7 +1530,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
                        "RESET", col_red, font_small);
   }
 
-  render_back_button(it, cx, font_small, 426, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 template<typename DisplayT, typename TimeT, typename FontTimeT, typename FontChronoT,
@@ -1553,7 +1552,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     // -------------------------------------------------------------------------
     // ALARMS LANDING PAGE (3 Modern Rounded Alarm Cards at y = 122, 210, 298)
     // -------------------------------------------------------------------------
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "ALARMS");
+    render_page_header(it, cx, "ALARMS", font_small, theme_primary);
 
     static constexpr const char *REC_LABELS[4] = {"Daily", "Weekdays", "Weekends", "Once"};
 
@@ -1615,7 +1614,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     draw_modern_alarm_card(layout().tool_card3_y(1), alarm2_hour, alarm2_minute, alarm2_enabled, alarm2_recurrence, 2);
     draw_modern_alarm_card(layout().tool_card3_y(2), alarm3_hour, alarm3_minute, alarm3_enabled, alarm3_recurrence, 3);
   } else {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, "EDIT ALARM");
+    render_page_header(it, cx, "EDIT ALARM", font_small, theme_primary);
 
     int cur_h = (alarm_edit_idx == 3) ? alarm3_hour : ((alarm_edit_idx == 2) ? alarm2_hour : alarm1_hour);
     int cur_m = (alarm_edit_idx == 3) ? alarm3_minute : ((alarm_edit_idx == 2) ? alarm2_minute : alarm1_minute);
@@ -1652,7 +1651,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     fast_line(it, cx + scale_x(115), rec_y, cx + scale_x(109), rec_y + 6, theme_secondary);
   }
 
-  render_back_button(it, cx, font_small, 426, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 template<typename DisplayT, typename FontDateT, typename FontBoldT, typename FontSmallT>
 inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc_history,
@@ -1742,7 +1741,7 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
     }
   }
 
-  render_back_button(it, cx, font_small, 426, "< BACK");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 // ==============================================================================
@@ -2167,17 +2166,16 @@ inline void render_tool_calendar(
       // 4. Bottom Translucent Back Scrim (aligned with layout().back_y)
       fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
     } else {
-      fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT MAP");
-      render_modern_card(it, cx, scale_y(222), 304, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
-                         "Loading OpenStreetMap...", theme_secondary, font_small);
+      render_page_header(it, cx, "EVENT MAP", font_small, theme_primary);
+      render_empty_state(it, cx, scale_y(222), "Loading OpenStreetMap...", font_small, theme_secondary);
     }
-    render_back_button(it, cx, font_small, 426, "< Back", col_white);
+    render_back_button(it, cx, font_small, layout().back_y, "< Back", col_white);
     return;
   }
 
   if (cal_detail_mode() == 1) {
     // MODE 1: EVENT DETAIL INSPECTOR (Wrapped Multi-Line Title + Time + Wrapped Location + View Map Button)
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "EVENT DETAILS");
+    render_page_header(it, cx, "EVENT DETAILS", font_small, theme_primary);
 
     // Time Badge Pill at y = 92
     std::string fit_tm = fit_text_to_width_font(cal_detail_time(), scale_x(260), font_small);
@@ -2222,12 +2220,12 @@ inline void render_tool_calendar(
                          "No location specified", col_slate, font_small);
     }
 
-    render_back_button(it, cx, font_small, 426, "< Back");
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
     return;
   }
 
   if (cal_quick_add_open()) {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ADD REMINDER");
+    render_page_header(it, cx, "ADD REMINDER", font_small, theme_primary);
     static constexpr const char *kQuickLabels[5] = {
       "In 15m: Quick Reminder",
       "In 30m: Check-In / Task",
@@ -2243,20 +2241,20 @@ inline void render_tool_calendar(
       fill_rect_row_major(it, c_left + 15, y_mid - 4, 3, 9, theme_primary);
       fast_print(it, c_left + 30, y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kQuickLabels[i]);
     }
-    render_back_button(it, cx, font_small, 426, "< Cancel");
+    render_back_button(it, cx, font_small, layout().back_y, "< Cancel");
     return;
   }
 
   const bool show_fb = (!cal_feedback_text().empty() && now_ms > 0 && (now_ms - cal_feedback_ms() < 2200U));
   if (show_fb) {
     std::string fit_fb = fit_text_to_width_font(cal_feedback_text(), scale_x(260), font_small);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    render_page_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);
   } else if (cal_total_pages > 1) {
     char c_hdr[36];
     snprintf(c_hdr, sizeof(c_hdr), "CALENDAR %d/%d (+)", cal_page, cal_total_pages);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, c_hdr);
+    render_page_header(it, cx, c_hdr, font_small, theme_primary);
   } else {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "CALENDAR  (+)");
+    render_page_header(it, cx, "CALENDAR  (+)", font_small, theme_primary);
   }
 
   std::string names[5] = {s1_name, s2_name, s3_name, s4_name, s5_name};
@@ -2283,8 +2281,7 @@ inline void render_tool_calendar(
   }
 
   if (names[0].empty()) {
-    render_modern_card(it, cx, scale_y(222), 296, 54, 14, Color(16, 20, 27), Color(38, 46, 58),
-                       "No upcoming events (Tap +)", col_slate, font_small);
+    render_empty_state(it, cx, scale_y(222), "No upcoming events (Tap +)", font_small, col_slate);
   } else {
     for (int i = 0; i < 5; i++) {
       if (names[i].empty()) continue;
@@ -2305,7 +2302,7 @@ inline void render_tool_calendar(
     render_vertical_page_pips(it, cal_page > 1, cal_page < cal_total_pages, col_bg, theme_secondary, col_slate);
   }
 
-  render_back_button(it, cx, font_small, 426, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 inline bool &intercom_live_call_mode() {
@@ -2356,7 +2353,7 @@ inline void render_tool_intercom(
   const bool show_fb = (!feedback_str.empty() && (now_ms - feedback_ms < 2200U));
   if (show_fb) {
     std::string fit_fb = fit_text_to_width_font(feedback_str, scale_x(280), font_small);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    render_page_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);
   } else {
     render_modern_card(it, cx, scale_y(44), 232, 34, 10, Color(18, 24, 34), theme_primary,
                        intercom_live_call_mode() ? "Mode: Talk >" : "Mode: Broadcast >",
@@ -2399,7 +2396,7 @@ inline void render_tool_intercom(
     }
   }
   (void)col_slate;
-  render_back_button(it, cx, font_small, 426, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
 static constexpr int MAX_CAMERA_SLOTS = 10;
@@ -2574,7 +2571,7 @@ inline void render_tool_camera(
   const int noise_idx = std::max(0, std::min(2, cam_noise_idx()));
 
   if (cam_quick_reply_open()) {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "DOORBELL ACTIONS");
+    render_page_header(it, cx, "DOORBELL ACTIONS", font_small, theme_primary);
     const Color card_bg(22, 27, 36);
     const Color card_brd(52, 62, 78);
     render_modern_card(it, cx, layout().slot5_y(0), 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
@@ -2602,8 +2599,7 @@ inline void render_tool_camera(
     render_album_art_canvas(it, cam_art, cx, false, false, false, false);
   } else {
     const char *msg = has_url ? "Loading camera snapshot..." : "Configure camera in Latter Studio";
-    render_modern_card(it, cx, scale_y(212), 308, 60, 14, Color(16, 20, 27), Color(44, 52, 66),
-                       msg, has_url ? theme_secondary : col_slate, font_small);
+    render_empty_state(it, cx, scale_y(212), msg, font_small, has_url ? theme_secondary : col_slate);
   }
 
   // 1. Top Translucent Camera Carousel Header Pill (y = 40)

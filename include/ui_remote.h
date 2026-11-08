@@ -280,7 +280,7 @@ inline void render_tv_remote_page(
                                 esphome::Color(0, 0, 0), theme_secondary, col_slate);
     }
 
-    render_back_button(it, cx, font_small, 426, "< BACK");
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
     return;
   }
 
@@ -289,10 +289,10 @@ inline void render_tv_remote_page(
   // ---------------------------------------------------------------------------
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
+    render_page_header(it, cx, fit_fb.c_str(), font_small, theme_primary);
   } else {
     std::string disp_title = fit_text_to_width_font(rem_name, scale_x(280), font_small);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, disp_title.c_str());
+    render_page_header(it, cx, disp_title.c_str(), font_small, theme_primary);
   }
 
   const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + scale_y(8));

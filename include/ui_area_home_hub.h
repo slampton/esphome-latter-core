@@ -387,7 +387,7 @@ inline void render_area_control_page(
   // SUBPAGE 1 / AREAS MODE: 5-SLOT AREA SWITCHER
   // ===========================================================================
   if (area_subpage == 1 || area_browse_mode == "areas" || area_browse_mode == "area_areas") {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SELECT AREA");
+    render_page_header(it, cx, "SELECT AREA", font_small, theme_primary);
 
     auto draw_area_row = [&](int y_mid, const std::string &name, const std::string &id_str, bool is_act) {
       if (name.empty() && id_str.empty()) return;
@@ -420,11 +420,11 @@ inline void render_area_control_page(
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
-  fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, fit_hdr.c_str());
+  render_page_header(it, cx, fit_hdr.c_str(), font_small, theme_primary);
 
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(area_action_feedback, scale_x(280), font_small);
-    fast_print(it, cx, layout().sub_hdr_y, font_small, theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    render_sub_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);
   } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
     const int tele_y = layout().sub_hdr_y;
     const Color icon_c(185, 225, 255);
@@ -492,7 +492,7 @@ inline void render_area_control_page(
                         : (area_domain_filter == "climate") ? "Climate & Thermostats"
                         : (area_domain_filter == "media")   ? "Area Media"
                         : "Tap Header to Switch Area";
-    fast_print(it, cx, layout().sub_hdr_y, font_small, col_slate, TextAlign::CENTER, sub_lbl);
+    render_sub_header(it, cx, sub_lbl, font_small, col_slate);
   }
 
   // Helper: Draw Enlarged Domain Vector Icon inside the Left 64x64 Card Well (gx = 108)
@@ -685,10 +685,10 @@ inline void render_area_control_page(
 }
 
 // =============================================================================
-// SECTION 16D: WHOLE-HOME HUB APP (PAGE 9 — ALARM, THERMOSTAT, GARAGE/LOCKS, VACUUM)
+// SECTION 16D: WHOLE-HOME HUB (PAGE 9 — ALARM, THERMOSTAT, GARAGE/LOCKS, VACUUM)
 // =============================================================================
 template <typename DisplayT, typename FontDateT, typename FontSmallT>
-inline void render_security_alarm_page(
+inline void render_whole_home_page(
     DisplayT &it, int cx, uint32_t now_ms,
     const std::string &alarm_entity, const std::string &alarm_state,
     const std::string &area_action_feedback, uint32_t area_feedback_timer,
@@ -707,7 +707,7 @@ inline void render_security_alarm_page(
 
   if (tab == 0) {
     // TAB 0: HOME SECURITY ALARM (Tri-state: unknown/unconfigured never claims "Disarmed" or "Ready (Demo)")
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "SECURITY ALARM");
+    render_page_header(it, cx, "SECURITY ALARM", font_small, theme_primary);
 
     std::string st_lbl = "Status: Unknown";
     Color st_col = col_slate;
@@ -720,8 +720,7 @@ inline void render_security_alarm_page(
       else if (alarm_state == "triggered") { st_lbl = "ALARM TRIGGERED!"; st_col = col_red; }
       else { st_lbl = "Status: " + alarm_state; st_col = theme_secondary; }
     }
-    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : st_col, TextAlign::CENTER,
-             is_fb ? area_action_feedback.c_str() : st_lbl.c_str());
+    render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : st_lbl.c_str(), font_small, is_fb ? theme_secondary : st_col);
 
     bool is_disarmed = (alarm_state == "disarmed");
     bool is_home     = (alarm_state == "armed_home" || alarm_state == "armed_night");
@@ -741,7 +740,7 @@ inline void render_security_alarm_page(
                        "Arm Away", col_white, font_date);
 
   } else if (tab == 1) {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "THERMOSTAT");
+    render_page_header(it, cx, "THERMOSTAT", font_small, theme_primary);
     char sub_t[48];
     const std::string &m = sim_thermostat_mode();
     const char *m_lbl = m.empty() ? "Mode: Unknown"
@@ -755,8 +754,7 @@ inline void render_security_alarm_page(
     } else {
       snprintf(sub_t, sizeof(sub_t), "%s", m_lbl);
     }
-    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? area_action_feedback.c_str() : sub_t);
+    render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : sub_t, font_small, is_fb ? theme_secondary : col_slate);
 
     const int hero_y = scale_y(156);
     const int mode_y = scale_y(266);
@@ -798,9 +796,8 @@ inline void render_security_alarm_page(
     }
 
   } else if (tab == 2) {
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ENTRY & GARAGE");
-    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle");
+    render_page_header(it, cx, "ENTRY & GARAGE", font_small, theme_primary);
+    render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle", font_small, is_fb ? theme_secondary : col_slate);
 
     GarageState gs = wh_garage_state();
     Color g_bg  = (gs == GarageState::OPEN) ? Color(40, 24, 18) : ((gs == GarageState::CLOSED) ? card_bg_on : card_bg_off);
@@ -824,10 +821,9 @@ inline void render_security_alarm_page(
 
   } else {
     // TAB 3: ROBOT VACUUM
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "ROBOT VACUUM");
+    render_page_header(it, cx, "ROBOT VACUUM", font_small, theme_primary);
     std::string v_st = sim_vacuum_state().empty() ? "Status: Unknown" : ("Status: " + sim_vacuum_state());
-    fast_print(it, cx, layout().sub_hdr_y, font_small, is_fb ? theme_secondary : col_slate, TextAlign::CENTER,
-             is_fb ? area_action_feedback.c_str() : v_st.c_str());
+    render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : v_st.c_str(), font_small, is_fb ? theme_secondary : col_slate);
 
     bool is_cln = (sim_vacuum_state() == "Cleaning");
     bool is_psd = (sim_vacuum_state() == "Paused");

@@ -895,7 +895,7 @@ inline void render_home_page(
     //   - 5 cards (w = 276, h = 44, r = 12) at y_mid = {110, 173, 236, 299, 362} (63px stride)
     //   - Top of Slot 0 = y 88 (30px below title); Bottom of Slot 4 = y 384 (31px above < BACK)
     // -------------------------------------------------------------------------
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, "HOME SETTINGS");
+    render_page_header(it, cx, "HOME SETTINGS", font_small, theme_primary);
 
     const Color card_bg_on(22, 27, 36);
     const Color card_bg_off(15, 18, 24);
@@ -995,8 +995,7 @@ inline void render_home_page(
       format_time_hhmm(now.hour, now.minute, is_24h_format, t_sub, sizeof(t_sub));
       snprintf(hdr_buf, sizeof(hdr_buf), "ACTIVE  •  %s", t_sub);
     }
-    fast_print(it, cx + 1, layout().hdr_y + 1, font_small, col_black, TextAlign::CENTER, hdr_buf);
-    fast_print(it, cx, layout().hdr_y, font_small, theme_primary, TextAlign::CENTER, hdr_buf);
+    render_page_header(it, cx, hdr_buf, font_small, theme_primary, true);
 
     Color ov_bg(22, 27, 36);
     Color ov_brd(56, 68, 86);
@@ -1009,7 +1008,7 @@ inline void render_home_page(
     }
 
     if (act_count <= 0) {
-      fast_print(it, cx, cy, font_small, col_slate, TextAlign::CENTER, "No active activities");
+      render_empty_state(it, cx, cy, "No active activities", font_small, col_slate);
     } else {
       int total_pages = (act_count > 5) ? 2 : 1;
       if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;

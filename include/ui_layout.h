@@ -382,8 +382,8 @@ struct UiLayout {
   // Header & Footer Y coordinates (Adaptive for Round vs Wearable Watch vs Square/Rect vs 720p HD)
   int hdr_y = LATTER_ROUND_DISPLAY ? 48 : (LATTER_IS_WEARABLE ? 36 : ((SCREEN_H > 520) ? 48 : 28));
   int sub_hdr_y = LATTER_ROUND_DISPLAY ? 76 : (LATTER_IS_WEARABLE ? 64 : ((SCREEN_H > 520) ? 88 : 56));
-  int back_y = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - scale_y(28));
-  int home_bar_y = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(11));
+  int back_y = kBackLabelY;
+  int home_bar_y = kHomeBarY;
   int dock_y = LATTER_ROUND_DISPLAY ? 359 : (SCREEN_H - scale_y(66));
   int app_dock_y = LATTER_ROUND_DISPLAY ? 369 : (SCREEN_H - scale_y(66));
   int dock_pips_y = LATTER_ROUND_DISPLAY ? 404 : (SCREEN_H - scale_y(27));
@@ -655,6 +655,45 @@ struct UiLayout {
 
 inline constexpr UiLayout layout() {
   return UiLayout{};
+}
+
+// Page header (docs/device-ui-design.md, components): an UPPERCASE title in font_small and theme_primary,
+// centered at layout().hdr_y. `shadow` adds a 1 px drop shadow for headers drawn over wallpaper or art.
+template <typename DisplayT, typename FontT>
+inline void render_page_header(DisplayT &it, int cx, const char *title, FontT *font, esphome::Color color,
+                               bool shadow = false) {
+  if (title == nullptr || title[0] == '\0' || font == nullptr) return;
+  const int y = layout().hdr_y;
+  if (shadow) fast_print(it, cx + 1, y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, title);
+  fast_print(it, cx, y, font, color, esphome::display::TextAlign::CENTER, title);
+}
+
+// Header text that may be long (names from Home Assistant): fitted to the header width first.
+template <typename DisplayT, typename FontT>
+inline void render_page_header(DisplayT &it, int cx, const std::string &title, FontT *font, esphome::Color color,
+                               bool shadow = false) {
+  if (title.empty() || font == nullptr) return;
+  const std::string fitted = fit_text_to_width_font(title, scale_x(280), font);
+  render_page_header(it, cx, fitted.c_str(), font, color, shadow);
+}
+
+// Sub-header line at layout().sub_hdr_y: action feedback in theme_secondary, otherwise a context line in
+// col_slate or col_white. Always font_small.
+template <typename DisplayT, typename FontT>
+inline void render_sub_header(DisplayT &it, int cx, const char *text, FontT *font, esphome::Color color) {
+  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
+  fast_print(it, cx, layout().sub_hdr_y, font, color, esphome::display::TextAlign::CENTER, text);
+}
+
+template <typename DisplayT, typename FontT>
+inline void render_sub_header(DisplayT &it, int cx, const std::string &text, FontT *font, esphome::Color color) {
+  render_sub_header(it, cx, text.c_str(), font, color);
+}
+
+// Empty or loading state: one sentence on a quiet card that says what's missing (or what's loading).
+template <typename DisplayT, typename FontT>
+inline void render_empty_state(DisplayT &it, int cx, int cy, const char *text, FontT *font, esphome::Color text_c) {
+  render_modern_card(it, cx, cy, 296, 54, 14, kChromeBarTrack, kChromeCardBorder, text, text_c, font);
 }
 
 
@@ -1079,14 +1118,7 @@ struct DockSlideAnimator {
   uint32_t act_start_ms = 0;
   bool act_animating = false;
 
-  static constexpr uint32_t kDurationMs = 210U;
-
-  static inline float ease_out_cubic(float t) {
-    if (t <= 0.0f) return 0.0f;
-    if (t >= 1.0f) return 1.0f;
-    float inv = 1.0f - t;
-    return 1.0f - (inv * inv * inv);
-  }
+  // Duration and curve come from the one motion system in ui_core.h (kMotionMs, ease_out_cubic).
 
   void reset() {
     target_start = -1;
@@ -1111,11 +1143,11 @@ struct DockSlideAnimator {
     }
     if (win_animating) {
       uint32_t dt = now_ms - win_start_ms;
-      if (dt >= kDurationMs) {
+      if (dt >= kMotionMs) {
         cur_start = static_cast<float>(target_start);
         win_animating = false;
       } else {
-        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kDurationMs));
+        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kMotionMs));
         cur_start = from_start + (static_cast<float>(target_start) - from_start) * e;
       }
     } else {
@@ -1140,11 +1172,11 @@ struct DockSlideAnimator {
     }
     if (act_animating) {
       uint32_t dt = now_ms - act_start_ms;
-      if (dt >= kDurationMs) {
+      if (dt >= kMotionMs) {
         cur_active = static_cast<float>(target_active);
         act_animating = false;
       } else {
-        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kDurationMs));
+        float e = ease_out_cubic(static_cast<float>(dt) / static_cast<float>(kMotionMs));
         cur_active = from_active + (static_cast<float>(target_active) - from_active) * e;
       }
     } else {
@@ -1210,9 +1242,9 @@ inline void render_in_app_mode_bar_track(
   const int left_cx  = win_xs[0];
   const int right_cx = win_xs[vis_count - 1];
   const int stride   = get_dock_slot_stride(win_xs, vis_count);
-  const Color track_bg(16, 20, 27);
-  const Color track_brd(52, 64, 82);
-  const Color cap_bg(16, 20, 27);
+  const Color track_bg = kChromeBarTrack;
+  const Color track_brd = kChromeBarBorder;
+  const Color cap_bg = kChromeBarTrack;
 
   // 1. Continuous Scanline Stadium Pill Track connecting left_cx .. right_cx
   for (int dy = -r_track; dy <= r_track; dy++) {
@@ -1234,7 +1266,7 @@ inline void render_in_app_mode_bar_track(
 
   // 2. Subtle vertical slot dividers between inactive slots inside the track
   const int div_h = dr - scale_s(6);
-  const Color div_col(30, 38, 50);
+  const Color div_col = kChromeTrack;
   const float rel_active = anim_active - anim_start;
   for (int i = 0; i < vis_count - 1; i++) {
     if (std::fabs(static_cast<float>(i) - rel_active) < 0.65f ||
@@ -1255,9 +1287,9 @@ inline void render_in_app_mode_bar_track(
       } else if (rel_active > static_cast<float>(vis_count - 1)) {
         ring_alpha = std::max(0.20f, 1.0f - (rel_active - static_cast<float>(vis_count - 1)) * 1.6f);
       }
-      Color ring_col(static_cast<uint8_t>(16 + (theme_primary.r - 16) * ring_alpha),
-                     static_cast<uint8_t>(20 + (theme_primary.g - 20) * ring_alpha),
-                     static_cast<uint8_t>(27 + (theme_primary.b - 27) * ring_alpha));
+      Color ring_col(static_cast<uint8_t>(track_bg.r + (theme_primary.r - track_bg.r) * ring_alpha),
+                     static_cast<uint8_t>(track_bg.g + (theme_primary.g - track_bg.g) * ring_alpha),
+                     static_cast<uint8_t>(track_bg.b + (theme_primary.b - track_bg.b) * ring_alpha));
       fast_filled_circle(it, abx, by, dr - 1, cap_bg);
       fast_circle(it, abx, by, dr, ring_col);
       fast_circle(it, abx, by, dr - 1, ring_col);
