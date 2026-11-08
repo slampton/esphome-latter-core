@@ -74,7 +74,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Weather** | Condition Simulation, which forces any of 16 conditions so you can preview them |
 | **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
 | **Status** | Battery Level, Battery Voltage, Battery Charging and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
-| **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi and Home Assistant connection counters (beacon timeouts, disconnects, signal, longest time without Home Assistant) refreshed every 15 minutes |
+| **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device) refreshed every 15 minutes |
 
 ### Reset to defaults
 

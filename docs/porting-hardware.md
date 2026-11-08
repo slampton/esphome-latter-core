@@ -129,7 +129,7 @@ power_management:
     profiling: ${pm_profiling}
 ```
 
-Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping, and leave the RTC sleep clock at its default (the `CONFIG_RTC_CLK_SRC_INT_8MD256` clock caused watchdog resets). Overnight, the System: Link Report sensor shows whether Wi-Fi still hears the access point in light sleep (beacon timeouts, disconnects, signal). Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
+Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping, and leave the RTC sleep clock at its default (the `CONFIG_RTC_CLK_SRC_INT_8MD256` clock caused watchdog resets). Overnight, the System: Link Report sensor shows whether Wi-Fi still hears the access point in light sleep (beacon timeouts, disconnects, signal), how much of the night the chip slept (`slp`) or was held awake (`awk`), and what woke it (`wk` timer/gpio/wifi/other, `gp` per wake pin). Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
 
 ## 5. Substitutions and sdkconfig
 

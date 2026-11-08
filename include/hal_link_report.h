@@ -10,13 +10,20 @@
 //   up        uptime (s)
 //   bto       WIFI_EVENT_STA_BEACON_TIMEOUT events: the station stopped hearing the AP's beacons
 //   disc      station disconnects; rsn = reason code of the last one (wifi_err_reason_t, 200 = beacon timeout)
-//   rssi_*    average and minimum signal (dBm) of the 60 s samples taken while associated; n = samples
-//   ls        light sleeps that actually slept (boards with automatic light sleep only)
+//   rssi      average/minimum signal (dBm) of the 60 s samples taken while associated; n = samples
+// Boards with automatic light sleep only (hal_power_pm.h):
+//   ls        light sleeps that actually slept
+//   slp       share of uptime spent in light sleep (%)
+//   awk       share of uptime the latter_awake lock was held (%): the power policy kept the chip up
+//   wk        wake cause per sleep, timer/gpio/wifi/other (sums to ls; Wi-Fi beacon wakes are timer wakes)
+//   gp        GPIO wakes per armed pin, pwr/btn/touch/imu/unattributed (a pin counts when its level had
+//             left the armed level at the exit; unattributed = no armed pin had)
 //   api       API client connects (any client); ha = Home Assistant client connects
 //   gap       longest time (s) with no Home Assistant client connected, the current gap included;
 //             down = the current gap (0 while connected)
 // Nothing here takes the awake lock: the Wi-Fi event handler only bumps counters (on the event-loop
-// task), and the RSSI sample and the report run from the main loop's scheduler.
+// task), the sleep counters come from the light-sleep callbacks, and the sample and the report run
+// from the main loop's scheduler.
 // ==============================================================================
 
 #include "esphome.h"
@@ -93,8 +100,10 @@ inline void link_report_init() {
 #endif
 }
 
-// Every 60 s from the main loop: one RSSI sample while associated.
-inline void link_report_sample_rssi() {
+// Every 60 s from the main loop: one RSSI sample while associated, and the light-sleep time fold.
+inline void link_report_sample() {
+  PmSleepStats pm;
+  (void) pm_sleep_stats(pm, esphome::millis());
 #ifdef USE_WIFI
   auto *wifi = esphome::wifi::global_wifi_component;
   if (wifi == nullptr || !wifi->is_connected()) return;
@@ -127,28 +136,48 @@ inline void link_report_api_disconnected(bool home_assistant, uint32_t now_ms) {
   if (r.ha_clients == 0) r.ha_gap_start_ms = now_ms;
 }
 
-// The report line (well under Home Assistant's 255-character state limit).
+// Share of uptime in tenths of a percent.
+inline uint32_t link_report_permille(uint64_t part, uint64_t whole) {
+  if (whole == 0) return 0;
+  const uint64_t p = part * 1000ULL / whole;
+  return p > 1000ULL ? 1000U : static_cast<uint32_t>(p);
+}
+
+// The report line. Realistic overnight values stay near 170 characters; the buffer caps it at Home
+// Assistant's 255-character state limit.
 inline std::string link_report_line(uint32_t now_ms) {
   const LinkReport &r = link_report();
   const uint32_t down_ms = (r.ha_clients == 0) ? now_ms - r.ha_gap_start_ms : 0U;
   const uint32_t gap_ms = (down_ms > r.ha_gap_max_ms) ? down_ms : r.ha_gap_max_ms;
-  char rssi[48];
+  char rssi[32];
   if (r.rssi_samples > 0) {
-    snprintf(rssi, sizeof(rssi), "rssi_avg=%ld rssi_min=%ld",
-             static_cast<long>(r.rssi_sum / static_cast<int32_t>(r.rssi_samples)), static_cast<long>(r.rssi_min));
+    snprintf(rssi, sizeof(rssi), "%ld/%ld", static_cast<long>(r.rssi_sum / static_cast<int32_t>(r.rssi_samples)),
+             static_cast<long>(r.rssi_min));
   } else {
-    snprintf(rssi, sizeof(rssi), "rssi_avg=na rssi_min=na");
+    snprintf(rssi, sizeof(rssi), "na");
   }
-  char ls[24] = "";
-  uint32_t sleeps = 0;
-  if (pm_sleep_count(sleeps)) snprintf(ls, sizeof(ls), " ls=%lu", static_cast<unsigned long>(sleeps));
+  char sleep[160] = "";
+  PmSleepStats pm;
+  if (pm_sleep_stats(pm, now_ms)) {
+    const uint32_t slp = link_report_permille(pm.slept_us, static_cast<uint64_t>(now_ms) * 1000ULL);
+    const uint32_t awk = link_report_permille(pm.awake_ms, now_ms);
+    snprintf(sleep, sizeof(sleep), " ls=%lu slp=%lu.%lu awk=%lu.%lu wk=%lu/%lu/%lu/%lu gp=%lu/%lu/%lu/%lu/%lu",
+             static_cast<unsigned long>(pm.sleeps), static_cast<unsigned long>(slp / 10U),
+             static_cast<unsigned long>(slp % 10U), static_cast<unsigned long>(awk / 10U),
+             static_cast<unsigned long>(awk % 10U), static_cast<unsigned long>(pm.timer_wakes),
+             static_cast<unsigned long>(pm.gpio_wakes), static_cast<unsigned long>(pm.wifi_wakes),
+             static_cast<unsigned long>(pm.other_wakes), static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_PWR_KEY]),
+             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_ACTION_BTN]),
+             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_TOUCH]),
+             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_IMU]), static_cast<unsigned long>(pm.gpio_unattributed));
+  }
   char line[256];
-  snprintf(line, sizeof(line), "up=%lu bto=%lu disc=%lu rsn=%lu %s n=%lu%s api=%lu ha=%lu gap=%lu down=%lu",
+  snprintf(line, sizeof(line), "up=%lu bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu%s api=%lu ha=%lu gap=%lu down=%lu",
            static_cast<unsigned long>(now_ms / 1000U),
            static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.last_reason.load(std::memory_order_relaxed)), rssi,
-           static_cast<unsigned long>(r.rssi_samples), ls, static_cast<unsigned long>(r.api_connects),
+           static_cast<unsigned long>(r.rssi_samples), sleep, static_cast<unsigned long>(r.api_connects),
            static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
            static_cast<unsigned long>(down_ms / 1000U));
   return std::string(line);

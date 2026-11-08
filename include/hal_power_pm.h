@@ -93,9 +93,12 @@ constexpr uint32_t kPmQuietLoopIntervalMs = 100U;
 
 #if LATTER_PM_AUTO_SLEEP
 constexpr esp_pm_lock_type_t kPmAwakeLockType = ESP_PM_CPU_FREQ_MAX;
-// ESP32-S3 RTC_CNTL wake-cause bit for GPIO wake: RTC_GPIO_TRIG_EN in esp_hw_support/port/esp32s3/include/soc/rtc.h
-// (not included here: that header also defines global macros such as MHZ).
+// ESP32-S3 RTC_CNTL wake-cause bits: RTC_GPIO_TRIG_EN / RTC_TIMER_TRIG_EN / RTC_WIFI_TRIG_EN in
+// esp_hw_support/port/esp32s3/include/soc/rtc.h (not included here: that header also defines global
+// macros such as MHZ).
 constexpr uint32_t kPmWakeCauseGpio = 1UL << 2;
+constexpr uint32_t kPmWakeCauseTimer = 1UL << 3;
+constexpr uint32_t kPmWakeCauseWifi = 1UL << 5;
 
 struct PmWakePin {
   int8_t gpio;
@@ -112,15 +115,28 @@ struct PmState {
   uint32_t entered_mask;           // pins switched to level wake by the current enter callback
   PmWakePin pins[PM_WAKE_SLOTS];
   volatile uint32_t sleeps;        // light sleeps that actually slept
-  volatile uint32_t slept_us;      // wraps; [PROF:PM] uses deltas
+  volatile uint32_t slept_us;      // wraps (~71 min); readers accumulate deltas
   volatile uint32_t gpio_wakes;    // sleeps ended by a GPIO
   volatile uint32_t synth;         // exits that delivered a pin edge to its ISR
+  // Wake cause of each sleep (one bucket per sleep, GPIO > Wi-Fi > timer > other; they sum to sleeps).
+  volatile uint32_t timer_wakes;
+  volatile uint32_t wifi_wakes;
+  volatile uint32_t other_wakes;
+  // GPIO wakes per armed pin (the pins whose level left the armed level), and GPIO wakes where no
+  // armed pin had changed by the exit (a pulse shorter than the wake-up, or an unarmed source).
+  volatile uint32_t pin_wakes[PM_WAKE_SLOTS];
+  volatile uint32_t gpio_unattributed;
+  // Awake lock held time (main loop only, pm_init / pm_apply).
+  uint32_t awake_ms_total;         // finished held periods
+  uint32_t awake_since_ms;         // start of the current held period
 };
 
 // Constant-initialized (no guard variable): the sleep callbacks read it from the idle task.
 inline PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
                              {{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}},
-                             0U, 0U, 0U, 0U};
+                             0U, 0U, 0U, 0U,
+                             0U, 0U, 0U, {0U, 0U, 0U, 0U}, 0U,
+                             0U, 0U};
 
 static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
   (void) sleep_time_us;
@@ -143,18 +159,34 @@ static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *
   return ESP_OK;
 }
 
+// Register reads, inline GPIO HAL calls and DRAM counters only: it runs from IRAM inside the light-sleep
+// critical section (no flash or PSRAM code, no logging).
 static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
   (void) arg;
   PmState &st = g_pm_state;
+  bool gpio_woke = false;
   if (slept_us > 0) {
     st.sleeps = st.sleeps + 1U;
     st.slept_us = st.slept_us + static_cast<uint32_t>(slept_us);
+    const uint32_t cause = rtc_cntl_ll_get_wakeup_cause();
+    gpio_woke = (cause & kPmWakeCauseGpio) != 0;
+    if (gpio_woke) {
+      st.gpio_wakes = st.gpio_wakes + 1U;
+    } else if ((cause & kPmWakeCauseWifi) != 0) {
+      st.wifi_wakes = st.wifi_wakes + 1U;
+    } else if ((cause & kPmWakeCauseTimer) != 0) {
+      st.timer_wakes = st.timer_wakes + 1U;
+    } else {
+      st.other_wakes = st.other_wakes + 1U;
+    }
   }
   const uint32_t entered = st.entered_mask;
-  if (entered == 0) return ESP_OK;
+  if (entered == 0) {
+    if (gpio_woke) st.gpio_unattributed = st.gpio_unattributed + 1U;
+    return ESP_OK;
+  }
   st.entered_mask = 0;
-  const bool gpio_woke = slept_us > 0 && (rtc_cntl_ll_get_wakeup_cause() & kPmWakeCauseGpio) != 0;
-  if (gpio_woke) st.gpio_wakes = st.gpio_wakes + 1U;
+  bool attributed = false;
   uint32_t changed_lo = 0, changed_hi = 0, isr_lo = 0, isr_hi = 0;
   for (uint32_t i = 0; i < PM_WAKE_SLOTS; i++) {
     if ((entered & (1UL << i)) == 0) continue;
@@ -162,10 +194,14 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
     gpio_ll_wakeup_disable(&GPIO, gpio_num);
     const uint32_t saved = st.pins[i].saved_type;
     gpio_ll_set_intr_type(&GPIO, gpio_num, static_cast<gpio_int_type_t>(saved));
+    const bool changed = static_cast<uint32_t>(gpio_ll_get_level(&GPIO, gpio_num)) != st.pins[i].armed_level;
+    if (gpio_woke && changed) {
+      st.pin_wakes[i] = st.pin_wakes[i] + 1U;
+      attributed = true;
+    }
     // Polled pins (no ISR attached) have nothing to deliver.
     if (saved == static_cast<uint32_t>(GPIO_INTR_DISABLE) || GPIO.pin[gpio_num].int_ena == 0) continue;
     const uint32_t bit = 1UL << (gpio_num & 31U);
-    const bool changed = static_cast<uint32_t>(gpio_ll_get_level(&GPIO, gpio_num)) != st.pins[i].armed_level;
     if (gpio_num < 32U) {
       isr_lo |= bit;
       if (changed) changed_lo |= bit;
@@ -174,6 +210,7 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
       if (changed) changed_hi |= bit;
     }
   }
+  if (gpio_woke && !attributed) st.gpio_unattributed = st.gpio_unattributed + 1U;
   // A GPIO woke the chip but every pin is back at its armed level (a pulse shorter than the wake-up):
   // hand the event to every armed ISR; each one re-reads its own source.
   if ((changed_lo | changed_hi) == 0 && gpio_woke) {
@@ -236,6 +273,7 @@ inline void pm_init() {
   }
   esp_pm_lock_acquire(lock);  // the screen is on at boot; pm_apply owns every later transition
   st.awake = true;
+  st.awake_since_ms = esphome::millis();
   st.loop_interval_awake = esphome::App.get_loop_interval();
   st.lock = lock;
   err = esp_sleep_enable_gpio_wakeup();
@@ -270,14 +308,17 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
     st.arm_mask = arm;
     return;
   }
+  const uint32_t now_ms = esphome::millis();
   if (stay_awake) {
     esp_pm_lock_acquire(st.lock);
+    st.awake_since_ms = now_ms;
     st.arm_mask = 0U;
     esphome::App.set_loop_interval(st.loop_interval_awake);
   } else {
     st.arm_mask = arm;  // armed before the first sleep can start
     esphome::App.set_loop_interval(kPmQuietLoopIntervalMs);
     esp_pm_lock_release(st.lock);
+    st.awake_ms_total += now_ms - st.awake_since_ms;
     st.dump_pending = true;
   }
   st.awake = stay_awake;
@@ -291,14 +332,43 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
 #endif
 }
 
-// Light sleeps that actually slept since boot (System: Link Report ls=); false without light sleep.
-inline bool pm_sleep_count(uint32_t &out) {
+// Light-sleep statistics since boot for System: Link Report. false without automatic light sleep.
+struct PmSleepStats {
+  uint32_t sleeps;
+  uint64_t slept_us;
+  uint32_t awake_ms;
+  uint32_t timer_wakes;
+  uint32_t gpio_wakes;
+  uint32_t wifi_wakes;
+  uint32_t other_wakes;
+  uint32_t pin_wakes[PM_WAKE_SLOTS];  // pwr, btn, touch, imu (PmWakeSlot order)
+  uint32_t gpio_unattributed;
+};
+
+// Main loop only, at least once per ~71 min (the 60 s link report sample): folds the wrapping 32-bit
+// slept-time counter into a 64-bit total.
+inline bool pm_sleep_stats(PmSleepStats &out, uint32_t now_ms) {
 #if LATTER_PM_AUTO_SLEEP
-  if (g_pm_state.lock == nullptr) return false;
-  out = g_pm_state.sleeps;
+  const PmState &st = g_pm_state;
+  if (st.lock == nullptr) return false;
+  static uint64_t total_us = 0;
+  static uint32_t last_us = 0;
+  const uint32_t cur_us = st.slept_us;
+  total_us += cur_us - last_us;
+  last_us = cur_us;
+  out.sleeps = st.sleeps;
+  out.slept_us = total_us;
+  out.awake_ms = st.awake_ms_total + (st.awake ? now_ms - st.awake_since_ms : 0U);
+  out.timer_wakes = st.timer_wakes;
+  out.gpio_wakes = st.gpio_wakes;
+  out.wifi_wakes = st.wifi_wakes;
+  out.other_wakes = st.other_wakes;
+  for (uint32_t i = 0; i < PM_WAKE_SLOTS; i++) out.pin_wakes[i] = st.pin_wakes[i];
+  out.gpio_unattributed = st.gpio_unattributed;
   return true;
 #else
   (void) out;
+  (void) now_ms;
   return false;
 #endif
 }

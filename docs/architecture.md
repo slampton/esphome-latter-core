@@ -84,7 +84,7 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `latter_protocol.h` | Generated Protocol v3 constants (from `protocol/latter_v3.json`) |
 | `hal_imu_qmi8658.h` | QMI8658 hardware wake-on-motion |
 | `hal_power_pm.h` | Automatic light sleep: the awake lock, light-sleep wake pins, sleep pad config for raw-IDF outputs, `[PROF:PM]` |
-| `hal_link_report.h` | Wi-Fi and Home Assistant link counters for the System: Link Report sensor and `[PROF:LINK]` |
+| `hal_link_report.h` | Wi-Fi, Home Assistant and light-sleep counters (residency, wake causes, awake-lock share) for the System: Link Report sensor and `[PROF:LINK]` |
 | `ui_touch_router.h` | Touch gesture routing and hit-testing |
 | `latter_state.h` | Typed per-domain state, plus allocation-free parsers for the packed (`\x1f` / `\x1e`) protocol payloads |
 
