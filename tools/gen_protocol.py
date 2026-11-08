@@ -91,6 +91,7 @@ def build_device_contract_md(schema: dict[str, Any]) -> str:
         f"- **Contract Version**: `{ver}`",
         "- **Field Separator**: `0x1F` (`\\x1f`, ASCII Unit Separator `␟`)",
         "- **Record Separator**: `0x1E` (`\\x1e`, ASCII Record Separator `␞`) with pipe (`|`) subfields inside record lists",
+        f"- **Absent Values**: {schema['absent_value']}",
         "- **Inbound Channel**: Each domain publishes a single `payload` attribute on `sensor.<device>_<domain>` prefixed with `v3␟<epoch>␟<rev>`.",
         "- **Revision Guard Semantics**:",
         "  - `epoch` (`u32`, non-zero): Generated randomly when the Home Assistant coordinator starts. If `in_epoch != cur_epoch`, the device accepts the frame unconditionally and updates `cur_epoch` and `cur_rev`.",

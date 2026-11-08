@@ -7,6 +7,7 @@
 - **Contract Version**: `3`
 - **Field Separator**: `0x1F` (`\x1f`, ASCII Unit Separator `␟`)
 - **Record Separator**: `0x1E` (`\x1e`, ASCII Record Separator `␞`) with pipe (`|`) subfields inside record lists
+- **Absent Values**: A field with no value is the empty string, never a placeholder (none, NONE, None, unknown, unavailable, Idle, Unassigned) or a made-up number. A state field carries only the values its description lists.
 - **Inbound Channel**: Each domain publishes a single `payload` attribute on `sensor.<device>_<domain>` prefixed with `v3␟<epoch>␟<rev>`.
 - **Revision Guard Semantics**:
   - `epoch` (`u32`, non-zero): Generated randomly when the Home Assistant coordinator starts. If `in_epoch != cur_epoch`, the device accepts the frame unconditionally and updates `cur_epoch` and `cur_rev`.
@@ -79,7 +80,7 @@ Active media player state, metadata, timestamped playback progress, artwork URL,
 
 | Index | Field | C++ Enum | Type | Description |
 | :---: | :--- | :--- | :---: | :--- |
-| `3` | `state` | `MediaField::STATE` | `string` | Playback state (playing|paused|idle|off) |
+| `3` | `state` | `MediaField::STATE` | `string` | Playback state (playing|paused|buffering|idle|off); empty while the speaker is missing or unavailable |
 | `4` | `title` | `MediaField::TITLE` | `string` | Track title |
 | `5` | `artist` | `MediaField::ARTIST` | `string` | Track artist |
 | `6` | `album` | `MediaField::ALBUM` | `string` | Album title |
