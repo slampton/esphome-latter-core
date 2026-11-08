@@ -682,9 +682,12 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
                                      esphome::Color col_white, esphome::Color col_gray,
                                      esphome::Color col_slate, esphome::Color col_dark_gray,
                                      esphome::Color col_green) {
-  if (std::isnan(ax)) ax = 0.0f;
-  if (std::isnan(ay)) ay = 0.0f;
-  if (std::isnan(az)) az = 9.8f;
+  if (std::isnan(ax) || std::isnan(ay) || std::isnan(az)) {
+    // No accelerometer reading yet: say so instead of drawing a level bubble (level_cy below is 232).
+    render_empty_state(it, cx, 232, "Waiting for the motion sensor...", font_small, col_slate);
+    render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    return;
+  }
 
   float p_rad = std::atan2(ay, std::sqrt(ax * ax + az * az));
   float r_rad = std::atan2(ax, std::sqrt(ay * ay + az * az));
@@ -2301,33 +2304,26 @@ inline bool &intercom_live_call_mode() {
   return live_mode;
 }
 
+// intercom_targets_summary (Protocol v3 area_context field 30): records joined by kProtocolRecordSep,
+// each "target_id|label|kind". kind is "all" (listed first, only when another Device exists) or
+// "device" (target_id = the Device's slug, label = its title). Empty = no other Device to call.
 inline int parse_intercom_targets_list(
     const std::string &raw,
     std::string out_ids[5],
-    std::string out_labels[5]) {
-  out_ids[0] = "all";
-  out_labels[0] = "Ring All Areas";
-  int idx = 1;
-  if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
-    return idx;
+    std::string out_labels[5],
+    bool out_all[5] = nullptr) {
+  std::string_view recs[5];
+  const size_t n = v3_split_fields(raw, recs, 5, kProtocolRecordSep);
+  int idx = 0;
+  for (size_t r = 0; r < n; r++) {
+    std::string_view f[3];
+    if (v3_split_fields(recs[r], f, 3, '|') != 3 || f[0].empty()) continue;
+    out_ids[idx] = std::string(f[0]);
+    out_labels[idx] = std::string(f[1]);
+    if (out_all != nullptr) out_all[idx] = (f[2] == "all");
+    idx++;
   }
-  size_t pos = 0;
-  idx = 0;
-  while (pos < raw.size() && idx < 5) {
-    size_t semi = raw.find(';', pos);
-    std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
-    pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
-    if (tok.empty()) continue;
-    size_t bar = tok.find('|');
-    std::string tid = (bar == std::string::npos) ? tok : tok.substr(0, bar);
-    std::string tlb = (bar == std::string::npos) ? tok : tok.substr(bar + 1);
-    if (!tid.empty()) {
-      out_ids[idx] = tid;
-      out_labels[idx] = tlb.empty() ? tid : tlb;
-      idx++;
-    }
-  }
-  return idx > 0 ? idx : 1;
+  return idx;
 }
 
 template<typename DisplayT, typename FontSmallT>
@@ -2357,11 +2353,14 @@ inline void render_tool_intercom(
 
   if (intercom_live_call_mode()) {
     std::string t_ids[5], t_lbls[5];
-    int cnt = parse_intercom_targets_list(intercom_targets_summary, t_ids, t_lbls);
+    bool t_all[5] = {false, false, false, false, false};
+    int cnt = parse_intercom_targets_list(intercom_targets_summary, t_ids, t_lbls, t_all);
+    if (cnt == 0) {
+      render_empty_state(it, cx, layout().slot5_y(0), "No other devices to call", font_small, col_slate);
+    }
     for (int i = 0; i < cnt; i++) {
       int y_mid = layout().slot5_y(i);
-      bool is_sip = (t_ids[i].rfind("sip:", 0) == 0);
-      Color brd_c = is_sip ? theme_secondary : Color(66, 188, 106);
+      Color brd_c = t_all[i] ? theme_secondary : Color(66, 188, 106);
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, col_white, font_small);
       fast_filled_circle(it, c_left + scale_x(18), y_mid, scale_s(6), brd_c);
       std::string fit_l = fit_text_to_width_font(t_lbls[i], layout().list_card_w - scale_x(46), font_small);
@@ -2386,7 +2385,6 @@ inline void render_tool_intercom(
       fast_print(it, c_left + scale_x(32), y_mid, font_small, col_white, TextAlign::CENTER_LEFT, kPresets[i]);
     }
   }
-  (void)col_slate;
   render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
 
@@ -2442,39 +2440,23 @@ inline bool &cam_download_in_progress() {
   return busy;
 }
 
+// cameras_summary (Protocol v3 area_context field 28): records joined by kProtocolRecordSep, each
+// "entity_id|name|area_id|snapshot_url" (snapshot_url is the signed Latter URL). Empty = no cameras.
 inline int parse_cameras_summary_list(
     const std::string &raw,
     std::string out_ids[MAX_CAMERA_SLOTS],
     std::string out_names[MAX_CAMERA_SLOTS],
     std::string out_urls[MAX_CAMERA_SLOTS] = nullptr) {
-  if (raw.empty() || raw == "NONE" || raw == "unknown" || raw == "unavailable") {
-    return 0;
-  }
-  size_t pos = 0;
+  std::string_view recs[MAX_CAMERA_SLOTS];
+  const size_t n = v3_split_fields(raw, recs, MAX_CAMERA_SLOTS, kProtocolRecordSep);
   int idx = 0;
-  while (pos < raw.size() && idx < MAX_CAMERA_SLOTS) {
-    size_t semi = raw.find(';', pos);
-    std::string tok = (semi == std::string::npos) ? raw.substr(pos) : raw.substr(pos, semi - pos);
-    pos = (semi == std::string::npos) ? raw.size() : (semi + 1);
-    if (tok.empty()) continue;
-    size_t p1 = tok.find('|');
-    if (p1 == std::string::npos) {
-      out_ids[idx] = tok;
-      out_names[idx] = tok;
-      if (out_urls != nullptr) out_urls[idx] = "";
-      idx++;
-      continue;
-    }
-    size_t p2 = tok.find('|', p1 + 1);
-    std::string cid = tok.substr(0, p1);
-    std::string cnm = (p2 == std::string::npos) ? tok.substr(p1 + 1) : tok.substr(p1 + 1, p2 - p1 - 1);
-    std::string curl = (p2 == std::string::npos) ? "" : tok.substr(p2 + 1);
-    if (!cid.empty()) {
-      out_ids[idx] = cid;
-      out_names[idx] = cnm.empty() ? cid : cnm;
-      if (out_urls != nullptr) out_urls[idx] = curl;
-      idx++;
-    }
+  for (size_t r = 0; r < n; r++) {
+    std::string_view f[4];
+    if (v3_split_fields(recs[r], f, 4, '|') != 4 || f[0].empty()) continue;
+    out_ids[idx] = std::string(f[0]);
+    out_names[idx] = std::string(f[1]);
+    if (out_urls != nullptr) out_urls[idx] = std::string(f[3]);
+    idx++;
   }
   return idx;
 }

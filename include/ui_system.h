@@ -733,22 +733,27 @@ inline void render_system_page(
 
     print_info_row(212, "IP:", ip_str.empty() ? "Connecting..." : ip_str.c_str(), col_slate);
 
-    std::string area_str = latter_area_label().empty() ? "Home" : latter_area_label();
+    std::string area_str = latter_area_label().empty() ? std::string(kUnknownGlyph) : latter_area_label();
     if (!latter_ble_proxy().empty() && latter_ble_proxy() != "unknown" && latter_ble_proxy() != "unavailable") {
       area_str += " (" + latter_ble_proxy() + ")";
     }
     area_str = fit_text_to_width_font(area_str, 220, font_small);
     print_info_row(244, "Area:", area_str.c_str(), col_slate);
 
-    snprintf(buf, sizeof(buf), "%.0f%% (%.2fV)%s",
-             std::isnan(batt) ? 100.0f : batt,
-             std::isnan(batt_v) ? 4.15f : batt_v,
-             is_charging ? " • Chg" : "");
+    if (std::isnan(batt) || std::isnan(batt_v)) {
+      snprintf(buf, sizeof(buf), "%s", kUnknownGlyph);
+    } else {
+      snprintf(buf, sizeof(buf), "%.0f%% (%.2fV)%s", batt, batt_v, is_charging ? " • Chg" : "");
+    }
     print_info_row(276, "Battery:", buf, col_slate);
 
-    float temp_c = std::isnan(imu_temp_c) ? 30.0f : imu_temp_c;
-    float temp_f = temp_c * 1.8f + 32.0f;
-    snprintf(buf, sizeof(buf), "%.1fC (%.1fF) • %luKB", temp_c, temp_f, (unsigned long)free_heap_kb);
+    if (std::isnan(imu_temp_c)) {
+      snprintf(buf, sizeof(buf), "%s • %luKB", kUnknownGlyph, (unsigned long)free_heap_kb);
+    } else {
+      const float temp_c = imu_temp_c;
+      const float temp_f = temp_c * 1.8f + 32.0f;
+      snprintf(buf, sizeof(buf), "%.1fC (%.1fF) • %luKB", temp_c, temp_f, (unsigned long)free_heap_kb);
+    }
     print_info_row(308, "HW / RAM:", buf, col_slate);
 
     draw_back();

@@ -1901,7 +1901,7 @@ script:
                     } else if (slot_idx < cnt) {
                       id(cam_intercom_action) = "call_target";
                       id(cam_intercom_message) = t_ids[slot_idx];
-                      id(intercom_feedback_str) = t_lbls[slot_idx];
+                      id(intercom_feedback_str) = "Call: " + t_lbls[slot_idx];
                       id(intercom_feedback_ms) = now_tools;
                       id(send_doorbell_intercom_cmd).execute();
                       latter_ui::cam_quick_reply_open() = false;

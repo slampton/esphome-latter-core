@@ -944,7 +944,7 @@ inline std::string format_forecast_short_name(const std::string &c) {
   if (c == "fog" || c == "foggy") return "Fog";
   if (c == "mist" || c == "misty" || c == "haze") return "Mist";
   if (c == "hail") return "Hail";
-  if (c.empty()) return "Fair";
+  if (c.empty()) return kUnknownGlyph;
   std::string s = c;
   for (char &ch : s) {
     if (ch == '-' || ch == '_') ch = ' ';
@@ -2149,16 +2149,9 @@ inline void render_weather_page(
     std::string cond_title = fit_text_to_width_font(format_weather_title(cond), scale_x(340), font_date);
     fast_print(it, cx, scale_y(182), font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
 
+    // high / low are forecast day 1 (ha-latter fills them from it); empty -> NAN -> unknown.
     float hi_val = weather_high;
     float lo_val = weather_low;
-    if ((std::isnan(hi_val) || std::isnan(lo_val)) &&
-        !weather_forecast_5d.empty() && weather_forecast_5d.find(':') != std::string::npos) {
-      int p_hi = 0, p_lo = 0;
-      if (sscanf(weather_forecast_5d.c_str(), "%*[^:]:%d:%d", &p_hi, &p_lo) == 2) {
-        if (std::isnan(hi_val)) hi_val = static_cast<float>(p_hi);
-        if (std::isnan(lo_val)) lo_val = static_cast<float>(p_lo);
-      }
-    }
 
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
     const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
@@ -2321,62 +2314,23 @@ inline void render_weather_page(
     DayForecast fc_days[5];
     int fc_count = 0;
 
-    if (!weather_forecast_5d.empty() && weather_forecast_5d != "unknown" &&
-        weather_forecast_5d != "unavailable" && weather_forecast_5d.find(':') != std::string::npos) {
-      size_t start = 0;
-      while (start < weather_forecast_5d.length() && fc_count < 5) {
-        size_t end = weather_forecast_5d.find(';', start);
-        if (end == std::string::npos) end = weather_forecast_5d.length();
-        std::string token = weather_forecast_5d.substr(start, end - start);
-        start = end + 1;
-        if (token.empty()) continue;
-
-        size_t c1 = token.find(':');
-        if (c1 != std::string::npos) {
-          size_t c2 = token.find(':', c1 + 1);
-          if (c2 != std::string::npos) {
-            size_t c3 = token.find(':', c2 + 1);
-            DayForecast &df = fc_days[fc_count++];
-            df.day = token.substr(0, c1);
-            df.high = token.substr(c1 + 1, c2 - c1 - 1);
-            if (c3 != std::string::npos) {
-              df.low = token.substr(c2 + 1, c3 - c2 - 1);
-              df.cond = token.substr(c3 + 1);
-            } else {
-              df.low = token.substr(c2 + 1);
-              df.cond = "sunny";
-            }
-          }
-        }
+    // forecast_5d (Protocol v3 weather field 10): records joined by kProtocolRecordSep, each
+    // "day|cond|high|low"; cond, high and low may be empty (unknown). Empty = no forecast.
+    {
+      std::string_view recs[5];
+      const size_t n = v3_split_fields(weather_forecast_5d, recs, 5, kProtocolRecordSep);
+      for (size_t r = 0; r < n; r++) {
+        std::string_view f[4];
+        if (v3_split_fields(recs[r], f, 4, '|') != 4) continue;
+        DayForecast &df = fc_days[fc_count++];
+        df.day = std::string(f[0]);
+        df.cond = std::string(f[1]);
+        df.high = f[2].empty() ? std::string(kUnknownGlyph) : std::string(f[2]);
+        df.low = f[3].empty() ? std::string(kUnknownGlyph) : std::string(f[3]);
       }
     }
-
     if (fc_count == 0) {
-      std::string cur_c = weather_cond_raw;
-      if (cur_c.empty() || cur_c == "unknown" || cur_c == "unavailable") cur_c = "partlycloudy";
-
-      float base_hi = !std::isnan(weather_high) ? weather_high : (!std::isnan(weather_temp) ? weather_temp + 4.0f : 82.0f);
-      float base_lo = !std::isnan(weather_low) ? weather_low : (!std::isnan(weather_temp) ? weather_temp - 15.0f : 58.0f);
-
-      const char *d_names[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
-      const int d_off[5][2] = {{0, 0}, {3, 2}, {5, 3}, {4, 2}, {2, 1}};
-
-      for (int i = 0; i < 5; i++) {
-        DayForecast &df = fc_days[fc_count++];
-        if (now.is_valid()) {
-          int d_idx = (now.day_of_week - 1 + i) % 7;
-          if (d_idx < 0) d_idx += 7;
-          df.day = (i == 0) ? "TODAY" : d_names[d_idx];
-        } else {
-          df.day = (i == 0) ? "TODAY" : d_names[(i + 5) % 7];
-        }
-        char h_buf[16], l_buf[16];
-        snprintf(h_buf, sizeof(h_buf), "%.0f", base_hi + d_off[i][0]);
-        snprintf(l_buf, sizeof(l_buf), "%.0f", base_lo + d_off[i][1]);
-        df.high = h_buf;
-        df.low = l_buf;
-        df.cond = cur_c;
-      }
+      render_empty_state(it, cx, SCREEN_CY, "Forecast not available yet", font_small, col_slate);
     }
 
     if (fc_count > 0) {
@@ -2398,10 +2352,10 @@ inline void render_weather_page(
       const auto &d = fc_days[i];
       int ry_data = ry + 1;
 
-      render_forecast_glyph(it, x_glyph, ry_data, d.cond);
+      if (!d.cond.empty()) render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
-      std::string hi_str = d.high + "°";
-      std::string lo_str = d.low + "°";
+      std::string hi_str = (d.high == kUnknownGlyph) ? d.high : d.high + "°";
+      std::string lo_str = (d.low == kUnknownGlyph) ? d.low : d.low + "°";
       if (large_fc) {
         fast_print(it, x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 56) - x_cond, font_date);
@@ -2487,12 +2441,18 @@ inline void render_weather_page(
     // SUBPAGE 3: MOON (ENLARGED LUNAR DISC + BALANCED PHASE TELEMETRY)
     // ----------------------------------------------------------------------
     double cycle = 0.5;
-    int illum_pct = 50;
-    std::string mp_label = "Moon";
-    compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
-                               moon_phase_raw, cycle, &illum_pct, &mp_label);
+    int illum_pct = 0;
+    std::string mp_label;
+    const bool moon_known =
+        compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
+                                   moon_phase_raw, cycle, &illum_pct, &mp_label);
 
     render_page_header(it, cx, "MOON", font_small, theme_primary);
+    if (!moon_known) {
+      render_empty_state(it, cx, SCREEN_CY, "Waiting for the time or moon phase...", font_small, col_slate);
+      render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);
+      return;
+    }
 
     const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
     const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : scale_y(36));

@@ -1510,9 +1510,7 @@ script:
           id(remote_feedback_timer) = millis();
       - if:
           condition:
-            lambda: |-
-              const std::string &sum = latter_ui::remote_state().slots_summary;
-              return !sum.empty() && sum != "unknown" && sum != "unavailable" && sum != "none" && sum != "NONE";
+            lambda: 'return !latter_ui::remote_state().slots_summary.empty();'
           then:
             - homeassistant.action:
                 action: latter.remote_action

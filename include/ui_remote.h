@@ -94,8 +94,10 @@ inline void seed_standalone_remote_slots(
   }
 }
 
-// Parses Latter's `slots_summary` attribute ("1:Name:remote_ent:mp_ent:state;2:...")
-// directly into the 10-slot table, falling back to YAML standalone slots 1..4 if empty.
+// remote_config slots_summary (Protocol v3 field 5): records joined by kProtocolRecordSep, one per
+// configured slot, each "index|label|entity_id|kind|area_id|state" (index is the 1-based slot number,
+// so gaps are possible; entity_id is the slot's remote.* entity, else its media_player.*). An empty
+// summary means Latter has no slots configured, and the YAML standalone slots 1..4 stay.
 inline void parse_latter_remote_slots_summary(
     const std::string &summary,
     const char *e1 = nullptr, const char *n1 = nullptr,
@@ -107,50 +109,24 @@ inline void parse_latter_remote_slots_summary(
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();
 
-  if (!summary.empty() && summary != "unknown" && summary != "unavailable" &&
-      summary != "none" && summary != "NONE") {
+  if (!summary.empty()) {
     for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
       t_ents[i] = "remote.none";
       t_names[i].clear();
       st_on[i] = false;
     }
-    size_t pos = 0;
-    while (pos < summary.size()) {
-      size_t semi = summary.find(';', pos);
-      std::string entry = (semi == std::string::npos) ? summary.substr(pos) : summary.substr(pos, semi - pos);
-      pos = (semi == std::string::npos) ? summary.size() : (semi + 1);
-      if (entry.empty()) continue;
-
-      size_t c1 = entry.find(':');
-      if (c1 == std::string::npos) continue;
-      int slot_num = std::atoi(entry.substr(0, c1).c_str());
+    std::string_view recs[MAX_REMOTE_SLOTS];
+    const size_t n = v3_split_fields(summary, recs, MAX_REMOTE_SLOTS, kProtocolRecordSep);
+    for (size_t r = 0; r < n; r++) {
+      std::string_view f[6];
+      if (v3_split_fields(recs[r], f, 6, '|') != 6 || f[2].empty()) continue;
+      const int slot_num = v3_parse_int(f[0], 0);
       if (slot_num < 1 || slot_num > MAX_REMOTE_SLOTS) continue;
-      int idx = slot_num - 1;
-
-      size_t c2 = entry.find(':', c1 + 1);
-      if (c2 == std::string::npos) continue;
-      std::string name = entry.substr(c1 + 1, c2 - (c1 + 1));
-
-      size_t c3 = entry.find(':', c2 + 1);
-      std::string rem_e = (c3 == std::string::npos) ? entry.substr(c2 + 1) : entry.substr(c2 + 1, c3 - (c2 + 1));
-      std::string mp_e = "";
-      std::string st_str = "";
-      if (c3 != std::string::npos) {
-        size_t c4 = entry.find(':', c3 + 1);
-        mp_e = (c4 == std::string::npos) ? entry.substr(c3 + 1) : entry.substr(c3 + 1, c4 - (c3 + 1));
-        if (c4 != std::string::npos) {
-          st_str = entry.substr(c4 + 1);
-        }
-      }
-
-      st_on[idx] = (st_str == "on" || st_str == "playing" || st_str == "paused" ||
-                    st_str == "buffering" || st_str == "idle");
-
-      std::string best_ent = (!rem_e.empty() && rem_e != "none" && rem_e != "None") ? rem_e : mp_e;
-      if (!best_ent.empty() && best_ent != "none" && best_ent != "None") {
-        t_ents[idx] = best_ent;
-        t_names[idx] = name.empty() ? format_remote_entity_fallback(best_ent) : name;
-      }
+      const int idx = slot_num - 1;
+      const std::string_view st = f[5];
+      st_on[idx] = (st == "on" || st == "playing" || st == "paused" || st == "buffering" || st == "idle");
+      t_ents[idx] = std::string(f[2]);
+      t_names[idx] = f[1].empty() ? format_remote_entity_fallback(t_ents[idx]) : std::string(f[1]);
     }
   }
   remote_control_page() = 0;

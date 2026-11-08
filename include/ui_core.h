@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110290L
+#define LATTER_SDK_REV 2026110291L
 
 namespace latter_ui {
 
@@ -2529,11 +2529,13 @@ inline void format_time_hhmm(int hour, int minute, bool is_24h, char *out_buf,
   }
 }
 
-inline void compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const std::string &fallback_phase,
+// Returns false when neither the clock nor Home Assistant's moon phase is known (outputs untouched then).
+inline bool compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const std::string &fallback_phase,
                                        double &out_cycle, int *out_illum = nullptr, std::string *out_label = nullptr) {
   double cycle = 0.5;
   int illum_pct = 50;
-  std::string mp_label = "Moon";
+  std::string mp_label;
+  bool known = true;
 
   if (time_valid) {
     double diff = (double)(epoch_sec - 947182440LL);
@@ -2558,11 +2560,14 @@ inline void compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const
     else if (fallback_phase == "waning_gibbous") { cycle = 0.68; illum_pct = 68; mp_label = "Waning Gibbous"; }
     else if (fallback_phase == "last_quarter") { cycle = 0.75; illum_pct = 50; mp_label = "Last Quarter"; }
     else if (fallback_phase == "waning_crescent") { cycle = 0.88; illum_pct = 22; mp_label = "Waning Crescent"; }
+    else known = false;
   }
+  if (!known) return false;
 
   out_cycle = cycle;
   if (out_illum != nullptr) *out_illum = illum_pct;
   if (out_label != nullptr) *out_label = mp_label;
+  return true;
 }
 
 // ------------------------------------------------------------------------------
