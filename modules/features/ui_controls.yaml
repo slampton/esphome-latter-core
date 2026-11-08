@@ -165,9 +165,9 @@ select:
     options:
       - "Nebula"
       - "Solaris"
-      - "Jarvis"
-      - "Alexa"
-      - "Gemini"
+      - "Rings"
+      - "Light Bar"
+      - "Dot Wave"
     set_action:
       - lambda: |-
           id(va_visual_profile).publish_state(x);
@@ -253,9 +253,9 @@ select:
     initial_option: ${default_screensaver_style}
     options:
       - "Ambient Clock"
-      - "Aurora Borealis"
+      - "Aurora"
       - "Starfield"
-      - "Matrix Rain"
+      - "Digital Rain"
       - "Fireworks"
     set_action:
       - lambda: |-

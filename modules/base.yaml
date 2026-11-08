@@ -56,6 +56,8 @@ api:
       id: latter_ping_action
       then:
         - logger.log: "Latter companion connected"
+        # Latter pings every bound Device once its services exist: answer with a fresh hello.
+        - script.execute: send_device_hello
 
 # Home Assistant subscribes to device actions only after it subscribes to states: a hello sent straight from
 # on_client_connected is dropped, so wait for the state subscription first.

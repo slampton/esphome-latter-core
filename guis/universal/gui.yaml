@@ -396,7 +396,7 @@ display:
           latter_ui::render_games_launcher(
               it, cx, id(game_carousel_idx), id(menu_scroll_active),
               id(menu_scroll_step), id(menu_scroll_dir), id(menu_scroll_target_page),
-              id(high_score_marbles), id(high_score_archery), id(high_score_breakout),
+              id(high_score_marbles), id(high_score_archery), id(high_score_bricks),
               id(high_score_chomp),
               id(font_games_title), id(font_btn_bold), id(font_small),
               id(theme_primary), id(theme_secondary),
@@ -419,9 +419,9 @@ display:
               id(col_bg), id(col_white), id(col_black), id(col_gold),
               id(col_cyan), id(col_red), id(col_slate), id(col_dark_gray));
         } else if (id(active_game) == 3) {
-          latter_ui::render_game_breakout(
+          latter_ui::render_game_bricks(
               it, cx, cy, millis(), game_just_entered, roll_delta,
-              id(marble_touch_x), id(game_btn_pressed), id(high_score_breakout),
+              id(marble_touch_x), id(game_btn_pressed), id(high_score_bricks),
               id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
               id(col_bg), id(col_white), id(col_gold), id(col_cyan),
               id(col_orange), id(col_green), id(col_red), id(col_slate), id(col_dark_gray));

@@ -21,7 +21,7 @@
 | **Remote** | D-pad, Home, Back, volume, and a device list with master power. Up to 10 remotes. |
 | **Sky & Weather** | Current conditions, 5-day forecast, sun, and moon. Animated effects: clouds, fog, 3-layer rain, snow, storms with lightning, and the occasional meteor at night. |
 | **Tools** | Timers (3), alarms (3, with daily, weekday, weekend, or one-time repeats and a 5-minute snooze), stopwatch, calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, camera (carousel of auto-refreshing snapshots, about 1–2 fps, doorbell call), dice, coin flip, flashlight, and a level (IMU boards only) |
-| **Games** | Marbles, Archery, Breakout, Chomp, 2048, Memory Match. On IMU boards the first four are tilt-controlled, with touch-drag as a fallback. On boards without an IMU, touch steering is always used. |
+| **Games** | Marbles, Archery, Bricks, Chomp, 2048, Memory Match. On IMU boards the first four are tilt-controlled, with touch-drag as a fallback. On boards without an IMU, touch steering is always used. |
 | **Settings** | Device status, sleep and wake, display, audio, voice, and firmware update |
 
 ## Voice
@@ -31,7 +31,7 @@ The wake word runs on the device with [micro_wake_word](https://github.com/kahre
 - **Wake words:** Okay Nabu (the default), Hey Jarvis, Hey Mycroft, Alexa, and Hey Luna. Up to two can be active at once.
 - **When it listens:** controlled by **Voice: Wake Word Mode**: `Docked Only` (the default on battery devices), `Always On`, or `Disabled`. The wake word is paused while this device plays media or a ringing alarm or timer, during voice replies, games, a doorbell call, OTA updates, and while Wi-Fi is down. (There is no on-device echo cancellation yet, so it can't listen over its own speaker.)
 - **Music during voice:** music pauses while you speak and resumes after the reply, unless you asked it to stop.
-- **Visual styles:** 5 animations for the voice overlay: Nebula, Solaris, Jarvis, Alexa, and Gemini.
+- **Visual styles:** 5 animations for the voice overlay: Nebula, Solaris, Rings, Light Bar, and Dot Wave.
 
 ## Power profiles
 
@@ -66,7 +66,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | :--- | :--- |
 | **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and the Display light |
 | **Home** | Weather Background, Wake Greeting (the dock itself is a Latter setting, not an entity) |
-| **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora Borealis, Starfield, Matrix Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Stay Awake, Hold Crown Power Off |
+| **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Stay Awake, Hold Crown Power Off |
 | **Voice** | Wake Word Mode, Active Wake Word, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist |
 | **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |
 | **Sound** | Volume Step Size, Alert Volume, Game Sound Effects |

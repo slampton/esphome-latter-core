@@ -517,8 +517,7 @@ inline void render_system_page(
     snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: N/A");
 #endif
     snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Docked Saver: %s", docked_ss_on ? "On" : "Off");
-    const char *short_s = (ss_style_opt == "Aurora Borealis") ? "Aurora"
-                          : ((ss_style_opt == "Matrix Rain") ? "Matrix" : ss_style_opt.c_str());
+    const char *short_s = (ss_style_opt == "Digital Rain") ? "Rain" : ss_style_opt.c_str();
     snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Saver Style: %s", short_s);
     snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Docked Timeout: %s", dock_inact_opt.c_str());
 #if LATTER_HAS_BATTERY

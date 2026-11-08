@@ -234,7 +234,7 @@ inline void render_screensaver_starfield(DisplayT &it, int cx, int cy, uint32_t 
     }
   }
 }
-static constexpr uint16_t MATRIX_GLYPH_MASK[32] = {
+static constexpr uint16_t DIGITAL_RAIN_GLYPH_MASK[32] = {
   0x121, 0x181, 0x069, 0x085, 0x183, 0x06B, 0x083, 0x129,
   0x0A9, 0x065, 0x0A3, 0x105, 0x214, 0x12B, 0x182, 0x007,
   0x301, 0x381, 0x108, 0x056, 0x141, 0x187, 0x223, 0x207,
@@ -242,7 +242,7 @@ static constexpr uint16_t MATRIX_GLYPH_MASK[32] = {
 };
 
 template<typename DisplayT>
-inline void draw_matrix_katakana_glyph(DisplayT &it, int sx, int gy, uint16_t mask,
+inline void draw_rain_katakana_glyph(DisplayT &it, int sx, int gy, uint16_t mask,
                                        esphome::Color col, bool slim_tail) {
   if (slim_tail) {
     if (mask & 0x080) fast_line(it, sx, gy - 3, sx, gy + 3, col);
@@ -264,7 +264,7 @@ inline void draw_matrix_katakana_glyph(DisplayT &it, int sx, int gy, uint16_t ma
 }
 
 template<typename DisplayT>
-inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now_ms) {
+inline void render_screensaver_digital_rain(DisplayT &it, int cx, int cy, uint32_t now_ms) {
   (void)cx;
   static constexpr int CELL_H = 14;
   static constexpr int NUM_COLS = (SCREEN_W - 24) / 19;
@@ -384,7 +384,7 @@ inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now
       uint32_t glitch_tick = (dist < 1.1f)
           ? (now_ms / 85U)
           : (((cell_hash & 7U) == 0U) ? (now_ms / (190U + (cell_hash & 255U))) : 0U);
-      uint16_t mask = MATRIX_GLYPH_MASK[(cell_hash + glitch_tick * 19U) & 31U];
+      uint16_t mask = DIGITAL_RAIN_GLYPH_MASK[(cell_hash + glitch_tick * 19U) & 31U];
 
       esphome::Color g_col;
       if (dist < 0.95f && head_row_top <= dissolve_row) {
@@ -427,7 +427,7 @@ inline void render_screensaver_matrix(DisplayT &it, int cx, int cy, uint32_t now
       }
 
       bool slim_tail = (dist > slen_f - 2.0f && slen > 8);
-      draw_matrix_katakana_glyph(it, sx, gy, mask, g_col, slim_tail);
+      draw_rain_katakana_glyph(it, sx, gy, mask, g_col, slim_tail);
     }
   }
 }
@@ -643,9 +643,9 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
 
   if (ss_style == "Starfield") {
     render_screensaver_starfield(it, cx, cy, now_ms);
-  } else if (ss_style == "Matrix Rain") {
-    render_screensaver_matrix(it, cx, cy, now_ms);
-  } else if (ss_style == "Fireworks" || ss_style == "Solar Flare") {
+  } else if (ss_style == "Digital Rain") {
+    render_screensaver_digital_rain(it, cx, cy, now_ms);
+  } else if (ss_style == "Fireworks") {
     render_screensaver_fireworks(it, cx, cy, now_ms);
   } else {
     render_screensaver_aurora(it, cx, cy, now_ms);
@@ -839,9 +839,9 @@ inline void render_progress_arc_r224(DisplayT &it, int cx, int cy, float prog, e
 // Complete Voice Assistant Visual Engine supporting 5 pure-visual profiles (zero text):
 //   - "Nebula":  Flagship Hybrid 3D Volumetric Silk Ribbons, Spectral Waves & 3D Purple/Magenta Orb (Default)
 //   - "Solaris": Flagship Radial Acoustic Corona & 3D Gimbaled Solar Astrolabe
-//   - "Jarvis":  Electric-Cyan Counter-Rotating 4-Ring Concentric Mechanical HUD
-//   - "Alexa":   Amazon Echo 360-Degree Spinning Cyan & Royal-Blue Perimeter Light Ring
-//   - "Gemini":  Minimalist 3 White Dots Graceful Wave, Spinning Orbit & Capsule Equalizer
+//   - "Rings":     Electric-Cyan Counter-Rotating 4-Ring Concentric Mechanical HUD
+//   - "Light Bar": 360-Degree Spinning Cyan & Royal-Blue Perimeter Light Ring
+//   - "Dot Wave":  Minimalist 3 White Dots Graceful Wave, Spinning Orbit & Capsule Equalizer
 template<typename DisplayT, typename StrRefT>
 inline void render_voice_assistant_overlay(
     DisplayT &it, int cx, int cy, uint32_t now_ms,
@@ -850,9 +850,9 @@ inline void render_voice_assistant_overlay(
     esphome::Color col_white, esphome::Color col_solaris_gold) {
 
   const bool is_solaris = (profile_opt == "Solaris");
-  const bool is_alexa   = (profile_opt == "Alexa");
-  const bool is_google  = (profile_opt == "Gemini" || profile_opt == "Google");
-  const bool is_jarvis  = (profile_opt == "Jarvis");
+  const bool is_light_bar = (profile_opt == "Light Bar");
+  const bool is_dot_wave  = (profile_opt == "Dot Wave");
+  const bool is_rings     = (profile_opt == "Rings");
 
   // Smooth exponential envelopes (0.0f -> 1.0f) for fluid organic transitions
   // across Listening -> Thinking -> Speaking and progressive wave launch from the core
@@ -875,13 +875,13 @@ inline void render_voice_assistant_overlay(
   smooth_speak += (speak_target - smooth_speak) * 0.22f;
 
   // ============================================================================
-  // PROFILE: "ALEXA" — AMAZON ECHO 360° SPINNING CYAN & ROYAL BLUE LIGHT RING
+  // PROFILE: "LIGHT BAR" — 360° SPINNING CYAN & ROYAL BLUE LIGHT RING
   // ============================================================================
-  if (is_alexa) {
-    const esphome::Color c_echo_blue(0, 52, 235);
-    const esphome::Color c_echo_deep(0, 22, 115);
-    const esphome::Color c_echo_cyan(0, 229, 255);
-    const esphome::Color c_echo_ice(215, 252, 255);
+  if (is_light_bar) {
+    const esphome::Color c_bar_blue(0, 52, 235);
+    const esphome::Color c_bar_deep(0, 22, 115);
+    const esphome::Color c_bar_cyan(0, 229, 255);
+    const esphome::Color c_bar_ice(215, 252, 255);
 
     float t_sec = static_cast<float>(now_ms % 60000U) * 0.001f;
     float syl_env = is_speaking
@@ -895,11 +895,11 @@ inline void render_voice_assistant_overlay(
       esphome::Color rc;
       if (r < base_ring_r) {
         float k = static_cast<float>(r - inner_glow_r) / static_cast<float>(base_ring_r - inner_glow_r);
-        rc = scale_color(c_echo_deep, k * k * 0.85f);
+        rc = scale_color(c_bar_deep, k * k * 0.85f);
       } else if (r <= max_ring_r - 3) {
-        rc = c_echo_blue;
+        rc = c_bar_blue;
       } else {
-        rc = c_echo_deep;
+        rc = c_bar_deep;
       }
       fast_circle(it, cx, cy, r, rc);
     }
@@ -956,8 +956,8 @@ inline void render_voice_assistant_overlay(
 
       if (cyan_w > 0.05f) {
         esphome::Color seg_c = (cyan_w > 0.74f)
-            ? lerp_color(c_echo_cyan, c_echo_ice, (cyan_w - 0.74f) * 3.8f)
-            : lerp_color(c_echo_blue, c_echo_cyan, cyan_w * 1.35f);
+            ? lerp_color(c_bar_cyan, c_bar_ice, (cyan_w - 0.74f) * 3.8f)
+            : lerp_color(c_bar_blue, c_bar_cyan, cyan_w * 1.35f);
 
         float sx0 = DIAL_SIN[i],      cy0 = -DIAL_COS[i];
         float sx1 = DIAL_SIN[next_i], cy1 = -DIAL_COS[next_i];
@@ -978,9 +978,9 @@ inline void render_voice_assistant_overlay(
   const float va_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
 
   // ============================================================================
-  // PROFILE: "GEMINI" — 3 WHITE DOTS GRACEFUL WAVE, SPINNING ORBIT & EQUALIZER
+  // PROFILE: "DOT WAVE" — 3 WHITE DOTS GRACEFUL WAVE, SPINNING ORBIT & EQUALIZER
   // ============================================================================
-  if (is_google) {
+  if (is_dot_wave) {
     const esphome::Color c_halo_outer(32, 58, 108);
     const esphome::Color c_halo_inner(110, 168, 255);
     const int cap_r = scale_min(12);
@@ -1089,9 +1089,9 @@ inline void render_voice_assistant_overlay(
   }
 
   // ============================================================================
-  // PROFILE: "JARVIS" — ELECTRIC CYAN COUNTER-ROTATING CONCENTRIC TECH HUD
+  // PROFILE: "RINGS" — ELECTRIC CYAN COUNTER-ROTATING CONCENTRIC TECH HUD
   // ============================================================================
-  if (is_jarvis) {
+  if (is_rings) {
     const esphome::Color c_cyan_bright(28, 214, 255);   // Primary electric cyan
     const esphome::Color c_cyan_ice(195, 248, 255);     // High-energy ice-cyan highlight
     const esphome::Color c_cyan_mid(16, 128, 165);      // Mid-tone structural teal

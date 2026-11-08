@@ -1308,7 +1308,7 @@ script:
                     return;
                   } else if (slot == 3) {
                     auto call = id(va_visual_profile).make_call();
-                    call.set_option(latter_ui::cycle_option(id(va_visual_profile).current_option(), {"Nebula", "Solaris", "Jarvis", "Alexa", "Gemini"}));
+                    call.set_option(latter_ui::cycle_option(id(va_visual_profile).current_option(), {"Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"}));
                     call.perform();
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
@@ -2931,7 +2931,7 @@ script:
                       } else if (idx == 5) {
                         if (id(docked_screensaver_switch).state) {
                           auto call = id(screensaver_style_select).make_call();
-                          call.set_option(latter_ui::cycle_option(id(screensaver_style_select).current_option(), {"Ambient Clock", "Aurora Borealis", "Starfield", "Matrix Rain", "Fireworks"}));
+                          call.set_option(latter_ui::cycle_option(id(screensaver_style_select).current_option(), {"Ambient Clock", "Aurora", "Starfield", "Digital Rain", "Fireworks"}));
                           call.perform();
                         }
                       } else if (idx == 6) {

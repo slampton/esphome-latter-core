@@ -20,7 +20,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110283L;
+            constexpr long LATTER_YAML_REV = 2026110284L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -135,6 +135,9 @@ api:
       id: latter_ping_action
       then:
         - logger.log: "Latter companion connected"
+        # Latter pings every bound Device once its services exist, so a hello sent before an HA restart
+        # finished registering latter.device_hello is not lost until the next reconnect.
+        - script.execute: send_device_hello
 
     # Reset to defaults (Latter Studio / latter.reset_device). Same panel hand-off as Restart Device:
     # AMOLED panels left awake across a reboot don't come back from their next DCS sleep.
@@ -991,7 +994,7 @@ globals:
     type: int
     restore_value: yes
     initial_value: '0'
-  - id: high_score_breakout
+  - id: high_score_bricks
     type: int
     restore_value: yes
     initial_value: '0'

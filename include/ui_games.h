@@ -1075,11 +1075,11 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
 
 // ============================================================================
-// SECTION 10: REUSABLE 3D BEVELED BRICK, CAPSULE PADDLE & BREAKOUT ENGINE
+// SECTION 10: REUSABLE 3D BEVELED BRICK, CAPSULE PADDLE & BRICKS ENGINE
 // ============================================================================
 
 template<typename DisplayT>
-inline void render_breakout_brick(DisplayT &it, int cx_b, int cy_b, int w, int h,
+inline void render_brick_tile(DisplayT &it, int cx_b, int cy_b, int w, int h,
                                   esphome::Color body_col, esphome::Color hi_col,
                                   int hp, int max_hp, esphome::Color col_white) {
   int rx = cx_b - w / 2;
@@ -1120,7 +1120,7 @@ inline void render_breakout_brick(DisplayT &it, int cx_b, int cy_b, int w, int h
 }
 
 template<typename DisplayT>
-inline void render_breakout_paddle(DisplayT &it, int px, int py, int pw, int ph,
+inline void render_brick_paddle(DisplayT &it, int px, int py, int pw, int ph,
                                    esphome::Color pad_col, esphome::Color col_white) {
   int r = ph / 2;
   int x_l = px - pw / 2 + r;
@@ -1143,10 +1143,10 @@ inline void render_breakout_paddle(DisplayT &it, int px, int py, int pw, int ph,
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
-inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
+inline void render_game_bricks(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                  bool game_just_entered, float roll_delta,
                                  float &marble_touch_x, bool &game_btn_pressed,
-                                 int &high_score_breakout,
+                                 int &high_score_bricks,
                                  FontBigT *font_date, FontSmallT *font_small,
                                  esphome::Color theme_primary, esphome::Color theme_secondary,
                                  esphome::Color col_bg, esphome::Color col_white,
@@ -1154,7 +1154,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                  esphome::Color col_orange, esphome::Color col_green,
                                  esphome::Color col_red, esphome::Color col_slate,
                                  esphome::Color col_dark_gray) {
-  struct BreakoutBrick {
+  struct BrickTile {
     int16_t x, y, w, h;
     uint8_t row;
     uint8_t hp;
@@ -1166,7 +1166,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   };
 
   static constexpr int NUM_BRICKS = 18;
-  static BreakoutBrick bricks[NUM_BRICKS];
+  static BrickTile bricks[NUM_BRICKS];
   static uint32_t last_phys_ms = 0;
   static int wave_num = 1;
   static int lives_left = 3;
@@ -1447,8 +1447,8 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
           int base_pts = (bricks[b].hp == 0) ? BASE_ROW_PTS[bricks[b].row] : 50;
           int pts = base_pts * mult;
           bo_score += pts;
-          if (bo_score > high_score_breakout) {
-            high_score_breakout = bo_score;
+          if (bo_score > high_score_bricks) {
+            high_score_bricks = bo_score;
             is_new_high = true;
           }
 
@@ -1488,8 +1488,8 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
       if (rem_check == 0 && banner_ms == 0U) {
         int wave_bonus = wave_num * 300;
         bo_score += wave_bonus;
-        if (bo_score > high_score_breakout) {
-          high_score_breakout = bo_score;
+        if (bo_score > high_score_bricks) {
+          high_score_bricks = bo_score;
           is_new_high = true;
         }
         wave_num++;
@@ -1506,8 +1506,8 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
         reset_ball_on_paddle();
         if (lives_left <= 0) {
           round_over = true;
-          if (bo_score > high_score_breakout) {
-            high_score_breakout = bo_score;
+          if (bo_score > high_score_bricks) {
+            high_score_bricks = bo_score;
             is_new_high = true;
           }
         }
@@ -1560,7 +1560,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
       b_col = esphome::Color(145, 162, 182);
       h_col = esphome::Color(230, 240, 252);
     }
-    render_breakout_brick(it, bricks[b].x, bricks[b].y, bricks[b].w, bricks[b].h,
+    render_brick_tile(it, bricks[b].x, bricks[b].y, bricks[b].w, bricks[b].h,
                           b_col, h_col, bricks[b].hp, bricks[b].max_hp, col_white);
   }
 
@@ -1592,7 +1592,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
   }
 
   // 5. Draw Capsule Paddle at y = 356
-  render_breakout_paddle(it, (int)paddle_x, paddle_y, paddle_w, paddle_h, theme_primary, col_white);
+  render_brick_paddle(it, (int)paddle_x, paddle_y, paddle_w, paddle_h, theme_primary, col_white);
 
   // 6. Draw Fading Ball Comet Trail & 3D Specular Energy Ball
   if (ball_launched) {
@@ -1628,7 +1628,7 @@ inline void render_game_breakout(DisplayT &it, int cx, int cy, uint32_t now_ms,
     fast_print(it, cx, cy - scale_y(35), font_date, col_white, esphome::display::TextAlign::CENTER, score_str);
 
     char best_str[32];
-    snprintf(best_str, sizeof(best_str), "Best: %d", high_score_breakout);
+    snprintf(best_str, sizeof(best_str), "Best: %d", high_score_bricks);
     fast_print(it, cx, cy, font_small, col_gold, esphome::display::TextAlign::CENTER, best_str);
 
     fast_print(it, cx, cy + scale_y(42), font_small, col_cyan, esphome::display::TextAlign::CENTER, "[ TAP TO REPLAY ]");
@@ -2618,7 +2618,7 @@ inline void render_games_launcher(
     DisplayT &it, int cx,
     int &game_carousel_idx, bool menu_scroll_active, int menu_scroll_step,
     int menu_scroll_dir, int menu_scroll_target_page,
-    int high_score_marbles, int high_score_archery, int high_score_breakout,
+    int high_score_marbles, int high_score_archery, int high_score_bricks,
     int high_score_chomp,
     FontTitleT *font_games_title, FontBoldT *font_btn_bold, FontSmallT *font_small,
     esphome::Color theme_primary, esphome::Color theme_secondary,
@@ -2682,7 +2682,7 @@ inline void render_games_launcher(
       fast_filled_circle(it, tail_x + 1, tail_y - 1, 2, col_white);
 
     } else if (g_idx == 2) {
-      // GAME 2: BREAKOUT — 3D Beveled Bricks, Shattering Hit & Compact Paddle
+      // GAME 2: BRICKS — 3D Beveled Bricks, Shattering Hit & Compact Paddle
       int b_w = 26, b_h = 11, gap_x = 4, gap_y = 5;
       int start_bx = icon_x - static_cast<int>(2.0f * b_w + 1.5f * gap_x) + b_w / 2;
       int start_by = icon_y - 36;
@@ -2703,11 +2703,11 @@ inline void render_games_launcher(
           int hp = (r == 0 && (c == 1 || c == 2)) ? 2 : 1;
           Color bc = (hp == 2) ? Color(145, 162, 182) : row_c[r];
           Color hc = (hp == 2) ? Color(230, 240, 252) : row_hi[r];
-          render_breakout_brick(it, bx, by, b_w, b_h, bc, hc, hp, hp, col_white);
+          render_brick_tile(it, bx, by, b_w, b_h, bc, hc, hp, hp, col_white);
         }
       }
       int pad_x = icon_x - 6, pad_y = icon_y + 42, pad_w = 44, pad_h = 8;
-      render_breakout_paddle(it, pad_x, pad_y, pad_w, pad_h, theme_primary, col_white);
+      render_brick_paddle(it, pad_x, pad_y, pad_w, pad_h, theme_primary, col_white);
 
       int ball_x = icon_x + 10, ball_y = icon_y + 7;
       fast_filled_circle(it, pad_x + 3,  pad_y - 7,  2, Color(50, 40, 14));
@@ -2766,8 +2766,8 @@ inline void render_games_launcher(
       title = "ARCHERY";
       score = high_score_archery;
     } else if (g_idx == 2) {
-      title = "BREAKOUT";
-      score = high_score_breakout;
+      title = "BRICKS";
+      score = high_score_bricks;
     } else if (g_idx == 3) {
       title = "CHOMP FOR KIDS";
       score = high_score_chomp;
