@@ -120,6 +120,20 @@ esp32:
       CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
       # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_power_pm.h)
       CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"
+      # Light-sleep Wi-Fi wake timing. Without the IRAM options the S3 leaves light sleep through cached
+      # flash/PSRAM code at 40 MHz (ESP-IDF budgets 8.6 ms for it instead of 0.4 ms), so the radio wakes
+      # late and misses the AP's beacons at weak signal. After 2 missed beacons the receiver stays on
+      # until one arrives, and each miss widens the window (PHY on 0.5 ms earlier, off 4 ms later).
+      # Never CONFIG_RTC_CLK_SRC_INT_8MD256: that sleep clock caused hardware watchdog resets (rev ...83).
+      CONFIG_ESP_WIFI_SLP_IRAM_OPT: "y"
+      CONFIG_PM_SLP_IRAM_OPT: "y"
+      CONFIG_PM_RTOS_IDLE_OPT: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OVER_THRESHOLD_RECEIVE: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
+      CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
+      CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
+      CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME: "60"
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true

@@ -20,13 +20,14 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110287L;
+            constexpr long LATTER_YAML_REV = 2026110288L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
                           "(docs/flashing.md) and rebuild.");
             ESP_LOGI("latter", "Latter SDK rev %ld (YAML rev %ld)", (long)LATTER_SDK_REV, LATTER_YAML_REV);
             latter_ui::start_stall_guard();
+            latter_ui::link_report_init();  // System: Link Report counts Wi-Fi beacon timeouts and disconnects
             // va_echo_gate's acoustic meter: the raw microphone's level (runs on the microphone task).
             id(latter_mic_i2s).add_data_callback([](const microphone::AudioCapture &c) {
               if (c.stream_info.get_bits_per_sample() == 16) latter_ui::echo_meter_feed(c.data.data(), c.data.size());
@@ -104,6 +105,7 @@ api:
       - lambda: |-
           latter_ui::link_state().ha_connected = true;
           latter_ui::link_state().last_ha_connect_ms = millis();
+          latter_ui::link_report_api_connected(client_info.find("Home Assistant") != std::string::npos, millis());
           if (client_info.find("Home Assistant") != std::string::npos) {
             latter_ui::reset_all_v3_rev_guards();
             id(last_seen_alert_id) = -1;
@@ -112,6 +114,7 @@ api:
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
+      - component.update: sys_link_report
       - if:
           condition:
             lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
@@ -126,6 +129,7 @@ api:
       - lambda: |-
           latter_ui::link_state().ha_connected = false;
           latter_ui::link_state().last_ha_disconnect_ms = millis();
+          latter_ui::link_report_api_disconnected(client_info.find("Home Assistant") != std::string::npos, millis());
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
@@ -1292,3 +1296,23 @@ sensor:
     lambda: 'return heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024.0f;'
     filters:
       - delta: 256.0
+
+# Wi-Fi and Home Assistant link counters since boot (include/hal_link_report.h): one key=value line every
+# 15 minutes and on every API client connect, kept in Home Assistant's history and logged as [PROF:LINK].
+text_sensor:
+  - platform: template
+    name: "System: Link Report"
+    id: sys_link_report
+    icon: "mdi:wifi-check"
+    entity_category: diagnostic
+    update_interval: 15min
+    lambda: 'return latter_ui::link_report_log_line(millis());'
+
+interval:
+  # Link report RSSI sample, and the Wi-Fi event hook until it is in place. A scheduler task: it adds
+  # one main-loop pass a minute and never takes the awake lock.
+  - interval: 60s
+    then:
+      - lambda: |-
+          latter_ui::link_report_init();
+          latter_ui::link_report_sample_rssi();

@@ -291,6 +291,18 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
 #endif
 }
 
+// Light sleeps that actually slept since boot (System: Link Report ls=); false without light sleep.
+inline bool pm_sleep_count(uint32_t &out) {
+#if LATTER_PM_AUTO_SLEEP
+  if (g_pm_state.lock == nullptr) return false;
+  out = g_pm_state.sleeps;
+  return true;
+#else
+  (void) out;
+  return false;
+#endif
+}
+
 // [PROF:PM] from the 10 s power profile: light-sleep share since the last line, sleeps, GPIO wakes,
 // delivered pin edges and the arming mask. While the lock is released it also dumps ESP-IDF's lock
 // table once per minute ([PROF:PM_LOCKS]; per-lock and per-mode time with the board's pm_profiling).

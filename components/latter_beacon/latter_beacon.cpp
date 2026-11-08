@@ -7,6 +7,8 @@
 #include <atomic>
 #include <cstring>
 
+#include <esp_heap_caps.h>
+
 #ifdef USE_LATTER_BEACON_HOSTED
 #include "esp_hosted_bt_host_stack.h"
 #endif
@@ -18,6 +20,14 @@ static const char *const TAG = "latter_beacon";
 static constexpr uint32_t STEP_TIMEOUT_MS = 1000;
 static constexpr uint32_t RETRY_AFTER_FAILURE_MS = 60000;
 static constexpr uint8_t STEP_COUNT = 4;  // reset, advertising parameters, advertising data, advertising enable
+
+// [PROF:BLE] internal RAM (bytes) at the controller's lifecycle points: pre_enable minus advertising is
+// what the running controller holds; pre_enable minus disabled is what it did not give back.
+static void log_internal_heap(const char *phase) {
+  ESP_LOGI(TAG, "[PROF:BLE] phase=%s int_free=%u int_max_blk=%u", phase,
+           static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+           static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+}
 
 // HCI events arrive on the controller's (or the hosted transport's) task: only flags cross over.
 static std::atomic<bool> s_cmd_complete{false};
@@ -128,6 +138,7 @@ void LatterBeacon::enable() {
   if (this->state_ != State::OFF || this->is_failed())
     return;
   this->failed_ = false;
+  log_internal_heap("pre_enable");
   const int err = this->transport_up_();
   if (err != 0) {
     this->fail_("controller start", err);
@@ -147,6 +158,7 @@ void LatterBeacon::disable() {
 
 void LatterBeacon::stop_(const char *log_what) {
   this->transport_down_();
+  log_internal_heap("disabled");
   this->state_ = State::OFF;
   this->disable_loop();
   if (log_what != nullptr)
@@ -179,6 +191,7 @@ void LatterBeacon::loop() {
       this->state_ = State::ADVERTISING;
       this->disable_loop();
       ESP_LOGI(TAG, "Advertising (major %u, minor %u)", this->major_, this->minor_);
+      log_internal_heap("advertising");
       return;
     }
   }

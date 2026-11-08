@@ -27,6 +27,7 @@ CORE_HEADERS: tuple[str, ...] = (
     "latter_state.h",
     "hal_imu_qmi8658.h",
     "hal_power_pm.h",
+    "hal_link_report.h",
     "ui_core.h",
     "ui_layout.h",
     "ui_touch_router.h",

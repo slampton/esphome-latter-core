@@ -110,6 +110,16 @@ esp32:
   framework:
     sdkconfig_options:
       CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"   # the wake pins arm inside the light-sleep callbacks
+      # Wi-Fi wake timing: sleep code in IRAM, and the beacon-lost receive window
+      CONFIG_ESP_WIFI_SLP_IRAM_OPT: "y"
+      CONFIG_PM_SLP_IRAM_OPT: "y"
+      CONFIG_PM_RTOS_IDLE_OPT: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OVER_THRESHOLD_RECEIVE: "y"
+      CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
+      CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
+      CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
+      CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME: "60"
 
 power_management:
   - platform: esp32_power_management
@@ -119,7 +129,7 @@ power_management:
     profiling: ${pm_profiling}
 ```
 
-Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping. Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
+Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping, and leave the RTC sleep clock at its default (the `CONFIG_RTC_CLK_SRC_INT_8MD256` clock caused watchdog resets). Overnight, the System: Link Report sensor shows whether Wi-Fi still hears the access point in light sleep (beacon timeouts, disconnects, signal). Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
 
 ## 5. Substitutions and sdkconfig
 

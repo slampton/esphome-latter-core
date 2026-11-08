@@ -109,6 +109,18 @@ def _final_validate(config: ConfigType) -> ConfigType:
 FINAL_VALIDATE_SCHEMA = _final_validate
 
 
+def _code_runs_from_psram() -> bool:
+    """Code and rodata execute from PSRAM (XIP): flash erases keep the cache and interrupts running."""
+    framework = CORE.config.get("esp32", {}).get("framework", {})
+    if framework.get("advanced", {}).get("execute_from_psram", False):
+        return True
+    options = framework.get("sdkconfig_options", {})
+    return all(
+        str(options.get(key, "")).lower() == "y"
+        for key in ("CONFIG_SPIRAM_FETCH_INSTRUCTIONS", "CONFIG_SPIRAM_RODATA")
+    )
+
+
 async def to_code(config: ConfigType) -> None:
     uuid = config[CONF_UUID].hex
     uuid_bytes = ", ".join(f"0x{uuid[i : i + 2]}" for i in range(0, len(uuid), 2))
@@ -139,5 +151,14 @@ async def to_code(config: ConfigType) -> None:
     add_idf_sdkconfig_option("CONFIG_BT_CONTROLLER_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLUEDROID_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_NIMBLE_ENABLED", False)
-    # One legacy advertising set; the controller sizes its activity pool from this (default 6).
-    add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_MAX_ACT", 2)
+    # Advertise-only controller (CONFIG_BT_CTRL_* is the ESP32-C3/S3 controller's Kconfig).
+    # One legacy advertising set: the activity pool needs one slot (default 6, 828 bytes each).
+    add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_MAX_ACT", 1)
+    # Nothing scans: no scan duplicate-filter cache.
+    add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_SCAN_DUPL", False)
+    # Controller code from flash instead of ROM + IRAM (frees over 20 KB of internal RAM). Its interrupt
+    # is then not IRAM-safe, and ESP-IDF warns it may stall while flash is erased. With code and rodata
+    # executing from PSRAM (every Latter S3 board) a flash erase keeps the cache and interrupts running,
+    # so at worst an advertising event slips; boards that execute from flash keep the ROM/IRAM controller.
+    if _code_runs_from_psram():
+        add_idf_sdkconfig_option("CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY", True)
