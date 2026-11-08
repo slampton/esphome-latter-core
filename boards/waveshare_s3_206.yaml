@@ -120,11 +120,6 @@ esp32:
       CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
       # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_power_pm.h)
       CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"
-      # Light-sleep timing clock: no 32 kHz crystal is fitted, and the default 136 kHz RC drifts enough that
-      # Wi-Fi wakes miss AP beacons: packets were lost in light sleep (HA and Music Assistant links stalled
-      # for a minute and dropped). The 17.5 MHz oscillator / 256 is the accurate internal source; it keeps
-      # that oscillator powered in sleep (a small current cost, including hibernate deep sleep).
-      CONFIG_RTC_CLK_SRC_INT_8MD256: "y"
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true
