@@ -668,25 +668,16 @@ display:
             id(col_white), id(col_slate), id(col_gold), id(col_green), id(col_red));
       }
 
-      // UNIVERSAL GLOBAL BOTTOM HOME INDICATOR BAR (Rendered at y = 434 for all top-level apps launched from Home)
-      auto current_overlay_mode = id(music_overlay_style).current_option();
-      bool music_clean_art = (id(gui_page) == 2 && current_overlay_mode != "Always Visible" && !id(music_hud_active));
-      bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
-                                ((id(tools_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
-                                 (id(tools_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                 (id(tools_subpage) == 3) ||
-                                 (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
-
-      bool show_top_level_back = !id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
-                                 id(va_status_text).empty() && id(display_power_state) == 0 &&
-                                 (id(gui_page) != 1) &&
-                                 !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
-                                 !(id(gui_page) == 3 && id(active_game) > 0) &&
-                                 !(id(gui_page) == 2 && (id(music_overlay_mode) > 0 || music_clean_art)) &&
-                                 !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
-                                 !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
-                                 !(id(gui_page) == 8 && id(tools_subpage) > 0 && !tools_direct_root) &&
-                                 !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
+      // HOME PILL on top-level pages (latter_ui::can_go_home), hidden in Music's art-only view.
+      const bool show_home_pill =
+          !id(is_hibernating) && !id(ota_in_progress) && !id(va_active) && id(va_status_text).empty() &&
+          id(display_power_state) == 0 &&
+          latter_ui::can_go_home(
+              id(gui_page), id(system_menu_mode), id(active_game), id(music_overlay_mode),
+              id(area_subpage), id(area_browse_mode) == "areas", id(remote_subpage), id(tools_subpage),
+              id(alarm_edit_idx), id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) &&
+          !latter_ui::music_art_only(id(gui_page), id(music_overlay_style).current_option() == "Always Visible",
+                                     id(music_hud_active));
 
       if (!id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
           id(va_status_text).empty() && id(display_power_state) == 0 &&
@@ -694,7 +685,7 @@ display:
         latter_ui::render_active_focus_overlay(it, id(gui_page), prof_sub, millis(), id(theme_primary), id(col_white));
       }
 
-      if (show_top_level_back) {
+      if (show_home_pill) {
         latter_ui::render_home_indicator_bar(it, cx, latter_ui::layout().home_bar_y);
       }
 

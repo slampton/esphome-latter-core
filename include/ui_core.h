@@ -50,7 +50,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110284L
+#define LATTER_SDK_REV 2026110285L
 
 namespace latter_ui {
 
@@ -2534,6 +2534,7 @@ static constexpr uint32_t TOUCH_DEBOUNCE_WAKE    = 180; // ms: Post-wake settlin
 static constexpr uint32_t TOUCH_DEBOUNCE_DISMISS = 200; // ms: Overlay/HUD dismissal
 static constexpr uint32_t TOUCH_DEBOUNCE_SCROLL  = 250; // ms: Page transitions & chevrons
 static constexpr uint32_t TOUCH_GUARD_DISMISS    = 250; // ms: Minimum post-wake delay
+static constexpr uint32_t TOUCH_POST_SWIPE_LOCKOUT = 200; // ms: Ignore moves right after a committed swipe
 
 inline uint32_t &last_screen_wake_ms() {
   static uint32_t ts = 0;
@@ -2567,26 +2568,6 @@ inline bool is_right_chevron_zone(const TouchT &t) {
   const int margin_y = scale_y(70);
   return (t.x >= chev_min_x && t.y >= margin_y && t.y <= (SCREEN_H - margin_y));
 #endif
-}
-
-template<typename TouchT>
-inline int get_5slot_index(const TouchT &t, int x_min, int x_max) {
-  const int half_w = (SCREEN_W > 520) ? ((SCREEN_W * 150) / 466) : 150;
-  const int scaled_min = (SCREEN_W < 380 && x_min < 60) ? 4 : scale_x(x_min);
-  const int scaled_max = (SCREEN_W < 380) ? (SCREEN_W - 10) : scale_x(x_max);
-  const int eff_min = (SCREEN_W == 466) ? std::min(x_min, 38) : std::max(4, std::min(scaled_min, SCREEN_CX - half_w));
-  const int eff_max = (SCREEN_W == 466) ? x_max : std::min(SCREEN_W - 10, std::max(scaled_max, SCREEN_CX + half_w));
-  if (t.x < eff_min || t.x > eff_max) return -1;
-  const int stride = (SCREEN_H > 520) ? ((SCREEN_H * 63) / 466) : 63;
-  const int center_y = (SCREEN_H > 520) ? SCREEN_CY : 236;
-  const int half_s = stride / 2;
-  for (int i = 0; i < 5; i++) {
-    int ym = center_y + (i - 2) * stride;
-    int y_top = ym - ((i == 0) ? (half_s + 4) : half_s);
-    int y_bot = ym + ((i == 4) ? (half_s + 10) : half_s);
-    if (t.y >= y_top && t.y <= y_bot) return i;
-  }
-  return -1;
 }
 
 inline int step_wrap(int val, int delta, int count) {

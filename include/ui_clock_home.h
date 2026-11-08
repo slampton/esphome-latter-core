@@ -827,6 +827,35 @@ inline int collect_home_dock_apps(int out_apps[8]) {
   return n;
 }
 
+// The one "can go home" predicate (docs/device-ui-design.md D-0xx): swipe-up and the home pill leave a
+// top-level page for Home. gui.yaml draws the pill when this holds and Music isn't in its art-only view;
+// the touch routers accept the swipe whenever it holds (latter-verify [HOME PREDICATE]).
+inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int music_overlay_mode,
+                        int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
+                        int alarm_edit_idx, bool alert_ringing) {
+  if (gui_page == PageId::HOME || alert_ringing) return false;
+  if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
+  if (gui_page == PageId::GAMES && active_game > 0) return false;
+  if (gui_page == PageId::MUSIC && music_overlay_mode > 0) return false;
+  if (gui_page == PageId::AREA && (area_subpage > 0 || area_picker)) return false;
+  if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
+  if (gui_page == PageId::TOOLS && tools_subpage > 0) {
+    // A tool opened straight from Home is itself top-level while it shows its root view.
+    const bool direct_root = tools_direct_home() &&
+        ((tools_subpage == ToolsSubpage::TIMERS && timer_view_slot() == 0) ||
+         (tools_subpage == ToolsSubpage::ALARMS && alarm_edit_idx == 0) ||
+         (tools_subpage == ToolsSubpage::STOPWATCH) ||
+         (tools_subpage == ToolsSubpage::CAMERAS && !cam_quick_reply_open()));
+    if (!direct_root) return false;
+  }
+  return true;
+}
+
+// Music's art-only view hides its chrome, including the home pill (the swipe still works).
+inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_active) {
+  return gui_page == PageId::MUSIC && !overlay_always_visible && !hud_active;
+}
+
 template <typename DisplayT, typename TimeT, typename StrT, typename FontTimeT, typename FontDateT, typename FontSmallT, typename WallImgT = void, typename FontMicroT = FontSmallT>
 inline void render_home_page(
     DisplayT &it, int cx, int cy, uint32_t now_ms, int home_subpage,

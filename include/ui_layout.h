@@ -411,7 +411,20 @@ struct UiLayout {
   }
   template <typename TouchT>
   constexpr int hit_slot5(const TouchT &t, int x_min, int x_max) const {
-    return get_5slot_index(t, x_min, x_max);
+    const int half_w = (w > 520) ? ((w * 150) / 466) : 150;
+    const int scaled_min = (w < 380 && x_min < 60) ? 4 : scale_x(x_min);
+    const int scaled_max = (w < 380) ? (w - 10) : scale_x(x_max);
+    const int eff_min = (w == 466) ? std::min(x_min, 38) : std::max(4, std::min(scaled_min, cx - half_w));
+    const int eff_max = (w == 466) ? x_max : std::min(w - 10, std::max(scaled_max, cx + half_w));
+    if (t.x < eff_min || t.x > eff_max) return -1;
+    const int half_s = slot5_stride / 2;
+    for (int i = 0; i < 5; i++) {
+      const int ym = slot5_y(i);
+      const int y_top = ym - ((i == 0) ? (half_s + 4) : half_s);
+      const int y_bot = ym + ((i == 4) ? (half_s + 10) : half_s);
+      if (t.y >= y_top && t.y <= y_bot) return i;
+    }
+    return -1;
   }
 
   // 2. Adaptive 3-Card Area Control & Whole-Home Geometry + Unified Hit-Testers
@@ -608,10 +621,30 @@ struct UiLayout {
     return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx >= map_zoom_right_x() - r);
   }
 
-  // 10. Millimeter-Calibrated Touch Slop, Swipe & Home Pill Geometry (via LATTER_PANEL_PPI)
-  constexpr int tap_slop() const { return mm_to_px(2.1f); }
-  constexpr int swipe_min() const { return mm_to_px(3.6f); }
-  constexpr int home_zone_y() const { return is_round ? 412 : (h - mm_to_px(5.2f)); }
+  // 10. Touch thresholds in millimetres (docs/device-ui-design.md D-002), converted with LATTER_PANEL_PPI.
+  //     Each value is the pixel distance the 466 px reference panel (266 ppi) used before, so that panel
+  //     behaves exactly as it did; every other panel gets the same physical distance. touch_handlers.yaml
+  //     takes every gesture threshold from here (latter-verify [TOUCH MM]).
+  constexpr int drag_start() const { return mm_to_px(0.6f); }          //  6 px: a card slider drag starts
+  constexpr int flick_min() const { return mm_to_px(1.7f); }           // 18 px: music track-inspector flick
+  constexpr int dock_release_swipe() const { return mm_to_px(1.9f); }  // 20 px: Home dock page swipe on release
+  constexpr int swipe_short() const { return mm_to_px(2.1f); }         // 22 px: dock swipe while moving, music lists
+  constexpr int swipe_min() const { return mm_to_px(2.3f); }           // 24 px: swipe-up home, pill-tap travel, mode bar, 2048
+  constexpr int list_swipe() const { return mm_to_px(2.5f); }          // 26 px: vertical list and carousel paging
+  constexpr int page_swipe() const { return mm_to_px(2.7f); }          // 28 px: in-app mode bars, map pan, cameras
+  constexpr int tap_max() const { return mm_to_px(2.9f); }             // 30 px: a touch that moved less is a tap
+  constexpr int wide_swipe() const { return mm_to_px(2.9f); }          // 30 px: Sky & Weather subpage swipe
+  constexpr int canvas_swipe() const { return mm_to_px(3.25f); }       // 34 px: Area Control canvas category swipe
+  constexpr int tap_max_loose() const { return mm_to_px(3.45f); }      // 36 px: music browser taps
+  constexpr int fast_pan() const { return mm_to_px(10.5f); }           // 110 px: a map drag pans two tiles
+  // Zones measured from the bottom edge (round panels keep their hand-placed rows).
+  constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
+  constexpr int home_zone_y() const { return is_round ? 412 : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
+  constexpr int chin_guard_y() const { return is_round ? 412 : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
+  // Area Control: drags above this line scrub card sliders; horizontal swipes below it step the mode bar.
+  constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
+  // Home dock icon hit radius: the drawn icon plus 16 px, and never less than a 7 mm target.
+  constexpr int dock_hit_r() const { return std::max(dock_r + 16, mm_to_px(3.6f)); }
   template <typename TouchT>
   constexpr bool is_home_pill_tap(const TouchT &t) const {
     const int pill_y = is_round ? 422 : (h - mm_to_px(2.8f));
@@ -1259,6 +1292,10 @@ inline void render_in_app_mode_bar_track(
 // ==============================================================================
 // 6. Universal Touchless / Rotary Encoder / Button Focus Navigation Engine
 // ==============================================================================
+// Home dock state, defined in ui_clock_home.h (the focus ring reads the same dock window).
+inline int &home_dock_page();
+inline int collect_home_dock_apps(int out_apps[8]);
+
 inline int &ui_focus_index() {
   static int s_idx = 0;
   return s_idx;
@@ -1313,11 +1350,17 @@ inline void render_active_focus_overlay(DisplayT &it, int page, int subpage, uin
   const int f_idx = std::max(0, ui_focus_index());
 
   if (page == 1 && subpage == 0) {
-    // Home Dock Icon Focus
-    const int vis_idx = f_idx % 4;
-    const int stride = (SCREEN_W < 380) ? 56 : scale_x(64);
-    const int fx = ly.cx + static_cast<int>((static_cast<float>(vis_idx) - 1.5f) * static_cast<float>(stride));
-    render_focus_ring_circle(it, fx, ly.dock_y, ly.dock_r, col_white, theme_primary);
+    // Home Dock Icon Focus: the ring sits on the icon `select` opens (same window and slots as the dock).
+    int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    const int dock_count = collect_home_dock_apps(dock_apps);
+    if (dock_count > 0) {
+      int win_xs[4] = {ly.cx, ly.cx, ly.cx, ly.cx};
+      bool has_l = false, has_r = false;
+      get_home_dock_window_xs(dock_count, home_dock_page(), ly.cx, win_xs, has_l, has_r);
+      const int vis_count = std::min(4, dock_count - get_home_dock_start_index(dock_count, home_dock_page()));
+      const int vis_idx = f_idx % std::max(1, vis_count);
+      render_focus_ring_circle(it, win_xs[vis_idx], ly.dock_y, ly.dock_r, col_white, theme_primary);
+    }
   } else if (page == 2) {
     if (subpage == 0) {
       // Music Now Playing Transport Controls (0: Prev, 1: Play/Pause, 2: Next, 3: Library, 4: Speakers)

@@ -152,26 +152,16 @@ script:
             gest.active = true;
             gest.swipe_committed = false;
 
-            bool music_clean_touch = (id(gui_page) == 2 && id(music_overlay_mode) == 0 &&
-                                      id(music_overlay_style).current_option() != "Always Visible" &&
-                                      !id(music_hud_active));
-            bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
-                                      ((id(tools_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
-                                       (id(tools_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                       (id(tools_subpage) == 3) ||
-                                       (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
-            bool is_top_level_home_bar = (id(gui_page) != 1) &&
-                                         !music_clean_touch &&
-                                         !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
-                                         !(id(gui_page) == 3 && id(active_game) > 0) &&
-                                         !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                         !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
-                                         !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
-                                         !(id(gui_page) == 8 && id(tools_subpage) > 0 && !tools_direct_root) &&
-                                         !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
-
-            // Top-level apps use the bottom Swipe-Up Home Indicator Bar (only reserve the bottom 28px chin)
-            const int home_bar_guard_y = LATTER_ROUND_DISPLAY ? 412 : (latter_ui::SCREEN_H - 28);
+            // The pill's chin is reserved only while the home pill shows (latter_ui::can_go_home, not Music's
+            // art-only view); the swipe-up itself is handled in the move and release routers.
+            const bool is_top_level_home_bar =
+                latter_ui::can_go_home(
+                    id(gui_page), id(system_menu_mode), id(active_game), id(music_overlay_mode),
+                    id(area_subpage), id(area_browse_mode) == "areas", id(remote_subpage), id(tools_subpage),
+                    id(alarm_edit_idx), id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) &&
+                !latter_ui::music_art_only(id(gui_page), id(music_overlay_style).current_option() == "Always Visible",
+                                           id(music_hud_active));
+            const int home_bar_guard_y = latter_ui::layout().chin_guard_y();
             if (is_top_level_home_bar && touch.y >= home_bar_guard_y) {
               if (latter_ui::profiler_enabled()) {
                 ESP_LOGI("PROF", "[PROF:TOUCH_HOLD] x=%d y=%d page=%d reason=HOME_BAR_SWIPE_ZONE",
@@ -212,13 +202,11 @@ script:
             }
 
             if (id(gui_page) == 1) {
-              static uint32_t last_home_tap = 0;
               uint32_t now_hm = millis();
 
               if (id(home_subpage) == 1) {
-                int slot_idx = latter_ui::get_5slot_index(touch, 90, 376);
-                if (slot_idx >= 0 && slot_idx <= 4 && (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
-                  last_home_tap = now_hm;
+                int slot_idx = latter_ui::layout().hit_slot5(touch, 90, 376);
+                if (slot_idx >= 0 && slot_idx <= 4 && (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON))) {
                   // Show or hide the row's app now, and save it as the Device's Latter dock setting.
                   std::string next_csv = latter_ui::toggled_dock_csv(latter_ui::kHomeSettingsDockTokens[slot_idx]);
                   if (!next_csv.empty()) {
@@ -230,8 +218,7 @@ script:
                   return;
                 }
                 if (latter_ui::is_back_button(touch) || touch.y <= latter_ui::scale_y(72)) {
-                  if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_home_tap = now_hm;
+                  if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(home_subpage) = 0;
                     id(gui_page) = 4;
                     id(system_menu_mode) = 0;
@@ -248,8 +235,7 @@ script:
               // 3. Celestial Sun / Moon Shortcut (Upper-Left across all 5 devices!) -> Open Sun (2) or Moon (3)
               const bool hit_celestial = (touch.x <= (LATTER_ROUND_DISPLAY ? 156 : latter_ui::scale_x(116)) && touch.y <= latter_ui::scale_y(130));
               if (id(home_weather_bg_switch).state && hit_celestial) {
-                if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_home_tap = now_hm;
+                if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   std::string s_state = id(ha_sun_state).state;
                   std::string cond = latter_ui::weather_state().condition;
                   bool is_night = (s_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" || (cond.find("night") != std::string::npos));
@@ -263,8 +249,7 @@ script:
 
               // 4. Hero Digital Clock Tap -> Open Full Clock Page (Page 0)
               if (latter_ui::layout().hit_home_clock(touch.x, touch.y)) {
-                if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_home_tap = now_hm;
+                if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(gui_page) = 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -273,8 +258,7 @@ script:
 
               // 5. Weather Temperature & Condition Line Tap -> Open Sky & Weather (Current Conditions Subpage 0)
               if (latter_ui::layout().hit_home_weather(touch.x, touch.y)) {
-                if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_home_tap = now_hm;
+                if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(sky_weather_subpage) = 0;
                   id(gui_page) = 5;
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -413,8 +397,7 @@ script:
               // SUBPAGE 2: TRANSLUCENT AUTO-CENTERED LIVE ACTIVITY OVERLAY TOUCH ROUTING
               if (id(home_subpage) == 2) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_home_tap = now_hm;
+                  if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(home_subpage) = 0;
                     latter_ui::home_activity_overlay_page() = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -422,8 +405,7 @@ script:
                   return;
                 }
                 if (act_count > 5 && latter_ui::is_right_chevron_zone(touch)) {
-                  if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_SCROLL) {
-                    last_home_tap = now_hm;
+                  if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_SCROLL)) {
                     latter_ui::home_activity_overlay_page() = (touch.y < latter_ui::scale_y(220)) ? 0 : 1;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -442,14 +424,12 @@ script:
                     }
                   }
                 }
-                if (hit_row >= 0 && (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
-                  last_home_tap = now_hm;
+                if (hit_row >= 0 && (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON))) {
                   handle_activity_item_action(start_i + hit_row, (touch.x >= latter_ui::SCREEN_CX + ov_half_w - latter_ui::scale_x(56)));
                   return;
                 }
                 // Tapping outside the centered cards on the translucent scrim dismisses the overlay!
-                if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_DISMISS) {
-                  last_home_tap = now_hm;
+                if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_DISMISS)) {
                   id(home_subpage) = 0;
                   latter_ui::home_activity_overlay_page() = 0;
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -467,8 +447,7 @@ script:
               const int act_right  = latter_ui::SCREEN_CX + (act_card_w / 2);
               const int act_left   = latter_ui::SCREEN_CX - (act_card_w / 2);
               if (!greet_blocking && act_count > 0 && latter_ui::layout().hit_home_activity(touch.x, touch.y)) {
-                if (now_hm - last_home_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_home_tap = now_hm;
+                if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   int feat_idx = latter_ui::resolve_home_featured_activity_idx(act_items, act_count, now_hm);
                   if (act_count > 1) {
                     if (touch.x >= act_right - latter_ui::scale_x(50)) {
@@ -493,10 +472,8 @@ script:
               const auto &ly = latter_ui::layout();
               if (id(music_overlay_mode) == 0) {
                 if (ly.hit_music_header(touch.x, touch.y)) {
-                  static uint32_t last_hdr_tap = 0;
                   uint32_t now_hdr = millis();
-                  if (now_hdr - last_hdr_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hdr_tap = now_hdr;
+                  if (latter_ui::touch_router().allow_tap(now_hdr, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::music_scroll_tap_lockout_until_ms() = now_hdr + 280U;
                     id(music_direct_nav) = false;
                     id(music_overlay_mode) = 5;
@@ -512,10 +489,8 @@ script:
 
                 if (!id(music_hud_active) && overlay_mode == "Art + Metadata" &&
                     ly.hit_music_metadata(touch.x, touch.y)) {
-                  static uint32_t last_meta_direct_tap = 0;
                   uint32_t now_md = millis();
-                  if (now_md - last_meta_direct_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_meta_direct_tap = now_md;
+                  if (latter_ui::touch_router().allow_tap(now_md, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::music_scroll_tap_lockout_until_ms() = now_md + 280U;
                     id(music_overlay_mode) = 6;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -537,10 +512,8 @@ script:
                 }
 
                 if (ly.hit_music_play_pause(touch.x, touch.y)) {
-                  static uint32_t last_pp_tap = 0;
                   uint32_t now_pp = millis();
-                  if (now_pp - last_pp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_pp_tap = now_pp;
+                  if (latter_ui::touch_router().allow_tap(now_pp, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     const auto &ms_pp = latter_ui::media_state();
                     bool is_remote = !ms_pp.is_local;
                     bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
@@ -554,10 +527,8 @@ script:
                 }
 
                 if (id(music_show_speaker_shortcut).state && ly.hit_music_spk_shortcut(touch.x, touch.y)) {
-                  static uint32_t last_sc_spk_tap = 0;
                   uint32_t now_sc = millis();
-                  if (now_sc - last_sc_spk_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_sc_spk_tap = now_sc;
+                  if (latter_ui::touch_router().allow_tap(now_sc, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::music_scroll_tap_lockout_until_ms() = now_sc + 280U;
                     id(selected_category_mode) = "speakers";
                     id(selected_category_title) = "SPEAKERS";
@@ -578,10 +549,8 @@ script:
                 }
 
                 if (id(music_show_library_shortcut).state && ly.hit_music_lib_shortcut(touch.x, touch.y)) {
-                  static uint32_t last_sc_lib_tap = 0;
                   uint32_t now_sc = millis();
-                  if (now_sc - last_sc_lib_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_sc_lib_tap = now_sc;
+                  if (latter_ui::touch_router().allow_tap(now_sc, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::music_scroll_tap_lockout_until_ms() = now_sc + 280U;
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
@@ -594,10 +563,8 @@ script:
                 }
 
                 if (ly.hit_music_vol_up(touch.x, touch.y)) {
-                  static uint32_t last_vol_up_tap = 0;
                   uint32_t now_vol_tap = millis();
-                  if (now_vol_tap - last_vol_up_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    last_vol_up_tap = now_vol_tap;
+                  if (latter_ui::touch_router().allow_tap(now_vol_tap, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
                     if (v_step <= 0) v_step = 5;
@@ -623,10 +590,8 @@ script:
                 }
 
                 if (ly.hit_music_vol_down(touch.x, touch.y)) {
-                  static uint32_t last_vol_dn_tap = 0;
                   uint32_t now_vol_tap = millis();
-                  if (now_vol_tap - last_vol_dn_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    last_vol_dn_tap = now_vol_tap;
+                  if (latter_ui::touch_router().allow_tap(now_vol_tap, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     id(music_hud_timer) = now_vol_tap;
                     int v_step = (int)id(volume_step_size).state;
                     if (v_step <= 0) v_step = 5;
@@ -652,10 +617,8 @@ script:
                 }
 
                 if (ly.hit_music_next(touch.x, touch.y)) {
-                  static uint32_t last_next_tap = 0;
                   uint32_t now_tap = millis();
-                  if (now_tap - last_next_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_next_tap = now_tap;
+                  if (latter_ui::touch_router().allow_tap(now_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_speech_media = (id(active_playback_media_type) == "podcast" ||
                                             id(active_playback_media_type) == "podcast_episode" ||
                                             id(active_playback_media_type) == "audiobook");
@@ -673,10 +636,8 @@ script:
                 }
 
                 if (ly.hit_music_prev(touch.x, touch.y)) {
-                  static uint32_t last_prev_tap = 0;
                   uint32_t now_tap = millis();
-                  if (now_tap - last_prev_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_prev_tap = now_tap;
+                  if (latter_ui::touch_router().allow_tap(now_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_speech_media = (id(active_playback_media_type) == "podcast" ||
                                             id(active_playback_media_type) == "podcast_episode" ||
                                             id(active_playback_media_type) == "audiobook");
@@ -694,10 +655,8 @@ script:
                 }
 
                 if (ly.hit_music_metadata(touch.x, touch.y)) {
-                  static uint32_t last_meta_tap = 0;
                   uint32_t now_mt = millis();
-                  if (now_mt - last_meta_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_meta_tap = now_mt;
+                  if (latter_ui::touch_router().allow_tap(now_mt, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(music_overlay_mode) = 6;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -707,10 +666,8 @@ script:
                 if (hud_enabled && id(music_hud_active)) {
                   if (std::abs(touch.x - ly.cx) <= 75 && (touch.y < 150 || (touch.y > 274 && touch.y < 400))) {
                     if (millis() - id(music_hud_timer) >= latter_ui::TOUCH_GUARD_DISMISS) {
-                      static uint32_t last_dismiss_tap = 0;
                       uint32_t now_dis = millis();
-                      if (now_dis - last_dismiss_tap > latter_ui::TOUCH_DEBOUNCE_DISMISS) {
-                        last_dismiss_tap = now_dis;
+                      if (latter_ui::touch_router().allow_tap(now_dis, latter_ui::TOUCH_DEBOUNCE_DISMISS)) {
                         id(music_hud_active) = false;
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
@@ -721,9 +678,7 @@ script:
               } else if (id(music_overlay_mode) == 5) {
                 uint32_t now_hub = millis();
                 if (latter_ui::is_back_button(touch)) {
-                  static uint32_t last_hub_back = 0;
-                  if (now_hub - last_hub_back > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hub_back = now_hub;
+                  if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(music_overlay_mode) = 0;
                     id(music_hud_active) = true;
                     id(music_hud_timer) = now_hub;
@@ -735,9 +690,7 @@ script:
                 const int m_x0 = ly.cx - ly.list_card_w / 2 - 8;
                 const int m_x1 = ly.cx + ly.list_card_w / 2 + 8;
                 if (touch.y >= latter_ui::scale_y(96) && touch.y < latter_ui::scale_y(160) && touch.x >= m_x0 && touch.x <= m_x1) {
-                  static uint32_t last_hub_spk = 0;
-                  if (now_hub - last_hub_spk > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hub_spk = now_hub;
+                  if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(selected_category_mode) = "speakers";
                     id(selected_category_title) = "SPEAKERS";
                     id(music_browse_page) = 1;
@@ -749,9 +702,7 @@ script:
                   return;
                 }
                 if (touch.y >= latter_ui::scale_y(160) && touch.y < latter_ui::scale_y(223) && touch.x >= m_x0 && touch.x <= m_x1) {
-                  static uint32_t last_hub_lib = 0;
-                  if (now_hub - last_hub_lib > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hub_lib = now_hub;
+                  if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(music_category_page) = 1;
                     id(menu_scroll_active) = false;
                     id(menu_scroll_step) = 0;
@@ -762,9 +713,7 @@ script:
                   return;
                 }
                 if (touch.y >= latter_ui::scale_y(223) && touch.y < latter_ui::scale_y(286) && touch.x >= m_x0 && touch.x <= m_x1) {
-                  static uint32_t last_hub_q = 0;
-                  if (now_hub - last_hub_q > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hub_q = now_hub;
+                  if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(selected_category_mode) = "active_queue";
                     id(selected_category_title) = "QUEUE";
                     id(drilldown_parent_mode) = "music_hub";
@@ -783,9 +732,7 @@ script:
                   return;
                 }
                 if (touch.y >= latter_ui::scale_y(286) && touch.y <= latter_ui::scale_y(368) && touch.x >= m_x0 && touch.x <= m_x1) {
-                  static uint32_t last_hub_set = 0;
-                  if (now_hub - last_hub_set > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_hub_set = now_hub;
+                  if (latter_ui::touch_router().allow_tap(now_hub, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(gui_page) = 4;
                     id(system_menu_mode) = 9;
                     id(audio_menu_parent_page) = 2;
@@ -832,9 +779,7 @@ script:
                     touch.y >= latter_ui::scale_y(24) && touch.y <= latter_ui::scale_y(74) &&
                     touch.x >= latter_ui::SCREEN_CX + latter_ui::scale_x(43) &&
                     touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(147)) {
-                  static uint32_t last_q_clr = 0;
-                  if (now_item - last_q_clr > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_q_clr = now_item;
+                  if (latter_ui::touch_router().allow_tap(now_item, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(clear_ha_music_queue).execute();
                     id(slot_1_name) = "Queue Cleared";
                     id(slot_1_id) = ""; id(slot_1_type) = "text";
@@ -884,22 +829,21 @@ script:
                 // Music Item Browser cards use vertical swipe + release-tap
                 return;
               } else if (id(music_overlay_mode) == 4) {
-                static uint32_t last_sheet_tap = 0;
                 uint32_t now_sheet = millis();
                 bool is_current = (id(target_speaker_id) == id(active_speaker_entity));
                 const bool in_sheet_x = (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143));
                 if (!is_current) {
                   if (in_sheet_x && touch.y >= latter_ui::scale_y(104) && touch.y < latter_ui::scale_y(166)) {
-                    if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_transfer_to_target).execute(); }
+                    if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_transfer_to_target).execute(); }
                     return;
                   } else if (in_sheet_x && touch.y >= latter_ui::scale_y(166) && touch.y < latter_ui::scale_y(226)) {
-                    if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_control_target).execute(); }
+                    if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_control_target).execute(); }
                     return;
                   } else if (in_sheet_x && touch.y >= latter_ui::scale_y(226) && touch.y < latter_ui::scale_y(286)) {
-                    if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_join_target).execute(); }
+                    if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_join_target).execute(); }
                     return;
                   } else if (in_sheet_x && touch.y >= latter_ui::scale_y(286) && touch.y <= latter_ui::scale_y(365)) {
-                    if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
+                    if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_unjoin_target).execute(); }
                     return;
                   }
                 } else {
@@ -907,26 +851,25 @@ script:
                   bool is_remote = !ms_sh.is_local && !ms_sh.local_speaker.empty();
                   if (is_remote) {
                     if (in_sheet_x && touch.y >= latter_ui::scale_y(114) && touch.y < latter_ui::scale_y(180)) {
-                      if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                        last_sheet_tap = now_sheet;
+                      if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                         id(target_speaker_id) = ms_sh.local_speaker;
                         id(target_speaker_name) = "${friendly_name}";
                         id(speaker_transfer_to_target).execute();
                       }
                       return;
                     } else if (in_sheet_x && touch.y >= latter_ui::scale_y(180) && touch.y < latter_ui::scale_y(242)) {
-                      if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
+                      if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_unjoin_target).execute(); }
                       return;
                     } else if (in_sheet_x && touch.y >= latter_ui::scale_y(242) && touch.y <= latter_ui::scale_y(322)) {
-                      if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(stop_ha_music).execute(); }
+                      if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(stop_ha_music).execute(); }
                       return;
                     }
                   } else {
                     if (in_sheet_x && touch.y >= latter_ui::scale_y(130) && touch.y < latter_ui::scale_y(200)) {
-                      if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(speaker_unjoin_target).execute(); }
+                      if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(speaker_unjoin_target).execute(); }
                       return;
                     } else if (in_sheet_x && touch.y >= latter_ui::scale_y(200) && touch.y <= latter_ui::scale_y(285)) {
-                      if (now_sheet - last_sheet_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) { last_sheet_tap = now_sheet; id(stop_ha_music).execute(); }
+                      if (latter_ui::touch_router().allow_tap(now_sheet, latter_ui::TOUCH_DEBOUNCE_BUTTON)) { id(stop_ha_music).execute(); }
                       return;
                     }
                   }
@@ -939,12 +882,10 @@ script:
                   return;
                 }
               } else if (id(music_overlay_mode) == 6) {
-                static uint32_t last_insp_tap = 0;
                 uint32_t now_in = millis();
                 const auto &ms_in = latter_ui::media_state();
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_insp_tap = now_in;
+                  if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(music_overlay_mode) = 0;
                     id(music_hud_active) = true;
                     id(music_hud_timer) = now_in;
@@ -954,8 +895,7 @@ script:
                 }
                 if (touch.y >= latter_ui::scale_y(104) && touch.y <= latter_ui::scale_y(178) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
-                  if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_insp_tap = now_in;
+                  if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_rem = !ms_in.is_local;
                     std::string alb = (is_rem || id(track_album).state.empty() || id(track_album).state == "None")
                                           ? ms_in.album : id(track_album).state;
@@ -973,8 +913,7 @@ script:
                   return;
                 }
                 if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(284)) {
-                  if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    last_insp_tap = now_in;
+                  if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     float dur = ms_in.duration;
                     float cur_pos = id(music_pos_base);
                     if (id(music_pos_sync_time) > 0) {
@@ -1003,8 +942,7 @@ script:
                 }
                 if (touch.y >= latter_ui::scale_y(292) && touch.y < latter_ui::scale_y(412) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(138)) {
-                  if (now_in - last_insp_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_insp_tap = now_in;
+                  if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_bio = (touch.x >= latter_ui::SCREEN_CX);
                     bool is_rem = !ms_in.is_local;
                     std::string t_name = (is_rem || id(track_title).state.empty() || id(track_title).state == "None")
@@ -1074,7 +1012,6 @@ script:
                 }
               }
             } else if (id(gui_page) == 4) {
-              static uint32_t last_sys_action_tap = 0;
               uint32_t now_sys = millis();
 
               if (id(system_menu_mode) == 0) {
@@ -1106,9 +1043,8 @@ script:
                 // Display cards (mode 2) use vertical swipe + release-tap
                 return;
               } else if (id(system_menu_mode) == 3) {
-                int slot = latter_ui::get_5slot_index(touch, 88, 371);
-                if (slot >= 0 && slot <= 4 && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_sys_action_tap = now_sys;
+                int slot = latter_ui::layout().hit_slot5(touch, 88, 371);
+                if (slot >= 0 && slot <= 4 && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (slot == 0) { id(trigger_screensaver_now).execute(); return; }
                   else if (slot == 1) {
                     #if LATTER_HAS_BATTERY
@@ -1133,14 +1069,12 @@ script:
                   return;
                 }
               } else if (id(system_menu_mode) == 4) {
-                if (touch.y >= latter_ui::scale_y(195) && touch.y <= latter_ui::scale_y(285) && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
+                if (touch.y >= latter_ui::scale_y(195) && touch.y <= latter_ui::scale_y(285) && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x < latter_ui::SCREEN_CX - 5) {
-                    last_sys_action_tap = now_sys;
                     id(system_menu_mode) = 3;
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
                   } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
-                    last_sys_action_tap = now_sys;
                     id(restart_button).press();
                     return;
                   }
@@ -1148,8 +1082,7 @@ script:
               } else if (id(system_menu_mode) == 5) {
                 if (touch.y >= latter_ui::scale_y(188) && touch.y <= latter_ui::scale_y(264) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
-                  if (now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_sys_action_tap = now_sys;
+                  if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool has_update = latter_ui::is_newer_semver(id(ha_firmware_latest_version).state, "${version}");
                     if (has_update) {
                       id(system_menu_mode) = 6;
@@ -1171,25 +1104,21 @@ script:
                   return;
                 }
               } else if (id(system_menu_mode) == 6) {
-                if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(290) && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
+                if (touch.y >= latter_ui::scale_y(210) && touch.y <= latter_ui::scale_y(290) && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (touch.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(140) && touch.x < latter_ui::SCREEN_CX - 5) {
-                    last_sys_action_tap = now_sys;
                     id(system_menu_mode) = 5;
                     latter_ui::schedule_disp_update(&id(disp1));
                     return;
                   } else if (touch.x > latter_ui::SCREEN_CX + 5 && touch.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(140)) {
-                    last_sys_action_tap = now_sys;
                     id(trigger_firmware_update).execute();
                     return;
                   }
                 }
               } else if (id(system_menu_mode) == 7) {
-                int slot_idx = latter_ui::get_5slot_index(touch, 88, 371);
+                int slot_idx = latter_ui::layout().hit_slot5(touch, 88, 371);
                 if (slot_idx >= 0 && slot_idx <= 3) {
                   if (slot_idx == 0) {
-                    static uint32_t last_audio_vol_tap = 0;
-                    if (now_sys - last_audio_vol_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                      last_audio_vol_tap = now_sys;
+                    if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                       float new_vol = latter_ui::step_wrap_range(id(latter_media_player).volume, 0.10f, 0.10f, 0.90f);
                       id(latter_media_player).volume = new_vol;
                       id(latter_media_player).make_call().set_volume(new_vol).perform();
@@ -1197,9 +1126,7 @@ script:
                     }
                     return;
                   } else if (slot_idx == 1) {
-                    static uint32_t last_alert_vol_tap = 0;
-                    if (now_sys - last_alert_vol_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                      last_alert_vol_tap = now_sys;
+                    if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                       float cur_a_f = id(alert_volume).state;
                       int cur_a = (std::isnan(cur_a_f) || cur_a_f < 20.0f) ? 70 : (int)std::round(cur_a_f);
                       int nxt_a = (int)latter_ui::step_wrap_range((float)cur_a, 10.0f, 50.0f, 100.0f);
@@ -1208,8 +1135,7 @@ script:
                     }
                     return;
                   } else if (slot_idx == 2) {
-                    if (now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_sys_action_tap = now_sys;
+                    if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       int cur_sz = (int)std::round(id(volume_step_size).state);
                       int nxt_sz = (cur_sz < 5) ? 5 : ((cur_sz < 10) ? 10 : 2);
                       id(volume_step_size).make_call().set_value((float)nxt_sz).perform();
@@ -1217,8 +1143,7 @@ script:
                     }
                     return;
                   } else if (slot_idx == 3) {
-                    if (now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_sys_action_tap = now_sys;
+                    if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       id(game_sound_switch).toggle();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -1241,9 +1166,8 @@ script:
                   return;
                 }
               } else if (id(system_menu_mode) == 9) {
-                int slot_idx = latter_ui::get_5slot_index(touch, 88, 371);
-                if (slot_idx >= 0 && slot_idx <= 4 && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_sys_action_tap = now_sys;
+                int slot_idx = latter_ui::layout().hit_slot5(touch, 88, 371);
+                if (slot_idx >= 0 && slot_idx <= 4 && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (slot_idx == 0) {
                     auto call = id(music_fullscreen_art_mode).make_call();
                     call.set_option(latter_ui::cycle_option(id(music_fullscreen_art_mode).current_option(), {"Full Screen", "Letterbox", "Standard"}));
@@ -1283,9 +1207,8 @@ script:
                   return;
                 }
               } else if (id(system_menu_mode) == 11) {
-                int slot = latter_ui::get_5slot_index(touch, 88, 371);
-                if (slot >= 0 && slot <= 4 && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_sys_action_tap = now_sys;
+                int slot = latter_ui::layout().hit_slot5(touch, 88, 371);
+                if (slot >= 0 && slot <= 4 && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (slot == 0) {
                     auto call = id(va_wake_word_mode).make_call();
                     call.set_option(latter_ui::cycle_option(id(va_wake_word_mode).current_option(), {"Docked Only", "Always On", "Disabled"}));
@@ -1326,9 +1249,8 @@ script:
                   return;
                 }
               } else if (id(system_menu_mode) == 12) {
-                int slot = latter_ui::get_5slot_index(touch, 88, 371);
-                if (slot >= 0 && slot <= 4 && now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_sys_action_tap = now_sys;
+                int slot = latter_ui::layout().hit_slot5(touch, 88, 371);
+                if (slot >= 0 && slot <= 4 && latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (slot == 0) {
                     auto call = id(ww_sens_okay_nabu).make_call();
                     call.set_option(latter_ui::cycle_option(id(ww_sens_okay_nabu).current_option(), {"Slightly sensitive", "Moderately sensitive", "Very sensitive"}));
@@ -1371,8 +1293,7 @@ script:
                 // Save Custom Color Button at y = 376 (y in [352..398])
                 if (touch.y >= latter_ui::scale_y(352) && touch.y <= latter_ui::scale_y(398) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
-                  if (now_sys - last_sys_action_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_sys_action_tap = now_sys;
+                  if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     auto call = id(theme_palette_select).make_call();
                     call.set_option("Custom");
                     call.perform();
@@ -1406,12 +1327,10 @@ script:
               // Page 5 (Sky & Weather) uses gesture-aware swipe + release-tap (handled in on_update & on_release)
               return;
             } else if (id(gui_page) == 6) {
-              static uint32_t last_area_tap = 0;
               uint32_t now_rm = millis();
 
               if (id(area_subpage) > 0 && latter_ui::is_back_button(touch)) {
-                if (now_rm - last_area_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_area_tap = now_rm;
+                if (latter_ui::touch_router().allow_tap(now_rm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(area_subpage) = 0;
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1420,8 +1339,7 @@ script:
 
               // Top Header Tap (y <= 88) -> Toggle 5-Row Area Picker (area_subpage == 1)
               if (touch.y <= latter_ui::scale_y(88) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
-                if (now_rm - last_area_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_area_tap = now_rm;
+                if (latter_ui::touch_router().allow_tap(now_rm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   if (id(area_subpage) == 1) {
                     id(area_subpage) = 0;
                   } else {
@@ -1440,13 +1358,11 @@ script:
               // All other Page 6 interactions (Horizontal Tab Swipe, Vertical Card/Area Swipe, Release-Tap) are handled in on_update & on_release
               return;
             } else if (id(gui_page) == 7) {
-              static uint32_t last_remote_btn_tap = 0;
               uint32_t now_rem = millis();
 
               if (id(remote_subpage) == 1) {
                 if (latter_ui::is_back_button(touch) || touch.y <= 72) {
-                  if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_remote_btn_tap = now_rem;
+                  if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(remote_action_feedback) = "";
                     id(remote_subpage) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -1457,11 +1373,10 @@ script:
                 int valid_count = latter_ui::collect_configured_remote_slots(valid_slots);
                 int total_pages = std::max(1, (valid_count + 3) / 4);
                 if (total_pages > 1 && latter_ui::is_right_chevron_zone(touch)) {
-                  if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
+                  if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     int delta = (touch.y < 220) ? -1 : 1;
                     int next_pg = std::max(0, std::min(total_pages - 1, latter_ui::remote_control_page() + delta));
                     if (next_pg != latter_ui::remote_control_page()) {
-                      last_remote_btn_tap = now_rem;
                       latter_ui::remote_control_page() = next_pg;
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -1475,8 +1390,7 @@ script:
               id(active_remote_slot) = act_slot;
 
               if (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(130) && touch.y <= latter_ui::scale_y(85)) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(remote_action_feedback) = "";
                   id(remote_subpage) = 1;
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -1499,8 +1413,7 @@ script:
 
               // 1. Center OK Button
               if (dist_sq <= (ok_hit_r * ok_hit_r)) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(remote_send_key).execute(4, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1510,8 +1423,7 @@ script:
               // 2. Priority Corner Flank Buttons
               int d_tl = (touch.x - rem_l_fx) * (touch.x - rem_l_fx) + (touch.y - rem_top_fy) * (touch.y - rem_top_fy);
               if (d_tl <= flank_hit_r2) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(remote_send_key).execute(6, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1520,8 +1432,7 @@ script:
 
               int d_tr = (touch.x - rem_r_fx) * (touch.x - rem_r_fx) + (touch.y - rem_top_fy) * (touch.y - rem_top_fy);
               if (d_tr <= flank_hit_r2) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                   id(remote_send_key).execute(7, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1530,8 +1441,7 @@ script:
 
               int d_bl = (touch.x - rem_l_fx) * (touch.x - rem_l_fx) + (touch.y - rem_btm_fy) * (touch.y - rem_btm_fy);
               if (d_bl <= flank_hit_r2) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(remote_send_key).execute(5, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1540,8 +1450,7 @@ script:
 
               int d_br = (touch.x - rem_r_fx) * (touch.x - rem_r_fx) + (touch.y - rem_btm_fy) * (touch.y - rem_btm_fy);
               if (d_br <= flank_hit_r2) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                   id(remote_send_key).execute(8, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -1551,8 +1460,7 @@ script:
               // 3. Adaptive Directional D-Pad Ring
               const int max_dpad_r = (latter_ui::SCREEN_W < 380) ? 138 : ((latter_ui::SCREEN_W > 520) ? 252 : ((!LATTER_ROUND_DISPLAY && latter_ui::SCREEN_W >= 480) ? 192 : 158));
               if (dist_sq > (ok_hit_r * ok_hit_r) && dist_sq <= (max_dpad_r * max_dpad_r)) {
-                if (now_rem - last_remote_btn_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                  last_remote_btn_tap = now_rem;
+                if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                   int k_dir = (abs(dy) >= abs(dx)) ? ((dy < 0) ? 0 : 1) : ((dx < 0) ? 2 : 3);
                   id(remote_send_key).execute(k_dir, act_slot);
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -1560,7 +1468,6 @@ script:
                 return;
               }
             } else if (id(gui_page) == 8) {
-              static uint32_t last_tools_tap = 0;
               uint32_t now_tools = millis();
 
               if (id(tools_subpage) == 0) {
@@ -1571,8 +1478,7 @@ script:
                 int &view_idx = latter_ui::timer_view_slot();
 
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (latter_ui::tools_direct_home()) {
                       latter_ui::tools_direct_home() = false;
                       view_idx = 0;
@@ -1592,8 +1498,7 @@ script:
                 if (view_idx == 0) {
                   int card_i = latter_ui::layout().hit_tool_card3(touch.x, touch.y);
                   if (card_i >= 0) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_tools_tap = now_tools;
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       auto &s = slots[card_i];
                       if (touch.x >= latter_ui::layout().tool_card3_div_x()) {
                         if (!s.running && !s.paused) {
@@ -1626,8 +1531,7 @@ script:
 
                 if (touch.y >= latter_ui::scale_y(218) && touch.y <= latter_ui::scale_y(286) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(103)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (!s.running && !s.paused) {
                       s.running = true;
                       s.paused = false;
@@ -1649,8 +1553,7 @@ script:
                 }
 
                 if (touch.y >= latter_ui::scale_y(290) && touch.y <= latter_ui::scale_y(376)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     if (!s.running && !s.paused) {
                       int st_col = latter_ui::hit_4col_stepper(touch.x);
                       if (st_col == 0) s.duration_sec = clamp(s.duration_sec - 300, 60, 3600);
@@ -1675,8 +1578,7 @@ script:
                 if (touch.y >= latter_ui::scale_y(110) && touch.y <= latter_ui::scale_y(175) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(93)) {
                   if (!s.running && !s.paused) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_tools_tap = now_tools;
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       s.name = "";
                       s.id = "";
                       s.duration_sec = (s_idx + 1) * 300;
@@ -1689,8 +1591,7 @@ script:
                 }
               } else if (id(tools_subpage) == 2) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (latter_ui::tools_direct_home()) {
                       latter_ui::tools_direct_home() = false;
                       id(alarm_edit_idx) = 0;
@@ -1712,8 +1613,7 @@ script:
                   int card_i = (hit_i >= 0) ? (hit_i + 1) : 0;
 
                   if (card_i >= 1) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_tools_tap = now_tools;
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       if (id(alarm_snooze_until) > 0 && (id(alarm_ringing_idx) == card_i || id(alarm_ringing_idx) == 0)) {
                         id(alarm_snooze_until) = 0;
                         latter_ui::schedule_disp_update(&id(disp1));
@@ -1744,10 +1644,9 @@ script:
                   int& cur_rec = (edit_idx == 3) ? id(alarm3_recurrence) : ((edit_idx == 2) ? id(alarm2_recurrence) : id(alarm1_recurrence));
 
                   if (touch.y >= latter_ui::scale_y(204) && touch.y <= latter_ui::scale_y(276)) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                       int st_col = latter_ui::hit_4col_stepper(touch.x);
                       if (st_col >= 0) {
-                        last_tools_tap = now_tools;
                         if (st_col == 0) cur_h = (cur_h - 1 + 24) % 24;
                         else if (st_col == 1) cur_h = (cur_h + 1) % 24;
                         else if (st_col == 2) cur_m = (cur_m - 5 + 60) % 60;
@@ -1760,8 +1659,7 @@ script:
 
                   if (touch.y >= latter_ui::scale_y(280) && touch.y <= latter_ui::scale_y(372) &&
                       std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(143)) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_tools_tap = now_tools;
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       cur_rec = (cur_rec + 1) % 4;
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
@@ -1770,8 +1668,7 @@ script:
                 }
               } else if (id(tools_subpage) == 3) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (latter_ui::tools_direct_home()) {
                       latter_ui::tools_direct_home() = false;
                       id(tools_subpage) = 0;
@@ -1785,23 +1682,18 @@ script:
                   return;
                 }
 
-                static uint32_t last_dial_tap = 0;
-                static uint32_t last_lap_tap = 0;
-                static uint32_t last_rst_tap = 0;
                 uint32_t now_chrono_tap = millis();
 
                 if (touch.y >= latter_ui::scale_y(280) && touch.y < latter_ui::scale_y(396)) {
                   if (touch.x < latter_ui::SCREEN_CX) {
-                    if (now_chrono_tap - last_lap_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_lap_tap = now_chrono_tap;
+                    if (latter_ui::touch_router().allow_tap(now_chrono_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       if (id(stopwatch_running)) id(stopwatch_lap_ms) = now_chrono_tap - id(stopwatch_start_time);
                       else if (id(stopwatch_elapsed_ms) > 0) id(stopwatch_lap_ms) = id(stopwatch_elapsed_ms);
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                     return;
                   } else {
-                    if (now_chrono_tap - last_rst_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_rst_tap = now_chrono_tap;
+                    if (latter_ui::touch_router().allow_tap(now_chrono_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       id(stopwatch_running) = false;
                       id(stopwatch_elapsed_ms) = 0;
                       id(stopwatch_lap_ms) = 0;
@@ -1810,16 +1702,14 @@ script:
                     return;
                   }
                 } else if (LATTER_ROUND_DISPLAY && touch.y <= 68 && touch.x >= latter_ui::SCREEN_CX - 110 && touch.x <= latter_ui::SCREEN_CX + 110) {
-                  if (now_chrono_tap - last_dial_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_dial_tap = now_chrono_tap;
+                  if (latter_ui::touch_router().allow_tap(now_chrono_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::stopwatch_modern_digital() = !latter_ui::stopwatch_modern_digital();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 } else if (touch.y >= latter_ui::scale_y(45) && touch.y < latter_ui::scale_y(280) &&
                            touch.x >= latter_ui::scale_x(40) && touch.x <= latter_ui::SCREEN_W - latter_ui::scale_x(40)) {
-                  if (now_chrono_tap - last_dial_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_dial_tap = now_chrono_tap;
+                  if (latter_ui::touch_router().allow_tap(now_chrono_tap, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (!id(stopwatch_running)) {
                       id(stopwatch_running) = true;
                       id(stopwatch_start_time) = now_chrono_tap - id(stopwatch_elapsed_ms);
@@ -1834,8 +1724,7 @@ script:
                 }
               } else if (id(tools_subpage) == 4) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(tools_subpage) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -1843,15 +1732,13 @@ script:
                 }
                 if (touch.y >= latter_ui::scale_y(385)) return;
                 if (!latter_ui::dice_state().anim_active) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::trigger_dice_roll(millis(), esp_random(), esp_random());
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
               } else if (id(tools_subpage) == 5) {
-                if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                  last_tools_tap = now_tools;
+                if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                   id(tools_subpage) = 0;
                   id(sync_display_brightness).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -1859,8 +1746,7 @@ script:
                 return;
               } else if (id(tools_subpage) == 6) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(tools_subpage) = 0;
                     latter_ui::reset_calculator_state();
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -1869,8 +1755,7 @@ script:
                 }
                 if (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(165) &&
                     touch.y >= latter_ui::scale_y(104) && touch.y < latter_ui::scale_y(412)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     latter_ui::handle_calculator_keypad_tap(touch.x, touch.y);
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -1878,8 +1763,7 @@ script:
                 }
               } else if (id(tools_subpage) == 7) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(tools_subpage) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -1887,8 +1771,7 @@ script:
                 }
               } else if (id(tools_subpage) == 8) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(tools_subpage) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -1896,16 +1779,14 @@ script:
                 }
                 if (touch.y >= latter_ui::scale_y(385)) return;
                 if (!latter_ui::coin_state().anim_active) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::trigger_coin_flip(millis(), esp_random());
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
               } else if (id(tools_subpage) == 9) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (latter_ui::cal_detail_mode() == 2) {
                       latter_ui::cal_detail_mode() = 1;
                       latter_ui::release_art(id(camera_snapshot_art));
@@ -1934,8 +1815,7 @@ script:
                   if (!latter_ui::cal_detail_location().empty() &&
                       touch.y >= latter_ui::scale_y(330) && touch.y <= latter_ui::scale_y(390) &&
                       std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
-                    if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                      last_tools_tap = now_tools;
+                    if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                       latter_ui::cal_map_zoom() = 15;
                       latter_ui::cal_map_pan_x() = 0;
                       latter_ui::cal_map_pan_y() = 0;
@@ -1948,9 +1828,8 @@ script:
                   return;
                 }
                 if (latter_ui::cal_quick_add_open()) {
-                  int q_idx = latter_ui::get_5slot_index(touch, 85, 381);
-                  if (q_idx >= 0 && q_idx <= 4 && (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
-                    last_tools_tap = now_tools;
+                  int q_idx = latter_ui::layout().hit_slot5(touch, 85, 381);
+                  if (q_idx >= 0 && q_idx <= 4 && (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON))) {
                     static constexpr const char *kQuickSummaries[5] = {
                       "Quick Reminder",
                       "Check-In / Task",
@@ -1971,11 +1850,10 @@ script:
                   return;
                 }
                 if (id(cal_browse_total_pages) > 1 && latter_ui::is_right_chevron_zone(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_RAPID) {
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
                     int delta = (touch.y < latter_ui::scale_y(220)) ? -1 : 1;
                     int next_pg = std::max(1, std::min(id(cal_browse_total_pages), id(cal_browse_page) + delta));
                     if (next_pg != id(cal_browse_page)) {
-                      last_tools_tap = now_tools;
                       id(cal_browse_page) = next_pg;
                       id(fetch_calendar_browse).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
@@ -1984,8 +1862,7 @@ script:
                   return;
                 }
                 if (touch.y <= latter_ui::scale_y(78) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::cal_quick_add_open() = true;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -1994,8 +1871,7 @@ script:
                 if (id(cal_slot_1_name).empty() &&
                     touch.y >= latter_ui::scale_y(190) && touch.y <= latter_ui::scale_y(255) &&
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::cal_quick_add_open() = true;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
@@ -2005,24 +1881,21 @@ script:
                 return;
               } else if (id(tools_subpage) == 10) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(tools_subpage) = 0;
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 }
                 if (touch.y <= latter_ui::scale_y(72) && std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(120)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     latter_ui::intercom_live_call_mode() = !latter_ui::intercom_live_call_mode();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
                 }
-                int slot_idx = latter_ui::get_5slot_index(touch, latter_ui::SCREEN_CX - 145, latter_ui::SCREEN_CX + 145);
-                if (slot_idx >= 0 && slot_idx <= 4 && (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
-                  last_tools_tap = now_tools;
+                int slot_idx = latter_ui::layout().hit_slot5(touch, latter_ui::SCREEN_CX - 145, latter_ui::SCREEN_CX + 145);
+                if (slot_idx >= 0 && slot_idx <= 4 && (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON))) {
                   if (latter_ui::intercom_live_call_mode()) {
                     std::string t_ids[5], t_lbls[5];
                     int cnt = latter_ui::parse_intercom_targets_list(latter_ui::area_ctx_state().intercom_targets_summary, t_ids, t_lbls);
@@ -2060,8 +1933,7 @@ script:
                 }
               } else if (id(tools_subpage) == 12) {
                 if (latter_ui::is_back_button(touch)) {
-                  if (now_tools - last_tools_tap > latter_ui::TOUCH_DEBOUNCE_BUTTON) {
-                    last_tools_tap = now_tools;
+                  if (latter_ui::touch_router().allow_tap(now_tools, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     if (latter_ui::cam_quick_reply_open()) {
                       latter_ui::cam_quick_reply_open() = false;
                       latter_ui::schedule_disp_update(&id(disp1));
@@ -2151,24 +2023,16 @@ script:
 
 
             if (gest.swipe_committed) return;
-            if (now_u - gest.last_swipe_ms < 200U) return;
+            if (now_u - gest.last_swipe_ms < latter_ui::TOUCH_POST_SWIPE_LOCKOUT) return;
 
-            // 1. UNIVERSAL BOTTOM HOME BAR SWIPE-UP TO EXIT TO HOME (Top-Level Apps ONLY, start_y >= 412)
-            bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
-                                      ((id(tools_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
-                                       (id(tools_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                       (id(tools_subpage) == 3) ||
-                                       (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
-            bool can_swipe_home = (id(gui_page) != 1) &&
-                                  !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
-                                  !(id(gui_page) == 3 && id(active_game) > 0) &&
-                                  !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                  !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
-                                  !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
-                                  !(id(gui_page) == 8 && id(tools_subpage) > 0 && !tools_direct_root) &&
-                                  !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
+            // 1. SWIPE-UP TO HOME from a top-level page (latter_ui::can_go_home), starting in the home zone
+            const bool can_swipe_home = latter_ui::can_go_home(
+                id(gui_page), id(system_menu_mode), id(active_game), id(music_overlay_mode),
+                id(area_subpage), id(area_browse_mode) == "areas", id(remote_subpage), id(tools_subpage),
+                id(alarm_edit_idx), id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
-            if (can_swipe_home && gest.start_y >= (latter_ui::SCREEN_H - 54) && dy <= -26 && std::abs(dy) > std::abs(dx)) {
+            if (can_swipe_home && gest.start_y >= latter_ui::layout().home_zone_y() &&
+                dy <= -latter_ui::layout().swipe_min() && std::abs(dy) > std::abs(dx)) {
               gest.swipe_committed = true;
               gest.last_swipe_ms = now_u;
               if (id(active_game) > 0) id(stop_alarm_sound).execute();
@@ -2197,7 +2061,7 @@ script:
 
             // 2. HOME SCREEN (PAGE 1) 4-ICON APP DOCK HORIZONTAL SWIPE
             if (id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::scale_y(320)) {
-              const int dock_swipe_min = (latter_ui::SCREEN_W < 380) ? 14 : 22;
+              const int dock_swipe_min = latter_ui::layout().swipe_short();
               if (std::abs(dx) >= dock_swipe_min && std::abs(dx) >= std::abs(dy)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
                 int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
@@ -2220,7 +2084,7 @@ script:
             // 3. MUSIC LIBRARY CATEGORIES (PAGE 2, mode == 2) VERTICAL SWIPE
             //    (Modes 1 & 3 evaluate velocity-scaled multi-page flicks on_release!)
             if (id(gui_page) == 2 && !id(menu_scroll_active) && id(music_overlay_mode) == 2 && gest.start_y < latter_ui::scale_y(404)) {
-              if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+              if (std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int target_pg = (dy < 0) ? 2 : 1;
@@ -2237,7 +2101,7 @@ script:
 
             // 4. GAMES LAUNCHER (PAGE 3, active_game == 0) HORIZONTAL CAROUSEL SWIPE & 2048 4-WAY SWIPE
             if (id(gui_page) == 3 && id(active_game) == 0 && !id(menu_scroll_active) && gest.start_y < latter_ui::scale_y(410)) {
-              if (std::abs(dx) >= 26 && std::abs(dx) > std::abs(dy)) {
+              if (std::abs(dx) >= latter_ui::layout().list_swipe() && std::abs(dx) > std::abs(dy)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int dir = (dx < 0) ? 1 : -1;
@@ -2250,7 +2114,7 @@ script:
                 return;
               }
             } else if (id(gui_page) == 3 && id(active_game) == 5 && gest.start_y < latter_ui::layout().back_y - latter_ui::scale_y(36)) {
-              if (std::abs(dx) >= 24 || std::abs(dy) >= 24) {
+              if (std::abs(dx) >= latter_ui::layout().swipe_min() || std::abs(dy) >= latter_ui::layout().swipe_min()) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 if (std::abs(dx) > std::abs(dy)) {
@@ -2267,7 +2131,7 @@ script:
             if (id(gui_page) == 4 && !id(menu_scroll_active) &&
                 (id(system_menu_mode) == 0 || id(system_menu_mode) == 1 || id(system_menu_mode) == 2) &&
                 gest.start_y < latter_ui::scale_y(404)) {
-              if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+              if (std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 int cur_pg = (id(system_menu_mode) == 0) ? id(system_dashboard_page)
                            : ((id(system_menu_mode) == 1) ? id(sleep_menu_page) : id(display_menu_page));
                 int target_pg = (dy < 0) ? 2 : 1;
@@ -2287,7 +2151,7 @@ script:
 
             // 6. SKY & WEATHER (PAGE 5) HORIZONTAL SUBPAGE SWIPE
             if (id(gui_page) == 5 && gest.start_y < latter_ui::scale_y(410)) {
-              if (std::abs(dx) >= 30 && std::abs(dx) > std::abs(dy)) {
+              if (std::abs(dx) >= latter_ui::layout().wide_swipe() && std::abs(dx) > std::abs(dy)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 if (dx < 0) {
@@ -2343,8 +2207,8 @@ script:
             }
 
             // 7. AREA CONTROL (PAGE 6): LIVE CARD SLIDER DRAG, BOTTOM MODE BAR SWIPE & NON-SLIDER CATEGORY SWIPE
-            if (id(gui_page) == 6 && id(area_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < (latter_ui::SCREEN_H - 16)) {
-              const int dock_top_y = latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14;
+            if (id(gui_page) == 6 && id(area_subpage) == 0 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < latter_ui::layout().edge_guard_y()) {
+              const int dock_top_y = latter_ui::layout().mode_bar_zone_top();
               int start_card = (gest.start_y < dock_top_y) ? latter_ui::layout().hit_area_card3(gest.start_x, gest.start_y) : -1;
               std::string start_type = (start_card == 0) ? id(area_slot_1_type) : (start_card == 1) ? id(area_slot_2_type) : (start_card == 2) ? id(area_slot_3_type) : "";
               int start_lvl = (start_card == 0) ? id(area_slot_1_level) : (start_card == 1) ? id(area_slot_2_level) : (start_card == 2) ? id(area_slot_3_level) : -1;
@@ -2352,7 +2216,7 @@ script:
 
               // (a) Live Horizontal Fill-Slider Drag inside an Area Card (never triggers category swipe!)
               if (is_card_slider_drag) {
-                if (std::abs(dx) >= 6 && std::abs(dx) >= std::abs(dy)) {
+                if (std::abs(dx) >= latter_ui::layout().drag_start() && std::abs(dx) >= std::abs(dy)) {
                   static uint32_t last_area_slider_ms = 0;
                   int pct = latter_ui::layout().area_slider_pct(gest.last_x);
                   bool &s_act = (start_card == 0) ? id(area_slot_1_active) : (start_card == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
@@ -2370,7 +2234,7 @@ script:
               }
 
               // (b) Bottom Segmented Mode Bar Horizontal Swipe -> Slide 4-Icon Conveyor Window & Keep Active Selector Visible
-              if (gest.start_y >= dock_top_y && std::abs(dx) >= 24 && std::abs(dx) > std::abs(dy)) {
+              if (gest.start_y >= dock_top_y && std::abs(dx) >= latter_ui::layout().swipe_min() && std::abs(dx) > std::abs(dy)) {
                 std::string cats[8];
                 int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                 gest.swipe_committed = true;
@@ -2410,7 +2274,7 @@ script:
               }
 
               // (c) Non-Slider Middle Canvas Horizontal Swipe -> Step Active Category & Sync Mode Bar Window
-              if (gest.start_y < dock_top_y && std::abs(dx) >= 34 && (std::abs(dx) * 2) > (std::abs(dy) * 3)) {
+              if (gest.start_y < dock_top_y && std::abs(dx) >= latter_ui::layout().canvas_swipe() && (std::abs(dx) * 2) > (std::abs(dy) * 3)) {
                 std::string cats[8];
                 int cat_cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
                 if (cat_cnt > 1) {
@@ -2432,7 +2296,7 @@ script:
               }
             }
             if (id(gui_page) == 6 && gest.start_y > latter_ui::scale_y(88) && gest.start_y < latter_ui::scale_y(324)) {
-              if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+              if (std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int delta = (dy < 0) ? 1 : -1;
@@ -2457,7 +2321,7 @@ script:
 
             // 7B. REMOTE CONTROL (PAGE 7, SUBPAGE 1) VERTICAL LIST SWIPE (UP TO 10 REMOTES)
             if (id(gui_page) == 7 && id(remote_subpage) == 1 && gest.start_y > 140 && gest.start_y < 404) {
-              if (std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+              if (std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 int valid_slots_u[latter_ui::MAX_REMOTE_SLOTS] = {0};
                 int valid_cnt_u = latter_ui::collect_configured_remote_slots(valid_slots_u);
                 int total_pg_u = std::max(1, (valid_cnt_u + 3) / 4);
@@ -2477,7 +2341,7 @@ script:
 
             // 8. TOOLS SUITE (PAGE 8) LAUNCHER (subpage 0) & CALENDAR (subpage 9) VERTICAL SWIPE
             if (id(gui_page) == 8 && !id(menu_scroll_active) && gest.start_y < latter_ui::scale_y(404)) {
-              if (id(tools_subpage) == 0 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+              if (id(tools_subpage) == 0 && std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int target_pg = (dy < 0) ? 1 : 0;
@@ -2490,7 +2354,7 @@ script:
                 }
                 return;
               } else if (id(tools_subpage) == 9 && !latter_ui::cal_quick_add_open() &&
-                         id(cal_browse_total_pages) > 1 && std::abs(dy) >= 26 && std::abs(dy) > std::abs(dx)) {
+                         id(cal_browse_total_pages) > 1 && std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_u;
                 int delta = (dy < 0) ? 1 : -1;
@@ -2502,7 +2366,7 @@ script:
                 }
                 return;
               } else if (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open() &&
-                         std::abs(dx) >= std::min(28, latter_ui::layout().swipe_min()) && std::abs(dx) > std::abs(dy)) {
+                         std::abs(dx) >= latter_ui::layout().page_swipe() && std::abs(dx) > std::abs(dy)) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
                 int c_total = latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, c_ids, c_names);
                 if (c_total > 1) {
@@ -2543,25 +2407,16 @@ script:
               tp.x = gest.last_x;
               tp.y = gest.last_y;
 
-              bool tools_direct_root = (id(gui_page) == 8 && latter_ui::tools_direct_home() &&
-                                        ((id(tools_subpage) == 1 && latter_ui::timer_view_slot() == 0) ||
-                                         (id(tools_subpage) == 2 && id(alarm_edit_idx) == 0) ||
-                                         (id(tools_subpage) == 3) ||
-                                         (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open())));
-              bool can_swipe_home = (id(gui_page) != 1) &&
-                                    !(id(gui_page) == 4 && id(system_menu_mode) > 0) &&
-                                    !(id(gui_page) == 3 && id(active_game) > 0) &&
-                                    !(id(gui_page) == 2 && id(music_overlay_mode) > 0) &&
-                                    !(id(gui_page) == 6 && (id(area_subpage) > 0 || id(area_browse_mode) == "areas")) &&
-                                    !(id(gui_page) == 7 && id(remote_subpage) > 0) &&
-                                    !(id(gui_page) == 8 && id(tools_subpage) > 0 && !tools_direct_root) &&
-                                    !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
+              const bool can_swipe_home = latter_ui::can_go_home(
+                  id(gui_page), id(system_menu_mode), id(active_game), id(music_overlay_mode),
+                  id(area_subpage), id(area_browse_mode) == "areas", id(remote_subpage), id(tools_subpage),
+                  id(alarm_edit_idx), id(alarm_ringing) || id(timer_ringing) || id(find_my_active));
 
-              const bool is_home_pill_tap = (gest.max_travel < std::max(24, latter_ui::layout().tap_slop()) &&
+              const bool is_home_pill_tap = (gest.max_travel < latter_ui::layout().swipe_min() &&
                                              latter_ui::layout().is_home_pill_tap(tp));
               if (!gest.swipe_committed && can_swipe_home &&
-                  ((gest.start_y >= std::min(latter_ui::SCREEN_H - 54, latter_ui::layout().home_zone_y()) &&
-                    dy <= -24 && std::abs(dy) > std::abs(dx)) ||
+                  ((gest.start_y >= latter_ui::layout().home_zone_y() &&
+                    dy <= -latter_ui::layout().swipe_min() && std::abs(dy) > std::abs(dx)) ||
                    is_home_pill_tap)) {
                 gest.swipe_committed = true;
                 gest.last_swipe_ms = now_rel;
@@ -2590,7 +2445,7 @@ script:
                 int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
                 int total_pages = (dock_count + 3) / 4;
 
-                const int dock_rel_swipe = (latter_ui::SCREEN_W < 380) ? 18 : 20;
+                const int dock_rel_swipe = latter_ui::layout().dock_release_swipe();
                 if (std::abs(dx) >= dock_rel_swipe && std::abs(dx) > (std::abs(dy) * 3) / 2 && total_pages > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
@@ -2598,9 +2453,9 @@ script:
                       ? ((latter_ui::home_dock_page() + 1) % total_pages)
                       : ((latter_ui::home_dock_page() + total_pages - 1) % total_pages);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 30 && dock_count > 0) {
+                } else if (gest.max_travel < latter_ui::layout().tap_max() && dock_count > 0) {
                   const int dock_cy = latter_ui::layout().dock_y;
-                  const int dock_hit_r = latter_ui::layout().dock_r + 16;
+                  const int dock_hit_r = latter_ui::layout().dock_hit_r();
                   if (gest.last_y >= (dock_cy - dock_hit_r) && gest.last_y <= (dock_cy + dock_hit_r)) {
                     int win_xs[4] = {0, 0, 0, 0};
                     bool dummy_l = false, dummy_r = false;
@@ -2667,7 +2522,7 @@ script:
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 2 &&
                          (id(music_overlay_mode) == 7 || id(music_overlay_mode) == 8) && gest.start_y < latter_ui::scale_y(404)) {
-                if (std::abs(dy) >= 22 && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
+                if (std::abs(dy) >= latter_ui::layout().swipe_short() && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   int delta = (dy < 0) ? 1 : -1;
@@ -2683,7 +2538,7 @@ script:
                          gest.start_context == (200 + id(music_overlay_mode)) &&
                          gest.start_y < latter_ui::scale_y(404)) {
                 if ((id(music_overlay_mode) == 1 || id(music_overlay_mode) == 3) &&
-                    std::abs(dy) >= 22 && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
+                    std::abs(dy) >= latter_ui::layout().swipe_short() && std::abs(dy) > std::abs(dx) && id(music_browse_total_pages) > 1) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   latter_ui::music_scroll_tap_lockout_until_ms() = now_rel + 180U;
@@ -2703,7 +2558,7 @@ script:
                              dy, (unsigned long)touch_dur_ms, delta, next_pg, id(music_browse_total_pages));
                     id(fetch_music_browse).execute();
                   }
-                } else if (!id(menu_scroll_active) && gest.max_travel < latter_ui::scale_s(36) && gest.last_y < latter_ui::scale_y(404) &&
+                } else if (!id(menu_scroll_active) && gest.max_travel < latter_ui::layout().tap_max_loose() && gest.last_y < latter_ui::scale_y(404) &&
                            ((now_rel - gest.last_swipe_ms >= 180U && now_rel >= latter_ui::music_scroll_tap_lockout_until_ms()) ||
                             latter_ui::is_right_chevron_zone(tp))) {
                   if (latter_ui::is_right_chevron_zone(tp)) {
@@ -2727,7 +2582,7 @@ script:
                       }
                     }
                   } else if (id(music_overlay_mode) == 1) {
-                    int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot_idx >= 0) {
                       std::string picked_id = "";
                       std::string picked_name = "";
@@ -2744,7 +2599,7 @@ script:
                       }
                     }
                   } else if (id(music_overlay_mode) == 2) {
-                    int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot_idx >= 0) {
                       int idx = (id(music_category_page) == 1) ? slot_idx : (slot_idx + 2);
                       if (idx == 0) { id(selected_category_mode) = "favorites"; id(selected_category_title) = "FAVORITES"; }
@@ -2768,7 +2623,7 @@ script:
                   } else if (id(music_overlay_mode) == 3) {
                     bool is_drill = (id(selected_category_mode) == "artist" || id(selected_category_mode) == "album" || id(selected_category_mode) == "artist_albums");
                     bool is_podcast_list = (id(selected_category_mode) == "podcast");
-                    int slot_idx = latter_ui::get_5slot_index(tp, 12, 415);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 12, 415);
                     if (slot_idx >= 0) {
                       int slot_num = slot_idx + 1;
                       std::string s_id = (slot_num == 1) ? id(slot_1_id) : (slot_num == 2) ? id(slot_2_id) : (slot_num == 3) ? id(slot_3_id) : (slot_num == 4) ? id(slot_4_id) : id(slot_5_id);
@@ -2817,7 +2672,7 @@ script:
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 3 && id(active_game) == 5) {
                 if (gest.last_y < latter_ui::layout().back_y - latter_ui::scale_y(36)) {
-                  if (std::abs(dx) >= 18 || std::abs(dy) >= 18) {
+                  if (std::abs(dx) >= latter_ui::layout().flick_min() || std::abs(dy) >= latter_ui::layout().flick_min()) {
                     if (std::abs(dx) > std::abs(dy)) {
                       latter_ui::game_2048_pending_dir() = (dx > 0) ? 2 : 4;
                     } else {
@@ -2831,7 +2686,7 @@ script:
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 3 && id(active_game) == 0 && !id(menu_scroll_active)) {
-                if (gest.start_y < latter_ui::scale_y(410) && std::abs(dx) >= 22 && std::abs(dx) > std::abs(dy)) {
+                if (gest.start_y < latter_ui::scale_y(410) && std::abs(dx) >= latter_ui::layout().swipe_short() && std::abs(dx) > std::abs(dy)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   int dir = (dx < 0) ? 1 : -1;
@@ -2840,7 +2695,7 @@ script:
                   id(menu_scroll_target_page) = latter_ui::step_wrap(id(game_carousel_idx), dir, 6);
                   id(menu_scroll_step) = 0;
                   id(menu_scroll_transition).execute();
-                } else if (gest.max_travel < latter_ui::scale_s(30)) {
+                } else if (gest.max_travel < latter_ui::layout().tap_max()) {
                   const int g_btn_y = latter_ui::layout().app_dock_y;
                   if (gest.last_x >= latter_ui::SCREEN_CX - latter_ui::scale_x(125) &&
                       gest.last_x <= latter_ui::SCREEN_CX - latter_ui::scale_x(55) &&
@@ -2867,7 +2722,7 @@ script:
                          (id(system_menu_mode) == 0 || id(system_menu_mode) == 1 || id(system_menu_mode) == 2)) {
                 int cur_pg = (id(system_menu_mode) == 0) ? id(system_dashboard_page)
                            : ((id(system_menu_mode) == 1) ? id(sleep_menu_page) : id(display_menu_page));
-                if (gest.start_y < latter_ui::scale_y(410) && std::abs(dy) >= 22 && std::abs(dy) > std::abs(dx)) {
+                if (gest.start_y < latter_ui::scale_y(410) && std::abs(dy) >= latter_ui::layout().swipe_short() && std::abs(dy) > std::abs(dx)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   int target_pg = (dy < 0) ? 2 : 1;
@@ -2878,7 +2733,7 @@ script:
                     id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   }
-                } else if (gest.max_travel < 30 && gest.last_y < latter_ui::scale_y(404)) {
+                } else if (gest.max_travel < latter_ui::layout().tap_max() && gest.last_y < latter_ui::scale_y(404)) {
                   if (latter_ui::is_right_chevron_zone(tp)) {
                     int target_pg = (cur_pg == 1) ? 2 : 1;
                     id(menu_scroll_active) = true;
@@ -2887,7 +2742,7 @@ script:
                     id(menu_scroll_step) = 0;
                     id(menu_scroll_transition).execute();
                   } else if (id(system_menu_mode) == 0) {
-                    int slot = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot >= 0) {
                       int item_idx = (id(system_dashboard_page) == 1) ? slot : (slot + 3);
                       if (item_idx == 0) { id(system_menu_mode) = 2; id(display_menu_page) = 1; }
@@ -2901,7 +2756,7 @@ script:
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   } else if (id(system_menu_mode) == 1) {
-                    int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot_idx >= 0) {
                       int idx = (id(sleep_menu_page) == 1) ? slot_idx : (slot_idx + 5);
                       if (idx == 0) {
@@ -2956,7 +2811,7 @@ script:
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   } else if (id(system_menu_mode) == 2) {
-                    int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                    int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                     if (slot_idx >= 0) {
                       int item_idx = (id(display_menu_page) == 1) ? slot_idx : (slot_idx + 4);
                       std::string ab = id(auto_brightness_mode).current_option();
@@ -3045,15 +2900,15 @@ script:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 5) {
-                if (gest.start_y < (latter_ui::SCREEN_H - 54) && std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
+                if (gest.start_y < latter_ui::layout().home_zone_y() && std::abs(dx) >= latter_ui::layout().page_swipe() && std::abs(dx) > std::abs(dy)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   id(sky_weather_subpage) = (dx < 0)
                       ? ((id(sky_weather_subpage) + 1) % 4)
                       : ((id(sky_weather_subpage) + 3) % 4);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 30 &&
-                           gest.last_y >= latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14 &&
+                } else if (gest.max_travel < latter_ui::layout().tap_max() &&
+                           gest.last_y >= latter_ui::layout().mode_bar_zone_top() &&
                            gest.last_y <= latter_ui::layout().app_dock_y + latter_ui::layout().dock_r + 16) {
                   int w_xs[4] = {0, 0, 0, 0};
                   bool d_l = false, d_r = false;
@@ -3072,7 +2927,7 @@ script:
                 }
               } else if (id(gui_page) == 6 && id(area_subpage) == 2 && gest.last_y < latter_ui::scale_y(404)) {
                 // Commit Light Color Wheel or White Kelvin / Brightness Inspector Action on Release!
-                if (gest.max_travel < 30 && tp.y <= latter_ui::scale_y(68) &&
+                if (gest.max_travel < latter_ui::layout().tap_max() && tp.y <= latter_ui::scale_y(68) &&
                     std::abs(tp.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(123)) {
                   latter_ui::light_insp_mode() = (latter_ui::light_insp_mode() == 0) ? 1 : 0;
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -3121,14 +2976,14 @@ script:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > latter_ui::scale_y(88) && gest.last_y < (latter_ui::SCREEN_H - 16)) {
-                const int dock_top_y = latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14;
+              } else if (!gest.swipe_committed && id(gui_page) == 6 && gest.last_y > latter_ui::scale_y(88) && gest.last_y < latter_ui::layout().edge_guard_y()) {
+                const int dock_top_y = latter_ui::layout().mode_bar_zone_top();
                 int start_card = (id(area_subpage) == 0 && gest.start_y < dock_top_y) ? latter_ui::layout().hit_area_card3(gest.start_x, gest.start_y) : -1;
                 std::string start_type = (start_card == 0) ? id(area_slot_1_type) : (start_card == 1) ? id(area_slot_2_type) : (start_card == 2) ? id(area_slot_3_type) : "";
                 int start_lvl = (start_card == 0) ? id(area_slot_1_level) : (start_card == 1) ? id(area_slot_2_level) : (start_card == 2) ? id(area_slot_3_level) : -1;
                 bool is_card_slider_drag = (start_card >= 0 && (start_type == "light" || start_type == "cover" || start_type == "fan") && start_lvl >= 0 && gest.start_x > latter_ui::layout().area_card_div_x());
 
-                if (is_card_slider_drag && gest.max_travel >= 30) {
+                if (is_card_slider_drag && gest.max_travel >= latter_ui::layout().tap_max()) {
                   std::string s_name = (start_card == 0) ? id(area_slot_1_name) : (start_card == 1) ? id(area_slot_2_name) : id(area_slot_3_name);
                   std::string s_id   = (start_card == 0) ? id(area_slot_1_id)   : (start_card == 1) ? id(area_slot_2_id)   : id(area_slot_3_id);
                   bool &s_act        = (start_card == 0) ? id(area_slot_1_active) : (start_card == 1) ? id(area_slot_2_active) : id(area_slot_3_active);
@@ -3183,7 +3038,7 @@ script:
                     id(fetch_area_browse).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
-                } else if (gest.max_travel < 30) {
+                } else if (gest.max_travel < latter_ui::layout().tap_max()) {
                   if (latter_ui::is_right_chevron_zone(tp) && id(area_subpage) != 2 && ((id(area_subpage) == 1 && id(area_list_total_pages) > 1) || (id(area_subpage) == 0 && id(area_browse_total_pages) > 1))) {
                     int delta = (tp.y < latter_ui::SCREEN_CY) ? -1 : 1;
                     if (id(area_subpage) == 1 && id(area_list_total_pages) > 1) {
@@ -3348,16 +3203,16 @@ script:
                     }
                   }
                 }
-              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < (latter_ui::SCREEN_H - 16)) {
-                if (gest.start_y < (latter_ui::SCREEN_H - 54) && std::abs(dx) >= 28 && std::abs(dx) > std::abs(dy)) {
+              } else if (!gest.swipe_committed && id(gui_page) == 9 && gest.last_y < latter_ui::layout().edge_guard_y()) {
+                if (gest.start_y < latter_ui::layout().home_zone_y() && std::abs(dx) >= latter_ui::layout().page_swipe() && std::abs(dx) > std::abs(dy)) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   latter_ui::whole_home_tab() = (dx < 0)
                       ? ((latter_ui::whole_home_tab() + 1) % 4)
                       : ((latter_ui::whole_home_tab() + 3) % 4);
                   latter_ui::schedule_disp_update(&id(disp1));
-                } else if (gest.max_travel < 30) {
-                  if (tp.y >= latter_ui::layout().app_dock_y - latter_ui::layout().dock_r - 14 &&
+                } else if (gest.max_travel < latter_ui::layout().tap_max()) {
+                  if (tp.y >= latter_ui::layout().mode_bar_zone_top() &&
                       tp.y <= latter_ui::layout().app_dock_y + latter_ui::layout().dock_r + 16 &&
                       tp.x >= latter_ui::SCREEN_CX - latter_ui::scale_x(205) && tp.x <= latter_ui::SCREEN_CX + latter_ui::scale_x(205)) {
                     int wh_xs[4] = {0, 0, 0, 0};
@@ -3443,7 +3298,7 @@ script:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 0 && !id(menu_scroll_active) && gest.last_y < latter_ui::scale_y(408)) {
-                if (gest.max_travel < 30) {
+                if (gest.max_travel < latter_ui::layout().tap_max()) {
                   if (latter_ui::is_right_chevron_zone(tp)) {
                     int target_pg = (id(tools_menu_page) == 0) ? 1 : 0;
                     id(menu_scroll_active) = true;
@@ -3495,21 +3350,21 @@ script:
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 9 &&
                          latter_ui::cal_detail_mode() == 2 && gest.start_y < latter_ui::scale_y(404)) {
                 // INTERACTIVE MAP VIEW: Swipe-to-Pan OR Tap +/- to Zoom OR Tap Top Header to Re-Center
-                if (std::abs(dx) >= 28 || std::abs(dy) >= 28) {
+                if (std::abs(dx) >= latter_ui::layout().page_swipe() || std::abs(dy) >= latter_ui::layout().page_swipe()) {
                   gest.swipe_committed = true;
                   gest.last_swipe_ms = now_rel;
                   // Natural map drag: dragging finger Left (dx < 0) moves camera Right (pan_x + 1)
                   if (std::abs(dx) >= std::abs(dy)) {
-                    int step_x = (std::abs(dx) >= 110) ? 2 : 1;
+                    int step_x = (std::abs(dx) >= latter_ui::layout().fast_pan()) ? 2 : 1;
                     latter_ui::cal_map_pan_x() = std::max(-25, std::min(25,
                         latter_ui::cal_map_pan_x() + ((dx < 0) ? step_x : -step_x)));
                   } else {
-                    int step_y = (std::abs(dy) >= 110) ? 2 : 1;
+                    int step_y = (std::abs(dy) >= latter_ui::layout().fast_pan()) ? 2 : 1;
                     latter_ui::cal_map_pan_y() = std::max(-25, std::min(25,
                         latter_ui::cal_map_pan_y() + ((dy < 0) ? step_y : -step_y)));
                   }
                   id(fetch_calendar_map_snapshot).execute();
-                } else if (gest.max_travel < 30) {
+                } else if (gest.max_travel < latter_ui::layout().tap_max()) {
                   if (latter_ui::layout().hit_map_zoom_out(tp.x, tp.y)) {
                     // Left (-) Zoom Out Button
                     if (latter_ui::cal_map_zoom() > 10) {
@@ -3538,7 +3393,7 @@ script:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 7 && id(remote_subpage) == 1 &&
-                         gest.max_travel < 30 && gest.last_y >= latter_ui::scale_y(84) && gest.last_y < latter_ui::scale_y(404)) {
+                         gest.max_travel < latter_ui::layout().tap_max() && gest.last_y >= latter_ui::scale_y(84) && gest.last_y < latter_ui::scale_y(404)) {
                 const int r_hw = latter_ui::scale_x(143);
                 if (tp.x >= latter_ui::SCREEN_CX - r_hw && tp.x <= latter_ui::SCREEN_CX + r_hw &&
                     tp.y >= latter_ui::layout().slot5_y(0) - latter_ui::scale_y(28) &&
@@ -3571,11 +3426,11 @@ script:
                   }
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 12 &&
-                         gest.max_travel < 30 && gest.last_y < latter_ui::scale_y(404)) {
+                         gest.max_travel < latter_ui::layout().tap_max() && gest.last_y < latter_ui::scale_y(404)) {
                 std::string c_ids[latter_ui::MAX_CAMERA_SLOTS], c_names[latter_ui::MAX_CAMERA_SLOTS];
                 int c_total = latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, c_ids, c_names);
                 if (latter_ui::cam_quick_reply_open()) {
-                  int q_row = latter_ui::get_5slot_index(tp, latter_ui::SCREEN_CX - 148, latter_ui::SCREEN_CX + 148);
+                  int q_row = latter_ui::layout().hit_slot5(tp, latter_ui::SCREEN_CX - 148, latter_ui::SCREEN_CX + 148);
                   if (q_row == 0) {
                     latter_ui::cam_quick_reply_open() = false;
                     id(cam_intercom_action) = "unlock_door";
@@ -3672,8 +3527,8 @@ script:
                 }
               } else if (!gest.swipe_committed && id(gui_page) == 8 && id(tools_subpage) == 9 &&
                          latter_ui::cal_detail_mode() == 0 && !latter_ui::cal_quick_add_open() &&
-                         gest.max_travel < 30 && gest.last_y >= latter_ui::scale_y(80) && gest.last_y < latter_ui::scale_y(404)) {
-                int slot_idx = latter_ui::get_5slot_index(tp, 75, 385);
+                         gest.max_travel < latter_ui::layout().tap_max() && gest.last_y >= latter_ui::scale_y(80) && gest.last_y < latter_ui::scale_y(404)) {
+                int slot_idx = latter_ui::layout().hit_slot5(tp, 75, 385);
                 if (slot_idx >= 0) {
                   std::string s_name = (slot_idx == 0) ? id(cal_slot_1_name) : (slot_idx == 1) ? id(cal_slot_2_name) : (slot_idx == 2) ? id(cal_slot_3_name) : (slot_idx == 3) ? id(cal_slot_4_name) : id(cal_slot_5_name);
                   std::string s_id   = (slot_idx == 0) ? id(cal_slot_1_id)   : (slot_idx == 1) ? id(cal_slot_2_id)   : (slot_idx == 2) ? id(cal_slot_3_id)   : (slot_idx == 3) ? id(cal_slot_4_id)   : id(cal_slot_5_id);

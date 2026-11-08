@@ -69,7 +69,8 @@ esphome:
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
     - "-DLATTER_PANEL_DCS_SLEEP=1"
-    - "-DLATTER_PANEL_PPI=222"
+    # Waveshare outline drawing: 38.99 x 38.99 mm active area for 480 x 480 = 312.7 ppi (2.17" diagonal)
+    - "-DLATTER_PANEL_PPI=313"
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
     - "-DLATTER_PWR_KEY_PIN=16"

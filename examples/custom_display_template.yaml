@@ -63,6 +63,7 @@ esphome:
     - "-DLATTER_IS_STATIONARY=1"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
+    - "-DLATTER_PANEL_PPI=313"   # diagonal pixels / diagonal inches (touch thresholds are in mm)
     - "-DLATTER_CHIP_P4=0"
     - "-DLATTER_PSRAM_MB=8"
     # Audio traits for the hardware manifest; keep in step with the substitutions above
