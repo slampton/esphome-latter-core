@@ -886,7 +886,7 @@ inline void apply_weather_sim_override(const CurT &sim_opt, std::string &cond, b
 }
 
 inline std::string format_weather_title(const std::string &c_in) {
-  if (c_in.empty() || c_in == "unknown" || c_in == "unavailable") return "Unavailable";
+  if (c_in.empty()) return "Unavailable";
   if (c_in == "partlycloudy" || c_in == "partly-cloudy") return "Partly Cloudy";
   if (c_in == "mostlycloudy" || c_in == "mostly-cloudy") return "Mostly Cloudy";
   if (c_in == "mostlysunny" || c_in == "mostly-sunny") return "Mostly Sunny";
@@ -1304,7 +1304,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
                                             int cel_cx = 341, int cel_cy = 91,
                                             bool mask_hero_temp = true,
                                             float accel_x = 0.0f, float accel_y = 0.0f) {
-  if (cond.empty() || cond == "unknown" || cond == "unavailable" || cond == "none" || cond == "NONE") {
+  if (cond.empty()) {
     return;
   }
 

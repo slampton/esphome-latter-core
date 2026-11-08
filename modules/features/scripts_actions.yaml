@@ -359,9 +359,6 @@ script:
                      !id(va_active) && id(va_status_text).empty() &&
                      (!ms.is_local || id(album_art).get_width() == 0) &&
                      !ms.art_url.empty() &&
-                     (ms.art_url != "none") &&
-                     (ms.art_url != "unknown") &&
-                     (ms.art_url != "unavailable") &&
                      (ms.art_url != id(current_loaded_art_url));
           then:
             - lambda: 'id(current_loaded_art_url) = latter_ui::media_state().art_url;'
@@ -381,9 +378,6 @@ script:
                      !id(va_active) && id(va_status_text).empty() &&
                      (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      !ac.wallpaper_url.empty() &&
-                     (ac.wallpaper_url != "none") &&
-                     (ac.wallpaper_url != "unknown") &&
-                     (ac.wallpaper_url != "unavailable") &&
                      (ac.wallpaper_url != id(current_loaded_wallpaper_url));
           then:
             - lambda: 'id(current_loaded_wallpaper_url) = latter_ui::area_ctx_state().wallpaper_url;'
@@ -602,11 +596,7 @@ script:
       - if:
           condition:
             lambda: |-
-              return id(notif_active) &&
-                     !id(notif_camera_url).empty() &&
-                     (id(notif_camera_url) != "none") &&
-                     (id(notif_camera_url) != "unknown") &&
-                     (id(notif_camera_url) != "unavailable");
+              return id(notif_active) && !id(notif_camera_url).empty();
           then:
             - online_image.set_url:
                 id: camera_snapshot_art
@@ -1212,7 +1202,7 @@ script:
             id(selected_slot_id)   = id(slot_5_id);
             id(selected_slot_type) = id(slot_5_type);
           }
-          if (id(active_speaker_entity).empty() || id(active_speaker_entity) == "None") {
+          if (id(active_speaker_entity).empty()) {
             id(active_speaker_entity) = latter_ui::media_state().local_speaker;
             latter_ui::media_state().is_local = !latter_ui::media_state().local_speaker.empty();
           }

@@ -82,7 +82,7 @@ struct AreaContextState {
 struct MediaState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
-  std::string state = "idle";
+  std::string state = "";
   std::string title = "";
   std::string artist = "";
   std::string album = "";
@@ -91,7 +91,7 @@ struct MediaState {
   uint32_t position_updated_at = 0;
   float volume = 0.5f;
   bool has_volume = false;
-  std::string media_type = "music";
+  std::string media_type = "";
   int supported_features = 0;
   std::string art_url = "";
   std::string active_speaker = "";
@@ -213,7 +213,7 @@ inline size_t v3_split_fields(std::string_view payload, std::string_view *out, s
 }
 
 inline int v3_parse_int(std::string_view sv, int fallback = 0) {
-  if (sv.empty() || sv == "None" || sv == "unknown" || sv == "unavailable") return fallback;
+  if (sv.empty()) return fallback;
   char buf[24];
   size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
   std::memcpy(buf, sv.data(), len);
@@ -225,7 +225,7 @@ inline int v3_parse_int(std::string_view sv, int fallback = 0) {
 }
 
 inline uint32_t v3_parse_u32(std::string_view sv, uint32_t fallback = 0) {
-  if (sv.empty() || sv == "None" || sv == "unknown" || sv == "unavailable") return fallback;
+  if (sv.empty()) return fallback;
   char buf[24];
   size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
   std::memcpy(buf, sv.data(), len);
@@ -237,7 +237,7 @@ inline uint32_t v3_parse_u32(std::string_view sv, uint32_t fallback = 0) {
 }
 
 inline float v3_parse_float(std::string_view sv, float fallback = NAN) {
-  if (sv.empty() || sv == "None" || sv == "none" || sv == "unknown" || sv == "unavailable") return fallback;
+  if (sv.empty()) return fallback;
   char buf[32];
   size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
   std::memcpy(buf, sv.data(), len);
@@ -292,7 +292,7 @@ inline GarageState parse_garage_state_str(std::string_view sv) {
 }
 
 inline std::string normalize_vacuum_state_str(std::string_view sv) {
-  if (sv.empty() || sv == "none" || sv == "unknown" || sv == "unavailable") return "";
+  if (sv.empty()) return "";
   if (sv == "cleaning" || sv == "Cleaning") return "Cleaning";
   if (sv == "paused" || sv == "Paused") return "Paused";
   if (sv == "returning" || sv == "Returning") return "Returning";
@@ -328,16 +328,11 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
   st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
 
-  std::string_view th_mode = f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)];
-  if (th_mode != "none" && th_mode != "unknown" && th_mode != "unavailable") {
-    wh.thermostat_mode = std::string(th_mode);
-  } else {
-    wh.thermostat_mode = "";
-  }
+  wh.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
   float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
-  if (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f) {
-    wh.thermostat_target_f = static_cast<int>(std::round(th_temp));
-  }
+  wh.thermostat_target_f = (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f)
+                               ? static_cast<int>(std::round(th_temp))
+                               : -1;  // no setpoint: unknown
   wh.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
   st.lock_entity          = std::string(f[static_cast<size_t>(AreaCtxField::LOCK_ENTITY)]);
   wh.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);

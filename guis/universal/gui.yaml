@@ -286,9 +286,9 @@ display:
         bool is_rem_h = !ms_h.is_local;
         bool loc_play_h = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
         bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, ms_h.state, now_h_ms);
-        std::string m_title_h = (is_rem_h || id(track_title).state.empty() || id(track_title).state == "None")
+        std::string m_title_h = (is_rem_h || id(track_title).state.empty())
                                     ? ms_h.title : id(track_title).state;
-        std::string m_artist_h = (is_rem_h || id(track_artist).state.empty() || id(track_artist).state == "None")
+        std::string m_artist_h = (is_rem_h || id(track_artist).state.empty())
                                      ? ms_h.artist : id(track_artist).state;
         float eff_w_temp_h = ws_h.temperature;
         std::string eff_w_cond_h = ws_h.condition;
@@ -362,9 +362,9 @@ display:
               id(col_white), id(col_slate), id(col_dark_gray),
               now_p2_ms, is_playing,
               ms_p2.duration, id(music_pos_base), id(music_pos_sync_time),
-              (is_remote || id(track_title).state.empty() || id(track_title).state == "None") ? ms_p2.title : id(track_title).state,
-              (is_remote || id(track_artist).state.empty() || id(track_artist).state == "None") ? ms_p2.artist : id(track_artist).state,
-              (is_remote || id(track_album).state.empty() || id(track_album).state == "None") ? ms_p2.album : id(track_album).state,
+              (is_remote || id(track_title).state.empty()) ? ms_p2.title : id(track_title).state,
+              (is_remote || id(track_artist).state.empty()) ? ms_p2.artist : id(track_artist).state,
+              (is_remote || id(track_album).state.empty()) ? ms_p2.album : id(track_album).state,
               id(album_art), id(remote_album_art),
               ms_p2.art_url, id(current_loaded_art_url));
         }

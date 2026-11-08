@@ -645,7 +645,11 @@ inline void render_system_page(
     }
 
     if (has_update) {
-      snprintf(buf, sizeof(buf), "Available: v%s", ha_fw_latest.empty() ? "2.0.x" : ha_fw_latest.c_str());
+      if (ha_fw_latest.empty()) {
+        snprintf(buf, sizeof(buf), "Update available");
+      } else {
+        snprintf(buf, sizeof(buf), "Available: v%s", ha_fw_latest.c_str());
+      }
       fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       std::string summ = ha_fw_summary;
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
@@ -734,7 +738,7 @@ inline void render_system_page(
     print_info_row(212, "IP:", ip_str.empty() ? "Connecting..." : ip_str.c_str(), col_slate);
 
     std::string area_str = latter_area_label().empty() ? std::string(kUnknownGlyph) : latter_area_label();
-    if (!latter_ble_proxy().empty() && latter_ble_proxy() != "unknown" && latter_ble_proxy() != "unavailable") {
+    if (!latter_ble_proxy().empty()) {
       area_str += " (" + latter_ble_proxy() + ")";
     }
     area_str = fit_text_to_width_font(area_str, 220, font_small);

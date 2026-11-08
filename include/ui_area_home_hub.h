@@ -111,7 +111,7 @@ inline int collect_area_categories(bool show_all_cat, std::string *out_cats) {
   int n = 0;
   const std::string &csv = area_available_domains_csv();
   auto has_tok = [&](const char *tok) -> bool {
-    if (csv.empty() || csv == "unknown" || csv == "unavailable") {
+    if (csv.empty()) {
       return true;
     }
     return (csv.find(tok) != std::string::npos);
@@ -711,7 +711,7 @@ inline void render_whole_home_page(
 
     std::string st_lbl = "Status: Unknown";
     Color st_col = col_slate;
-    if (!alarm_state.empty() && alarm_state != "none" && alarm_state != "unknown" && alarm_state != "unavailable") {
+    if (!alarm_state.empty()) {
       if (alarm_state == "disarmed") { st_lbl = "Status: Disarmed"; st_col = col_green; }
       else if (alarm_state == "armed_home") { st_lbl = "Status: Armed Home"; st_col = col_gold; }
       else if (alarm_state == "armed_away") { st_lbl = "Status: Armed Away"; st_col = col_red; }

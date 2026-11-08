@@ -282,9 +282,6 @@ media_player:
                   if (id(gui_page) == 2 &&
                       (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
                       !art_u.empty() &&
-                      art_u != "none" &&
-                      art_u != "unknown" &&
-                      art_u != "unavailable" &&
                       art_u != id(current_loaded_art_url)) {
                     id(fetch_remote_art_debounced).execute();
                   }

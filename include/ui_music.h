@@ -79,8 +79,7 @@ inline void render_music_now_playing(
   bool rendered_art = false;
   bool used_remote_art = false;
   (void)current_loaded_art_url;
-  const bool remote_art_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-                                 ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
+  const bool remote_art_ready = (!ha_target_art_url.empty() &&
                                  remote_art && remote_art->get_width() > 0);
   const bool local_art_ready = (local_art && local_art->get_width() > 0);
   if (is_remote) {
@@ -112,7 +111,7 @@ inline void render_music_now_playing(
   const esphome::Color glass_brd(62, 74, 92);
 
   std::string spk_title = active_speaker_name;
-  if (spk_title.empty() || spk_title == "None") spk_title = friendly_name;
+  if (spk_title.empty()) spk_title = friendly_name;
   bool is_feedback = (now_ms - music_feedback_timer < 1800U && !music_action_feedback.empty());
   if (is_feedback) {
     spk_title = music_action_feedback;
@@ -270,11 +269,11 @@ inline void render_music_now_playing(
 
     render_progress_arc_r224(it, cx, cy, prog, theme_secondary);
 
-    std::string title = is_remote ? ha_title : ((local_title.empty() || local_title == "None") ? ha_title : local_title);
-    std::string artist = is_remote ? ha_artist : ((local_artist.empty() || local_artist == "None") ? ha_artist : local_artist);
-    std::string album = is_remote ? ha_album : ((local_album.empty() || local_album == "None") ? ha_album : local_album);
+    std::string title = is_remote ? ha_title : (local_title.empty() ? ha_title : local_title);
+    std::string artist = is_remote ? ha_artist : (local_artist.empty() ? ha_artist : local_artist);
+    std::string album = is_remote ? ha_album : (local_album.empty() ? ha_album : local_album);
 
-    if (title.empty() || title == "None") title = is_playing ? "Playing Audio" : "Idle";
+    if (title.empty()) title = is_playing ? "Playing Audio" : "Idle";
     title = fit_text_to_width_font(title, scale_x(280), font_small);
 
     bool has_shadow = has_art;
@@ -286,14 +285,14 @@ inline void render_music_now_playing(
     }
     fast_print(it, cx, y_t, font_small, col_white, esphome::display::TextAlign::CENTER, title.c_str());
 
-    if (!artist.empty() && artist != "None") {
+    if (!artist.empty()) {
       artist = fit_text_to_width_font(artist, scale_x(260), font_small);
       if (has_shadow) {
         fast_print(it, cx + 1, y_ar + 1, font_small, col_black, esphome::display::TextAlign::CENTER, artist.c_str());
       }
       fast_print(it, cx, y_ar, font_small, theme_secondary, esphome::display::TextAlign::CENTER, artist.c_str());
     }
-    if (!album.empty() && album != "None") {
+    if (!album.empty()) {
       album = fit_text_to_width_font(album, scale_x(240), font_small);
       if (has_shadow) {
         fast_print(it, cx + 1, y_al + 1, font_small, col_black, esphome::display::TextAlign::CENTER, album.c_str());
@@ -338,8 +337,7 @@ inline void render_music_menus(
 
   (void)current_loaded_art_url;
   if (!menu_scroll_active) {
-    const bool rem_ready = (!ha_target_art_url.empty() && ha_target_art_url != "none" &&
-                            ha_target_art_url != "unknown" && ha_target_art_url != "unavailable" &&
+    const bool rem_ready = (!ha_target_art_url.empty() &&
                             remote_art != nullptr && remote_art->get_width() > 0);
     const bool loc_ready = (local_art != nullptr && local_art->get_width() > 0);
     if (is_rem) {
@@ -564,10 +562,10 @@ inline void render_music_menus(
     render_page_header(it, cx, disp_t.c_str(), font_small, theme_primary);
 
     std::string sub_meta = cur_artist;
-    if (!cur_album.empty() && cur_album != "None") {
+    if (!cur_album.empty()) {
       sub_meta = sub_meta.empty() ? cur_album : (sub_meta + " • " + cur_album);
     }
-    if (!sub_meta.empty() && sub_meta != "None") {
+    if (!sub_meta.empty()) {
       sub_meta = fit_text_to_width_font(sub_meta, scale_x(275), font_small);
       render_sub_header(it, cx, sub_meta.c_str(), font_small, col_slate);
     }

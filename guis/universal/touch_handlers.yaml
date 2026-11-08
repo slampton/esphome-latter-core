@@ -72,8 +72,7 @@ script:
             if (id(notif_active)) {
               latter_ui::touch_gesture().active = false;
               latter_ui::last_screen_wake_ms() = now_touch;
-              bool has_notif_cam = (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
-                                    id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable");
+              bool has_notif_cam = !id(notif_camera_url).empty();
               if (has_notif_cam && ((touch.y >= latter_ui::scale_y(390) && touch.x < latter_ui::SCREEN_CX) || touch.y < latter_ui::scale_y(380))) {
                 id(notif_active) = false;
                 latter_ui::tools_direct_home() = true;
@@ -272,9 +271,9 @@ script:
               bool is_rem_h = !ms_hm.is_local;
               bool loc_play_h = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
               bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, ms_hm.state, now_hm);
-              std::string m_title_h = (is_rem_h || id(track_title).state.empty() || id(track_title).state == "None")
+              std::string m_title_h = (is_rem_h || id(track_title).state.empty())
                                           ? ms_hm.title : id(track_title).state;
-              std::string m_artist_h = (is_rem_h || id(track_artist).state.empty() || id(track_artist).state == "None")
+              std::string m_artist_h = (is_rem_h || id(track_artist).state.empty())
                                            ? ms_hm.artist : id(track_artist).state;
               auto now_t_hm = id(ha_time).now();
               int act_count = latter_ui::collect_home_activities(
@@ -892,10 +891,10 @@ script:
                     std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(148)) {
                   if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_rem = !ms_in.is_local;
-                    std::string alb = (is_rem || id(track_album).state.empty() || id(track_album).state == "None")
+                    std::string alb = (is_rem || id(track_album).state.empty())
                                           ? ms_in.album : id(track_album).state;
                     id(selected_category_mode) = "current_album_tracks";
-                    id(selected_category_title) = (alb.empty() || alb == "None") ? "ALBUM TRACKS" : alb;
+                    id(selected_category_title) = alb.empty() ? "ALBUM TRACKS" : alb;
                     id(drilldown_album_id) = alb;
                     id(music_browse_page) = 1;
                     id(music_browse_total_pages) = 1;
@@ -940,11 +939,11 @@ script:
                   if (latter_ui::touch_router().allow_tap(now_in, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     bool is_bio = (touch.x >= latter_ui::SCREEN_CX);
                     bool is_rem = !ms_in.is_local;
-                    std::string t_name = (is_rem || id(track_title).state.empty() || id(track_title).state == "None")
+                    std::string t_name = (is_rem || id(track_title).state.empty())
                                              ? ms_in.title : id(track_title).state;
-                    std::string ar_name = (is_rem || id(track_artist).state.empty() || id(track_artist).state == "None")
+                    std::string ar_name = (is_rem || id(track_artist).state.empty())
                                               ? ms_in.artist : id(track_artist).state;
-                    std::string al_name = (is_rem || id(track_album).state.empty() || id(track_album).state == "None")
+                    std::string al_name = (is_rem || id(track_album).state.empty())
                                               ? ms_in.album : id(track_album).state;
                     id(drilldown_album_id) = t_name + "|" + ar_name + "|" + al_name;
                     id(selected_category_mode) = is_bio ? "bio" : "lyrics";

@@ -19,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110291L;
+            constexpr long LATTER_YAML_REV = 2026110292L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -296,8 +296,7 @@ api:
               int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
               id(play_game_sfx).execute(sfx);
             }
-            if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
-                id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+            if (!id(notif_camera_url).empty()) {
               id(fetch_camera_snapshot).execute();
             } else {
               id(current_loaded_camera_url) = "";

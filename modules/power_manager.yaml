@@ -718,15 +718,11 @@ script:
           if (id(gui_page) == 2 &&
               (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
               !art_u.empty() &&
-              art_u != "none" &&
               art_u != id(current_loaded_art_url)) {
             id(fetch_remote_art_debounced).execute();
           }
           const std::string &wp_u = latter_ui::area_ctx_state().wallpaper_url;
           if (!wp_u.empty() &&
-              wp_u != "none" &&
-              wp_u != "unknown" &&
-              wp_u != "unavailable" &&
               wp_u != id(current_loaded_wallpaper_url)) {
             id(fetch_wallpaper_debounced).execute();
           }

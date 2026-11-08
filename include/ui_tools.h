@@ -1162,8 +1162,7 @@ inline void render_notification_overlay(
   const bool pulse   = ((now_ms / 250U) % 2U) != 0;
   Color accent_c = is_crit ? col_red : (is_warn ? col_gold : theme_primary);
 
-  const bool has_cam_url = (!cam_url.empty() && cam_url != "none" &&
-                            cam_url != "unknown" && cam_url != "unavailable");
+  const bool has_cam_url = !cam_url.empty();
   const bool cam_ready   = (has_cam_url && cam_url == loaded_cam_url &&
                             cam_art != nullptr && cam_art->get_width() > 0);
 
@@ -2052,8 +2051,7 @@ inline void parse_calendar_slot_meta(const std::string &slot_name, const std::st
       out_title = slot_id.substr(p1 + 1, p2 - p1 - 1);
       if (p3 != std::string::npos) {
         out_loc = slot_id.substr(p2 + 1, p3 - p2 - 1);
-        out_map_url = slot_id.substr(p3 + 1);
-        if (out_map_url == "none") out_map_url.clear();
+        out_map_url = slot_id.substr(p3 + 1);  // "" without a location
       } else {
         out_loc = slot_id.substr(p2 + 1);
       }
@@ -2495,8 +2493,7 @@ inline std::string build_carousel_camera_url(
     }
     chosen_url = urls[cam_carousel_idx()];
   }
-  if (chosen_url.empty() && !base_cam_url.empty() &&
-      base_cam_url != "none" && base_cam_url != "unknown" && base_cam_url != "unavailable") {
+  if (chosen_url.empty() && !base_cam_url.empty()) {
     chosen_url = base_cam_url;
   }
   if (chosen_url.empty()) {
@@ -2553,7 +2550,7 @@ inline void render_tool_camera(
     return;
   }
 
-  bool has_url = (!cam_url.empty() && cam_url != "none" && cam_url != "unknown" && cam_url != "unavailable") || (cam_count > 0);
+  bool has_url = !cam_url.empty() || (cam_count > 0);
   bool has_frame = (has_url && cam_art != nullptr && cam_art->get_width() > 16 && cam_art->get_height() > 16);
 
   if (has_frame) {

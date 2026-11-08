@@ -83,7 +83,6 @@ interval:
           const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
           const bool custom_wp_loaded = !weather_sim_active &&
                                         !latter_ui::area_ctx_state().wallpaper_url.empty() &&
-                                        latter_ui::area_ctx_state().wallpaper_url != "none" &&
                                         (latter_ui::area_ctx_state().wallpaper_url == id(current_loaded_wallpaper_url));
           const bool weather_canvas_visible = (id(home_weather_bg_switch).state && !custom_wp_loaded) || weather_sim_active;
           const uint32_t now_w_ms = millis();

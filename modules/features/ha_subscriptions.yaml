@@ -168,14 +168,11 @@ text_sensor:
               prev_s_artist = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (!x.empty() && x != "Idle" && x != "None" &&
+                if (!x.empty() &&
                     id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&
-                    ms.art_url != "none" &&
-                    ms.art_url != "unknown" &&
-                    ms.art_url != "unavailable" &&
                     ms.art_url != id(current_loaded_art_url)) {
                   id(fetch_remote_art_debounced).execute();
                 }
@@ -194,19 +191,16 @@ text_sensor:
             static std::string prev_s_title = "";
             if (x != prev_s_title) {
               prev_s_title = x;
-              if (!x.empty() && x != "Idle" && x != "None") {
+              if (!x.empty()) {
                 latter_ui::music_queue_cleared() = false;
               }
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (!x.empty() && x != "Idle" && x != "None" &&
+                if (!x.empty() &&
                     id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&
-                    ms.art_url != "none" &&
-                    ms.art_url != "unknown" &&
-                    ms.art_url != "unavailable" &&
                     ms.art_url != id(current_loaded_art_url)) {
                   id(fetch_remote_art_debounced).execute();
                 }
@@ -227,14 +221,11 @@ text_sensor:
               prev_s_album = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
-                if (!x.empty() && x != "Idle" && x != "None" &&
+                if (!x.empty() &&
                     id(display_power_state) == 0 &&
                     id(gui_page) == 2 &&
                     id(album_art).get_width() == 0 &&
                     !ms.art_url.empty() &&
-                    ms.art_url != "none" &&
-                    ms.art_url != "unknown" &&
-                    ms.art_url != "unavailable" &&
                     ms.art_url != id(current_loaded_art_url)) {
                   id(fetch_remote_art_debounced).execute();
                 }
@@ -256,16 +247,14 @@ text_sensor:
             std::string prev_dock = latter_ui::area_ctx_state().dock_apps;
             if (latter_ui::parse_v3_area_ctx_payload(x, latter_ui::area_ctx_state(), latter_ui::whole_home_state())) {
               const auto &st = latter_ui::area_ctx_state();
-              if (!st.area_name.empty()) {
-                id(active_area_name) = st.area_name;
-                latter_ui::latter_area_label() = st.area_name;
-              }
+              id(active_area_name) = st.area_name;  // "" without an Area
+              latter_ui::latter_area_label() = st.area_name;
               if (!st.area_id.empty() && st.area_id != id(active_area_id)) {
                 id(active_area_id) = st.area_id;
                 id(area_browse_page) = 1;
                 latter_ui::area_cat_dock_page() = 0;
               }
-              if (st.available_domains != "unknown" && st.available_domains != "unavailable") {
+              {  // available_domains: the Area's categories, "" when it has none
                 latter_ui::area_available_domains_csv() = st.available_domains;
                 std::string valid_cat = latter_ui::resolve_preferred_area_category(
                     std::string(id(area_default_category_select).current_option()),
@@ -293,12 +282,8 @@ text_sensor:
                 latter_ui::latter_dock_order_csv() = st.dock_apps;
                 latter_ui::home_dock_page() = 0;
               }
-              if (!st.alarm_entity.empty() && st.alarm_entity != "none") {
-                id(area_alarm_entity) = st.alarm_entity;
-              }
-              if (!st.alarm_state.empty()) {
-                id(area_alarm_state) = st.alarm_state;
-              }
+              id(area_alarm_entity) = st.alarm_entity;  // "" without an alarm panel
+              id(area_alarm_state) = st.alarm_state;
               if (!st.site_id.empty()) {
                 latter_ui::latter_site_id() = st.site_id;
               }
@@ -334,8 +319,7 @@ text_sensor:
                     int sfx = (id(notif_priority) == "critical" || id(notif_priority) == "warning") ? 9 : 6;
                     id(play_game_sfx).execute(sfx);
                   }
-                  if (!id(notif_camera_url).empty() && id(notif_camera_url) != "none" &&
-                      id(notif_camera_url) != "unknown" && id(notif_camera_url) != "unavailable") {
+                  if (!id(notif_camera_url).empty()) {
                     id(fetch_camera_snapshot).execute();
                   } else {
                     id(current_loaded_camera_url) = "";
@@ -343,8 +327,7 @@ text_sensor:
                   }
                 }
               }
-              if (st.wallpaper_url.empty() || st.wallpaper_url == "none" ||
-                  st.wallpaper_url == "unknown" || st.wallpaper_url == "unavailable") {
+              if (st.wallpaper_url.empty()) {
                 if (!id(current_loaded_wallpaper_url).empty()) {
                   id(fetch_wallpaper_debounced).stop();
                   id(current_loaded_wallpaper_url) = "";
@@ -386,9 +369,7 @@ text_sensor:
             }
             if (latter_ui::parse_v3_media_payload(x, latter_ui::media_state())) {
               const auto &ms = latter_ui::media_state();
-              if (!ms.media_type.empty()) {
-                id(active_playback_media_type) = ms.media_type;
-              }
+              id(active_playback_media_type) = ms.media_type;
               if (ms.position >= 0.0f) {
                 id(music_pos_base) = ms.position;
                 id(music_pos_sync_time) = millis();
@@ -398,7 +379,7 @@ text_sensor:
               }
               if (ms.is_local) {
                 id(active_speaker_name) = "${friendly_name}";
-              } else if (!ms.speaker_name.empty() && ms.speaker_name != "None") {
+              } else if (!ms.speaker_name.empty()) {
                 id(active_speaker_name) = ms.speaker_name;
               } else if (!ms.active_speaker.empty()) {
                 std::string s = ms.active_speaker;
@@ -422,12 +403,11 @@ text_sensor:
               }
               if (ms.title != prev_title) {
                 id(music_action_feedback) = "";
-                if (!ms.title.empty() && ms.title != "Idle" && ms.title != "None") {
+                if (!ms.title.empty()) {
                   latter_ui::music_queue_cleared() = false;
                 }
               }
-              if (ms.art_url.empty() || ms.art_url == "none" ||
-                  ms.art_url == "unknown" || ms.art_url == "unavailable") {
+              if (ms.art_url.empty()) {
                 if (!id(current_loaded_art_url).empty()) {
                   id(fetch_remote_art_debounced).stop();
                   id(current_loaded_art_url) = "";

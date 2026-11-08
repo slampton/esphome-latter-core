@@ -289,16 +289,14 @@ inline int collect_home_activities(
 
   // 3. Active or Paused Music Queue (automatically displays on Hibernate wake / boot whenever
   //    the active speaker has a track or podcast in its queue, until Clear Queue is pressed!)
-  bool has_valid_track = (!music_title.empty() && music_title != "None" &&
-                          music_title != "Idle" && music_title != "unknown" &&
-                          music_title != "unavailable");
+  bool has_valid_track = !music_title.empty();
   if (music_playing) {
     music_queue_cleared() = false;
   }
   if ((music_playing || (has_valid_track && !music_queue_cleared())) && count < 8) {
     std::string m_txt = music_title;
     if (!has_valid_track) m_txt = "Now Playing";
-    else if (!music_artist.empty() && music_artist != "None" && music_artist != "unknown") {
+    else if (!music_artist.empty()) {
       m_txt = music_artist + " • " + m_txt;
     }
     out_items[count++] = {3, 0, music_playing, false, true, m_txt};
@@ -695,7 +693,7 @@ inline const char *resolve_wake_greeting(int hour, int minute, int day_of_year,
   int pick = (day_of_year + hour * 3 + (minute / 10)) % 3;
 
   // 1. Helpful / Playful Weather-Aware Overrides (when weather condition is known)
-  if (!cond.empty() && cond != "unknown" && cond != "unavailable") {
+  if (!cond.empty()) {
     if (cond.find("lightning") != std::string::npos || cond.find("thunder") != std::string::npos) {
       return "Stay dry out there";
     }
@@ -760,7 +758,7 @@ inline int dock_app_id_for_token(const std::string &tok) {
 inline const std::string &effective_dock_csv() {
   static const std::string kDefault(kDefaultDockApps);
   const std::string &csv = latter_dock_order_csv();
-  return (csv.empty() || csv == "unknown" || csv == "unavailable") ? kDefault : csv;
+  return csv.empty() ? kDefault : csv;  // the spec's defaults.dock_apps
 }
 
 // Calls fn(token) for each comma-separated, trimmed, lower-cased token of csv.
@@ -946,7 +944,7 @@ inline void render_home_page(
   const bool eff_weather_bg = show_weather_bg && weather_ready;
 
   const bool is_dim_backdrop = (home_subpage == 2);
-  const bool has_custom_wallpaper = (!wallpaper_url.empty() && wallpaper_url != "none" &&
+  const bool has_custom_wallpaper = (!wallpaper_url.empty() &&
                                      wallpaper_url == loaded_wallpaper_url &&
                                      wallpaper_art != nullptr && wallpaper_art->get_width() > 0);
   const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
