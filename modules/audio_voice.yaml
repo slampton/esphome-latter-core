@@ -329,7 +329,7 @@ micro_wake_word:
   ring_buffer_duration: 500ms
   stop_after_detection: true
   vad:
-  # At most 2 models run concurrently (enforced by ensure_wake_words_restored & poll_and_persist_wake_words).
+  # Home Assistant's Wake Word selects enable at most 2 models; each model keeps its enabled flag in preferences.
   # Vendored hey_luna SHA-256: json=4A3618E366B28A82C7AFADC8E54CA726..., tflite=18A56BA916A5C7ADFF1D5D4F594EAADF...
   models:
     - model: okay_nabu
@@ -364,7 +364,6 @@ voice_assistant:
   on_client_connected:
     then:
       - delay: 200ms
-      - lambda: 'esphome::voice_assistant::ensure_wake_words_restored(id(mww));'
       - script.execute: apply_wake_word_sensitivities
       - script.execute: sync_wake_word_state
   on_listening:
@@ -984,7 +983,6 @@ script:
                   - lambda: |-
                       id(hal_set_audio_codecs_standby).execute(false);
                       id(latter_mic).set_mute_state(false);  // never start the wake word on a gated microphone
-                      esphome::voice_assistant::ensure_wake_words_restored(id(mww));
                   - if:
                       condition:
                         lambda: 'return !latter_ui::kAudioFullDuplex;'
@@ -1010,9 +1008,8 @@ script:
                             timeout: 100ms
                         - lambda: |-
                             id(hal_set_audio_codecs_standby).execute(false);
-                            ESP_LOGI("mww", "Wake word detection ARMED (ww1='%s', ww2='%s', mode='%s')",
-                                     esphome::voice_assistant::last_persisted_ww1().c_str(),
-                                     esphome::voice_assistant::last_persisted_ww2().c_str(),
+                            ESP_LOGI("mww", "Wake word detection ARMED (primary='%s', mode='%s')",
+                                     esphome::voice_assistant::primary_wake_word_name(id(mww)).c_str(),
                                      id(va_wake_word_mode).current_option().c_str());
           else:
             - if:

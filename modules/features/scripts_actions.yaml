@@ -451,12 +451,7 @@ script:
           latter_ui::last_cam_live_fetch_ms() = millis();
           const auto &ac = latter_ui::area_ctx_state();
           id(notif_camera_url) = latter_ui::build_carousel_camera_url(
-              ac.camera_snapshot_url,
-              ac.wallpaper_url,
-              latter_ui::media_state().art_url,
-              "${name}", "${screen_w}", "${screen_h}", "${art_shape}",
-              ac.cameras_summary,
-              millis());
+              ac.camera_snapshot_url, ac.cameras_summary, millis());
       - if:
           condition:
             # The page may have closed during the delay: a fetch started now would hold the image.

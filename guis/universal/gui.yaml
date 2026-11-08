@@ -485,7 +485,7 @@ display:
             id(music_fullscreen_art_mode).current_option(), id(music_overlay_style).current_option(),
             id(music_album_sort_order).current_option(), id(music_artist_album_sort_order).current_option(),
             id(music_podcast_sort_order).current_option(),
-            id(va_wake_word_mode).current_option(), id(va_active_wake_word).current_option(),
+            id(va_wake_word_mode).current_option(), esphome::voice_assistant::primary_wake_word_name(id(mww)),
             id(ww_sens_okay_nabu).current_option(), id(ww_sens_hey_luna).current_option(),
             id(ww_sens_hey_jarvis).current_option(), id(ww_sens_hey_mycroft).current_option(),
             id(ww_sens_alexa).current_option(),

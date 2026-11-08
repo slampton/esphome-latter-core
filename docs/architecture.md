@@ -79,7 +79,7 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `ui_games.h` | The 6 games and the launcher |
 | `ui_ambient_va.h` | Screensavers and the voice overlay |
 | `ui_system.h` | Settings page |
-| `va_cancel_helper.h` | Voice session teardown, wake word persistence (NVS), API client release before hibernate |
+| `va_cancel_helper.h` | Voice session teardown, the on-device wake-word picker (same path as Home Assistant's Wake word selects), API client release before hibernate |
 | `audio_router.h` | Full-duplex bus trait, wake word run predicate, loudness model, codec standby |
 | `latter_protocol.h` | Generated Protocol v3 constants (from `protocol/latter_v3.json`) |
 | `hal_imu_qmi8658.h` | QMI8658 hardware wake-on-motion |

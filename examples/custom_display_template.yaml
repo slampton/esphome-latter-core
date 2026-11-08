@@ -32,7 +32,6 @@ substitutions:
   imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion); required by modules/imu_qmi8658.yaml
 
   # Optional Standalone ESPHome Overrides (only needed if NOT using the ha-latter integration):
-  # weather_entity: "weather.forecast_home"
   # remote_1_entity: "remote.living_room_tv"
   # remote_1_name: "Living Room TV"
   # remote_2_entity: "remote.bedroom_tv"

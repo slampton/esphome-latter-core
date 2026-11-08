@@ -772,7 +772,7 @@ inline void render_system_page(
     const bool ww_en = (va_ww_mode_opt != "Disabled");
     snprintf(buf, sizeof(buf), "Wake Mode: %s", va_ww_mode_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(0), buf, ww_en);
-    snprintf(buf, sizeof(buf), "Wake Word: %s", va_ww_active_opt.empty() ? "Okay Nabu" : va_ww_active_opt.c_str());
+    snprintf(buf, sizeof(buf), "Wake Word: %s", va_ww_active_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(1), buf, ww_en);
     draw_action_card_y(layout().slot5_y(2), "Sensitivity (Per Model) >",
                        ww_en ? card_brd_on : card_brd_off,

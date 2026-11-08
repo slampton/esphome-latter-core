@@ -2260,23 +2260,14 @@ inline void render_tool_calendar(
   std::string names[5] = {s1_name, s2_name, s3_name, s4_name, s5_name};
   bool acts[5] = {s1_act, s2_act, s3_act, s4_act, s5_act};
 
-  // Fallback to parsing sensor.<slug>_calendar_agenda ("TODAY 14:30|Dentist;...") if browse slots haven't arrived yet
-  if (names[0].empty() && !raw_agenda.empty() && raw_agenda != "NONE" &&
-      raw_agenda != "unknown" && raw_agenda != "unavailable") {
-    size_t pos = 0;
-    int idx = 0;
-    while (pos < raw_agenda.size() && idx < 5) {
-      size_t semi = raw_agenda.find(';', pos);
-      std::string tok = (semi == std::string::npos) ? raw_agenda.substr(pos) : raw_agenda.substr(pos, semi - pos);
-      pos = (semi == std::string::npos) ? raw_agenda.size() : (semi + 1);
-      if (tok.empty()) continue;
-      size_t bar = tok.find('|');
-      if (bar != std::string::npos) {
-        tok = tok.substr(0, bar) + ": " + tok.substr(bar + 1);
-      }
-      names[idx] = tok;
-      acts[idx] = (idx == 0);
-      idx++;
+  // Until the browse slots arrive, list the calendar payload's records as "time: title" (all-day events
+  // already read "TOM ALL DAY: Trip"; the location shows in the event detail, which uses the slots).
+  if (names[0].empty()) {
+    CalendarRecord recs[5];
+    const size_t n = parse_calendar_records(raw_agenda, recs, 5);
+    for (size_t i = 0; i < n; i++) {
+      names[i] = std::string(recs[i].time) + ": " + std::string(recs[i].title);
+      acts[i] = (i == 0);
     }
   }
 
@@ -2511,20 +2502,8 @@ inline std::string resolve_active_carousel_camera_id(
 
 inline std::string build_carousel_camera_url(
     const std::string &base_cam_url,
-    const std::string &fallback_wp_url,
-    const std::string &fallback_art_url,
-    const char *device_name,
-    const char *screen_w,
-    const char *screen_h,
-    const char *art_shape,
     const std::string &cameras_summary,
     uint32_t now_ms) {
-  (void)fallback_wp_url;
-  (void)fallback_art_url;
-  (void)device_name;
-  (void)screen_w;
-  (void)screen_h;
-  (void)art_shape;
   std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], urls[MAX_CAMERA_SLOTS];
   int cnt = parse_cameras_summary_list(cameras_summary, ids, names, urls);
   std::string chosen_url = "";

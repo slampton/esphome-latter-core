@@ -12,7 +12,6 @@ esphome:
             id(sleep_start_time) = millis();
             id(is_hibernating) = false;
             id(display_power_state) = 0; // ACTIVE
-            esphome::voice_assistant::ensure_wake_words_restored(id(mww));
 
     - priority: -100
       then:
@@ -20,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110289L;
+            constexpr long LATTER_YAML_REV = 2026110290L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -80,9 +79,6 @@ esphome:
             } else {
               latter_ui::clamp_power_capabilities(id(pickup_wake_mode), id(hibernate_timeout_mode));
             }
-            esphome::voice_assistant::ensure_wake_words_restored(id(mww), true);
-            id(va_active_wake_word).publish_state(
-                esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer
@@ -110,7 +106,7 @@ api:
             latter_ui::reset_all_v3_rev_guards();
             id(last_seen_alert_id) = -1;
           }
-          esphome::voice_assistant::on_api_client_authenticated(id(va), id(mww), client_info, client_address);
+          esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }

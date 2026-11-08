@@ -450,6 +450,37 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
   return true;
 }
 
+// Calendar agenda summary (Protocol v3 calendar_agenda field 3): up to 5 records joined by
+// kProtocolRecordSep, each "time|title|location|all_day". ha-latter replaces '|' and every control
+// character in each subfield, so a record always splits into exactly 4 parts. time is a preformatted
+// local label ("TODAY 14:30", "TOM ALL DAY", "NOV 20 08:05"); all_day is "1" or "0"; location may be
+// empty. The views point into summary, which must outlive them. Empty summary = no events.
+struct CalendarRecord {
+  std::string_view time;
+  std::string_view title;
+  std::string_view location;
+  bool all_day = false;
+};
+
+inline size_t parse_calendar_records(std::string_view summary, CalendarRecord *out, size_t max_records) {
+  if (summary.empty() || out == nullptr || max_records == 0) return 0;
+  constexpr size_t kMaxRecords = 8;
+  std::string_view recs[kMaxRecords];
+  const size_t n = v3_split_fields(summary, recs, max_records < kMaxRecords ? max_records : kMaxRecords,
+                                   kProtocolRecordSep);
+  size_t count = 0;
+  for (size_t i = 0; i < n; i++) {
+    std::string_view f[4];
+    if (v3_split_fields(recs[i], f, 4, '|') != 4) continue;
+    out[count].time = f[0];
+    out[count].title = f[1];
+    out[count].location = f[2];
+    out[count].all_day = (f[3] == "1");
+    count++;
+  }
+  return count;
+}
+
 // Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel\x1e...")
 inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
   for (size_t i = 0; i < max_slots; i++) {

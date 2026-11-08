@@ -17,11 +17,11 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 // Voice Assistant Session & Wake Word Helpers (va_cancel_helper.h)
 // ==============================================================================
 // Provides clean, encapsulated lifecycle helpers for ESPHome's final VoiceAssistant
-// component and on-board micro_wake_word configuration + NVS flash persistence:
+// component and the on-device wake-word picker:
 //   1. stop_va_microphone(va)
 //   2. abort_voice_assistant(va)
-//   3. ensure_wake_words_restored(mww) & poll_and_persist_wake_words(mww)
-//   4. on_api_client_authenticated(va, mww, client_info, client_address)
+//   3. primary_wake_word_name(mww) & cycle_primary_wake_word(va, mww)
+//   4. on_api_client_authenticated(va, client_info, client_address)
 //   5. clean_disconnect_api_before_hibernate(va)
 // ==============================================================================
 
@@ -87,130 +87,59 @@ inline void abort_voice_assistant(VoiceAssistant *va) {
 }
 
 // ==============================================================================
-// Wake Word NVS Persistence (Dual-Slot ww1 & ww2), Model State Sync & API Handoff
+// Wake Words: One Path With Home Assistant
 // ==============================================================================
-struct SavedWakeWordsNVS {
-  uint32_t magic;
-  char ww1[28];
-  char ww2[28];
-};
-
-static constexpr uint32_t WAKE_WORDS_NVS_KEY = 0x50415757UL;
-static constexpr uint32_t WAKE_WORDS_NVS_MAGIC = 0x50415734UL;
-
-inline bool &wake_words_restored_flag() {
-  static bool restored = false;
-  return restored;
-}
-
-inline std::string &last_persisted_ww1() {
-  static std::string s;
-  return s;
-}
-
-inline std::string &last_persisted_ww2() {
-  static std::string s;
-  return s;
-}
-
-inline void save_wake_words_to_nvs(const std::string &w1, const std::string &w2 = "") {
-  last_persisted_ww1() = w1;
-  last_persisted_ww2() = w2;
-  if (global_preferences == nullptr) return;
-  SavedWakeWordsNVS data{};
-  data.magic = WAKE_WORDS_NVS_MAGIC;
-  std::snprintf(data.ww1, sizeof(data.ww1), "%s", w1.c_str());
-  std::snprintf(data.ww2, sizeof(data.ww2), "%s", w2.c_str());
-  auto pref = global_preferences->make_preference<SavedWakeWordsNVS>(WAKE_WORDS_NVS_KEY);
-  pref.save(&data);
-  global_preferences->sync();
-  ESP_LOGI("va_nvs", "Saved wake words to NVS: ww1='%s', ww2='%s'", w1.c_str(), w2.c_str());
-}
-
+// Home Assistant's Assist satellite Wake Word selects are the one control. They arrive as
+// VoiceAssistant::on_set_configuration(), which enables the listed micro_wake_word models. Every
+// WakeWordModel saves its own enabled flag in preferences on enable() / disable() and loads it at boot
+// (micro_wake_word/streaming_model.cpp), so the choice survives reboots with nothing stored by Latter,
+// and the inference task loads and unloads models as their flags change, so nothing restarts it.
+// The on-device Settings > Voice picker goes through the same on_set_configuration() call, and its
+// options are the compiled models (id + wake_word name). Home Assistant's selects show a choice made on
+// the device after their next configuration request (on reconnect): the native API has no
+// device-initiated configuration push (VoiceAssistantConfigurationResponse only answers a request).
 #ifdef USE_MICRO_WAKE_WORD
-// Restores both Wake Word 1 and Wake Word 2 from NVS on boot
-inline void ensure_wake_words_restored(esphome::micro_wake_word::MicroWakeWord *mww, bool force = false) {
-  if ((wake_words_restored_flag() && !force) || mww == nullptr) return;
-  wake_words_restored_flag() = true;
-
-  std::string w1 = "okay_nabu";
-  std::string w2 = "";
-  if (global_preferences != nullptr) {
-    SavedWakeWordsNVS data{};
-    auto pref = global_preferences->make_preference<SavedWakeWordsNVS>(WAKE_WORDS_NVS_KEY);
-    if (pref.load(&data) && data.magic == WAKE_WORDS_NVS_MAGIC) {
-      data.ww1[sizeof(data.ww1) - 1] = '\0';
-      data.ww2[sizeof(data.ww2) - 1] = '\0';
-      w1 = data.ww1;
-      w2 = data.ww2;
-    } else {
-      save_wake_words_to_nvs(w1, w2);
+// The device's primary wake word: the first enabled model, which is also the first active wake word
+// Home Assistant's configuration request reports (VoiceAssistant::get_configuration()).
+inline std::string primary_wake_word_name(micro_wake_word::MicroWakeWord *mww) {
+  if (mww != nullptr) {
+    for (auto *model : mww->get_wake_words()) {
+      if (model->is_enabled()) return model->get_wake_word();
     }
   }
-  last_persisted_ww1() = w1;
-  last_persisted_ww2() = w2;
-
-  for (auto *model : mww->get_wake_words()) {
-    model->disable();
-  }
-  int matched_count = 0;
-  for (auto *model : mww->get_wake_words()) {
-    const std::string id_str = model->get_id();
-    if ((!w1.empty() && w1 != "no_wake_word" && id_str == w1) ||
-        (!w2.empty() && w2 != "no_wake_word" && id_str == w2)) {
-      model->enable();
-      matched_count++;
-    }
-  }
-  if (matched_count == 0 && w1 != "no_wake_word" && !mww->get_wake_words().empty()) {
-    mww->get_wake_words().front()->enable();
-    last_persisted_ww1() = mww->get_wake_words().front()->get_id();
-  }
+  return "None";
 }
 
-// Polls mww->get_wake_words() once per second to detect when Home Assistant updates
-// Wake Word 1 or Wake Word 2 via on_set_configuration, persisting both slots to NVS.
-inline bool poll_and_persist_wake_words(esphome::micro_wake_word::MicroWakeWord *mww) {
-  if (mww == nullptr) return false;
-  ensure_wake_words_restored(mww);
-
-  std::string cur_w1 = "no_wake_word";
-  std::string cur_w2 = "";
-  for (auto *model : mww->get_wake_words()) {
-    if (model->is_enabled()) {
-      if (cur_w1 == "no_wake_word") {
-        cur_w1 = model->get_id();
-      } else if (cur_w2.empty()) {
-        cur_w2 = model->get_id();
-      } else {
-        // Keep at most 2 active wake words to match Home Assistant's 2-slot Assist Satellite UI
-        model->disable();
-      }
+// Settings > Voice picker: the next compiled model becomes the primary wake word; a second enabled
+// model (Home Assistant's Wake Word 2) stays enabled.
+inline void cycle_primary_wake_word(VoiceAssistant *va, micro_wake_word::MicroWakeWord *mww) {
+  if (va == nullptr || mww == nullptr) return;
+  const auto models = mww->get_wake_words();
+  const size_t n = models.size();
+  if (n == 0) return;
+  size_t primary = n, second = n;
+  for (size_t i = 0; i < n; i++) {
+    if (!models[i]->is_enabled()) continue;
+    if (primary == n) {
+      primary = i;
+    } else if (second == n) {
+      second = i;
     }
   }
-
-  if (cur_w1 != last_persisted_ww1() || cur_w2 != last_persisted_ww2()) {
-    save_wake_words_to_nvs(cur_w1, cur_w2);
-    if (mww->is_running()) {
-      mww->stop();
-    }
-    return true;
+  size_t next = (primary == n) ? 0 : (primary + 1) % n;
+  if (next == second) {
+    if (n <= 2) return;  // every compiled model is already enabled
+    next = (next + 1) % n;
   }
-  return false;
+  std::vector<std::string> active{models[next]->get_id()};
+  if (second != n && second != next) active.push_back(models[second]->get_id());
+  va->on_set_configuration(active);
 }
 #endif
 
 // Called synchronously from `api: on_client_connected:` inside APIConnection::complete_authentication_()
-inline void on_api_client_authenticated(VoiceAssistant *va,
-#ifdef USE_MICRO_WAKE_WORD
-                                        esphome::micro_wake_word::MicroWakeWord *mww,
-#endif
-                                        const std::string &client_info,
+inline void on_api_client_authenticated(VoiceAssistant *va, const std::string &client_info,
                                         const std::string &client_address) {
-  (void)client_address;
-#ifdef USE_MICRO_WAKE_WORD
-  ensure_wake_words_restored(mww);
-#endif
   if (va == nullptr) return;
   if (client_info.find("Home Assistant") != std::string::npos) {
     if (va->get_api_connection() != nullptr) {
@@ -221,43 +150,6 @@ inline void on_api_client_authenticated(VoiceAssistant *va,
   }
 }
 
-inline const char *wake_word_id_to_label(const std::string &id_str) {
-  if (id_str == "hey_luna") return "Hey Luna";
-  if (id_str == "hey_jarvis") return "Hey Jarvis";
-  if (id_str == "hey_mycroft") return "Hey Mycroft";
-  if (id_str == "alexa") return "Alexa";
-  return "Okay Nabu";
-}
-
-inline const char *wake_word_label_to_id(const std::string &label) {
-  if (label == "Hey Luna") return "hey_luna";
-  if (label == "Hey Jarvis") return "hey_jarvis";
-  if (label == "Hey Mycroft") return "hey_mycroft";
-  if (label == "Alexa") return "alexa";
-  return "okay_nabu";
-}
-
-#ifdef USE_MICRO_WAKE_WORD
-inline void set_primary_wake_word_by_label(esphome::micro_wake_word::MicroWakeWord *mww, const std::string &label) {
-  if (mww == nullptr) return;
-  const std::string target_id = wake_word_label_to_id(label);
-  std::string cur_w2 = last_persisted_ww2();
-  if (cur_w2 == target_id) cur_w2 = "";
-
-  for (auto *model : mww->get_wake_words()) {
-    const std::string m_id = model->get_id();
-    if (m_id == target_id || (!cur_w2.empty() && m_id == cur_w2)) {
-      model->enable();
-    } else {
-      model->disable();
-    }
-  }
-  save_wake_words_to_nvs(target_id, cur_w2);
-  if (mww->is_running()) {
-    mww->stop();
-  }
-}
-#endif
 // Cleanly sends ESPHome DisconnectRequest + TCP FIN to all connected API clients
 // before the AXP2101 cuts the 3.3V power rail in Hibernate (enter_deep_sleep).
 // Prevents Home Assistant from staying stuck on a half-open ("zombie") TCP socket

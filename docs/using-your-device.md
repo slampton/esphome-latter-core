@@ -28,7 +28,7 @@
 
 The wake word runs on the device with [micro_wake_word](https://github.com/kahrendt/microWakeWord). Speech recognition and replies go through your Home Assistant Assist pipeline.
 
-- **Wake words:** Okay Nabu (the default), Hey Jarvis, Hey Mycroft, Alexa, and Hey Luna. Up to two can be active at once.
+- **Wake words:** Okay Nabu (the default), Hey Jarvis, Hey Mycroft, Alexa, and Hey Luna. Up to two can be active at once. Choose them with Home Assistant's **Wake word** and **Wake word 2** selects on the device (Assist satellite settings) or in Settings > Voice on the device; both change the same setting, and the device keeps it across restarts.
 - **When it listens:** controlled by **Voice: Wake Word Mode**: `Docked Only` (the default on battery devices), `Always On`, or `Disabled`. The wake word is paused while this device plays media or a ringing alarm or timer, during voice replies, games, a doorbell call, OTA updates, and while Wi-Fi is down. (There is no on-device echo cancellation yet, so it can't listen over its own speaker.)
 - **Music during voice:** music pauses while you speak and resumes after the reply, unless you asked it to stop.
 - **Visual styles:** 5 animations for the voice overlay: Nebula, Solaris, Rings, Light Bar, and Dot Wave.
@@ -67,7 +67,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and the Display light |
 | **Home** | Weather Background, Wake Greeting (the dock itself is a Latter setting, not an entity) |
 | **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Stay Awake, Hold Crown Power Off |
-| **Voice** | Wake Word Mode, Active Wake Word, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist |
+| **Voice** | Wake Word Mode, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist (the wake words themselves are Home Assistant's Assist satellite Wake word selects) |
 | **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |
 | **Sound** | Volume Step Size, Alert Volume, Game Sound Effects |
 | **Area** | Default Category, Show All Category, BLE Presence Beacon (off out of the box; Latter turns it on for devices with BLE presence tracking), Presence Beacon Mode |

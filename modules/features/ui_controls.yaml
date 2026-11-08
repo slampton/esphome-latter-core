@@ -42,27 +42,9 @@ select:
       - script.execute: sync_wake_word_state
       - script.execute: mp_idle_debounce
 
-  - platform: template
-    name: "Voice: Active Wake Word"
-    id: va_active_wake_word
-    icon: "mdi:account-voice"
-    entity_category: config
-    optimistic: true
-    restore_value: true
-    initial_option: "Okay Nabu"
-    options:
-      - "Okay Nabu"
-      - "Hey Luna"
-      - "Hey Jarvis"
-      - "Hey Mycroft"
-      - "Alexa"
-    set_action:
-      - lambda: |-
-          id(va_active_wake_word).publish_state(x);
-          esphome::voice_assistant::set_primary_wake_word_by_label(id(mww), x);
-          latter_ui::schedule_disp_update(&id(disp1));
-      - script.execute: apply_wake_word_sensitivities
-      - script.execute: sync_wake_word_state
+  # Which wake words are active is Home Assistant's Assist satellite Wake Word / Wake Word 2 setting
+  # (micro_wake_word keeps it across reboots); Settings > Voice changes it through the same call
+  # (va_cancel_helper.h cycle_primary_wake_word).
 
   - platform: template
     name: "Voice: Sensitivity (Okay Nabu)"

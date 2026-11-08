@@ -337,17 +337,12 @@ inline int collect_home_activities(
     }
   }
 
-  // 5. Upcoming Calendar Event (from sensor.<slug>_calendar_agenda "TODAY 14:30|Dentist;...")
-  if (!calendar_agenda_raw.empty() && calendar_agenda_raw != "NONE" &&
-      calendar_agenda_raw != "unknown" && calendar_agenda_raw != "unavailable" && count < 8) {
-    size_t semi = calendar_agenda_raw.find(';');
-    std::string first_ev = (semi == std::string::npos) ? calendar_agenda_raw : calendar_agenda_raw.substr(0, semi);
-    size_t bar = first_ev.find('|');
-    if (bar != std::string::npos) {
-      first_ev = first_ev.substr(0, bar) + " • " + first_ev.substr(bar + 1);
-    }
-    bool is_today = (first_ev.rfind("TODAY", 0) == 0 || first_ev.rfind("NOW", 0) == 0);
-    out_items[count++] = {5, 0, false, false, is_today, first_ev};
+  // 5. Upcoming Calendar Event: the first record of the calendar payload's summary ("TODAY 14:30 • Dentist").
+  CalendarRecord first_rec[1];
+  if (count < 8 && parse_calendar_records(calendar_agenda_raw, first_rec, 1) == 1) {
+    const bool is_today = first_rec[0].time.rfind("TODAY", 0) == 0;
+    out_items[count++] = {5, 0, false, false, is_today,
+                          std::string(first_rec[0].time) + " • " + std::string(first_rec[0].title)};
   }
 
   return count;

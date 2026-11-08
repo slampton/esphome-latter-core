@@ -1211,9 +1211,8 @@ script:
                     return;
                   } else if (slot == 1) {
                     if (id(va_wake_word_mode).current_option() != "Disabled") {
-                      auto call = id(va_active_wake_word).make_call();
-                      call.set_option(latter_ui::cycle_option(id(va_active_wake_word).current_option(), {"Okay Nabu", "Hey Luna", "Hey Jarvis", "Hey Mycroft", "Alexa"}));
-                      call.perform();
+                      // Same path as Home Assistant's Wake Word select (VoiceAssistant::on_set_configuration).
+                      esphome::voice_assistant::cycle_primary_wake_word(id(va), id(mww));
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                     return;

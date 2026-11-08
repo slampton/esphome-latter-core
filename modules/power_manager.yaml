@@ -295,7 +295,6 @@ interval:
               id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_IDLE, id(gui_page));
 
           // 2. On-Board Wake Word (micro_wake_word) Power & Bus Supervisor
-          const bool ww_changed = esphome::voice_assistant::poll_and_persist_wake_words(id(mww));
           static bool ww_model_initialized = false;
           if (!ww_model_initialized && millis() > 12000U && id(wifi_ctrl).is_connected()) {
             ww_model_initialized = true;
@@ -316,11 +315,7 @@ interval:
                 id(va_wake_word_mode).current_option(),
                 id(usb_connected).state,
                 va_busy, media_busy, alert_or_tool_busy, sys_busy);
-            if (ww_changed) {
-              id(va_active_wake_word).publish_state(
-                  esphome::voice_assistant::wake_word_id_to_label(esphome::voice_assistant::last_persisted_ww1()));
-            }
-            if (ww_changed || should_ww_run != id(mww).is_running()) {
+            if (should_ww_run != id(mww).is_running()) {
               id(sync_wake_word_state).execute();
             }
           }
