@@ -215,35 +215,64 @@ inline int lunar_phase_bucket(double cycle) {
 
 struct LunarShade {
   int r;
-  float penumbra;
-  float inv_2pen;
-  float r_plus_sq_inv;
-  float phase_cos;
-  bool waxing;
-  float term_sign;
+  float r_f;
+  float r_sq;
+  float inv_r;
+  float sun_x;
+  float sun_z;
+  float term_w;
+  float inv_term_w;
+  float lit_scale;
 
   LunarShade(int moon_r, double cycle) : r(moon_r) {
-    const float scale = static_cast<float>(moon_r) * (1.0f / 44.0f);
-    penumbra = 6.0f * scale;
-    inv_2pen = 1.0f / (2.0f * penumbra);
-    r_plus_sq_inv = 1.0f / static_cast<float>((moon_r + 2) * (moon_r + 2));
-    phase_cos = fast_cos(static_cast<float>(cycle * 2.0 * 3.1415926535));
-    waxing = (cycle <= 0.5);
-    term_sign = waxing ? 1.0f : -1.0f;
+    r_f = static_cast<float>(moon_r);
+    r_sq = r_f * r_f;
+    inv_r = (moon_r > 0) ? (1.0f / r_f) : 1.0f;
+    const float angle = static_cast<float>(cycle * 2.0 * 3.1415926535);
+    sun_x = fast_sin(angle);
+    sun_z = -fast_cos(angle);
+    term_w = (moon_r < 40) ? 0.18f : 0.13f;
+    inv_term_w = 1.0f / term_w;
+    // Illuminated fraction (0.0 at New Moon, 1.0 at Full Moon): suppress grazing-limb highlights
+    // inside the New Moon window (<1.5% illumination) so New Moon renders purely as a ghost disc.
+    const float illum_frac = 0.5f * (1.0f + sun_z);
+    if (illum_frac <= 0.015f) {
+      lit_scale = 0.0f;
+    } else if (illum_frac >= 0.040f) {
+      lit_scale = 1.0f;
+    } else {
+      const float u = (illum_frac - 0.015f) * (1.0f / 0.025f);
+      lit_scale = u * u * (3.0f - 2.0f * u);
+    }
   }
 };
 
-// Shades one disc row (mx = -w_line .. +w_line) into native RGB565.
+inline int lunar_aa_half_span(int moon_r, int my) {
+  const float r_aa = static_cast<float>(moon_r) + 0.45f;
+  const float d2 = r_aa * r_aa - static_cast<float>(my * my);
+  if (d2 <= 0.0f) return 0;
+  const int w = static_cast<int>(floorf(sqrtf(d2)));
+  return (w > moon_r) ? moon_r : w;
+}
+
+// Shades one disc row (mx = -w_line .. +w_line) into native RGB565 with 3D spherical terminator
+// lighting, subtle earthshine ("ghost moon") on the unlit hemisphere, and sub-pixel radial limb AA.
 inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
   const int moon_r = sh.r;
   const float my_sq_f = static_cast<float>(my * my);
-  const float x_term = sh.term_sign * static_cast<float>(w_line) * sh.phase_cos;
-  const int pen_lo = static_cast<int>(floorf(x_term - sh.penumbra));
-  const int pen_hi = static_cast<int>(ceilf(x_term + sh.penumbra));
   const int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / (2 * moon_r));
   const int ty_45  = (moon_r == 22) ? (my + 22) : 0;
 
   for (int mx = -w_line; mx <= w_line; mx++) {
+    const float r2 = static_cast<float>(mx * mx) + my_sq_f;
+    const float dist = sqrtf(r2);
+    const float edge_t = ((sh.r_f + 0.45f) - dist) * (1.0f / 1.35f);
+    if (edge_t <= 0.0f) {
+      row[mx + w_line] = 0;
+      continue;
+    }
+    const float edge_alpha = (edge_t >= 1.0f) ? 1.0f : (edge_t * edge_t * (3.0f - 2.0f * edge_t));
+
     uint8_t tex_u8;
     if (moon_r == 69) {
       tex_u8 = LUNAR_ALBEDO_139[ty_139][mx + 69];
@@ -254,40 +283,37 @@ inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_l
       tex_u8 = LUNAR_ALBEDO_139[ty_139][tx_139];
     }
 
-    float r2_norm = (static_cast<float>(mx * mx) + my_sq_f) * sh.r_plus_sq_inv;
-    float base_lum = static_cast<float>(tex_u8) * (0.86f + 0.14f * (1.0f - r2_norm));
+    const float mz = (r2 < sh.r_sq) ? sqrtf(sh.r_sq - r2) : 0.0f;
+    const float nz = mz * sh.inv_r;
+    const float base_lum = static_cast<float>(tex_u8) * (0.84f + 0.16f * nz);
 
-    float shadow;
-    if (mx < pen_lo) {
-      shadow = sh.waxing ? 0.0f : 1.0f;
-    } else if (mx > pen_hi) {
-      shadow = sh.waxing ? 1.0f : 0.0f;
-    } else {
-      float dist_to_term = sh.waxing ? (static_cast<float>(mx) - x_term)
-                                     : (x_term - static_cast<float>(mx));
-      if (dist_to_term >= sh.penumbra) {
-        shadow = 1.0f;
-      } else if (dist_to_term <= -sh.penumbra) {
-        shadow = 0.0f;
-      } else {
-        float t = (dist_to_term + sh.penumbra) * sh.inv_2pen;
-        shadow = t * t * (3.0f - 2.0f * t);
+    float shadow = 0.0f;
+    if (sh.lit_scale > 0.0f) {
+      const float ndotl = (static_cast<float>(mx) * sh.sun_x + mz * sh.sun_z) * sh.inv_r;
+      if (ndotl >= sh.term_w) {
+        shadow = sh.lit_scale;
+      } else if (ndotl > 0.0f) {
+        const float t = ndotl * sh.inv_term_w;
+        shadow = (t * t * (3.0f - 2.0f * t)) * sh.lit_scale;
       }
     }
 
-    float dark_lum = 7.0f + base_lum * 0.055f;
-    float final_lum = base_lum * shadow + dark_lum * (1.0f - shadow);
-    uint8_t c = static_cast<uint8_t>(fminf(255.0f, final_lum));
-    uint8_t cr, cg, cb;
-    if (shadow < 0.05f) {
-      cr = static_cast<uint8_t>(c * 0.78f);
-      cg = static_cast<uint8_t>(c * 0.92f);
-      cb = static_cast<uint8_t>(fminf(255.0f, c * 1.25f));
-    } else {
-      cr = c;
-      cg = static_cast<uint8_t>(c * 0.98f);
-      cb = static_cast<uint8_t>(c * 0.94f);
-    }
+    // Subtle earthshine ("ghost moon") on the unlit side / New Moon: dimly reveals the lunar
+    // maria & highlands against pure black space and softens toward the outer limb (no bright ring).
+    const float earthshine_limb = 0.62f + 0.38f * nz;
+    const float dark_lum = (6.0f + static_cast<float>(tex_u8) * 0.115f) * earthshine_limb;
+
+    const float lit_r = base_lum;
+    const float lit_g = base_lum * 0.98f;
+    const float lit_b = base_lum * 0.94f;
+
+    const float drk_r = dark_lum * 0.82f;
+    const float drk_g = dark_lum * 0.90f;
+    const float drk_b = dark_lum * 1.12f;
+
+    const uint8_t cr = static_cast<uint8_t>(fminf(255.0f, (drk_r + (lit_r - drk_r) * shadow) * edge_alpha));
+    const uint8_t cg = static_cast<uint8_t>(fminf(255.0f, (drk_g + (lit_g - drk_g) * shadow) * edge_alpha));
+    const uint8_t cb = static_cast<uint8_t>(fminf(255.0f, (drk_b + (lit_b - drk_b) * shadow) * edge_alpha));
     row[mx + w_line] = static_cast<uint16_t>(((static_cast<uint16_t>(cr) & 0xF8U) << 8) |
                                              ((static_cast<uint16_t>(cg) & 0xFCU) << 3) |
                                              (static_cast<uint16_t>(cb) >> 3));
@@ -350,7 +376,6 @@ template<typename DisplayT>
 inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r,
                               double cycle, bool /*with_tycho*/ = true) {
   if (moon_r <= 0) return;
-  fast_circle(it, moon_cx, moon_cy, moon_r + 1, esphome::Color(35, 45, 60));
 
   const int bucket = lunar_phase_bucket(cycle);
   const LunarShade sh(moon_r, static_cast<double>(bucket) / LUNAR_PHASE_BUCKETS);
@@ -370,7 +395,7 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
 
   for (int my = -moon_r; my <= moon_r; my++) {
     const int py = moon_cy + my;
-    const int w_line = chord_half_span_int(moon_r, my);
+    const int w_line = lunar_aa_half_span(moon_r, my);
     const bool visible = (py >= 0 && py < SCREEN_H);
     uint16_t *row;
     if (tile != nullptr) {
@@ -383,7 +408,6 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
     }
     if (visible) blit_rgb565_scanline(it, moon_cx - w_line, py, 2 * w_line + 1, row, false);
   }
-  fast_circle(it, moon_cx, moon_cy, moon_r, esphome::Color(45, 55, 70));
 }
 
 // Writes one cloud band span with a pre-encoded hardware color; identical pixels to fast_hline.
@@ -1009,54 +1033,6 @@ inline void render_forecast_glyph(DisplayT &it, int gx, int gy, const std::strin
   }
 }
 
-// Tracks the epoch offset for the Clear Day Origami bird flock so that switching to
-// Clear Day immediately glides a flock across from the edge, then waits calmly between passes!
-inline uint32_t &clear_day_flock_epoch_ms() {
-  static uint32_t ep = 0;
-  return ep;
-}
-
-inline uint32_t &clear_day_last_seen_ms() {
-  static uint32_t ls = 0;
-  return ls;
-}
-
-inline bool &clear_day_epoch_initialized() {
-  static bool init = false;
-  return init;
-}
-
-// Origami-Inspired High-Altitude V-Flock of Migrating Birds:
-// Uses a 24.0-second window with a 9.0-second flight and randomized launch offsets,
-// creating a natural, unhurried 11..22 second pause between passes!
-static constexpr uint32_t BIRD_WINDOW_MS = 24000U;
-static constexpr uint32_t BIRD_FLIGHT_MS = 9000U;
-
-inline uint32_t get_bird_flock_launch_ms(uint32_t slot_idx) {
-  if (slot_idx == 0U) return 1500U; // First pass appears 1.5s after entering Clear/Partly Sunny sky
-  int seed = static_cast<int>(slot_idx * 53U + 19U);
-  return 1000U + static_cast<uint32_t>(hash2d_01(seed, 11) * 11500.0f);
-}
-
-inline bool is_clear_day_flock_active(uint32_t now_ms, bool touch_seen = false) {
-  if (!clear_day_epoch_initialized() || (now_ms - clear_day_last_seen_ms() > 2500U)) {
-    if (touch_seen) {
-      clear_day_flock_epoch_ms() = now_ms;
-      clear_day_epoch_initialized() = true;
-    } else {
-      return true;
-    }
-  }
-  if (touch_seen) {
-    clear_day_last_seen_ms() = now_ms;
-  }
-  uint32_t rel_ms = now_ms - clear_day_flock_epoch_ms();
-  uint32_t slot_idx = rel_ms / BIRD_WINDOW_MS;
-  uint32_t slot_ms  = rel_ms % BIRD_WINDOW_MS;
-  uint32_t launch_ms = get_bird_flock_launch_ms(slot_idx);
-  return (slot_ms >= launch_ms && slot_ms < launch_ms + BIRD_FLIGHT_MS);
-}
-
 // Tracks the epoch offset for the Night Shooting Star so entering Clear Night / Partly Cloudy Night
 // showcases a shooting star within ~1.2s, followed by randomized 5..17s intervals thereafter.
 inline uint32_t &night_meteor_epoch_ms() {
@@ -1204,64 +1180,9 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
     return is_night_meteor_active(now_ms);
   }
   if (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday")) {
-    return is_clear_day_flock_active(now_ms);
+    return true;
   }
   return false;
-}
-
-// Draws a single articulated high-altitude bird in the V-echelon formation:
-// Doubled wingspan (2x), 3 px solid black silhouette core, and a 1 px sunlit upper-wing rim
-// so the dark silhouette pops crisply against the deep blue daytime sky.
-template<typename DisplayT>
-inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float flap_phase,
-                                float scale, int cy) {
-  if (by < 16 || by > SCREEN_H - 16) return;
-  float s1 = fast_sin(flap_phase);
-  float s2 = fast_sin(flap_phase - 0.55f);
-  int w_in  = static_cast<int>(10.8f * scale);
-  int w_out = static_cast<int>(20.8f * scale);
-  int dy_in  = static_cast<int>(-7.6f * scale * s1) - 2;
-  int dy_out = dy_in + static_cast<int>(-7.2f * scale * s2) + 2;
-
-  const esphome::Color col_wing = kChromeShadow;       // Pure black wing & body silhouette
-  const esphome::Color col_rim  = kChromeHomePill;     // Sunlit silver-blue leading top edge
-  const esphome::Color col_tip  = kChromePipInactive;  // Outer wingtip sunlit rim
-  const esphome::Color col_edge = kChromeBarBorder;    // Soft sky-blue under-wing separation
-
-  int lx_m = bx - w_in,  ly_m = by + dy_in - (dir > 0 ? 2 : 0);
-  int lx_t = bx - w_out, ly_t = by + dy_out - (dir > 0 ? 4 : 0);
-  int rx_m = bx + w_in,  ry_m = by + dy_in - (dir < 0 ? 2 : 0);
-  int rx_t = bx + w_out, ry_t = by + dy_out - (dir < 0 ? 4 : 0);
-
-  auto draw_clipped_seg = [&](int x0, int y0, int x1, int y1, bool inner_wing) {
-    if (is_inside_bezel(x0, y0, cy, 4) && is_inside_bezel(x1, y1, cy, 4)) {
-      fast_line(it, x0, y0 - 1, x1, y1 - 1, inner_wing ? col_rim : col_tip);
-      fast_line(it, x0, y0,     x1, y1,     col_wing);
-      fast_line(it, x0, y0 + 1, x1, y1 + 1, col_wing);
-      if (inner_wing) {
-        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_wing);
-        fast_line(it, x0, y0 + 3, x1, y1 + 3, col_edge);
-      } else {
-        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_edge);
-      }
-    }
-  };
-
-  // Inner wings (3 px black core + sunlit top rim) & tapered outer wingtips (2 px black core)
-  draw_clipped_seg(bx,   by,   lx_m, ly_m, true);
-  draw_clipped_seg(lx_m, ly_m, lx_t, ly_t, false);
-  draw_clipped_seg(bx,   by,   rx_m, ry_m, true);
-  draw_clipped_seg(rx_m, ry_m, rx_t, ry_t, false);
-
-  // Central avian body, sunlit crown & directional head/tail core
-  if (is_inside_bezel(bx, by, cy, 5)) {
-    fast_hline(it, bx - 2, by - 1, 5, col_rim);
-    fast_hline(it, bx - 2, by,     5, col_wing);
-    fast_hline(it, bx - 3, by + 1, 7, col_wing);
-    fast_hline(it, bx - 2, by + 2, 5, col_wing);
-    fast_hline(it, bx - 1, by + 3, 3, col_edge);
-    fast_pixel(it, bx + (dir > 0 ? 4 : -4), by + 1, col_wing);
-  }
 }
 
 // Draws a true 3D Euler-rotated tumbling leaf mesh (tip, base, cambered lobes, midrib & petiole stem)
@@ -1508,50 +1429,6 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
                             c_cir_crest, c_cir_body, c_cir_base, cy);
     render_wispy_cloud_veil(it, w1_x, 174 + static_cast<int>(par_y * 0.45f), static_cast<int>(126.0f * w_scale), -t_cir * 1.2f + 1.4f, 12,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
-  }
-
-  // LAYER 1D: CLEAR DAY & PARTLY CLOUDY DAY V-FLOCK OF MIGRATING BIRDS (Randomized 11..22s pause between passes!)
-  if (is_clear_day || (!is_night && is_partly)) {
-    if (is_clear_day_flock_active(now_ms, true)) {
-      uint32_t rel_ms = now_ms - clear_day_flock_epoch_ms();
-      uint32_t cycle_idx = rel_ms / BIRD_WINDOW_MS;
-      uint32_t slot_ms   = rel_ms % BIRD_WINDOW_MS;
-      uint32_t launch_ms = get_bird_flock_launch_ms(cycle_idx);
-      uint32_t flight_ms = (slot_ms >= launch_ms) ? (slot_ms - launch_ms) : 0U;
-      float prog = static_cast<float>(flight_ms) * (1.0f / static_cast<float>(BIRD_FLIGHT_MS));
-
-      const float b_scale = (SCREEN_W > 520) ? (static_cast<float>(SCREEN_W) / 466.0f) : 1.0f;
-      int dir = (hash2d_01(static_cast<int>(cycle_idx * 37U + 13U), 29) < 0.5f) ? 1 : -1;
-      float r_alt = hash2d_01(static_cast<int>(cycle_idx * 31U + 7U), 19);
-      int base_y = scale_y(96 + static_cast<int>(r_alt * 54.0f));
-
-      int chord_hw = circle_half_span(base_y, 2);
-      int x_left_edge  = cx - chord_hw;
-      int x_right_edge = cx + chord_hw;
-      int margin_in  = static_cast<int>(28.0f * b_scale);
-      int margin_out = static_cast<int>(156.0f * b_scale);
-      int start_x = (dir > 0) ? (x_left_edge - margin_in)  : (x_right_edge + margin_in);
-      int end_x   = (dir > 0) ? (x_right_edge + margin_out) : (x_left_edge - margin_out);
-
-      int lead_x  = start_x + static_cast<int>((end_x - start_x) * prog);
-      int lead_y  = base_y + static_cast<int>(fast_sin(prog * PI_F) * -8.0f * b_scale);
-
-      float t_flap = now_ms * 0.0052f;
-      static constexpr int8_t V_OFF[7][2] = {
-        {  0,   0}, {-34, -16}, {-40,  19}, {-68, -31}, {-76,  35}, {-104, -44}, {-114,  48}
-      };
-      static constexpr float V_SCALE[7] = {1.28f, 1.18f, 1.20f, 1.10f, 1.12f, 1.04f, 1.00f};
-      static constexpr float V_FLAP_OFF[7] = {0.0f, 0.72f, 1.38f, 2.15f, 2.86f, 3.64f, 4.35f};
-
-      for (int b = 0; b < 7; b++) {
-        int jx = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 17U + b * 13U), 41) - 0.5f) * 10.0f);
-        int jy = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 23U + b * 19U), 53) - 0.5f) * 8.0f);
-        float flap_b = t_flap - V_FLAP_OFF[b];
-        int bx = lead_x + dir * static_cast<int>((V_OFF[b][0] + jx) * b_scale);
-        int by = lead_y + static_cast<int>((V_OFF[b][1] + jy) * b_scale + fast_sin(flap_b) * 1.8f * b_scale);
-        draw_migrating_bird(it, bx, by, dir, flap_b, V_SCALE[b] * b_scale, cy);
-      }
-    }
   }
 
   // LAYER 1E: SCULPTED 3D CUMULUS (Partly Cloudy) & HYBRID CUMULUS + WISPY VEIL OVERCAST (Cloudy / Overcast)
