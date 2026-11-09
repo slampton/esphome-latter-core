@@ -74,6 +74,11 @@ async def to_code(config: dict[str, Any]) -> None:
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
+    if CORE.is_esp32:
+        # Flash-write counters for System: Link Report (nvs=, hal_link_report.h defines the wraps).
+        cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
+        cg.add_build_flag("-Wl,--wrap=esp_flash_erase_region")
+
     probe = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(probe, config)
     cg.add_define("USE_LATTER_LOOP_PROBE")

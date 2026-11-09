@@ -28,6 +28,12 @@
 //   bat       raw VBAT mV / compensated rest-voltage mV / Battery Level % / state (d discharging,
 //             c charging, v constant-voltage phase, f full, n on USB but not charging)
 //   dr        average discharge (%/h) since the estimate settled on battery ("-" for the first 30 min)
+// All boards:
+//   nvs       flash writes since boot: NVS blob writes / flash erases / longest single NVS write (ms).
+//             Counted by linker wraps (components/latter_core adds -Wl,--wrap=nvs_set_blob and
+//             -Wl,--wrap=esp_flash_erase_region), so every caller counts: ESPHome's preference sync
+//             (restore_value globals, restoring selects/numbers/switches, media player volume, wake word
+//             model state, Wi-Fi fast connect) and OTA. An erase that isn't OTA is NVS garbage collection.
 // Nothing here takes the awake lock: the Wi-Fi event handler only bumps counters (on the event-loop
 // task), the sleep counters come from the light-sleep callbacks, and the sample and the report run
 // from the main loop's scheduler.
@@ -42,7 +48,10 @@
 
 #ifdef USE_ESP32
 #include <esp_event.h>
+#include <esp_flash.h>
+#include <esp_timer.h>
 #include <esp_wifi.h>
+#include <nvs.h>
 #endif
 
 #include "hal_battery.h"
@@ -70,6 +79,14 @@ inline LinkReport &link_report() {
   static LinkReport r;
   return r;
 }
+
+// Flash writes from any task (the linker wraps below). Constant-initialized.
+struct FlashWriteStats {
+  std::atomic<uint32_t> nvs_writes{0};
+  std::atomic<uint32_t> erases{0};
+  std::atomic<uint32_t> nvs_max_us{0};
+};
+inline FlashWriteStats g_flash_write_stats;
 
 #ifdef USE_ESP32
 // Event-loop task: counters only.
@@ -253,9 +270,10 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   const char *where = pm_crash_where();
   char batt[48];
   battery_report_fragment(batt, sizeof(batt), now_ms);
+  const FlashWriteStats &fw = g_flash_write_stats;
   char line[256];
   snprintf(line, sizeof(line),
-           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu%s",
+           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu nvs=%lu/%lu/%lu%s",
            static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
            where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
@@ -263,7 +281,10 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
            static_cast<unsigned long>(r.rssi_samples), static_cast<unsigned long>(wlk / 10U),
            static_cast<unsigned long>(wlk % 10U), sleep, static_cast<unsigned long>(r.api_connects),
            static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
-           static_cast<unsigned long>(down_ms / 1000U), batt);
+           static_cast<unsigned long>(down_ms / 1000U),
+           static_cast<unsigned long>(fw.nvs_writes.load(std::memory_order_relaxed)),
+           static_cast<unsigned long>(fw.erases.load(std::memory_order_relaxed)),
+           static_cast<unsigned long>((fw.nvs_max_us.load(std::memory_order_relaxed) + 999U) / 1000U), batt);
   return std::string(line);
 }
 
@@ -275,3 +296,29 @@ inline std::string link_report_log_line(uint32_t now_ms, const char *reset_reaso
 }
 
 }  // namespace latter_ui
+
+#ifdef USE_ESP32
+// Linker wraps (-Wl,--wrap=..., added by components/latter_core): count every NVS blob write and flash
+// erase, and time the NVS write (garbage collection, when it runs, runs inside it). Task context only:
+// both functions are called by tasks, never from an interrupt or with the cache disabled.
+extern "C" {
+esp_err_t __real_nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t length);
+esp_err_t __wrap_nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t length) {
+  const int64_t t0 = esp_timer_get_time();
+  const esp_err_t err = __real_nvs_set_blob(handle, key, value, length);
+  const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
+  auto &fw = latter_ui::g_flash_write_stats;
+  fw.nvs_writes.fetch_add(1U, std::memory_order_relaxed);
+  uint32_t prev = fw.nvs_max_us.load(std::memory_order_relaxed);
+  while (us > prev && !fw.nvs_max_us.compare_exchange_weak(prev, us, std::memory_order_relaxed)) {
+  }
+  return err;
+}
+
+esp_err_t __real_esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len);
+esp_err_t __wrap_esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len) {
+  latter_ui::g_flash_write_stats.erases.fetch_add(1U, std::memory_order_relaxed);
+  return __real_esp_flash_erase_region(chip, start, len);
+}
+}  // extern "C"
+#endif
