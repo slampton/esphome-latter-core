@@ -595,6 +595,7 @@ script:
           if (tw_mode == "Always On") wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_TOUCH);
           #if LATTER_HAS_IMU
           if (latter_ui::imu_wom().armed) wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_IMU);
+          latter_ui::pm_note_imu(latter_ui::imu_wom().armed, latter_ui::imu_wom().events);
           #endif
           latter_ui::pm_apply(stay_awake, wake_mask);
 

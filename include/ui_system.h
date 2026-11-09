@@ -324,10 +324,23 @@ inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
 inline void log_boot_summary() {
   log_stall_summary();
   const PmCrumb &crumb = pm_previous_crumb();
-  if (crumb.magic == kPmCrumbMagic) {
-    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu req=%luus arm=0x%02lx cause=0x%04lx",
-             pm_crash_where(), (unsigned long)crumb.seq, (unsigned long)crumb.req_us, (unsigned long)crumb.arm,
-             (unsigned long)crumb.cause);
+  if (crumb.magic == kPmCrumbMagic && crumb.ring_head < kPmCrumbRing) {
+    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu imu_wom=%lu imu_events=%lu",
+             pm_crash_where(), (unsigned long)crumb.seq, (unsigned long)crumb.imu_armed,
+             (unsigned long)crumb.imu_events);
+    // Oldest first: the 4 sleeps before the last entry, then the last entry (in flight when ls-in; slept=0
+    // at ls-out means that attempt didn't sleep). lv = wake-pin levels, bits 0-3 at entry and 4-7 at exit
+    // (pwr, btn, touch, imu); arm = the pins armed as level wakes; t = esp_timer low 32 bits.
+    for (uint32_t k = 0; k < kPmCrumbRing; k++) {
+      const uint32_t idx = (crumb.ring_head + 1U + k) % kPmCrumbRing;
+      const PmCrumbSleep &e = crumb.ring[idx];
+      const bool last = idx == crumb.ring_head;
+      if (e.t_us == 0 && e.req_us == 0) continue;
+      ESP_LOGW("PROF", "[PROF:BOOT]   %s t=%luus req=%luus slept=%luus cause=0x%04x arm=0x%02x lv=0x%02x",
+               last ? (crumb.phase == 1U ? "in-flight" : "last") : "sleep", (unsigned long)e.t_us,
+               (unsigned long)e.req_us, (unsigned long)e.slept_us, (unsigned)e.cause, (unsigned)e.arm,
+               (unsigned)e.levels);
+    }
   }
   uint32_t up_s = esphome::millis() / 1000U;
   const char *rr = last_reset_reason();

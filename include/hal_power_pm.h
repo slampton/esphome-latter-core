@@ -18,13 +18,18 @@
 //    LATTER_TOUCH_INT_PIN, LATTER_IMU_INT1_PIN. GPIO wake is level-only and the GPIO edge detector
 //    is not clocked in light sleep, while the ESPHome components that own these pins expect edge
 //    interrupts. So the pins switch to level wake only inside ESP-IDF's light-sleep critical section
-//    (CONFIG_PM_LIGHT_SLEEP_CALLBACKS), where interrupts are masked:
-//      enter: wake level = the opposite of the current level (any change wakes the chip)
-//      exit:  restore the component's edge interrupt type, then raise the pin's interrupt status
+//    (CONFIG_PM_LIGHT_SLEEP_CALLBACKS), where interrupts are masked on the sleeping core:
+//      enter: take the pin's interrupt away from every CPU (int_ena = 0), then wake level = the
+//             opposite of the current level (any change wakes the chip)
+//      exit:  restore the component's edge interrupt type, clear the status the level type latched,
+//             give the interrupt back to its CPU, then raise the pin's interrupt status
 //             (GPIO_STATUS_W1TS) when its level changed or a GPIO woke the chip, so the owning
-//             component's ISR runs exactly once when interrupts unmask.
-//    A level interrupt therefore never exists with interrupts enabled (no interrupt storm), and an
-//    edge that happened while the edge detector slept is still delivered. gpio_ll_wakeup_disable()
+//             component's ISR runs exactly once.
+//    The critical section masks only the sleeping core. The other core keeps interrupts enabled
+//    before ESP-IDF stalls it and after it is released on wake, and a component's ISR usually lives
+//    there (the loop task's core). Masking int_ena while the pin is a level wake means no core can
+//    take a level interrupt from it (no interrupt storm); GPIO wake-up itself doesn't need int_ena.
+//    An edge that happened while the edge detector slept is still delivered. gpio_ll_wakeup_disable()
 //    is used instead of gpio_wakeup_disable(), which would re-enable the pad's sleep isolation.
 //    The arming mask is set by pm_apply() and is zero while the lock is held.
 //
@@ -107,14 +112,27 @@ inline constexpr uint32_t pm_quiet_loop_interval(uint32_t arm_mask) {
 // interrupt-watchdog reset without a panic record means a CPU couldn't take the watchdog interrupt at all
 // (interrupts fully masked, or stalled by the other core), which in light-sleep quiet points into
 // ESP-IDF's sleep path. The breadcrumb tells the next boot whether the last light sleep had entered
-// (phase 1: between the enter and exit callbacks) or come back (phase 2). Written by the callbacks only.
+// (phase 1: between the enter and exit callbacks) or come back (phase 2), and keeps a ring of the last
+// sleeps: the in-flight attempt at ring[head] while phase 1, the completed ones before it. The sleep
+// callbacks write everything except the IMU fields, which the main loop writes (pm_note_imu).
+struct PmCrumbSleep {
+  uint32_t t_us;      // esp_timer time at entry (low 32 bits, wraps ~71 min)
+  uint32_t req_us;    // requested sleep (low 32 bits)
+  uint32_t slept_us;  // 0 while in flight
+  uint16_t cause;     // RTC wake cause (kPmWakeCause* bits)
+  uint8_t arm;        // pins armed as level wakes (PmWakeSlot bits)
+  uint8_t levels;     // wake-pin levels: bits 0-3 at entry, bits 4-7 at exit (PmWakeSlot order)
+};
+constexpr uint32_t kPmCrumbRing = 5U;  // the in-flight sleep plus the last 4 that slept
 struct PmCrumb {
   uint32_t magic;
-  uint32_t phase;   // 1 entered, 2 exited
-  uint32_t seq;     // sleeps that had slept before this one
-  uint32_t req_us;  // requested sleep (us, low 32 bits)
-  uint32_t arm;     // pins armed as level wakes
-  uint32_t cause;   // RTC wake cause of the last sleep that slept
+  uint32_t phase;       // 1 entered, 2 exited
+  uint32_t seq;         // sleeps that had slept before the last entry
+  uint32_t imu_armed;   // QMI8658 Wake-on-Motion armed when the main loop last noted it
+  uint32_t imu_events;  // WoM events counted by then
+  uint32_t ring_head;   // the last entry's slot
+  uint32_t ring_next;   // the next entry's slot (ring_head again when the last attempt didn't sleep)
+  PmCrumbSleep ring[kPmCrumbRing];
 };
 constexpr uint32_t kPmCrumbMagic = 0x4C534C50UL;  // "LSLP"
 
@@ -131,6 +149,7 @@ struct PmWakePin {
   int8_t gpio;
   uint8_t armed_level;
   uint8_t saved_type;
+  uint8_t saved_ena;  // the pin's per-CPU interrupt enable bits (GPIO_PINn_INT_ENA)
 };
 
 struct PmState {
@@ -162,7 +181,7 @@ static RTC_NOINIT_ATTR PmCrumb s_pm_crumb;
 
 // Constant-initialized (no guard variable): the sleep callbacks read it from the idle task.
 inline PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
-                             {{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}},
+                             {{-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}},
                              0U, 0U, 0U, 0U,
                              0U, 0U, 0U, {0U, 0U, 0U, 0U}, 0U,
                              0U, 0U};
@@ -199,22 +218,36 @@ static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *
   wh.req[bucket] = wh.req[bucket] + 1U;
   const uint32_t mask = st.arm_mask;
   uint32_t entered = 0;
+  uint32_t levels = 0;
   for (uint32_t i = 0; i < PM_WAKE_SLOTS; i++) {
     const int g = st.pins[i].gpio;
-    if (g < 0 || (mask & (1UL << i)) == 0) continue;
+    if (g < 0) continue;
     const uint32_t gpio_num = static_cast<uint32_t>(g);
     const int level = gpio_ll_get_level(&GPIO, gpio_num);
+    if (level) levels |= 1UL << i;
+    if ((mask & (1UL << i)) == 0) continue;
     st.pins[i].armed_level = static_cast<uint8_t>(level);
     st.pins[i].saved_type = static_cast<uint8_t>(GPIO.pin[gpio_num].int_type);
+    st.pins[i].saved_ena = static_cast<uint8_t>(GPIO.pin[gpio_num].int_ena);
+    GPIO.pin[gpio_num].int_ena = 0;  // no CPU takes the level interrupt (see the header comment)
     gpio_ll_set_intr_type(&GPIO, gpio_num, level ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
     gpio_ll_wakeup_enable(&GPIO, gpio_num);
     entered |= 1UL << i;
   }
   st.entered_mask = entered;
+  // RTC_NOINIT: pm_init() clears it, the bound check keeps a corrupt head inside the ring.
+  uint32_t head = s_pm_crumb.ring_next;
+  if (head >= kPmCrumbRing) head = 0;
+  PmCrumbSleep &e = s_pm_crumb.ring[head];
+  e.t_us = static_cast<uint32_t>(esp_timer_get_time());  // low 32 bits: no 64-bit math in IRAM
+  e.req_us = static_cast<uint32_t>(sleep_time_us);
+  e.slept_us = 0;
+  e.cause = 0;
+  e.arm = static_cast<uint8_t>(entered);
+  e.levels = static_cast<uint8_t>(levels);
+  s_pm_crumb.ring_head = head;
   s_pm_crumb.magic = kPmCrumbMagic;
   s_pm_crumb.seq = st.sleeps;
-  s_pm_crumb.req_us = static_cast<uint32_t>(sleep_time_us);  // no 64-bit math in the IRAM callback
-  s_pm_crumb.arm = entered;
   s_pm_crumb.phase = 1U;
   return ESP_OK;
 }
@@ -230,7 +263,20 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
     st.sleeps = st.sleeps + 1U;
     st.slept_us = st.slept_us + static_cast<uint32_t>(slept_us);
     const uint32_t cause = rtc_cntl_ll_get_wakeup_cause();
-    s_pm_crumb.cause = cause;
+    // Complete the ring entry (wake-pin levels before the exit restores any pin) and move the head on;
+    // an attempt that didn't sleep keeps its slot for the next entry.
+    uint32_t head = s_pm_crumb.ring_head;
+    if (head >= kPmCrumbRing) head = 0;
+    uint32_t levels_out = 0;
+    for (uint32_t i = 0; i < PM_WAKE_SLOTS; i++) {
+      const int g = st.pins[i].gpio;
+      if (g >= 0 && gpio_ll_get_level(&GPIO, static_cast<uint32_t>(g))) levels_out |= 1UL << (i + 4U);
+    }
+    PmCrumbSleep &e = s_pm_crumb.ring[head];
+    e.slept_us = static_cast<uint32_t>(slept_us);
+    e.cause = static_cast<uint16_t>(cause);
+    e.levels = static_cast<uint8_t>((e.levels & 0x0FU) | levels_out);
+    s_pm_crumb.ring_next = head + 1U == kPmCrumbRing ? 0U : head + 1U;
     gpio_woke = (cause & kPmWakeCauseGpio) != 0;
     if (gpio_woke) {
       st.gpio_wakes = st.gpio_wakes + 1U;
@@ -256,14 +302,22 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
     gpio_ll_wakeup_disable(&GPIO, gpio_num);
     const uint32_t saved = st.pins[i].saved_type;
     gpio_ll_set_intr_type(&GPIO, gpio_num, static_cast<gpio_int_type_t>(saved));
+    const uint32_t bit = 1UL << (gpio_num & 31U);
+    // Drop the status the level type latched, then give the interrupt back to its CPU. A real edge
+    // in this window is not lost: a changed level is re-raised below.
+    if (gpio_num < 32U) {
+      REG_WRITE(GPIO_STATUS_W1TC_REG, bit);
+    } else {
+      REG_WRITE(GPIO_STATUS1_W1TC_REG, bit);
+    }
+    GPIO.pin[gpio_num].int_ena = st.pins[i].saved_ena;
     const bool changed = static_cast<uint32_t>(gpio_ll_get_level(&GPIO, gpio_num)) != st.pins[i].armed_level;
     if (gpio_woke && changed) {
       st.pin_wakes[i] = st.pin_wakes[i] + 1U;
       attributed = true;
     }
     // Polled pins (no ISR attached) have nothing to deliver.
-    if (saved == static_cast<uint32_t>(GPIO_INTR_DISABLE) || GPIO.pin[gpio_num].int_ena == 0) continue;
-    const uint32_t bit = 1UL << (gpio_num & 31U);
+    if (saved == static_cast<uint32_t>(GPIO_INTR_DISABLE) || st.pins[i].saved_ena == 0) continue;
     if (gpio_num < 32U) {
       isr_lo |= bit;
       if (changed) changed_lo |= bit;
@@ -322,7 +376,7 @@ inline void pm_init() {
       (rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT || rr == ESP_RST_PANIC)) {
     pm_previous_crumb() = s_pm_crumb;
   }
-  s_pm_crumb.magic = 0;
+  memset(&s_pm_crumb, 0, sizeof(s_pm_crumb));  // RTC_NOINIT: the ring indexes start inside the ring
   pm_keep_raw_outputs_driven();
 #ifdef LATTER_PWR_KEY_PIN
   st.pins[PM_WAKE_PWR_KEY].gpio = static_cast<int8_t>(LATTER_PWR_KEY_PIN);
@@ -409,6 +463,18 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
 #else
   (void) stay_awake;
   (void) wake_mask;
+#endif
+}
+
+// Main loop only (script apply_power_policy and the QMI8658 WoM event handler): records the IMU
+// Wake-on-Motion state in the light-sleep breadcrumb. No-op without light sleep.
+inline void pm_note_imu(bool armed, uint32_t events) {
+#if LATTER_PM_AUTO_SLEEP
+  s_pm_crumb.imu_armed = armed ? 1U : 0U;
+  s_pm_crumb.imu_events = events;
+#else
+  (void) armed;
+  (void) events;
 #endif
 }
 
