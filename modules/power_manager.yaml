@@ -179,18 +179,6 @@ switch:
             #endif
           }
 
-  - platform: template
-    name: "Sleep & Wake: Stay Awake"
-    id: prevent_deep_sleep_switch
-    entity_category: config
-    icon: "mdi:sleep-off"
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-    turn_on_action:
-      - lambda: 'id(prevent_deep_sleep_switch).publish_state(true);'
-    turn_off_action:
-      - lambda: 'id(prevent_deep_sleep_switch).publish_state(false);'
-
 select:
   - platform: template
     name: "Sleep & Wake: Battery Screen Timeout"
@@ -288,6 +276,9 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
+          // 0. Alarm engine (timers_intervals.yaml) shares this tick: one wake a second for both.
+          id(alarm_engine_tick).execute();
+
           // 1. Poll Board PMU Telemetry (AXP2101 VBUS & Battery Charging or Stationary No-Op)
           id(hal_poll_pmu_1s).execute();
           latter_ui::watch_internal_low_water(
@@ -427,7 +418,6 @@ interval:
 
           const bool hibernate_blockers_active =
               id(is_hibernating) ||
-              id(prevent_deep_sleep_switch).state ||
               id(usb_connected).state ||
               id(ota_in_progress) ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -544,10 +534,22 @@ script:
               tick->stop_poller();
             }
           };
-          static int8_t ss_anim_on = -1, ui_anim_on = -1, ui_fast_on = -1;
+          static int8_t ss_anim_on = -1, ui_anim_on = -1;
           gate(id(screensaver_anim_tick), id(display_power_state) == 1, ss_anim_on);
           gate(id(ui_anim_tick), id(display_power_state) == 0 || va_busy, ui_anim_on);
-          gate(id(ui_fast_tick), id(display_power_state) != 2 || alerts_pending || va_busy, ui_fast_on);
+          // ui_fast_tick: 250 ms with the screen on or a voice turn; 1 s with the screen off while a timer,
+          // stopwatch or alert is pending (a countdown still expires within a second); stopped otherwise.
+          static uint32_t ui_fast_ms = UINT32_MAX;
+          const uint32_t want_fast_ms = (id(display_power_state) != 2 || va_busy) ? 250U : (alerts_pending ? 1000U : 0U);
+          if (want_fast_ms != ui_fast_ms) {
+            ui_fast_ms = want_fast_ms;
+            if (want_fast_ms == 0U) {
+              id(ui_fast_tick).stop_poller();
+            } else {
+              id(ui_fast_tick).set_update_interval(want_fast_ms);
+              id(ui_fast_tick).start_poller();
+            }
+          }
 
           // Battery gauge: 5 s with the screen on or docked, 60 s with the screen off.
           #if LATTER_HAS_BATTERY
@@ -575,8 +577,11 @@ script:
                                      esphome::api::global_api_server->is_connected_with_state_subscription();
           const bool ha_link_settling =
               !api_connected || (now_p - latter_ui::link_state().last_ha_connect_ms < 60000U);
+          // Weak Wi-Fi: Home Assistant's link drops in light sleep at weak RSSI (hal_link_report.h,
+          // kWeakLinkEnterDbm), so a weak link keeps the chip awake until the v3 fix.
+          const bool weak_link = latter_ui::weak_link_update(now_p);
           const bool stay_awake =
-              ha_link_settling ||
+              ha_link_settling || weak_link ||
               id(display_power_state) != 2 || id(usb_connected).state || id(is_hibernating) ||
               id(ota_in_progress) || audio_busy || va_busy || id(va).is_running() || id(va_tts_received) ||
               latter_ui::radio_boost_active(now_p) || (id(active_game) > 0) ||

@@ -45,7 +45,7 @@ The wake word runs on the device with [micro_wake_word](https://github.com/kahre
 | Tabletop Dock | Docked only | Docked only | Off | 30 s | 5 min | 15 min |
 | Always-On Wall / Desk | Always | Always | Off | Never | 5 min | Off |
 
-A device doesn't hibernate while it's on USB power, while **Stay Awake** is on, or while music, a timer, a voice session, a game, or a call is active.
+A device doesn't hibernate while it's on USB power or while music, a timer, a voice session, a game, or a call is active.
 
 How the wake inputs behave when the screen is off:
 
@@ -66,7 +66,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | :--- | :--- |
 | **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and the Display light |
 | **Home** | Weather Background, Wake Greeting (the dock itself is a Latter setting, not an entity) |
-| **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Stay Awake, Hold Crown Power Off |
+| **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Hold Crown Power Off (to never hibernate, set Battery Hibernate Timeout to Disabled) |
 | **Voice** | Wake Word Mode, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist (the wake words themselves are Home Assistant's Assist satellite Wake word selects) |
 | **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |
 | **Sound** | Volume Step Size, Alert Volume, Game Sound Effects |

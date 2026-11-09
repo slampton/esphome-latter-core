@@ -119,7 +119,9 @@ esp32:
       CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
       CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
       CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
-      CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME: "60"
+      # Fewer periodic wakes: DHCP coarse timer 10 s, mDNS timer 500 ms
+      CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
+      CONFIG_MDNS_TIMER_PERIOD_MS: "500"
 
 power_management:
   - platform: esp32_power_management

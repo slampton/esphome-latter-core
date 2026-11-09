@@ -108,7 +108,8 @@ The ESP32-S3 battery boards declare ESPHome's `power_management:` (platform `esp
 
 - **Awake lock.** Held whenever the screen is on or showing a screensaver, the device is docked, audio, wake word, a voice turn, OTA, a game, a ringing alarm or timer, Find My, a notification, or a doorbell call is active. It is released only in screen-off quiet on battery. While it is held the chip runs exactly as it does without power management (fixed maximum clock).
 - **Wake pins.** While the lock is released, the PWR key, the action button, the touch interrupt (when tap to wake works on battery) and the IMU INT1 (while wake-on-motion is armed) wake the chip from light sleep. The pins come from board traits (`LATTER_PWR_KEY_PIN`, `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN`, `LATTER_IMU_INT1_PIN`).
-- **Longer main loop interval.** 100 ms instead of 16 ms while the lock is released, so the chip sleeps in longer stretches. ESPHome's scheduler keeps its own deadlines, so timers, alarms and intervals still fire on time.
+- **Longer main loop interval.** 1 s instead of 16 ms while the lock is released (250 ms while a screen-off tap can wake the device, because the touch interrupt doesn't wake the loop), so the chip sleeps in longer stretches. ESPHome's scheduler keeps its own deadlines, so timers, alarms and intervals still fire on time.
+- **Weak Wi-Fi keeps it awake.** At weak signal, Home Assistant's connection dropped every few minutes in light sleep while Wi-Fi stayed associated. Until that is fixed, a smoothed RSSI below -65 dBm holds the lock, and only a signal above -61 dBm for 2 minutes releases it. System: Link Report shows the share of uptime this kept the device awake (`wlk`).
 
 Wi-Fi stays associated in modem sleep (the Home Assistant API connection stays up). The P4 boards don't use light sleep: MIPI-DSI holds the chip awake for the panel's lifetime, and the Remote waits for bench data on its esp_hosted link.
 

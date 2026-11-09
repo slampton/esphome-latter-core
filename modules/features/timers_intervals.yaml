@@ -263,7 +263,10 @@ interval:
           }
 
 
-  - interval: 1s
+script:
+  # Alarm engine: runs from the power supervisor's 1 s interval (power_manager.yaml), so the chip wakes
+  # once a second for both.
+  - id: alarm_engine_tick
     then:
       - lambda: |-
           // ------------------------------------------------------------------

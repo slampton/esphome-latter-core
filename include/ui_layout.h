@@ -223,13 +223,19 @@ inline void stall_current_source(char *dst, size_t n) {
 inline void stall_guard_task(void *) {
   auto &g = stall_guard();
   for (;;) {
-    vTaskDelay(pdMS_TO_TICKS(500));
+    // Every 2 s: each check wakes the chip from light sleep, and stalls worth reporting last seconds.
+    vTaskDelay(pdMS_TO_TICKS(2000));
     if (g.paused.load(std::memory_order_relaxed)) continue;
     uint32_t start = esphome::App.get_loop_component_start_time();
     const uint32_t resumed = g.resumed_ms.load(std::memory_order_relaxed);
     if (resumed != 0 && static_cast<int32_t>(resumed - start) > 0) start = resumed;
-    const uint32_t blocked = esphome::millis() - start;
-    if (static_cast<int32_t>(blocked) < 0 || blocked < kStallReportMs) continue;
+    // The start time is the last dispatch, so an idle loop sleeping out its interval (1 s in light-sleep
+    // quiet) looks blocked for that long: count only the time beyond one loop interval.
+    const uint32_t idle_ms = esphome::App.get_loop_interval();
+    const uint32_t since = esphome::millis() - start;
+    if (static_cast<int32_t>(since) < 0 || since <= idle_ms) continue;
+    const uint32_t blocked = since - idle_ms;
+    if (blocked < kStallReportMs) continue;
     StallRecord rec{};
     rec.magic = kStallRecordMagic;
     rec.blocked_ms = blocked;

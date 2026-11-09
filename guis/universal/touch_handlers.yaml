@@ -2786,10 +2786,6 @@ script:
                         #if LATTER_HAS_BATTERY
                         id(instant_crown_hibernate_switch).toggle();
                         #endif
-                      } else if (idx == 9) {
-                        #if LATTER_HAS_BATTERY
-                        id(prevent_deep_sleep_switch).toggle();
-                        #endif
                       }
                       latter_ui::schedule_disp_update(&id(disp1));
                     }

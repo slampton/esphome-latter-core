@@ -19,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110292L;
+            constexpr long LATTER_YAML_REV = 2026110293L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -1301,7 +1301,7 @@ text_sensor:
     icon: "mdi:wifi-check"
     entity_category: diagnostic
     update_interval: 15min
-    lambda: 'return latter_ui::link_report_log_line(millis());'
+    lambda: 'return latter_ui::link_report_log_line(millis(), latter_ui::last_reset_reason());'
 
 interval:
   # Link report RSSI sample and light-sleep time fold, plus the Wi-Fi event hook until it is in place.

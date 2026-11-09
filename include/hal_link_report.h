@@ -11,6 +11,7 @@
 //   bto       WIFI_EVENT_STA_BEACON_TIMEOUT events: the station stopped hearing the AP's beacons
 //   disc      station disconnects; rsn = reason code of the last one (wifi_err_reason_t, 200 = beacon timeout)
 //   rssi      average/minimum signal (dBm) of the 60 s samples taken while associated; n = samples
+//   wlk       share of uptime the light-sleep RSSI gate kept the chip awake (%; see kWeakLinkEnterDbm)
 // Boards with automatic light sleep only (hal_power_pm.h):
 //   ls        light sleeps that actually slept
 //   slp       share of uptime spent in light sleep (%)
@@ -18,6 +19,8 @@
 //   wk        wake cause per sleep, timer/gpio/wifi/other (sums to ls; Wi-Fi beacon wakes are timer wakes)
 //   gp        GPIO wakes per armed pin, pwr/btn/touch/imu/unattributed (a pin counts when its level had
 //             left the armed level at the exit; unattributed = no armed pin had)
+//   rst       why the previous boot ended (power-on, int-wdt, ...), with @ls-in / @ls-out when a watchdog
+//             or panic reset hit inside a light sleep or after the last one came back (hal_power_pm.h)
 //   api       API client connects (any client); ha = Home Assistant client connects
 //   gap       longest time (s) with no Home Assistant client connected, the current gap included;
 //             down = the current gap (0 while connected)
@@ -116,6 +119,76 @@ inline void link_report_sample() {
 #endif
 }
 
+// Light-sleep RSSI gate (v1). On 2026-11-08, at -64...-72 dBm with automatic light sleep, Home Assistant's
+// API link dropped about every 5 minutes while Wi-Fi stayed associated (bto=0, disc=0); with the awake
+// lock held at the same spot the link stayed up for 24 minutes. The root cause is deferred to v3; until
+// then a weak link keeps the chip awake (apply_power_policy's weak_link).
+constexpr int32_t kWeakLinkEnterDbm = -65;          // weak when the smoothed RSSI falls below this
+constexpr int32_t kWeakLinkClearDbm = -61;          // cleared only above this...
+constexpr uint32_t kWeakLinkClearHoldMs = 120000U;  // ...for this long without a dip
+constexpr uint32_t kWeakLinkSampleMs = 10000U;      // RSSI sample period (from the 1 s power supervisor)
+constexpr float kWeakLinkEmaAlpha = 0.3f;           // about 30 s of smoothing at 10 s samples
+
+struct WeakLinkGate {
+  bool weak{false};
+  bool have{false};
+  float ema{0.0f};
+  uint32_t last_sample_ms{0};
+  uint32_t above_since_ms{0};  // 0 = not above the clear threshold
+  uint32_t weak_since_ms{0};
+  uint32_t weak_total_ms{0};   // finished weak periods
+};
+
+inline WeakLinkGate &weak_link_gate() {
+  static WeakLinkGate g;
+  return g;
+}
+
+// Script apply_power_policy (main loop): true while the smoothed RSSI says the link is too weak for
+// light sleep. Samples at most every kWeakLinkSampleMs while associated; keeps its state otherwise
+// (a dropped Home Assistant link keeps the chip awake on its own).
+inline bool weak_link_update(uint32_t now_ms) {
+  WeakLinkGate &g = weak_link_gate();
+#ifdef USE_WIFI
+  if (g.last_sample_ms != 0 && now_ms - g.last_sample_ms < kWeakLinkSampleMs) return g.weak;
+  g.last_sample_ms = now_ms | 1U;
+  auto *wifi = esphome::wifi::global_wifi_component;
+  if (wifi == nullptr || !wifi->is_connected()) return g.weak;
+  const int32_t rssi = wifi->wifi_rssi();
+  if (rssi <= -127 || rssi >= 0) return g.weak;  // -127: ESPHome's "not associated"
+  const float r = static_cast<float>(rssi);
+  g.ema = g.have ? g.ema + kWeakLinkEmaAlpha * (r - g.ema) : r;
+  g.have = true;
+  if (!g.weak) {
+    if (g.ema < static_cast<float>(kWeakLinkEnterDbm)) {
+      g.weak = true;
+      g.weak_since_ms = now_ms;
+      g.above_since_ms = 0;
+      ESP_LOGI("power", "Light sleep: weak Wi-Fi link (%.0f dBm smoothed), staying awake", g.ema);
+    }
+  } else if (g.ema > static_cast<float>(kWeakLinkClearDbm)) {
+    if (g.above_since_ms == 0) {
+      g.above_since_ms = now_ms | 1U;
+    } else if (now_ms - g.above_since_ms >= kWeakLinkClearHoldMs) {
+      g.weak = false;
+      g.weak_total_ms += now_ms - g.weak_since_ms;
+      g.above_since_ms = 0;
+      ESP_LOGI("power", "Light sleep: Wi-Fi link recovered (%.0f dBm smoothed)", g.ema);
+    }
+  } else {
+    g.above_since_ms = 0;
+  }
+#else
+  (void) now_ms;
+#endif
+  return g.weak;
+}
+
+inline uint32_t weak_link_ms(uint32_t now_ms) {
+  const WeakLinkGate &g = weak_link_gate();
+  return g.weak_total_ms + (g.weak ? now_ms - g.weak_since_ms : 0U);
+}
+
 // api on_client_connected / on_client_disconnected.
 inline void link_report_api_connected(bool home_assistant, uint32_t now_ms) {
   LinkReport &r = link_report();
@@ -145,7 +218,7 @@ inline uint32_t link_report_permille(uint64_t part, uint64_t whole) {
 
 // The report line. Realistic overnight values stay near 170 characters; the buffer caps it at Home
 // Assistant's 255-character state limit.
-inline std::string link_report_line(uint32_t now_ms) {
+inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   const LinkReport &r = link_report();
   const uint32_t down_ms = (r.ha_clients == 0) ? now_ms - r.ha_gap_start_ms : 0U;
   const uint32_t gap_ms = (down_ms > r.ha_gap_max_ms) ? down_ms : r.ha_gap_max_ms;
@@ -171,21 +244,25 @@ inline std::string link_report_line(uint32_t now_ms) {
              static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_TOUCH]),
              static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_IMU]), static_cast<unsigned long>(pm.gpio_unattributed));
   }
+  const uint32_t wlk = link_report_permille(weak_link_ms(now_ms), now_ms);
+  const char *where = pm_crash_where();
   char line[256];
-  snprintf(line, sizeof(line), "up=%lu bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu%s api=%lu ha=%lu gap=%lu down=%lu",
-           static_cast<unsigned long>(now_ms / 1000U),
-           static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
+  snprintf(line, sizeof(line),
+           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu",
+           static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
+           where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.last_reason.load(std::memory_order_relaxed)), rssi,
-           static_cast<unsigned long>(r.rssi_samples), sleep, static_cast<unsigned long>(r.api_connects),
+           static_cast<unsigned long>(r.rssi_samples), static_cast<unsigned long>(wlk / 10U),
+           static_cast<unsigned long>(wlk % 10U), sleep, static_cast<unsigned long>(r.api_connects),
            static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
            static_cast<unsigned long>(down_ms / 1000U));
   return std::string(line);
 }
 
 // The System: Link Report text sensor's lambda: the line, also logged as [PROF:LINK].
-inline std::string link_report_log_line(uint32_t now_ms) {
-  std::string line = link_report_line(now_ms);
+inline std::string link_report_log_line(uint32_t now_ms, const char *reset_reason) {
+  std::string line = link_report_line(now_ms, reset_reason);
   ESP_LOGI("PROF", "[PROF:LINK] %s", line.c_str());
   return line;
 }

@@ -323,6 +323,12 @@ inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
 // AXP2101 REG20 / REG21 bit names follow XPowersLib (xpower_power_on/off_source_t).
 inline void log_boot_summary() {
   log_stall_summary();
+  const PmCrumb &crumb = pm_previous_crumb();
+  if (crumb.magic == kPmCrumbMagic) {
+    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu req=%luus arm=0x%02lx cause=0x%04lx",
+             pm_crash_where(), (unsigned long)crumb.seq, (unsigned long)crumb.req_us, (unsigned long)crumb.arm,
+             (unsigned long)crumb.cause);
+  }
   uint32_t up_s = esphome::millis() / 1000U;
   const char *rr = last_reset_reason();
   const int crash = crash_record_present() ? 1 : 0;
@@ -386,7 +392,7 @@ inline void render_system_page(
     const std::string &pickup_wake_opt, const std::string &tap_wake_opt,
     const std::string &screen_off_opt, bool docked_ss_on, const std::string &ss_style_opt,
     const std::string &dock_inact_opt, const std::string &hibernate_to_opt,
-    bool instant_crown_hib, bool stay_awake_on,
+    bool instant_crown_hib,
     // Display & Clock values
     bool clock_face_digital, bool is_24h_format,
     const std::string &palette_opt, const std::string &default_app_opt,
@@ -499,7 +505,7 @@ inline void render_system_page(
 
   } else if (system_menu_mode == 1) {
     int current_offset = compute_scroll_offset(sleep_menu_page, 315);
-    char sleep_labels[10][36];
+    char sleep_labels[9][36];
     const char *short_p = power_profile_short_label(power_profile_opt);
     snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
 #if LATTER_HAS_IMU
@@ -520,22 +526,18 @@ inline void render_system_page(
 #if LATTER_HAS_BATTERY
     snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: %s", hibernate_to_opt.c_str());
     snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: %s", instant_crown_hib ? "Instant" : "5s Delay");
-    snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Stay Awake: %s", stay_awake_on ? "On" : "Off");
 #else
     snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: N/A");
     snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: N/A");
-    snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Stay Awake: N/A");
 #endif
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 9; i++) {
       int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         if (i == 4) {
           draw_toggle_card_y(y, sleep_labels[i], docked_ss_on);
         } else if (i == 8) {
           draw_toggle_card_y(y, sleep_labels[i], LATTER_HAS_BATTERY != 0);
-        } else if (i == 9) {
-          draw_toggle_card_y(y, sleep_labels[i], (LATTER_HAS_BATTERY != 0) && stay_awake_on);
         } else {
           bool en = (i == 0) ? true
                   : (i == 1) ? ((LATTER_HAS_IMU != 0) && (pickup_wake_opt != "Disabled"))

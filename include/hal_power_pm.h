@@ -34,9 +34,10 @@
 //    every pin it manages (esp32/gpio.cpp setup() under CONFIG_FREERTOS_USE_TICKLESS_IDLE); Latter
 //    does it for the raw-IDF outputs named by board traits (LATTER_TOUCH_RST_PIN, backlight, C6 reset).
 //
-// The main loop interval stretches to kPmQuietLoopIntervalMs while the lock is released (ESPHome's
-// scheduler runs on its own deadlines, so timers and intervals still fire on time) and returns to
-// the configured interval when it is taken again.
+// The main loop interval stretches while the lock is released (kPmQuietLoopIntervalMs, or
+// kPmQuietTouchLoopIntervalMs while touch is an armed wake pin; ESPHome's scheduler runs on its own
+// deadlines, so timers and intervals still fire on time) and returns to the configured interval when
+// it is taken again.
 // ==============================================================================
 
 #include "esphome.h"
@@ -68,6 +69,7 @@
 #include <esp_heap_caps.h>
 #include <esp_pm.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 #include <hal/gpio_ll.h>
 #include <hal/rtc_cntl_ll.h>
 #include <soc/gpio_reg.h>
@@ -88,8 +90,31 @@ enum PmWakeSlot : uint8_t {
 
 inline constexpr uint32_t pm_wake_bit(PmWakeSlot slot) { return 1UL << static_cast<uint32_t>(slot); }
 
-// Main loop interval while the awake lock is released (ESPHome's default is 16 ms).
-constexpr uint32_t kPmQuietLoopIntervalMs = 100U;
+// Main loop interval while the awake lock is released (ESPHome's default is 16 ms). Component loop()
+// passes wait for it; scheduler items (intervals, timeouts) and ISR-driven components such as the
+// GPIO binary sensors wake the loop on their own. The touchscreen ISR does not wake it, so while touch
+// is an armed wake pin a shorter interval keeps a screen-off tap responsive.
+constexpr uint32_t kPmQuietLoopIntervalMs = 1000U;
+constexpr uint32_t kPmQuietTouchLoopIntervalMs = 250U;
+
+inline constexpr uint32_t pm_quiet_loop_interval(uint32_t arm_mask) {
+  return (arm_mask & pm_wake_bit(PM_WAKE_TOUCH)) != 0 ? kPmQuietTouchLoopIntervalMs : kPmQuietLoopIntervalMs;
+}
+
+// Light-sleep breadcrumb in RTC memory: it survives a watchdog or panic reset (not a power-on). An
+// interrupt-watchdog reset without a panic record means a CPU couldn't take the watchdog interrupt at all
+// (interrupts fully masked, or stalled by the other core), which in light-sleep quiet points into
+// ESP-IDF's sleep path. The breadcrumb tells the next boot whether the last light sleep had entered
+// (phase 1: between the enter and exit callbacks) or come back (phase 2). Written by the callbacks only.
+struct PmCrumb {
+  uint32_t magic;
+  uint32_t phase;   // 1 entered, 2 exited
+  uint32_t seq;     // sleeps that had slept before this one
+  uint32_t req_us;  // requested sleep (us, low 32 bits)
+  uint32_t arm;     // pins armed as level wakes
+  uint32_t cause;   // RTC wake cause of the last sleep that slept
+};
+constexpr uint32_t kPmCrumbMagic = 0x4C534C50UL;  // "LSLP"
 
 #if LATTER_PM_AUTO_SLEEP
 constexpr esp_pm_lock_type_t kPmAwakeLockType = ESP_PM_CPU_FREQ_MAX;
@@ -131,6 +156,8 @@ struct PmState {
   uint32_t awake_since_ms;         // start of the current held period
 };
 
+static RTC_NOINIT_ATTR PmCrumb s_pm_crumb;
+
 // Constant-initialized (no guard variable): the sleep callbacks read it from the idle task.
 inline PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
                              {{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}},
@@ -139,7 +166,6 @@ inline PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
                              0U, 0U};
 
 static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
-  (void) sleep_time_us;
   (void) arg;
   PmState &st = g_pm_state;
   const uint32_t mask = st.arm_mask;
@@ -156,6 +182,11 @@ static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *
     entered |= 1UL << i;
   }
   st.entered_mask = entered;
+  s_pm_crumb.magic = kPmCrumbMagic;
+  s_pm_crumb.seq = st.sleeps;
+  s_pm_crumb.req_us = static_cast<uint32_t>(sleep_time_us);  // no 64-bit math in the IRAM callback
+  s_pm_crumb.arm = entered;
+  s_pm_crumb.phase = 1U;
   return ESP_OK;
 }
 
@@ -164,11 +195,13 @@ static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *
 static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
   (void) arg;
   PmState &st = g_pm_state;
+  s_pm_crumb.phase = 2U;
   bool gpio_woke = false;
   if (slept_us > 0) {
     st.sleeps = st.sleeps + 1U;
     st.slept_us = st.slept_us + static_cast<uint32_t>(slept_us);
     const uint32_t cause = rtc_cntl_ll_get_wakeup_cause();
+    s_pm_crumb.cause = cause;
     gpio_woke = (cause & kPmWakeCauseGpio) != 0;
     if (gpio_woke) {
       st.gpio_wakes = st.gpio_wakes + 1U;
@@ -242,12 +275,25 @@ inline void pm_keep_raw_outputs_driven() {
 }
 #endif  // LATTER_PM_AUTO_SLEEP
 
+// The previous boot's breadcrumb, copied once at boot when that boot ended in a watchdog or panic reset.
+inline PmCrumb &pm_previous_crumb() {
+  static PmCrumb c{};
+  return c;
+}
+
 // Once, from on_boot (before the components that own the wake pins finish setup). Creates the awake
-// lock held, records the wake pins and registers the light-sleep callbacks. No-op without light sleep.
+// lock held, records the wake pins and registers the light-sleep callbacks, and keeps the previous
+// boot's light-sleep breadcrumb. No-op without light sleep.
 inline void pm_init() {
 #if LATTER_PM_AUTO_SLEEP
   PmState &st = g_pm_state;
   if (st.lock != nullptr) return;
+  const esp_reset_reason_t rr = esp_reset_reason();
+  if (s_pm_crumb.magic == kPmCrumbMagic &&
+      (rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT || rr == ESP_RST_WDT || rr == ESP_RST_PANIC)) {
+    pm_previous_crumb() = s_pm_crumb;
+  }
+  s_pm_crumb.magic = 0;
   pm_keep_raw_outputs_driven();
 #ifdef LATTER_PWR_KEY_PIN
   st.pins[PM_WAKE_PWR_KEY].gpio = static_cast<int8_t>(LATTER_PWR_KEY_PIN);
@@ -287,9 +333,10 @@ inline void pm_init() {
     ESP_LOGE("power", "Light sleep: wake-pin callbacks unavailable (%s); waking on timers and Wi-Fi only",
              esp_err_to_name(err));
   }
-  ESP_LOGI("power", "Light sleep: awake lock held at boot, wake pins pwr=%d btn=%d touch=%d imu=%d, quiet loop %lums",
+  ESP_LOGI("power", "Light sleep: awake lock held at boot, wake pins pwr=%d btn=%d touch=%d imu=%d, quiet loop %lums (%lums with touch wake)",
            st.pins[PM_WAKE_PWR_KEY].gpio, st.pins[PM_WAKE_ACTION_BTN].gpio, st.pins[PM_WAKE_TOUCH].gpio,
-           st.pins[PM_WAKE_IMU].gpio, static_cast<unsigned long>(kPmQuietLoopIntervalMs));
+           st.pins[PM_WAKE_IMU].gpio, static_cast<unsigned long>(kPmQuietLoopIntervalMs),
+           static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
 #endif
 }
 
@@ -306,6 +353,10 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
   const uint32_t arm = stay_awake ? 0U : (wake_mask & valid);
   if (stay_awake == st.awake) {
     st.arm_mask = arm;
+    // Touch wake can be armed or disarmed while the lock stays released.
+    if (!stay_awake && esphome::App.get_loop_interval() != pm_quiet_loop_interval(arm)) {
+      esphome::App.set_loop_interval(pm_quiet_loop_interval(arm));
+    }
     return;
   }
   const uint32_t now_ms = esphome::millis();
@@ -316,7 +367,7 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
     esphome::App.set_loop_interval(st.loop_interval_awake);
   } else {
     st.arm_mask = arm;  // armed before the first sleep can start
-    esphome::App.set_loop_interval(kPmQuietLoopIntervalMs);
+    esphome::App.set_loop_interval(pm_quiet_loop_interval(arm));
     esp_pm_lock_release(st.lock);
     st.awake_ms_total += now_ms - st.awake_since_ms;
     st.dump_pending = true;
@@ -330,6 +381,15 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
   (void) stay_awake;
   (void) wake_mask;
 #endif
+}
+
+// Where the previous boot's watchdog / panic reset hit relative to light sleep: "ls-in" (inside a sleep,
+// between the enter and exit callbacks), "ls-out" (after the last sleep came back), or "" (no breadcrumb:
+// not a watchdog or panic reset, or no light sleep). [PROF:BOOT] and System: Link Report (rst=) show it.
+inline const char *pm_crash_where() {
+  const PmCrumb &c = pm_previous_crumb();
+  if (c.magic != kPmCrumbMagic) return "";
+  return c.phase == 1U ? "ls-in" : "ls-out";
 }
 
 // Light-sleep statistics since boot for System: Link Report. false without automatic light sleep.

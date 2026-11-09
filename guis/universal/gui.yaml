@@ -475,7 +475,6 @@ display:
             id(display_off_timeout).current_option(), id(docked_screensaver_switch).state,
             id(screensaver_style_select).current_option(), id(screensaver_docked_timeout).current_option(),
             id(hibernate_timeout_mode).current_option(), id(instant_crown_hibernate_switch).state,
-            id(prevent_deep_sleep_switch).state,
             id(clock_face_digital), id(is_24h_format),
             id(theme_palette_select).current_option(), id(default_start_app).current_option(),
             id(auto_brightness_mode).current_option(), id(display_brightness_preset).current_option(),

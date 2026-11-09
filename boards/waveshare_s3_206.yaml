@@ -133,7 +133,10 @@ esp32:
       CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
       CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
       CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
-      CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME: "60"
+      # Fewer periodic wakes in light sleep: lwIP's DHCP coarse timer every 10 s (default 1 s) and the
+      # mDNS timer every 500 ms (default 100 ms).
+      CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
+      CONFIG_MDNS_TIMER_PERIOD_MS: "500"
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true
