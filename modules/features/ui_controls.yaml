@@ -187,7 +187,6 @@ select:
           if (x != "Live (Home Assistant)" && !id(home_weather_bg_switch).state) {
             id(home_weather_bg_switch).turn_on();
           }
-          latter_ui::clear_day_epoch_initialized() = false;
           latter_ui::night_meteor_epoch_initialized() = false;
           latter_ui::weather_sim_dirty() = true;
           latter_ui::record_ambient_frame_ms(0);
