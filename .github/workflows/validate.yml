@@ -36,6 +36,17 @@ jobs:
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
 
+      # Remote files ESPHome downloads during config validation (fonts, remote sounds) are kept between runs, so
+      # a brief outage of a download host does not fail a build that did not change them. Wake word models are
+      # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
+      - name: Restore downloaded remote files
+        uses: actions/cache@v5
+        with:
+          path: '**/.esphome/external_files'
+          key: external-files-esphome-2026.11.0b2-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          restore-keys: |
+            external-files-esphome-2026.11.0b2-
+
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check
 
@@ -120,6 +131,17 @@ jobs:
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      # Remote files ESPHome downloads during config validation (fonts, remote sounds) are kept between runs, so
+      # a brief outage of a download host does not fail a build that did not change them. Wake word models are
+      # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
+      - name: Restore downloaded remote files
+        uses: actions/cache@v5
+        with:
+          path: '**/.esphome/external_files'
+          key: external-files-esphome-2026.11.0b2-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          restore-keys: |
+            external-files-esphome-2026.11.0b2-
 
       - name: Compile
         run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml

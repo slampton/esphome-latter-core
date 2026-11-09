@@ -325,19 +325,28 @@ micro_wake_word:
   # longer, which reset the buffer and dropped audio. 500 ms of 16 kHz mono is 16 KB.
   ring_buffer_duration: 500ms
   stop_after_detection: true
+  # Every model is vendored in models/ (see models/README.md): builds never depend on github.com's /raw/
+  # download path, which returned 504 to GitHub Actions runners for hours on 2026-11-08. The upstream
+  # esphome/micro-wake-word-models files are copied byte-for-byte; the release intake re-syncs them.
+  # SHA-256 (first 32 hex): okay_nabu json=6DD65604F70FE5EA9D1AF73A7BF23952 tflite=0689ABE1912A95A3318A0D8CB2E67BAD,
+  # hey_jarvis json=B153867D818675D8ABCC9DACE474AFE7 tflite=21A7976ADD39EE24EC96C63D96B7AAA1,
+  # hey_mycroft json=57B2B06FE5FDBBE834A242FABC7AF31E tflite=C2A9B6ED51182DB72E014781D5A4ECE1,
+  # alexa json=1D999798B35B1FE2606465B75AB840BE tflite=9011A8155B04DE858C48038529235CBC,
+  # vad json=BD8C9CD4350814F761E651685AE5196E tflite=7AA4DB6D5FB7C5358609F6931E7847D3,
+  # hey_luna json=4A3618E366B28A82C7AFADC8E54CA726 tflite=18A56BA916A5C7ADFF1D5D4F594EAADF.
   vad:
+    model: github://slampton/esphome-latter-core/models/vad.json@main
   # Home Assistant's Wake Word selects enable at most 2 models; each model keeps its enabled flag in preferences.
-  # Vendored hey_luna SHA-256: json=4A3618E366B28A82C7AFADC8E54CA726..., tflite=18A56BA916A5C7ADFF1D5D4F594EAADF...
   models:
-    - model: okay_nabu
+    - model: github://slampton/esphome-latter-core/models/okay_nabu.json@main
       id: okay_nabu
     - model: github://slampton/esphome-latter-core/models/hey_luna.json@main
       id: hey_luna
-    - model: hey_jarvis
+    - model: github://slampton/esphome-latter-core/models/hey_jarvis.json@main
       id: hey_jarvis
-    - model: hey_mycroft
+    - model: github://slampton/esphome-latter-core/models/hey_mycroft.json@main
       id: hey_mycroft
-    - model: alexa
+    - model: github://slampton/esphome-latter-core/models/alexa.json@main
       id: alexa
   on_wake_word_detected:
     then:
