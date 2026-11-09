@@ -238,7 +238,7 @@ inline int &home_activity_overlay_page() {
 }
 
 struct HomeActivityItem {
-  int kind;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm
+  int kind;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar
   int slot_idx;    // Timer slot (0..2) or Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3)
   bool is_active;  // true = running / playing / snoozed, false = paused / armed
   bool urgent_pin; // true = locks top slot & pauses rotation (ONLY running Stopwatch or running Timer <= 60s!)
@@ -343,7 +343,17 @@ inline int collect_home_activities(
                           std::string(first_rec[0].time) + " • " + std::string(first_rec[0].title)};
   }
 
-  return count;
+  // The Device's Latter Activity Card setting (D-029): card off, or a source switched off, drops its
+  // items here, so the card, its dropdown list and the touch routers all see the same list.
+  const uint8_t mask = activity_source_mask();
+  int kept = 0;
+  for (int i = 0; i < count; i++) {
+    if (mask & (1U << out_items[i].kind)) {
+      if (kept != i) out_items[kept] = out_items[i];
+      kept++;
+    }
+  }
+  return kept;
 }
 
 // Home activity card transitions (D-028): what the card showed last, what it showed before that, and
@@ -426,9 +436,11 @@ inline void resolve_home_card_palette(
   }
 }
 
-// Which items the Home activity card shows (D-028). The rotation advances every
-// kHomeActivityRotateMs across the front-deck items; a pinned item (running stopwatch, or a timer in its
-// last minute) keeps the top (or only) line. A two-line card shows the next deck item below the top one.
+// Which items the Home activity card shows (D-028, rotation rule D-029). The card rotates only when
+// it has more items than lines: a two-line card holds 1 or 2 items still and cycles from 3; the
+// one-line card holds 1 still and cycles from 2. The rotation advances every kHomeActivityRotateMs; a
+// pinned item (running stopwatch, or a timer in its last minute) keeps the top (or only) line, and the
+// free line of a two-line card cycles only when 2+ other items share it.
 static constexpr uint32_t kHomeActivityRotateMs = 8000U;
 
 struct HomeActivityView {
@@ -464,8 +476,14 @@ inline HomeActivityView resolve_home_activity_view(const HomeActivityItem items[
     v.top = 0;  // only distant alarms: show the first so its controls stay reachable
     return v;
   }
+  const int lines = two_line ? 2 : 1;
+  if (n <= lines) {  // everything fits: no rotation
+    v.top = deck[0];
+    if (two_line && n > 1) v.bottom = deck[1];
+    return v;
+  }
   v.top = deck[slot % static_cast<uint32_t>(n)];
-  if (two_line && n > 1) v.bottom = deck[(slot + 1U) % static_cast<uint32_t>(n)];
+  if (two_line) v.bottom = deck[(slot + 1U) % static_cast<uint32_t>(n)];
   return v;
 }
 
@@ -486,7 +504,7 @@ inline void draw_home_activity_row_contents(
     bool has_dropdown_ext, bool is_list_row, FontSmallT *font_small,
     esphome::Color card_bg, esphome::Color btn_bg,
     esphome::Color theme_secondary, esphome::Color col_white,
-    float alpha = 1.0f) {
+    float alpha = 1.0f, bool glass = false) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -543,7 +561,7 @@ inline void draw_home_activity_row_contents(
     } else {
       fast_filled_circle(it, gx - 6, gy - 6, 2, fg_w);
       fast_filled_circle(it, gx + 6, gy - 6, 2, fg_w);
-      fast_filled_circle(it, gx, gy + 1, 9, card_bg);
+      if (!glass) fast_filled_circle(it, gx, gy + 1, 9, card_bg);  // knock-out (opaque cards only)
       fast_circle(it, gx, gy + 1, 8, fg_w);
       fast_line(it, gx - 5, gy + 8, gx - 7, gy + 10, fg_w);
       fast_line(it, gx + 5, gy + 8, gx + 7, gy + 10, fg_w);
@@ -597,7 +615,7 @@ inline void draw_home_activity_row_contents(
     } else {
       fast_filled_circle(it, gx - 8, gy - 7, 3, fg_w);
       fast_filled_circle(it, gx + 8, gy - 7, 3, fg_w);
-      fast_filled_circle(it, gx, gy + 2, 12, card_bg);
+      if (!glass) fast_filled_circle(it, gx, gy + 2, 12, card_bg);  // knock-out (opaque cards only)
       fast_circle(it, gx, gy + 2, 10, fg_w);
       fast_circle(it, gx, gy + 2, 9,  fg_w);
       fast_line(it, gx - 6, gy + 10, gx - 9, gy + 13, fg_w);
@@ -1142,15 +1160,27 @@ inline void render_home_page(
     }
     const bool animating = (e < 1.0f);
 
-    Color card_bg, card_brd, btn_bg;
-    resolve_home_card_palette(eff_weather_bg, is_night, cond, card_bg, card_brd, btn_bg);
-    render_modern_card(it, cx, act_card_cy, card_w, card_h, 16, card_bg, card_brd, nullptr, col_white, font_small);
+    Color tint, card_brd, btn_bg;
+    resolve_home_card_palette(eff_weather_bg, is_night, cond, tint, card_brd, btn_bg);
+    // Glass card (D-029): the tint blends over the backdrop at the lightest alpha that keeps the
+    // white text at kGlassTextContrast over the brightest part of what is behind the card.
+    const int card_r = std::min(card_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
+    const int card_x0 = cx - card_w / 2;
+    const int card_y0 = act_card_cy - card_h / 2;
+    const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
+    static int glass_alpha_state = 0;
+    const int glass_a = backdrop.valid
+        ? glass_alpha_smooth(glass_alpha_state, glass_alpha_for_text(tint, backdrop.bright, col_white))
+        : 256;
+    render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a);
+    // What the text sits on, on average: the fades and button rims blend toward it.
+    const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
 
     const int rise = scale_y(16);
     auto draw_row = [&](int item, int y, float alpha) {
       if (item < 0 || item >= act_count || alpha <= 0.05f) return;
       draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, font_small,
-                                      card_bg, btn_bg, theme_secondary, col_white, std::min(1.0f, alpha));
+                                      card_bg, btn_bg, theme_secondary, col_white, std::min(1.0f, alpha), true);
     };
     // One line changing in place: the old item rises and fades out while the new one rises in from below.
     auto change_in_place = [&](int from, int to, int y) {

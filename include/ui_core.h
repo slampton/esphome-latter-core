@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110298L
+#define LATTER_SDK_REV 2026110299L
 
 namespace latter_ui {
 
@@ -169,6 +169,7 @@ inline const esphome::Color kChromeCardBorder(38, 46, 58);      // empty-state c
 inline const esphome::Color kChromePipInactive(95, 112, 134);
 inline const esphome::Color kChromeBackLabel(158, 158, 158);
 inline const esphome::Color kChromeGlassTint(22, 27, 36);       // ambient-tint fallback for glass cards
+inline const esphome::Color kChromeGlassSheen(255, 255, 255);   // glass card edge sheen, blended (D-029)
 
 namespace PageId {
   static constexpr int HOME       = 1;
@@ -1145,6 +1146,213 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color
       if (ox > 0) fast_pixel_blend(it, cx + ox, py, c, a);
     }
   }
+}
+
+// -------------------------------------------------------------------------------------------------
+// Glass surfaces (docs/device-ui-design.md D-029). A glass card blends its tint over the pixels already
+// in the framebuffer, so the sky, weather or wallpaper behind it shows through. The blend runs at 8-bit
+// alpha in the RGB565 level domain and quantizes with the same 4x4 ordered dither as the gradients
+// (D-027); edge pixels scale the alpha by the anti-aliased coverage. Readability comes first: before
+// drawing, sample_glass_backdrop() reads the backdrop under the card and glass_alpha_for_text() picks
+// the lightest tint (never below kGlassAlphaMinQ8) at which the card's text still clears
+// kGlassTextContrast against the mean of the brightest kGlassBrightPercent of that backdrop (white
+// clouds, bright wallpapers, daylight sky). No blur: a box blur of the card area would cost a full
+// extra read pass per frame for little legibility gain.
+// -------------------------------------------------------------------------------------------------
+static constexpr int kGlassAlphaMinQ8 = 154;       // 60 % tint: the lightest the glass ever gets
+static constexpr float kGlassTextContrast = 5.0f;  // card text vs the glass (4.5:1 plus margin for sampling)
+static constexpr int kGlassBrightPercent = 3;      // backdrop share the contrast is computed against
+static constexpr int kGlassSheenTopQ8 = 92;        // 1 px edge: 36 % white along the top...
+static constexpr int kGlassSheenBotQ8 = 28;        // ...fading to 11 % along the bottom
+static constexpr int kGlassAlphaFallQ8 = 4;        // per-frame step toward a lighter glass (darker is immediate)
+
+// sRGB 8-bit -> linear light, for WCAG relative luminance.
+inline const float *srgb_linear_lut() {
+  static float lut[256];
+  static bool ready = false;
+  if (!ready) {
+    for (int i = 0; i < 256; i++) {
+      const float c = static_cast<float>(i) / 255.0f;
+      lut[i] = (c <= 0.04045f) ? (c / 12.92f) : powf((c + 0.055f) / 1.055f, 2.4f);
+    }
+    ready = true;
+  }
+  return lut;
+}
+
+inline float relative_luminance(esphome::Color c) {
+  const float *lut = srgb_linear_lut();
+  return 0.2126f * lut[c.r] + 0.7152f * lut[c.g] + 0.0722f * lut[c.b];
+}
+
+inline float contrast_ratio(float la, float lb) {
+  const float hi = std::max(la, lb), lo = std::min(la, lb);
+  return (hi + 0.05f) / (lo + 0.05f);
+}
+
+// c_over blended over c_under at alpha a (0..256).
+inline esphome::Color mix_color_q8(esphome::Color c_under, esphome::Color c_over, int a) {
+  a = std::max(0, std::min(256, a));
+  const int ia = 256 - a;
+  return esphome::Color(static_cast<uint8_t>((c_over.r * a + c_under.r * ia) >> 8),
+                        static_cast<uint8_t>((c_over.g * a + c_under.g * ia) >> 8),
+                        static_cast<uint8_t>((c_over.b * a + c_under.b * ia) >> 8));
+}
+
+struct GlassBackdrop {
+  esphome::Color bright{};  // mean of the brightest kGlassBrightPercent of the samples
+  esphome::Color mean{};    // mean of all samples
+  bool valid = false;
+};
+
+// Samples the framebuffer under [x0, x0 + w) x [y0, y0 + h) on a sparse grid (about 12 rows).
+inline GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
+  GlassBackdrop out;
+  const uint16_t *fb = active_frame_buf16();
+  const int xs = std::max(0, x0), xe = std::min(SCREEN_W, x0 + w);
+  const int ys = std::max(0, y0), ye = std::min(SCREEN_H, y0 + h);
+  if (fb == nullptr || xe <= xs || ye <= ys) return out;
+  const float *lut = srgb_linear_lut();
+  const int step = std::max(3, h / 12);
+  uint32_t cnt[32] = {0}, sr[32] = {0}, sg[32] = {0}, sb[32] = {0};
+  uint32_t tr = 0, tg = 0, tb = 0, n = 0;
+  for (int y = ys + step / 2; y < ye; y += step) {
+    const uint16_t *row = fb + y * SCREEN_W;
+    for (int x = xs + step / 2; x < xe; x += step) {
+      const uint16_t p = decode_hw_rgb565_raw(row[x]);
+      const int r5 = (p >> 11) & 0x1F, g6 = (p >> 5) & 0x3F, b5 = p & 0x1F;
+      const int r = (r5 << 3) | (r5 >> 2), g = (g6 << 2) | (g6 >> 4), b = (b5 << 3) | (b5 >> 2);
+      const float lum = 0.2126f * lut[r] + 0.7152f * lut[g] + 0.0722f * lut[b];
+      const int bin = std::min(31, static_cast<int>(lum * 32.0f));
+      cnt[bin]++;
+      sr[bin] += r;
+      sg[bin] += g;
+      sb[bin] += b;
+      tr += r;
+      tg += g;
+      tb += b;
+      n++;
+    }
+  }
+  if (n == 0) return out;
+  const uint32_t want = std::max<uint32_t>(1U, (n * kGlassBrightPercent + 99U) / 100U);
+  uint32_t acc = 0, ar = 0, ag = 0, ab = 0;
+  for (int bin = 31; bin >= 0 && acc < want; bin--) {
+    acc += cnt[bin];
+    ar += sr[bin];
+    ag += sg[bin];
+    ab += sb[bin];
+  }
+  out.bright = esphome::Color(static_cast<uint8_t>(ar / acc), static_cast<uint8_t>(ag / acc),
+                              static_cast<uint8_t>(ab / acc));
+  out.mean = esphome::Color(static_cast<uint8_t>(tr / n), static_cast<uint8_t>(tg / n), static_cast<uint8_t>(tb / n));
+  out.valid = true;
+  return out;
+}
+
+// Lightest glass alpha (kGlassAlphaMinQ8..256) at which `text` clears kGlassTextContrast over the
+// tint blended onto `backdrop`. 256 = opaque tint.
+inline int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text) {
+  const float lt = relative_luminance(text);
+  for (int a = kGlassAlphaMinQ8; a < 256; a += 8) {
+    if (contrast_ratio(lt, relative_luminance(mix_color_q8(backdrop, tint, a))) >= kGlassTextContrast) return a;
+  }
+  return 256;
+}
+
+// Per-surface smoothing: darker at once (readability), lighter by kGlassAlphaFallQ8 per frame, so
+// drifting clouds never make the glass flicker.
+inline int glass_alpha_smooth(int &state, int target) {
+  if (state <= 0 || target >= state) state = target;
+  else state = std::max(target, state - kGlassAlphaFallQ8);
+  return state;
+}
+
+// Rounded rectangle (same geometry and hole rule as fill_round_rect_aa) blending `tint` over the
+// framebuffer with alpha a_top (first row) -> a_bot (last row), 0..256, ordered-dithered.
+template<typename DisplayT>
+inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
+                                  esphome::Color tint, int a_top, int a_bot, int hole = 0) {
+  if (w <= 0 || h <= 0) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    fill_round_rect_aa(it, x0, y0, w, h, rad, tint, tint, hole);  // no framebuffer to read: opaque
+    return;
+  }
+  AaRoundRect o;
+  o.init(x0, y0, w, h, rad);
+  AaRoundRect in;
+  const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
+  if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
+  const uint32_t tr = (static_cast<uint32_t>(tint.r) * 31U * 256U + 127U) / 255U;  // tint at 5.8 / 6.8 levels
+  const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
+  const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
+  auto mix = [&](uint16_t &dst, int a, int t) {
+    const uint16_t bg = decode_hw_rgb565_raw(dst);
+    const uint32_t ia = static_cast<uint32_t>(256 - a);
+    const uint32_t ua = static_cast<uint32_t>(a);
+    uint32_t r = ((tr * ua) / 256U + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
+    uint32_t g = ((tg * ua) / 256U + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t)) >> 8;
+    uint32_t b = ((tb * ua) / 256U + (bg & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
+    if (r > 31U) r = 31U;
+    if (g > 63U) g = 63U;
+    if (b > 31U) b = 31U;
+    dst = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+  };
+  const int ys = std::max(0, y0);
+  const int ye = std::min(SCREEN_H, y0 + h);
+  for (int py = ys; py < ye; py++) {
+    float dy = 0.0f;
+    int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
+    if (!o.row(py, dy, s0, s1, e0, e1)) continue;
+    const int a = (h > 1) ? (a_top + ((a_bot - a_top) * (py - y0)) / (h - 1)) : a_top;
+    if (a <= 0) continue;
+    const uint8_t *th = kBayer4[py & 3];
+    uint16_t *row = fb + py * SCREEN_W;
+    auto span = [&](int xa, int xb) {
+      xa = std::max(xa, 0);
+      xb = std::min(xb, SCREEN_W - 1);
+      for (int x = xa; x <= xb; x++) mix(row[x], a, th[x & 3] * 16 + 8);
+    };
+    auto edge = [&](int px) {
+      if (px < 0 || px >= SCREEN_W) return;
+      const int cov = o.coverage(px, dy);
+      if (cov <= 0) return;
+      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
+    };
+    if (s1 >= s0) {
+      int hs0 = 1, hs1 = 0;
+      if (has_hole) {
+        float idy = 0.0f;
+        int ie0 = 0, ie1 = -1;
+        if (!in.row(py, idy, hs0, hs1, ie0, ie1)) {
+          hs0 = 1;
+          hs1 = 0;
+        }
+      }
+      if (hs1 >= hs0) {
+        span(s0, std::min(s1, hs0 - 1));
+        span(std::max(s0, hs1 + 1), s1);
+      } else {
+        span(s0, s1);
+      }
+      for (int px = e0; px < s0; px++) edge(px);
+      for (int px = s1 + 1; px <= e1; px++) edge(px);
+    } else {
+      for (int px = e0; px <= e1; px++) edge(px);
+    }
+  }
+}
+
+// Glass card: a 1 px white sheen edge (kGlassSheenTopQ8 -> kGlassSheenBotQ8) around the tint at
+// alpha_q8 (from glass_alpha_for_text / glass_alpha_smooth).
+template<typename DisplayT>
+inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8) {
+  if (w <= 4 || h <= 4) return;
+  r = std::max(2, std::min(r, std::min(w, h) / 2));
+  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, kGlassSheenTopQ8,
+                        kGlassSheenBotQ8, 1);
+  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, tint, alpha_q8, alpha_q8);
 }
 
 // Same Bresenham walk as Display::line (endpoints inclusive); axis-aligned lines use spans.

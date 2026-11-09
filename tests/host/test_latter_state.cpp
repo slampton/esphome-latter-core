@@ -69,7 +69,7 @@ void test_epoch_and_rev_monotonicity() {
 void test_all_five_domain_parsers() {
   latter_ui::reset_all_v3_rev_guards();
 
-  // Area Context (COUNT = 38)
+  // Area Context (COUNT = 40)
   std::vector<std::string> area_t(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
   area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "office";
   area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Office";
@@ -82,6 +82,20 @@ void test_all_five_domain_parsers() {
   assert(latter_ui::area_ctx_state().area_id == "office");
   assert(latter_ui::area_ctx_state().lights_on == 2);
   assert(latter_ui::area_ctx_state().alert_id == 42);
+
+  // Activity Card setting: empty fields take the spec defaults (card on, every source).
+  assert(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "1";
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "calendar,timers,future_key";
+  assert(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 2, area_t)));
+  assert(latter_ui::activity_source_mask() == ((1U << 5) | (1U << 1)));
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "0";
+  assert(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 3, area_t)));
+  assert(latter_ui::activity_source_mask() == 0);
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "";
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "";
+  assert(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 4, area_t)));
+  assert(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
 
   // Active Media (COUNT = 20, including position_updated_at & is_local)
   std::vector<std::string> media_t(static_cast<size_t>(latter_ui::MediaField::COUNT), "");

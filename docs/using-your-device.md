@@ -4,6 +4,7 @@
 
 - **Home:** swipe up from the bottom edge, or tap the pill at the bottom of the screen.
 - **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & home**; **Settings → Home** on the device shows or hides Music, Area, Remote, Games and Tools and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Home Hub, Area, Remote, Games and Tools.
+- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Display & home**.
 - **Apps with modes:** Weather, Area Control, and Whole-Home Hub have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
 - **Button:**
   - On battery boards, a short press of the crown wakes the screen, turns it off, snoozes an alarm, or dismisses a notification, depending on what's showing.
@@ -65,7 +66,7 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | Group | Entities |
 | :--- | :--- |
 | **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and the Display light |
-| **Home** | Weather Background, Wake Greeting (the dock itself is a Latter setting, not an entity) |
+| **Home** | Weather Background, Wake Greeting (the dock and the activity card are Latter settings, not entities) |
 | **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Hold Crown Power Off (to never hibernate, set Battery Hibernate Timeout to Disabled) |
 | **Voice** | Wake Word Mode, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist (the wake words themselves are Home Assistant's Assist satellite Wake word selects) |
 | **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |

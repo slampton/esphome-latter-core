@@ -44,7 +44,7 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 
 - **Small text contrast.** Text in `font_small` or `font_micro` is at least 4.5:1 on its background; the colors below that are for large text (`font_date` and up), fills and icons. Disabled controls may use `col_gray`. **Enforced: `[TEXT CONTRAST]`** (D-019).
 - **Theme presets.** `apply_theme_preset` in [`modules/features/scripts_actions.yaml`](../modules/features/scripts_actions.yaml) writes `theme_primary` from **Display: Color Profile**: Steel Blue (default, `6B8E9E`), Blue (`456E8A`), Green (`427453`), Pink (`A87884`), or Custom (a color-wheel pick through `apply_custom_rgb_harmony`). It resets `theme_secondary` to `C0C0C0`. These two are the only color IDs the core modules write.
-- **Chrome colors** are named constants in `ui_core.h`, never literals (D-021): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeTrackDim`, `kChromeTrackBorderDim`, `kChromeBarTrack`, `kChromeBarBorder`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint`. The page art (sky, games, weather) still carries `Color(r, g, b)` literals; their count per header may only go down. **Enforced: `[UI COLOR TOKENS]`** (ratchet).
+- **Chrome colors** are named constants in `ui_core.h`, never literals (D-021): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeTrackDim`, `kChromeTrackBorderDim`, `kChromeBarTrack`, `kChromeBarBorder`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint`, `kChromeGlassSheen`. The page art (sky, games, weather) still carries `Color(r, g, b)` literals; their count per header may only go down. **Enforced: `[UI COLOR TOKENS]`** (ratchet).
 
 ### 1.2 Typography
 
@@ -156,7 +156,7 @@ Every gesture threshold in `touch_handlers.yaml` comes from a millimetre constan
 
 Each component has one implementation. Use it; don't hand-draw the same role.
 
-**Primitives** (`ui_core.h`): `fast_pixel`, `fast_hline`, `fast_vline`, `fill_rect_row_major`, `fast_rect_outline`, `fast_filled_circle`, `fast_circle`, `fast_line`, `fast_filled_triangle`, `fast_print`, `draw_glow_line`, `blit_rgb565_scanline`. Anti-aliased shapes and dithered gradients (D-027): `fill_round_rect_aa` (rounded rectangle, stadium or circle, flat or vertical gradient), `stroke_round_rect_aa` (its border ring), `fast_filled_circle_aa`, `fast_filled_circle_aa_grad`, `fast_circle_aa` (ring), `fast_hline_dither`, `fast_pixel_blend`. Every rounded chrome shape (cards, pill buttons, glass circles, dock rings, mode bar, scrollbar, pips, home pill, focus rings, Offline pill) draws through them. **Enforced: `[FAST PRIMITIVES]`** in `include/ui_*.h` and `guis/**/*.yaml` ([section 5](#5-rendering-pipeline)).
+**Primitives** (`ui_core.h`): `fast_pixel`, `fast_hline`, `fast_vline`, `fill_rect_row_major`, `fast_rect_outline`, `fast_filled_circle`, `fast_circle`, `fast_line`, `fast_filled_triangle`, `fast_print`, `draw_glow_line`, `blit_rgb565_scanline`. Anti-aliased shapes and dithered gradients (D-027): `fill_round_rect_aa` (rounded rectangle, stadium or circle, flat or vertical gradient), `stroke_round_rect_aa` (its border ring), `fast_filled_circle_aa`, `fast_filled_circle_aa_grad`, `fast_circle_aa` (ring), `fast_hline_dither`, `fast_pixel_blend`. Glass (D-029): `fill_round_rect_glass` blends a tint over the framebuffer by alpha and coverage, ordered-dithered. Every rounded chrome shape (cards, pill buttons, glass circles, dock rings, mode bar, scrollbar, pips, home pill, focus rings, Offline pill) draws through them. **Enforced: `[FAST PRIMITIVES]`** in `include/ui_*.h` and `guis/**/*.yaml` ([section 5](#5-rendering-pipeline)).
 
 | Component | API | Geometry from | Use for |
 | :--- | :--- | :--- | :--- |
@@ -166,6 +166,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Card | `render_modern_card(it, cx, cy, w, h, r, bg, border, label, text_c, font)` (centered, with label) and an `x0, y0` overload | Caller, from `UiLayout` | Every list row, tile and panel. Single-pass scanline fill with a glass bevel. The centered overload resizes: above 520 px it scales `w ≤ 340`, `h ≤ 96`, `r ≤ 24`; below 380 px it forces `w = W − 88` for short wide cards; otherwise it caps `w` at `W − 20`. |
 | Pill button | `render_pill_button(it, x1, x2, y_mid, r, border, bg, label, text_c, font)` | Caller | A standalone action button (Games launcher) |
 | Glass circle | `render_glass_circle(...)` | Caller | Round transport and clock controls |
+| Glass card | `render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8)` with `sample_glass_backdrop()`, `glass_alpha_for_text()`, `glass_alpha_smooth()` | Caller, from `UiLayout` | Translucent card over sky or wallpaper (Home activity card). Tint at least 60 % opaque, raised until the text clears 5:1 over the brightest 3 % of the backdrop (D-029) |
 | Back label | `render_back_button(it, cx, font, layout().back_y, label, text = kChromeBackLabel)` | `UiLayout::back_y` | Returning from a sub-page ([3.3](#33-return-paths)). `"Home"` draws the home pill. **Enforced: `[BACK BUTTON Y]`**. |
 | Home pill | `render_home_indicator_bar(it, cx, layout().home_bar_y)` | `UiLayout::home_bar_y` | Top-level pages; drawn by `gui.yaml` after the page |
 | Home dock | `get_home_dock_window_xs` + the Home renderer; `home_dock_anim()` | `UiLayout::dock_y`, `dock_r` | Page 1 only: floating circular app icons, 4 per window |
@@ -177,7 +178,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Tools pages (D-007) |
 | Battery indicator | `render_battery_indicator` (`ui_clock_home.h`) | `UiLayout::battery_cx/y` | Clock and Home |
 | Time readout | `render_time_readout(it, cx, text, font_time, color)` (`ui_tools.h`) | `scale_y(142)` | The big readout on the timer, alarm editor and stopwatch pages (one component, one font) |
-| Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` | Live items (timers, stopwatch, music, alarms, calendar). One line on the round panel, two elsewhere; rotation every 8 s slides upward (D-028) |
+| Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` | Live items (timers, stopwatch, music, alarms, calendar), filtered by the Device's Activity Card setting. One line on the round panel, two elsewhere; glass over the backdrop; rotates every 8 s, sliding upward, only when there are more items than lines (D-028, D-029) |
 | Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge (a tab on rectangular panels; floating inside the bezel on round), sized from the text and mm padding | Home Assistant disconnected for 8 s or more (D-026) |
 | Tool launcher card | `render_tool_launcher_card` (`ui_tools.h`) | `UiLayout::tools_*` | The Tools grid |
 
@@ -515,8 +516,8 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Date:** 2026-11-08
 - **Decision:** The round panel keeps a one-line activity card, centered between the bottom of the weather line and the top of the dock. Every other panel shows a two-line card (two rows 46 apart plus padding, scaled above 520 px) whose bottom sits `home_activity_dock_gap()` (3 mm) above the dock: data above, controls below. With two or more front-deck items both lines show; every 8 s the bottom line moves up to the top and the next item enters below, wrapping, with the shared motion (kMotionMs, ease-out cubic). A pinned item (running stopwatch, or a timer in its last minute) keeps the top line while the bottom line rotates. One item sits centered in the same fixed-height card; with none the card is hidden. A tap acts on the line it lands on; the right-hand button acts inline; the dropdown column appears when there are more items than lines and opens the full list. While the card shows, the Home dock's swipe and tap zone starts 1 mm below it (`home_dock_zone_top()`, never below the dock's own tap band), so a swipe on the card never pages the dock. Supersedes the earlier single-line card at a fixed y (266 on the 466 grid) with its frame-stepped three-step reel.
 - **Why:** On the larger panels the card sat high and close to the weather line, and one line hid most live items.
-- **Open:** The card's translucency over the sky (it sometimes covers clouds) is to be discussed; styling is unchanged.
-- **Status:** Accepted; implemented 2026-11-08.
+- **Open:** Resolved by D-029 (glass card).
+- **Status:** Accepted; implemented 2026-11-08. Amended by D-029 (no rotation while the items fit, glass, Activity Card setting).
 
 ### D-026: An "Offline" pill shows a lost Home Assistant connection
 - **Date:** 2026-11-08
@@ -525,11 +526,17 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Alternatives:** A larger broken-link glyph; no indicator.
 - **Status:** Accepted; implemented 2026-11-08.
 
+### D-029: Glass activity card, rotation only on overflow, Activity Card setting
+- **Date:** 2026-11-08
+- **Decision:** (1) The Home activity card rotates only when it has more items than lines: a two-line card holds one or two items still and cycles from three; the one-line round card holds one still and cycles from two. A pinned item keeps the top line, and the free line cycles only when two or more other items share it. (2) The card is glass: a 1 px white sheen edge (36 % at the top fading to 11 % at the bottom) around the sky palette's tint, blended over the backdrop already drawn (`render_glass_card`, `fill_round_rect_glass`; 8-bit alpha in the RGB565 level domain with the D-027 ordered dither and coverage-scaled edges). The tint is at least 60 % opaque (`kGlassAlphaMinQ8`). Each frame the firmware samples the backdrop under the card (`sample_glass_backdrop`, about 12 sparse rows) and raises the tint until the white text clears 5:1 (`kGlassTextContrast`, 4.5:1 plus margin) against the mean of the brightest 3 % of that backdrop (`kGlassBrightPercent`): white clouds, bright wallpapers and daylight sky make the glass darker; night sky leaves it light. The glass darkens at once and lightens by `kGlassAlphaFallQ8` per frame, so drifting clouds don't make it flicker. Icon knock-outs drawn in the card color are skipped on glass. No blur. (3) The card and each source are optional through the Device's Latter setting, delivered in Protocol v3 `area_context.activity_card` (`1` on, `0` off) and `activity_sources` (CSV of `calendar`, `music_queue`, `stopwatch`, `alarms`, `timers`). Empty fields (not set, or no payload yet) take the spec defaults (card on, every source). Items of a disabled source are dropped in `collect_home_activities()`, so the card, its dropdown list and the touch routers see one list; the card hides when it is off or no enabled source has an item. Amends D-028 (rotation with two items) and resolves its open translucency item.
+- **Why:** Swapping two items that both fit was motion without information. The opaque card hid the sky and clouds behind it. Not every Device needs every source on its Home page.
+- **Cost:** The glass reads and writes every card pixel instead of a plain span fill: about 95 k pixels on Desk and 26 k on Pocket per Home frame, estimated a few milliseconds on the P4 and 2 to 3 ms on the S3 at the 20 FPS weather cadence (not yet profiled; `[PROF:*]` HOME_TEXT covers it). Sampling is about 1 k pixel reads. A box blur would add a full extra read pass, so it was left out.
+- **Alternatives:** A fixed alpha with a darker scrim strip under each text row; a real blur.
+- **Status:** Accepted; implemented 2026-11-08.
+
 ## Known gaps
 
 Nothing here contradicts a standing decision; these are the places the code doesn't fully reach it yet.
-
-- Home activity card translucency over the weather sky (D-028) is an open design question.
 
 - Some raw touch coordinates remain in `touch_handlers.yaml` (D-002); there is no check for them yet.
 - Toggle, slider and list row are not shared components (section 2).

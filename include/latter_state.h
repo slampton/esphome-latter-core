@@ -77,6 +77,8 @@ struct AreaContextState {
   int alert_duration = 10;
   bool alert_chime = true;
   std::string alert_camera_url = "";
+  std::string activity_card = "";     // "1" / "0"; empty = not set -> kDefaultActivityCard
+  std::string activity_sources = "";  // csv of source keys; empty = not set -> kDefaultActivitySources
 };
 
 struct MediaState {
@@ -352,7 +354,37 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.alert_duration           = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_DURATION)], 10);
   st.alert_chime              = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::ALERT_CHIME)]);
   st.alert_camera_url         = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_URL)]);
+  st.activity_card            = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_CARD)]);
+  st.activity_sources         = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_SOURCES)]);
   return true;
+}
+
+// Home Activity Card sources enabled by the Device's Latter setting (area_context.activity_card /
+// activity_sources). One bit per Home activity kind: 1 << 1 timers, 1 << 2 stopwatch,
+// 1 << 3 music_queue, 1 << 4 alarms, 1 << 5 calendar. 0 = the card is off. An empty field (not set,
+// or no payload yet) takes the spec default; unknown keys are ignored.
+static constexpr uint8_t kActivitySourceAll = 0x3E;
+
+inline uint8_t activity_source_mask(const AreaContextState &st = area_ctx_state()) {
+  const std::string_view card = st.activity_card.empty() ? std::string_view(kDefaultActivityCard)
+                                                         : std::string_view(st.activity_card);
+  if (!v3_parse_bool(card)) return 0;
+  const std::string_view csv = st.activity_sources.empty() ? std::string_view(kDefaultActivitySources)
+                                                           : std::string_view(st.activity_sources);
+  uint8_t mask = 0;
+  size_t start = 0;
+  while (start <= csv.size()) {
+    size_t end = csv.find(',', start);
+    if (end == std::string_view::npos) end = csv.size();
+    const std::string_view key = csv.substr(start, end - start);
+    if (key == "timers") mask |= 1U << 1;
+    else if (key == "stopwatch") mask |= 1U << 2;
+    else if (key == "music_queue") mask |= 1U << 3;
+    else if (key == "alarms") mask |= 1U << 4;
+    else if (key == "calendar") mask |= 1U << 5;
+    start = end + 1;
+  }
+  return mask;
 }
 
 // Parse Protocol v3 active_media payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
