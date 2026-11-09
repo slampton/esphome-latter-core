@@ -3,8 +3,8 @@
 ## Getting around
 
 - **Home:** swipe up from the bottom edge, or tap the pill at the bottom of the screen.
-- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & home**; **Settings → Home** on the device shows or hides Music, Area, Remote, Games and Tools and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Home Hub, Area, Remote, Games and Tools.
-- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Display & home**.
+- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & Home**; **Settings → Home** on the device shows or hides Music, Area, Remote, Games and Tools and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Home Hub, Area, Remote, Games and Tools.
+- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Display & Home**.
 - **Apps with modes:** Weather, Area Control, and Whole-Home Hub have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
 - **Button:**
   - On battery boards, a short press of the crown wakes the screen, turns it off, snoozes an alarm, or dismisses a notification, depending on what's showing.
@@ -55,7 +55,7 @@ How the wake inputs behave when the screen is off:
 - **Animated weather** on the Home screen runs continuously on USB power. On battery it animates for 10 seconds after you wake or touch the screen, then holds still until the next touch.
 - **Light sleep (ESP32-S3 battery devices).** With the screen off on battery and nothing playing, listening or ringing, the processor sleeps between Wi-Fi beacons and timer ticks. It stays connected to Home Assistant, and timers and alarms still fire on time. The crown, the action button, a tap (when Tap to Wake works on battery) and a pickup (when Pickup to Wake works on battery) wake it immediately; commands from Home Assistant can take a fraction of a second longer to arrive than with the screen on.
 
-Whether music follows the device when you pick another Area on it (or Bluetooth moves it) is a Latter setting: **Studio → Devices → Audio & voice → Media follows this Device**.
+Whether music follows the device when you pick another Area on it (or Bluetooth moves it) is a Latter setting: **Studio → Devices → Audio & Voice → Media Follows This Device to Its New Area**.
 
 ---
 
@@ -79,4 +79,4 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 
 ### Reset to defaults
 
-To put every setting above back to its default, open the device in Latter Studio and choose **Reset to defaults**, or call the `latter.reset_device` service. The device erases its saved settings, including the Wi-Fi driver's cached network data and RF calibration, then restarts. Wi-Fi and pairing are compiled into the firmware, so it rejoins Home Assistant on its own and stays bound to Latter. A second checkbox also resets Latter's options for that device.
+To put every setting above back to its default, open the device in Latter Studio and choose **Tools → Danger Zone → Reset**, or call the `latter.reset_device` service. The device erases its saved settings, including the Wi-Fi driver's cached network data and RF calibration, then restarts. Wi-Fi and pairing are compiled into the firmware, so it rejoins Home Assistant on its own and stays bound to Latter. A second checkbox also resets Latter's options for that device.
