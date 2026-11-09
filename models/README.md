@@ -1,6 +1,6 @@
 # Wake word models
 
-Latter builds load every micro_wake_word model from this folder (`github://slampton/esphome-latter-core/models/<name>.json@main`, pinned to the commit under test in CI), so firmware builds never depend on github.com's `/raw/` download path.
+Latter builds load every micro_wake_word model from this folder (`https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/<name>.json`, like the sounds; CI points it at the commit under test), so firmware builds never depend on github.com's `/raw/` download path.
 
 | Model | Source | License |
 |---|---|---|
