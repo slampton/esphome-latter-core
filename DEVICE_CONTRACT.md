@@ -29,10 +29,12 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 | Name | Value |
 | :--- | :--- |
 | `dock_apps` | `music,alarm,area,remote,games,tools` |
+| `activity_card` | `1` |
+| `activity_sources` | `calendar,music_queue,stopwatch,alarms,timers` |
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `38` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `40` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -73,6 +75,8 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `35` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
 | `36` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `bool` | 1 = play the alert chime (embedded WAV: sfx 9 for warning/critical, otherwise sfx 6), else 0 |
 | `37` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
+| `38` | `activity_card` | `AreaCtxField::ACTIVITY_CARD` | `bool` | 1 = show the Home Activity Card, 0 = hide it (also sent when every source is off); empty until set: the device uses defaults.activity_card |
+| `39` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
 
 ### `sensor.<device>_active_media` (`MediaField`, `20` total fields)
 

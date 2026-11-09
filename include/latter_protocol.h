@@ -11,6 +11,8 @@ static constexpr char kProtocolFieldSep = '\x1f';
 static constexpr char kProtocolRecordSep = '\x1e';
 
 static constexpr const char *kDefaultDockApps = "music,alarm,area,remote,games,tools";  // defaults.dock_apps
+static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_card
+static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 
 enum class ProtocolHeaderField : size_t {
   HEADER_VERSION = 0,  // version (string)
@@ -59,7 +61,9 @@ enum class AreaCtxField : size_t {
   ALERT_DURATION = 35,  // alert_duration (u16)
   ALERT_CHIME = 36,  // alert_chime (bool)
   ALERT_CAMERA_URL = 37,  // alert_camera_url (url)
-  COUNT = 38
+  ACTIVITY_CARD = 38,  // activity_card (bool)
+  ACTIVITY_SOURCES = 39,  // activity_sources (csv)
+  COUNT = 40
 };
 
 // Domain: active_media (sensor.<device>_active_media)
