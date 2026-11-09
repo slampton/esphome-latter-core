@@ -737,18 +737,12 @@ inline void render_offline_pill(DisplayT &it, int cx, uint32_t now_ms, FontT *fo
   const int y0 = 0;
   const bool round_top = false;
 #endif
-  // Scanline fill of a rounded rectangle (top corners rounded only when the pill floats).
-  auto fill_shape = [&](int sx, int sy, int sw, int sh, int sr, esphome::Color c) {
-    for (int y = std::max(0, sy); y < sy + sh && y < SCREEN_H; y++) {
-      int dy = 0;
-      if (round_top && y < sy + sr) dy = (sy + sr) - y;
-      else if (y > sy + sh - 1 - sr) dy = y - (sy + sh - 1 - sr);
-      const int inset = (dy > 0) ? (sr - chord_half_span_int(sr, dy, true)) : 0;
-      if (sw - 2 * inset > 0) fast_hline(it, sx + inset, y, sw - 2 * inset, c);
-    }
-  };
-  fill_shape(x0 - 1, round_top ? (y0 - 1) : y0, pill_w + 2, pill_h + (round_top ? 2 : 1), r + 1, kChromeBarBorder);
-  fill_shape(x0, y0, pill_w, pill_h, r, kChromeBarTrack);
+  // Anti-aliased card with a 1 px border; the tab's top corners lie above the screen edge.
+  const float rad = 0.5f * static_cast<float>(pill_h);
+  const int sy0 = round_top ? y0 : (y0 - r);
+  const int sh = round_top ? pill_h : (pill_h + r);
+  stroke_round_rect_aa(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, kChromeBarBorder, kChromeBarBorder, 1);
+  fill_round_rect_aa(it, x0, sy0, pill_w, sh, rad, kChromeBarTrack);
   const int text_top = y0 + pad_y - (base - glyph_h);
   fast_print(it, cx, text_top, font, text_c, esphome::display::TextAlign::TOP_CENTER, kLabel);
 }
@@ -1303,38 +1297,15 @@ inline void render_in_app_mode_bar_track(
   const Color track_brd = kChromeBarBorder;
   const Color cap_bg = kChromeBarTrack;
 
-  // 1. Continuous Scanline Stadium Pill Track connecting left_cx .. right_cx
-  for (int dy = -r_track; dy <= r_track; dy++) {
-    int py = by + dy;
-    if (py < 0 || py >= SCREEN_H) continue;
-    int dx_cap = chord_half_span_int(r_track, dy, false);
-    int x0 = left_cx - dx_cap;
-    int x1 = right_cx + dx_cap;
-    if (x1 > x0) {
-      fast_hline(it, x0, py, x1 - x0 + 1, track_bg);
-      if (std::abs(dy) == r_track) {
-        fast_hline(it, left_cx, py, right_cx - left_cx + 1, track_brd);
-      } else {
-        fast_pixel(it, x0, py, track_brd);
-        fast_pixel(it, x1, py, track_brd);
-      }
-    }
-  }
+  // 1. Anti-aliased stadium track from left_cx to right_cx with a 1 px border. No slot separators.
+  const int tx0 = left_cx - r_track;
+  const int tw = (right_cx - left_cx) + 2 * r_track + 1;
+  const int th = 2 * r_track + 1;
+  stroke_round_rect_aa(it, tx0, by - r_track, tw, th, static_cast<float>(r_track) + 0.5f, track_brd, track_brd, 1);
+  fill_round_rect_aa(it, tx0 + 1, by - r_track + 1, tw - 2, th - 2, static_cast<float>(r_track) - 0.5f, track_bg);
 
-  // 2. Subtle vertical slot dividers between inactive slots inside the track
-  const int div_h = dr - scale_s(6);
-  const Color div_col = kChromeTrack;
+  // 2. Smoothly gliding active-slot capsule: an anti-aliased 2 px ring on the track color.
   const float rel_active = anim_active - anim_start;
-  for (int i = 0; i < vis_count - 1; i++) {
-    if (std::fabs(static_cast<float>(i) - rel_active) < 0.65f ||
-        std::fabs(static_cast<float>(i + 1) - rel_active) < 0.65f) {
-      continue;
-    }
-    int mid_x = (win_xs[i] + win_xs[i + 1]) / 2;
-    fast_vline(it, mid_x, by - div_h, div_h * 2 + 1, div_col);
-  }
-
-  // 3. Smoothly Gliding Active Slot Capsule Highlight inside the track
   if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
     int abx = left_cx + static_cast<int>(std::roundf(rel_active * static_cast<float>(stride)));
     if (abx >= left_cx - scale_x(16) && abx <= right_cx + scale_x(16)) {
@@ -1347,9 +1318,8 @@ inline void render_in_app_mode_bar_track(
       Color ring_col(static_cast<uint8_t>(track_bg.r + (theme_primary.r - track_bg.r) * ring_alpha),
                      static_cast<uint8_t>(track_bg.g + (theme_primary.g - track_bg.g) * ring_alpha),
                      static_cast<uint8_t>(track_bg.b + (theme_primary.b - track_bg.b) * ring_alpha));
-      fast_filled_circle(it, abx, by, dr - 1, cap_bg);
-      fast_circle(it, abx, by, dr, ring_col);
-      fast_circle(it, abx, by, dr - 1, ring_col);
+      stroke_round_rect_aa(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1, static_cast<float>(dr) + 0.5f, ring_col, ring_col, 2);
+      fast_filled_circle_aa(it, abx, by, dr - 2, cap_bg);
     }
   }
 
@@ -1417,9 +1387,8 @@ inline void clear_ui_focus() {
 
 template<typename DisplayT>
 inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r, esphome::Color accent, esphome::Color inner_hi) {
-  fast_circle(it, cx, cy, r + 2, accent);
-  fast_circle(it, cx, cy, r + 3, accent);
-  fast_circle(it, cx, cy, r + 1, inner_hi);
+  fast_circle_aa(it, cx, cy, static_cast<float>(r) + 2.5f, accent, 2.0f);
+  fast_circle_aa(it, cx, cy, static_cast<float>(r) + 1.0f, inner_hi, 1.0f);
 }
 
 template<typename DisplayT>

@@ -155,7 +155,7 @@ Every gesture threshold in `touch_handlers.yaml` comes from a millimetre constan
 
 Each component has one implementation. Use it; don't hand-draw the same role.
 
-**Primitives** (`ui_core.h`): `fast_pixel`, `fast_hline`, `fast_vline`, `fill_rect_row_major`, `fast_rect_outline`, `fast_filled_circle`, `fast_circle`, `fast_line`, `fast_filled_triangle`, `fast_print`, `draw_glow_line`, `blit_rgb565_scanline`. **Enforced: `[FAST PRIMITIVES]`** in `include/ui_*.h` and `guis/**/*.yaml` ([section 5](#5-rendering-pipeline)).
+**Primitives** (`ui_core.h`): `fast_pixel`, `fast_hline`, `fast_vline`, `fill_rect_row_major`, `fast_rect_outline`, `fast_filled_circle`, `fast_circle`, `fast_line`, `fast_filled_triangle`, `fast_print`, `draw_glow_line`, `blit_rgb565_scanline`. Anti-aliased shapes and dithered gradients (D-027): `fill_round_rect_aa` (rounded rectangle, stadium or circle, flat or vertical gradient), `stroke_round_rect_aa` (its border ring), `fast_filled_circle_aa`, `fast_filled_circle_aa_grad`, `fast_circle_aa` (ring), `fast_hline_dither`, `fast_pixel_blend`. Every rounded chrome shape (cards, pill buttons, glass circles, dock rings, mode bar, scrollbar, pips, home pill, focus rings, Offline pill) draws through them. **Enforced: `[FAST PRIMITIVES]`** in `include/ui_*.h` and `guis/**/*.yaml` ([section 5](#5-rendering-pipeline)).
 
 | Component | API | Geometry from | Use for |
 | :--- | :--- | :--- | :--- |
@@ -168,7 +168,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Back label | `render_back_button(it, cx, font, layout().back_y, label, text = kChromeBackLabel)` | `UiLayout::back_y` | Returning from a sub-page ([3.3](#33-return-paths)). `"Home"` draws the home pill. **Enforced: `[BACK BUTTON Y]`**. |
 | Home pill | `render_home_indicator_bar(it, cx, layout().home_bar_y)` | `UiLayout::home_bar_y` | Top-level pages; drawn by `gui.yaml` after the page |
 | Home dock | `get_home_dock_window_xs` + the Home renderer; `home_dock_anim()` | `UiLayout::dock_y`, `dock_r` | Page 1 only: floating circular app icons, 4 per window |
-| In-app mode bar | `render_in_app_mode_bar_track(...)`; `mode_bar_anim()` | `UiLayout::app_dock_y`, `dock_r` | Switching the middle view of a multi-mode app (pages 5, 6, 9) |
+| In-app mode bar | `render_in_app_mode_bar_track(...)`; `mode_bar_anim()` | `UiLayout::app_dock_y`, `dock_r` | Switching the middle view of a multi-mode app (pages 5, 6, 9). An anti-aliased track with a gliding capsule ring; no separators between slots. |
 | Viewport scrollbar | `render_viewport_scrollbar(it, cx, y, total, start_idx, thumb, dim)` | `dock_pips_y` / `app_dock_pips_y` | Under the Home dock and a mode bar when there are more than 4 items (D-016) |
 | Page pips | `render_dock_page_pips(it, cx, y, pages, active, c_active, c_inactive)` | Caller | Paged carousels: Games launcher, camera carousel (D-016) |
 | Vertical chevrons | `render_vertical_page_pips(it, show_up, show_down, bg, active, inactive)` | Right-edge column per width bucket | Paged vertical lists: 5-slot lists and the Tools launcher (D-016) |
@@ -271,7 +271,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 | Row-major: loop `y` outside and `x` inside | *Documented only* |
 | No column-major `it.image()`, no `it.draw_pixels_at()`; images go through `blit_rgb565_scanline` | **Enforced: `[UI INVARIANT]`** |
 | Full 16-bit RGB565: no lossy bitmasks (`0xC718`, `0xE79C`), no skipped scanlines | **Enforced: `[UI INVARIANT]`** (masks); skipped scanlines *documented only* |
-| Dimming in eighths, per channel (D-014): `scale_rgb565_q3` (37.5–87.5 %) with `dim_rgb565_pair_50pct` / `_25pct` as the fast paths, through `compute_art_row_scale_q3` for art scrims | *Documented only* |
+| Smooth dimming and gradients (D-027): art scrims scale per channel in 1/256 (`compute_art_row_scale_q8`, ramped between levels) through `dim_rgb565_row_dither`; gradient fills interpolate at 8.8 fixed point; both quantize to RGB565 with a 4×4 ordered dither keyed to the screen position. Curved edges blend by coverage against the framebuffer; straight edges stay on pixel boundaries. The dither alternates adjacent RGB565 levels (one step), never lit/black, so the IPS rule below still holds. | *Documented only* |
 | IPS panels (`LATTER_PANEL_IPS=1`): no 1-px alternating lit/black row or column patterns | *Documented only* |
 | Round clipping uses `circle_half_span(y)` / `chord_half_span_int`; on rectangular panels never pass `x` into `circle_half_span` to get vertical bounds | *Documented only* |
 | No `sinf`, `cosf` or `sqrtf` in per-pixel loops: `fast_sin`/`fast_cos`/`fast_sincos` and the chord table | *Documented only* |
@@ -430,7 +430,7 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Date:** 2026-11-07
 - **Decision:** Dimming uses per-channel eighths (`scale_rgb565_q3`, 37.5–87.5 %), with the 50 % and 25 % paired dimmers as fast paths.
 - **Why:** Art scrims need more than two levels; the rule that matters is per-channel dimming with no lossy masks.
-- **Status:** Accepted.
+- **Status:** Superseded by D-027.
 
 ### D-015: One motion system
 - **Date:** 2026-11-07
@@ -499,6 +499,14 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Decision:** Pages draw their title with `render_page_header`, the line below with `render_sub_header`, and empty or loading cards with `render_empty_state`.
 - **Why:** Each page had inlined its own, and their fonts, colors and shadows drifted.
 - **Status:** Accepted; implemented 2026-11-07.
+
+### D-027: Anti-aliased shapes and ordered-dithered gradients
+- **Date:** 2026-11-08
+- **Decision:** Rounded rectangles, stadiums and circles in the chrome draw through one anti-aliased implementation (`fill_round_rect_aa` and its circle and ring forms): straight edges on pixel boundaries, curved edge pixels blended by coverage against what's already in the framebuffer, border and fill each written once. Gradient fills interpolate at 8.8 fixed point, and art scrims dim in 1/256 with smooth ramps; both quantize to RGB565 with a 4×4 ordered (Bayer) dither. Output stays full 16-bit, row-major, with no lossy masks or skipped scanlines. The mode bar has no slot separators. Supersedes D-014 (dimming in eighths).
+- **Why:** Hard-edged Bresenham curves looked rough next to each other (the stadium caps met their straight runs with steps), and stepped bands and eighth-step scrims showed stripes on the bright IPS panels.
+- **Cost:** Coverage math touches only curved edge pixels (one or two `sqrtf` per corner row, none per pixel). Dithered spans store per pixel instead of in pairs. Estimated well under 1 ms per frame on the S3 boards for a page of cards, a mode bar and the Home dock; art scrims are dithered once when the art cache is composed.
+- **Alternatives:** Lower-contrast gradients without dithering; supersampled shapes (slower).
+- **Status:** Accepted; implemented 2026-11-08.
 
 ### D-026: An "Offline" pill shows a lost Home Assistant connection
 - **Date:** 2026-11-08

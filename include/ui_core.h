@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110296L
+#define LATTER_SDK_REV 2026110297L
 
 namespace latter_ui {
 
@@ -207,13 +207,6 @@ namespace MusicOverlayMode {
   static constexpr int TRACK_INSPECTOR = 6;
 }
 
-// 32-Bit Dual-Pixel SIMD RGB565 Fast Dimmers (processes 2 adjacent RGB565 pixels in 1 CPU cycle)
-inline constexpr uint32_t dim_rgb565_pair_50pct(uint32_t px32) {
-  return (px32 & 0xF7DEF7DEU) >> 1;
-}
-inline constexpr uint32_t dim_rgb565_pair_25pct(uint32_t px32) {
-  return dim_rgb565_pair_50pct(dim_rgb565_pair_50pct(px32));
-}
 
 // 1. Mathematical, Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 // ------------------------------------------------------------------------------
@@ -893,6 +886,267 @@ inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
   } while (dx <= 0);
 }
 
+// -------------------------------------------------------------------------------------------------
+// Anti-aliased shapes and dithered gradients (docs/device-ui-design.md D-027). The chrome draws every
+// rounded rectangle, stadium and circle through fill_round_rect_aa / fast_filled_circle_aa /
+// fast_circle_aa: straight edges sit on pixel boundaries, and only the curved edge pixels blend by
+// coverage against the pixels already in the framebuffer (row-major, full 16-bit output). Gradients
+// interpolate at 8.8 fixed point and quantize to RGB565 with a 4x4 ordered (Bayer) dither, so no
+// stripes appear on bright IPS panels. No per-pixel sqrtf: coverage uses the distance-squared
+// approximation |d - r| ~ |d^2 - r^2| / 2r, exact to well under a pixel at these radii.
+// -------------------------------------------------------------------------------------------------
+static constexpr uint8_t kBayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+
+// Inverse of encode_hw_rgb565_raw: framebuffer word -> native RGB565.
+inline uint16_t decode_hw_rgb565_raw(uint16_t hw) {
+  const int mode = active_frame_endian_mode();
+  if (mode == 1) return hw;
+  if (mode == 2) return __builtin_bswap16(hw);
+  const uint16_t bgr = (mode == 4) ? __builtin_bswap16(hw) : hw;
+  return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
+}
+
+// Quantizes a color at 8.8 fixed point per channel (0..65280) to RGB565 with ordered-dither
+// threshold t (0..15): each channel rounds up when its fraction of a level exceeds the threshold.
+inline uint16_t dither_rgb565(uint32_t r88, uint32_t g88, uint32_t b88, int t) {
+  const uint32_t th = static_cast<uint32_t>(t) * 16U + 8U;
+  uint32_t r = ((r88 * 31U) / 255U + th) >> 8;
+  uint32_t g = ((g88 * 63U) / 255U + th) >> 8;
+  uint32_t b = ((b88 * 31U) / 255U + th) >> 8;
+  if (r > 31U) r = 31U;
+  if (g > 63U) g = 63U;
+  if (b > 31U) b = 31U;
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
+// Horizontal span of an 8.8 color, ordered-dithered against the screen position.
+template<typename DisplayT>
+inline void fast_hline_dither(DisplayT &it, int x, int y, int w, uint32_t r88, uint32_t g88, uint32_t b88) {
+  if (w <= 0 || y < 0 || y >= SCREEN_H) return;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (x + w > SCREEN_W) w = SCREEN_W - x;
+  if (w <= 0) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    fast_hline(it, x, y, w, esphome::Color(static_cast<uint8_t>(r88 >> 8), static_cast<uint8_t>(g88 >> 8),
+                                           static_cast<uint8_t>(b88 >> 8)));
+    return;
+  }
+  const uint8_t *th = kBayer4[y & 3];
+  uint16_t pat[4];
+  for (int k = 0; k < 4; k++) pat[k] = encode_hw_rgb565_raw(dither_rgb565(r88, g88, b88, th[k]));
+  uint16_t *dst = fb + y * SCREEN_W + x;
+  for (int i = 0; i < w; i++) dst[i] = pat[(x + i) & 3];
+}
+
+// Blends color c over the framebuffer pixel (x, y) with coverage a (0..255).
+template<typename DisplayT>
+inline void fast_pixel_blend(DisplayT &it, int x, int y, esphome::Color c, int a) {
+  if (a <= 0 || x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    if (a >= 128) fast_pixel(it, x, y, c);
+    return;
+  }
+  uint16_t &dst = fb[y * SCREEN_W + x];
+  if (a >= 255) {
+    dst = encode_hw_rgb565(c);
+    return;
+  }
+  const uint16_t bg = decode_hw_rgb565_raw(dst);
+  const int r5 = (bg >> 11) & 0x1F, g6 = (bg >> 5) & 0x3F, b5 = bg & 0x1F;
+  const int br = (r5 << 3) | (r5 >> 2), bgc = (g6 << 2) | (g6 >> 4), bb = (b5 << 3) | (b5 >> 2);
+  const int rr = br + (((static_cast<int>(c.r) - br) * a + 127) / 255);
+  const int rg = bgc + (((static_cast<int>(c.g) - bgc) * a + 127) / 255);
+  const int rb = bb + (((static_cast<int>(c.b) - bb) * a + 127) / 255);
+  dst = encode_hw_rgb565(esphome::Color(static_cast<uint8_t>(rr), static_cast<uint8_t>(rg), static_cast<uint8_t>(rb)));
+}
+
+inline int aa_coverage_8(float a) {
+  if (a <= 0.0f) return 0;
+  if (a >= 1.0f) return 255;
+  return static_cast<int>(a * 255.0f + 0.5f);
+}
+
+// Geometry of one anti-aliased rounded rectangle [x0, x0 + w) x [y0, y0 + h) (pixel edges).
+struct AaRoundRect {
+  float cxl = 0, cxr = 0, cyt = 0, cyb = 0, rad = 0, r_in = 0, r_out = 0, rad2 = 0, inv2r = 1;
+  int x0 = 0, x_last = -1, y0 = 0, y_end = 0;
+
+  void init(int x, int y, int w, int h, float r) {
+    const float max_rad = 0.5f * static_cast<float>(std::min(w, h));
+    rad = std::max(0.0f, std::min(r, max_rad));
+    x0 = x;
+    x_last = x + w - 1;
+    y0 = y;
+    y_end = y + h;
+    cxl = static_cast<float>(x) + rad;
+    cxr = static_cast<float>(x + w) - rad;
+    cyt = static_cast<float>(y) + rad;
+    cyb = static_cast<float>(y + h) - rad;
+    r_in = rad - 0.5f;
+    r_out = rad + 0.5f;
+    rad2 = rad * rad;
+    inv2r = (rad > 0.5f) ? (0.5f / rad) : 1.0f;
+  }
+
+  // Row py: the fully covered range [s0, s1] (empty when s1 < s0) and the touched range [e0, e1].
+  // Returns false when the row misses the shape.
+  bool row(int py, float &dy, int &s0, int &s1, int &e0, int &e1) const {
+    if (py < y0 || py >= y_end || x_last < x0) return false;
+    const float yc = static_cast<float>(py) + 0.5f;
+    dy = 0.0f;
+    if (yc < cyt) dy = cyt - yc;
+    else if (yc > cyb) dy = yc - cyb;
+    s0 = x0;
+    s1 = x_last;
+    e0 = x0;
+    e1 = x_last;
+    if (dy <= 0.0f || rad <= 0.0f) return true;
+    if (dy >= r_out) return false;
+    const float xo = sqrtf(r_out * r_out - dy * dy);
+    e0 = std::max(x0, static_cast<int>(floorf(cxl - xo - 0.5f)));
+    e1 = std::min(x_last, static_cast<int>(ceilf(cxr + xo - 0.5f)));
+    if (dy < r_in) {
+      const float xi = sqrtf(r_in * r_in - dy * dy);
+      s0 = std::max(e0, static_cast<int>(ceilf(cxl - xi - 0.5f)));
+      s1 = std::min(e1, static_cast<int>(floorf(cxr + xi - 0.5f)));
+    } else {
+      s0 = e1 + 1;
+      s1 = e1;
+    }
+    return true;
+  }
+
+  // Coverage (0..255) of pixel px on a row at vertical corner distance dy.
+  int coverage(int px, float dy) const {
+    const float xc = static_cast<float>(px) + 0.5f;
+    const float ox = std::max(0.0f, std::max(cxl - xc, xc - cxr));
+    return aa_coverage_8(0.5f - (ox * ox + dy * dy - rad2) * inv2r);
+  }
+};
+
+// Fills a rounded rectangle [x0, x0 + w) x [y0, y0 + h) with corner radius rad (rad = h / 2 is a
+// stadium; w == h == 2 * rad a circle) and a vertical gradient from c_top (first row) to c_bot (last
+// row), ordered-dithered; c_top == c_bot fills the exact color. hole > 0 leaves out the pixels fully
+// inside the same shape inset by hole (a border pass whose inside the next call fills), so the
+// border and the fill each write their pixels once. Rows outside the screen are clipped, so a shape
+// may extend past an edge (a tab hanging from the top edge).
+template<typename DisplayT>
+inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad,
+                               esphome::Color c_top, esphome::Color c_bot, int hole = 0) {
+  if (w <= 0 || h <= 0) return;
+  AaRoundRect o;
+  o.init(x0, y0, w, h, rad);
+  AaRoundRect in;
+  const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
+  if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
+  const bool flat = (c_top.r == c_bot.r && c_top.g == c_bot.g && c_top.b == c_bot.b);
+  const int ys = std::max(0, y0);
+  const int ye = std::min(SCREEN_H, y0 + h);
+  for (int py = ys; py < ye; py++) {
+    float dy = 0.0f;
+    int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
+    if (!o.row(py, dy, s0, s1, e0, e1)) continue;
+    uint32_t r88 = static_cast<uint32_t>(c_top.r) << 8;
+    uint32_t g88 = static_cast<uint32_t>(c_top.g) << 8;
+    uint32_t b88 = static_cast<uint32_t>(c_top.b) << 8;
+    esphome::Color rc = c_top;
+    if (!flat && h > 1) {
+      const int num = py - y0;
+      const int den = h - 1;
+      r88 = static_cast<uint32_t>((static_cast<int>(c_top.r) << 8) + ((static_cast<int>(c_bot.r) - static_cast<int>(c_top.r)) * 256 * num) / den);
+      g88 = static_cast<uint32_t>((static_cast<int>(c_top.g) << 8) + ((static_cast<int>(c_bot.g) - static_cast<int>(c_top.g)) * 256 * num) / den);
+      b88 = static_cast<uint32_t>((static_cast<int>(c_top.b) << 8) + ((static_cast<int>(c_bot.b) - static_cast<int>(c_top.b)) * 256 * num) / den);
+      rc = esphome::Color(static_cast<uint8_t>(r88 >> 8), static_cast<uint8_t>(g88 >> 8), static_cast<uint8_t>(b88 >> 8));
+    }
+    auto span = [&](int a, int b) {
+      if (b < a) return;
+      if (flat) fast_hline(it, a, py, b - a + 1, rc);
+      else fast_hline_dither(it, a, py, b - a + 1, r88, g88, b88);
+    };
+    if (s1 >= s0) {
+      int hs0 = 1, hs1 = 0;
+      if (has_hole) {
+        float idy = 0.0f;
+        int ie0 = 0, ie1 = -1;
+        if (!in.row(py, idy, hs0, hs1, ie0, ie1)) {
+          hs0 = 1;
+          hs1 = 0;
+        }
+      }
+      if (hs1 >= hs0) {
+        span(s0, std::min(s1, hs0 - 1));
+        span(std::max(s0, hs1 + 1), s1);
+      } else {
+        span(s0, s1);
+      }
+    }
+    if (s1 < s0) {
+      for (int px = e0; px <= e1; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
+    } else {
+      for (int px = e0; px < s0; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
+      for (int px = s1 + 1; px <= e1; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
+    }
+  }
+}
+
+template<typename DisplayT>
+inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad, esphome::Color c) {
+  fill_round_rect_aa(it, x0, y0, w, h, rad, c, c, 0);
+}
+
+// Border ring of a rounded rectangle, `thick` px wide, for a fill drawn next with the inset shape.
+template<typename DisplayT>
+inline void stroke_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad,
+                                 esphome::Color c_top, esphome::Color c_bot, int thick = 1) {
+  fill_round_rect_aa(it, x0, y0, w, h, rad, c_top, c_bot, thick);
+}
+
+// Anti-aliased filled circle with the same footprint as fast_filled_circle (center at pixel (cx, cy)).
+template<typename DisplayT>
+inline void fast_filled_circle_aa(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+  if (r < 0) return;
+  fill_round_rect_aa(it, cx - r, cy - r, 2 * r + 1, 2 * r + 1, static_cast<float>(r) + 0.5f, c, c);
+}
+
+template<typename DisplayT>
+inline void fast_filled_circle_aa_grad(DisplayT &it, int cx, int cy, int r, esphome::Color c_top, esphome::Color c_bot) {
+  if (r < 0) return;
+  fill_round_rect_aa(it, cx - r, cy - r, 2 * r + 1, 2 * r + 1, static_cast<float>(r) + 0.5f, c_top, c_bot);
+}
+
+// Anti-aliased ring centered on pixel (cx, cy): radius r to the middle of a stroke `thick` pixels wide.
+template<typename DisplayT>
+inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color c, float thick = 1.5f) {
+  if (r <= 1.0f) return;
+  const float half = 0.5f * thick;
+  const float ro = r + half + 0.5f;
+  const float ri = r - half - 0.5f;
+  const float r2 = r * r;
+  const float inv2r = 0.5f / r;
+  const int span = static_cast<int>(ceilf(ro));
+  for (int dyi = -span; dyi <= span; dyi++) {
+    const int py = cy + dyi;
+    if (py < 0 || py >= SCREEN_H) continue;
+    const float dy = static_cast<float>(dyi);
+    const float dy2 = dy * dy;
+    if (dy2 >= ro * ro) continue;
+    const int ox_hi = static_cast<int>(ceilf(sqrtf(ro * ro - dy2)));
+    const int ox_lo = (ri > 0.0f && dy2 < ri * ri) ? static_cast<int>(floorf(sqrtf(ri * ri - dy2))) : 0;
+    for (int ox = ox_lo; ox <= ox_hi; ox++) {
+      const float d2 = static_cast<float>(ox * ox) + dy2;
+      const int a = aa_coverage_8(half + 0.5f - std::fabs(d2 - r2) * inv2r);
+      if (a <= 0) continue;
+      fast_pixel_blend(it, cx - ox, py, c, a);
+      if (ox > 0) fast_pixel_blend(it, cx + ox, py, c, a);
+    }
+  }
+}
+
 // Same Bresenham walk as Display::line (endpoints inclusive); axis-aligned lines use spans.
 template<typename DisplayT>
 inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c) {
@@ -1288,16 +1542,12 @@ template<typename DisplayT, typename FontT>
 inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
                                esphome::Color border_c, esphome::Color bg_c,
                                const char *label, esphome::Color text_c, FontT *font) {
-  int ri = (r > 2) ? (r - 2) : 1;
-  int span_w = x2 - x1;
-  // Draw end caps + single-pass interior fill + 2px top/bottom border bands (avoids 2x center rectangle overdraw!)
-  fast_filled_circle(it, x1, y_mid, r, border_c);
-  fast_filled_circle(it, x2, y_mid, r, border_c);
-  fast_filled_circle(it, x1, y_mid, ri, bg_c);
-  fast_filled_circle(it, x2, y_mid, ri, bg_c);
-  fill_rect_row_major(it, x1, y_mid - r,      span_w, 2,          border_c);
-  fill_rect_row_major(it, x1, y_mid + r - 1,  span_w, 2,          border_c);
-  fill_rect_row_major(it, x1, y_mid - ri,     span_w, 2 * ri + 1, bg_c);
+  // Anti-aliased stadium: cap centers at x1 and x2, radius r, a 2 px border.
+  const int px0 = x1 - r;
+  const int pw = (x2 - x1) + 2 * r + 1;
+  const int ph = 2 * r + 1;
+  stroke_round_rect_aa(it, px0, y_mid - r, pw, ph, static_cast<float>(r) + 0.5f, border_c, border_c, 2);
+  if (r > 2) fill_round_rect_aa(it, px0 + 2, y_mid - r + 2, pw - 4, ph - 4, static_cast<float>(r) - 1.5f, bg_c);
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     int btn_cx = (x1 + x2) / 2;
@@ -1336,20 +1586,10 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
                        static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
                        static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
       : border_c;
-  const esphome::Color bg_spec = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 12)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 15)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 20)))
-      : bg_c;
   const esphome::Color bg_top = is_lit_glass
       ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 6)),
                        static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 8)),
                        static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 11)))
-      : bg_c;
-  const esphome::Color bg_upper = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 3)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 4)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 5)))
       : bg_c;
   const esphome::Color bg_btm = is_lit_glass
       ? esphome::Color(static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.r) - 4)),
@@ -1357,48 +1597,10 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
                        static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
       : bg_c;
 
-  // Single-pass scanline rounded rectangle with top-lit specular glass bevel & vertical sheen:
-  int top_in = r / 2 + 2;
-  fast_hline(it, x0 + top_in, y0,         w - 2 * top_in, brd_top);
-  fast_hline(it, x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
-
-  for (int dy = 1; dy < r; dy++) {
-    int ry = r - dy;
-    int dx_out = r - chord_half_span_int(r, ry, true);
-    int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
-    int span_out = w - 2 * dx_out;
-    int span_in  = w - 2 * dx_in;
-    int yt = y0 + dy;
-    int yb = y0 + h - 1 - dy;
-    esphome::Color b_t = (dy <= r / 2) ? brd_top : border_c;
-    esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
-    esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
-    if (span_in > 0) {
-      fast_hline(it, x0 + dx_out, yt, dx_in - dx_out, b_t);
-      fast_hline(it, x0 + dx_in,  yt, span_in,        f_t);
-      fast_hline(it, x0 + w - dx_in, yt, dx_in - dx_out, b_t);
-
-      fast_hline(it, x0 + dx_out, yb, dx_in - dx_out, b_b);
-      fast_hline(it, x0 + dx_in,  yb, span_in,        bg_btm);
-      fast_hline(it, x0 + w - dx_in, yb, dx_in - dx_out, b_b);
-    } else if (span_out > 0) {
-      fast_hline(it, x0 + dx_out, yt, span_out, b_t);
-      fast_hline(it, x0 + dx_out, yb, span_out, b_b);
-    }
-  }
-
-  int mid_h = h - 2 * r;
-  if (mid_h > 0) {
-    int mid_top = mid_h / 2;
-    for (int dy = 0; dy < mid_h; dy++) {
-      int py = y0 + r + dy;
-      fast_pixel(it, x0, py, border_c);
-      if (w > 2) {
-        fast_hline(it, x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
-      }
-      fast_pixel(it, x0 + w - 1, py, border_c);
-    }
-  }
+  // Anti-aliased rounded rectangle: a 1 px border lit from the top (brd_top -> brd_btm) around a
+  // smooth, dithered sheen (bg_top -> bg_btm). Unlit cards are flat.
+  stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
+  fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_top, bg_btm);
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     fast_print(it, cx_card, cy_card, font, text_c, esphome::display::TextAlign::CENTER, label);
@@ -1424,20 +1626,10 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
                        static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
                        static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
       : border_c;
-  const esphome::Color bg_spec = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 12)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 15)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 20)))
-      : bg_c;
   const esphome::Color bg_top = is_lit_glass
       ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 6)),
                        static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 8)),
                        static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 11)))
-      : bg_c;
-  const esphome::Color bg_upper = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 3)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 4)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 5)))
       : bg_c;
   const esphome::Color bg_btm = is_lit_glass
       ? esphome::Color(static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.r) - 4)),
@@ -1445,52 +1637,13 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
                        static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
       : bg_c;
 
-  int top_in = r / 2 + 2;
-  if (w > 2 * top_in) {
-    fast_hline(it, x0 + top_in, y0,         w - 2 * top_in, brd_top);
-    fast_hline(it, x0 + top_in, y0 + h - 1, w - 2 * top_in, brd_btm);
-  }
-
-  for (int dy = 1; dy < r; dy++) {
-    int ry = r - dy;
-    int dx_out = r - chord_half_span_int(r, ry, true);
-    int dx_in  = dx_out + ((dy <= 2) ? 2 : 1);
-    int span_out = w - 2 * dx_out;
-    int span_in  = w - 2 * dx_in;
-    int yt = y0 + dy;
-    int yb = y0 + h - 1 - dy;
-    esphome::Color b_t = (dy <= r / 2) ? brd_top : border_c;
-    esphome::Color b_b = (dy <= r / 2) ? brd_btm : border_c;
-    esphome::Color f_t = (dy == 1) ? bg_spec : bg_top;
-    if (span_in > 0) {
-      fast_hline(it, x0 + dx_out, yt, dx_in - dx_out, b_t);
-      fast_hline(it, x0 + dx_in,  yt, span_in,        f_t);
-      fast_hline(it, x0 + w - dx_in, yt, dx_in - dx_out, b_t);
-
-      fast_hline(it, x0 + dx_out, yb, dx_in - dx_out, b_b);
-      fast_hline(it, x0 + dx_in,  yb, span_in,        bg_btm);
-      fast_hline(it, x0 + w - dx_in, yb, dx_in - dx_out, b_b);
-    } else if (span_out > 0) {
-      fast_hline(it, x0 + dx_out, yt, span_out, b_t);
-      fast_hline(it, x0 + dx_out, yb, span_out, b_b);
-    }
-  }
-
-  int mid_h = h - 2 * r;
-  if (mid_h > 0) {
-    int mid_top = mid_h / 2;
-    for (int dy = 0; dy < mid_h; dy++) {
-      int py = y0 + r + dy;
-      fast_pixel(it, x0, py, border_c);
-      if (w > 2) {
-        fast_hline(it, x0 + 1, py, w - 2, (dy < mid_top) ? bg_upper : bg_c);
-      }
-      fast_pixel(it, x0 + w - 1, py, border_c);
-    }
-  }
+  // Anti-aliased rounded rectangle: a 1 px border lit from the top (brd_top -> brd_btm) around a
+  // smooth, dithered sheen (bg_top -> bg_btm). Unlit cards are flat.
+  stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
+  fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_top, bg_btm);
 }
 
-// Single-pass scanline frosted-glass circular button pill with top-lit specular bevel rim
+// Frosted-glass circular button with a top-lit rim
 template<typename DisplayT>
 inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
                                 esphome::Color bg_c, esphome::Color border_c) {
@@ -1503,10 +1656,6 @@ inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
       static_cast<uint8_t>((static_cast<int>(border_c.r) * 165) >> 8),
       static_cast<uint8_t>((static_cast<int>(border_c.g) * 165) >> 8),
       static_cast<uint8_t>((static_cast<int>(border_c.b) * 165) >> 8));
-  const esphome::Color bg_spec(
-      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 14)),
-      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 17)),
-      static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.b) + 22)));
   const esphome::Color bg_top(
       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.r) + 7)),
       static_cast<uint8_t>(std::min(255, static_cast<int>(bg_c.g) + 9)),
@@ -1516,22 +1665,9 @@ inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.g) - 6)),
       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 8)));
 
-  for (int dy = -r; dy <= r; dy++) {
-    int y = cy_btn + dy;
-    if (y < 0 || y >= SCREEN_H) continue;
-    int hw_out = chord_half_span_int(r, dy, true);
-    int hw_in  = (std::abs(dy) >= r - 1) ? 0 : chord_half_span_int(r - 1, dy, true);
-    esphome::Color brd_row = (dy < -r / 3) ? brd_top : ((dy > r / 3) ? brd_btm : border_c);
-    if (hw_in <= 0) {
-      fast_hline(it, cx_btn - hw_out, y, 2 * hw_out + 1, brd_row);
-    } else {
-      esphome::Color fill_row = (dy == -r + 1) ? bg_spec : ((dy < -r / 4) ? bg_top : ((dy > r / 4) ? bg_btm : bg_c));
-      int cap_w = std::max(1, hw_out - hw_in);
-      fast_hline(it, cx_btn - hw_out, y, cap_w, brd_row);
-      fast_hline(it, cx_btn - hw_in,  y, 2 * hw_in + 1, fill_row);
-      fast_hline(it, cx_btn + hw_in + 1, y, cap_w, brd_row);
-    }
-  }
+  // Anti-aliased: a 1 px rim lit from the top (brd_top -> brd_btm) around a dithered sheen.
+  stroke_round_rect_aa(it, cx_btn - r, cy_btn - r, 2 * r + 1, 2 * r + 1, static_cast<float>(r) + 0.5f, brd_top, brd_btm, 1);
+  fast_filled_circle_aa_grad(it, cx_btn, cy_btn, r - 1, bg_top, bg_btm);
 }
 
 // Ultra-fast (<2us) 4x4 grid sampler that extracts an ambient color tint from an RGB565 image buffer
@@ -1643,10 +1779,9 @@ inline void render_home_indicator_bar(DisplayT &it, int cx, int y_pos = kHomeBar
   const int half_w = scale_x(54);
   const int bar_h  = (SCREEN_H > 520) ? 7 : 5;
   const int cap_r  = bar_h / 2;
-  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r + 1, (half_w - cap_r) * 2, bar_h, kChromeShadow);
-  fill_rect_row_major(it, cx - half_w + cap_r, y_pos - cap_r,     (half_w - cap_r) * 2, bar_h, bar_col);
-  fast_filled_circle(it, cx - half_w + cap_r, y_pos, cap_r, bar_col);
-  fast_filled_circle(it, cx + half_w - cap_r, y_pos, cap_r, bar_col);
+  const float cap = 0.5f * static_cast<float>(bar_h);
+  fill_round_rect_aa(it, cx - half_w, y_pos - cap_r + 1, 2 * half_w + 1, bar_h, cap, kChromeShadow);
+  fill_round_rect_aa(it, cx - half_w, y_pos - cap_r, 2 * half_w + 1, bar_h, cap, bar_col);
 }
 
 template <typename DisplayT>
@@ -1663,14 +1798,12 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const esphome::Color col_track = is_dim ? kChromeTrackDim : kChromeTrack;
   const esphome::Color col_brd   = is_dim ? kChromeTrackBorderDim : kChromeTrackBorder;
 
+  const float cap = static_cast<float>(r_cap);
   if (!is_dim) {
-    fill_rect_row_major(it, track_x0 + 1, track_y0 + 1, track_w, track_h, kChromeShadow);
+    fill_round_rect_aa(it, track_x0 + 1, track_y0 + 1, track_w, track_h, cap, kChromeShadow);
   }
-  fill_rect_row_major(it, track_x0, track_y0, track_w, track_h, col_track);
-  fast_hline(it, track_x0 + 1, track_y0, track_w - 2, col_brd);
-  fast_hline(it, track_x0 + 1, track_y0 + track_h - 1, track_w - 2, col_brd);
-  fast_filled_circle(it, track_x0 + r_cap, y_pos, r_cap, col_track);
-  fast_filled_circle(it, track_x0 + track_w - r_cap, y_pos, r_cap, col_track);
+  stroke_round_rect_aa(it, track_x0, track_y0, track_w, track_h, cap, col_brd, col_brd, 1);
+  fill_round_rect_aa(it, track_x0 + 1, track_y0 + 1, track_w - 2, track_h - 2, cap - 1.0f, col_track);
 
   const int min_thumb_w = (SCREEN_W > 520) ? 28 : 20;
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
@@ -1679,9 +1812,7 @@ inline void render_viewport_scrollbar(DisplayT &it, int cx, int y_pos, int total
   const float frac = clamped_start / max_start;
   const int thumb_x0 = track_x0 + static_cast<int>( std::roundf(frac * static_cast<float>(track_w - thumb_w)) );
 
-  fill_rect_row_major(it, thumb_x0, track_y0, thumb_w, track_h, col_thumb);
-  fast_filled_circle(it, thumb_x0 + r_cap, y_pos, r_cap, col_thumb);
-  fast_filled_circle(it, thumb_x0 + thumb_w - r_cap, y_pos, r_cap, col_thumb);
+  fill_round_rect_aa(it, thumb_x0, track_y0, thumb_w, track_h, cap, col_thumb);
 }
 
 template <typename DisplayT>
@@ -1697,13 +1828,14 @@ inline void render_dock_page_pips(DisplayT &it, int cx, int y_pos, int total_pag
     if (p == active_page) {
       int pw = scale_x(7);
       int ph = dot_r * 2 + 1;
-      fill_rect_row_major(it, px - pw / 2 + 1, y_pos - dot_r + 1, pw, ph, kChromeShadow);
-      fill_rect_row_major(it, px - pw / 2,     y_pos - dot_r,     pw, ph, col_active);
-      fast_filled_circle(it, px - pw / 2, y_pos, dot_r, col_active);
-      fast_filled_circle(it, px + pw / 2, y_pos, dot_r, col_active);
+      const int sx0 = px - pw / 2 - dot_r;
+      const int sw = pw + 2 * dot_r + 1;
+      const float cap = static_cast<float>(dot_r) + 0.5f;
+      fill_round_rect_aa(it, sx0 + 1, y_pos - dot_r + 1, sw, ph, cap, kChromeShadow);
+      fill_round_rect_aa(it, sx0, y_pos - dot_r, sw, ph, cap, col_active);
     } else {
-      fast_filled_circle(it, px + 1, y_pos + 1, dot_r, kChromeShadow);
-      fast_filled_circle(it, px,     y_pos,     dot_r, col_inactive);
+      fast_filled_circle_aa(it, px + 1, y_pos + 1, dot_r, kChromeShadow);
+      fast_filled_circle_aa(it, px, y_pos, dot_r, col_inactive);
     }
   }
 }
@@ -1826,51 +1958,43 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   return (gui_page * 100) + sub;
 }
 
-inline int compute_art_row_scale_q3(int y, bool apply_scrim, bool show_metadata, int dim_level) {
-  if (dim_level >= 2) return 2; // 25% ambient backdrop behind glass menu cards
+// Art dimming per row in 1/256 (256 = unchanged), with smooth ramps between levels so a scrim never
+// shows a step. Applied with dim_rgb565_row_dither (ordered dither, full 16-bit output).
+inline int compute_art_row_scale_q8(int y, bool apply_scrim, bool show_metadata, int dim_level) {
+  if (dim_level >= 2) return 64;  // 25% ambient backdrop behind glass menu cards
+  auto ramp = [](int yy, int y_a, int v_a, int y_b, int v_b) -> int {
+    if (yy <= y_a) return v_a;
+    if (yy >= y_b) return v_b;
+    return v_a + ((v_b - v_a) * (yy - y_a)) / (y_b - y_a);
+  };
   if (apply_scrim) {
-    if (y < scale_y(76) || (show_metadata && y >= scale_y(324))) return 3; // 37.5% behind header/metadata
-    return 4; // 50% behind HUD transport buttons
+    // 37.5% behind the header and the metadata, 50% behind the HUD transport buttons.
+    const int ramp_h = scale_y(12);
+    int v = ramp(y, scale_y(76) - ramp_h, 96, scale_y(76) + ramp_h, 128);
+    if (show_metadata) v = std::min(v, ramp(y, scale_y(324) - ramp_h, 128, scale_y(324) + ramp_h, 96));
+    return v;
   }
   if (show_metadata) {
-    if (y < scale_y(304)) return 8;
-    if (y < scale_y(316)) return 7;
-    if (y < scale_y(328)) return 6;
-    if (y < scale_y(340)) return 5;
-    if (y < scale_y(352)) return 4;
-    if (y < scale_y(410)) return 3;
+    // Fade in behind the title and artist (100% -> 37.5%), and back out below the metadata.
+    if (y < scale_y(410)) return ramp(y, scale_y(298), 256, scale_y(358), 96);
+    return ramp(y, scale_y(410), 96, scale_y(422), 256);
   }
-  return 8;
+  return 256;
 }
 
-inline constexpr uint16_t scale_rgb565_q3(uint16_t p, int mul_q3) {
-  if (mul_q3 >= 8) return p;
-  if (mul_q3 == 4) return static_cast<uint16_t>((p & 0xF7DEU) >> 1);
-  if (mul_q3 == 2) return static_cast<uint16_t>(dim_rgb565_pair_25pct(p));
-  uint16_t r = static_cast<uint16_t>((((p >> 11) & 0x1FU) * mul_q3) >> 3);
-  uint16_t g = static_cast<uint16_t>((((p >> 5)  & 0x3FU) * mul_q3) >> 3);
-  uint16_t b = static_cast<uint16_t>((( p        & 0x1FU) * mul_q3) >> 3);
-  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
-}
-
-inline void dim_rgb565_row_in_place(uint16_t *row_buf, int span_w, int mul_q3) {
-  if (mul_q3 >= 8 || span_w <= 0) return;
-  if (mul_q3 == 4 || mul_q3 == 2) {
-    int i = 0;
-    for (; i + 1 < span_w; i += 2) {
-      uint32_t pair = static_cast<uint32_t>(row_buf[i]) |
-                      (static_cast<uint32_t>(row_buf[i + 1]) << 16);
-      uint32_t dimmed = (mul_q3 == 4) ? dim_rgb565_pair_50pct(pair) : dim_rgb565_pair_25pct(pair);
-      row_buf[i]     = static_cast<uint16_t>(dimmed & 0xFFFFU);
-      row_buf[i + 1] = static_cast<uint16_t>(dimmed >> 16);
-    }
-    if (i < span_w) {
-      row_buf[i] = scale_rgb565_q3(row_buf[i], mul_q3);
-    }
-    return;
-  }
+// Scales a row of native RGB565 by mul_q8/256 with a 4x4 ordered dither (screen position x0 + i, y).
+inline void dim_rgb565_row_dither(uint16_t *row_buf, int span_w, int mul_q8, int x0, int y) {
+  if (mul_q8 >= 256 || span_w <= 0) return;
+  if (mul_q8 < 0) mul_q8 = 0;
+  const uint8_t *th = kBayer4[y & 3];
+  const uint32_t m = static_cast<uint32_t>(mul_q8);
   for (int i = 0; i < span_w; i++) {
-    row_buf[i] = scale_rgb565_q3(row_buf[i], mul_q3);
+    const uint32_t p = row_buf[i];
+    const uint32_t t = static_cast<uint32_t>(th[(x0 + i) & 3]) * 16U + 8U;
+    const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
+    const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
+    const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
+    row_buf[i] = static_cast<uint16_t>((r << 11) | (g << 5) | b);
   }
 }
 
@@ -1997,7 +2121,7 @@ inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, in
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
     const int step_x = (src_w << 12) / r.w;
     const int step_y = (src_h << 12) / r.h;
-    const int mul_q3 = (dim_level >= 2) ? 2 : (apply_scrim ? 4 : 8);
+    const int mul_q8 = (dim_level >= 2) ? 64 : (apply_scrim ? 128 : 256);
     int curr_y = 0;
     for (int y = 0; y < r.h; y++) {
       const int sy = std::min(src_h - 1, curr_y >> 12);
@@ -2016,7 +2140,7 @@ inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, in
         row_buf[i] = src_row[std::min(src_w - 1, curr_x >> 12)];
         curr_x += step_x;
       }
-      dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+      dim_rgb565_row_dither(row_buf, span_w, mul_q8, r.x0 + x_start, py);
       blit_rgb565_scanline(it, r.x0 + x_start, py, span_w, row_buf, false);
     }
     // Thin top-lit frame just outside the art, so every art pixel stays visible.
@@ -2032,17 +2156,17 @@ inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, in
 
   if (src_w == SCREEN_W && src_h == SCREEN_H) {
     for (int y = start_y; y < end_y; y++) {
-      const int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
+      const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
       int start_x = 0, end_x = 0;
       art_row_span(y, cx, start_x, end_x);
       const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + y * SCREEN_W;
-      if (mul_q3 >= 8) {
+      if (mul_q8 >= 256) {
         blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, false);
       } else {
         std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        dim_rgb565_row_in_place(row_buf, span_w, mul_q3);
+        dim_rgb565_row_dither(row_buf, span_w, mul_q8, start_x, y);
         blit_rgb565_scanline(it, start_x, y, span_w, row_buf, false);
       }
     }
@@ -2069,11 +2193,10 @@ inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, in
 
     int curr_y = src_y0_fp;
     int prev_sy = -1;
-    int prev_mul_q3 = -1;
     for (int y = start_y; y < end_y; y++) {
       const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
       curr_y += step_fp;
-      const int mul_q3 = compute_art_row_scale_q3(y, apply_scrim, show_metadata, dim_level);
+      const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
       int start_x = 0, end_x = 0;
       art_row_span(y, cx, start_x, end_x);
       const int span_w = end_x - start_x + 1;
@@ -2084,16 +2207,13 @@ inline void draw_album_art(DisplayT &it, const uint16_t *src_data, int src_w, in
           scaled_row[x] = src_row[sx_lut[x]];
         }
         prev_sy = sy;
-        prev_mul_q3 = -1;
       }
-      if (mul_q3 >= 8) {
+      if (mul_q8 >= 256) {
         blit_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, false);
       } else {
-        if (mul_q3 != prev_mul_q3) {
-          std::memcpy(row_buf + start_x, scaled_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
-          dim_rgb565_row_in_place(row_buf + start_x, span_w, mul_q3);
-          prev_mul_q3 = mul_q3;
-        }
+        // The dither pattern follows the screen row, so each row is dimmed on its own.
+        std::memcpy(row_buf + start_x, scaled_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
+        dim_rgb565_row_dither(row_buf + start_x, span_w, mul_q8, start_x, y);
         blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, false);
       }
     }

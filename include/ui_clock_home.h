@@ -1459,9 +1459,9 @@ inline void render_home_page(
                       static_cast<uint8_t>(dock_fg_c.b * alpha));
       int app_id = dock_apps[g_idx];
       if (!is_dim_backdrop && alpha > 0.55f) {
-        fast_circle(it, bx + 1, dock_y + 1, dock_r, col_black);
+        fast_circle_aa(it, bx + 1, dock_y + 1, static_cast<float>(dock_r), col_black);
       }
-      fast_circle(it, bx, dock_y, dock_r, slot_ring_c);
+      fast_circle_aa(it, bx, dock_y, static_cast<float>(dock_r), slot_ring_c);
       if (!is_dim_backdrop && alpha > 0.55f) {
         draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true);
       }
