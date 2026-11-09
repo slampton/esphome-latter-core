@@ -815,7 +815,8 @@ inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
 
 // Wi-Fi modem power save has one owner: ESPHome's wifi component (latter_core enables its runtime
 // power-save control). Latter sets the base mode with set_power_save_mode(): LIGHT with the screen on,
-// HIGH with it off (LIGHT on the P4, so the SDIO RPC to the C6 stays responsive). While Latter needs
+// HIGH with it off, except LIGHT in every state on the P4 (the SDIO RPC to the C6 stays responsive) and on
+// automatic light-sleep boards (CONFIG_FREERTOS_USE_TICKLESS_IDLE, see below). While Latter needs
 // full throughput it holds an ESPHome high-performance request; ESPHome runs NONE while any component
 // holds one and returns to the base mode when the last is released. Latter never calls esp_wifi_set_ps()
 // for this: the old direct call cached its last mode, so when ESPHome restored its configured LIGHT after

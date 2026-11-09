@@ -20,7 +20,7 @@
       {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M"}
     ]
   },
-  "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "active_area_mm": [38.99, 38.99], "te": "unrouted", "low_power": "DCS sleep"},
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "active_area_mm": [38.99, 38.99], "te": "unrouted", "low_power": "DCS sleep", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
     {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},

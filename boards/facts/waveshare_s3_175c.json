@@ -18,7 +18,7 @@
       {"rail": "ALDO1", "loads": "codec analog A3V3 (ES8311, ES7210, mics)", "confidence": "M"}
     ]
   },
-  "display": {"bus": "qspi", "controller": "CO5300", "width": 466, "height": 466, "shape": "round", "offset_x": 6, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29)"},
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 466, "height": 466, "shape": "round", "offset_x": 6, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29)", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
     {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
@@ -54,7 +54,7 @@
     {"gpio": 14, "role": "i2c_scl", "confidence": "H"},
     {"gpio": 15, "role": "i2c_sda", "confidence": "H"},
     {"gpio": 16, "role": "i2s_mclk", "confidence": "H"},
-    {"gpio": 21, "role": "imu_int1", "light_sleep_wake": true, "confidence": "M", "note": "QMI8658 INT1 (wake-on-motion); INT2 not connected"},
+    {"gpio": 21, "role": "imu_int1", "light_sleep_wake": true, "confidence": "H", "note": "QMI8658 INT1 (wake-on-motion); INT2 not connected. Hardware WoM validated (plan 2b.1, core d562880)"},
     {"gpio": 38, "role": "display_qspi_clk", "confidence": "H"},
     {"gpio": 45, "role": "i2s_ws", "strapping": true, "confidence": "H"},
     {"gpio": 46, "role": "speaker_pa", "polarity": "active_high", "strapping": true, "confidence": "H"}

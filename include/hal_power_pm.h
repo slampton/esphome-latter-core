@@ -616,9 +616,11 @@ inline void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *
 //              alarm or a FreeRTOS timeout) and their requested-length histogram (light-sleep boards)
 //   loop       ESPHome's loop interval and component-phase passes, their gaps, and passes run while a
 //              HighFrequencyLoopRequester was held (latter_core's loop probe)
-//   WAKE_TIMER esp_timer_dump(): every esp_timer with its period and, with CONFIG_ESP_TIMER_PROFILING,
-//              times armed / triggered and callback time
+//   WAKE_TIMER esp_timer_dump(): every esp_timer with its period, times armed / triggered and callback time
+//              (CONFIG_ESP_TIMER_PROFILING)
 //   WAKE_TASK  CPU time per FreeRTOS task in the window, busiest first (CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
+// Both options cost time in every build that sets them, so the boards leave them off (substitution
+// wake_profiling: "n"); without them those two sections log one line saying how to turn them on.
 inline void pm_log_wake_profile() {
   static uint32_t last_ms = 0;
   const uint32_t now_ms = esphome::millis();
@@ -666,8 +668,10 @@ inline void pm_log_wake_profile() {
   }
 #endif
 
-#if defined(USE_ESP32)
+#if defined(USE_ESP32) && defined(CONFIG_ESP_TIMER_PROFILING)
   pm_log_dump_lines("[PROF:WAKE_TIMER]", 6144, [](FILE *f) { esp_timer_dump(f); });
+#elif defined(USE_ESP32)
+  ESP_LOGI("PROF", "[PROF:WAKE_TIMER] off (build with substitution wake_profiling: \"y\")");
 #endif
 
 #if defined(USE_ESP32) && defined(CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
@@ -715,6 +719,8 @@ inline void pm_log_wake_profile() {
       heap_caps_free(ts);
     }
   }
+#elif defined(USE_ESP32)
+  ESP_LOGI("PROF", "[PROF:WAKE_TASK] off (build with substitution wake_profiling: \"y\")");
 #endif
 }
 

@@ -20,7 +20,7 @@
       {"rail": "ALDO3", "loads": "vibration motor supply", "confidence": "M"}
     ]
   },
-  "display": {"bus": "qspi", "controller": "CO5300", "width": 410, "height": 502, "shape": "rect", "corner_radius": 98, "offset_x": 22, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29 is required)"},
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 410, "height": 502, "shape": "rect", "corner_radius": 98, "offset_x": 22, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29 is required)", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
     {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
@@ -59,7 +59,7 @@
     {"gpio": 16, "role": "i2s_mclk", "confidence": "H"},
     {"gpio": 17, "role": "sd_cs", "confidence": "M", "note": "unused"},
     {"gpio": 18, "role": "haptic_motor", "polarity": "active_high", "confidence": "M", "note": "MMBT3904 driver, ALDO3 supply; unused"},
-    {"gpio": 21, "role": "imu_int1", "light_sleep_wake": true, "confidence": "M", "note": "QMI8658 INT1 (wake-on-motion)"},
+    {"gpio": 21, "role": "imu_int1", "light_sleep_wake": true, "confidence": "H", "note": "QMI8658 INT1 (wake-on-motion). Hardware WoM validated (plan 2b.1, core d562880)"},
     {"gpio": 38, "role": "touch_int", "polarity": "active_low", "light_sleep_wake": true, "confidence": "H"},
     {"gpio": 39, "role": "rtc_int", "confidence": "M", "note": "PCF85063 INT, unused"},
     {"gpio": 40, "role": "i2s_dout", "confidence": "H"},

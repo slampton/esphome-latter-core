@@ -80,7 +80,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 29 | touch_reset | pulsed at boot by the HAL | H |
 | 35 | boot_button | active_low | H |
 | 45 | sd_power_gate | high_off; AO3401 gate, 10k pull-down: HIGH = SD off; left undriven | M |
-| 49 | pwr_key | active_high; K1 -> AXP PWRON and BSS138 -> GPIO49; not LP, so no deep-sleep wake | H |
+| 49 | pwr_key | active_high; K1 -> AXP PWRON and BSS138 -> GPIO49 (schematic); not LP, so no deep-sleep wake. M until the press test on hardware | M |
 | 50 | touch_int | active_low | H |
 | 53 | speaker_pa | active_high | H |
 | 54 | c6_chip_pu | active_high; 10k pull-up + 1 uF; held low in alarm-sleep (rev >= 3.0) | H |
@@ -152,7 +152,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 14 | i2c_scl |  | H |
 | 15 | i2c_sda |  | H |
 | 16 | i2s_mclk |  | H |
-| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); INT2 not connected; light-sleep wake | M |
+| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); INT2 not connected. Hardware WoM validated (plan 2b.1, core d562880); light-sleep wake | H |
 | 38 | display_qspi_clk |  | H |
 | 45 | i2s_ws |  | H |
 | 46 | speaker_pa | active_high | H |
@@ -180,7 +180,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 16 | i2s_mclk |  | H |
 | 17 | sd_cs | unused | M |
 | 18 | haptic_motor | active_high; MMBT3904 driver, ALDO3 supply; unused | M |
-| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion); light-sleep wake | M |
+| 21 | imu_int1 | QMI8658 INT1 (wake-on-motion). Hardware WoM validated (plan 2b.1, core d562880); light-sleep wake | H |
 | 38 | touch_int | active_low; light-sleep wake | H |
 | 39 | rtc_int | PCF85063 INT, unused | M |
 | 40 | i2s_dout |  | H |

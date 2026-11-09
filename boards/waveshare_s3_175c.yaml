@@ -52,6 +52,10 @@ substitutions:
   # Light-sleep PM profiling (CONFIG_PM_PROFILING): per-lock and per-mode times in [PROF:PM_LOCKS].
   # Bench builds only: set it to "true" in the device config's substitutions.
   pm_profiling: "false"
+  # Wake profiling for [PROF:WAKE] (CONFIG_ESP_TIMER_PROFILING + CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS):
+  # esp_timer fire counts and CPU time per task. Both cost time on every esp_timer callback and context
+  # switch, so they stay off; profiling builds set it to "y" (a Kconfig value: y or n).
+  wake_profiling: "n"
 
 esphome:
   build_flags:
@@ -143,10 +147,9 @@ esp32:
       # handler runs from IRAM too) when the flash/PSRAM cache can't serve code, e.g. a hang around a
       # light-sleep transition (int-wdt resets with no crash record, 2026-11-08).
       CONFIG_ESP_PANIC_HANDLER_IRAM: "y"
-      # Wake profiling for [PROF:WAKE] (Telemetry Profiler): esp_timer names and fire counts, CPU time per
-      # task. Costs a little time per esp_timer callback and per context switch.
-      CONFIG_ESP_TIMER_PROFILING: "y"
-      CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: "y"
+      # Wake profiling for [PROF:WAKE] (Telemetry Profiler), off unless the wake_profiling substitution is "y".
+      CONFIG_ESP_TIMER_PROFILING: ${wake_profiling}
+      CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: ${wake_profiling}
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true
