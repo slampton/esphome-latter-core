@@ -552,17 +552,6 @@ script:
             }
           }
 
-          // Battery gauge: 5 s with the screen on or docked, 60 s with the screen off.
-          #if LATTER_HAS_BATTERY
-          static int8_t batt_slow = -1;
-          const bool want_batt_slow = (id(display_power_state) == 2);
-          if (batt_slow != (want_batt_slow ? 1 : 0)) {
-            batt_slow = want_batt_slow ? 1 : 0;
-            id(batt_level).set_update_interval(want_batt_slow ? 60000 : 5000);
-            id(batt_level).start_poller();
-          }
-          #endif
-
           // Automatic light sleep (boards whose HAL declares power_management with enable_light_sleep;
           // include/hal_power_pm.h). The awake lock keeps the chip out of light sleep except in screen-off
           // quiet on battery; while it is released the light-sleep wake pins below arm and the main loop

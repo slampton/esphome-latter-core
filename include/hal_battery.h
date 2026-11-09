@@ -7,22 +7,27 @@
 // fitted cell's rated capacity (boards/facts power.battery_mah); everything below derives from it.
 //
 // Charge profile (AXP2101 REG61-64, applied by hal_init_axp2101 in ui_system.h), for a 3.7 V LiPo:
-//   constant current  0.5C (the cell datasheets' standard charge, the condition cycle life is rated
-//                     at), rounded up to the next AXP2101 step, never above 0.8C, capped at 500 mA: the
-//                     AXP2101 charger is linear and dissipates (VBUS - VBAT) x I inside the enclosure
+//   constant current  0.5C, the standard charge rate in LiPo cell datasheets (the condition cycle life
+//                     is rated at; Sean's decision 2026-11-09), rounded up to the next AXP2101 step, never
+//                     above 0.8C, capped at 500 mA: the AXP2101 charger is linear and dissipates
+//                     (VBUS - VBAT) x I inside the enclosure
 //   precharge         0.1C below the precharge threshold (floored to 25 mA steps, 25..200 mA)
 //   termination       C/20, enabled (floored to 25 mA steps, 25..200 mA)
 //   constant voltage  4.20 V (standard LiPo; no fitted cell is a 4.35 V HV type)
 //
 // State of charge. The AXP2101 fuel gauge (REG A4) needs a battery model (parameter table) loaded for the
 // fitted cell, which X-Powers doesn't publish; with its default model it sat at 99 % from 4.11 to 4.19 V
-// and fell 17 points in 2 h mid-range on the Mobile (2026-11-09). It stays as telemetry (gauge=) only.
+// and fell 17 points in 2 h mid-range on the Mobile (2026-11-09). It is read only while the Telemetry
+// Profiler is on, for the [PROF:POWER] gauge= comparison.
 // The AXP2101 has no battery-current ADC and no coulomb counter (its ADC channels are VBAT, TS, VBUS,
 // VSYS and die temperature), so state of charge comes from the battery voltage:
-//   1. VBAT (REG34/35, 1 mV/LSB) is sampled every kSampleMs by hal_poll_pmu_1s (pmu_axp2101.yaml).
+//   1. VBAT (REG34/35, 1 mV/LSB) is sampled by hal_poll_pmu_1s (pmu_axp2101.yaml) from the existing 1 s
+//      supervisor tick: every kSampleMs while awake or docked, every kSampleQuietMs with the screen off on
+//      battery (light-sleep quiet), and back to kSampleMs on the discharge knee (kFastSampleMv) or once a
+//      sample is below the cutoff, so the cutoff debounce keeps its 30 s.
 //   2. Load compensation estimates the rest voltage: VBAT + I_load x R_path on battery, VBAT -
 //      I_charge x R_path while charging at constant current. I_load is a per-state class (BattLoad).
-//   3. An EMA (kEmaAlpha, about a 60 s time constant at the 10 s cadence) smooths it.
+//   3. An EMA with a kEmaTauMs time constant (the weight follows the actual sample spacing) smooths it.
 //   4. kOcvCurve maps the smoothed rest voltage to percent.
 //   5. Display rules: on battery the value never rises (except in the kSettleMs window after boot or a
 //      plug change, while the estimate converges). While charging it never falls and stops at 99 %; in
@@ -93,14 +98,15 @@ constexpr int kCellIrMilliohmAh = 120;
 constexpr int kBattPathMilliohm =
     kPathFixedMilliohm + (kBattCapacityMah > 0 ? kCellIrMilliohmAh * 1000 / kBattCapacityMah : 0);
 
-// Load classes at the moment VBAT is sampled (the chip is always awake then: the sample runs from the 1 s
-// supervisor). QUIET is measured: boards/facts power_baseline screen_off_awake_ma, 62 mA (Mobile) and
-// 67 mA (Pocket). SCREEN and AUDIO are estimates; calibrate them from the vraw step when the screen or
-// the speaker turns on or off ([PROF:BATT] / Link Report bat=).
+// Average load per class (the cell's voltage follows the average draw, not the instant of the I2C read).
+// QUIET (screen off on battery, light sleep) is measured: about 30-35 mA on the Mobile with light sleep
+// (rev 2026110289; the pre-light-sleep 62-67 mA in boards/facts power_baseline no longer applies).
+// SCREEN and AUDIO are ESTIMATES pending calibration: read the vraw step in the Link Report bat= / [PROF:BATT]
+// when the screen or the speaker turns on or off, divide by kBattPathMilliohm, and set them from that.
 enum class BattLoad : uint8_t { QUIET = 0, SCREEN = 1, AUDIO = 2 };
-constexpr int kLoadQuietMa = 65;
-constexpr int kLoadScreenMa = 200;
-constexpr int kLoadAudioMa = 300;
+constexpr int kLoadQuietMa = 33;
+constexpr int kLoadScreenMa = 200;  // estimate
+constexpr int kLoadAudioMa = 300;   // estimate
 
 inline int batt_load_ma(BattLoad load) {
   switch (load) {
@@ -125,7 +131,7 @@ inline bool charge_phase_is_charging(ChargePhase p) {
          p == ChargePhase::CV;
 }
 
-// The Battery Charge State text sensor (pmu_axp2101.yaml), straight from the PMIC each second.
+// The Battery Charge State text sensor (pmu_axp2101.yaml): REG01 read each second while VBUS is present.
 inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_state) {
   if (on_battery) return "Discharging";
   const ChargePhase p = static_cast<ChargePhase>(reg01_chg_state & 0x07);
@@ -184,8 +190,9 @@ struct HibernateRecord {
 // The model
 // ---------------------------------------------------------------------------------------------------
 struct BatteryModel {
-  static constexpr uint32_t kSampleMs = 10000U;
-  static constexpr float kEmaAlpha = 0.15f;        // 1 - exp(-10 s / 60 s)
+  static constexpr uint32_t kSampleMs = 10000U;       // awake, docked, low or near the cutoff
+  static constexpr uint32_t kSampleQuietMs = 60000U;  // screen off on battery (light-sleep quiet)
+  static constexpr float kEmaTauMs = 60000.0f;
   static constexpr uint32_t kSettleMs = 180000U;   // after boot or a plug change the estimate may move both ways
   static constexpr uint32_t kCvNominalMs = 40U * 60U * 1000U;  // typical CV phase, 0.5C down to C/20
   static constexpr float kCvRampCeilPct = 99.0f;   // only the PMIC's charge-done state shows 100 %
@@ -201,6 +208,7 @@ struct BatteryModel {
   static constexpr int kCutoffLoadedMv = 3300;
   static constexpr uint32_t kCutoffHoldMs = 30000U;
   static constexpr uint8_t kCutoffMinSamples = 4;  // 4 samples 10 s apart span 30 s
+  static constexpr int kFastSampleMv = 3500;       // knee: back to kSampleMs below this rest voltage
   static constexpr uint32_t kDrainMinMs = 30U * 60U * 1000U;  // drain rate needs 30 min on battery
   static constexpr int kVbatMinValidMv = 2500;
   static constexpr int kVbatMaxValidMv = 4600;
@@ -229,13 +237,23 @@ struct BatteryModel {
   HibernateReason hib_reason = HibernateReason::OTHER;  // set by whoever starts a hibernate
   HibernateRecord prev_hib;                              // read from the AXP2101 at boot
 
-  bool sample_due(uint32_t now_ms) const { return !has_sample || (now_ms - last_sample_ms) >= kSampleMs; }
+  // quiet = screen off on battery with no audio. The slow cadence stops on the discharge knee (rest voltage
+  // <= kFastSampleMv, about 2-3 % left) and as soon as a sample is below the cutoff, so the cutoff still trips
+  // 30 s (4 samples) after the voltage gets there.
+  uint32_t sample_interval_ms(bool quiet) const {
+    const bool near_cutoff = cutoff_below_count > 0 || (has_sample && vrest_mv <= kFastSampleMv);
+    return (quiet && !near_cutoff) ? kSampleQuietMs : kSampleMs;
+  }
+  bool sample_due(uint32_t now_ms, bool quiet) const {
+    return !has_sample || (now_ms - last_sample_ms) >= sample_interval_ms(quiet);
+  }
 
   bool settling(uint32_t now_ms) const { return static_cast<int32_t>(settle_until_ms - now_ms) > 0; }
 
   // Feeds one VBAT sample. Returns true exactly once, when the cutoff trips.
   bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms) {
     if (now_ms == 0) now_ms = 1;
+    const uint32_t dt_ms = has_sample ? now_ms - last_sample_ms : 0U;
     last_sample_ms = now_ms;
     if (vbat_mv < kVbatMinValidMv || vbat_mv > kVbatMaxValidMv) return false;
     const bool first = !has_sample;
@@ -261,7 +279,8 @@ struct BatteryModel {
       ema_mv = static_cast<float>(vrest_mv);
       settle_until_ms = now_ms + kSettleMs;
     } else {
-      ema_mv += kEmaAlpha * (static_cast<float>(vrest_mv) - ema_mv);
+      const float alpha = 1.0f - std::exp(-static_cast<float>(dt_ms) / kEmaTauMs);
+      ema_mv += alpha * (static_cast<float>(vrest_mv) - ema_mv);
     }
     soc_model = ocv_to_soc(ema_mv);
     const bool settle = settling(now_ms);

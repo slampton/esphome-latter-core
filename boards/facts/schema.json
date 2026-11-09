@@ -43,7 +43,7 @@
         "source": {"enum": ["battery", "usb", "mains"]},
         "pmu": {"type": ["string", "null"]},
         "battery_mah": {"type": ["integer", "null"]},
-        "charge_ma": {"type": ["integer", "null"]},
+        "charge_ma": {"type": ["integer", "null"], "description": "Constant-charge current include/hal_battery.h derives from battery_mah: 0.5C (the standard charge rate in LiPo cell datasheets, at which cycle life is rated) rounded up to the AXP2101 step, never above 0.8C or 500 mA. check_boards.py verifies it."},
         "rails": {
           "type": "array",
           "items": {

@@ -56,17 +56,12 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     accuracy_decimals: 0
-    update_interval: 5s
+    # Published by hal_poll_pmu_1s after each battery-model sample (include/hal_battery.h: load-compensated,
+    # smoothed, never rising on battery, 100 % only from the PMIC's charge-done state). No poller of its own,
+    # and only whole-percent changes go out, so an idle device doesn't send a state every minute.
+    update_interval: never
     filters:
-      - or:
-          - throttle: 60s
-          - delta: 1.0
-    lambda: |-
-      // The voltage model in include/hal_battery.h (fed every 10 s by hal_poll_pmu_1s): load-compensated,
-      // smoothed, never rising on battery, 100 % only from the PMIC's charge-done state.
-      const float soc = latter_ui::battery_model().soc_display;
-      if (std::isnan(soc)) return {};
-      return std::round(soc);
+      - delta: 1.0
 
   - platform: template
     name: "Battery Voltage"
@@ -76,15 +71,11 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     accuracy_decimals: 2
-    update_interval: 60s
+    # The raw VBAT of each battery-model sample, published by hal_poll_pmu_1s (in every power state): the
+    # screen-off battery voltage is the drain metric for power work, and [PROF:POWER] reports it.
+    update_interval: never
     filters:
       - throttle: 120s
-    lambda: |-
-      // The raw VBAT the battery model last sampled (REG34/35 every 10 s, in every power state): the
-      // screen-off battery voltage is the drain metric for power work, and [PROF:POWER] reports it.
-      const int mv = latter_ui::battery_model().vraw_mv;
-      if (mv <= 0) return {};
-      return static_cast<float>(mv) / 1000.0f;
 
 text_sensor:
   - platform: template
@@ -117,44 +108,85 @@ script:
     mode: restart
     then:
       - lambda: |-
-          // AXP2101 VBUS and charger state every second, VBAT into the battery model every 10 s
-          // (include/hal_battery.h). Skipped during an active voice turn to keep bus_internal quiet: the
-          // model's cutoff and smoothing are debounced well past a voice turn.
+          // AXP2101 polling, all from the existing 1 s supervisor tick (no timers of its own, never the awake
+          // lock): REG00 (VBUS, battery present) every second, every 5 s in screen-off quiet on battery;
+          // REG01 (charger) only while VBUS is present; VBAT into the battery model on its own cadence
+          // (include/hal_battery.h: 10 s awake or docked, 60 s in quiet, 10 s again near the cutoff); the fuel
+          // gauge only with the Telemetry Profiler on. Skipped during an active voice turn to keep bus_internal
+          // quiet: the model's cutoff and smoothing are debounced well past a voice turn.
           if (id(va_active) || id(va_tts_received)) return;
-          uint8_t reg0 = 0x00;
-          uint8_t stat0 = 0;
+          auto &bm = latter_ui::battery_model();
+          const uint32_t now_b = millis();
+          const bool audio_load = id(speaker_enable).state ||
+                                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
+          const bool quiet = !id(usb_connected).state && id(display_power_state) == 2 && !audio_load;
+
+          static uint32_t last_stat0_ms = 0;
+          static bool bat_present = true;
           bool vbus = id(usb_connected).state;
-          bool bat_present = true;
-          if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
-            bool vbus_good = (stat0 & 0x20) != 0;
-            bat_present = (stat0 & 0x08) != 0;
-            // If powered via the UART USB-C port with no LiPo battery attached (bat_present == false),
-            // the board is running on USB 5V power even though AXP2101 VBUS_IN is unpowered!
-            vbus = vbus_good || !bat_present;
-            if (!id(usb_connected).has_state() || id(usb_connected).state != vbus) {
-              id(usb_connected).publish_state(vbus);
-              if (id(display_power_state) == 0) {
-                id(screen_sleep_timer).execute();
+          if (!quiet || last_stat0_ms == 0 || (now_b - last_stat0_ms) >= 5000U) {
+            last_stat0_ms = (now_b == 0) ? 1U : now_b;
+            uint8_t reg0 = 0x00;
+            uint8_t stat0 = 0;
+            if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
+              bool vbus_good = (stat0 & 0x20) != 0;
+              bat_present = (stat0 & 0x08) != 0;
+              // If powered via the UART USB-C port with no LiPo battery attached (bat_present == false),
+              // the board is running on USB 5V power even though AXP2101 VBUS_IN is unpowered!
+              vbus = vbus_good || !bat_present;
+              if (!id(usb_connected).has_state() || id(usb_connected).state != vbus) {
+                id(usb_connected).publish_state(vbus);
+                if (id(display_power_state) == 0) {
+                  id(screen_sleep_timer).execute();
+                }
+                // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
+                // so the screensaver never stays awake draining the battery.
+                if (!vbus && id(display_power_state) == 1) {
+                  id(turn_screen_off).execute();
+                } else if (id(display_power_state) == 2) {
+                  if (!vbus) id(sleep_start_time) = millis();
+                  id(sync_wake_word_state).execute();
+                }
+                id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
               }
-              // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
-              // so the screensaver never stays awake draining the battery.
-              if (!vbus && id(display_power_state) == 1) {
-                id(turn_screen_off).execute();
-              } else if (id(display_power_state) == 2) {
-                if (!vbus) id(sleep_start_time) = millis();
-                id(sync_wake_word_state).execute();
-              }
-              id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
             }
           }
 
-          // Charger state (REG01): bits 6:5 current direction (1 = charging), bits 2:0 charger phase.
-          uint8_t reg1 = 0x01;
-          uint8_t stat1 = 0;
-          if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) != esphome::i2c::ERROR_OK) return;
-          const uint8_t chg_dir = (stat1 >> 5) & 0x03;
-          const uint8_t chg_state = stat1 & 0x07;
-          const bool is_charging = vbus && (chg_dir == 1) && (chg_state < 4);
+          // Charger state (REG01, only while VBUS is present): bits 6:5 current direction (1 = charging),
+          // bits 2:0 charger phase. On battery the charger is idle by definition.
+          uint8_t chg_state = static_cast<uint8_t>(latter_ui::ChargePhase::IDLE);
+          bool is_charging = false;
+          static uint8_t last_stat1 = 0xFF;
+          if (vbus) {
+            uint8_t reg1 = 0x01;
+            uint8_t stat1 = 0;
+            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) != esphome::i2c::ERROR_OK) return;
+            chg_state = stat1 & 0x07;
+            is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
+            if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
+              // Charger diagnostics on every charger change (rare): REG00 status, REG01, TS config (REG50: bit 4
+              // set = TS ignored by the charger), TS ADC (REG36/37 raw), battery temperature IRQ bits (REG48 bits
+              // 0-3: under/over temperature in work / in charge). A charger held back by TS shows here.
+              uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
+              uint8_t rr = 0x00;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
+              rr = 0x50;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
+              rr = 0x48;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
+              rr = 0x36;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
+              rr = 0x37;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
+              ESP_LOGI("PROF", "[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
+                       r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
+                       (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
+              last_stat1 = stat1 & 0x67;
+            }
+          } else {
+            last_stat1 = 0xFF;
+          }
           if (!id(batt_charging).has_state() || id(batt_charging).state != is_charging) {
             id(batt_charging).publish_state(is_charging);
           }
@@ -166,27 +198,27 @@ script:
           }
 
           // Battery model: VBAT (REG34/35), the load class at this instant, and the cutoff.
-          auto &bm = latter_ui::battery_model();
-          const uint32_t now_b = millis();
-          if (bat_present && bm.sample_due(now_b)) {
+          if (bat_present && bm.sample_due(now_b, quiet)) {
             uint8_t vreg = 0x34;
             uint8_t vbuf[2] = {0, 0};
             if (id(bus_internal).write_readv(0x34, &vreg, 1, vbuf, 2) == esphome::i2c::ERROR_OK) {
               const int vbat_mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
-              uint8_t greg = 0xA4;
-              uint8_t gauge = 0;
-              if (id(bus_internal).write_readv(0x34, &greg, 1, &gauge, 1) == esphome::i2c::ERROR_OK && gauge <= 100) {
-                latter_ui::pmu_telemetry().gauge_raw = gauge;  // comparison telemetry only
+              if (latter_ui::profiler_enabled()) {
+                uint8_t greg = 0xA4;
+                uint8_t gauge = 0;
+                if (id(bus_internal).write_readv(0x34, &greg, 1, &gauge, 1) == esphome::i2c::ERROR_OK && gauge <= 100) {
+                  latter_ui::pmu_telemetry().gauge_raw = gauge;  // [PROF:POWER] gauge= comparison only
+                }
               }
               latter_ui::BattLoad load = latter_ui::BattLoad::QUIET;
-              if (id(speaker_enable).state ||
-                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
-                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) {
+              if (audio_load) {
                 load = latter_ui::BattLoad::AUDIO;
               } else if (id(display_power_state) != 2) {
                 load = latter_ui::BattLoad::SCREEN;
               }
               const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b);
+              if (!std::isnan(bm.soc_display)) id(batt_level).publish_state(std::round(bm.soc_display));
+              if (bm.vraw_mv > 0) id(batt_voltage).publish_state(static_cast<float>(bm.vraw_mv) / 1000.0f);
               if (!id(batt_low).has_state() || id(batt_low).state != bm.low) {
                 id(batt_low).publish_state(bm.low);
               }
@@ -200,8 +232,8 @@ script:
               // letting the cell run into the PMIC's under-voltage cutoff. A hibernate countdown already running
               // is replaced by the instant one; the final power-off sequence is left alone.
               if (cutoff && !id(ota_in_progress) && !(id(is_hibernating) && id(hibernate_countdown_val) == 0)) {
-                ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT vraw=%dmV vrest=%dmV soc=%.0f%% gauge=%d%% -> hibernate",
-                         bm.vraw_mv, bm.vrest_mv, bm.soc_display, latter_ui::pmu_telemetry().gauge_raw);
+                ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT vraw=%dmV vrest=%dmV soc=%.0f%% -> hibernate",
+                         bm.vraw_mv, bm.vrest_mv, bm.soc_display);
                 bm.hib_reason = latter_ui::HibernateReason::CRITICAL;
                 id(start_instant_hibernation).execute();
                 return;
