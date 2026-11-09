@@ -12,7 +12,7 @@
     "source": "battery",
     "pmu": "AXP2101",
     "battery_mah": 400,
-    "charge_ma": 300,
+    "charge_ma": 200,
     "rails": [
       {"rail": "DCDC1", "loads": "3V3 system", "confidence": "H"},
       {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M"},
@@ -37,7 +37,7 @@
     "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,
     "LATTER_PWR_KEY_PIN": 10, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_PWR_KEY_DEEP_SLEEP_WAKE": 1,
     "LATTER_ACTION_BTN_PIN": 0, "LATTER_TOUCH_INT_PIN": 38, "LATTER_IMU_INT1_PIN": 21, "LATTER_TOUCH_RST_PIN": 9,
-    "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x003", "LATTER_PMU_CHARGE_MA": 300
+    "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x003", "LATTER_BATTERY_MAH": 400
   },
   "pins": [
     {"gpio": 0, "role": "boot_button", "polarity": "active_low", "light_sleep_wake": true, "strapping": true, "confidence": "H"},

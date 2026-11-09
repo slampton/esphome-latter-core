@@ -42,6 +42,7 @@
 #include "audio_router.h"
 #include "hal_imu_qmi8658.h"
 #include "hal_power_pm.h"
+#include "hal_battery.h"
 #include "hal_link_report.h"
 #include "latter_state.h"
 
@@ -51,7 +52,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110902L
+#define LATTER_SDK_REV 2026110903L
 
 namespace latter_ui {
 
@@ -3616,8 +3617,8 @@ inline void log_audio_profile(const char *event_tag, const char *detail = "") {
            event_tag, (unsigned long)va_el, detail ? detail : "");
 }
 
-// PMIC telemetry shared by the PMU module and the profiler. gauge_raw is the AXP2101 fuel gauge
-// (REG A4) before the display smoothing in pmu_axp2101.yaml, which can lag the cell by many percent.
+// PMIC telemetry shared by the PMU module and the profiler. gauge_raw is the AXP2101 fuel gauge (REG A4),
+// kept for comparison only: Battery Level comes from the voltage model in hal_battery.h.
 // on_src / off_src are REG20 / REG21 (power-on / power-off source of the previous cycle), latched at boot.
 struct PmuTelemetry {
   int gauge_raw = -1;
@@ -3632,45 +3633,6 @@ inline PmuTelemetry &pmu_telemetry() {
   static PmuTelemetry t;
   return t;
 }
-
-// Critical-battery guard: on battery, hibernate cleanly before the PMIC's DCDC under-voltage cutoff
-// cuts power mid-write (Wrist: last_off=dcdc-undervolt at a displayed 60 %). Trips after
-// kCriticalSamples consecutive VBAT samples (one per kCriticalSampleMs) below LATTER_BATT_CRITICAL_MV,
-// so a single Wi-Fi TX sag never triggers it.
-#ifndef LATTER_BATT_CRITICAL_MV
-#define LATTER_BATT_CRITICAL_MV 3450
-#endif
-struct CriticalBatteryGuard {
-  static constexpr uint32_t kCriticalSampleMs = 10000U;
-  static constexpr uint8_t kCriticalSamples = 3;
-  uint32_t last_sample_ms = 0;
-  uint8_t below_count = 0;
-  bool tripped = false;
-
-  // Returns true when a VBAT sample is due.
-  bool sample_due(uint32_t now_ms) const {
-    return last_sample_ms == 0 || (now_ms - last_sample_ms) >= kCriticalSampleMs;
-  }
-  // Feeds one sample; returns true exactly once, when the guard trips.
-  bool feed(bool on_battery, int vbat_mv, uint32_t now_ms) {
-    last_sample_ms = (now_ms == 0) ? 1U : now_ms;
-    if (!on_battery || vbat_mv <= 0) {
-      below_count = 0;
-      tripped = false;
-      return false;
-    }
-    if (vbat_mv < LATTER_BATT_CRITICAL_MV) {
-      if (below_count < 255) below_count++;
-    } else {
-      below_count = 0;
-    }
-    if (!tripped && below_count >= kCriticalSamples) {
-      tripped = true;
-      return true;
-    }
-    return false;
-  }
-};
 
 // Voice sessions return the display to the state it was in before the session started:
 // active -> normal timeout, screensaver -> screensaver (or off if no longer allowed), off -> off.
@@ -3697,10 +3659,6 @@ inline VaDisplayRestore &va_display_restore() {
   return r;
 }
 
-inline CriticalBatteryGuard &critical_battery_guard() {
-  static CriticalBatteryGuard g;
-  return g;
-}
 // Modem power-save mode the Wi-Fi driver is actually in: 0 none, 1 min modem, 2 max modem, -1 unknown.
 inline int wifi_ps_mode_now() {
 #ifdef USE_ESP32
@@ -3726,6 +3684,7 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
            (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
            (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events,
            wifi_ps_mode_now());
+  battery_log_profile(now_m);
   pm_log_profile();
   pm_log_wake_profile();
 #ifdef USE_ESP32

@@ -24,6 +24,10 @@
 //   api       API client connects (any client); ha = Home Assistant client connects
 //   gap       longest time (s) with no Home Assistant client connected, the current gap included;
 //             down = the current gap (0 while connected)
+// Battery boards only (hal_battery.h):
+//   bat       raw VBAT mV / compensated rest-voltage mV / Battery Level % / state (d discharging,
+//             c charging, v constant-voltage phase, f full, n on USB but not charging)
+//   dr        average discharge (%/h) since the estimate settled on battery ("-" for the first 30 min)
 // Nothing here takes the awake lock: the Wi-Fi event handler only bumps counters (on the event-loop
 // task), the sleep counters come from the light-sleep callbacks, and the sample and the report run
 // from the main loop's scheduler.
@@ -41,6 +45,7 @@
 #include <esp_wifi.h>
 #endif
 
+#include "hal_battery.h"
 #include "hal_power_pm.h"
 
 namespace latter_ui {
@@ -216,8 +221,8 @@ inline uint32_t link_report_permille(uint64_t part, uint64_t whole) {
   return p > 1000ULL ? 1000U : static_cast<uint32_t>(p);
 }
 
-// The report line. Realistic overnight values stay near 170 characters; the buffer caps it at Home
-// Assistant's 255-character state limit.
+// The report line. Realistic overnight values stay near 200 characters with the battery tail; the buffer
+// caps it at Home Assistant's 255-character state limit.
 inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   const LinkReport &r = link_report();
   const uint32_t down_ms = (r.ha_clients == 0) ? now_ms - r.ha_gap_start_ms : 0U;
@@ -246,9 +251,11 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   }
   const uint32_t wlk = link_report_permille(weak_link_ms(now_ms), now_ms);
   const char *where = pm_crash_where();
+  char batt[48];
+  battery_report_fragment(batt, sizeof(batt), now_ms);
   char line[256];
   snprintf(line, sizeof(line),
-           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu",
+           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu%s",
            static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
            where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
@@ -256,7 +263,7 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
            static_cast<unsigned long>(r.rssi_samples), static_cast<unsigned long>(wlk / 10U),
            static_cast<unsigned long>(wlk % 10U), sleep, static_cast<unsigned long>(r.api_connects),
            static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
-           static_cast<unsigned long>(down_ms / 1000U));
+           static_cast<unsigned long>(down_ms / 1000U), batt);
   return std::string(line);
 }
 

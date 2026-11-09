@@ -83,8 +83,9 @@ esphome:
     - "-DLATTER_PMU_TS_DISABLE=1"
     - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
     - "-DLATTER_PMU_LDO_KEEP_MASK=0x001"
-    # Fitted cell: 1000mAh -> charge current = min(0.8C, 500mA), floored to the AXP2101 step
-    - "-DLATTER_PMU_CHARGE_MA=500"
+    # Fitted cell (boards/facts power.battery_mah): the charge profile, state of charge and cutoff derive
+    # from it (include/hal_battery.h)
+    - "-DLATTER_BATTERY_MAH=1000"
     - "-DLATTER_AUDIO_OUT_RATE=48000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"

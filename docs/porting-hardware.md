@@ -70,6 +70,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_BATTERY_MAH=1000"  # the fitted cell (boards/facts power.battery_mah)
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
@@ -89,7 +90,8 @@ Optional hardware flags:
 | `LATTER_PWR_KEY_PIN`, `LATTER_PWR_KEY_ACTIVE_HIGH`, `LATTER_PWR_KEY_DEEP_SLEEP_WAKE` | The GPIO that reads the power key (for example the AXP2101 `SYS_OUT` net), its polarity, and whether it is RTC/LP-capable and can wake the chip from deep sleep. Must match the `pwr_key` binary sensor's pin. |
 | `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN`, `LATTER_IMU_INT1_PIN` | Boards with light sleep (see below): the action button (`boot_button`), touch interrupt and QMI8658 INT1 GPIOs, armed with `LATTER_PWR_KEY_PIN` as light-sleep wake sources. `LATTER_IMU_INT1_PIN` must equal the `imu_int1_pin` substitution. Mark each pin `light_sleep_wake` in the board facts. |
 | `LATTER_TOUCH_RST_PIN` | A touch reset the HAL drives with raw `gpio_set_level` (touch platforms without `reset_pin:`), so it keeps driving in light sleep |
-| `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK`, `LATTER_PMU_CHARGE_MA` | AXP2101 traits: no NTC on TS; which DCDC and LDO rails stay on (everything else with no load is turned off); charge current from the fitted cell's capacity, using min(0.8C, 500 mA) rounded down to the AXP2101 step (25 mA steps up to 200 mA, then 100 mA steps). Leave a trait undefined if the schematic doesn't confirm it. |
+| `LATTER_BATTERY_MAH` | Battery boards (`LATTER_HAS_BATTERY=1`, required): the fitted cell's rated capacity, equal to `power.battery_mah` in the board facts. `include/hal_battery.h` derives everything from it: the charge profile (0.5C rounded up to the AXP2101 step, never above 0.8C or 500 mA; precharge 0.1C; termination C/20; 4.20 V), the battery-path resistance used for load compensation, the state of charge, the 10 % low warning and the 3.40 V rest / 3.30 V loaded cutoff. `power.charge_ma` in the facts records the derived current (`check_boards.py` checks it). |
+| `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK` | AXP2101 traits: no NTC on TS (the charger then ignores TS; keep TS enabled only when a thermistor is fitted); which DCDC and LDO rails stay on (everything else with no load is turned off). Leave a trait undefined if the schematic doesn't confirm it. |
 | `LATTER_PANEL_DCS_SLEEP` | Self-emissive QSPI DCS panels (for example CO5300 AMOLED) on `mipi_spi`: screen-off sends DISPOFF + SLPIN and screen-on sends SLPOUT + DISPON, instead of only setting brightness to 0 |
 | `LATTER_CORNER_R` | A corner radius other than the default |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels. See [ESP32-P4](#6-esp32-p4). |

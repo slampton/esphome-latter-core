@@ -188,6 +188,12 @@ inline void hal_release_pwr_key_wake_pad() {
 template <typename I2cBusT>
 inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_until_alarm) {
 #ifdef USE_ESP32
+  BatteryModel &batt = battery_model();
+  if (batt.cutoff_tripped && sec_until_alarm > 0) {
+    // Alarm-sleep keeps every rail on and wakes into a speaker load: at the cutoff that runs the cell flat.
+    ESP_LOGW("power", "Battery at cutoff: powering off instead of alarm-sleep (alarm in %lds)", (long)sec_until_alarm);
+    sec_until_alarm = -1;
+  }
 #if defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_PM_SUPPORT_EXT0_WAKEUP
   // Alarm-sleep keeps AXP2101 rails ON, so a PWR key press wakes the SoC through ext0.
   esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN), LATTER_PWR_KEY_ACTIVE_HIGH ? 1 : 0);
@@ -208,6 +214,18 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_unt
     return;
   }
   if (bus != nullptr) {
+    // Power-off record in the AXP2101 data buffer (REG04-07, kept while a cell is connected), read back by
+    // hal_init_axp2101 at the next boot: magic | reason, VBAT mV (big-endian), percent (0xFF unknown).
+    const uint16_t rec_mv = batt.vraw_mv > 0 ? static_cast<uint16_t>(batt.vraw_mv) : 0U;
+    const uint8_t rec_soc = std::isnan(batt.soc_display) ? 0xFF : static_cast<uint8_t>(std::lround(batt.soc_display));
+    const uint8_t rec[4] = {static_cast<uint8_t>(kHibRecordMagic | (static_cast<uint8_t>(batt.hib_reason) & 0x0F)),
+                            static_cast<uint8_t>(rec_mv >> 8), static_cast<uint8_t>(rec_mv & 0xFF), rec_soc};
+    for (uint8_t i = 0; i < 4; i++) {
+      const uint8_t wr_rec[2] = {static_cast<uint8_t>(0x04 + i), rec[i]};
+      bus->write(0x34, wr_rec, 2);
+    }
+    ESP_LOGI("power", "AXP2101 power-off: reason=%s vbat=%umV soc=%u", hibernate_reason_name(rec[0] & 0x0F),
+             (unsigned)rec_mv, (unsigned)rec_soc);
     uint8_t axp_pwr_off[2] = {0x10, 0x01};
     auto err = bus->write(0x34, axp_pwr_off, 2);
     if (err != esphome::i2c::ERROR_OK) {
@@ -246,8 +264,11 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32
 //      (bits0-7 = REG90 ALDO1-4/BLDO1-2/CPUSLDO/DLDO1, bit8 = REG91 bit0 DLDO2) only ever switch
 //      rails OFF; rails outside the mask that have no load per the schematic are disabled.
 //      Boards without a verified rail map leave both masks undefined (OTP defaults retained).
-//   4. LATTER_PMU_CHARGE_MA (100..1000): constant-charge current (REG62), set per board from the
-//      fitted cell capacity (<= 1C). Undefined = OTP default retained.
+//   4. LATTER_HAS_BATTERY=1: the charge profile derived from LATTER_BATTERY_MAH in hal_battery.h:
+//      constant current (REG62), precharge (REG61 bits 3:0), termination (REG63 bits 3:0, bit 4 enable)
+//      and the 4.20 V constant voltage (REG64 bits 2:0).
+//   5. Reads and clears the previous power-off record (data buffer REG04-07, see
+//      enter_axp2101_hibernate_or_alarm_sleep) for [PROF:BOOT] hib=.
 template <typename I2cBusT>
 inline void hal_init_axp2101(I2cBusT *bus) {
 #ifdef USE_ESP32
@@ -279,19 +300,39 @@ inline void hal_init_axp2101(I2cBusT *bus) {
   if (rd(0x91, v)) wr(0x91, static_cast<uint8_t>(v & (0xFE | ((LATTER_PMU_LDO_KEEP_MASK >> 8) & 0x01))));
 #endif
 
-#if defined(LATTER_PMU_CHARGE_MA)
-  static_assert(LATTER_PMU_CHARGE_MA >= 100 && LATTER_PMU_CHARGE_MA <= 1000,
-                "LATTER_PMU_CHARGE_MA must be within 100..1000 mA");
-  constexpr uint8_t kIccCode = (LATTER_PMU_CHARGE_MA <= 200)
-                                   ? static_cast<uint8_t>(LATTER_PMU_CHARGE_MA / 25)
-                                   : static_cast<uint8_t>(8 + (LATTER_PMU_CHARGE_MA - 200) / 100);
-  if (rd(0x62, v)) wr(0x62, static_cast<uint8_t>((v & 0xE0) | kIccCode));
+#if LATTER_HAS_BATTERY
+  static_assert(kBattChargeMa >= 100 && kBattChargeMa <= 1000, "charge current outside the AXP2101 range");
+  if (rd(0x62, v)) wr(0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kBattChargeMa)));
+  if (rd(0x61, v)) wr(0x61, static_cast<uint8_t>((v & 0xF0) | (kBattPrechargeMa / 25)));
+  if (rd(0x63, v)) wr(0x63, static_cast<uint8_t>((v & 0xE0) | 0x10 | (kBattTermMa / 25)));
+  if (rd(0x64, v)) wr(0x64, static_cast<uint8_t>((v & 0xF8) | kBattCvCode));
 #endif
 
+  // Previous power-off record (Latter writes it right before the REG10 power-off).
+  {
+    uint8_t rec[4] = {0, 0, 0, 0};
+    bool rec_ok = true;
+    for (uint8_t i = 0; i < 4; i++) rec_ok = rd(static_cast<uint8_t>(0x04 + i), rec[i]) && rec_ok;
+    HibernateRecord &prev = battery_model().prev_hib;
+    if (rec_ok && (rec[0] & 0xF0) == kHibRecordMagic) {
+      prev.valid = true;
+      prev.reason = rec[0] & 0x0F;
+      prev.mv = static_cast<uint16_t>((rec[1] << 8) | rec[2]);
+      prev.soc = rec[3];
+    }
+    for (uint8_t i = 0; i < 4; i++) wr(static_cast<uint8_t>(0x04 + i), 0x00);
+  }
+
   // Configuration snapshot for the board facts ledger / bring-up log.
-  uint8_t r62 = 0, r64 = 0, r80 = 0, r90 = 0, r91 = 0, r30 = 0, r50 = 0, r27 = 0;
+  uint8_t r61 = 0, r62 = 0, r63 = 0, r64 = 0, r80 = 0, r90 = 0, r91 = 0, r30 = 0, r50 = 0, r27 = 0, r16 = 0, r18 = 0,
+          r24 = 0;
+  rd(0x61, r61);
   rd(0x62, r62);
+  rd(0x63, r63);
   rd(0x64, r64);
+  rd(0x16, r16);
+  rd(0x18, r18);
+  rd(0x24, r24);
   rd(0x80, r80);
   rd(0x90, r90);
   rd(0x91, r91);
@@ -306,8 +347,11 @@ inline void hal_init_axp2101(I2cBusT *bus) {
   tel.cv_reg = r64;
   tel.icc_ma = icc_ma;
   tel.boot_valid = true;
-  ESP_LOGI("pmu", "AXP2101: ICC=%dmA (0x62=0x%02X) CV=0x%02X DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X",
-           icc_ma, r62, r64, r80, r90, r91, r30, r50, r27);
+  static const int kCvMv[8] = {0, 4000, 4100, 4200, 4350, 4400, 0, 0};
+  ESP_LOGI("pmu", "AXP2101: ICC=%dmA (0x62=0x%02X) IPRE=%dmA ITERM=%dmA%s CV=%dmV (0x%02X) cell=%dmAh "
+           "DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X ILIM=0x%02X CHG=0x%02X VOFF=0x%02X",
+           icc_ma, r62, (r61 & 0x0F) * 25, (r63 & 0x0F) * 25, (r63 & 0x10) ? "" : "(off)", kCvMv[r64 & 0x07], r64,
+           kBattCapacityMah, r80, r90, r91, r30, r50, r27, r16, r18, r24);
 #else
   (void)bus;
 #endif
@@ -373,10 +417,22 @@ inline void log_boot_summary() {
       std::strncat(on_s, kOn[b], sizeof(on_s) - std::strlen(on_s) - 1);
     }
   }
+  // hib = the reason Latter switched the PMIC off last time (hal_battery.h HibernateReason), with VBAT and the
+  // battery percent at that moment; "-" when the last power-off wasn't Latter's (key hold, under-voltage).
+  char hib_s[48] = "-";
+  const HibernateRecord &prev = battery_model().prev_hib;
+  if (prev.valid) {
+    if (prev.soc <= 100) {
+      snprintf(hib_s, sizeof(hib_s), "%s@%umV/%u%%", hibernate_reason_name(prev.reason), (unsigned)prev.mv,
+               (unsigned)prev.soc);
+    } else {
+      snprintf(hib_s, sizeof(hib_s), "%s@%umV", hibernate_reason_name(prev.reason), (unsigned)prev.mv);
+    }
+  }
   ESP_LOGI("PROF",
-           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) on=0x%02X(%s) icc=%dmA cv=0x%02X",
-           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", tel.on_src,
-           on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
+           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
+           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
+           tel.on_src, on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
 }
 inline std::string &latter_site_id() {
   static std::string s = "primary";

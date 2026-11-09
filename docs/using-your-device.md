@@ -59,6 +59,18 @@ Whether music follows the device when you pick another Area on it (or Bluetooth 
 
 ---
 
+## Battery
+
+Battery devices use a single-cell 3.7 V LiPo. Every battery board handles it the same way. Only the cell's capacity differs.
+
+- **Charging.** Plug in USB-C. The charger runs at about half the cell's capacity per hour (0.5C, at most 500 mA), then holds 4.20 V until the current tapers to a twentieth of the capacity. **Battery Charge State** reads `Charging`, `Full`, `Not Charging` (on USB, charger paused) or `Discharging`. A typical charge from empty takes 2 to 2.5 hours.
+- **Battery Level** comes from the battery voltage. The charge chip can't measure current, so Latter estimates the resting voltage: it adds back the drop caused by the screen or speaker, smooths the reading over about a minute, and converts it with a standard LiPo voltage curve. On battery the level never goes up. While charging it never goes down and stops at 99 %. It reads 100 % only once the charger reports the charge is complete, and holds 100 % until you unplug.
+- **Low battery.** At 10 % the **Battery Low** entity turns on, and the device shows a "Battery Low" notice the next time its screen is on. It never wakes the screen just to show the notice.
+- **Automatic power-off.** When the cell reaches empty (3.40 V at rest, or 3.30 V under load) and stays there for 30 seconds, the device hibernates cleanly: it saves state, disconnects from Home Assistant and switches the power chip off, so the cell is never run flat. A short voltage dip from Wi-Fi or the speaker doesn't trigger it. An armed alarm doesn't keep it in alarm-sleep at that point, because ringing an alarm from an empty cell would drain it completely. Plug in USB or press the crown to turn it back on.
+- The level reflects the cell as fitted. Older or damaged cells sag more under load and reach the power-off point sooner.
+
+---
+
 ## Settings exposed to Home Assistant
 
 These appear as entities on the ESPHome device. Most of them can also be changed in Studio.
@@ -74,8 +86,8 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Area** | Default Category, Show All Category, BLE Presence Beacon (off out of the box; Latter turns it on for devices with BLE presence tracking), Presence Beacon Mode |
 | **Weather** | Condition Simulation, which forces any of 16 conditions so you can preview them |
 | **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
-| **Status** | Battery Level, Battery Voltage, Battery Charging and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
-| **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device) refreshed every 15 minutes |
+| **Status** | Battery Level, Battery Voltage, Battery Charging, Battery Charge State, Battery Low and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
+| **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device, and on battery boards the battery voltage, level, charge state and average drain) refreshed every 15 minutes |
 
 ### Reset to defaults
 

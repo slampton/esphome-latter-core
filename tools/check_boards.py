@@ -74,6 +74,29 @@ MINOR_RE = re.compile(r"^\s*minor:\s*(\d+)", re.MULTILINE)
 BOARD_INCLUDE_RE = re.compile(r"!include\s+\.\./boards/([a-z0-9_]+)\.yaml")
 
 
+def _axp2101_icc_floor(ma: int) -> int:
+    if ma < 25:
+        return 25
+    if ma <= 200:
+        return ma // 25 * 25
+    return 1000 if ma >= 1000 else 200 + (ma - 200) // 100 * 100
+
+
+def _axp2101_icc_ceil(ma: int) -> int:
+    if ma <= 25:
+        return 25
+    if ma <= 200:
+        return (ma + 24) // 25 * 25
+    return 1000 if ma >= 1000 else 200 + (ma - 200 + 99) // 100 * 100
+
+
+def battery_charge_ma(mah: int) -> int:
+    """Constant-charge current include/hal_battery.h derives (kBattChargeMa): 0.5C rounded up to the
+    AXP2101 step, never above 0.8C or 500 mA."""
+    cap = _axp2101_icc_floor(min(mah * 8 // 10, 500))
+    return min(_axp2101_icc_ceil(mah // 2), cap)
+
+
 def strip_comments(text: str) -> str:
     """Drop YAML (#) and C++ (//) comments so header prose never counts as pin usage."""
     out: list[str] = []
@@ -266,6 +289,15 @@ def check_board(
     if str(facts.get("latter_flags", {}).get("LATTER_HAS_BATTERY")) == "1":
         if not power.get("battery_mah") or not power.get("pmu"):
             err("LATTER_HAS_BATTERY=1 needs power.pmu and power.battery_mah")
+        else:
+            mah = int(power["battery_mah"])
+            flag = facts.get("latter_flags", {}).get("LATTER_BATTERY_MAH")
+            if flag is None or int(flag) != mah:
+                err(f"latter_flags.LATTER_BATTERY_MAH must equal power.battery_mah ({mah})")
+            if power.get("charge_ma") != battery_charge_ma(mah):
+                err(
+                    f"power.charge_ma must be {battery_charge_ma(mah)} mA, the profile include/hal_battery.h derives from {mah} mAh"
+                )
         if "pmu_axp2101.yaml" not in scan["code"] and power.get("pmu") == "AXP2101":
             err("AXP2101 battery board does not include modules/pmu_axp2101.yaml")
 
