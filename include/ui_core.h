@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110293L
+#define LATTER_SDK_REV 2026110294L
 
 namespace latter_ui {
 
@@ -3404,6 +3404,7 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
            (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events,
            wifi_ps_mode_now());
   pm_log_profile();
+  pm_log_wake_profile();
 #ifdef USE_ESP32
   size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U;
   size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;

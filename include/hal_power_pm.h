@@ -47,6 +47,8 @@
 #include <cstring>
 
 #ifdef USE_ESP32
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <sdkconfig.h>
 #endif
 
@@ -165,9 +167,36 @@ inline PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
                              0U, 0U, 0U, {0U, 0U, 0U, 0U}, 0U,
                              0U, 0U};
 
+// Wake attribution for [PROF:WAKE], counted in the enter callback (IRAM, counters only). ESP-IDF sizes
+// each light-sleep attempt to the nearest deadline (pm_impl.c vApplicationSleep): the next esp_timer
+// alarm, or a FreeRTOS timeout (a task delay or a blocking call with a timeout).
+struct PmWakeHist {
+  volatile uint32_t attempts;
+  volatile uint32_t timer_bound;  // the next esp_timer alarm set the length
+  volatile uint32_t rtos_bound;   // a FreeRTOS timeout set it
+  volatile uint32_t req[5];       // requested length: <20 ms, <50 ms, <200 ms, <1 s, >=1 s
+};
+inline PmWakeHist g_pm_wake_hist = {0U, 0U, 0U, {0U, 0U, 0U, 0U, 0U}};
+
 static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
   (void) arg;
   PmState &st = g_pm_state;
+  // esp_timer_get_time / esp_timer_get_next_alarm_for_wake_up are IRAM-safe here: CONFIG_PM_SLP_IRAM_OPT
+  // selects CONFIG_ESP_TIMER_IN_IRAM, and pm_impl.c calls the latter in this same critical section.
+  PmWakeHist &wh = g_pm_wake_hist;
+  wh.attempts = wh.attempts + 1U;
+  const int64_t until_timer = esp_timer_get_next_alarm_for_wake_up() - esp_timer_get_time();
+  if (until_timer <= sleep_time_us + 1000) {
+    wh.timer_bound = wh.timer_bound + 1U;
+  } else {
+    wh.rtos_bound = wh.rtos_bound + 1U;
+  }
+  const uint32_t bucket = sleep_time_us < 20000 ? 0U
+                          : sleep_time_us < 50000 ? 1U
+                          : sleep_time_us < 200000 ? 2U
+                          : sleep_time_us < 1000000 ? 3U
+                                                    : 4U;
+  wh.req[bucket] = wh.req[bucket] + 1U;
   const uint32_t mask = st.arm_mask;
   uint32_t entered = 0;
   for (uint32_t i = 0; i < PM_WAKE_SLOTS; i++) {
@@ -474,6 +503,136 @@ inline void pm_log_profile() {
     }
   }
   heap_caps_free(buf);
+#endif
+}
+
+// Writes an ESP-IDF dump function's text into a PSRAM buffer and logs it line by line under label.
+inline void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *)) {
+#ifdef USE_ESP32
+  char *buf = static_cast<char *>(heap_caps_calloc(1, len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (buf == nullptr) return;
+  FILE *f = fmemopen(buf, len - 1, "w");
+  if (f != nullptr) {
+    dump(f);
+    fclose(f);
+    char *save = nullptr;
+    for (char *line = strtok_r(buf, "\n", &save); line != nullptr; line = strtok_r(nullptr, "\n", &save)) {
+      if (line[0] != '\0') ESP_LOGI("PROF", "%s %s", label, line);
+    }
+  }
+  heap_caps_free(buf);
+#else
+  (void) label;
+  (void) len;
+  (void) dump;
+#endif
+}
+
+// [PROF:WAKE], once a minute while the Telemetry Profiler is on (called from the 10 s power profile).
+// Measures what wakes the chip instead of guessing:
+//   sleeps     light-sleep attempts in the window, how many slept, which deadline sized them (an esp_timer
+//              alarm or a FreeRTOS timeout) and their requested-length histogram (light-sleep boards)
+//   loop       ESPHome's loop interval and component-phase passes, their gaps, and passes run while a
+//              HighFrequencyLoopRequester was held (latter_core's loop probe)
+//   WAKE_TIMER esp_timer_dump(): every esp_timer with its period and, with CONFIG_ESP_TIMER_PROFILING,
+//              times armed / triggered and callback time
+//   WAKE_TASK  CPU time per FreeRTOS task in the window, busiest first (CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
+inline void pm_log_wake_profile() {
+  static uint32_t last_ms = 0;
+  const uint32_t now_ms = esphome::millis();
+  if (last_ms != 0 && now_ms - last_ms < 60000U) return;
+  const uint32_t window_ms = (last_ms == 0) ? now_ms : now_ms - last_ms;
+  last_ms = now_ms;
+
+#if LATTER_PM_AUTO_SLEEP
+  {
+    static uint32_t p_att = 0, p_tb = 0, p_rb = 0, p_sl = 0, p_req[5] = {0, 0, 0, 0, 0};
+    const PmWakeHist &wh = g_pm_wake_hist;
+    const uint32_t att = wh.attempts, tb = wh.timer_bound, rb = wh.rtos_bound, sl = g_pm_state.sleeps;
+    uint32_t req[5];
+    for (int i = 0; i < 5; i++) req[i] = wh.req[i];
+    ESP_LOGI("PROF",
+             "[PROF:WAKE] window=%lus sleeps: attempts=%lu slept=%lu bound_by esp_timer=%lu rtos=%lu "
+             "req <20ms=%lu <50ms=%lu <200ms=%lu <1s=%lu >=1s=%lu lock=%s",
+             (unsigned long)(window_ms / 1000U), (unsigned long)(att - p_att), (unsigned long)(sl - p_sl),
+             (unsigned long)(tb - p_tb), (unsigned long)(rb - p_rb), (unsigned long)(req[0] - p_req[0]),
+             (unsigned long)(req[1] - p_req[1]), (unsigned long)(req[2] - p_req[2]),
+             (unsigned long)(req[3] - p_req[3]), (unsigned long)(req[4] - p_req[4]),
+             g_pm_state.awake ? "held" : "released");
+    p_att = att;
+    p_tb = tb;
+    p_rb = rb;
+    p_sl = sl;
+    for (int i = 0; i < 5; i++) p_req[i] = req[i];
+  }
+#endif
+
+#ifdef USE_LATTER_LOOP_PROBE
+  {
+    static esphome::latter_core::LoopProbeStats prev{};
+    const esphome::latter_core::LoopProbeStats &lp = esphome::latter_core::loop_probe_stats();
+    ESP_LOGI("PROF",
+             "[PROF:WAKE] loop: interval=%lums passes=%lu hf_held=%lu hf_now=%d gaps <20ms=%lu <50ms=%lu "
+             "<200ms=%lu <1s=%lu >=1s=%lu",
+             (unsigned long)esphome::App.get_loop_interval(), (unsigned long)(lp.passes - prev.passes),
+             (unsigned long)(lp.hf_passes - prev.hf_passes),
+             (int)esphome::HighFrequencyLoopRequester::is_high_frequency(),
+             (unsigned long)(lp.gaps[0] - prev.gaps[0]), (unsigned long)(lp.gaps[1] - prev.gaps[1]),
+             (unsigned long)(lp.gaps[2] - prev.gaps[2]), (unsigned long)(lp.gaps[3] - prev.gaps[3]),
+             (unsigned long)(lp.gaps[4] - prev.gaps[4]));
+    prev = lp;
+  }
+#endif
+
+#if defined(USE_ESP32)
+  pm_log_dump_lines("[PROF:WAKE_TIMER]", 6144, [](FILE *f) { esp_timer_dump(f); });
+#endif
+
+#if defined(USE_ESP32) && defined(CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
+  {
+    constexpr UBaseType_t kMaxTasks = 48;
+    static TaskHandle_t prev_h[kMaxTasks] = {};
+    static uint64_t prev_rt[kMaxTasks] = {};
+    static UBaseType_t prev_n = 0;
+    auto *ts = static_cast<TaskStatus_t *>(
+        heap_caps_malloc(sizeof(TaskStatus_t) * kMaxTasks, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (ts != nullptr) {
+      configRUN_TIME_COUNTER_TYPE total = 0;
+      const UBaseType_t n = uxTaskGetSystemState(ts, kMaxTasks, &total);
+      uint64_t delta[kMaxTasks];
+      for (UBaseType_t i = 0; i < n; i++) {
+        const uint64_t rt = static_cast<uint64_t>(ts[i].ulRunTimeCounter);
+        uint64_t prev = rt;  // a task new in this window reports 0
+        for (UBaseType_t j = 0; j < prev_n; j++) {
+          if (prev_h[j] == ts[i].xHandle) {
+            prev = prev_rt[j];
+            break;
+          }
+        }
+        delta[i] = rt >= prev ? rt - prev : rt;  // the 32-bit counter wraps after ~71 min
+      }
+      // Busiest 14 first (counter clock: esp_timer, 1 us).
+      bool shown[kMaxTasks] = {};
+      for (int k = 0; k < 14; k++) {
+        int best = -1;
+        for (UBaseType_t i = 0; i < n; i++) {
+          if (!shown[i] && (best < 0 || delta[i] > delta[best])) best = static_cast<int>(i);
+        }
+        if (best < 0 || delta[best] == 0) break;
+        shown[best] = true;
+        const uint32_t pm = window_ms > 0 ? static_cast<uint32_t>(delta[best] / window_ms) : 0;  // us per ms = permille
+        ESP_LOGI("PROF", "[PROF:WAKE_TASK] %-16s prio=%u run=%lums (%lu.%lu%%)", ts[best].pcTaskName,
+                 (unsigned) ts[best].uxCurrentPriority, (unsigned long)(delta[best] / 1000U),
+                 (unsigned long)(pm / 10U), (unsigned long)(pm % 10U));
+      }
+      prev_n = n;
+      for (UBaseType_t i = 0; i < n; i++) {
+        prev_h[i] = ts[i].xHandle;
+        prev_rt[i] = static_cast<uint64_t>(ts[i].ulRunTimeCounter);
+      }
+      heap_caps_free(ts);
+    }
+  }
 #endif
 }
 

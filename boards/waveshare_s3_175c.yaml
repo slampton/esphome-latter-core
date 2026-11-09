@@ -138,6 +138,10 @@ esp32:
       # mDNS timer every 500 ms (default 100 ms).
       CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
       CONFIG_MDNS_TIMER_PERIOD_MS: "500"
+      # Wake profiling for [PROF:WAKE] (Telemetry Profiler): esp_timer names and fire counts, CPU time per
+      # task. Costs a little time per esp_timer callback and per context switch.
+      CONFIG_ESP_TIMER_PROFILING: "y"
+      CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: "y"
     advanced:
       enable_idf_experimental_features: true
       nvs_cache_in_psram: true

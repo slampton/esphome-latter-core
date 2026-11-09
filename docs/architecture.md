@@ -89,7 +89,7 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `latter_state.h` | Typed per-domain state, plus allocation-free parsers for the packed (`\x1f` / `\x1e`) protocol payloads |
 
 ### `components/latter_core/`
-An ESPHome external component that copies the 19 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas.
+An ESPHome external component that copies the 19 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas. It also registers a counting-only main-loop probe that the Telemetry Profiler's `[PROF:WAKE]` reads.
 
 ### `examples/`
 | File | What it shows |

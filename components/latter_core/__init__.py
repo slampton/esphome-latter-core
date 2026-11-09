@@ -8,17 +8,23 @@ from typing import Any
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.const import CONF_ID
 from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
 
 CONF_GUI = "gui"
 
+latter_core_ns = cg.esphome_ns.namespace("latter_core")
+# Main-loop pass probe for [PROF:WAKE] (latter_core.h): counts component-phase passes, nothing else.
+LatterLoopProbe = latter_core_ns.class_("LatterLoopProbe", cg.Component)
+
 CONFIG_SCHEMA = cv.Schema(
     {
+        cv.GenerateID(): cv.declare_id(LatterLoopProbe),
         cv.Optional(CONF_GUI, default="universal"): cv.string,
     }
-)
+).extend(cv.COMPONENT_SCHEMA)
 
 CORE_HEADERS: tuple[str, ...] = (
     "audio_router.h",
@@ -65,6 +71,10 @@ async def to_code(config: dict[str, Any]) -> None:
         dst_file = Path(CORE.relative_src_path(hdr))
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
+
+    probe = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(probe, config)
+    cg.add_define("USE_LATTER_LOOP_PROBE")
 
     if "wifi" in CORE.config:
         # Latter drives Wi-Fi modem power save through ESPHome's request_high_performance() /
