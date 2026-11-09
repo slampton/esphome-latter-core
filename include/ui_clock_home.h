@@ -1324,30 +1324,40 @@ inline void render_home_page(
         fast_line(it, bx - 5, by - 10, bx + 13, by - 13, c);
         fast_line(it, bx - 5, by - 9,  bx + 13, by - 12, c);
       } else if (app_id == 7) {
-        // Remote: Balanced 4-Segment Circular D-Pad + Center OK Dot (Slimmer 6px ring + wider moat & diagonal gaps)
-        // Matches the open/filled visual weight of Music, Games, and Tools!
-        auto is_remote_dpad = [](int dx, int dy) -> bool {
-          int r2 = dx * dx + dy * dy;
-          // 1. Solid filled center OK dot (r <= 3.8px -> r2 <= 15)
-          if (r2 <= 15) return true;
-          // 2. Generous 5.2px transparent moat around center OK dot (3.8px < r < 9.0px -> r2 < 81)
-          //    and slimmer outer D-pad radius (r <= 15.2px -> r2 <= 232)
-          if (r2 < 81 || r2 > 232) return false;
-          // 3. Wider 45-degree X-shaped diagonal sector gaps (±2.25px -> 4.5px gap) splitting Up, Down, Left, Right arcs
-          static constexpr float INV_SQRT2 = 0.70710678f;
-          float fx = static_cast<float>(dx);
-          float fy = static_cast<float>(dy);
-          float d1 = std::fabs((fx - fy) * INV_SQRT2);
-          float d2 = std::fabs((fx + fy) * INV_SQRT2);
-          if (d1 <= 2.25f || d2 <= 2.25f) return false;
+        // Remote: Handheld Remote Control Silhouette (Top 2 pill buttons, 4-segment circular D-pad + OK dot, 3x3 button grid)
+        auto is_remote_icon = [](int dx, int dy) -> bool {
+          int ax = std::abs(dx);
+          int ay = std::abs(dy);
+          if (ax > 9 || ay > 16) return false;
+          if (ax > 6 && ay > 13 && ((ax - 6) * (ax - 6) + (ay - 13) * (ay - 13) > 10)) {
+            return false;
+          }
+          // 1. Top left & right pill button cutouts
+          if (dy >= -13 && dy <= -12 && ax >= 4 && ax <= 6) {
+            return false;
+          }
+          // 2. Circular 4-segment D-pad ring cutout + solid center OK dot at (0, -4)
+          int dpy = dy + 4;
+          int r2 = dx * dx + dpy * dpy;
+          if (r2 >= 6 && r2 <= 34) {
+            if (r2 >= 16 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
+              return true;
+            }
+            return false;
+          }
+          // 3. Lower 3x3 button grid cutouts (3x2px pills with 2px bridges)
+          if (((dy >= 4 && dy <= 5) || (dy >= 8 && dy <= 9) || (dy >= 12 && dy <= 13)) &&
+              (ax <= 1 || (ax >= 4 && ax <= 6))) {
+            return false;
+          }
           return true;
         };
 
         if (!is_shadow) {
-          for (int dy = -17; dy <= 17; dy++) {
-            for (int dx = -17; dx <= 17; dx++) {
-              if (is_remote_dpad(dx, dy)) {
-                if (!is_remote_dpad(dx + 1, dy + 1)) {
+          for (int dy = -16; dy <= 16; dy++) {
+            for (int dx = -9; dx <= 9; dx++) {
+              if (is_remote_icon(dx, dy)) {
+                if (!is_remote_icon(dx + 1, dy + 1)) {
                   fast_pixel(it, bx + dx + 1, by + dy + 1, col_black);
                 }
                 fast_pixel(it, bx + dx, by + dy, c);
