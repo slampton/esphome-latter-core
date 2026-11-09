@@ -1404,7 +1404,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
 
       (void)mask_hero_temp;
-      const int excl_r = LATTER_ROUND_DISPLAY ? 33 : scale_min(39);
+      const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
       if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
           (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
 
@@ -1437,7 +1437,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1B: CELESTIAL CORNER BADGE (3D GRADIENT SUN ORB / LUNAR DISC)
   if (show_celestial && cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
-      const int m_r = LATTER_ROUND_DISPLAY ? 27 : scale_min(33);
+      const int m_r = LATTER_ROUND_DISPLAY ? 24 : scale_min(30);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle, false);
       if (is_fog_mist) {
         fast_circle(it, cel_cx, cel_cy, m_r + 3, esphome::Color(55, 70, 88));
@@ -1452,8 +1452,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
         const esphome::Color c_body = is_fog_mist ? esphome::Color(174, 160, 102) : esphome::Color(250, 204, 24);
         const esphome::Color c_core = is_fog_mist ? esphome::Color(198, 186, 128) : esphome::Color(255, 228, 72);
 
-        const int s_r_out = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
-        const int s_r_in  = LATTER_ROUND_DISPLAY ? 26 : scale_min(32);
+        const int s_r_out = LATTER_ROUND_DISPLAY ? 27 : scale_min(32);
+        const int s_r_in  = LATTER_ROUND_DISPLAY ? 23 : scale_min(29);
         const int r2_out  = s_r_out * s_r_out;
         const int r2_in   = s_r_in * s_r_in;
         const float r2_span = static_cast<float>(std::max(1, r2_out - r2_in));

@@ -619,7 +619,7 @@ inline void render_screensaver_fireworks(DisplayT &it, int cx, int cy, uint32_t 
 template<typename DisplayT, typename TimeT, typename StrT, typename FontT>
 inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                       const TimeT &now, bool is_24h, const StrT &ss_style,
-                                      FontT *font_time, FontT *font_small,
+                                      FontT *font_time, FontT *font_date,
                                       esphome::Color col_slate, esphome::Color col_dark_gray) {
   (void)col_dark_gray;
   if (ss_style == "Ambient Clock") {
@@ -637,7 +637,7 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
     if (now.is_valid()) {
       format_time_hhmm(now.hour, now.minute, is_24h, amb_time, sizeof(amb_time));
       fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, amb_time);
-      it.strftime(cx + drift_x, cy + scale_y(48) + drift_y, font_small, esphome::Color(90, 102, 118),
+      it.strftime(cx + drift_x, cy + scale_y(48) + drift_y, font_date, esphome::Color(90, 102, 118),
                   esphome::display::TextAlign::CENTER, "%a, %b %d", now);
     } else {
       fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, font_time, col_slate, esphome::display::TextAlign::CENTER, kUnknownGlyph);

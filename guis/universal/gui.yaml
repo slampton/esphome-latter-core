@@ -250,7 +250,7 @@ display:
         latter_ui::render_docked_screensaver(
             it, cx, cy, millis(), now, id(is_24h_format),
             id(screensaver_style_select).current_option(),
-            id(font_time), id(font_small), id(col_slate), id(col_dark_gray));
+            id(font_time), id(font_date), id(col_slate), id(col_dark_gray));
         return;
       }
 

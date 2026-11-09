@@ -994,7 +994,7 @@ inline void render_home_page(
 #endif
       }
       if (show_celestial) {
-        fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 25 : scale_min(30), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
+        fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 23 : scale_min(27), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
       }
     } else {
       double moon_cycle = 0.5;
