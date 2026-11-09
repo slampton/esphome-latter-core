@@ -969,7 +969,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
 }
 
 template <typename DispT>
-inline void hal_panel_dcs_set_sleep(DispT *disp, bool sleep);
+inline void hal_panel_dcs_set_brightness(DispT *disp, uint8_t bri_byte);
 
 template <typename DispT>
 inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
@@ -1044,15 +1044,7 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 #if !defined(LATTER_BACKLIGHT_PIN)
   static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
                 "Display driver lacks set_brightness() and no LATTER_BACKLIGHT_PIN is defined");
-  if (disp != nullptr) {
-    if (bri_byte == 0) {
-      disp->set_brightness(0);
-      hal_panel_dcs_set_sleep(disp, true);
-    } else {
-      hal_panel_dcs_set_sleep(disp, false);
-      disp->set_brightness(bri_byte);
-    }
-  }
+  if (disp != nullptr) hal_panel_dcs_set_brightness(disp, bri_byte);
 #else
   (void)disp;
 #endif
@@ -1062,53 +1054,125 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 // With LATTER_PANEL_DCS_SLEEP=1 (QSPI DCS panels such as CO5300), screen-off sends DISPOFF (0x28) +
 // SLPIN (0x10) and screen-on sends SLPOUT (0x11) + DISPON (0x29), using the same QSPI command framing
 // as esphome::mipi_spi (cmd 0x02, 24-bit address = DCS << 8). GRAM is retained across sleep.
+//
+// DCS timing: the panel powers up for 120 ms after SLPOUT. SH8601-class AMOLEDs (S3-2.06) ignore a DISPON
+// sent earlier and stay dark, and SLPIN must not follow SLPOUT within 120 ms. Neither wait blocks the
+// main loop (a blocking 120 ms wait here held the light component for 120 ms on every screen wake): the
+// next step runs as a timeout on the display component, and the brightness is written after DISPON.
+// OTA begin / end call hal_panel_dcs_flush(), which may wait, because they block the loop anyway.
+struct PanelDcsState {
+  enum Phase : uint8_t { AWAKE, WAKING, ASLEEP };
+  Phase phase = AWAKE;     // at boot the panel's init sequence has already sent SLPOUT + DISPON
+  uint8_t want_bri = 0;    // latest requested brightness byte (0 = screen off)
+  uint32_t slpout_ms = 0;  // millis() of the last SLPOUT (0 = none since boot)
+};
+inline PanelDcsState &panel_dcs_state() {
+  static PanelDcsState s;
+  return s;
+}
+inline constexpr uint32_t kPanelDcsSlpoutMs = 120U;
+
+// Milliseconds until the last SLPOUT has settled (0 = settled).
+inline uint32_t panel_dcs_settle_left_ms(uint32_t now_ms) {
+  const auto &st = panel_dcs_state();
+  if (st.slpout_ms == 0) return 0;
+  const uint32_t since = now_ms - st.slpout_ms;
+  return (since >= kPanelDcsSlpoutMs) ? 0U : (kPanelDcsSlpoutMs - since);
+}
+
+// Moves the panel one step towards panel_dcs_state().want_bri; re-arms itself while a DCS wait runs.
 template <typename DispT>
-inline void hal_panel_dcs_set_sleep(DispT *disp, bool sleep) {
+inline void hal_panel_dcs_service(DispT *disp) {
+  if (disp == nullptr) return;
+  auto &st = panel_dcs_state();
 #if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
   if constexpr (requires(DispT *d, const uint8_t *b) {
                   d->enable();
                   d->disable();
                   d->write_cmd_addr_data(size_t{8}, uint32_t{0x02}, size_t{24}, uint32_t{0}, b, size_t{0});
                 }) {
-    static bool asleep = false;
-    static uint32_t last_wake_ms = 0;
-    if (disp == nullptr || sleep == asleep || !disp->is_ready()) return;
+    if (!disp->is_ready()) {
+      disp->set_brightness(st.want_bri);  // stored; the driver applies it when its setup runs
+      return;
+    }
     auto dcs = [disp](uint8_t cmd) {
       uint8_t dummy = cmd;
       disp->enable();
       disp->write_cmd_addr_data(8, 0x02, 24, static_cast<uint32_t>(cmd) << 8, &dummy, 0);
       disp->disable();
     };
-    if (sleep) {
-      // DCS timing: at least 120 ms between SLPOUT and SLPIN.
-      const uint32_t since_wake = esphome::millis() - last_wake_ms;
-      if (last_wake_ms != 0 && since_wake < 120U) esphome::delay(120U - since_wake);
-      dcs(0x28);
-      dcs(0x10);
-      asleep = true;
-      if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=sleep");
-    } else {
-      dcs(0x11);
-      // DCS timing: the panel's internal power-up runs after SLPOUT; SH8601-class AMOLEDs (S3-2.06)
-      // ignore DISPON sent before ~120 ms and stay dark. Wait the full 120 ms before DISPON.
-      esphome::delay(120);
-      dcs(0x29);
-      last_wake_ms = esphome::millis();
-      asleep = false;
-      if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=wake");
+    auto service_in = [disp](uint32_t delay_ms) {
+      DisplayUpdateScheduler::request_timeout(static_cast<esphome::Component *>(disp),
+                                              DisplayUpdateScheduler::kTimeoutPanelDcs, delay_ms,
+                                              [disp]() { hal_panel_dcs_service(disp); });
+    };
+    const uint32_t now = esphome::millis();
+    if (st.want_bri > 0) {
+      if (st.phase == PanelDcsState::ASLEEP) {
+        dcs(0x11);
+        st.slpout_ms = (now != 0) ? now : 1U;
+        st.phase = PanelDcsState::WAKING;
+        service_in(kPanelDcsSlpoutMs);
+        return;
+      }
+      if (st.phase == PanelDcsState::WAKING) {
+        const uint32_t left = panel_dcs_settle_left_ms(now);
+        if (left > 0) {
+          service_in(left);
+          return;
+        }
+        dcs(0x29);
+        st.phase = PanelDcsState::AWAKE;
+        if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=wake");
+      }
+      disp->set_brightness(st.want_bri);
+      return;
     }
+    if (st.phase == PanelDcsState::ASLEEP) return;
+    disp->set_brightness(0);
+    const uint32_t left = panel_dcs_settle_left_ms(now);
+    if (left > 0) {
+      service_in(left);  // dark already; SLPIN once the last SLPOUT has settled
+      return;
+    }
+    if (st.phase == PanelDcsState::AWAKE) dcs(0x28);
+    dcs(0x10);
+    st.phase = PanelDcsState::ASLEEP;
+    if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=sleep");
   } else {
     static bool warned = false;
     if (!warned) {
       warned = true;
       ESP_LOGW("power", "LATTER_PANEL_DCS_SLEEP set but the display driver exposes no QSPI command path; panel sleep disabled");
     }
-    (void)disp;
-    (void)sleep;
+    disp->set_brightness(st.want_bri);
   }
 #else
+  disp->set_brightness(st.want_bri);
+#endif
+}
+
+template <typename DispT>
+inline void hal_panel_dcs_set_brightness(DispT *disp, uint8_t bri_byte) {
+  panel_dcs_state().want_bri = bri_byte;
+  hal_panel_dcs_service(disp);
+}
+
+// Completes a pending DCS transition now, waiting out the SLPOUT settle time. Only for callers that block
+// the loop anyway (OTA begin: the progress screen must be lit; OTA end: the panel must be asleep before
+// the reboot).
+template <typename DispT>
+inline void hal_panel_dcs_flush(DispT *disp) {
+#if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP && !defined(LATTER_BACKLIGHT_PIN)
+  const auto &st = panel_dcs_state();
+  const bool pending = (st.phase == PanelDcsState::WAKING) ||
+                       (st.want_bri == 0 && st.phase != PanelDcsState::ASLEEP);
+  if (!pending || disp == nullptr) return;
+  const uint32_t left = panel_dcs_settle_left_ms(esphome::millis());
+  if (left > 0) esphome::delay(left);
+  hal_panel_dcs_service(disp);
+#else
   (void)disp;
-  (void)sleep;
 #endif
 }
 
@@ -1541,6 +1605,7 @@ inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progre
   if (disp != nullptr) {
     disp->stop_poller();
     hal_set_display_brightness(disp, 230);
+    hal_panel_dcs_flush(disp);  // OTA blocks the loop: finish a DCS wake now so the progress screen is lit
   }
 }
 
@@ -1589,6 +1654,7 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
     // "Restart Device" path (brightness 0 + DCS sleep / backlight off) rather than awake mid-frame;
     // AMOLED panels left awake across an OTA reboot would not come back from their next DCS sleep.
     hal_set_display_brightness(disp, 0);
+    hal_panel_dcs_flush(disp);  // asleep before the reboot, not left waiting on a timeout
   }
   ota_in_progress = false;
   stall_guard_pause(false);

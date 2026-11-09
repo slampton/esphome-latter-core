@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110811L
+#define LATTER_SDK_REV 2026110901L
 
 namespace latter_ui {
 
@@ -2986,6 +2986,15 @@ struct DisplayUpdateScheduler : public esphome::Component {
   // of the small ids the display component's own code uses.
   static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
   static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
+  static constexpr uint32_t kTimeoutPanelDcs = 0x4C410003U;
+
+  // One-shot on the display component after delay_ms (replaces a pending one with the same id), so the
+  // work is attributed to Display and never blocks the caller (e.g. the AMOLED DCS wake in ui_layout.h).
+  static void request_timeout(esphome::Component *comp, uint32_t timeout_id, uint32_t delay_ms,
+                              std::function<void()> &&fn) {
+    if (comp == nullptr) return;
+    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(timeout_id, delay_ms, std::move(fn));
+  }
 
   // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
   static void request_post_frame(esphome::Component *comp, void (*fn)()) {
