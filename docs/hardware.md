@@ -80,7 +80,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 29 | touch_reset | pulsed at boot by the HAL | H |
 | 35 | boot_button | active_low | H |
 | 45 | sd_power_gate | high_off; AO3401 gate, 10k pull-down: HIGH = SD off; left undriven | M |
-| 49 | pwr_key | active_high; K1 -> AXP PWRON and BSS138 -> GPIO49 (schematic); not LP, so no deep-sleep wake. M until the press test on hardware | M |
+| 49 | pwr_key | active_high; K1 -> AXP PWRON and BSS138 -> GPIO49. GPIO49 reads presses; it is not LP, so it cannot wake deep sleep (alarm-sleep wakes on its timer only). Wake from hibernate is the AXP2101: hibernate powers the PMIC off and K1 on PWRON powers it back on, so the P4 cold-boots. Sean, bench 2026-11-09: press + wake from hibernate verified | H |
 | 50 | touch_int | active_low | H |
 | 53 | speaker_pa | active_high | H |
 | 54 | c6_chip_pu | active_high; 10k pull-up + 1 uF; held low in alarm-sleep (rev >= 3.0) | H |

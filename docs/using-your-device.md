@@ -89,6 +89,21 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 | **Status** | Battery Level, Battery Voltage, Battery Charging, Battery Charge State, Battery Low and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
 | **Diagnostics** | System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device, and on battery boards the battery voltage, level, charge state and average drain) refreshed every 15 minutes |
 
+### Logs
+
+At the default `INFO` log level the device is quiet once it has booted. Taps, gestures, frames, voice-turn steps, Bluetooth beacon cycles and wake word pauses log at `DEBUG`, and `[PROF:*]` diagnostics only while the profiler is on. These lines still log at `INFO`:
+
+- the boot summary: SDK revision, display buffers, `[PROF:BOOT]` with the reset reason, crash flag and previous power-off, and charger and light-sleep setup. They are replayed to every log viewer that connects, so a viewer opened after a restart still shows why the device restarted.
+- real events: wake word detected, Assist timers started, cancelled or finished, alarms and timers firing, hibernate countdown and power-off, Home Assistant client changes.
+- warnings and errors, always.
+
+To see more:
+
+1. Turn on **System: Telemetry Profiler**: `[PROF:*]` lines for frames, touch, audio, power, battery, memory, light sleep and wake sources, until you turn it off. Turn it off afterwards: it adds log traffic and CPU time.
+2. For everything, set `logger:` `level: DEBUG` in the device's configuration in ESPHome Device Builder and install. `DEBUG` lines are compiled out of the default `INFO` build, so a runtime log-level change can't bring them back.
+
+Crash details survive a restart: the next boot's `[PROF:BOOT]` line and ESPHome's crash report show them, and Latter raises a "Device restarted after a crash" repair in Home Assistant.
+
 ### Reset to defaults
 
 To put every setting above back to its default, open the device in Latter Studio and choose **Tools → Danger Zone → Reset**, or call the `latter.reset_device` service. The device erases its saved settings, including the Wi-Fi driver's cached network data and RF calibration, then restarts. Wi-Fi and pairing are compiled into the firmware, so it rejoins Home Assistant on its own and stays bound to Latter. A second checkbox also resets Latter's options for that device.

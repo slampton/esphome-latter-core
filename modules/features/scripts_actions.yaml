@@ -204,7 +204,7 @@ script:
           if (local_active || remote_active) {
             id(va_resume_music_after) = true;
           }
-          ESP_LOGI("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d", local_active, remote_active, id(va_resume_music_after));
+          ESP_LOGD("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d", local_active, remote_active, id(va_resume_music_after));
       - if:
           condition:
             lambda: 'return id(va_resume_music_after);'
@@ -236,7 +236,7 @@ script:
             - script.execute: mp_idle_debounce
             - lambda: |-
                 id(va_resume_music_after) = false;
-                ESP_LOGI("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)", id(active_speaker_entity).c_str(), id(va_was_cancelled));
+                ESP_LOGD("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)", id(active_speaker_entity).c_str(), id(va_was_cancelled));
             - if:
                 condition:
                   lambda: 'return !id(active_speaker_entity).empty() && !latter_ui::media_state().is_local;'
@@ -423,7 +423,7 @@ script:
                                        "&z=" + to_string(latter_ui::cal_map_zoom()) +
                                        "&pan_x=" + to_string(latter_ui::cal_map_pan_x()) +
                                        "&pan_y=" + to_string(latter_ui::cal_map_pan_y());
-                ESP_LOGI("cal_map", "Fetching Calendar Map Snapshot: %s", id(notif_camera_url).c_str());
+                ESP_LOGD("cal_map", "Fetching Calendar Map Snapshot: %s", id(notif_camera_url).c_str());
             - online_image.set_url:
                 id: camera_snapshot_art
                 url: !lambda 'return id(notif_camera_url);'

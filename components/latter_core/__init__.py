@@ -27,6 +27,7 @@ CONFIG_SCHEMA = cv.Schema(
 ).extend(cv.COMPONENT_SCHEMA)
 
 CORE_HEADERS: tuple[str, ...] = (
+    "latter_prof.h",
     "audio_router.h",
     "va_cancel_helper.h",
     "latter_protocol.h",

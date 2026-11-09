@@ -229,7 +229,9 @@ binary_sensor:
     entity_category: diagnostic
 
   # PWR key state (K1 -> BSS138 inverter -> GPIO49, HIGH while pressed). Press timing lives in
-  # modules/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep.
+  # modules/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep (alarm-sleep
+  # wakes on its timer). Wake from hibernate needs no GPIO: hibernate powers the AXP2101 off, and K1 also
+  # drives AXP PWRON, which powers the rails back up and cold-boots the P4 (bench-verified 2026-11-09).
   - platform: gpio
     id: pwr_key
     name: "Power Key"

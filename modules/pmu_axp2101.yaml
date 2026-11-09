@@ -179,7 +179,7 @@ script:
               id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
               rr = 0x37;
               id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
-              ESP_LOGI("PROF", "[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
+              LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
                        r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
                        (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
               last_stat1 = stat1 & 0x67;

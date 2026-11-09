@@ -22,8 +22,11 @@ static constexpr uint32_t RETRY_AFTER_FAILURE_MS = 60000;
 static constexpr uint8_t STEP_COUNT = 4;  // reset, advertising parameters, advertising data, advertising enable
 
 // [PROF:BLE] internal RAM (bytes) at the controller's lifecycle points: pre_enable minus advertising is
-// what the running controller holds; pre_enable minus disabled is what it did not give back.
-static void log_internal_heap(const char *phase) {
+// what the running controller holds; pre_enable minus disabled is what it did not give back. Logged only
+// while the Telemetry Profiler is on (set_profile_logging), like every other [PROF:*] INFO line.
+void LatterBeacon::log_internal_heap_(const char *phase) {
+  if (!this->profile_logging_)
+    return;
   ESP_LOGI(TAG, "[PROF:BLE] phase=%s int_free=%u int_max_blk=%u", phase,
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
@@ -138,7 +141,7 @@ void LatterBeacon::enable() {
   if (this->state_ != State::OFF || this->is_failed())
     return;
   this->failed_ = false;
-  log_internal_heap("pre_enable");
+  this->log_internal_heap_("pre_enable");
   const int err = this->transport_up_();
   if (err != 0) {
     this->fail_("controller start", err);
@@ -158,11 +161,11 @@ void LatterBeacon::disable() {
 
 void LatterBeacon::stop_(const char *log_what) {
   this->transport_down_();
-  log_internal_heap("disabled");
+  this->log_internal_heap_("disabled");
   this->state_ = State::OFF;
   this->disable_loop();
   if (log_what != nullptr)
-    ESP_LOGI(TAG, "%s", log_what);
+    ESP_LOGD(TAG, "%s", log_what);
 }
 
 void LatterBeacon::loop() {
@@ -190,8 +193,8 @@ void LatterBeacon::loop() {
     if (this->step_ >= STEP_COUNT) {
       this->state_ = State::ADVERTISING;
       this->disable_loop();
-      ESP_LOGI(TAG, "Advertising (major %u, minor %u)", this->major_, this->minor_);
-      log_internal_heap("advertising");
+      ESP_LOGD(TAG, "Advertising (major %u, minor %u)", this->major_, this->minor_);
+      this->log_internal_heap_("advertising");
       return;
     }
   }

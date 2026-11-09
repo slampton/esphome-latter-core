@@ -13,7 +13,7 @@ script:
     then:
       - lambda: |-
             const latter_ui::TouchPt touch{touch_x, touch_y};
-            ESP_LOGI("touch", ">>> Touch Down: x=%d y=%d page=%d", touch.x, touch.y, id(gui_page));
+            ESP_LOGD("touch", ">>> Touch Down: x=%d y=%d page=%d", touch.x, touch.y, id(gui_page));
             if (id(is_hibernating)) {
               if (id(hibernate_countdown_val) > 0) {
                 id(is_hibernating) = false;
@@ -39,7 +39,7 @@ script:
 
             if (now_touch - latter_ui::last_screen_wake_ms() < latter_ui::TOUCH_DEBOUNCE_WAKE) {
               if (latter_ui::profiler_enabled()) {
-                ESP_LOGI("PROF", "[PROF:TOUCH_BLOCKED] x=%d y=%d page=%d reason=WAKE_DEBOUNCE",
+                LATTER_PROF_LOGI("[PROF:TOUCH_BLOCKED] x=%d y=%d page=%d reason=WAKE_DEBOUNCE",
                          touch.x, touch.y, id(gui_page));
               }
               return;
@@ -163,7 +163,7 @@ script:
             const int home_bar_guard_y = latter_ui::layout().chin_guard_y();
             if (is_top_level_home_bar && touch.y >= home_bar_guard_y) {
               if (latter_ui::profiler_enabled()) {
-                ESP_LOGI("PROF", "[PROF:TOUCH_HOLD] x=%d y=%d page=%d reason=HOME_BAR_SWIPE_ZONE",
+                LATTER_PROF_LOGI("[PROF:TOUCH_HOLD] x=%d y=%d page=%d reason=HOME_BAR_SWIPE_ZONE",
                          touch.x, touch.y, id(gui_page));
               }
               return;
@@ -2047,7 +2047,7 @@ script:
                 latter_ui::release_art(id(camera_snapshot_art));
                 id(sync_wake_word_state).execute();
               }
-              ESP_LOGI("touch", "Swipe-Up Home Bar -> Home");
+              ESP_LOGD("touch", "Swipe-Up Home Bar -> Home");
               latter_ui::schedule_disp_update(&id(disp1));
               return;
             }
@@ -2067,7 +2067,7 @@ script:
                   } else {
                     latter_ui::home_dock_page() = (latter_ui::home_dock_page() + total_pages - 1) % total_pages;
                   }
-                  ESP_LOGI("touch", "Home Dock Swipe (dx=%d) -> dock_page=%d", dx, latter_ui::home_dock_page());
+                  ESP_LOGD("touch", "Home Dock Swipe (dx=%d) -> dock_page=%d", dx, latter_ui::home_dock_page());
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
@@ -2100,7 +2100,7 @@ script:
                 id(menu_scroll_active) = true;
                 id(menu_scroll_dir) = dir;
                 id(menu_scroll_target_page) = latter_ui::step_wrap(id(game_carousel_idx), dir, 6);
-                ESP_LOGI("touch", "Games Carousel Swipe (dx=%d) -> game=%d", dx, id(menu_scroll_target_page));
+                ESP_LOGD("touch", "Games Carousel Swipe (dx=%d) -> game=%d", dx, id(menu_scroll_target_page));
                 id(menu_scroll_transition).execute();
                 return;
               }
@@ -2132,7 +2132,7 @@ script:
                   id(menu_scroll_active) = true;
                   id(menu_scroll_dir) = (target_pg == 2) ? 1 : -1;
                   id(menu_scroll_target_page) = target_pg;
-                  ESP_LOGI("touch", "System Menu Vertical Swipe (dy=%d) -> page=%d", dy, target_pg);
+                  ESP_LOGD("touch", "System Menu Vertical Swipe (dy=%d) -> page=%d", dy, target_pg);
                   id(menu_scroll_transition).execute();
                 }
                 return;
@@ -2149,7 +2149,7 @@ script:
                 } else {
                   id(sky_weather_subpage) = (id(sky_weather_subpage) + 3) % 4;
                 }
-                ESP_LOGI("touch", "Page 5 Horizontal Swipe (dx=%d) -> subpage=%d", dx, id(sky_weather_subpage));
+                ESP_LOGD("touch", "Page 5 Horizontal Swipe (dx=%d) -> subpage=%d", dx, id(sky_weather_subpage));
                 latter_ui::schedule_disp_update(&id(disp1));
                 return;
               }
@@ -2504,7 +2504,7 @@ script:
                         id(remote_subpage) = 0;
                         id(tools_subpage) = 0;
                         id(active_game) = 0;
-                        ESP_LOGI("touch", "Home Dock Release Tap -> app=%d", id(gui_page));
+                        ESP_LOGD("touch", "Home Dock Release Tap -> app=%d", id(gui_page));
                         latter_ui::schedule_disp_update(&id(disp1));
                       }
                     }
@@ -2543,7 +2543,7 @@ script:
                     id(music_browse_page) = next_pg;
                     latter_ui::last_music_page_req_ms() = now_rel;
                     id(menu_scroll_active) = false;
-                    ESP_LOGI("touch", "Music Flick (dy=%d, dt=%lums) -> step=%d page=%d/%d",
+                    ESP_LOGD("touch", "Music Flick (dy=%d, dt=%lums) -> step=%d page=%d/%d",
                              dy, (unsigned long)touch_dur_ms, delta, next_pg, id(music_browse_total_pages));
                     id(fetch_music_browse).execute();
                   }
@@ -2902,7 +2902,7 @@ script:
                   }
                   if (target >= 0 && id(sky_weather_subpage) != target) {
                     id(sky_weather_subpage) = target;
-                    ESP_LOGI("touch", "Page 5 Release Tap -> subpage=%d", target);
+                    ESP_LOGD("touch", "Page 5 Release Tap -> subpage=%d", target);
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
@@ -3534,7 +3534,7 @@ script:
               int dx_p = gest.last_x - gest.start_x;
               int dy_p = gest.last_y - gest.start_y;
               uint32_t dur_p = (now_rel >= gest.start_ms) ? (now_rel - gest.start_ms) : 0U;
-              ESP_LOGI("PROF",
+              LATTER_PROF_LOGI(
                        "[PROF:TOUCH_UP] start=(%d,%d) end=(%d,%d) dx=%d dy=%d travel=%d samples=%d dur=%lums swipe=%d ctx=%d->%d exec=%luus",
                        gest.start_x, gest.start_y, gest.last_x, gest.last_y,
                        dx_p, dy_p, gest.max_travel, gest.sample_count,
@@ -3542,4 +3542,4 @@ script:
                        gest.start_context, end_ctx, (unsigned long)rel_exec_us);
             }
             gest.active = false;
-            ESP_LOGI("touch", "<<< Touch Released (page=%d)", id(gui_page));
+            ESP_LOGD("touch", "<<< Touch Released (page=%d)", id(gui_page));

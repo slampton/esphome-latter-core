@@ -24,6 +24,7 @@
 // ==============================================================================
 
 #include "esphome.h"
+#include "latter_prof.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -134,7 +135,7 @@ template <typename I2cBusT> inline bool hal_imu_wom_enter(I2cBusT *bus, uint8_t 
   }
   st.armed = true;
   st.threshold_mg = threshold_mg;
-  ESP_LOGI("PROF", "[PROF:IMU] wom=armed thr=%umg", static_cast<unsigned>(threshold_mg));
+  LATTER_PROF_LOGI("[PROF:IMU] wom=armed thr=%umg", static_cast<unsigned>(threshold_mg));
   return true;
 }
 

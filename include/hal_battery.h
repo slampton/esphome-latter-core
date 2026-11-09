@@ -44,6 +44,7 @@
 // ==============================================================================
 
 #include "esphome.h"
+#include "latter_prof.h"
 
 #include <cmath>
 #include <cstddef>
@@ -412,7 +413,7 @@ inline void battery_log_profile(uint32_t now_ms) {
   const float rate = b.drain_pct_per_h(now_ms);
   const uint32_t below_s = b.cutoff_below_count > 0 ? (now_ms - b.cutoff_below_since_ms) / 1000U : 0U;
   const int32_t settle_left = static_cast<int32_t>(b.settle_until_ms - now_ms);
-  ESP_LOGI("PROF",
+  LATTER_PROF_LOGI(
            "[PROF:BATT] vraw=%dmV vrest=%dmV ema=%.0fmV soc=%.1f%% disp=%.0f%% state=%c load=%s R=%dmOhm "
            "low=%d cut=%u/%lus settle=%lds dr=%.1f%%/h (~%.0fmA) cap=%dmAh",
            b.vraw_mv, b.vrest_mv, std::isnan(b.ema_mv) ? 0.0f : b.ema_mv,

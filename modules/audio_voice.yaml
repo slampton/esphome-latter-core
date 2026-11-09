@@ -439,7 +439,7 @@ voice_assistant:
             return;
           }
           id(va_status_text) = "Listening...";
-          ESP_LOGI("va", "Status: Listening...");
+          ESP_LOGD("va", "Status: Listening...");
           if (id(display_power_state) == 0 || id(va_wake_screen_switch).state) {
             id(display_brightness).turn_on().perform();
             latter_ui::schedule_disp_update(&id(disp1));
@@ -458,7 +458,7 @@ voice_assistant:
           } else {
             id(va_status_text) = "Listening...";
           }
-          ESP_LOGI("va", "Status: Listening (VAD active)...");
+          ESP_LOGD("va", "Status: Listening (VAD active)...");
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_vad_end:
     then:
@@ -471,7 +471,7 @@ voice_assistant:
           } else {
             id(va_status_text) = "Thinking...";
           }
-          ESP_LOGI("va", "Status: Thinking...");
+          ESP_LOGD("va", "Status: Thinking...");
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_end:
     then:
@@ -531,9 +531,9 @@ voice_assistant:
                                             utt.find("turn off") != std::string::npos);
           if (bare_pause_or_stop || media_pause_or_stop) {
             id(va_resume_music_after) = false;
-            ESP_LOGI("va", "Stop/Pause media intent detected: clearing va_resume_music_after");
+            ESP_LOGD("va", "Stop/Pause media intent detected: clearing va_resume_music_after");
           }
-          ESP_LOGI("va", "STT End (hidden): %s", x.c_str());
+          ESP_LOGD("va", "STT End (hidden): %s", x.c_str());
   on_intent_progress:
     then:
       # An intercom turn's speech went to the doorbell; drop the reply the pipeline started streaming
@@ -573,7 +573,7 @@ voice_assistant:
                       if (id(va_active)) {
                         id(va_status_text) = "Responding...";
                       }
-                      ESP_LOGI("va", "Status: Responding (Streaming TTS)...");
+                      ESP_LOGD("va", "Status: Responding (Streaming TTS)...");
                   - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
     then:
@@ -605,7 +605,7 @@ voice_assistant:
                 if (id(va_active)) {
                   id(va_status_text) = "Responding...";
                 }
-                ESP_LOGI("va", "Status: Responding (TTS)...");
+                ESP_LOGD("va", "Status: Responding (TTS)...");
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_end:
     then:
@@ -628,7 +628,7 @@ voice_assistant:
                 if (id(va_active)) {
                   id(va_status_text) = "Responding...";
                 }
-                ESP_LOGI("va", "TTS URL ready: %s", x.c_str());
+                ESP_LOGD("va", "TTS URL ready: %s", x.c_str());
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_error:
     then:
@@ -676,7 +676,7 @@ voice_assistant:
   on_timer_updated:
     then:
       - lambda: |-
-          ESP_LOGI("va_timer", "Timer updated via Assist: %s (left: %lu sec, active: %d)", timer.name.c_str(), (unsigned long)timer.seconds_left, timer.is_active);
+          ESP_LOGD("va_timer", "Timer updated via Assist: %s (left: %lu sec, active: %d)", timer.name.c_str(), (unsigned long)timer.seconds_left, timer.is_active);
           uint32_t now_t = millis();
           latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
@@ -971,7 +971,7 @@ script:
                             timeout: 100ms
                         - lambda: |-
                             id(hal_set_audio_codecs_standby).execute(false);
-                            ESP_LOGI("mww", "Wake word detection ARMED (primary='%s', mode='%s')",
+                            ESP_LOGD("mww", "Wake word detection ARMED (primary='%s', mode='%s')",
                                      esphome::voice_assistant::primary_wake_word_name(id(mww)).c_str(),
                                      id(va_wake_word_mode).current_option().c_str());
           else:
@@ -981,7 +981,7 @@ script:
                 then:
                   - micro_wake_word.stop:
                   - lambda: |-
-                      ESP_LOGI("mww", "Wake word detection PAUSED (mode='%s', usb=%d)",
+                      ESP_LOGD("mww", "Wake word detection PAUSED (mode='%s', usb=%d)",
                                id(va_wake_word_mode).current_option().c_str(),
                                (int)id(usb_connected).state);
 

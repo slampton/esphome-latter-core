@@ -626,20 +626,27 @@ switch:
     id: telemetry_profiler_switch
     icon: "mdi:chart-timeline-variant-shimmer"
     entity_category: diagnostic
-    optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
+    # The actions publish the new state first (no optimistic second publish). The PROFILER_ON snapshot
+    # (power, battery, memory, heaps, tasks, light sleep: dozens of lines) is logged half a second later,
+    # and turning off logs one line. Log lines go to a connected API log viewer as they are written while a
+    # state change waits for the API's next batch, so a snapshot logged inside the action reached Home
+    # Assistant ahead of the switch's own state: the switch took ~12 s to show "off".
     turn_on_action:
       - lambda: |-
           id(telemetry_profiler_switch).publish_state(true);
           latter_ui::profiler_enabled() = true;
+          id(ble_ctrl).set_profile_logging(true);
           auto &fr = latter_ui::flight_recorder();
           fr.window_frames = 0;
           fr.window_render_us = 0;
           fr.max_render_us = 0;
           fr.slow_frames = 0;
           fr.last_summary_ms = millis();
-          ESP_LOGI("PROF", "[PROF:START] 10-Minute Flight Recorder ENABLED for '${name}' (screen=%dx%d)",
-                   latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+          LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d)",
+                           latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+      - delay: 500ms
+      - lambda: |-
           latter_ui::log_power_and_mem_profile(
               "PROFILER_ON", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
               id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
@@ -649,14 +656,9 @@ switch:
     turn_off_action:
       - lambda: |-
           id(telemetry_profiler_switch).publish_state(false);
-          latter_ui::log_power_and_mem_profile(
-              "PROFILER_OFF", id(display_power_state), id(usb_connected).state, id(batt_charging).state,
-              id(batt_level).state, id(batt_voltage).state, id(speaker_enable).state,
-              id(mww).is_running(), id(va_active),
-              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
-              id(ble_ctrl).is_active(), id(active_game), id(sleep_start_time));
+          LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler off");
           latter_ui::profiler_enabled() = false;
-          ESP_LOGI("PROF", "[PROF:STOP] Flight Recorder DISABLED");
+          id(ble_ctrl).set_profile_logging(false);
 
   - platform: template
     name: "Area: BLE Presence Beacon"

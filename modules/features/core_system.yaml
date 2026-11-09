@@ -19,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110905L;
+            constexpr long LATTER_YAML_REV = 2026110906L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -84,13 +84,21 @@ esphome:
         - script.execute: screen_sleep_timer
 
 # Boot lines are usually logged before any API log viewer connects. Keep warnings plus the one-shot
-# display/audio/SDK status lines and replay them to every client that connects (fixed buffer, no heap).
+# boot status lines and replay them to every client that connects (fixed buffer, no heap): display
+# buffers, audio, SDK revision, [PROF:BOOT] (reset reason, crash flag, previous power-off; [PROF:*] INFO
+# lines are otherwise gated on the Telemetry Profiler), the AXP2101 charger setup and the light-sleep setup.
+# Steady state at the default INFO level is quiet: per-touch, per-frame, per-turn and per-cycle lines log at
+# DEBUG (a Device Builder build with logger: level: DEBUG shows them), [PROF:*] diagnostics only while the
+# Telemetry Profiler is on (latter-verify [PROF GATE]).
 logger:
   boot_log_buffer_size: 2kB
   boot_logs:
     disp_fb: INFO
     audio: INFO
     latter: INFO
+    PROF: INFO
+    pmu: INFO
+    power: INFO
 
 api:
   reboot_timeout: ${api_reboot_timeout}

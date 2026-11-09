@@ -950,10 +950,10 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
     const bool want_ble = beacon_wanted;
 #endif
     if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
-      ESP_LOGI("ble", "Enabling BLE radio (Area Presence Beacon)");
+      ESP_LOGD("ble", "Enabling BLE radio (Area Presence Beacon)");
       ble_ctrl->enable();
     } else if (!want_ble && ble_ctrl->is_active()) {
-      ESP_LOGI("ble", "Disabling BLE radio (beacon %s)",
+      ESP_LOGD("ble", "Disabling BLE radio (beacon %s)",
                !beacon_paused ? "off" : (usb_powered ? "paused while docked" : "paused for screen-off on battery"));
       ble_ctrl->disable();
     }
@@ -1124,7 +1124,7 @@ inline void hal_panel_dcs_service(DispT *disp) {
         }
         dcs(0x29);
         st.phase = PanelDcsState::AWAKE;
-        if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=wake");
+        LATTER_PROF_LOGI("[PROF:PANEL] dcs=wake");
       }
       disp->set_brightness(st.want_bri);
       return;
@@ -1139,7 +1139,7 @@ inline void hal_panel_dcs_service(DispT *disp) {
     if (st.phase == PanelDcsState::AWAKE) dcs(0x28);
     dcs(0x10);
     st.phase = PanelDcsState::ASLEEP;
-    if (profiler_enabled()) ESP_LOGI("PROF", "[PROF:PANEL] dcs=sleep");
+    LATTER_PROF_LOGI("[PROF:PANEL] dcs=sleep");
   } else {
     static bool warned = false;
     if (!warned) {

@@ -88,9 +88,10 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `hal_link_report.h` | Wi-Fi, Home Assistant and light-sleep counters (residency, wake causes, awake-lock share) for the System: Link Report sensor and `[PROF:LINK]` |
 | `ui_touch_router.h` | Touch gesture routing and hit-testing |
 | `latter_state.h` | Typed per-domain state, plus allocation-free parsers for the packed (`\x1f` / `\x1e`) protocol payloads |
+| `latter_prof.h` | `LATTER_PROF_LOGI`: `[PROF:*]` INFO lines that log only while the Telemetry Profiler is on |
 
 ### `components/latter_core/`
-An ESPHome external component that copies the 19 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas. It also registers a counting-only main-loop probe that the Telemetry Profiler's `[PROF:WAKE]` reads.
+An ESPHome external component that copies the 20 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas. It also registers a counting-only main-loop probe that the Telemetry Profiler's `[PROF:WAKE]` reads.
 
 ### `examples/`
 | File | What it shows |

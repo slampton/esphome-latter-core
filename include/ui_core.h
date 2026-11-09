@@ -7,6 +7,7 @@
 // ==============================================================================
 
 #include "esphome.h"
+#include "latter_prof.h"
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
@@ -52,7 +53,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110905L
+#define LATTER_SDK_REV 2026110906L
 
 namespace latter_ui {
 
@@ -3563,7 +3564,7 @@ struct FrameProfileScope {
     if (page_changed || is_slow) {
       fr.last_logged_page = page;
       fr.last_logged_sub = sub;
-      ESP_LOGI("PROF", "[PROF:FRAME] page=%d sub=%d pwr=%d render=%luus dt=%lums%s",
+      LATTER_PROF_LOGI("[PROF:FRAME] page=%d sub=%d pwr=%d render=%luus dt=%lums%s",
                page, sub, pwr, (unsigned long)render_us, (unsigned long)dt_ms,
                is_slow ? " [SLOW_FRAME]" : "");
     }
@@ -3573,7 +3574,7 @@ struct FrameProfileScope {
     if (win_el >= 5000U && fr.window_frames > 0) {
       float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
       uint32_t avg_us = fr.window_render_us / fr.window_frames;
-      ESP_LOGI("PROF", "[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu%s%s%s",
+      LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu%s%s%s",
                (unsigned long)fr.window_frames, fps, (unsigned long)avg_us,
                (unsigned long)fr.max_render_us, fr.max_render_page, fr.max_render_sub,
                (unsigned long)fr.slow_frames, (unsigned long)fb_clear_state().hits,
@@ -3588,7 +3589,7 @@ struct FrameProfileScope {
       for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
       if (any_sect != 0U) {
         const uint32_t n = fr.window_frames;
-        ESP_LOGI("PROF", "[PROF:SECT] avg/frame base=%luus art=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+        LATTER_PROF_LOGI("[PROF:SECT] avg/frame base=%luus art=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
                  (unsigned long)(sect[6] / n), (unsigned long)(sect[7] / n),
                  (unsigned long)(sect[0] / n), (unsigned long)(sect[1] / n), (unsigned long)(sect[2] / n),
                  (unsigned long)(sect[3] / n), (unsigned long)(sect[4] / n), (unsigned long)(sect[5] / n));
@@ -3613,7 +3614,7 @@ inline void log_audio_profile(const char *event_tag, const char *detail = "") {
   uint32_t va_el = (fr.va_session_start_ms > 0 && now_m >= fr.va_session_start_ms)
                        ? (now_m - fr.va_session_start_ms)
                        : 0U;
-  ESP_LOGI("PROF", "[PROF:AUDIO] event=%s va_elapsed=%lums %s",
+  LATTER_PROF_LOGI("[PROF:AUDIO] event=%s va_elapsed=%lums %s",
            event_tag, (unsigned long)va_el, detail ? detail : "");
 }
 
@@ -3676,7 +3677,7 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
   uint32_t sleep_age_s = (sleep_start_ms > 0 && now_m >= sleep_start_ms)
                              ? ((now_m - sleep_start_ms) / 1000U)
                              : 0U;
-  ESP_LOGI("PROF",
+  LATTER_PROF_LOGI(
            "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) gauge=%d%% spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu wifi_ps=%d",
            trigger, pwr_state, (int)usb, (int)chg,
            std::isnan(batt_pct) ? -1.0f : batt_pct,
@@ -3694,7 +3695,7 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
   size_t ps_min   = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U;
   size_t int_min  = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U;
   size_t dma_free = heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL) / 1024U;
-  ESP_LOGI("PROF", "[PROF:MEM] int_free=%luKB int_max_blk=%luKB int_min=%luKB dma_free=%luKB psram_free=%luKB psram_min=%luKB",
+  LATTER_PROF_LOGI("[PROF:MEM] int_free=%luKB int_max_blk=%luKB int_min=%luKB dma_free=%luKB psram_free=%luKB psram_min=%luKB",
            (unsigned long)int_free, (unsigned long)int_max, (unsigned long)int_min, (unsigned long)dma_free,
            (unsigned long)ps_free, (unsigned long)ps_min);
 #endif
@@ -3733,7 +3734,7 @@ inline void log_memory_report() {
   auto region = [](const char *name, uint32_t caps) {
     multi_heap_info_t hi;
     heap_caps_get_info(&hi, caps);
-    ESP_LOGI("PROF", "[PROF:HEAP] %s free=%uKB largest=%uKB min_ever=%uKB alloc=%uKB blocks=%u/%u", name,
+    LATTER_PROF_LOGI("[PROF:HEAP] %s free=%uKB largest=%uKB min_ever=%uKB alloc=%uKB blocks=%u/%u", name,
              (unsigned)(hi.total_free_bytes / 1024U), (unsigned)(hi.largest_free_block / 1024U),
              (unsigned)(hi.minimum_free_bytes / 1024U), (unsigned)(hi.total_allocated_bytes / 1024U),
              (unsigned)hi.allocated_blocks, (unsigned)hi.free_blocks);
@@ -3750,13 +3751,13 @@ inline void log_memory_report() {
   for (UBaseType_t i = 0; i < n; i++) {
     const bool ext = esp_ptr_external_ram(ts[i].pxStackBase);
     if (!ext) int_stacks++;
-    ESP_LOGI("PROF", "[PROF:TASK] %-16s stack=%s unused=%uB prio=%u", ts[i].pcTaskName, ext ? "PSRAM" : "INT",
+    LATTER_PROF_LOGI("[PROF:TASK] %-16s stack=%s unused=%uB prio=%u", ts[i].pcTaskName, ext ? "PSRAM" : "INT",
              (unsigned)ts[i].usStackHighWaterMark, (unsigned)ts[i].uxCurrentPriority);
   }
-  ESP_LOGI("PROF", "[PROF:TASK] %u tasks, %u with internal-RAM stacks", (unsigned)n, int_stacks);
+  LATTER_PROF_LOGI("[PROF:TASK] %u tasks, %u with internal-RAM stacks", (unsigned)n, int_stacks);
   heap_caps_free(ts);
 #else
-  ESP_LOGI("PROF", "[PROF:TASK] task list needs CONFIG_FREERTOS_USE_TRACE_FACILITY");
+  LATTER_PROF_LOGI("[PROF:TASK] task list needs CONFIG_FREERTOS_USE_TRACE_FACILITY");
 #endif
 #endif
 }
@@ -3815,7 +3816,7 @@ inline void record_screen_wake() {
   ws.pending = WakeReason::OTHER;
   ws.counts[static_cast<int>(r)]++;
   if (!profiler_enabled()) return;
-  ESP_LOGI("PROF", "[PROF:WAKE] reason=%s total_touch=%lu raise=%lu crown=%lu voice=%lu notify=%lu alert=%lu media=%lu other=%lu",
+  LATTER_PROF_LOGI("[PROF:WAKE] reason=%s total_touch=%lu raise=%lu crown=%lu voice=%lu notify=%lu alert=%lu media=%lu other=%lu",
            wake_reason_name(r),
            (unsigned long)ws.counts[0], (unsigned long)ws.counts[1], (unsigned long)ws.counts[2],
            (unsigned long)ws.counts[3], (unsigned long)ws.counts[4], (unsigned long)ws.counts[5],

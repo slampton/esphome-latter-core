@@ -44,6 +44,8 @@ class LatterBeacon : public Component {
   bool is_active() const { return this->state_ != State::OFF; }
   /// True for a minute after a failed start, so the power policy does not retry every second.
   bool is_failed() const;
+  /// [PROF:BLE] heap lines on/off (follows the Telemetry Profiler switch).
+  void set_profile_logging(bool on) { this->profile_logging_ = on; }
 
  protected:
   enum class State : uint8_t { OFF, CONFIGURING, ADVERTISING };
@@ -57,6 +59,7 @@ class LatterBeacon : public Component {
   bool send_step_(uint8_t step);
   void fail_(const char *what, int err);
   void stop_(const char *log_what);
+  void log_internal_heap_(const char *phase);
 
   std::array<uint8_t, 16> uuid_;
   uint16_t major_{1};
@@ -74,6 +77,7 @@ class LatterBeacon : public Component {
   uint32_t step_sent_ms_{0};
   uint32_t retry_after_ms_{0};
   bool failed_{false};
+  bool profile_logging_{false};
 };
 
 }  // namespace esphome::latter_beacon

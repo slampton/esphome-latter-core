@@ -122,7 +122,7 @@ binary_sensor:
             latter_ui::pm_note_imu(wom.armed, wom.events);
             // Poll for a short window so the orientation-qualified RaiseToWakeDetector can confirm a raise.
             wom.qualify_until_ms = (millis() + 2500U) | 1U;
-            ESP_LOGI("PROF", "[PROF:IMU] wom=event n=%u", static_cast<unsigned>(wom.events));
+            LATTER_PROF_LOGI("[PROF:IMU] wom=event n=%u", static_cast<unsigned>(wom.events));
             id(hal_set_imu_power_mode).execute(0x01);
 
 script:

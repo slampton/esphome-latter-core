@@ -83,9 +83,9 @@
 #include <soc/gpio_reg.h>
 #endif
 
-namespace latter_ui {
+#include "latter_prof.h"
 
-inline bool &profiler_enabled();
+namespace latter_ui {
 
 // Wake-pin slots, in arming-mask bit order (pm_wake_bit).
 enum PmWakeSlot : uint8_t {
@@ -473,7 +473,7 @@ inline void pm_apply(bool stay_awake, uint32_t wake_mask) {
   }
   st.awake = stay_awake;
   if (profiler_enabled()) {
-    ESP_LOGI("PROF", "[PROF:PM] lock=%s arm=0x%02lx loop=%lums", stay_awake ? "held" : "released",
+    LATTER_PROF_LOGI("[PROF:PM] lock=%s arm=0x%02lx loop=%lums", stay_awake ? "held" : "released",
              static_cast<unsigned long>(arm), static_cast<unsigned long>(esphome::App.get_loop_interval()));
   }
 #else
@@ -559,7 +559,7 @@ inline void pm_log_profile() {
     permille = (slept_us - last_slept_us) / (now_ms - last_ms);
     if (permille > 1000U) permille = 1000U;
   }
-  ESP_LOGI("PROF", "[PROF:PM] lock=%s ls=%lu.%lu%% sleeps=%lu gpio_wakes=%lu synth=%lu arm=0x%02lx loop=%lums",
+  LATTER_PROF_LOGI("[PROF:PM] lock=%s ls=%lu.%lu%% sleeps=%lu gpio_wakes=%lu synth=%lu arm=0x%02lx loop=%lums",
            st.awake ? "held" : "released", static_cast<unsigned long>(permille / 10U),
            static_cast<unsigned long>(permille % 10U), static_cast<unsigned long>(sleeps - last_sleeps),
            static_cast<unsigned long>(gpio_wakes - last_gpio), static_cast<unsigned long>(synth - last_synth),
@@ -581,7 +581,7 @@ inline void pm_log_profile() {
     fclose(f);
     char *save = nullptr;
     for (char *line = strtok_r(buf, "\n", &save); line != nullptr; line = strtok_r(nullptr, "\n", &save)) {
-      if (line[0] != '\0') ESP_LOGI("PROF", "[PROF:PM_LOCKS] %s", line);
+      if (line[0] != '\0') LATTER_PROF_LOGI("[PROF:PM_LOCKS] %s", line);
     }
   }
   heap_caps_free(buf);
@@ -599,7 +599,7 @@ inline void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *
     fclose(f);
     char *save = nullptr;
     for (char *line = strtok_r(buf, "\n", &save); line != nullptr; line = strtok_r(nullptr, "\n", &save)) {
-      if (line[0] != '\0') ESP_LOGI("PROF", "%s %s", label, line);
+      if (line[0] != '\0') LATTER_PROF_LOGI("%s %s", label, line);
     }
   }
   heap_caps_free(buf);
@@ -635,7 +635,7 @@ inline void pm_log_wake_profile() {
     const uint32_t att = wh.attempts, tb = wh.timer_bound, rb = wh.rtos_bound, sl = g_pm_state.sleeps;
     uint32_t req[5];
     for (int i = 0; i < 5; i++) req[i] = wh.req[i];
-    ESP_LOGI("PROF",
+    LATTER_PROF_LOGI(
              "[PROF:WAKE] window=%lus sleeps: attempts=%lu slept=%lu bound_by esp_timer=%lu rtos=%lu "
              "req <20ms=%lu <50ms=%lu <200ms=%lu <1s=%lu >=1s=%lu lock=%s",
              (unsigned long)(window_ms / 1000U), (unsigned long)(att - p_att), (unsigned long)(sl - p_sl),
@@ -655,7 +655,7 @@ inline void pm_log_wake_profile() {
   {
     static esphome::latter_core::LoopProbeStats prev{};
     const esphome::latter_core::LoopProbeStats &lp = esphome::latter_core::loop_probe_stats();
-    ESP_LOGI("PROF",
+    LATTER_PROF_LOGI(
              "[PROF:WAKE] loop: interval=%lums passes=%lu hf_held=%lu hf_now=%d gaps <20ms=%lu <50ms=%lu "
              "<200ms=%lu <1s=%lu >=1s=%lu",
              (unsigned long)esphome::App.get_loop_interval(), (unsigned long)(lp.passes - prev.passes),
@@ -671,7 +671,7 @@ inline void pm_log_wake_profile() {
 #if defined(USE_ESP32) && defined(CONFIG_ESP_TIMER_PROFILING)
   pm_log_dump_lines("[PROF:WAKE_TIMER]", 6144, [](FILE *f) { esp_timer_dump(f); });
 #elif defined(USE_ESP32)
-  ESP_LOGI("PROF", "[PROF:WAKE_TIMER] off (build with substitution wake_profiling: \"y\")");
+  LATTER_PROF_LOGI("[PROF:WAKE_TIMER] off (build with substitution wake_profiling: \"y\")");
 #endif
 
 #if defined(USE_ESP32) && defined(CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
@@ -707,7 +707,7 @@ inline void pm_log_wake_profile() {
         if (best < 0 || delta[best] == 0) break;
         shown[best] = true;
         const uint32_t pm = window_ms > 0 ? static_cast<uint32_t>(delta[best] / window_ms) : 0;  // us per ms = permille
-        ESP_LOGI("PROF", "[PROF:WAKE_TASK] %-16s prio=%u run=%lums (%lu.%lu%%)", ts[best].pcTaskName,
+        LATTER_PROF_LOGI("[PROF:WAKE_TASK] %-16s prio=%u run=%lums (%lu.%lu%%)", ts[best].pcTaskName,
                  (unsigned) ts[best].uxCurrentPriority, (unsigned long)(delta[best] / 1000U),
                  (unsigned long)(pm / 10U), (unsigned long)(pm % 10U));
       }
@@ -720,7 +720,7 @@ inline void pm_log_wake_profile() {
     }
   }
 #elif defined(USE_ESP32)
-  ESP_LOGI("PROF", "[PROF:WAKE_TASK] off (build with substitution wake_profiling: \"y\")");
+  LATTER_PROF_LOGI("[PROF:WAKE_TASK] off (build with substitution wake_profiling: \"y\")");
 #endif
 }
 
