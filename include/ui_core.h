@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110295L
+#define LATTER_SDK_REV 2026110296L
 
 namespace latter_ui {
 
@@ -1635,24 +1635,6 @@ inline void render_bezel_alert_border(DisplayT &it, int cx, int cy, esphome::Col
     }
   }
 #endif
-}
-
-// Home Assistant link-off indicator (top center, docs/device-ui-design.md components): drawn once the API
-// has been disconnected for 8 s, so a reconnect that completes within that time never shows it. Before
-// the first connection the 8 s count from boot.
-template <typename DisplayT>
-inline void render_link_state_indicator(DisplayT &it, int cx, uint32_t now_ms,
-                                        esphome::Color warn_c, esphome::Color bg_c) {
-  const auto &ls = link_state();
-  if (ls.ha_connected || (now_ms - ls.last_ha_disconnect_ms) < 8000U) return;
-  const int gy = scale_y(14);
-  // Compact 13x7 link-broken pill + diagonal slash
-  fast_filled_circle(it, cx - 4, gy, 3, warn_c);
-  fast_filled_circle(it, cx + 4, gy, 3, warn_c);
-  fast_filled_circle(it, cx - 4, gy, 1, bg_c);
-  fast_filled_circle(it, cx + 4, gy, 1, bg_c);
-  fast_line(it, cx - 5, gy + 4, cx + 5, gy - 4, bg_c);
-  fast_line(it, cx - 4, gy + 4, cx + 5, gy - 3, warn_c);
 }
 
 template <typename DisplayT>

@@ -685,7 +685,7 @@ display:
       }
 
       if (!id(is_hibernating) && !id(ota_in_progress) && id(display_power_state) == 0) {
-        latter_ui::render_link_state_indicator(it, cx, millis(), id(col_gold), id(col_bg));
+        latter_ui::render_offline_pill(it, cx, millis(), id(font_micro), id(col_gold));
       }
 
       uint32_t end_draw_ms = millis();

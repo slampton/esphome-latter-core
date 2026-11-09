@@ -36,7 +36,7 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 | `col_slate` | `9E9E9E` | Secondary text, empty states | 7.8:1 |
 | `col_gray` | `616161` | Disabled text only | 3.4:1 |
 | `col_dark_gray` | `212121` | Card fills, tracks, inactive surfaces | 1.3:1 |
-| `col_gold` | `C59B27` | Highlights; the Home Assistant link-off indicator | 8.1:1 |
+| `col_gold` | `C59B27` | Highlights; the Offline pill | 8.1:1 |
 | `col_warm_gold` | `A88424` | Sun and celestial art. IPS panels use `Color(255, 178, 28)` on Sky & Weather. | 6.0:1 |
 | `col_orange` | `B85C24` | Urgent small text (a countdown under 10 s) | 4.6:1 |
 | `col_red`, `col_green`, `col_cyan`, `col_purple`, `col_magenta` | `A84338`, `427453`, `456E8A`, `6D4B7D`, `8E4A7D` | Status and category colors for large text, fills and icons | 3.0–3.9:1 |
@@ -175,7 +175,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | The same slots the page draws (the Home-dock ring uses `get_home_dock_window_xs`) | Rotary / button navigation |
 | Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Tools pages (D-007) |
 | Battery indicator | `render_battery_indicator` (`ui_clock_home.h`) | `UiLayout::battery_cx/y` | Clock and Home |
-| Link-off indicator | `render_link_state_indicator(it, cx, now, warn, bg)` | `scale_y(14)` | Home Assistant disconnected for 8 s or more |
+| Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge (a tab on rectangular panels; floating inside the bezel on round), sized from the text and mm padding | Home Assistant disconnected for 8 s or more (D-026) |
 | Tool launcher card | `render_tool_launcher_card` (`ui_tools.h`) | `UiLayout::tools_*` | The Tools grid |
 
 **Icons** are monochrome solid-filled silhouettes with negative-space cutouts (D-008). *Documented only.*
@@ -237,7 +237,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | 7 | Docked screensaver | `display_power_state == 1` |
 | 8 | The page | `gui_page` |
 
-After the page, `gui.yaml` draws the chrome in order: the focus overlay (not during takeovers), the home pill, and the link-off indicator. Then, while a dock, mode-bar or list transition runs, it schedules the next animation frame. The alarm/timer takeover ranks above the voice assistant (D-006). *Documented only* (order is by code position).
+After the page, `gui.yaml` draws the chrome in order: the focus overlay (not during takeovers), the home pill, and the Offline pill. Then, while a dock, mode-bar or list transition runs, it schedules the next animation frame. The alarm/timer takeover ranks above the voice assistant (D-006). *Documented only* (order is by code position).
 
 ## 4. Gestures and hit-testing
 
@@ -259,7 +259,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 3. `bind_frame_buffer(disp1, it)` binds the software framebuffer for direct scanline writes; `frame_base_begin()` resets the base state.
 4. Takeovers in priority order ([3.4](#34-takeover-priority)), each starting with `frame_base(it, col_bg)`.
 5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` from `gui.yaml`; Home paints its own base (the daytime sky on rectangular panels), and Music's full-screen art claims the base with `frame_base_claim()`.
-6. Chrome: focus overlay, home pill, link-off indicator.
+6. Chrome: focus overlay, home pill, Offline pill.
 7. `FrameProfileScope` ends: logs a frame that never painted a base, records timing, and starts the next DMA clear.
 
 ### 5.2 Rules
@@ -499,6 +499,13 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Decision:** Pages draw their title with `render_page_header`, the line below with `render_sub_header`, and empty or loading cards with `render_empty_state`.
 - **Why:** Each page had inlined its own, and their fonts, colors and shadows drifted.
 - **Status:** Accepted; implemented 2026-11-07.
+
+### D-026: An "Offline" pill shows a lost Home Assistant connection
+- **Date:** 2026-11-08
+- **Decision:** When the Home Assistant API has been disconnected for 8 s, a small pill reading "Offline" appears at the top center: `font_micro` in `col_gold` on the dark chrome card (`kChromeBarTrack`, `kChromeBarBorder` border). On rectangular panels it hangs from the top edge as a tab, which keeps it above every page header; on the round panel it floats just inside the bezel. It is drawn after the page, never over a takeover, and not with the screen off, during hibernation or during an update. It replaces the earlier link-off glyph (two rings and a slash, listed in section 2), which had no decision entry of its own.
+- **Why:** The glyph was a few pixels wide at fixed size and read as two stray dots; a word can't be mistaken for a defect and says why controls aren't responding.
+- **Alternatives:** A larger broken-link glyph; no indicator.
+- **Status:** Accepted; implemented 2026-11-08.
 
 ## Known gaps
 

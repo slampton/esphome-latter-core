@@ -702,6 +702,57 @@ inline void render_empty_state(DisplayT &it, int cx, int cy, const char *text, F
   render_modern_card(it, cx, cy, 296, 54, 14, kChromeBarTrack, kChromeCardBorder, text, text_c, font);
 }
 
+// The Offline pill shows once the Home Assistant API has been disconnected for 8 s, so a reconnect that
+// completes within that time never shows it. Before the first connection the 8 s count from boot.
+inline bool offline_pill_due(uint32_t now_ms) {
+  const auto &ls = link_state();
+  return !ls.ha_connected && (now_ms - ls.last_ha_disconnect_ms) >= 8000U;
+}
+
+// "Offline" pill (docs/device-ui-design.md D-026): top center, the word in font_micro and col_gold on the
+// dark chrome card. Rectangular panels hang it from the top edge as a tab (rounded bottom corners), which
+// keeps it above every page header; the round panel floats it inside the bezel where the circle is wider
+// than the pill. gui.yaml draws it after the page and never over a takeover.
+template <typename DisplayT, typename FontT>
+inline void render_offline_pill(DisplayT &it, int cx, uint32_t now_ms, FontT *font, esphome::Color text_c) {
+  if (font == nullptr || !offline_pill_due(now_ms)) return;
+  static const char *const kLabel = "Offline";
+  int text_w = 0, x_off = 0, base = 0, text_h = 0;
+  font->measure(kLabel, &text_w, &x_off, &base, &text_h);
+  // Visible glyphs of "Offline" run from the f/l ascender (0.75 em in Roboto, whose line height is
+  // 2400/2048 em) down to the baseline; the card pads that ink, not the font's full line box.
+  const int em = (text_h * 2048 + 1200) / 2400;
+  const int glyph_h = (em * 3 + 2) / 4;
+  const int pad_y = std::max(2, mm_to_px(0.2f));
+  const int pad_x = mm_to_px(1.4f);
+  const int pill_h = glyph_h + 2 * pad_y;
+  const int pill_w = text_w + 2 * pad_x;
+  const int r = pill_h / 2;
+  const int x0 = cx - pill_w / 2;
+#if LATTER_ROUND_DISPLAY
+  const int margin = mm_to_px(0.6f);
+  const int y0 = (SCREEN_R - chord_half_span_int(SCREEN_R, pill_w / 2 + margin)) + margin;
+  const bool round_top = true;
+#else
+  const int y0 = 0;
+  const bool round_top = false;
+#endif
+  // Scanline fill of a rounded rectangle (top corners rounded only when the pill floats).
+  auto fill_shape = [&](int sx, int sy, int sw, int sh, int sr, esphome::Color c) {
+    for (int y = std::max(0, sy); y < sy + sh && y < SCREEN_H; y++) {
+      int dy = 0;
+      if (round_top && y < sy + sr) dy = (sy + sr) - y;
+      else if (y > sy + sh - 1 - sr) dy = y - (sy + sh - 1 - sr);
+      const int inset = (dy > 0) ? (sr - chord_half_span_int(sr, dy, true)) : 0;
+      if (sw - 2 * inset > 0) fast_hline(it, sx + inset, y, sw - 2 * inset, c);
+    }
+  };
+  fill_shape(x0 - 1, round_top ? (y0 - 1) : y0, pill_w + 2, pill_h + (round_top ? 2 : 1), r + 1, kChromeBarBorder);
+  fill_shape(x0, y0, pill_w, pill_h, r, kChromeBarTrack);
+  const int text_top = y0 + pad_y - (base - glyph_h);
+  fast_print(it, cx, text_top, font, text_c, esphome::display::TextAlign::TOP_CENTER, kLabel);
+}
+
 
 // Hit-test the 4-column stepper row (returns 0..3 or -1)
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
