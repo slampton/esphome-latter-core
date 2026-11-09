@@ -19,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110803L;
+            constexpr long LATTER_YAML_REV = 2026110804L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -99,10 +99,10 @@ api:
   on_client_connected:
     then:
       - lambda: |-
-          latter_ui::link_state().ha_connected = true;
-          latter_ui::link_state().last_ha_connect_ms = millis();
-          latter_ui::link_report_api_connected(client_info.find("Home Assistant") != std::string::npos, millis());
-          if (client_info.find("Home Assistant") != std::string::npos) {
+          const bool is_ha_conn = client_info.find("Home Assistant") != std::string::npos;
+          if (is_ha_conn) { latter_ui::link_state().ha_connected = true; latter_ui::link_state().last_ha_connect_ms = millis(); }
+          latter_ui::link_report_api_connected(is_ha_conn, millis());
+          if (is_ha_conn) {
             latter_ui::reset_all_v3_rev_guards();
             id(last_seen_alert_id) = -1;
           }
@@ -123,9 +123,9 @@ api:
   on_client_disconnected:
     then:
       - lambda: |-
-          latter_ui::link_state().ha_connected = false;
-          latter_ui::link_state().last_ha_disconnect_ms = millis();
-          latter_ui::link_report_api_disconnected(client_info.find("Home Assistant") != std::string::npos, millis());
+          const bool is_ha_disc = client_info.find("Home Assistant") != std::string::npos;
+          latter_ui::link_report_api_disconnected(is_ha_disc, millis());
+          if (is_ha_disc && latter_ui::link_report().ha_clients == 0) { latter_ui::link_state().ha_connected = false; latter_ui::link_state().last_ha_disconnect_ms = millis(); }
           if (id(display_power_state) == 0 && !id(is_hibernating)) {
             latter_ui::schedule_disp_update(&id(disp1));
           }

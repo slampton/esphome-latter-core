@@ -739,7 +739,18 @@ inline void render_empty_state(DisplayT &it, int cx, int cy, const char *text, F
 // The Offline pill shows once the Home Assistant API has been disconnected for 8 s, so a reconnect that
 // completes within that time never shows it. Before the first connection the 8 s count from boot.
 inline bool offline_pill_due(uint32_t now_ms) {
-  const auto &ls = link_state();
+  auto &ls = link_state();
+#ifdef USE_API
+  if (esphome::api::global_api_server != nullptr &&
+      esphome::api::global_api_server->is_connected_with_state_subscription()) {
+    if (!ls.ha_connected) {
+      ls.ha_connected = true;
+      ls.last_ha_connect_ms = now_ms;
+    }
+    return false;
+  }
+#endif
+  if (link_report().ha_clients > 0) return false;
   return !ls.ha_connected && (now_ms - ls.last_ha_disconnect_ms) >= 8000U;
 }
 
