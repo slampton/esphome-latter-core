@@ -153,21 +153,49 @@ inline uint32_t device_boot_id() {
 // reports reset "stall" in the manifest, and the boot summary names the operation. Blocks of
 // kStallReportMs or more are kept as the longest block since boot and re-logged to every API client:
 // such a block usually ends while the API is down, so ESPHome's "took a long time" line is lost.
+// ESPHome's task watchdog (5 s) usually ends a block long before the abort, so while a block of
+// kStallReportMs or more runs, the guard also keeps it in RTC memory as a live record, and the task
+// watchdog's interrupt adds its own record (esp_task_wdt_isr_user_handler below). The next boot reports
+// both after a watchdog reset ([PROF:STALL]).
 constexpr uint32_t kStallAbortMs = 30000U;
 constexpr uint32_t kStallReportMs = 2000U;
-constexpr uint32_t kStallRecordMagic = 0x5354414CU;  // "STAL"
+constexpr uint32_t kStallRecordMagic = 0x5354414CU;  // "STAL": the guard aborted (also marks valid in-RAM records)
+constexpr uint32_t kStallLiveMagic = 0x53544C56U;    // "STLV": a block still running at the guard's last check
+constexpr uint32_t kTwdtRecordMagic = 0x54574454U;   // "TWDT": written by the task watchdog's interrupt
 
 struct StallRecord {
-  uint32_t magic;       // kStallRecordMagic when valid
+  uint32_t magic;       // kStallRecordMagic / kStallLiveMagic / kTwdtRecordMagic when valid
   uint32_t blocked_ms;  // how long the operation had run
   uint32_t uptime_s;    // when it started
   char source[40];      // ESPHome execution source / component
+  char cpu0[16];        // task running on each CPU when the record was written
+  char cpu1[16];
+  char loop_state;      // loopTask: R running, r ready, B blocked, S suspended, ? not sampled
 };
 
 #ifdef USE_ESP32
-// Survives the abort's software reset (not a power-on); validated by magic + reset reason.
+// Survive the abort's software reset and a watchdog reset (not a power-on); validated by magic + reset reason.
 static RTC_NOINIT_ATTR StallRecord s_stall_rtc_record;
+static RTC_NOINIT_ATTR StallRecord s_twdt_rtc_record;
+// The ESPHome loop task (start_stall_guard runs inside it). Constant-initialized: the task watchdog's
+// interrupt may read it.
+inline TaskHandle_t g_stall_loop_task = nullptr;
 #endif
+
+// Bounded string copy without snprintf (also used from the task watchdog's interrupt).
+inline void stall_copy_str(char *dst, size_t n, const char *src) {
+  size_t i = 0;
+  if (src != nullptr) {
+    for (; i + 1 < n && src[i] != '\0'; i++) dst[i] = src[i];
+  }
+  dst[i] = '\0';
+}
+
+inline void stall_terminate(StallRecord &rec) {
+  rec.source[sizeof(rec.source) - 1] = '\0';
+  rec.cpu0[sizeof(rec.cpu0) - 1] = '\0';
+  rec.cpu1[sizeof(rec.cpu1) - 1] = '\0';
+}
 
 struct StallGuardState {
   std::atomic<bool> paused{false};
@@ -176,17 +204,29 @@ struct StallGuardState {
   std::atomic<uint32_t> resumed_ms{0};
   bool started{false};
   StallRecord previous_boot{};  // the abort that ended the previous boot (magic 0 = none)
+  StallRecord previous_live{};  // a block still running when a watchdog reset ended the previous boot
+  StallRecord previous_twdt{};  // the task watchdog interrupt's record of the previous boot
   StallRecord longest{};        // longest block this boot (magic 0 = none)
 #ifdef USE_ESP32
   portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 #endif
   StallGuardState() {
 #ifdef USE_ESP32
-    if (esp_reset_reason() == ESP_RST_PANIC && s_stall_rtc_record.magic == kStallRecordMagic) {
+    const esp_reset_reason_t rr = esp_reset_reason();
+    const bool wdt_reset = rr == ESP_RST_TASK_WDT || rr == ESP_RST_INT_WDT || rr == ESP_RST_WDT || rr == ESP_RST_PANIC;
+    if (rr == ESP_RST_PANIC && s_stall_rtc_record.magic == kStallRecordMagic) {
       previous_boot = s_stall_rtc_record;
-      previous_boot.source[sizeof(previous_boot.source) - 1] = '\0';
+      stall_terminate(previous_boot);
+    } else if (wdt_reset && s_stall_rtc_record.magic == kStallLiveMagic) {
+      previous_live = s_stall_rtc_record;
+      stall_terminate(previous_live);
+    }
+    if (wdt_reset && s_twdt_rtc_record.magic == kTwdtRecordMagic) {
+      previous_twdt = s_twdt_rtc_record;
+      stall_terminate(previous_twdt);
     }
     s_stall_rtc_record.magic = 0;
+    s_twdt_rtc_record.magic = 0;
 #endif
   }
 };
@@ -220,12 +260,39 @@ inline void stall_current_source(char *dst, size_t n) {
 }
 
 #ifdef USE_ESP32
+// The task each CPU is running (task context or the task watchdog's interrupt).
+inline void stall_fill_cpus(StallRecord &rec) {
+  stall_copy_str(rec.cpu0, sizeof(rec.cpu0), pcTaskGetName(xTaskGetCurrentTaskHandleForCore(0)));
+#if !CONFIG_FREERTOS_UNICORE
+  stall_copy_str(rec.cpu1, sizeof(rec.cpu1), pcTaskGetName(xTaskGetCurrentTaskHandleForCore(1)));
+#endif
+}
+
+// Task context only (eTaskGetState is not interrupt-safe).
+inline char stall_loop_state() {
+  if (g_stall_loop_task == nullptr) return '?';
+  switch (eTaskGetState(g_stall_loop_task)) {
+    case eRunning: return 'R';
+    case eReady: return 'r';
+    case eBlocked: return 'B';
+    case eSuspended: return 'S';
+    default: return '?';
+  }
+}
+
+inline void stall_clear_live() {
+  if (s_stall_rtc_record.magic == kStallLiveMagic) s_stall_rtc_record.magic = 0;
+}
+
 inline void stall_guard_task(void *) {
   auto &g = stall_guard();
   for (;;) {
     // Every 2 s: each check wakes the chip from light sleep, and stalls worth reporting last seconds.
     vTaskDelay(pdMS_TO_TICKS(2000));
-    if (g.paused.load(std::memory_order_relaxed)) continue;
+    if (g.paused.load(std::memory_order_relaxed)) {
+      stall_clear_live();
+      continue;
+    }
     uint32_t start = esphome::App.get_loop_component_start_time();
     const uint32_t resumed = g.resumed_ms.load(std::memory_order_relaxed);
     if (resumed != 0 && static_cast<int32_t>(resumed - start) > 0) start = resumed;
@@ -233,14 +300,18 @@ inline void stall_guard_task(void *) {
     // quiet) looks blocked for that long: count only the time beyond one loop interval.
     const uint32_t idle_ms = esphome::App.get_loop_interval();
     const uint32_t since = esphome::millis() - start;
-    if (static_cast<int32_t>(since) < 0 || since <= idle_ms) continue;
+    if (static_cast<int32_t>(since) < 0 || since <= idle_ms || since - idle_ms < kStallReportMs) {
+      stall_clear_live();  // no block (or it ended)
+      continue;
+    }
     const uint32_t blocked = since - idle_ms;
-    if (blocked < kStallReportMs) continue;
     StallRecord rec{};
     rec.magic = kStallRecordMagic;
     rec.blocked_ms = blocked;
     rec.uptime_s = start / 1000U;
     stall_current_source(rec.source, sizeof(rec.source));
+    stall_fill_cpus(rec);
+    rec.loop_state = stall_loop_state();
     portENTER_CRITICAL(&g.mux);
     if (blocked > g.longest.blocked_ms) g.longest = rec;
     portEXIT_CRITICAL(&g.mux);
@@ -249,6 +320,9 @@ inline void stall_guard_task(void *) {
       s_stall_rtc_record = rec;
       esp_system_abort("Latter stall guard: main loop blocked");
     }
+    // Live record: a watchdog reset that lands before the abort still names the operation.
+    rec.magic = kStallLiveMagic;
+    s_stall_rtc_record = rec;
   }
 }
 #endif
@@ -258,6 +332,7 @@ inline void start_stall_guard() {
 #ifdef USE_ESP32
   auto &g = stall_guard();
   if (g.started) return;
+  g_stall_loop_task = xTaskGetCurrentTaskHandle();  // on_boot runs in the ESPHome loop task
   g.started = xTaskCreate(stall_guard_task, "latter_stall", 2560, nullptr, 15, nullptr) == pdPASS;
   if (!g.started) ESP_LOGW("latter", "Stall guard task could not start");
 #endif
@@ -266,10 +341,28 @@ inline void start_stall_guard() {
 inline void log_stall_summary() {
   auto &g = stall_guard();
   if (g.previous_boot.magic == kStallRecordMagic) {
-    ESP_LOGW("PROF", "[PROF:STALL] previous boot aborted: main loop blocked %lums in %s (started at uptime %lus)",
+    ESP_LOGW("PROF", "[PROF:STALL] previous boot aborted: main loop blocked %lums in %s (started at uptime %lus) loopTask=%c CPU0=%s CPU1=%s",
              (unsigned long)g.previous_boot.blocked_ms, g.previous_boot.source,
-             (unsigned long)g.previous_boot.uptime_s);
+             (unsigned long)g.previous_boot.uptime_s, g.previous_boot.loop_state ? g.previous_boot.loop_state : '?',
+             g.previous_boot.cpu0, g.previous_boot.cpu1);
   }
+  if (g.previous_live.magic == kStallLiveMagic) {
+    ESP_LOGW("PROF", "[PROF:STALL] previous boot reset during a main loop block: %lums so far in %s (started at uptime %lus) loopTask=%c CPU0=%s CPU1=%s",
+             (unsigned long)g.previous_live.blocked_ms, g.previous_live.source,
+             (unsigned long)g.previous_live.uptime_s, g.previous_live.loop_state ? g.previous_live.loop_state : '?',
+             g.previous_live.cpu0, g.previous_live.cpu1);
+  }
+#ifdef USE_ESP32
+  if (g.previous_twdt.magic == kTwdtRecordMagic) {
+    ESP_LOGW("PROF", "[PROF:STALL] previous boot task watchdog fired: main loop blocked %lums in %s (started at uptime %lus) CPU0=%s CPU1=%s",
+             (unsigned long)g.previous_twdt.blocked_ms, g.previous_twdt.source,
+             (unsigned long)g.previous_twdt.uptime_s, g.previous_twdt.cpu0, g.previous_twdt.cpu1);
+  } else if (esp_reset_reason() == ESP_RST_TASK_WDT) {
+    // The watchdog's second stage reset the chip without its interrupt running: CPU0 had non-IRAM
+    // interrupts off for the whole window (e.g. parked while a flash operation ran on the other CPU).
+    ESP_LOGW("PROF", "[PROF:STALL] previous boot task-watchdog reset without the watchdog interrupt's record (interrupt never ran)");
+  }
+#endif
   StallRecord longest{};
 #ifdef USE_ESP32
   portENTER_CRITICAL(&g.mux);
@@ -281,6 +374,42 @@ inline void log_stall_summary() {
              (unsigned long)longest.blocked_ms, longest.source, (unsigned long)longest.uptime_s);
   }
 }
+
+}  // namespace latter_ui
+
+#ifdef USE_ESP32
+// ESP-IDF calls this from the task watchdog's interrupt (CPU0), before it aborts the task that stopped
+// feeding the watchdog: one RTC record of what the main loop was running and which task each CPU was in.
+// After a task-watchdog reset, this record without a crash record means the abort itself didn't finish;
+// no record means the interrupt never ran. Flash code and rodata are fine here: the interrupt is not
+// IRAM-safe, so it only runs with the cache enabled. No snprintf, no locks.
+extern "C" void esp_task_wdt_isr_user_handler(void) {
+  using namespace latter_ui;
+  StallRecord rec{};
+  const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  const uint32_t start = esphome::App.get_loop_component_start_time();
+  rec.blocked_ms = now_ms - start;
+  rec.uptime_s = start / 1000U;
+  const esphome::LogString *src = esphome::App.get_current_source();
+  esphome::Component *comp = esphome::App.get_current_component();
+  const char *src_s = (src != nullptr) ? LOG_STR_ARG(src) : nullptr;
+  const char *comp_s = (comp != nullptr) ? LOG_STR_ARG(comp->get_component_log_str()) : nullptr;
+  stall_copy_str(rec.source, sizeof(rec.source), comp_s != nullptr ? comp_s : (src_s != nullptr ? src_s : "unknown"));
+  if (comp_s != nullptr && src_s != nullptr && std::strcmp(src_s, comp_s) != 0) {
+    const size_t used = std::strlen(rec.source);
+    if (used + 2 < sizeof(rec.source)) {
+      rec.source[used] = '/';
+      stall_copy_str(rec.source + used + 1, sizeof(rec.source) - used - 1, src_s);
+    }
+  }
+  stall_fill_cpus(rec);
+  rec.loop_state = '?';
+  rec.magic = kTwdtRecordMagic;
+  s_twdt_rtc_record = rec;
+}
+#endif
+
+namespace latter_ui {
 
 // Why the device last restarted, whether ESPHome's crash handler holds a record of that crash (its
 // decoded backtrace is logged to every log client until the next restart), and whether the running
