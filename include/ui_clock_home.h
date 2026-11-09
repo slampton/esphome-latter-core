@@ -903,7 +903,9 @@ inline void render_home_page(
     const std::string &loaded_wallpaper_url = "",
     const std::string &calendar_agenda_raw = "",
     const std::string &home_alarm_state = "",
-    FontMicroT *font_micro = nullptr) {
+    FontMicroT *font_micro = nullptr,
+    bool show_sun = true,
+    bool show_moon = true) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -981,6 +983,7 @@ inline void render_home_page(
   } else if (eff_weather_bg) {
     const int cel_x = layout().celestial_x;
     const int cel_y = layout().celestial_y;
+    const bool show_celestial = is_night ? show_moon : show_sun;
     if (is_dim_backdrop) {
       frame_base(it, col_bg);
       if (!is_night) {
@@ -990,7 +993,9 @@ inline void render_home_page(
         fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, Color(7, 13, 22));
 #endif
       }
-      fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 25 : scale_min(30), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
+      if (show_celestial) {
+        fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 25 : scale_min(30), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
+      }
     } else {
       double moon_cycle = 0.5;
       if (is_night) {
@@ -998,7 +1003,7 @@ inline void render_home_page(
                                    moon_phase_raw, moon_cycle, nullptr, nullptr);
       }
       render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night,
-                                      moon_cycle, cel_x, cel_y, true, accel_x, accel_y);
+                                      moon_cycle, cel_x, cel_y, true, accel_x, accel_y, show_celestial);
     }
   }
   frame_base(it, col_bg);  // no wallpaper, or a wallpaper frame without a sky fill

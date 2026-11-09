@@ -314,7 +314,8 @@ display:
             id(home_wake_greeting_switch).state,
             id(home_wallpaper_art), ac_h.wallpaper_url,
             id(current_loaded_wallpaper_url), cs_h.summary,
-            id(area_alarm_state), id(font_micro));
+            id(area_alarm_state), id(font_micro),
+            id(home_sun_switch).state, id(home_moon_switch).state);
 
       // ==========================================
       // PAGE 2: MUSIC PLAYER & LIBRARY BROWSER

@@ -567,6 +567,34 @@ switch:
         - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
 
   - platform: template
+    name: "Home: Sun"
+    id: home_sun_switch
+    icon: "mdi:weather-sunny"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
+    name: "Home: Moon"
+    id: home_moon_switch
+    icon: "mdi:weather-night"
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+    on_turn_off:
+      then:
+        - lambda: 'if (id(display_power_state) == 0 && millis() > 3000) latter_ui::schedule_disp_update(&id(disp1));'
+
+  - platform: template
     name: "Home: Wake Greeting"
     id: home_wake_greeting_switch
     icon: "mdi:hand-wave-outline"

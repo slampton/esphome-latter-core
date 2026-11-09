@@ -1309,7 +1309,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
                                             double moon_cycle = 0.5,
                                             int cel_cx = 341, int cel_cy = 91,
                                             bool mask_hero_temp = true,
-                                            float accel_x = 0.0f, float accel_y = 0.0f) {
+                                            float accel_x = 0.0f, float accel_y = 0.0f,
+                                            bool show_celestial = true) {
   if (cond.empty()) {
     return;
   }
@@ -1404,7 +1405,8 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
       (void)mask_hero_temp;
       const int excl_r = LATTER_ROUND_DISPLAY ? 33 : scale_min(39);
-      if ((sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
+      if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
+          (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
 
       float twinkle = fast_sin(t_star + static_cast<float>(k) * 0.85f);
       uint8_t br = static_cast<uint8_t>(182 + static_cast<int>(63.0f * twinkle));
@@ -1433,7 +1435,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     }
   }
   // LAYER 1B: CELESTIAL CORNER BADGE (3D GRADIENT SUN ORB / LUNAR DISC)
-  if (cel_cx > 0 && cel_cy > 0) {
+  if (show_celestial && cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
       const int m_r = LATTER_ROUND_DISPLAY ? 27 : scale_min(33);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle, false);
