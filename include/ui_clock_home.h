@@ -346,24 +346,22 @@ inline int collect_home_activities(
   return count;
 }
 
-// Deterministic 3-step upward carousel reel state for the Home Live Activity Card
-inline int &home_act_anim_step() {
-  static int step = 0; // 0 = settled, 1..3 = upward reel transition frames
-  return step;
+// Home activity card transitions (D-028): what the card showed last, what it showed before that, and
+// when the slide between them started (kMotionMs, ease-out cubic; 0 = settled).
+struct HomeActivityCardState {
+  int top = -1, bottom = -1;
+  int from_top = -1, from_bottom = -1;
+  uint32_t anim_start_ms = 0;
+};
+
+inline HomeActivityCardState &home_act_state() {
+  static HomeActivityCardState st;
+  return st;
 }
 
-inline int &home_act_prev_idx() {
-  static int idx = 0;
-  return idx;
-}
-
-inline int &home_act_cur_idx() {
-  static int idx = 0;
-  return idx;
-}
-
-inline bool is_home_activity_carousel_animating(uint32_t /*now_ms*/) {
-  return (home_act_anim_step() > 0);
+inline bool is_home_activity_carousel_animating(uint32_t now_ms) {
+  const uint32_t t0 = home_act_state().anim_start_ms;
+  return t0 != 0 && (now_ms - t0) < kMotionMs;
 }
 
 // Computes an adaptive, slightly lighter 3D card palette that complements whichever
@@ -428,36 +426,47 @@ inline void resolve_home_card_palette(
   }
 }
 
-// Selects which activity item is featured on the single Home Live Activity Card:
-//   - Returns -1 if ONLY distant alarms (>4h away, in_deck == false) are active (so distant alarms
-//     don't clutter the front Home screen, or if other deck items exist, rotates only through in_deck items!).
-//   - Priority 1 (Running Stopwatch): Locks top slot & pauses rotation
-//   - Priority 2 (Running Timer <= 60s): Locks top slot & pauses rotation
-//   - Otherwise: Calmly rotates every 8.0 seconds across all `in_deck` items!
-inline int resolve_home_featured_activity_idx(const HomeActivityItem items[8], int count, uint32_t now_ms) {
-  if (count <= 0) return -1;
-  // 1. Check Priority 1: Running Stopwatch
-  for (int i = 0; i < count; i++) {
-    if (items[i].kind == 2 && items[i].urgent_pin) return i;
+// Which items the Home activity card shows (D-028). The rotation advances every
+// kHomeActivityRotateMs across the front-deck items; a pinned item (running stopwatch, or a timer in its
+// last minute) keeps the top (or only) line. A two-line card shows the next deck item below the top one.
+static constexpr uint32_t kHomeActivityRotateMs = 8000U;
+
+struct HomeActivityView {
+  int top = -1;     // item on the top (or only) line
+  int bottom = -1;  // item on the bottom line of a two-line card; -1 when there is none
+  bool pinned = false;
+};
+
+inline HomeActivityView resolve_home_activity_view(const HomeActivityItem items[8], int count, uint32_t now_ms,
+                                                   bool two_line) {
+  HomeActivityView v;
+  if (count <= 0) return v;
+  int pin = -1;
+  for (int i = 0; i < count && pin < 0; i++) {
+    if (items[i].kind == 2 && items[i].urgent_pin) pin = i;
   }
-  // 2. Check Priority 2: Running Timer <= 60s
-  for (int i = 0; i < count; i++) {
-    if (items[i].kind == 1 && items[i].urgent_pin) return i;
+  for (int i = 0; i < count && pin < 0; i++) {
+    if (items[i].kind == 1 && items[i].urgent_pin) pin = i;
   }
-  // 3. Collect all items eligible for front-deck rotation (in_deck == true)
-  int deck_indices[8];
-  int deck_cnt = 0;
+  int deck[8];
+  int n = 0;
   for (int i = 0; i < count; i++) {
-    if (items[i].in_deck) {
-      deck_indices[deck_cnt++] = i;
-    }
+    if (items[i].in_deck && i != pin) deck[n++] = i;
   }
-  // If only distant (>4h) alarms are armed, still show the first alarm card on Home so you have
-  // access to the card/submenu, or if deck_cnt > 0, rotate calmly every 8.0 seconds across deck_indices!
-  if (deck_cnt == 0) return 0;
-  if (deck_cnt == 1) return deck_indices[0];
-  int rot_slot = static_cast<int>((now_ms / 8000U) % static_cast<uint32_t>(deck_cnt));
-  return deck_indices[rot_slot];
+  const uint32_t slot = now_ms / kHomeActivityRotateMs;
+  if (pin >= 0) {
+    v.top = pin;
+    v.pinned = true;
+    if (two_line && n > 0) v.bottom = deck[slot % static_cast<uint32_t>(n)];
+    return v;
+  }
+  if (n == 0) {
+    v.top = 0;  // only distant alarms: show the first so its controls stay reachable
+    return v;
+  }
+  v.top = deck[slot % static_cast<uint32_t>(n)];
+  if (two_line && n > 1) v.bottom = deck[(slot + 1U) % static_cast<uint32_t>(n)];
+  return v;
 }
 
 // Helper to compute auto-centered y_mid coordinates for 1..5 overlay cards using our exact
@@ -1088,73 +1097,108 @@ inline void render_home_page(
   const bool greeting_active = show_wake_greeting && wake_greeting_latched() &&
                                now.is_valid() && (greet_el < 10500U);
 
-  // ZONE 4 (pill_y = 271, y = 237..305, h = 68px):
-  //   - Adaptive sky-matched 3D card palette (resolve_home_card_palette)
-  //   - Deterministic 3-step UPWARD carousel reel transition (outgoing slides UP & fades out,
-  //     incoming rises UP from below & fades in, strictly inside the 68px card bounds!)
-  if (home_subpage == 0 && !greeting_active && act_count > 0) {
-    const int pill_y = layout().home_activity_y;
-    const bool has_drop = (act_count > 1);
-    int feat_idx = resolve_home_featured_activity_idx(act_items, act_count, now_ms);
-    if (home_act_cur_idx() >= act_count) home_act_cur_idx() = 0;
-    if (home_act_prev_idx() >= act_count) home_act_prev_idx() = 0;
-
-    if (feat_idx != home_act_cur_idx()) {
-      home_act_prev_idx() = home_act_cur_idx();
-      home_act_cur_idx()  = feat_idx;
-      home_act_anim_step() = 1; // Start 3-step upward reel transition!
+  // ZONE 4: Home activity card (D-028). One line on the round panel, centered between the weather line
+  // and the dock; two lines elsewhere, a named gap above the dock. Rotation slides upward with the
+  // shared motion (kMotionMs, ease-out cubic).
+  if (font_date != nullptr) {
+    static bool weather_h_measured = false;
+    if (!weather_h_measured) {
+      int m_w = 0, m_xo = 0, m_bl = 0, m_h = 0;
+      font_date->measure("Ag", &m_w, &m_xo, &m_bl, &m_h);
+      if (m_h > 0) home_weather_text_h() = m_h;
+      weather_h_measured = true;
     }
-    home_activity_idx = feat_idx;
+  }
+  const int act_card_cy = layout().home_activity_cy(home_weather_text_h());
+  home_activity_card_shown() = (home_subpage == 0 && !greeting_active && act_count > 0);
+  if (home_activity_card_shown()) {
+    const auto &ly = layout();
+    const bool two = ly.home_activity_two_line();
+    const int card_h = ly.home_activity_h();
+    const int card_w = ly.home_activity_w();
+    const int pitch = ly.home_activity_pitch();
+    const int row_top = two ? (act_card_cy - pitch / 2) : act_card_cy;
+    const int row_bot = act_card_cy + pitch / 2;
+    const bool has_drop = ly.home_activity_has_drop(act_count);
+    const HomeActivityView view = resolve_home_activity_view(act_items, act_count, now_ms, two);
+    home_activity_idx = view.top;
+
+    auto &st = home_act_state();
+    if (view.top != st.top || view.bottom != st.bottom) {
+      st.from_top = st.top;
+      st.from_bottom = st.bottom;
+      st.top = view.top;
+      st.bottom = view.bottom;
+      st.anim_start_ms = (st.from_top >= 0) ? ((now_ms == 0) ? 1U : now_ms) : 0U;
+    }
+    float e = 1.0f;
+    if (st.anim_start_ms != 0) {
+      const uint32_t el = now_ms - st.anim_start_ms;
+      if (el < kMotionMs) {
+        e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
+      } else {
+        st.anim_start_ms = 0;
+      }
+    }
+    const bool animating = (e < 1.0f);
 
     Color card_bg, card_brd, btn_bg;
     resolve_home_card_palette(eff_weather_bg, is_night, cond, card_bg, card_brd, btn_bg);
+    render_modern_card(it, cx, act_card_cy, card_w, card_h, 16, card_bg, card_brd, nullptr, col_white, font_small);
 
-    int step = home_act_anim_step();
-    if (has_drop && step >= 1 && step <= 3 && home_act_prev_idx() != home_act_cur_idx()) {
-      // Deterministic 3-frame upward reel slide strictly inside the card (zero dip, zero pop!):
-      //   Step 1: Outgoing at pill_y - 9  (alpha 0.65), Incoming at pill_y + 15 (alpha 0.40)
-      //   Step 2: Outgoing at pill_y - 16 (alpha 0.28), Incoming at pill_y + 8  (alpha 0.75)
-      //   Step 3: Incoming at pill_y + 3  (alpha 0.92) -> then step resets to 0 (settled at pill_y)
-      static constexpr int8_t OUT_DY[4]    = {0,  -9, -16, -20};
-      static constexpr int8_t IN_DY[4]     = {0, +15,  +8,  +3};
-      static constexpr float  OUT_ALPHA[4] = {0.0f, 0.65f, 0.25f, 0.0f};
-      static constexpr float  IN_ALPHA[4]  = {1.0f, 0.42f, 0.76f, 0.94f};
-
-      const int act_w = (SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32);
-      const int act_h = scale_y(68);
-      const int act_x0 = cx - act_w / 2;
-      const int act_right = cx + act_w / 2;
-      render_modern_card(it, cx, pill_y, act_w, 68, 16, card_bg, card_brd, nullptr, col_white, font_small);
-
-      if (OUT_ALPHA[step] > 0.05f) {
-        draw_home_activity_row_contents(
-            it, pill_y + scale_y(OUT_DY[step]), act_items[home_act_prev_idx()], true, false, font_small,
-            card_bg, btn_bg, theme_secondary, col_white, OUT_ALPHA[step]);
+    const int rise = scale_y(16);
+    auto draw_row = [&](int item, int y, float alpha) {
+      if (item < 0 || item >= act_count || alpha <= 0.05f) return;
+      draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, font_small,
+                                      card_bg, btn_bg, theme_secondary, col_white, std::min(1.0f, alpha));
+    };
+    // One line changing in place: the old item rises and fades out while the new one rises in from below.
+    auto change_in_place = [&](int from, int to, int y) {
+      if (!animating || from == to) {
+        draw_row(to, y, 1.0f);
+        return;
       }
-      draw_home_activity_row_contents(
-          it, pill_y + scale_y(IN_DY[step]), act_items[home_act_cur_idx()], true, false, font_small,
-          card_bg, btn_bg, theme_secondary, col_white, IN_ALPHA[step]);
-
-      fast_hline(it, act_x0 + scale_x(16), pill_y - act_h / 2, act_w - scale_x(32), card_brd);
-      fast_hline(it, act_x0 + scale_x(16), pill_y + act_h / 2 - 1, act_w - scale_x(32), card_brd);
-      fast_line(it, act_right - scale_x(108), pill_y - scale_y(23), act_right - scale_x(108), pill_y + scale_y(23), card_brd);
-      fast_line(it, act_right - scale_x(52),  pill_y - scale_y(23), act_right - scale_x(52),  pill_y + scale_y(23), card_brd);
-      const int d_bx = act_right - scale_x(26);
-      for (int w = -1; w <= 1; w++) {
-        fast_line(it, d_bx - 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
-        fast_line(it, d_bx + 8, pill_y - 4 + w, d_bx, pill_y + 4 + w, col_white);
-      }
-
-      if (step < 3) {
-        home_act_anim_step() = step + 1;
-      } else {
-        home_act_anim_step() = 0;
-      }
+      draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+      draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+    };
+    if (!two) {
+      change_in_place(st.from_top, view.top, act_card_cy);
+    } else if (view.bottom < 0) {
+      // A single item sits centered in the fixed two-line card (no layout jump).
+      if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
+      else draw_row(view.top, act_card_cy, 1.0f);
+    } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
+      // Rotation: the top item leaves upward, the bottom line moves up to the top, the next enters below.
+      draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+      draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
+      draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+    } else if (animating && st.from_bottom >= 0) {
+      change_in_place(st.from_top, view.top, row_top);
+      change_in_place(st.from_bottom, view.bottom, row_bot);
     } else {
-      home_act_anim_step() = 0;
-      render_home_activity_card_row(
-          it, cx, pill_y, act_items[feat_idx], has_drop, font_small,
-          theme_secondary, col_white, false, card_bg, card_brd, btn_bg);
+      draw_row(view.top, row_top, 1.0f);
+      draw_row(view.bottom, row_bot, 1.0f);
+    }
+
+    // Separators between each line's label and its action button, and the dropdown column.
+    const int card_right = cx + card_w / 2;
+    const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
+    const int div_h = scale_y(two ? 17 : 23);
+    if (two && view.bottom >= 0) {
+      fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, card_brd);
+      fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, card_brd);
+    } else {
+      fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, card_brd);
+    }
+    if (has_drop) {
+      const int div2_x = card_right - scale_x(52);
+      const int col_h = card_h / 2 - scale_y(10);
+      fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, card_brd);
+      const int d_bx = card_right - scale_x(26);
+      for (int w = -1; w <= 1; w++) {
+        fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, col_white);
+        fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, col_white);
+      }
     }
   }
 
@@ -1162,7 +1206,7 @@ inline void render_home_page(
     const char *raw_greet = resolve_wake_greeting(
         now.hour, now.minute, now.day_of_year, cond, weather_temp);
     std::string fit_greet = fit_text_to_width_font(std::string(raw_greet), 340, font_date);
-    int greet_y = layout().home_activity_y - 2;
+    int greet_y = act_card_cy - 2;
 
     // 0..8000ms = 1.0f full brightness; 8000..10500ms = smooth 2.5s Hermite fade into background sky color
     float alpha = 1.0f;

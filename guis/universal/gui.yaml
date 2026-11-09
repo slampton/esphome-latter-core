@@ -603,7 +603,7 @@ display:
           latter_ui::render_tool_stopwatch(
               it, cx, cy, millis(), id(stopwatch_running),
               id(stopwatch_start_time), id(stopwatch_elapsed_ms), id(stopwatch_lap_ms),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary), id(col_white),
+              id(font_time), id(font_date), id(font_small), id(theme_primary), id(theme_secondary), id(col_white),
               id(col_slate), id(col_dark_gray), id(col_red));
         } else if (id(tools_subpage) == 4) {
           latter_ui::render_tool_dice_roll(

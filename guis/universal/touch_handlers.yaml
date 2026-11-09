@@ -435,29 +435,30 @@ script:
                 return;
               }
 
-              // 7. Live Activity Card Tap on Home (y in [232..296], only active once Wake Greeting has finished):
-              //    Acts on feat_idx (the currently rotated or urgency-pinned item shown on the card!)
+              // 7. Home activity card tap (D-028), once the wake greeting has finished. One-line card: the shown
+              //    item. Two-line card: the top or bottom line's item by tap height; a single item fills the card.
+              //    The right-hand button acts inline; the dropdown column (more items than lines) opens the list.
               const bool greet_blocking = id(home_wake_greeting_switch).state &&
                                           latter_ui::wake_greeting_latched() &&
                                           (now_hm >= latter_ui::wake_greeting_start_ms()) &&
                                           (now_hm - latter_ui::wake_greeting_start_ms() < 10500U);
-              const int act_card_w = (latter_ui::SCREEN_W > 520) ? latter_ui::scale_x(380) : std::min(380, latter_ui::SCREEN_W - 24);
-              const int act_right  = latter_ui::SCREEN_CX + (act_card_w / 2);
-              const int act_left   = latter_ui::SCREEN_CX - (act_card_w / 2);
-              if (!greet_blocking && act_count > 0 && latter_ui::layout().hit_home_activity(touch.x, touch.y)) {
+              const auto &act_ly = latter_ui::layout();
+              const int act_weather_h = latter_ui::home_weather_text_h();
+              if (!greet_blocking && act_count > 0 && act_ly.hit_home_activity(touch.x, touch.y, act_weather_h)) {
                 if (latter_ui::touch_router().allow_tap(now_hm, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
-                  int feat_idx = latter_ui::resolve_home_featured_activity_idx(act_items, act_count, now_hm);
-                  if (act_count > 1) {
-                    if (touch.x >= act_right - latter_ui::scale_x(50)) {
-                      latter_ui::home_activity_overlay_page() = 0;
-                      id(home_subpage) = 2;
-                      latter_ui::schedule_disp_update(&id(disp1));
-                      return;
-                    }
-                    handle_activity_item_action(feat_idx, (touch.x >= act_right - latter_ui::scale_x(106)));
-                  } else {
-                    handle_activity_item_action(0, (touch.x >= act_right - latter_ui::scale_x(54)));
+                  const int act_right = latter_ui::SCREEN_CX + act_ly.home_activity_w() / 2;
+                  const bool act_drop = act_ly.home_activity_has_drop(act_count);
+                  if (act_drop && touch.x >= act_right - latter_ui::scale_x(50)) {
+                    latter_ui::home_activity_overlay_page() = 0;
+                    id(home_subpage) = 2;
+                    latter_ui::schedule_disp_update(&id(disp1));
+                    return;
                   }
+                  const latter_ui::HomeActivityView act_view = latter_ui::resolve_home_activity_view(
+                      act_items, act_count, now_hm, act_ly.home_activity_two_line());
+                  int act_item = (act_view.top >= 0) ? act_view.top : 0;
+                  if (act_view.bottom >= 0 && touch.y >= act_ly.home_activity_cy(act_weather_h)) act_item = act_view.bottom;
+                  handle_activity_item_action(act_item, touch.x >= act_right - latter_ui::scale_x(act_drop ? 106 : 54));
                 }
                 return;
               }
@@ -2052,7 +2053,7 @@ script:
             }
 
             // 2. HOME SCREEN (PAGE 1) 4-ICON APP DOCK HORIZONTAL SWIPE
-            if (id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::scale_y(320)) {
+            if (id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::layout().home_dock_zone_top(latter_ui::home_weather_text_h(), latter_ui::home_activity_card_shown())) {
               const int dock_swipe_min = latter_ui::layout().swipe_short();
               if (std::abs(dx) >= dock_swipe_min && std::abs(dx) >= std::abs(dy)) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -2428,7 +2429,8 @@ script:
                   id(sync_wake_word_state).execute();
                 }
                 latter_ui::schedule_disp_update(&id(disp1));
-              } else if (!gest.swipe_committed && id(gui_page) == 1 && id(home_subpage) == 0 && gest.start_y >= latter_ui::scale_y(320)) {
+              } else if (!gest.swipe_committed && id(gui_page) == 1 && id(home_subpage) == 0 &&
+                         gest.start_y >= latter_ui::layout().home_dock_zone_top(latter_ui::home_weather_text_h(), latter_ui::home_activity_card_shown())) {
                 int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
                 int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
                 int total_pages = (dock_count + 3) / 4;

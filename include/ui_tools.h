@@ -308,11 +308,17 @@ inline bool &stopwatch_modern_digital() {
   return modern;
 }
 
-template<typename DisplayT, typename FontBigT, typename FontSmallT>
+// The big time readout shared by the timer, alarm editor and stopwatch pages: font_time at scale_y(142).
+template<typename DisplayT, typename FontT>
+inline void render_time_readout(DisplayT &it, int cx, const char *text, FontT *font_time, esphome::Color color) {
+  fast_print(it, cx, scale_y(142), font_time, color, esphome::display::TextAlign::CENTER, text);
+}
+
+template<typename DisplayT, typename FontTimeT, typename FontBigT, typename FontSmallT>
 inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                   bool stopwatch_running, uint32_t stopwatch_start_time,
                                   uint32_t stopwatch_elapsed_ms, uint32_t stopwatch_lap_ms,
-                                  FontBigT *font_date, FontSmallT *font_small,
+                                  FontTimeT *font_time, FontBigT *font_date, FontSmallT *font_small,
                                   esphome::Color theme_primary, esphome::Color theme_secondary,
                                   esphome::Color col_white,
                                   esphome::Color col_slate, esphome::Color col_dark_gray,
@@ -331,7 +337,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
 
     char main_buf[32];
     snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
-    fast_print(it, cx, scale_y(146), font_date, col_white, esphome::display::TextAlign::CENTER, main_buf);
+    render_time_readout(it, cx, main_buf, font_time, col_white);
 
     if (stopwatch_lap_ms > 0) {
       int l_mins = (stopwatch_lap_ms / 60000U) % 60U;
@@ -1500,7 +1506,7 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
   int disp_sec = (s.running || s.paused) ? s.remaining_sec : s.duration_sec;
   char t_str[16];
   snprintf(t_str, sizeof(t_str), "%02d:%02d", disp_sec / 60, disp_sec % 60);
-  fast_print(it, cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_str);
+  render_time_readout(it, cx, t_str, font_time, col_white);
 
   if (s.running) {
     fast_print(it, cx, scale_y(192), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Running");
@@ -1625,7 +1631,7 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     char t_buf[16];
     char ap_buf[8] = "";
     format_time_hhmm(cur_h, cur_m, is_24h_format, t_buf, sizeof(t_buf), ap_buf);
-    fast_print(it, cx, scale_y(142), font_time, col_white, esphome::display::TextAlign::CENTER, t_buf);
+    render_time_readout(it, cx, t_buf, font_time, col_white);
     if (!is_24h_format) {
       int h12 = cur_h % 12;
       if (h12 == 0) h12 = 12;

@@ -516,7 +516,6 @@ struct UiLayout {
   int home_date_y     = (SCREEN_H > 520) ? ((SCREEN_H * 52) / 466)  : 52;
   int home_clock_y    = (SCREEN_H > 520) ? ((SCREEN_H * 128) / 466) : 128;
   int home_weather_y  = (SCREEN_H > 520) ? ((SCREEN_H * 200) / 466) : 200;
-  int home_activity_y = (SCREEN_H > 520) ? ((SCREEN_H * 266) / 466) : 266;
   constexpr bool hit_home_clock(int tx, int ty) const {
     int hw = (w > 520) ? 180 : 135;
     int hh = (h > 520) ? 64  : 48;
@@ -527,11 +526,33 @@ struct UiLayout {
     int hh = (h > 520) ? 36  : 28;
     return (tx >= cx - hw && tx <= cx + hw && ty >= home_weather_y - hh && ty <= home_weather_y + hh);
   }
-  constexpr bool hit_home_activity(int tx, int ty) const {
-    int act_w = (w - 24 < 380) ? (w - 24) : ((w > 520) ? ((w * 380) / 466) : 380);
-    int hw = act_w / 2;
-    int hh = (h > 520) ? 54 : 44;
-    return (tx >= cx - hw && tx <= cx + hw && ty >= home_activity_y - hh && ty <= home_activity_y + hh);
+  // Home activity card (docs/device-ui-design.md D-028). The round panel keeps one line, centered
+  // between the weather line and the dock; every other panel shows two lines, a named gap above the
+  // dock (data above, controls below). weather_h is font_date's line height (home_weather_text_h()).
+  constexpr bool home_activity_two_line() const { return !is_round; }
+  constexpr int home_activity_w() const { return (w > 520) ? scale_x(380) : std::min(380, w - 32); }
+  constexpr int home_activity_pitch() const { return scale_y(46); }  // two-line row pitch
+  constexpr int home_activity_h() const { return is_round ? scale_y(68) : (2 * scale_y(46) + scale_y(12)); }
+  constexpr int home_activity_dock_gap() const { return mm_to_px(3.0f); }  // clear space above the dock
+  constexpr int home_activity_cy(int weather_h) const {
+    return is_round ? ((home_weather_y + weather_h / 2) + (dock_y - dock_r)) / 2
+                    : (dock_y - dock_r - home_activity_dock_gap() - home_activity_h() / 2);
+  }
+  // A dropdown column (opens the full activity list) when there are more items than lines.
+  constexpr bool home_activity_has_drop(int count) const { return count > (is_round ? 1 : 2); }
+  // Home dock swipe/tap zone top: below the activity card (plus 1 mm) while it shows, so a swipe on the
+  // card never pages the dock, and never below the dock's own tap band (dock_y - dock_hit_r()).
+  constexpr int home_dock_zone_top(int weather_h, bool card_shown) const {
+    const int base = scale_y(320);
+    if (!card_shown) return base;
+    const int below_card = home_activity_cy(weather_h) + home_activity_h() / 2 + mm_to_px(1.0f);
+    return std::min(dock_y - dock_hit_r(), std::max(base, below_card));
+  }
+  constexpr bool hit_home_activity(int tx, int ty, int weather_h) const {
+    const int hw = home_activity_w() / 2;
+    const int hh = home_activity_h() / 2 + scale_y(4);
+    const int acy = home_activity_cy(weather_h);
+    return (tx >= cx - hw && tx <= cx + hw && ty >= acy - hh && ty <= acy + hh);
   }
 
   // 4-Column Stepper X centers (-5m, -1m, +1m, +5m / -1h, +1h, -5m, +5m)
@@ -661,6 +682,19 @@ struct UiLayout {
 
 inline constexpr UiLayout layout() {
   return UiLayout{};
+}
+
+// Whether the Home renderer drew the activity card on the last Home frame (the dock zone starts below it).
+inline bool &home_activity_card_shown() {
+  static bool shown = false;
+  return shown;
+}
+
+// font_date's line height, measured by the Home renderer (the activity card's position on the round
+// panel depends on it); the default covers the first frame.
+inline int &home_weather_text_h() {
+  static int h = (SCREEN_H > 520) ? 45 : 32;
+  return h;
 }
 
 // Page header (docs/device-ui-design.md, components): an UPPERCASE title in font_small and theme_primary,

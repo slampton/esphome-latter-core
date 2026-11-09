@@ -82,7 +82,8 @@ There is no spacing scale. Spacing lives in `UiLayout` ([`ui_layout.h`](../inclu
 | `slot5_y(i)`, `hit_slot5()` | 236 + (i − 2) × 63 | scaled above 520 px | 5-slot list rows (height 44) and their hit-test |
 | `area_card3_*`, `tool_card3_*` | stride 76 / 100, height 64 / 74 | scaled above 520 px | 3-card pages |
 | `tools_row_y`, `tools_col_off` | stride 105, offset 68 | 61 below 380 px | Tools launcher grid |
-| `home_*_y` | date 52, clock 128, weather 200, activity 266 | scaled above 520 px | Home screen zones |
+| `home_*_y` | date 52, clock 128, weather 200 | scaled above 520 px | Home screen zones |
+| `home_activity_cy()`, `home_activity_h()` | centered between the weather line and the dock (one line, 68) | `dock_y − dock_r − home_activity_dock_gap()` (3 mm) − half the two-line card (2 × 46 + 12) | Home activity card (D-028) |
 | `battery_cx/y`, `celestial_x/y` | — | per width bucket | Corner-safe indicators |
 
 UiLayout also holds the page-specific geometry for music, light sliders, steppers, calculator, map zoom and system swatches, each with its hit-tester, and the touch constants in [1.6](#16-touch-constants). **Rule:** a spacing value used by more than one page, or by both drawing and touch, goes into `UiLayout`. *Documented only.*
@@ -175,6 +176,8 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | The same slots the page draws (the Home-dock ring uses `get_home_dock_window_xs`) | Rotary / button navigation |
 | Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Tools pages (D-007) |
 | Battery indicator | `render_battery_indicator` (`ui_clock_home.h`) | `UiLayout::battery_cx/y` | Clock and Home |
+| Time readout | `render_time_readout(it, cx, text, font_time, color)` (`ui_tools.h`) | `scale_y(142)` | The big readout on the timer, alarm editor and stopwatch pages (one component, one font) |
+| Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` | Live items (timers, stopwatch, music, alarms, calendar). One line on the round panel, two elsewhere; rotation every 8 s slides upward (D-028) |
 | Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge (a tab on rectangular panels; floating inside the bezel on round), sized from the text and mm padding | Home Assistant disconnected for 8 s or more (D-026) |
 | Tool launcher card | `render_tool_launcher_card` (`ui_tools.h`) | `UiLayout::tools_*` | The Tools grid |
 
@@ -508,6 +511,13 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Alternatives:** Lower-contrast gradients without dithering; supersampled shapes (slower).
 - **Status:** Accepted; implemented 2026-11-08.
 
+### D-028: Home activity card: one line on round, two lines elsewhere
+- **Date:** 2026-11-08
+- **Decision:** The round panel keeps a one-line activity card, centered between the bottom of the weather line and the top of the dock. Every other panel shows a two-line card (two rows 46 apart plus padding, scaled above 520 px) whose bottom sits `home_activity_dock_gap()` (3 mm) above the dock: data above, controls below. With two or more front-deck items both lines show; every 8 s the bottom line moves up to the top and the next item enters below, wrapping, with the shared motion (kMotionMs, ease-out cubic). A pinned item (running stopwatch, or a timer in its last minute) keeps the top line while the bottom line rotates. One item sits centered in the same fixed-height card; with none the card is hidden. A tap acts on the line it lands on; the right-hand button acts inline; the dropdown column appears when there are more items than lines and opens the full list. While the card shows, the Home dock's swipe and tap zone starts 1 mm below it (`home_dock_zone_top()`, never below the dock's own tap band), so a swipe on the card never pages the dock. Supersedes the earlier single-line card at a fixed y (266 on the 466 grid) with its frame-stepped three-step reel.
+- **Why:** On the larger panels the card sat high and close to the weather line, and one line hid most live items.
+- **Open:** The card's translucency over the sky (it sometimes covers clouds) is to be discussed; styling is unchanged.
+- **Status:** Accepted; implemented 2026-11-08.
+
 ### D-026: An "Offline" pill shows a lost Home Assistant connection
 - **Date:** 2026-11-08
 - **Decision:** When the Home Assistant API has been disconnected for 8 s, a small pill reading "Offline" appears at the top center: `font_micro` in `col_gold` on the dark chrome card (`kChromeBarTrack`, `kChromeBarBorder` border). On rectangular panels it hangs from the top edge as a tab, which keeps it above every page header; on the round panel it floats just inside the bezel. It is drawn after the page, never over a takeover, and not with the screen off, during hibernation or during an update. It replaces the earlier link-off glyph (two rings and a slash, listed in section 2), which had no decision entry of its own.
@@ -518,6 +528,8 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 ## Known gaps
 
 Nothing here contradicts a standing decision; these are the places the code doesn't fully reach it yet.
+
+- Home activity card translucency over the weather sky (D-028) is an open design question.
 
 - Some raw touch coordinates remain in `touch_handlers.yaml` (D-002); there is no check for them yet.
 - Toggle, slider and list row are not shared components (section 2).
