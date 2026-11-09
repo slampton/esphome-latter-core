@@ -335,16 +335,6 @@ touchscreen:
 
 # Board-Level Hardware Abstraction Scripts (pad holds, DAC mute, codec standby & hibernate)
 script:
-  - id: hal_route_i2s_to_spk
-    mode: restart
-    then:
-      - lambda: 'return;'
-
-  - id: hal_route_i2s_to_mic
-    mode: restart
-    then:
-      - lambda: 'return;'
-
   - id: hal_release_deep_sleep_holds
     mode: restart
     then:

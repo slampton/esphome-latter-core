@@ -3,8 +3,10 @@
 // ==============================================================================
 // Latter Core Audio Router & Wake-Word Arbitrator (audio_router.h)
 // ==============================================================================
-// Centralizes the full-duplex bus trait, wake-word run-state arbitration, the loudness model
-// and codec standby across all Latter display and voice hardware targets.
+// Centralizes the echo meter, wake-word run-state arbitration, the loudness model and codec standby
+// across all Latter display and voice hardware targets. Every board runs one full-duplex I2S bus
+// (i2s_audio full_duplex: true): the microphone and speaker run at the same time and never hand the
+// bus over.
 // ==============================================================================
 
 #include <algorithm>
@@ -17,16 +19,6 @@
 #include "esphome/core/hal.h"
 
 namespace latter_ui {
-
-// True when the board's I2S bus runs in full duplex (i2s_audio full_duplex: true, which defines
-// USE_I2S_AUDIO_FULL_DUPLEX). The microphone and speaker then run at the same time, so the core never
-// hands the bus over: the speaker is never stopped to free the bus for the microphone. (Media still
-// pauses the wake word by policy until echo cancellation exists.)
-#ifdef USE_I2S_AUDIO_FULL_DUPLEX
-inline constexpr bool kAudioFullDuplex = true;
-#else
-inline constexpr bool kAudioFullDuplex = false;
-#endif
 
 // Acoustic meter for va_echo_gate: when the raw microphone last heard something loud. A follow-up turn
 // opens once the speaker has been acoustically quiet for a moment, instead of waiting for the reply's

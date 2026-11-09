@@ -44,7 +44,7 @@ A board file defines:
 - **Hardware:** the display, touchscreen, I2C/SPI buses, I2S, and audio codecs.
 - **Modules:** which PMU and IMU modules to include.
 - **Build settings:** the `LATTER_*` capability flags and sdkconfig options.
-- **HAL scripts:** the scripts the core calls, such as `hal_route_i2s_to_spk` and `hal_enter_hardware_hibernate`.
+- **HAL scripts:** the scripts the core calls, such as `hal_set_dac_mute` and `hal_enter_hardware_hibernate`.
 
 → [Porting hardware](porting-hardware.md)
 
@@ -80,7 +80,7 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `ui_ambient_va.h` | Screensavers and the voice overlay |
 | `ui_system.h` | Settings page |
 | `va_cancel_helper.h` | Voice session teardown, the on-device wake-word picker (same path as Home Assistant's Wake word selects), API client release before hibernate |
-| `audio_router.h` | Full-duplex bus trait, wake word run predicate, loudness model, codec standby |
+| `audio_router.h` | Echo meter, wake word run predicate, loudness model, codec standby |
 | `latter_protocol.h` | Generated Protocol v3 constants (from `protocol/latter_v3.json`) |
 | `hal_imu_qmi8658.h` | QMI8658 hardware wake-on-motion |
 | `hal_power_pm.h` | Automatic light sleep: the awake lock, light-sleep wake pins, sleep pad config for raw-IDF outputs, `[PROF:PM]` |

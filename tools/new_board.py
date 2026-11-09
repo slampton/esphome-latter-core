@@ -30,16 +30,6 @@ INPUT_ROLES = {"pwr_key", "touch_int", "imu_int1", "imu_int2", "rtc_int"}
 SWITCH_ROLES = {"speaker_pa", "haptic_motor", "backlight_enable", "sd_power_gate"}
 PWM_ROLES = {"backlight_pwm", "backlight_analog_dim"}
 HAL_SCRIPTS = (
-    (
-        "hal_route_i2s_to_spk",
-        None,
-        "Route the I2S bus to the speaker (no-op on a full-duplex bus)",
-    ),
-    (
-        "hal_route_i2s_to_mic",
-        None,
-        "Route the I2S bus to the microphone (no-op on a full-duplex bus)",
-    ),
     ("hal_set_dac_mute", ("muted", "bool"), "Mute the codec output"),
     (
         "hal_set_audio_codecs_standby",

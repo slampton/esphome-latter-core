@@ -53,10 +53,10 @@ template struct Rob<VA_ApiClient_Tag, &esphome::voice_assistant::VoiceAssistant:
 namespace esphome {
 namespace voice_assistant {
 
-// Stops VoiceAssistant's internal MicrophoneSource right now, so a shared I2S bus is free for the speaker
-// path (route_i2s_to_spk) and for a synchronous abort. Since ESPHome 2026.11 the component itself stops
-// the microphone at STT_END and when STT_END + TTS_END arrive in one burst (esphome#21380, #21755), so
-// the STT callbacks no longer call this.
+// Stops VoiceAssistant's internal MicrophoneSource right now, for a synchronous abort
+// (abort_voice_assistant). Since ESPHome 2026.11 the component itself stops the microphone at STT_END
+// and when STT_END + TTS_END arrive in one burst (esphome#21380, #21755), so the STT callbacks don't
+// call this.
 inline void stop_va_microphone(VoiceAssistant *va) {
   if (va == nullptr) return;
 #ifdef USE_MICROPHONE

@@ -32,7 +32,7 @@ speaker:
 # No sample-rate conversion on the device: every source arrives at ${audio_out_rate} (Sendspin's
 # sample_rate, the speaker_source pipelines' preferred format for Home Assistant, the sounds rendered
 # per rate by tools/gen_sounds.py), and the mixer folds stereo to the panel's ${audio_out_channels}
-# channel(s). On a full-duplex bus the speaker accepts no other format.
+# channel(s). The full-duplex speaker accepts no other format.
 #
 # Sounds are embedded WAV files (no decode cost) for this board's ${audio_out_rate}. ESPHome's rtttl
 # synthesizes at a fixed 16 kHz, so it cannot feed a 48 kHz mixer.
@@ -205,7 +205,7 @@ media_player:
                     // A reply: the voice assistant reopens the microphone for a follow-up about one buffer
                     // (${announcement_buffer_s} s) before the reply has finished playing, so it starts muted
                     // and va_echo_gate unmutes it once the speaker is quiet.
-                    if (latter_ui::kAudioFullDuplex) id(latter_mic).set_mute_state(true);
+                    id(latter_mic).set_mute_state(true);
                     id(va_vad_active) = false;
                     id(va_status_text) = "Responding...";
                   }
@@ -263,7 +263,7 @@ media_player:
                         id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
               - if:
                   condition:
-                    lambda: 'return !id(speaker_enable).state || id(mww).is_running() || id(latter_mic).is_running();'
+                    lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
                   then:
                     - script.execute: route_i2s_to_spk
                     - script.wait: route_i2s_to_spk
@@ -401,15 +401,14 @@ voice_assistant:
             - delay: 150ms
       - script.stop: mp_idle_debounce
       - script.stop: screen_sleep_timer
-      # A full-duplex microphone hears the speaker. A continued-conversation turn opens while the reply's
-      # last frames are still buffered, so va_echo_gate feeds the pipeline silence until they have played
-      # and the amplifier is off. Otherwise silence the speaker path at once.
+      # The microphone hears the speaker. A continued-conversation turn opens while the reply's last
+      # frames are still buffered, so va_echo_gate feeds the pipeline silence until they have played and
+      # the amplifier is off. Otherwise silence the speaker path at once.
       - if:
           condition:
             lambda: |-
-              return latter_ui::kAudioFullDuplex &&
-                     (id(latter_mic).get_mute_state() || id(announcement_mixing_input).is_running() ||
-                      id(sound_mixing_input).is_running() || id(physical_speaker).has_buffered_data());
+              return id(latter_mic).get_mute_state() || id(announcement_mixing_input).is_running() ||
+                     id(sound_mixing_input).is_running() || id(physical_speaker).has_buffered_data();
           then:
             - script.execute: va_echo_gate
           else:
@@ -445,8 +444,8 @@ voice_assistant:
             id(display_brightness).turn_on().perform();
             latter_ui::schedule_disp_update(&id(disp1));
           }
-      # va_busy now holds: pause the wake word for the turn (on a full-duplex bus nothing else stops it,
-      # and it would hear the reply).
+      # va_busy now holds: pause the wake word for the turn (nothing else stops it, and it would hear the
+      # reply).
       - script.execute: sync_wake_word_state
   on_stt_vad_start:
     then:
@@ -807,35 +806,13 @@ script:
       # 4. Smoothly restore music playback or mute & route I2S back to mic, then restore the display
       - script.execute: resume_music_after_va
       - script.execute: va_restore_display
+  # Powers the speaker path up. The full-duplex bus keeps the microphone and the wake word running (the
+  # wake word is paused by sync_wake_word_state while media plays).
   - id: route_i2s_to_spk
     mode: restart
     then:
       - script.stop: route_i2s_to_mic
-      # Half-duplex bus hand-off: the microphone must release the bus before the speaker can take it.
-      # A full-duplex bus (every supported board) runs both at once and skips this; the wake word itself
-      # is paused by sync_wake_word_state while media plays.
-      - if:
-          condition:
-            lambda: 'return !latter_ui::kAudioFullDuplex;'
-          then:
-            - script.stop: sync_wake_word_state
-            - if:
-                condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-            - lambda: |-
-                esphome::voice_assistant::stop_va_microphone(id(va));
-            - if:
-                condition:
-                  lambda: 'return id(latter_mic).is_running();'
-                then:
-                  - wait_until:
-                      condition:
-                        lambda: 'return !id(latter_mic).is_running();'
-                      timeout: 150ms
       - lambda: 'id(hal_set_audio_codecs_standby).execute(false);'
-      - script.execute: hal_route_i2s_to_spk
       # Amplifier sequencing (the one place the speaker path powers up). On a cold start the I2S
       # clocks start first with the amplifier off, so the DAC output settles unamplified; then the
       # amplifier turns on. Starting the clocks with the amplifier already on is what pops. A running
@@ -847,7 +824,7 @@ script:
           then:
             - lambda: |-
                 id(speaker_enable).turn_off();
-                // Start in the mixer's output format: a full-duplex speaker rejects any other.
+                // Start in the mixer's output format: the full-duplex speaker rejects any other.
                 id(physical_speaker).set_audio_stream_info(
                     audio::AudioStreamInfo(${audio_out_bits}, ${audio_out_channels}, ${audio_out_rate}));
                 id(physical_speaker).start();
@@ -857,30 +834,14 @@ script:
                 timeout: 200ms
             - delay: 30ms
       - switch.turn_on: speaker_enable
-  # Silences the speaker path (DAC mute, amplifier off). On a half-duplex bus it also stops the speaker
-  # to free the bus for the microphone; a full-duplex speaker is left to its own idle timeout.
+  # Silences the speaker path (DAC mute, amplifier off). The speaker is left to its own idle timeout.
   - id: route_i2s_to_mic
     mode: restart
     then:
       - lambda: 'id(hal_set_dac_mute).execute(true);'
       - switch.turn_off: speaker_enable
-      - if:
-          condition:
-            lambda: 'return !latter_ui::kAudioFullDuplex && id(physical_speaker).is_running();'
-          then:
-            # Stop the mixer inputs first. An input still holding audio when its output stops never
-            # drains, so it stays running and speaker_source waits on it: the next reply never plays.
-            - lambda: |-
-                id(announcement_mixing_input).stop();
-                id(sound_mixing_input).stop();
-                id(physical_speaker).stop();
-            - wait_until:
-                condition:
-                  lambda: 'return !id(physical_speaker).is_running();'
-                timeout: 150ms
-      - script.execute: hal_route_i2s_to_mic
 
-  # Full duplex only. Without it, Home Assistant's speech-to-text heard the end of the reply and the
+  # Without it, Home Assistant's speech-to-text heard the end of the reply and the
   # amplifier switching off at the start of every continued-conversation turn, took that as the start
   # of the answer, and ended the turn after the user's first word. The muted microphone publishes
   # zeros (the wake word is paused for the turn). The reply's start muted it already (on_announcement);
@@ -962,9 +923,9 @@ script:
       - if:
           condition:
             lambda: |-
-              // Media pauses the wake word on every board. A full-duplex bus could listen during playback, but without
-              // echo cancellation (roadmap: v3) the speaker drowns the mic, lyrics false-trigger it, and inference on
-              // top of 48 kHz decoding costs CPU, memory and battery.
+              // Media pauses the wake word on every board. The full-duplex bus could listen during playback, but
+              // without echo cancellation (roadmap: v3) the speaker drowns the mic, lyrics false-trigger it, and
+              // inference on top of 48 kHz decoding costs CPU, memory and battery.
               // Image/camera fetches run in 16 KB slices with <=2 concurrent MWW models and do NOT suspend MWW.
               const bool va_busy = id(va_active) || id(va).is_running() || !id(va_status_text).empty() ||
                                    id(va_tts_received) || id(announcement_mixing_input).is_running();
@@ -991,12 +952,6 @@ script:
                   - lambda: |-
                       id(hal_set_audio_codecs_standby).execute(false);
                       id(latter_mic).set_mute_state(false);  // never start the wake word on a gated microphone
-                  - if:
-                      condition:
-                        lambda: 'return !latter_ui::kAudioFullDuplex;'
-                      then:
-                        - script.execute: route_i2s_to_mic
-                        - script.wait: route_i2s_to_mic
                   - delay: 25ms
                   - script.execute: apply_wake_word_sensitivities
                   - if:
@@ -1079,7 +1034,7 @@ script:
       # Only re-route when the speaker path is not already active (music already owns it).
       - if:
           condition:
-            lambda: 'return !id(speaker_enable).state || id(mww).is_running() || id(latter_mic).is_running();'
+            lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
           then:
             - script.execute: route_i2s_to_spk
             - script.wait: route_i2s_to_spk

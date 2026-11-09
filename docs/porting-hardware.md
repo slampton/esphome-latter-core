@@ -16,7 +16,7 @@ The core modules refer to these IDs. Your board or device file must define each 
 | `touch_screen` | `touchscreen` | The GUI adds gesture handling with `!extend` |
 | `boot_button` | `binary_sensor` | `latter_client.yaml` extends it: wake, dismiss alerts, game button, start or stop a voice turn |
 | `bus_internal` | `i2c` | The bus shared by the PMU, IMU, codecs, and touch |
-| `latter_mic` | `microphone` | 16 kHz (`audio_in_rate`) mono. On a full-duplex bus faster than that, a `resampler` microphone over the I2S mic |
+| `latter_mic` | `microphone` | 16 kHz (`audio_in_rate`) mono: a `resampler` microphone over the I2S mic when the bus runs faster |
 | `physical_speaker` | `speaker` | Set `timeout: 4s` (longer than the 3 s idle power-down, so gaps between tracks never stop the I2S clocks under a powered amplifier) |
 | `speaker_enable` | `switch` | Amplifier enable. Only `route_i2s_to_spk` turns it on, after the I2S clocks run |
 | `wifi_ctrl` | `wifi` | Usually defined in the device file |
@@ -29,8 +29,6 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 
 | Script | Parameters | Purpose |
 | :--- | :--- | :--- |
-| `hal_route_i2s_to_spk` | — | Reserved for a board that must hand its I2S bus to the speaker. A no-op on a full-duplex bus (every supported board). |
-| `hal_route_i2s_to_mic` | — | The same, towards the microphone. A no-op on a full-duplex bus. |
 | `hal_set_dac_mute` | `muted: bool` | Mute the codec output |
 | `hal_set_audio_codecs_standby` | `standby: bool` | Put the codecs into low-power standby, or wake them |
 | `hal_set_imu_power_mode` | `ctrl7_val: int` | IMU power mode: `0x00` off, `0x01` accelerometer, `0x03` accelerometer + gyro, `0x80` hardware wake-on-motion (no polling) |
@@ -38,8 +36,8 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 | `hal_release_deep_sleep_holds` | — | Release GPIO holds at boot, and pulse touch reset if the touch driver can't |
 | `hal_enter_hardware_hibernate` | — | Hold pins and cut power. Called after the core has saved state and disconnected from the API. |
 
-**Audio routing:**
-- **One full-duplex I2S bus** (every supported board): set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The routing scripts are no-ops. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
+**Audio bus (full duplex is required):**
+- **One full-duplex I2S bus**: set `full_duplex: true` on the bus and run the codecs, the speaker and an I2S microphone (e.g. `latter_mic_i2s`) at `audio_out_rate` (48000 where the codecs allow). `latter_mic` is then a `resampler` microphone at `audio_in_rate` (16000) for wake word and voice. The microphone and speaker run at the same time; Latter never hands the bus over, so a board whose codecs can't share one full-duplex bus isn't supported. See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
 - **Separate controllers per codec** (an ES8311 DAC plus an ES7210 ADC, as on the S3 boards): put both data pins on the one full-duplex bus; they share BCLK/WS/MCLK. See [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml).
 - Never put a `resampler` speaker in the output path: every source arrives at `audio_out_rate`, and the sounds come from `sounds/<audio_out_rate>/` (`python tools/gen_sounds.py` renders a new rate).
 
