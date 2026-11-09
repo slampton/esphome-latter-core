@@ -325,9 +325,13 @@ inline void log_boot_summary() {
   log_stall_summary();
   const PmCrumb &crumb = pm_previous_crumb();
   if (crumb.magic == kPmCrumbMagic && crumb.ring_head < kPmCrumbRing) {
-    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu imu_wom=%lu imu_events=%lu",
+    // tick0 / tick1: each CPU's last FreeRTOS tick, as microseconds after the last ring entry's start
+    // (the hung CPU stopped ticking first; the other one keeps ticking until the watchdog resets).
+    const PmCrumbSleep &last_entry = crumb.ring[crumb.ring_head];
+    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu imu_wom=%lu imu_events=%lu tick0=%+ldus tick1=%+ldus",
              pm_crash_where(), (unsigned long)crumb.seq, (unsigned long)crumb.imu_armed,
-             (unsigned long)crumb.imu_events);
+             (unsigned long)crumb.imu_events, (long)(int32_t)(crumb.tick_us[0] - last_entry.t_us),
+             (long)(int32_t)(crumb.tick_us[1] - last_entry.t_us));
     // Oldest first: the 4 sleeps before the last entry, then the last entry (in flight when ls-in; slept=0
     // at ls-out means that attempt didn't sleep). lv = wake-pin levels, bits 0-3 at entry and 4-7 at exit
     // (pwr, btn, touch, imu); arm = the pins armed as level wakes; t = esp_timer low 32 bits.

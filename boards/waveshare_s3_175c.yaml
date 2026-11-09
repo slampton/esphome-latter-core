@@ -138,6 +138,10 @@ esp32:
       # mDNS timer every 500 ms (default 100 ms).
       CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
       CONFIG_MDNS_TIMER_PERIOD_MS: "500"
+      # Panic handler in IRAM: a watchdog or cache panic still records its backtrace (ESPHome's crash
+      # handler runs from IRAM too) when the flash/PSRAM cache can't serve code, e.g. a hang around a
+      # light-sleep transition (int-wdt resets with no crash record, 2026-11-08).
+      CONFIG_ESP_PANIC_HANDLER_IRAM: "y"
       # Wake profiling for [PROF:WAKE] (Telemetry Profiler): esp_timer names and fire counts, CPU time per
       # task. Costs a little time per esp_timer callback and per context switch.
       CONFIG_ESP_TIMER_PROFILING: "y"

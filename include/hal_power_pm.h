@@ -73,6 +73,7 @@
 #include <driver/gpio.h>
 #include <esp_attr.h>
 #include <esp_err.h>
+#include <esp_freertos_hooks.h>
 #include <esp_heap_caps.h>
 #include <esp_pm.h>
 #include <esp_sleep.h>
@@ -114,7 +115,9 @@ inline constexpr uint32_t pm_quiet_loop_interval(uint32_t arm_mask) {
 // ESP-IDF's sleep path. The breadcrumb tells the next boot whether the last light sleep had entered
 // (phase 1: between the enter and exit callbacks) or come back (phase 2), and keeps a ring of the last
 // sleeps: the in-flight attempt at ring[head] while phase 1, the completed ones before it. The sleep
-// callbacks write everything except the IMU fields, which the main loop writes (pm_note_imu).
+// callbacks write the phase and the ring, the main loop writes the IMU fields (pm_note_imu), and a
+// FreeRTOS tick hook on each CPU stamps tick_us: the CPU whose ticks stopped first is the one that hung,
+// and its last tick against the last ring entry says how long after that sleep it hung.
 struct PmCrumbSleep {
   uint32_t t_us;      // esp_timer time at entry (low 32 bits, wraps ~71 min)
   uint32_t req_us;    // requested sleep (low 32 bits)
@@ -132,6 +135,7 @@ struct PmCrumb {
   uint32_t imu_events;  // WoM events counted by then
   uint32_t ring_head;   // the last entry's slot
   uint32_t ring_next;   // the next entry's slot (ring_head again when the last attempt didn't sleep)
+  uint32_t tick_us[2];  // last FreeRTOS tick per CPU (esp_timer low 32 bits)
   PmCrumbSleep ring[kPmCrumbRing];
 };
 constexpr uint32_t kPmCrumbMagic = 0x4C534C50UL;  // "LSLP"
@@ -341,6 +345,11 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
   return ESP_OK;
 }
 
+// FreeRTOS tick hooks (tick interrupt, IRAM, also while the flash cache is disabled): one RTC store each.
+// esp_timer_get_time is in IRAM here (CONFIG_PM_SLP_IRAM_OPT selects CONFIG_ESP_TIMER_IN_IRAM).
+static void IRAM_ATTR pm_tick_hook_cpu0() { s_pm_crumb.tick_us[0] = static_cast<uint32_t>(esp_timer_get_time()); }
+static void IRAM_ATTR pm_tick_hook_cpu1() { s_pm_crumb.tick_us[1] = static_cast<uint32_t>(esp_timer_get_time()); }
+
 // Raw-IDF outputs (driven with gpio_set_level, not through an ESPHome pin) keep driving in light sleep.
 inline void pm_keep_raw_outputs_driven() {
 #ifdef LATTER_TOUCH_RST_PIN
@@ -377,6 +386,13 @@ inline void pm_init() {
     pm_previous_crumb() = s_pm_crumb;
   }
   memset(&s_pm_crumb, 0, sizeof(s_pm_crumb));  // RTC_NOINIT: the ring indexes start inside the ring
+#if !defined(CONFIG_ESP_TIMER_IN_IRAM)
+#error "Latter's light-sleep tick hooks need CONFIG_ESP_TIMER_IN_IRAM (selected by CONFIG_PM_SLP_IRAM_OPT)"
+#endif
+  esp_register_freertos_tick_hook_for_cpu(pm_tick_hook_cpu0, 0);
+#if !CONFIG_FREERTOS_UNICORE
+  esp_register_freertos_tick_hook_for_cpu(pm_tick_hook_cpu1, 1);
+#endif
   pm_keep_raw_outputs_driven();
 #ifdef LATTER_PWR_KEY_PIN
   st.pins[PM_WAKE_PWR_KEY].gpio = static_cast<int8_t>(LATTER_PWR_KEY_PIN);
