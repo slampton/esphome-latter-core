@@ -1209,53 +1209,50 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
   return false;
 }
 
-// Draws a single articulated high-altitude bird in the Origami V-echelon formation:
-// - Because the AMOLED daytime sky `day_bg` (28, 54, 84) is a dark navy (~3% physical OLED luminance),
-//   pure black (0, 0, 0) has only 3% contrast against the sky and disappears to the eye.
-// - Over the dark navy sky, we render the bird in a subtle, muted silver-slate (152, 184, 218 upper wing +
-//   104, 138, 175 lower wing — ~35% softer than Chunk 80's stark white, yet 100% visible against the navy sky),
-//   and automatically flip to a dark charcoal silhouette (20, 32, 48) whenever a wing segment crosses
-//   in front of the bright golden Sun disc at (cel_cx, cel_cy)!
+// Draws a single articulated high-altitude bird in the V-echelon formation:
+// Rendered as a crisp black silhouette with a 2 px inner wing, tapered outer wingtips, and central body core.
 template<typename DisplayT>
 inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float flap_phase,
-                                float scale, int cy, int cel_cx = 341, int cel_cy = 91) {
+                                float scale, int cy) {
   if (by < 12 || by > SCREEN_H - 12) return;
   float s1 = fast_sin(flap_phase);
   float s2 = fast_sin(flap_phase - 0.55f);
-  int w_in  = static_cast<int>(5.2f * scale);
-  int w_out = static_cast<int>(10.0f * scale);
-  int dy_in  = static_cast<int>(-3.6f * scale * s1) - 1;
-  int dy_out = dy_in + static_cast<int>(-4.0f * scale * s2);
+  int w_in  = static_cast<int>(5.4f * scale);
+  int w_out = static_cast<int>(10.4f * scale);
+  int dy_in  = static_cast<int>(-3.8f * scale * s1) - 1;
+  int dy_out = dy_in + static_cast<int>(-3.6f * scale * s2) + 1;
 
-  esphome::Color col_sky_upper(156, 188, 222); // Subtle silver-slate upper wing (softer than white, high contrast on navy)
-  esphome::Color col_sky_under(102, 136, 174); // Muted steel-blue underwing shadow
-  esphome::Color col_sun_silh(18,  30,  46);   // Dark silhouette when crossing directly in front of the golden Sun
-  const int sun_r_sq = scale_min(24) * scale_min(24);
+  const esphome::Color col_wing = kChromeShadow;   // Pure black wing & body silhouette
+  const esphome::Color col_edge = kChromeTrackDim; // Feathered dark under-edge
 
   int lx_m = bx - w_in,  ly_m = by + dy_in - (dir > 0 ? 1 : 0);
   int lx_t = bx - w_out, ly_t = by + dy_out - (dir > 0 ? 2 : 0);
   int rx_m = bx + w_in,  ry_m = by + dy_in - (dir < 0 ? 1 : 0);
   int rx_t = bx + w_out, ry_t = by + dy_out - (dir < 0 ? 2 : 0);
 
-  auto draw_clipped_seg = [&](int x0, int y0, int x1, int y1) {
+  auto draw_clipped_seg = [&](int x0, int y0, int x1, int y1, bool thick) {
     if (is_inside_bezel(x0, y0, cy, 2) && is_inside_bezel(x1, y1, cy, 2)) {
-      int mx = (x0 + x1) >> 1;
-      int my = (y0 + y1) >> 1;
-      bool over_sun = ((mx - cel_cx) * (mx - cel_cx) + (my - cel_cy) * (my - cel_cy)) <= sun_r_sq;
-      if (over_sun) {
-        fast_line(it, x0, y0,     x1, y1,     col_sun_silh);
-        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_sun_silh);
+      fast_line(it, x0, y0, x1, y1, col_wing);
+      if (thick) {
+        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_wing);
+        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_edge);
       } else {
-        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_sky_under);
-        fast_line(it, x0, y0,     x1, y1,     col_sky_upper);
+        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_edge);
       }
     }
   };
 
-  draw_clipped_seg(bx,   by,   lx_m, ly_m);
-  draw_clipped_seg(lx_m, ly_m, lx_t, ly_t);
-  draw_clipped_seg(bx,   by,   rx_m, ry_m);
-  draw_clipped_seg(rx_m, ry_m, rx_t, ry_t);
+  // Inner wings (2 px black core + feathered lower edge) & tapered outer wingtips
+  draw_clipped_seg(bx,   by,   lx_m, ly_m, true);
+  draw_clipped_seg(lx_m, ly_m, lx_t, ly_t, false);
+  draw_clipped_seg(bx,   by,   rx_m, ry_m, true);
+  draw_clipped_seg(rx_m, ry_m, rx_t, ry_t, false);
+
+  // Central avian body & head core
+  if (is_inside_bezel(bx, by, cy, 3)) {
+    fast_hline(it, bx - 1, by + 1, 3, col_wing);
+    fast_pixel(it, bx + (dir > 0 ? 1 : -1), by, col_wing);
+  }
 }
 
 // Draws a true 3D Euler-rotated tumbling leaf mesh (tip, base, cambered lobes, midrib & petiole stem)
@@ -1492,9 +1489,9 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
     esphome::Color c_cir_body(42,  70, 104);
     esphome::Color c_cir_base(33,  58,  88);
 
-    int w0_x = static_cast<int>(148.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
-    int w1_x = static_cast<int>(308.0f * w_scale) + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
-    int w2_x = static_cast<int>(196.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 1.05f + 3.1f) * 22.0f + par_x * 0.58f);
+    int w0_x = static_cast<int>(318.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
+    int w1_x = static_cast<int>(158.0f * w_scale) + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
+    int w2_x = static_cast<int>(270.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 1.05f + 3.1f) * 22.0f + par_x * 0.58f);
 
     render_wispy_cloud_veil(it, w0_x, 102 + static_cast<int>(par_y * 0.32f), static_cast<int>(118.0f * w_scale),  t_cir * 1.1f,        11,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
@@ -1522,22 +1519,25 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       int x_left_edge  = cx - chord_hw;
       int x_right_edge = cx + chord_hw;
       int start_x = (dir > 0) ? (x_left_edge - 16)  : (x_right_edge + 16);
-      int end_x   = (dir > 0) ? (x_right_edge + 72) : (x_left_edge - 72);
+      int end_x   = (dir > 0) ? (x_right_edge + 92) : (x_left_edge - 92);
 
       int lead_x  = start_x + static_cast<int>((end_x - start_x) * prog);
       int lead_y  = base_y + static_cast<int>(fast_sin(prog * PI_F) * -6.0f);
 
       float t_flap = now_ms * 0.0052f;
-      static constexpr int8_t V_OFF[5][2] = {
-        {  0,   0}, {-24, -12}, {-27,  13}, {-48, -22}, {-54,  24}
+      static constexpr int8_t V_OFF[7][2] = {
+        {  0,   0}, {-21, -11}, {-25,  13}, {-43, -20}, {-48,  23}, {-67, -29}, {-73,  31}
       };
-      static constexpr float V_SCALE[5] = {1.28f, 1.18f, 1.18f, 1.08f, 1.05f};
+      static constexpr float V_SCALE[7] = {1.28f, 1.18f, 1.20f, 1.10f, 1.12f, 1.04f, 1.00f};
+      static constexpr float V_FLAP_OFF[7] = {0.0f, 0.72f, 1.38f, 2.15f, 2.86f, 3.64f, 4.35f};
 
-      for (int b = 0; b < 5; b++) {
-        int bx = lead_x + dir * V_OFF[b][0];
-        int by = lead_y + V_OFF[b][1];
-        draw_migrating_bird(it, bx, by, dir, t_flap - static_cast<float>(b) * 0.75f,
-                            V_SCALE[b], cy, cel_cx, cel_cy);
+      for (int b = 0; b < 7; b++) {
+        int jx = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 17U + b * 13U), 41) - 0.5f) * 6.0f);
+        int jy = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 23U + b * 19U), 53) - 0.5f) * 5.0f);
+        float flap_b = t_flap - V_FLAP_OFF[b];
+        int bx = lead_x + dir * (V_OFF[b][0] + jx);
+        int by = lead_y + V_OFF[b][1] + jy + static_cast<int>(fast_sin(flap_b) * 1.2f);
+        draw_migrating_bird(it, bx, by, dir, flap_b, V_SCALE[b], cy);
       }
     }
   }
