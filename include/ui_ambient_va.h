@@ -623,11 +623,15 @@ inline void render_docked_screensaver(DisplayT &it, int cx, int cy, uint32_t now
                                       esphome::Color col_slate, esphome::Color col_dark_gray) {
   (void)col_dark_gray;
   if (ss_style == "Ambient Clock") {
-    // Continuous visible Lissajous floating drift (updated every second on disp1's 1 Hz tick):
-    // Glides smoothly across +/-42px X and +/-52px Y so the clock & date visibly float around the screen
-    float t_drift = static_cast<float>(now_ms % 3600000U) * 0.000035f;
-    int drift_x = static_cast<int>(fast_sin(t_drift) * scale_min_f(28.0f));
-    int drift_y = static_cast<int>(fast_cos(t_drift * 0.73f) * scale_min_f(32.0f));
+    // Visually stationary AOD clock with imperceptible 1-minute micro-shift (+/-3 px diamond):
+    // Holds completely still during each minute so the clock always looks centered at (cx, cy),
+    // advancing by 1 px only when the minute digit changes to feather static anti-aliased edges.
+    static constexpr int8_t kMicroOrbit[12] = {-3, -2, -1, 0, 1, 2, 3, 2, 1, 0, -1, -2};
+    const uint32_t min_idx = now.is_valid()
+        ? static_cast<uint32_t>(now.hour * 60 + now.minute)
+        : (now_ms / 60000U);
+    const int drift_x = static_cast<int>(kMicroOrbit[min_idx % 12U]);
+    const int drift_y = static_cast<int>(kMicroOrbit[(min_idx + 3U) % 12U]);
 
     char amb_time[16];
     if (now.is_valid()) {

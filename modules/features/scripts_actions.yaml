@@ -706,7 +706,7 @@ script:
           if (id(display_power_state) == 0) {
             id(display_brightness).turn_on().set_brightness(b_target).perform();
           } else if (id(display_power_state) == 1) {
-            id(display_brightness).turn_on().set_brightness(0.60f).perform();
+            id(display_brightness).turn_on().set_brightness(latter_ui::kScreensaverBrightness).perform();
           }
 
   - id: apply_default_start_page

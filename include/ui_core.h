@@ -51,7 +51,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110302L
+#define LATTER_SDK_REV 2026110801L
 
 namespace latter_ui {
 
@@ -152,6 +152,7 @@ static constexpr int STD_ART_OFFSET = (SCREEN_W - STD_ART_SIZE) / 2;
 // Shared chrome rows (UiLayout::back_y and UiLayout::home_bar_y read these).
 static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? 426 : (SCREEN_H - scale_y(28));
 static constexpr int kHomeBarY = LATTER_ROUND_DISPLAY ? 434 : (SCREEN_H - scale_y(11));
+static constexpr float kScreensaverBrightness = 0.52f;  // 52 %: hw 99/255 on AMOLED (above the ~50 % dark floor, ~half the active emission of 60 %)
 
 // Chrome colors (docs/device-ui-design.md, palette): the shared chrome draws with these named
 // constants, never with literals. Palette colors (theme_primary, col_white, ...) are the GUI's
