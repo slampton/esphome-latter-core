@@ -1210,48 +1210,57 @@ inline bool has_weather_motion(const std::string &cond, bool is_night, uint32_t 
 }
 
 // Draws a single articulated high-altitude bird in the V-echelon formation:
-// Rendered as a crisp black silhouette with a 2 px inner wing, tapered outer wingtips, and central body core.
+// Doubled wingspan (2x), 3 px solid black silhouette core, and a 1 px sunlit upper-wing rim
+// so the dark silhouette pops crisply against the deep blue daytime sky.
 template<typename DisplayT>
 inline void draw_migrating_bird(DisplayT &it, int bx, int by, int dir, float flap_phase,
                                 float scale, int cy) {
-  if (by < 12 || by > SCREEN_H - 12) return;
+  if (by < 16 || by > SCREEN_H - 16) return;
   float s1 = fast_sin(flap_phase);
   float s2 = fast_sin(flap_phase - 0.55f);
-  int w_in  = static_cast<int>(5.4f * scale);
-  int w_out = static_cast<int>(10.4f * scale);
-  int dy_in  = static_cast<int>(-3.8f * scale * s1) - 1;
-  int dy_out = dy_in + static_cast<int>(-3.6f * scale * s2) + 1;
+  int w_in  = static_cast<int>(10.8f * scale);
+  int w_out = static_cast<int>(20.8f * scale);
+  int dy_in  = static_cast<int>(-7.6f * scale * s1) - 2;
+  int dy_out = dy_in + static_cast<int>(-7.2f * scale * s2) + 2;
 
-  const esphome::Color col_wing = kChromeShadow;   // Pure black wing & body silhouette
-  const esphome::Color col_edge = kChromeTrackDim; // Feathered dark under-edge
+  const esphome::Color col_wing = kChromeShadow;       // Pure black wing & body silhouette
+  const esphome::Color col_rim  = kChromeHomePill;     // Sunlit silver-blue leading top edge
+  const esphome::Color col_tip  = kChromePipInactive;  // Outer wingtip sunlit rim
+  const esphome::Color col_edge = kChromeBarBorder;    // Soft sky-blue under-wing separation
 
-  int lx_m = bx - w_in,  ly_m = by + dy_in - (dir > 0 ? 1 : 0);
-  int lx_t = bx - w_out, ly_t = by + dy_out - (dir > 0 ? 2 : 0);
-  int rx_m = bx + w_in,  ry_m = by + dy_in - (dir < 0 ? 1 : 0);
-  int rx_t = bx + w_out, ry_t = by + dy_out - (dir < 0 ? 2 : 0);
+  int lx_m = bx - w_in,  ly_m = by + dy_in - (dir > 0 ? 2 : 0);
+  int lx_t = bx - w_out, ly_t = by + dy_out - (dir > 0 ? 4 : 0);
+  int rx_m = bx + w_in,  ry_m = by + dy_in - (dir < 0 ? 2 : 0);
+  int rx_t = bx + w_out, ry_t = by + dy_out - (dir < 0 ? 4 : 0);
 
-  auto draw_clipped_seg = [&](int x0, int y0, int x1, int y1, bool thick) {
-    if (is_inside_bezel(x0, y0, cy, 2) && is_inside_bezel(x1, y1, cy, 2)) {
-      fast_line(it, x0, y0, x1, y1, col_wing);
-      if (thick) {
-        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_wing);
-        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_edge);
+  auto draw_clipped_seg = [&](int x0, int y0, int x1, int y1, bool inner_wing) {
+    if (is_inside_bezel(x0, y0, cy, 4) && is_inside_bezel(x1, y1, cy, 4)) {
+      fast_line(it, x0, y0 - 1, x1, y1 - 1, inner_wing ? col_rim : col_tip);
+      fast_line(it, x0, y0,     x1, y1,     col_wing);
+      fast_line(it, x0, y0 + 1, x1, y1 + 1, col_wing);
+      if (inner_wing) {
+        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_wing);
+        fast_line(it, x0, y0 + 3, x1, y1 + 3, col_edge);
       } else {
-        fast_line(it, x0, y0 + 1, x1, y1 + 1, col_edge);
+        fast_line(it, x0, y0 + 2, x1, y1 + 2, col_edge);
       }
     }
   };
 
-  // Inner wings (2 px black core + feathered lower edge) & tapered outer wingtips
+  // Inner wings (3 px black core + sunlit top rim) & tapered outer wingtips (2 px black core)
   draw_clipped_seg(bx,   by,   lx_m, ly_m, true);
   draw_clipped_seg(lx_m, ly_m, lx_t, ly_t, false);
   draw_clipped_seg(bx,   by,   rx_m, ry_m, true);
   draw_clipped_seg(rx_m, ry_m, rx_t, ry_t, false);
 
-  // Central avian body & head core
-  if (is_inside_bezel(bx, by, cy, 3)) {
-    fast_hline(it, bx - 1, by + 1, 3, col_wing);
-    fast_pixel(it, bx + (dir > 0 ? 1 : -1), by, col_wing);
+  // Central avian body, sunlit crown & directional head/tail core
+  if (is_inside_bezel(bx, by, cy, 5)) {
+    fast_hline(it, bx - 2, by - 1, 5, col_rim);
+    fast_hline(it, bx - 2, by,     5, col_wing);
+    fast_hline(it, bx - 3, by + 1, 7, col_wing);
+    fast_hline(it, bx - 2, by + 2, 5, col_wing);
+    fast_hline(it, bx - 1, by + 3, 3, col_edge);
+    fast_pixel(it, bx + (dir > 0 ? 4 : -4), by + 1, col_wing);
   }
 }
 
@@ -1394,7 +1403,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
 
       (void)mask_hero_temp;
-      const int excl_r = scale_min(28);
+      const int excl_r = LATTER_ROUND_DISPLAY ? 33 : scale_min(39);
       if ((sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
 
       float twinkle = fast_sin(t_star + static_cast<float>(k) * 0.85f);
@@ -1426,7 +1435,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
   // LAYER 1B: CELESTIAL CORNER BADGE (3D GRADIENT SUN ORB / LUNAR DISC)
   if (cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
-      const int m_r = scale_min(22);
+      const int m_r = LATTER_ROUND_DISPLAY ? 27 : scale_min(33);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle, false);
       if (is_fog_mist) {
         fast_circle(it, cel_cx, cel_cy, m_r + 3, esphome::Color(55, 70, 88));
@@ -1441,18 +1450,19 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
         const esphome::Color c_body = is_fog_mist ? esphome::Color(174, 160, 102) : esphome::Color(250, 204, 24);
         const esphome::Color c_core = is_fog_mist ? esphome::Color(198, 186, 128) : esphome::Color(255, 228, 72);
 
-        const int s_r_out = scale_min(24);
-        const int s_r_in  = scale_min(21);
+        const int s_r_out = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
+        const int s_r_in  = LATTER_ROUND_DISPLAY ? 26 : scale_min(32);
         const int r2_out  = s_r_out * s_r_out;
         const int r2_in   = s_r_in * s_r_in;
         const float r2_span = static_cast<float>(std::max(1, r2_out - r2_in));
         const float inv_r2_in = 1.0f / static_cast<float>(std::max(1, r2_in));
+        const float hl_off = static_cast<float>(s_r_in) * (2.2f / 21.0f);
         for (int dy = -s_r_out; dy <= s_r_out; dy++) {
           int py = cel_cy + dy;
           if (py < 0 || py >= SCREEN_H) continue;
           int hw = chord_half_span_int(s_r_out, dy);
           int dy2 = dy * dy;
-          float ldy = static_cast<float>(dy) + 2.2f;
+          float ldy = static_cast<float>(dy) + hl_off;
           float ldy2 = ldy * ldy;
           for (int dx = -hw; dx <= hw; dx++) {
             int r2 = dx * dx + dy2;
@@ -1460,7 +1470,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
               float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
               fast_pixel(it, cel_cx + dx, py, lerp_color(sky_c, c_haze, k));
             } else {
-              float ldx = static_cast<float>(dx) + 2.2f;
+              float ldx = static_cast<float>(dx) + hl_off;
               float d2_norm = (ldx * ldx + ldy2) * inv_r2_in;
               float u = 1.0f - (d2_norm > 1.0f ? 1.0f : d2_norm);
               esphome::Color pix_c = (u < 0.35f)
@@ -1481,7 +1491,7 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
   lap.mark(ProfSect::BG_CELESTIAL);
 
-  // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Mild atmospheric texture on Sunny days)
+  // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Top & middle layers only)
   if (is_clear_day) {
     float t_cir = now_ms * 0.00025f;
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
@@ -1491,13 +1501,10 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
 
     int w0_x = static_cast<int>(318.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
     int w1_x = static_cast<int>(158.0f * w_scale) + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
-    int w2_x = static_cast<int>(270.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 1.05f + 3.1f) * 22.0f + par_x * 0.58f);
 
     render_wispy_cloud_veil(it, w0_x, 102 + static_cast<int>(par_y * 0.32f), static_cast<int>(118.0f * w_scale),  t_cir * 1.1f,        11,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
     render_wispy_cloud_veil(it, w1_x, 174 + static_cast<int>(par_y * 0.45f), static_cast<int>(126.0f * w_scale), -t_cir * 1.2f + 1.4f, 12,
-                            c_cir_crest, c_cir_body, c_cir_base, cy);
-    render_wispy_cloud_veil(it, w2_x, 248 + static_cast<int>(par_y * 0.58f), static_cast<int>(112.0f * w_scale),  t_cir * 1.0f + 2.8f, 13,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
   }
 
@@ -1511,33 +1518,36 @@ inline void render_weather_motion_wallpaper(DisplayT &it, int cx, int cy, uint32
       uint32_t flight_ms = (slot_ms >= launch_ms) ? (slot_ms - launch_ms) : 0U;
       float prog = static_cast<float>(flight_ms) * (1.0f / static_cast<float>(BIRD_FLIGHT_MS));
 
+      const float b_scale = (SCREEN_W > 520) ? (static_cast<float>(SCREEN_W) / 466.0f) : 1.0f;
       int dir = (hash2d_01(static_cast<int>(cycle_idx * 37U + 13U), 29) < 0.5f) ? 1 : -1;
       float r_alt = hash2d_01(static_cast<int>(cycle_idx * 31U + 7U), 19);
-      int base_y = 72 + static_cast<int>(r_alt * 62.0f);
+      int base_y = scale_y(96 + static_cast<int>(r_alt * 54.0f));
 
       int chord_hw = circle_half_span(base_y, 2);
       int x_left_edge  = cx - chord_hw;
       int x_right_edge = cx + chord_hw;
-      int start_x = (dir > 0) ? (x_left_edge - 16)  : (x_right_edge + 16);
-      int end_x   = (dir > 0) ? (x_right_edge + 92) : (x_left_edge - 92);
+      int margin_in  = static_cast<int>(28.0f * b_scale);
+      int margin_out = static_cast<int>(156.0f * b_scale);
+      int start_x = (dir > 0) ? (x_left_edge - margin_in)  : (x_right_edge + margin_in);
+      int end_x   = (dir > 0) ? (x_right_edge + margin_out) : (x_left_edge - margin_out);
 
       int lead_x  = start_x + static_cast<int>((end_x - start_x) * prog);
-      int lead_y  = base_y + static_cast<int>(fast_sin(prog * PI_F) * -6.0f);
+      int lead_y  = base_y + static_cast<int>(fast_sin(prog * PI_F) * -8.0f * b_scale);
 
       float t_flap = now_ms * 0.0052f;
       static constexpr int8_t V_OFF[7][2] = {
-        {  0,   0}, {-21, -11}, {-25,  13}, {-43, -20}, {-48,  23}, {-67, -29}, {-73,  31}
+        {  0,   0}, {-34, -16}, {-40,  19}, {-68, -31}, {-76,  35}, {-104, -44}, {-114,  48}
       };
       static constexpr float V_SCALE[7] = {1.28f, 1.18f, 1.20f, 1.10f, 1.12f, 1.04f, 1.00f};
       static constexpr float V_FLAP_OFF[7] = {0.0f, 0.72f, 1.38f, 2.15f, 2.86f, 3.64f, 4.35f};
 
       for (int b = 0; b < 7; b++) {
-        int jx = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 17U + b * 13U), 41) - 0.5f) * 6.0f);
-        int jy = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 23U + b * 19U), 53) - 0.5f) * 5.0f);
+        int jx = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 17U + b * 13U), 41) - 0.5f) * 10.0f);
+        int jy = (b == 0) ? 0 : static_cast<int>((hash2d_01(static_cast<int>(cycle_idx * 23U + b * 19U), 53) - 0.5f) * 8.0f);
         float flap_b = t_flap - V_FLAP_OFF[b];
-        int bx = lead_x + dir * (V_OFF[b][0] + jx);
-        int by = lead_y + V_OFF[b][1] + jy + static_cast<int>(fast_sin(flap_b) * 1.2f);
-        draw_migrating_bird(it, bx, by, dir, flap_b, V_SCALE[b], cy);
+        int bx = lead_x + dir * static_cast<int>((V_OFF[b][0] + jx) * b_scale);
+        int by = lead_y + static_cast<int>((V_OFF[b][1] + jy) * b_scale + fast_sin(flap_b) * 1.8f * b_scale);
+        draw_migrating_bird(it, bx, by, dir, flap_b, V_SCALE[b] * b_scale, cy);
       }
     }
   }

@@ -990,7 +990,7 @@ inline void render_home_page(
         fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, Color(7, 13, 22));
 #endif
       }
-      fast_filled_circle(it, cel_x, cel_y, scale_min(20), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
+      fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 25 : scale_min(30), is_night ? Color(22, 26, 34) : Color(42, 36, 12));
     } else {
       double moon_cycle = 0.5;
       if (is_night) {

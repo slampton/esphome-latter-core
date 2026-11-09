@@ -397,8 +397,8 @@ struct UiLayout {
   int dock_r = (SCREEN_W < 360) ? 24 : ((SCREEN_W > 520) ? 40 : 27);
 
   // Consistent Upper-Left Celestial Sun/Moon Coordinates across all 5 displays
-  int celestial_x = LATTER_ROUND_DISPLAY ? 106 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : ((SCREEN_W > 520) ? 118 : 78)));
-  int celestial_y = LATTER_ROUND_DISPLAY ? 86  : ((SCREEN_W < 380) ? 72 : ((SCREEN_H > 520) ? 118 : 78));
+  int celestial_x = LATTER_ROUND_DISPLAY ? 100 : ((SCREEN_W < 380) ? 44 : (LATTER_IS_WEARABLE ? 68 : ((SCREEN_W > 520) ? 118 : 78)));
+  int celestial_y = LATTER_ROUND_DISPLAY ? 92  : ((SCREEN_W < 380) ? 72 : ((SCREEN_H > 520) ? 118 : 78));
 
   // Corner-Safe Battery Indicator Coordinates for Non-Round Displays
   int battery_cx = LATTER_ROUND_DISPLAY ? SCREEN_CX : (LATTER_IS_WEARABLE ? (SCREEN_W - 68) : ((SCREEN_W < 380) ? (SCREEN_W - 36) : ((SCREEN_W > 520) ? (SCREEN_W - 86) : (SCREEN_W - 58))));
