@@ -131,6 +131,18 @@ interval:
     id: ui_fast_tick
     then:
       - lambda: |-
+          // Fetch any pending wallpaper update that arrived while the display was asleep or dimmed
+          static int s_prev_disp_pwr = -1;
+          if (id(display_power_state) != s_prev_disp_pwr) {
+            const int prev_pwr = s_prev_disp_pwr;
+            s_prev_disp_pwr = id(display_power_state);
+            if (prev_pwr != 0 && s_prev_disp_pwr == 0 &&
+                !latter_ui::area_ctx_state().wallpaper_url.empty() &&
+                latter_ui::area_ctx_state().wallpaper_url != id(current_loaded_wallpaper_url)) {
+              id(fetch_wallpaper_debounced).execute();
+            }
+          }
+
           // ------------------------------------------------------------------
           // 3-SLOT COUNTDOWN TIMER TICK & ALERT TRIGGER
           // ------------------------------------------------------------------

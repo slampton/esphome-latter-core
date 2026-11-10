@@ -1308,6 +1308,11 @@ script:
                 if (id(display_power_state) == 2 && !id(usb_connected).state) {
                   if (id(sleep_start_time) == 0) id(sleep_start_time) = millis();
                 }
+                if (id(display_power_state) == 0 &&
+                    !latter_ui::area_ctx_state().wallpaper_url.empty() &&
+                    latter_ui::area_ctx_state().wallpaper_url != id(current_loaded_wallpaper_url)) {
+                  id(fetch_wallpaper_debounced).execute();
+                }
                 id(apply_power_policy).execute();  // local audio idle: beacon back, modem sleep if screen off
 
   - id: toggle_voice_assistant
