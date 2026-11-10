@@ -19,7 +19,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110909L;
+            constexpr long LATTER_YAML_REV = 2026110910L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -33,11 +33,7 @@ esphome:
             });
         - script.execute: hal_init_pmu
         - lambda: |-
-            latter_ui::seed_standalone_remote_slots(
-                "${remote_1_entity}", "${remote_1_name}",
-                "${remote_2_entity}", "${remote_2_name}",
-                "${remote_3_entity}", "${remote_3_name}",
-                "${remote_4_entity}", "${remote_4_name}");
+            latter_ui::parse_latter_remote_slots_summary(latter_ui::remote_state().slots_summary);
             id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
         - media_player.pause: latter_media_player
         - lambda: 'latter_ui::release_art(id(remote_album_art));'
@@ -253,8 +249,8 @@ api:
       then:
         - lambda: |-
             (void)contract;
-            latter_ui::BrowseSlotItem v3_items[5];
-            latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 5);
+            latter_ui::BrowseSlotItem v3_items[3];
+            latter_ui::parse_v3_slots_payload(std::string_view(slots.c_str(), slots.size()), v3_items, 3);
             id(area_browse_mode) = mode;
             id(area_browse_page) = page;
             id(area_browse_total_pages) = total_pages;
@@ -339,6 +335,7 @@ ota:
                                         id(notif_active), id(notif_title), id(notif_message),
                                         id(notif_priority), id(notif_duration_ms),
                                         id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
         - script.execute: screen_sleep_timer
     on_abort:
       then:
@@ -347,6 +344,7 @@ ota:
                                         id(notif_active), id(notif_title), id(notif_message),
                                         id(notif_priority), id(notif_duration_ms),
                                         id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
         - script.execute: screen_sleep_timer
 
   - platform: http_request
@@ -374,6 +372,7 @@ ota:
                                         id(notif_active), id(notif_title), id(notif_message),
                                         id(notif_priority), id(notif_duration_ms),
                                         id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
         - script.execute: screen_sleep_timer
     on_abort:
       then:
@@ -382,6 +381,7 @@ ota:
                                         id(notif_active), id(notif_title), id(notif_message),
                                         id(notif_priority), id(notif_duration_ms),
                                         id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
         - script.execute: screen_sleep_timer
 
 time:

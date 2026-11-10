@@ -380,7 +380,6 @@ script:
                      !ac.wallpaper_url.empty() &&
                      (ac.wallpaper_url != id(current_loaded_wallpaper_url));
           then:
-            - lambda: 'id(current_loaded_wallpaper_url) = latter_ui::area_ctx_state().wallpaper_url;'
             - online_image.set_url:
                 id: home_wallpaper_art
                 url: !lambda 'return latter_ui::area_ctx_state().wallpaper_url;'
@@ -1509,59 +1508,3 @@ script:
                   slot: !lambda 'return to_string(id(remote_latter_slot_num));'
                   action: !lambda 'return id(remote_latter_act);'
                   command: !lambda 'return id(remote_latter_cmd);'
-          else:
-            # Standalone ESPHome Fallback (when ha-latter is not installed and remote_1..4_entity are used)
-            - if:
-                condition:
-                  lambda: |-
-                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                    return latter_ui::is_configured_remote_slot(latter_ui::remote_slots_ent()[idx]);
-                then:
-                  - if:
-                      condition:
-                        lambda: 'return id(remote_latter_act) == "toggle";'
-                      then:
-                        - homeassistant.action:
-                            action: homeassistant.toggle
-                            data:
-                              entity_id: !lambda |-
-                                int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                return latter_ui::remote_slots_ent()[idx].c_str();
-                      else:
-                        - if:
-                            condition:
-                              lambda: 'return id(remote_latter_act) == "volume_up";'
-                            then:
-                              - homeassistant.action:
-                                  action: !lambda |-
-                                    int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                    return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
-                                        ? "media_player.volume_up" : "remote.send_command";
-                                  data:
-                                    entity_id: !lambda |-
-                                      int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                      return latter_ui::remote_slots_ent()[idx].c_str();
-                                    command: "volume_up"
-                            else:
-                              - if:
-                                  condition:
-                                    lambda: 'return id(remote_latter_act) == "volume_down";'
-                                  then:
-                                    - homeassistant.action:
-                                        action: !lambda |-
-                                          int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                          return (latter_ui::remote_slots_ent()[idx].rfind("media_player.", 0) == 0)
-                                              ? "media_player.volume_down" : "remote.send_command";
-                                        data:
-                                          entity_id: !lambda |-
-                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                            return latter_ui::remote_slots_ent()[idx].c_str();
-                                          command: "volume_down"
-                                  else:
-                                    - homeassistant.action:
-                                        action: remote.send_command
-                                        data:
-                                          entity_id: !lambda |-
-                                            int idx = std::max(0, std::min(latter_ui::MAX_REMOTE_SLOTS - 1, id(remote_latter_slot_num) - 1));
-                                            return latter_ui::remote_slots_ent()[idx].c_str();
-                                          command: !lambda 'return id(remote_latter_cmd);'

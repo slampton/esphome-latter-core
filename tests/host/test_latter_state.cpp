@@ -121,6 +121,15 @@ void test_all_five_domain_parsers() {
   assert(!latter_ui::media_state().has_volume);
   assert(std::abs(latter_ui::media_state().volume - 0.65f) < 0.001f);
 
+  // 1% volume ("1") normalizes to 0.01f (not 1.0f), and 100% ("100") to 1.0f
+  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "1";
+  assert(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
+  assert(latter_ui::media_state().has_volume);
+  assert(std::abs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
+  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "100";
+  assert(latter_ui::parse_v3_media_payload(build_v3_packet(10, 4, media_t)));
+  assert(std::abs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
+
   // Weather Forecast (COUNT = 11)
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";

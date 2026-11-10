@@ -9,10 +9,26 @@ substitutions:
   friendly_name: "Latter Headless Node"
   version: "2.2.1"
 
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [latter_core]
+
+latter_core:
+
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   min_version: 2026.11.0b2
+  build_flags:
+    - "-DLATTER_HAS_DISPLAY=0"
+    - "-DLATTER_HAS_TOUCH=0"
+    - "-DLATTER_HAS_AUDIO=0"
+    - "-DLATTER_HAS_IMU=0"
+    - "-DLATTER_HAS_BATTERY=0"
+    - "-DLATTER_IS_STATIONARY=1"
+    - "-DLATTER_IS_WEARABLE=0"
 
 esp32:
   board: esp32-s3-devkitc-1

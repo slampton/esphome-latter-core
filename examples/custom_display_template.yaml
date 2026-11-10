@@ -31,12 +31,6 @@ substitutions:
   audio_in_rate: "16000"
   imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion); required by modules/imu_qmi8658.yaml
 
-  # Optional Standalone ESPHome Overrides (only needed if NOT using the ha-latter integration):
-  # remote_1_entity: "remote.living_room_tv"
-  # remote_1_name: "Living Room TV"
-  # remote_2_entity: "remote.bedroom_tv"
-  # remote_2_name: "Bedroom TV"
-
 # Load the Latter Core C++20 header staging component (use github://slampton/esphome-latter-core@main in external repos)
 external_components:
   - source:

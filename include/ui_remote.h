@@ -67,54 +67,22 @@ inline std::string format_remote_entity_fallback(const std::string &ent) {
   return s;
 }
 
-// Seeds slots 0..3 from YAML substitutions (`remote_1_entity`..`remote_4_entity`)
-// for standalone ESPHome deployments that do not use the `ha-latter` integration.
-inline void seed_standalone_remote_slots(
-    const char *e1, const char *n1,
-    const char *e2, const char *n2,
-    const char *e3, const char *n3,
-    const char *e4, const char *n4) {
+// remote_config slots_summary (Protocol v3 field 5): records joined by kProtocolRecordSep, one per
+// configured slot, each "index|label|entity_id|kind|area_id|state" (index is the 1-based slot number,
+// so gaps are possible; entity_id is the slot's remote.* entity, else its media_player.*). An empty
+// summary means Latter has no slots configured and clears all 10 slots.
+inline void parse_latter_remote_slots_summary(const std::string &summary) {
   std::string *t_ents = remote_slots_ent();
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();
-  const char *ents[4] = {e1, e2, e3, e4};
-  const char *names[4] = {n1, n2, n3, n4};
+
   for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
     t_ents[i] = "remote.none";
     t_names[i].clear();
     st_on[i] = false;
   }
-  for (int i = 0; i < 4; i++) {
-    std::string ent = (ents[i] != nullptr) ? ents[i] : "remote.none";
-    if (is_configured_remote_slot(ent)) {
-      t_ents[i] = ent;
-      std::string nm = (names[i] != nullptr) ? names[i] : "";
-      t_names[i] = nm.empty() ? format_remote_entity_fallback(ent) : nm;
-    }
-  }
-}
-
-// remote_config slots_summary (Protocol v3 field 5): records joined by kProtocolRecordSep, one per
-// configured slot, each "index|label|entity_id|kind|area_id|state" (index is the 1-based slot number,
-// so gaps are possible; entity_id is the slot's remote.* entity, else its media_player.*). An empty
-// summary means Latter has no slots configured, and the YAML standalone slots 1..4 stay.
-inline void parse_latter_remote_slots_summary(
-    const std::string &summary,
-    const char *e1 = nullptr, const char *n1 = nullptr,
-    const char *e2 = nullptr, const char *n2 = nullptr,
-    const char *e3 = nullptr, const char *n3 = nullptr,
-    const char *e4 = nullptr, const char *n4 = nullptr) {
-  seed_standalone_remote_slots(e1, n1, e2, n2, e3, n3, e4, n4);
-  std::string *t_ents = remote_slots_ent();
-  std::string *t_names = remote_slots_name();
-  bool *st_on = remote_slot_states_on();
 
   if (!summary.empty()) {
-    for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
-      t_ents[i] = "remote.none";
-      t_names[i].clear();
-      st_on[i] = false;
-    }
     std::string_view recs[MAX_REMOTE_SLOTS];
     const size_t n = v3_split_fields(summary, recs, MAX_REMOTE_SLOTS, kProtocolRecordSep);
     for (size_t r = 0; r < n; r++) {

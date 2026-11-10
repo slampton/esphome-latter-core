@@ -32,7 +32,11 @@ image:
     resize: ${art_resize}
     url: "${initial_art_url}"
     on_download_finished:
-      - lambda: 'id(current_loaded_art_url) = latter_ui::media_state().art_url;'
+      - lambda: |-
+          const auto &ms = latter_ui::media_state();
+          if (!ms.art_url.empty() && ms.art_url != id(current_loaded_art_url)) {
+            id(fetch_remote_art_debounced).execute();
+          }
       - script.execute: throttled_disp_update
       - script.execute: sync_wake_word_state
     on_error:

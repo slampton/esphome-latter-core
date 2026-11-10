@@ -271,6 +271,7 @@ inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_e
 inline void reset_all_v3_rev_guards() {
   area_ctx_state().epoch = 0;
   area_ctx_state().rev = 0;
+  area_ctx_state().alert_id = -1;
   media_state().epoch = 0;
   media_state().rev = 0;
   remote_state().epoch = 0;
@@ -347,7 +348,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
   st.doorbell_talk_state      = std::string(f[static_cast<size_t>(AreaCtxField::DOORBELL_TALK_STATE)]);
   st.intercom_targets_summary = std::string(f[static_cast<size_t>(AreaCtxField::INTERCOM_TARGETS_SUMMARY)]);
-  st.alert_id                 = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_ID)], st.alert_id);
+  st.alert_id                 = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_ID)], 0);
   st.alert_title              = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_TITLE)]);
   st.alert_message            = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_MESSAGE)]);
   st.alert_priority           = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_PRIORITY)]);
@@ -406,7 +407,7 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
   st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
   float raw_vol          = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
   if (!std::isnan(raw_vol)) {
-    st.volume     = (raw_vol > 1.0f) ? (raw_vol * 0.01f) : raw_vol;
+    st.volume     = std::max(0.0f, std::min(1.0f, raw_vol * 0.01f));
     st.has_volume = true;
   } else {
     st.has_volume = false;

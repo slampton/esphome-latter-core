@@ -31,14 +31,6 @@ substitutions:
   area_context_sensor: "sensor.${device_slug}_area_context"
   calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
   remote_config_sensor: "sensor.${device_slug}_remote_config"
-  remote_1_entity: "remote.none"
-  remote_1_name: ""
-  remote_2_entity: "remote.none"
-  remote_2_name: ""
-  remote_3_entity: "remote.none"
-  remote_3_name: ""
-  remote_4_entity: "remote.none"
-  remote_4_name: ""
 
 api:
   reboot_timeout: ${api_reboot_timeout}
@@ -91,8 +83,4 @@ text_sensor:
     icon: "mdi:chip"
     entity_category: diagnostic
     update_interval: 300s
-    lambda: |-
-      return std::string("{\"w\":0,\"h\":0,\"shape\":\"none\","
-                         "\"display\":0,\"touch\":0,\"audio\":0,\"mic\":0,\"spk\":0,"
-                         "\"imu\":0,\"battery\":0,\"stationary\":1,\"wearable\":0,"
-                         "\"ips\":0,\"chip\":\"ESP32\",\"psram_mb\":8}");
+    lambda: 'return latter_ui::build_hardware_manifest_state_json();'

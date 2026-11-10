@@ -30,14 +30,6 @@ substitutions:
   area_context_sensor: "sensor.${device_slug}_area_context"
   calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
   remote_config_sensor: "sensor.${device_slug}_remote_config"
-  remote_1_entity: "remote.none"
-  remote_1_name: ""
-  remote_2_entity: "remote.none"
-  remote_2_name: ""
-  remote_3_entity: "remote.none"
-  remote_3_name: ""
-  remote_4_entity: "remote.none"
-  remote_4_name: ""
 
 packages:
   latter_pipeline: !include display_pipeline.yaml
