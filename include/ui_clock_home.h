@@ -978,7 +978,7 @@ inline void render_home_page(
   const bool eff_weather_bg = show_weather_bg && weather_ready;
 
   const bool is_dim_backdrop = (home_subpage == 2);
-  const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
+  const bool use_custom_wallpaper = has_custom_wallpaper && !show_weather_bg;
 
   if (use_custom_wallpaper) {
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false, is_dim_backdrop ? 2 : 0);
