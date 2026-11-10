@@ -91,7 +91,7 @@ Fonts, the color palette, the `display:` render lambda (an `!extend` of `disp1`)
 | `latter_prof.h` | `LATTER_PROF_LOGI`: `[PROF:*]` INFO lines that log only while the Telemetry Profiler is on |
 
 ### `components/latter_core/`
-An ESPHome external component that copies the 20 headers from `include/` into the build's `src/` directory, adds an `#include` for each, and adds `using namespace latter_ui;`. Adding `latter_core:` to a config is what makes the headers available to lambdas. It also registers a counting-only main-loop probe that the Telemetry Profiler's `[PROF:WAKE]` reads.
+An ESPHome external component that copies the 21 headers from `include/` into the build's `src/` directory, adds an `#include` for each, wraps NVS flash writes for the link report, and enables runtime Wi-Fi power-save control. Adding `latter_core:` to a config is what makes the headers available to lambdas. It also registers a counting-only main-loop probe that the Telemetry Profiler's `[PROF:WAKE]` reads.
 
 ### `examples/`
 | File | What it shows |

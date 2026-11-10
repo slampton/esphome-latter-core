@@ -84,8 +84,18 @@ def slug(text: str) -> str:
     )
 
 
-def esp32_block(facts: dict[str, Any]) -> list[str]:
+def esp32_block(facts: dict[str, Any], with_sdkconfig: bool = False) -> list[str]:
     flash = facts["silicon"].get("flash_mb", 16)
+    sdkconfig = (
+        [
+            "    sdkconfig_options:",
+            '      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"',
+            '      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"',
+            '      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"',
+        ]
+        if with_sdkconfig
+        else []
+    )
     if is_p4(facts):
         return [
             "esp32:",
@@ -95,6 +105,7 @@ def esp32_block(facts: dict[str, Any]) -> list[str]:
             f"  flash_size: {flash}MB",
             "  framework:",
             "    type: esp-idf",
+            *sdkconfig,
             "",
             "psram:",
             "  speed: 200MHz",
@@ -106,6 +117,7 @@ def esp32_block(facts: dict[str, Any]) -> list[str]:
         f"  flash_size: {flash}MB",
         "  framework:",
         "    type: esp-idf",
+        *sdkconfig,
         "",
         "psram:",
         "  mode: octal",
@@ -348,7 +360,7 @@ def render_board(facts: dict[str, Any]) -> str:
     if facts.get("ble_minor") is not None:
         body.append(f'    - "-DLATTER_BLE_MINOR={facts["ble_minor"]}"')
     body += [f'    - "-D{k}={v}"' for k, v in flags.items()]
-    body += ["", *esp32_block(facts), ""]
+    body += ["", *esp32_block(facts, with_sdkconfig=True), ""]
     sda, scl = pin_of(facts, "i2c_sda"), pin_of(facts, "i2c_scl")
     if sda is not None:
         body += [

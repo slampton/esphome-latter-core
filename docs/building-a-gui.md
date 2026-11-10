@@ -46,8 +46,8 @@ display:
     lambda: |-
       it.fill(id(col_bg));
       if (id(display_power_state) != 0) return;   // screensaver / off handled by core
-      it.printf(SCREEN_CX, SCREEN_CY, id(font_body), id(theme_primary),
-                TextAlign::CENTER, "%s", id(ha_area_context_name).state.c_str());
+      it.printf(latter_ui::SCREEN_CX, latter_ui::SCREEN_CY, id(font_body), id(theme_primary),
+                TextAlign::CENTER, "%s", latter_ui::area_ctx_state().area_name.c_str());
 
 touchscreen:
   - id: !extend touch_screen
@@ -55,7 +55,7 @@ touchscreen:
       - script.execute: { id: ui_input_event, action: "select", delta: 0 }
 ```
 
-`ha_area_context_name` is the text sensor `latter_client.yaml` keeps in sync with the device's current area name. The other `ha_*` IDs are in the same file. Treat this as a starting shape, not a finished GUI.
+`latter_ui::area_ctx_state().area_name` is the active Area name parsed from `sensor.<slug>_area_context`'s Protocol v3 `payload` attribute. All five domain state structs live in [`latter_state.h`](../include/latter_state.h). Treat this as a starting shape, not a finished GUI.
 
 ---
 
@@ -70,7 +70,7 @@ touchscreen:
 | Voice | `va_active`, `va_status_text`, `va_tts_received` |
 | Alerts | `notif_*`, `alarm_*`, `timer_*` |
 | List data | `slot_*` (browse), `area_slot_*`, `cal_slot_*`, filled by `set_browse_slots` and `set_area_slots` |
-| Home Assistant data | `ha_*` sensors and text sensors for every attribute in the [device protocol](device-protocol.md#3c-sensors-to-subscribe-to) |
+| Home Assistant data | `latter_ui::area_ctx_state()`, `latter_ui::media_state()`, `latter_ui::remote_state()`, `latter_ui::weather_state()`, and `latter_ui::calendar_state()` in [`latter_state.h`](../include/latter_state.h), populated by the `ha_*_payload` sensors in the [device protocol](device-protocol.md#3c-sensors-to-subscribe-to) (plus `ha_sun_state` and `ha_moon_phase`) |
 | Images | `album_art` (Sendspin), `remote_album_art`, `home_wallpaper_art`, `camera_snapshot_art`. These are decoded as RGB565 at `${screen_w}x${screen_h}`. |
 
 Page IDs and sub-page enums are in [`ui_core.h`](../include/ui_core.h) as `PageId` and `ToolsSubpage`. You can reuse them or ignore them.

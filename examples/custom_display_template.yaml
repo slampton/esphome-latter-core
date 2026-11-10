@@ -70,6 +70,10 @@ esp32:
   flash_size: 16MB
   framework:
     type: esp-idf
+    sdkconfig_options:
+      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
+      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
 
 psram:
   mode: octal

@@ -3,7 +3,7 @@
 ## Getting around
 
 - **Home:** swipe up from the bottom edge, or tap the pill at the bottom of the screen.
-- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & Home**; **Settings → Home** on the device shows or hides Music, Area, Remote, Games and Tools and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Home Hub, Area, Remote, Games and Tools.
+- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & Home**; **Settings → Home** on the device shows or hides Music, Alarms, Area, Remote and Games and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Alarms, Area, Remote, Games and Tools.
 - **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Display & Home**.
 - **Apps with modes:** Weather, Area Control, and Whole-Home Hub have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
 - **Button:**

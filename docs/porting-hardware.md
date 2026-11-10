@@ -122,6 +122,8 @@ esp32:
       # Fewer periodic wakes: DHCP coarse timer 10 s, mDNS timer 500 ms
       CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
       CONFIG_MDNS_TIMER_PERIOD_MS: "500"
+      # Panic handler in IRAM so a watchdog panic around light sleep still leaves a crash record
+      CONFIG_ESP_PANIC_HANDLER_IRAM: "y"
 
 power_management:
   - platform: esp32_power_management

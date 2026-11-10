@@ -31,7 +31,7 @@ api:
     - action: latter_ping
       id: latter_ping_action   # fixed id, so packages that both declare it merge without conflict
       then:
-        - logger.log: "Latter companion connected"
+        - script.execute: send_device_hello
 ```
 
 **The device must be allowed to call services.** In the ESPHome integration's options for the device, enable **Allow the device to perform Home Assistant actions**. Without it, every outbound call in [section 4](#4-outbound-calls) is silently blocked.
@@ -166,13 +166,13 @@ Subscribe with `platform: homeassistant`. Each of the 5 Latter domain sensors (`
 
 | Sensor | Inbound Attribute | Parsed by (`include/latter_state.h`) |
 | :--- | :--- | :--- |
-| `sensor.<slug>_area_context` | `payload` | `latter_ui::ingest_area_context_payload()` (area ID/name, available domains, dock apps, cameras summary, intercom targets, whole-home entities, and `alert_*` fields) |
-| `sensor.<slug>_active_media` | `payload` | `latter_ui::ingest_active_media_payload()` (player ID/name, state, title, artist, album, signed `art_url`, volume, shuffle/repeat, position/duration) |
-| `sensor.<slug>_remote_config` | `payload` | `latter_ui::ingest_remote_config_payload()` (slot count, `slots_summary`, active slot metadata) |
-| `sensor.<slug>_weather_forecast` | `payload` | `latter_ui::ingest_weather_payload()` (condition, temperature, high/low, humidity, wind, UV, AQI, 5-day forecast, signed `wallpaper_url`) |
-| `sensor.<slug>_calendar_agenda` | `payload` | `latter_ui::ingest_calendar_payload()` (event count, `events_summary`, next event summary/location/travel/coords, signed `event_map_url`) |
+| `sensor.<slug>_area_context` | `payload` | `latter_ui::ingest_area_context_payload()` (area ID/name, available domains, dock apps, activity card settings, signed `wallpaper_url`, cameras summary, intercom targets, whole-home entities, and `alert_*` fields) |
+| `sensor.<slug>_active_media` | `payload` | `latter_ui::ingest_active_media_payload()` (player ID/name, state, title, artist, album, duration, timestamped position, volume, media type, supported features, signed `art_url`, speaker routing) |
+| `sensor.<slug>_remote_config` | `payload` | `latter_ui::ingest_remote_config_payload()` (active slot, configured count, `slots_summary` records) |
+| `sensor.<slug>_weather_forecast` | `payload` | `latter_ui::ingest_weather_payload()` (condition, temperature, humidity, wind speed/bearing, today's high/low, 5-day `forecast_5d` records) |
+| `sensor.<slug>_calendar_agenda` | `payload` | `latter_ui::ingest_calendar_payload()` (`summary` agenda records, upcoming event `count`, `next_event` headline) |
 
-Image URLs (`art_url`, `wallpaper_url`, `camera_snapshot_url`, and `event_map_url`) embedded in each domain's `payload` are already HMAC-signed with day-bucketed deterministic tokens scoped to the resource and render dimensions (`w`×`h`, capped at `480×480`). Fetch them with ESPHome's `online_image`. → [HTTP API](https://github.com/slampton/ha-latter/blob/main/docs/reference/http-api.md)
+Image URLs (`art_url`, `wallpaper_url`, `camera_snapshot_url`, and `alert_camera_url`) embedded in each domain's `payload` (plus per-event `map_url` subfields pushed via `set_browse_slots` for `calendar_agenda`) are already HMAC-signed with day-bucketed deterministic tokens scoped to the resource and render dimensions (`w`×`h`, up to `720×720` for wallpapers/cameras/maps and `480×480` for album art). Fetch them with ESPHome's `online_image`. → [HTTP API](https://github.com/slampton/ha-latter/blob/main/docs/reference/http-api.md)
 
 ---
 
@@ -192,6 +192,7 @@ The device calls `latter.*` services with `homeassistant.action`. Always pass `t
 
 | Service | Typical use from a device |
 | :--- | :--- |
+| `latter.device_hello` | Handshake sent when Home Assistant connects to the ESPHome API (and on `latter_ping`) |
 | `latter.music_browse` | Request a page. Latter replies with `set_browse_slots`. |
 | `latter.area_browse` | Request areas or entities. Latter replies with `set_area_slots` or `set_browse_slots`. |
 | `latter.area_action` | Toggle, set level, color, or color temperature; alarm, lock, garage, and vacuum actions |
@@ -202,6 +203,7 @@ The device calls `latter.*` services with `homeassistant.action`. Always pass `t
 | `latter.calendar_fetch`, `latter.calendar_create_event` | Calendar page and quick-add |
 | `latter.intercom_broadcast`, `latter.doorbell_intercom` | Intercom and doorbell |
 | `latter.save_custom_color` | Color picker |
+| `latter.set_dock_apps` | Save the Home dock apps chosen in on-device Home settings |
 
 The reference firmware also calls `media_player.join` and `media_player.unjoin` directly for speaker grouping.
 

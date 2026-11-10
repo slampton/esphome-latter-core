@@ -590,7 +590,7 @@ inline void render_area_control_page(
     if (raw_name.empty() && id_str.empty()) return;
 
     if (dtype == "text" || id_str.empty()) {
-      std::string fit_msg = fit_text_to_width_font(raw_name, 280, font_small);
+      std::string fit_msg = fit_text_to_width_font(raw_name, scale_x(280), font_small);
       render_modern_card(it, cx, y_mid, 316, 64, 16, card_bg_off, card_brd_off,
                          fit_msg.c_str(), col_slate, font_small);
       return;
