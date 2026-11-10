@@ -317,9 +317,13 @@ script:
                   - lambda: |-
                       id(va_was_cancelled) = false;
                       id(apply_power_policy).execute();
-                  - lambda: 'id(hal_set_dac_mute).execute(true);'
-                  - script.execute: route_i2s_to_mic
-                  - script.execute: sync_wake_word_state
+                  - if:
+                      condition:
+                        lambda: 'return !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();'
+                      then:
+                        - lambda: 'id(hal_set_dac_mute).execute(true);'
+                        - script.execute: route_i2s_to_mic
+                        - script.execute: sync_wake_word_state
   # A Home Assistant announcement outside a voice turn (assist_satellite.announce, TTS to the music player).
   # When music keeps playing, the player goes from announcing back to playing, never idle, so on_idle never
   # runs the drain and the music would stay ducked. Run it once the announcement has actually started.
@@ -332,7 +336,7 @@ script:
           timeout: 3s
       - if:
           condition:
-            lambda: 'return !id(va_active);'
+            lambda: 'return !id(va_active) && !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();'
           then:
             - script.execute: va_tts_drain_and_finish
   - id: fetch_remote_art_debounced
@@ -509,10 +513,13 @@ script:
     mode: restart
     then:
       - script.stop: start_doorbell_ptt
+      - script.stop: va_echo_gate
       - lambda: |-
           latter_ui::cam_call_active() = false;
           latter_ui::cam_intercom_ptt_active() = false;
           latter_ui::cam_listen_active() = false;
+          id(va_intercom_turn) = false;
+          id(latter_mic).set_mute_state(false);
           latter_ui::cam_intercom_status() = "CALL ENDED";
           id(cam_intercom_status_ms) = millis();
           id(cam_intercom_action) = "listen_stop";
@@ -571,6 +578,9 @@ script:
             - script.stop: start_doorbell_ptt
       # Silence the door audio here only: Home Assistant keeps the call in listening, so the message
       # this turn sends resumes listening there once the doorbell has spoken it.
+      - script.stop: finish_announcement
+      - script.stop: va_tts_drain_and_finish
+      - script.stop: va_echo_gate
       - script.execute: stop_doorbell_audio
       - if:
           condition:
@@ -584,6 +594,7 @@ script:
           id(cam_intercom_status_ms) = millis();
           latter_ui::schedule_disp_update(&id(disp1));
           id(hal_set_audio_codecs_standby).execute(false);
+          id(latter_mic).set_mute_state(false);
       - script.execute: route_i2s_to_mic
       - script.wait: route_i2s_to_mic
       - voice_assistant.start:
@@ -1316,10 +1327,12 @@ script:
                       level: WARN
                       format: "Assist pipeline not connected to Home Assistant yet; ignoring PTT press"
                   - script.stop: toggle_voice_assistant
+            - script.stop: va_echo_gate
             - lambda: |-
                 latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
                 id(apply_power_policy).execute();
                 id(hal_set_audio_codecs_standby).execute(false);
+                id(latter_mic).set_mute_state(false);
                 id(va_restore_display).stop();
                 latter_ui::va_display_restore().capture(id(display_power_state),
                     id(display_brightness).current_values.is_on(), millis(), true);
@@ -1360,8 +1373,11 @@ script:
     mode: restart
     then:
       - script.stop: va_tts_drain_and_finish
+      - script.stop: va_echo_gate
       - script.stop: mp_idle_debounce
       - lambda: |-
+          id(latter_mic).set_mute_state(false);
+          id(va_intercom_turn) = false;
           id(va_was_cancelled) = true;
           id(va_status_text) = "";
           id(va_tts_received) = false;
@@ -1392,6 +1408,8 @@ script:
       - script.stop: mp_idle_debounce
       - lambda: |-
           esphome::voice_assistant::abort_voice_assistant(id(va));
+          id(latter_mic).set_mute_state(false);
+          id(va_intercom_turn) = false;
           id(va_was_cancelled) = true;
           id(va_status_text) = "";
           id(va_tts_received) = false;

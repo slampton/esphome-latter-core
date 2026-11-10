@@ -118,10 +118,16 @@ media_player:
     on_state:
       then:
         - lambda: |-
-            if (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
-                id(mww).is_running()) {
-              id(mww).stop();
+            static int last_ss_state = -1;
+            int cur_ss = static_cast<int>(id(sendspin_group_media_player).state);
+            if (cur_ss == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+              if (id(mww).is_running()) {
+                id(mww).stop();
+              }
+            } else if (last_ss_state == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+              id(mp_idle_debounce).execute();
             }
+            last_ss_state = cur_ss;
 
   - platform: speaker_source
     id: latter_media_player
@@ -187,6 +193,7 @@ media_player:
             else:
               - script.stop: mp_idle_debounce
               - script.stop: sync_wake_word_state
+              - script.stop: va_echo_gate
               - script.stop: route_i2s_to_mic
               - script.stop: screen_sleep_timer
               - mixer_speaker.apply_ducking:
@@ -200,7 +207,9 @@ media_player:
               - script.execute: route_i2s_to_spk
               - script.wait: route_i2s_to_spk
               - lambda: |-
-                  id(va_tts_received) = true;
+                  if (!latter_ui::cam_call_active() && !latter_ui::cam_listen_active()) {
+                    id(va_tts_received) = true;
+                  }
                   if (id(va_active)) {
                     // A reply: the voice assistant reopens the microphone for a follow-up about one buffer
                     // (${announcement_buffer_s} s) before the reply has finished playing, so it starts muted
@@ -223,10 +232,10 @@ media_player:
                   id(hal_set_dac_mute).execute(false);
               - script.execute: throttled_disp_update
               - script.execute: announce_stall_check
-              # Outside a voice turn nothing else ends the announcement when music keeps playing.
+              # Outside a voice turn or doorbell call nothing else ends the announcement when music keeps playing.
               - if:
                   condition:
-                    lambda: 'return !id(va_active);'
+                    lambda: 'return !id(va_active) && !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();'
                   then:
                     - script.execute: finish_announcement
     on_play:
@@ -244,6 +253,7 @@ media_player:
                   id(active_game) = 0;
               - script.stop: mp_idle_debounce
               - script.stop: sync_wake_word_state
+              - script.stop: va_echo_gate
               - script.stop: route_i2s_to_mic
               - if:
                   condition:
@@ -379,21 +389,18 @@ voice_assistant:
       - lambda: |-
           latter_ui::log_audio_profile("VA_LISTEN_START");
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
-          if (latter_ui::cam_intercom_ptt_active()) {
-            // A late reply from the previous intercom turn must stay dropped; only a normal turn clears it.
-            latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
-          }
-          id(va_intercom_turn) = false;
-          if (!id(va_active)) {
-            id(return_page) = id(gui_page);
-            id(va_active) = true;
+          if (!latter_ui::cam_intercom_ptt_active()) {
+            id(va_intercom_turn) = false;
+            if (!id(va_active)) {
+              id(return_page) = id(gui_page);
+              id(va_active) = true;
+            }
           }
       - if:
           condition:
             lambda: |-
-              return !id(va_resume_music_after) &&
+              return !latter_ui::cam_intercom_ptt_active() &&
+                     !id(va_resume_music_after) &&
                      ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                       (!id(active_speaker_entity).empty() && latter_ui::media_state().state == "playing"));
           then:
@@ -418,6 +425,15 @@ voice_assistant:
           decibel_reduction: 0
           duration: 0.1s
       - lambda: |-
+          id(va_was_cancelled) = false;
+          id(va_vad_active) = false;
+          id(va_tts_received) = false;
+          if (latter_ui::cam_intercom_ptt_active()) {
+            id(va_status_text) = "";
+            latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
           id(va_restore_display).stop();
           latter_ui::va_display_restore().capture(id(display_power_state),
               id(display_brightness).current_values.is_on(), millis(), false);
@@ -427,16 +443,6 @@ voice_assistant:
             id(disp1).start_poller();
             id(apply_power_policy).execute();
             id(sync_display_brightness).execute();
-          }
-          id(va_was_cancelled) = false;
-          id(va_vad_active) = false;
-          id(va_tts_received) = false;
-          latter_ui::va_session_state().active = true;
-          latter_ui::va_session_state().tts_received = false;
-          if (latter_ui::cam_intercom_ptt_active()) {
-            id(va_status_text) = "";
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
           }
           id(va_status_text) = "Listening...";
           ESP_LOGD("va", "Status: Listening...");
@@ -486,6 +492,8 @@ voice_assistant:
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
+            id(va_echo_gate).stop();
+            id(latter_mic).set_mute_state(false);
             id(va_intercom_turn) = true;
             id(va_active) = false;
             id(va_status_text) = "";
@@ -568,11 +576,23 @@ voice_assistant:
                   # The DAC rises to the voice level in on_announcement, when the reply actually plays.
                   - lambda: |-
                       id(hal_set_dac_mute).execute(false);
+                      if (!id(va_active)) {
+                        id(return_page) = id(gui_page);
+                        id(va_active) = true;
+                        id(va_restore_display).stop();
+                        latter_ui::va_display_restore().capture(id(display_power_state),
+                            id(display_brightness).current_values.is_on(), millis(), false);
+                        if (id(display_power_state) != 0 && id(va_wake_screen_switch).state) {
+                          latter_ui::screen_is_off_standby() = false;
+                          id(display_power_state) = 0;
+                          id(disp1).start_poller();
+                          id(apply_power_policy).execute();
+                          id(sync_display_brightness).execute();
+                        }
+                      }
                       id(va_vad_active) = false;
                       id(va_tts_received) = true;
-                      if (id(va_active)) {
-                        id(va_status_text) = "Responding...";
-                      }
+                      id(va_status_text) = "Responding...";
                       ESP_LOGD("va", "Status: Responding (Streaming TTS)...");
                   - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_start:
@@ -600,11 +620,23 @@ voice_assistant:
             # plays: raising it here played the not-yet-ducked music louder before the chime.
             - lambda: |-
                 id(hal_set_dac_mute).execute(false);
+                if (!id(va_active)) {
+                  id(return_page) = id(gui_page);
+                  id(va_active) = true;
+                  id(va_restore_display).stop();
+                  latter_ui::va_display_restore().capture(id(display_power_state),
+                      id(display_brightness).current_values.is_on(), millis(), false);
+                  if (id(display_power_state) != 0 && id(va_wake_screen_switch).state) {
+                    latter_ui::screen_is_off_standby() = false;
+                    id(display_power_state) = 0;
+                    id(disp1).start_poller();
+                    id(apply_power_policy).execute();
+                    id(sync_display_brightness).execute();
+                  }
+                }
                 id(va_vad_active) = false;
                 id(va_tts_received) = true;
-                if (id(va_active)) {
-                  id(va_status_text) = "Responding...";
-                }
+                id(va_status_text) = "Responding...";
                 ESP_LOGD("va", "Status: Responding (TTS)...");
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_tts_end:
@@ -623,16 +655,19 @@ voice_assistant:
             - script.wait: route_i2s_to_spk
             - lambda: 'id(hal_set_dac_mute).execute(false);'
             - lambda: |-
+                if (!id(va_active)) {
+                  id(return_page) = id(gui_page);
+                  id(va_active) = true;
+                }
                 id(va_vad_active) = false;
                 id(va_tts_received) = true;
-                if (id(va_active)) {
-                  id(va_status_text) = "Responding...";
-                }
+                id(va_status_text) = "Responding...";
                 ESP_LOGD("va", "TTS URL ready: %s", x.c_str());
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_error:
     then:
       - script.stop: va_tts_drain_and_finish
+      - script.stop: va_echo_gate
       - if:
           condition:
             lambda: 'return latter_ui::cam_intercom_ptt_active();'
@@ -640,12 +675,26 @@ voice_assistant:
             # A push-to-talk turn that failed (usually no speech recognised): the call goes back to
             # listening, on the camera page.
             - lambda: |-
+                id(latter_mic).set_mute_state(false);
+                id(va_intercom_turn) = false;
                 esphome::voice_assistant::abort_voice_assistant(id(va));
                 id(va_vad_active) = false;
                 ESP_LOGW("va", "Intercom turn error: %s - %s", code.c_str(), message.c_str());
             - script.execute: resume_doorbell_listen
           else:
+            - if:
+                condition:
+                  lambda: |-
+                    return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
+                           !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();
+                then:
+                  - media_player.stop:
+                      id: latter_media_player
+                      announcement: true
+                  - speaker.stop: announcement_mixing_input
             - lambda: |-
+                id(latter_mic).set_mute_state(false);
+                id(va_intercom_turn) = false;
                 esphome::voice_assistant::abort_voice_assistant(id(va));
                 id(va_vad_active) = false;
                 id(va_tts_received) = false;
@@ -656,7 +705,6 @@ voice_assistant:
                 id(apply_power_policy).execute();
                 ESP_LOGE("va", "Error: %s - %s", code.c_str(), message.c_str());
             - script.execute: resume_music_after_va
-            - script.execute: mp_idle_debounce
             - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
             - script.execute: va_restore_display
   on_timer_started:
@@ -668,8 +716,11 @@ voice_assistant:
           id(va_timer_name) = timer.name;
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
           id(timer_ringing) = false;
+          id(apply_power_policy).execute();
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
+            if (((id(gui_page) == 8 && id(tools_subpage) == 1) ||
+                 (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) &&
+                id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -680,8 +731,11 @@ voice_assistant:
           uint32_t now_t = millis();
           latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          id(apply_power_policy).execute();
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
+            if (((id(gui_page) == 8 && id(tools_subpage) == 1) ||
+                 (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) &&
+                id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -698,13 +752,19 @@ voice_assistant:
             }
           }
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          if (id(home_subpage) == 2 && !id(timer_running)) {
+            id(home_subpage) = 0;
+          }
           const bool was_ringing = id(timer_ringing);
           id(timer_ringing) = false;
           if (was_ringing) {
             id(stop_alarm_sound).execute();
           }
+          id(apply_power_policy).execute();
           if (!id(va_active) && id(va_status_text).empty()) {
-            if (id(gui_page) == 8 && id(tools_subpage) == 1 && id(display_power_state) == 0) {
+            if (((id(gui_page) == 8 && id(tools_subpage) == 1) ||
+                 (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) &&
+                id(display_power_state) == 0) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           }
@@ -723,6 +783,9 @@ voice_assistant:
             }
           }
           latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+          if (id(home_subpage) == 2) {
+            id(home_subpage) = 0;
+          }
           if (id(va_active) || !id(va_status_text).empty()) {
             id(cancel_voice_assistant).execute();
           }
@@ -740,6 +803,10 @@ voice_assistant:
             not:
               voice_assistant.is_running:
           timeout: 25s
+      - lambda: |-
+          if (!id(va).is_running()) {
+            id(va_intercom_turn) = false;
+          }
       # A push-to-talk turn that ended without a result: the call goes back to listening.
       - if:
           condition:
@@ -785,14 +852,13 @@ script:
       #    preserving conversation_id and native continued-conversation state.
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
+          id(va_echo_gate).stop();
           id(latter_mic).set_mute_state(false);  // va_echo_gate never outlives the session
           const bool was_va_session = id(va_active);
           id(va_vad_active) = false;
           id(va_status_text) = "";
           id(va_tts_received) = false;
           id(va_active) = false;
-          latter_ui::va_session_state().active = false;
-          latter_ui::va_session_state().tts_received = false;
           if (was_va_session) {
             id(gui_page) = id(return_page);
           }
@@ -936,7 +1002,8 @@ script:
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING));
               const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                               (id(active_game) > 0) ||
-                                              latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+                                              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+                                              latter_ui::cam_intercom_ptt_active();
               const bool sys_busy = id(is_hibernating) || id(ota_in_progress) ||
                                     !id(wifi_ctrl).is_connected() || (millis() < 12000U);
               return latter_ui::wake_word_should_run(
@@ -988,10 +1055,12 @@ script:
   - id: trigger_va_from_wake_word
     mode: restart
     then:
+      - script.stop: va_echo_gate
       - lambda: |-
           latter_ui::request_radio_boost(millis(), 15000U);  // VA about to stream: full-throughput Wi-Fi now
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
+          id(latter_mic).set_mute_state(false);
           id(va_restore_display).stop();
           latter_ui::va_display_restore().capture(id(display_power_state),
               id(display_brightness).current_values.is_on(), millis(), true);
@@ -1012,12 +1081,15 @@ script:
   - id: play_alarm_sound
     mode: restart
     then:
-      - lambda: 'latter_ui::va_display_restore().armed = false;'
+      - lambda: |-
+          latter_ui::va_display_restore().armed = false;
+          id(latter_mic).set_mute_state(false);
       - script.stop: va_restore_display
       - script.stop: stop_alarm_sound
       - script.stop: mp_idle_debounce
       - script.stop: cancel_voice_assistant
       - script.stop: va_tts_drain_and_finish
+      - script.stop: va_echo_gate
       - script.stop: resume_music_after_va
       # Duck local music first and let the already-buffered (unducked) samples drain through the
       # mixer + I2S buffers before the DAC volume jumps to alert level. Raising the volume first

@@ -133,17 +133,6 @@ struct CalendarState {
   std::string next_event = "";
 };
 
-struct VaSessionState {
-  bool active = false;
-  bool tts_received = false;
-  uint32_t last_abort_ms = 0;
-};
-
-struct PowerState {
-  int profile_idx = 0;
-  bool hibernating = false;
-};
-
 struct BrowseSlotItem {
   std::string name = "";
   std::string id = "";
@@ -184,16 +173,6 @@ inline WeatherState &weather_state() {
 
 inline CalendarState &calendar_state() {
   static CalendarState st;
-  return st;
-}
-
-inline VaSessionState &va_session_state() {
-  static VaSessionState st;
-  return st;
-}
-
-inline PowerState &power_state() {
-  static PowerState st;
   return st;
 }
 

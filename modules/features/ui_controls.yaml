@@ -40,7 +40,11 @@ select:
           latter_ui::mark_power_profile_custom_if_manual(id(power_profile_select));
           latter_ui::schedule_disp_update(&id(disp1));
       - script.execute: sync_wake_word_state
-      - script.execute: mp_idle_debounce
+      - if:
+          condition:
+            lambda: 'return x != "Always On";'
+          then:
+            - script.execute: media_idle_finish
 
   # Which wake words are active is Home Assistant's Assist satellite Wake Word / Wake Word 2 setting
   # (micro_wake_word keeps it across reboots); Settings > Voice changes it through the same call
@@ -210,7 +214,6 @@ select:
       - lambda: |-
           id(power_profile_select).publish_state(x);
           const auto prof = latter_ui::parse_power_profile(x);
-          latter_ui::power_state().profile_idx = static_cast<int>(prof);
           if (millis() <= 2500 || prof == latter_ui::PowerProfile::CUSTOM) {
             latter_ui::schedule_disp_update(&id(disp1));
             return;

@@ -295,11 +295,14 @@ interval:
             const bool va_busy = id(va).is_running() || !id(va_status_text).empty() ||
                                  id(announcement_mixing_input).is_running();
             const bool media_busy = id(mp_idle_debounce).is_running() || id(va_resume_music_after) ||
+                                    id(media_mixing_input).is_running() ||
+                                    (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
             const bool alert_or_tool_busy = id(alarm_ringing) || id(timer_ringing) || id(find_my_active) ||
                                             (id(active_game) > 0) ||
-                                            latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+                                            latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+                                            latter_ui::cam_intercom_ptt_active();
             const bool sys_busy = id(is_hibernating) || id(ota_in_progress) ||
                                   !id(wifi_ctrl).is_connected();
             const bool should_ww_run = latter_ui::wake_word_should_run(
