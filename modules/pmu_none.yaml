@@ -32,6 +32,11 @@ sensor:
     lambda: 'return NAN;'
 
 script:
+  - id: hal_boot_battery_check
+    mode: single
+    then:
+      - lambda: 'return;'
+
   - id: hal_init_pmu
     mode: restart
     then:

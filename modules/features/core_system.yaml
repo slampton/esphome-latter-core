@@ -5,6 +5,9 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
+            // A battery past the cutoff powers straight back off before anything else starts (no-op on USB or
+            // without a PMU).
+            id(hal_boot_battery_check).execute();
             // Light-sleep awake lock (created held), wake pins and sleep pad config; no-op without light sleep.
             latter_ui::pm_init();
             id(hal_release_deep_sleep_holds).execute();
@@ -19,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026110916L;
+            constexpr long LATTER_YAML_REV = 2026111001L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "

@@ -96,6 +96,13 @@ button:
       - script.execute: enter_deep_sleep
 
 script:
+  # First thing in on_boot (core_system.yaml, priority 800): a cell clearly past the cutoff on battery powers
+  # straight back off before the display and Wi-Fi start (latter_ui::hal_axp2101_boot_battery_check).
+  - id: hal_boot_battery_check
+    mode: single
+    then:
+      - lambda: 'latter_ui::hal_axp2101_boot_battery_check(id(bus_internal));'
+
   - id: hal_init_pmu
     mode: restart
     then:

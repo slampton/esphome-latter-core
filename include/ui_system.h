@@ -255,6 +255,50 @@ inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32
   if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
 }
 
+// Boot check, first thing in on_boot (priority 800: after the I2C bus, before the display and Wi-Fi): on
+// battery (cell present, no VBUS) with VBAT at or below BatteryModel::kBootCutoffMv, write the hib=critical
+// record and switch the PMIC straight back off, so a cell past the cutoff can't run the boot (display,
+// Wi-Fi) and sag further. The best of three readings counts, so a single dip never blocks a boot.
+template <typename I2cBusT>
+inline void hal_axp2101_boot_battery_check(I2cBusT *bus) {
+#ifdef USE_ESP32
+  if (bus == nullptr) return;
+  auto rd = [bus](uint8_t reg, uint8_t *buf, size_t len) -> bool {
+    return bus->write_readv(0x34, &reg, 1, buf, len) == esphome::i2c::ERROR_OK;
+  };
+  uint8_t stat0 = 0;
+  if (!rd(0x00, &stat0, 1)) return;
+  const bool vbus_good = (stat0 & 0x20) != 0;
+  const bool bat_present = (stat0 & 0x08) != 0;
+  if (vbus_good || !bat_present) return;
+  int best_mv = -1;
+  for (int i = 0; i < 3; i++) {
+    uint8_t vbuf[2] = {0, 0};
+    if (rd(0x34, vbuf, 2)) {
+      const int mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
+      if (mv > best_mv) best_mv = mv;
+    }
+    if (i < 2) esphome::delay(20);
+  }
+  if (best_mv < BatteryModel::kVbatMinValidMv || best_mv > BatteryModel::kBootCutoffMv) return;
+  ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT_BOOT vbat=%dmV <= %dmV on battery -> power off", best_mv,
+           BatteryModel::kBootCutoffMv);
+  BatteryModel &batt = battery_model();
+  batt.vraw_mv = best_mv;
+  batt.soc_display = 0.0f;
+  batt.cutoff_tripped = true;
+  batt.hib_reason = HibernateReason::CRITICAL;
+  enter_axp2101_hibernate_or_alarm_sleep(bus, -1);
+#else
+  (void)bus;
+#endif
+}
+
+template <typename I2cBusT>
+inline void hal_axp2101_boot_battery_check(I2cBusT *const *bus_pp) {
+  if (bus_pp != nullptr) hal_axp2101_boot_battery_check(*bus_pp);
+}
+
 // Canonical AXP2101 boot configuration (register map per XPowersLib AXP2101Constants.h).
 //   1. Masks every IRQ source (REG40-42) and clears latched status (REG48-4A): no supported
 //      board routes AXP_IRQ to the SoC; the PWR key is read from its own GPIO instead.

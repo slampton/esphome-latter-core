@@ -100,12 +100,13 @@ constexpr int kBattPathMilliohm =
     kPathFixedMilliohm + (kBattCapacityMah > 0 ? kCellIrMilliohmAh * 1000 / kBattCapacityMah : 0);
 
 // Average load per class (the cell's voltage follows the average draw, not the instant of the I2C read).
-// QUIET (screen off on battery, light sleep) is measured: about 30-35 mA on the Mobile with light sleep
-// (rev 2026110289; the pre-light-sleep 62-67 mA in boards/facts power_baseline no longer applies).
+// QUIET (screen off on battery) is derived from voltage-based run-downs, pending an inline-meter measurement:
+// Mobile with light sleep (rev 2026110289) used about 90 % of 1000 mAh in 15.8 h = 55-57 mA (Link Report
+// dr about 6 %/h agrees); Pocket held awake by the RSSI gate (2026-11-09) ran 500 mAh in 9.3 h = 54 mA.
 // SCREEN and AUDIO are ESTIMATES pending calibration: read the vraw step in the Link Report bat= / [PROF:BATT]
 // when the screen or the speaker turns on or off, divide by kBattPathMilliohm, and set them from that.
 enum class BattLoad : uint8_t { QUIET = 0, SCREEN = 1, AUDIO = 2 };
-constexpr int kLoadQuietMa = 33;
+constexpr int kLoadQuietMa = 55;
 constexpr int kLoadScreenMa = 200;  // estimate
 constexpr int kLoadAudioMa = 300;   // estimate
 
@@ -141,20 +142,23 @@ inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_
   return "Not Charging";
 }
 
-// Rest (open-circuit) voltage -> state of charge for a single 3.7 V LiCoO2 / LiPo cell at room temperature.
-// Source: the widely published LiPo rest-voltage chart (4.20 V 100 %, 4.11 V 90 %, 3.95 V 70 %, 3.85 V 55 %,
-// 3.80 V 40 %, 3.73 V 20 %, 3.69 V 10 %, 3.61 V 5 %, 3.27 V 0 %, in 5 % steps), with two Latter anchors:
-// 0 % sits at kCutoffRestMv (3.40 V; the chart's 3.27-3.40 V band holds under 2 % and Latter powers off
-// there), and 100 % at 4.16 V, the rest voltage a cell relaxes to after the charger terminates at
-// 4.20 V / C/20 (4.20 V itself only exists under charge).
+// Compensated rest voltage -> state of charge (percent of the capacity left above the cutoff).
+// Source: a measured discharge, not a generic chart. Pocket (500 mAh LiPo), 2026-11-09 14:43 -> 2026-11-10
+// 00:01: unplugged after charge done, screen off, held awake all night (constant load, about 54 mA), until the
+// cutoff tripped; Link Report bat= every 15 min (Home Assistant history). Capacity left = the share of that
+// 9.3 h still to run (constant current), against vraw + kLoadQuietMa x kBattPathMilliohm (what the model
+// computes in that state). 0 % is the cutoff (kCutoffRestMv), 100 % is 4.15 V (the data reached 4.10 V at
+// 95 % and 4.15 V within 15 min of unplugging). The generic LiPo chart this replaces (3.83 V = 48 %,
+// 3.60 V = 5 %) read far too steep mid-range: the cell held 34 % at 3.83 V and 13-15 % at 3.60-3.62 V.
+// One cell at one low rate (about 0.1C); refit when another board's run-down disagrees.
 struct OcvPoint {
   int16_t mv;
   uint8_t pct;
 };
 constexpr OcvPoint kOcvCurve[] = {
-    {3400, 0},  {3610, 5},  {3690, 10}, {3710, 15}, {3730, 20}, {3750, 25}, {3770, 30},
-    {3790, 35}, {3800, 40}, {3820, 45}, {3840, 50}, {3850, 55}, {3870, 60}, {3910, 65},
-    {3950, 70}, {3980, 75}, {4020, 80}, {4080, 85}, {4110, 90}, {4160, 100},
+    {3400, 0},  {3495, 5},  {3555, 10}, {3615, 15}, {3680, 20}, {3750, 25}, {3790, 30},
+    {3830, 35}, {3855, 40}, {3875, 45}, {3890, 50}, {3910, 55}, {3950, 60}, {3990, 65},
+    {4020, 70}, {4035, 75}, {4050, 80}, {4065, 85}, {4080, 90}, {4100, 95}, {4150, 100},
 };
 constexpr size_t kOcvPoints = sizeof(kOcvCurve) / sizeof(kOcvCurve[0]);
 
@@ -210,6 +214,11 @@ struct BatteryModel {
   static constexpr uint32_t kCutoffHoldMs = 30000U;
   static constexpr uint8_t kCutoffMinSamples = 4;  // 4 samples 10 s apart span 30 s
   static constexpr int kFastSampleMv = 3500;       // knee: back to kSampleMs below this rest voltage
+  // Boot check (hal_axp2101_boot_battery_check, before Wi-Fi and the display): on battery, a cell reading
+  // at or below this at boot's light load is clearly past the cutoff and powers straight back off. 50 mV
+  // under kCutoffRestMv, so a low but usable cell (e.g. 3.46 V at rest) still boots; one near the cutoff
+  // boots and the runtime cutoff handles it.
+  static constexpr int kBootCutoffMv = kCutoffRestMv - 50;
   static constexpr uint32_t kDrainMinMs = 30U * 60U * 1000U;  // drain rate needs 30 min on battery
   static constexpr int kVbatMinValidMv = 2500;
   static constexpr int kVbatMaxValidMv = 4600;
