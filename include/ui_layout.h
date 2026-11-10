@@ -833,7 +833,9 @@ inline void render_page_header(DisplayT &it, int cx, const char *title, FontT *f
                                bool shadow = false) {
   if (title == nullptr || title[0] == '\0' || font == nullptr) return;
   const int y = layout().hdr_y;
-  if (shadow) fast_print(it, cx + 1, y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, title);
+  if (shadow || backdrop_active()) {
+    fast_print(it, cx + 1, y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, title);
+  }
   fast_print(it, cx, y, font, color, esphome::display::TextAlign::CENTER, title);
 }
 
@@ -851,6 +853,9 @@ inline void render_page_header(DisplayT &it, int cx, const std::string &title, F
 template <typename DisplayT, typename FontT>
 inline void render_sub_header(DisplayT &it, int cx, const char *text, FontT *font, esphome::Color color) {
   if (text == nullptr || text[0] == '\0' || font == nullptr) return;
+  if (backdrop_active()) {
+    fast_print(it, cx + 1, layout().sub_hdr_y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, text);
+  }
   fast_print(it, cx, layout().sub_hdr_y, font, color, esphome::display::TextAlign::CENTER, text);
 }
 
@@ -1536,12 +1541,18 @@ inline void render_in_app_mode_bar_track(
   const Color track_brd = kChromeBarBorder;
   const Color cap_bg = kChromeBarTrack;
 
-  // 1. Anti-aliased stadium track from left_cx to right_cx with a 1 px border. No slot separators.
+  // 1. Anti-aliased stadium track from left_cx to right_cx with a 1 px border (or translucent glass over a backdrop). No slot separators.
   const int tx0 = left_cx - r_track;
   const int tw = (right_cx - left_cx) + 2 * r_track + 1;
   const int th = 2 * r_track + 1;
-  stroke_round_rect_aa(it, tx0, by - r_track, tw, th, static_cast<float>(r_track) + 0.5f, track_brd, track_brd, 1);
-  fill_round_rect_aa(it, tx0 + 1, by - r_track + 1, tw - 2, th - 2, static_cast<float>(r_track) - 0.5f, track_bg);
+  if (backdrop_active()) {
+    const GlassBackdrop bd = sample_glass_backdrop(tx0, by - r_track, tw, th);
+    const int track_alpha = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : 168;
+    render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha);
+  } else {
+    stroke_round_rect_aa(it, tx0, by - r_track, tw, th, static_cast<float>(r_track) + 0.5f, track_brd, track_brd, 1);
+    fill_round_rect_aa(it, tx0 + 1, by - r_track + 1, tw - 2, th - 2, static_cast<float>(r_track) - 0.5f, track_bg);
+  }
 
   // 2. Smoothly gliding active-slot capsule: an anti-aliased 2 px ring on the track color.
   const float rel_active = anim_active - anim_start;
@@ -1558,7 +1569,12 @@ inline void render_in_app_mode_bar_track(
                      static_cast<uint8_t>(track_bg.g + (theme_primary.g - track_bg.g) * ring_alpha),
                      static_cast<uint8_t>(track_bg.b + (theme_primary.b - track_bg.b) * ring_alpha));
       stroke_round_rect_aa(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1, static_cast<float>(dr) + 0.5f, ring_col, ring_col, 2);
-      fast_filled_circle_aa(it, abx, by, dr - 2, cap_bg);
+      if (backdrop_active()) {
+        fill_round_rect_glass(it, abx - dr + 2, by - dr + 2, 2 * dr - 3, 2 * dr - 3,
+                              static_cast<float>(dr) - 1.5f, theme_primary, 48, 28);
+      } else {
+        fast_filled_circle_aa(it, abx, by, dr - 2, cap_bg);
+      }
     }
   }
 

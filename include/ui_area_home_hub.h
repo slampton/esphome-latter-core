@@ -260,12 +260,18 @@ inline void render_area_control_page(
         }
       } else if (cat == "switch") {
         // Switches & Outlets: Rounded Toggle Pill + Knob
+        const Color cut_c = backdrop_active()
+            ? mix_color_q8(sample_glass_backdrop(bx - 12, by - 12, 25, 25).mean, kChromeGlassTint, kGlassAlphaMinQ8)
+            : card_bg_off;
         fast_filled_circle(it, bx - 5, by, 7, fg_c);
         fast_filled_circle(it, bx + 5, by, 7, fg_c);
         fill_rect_row_major(it, bx - 5, by - 7, 10, 15, fg_c);
-        fast_filled_circle(it, bx + 5, by, 4, Color(16, 20, 27));
+        fast_filled_circle(it, bx + 5, by, 4, cut_c);
       } else if (cat == "climate") {
         // Area Climate: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
+        const Color cut_c = backdrop_active()
+            ? mix_color_q8(sample_glass_backdrop(bx - 12, by - 12, 25, 25).mean, kChromeGlassTint, kGlassAlphaMinQ8)
+            : card_bg_off;
         int tx = bx - 2;
         fast_line(it, tx - 3, by - 11, tx + 3, by - 11, fg_c);
         fast_line(it, tx - 2, by - 12, tx + 2, by - 12, fg_c);
@@ -274,7 +280,7 @@ inline void render_area_control_page(
         fast_line(it, tx + 3, by - 11, tx + 3, by + 3,  fg_c);
         fast_line(it, tx + 2, by - 11, tx + 2, by + 3,  fg_c);
         fast_filled_circle(it, tx, by + 7, 5, fg_c);
-        fast_filled_circle(it, tx, by + 7, 3, Color(16, 20, 27));
+        fast_filled_circle(it, tx, by + 7, 3, cut_c);
         fast_filled_circle(it, tx, by + 7, 1, fg_c);
         fill_rect_row_major(it, tx - 1, by - 4, 3, 10, fg_c);
         fill_rect_row_major(it, tx + 5, by - 9, 4, 2, fg_c);
@@ -374,7 +380,12 @@ inline void render_area_control_page(
       int b_max_w = layout().light_bri_bar_w();
       int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        fill_rect_row_major(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
+        if (backdrop_active()) {
+          fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56),
+                                static_cast<float>(scale_s(12)), Color(92, 68, 22), 152, 132);
+        } else {
+          fill_rect_row_major(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
+        }
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
@@ -619,7 +630,11 @@ inline void render_area_control_page(
       int fill_w = (r_slider_w * clamped_lvl) / 100;
       if (fill_w > 4) {
         int fh = r_card_h - 6;
-        fill_rect_row_major(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
+        if (backdrop_active()) {
+          fill_round_rect_glass(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, 0.0f, fill_c, 152, 132);
+        } else {
+          fill_rect_row_major(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
+        }
         fast_vline(it, r_div_x + fill_w, y_mid - fh / 2 + 1, fh - 2, scale_color(col_white, 0.35f));
       }
     }
@@ -853,6 +868,9 @@ inline void render_whole_home_page(
     int bx = WH_XS[i];
     bool is_act = (i == tab);
     Color fg_c   = is_act ? theme_primary : col_white;
+    const Color cut_c = backdrop_active()
+        ? mix_color_q8(sample_glass_backdrop(bx - 14, WH_Y - 14, 29, 29).mean, kChromeGlassTint, kGlassAlphaMinQ8)
+        : card_bg_off;
 
     if (i == 0) {
       // 0. Security Alarm: Pitched-Crest Shield with Negative-Space Overhanging-Roof House & Doorway
@@ -878,7 +896,7 @@ inline void render_whole_home_page(
             if (ax <= 5 && !(ax <= 1 && dy >= 3)) carve = true;         // House walls with 3x5px centered doorway
           }
           if (carve) {
-            fast_pixel(it, bx + dx, WH_Y + dy, card_bg_off);
+            fast_pixel(it, bx + dx, WH_Y + dy, cut_c);
           }
         }
       }
@@ -892,7 +910,7 @@ inline void render_whole_home_page(
       fast_line(it, tx + 3, WH_Y - 13, tx + 3, WH_Y + 3,  fg_c);
       fast_line(it, tx + 2, WH_Y - 13, tx + 2, WH_Y + 3,  fg_c);
       fast_filled_circle(it, tx, WH_Y + 8, 6, fg_c);
-      fast_filled_circle(it, tx, WH_Y + 8, 4, card_bg_off);
+      fast_filled_circle(it, tx, WH_Y + 8, 4, cut_c);
       fast_filled_circle(it, tx, WH_Y + 8, 2, fg_c);
       fill_rect_row_major(it, tx - 1, WH_Y - 5, 3, 12, fg_c);
       // 2px-thick degree ticks on right
@@ -904,9 +922,9 @@ inline void render_whole_home_page(
       fast_filled_triangle(it, bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
       fill_rect_row_major(it, bx - 15, WH_Y - 4, 31, 2, fg_c);
       fill_rect_row_major(it, bx - 12, WH_Y - 2, 25, 14, fg_c);
-      fast_hline(it, bx - 12, WH_Y - 2, 25, card_bg_off);
+      fast_hline(it, bx - 12, WH_Y - 2, 25, cut_c);
       // Negative-space garage bay opening
-      fill_rect_row_major(it, bx - 9, WH_Y, 19, 12, card_bg_off);
+      fill_rect_row_major(it, bx - 9, WH_Y, 19, 12, cut_c);
       // 3 distinct raised horizontal roll-up garage door panels inside bay
       fill_rect_row_major(it, bx - 7, WH_Y + 1, 15, 3, fg_c);
       fill_rect_row_major(it, bx - 7, WH_Y + 5, 15, 3, fg_c);
@@ -921,15 +939,15 @@ inline void render_whole_home_page(
       // Solid circular robot chassis (r = 12)
       fast_filled_circle(it, bx, WH_Y + 1, 12, fg_c);
       // Negative-space curved front bumper seam across upper arc
-      fast_hline(it, bx - 8, WH_Y - 6, 17, card_bg_off);
-      fast_hline(it, bx - 9, WH_Y - 5, 19, card_bg_off);
-      fast_line(it, bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, card_bg_off);
-      fast_line(it, bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, card_bg_off);
+      fast_hline(it, bx - 8, WH_Y - 6, 17, cut_c);
+      fast_hline(it, bx - 9, WH_Y - 5, 19, cut_c);
+      fast_line(it, bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, cut_c);
+      fast_line(it, bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, cut_c);
       // Negative-space moat + raised center LiDAR laser turret dome
-      fast_filled_circle(it, bx, WH_Y + 2, 5, card_bg_off);
+      fast_filled_circle(it, bx, WH_Y + 2, 5, cut_c);
       fast_filled_circle(it, bx, WH_Y + 2, 3, fg_c);
       // Rear status indicator slit
-      fast_hline(it, bx - 3, WH_Y + 9, 7, card_bg_off);
+      fast_hline(it, bx - 3, WH_Y + 9, 7, cut_c);
     }
   }
 

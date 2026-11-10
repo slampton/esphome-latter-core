@@ -910,8 +910,12 @@ inline void render_home_page(
   using esphome::Color;
   using esphome::display::TextAlign;
 
+  const bool has_custom_wallpaper = (!wallpaper_url.empty() &&
+                                     wallpaper_url == loaded_wallpaper_url &&
+                                     wallpaper_art != nullptr && wallpaper_art->get_width() > 0);
+
   if (home_subpage == 1) {
-    frame_base(it, col_bg);
+    render_page_wallpaper_base(it, wallpaper_art, has_custom_wallpaper, cx, col_bg);
     // -------------------------------------------------------------------------
     // SUBPAGE 1: HOME SETTINGS (Canonical 5-Card Template: 30px Top/Bottom Buffer, 19px Gap)
     //   - Title at y = 48 (bottom at y = 58)
@@ -974,14 +978,12 @@ inline void render_home_page(
   const bool eff_weather_bg = show_weather_bg && weather_ready;
 
   const bool is_dim_backdrop = (home_subpage == 2);
-  const bool has_custom_wallpaper = (!wallpaper_url.empty() &&
-                                     wallpaper_url == loaded_wallpaper_url &&
-                                     wallpaper_art != nullptr && wallpaper_art->get_width() > 0);
   const bool use_custom_wallpaper = has_custom_wallpaper && (!show_weather_bg || weather_sim_opt == "Live (Home Assistant)");
 
   if (use_custom_wallpaper) {
     render_album_art_canvas(it, wallpaper_art, cx, false, false, true, false, is_dim_backdrop ? 2 : 0);
   } else if (eff_weather_bg) {
+    backdrop_active() = true;
     const int cel_x = layout().celestial_x;
     const int cel_y = layout().celestial_y;
     const bool show_celestial = is_night ? show_moon : show_sun;
@@ -1292,7 +1294,7 @@ inline void render_home_page(
     const int dock_y = layout().dock_y;
     const int dock_r = layout().dock_r;
 
-    auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow) {
+    auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow, Color cut_c) {
       if (app_id == 6) {
         // Area Control (Option B): Sculpted 2-Cushion Sofa + Tall Floor Lamp Silhouette
         // 1. Floor Lamp on right (x = bx + 11, lampshade at top y = by - 14..by - 7, pole to y = by + 12)
@@ -1314,7 +1316,6 @@ inline void render_home_page(
         fill_rect_row_major(it, bx - 14, by + 10, 3, 3, c);
         fill_rect_row_major(it, bx + 2,  by + 10, 3, 3, c);
         if (!is_shadow) {
-          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           // Negative-space cushion seam & armrest crease so the sofa reads crisply at 54px!
           fast_vline(it, bx - 5, by - 4, 8, cut_c);
           fast_hline(it, bx - 12, by + 4, 15, cut_c);
@@ -1492,7 +1493,6 @@ inline void render_home_page(
         fill_rect_row_major(it, bx - 13, by - 7, 26, 17, c);
         fill_rect_row_major(it, bx - 5, by - 11, 10, 4, c);
         if (!is_shadow) {
-          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           fast_filled_circle(it, bx, by + 1, 6, cut_c);
           fast_circle(it, bx, by + 1, 4, c);
           fast_filled_circle(it, bx, by + 1, 2, c);
@@ -1507,7 +1507,6 @@ inline void render_home_page(
         // 2. Solid lower house facade
         fill_rect_row_major(it, bx - 12, by, 25, 13, c);
         if (!is_shadow) {
-          Color cut_c = (eff_weather_bg && !is_night) ? Color(28, 54, 84) : col_black;
           // Negative-space eave shadow line separating overhanging roof from facade
           fast_hline(it, bx - 12, by, 25, cut_c);
           // Negative-space front door on left (with tiny doorknob pip)
@@ -1548,14 +1547,26 @@ inline void render_home_page(
                       static_cast<uint8_t>(dock_fg_c.g * alpha),
                       static_cast<uint8_t>(dock_fg_c.b * alpha));
       int app_id = dock_apps[g_idx];
-      if (!is_dim_backdrop && alpha > 0.55f) {
-        fast_circle_aa(it, bx + 1, dock_y + 1, static_cast<float>(dock_r), col_black);
+      Color slot_cut_c = col_black;
+      if (!is_dim_backdrop) {
+        const int d = 2 * dock_r + 1;
+        const GlassBackdrop bd = sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d);
+        const int base_a = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : kGlassAlphaMinQ8;
+        const int glass_a = static_cast<int>(std::roundf(static_cast<float>(base_a) * alpha));
+        const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(kGlassSheenTopQ8) * alpha));
+        const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(kGlassSheenBotQ8) * alpha));
+        fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f,
+                              kChromeGlassSheen, sheen_top, sheen_bot, 1);
+        fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f,
+                              kChromeGlassTint, glass_a, glass_a);
+        slot_cut_c = bd.valid ? mix_color_q8(bd.mean, kChromeGlassTint, glass_a) : kChromeGlassTint;
+        if (alpha > 0.55f) {
+          draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true, col_black);
+        }
+      } else {
+        fast_circle_aa(it, bx, dock_y, static_cast<float>(dock_r), slot_ring_c);
       }
-      fast_circle_aa(it, bx, dock_y, static_cast<float>(dock_r), slot_ring_c);
-      if (!is_dim_backdrop && alpha > 0.55f) {
-        draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true);
-      }
-      draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false);
+      draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false, slot_cut_c);
     }
 
     const int pips_y = layout().dock_pips_y;

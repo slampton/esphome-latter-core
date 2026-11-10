@@ -53,7 +53,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110914L
+#define LATTER_SDK_REV 2026110915L
 
 namespace latter_ui {
 
@@ -1358,6 +1358,14 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
   fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, tint, alpha_q8, alpha_q8);
 }
 
+// True for the current frame whenever a wallpaper, album-art backdrop, or live Weather Sky canvas
+// has been painted as the frame base; cards, pills, dock orbs, and mode bars automatically switch
+// to translucent glass over the active backdrop.
+inline bool &backdrop_active() {
+  static bool active = false;
+  return active;
+}
+
 // Same Bresenham walk as Display::line (endpoints inclusive); axis-aligned lines use spans.
 template<typename DisplayT>
 inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c) {
@@ -1753,23 +1761,47 @@ template<typename DisplayT, typename FontT>
 inline void render_pill_button(DisplayT &it, int x1, int x2, int y_mid, int r,
                                esphome::Color border_c, esphome::Color bg_c,
                                const char *label, esphome::Color text_c, FontT *font) {
-  // Anti-aliased stadium: cap centers at x1 and x2, radius r, a 2 px border.
+  // Anti-aliased stadium: cap centers at x1 and x2, radius r, a 2 px border (or translucent glass over a backdrop).
   const int px0 = x1 - r;
+  const int py0 = y_mid - r;
   const int pw = (x2 - x1) + 2 * r + 1;
   const int ph = 2 * r + 1;
-  stroke_round_rect_aa(it, px0, y_mid - r, pw, ph, static_cast<float>(r) + 0.5f, border_c, border_c, 2);
-  if (r > 2) fill_round_rect_aa(it, px0 + 2, y_mid - r + 2, pw - 4, ph - 4, static_cast<float>(r) - 1.5f, bg_c);
+  if (backdrop_active()) {
+    const GlassBackdrop bd = sample_glass_backdrop(px0, py0, pw, ph);
+    const int alpha_q8 = bd.valid ? glass_alpha_for_text(bg_c, bd.bright, text_c) : 168;
+    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
+    if (neutral_brd) {
+      fill_round_rect_glass(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f,
+                            kChromeGlassSheen, kGlassSheenTopQ8, kGlassSheenBotQ8, 1);
+      if (r > 1) {
+        fill_round_rect_glass(it, px0 + 1, py0 + 1, pw - 2, ph - 2, static_cast<float>(r) - 0.5f,
+                              bg_c, alpha_q8, alpha_q8);
+      }
+    } else {
+      stroke_round_rect_aa(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f, border_c, border_c, 2);
+      if (r > 2) {
+        fill_round_rect_glass(it, px0 + 2, py0 + 2, pw - 4, ph - 4, static_cast<float>(r) - 1.5f,
+                              bg_c, alpha_q8, alpha_q8);
+      }
+    }
+  } else {
+    stroke_round_rect_aa(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f, border_c, border_c, 2);
+    if (r > 2) fill_round_rect_aa(it, px0 + 2, py0 + 2, pw - 4, ph - 4, static_cast<float>(r) - 1.5f, bg_c);
+  }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     int btn_cx = (x1 + x2) / 2;
+    if (backdrop_active()) {
+      fast_print(it, btn_cx + 1, y_mid + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, label);
+    }
     fast_print(it, btn_cx, y_mid, font, text_c, esphome::display::TextAlign::CENTER, label);
   }
 }
 
 template<typename DisplayT, typename FontT>
-inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, int h, int r,
-                               esphome::Color bg_c, esphome::Color border_c,
-                               const char *label, esphome::Color text_c, FontT *font) {
+inline esphome::Color render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, int h, int r,
+                                         esphome::Color bg_c, esphome::Color border_c,
+                                         const char *label, esphome::Color text_c, FontT *font) {
   if (SCREEN_W > 520) {
     if (w <= 340) w = scale_x(w);
     if (h <= 96)  h = scale_y(h);
@@ -1808,20 +1840,39 @@ inline void render_modern_card(DisplayT &it, int cx_card, int cy_card, int w, in
                        static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
       : bg_c;
 
-  // Anti-aliased rounded rectangle: a 1 px border lit from the top (brd_top -> brd_btm) around a
-  // smooth, dithered sheen (bg_top -> bg_btm). Unlit cards are flat.
-  stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
-  fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_top, bg_btm);
+  esphome::Color surf_bg = bg_c;
+  if (backdrop_active() && is_lit_glass) {
+    const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+    const int alpha_q8 = bd.valid ? glass_alpha_for_text(bg_c, bd.bright, kChromeGlassSheen) : 168;
+    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
+    if (neutral_brd) {
+      fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, kGlassSheenTopQ8,
+                            kGlassSheenBotQ8, 1);
+    } else {
+      stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
+    }
+    fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_c, alpha_q8, alpha_q8);
+    surf_bg = bd.valid ? mix_color_q8(bd.mean, bg_c, alpha_q8) : bg_c;
+  } else {
+    // Anti-aliased rounded rectangle: a 1 px border lit from the top (brd_top -> brd_btm) around a
+    // smooth, dithered sheen (bg_top -> bg_btm). Unlit cards are flat.
+    stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
+    fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_top, bg_btm);
+  }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    if (backdrop_active()) {
+      fast_print(it, cx_card + 1, cy_card + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, label);
+    }
     fast_print(it, cx_card, cy_card, font, text_c, esphome::display::TextAlign::CENTER, label);
   }
+  return surf_bg;
 }
 
 template<typename DisplayT>
-inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
-                               esphome::Color bg_c, esphome::Color border_c, int r = 10) {
-  if (w <= 4 || h <= 4) return;
+inline esphome::Color render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
+                                         esphome::Color bg_c, esphome::Color border_c, int r = 10) {
+  if (w <= 4 || h <= 4) return bg_c;
   if (r > h / 2) r = h / 2;
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
@@ -1848,10 +1899,25 @@ inline void render_modern_card(DisplayT &it, int x0, int y0, int w, int h,
                        static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 7)))
       : bg_c;
 
+  if (backdrop_active() && is_lit_glass) {
+    const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+    const int alpha_q8 = bd.valid ? glass_alpha_for_text(bg_c, bd.bright, kChromeGlassSheen) : 168;
+    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
+    if (neutral_brd) {
+      fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, kGlassSheenTopQ8,
+                            kGlassSheenBotQ8, 1);
+    } else {
+      stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
+    }
+    fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_c, alpha_q8, alpha_q8);
+    return bd.valid ? mix_color_q8(bd.mean, bg_c, alpha_q8) : bg_c;
+  }
+
   // Anti-aliased rounded rectangle: a 1 px border lit from the top (brd_top -> brd_btm) around a
   // smooth, dithered sheen (bg_top -> bg_btm). Unlit cards are flat.
   stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
   fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_top, bg_btm);
+  return bg_c;
 }
 
 // Frosted-glass circular button with a top-lit rim
@@ -1876,8 +1942,24 @@ inline void render_glass_circle(DisplayT &it, int cx_btn, int cy_btn, int r,
       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.g) - 6)),
       static_cast<uint8_t>(std::max(0, static_cast<int>(bg_c.b) - 8)));
 
+  const int d = 2 * r + 1;
+  if (backdrop_active()) {
+    const GlassBackdrop bd = sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d);
+    const int alpha_q8 = bd.valid ? glass_alpha_for_text(bg_c, bd.bright, kChromeGlassSheen) : 168;
+    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
+    if (neutral_brd) {
+      fill_round_rect_glass(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
+                            kChromeGlassSheen, kGlassSheenTopQ8, kGlassSheenBotQ8, 1);
+    } else {
+      stroke_round_rect_aa(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f, brd_top, brd_btm, 1);
+    }
+    fill_round_rect_glass(it, cx_btn - r + 1, cy_btn - r + 1, d - 2, d - 2, static_cast<float>(r) - 0.5f,
+                          bg_c, alpha_q8, alpha_q8);
+    return;
+  }
+
   // Anti-aliased: a 1 px rim lit from the top (brd_top -> brd_btm) around a dithered sheen.
-  stroke_round_rect_aa(it, cx_btn - r, cy_btn - r, 2 * r + 1, 2 * r + 1, static_cast<float>(r) + 0.5f, brd_top, brd_btm, 1);
+  stroke_round_rect_aa(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f, brd_top, brd_btm, 1);
   fast_filled_circle_aa_grad(it, cx_btn, cy_btn, r - 1, bg_top, bg_btm);
 }
 
@@ -2066,9 +2148,11 @@ inline void render_vertical_page_pips(DisplayT &it, bool show_up, bool show_down
 #endif
   const int up_y = scale_y(162);
   const int dn_y = scale_y(278);
-  fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
-  if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, false);
-  if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, false);
+  if (!backdrop_active()) {
+    fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
+  }
+  if (show_up) render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, backdrop_active());
+  if (show_down) render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, backdrop_active());
 }
 
 // Back affordance (docs/device-ui-design.md, return paths): "< Back" returns to the parent, "Exit" ends a
@@ -2455,7 +2539,7 @@ struct ArtCanvasCache {
   int16_t row_len[SCREEN_H];
 };
 
-static constexpr int kArtCacheEntries = 2;
+static constexpr int kArtCacheEntries = 3;
 
 inline ArtCanvasCache *art_canvas_entries() {
   static ArtCanvasCache *entries = static_cast<ArtCanvasCache *>(
@@ -2553,6 +2637,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
   ArtCanvasCache *entries = art_canvas_entries();
   if (fb == nullptr || entries == nullptr) {
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+    backdrop_active() = true;
     return true;
   }
 
@@ -2582,6 +2667,7 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     }
     if (victim->px == nullptr) {
       draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+      backdrop_active() = true;
       return true;
     }
     // Compose into the cache by binding it as the framebuffer (same size, stride and encoding).
@@ -2604,7 +2690,20 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
     const size_t off = static_cast<size_t>(y) * SCREEN_W + hit->row_x0[y];
     std::memcpy(fb + off, hit->px + off, static_cast<size_t>(len) * sizeof(uint16_t));
   }
+  backdrop_active() = true;
   return true;
+}
+
+// Paints the active wallpaper as the full-screen frame base when available, falling back to a
+// solid frame_base(it, col_bg) when no wallpaper is configured or loaded.
+template<typename DisplayT, typename ImageT>
+inline bool render_page_wallpaper_base(DisplayT &it, ImageT *wallpaper_img, bool has_wallpaper,
+                                       int cx, esphome::Color col_bg, int dim_level = 0) {
+  if (has_wallpaper && render_album_art_canvas(it, wallpaper_img, cx, false, false, true, false, dim_level)) {
+    return true;
+  }
+  frame_base(it, col_bg);
+  return false;
 }
 
 // ------------------------------------------------------------------------------
@@ -3136,6 +3235,7 @@ inline FrameBaseState &frame_base_state() {
 inline void frame_base_begin() {
   frame_base_state().painted = false;
   frame_base_state().has_color = false;
+  backdrop_active() = false;
 }
 inline void frame_base_skip() { frame_base_state().painted = true; }
 

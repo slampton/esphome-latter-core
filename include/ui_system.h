@@ -567,7 +567,7 @@ inline void render_system_page(
       }
     }
 
-    if (menu_scroll_active) {
+    if (menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
@@ -625,7 +625,7 @@ inline void render_system_page(
       }
     }
 
-    if (menu_scroll_active) {
+    if (menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
@@ -674,7 +674,7 @@ inline void render_system_page(
       }
     }
 
-    if (menu_scroll_active) {
+    if (menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
@@ -770,6 +770,9 @@ inline void render_system_page(
 
   } else if (system_menu_mode == 8) {
     render_page_header(it, cx, "SYSTEM INFO", font_small, theme_primary);
+    if (backdrop_active()) {
+      render_modern_card(it, cx, scale_y(196), 312, 260, 16, card_bg_on, card_brd_on, nullptr, col_white, font_small);
+    }
     const int info_x = layout().sys_info_x();
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
       int ey = scale_y(y);

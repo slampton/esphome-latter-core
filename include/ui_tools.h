@@ -27,7 +27,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
   esphome::Color card_bg(22, 27, 36);
   esphome::Color card_border(48, 56, 70);
   const int card_w = (SCREEN_W < 380) ? 110 : 122;
-  render_modern_card(it, cx_card, cy_card, card_w, 86, 14, card_bg, card_border, nullptr, col_white, font_small);
+  const esphome::Color surf_bg = render_modern_card(
+      it, cx_card, cy_card, card_w, 86, 14, card_bg, card_border, nullptr, col_white, font_small);
 
   int ix = cx_card;
   int iy = cy_card - 13;
@@ -55,7 +56,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     // Twin filled bells at upper-left & upper-right (carved cleanly by outer bezel gap)
     fast_filled_circle(it, ix - 10, iy - 9, 4, col_white);
     fast_filled_circle(it, ix + 10, iy - 9, 4, col_white);
-    fast_filled_circle(it, ix, iy + 2, 14, card_bg);
+    fast_filled_circle(it, ix, iy + 2, 14, surf_bg);
     // 2px clock case ring
     fast_circle(it, ix, iy + 2, 12, col_white);
     fast_circle(it, ix, iy + 2, 11, col_white);
@@ -102,11 +103,11 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fast_filled_circle(it, x0 + d_r, y0 + s - 1 - d_r, d_r, col_white);
     fast_filled_circle(it, x0 + s - 1 - d_r, y0 + s - 1 - d_r, d_r, col_white);
     // 5 dark negative-space pips
-    fast_filled_circle(it, ix,     iy,     2, card_bg);
-    fast_filled_circle(it, ix - 7, iy - 7, 2, card_bg);
-    fast_filled_circle(it, ix + 7, iy - 7, 2, card_bg);
-    fast_filled_circle(it, ix - 7, iy + 7, 2, card_bg);
-    fast_filled_circle(it, ix + 7, iy + 7, 2, card_bg);
+    fast_filled_circle(it, ix,     iy,     2, surf_bg);
+    fast_filled_circle(it, ix - 7, iy - 7, 2, surf_bg);
+    fast_filled_circle(it, ix + 7, iy - 7, 2, surf_bg);
+    fast_filled_circle(it, ix - 7, iy + 7, 2, surf_bg);
+    fast_filled_circle(it, ix + 7, iy + 7, 2, surf_bg);
 
   } else if (app_id == 5) {
     // 5. Flashlight: Solid filled sculpted torch body & reflector head + 3 bold 2px light beams
@@ -117,7 +118,7 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fill_rect_row_major(it, ix - 5, iy + 1, 11, 14, col_white);
     fast_filled_circle(it, ix, iy + 14, 5, col_white);
     // Negative-space power button slot on handle
-    fill_rect_row_major(it, ix - 1, iy + 5, 3, 5, card_bg);
+    fill_rect_row_major(it, ix - 1, iy + 5, 3, 5, surf_bg);
     // 3 bold 2px-thick radiating light beams
     fast_line(it, ix,     iy - 10, ix,     iy - 16, col_white);
     fast_line(it, ix + 1, iy - 10, ix + 1, iy - 16, col_white);
@@ -167,8 +168,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     // Solid filled house emblem with negative-space center node/stem
     fast_filled_triangle(it, ix - 7, iy, ix + 7, iy, ix, iy - 7, col_white);
     fill_rect_row_major(it, ix - 5, iy, 11, 7, col_white);
-    fast_filled_circle(it, ix, iy + 1, 2, card_bg);
-    fast_line(it, ix, iy + 3, ix, iy + 6, card_bg);
+    fast_filled_circle(it, ix, iy + 1, 2, surf_bg);
+    fast_line(it, ix, iy + 3, ix, iy + 6, surf_bg);
   } else if (app_id == 9) {
     // 9. Calendar: 2px rounded page frame, solid header band, twin binder rings & 3x2 date pips
     fast_rect_outline(it, ix - 13, iy - 12, 27, 26, col_white);
@@ -195,12 +196,16 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     // 12. Camera (Doorbell / Security Peephole): Sculpted Camera Body, Top Prism & Dual-Ring Lens
     fill_rect_row_major(it, ix - 13, iy - 8, 26, 19, col_white);
     fill_rect_row_major(it, ix - 5, iy - 12, 10, 4, col_white);
-    fast_filled_circle(it, ix, iy + 1, 7, card_bg);
+    fast_filled_circle(it, ix, iy + 1, 7, surf_bg);
     fast_circle(it, ix, iy + 1, 5, theme_secondary);
     fast_filled_circle(it, ix, iy + 1, 2, col_white);
-    fast_filled_circle(it, ix + 9, iy - 5, 1, card_bg);
+    fast_filled_circle(it, ix + 9, iy - 5, 1, surf_bg);
   }
 
+  if (backdrop_active()) {
+    fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, font_small, kChromeShadow,
+               esphome::display::TextAlign::CENTER, label);
+  }
   fast_print(it, cx_card, cy_card + scale_y(22), font_small, col_white,
            esphome::display::TextAlign::CENTER, label);
 }
@@ -294,7 +299,7 @@ inline void render_tools_launcher(DisplayT &it, int cx, int tools_menu_page,
     draw_page_cards(tools_menu_page, 0);
   }
 
-  if (menu_scroll_active) {
+  if (menu_scroll_active && !backdrop_active()) {
     fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), col_bg);
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), col_bg);
   }
@@ -1696,6 +1701,10 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
 
   auto draw_calc_key = [&](int kx, int ky, const char *label,
                            esphome::Color bg_c, esphome::Color text_c, esphome::Color border_c) {
+    if (backdrop_active()) {
+      render_modern_card(it, kx, ky, (SCREEN_W < 380) ? 62 : 68, 42, 9, bg_c, border_c, label, text_c, font_btn_bold);
+      return;
+    }
     const int kw = scale_x((SCREEN_W < 380) ? 62 : 68);
     const int kh = scale_y(42);
     const int kr = scale_s(9);
@@ -2637,7 +2646,9 @@ inline void render_tool_camera(
                        "Reply", theme_secondary, font_small);
   }
 
-  fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+  if (has_frame) {
+    fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+  }
   render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back", col_white);
 }
 

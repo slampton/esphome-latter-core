@@ -252,9 +252,26 @@ display:
 
       float batt = id(batt_level).state;
 
-      // Home and Music paint their own base (Home's daytime sky, Music's full-screen art).
+      // Home and Music paint their own base; System, Weather (Current/Forecast), Area, Tools, and
+      // Whole-Home Hub paint the active wallpaper as their base when loaded (with translucent glass UI).
       if (id(gui_page) != 1 && id(gui_page) != 2) {
-        latter_ui::frame_base(it, id(col_bg));
+        const auto &ac_wall = latter_ui::area_ctx_state();
+        const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
+                                    ac_wall.wallpaper_url == id(current_loaded_wallpaper_url) &&
+                                    id(home_wallpaper_art)->get_width() > 0);
+        const bool tools_full_bleed =
+            (id(gui_page) == 8) &&
+            ((id(tools_subpage) == 5) ||
+             (id(tools_subpage) == 9 && latter_ui::cal_detail_mode() == 2 && id(camera_snapshot_art)->get_width() > 16) ||
+             (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open() && id(camera_snapshot_art)->get_width() > 16));
+        const bool use_page_wallpaper =
+            has_wallpaper && !tools_full_bleed &&
+            (id(gui_page) == 4 ||
+             (id(gui_page) == 5 && id(sky_weather_subpage) <= 1) ||
+             id(gui_page) == 6 ||
+             id(gui_page) == 8 ||
+             id(gui_page) == 9);
+        latter_ui::render_page_wallpaper_base(it, id(home_wallpaper_art), use_page_wallpaper, cx, id(col_bg));
       }
 
       // ==========================================

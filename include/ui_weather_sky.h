@@ -2022,6 +2022,9 @@ inline void render_weather_page(
     const Color col_deg_silver(204, 214, 228);
     const Color col_deg_aa(120, 132, 148);
 
+    if (backdrop_active()) {
+      fast_print(it, num_cx + 2, scale_y(120) + 2, font_time, kChromeShadow, TextAlign::CENTER, temp_num);
+    }
     fast_print(it, num_cx, scale_y(120), font_time, col_white, TextAlign::CENTER, temp_num);
 
     for (int dy = -9; dy <= 9; dy++) {
@@ -2036,6 +2039,9 @@ inline void render_weather_page(
     }
 
     std::string cond_title = fit_text_to_width_font(format_weather_title(cond), scale_x(340), font_date);
+    if (backdrop_active()) {
+      fast_print(it, cx + 1, scale_y(182) + 1, font_date, kChromeShadow, TextAlign::CENTER, cond_title.c_str());
+    }
     fast_print(it, cx, scale_y(182), font_date, theme_secondary, TextAlign::CENTER, cond_title.c_str());
 
     // high / low are forecast day 1 (ha-latter fills them from it); empty -> NAN -> unknown.
@@ -2044,6 +2050,11 @@ inline void render_weather_page(
 
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
     const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
+    const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
+    if (backdrop_active()) {
+      render_modern_card(it, cx, (hilo_y + tele_y) / 2, 328, (tele_y - hilo_y) + scale_y(54), 16,
+                         kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
+    }
     const Color icon_c(185, 225, 255);
 
     // 2px-stroke outline Up/Down arrow primitive matching Humidity & Wind icon weight
@@ -2103,8 +2114,6 @@ inline void render_weather_page(
         fast_print(it, lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
       }
     }
-
-    const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
 
     auto draw_droplet_outline = [&](int dx, int dy, Color c) {
       fast_line(it, dx,     dy - 11, dx - 7, dy + 1, c);
@@ -2240,6 +2249,11 @@ inline void render_weather_page(
       int ry = fc_top_y + i * fc_step_y;
       const auto &d = fc_days[i];
       int ry_data = ry + 1;
+
+      if (backdrop_active()) {
+        render_modern_card(it, cx, ry, row_hw * 2 + 12, fc_step_y - 5, 11,
+                           kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
+      }
 
       if (!d.cond.empty()) render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
