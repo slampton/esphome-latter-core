@@ -816,7 +816,7 @@ inline void render_system_page(
     if (!latter_ble_proxy().empty()) {
       area_str += " (" + latter_ble_proxy() + ")";
     }
-    area_str = fit_text_to_width_font(area_str, 220, font_small);
+    area_str = fit_text_to_width_font(area_str, scale_x(220), font_small);
     print_info_row(244, "Area:", area_str.c_str(), col_slate);
 
     if (std::isnan(batt) || std::isnan(batt_v)) {

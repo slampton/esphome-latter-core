@@ -1074,6 +1074,7 @@ template<typename DisplayT, typename TimeT, typename FontTimeT, typename FontDat
 inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                          bool alarm_ringing, int alarm_ringing_idx,
                                          int alarm1_recurrence, int alarm2_recurrence,
+                                         int alarm3_recurrence,
                                          const TimeT &now, bool is_24h_format,
                                          FontTimeT *font_time, FontDateT *font_date,
                                          FontSmallT *font_small, FontMicroT *font_micro,
@@ -1127,7 +1128,7 @@ inline void render_alert_ringing_overlay(DisplayT &it, int cx, int cy, uint32_t 
                esphome::display::TextAlign::LEFT, ampm_buf);
     }
 
-    int r_idx = (alarm_ringing_idx == 2) ? alarm2_recurrence : alarm1_recurrence;
+    int r_idx = (alarm_ringing_idx == 3) ? alarm3_recurrence : ((alarm_ringing_idx == 2) ? alarm2_recurrence : alarm1_recurrence);
     static constexpr const char *REC_NAMES[4] = {"Daily", "Weekdays", "Weekends", "Once"};
     fast_print(it, cx, scale_y(225), font_small, theme_primary,
              esphome::display::TextAlign::CENTER, REC_NAMES[r_idx & 3]);
@@ -2300,7 +2301,7 @@ inline void render_tool_calendar(
     render_vertical_page_pips(it, cal_page > 1, cal_page < cal_total_pages, col_bg, theme_secondary, col_slate);
   }
 
-  render_back_button(it, cx, font_small, layout().back_y, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back");
 }
 
 inline bool &intercom_live_call_mode() {

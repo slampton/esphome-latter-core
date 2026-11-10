@@ -309,6 +309,7 @@ script:
                     latter_ui::sync_multi_timer_globals(
                         id(timer_running), id(timer_paused), id(timer_remaining_sec),
                         id(timer_duration_sec), id(timer_target_ms));
+                    id(apply_power_policy).execute();
                   } else if (kind == 2) {
                     if (!id(stopwatch_running)) {
                       id(stopwatch_running) = true;
@@ -386,6 +387,8 @@ script:
                   latter_ui::tools_direct_home() = true;
                   id(gui_page) = 8;
                   id(tools_subpage) = 9;
+                  latter_ui::cal_detail_mode() = 0;
+                  latter_ui::cal_quick_add_open() = false;
                   id(cal_browse_page) = 1;
                   id(fetch_calendar_browse).execute();
                 }
@@ -662,7 +665,8 @@ script:
                 }
 
                 if (hud_enabled && id(music_hud_active)) {
-                  if (std::abs(touch.x - ly.cx) <= 75 && (touch.y < 150 || (touch.y > 274 && touch.y < 400))) {
+                  if (std::abs(touch.x - ly.cx) <= latter_ui::scale_x(75) &&
+                      (touch.y < latter_ui::scale_y(150) || (touch.y > latter_ui::scale_y(274) && touch.y < latter_ui::scale_y(400)))) {
                     if (millis() - id(music_hud_timer) >= latter_ui::TOUCH_GUARD_DISMISS) {
                       uint32_t now_dis = millis();
                       if (latter_ui::touch_router().allow_tap(now_dis, latter_ui::TOUCH_DEBOUNCE_DISMISS)) {
@@ -1354,7 +1358,7 @@ script:
               uint32_t now_rem = millis();
 
               if (id(remote_subpage) == 1) {
-                if (latter_ui::is_back_button(touch) || touch.y <= 72) {
+                if (latter_ui::is_back_button(touch) || touch.y <= latter_ui::scale_y(72)) {
                   if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_BUTTON)) {
                     id(remote_action_feedback) = "";
                     id(remote_subpage) = 0;
@@ -1367,7 +1371,7 @@ script:
                 int total_pages = std::max(1, (valid_count + 3) / 4);
                 if (total_pages > 1 && latter_ui::is_right_chevron_zone(touch)) {
                   if (latter_ui::touch_router().allow_tap(now_rem, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
-                    int delta = (touch.y < 220) ? -1 : 1;
+                    int delta = (touch.y < latter_ui::scale_y(220)) ? -1 : 1;
                     int next_pg = std::max(0, std::min(total_pages - 1, latter_ui::remote_control_page() + delta));
                     if (next_pg != latter_ui::remote_control_page()) {
                       latter_ui::remote_control_page() = next_pg;
@@ -1509,6 +1513,7 @@ script:
                           s.target_ms = now_tools + static_cast<uint32_t>(s.remaining_sec) * 1000U;
                         }
                         latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+                        id(apply_power_policy).execute();
                       } else {
                         view_idx = card_i + 1;
                       }
@@ -1540,6 +1545,7 @@ script:
                       s.target_ms = now_tools + static_cast<uint32_t>(s.remaining_sec) * 1000U;
                     }
                     latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+                    id(apply_power_policy).execute();
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   return;
@@ -1555,6 +1561,7 @@ script:
                       else if (st_col == 3) s.duration_sec = clamp(s.duration_sec + 300, 60, 3600);
                       s.remaining_sec = s.duration_sec;
                       latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+                      id(apply_power_policy).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                       return;
                     } else if (std::abs(touch.x - latter_ui::SCREEN_CX) <= latter_ui::scale_x(85)) {
@@ -1562,6 +1569,7 @@ script:
                       s.paused = false;
                       s.remaining_sec = s.duration_sec;
                       latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+                      id(apply_power_policy).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                       return;
                     }
@@ -1577,6 +1585,7 @@ script:
                       s.duration_sec = (s_idx + 1) * 300;
                       s.remaining_sec = s.duration_sec;
                       latter_ui::sync_multi_timer_globals(id(timer_running), id(timer_paused), id(timer_remaining_sec), id(timer_duration_sec), id(timer_target_ms));
+                      id(apply_power_policy).execute();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                   }
@@ -2036,6 +2045,7 @@ script:
               latter_ui::tools_direct_home() = false;
               latter_ui::timer_view_slot() = 0;
               id(alarm_edit_idx) = 0;
+              latter_ui::cal_detail_mode() = 0;
               latter_ui::cal_quick_add_open() = false;
               id(gui_page) = 1;
               id(home_subpage) = 0;
@@ -2310,7 +2320,8 @@ script:
             }
 
             // 7B. REMOTE CONTROL (PAGE 7, SUBPAGE 1) VERTICAL LIST SWIPE (UP TO 10 REMOTES)
-            if (id(gui_page) == 7 && id(remote_subpage) == 1 && gest.start_y > 140 && gest.start_y < 404) {
+            if (id(gui_page) == 7 && id(remote_subpage) == 1 &&
+                gest.start_y > latter_ui::scale_y(140) && gest.start_y < latter_ui::scale_y(404)) {
               if (std::abs(dy) >= latter_ui::layout().list_swipe() && std::abs(dy) > std::abs(dx)) {
                 int valid_slots_u[latter_ui::MAX_REMOTE_SLOTS] = {0};
                 int valid_cnt_u = latter_ui::collect_configured_remote_slots(valid_slots_u);
@@ -2417,6 +2428,7 @@ script:
                 latter_ui::tools_direct_home() = false;
                 latter_ui::timer_view_slot() = 0;
                 id(alarm_edit_idx) = 0;
+                latter_ui::cal_detail_mode() = 0;
                 latter_ui::cal_quick_add_open() = false;
                 id(gui_page) = 1;
                 id(home_subpage) = 0;
@@ -2982,7 +2994,7 @@ script:
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 } else if (id(area_subpage) == 0 && !is_card_slider_drag &&
-                           std::abs(tp.x - gest.start_x) >= 24 &&
+                           std::abs(tp.x - gest.start_x) >= latter_ui::layout().swipe_min() &&
                            std::abs(tp.x - gest.start_x) > std::abs(tp.y - gest.start_y)) {
                   int dx_rel = tp.x - gest.start_x;
                   std::string cats[8];

@@ -865,6 +865,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
         ((tools_subpage == ToolsSubpage::TIMERS && timer_view_slot() == 0) ||
          (tools_subpage == ToolsSubpage::ALARMS && alarm_edit_idx == 0) ||
          (tools_subpage == ToolsSubpage::STOPWATCH) ||
+         (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()) ||
          (tools_subpage == ToolsSubpage::CAMERAS && !cam_quick_reply_open()));
     if (!direct_root) return false;
   }

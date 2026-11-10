@@ -1583,11 +1583,11 @@ inline void render_game_bricks(DisplayT &it, int cx, int cy, uint32_t now_ms,
     if (b_el >= 3000U) {
       banner_ms = 0U;
     } else if (b_el < 1100U) {
-      fast_print(it, cx, 212, font_date, col_gold, esphome::display::TextAlign::CENTER, banner_text);
+      fast_print(it, cx, cy - scale_y(21), font_date, col_gold, esphome::display::TextAlign::CENTER, banner_text);
     } else {
       char rdy_buf[32];
       snprintf(rdy_buf, sizeof(rdy_buf), "GET READY! WAVE %d", wave_num);
-      fast_print(it, cx, 212, font_date, col_cyan, esphome::display::TextAlign::CENTER, rdy_buf);
+      fast_print(it, cx, cy - scale_y(21), font_date, col_cyan, esphome::display::TextAlign::CENTER, rdy_buf);
     }
   }
 
@@ -2166,24 +2166,24 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
     char p_msg[36];
     if (rem_cel > 1900U) {
       for (int c = 0; c < 16; c++) {
-        fast_filled_circle(it, static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), 3, confetti[c].col);
+        fast_filled_circle(it, static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), scale_min(3), confetti[c].col);
       }
       snprintf(p_msg, sizeof(p_msg), "LEVEL %d CLEAR!", level_num);
-      fast_print(it, cx, imy - 62, font_date, col_gold, esphome::display::TextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - scale_min(62), font_date, col_gold, esphome::display::TextAlign::CENTER, p_msg);
     } else {
       // Quiet centered anticipation beat before the new treats pop onto the plate!
       snprintf(p_msg, sizeof(p_msg), "GET READY! LEVEL %d", level_num + 1);
-      fast_print(it, cx, imy - 62, font_date, col_cyan, esphome::display::TextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - scale_min(62), font_date, col_cyan, esphome::display::TextAlign::CENTER, p_msg);
     }
   } else if (is_chomping) {
     static constexpr const char *CHOMP_WORDS[5] = {
         "NOM NOM!", "YUMMY!", "COOKIE!", "CHOMP!", "DELICIOUS!"};
-    int pop_y = (imy > 150) ? (imy - 52) : (imy + 52);
-    int pop_x = std::max(115, std::min(351, imx));
+    int pop_y = (imy > scale_y(150)) ? (imy - scale_min(52)) : (imy + scale_min(52));
+    int pop_x = std::max(scale_x(115), std::min(SCREEN_W - scale_x(115), imx));
     fast_print(it, pop_x, pop_y, font_date, col_gold, esphome::display::TextAlign::CENTER,
              CHOMP_WORDS[chomp_word_idx]);
-    fast_filled_circle(it, imx - 42, imy - 16, 3, col_gold);
-    fast_filled_circle(it, imx + 42, imy - 16, 3, col_cyan);
+    fast_filled_circle(it, imx - scale_min(42), imy - scale_min(16), scale_min(3), col_gold);
+    fast_filled_circle(it, imx + scale_min(42), imy - scale_min(16), scale_min(3), col_cyan);
   }
 }
 // ==============================================================================

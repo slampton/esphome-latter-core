@@ -159,14 +159,14 @@ inline void render_tv_remote_page(
     int cur_page = remote_control_page();
 
     if (is_fb) {
-      std::string fit_fb = fit_text_to_width_font(remote_action_feedback, 280, font_small);
-      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, fit_fb.c_str());
+      std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
+      render_page_header(it, cx, fit_fb.c_str(), font_small, theme_primary);
     } else if (total_pages > 1) {
       char hdr_buf[32];
       snprintf(hdr_buf, sizeof(hdr_buf), "CONTROL  %d/%d", cur_page + 1, total_pages);
-      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, hdr_buf);
+      render_page_header(it, cx, hdr_buf, font_small, theme_primary);
     } else {
-      fast_print(it, cx, 48, font_small, theme_primary, esphome::display::TextAlign::CENTER, "CONTROL");
+      render_page_header(it, cx, "CONTROL", font_small, theme_primary);
     }
 
     const esphome::Color card_bg(22, 27, 36);
