@@ -53,9 +53,14 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111001L
+#define LATTER_SDK_REV 2026111002L
 
 namespace latter_ui {
+
+inline bool &speaker_volume_boot_synced() {
+  static bool synced = false;
+  return synced;
+}
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
 #ifndef LATTER_SCREEN_W

@@ -170,6 +170,12 @@ media_player:
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
               }
             }
+            if (vol_changed && latter_ui::speaker_volume_boot_synced()) {
+              float pct = std::clamp(std::round(v * 100.0f), 10.0f, 100.0f);
+              if (std::isnan(id(speaker_volume).state) || std::fabs(id(speaker_volume).state - pct) >= 0.5f) {
+                id(speaker_volume).publish_state(pct);
+              }
+            }
             if (state_changed || vol_changed) {
               last_mp_state = cur_st;
               if (vol_valid) last_mp_vol = v;
@@ -1226,6 +1232,30 @@ script:
                         - script.execute: sync_wake_word_state
 
 number:
+  - platform: template
+    name: "Sound: Speaker Volume"
+    id: speaker_volume
+    optimistic: true
+    min_value: 10
+    max_value: 100
+    step: 5
+    initial_value: 60
+    restore_value: true
+    unit_of_measurement: "%"
+    mode: slider
+    icon: "mdi:volume-medium"
+    entity_category: config
+    on_value:
+      then:
+        - lambda: |-
+            if (std::isnan(x) || !latter_ui::speaker_volume_boot_synced()) return;
+            float target_v = std::clamp(x / 100.0f, 0.10f, 1.00f);
+            float cur_v = id(latter_media_player).volume;
+            if (std::isnan(cur_v) || std::fabs(cur_v - target_v) >= 0.005f) {
+              id(latter_media_player).volume = target_v;
+              id(latter_media_player).make_call().set_volume(target_v).perform();
+            }
+
   - platform: template
     name: "Sound: Volume Step Size"
     id: volume_step_size

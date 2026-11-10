@@ -1117,9 +1117,8 @@ script:
                 if (slot_idx >= 0 && slot_idx <= 3) {
                   if (slot_idx == 0) {
                     if (latter_ui::touch_router().allow_tap(now_sys, latter_ui::TOUCH_DEBOUNCE_RAPID)) {
-                      float new_vol = latter_ui::step_wrap_range(id(latter_media_player).volume, 0.10f, 0.10f, 0.90f);
-                      id(latter_media_player).volume = new_vol;
-                      id(latter_media_player).make_call().set_volume(new_vol).perform();
+                      float new_vol = latter_ui::step_wrap_range(id(latter_media_player).volume, 0.10f, 0.10f, 1.00f);
+                      id(speaker_volume).make_call().set_value(std::round(new_vol * 100.0f)).perform();
                       latter_ui::schedule_disp_update(&id(disp1));
                     }
                     return;

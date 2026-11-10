@@ -22,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111001L;
+            constexpr long LATTER_YAML_REV = 2026111002L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -39,6 +39,14 @@ esphome:
             latter_ui::parse_latter_remote_slots_summary(latter_ui::remote_state().slots_summary);
             id(active_remote_slot) = latter_ui::resolve_active_remote_slot(id(active_remote_slot));
         - media_player.pause: latter_media_player
+        - lambda: |-
+            float sv = id(speaker_volume).state;
+            if (!std::isnan(sv) && sv >= 10.0f && sv <= 100.0f) {
+              float target_v = std::clamp(sv / 100.0f, 0.10f, 1.00f);
+              id(latter_media_player).volume = target_v;
+              id(latter_media_player).make_call().set_volume(target_v).perform();
+            }
+            latter_ui::speaker_volume_boot_synced() = true;
         - lambda: 'latter_ui::release_art(id(remote_album_art));'
         - lambda: 'latter_ui::release_art(id(home_wallpaper_art));'
         - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
