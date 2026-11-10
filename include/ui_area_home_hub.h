@@ -260,18 +260,14 @@ inline void render_area_control_page(
         }
       } else if (cat == "switch") {
         // Switches & Outlets: Rounded Toggle Pill + Knob
-        const Color cut_c = backdrop_active()
-            ? mix_color_q8(sample_glass_backdrop(bx - 12, by - 12, 25, 25).mean, kChromeGlassTint, kGlassAlphaMinQ8)
-            : card_bg_off;
+        const Color cut_c = sample_glass_surface_color(bx - 12, by - 12, 25, 25);
         fast_filled_circle(it, bx - 5, by, 7, fg_c);
         fast_filled_circle(it, bx + 5, by, 7, fg_c);
         fill_rect_row_major(it, bx - 5, by - 7, 10, 15, fg_c);
         fast_filled_circle(it, bx + 5, by, 4, cut_c);
       } else if (cat == "climate") {
         // Area Climate: Sculpted 2px-Walled Thermometer + Mercury Bulb & 3 Graduated Scale Ticks
-        const Color cut_c = backdrop_active()
-            ? mix_color_q8(sample_glass_backdrop(bx - 12, by - 12, 25, 25).mean, kChromeGlassTint, kGlassAlphaMinQ8)
-            : card_bg_off;
+        const Color cut_c = sample_glass_surface_color(bx - 12, by - 12, 25, 25);
         int tx = bx - 2;
         fast_line(it, tx - 3, by - 11, tx + 3, by - 11, fg_c);
         fast_line(it, tx - 2, by - 12, tx + 2, by - 12, fg_c);
@@ -380,12 +376,8 @@ inline void render_area_control_page(
       int b_max_w = layout().light_bri_bar_w();
       int b_fill_w = (b_max_w * b_clamped) / 100;
       if (b_fill_w > 6) {
-        if (backdrop_active()) {
-          fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56),
-                                static_cast<float>(scale_s(12)), Color(92, 68, 22), 152, 132);
-        } else {
-          fill_rect_row_major(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56), Color(92, 68, 22));
-        }
+        fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56),
+                              static_cast<float>(scale_s(12)), Color(92, 68, 22), 152, 132);
       }
       char b_buf[48];
       snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
@@ -630,11 +622,7 @@ inline void render_area_control_page(
       int fill_w = (r_slider_w * clamped_lvl) / 100;
       if (fill_w > 4) {
         int fh = r_card_h - 6;
-        if (backdrop_active()) {
-          fill_round_rect_glass(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, 0.0f, fill_c, 152, 132);
-        } else {
-          fill_rect_row_major(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, fill_c);
-        }
+        fill_round_rect_glass(it, r_div_x + 1, y_mid - fh / 2, fill_w, fh, 0.0f, fill_c, 152, 132);
         fast_vline(it, r_div_x + fill_w, y_mid - fh / 2 + 1, fh - 2, scale_color(col_white, 0.35f));
       }
     }
@@ -779,13 +767,11 @@ inline void render_whole_home_page(
     const int plus_x  = cx + scale_x(115);
     const int btn_r   = scale_s(24);
     const int gl_s    = scale_s(8);
-    fast_filled_circle(it, minus_x, hero_y, btn_r, Color(30, 38, 52));
-    fast_circle(it, minus_x, hero_y, btn_r, card_brd_off);
+    render_glass_circle(it, minus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
     fast_hline(it, minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
 
-    fast_filled_circle(it, plus_x, hero_y, btn_r, Color(30, 38, 52));
-    fast_circle(it, plus_x, hero_y, btn_r, card_brd_off);
+    render_glass_circle(it, plus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
     fast_hline(it, plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
     fast_vline(it, plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
@@ -868,9 +854,7 @@ inline void render_whole_home_page(
     int bx = WH_XS[i];
     bool is_act = (i == tab);
     Color fg_c   = is_act ? theme_primary : col_white;
-    const Color cut_c = backdrop_active()
-        ? mix_color_q8(sample_glass_backdrop(bx - 14, WH_Y - 14, 29, 29).mean, kChromeGlassTint, kGlassAlphaMinQ8)
-        : card_bg_off;
+    const Color cut_c = sample_glass_surface_color(bx - 14, WH_Y - 14, 29, 29);
 
     if (i == 0) {
       // 0. Security Alarm: Pitched-Crest Shield with Negative-Space Overhanging-Roof House & Doorway

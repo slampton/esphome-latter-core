@@ -2829,13 +2829,11 @@ inline void render_games_launcher(
   int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
   render_dock_page_pips(it, cx, pips_y, 6, active_pip, col_white, kChromePipInactive);
 
-  render_pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22), theme_primary, col_dark_gray, "PLAY", col_white, font_btn_bold);
+  render_pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22), theme_primary, kChromeGlassTint, "PLAY", col_white, font_btn_bold);
 
   const int spk_x = cx - scale_x(91), spk_y = btn_row_y;
   const int spk_r = scale_s(22);
-  fast_filled_circle(it, spk_x, spk_y, spk_r, col_dark_gray);
-  fast_circle(it, spk_x, spk_y, spk_r, game_sound_on ? theme_secondary : col_slate);
-  fast_circle(it, spk_x, spk_y, spk_r - 1, game_sound_on ? theme_secondary : col_slate);
+  render_glass_circle(it, spk_x, spk_y, spk_r, kChromeGlassTint, game_sound_on ? theme_secondary : kChromeCardBorder);
   Color spk_c = game_sound_on ? col_white : col_slate;
   // Speaker body & cone
   fill_rect_row_major(it, spk_x - 9, spk_y - 4, 5, 9, spk_c);

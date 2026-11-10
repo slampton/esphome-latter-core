@@ -504,7 +504,7 @@ inline void draw_home_activity_row_contents(
     bool has_dropdown_ext, bool is_list_row, FontSmallT *font_small,
     esphome::Color card_bg, esphome::Color btn_bg,
     esphome::Color theme_secondary, esphome::Color col_white,
-    float alpha = 1.0f, bool glass = false) {
+    float alpha = 1.0f) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -561,7 +561,6 @@ inline void draw_home_activity_row_contents(
     } else {
       fast_filled_circle(it, gx - 6, gy - 6, 2, fg_w);
       fast_filled_circle(it, gx + 6, gy - 6, 2, fg_w);
-      if (!glass) fast_filled_circle(it, gx, gy + 1, 9, card_bg);  // knock-out (opaque cards only)
       fast_circle(it, gx, gy + 1, 8, fg_w);
       fast_line(it, gx - 5, gy + 8, gx - 7, gy + 10, fg_w);
       fast_line(it, gx + 5, gy + 8, gx + 7, gy + 10, fg_w);
@@ -615,7 +614,6 @@ inline void draw_home_activity_row_contents(
     } else {
       fast_filled_circle(it, gx - 8, gy - 7, 3, fg_w);
       fast_filled_circle(it, gx + 8, gy - 7, 3, fg_w);
-      if (!glass) fast_filled_circle(it, gx, gy + 2, 12, card_bg);  // knock-out (opaque cards only)
       fast_circle(it, gx, gy + 2, 10, fg_w);
       fast_circle(it, gx, gy + 2, 9,  fg_w);
       fast_line(it, gx - 6, gy + 10, gx - 9, gy + 13, fg_w);
@@ -671,12 +669,12 @@ inline void render_home_activity_card_row(
   const int div2_x     = card_right - scale_x(52);
   const int drop_bx    = card_right - scale_x(26);
 
-  render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
-                     nullptr, col_white, font_small);
+  const esphome::Color surf_bg = render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
+                                                    nullptr, col_white, font_small);
 
   draw_home_activity_row_contents(
       it, pill_y, cur_act, has_dropdown_ext, is_list_row, font_small,
-      card_bg, btn_bg, theme_secondary, col_white, 1.0f);
+      surf_bg, btn_bg, theme_secondary, col_white, 1.0f);
 
   fast_line(it, div1_x, pill_y - div_h, div1_x, pill_y + div_h, card_brd);
 
@@ -1182,13 +1180,16 @@ inline void render_home_page(
         : 256;
     render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a);
     // What the text sits on, on average: the fades and button rims blend toward it.
-    const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
+    Color eff_card_tint;
+    int card_a_top = 0, card_a_bot = 0, card_rim_top = 0, card_rim_bot = 0;
+    resolve_glass_fill(backdrop, tint, col_white, eff_card_tint, card_a_top, card_a_bot, card_rim_top, card_rim_bot, glass_a);
+    const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, eff_card_tint, (card_a_top + card_a_bot) / 2) : eff_card_tint;
 
     const int rise = scale_y(16);
     auto draw_row = [&](int item, int y, float alpha) {
       if (item < 0 || item >= act_count || alpha <= 0.05f) return;
       draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, font_small,
-                                      card_bg, btn_bg, theme_secondary, col_white, std::min(1.0f, alpha), true);
+                                      card_bg, btn_bg, theme_secondary, col_white, std::min(1.0f, alpha));
     };
     // One line changing in place: the old item rises and fades out while the new one rises in from below.
     auto change_in_place = [&](int from, int to, int y) {
@@ -1520,8 +1521,6 @@ inline void render_home_page(
       }
     };
 
-    const Color dock_ring_c = is_dim_backdrop ? Color(18, 22, 28) : Color(95, 118, 148);
-    const Color dock_fg_c   = is_dim_backdrop ? Color(34, 38, 44) : col_white;
     const float anim_start  = home_dock_anim().step_window(start_idx, now_ms);
     const int stride        = get_dock_slot_stride(win_xs, vis_count);
     const int left_cx       = win_xs[0];
@@ -1540,31 +1539,26 @@ inline void render_home_page(
         alpha = std::max(0.15f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.15f);
       }
 
-      Color slot_ring_c(static_cast<uint8_t>(dock_ring_c.r * alpha),
-                        static_cast<uint8_t>(dock_ring_c.g * alpha),
-                        static_cast<uint8_t>(dock_ring_c.b * alpha));
-      Color slot_fg_c(static_cast<uint8_t>(dock_fg_c.r * alpha),
-                      static_cast<uint8_t>(dock_fg_c.g * alpha),
-                      static_cast<uint8_t>(dock_fg_c.b * alpha));
+      Color slot_fg_c(static_cast<uint8_t>(col_white.r * alpha),
+                      static_cast<uint8_t>(col_white.g * alpha),
+                      static_cast<uint8_t>(col_white.b * alpha));
       int app_id = dock_apps[g_idx];
-      Color slot_cut_c = col_black;
-      if (!is_dim_backdrop) {
-        const int d = 2 * dock_r + 1;
-        const GlassBackdrop bd = sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d);
-        const int base_a = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : kGlassAlphaMinQ8;
-        const int glass_a = static_cast<int>(std::roundf(static_cast<float>(base_a) * alpha));
-        const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(kGlassSheenTopQ8) * alpha));
-        const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(kGlassSheenBotQ8) * alpha));
-        fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f,
-                              kChromeGlassSheen, sheen_top, sheen_bot, 1);
-        fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f,
-                              kChromeGlassTint, glass_a, glass_a);
-        slot_cut_c = bd.valid ? mix_color_q8(bd.mean, kChromeGlassTint, glass_a) : kChromeGlassTint;
-        if (alpha > 0.55f) {
-          draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true, col_black);
-        }
-      } else {
-        fast_circle_aa(it, bx, dock_y, static_cast<float>(dock_r), slot_ring_c);
+      const int d = 2 * dock_r + 1;
+      const GlassBackdrop bd = sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d);
+      Color eff_tint;
+      int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+      resolve_glass_fill(bd, kChromeGlassTint, kChromeGlassSheen, eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
+      const int a_top     = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
+      const int a_bot     = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
+      const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(raw_rim_top) * alpha));
+      const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(raw_rim_bot) * alpha));
+      fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f,
+                            kChromeGlassSheen, sheen_top, sheen_bot, 1);
+      fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f,
+                            eff_tint, a_top, a_bot);
+      const Color slot_cut_c = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
+      if (alpha > 0.55f) {
+        draw_dock_glyph(app_id, bx + 1, dock_y + 1, col_black, true, col_black);
       }
       draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false, slot_cut_c);
     }

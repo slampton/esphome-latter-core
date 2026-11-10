@@ -202,10 +202,8 @@ inline void render_tool_launcher_card(DisplayT &it, int cx_card, int cy_card,
     fast_filled_circle(it, ix + 9, iy - 5, 1, surf_bg);
   }
 
-  if (backdrop_active()) {
-    fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, font_small, kChromeShadow,
-               esphome::display::TextAlign::CENTER, label);
-  }
+  fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, font_small, kChromeShadow,
+             esphome::display::TextAlign::CENTER, label);
   fast_print(it, cx_card, cy_card + scale_y(22), font_small, col_white,
            esphome::display::TextAlign::CENTER, label);
 }
@@ -431,16 +429,13 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   const int btn_rst_x = cx + 57;
   const int btn_r = 36;
 
-  fast_filled_circle(it, btn_lap_x, btn_y, btn_r - 2, col_dark_gray);
-  fast_circle(it, btn_lap_x, btn_y, btn_r, theme_secondary);
-  fast_circle(it, btn_lap_x, btn_y, btn_r - 1, col_slate);
-  fast_circle(it, btn_lap_x, btn_y, btn_r - 4, (stopwatch_lap_ms > 0) ? col_red : col_slate);
-  fast_print(it, btn_lap_x, btn_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "LAP");
+  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeGlassTint,
+                      (stopwatch_lap_ms > 0) ? col_red : theme_secondary);
+  fast_print(it, btn_lap_x + 1, btn_y + 1, font_small, kChromeShadow, esphome::display::TextAlign::CENTER, "LAP");
+  fast_print(it, btn_lap_x, btn_y, font_small, col_white, esphome::display::TextAlign::CENTER, "LAP");
 
-  fast_filled_circle(it, btn_rst_x, btn_y, btn_r - 2, col_dark_gray);
-  fast_circle(it, btn_rst_x, btn_y, btn_r, theme_secondary);
-  fast_circle(it, btn_rst_x, btn_y, btn_r - 1, col_slate);
-  fast_circle(it, btn_rst_x, btn_y, btn_r - 4, col_slate);
+  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeGlassTint, kChromeCardBorder);
+  fast_print(it, btn_rst_x + 1, btn_y + 1, font_small, kChromeShadow, esphome::display::TextAlign::CENTER, "RESET");
   fast_print(it, btn_rst_x, btn_y, font_small, theme_secondary, esphome::display::TextAlign::CENTER, "RESET");
 
   // Split-Second (Rattrapante) Ghost Hand via fast_sincos
@@ -1476,13 +1471,12 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
 
       // Subtle vertical separator at t_div_x
       fast_line(it, t_div_x, y_mid - 22, t_div_x, y_mid + 22, esphome::Color(42, 50, 64));
-      fast_filled_circle(it, bx, y_mid, 18, is_act ? theme_primary : esphome::Color(30, 36, 48));
-      fast_circle(it, bx, y_mid, 18, is_act ? col_white : theme_secondary);
+      render_glass_circle(it, bx, y_mid, 18, kChromeGlassTint, is_act ? theme_primary : theme_secondary);
       if (s.running) {
-        fill_rect_row_major(it, bx - 5, y_mid - 6, 3, 13, col_black);
-        fill_rect_row_major(it, bx + 2, y_mid - 6, 3, 13, col_black);
+        fill_rect_row_major(it, bx - 5, y_mid - 6, 3, 13, col_white);
+        fill_rect_row_major(it, bx + 2, y_mid - 6, 3, 13, col_white);
       } else {
-        esphome::Color tri_c = s.paused ? col_black : theme_primary;
+        esphome::Color tri_c = s.paused ? col_white : theme_primary;
         fast_filled_triangle(it, bx - 4, y_mid - 7, bx - 4, y_mid + 7, bx + 7, y_mid, tri_c);
       }
     }
@@ -1701,28 +1695,7 @@ inline void render_tool_calculator(DisplayT &it, int cx, const std::string &calc
 
   auto draw_calc_key = [&](int kx, int ky, const char *label,
                            esphome::Color bg_c, esphome::Color text_c, esphome::Color border_c) {
-    if (backdrop_active()) {
-      render_modern_card(it, kx, ky, (SCREEN_W < 380) ? 62 : 68, 42, 9, bg_c, border_c, label, text_c, font_btn_bold);
-      return;
-    }
-    const int kw = scale_x((SCREEN_W < 380) ? 62 : 68);
-    const int kh = scale_y(42);
-    const int kr = scale_s(9);
-    int x0 = kx - kw / 2;
-    int y0 = ky - kh / 2;
-    fill_rect_row_major(it, x0 + kr, y0, kw - 2 * kr, kh, bg_c);
-    fill_rect_row_major(it, x0, y0 + kr, kw, kh - 2 * kr, bg_c);
-    fast_filled_circle(it, x0 + kr, y0 + kr, kr, bg_c);
-    fast_filled_circle(it, x0 + kw - kr, y0 + kr, kr, bg_c);
-    fast_filled_circle(it, x0 + kr, y0 + kh - kr, kr, bg_c);
-    fast_filled_circle(it, x0 + kw - kr, y0 + kh - kr, kr, bg_c);
-
-    fast_line(it, x0 + kr, y0, x0 + kw - kr, y0, border_c);
-    fast_line(it, x0 + kr, y0 + kh - 1, x0 + kw - kr, y0 + kh - 1, border_c);
-    fast_line(it, x0, y0 + kr, x0, y0 + kh - kr, border_c);
-    fast_line(it, x0 + kw - 1, y0 + kr, x0 + kw - 1, y0 + kh - kr, border_c);
-
-    fast_print(it, kx, ky, font_btn_bold, text_c, esphome::display::TextAlign::CENTER, label);
+    render_modern_card(it, kx, ky, (SCREEN_W < 380) ? 62 : 68, 42, 9, bg_c, border_c, label, text_c, font_btn_bold);
   };
 
   for (int r = 0; r < 5; r++) {
@@ -2150,38 +2123,31 @@ inline void render_tool_calendar(
 
       // 1. Top Address & Zoom Header Pill (Tap to Re-Center on Event Pin)
       const int map_hdr_w = std::min(scale_x(278), SCREEN_W - 24);
-      const int map_hdr_h = scale_y(34);
-      const int map_hdr_y = scale_y(24);
-      fill_rect_row_major(it, cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, Color(10, 14, 20));
-      fast_rect_outline(it, cx - map_hdr_w / 2, map_hdr_y, map_hdr_w, map_hdr_h, theme_primary);
       char z_prefix[16];
       snprintf(z_prefix, sizeof(z_prefix), "z%d • ", cal_map_zoom());
       std::string loc_hdr = fit_text_to_width_font(std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, font_small);
-      fast_print(it, cx, scale_y(41), font_small, col_white, TextAlign::CENTER, loc_hdr.c_str());
+      render_modern_card(it, cx, scale_y(41), map_hdr_w, 34, 10, kChromeGlassTint, theme_primary,
+                         loc_hdr.c_str(), col_white, font_small);
 
       // 2. Left/Right Floating Zoom Buttons (single-source layout().map_zoom_*)
       const int z_by = layout().map_zoom_y;
       const int z_lx = layout().map_zoom_left_x();
       const int z_rx = layout().map_zoom_right_x();
       const int z_r  = scale_s(21);
-      Color btn_bg(12, 16, 24);
-      Color btn_ring = (cal_map_zoom() > 10) ? theme_primary : col_slate;
-      fast_filled_circle(it, z_lx, z_by, z_r, btn_bg);
-      fast_circle(it, z_lx, z_by, z_r, btn_ring);
-      fast_circle(it, z_lx, z_by, z_r - 1, btn_ring);
+      Color btn_ring = (cal_map_zoom() > 10) ? theme_primary : kChromeCardBorder;
+      render_glass_circle(it, z_lx, z_by, z_r, kChromeGlassTint, btn_ring);
       fill_rect_row_major(it, z_lx - 8, z_by - 1, 17, 3, (cal_map_zoom() > 10) ? col_white : col_slate);
 
       // 3. Right Floating Zoom-In (+) Button
-      Color btn_ring_in = (cal_map_zoom() < 18) ? theme_primary : col_slate;
+      Color btn_ring_in = (cal_map_zoom() < 18) ? theme_primary : kChromeCardBorder;
       Color fg_in = (cal_map_zoom() < 18) ? col_white : col_slate;
-      fast_filled_circle(it, z_rx, z_by, z_r, btn_bg);
-      fast_circle(it, z_rx, z_by, z_r, btn_ring_in);
-      fast_circle(it, z_rx, z_by, z_r - 1, btn_ring_in);
+      render_glass_circle(it, z_rx, z_by, z_r, kChromeGlassTint, btn_ring_in);
       fill_rect_row_major(it, z_rx - 8, z_by - 1, 17, 3, fg_in);
       fill_rect_row_major(it, z_rx - 1, z_by - 8, 3, 17, fg_in);
 
-      // 4. Bottom Translucent Back Scrim (aligned with layout().back_y)
-      fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+      // 4. Bottom Translucent Glass Back Pill (aligned with layout().back_y)
+      render_glass_card(it, cx - scale_x(64), layout().back_y - scale_y(16), scale_x(128), scale_y(32),
+                        scale_s(16), kChromeGlassTint, 176);
     } else {
       render_page_header(it, cx, "EVENT MAP", font_small, theme_primary);
       render_empty_state(it, cx, scale_y(222), "Loading OpenStreetMap...", font_small, theme_secondary);
@@ -2646,8 +2612,9 @@ inline void render_tool_camera(
                        "Reply", theme_secondary, font_small);
   }
 
-  if (has_frame) {
-    fill_rect_row_major(it, cx - scale_x(85), layout().back_y - scale_y(20), scale_x(170), scale_y(38), Color(10, 14, 20));
+  if (has_frame && !tools_direct_home()) {
+    render_glass_card(it, cx - scale_x(64), layout().back_y - scale_y(16), scale_x(128), scale_y(32),
+                      scale_s(16), kChromeGlassTint, 176);
   }
   render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back", col_white);
 }

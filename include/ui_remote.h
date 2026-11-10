@@ -206,8 +206,7 @@ inline void render_tv_remote_page(
         const int p_cx = cx + scale_x(120);
         const int p_r  = scale_s(18);
         const bool is_dev_on = remote_slot_states_on()[s_idx];
-        fast_filled_circle(it, p_cx, y_mid, p_r, card_bg);
-        fast_circle(it, p_cx, y_mid, p_r, is_dev_on ? theme_secondary : col_red);
+        render_glass_circle(it, p_cx, y_mid, p_r, kChromeGlassTint, is_dev_on ? theme_secondary : col_red);
         for (int i = 6; i < 54; i += 2) {
           int x1 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i]);
           int y1 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i]);
@@ -248,31 +247,27 @@ inline void render_tv_remote_page(
   const int f_r      = scale_s(19);
 
   // 1. HOME: Top-Left
-  fast_filled_circle(it, left_fx, top_fy, f_r, col_dark_gray);
-  fast_circle(it, left_fx, top_fy, f_r, col_gray);
+  const esphome::Color home_surf = render_glass_circle(it, left_fx, top_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fast_filled_triangle(it, left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
   fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
-  fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), col_dark_gray);
+  fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), home_surf);
 
   // 2. VOL UP: Top-Right
   const int pls = scale_s(7);
   const int pth = scale_s(3);
-  fast_filled_circle(it, right_fx, top_fy, f_r, col_dark_gray);
-  fast_circle(it, right_fx, top_fy, f_r, col_gray);
+  render_glass_circle(it, right_fx, top_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fill_rect_row_major(it, right_fx - pls, top_fy - pth / 2, pls * 2 + 1, pth, col_white);
   fill_rect_row_major(it, right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
 
   // 3. BACK: Bottom-Left
-  fast_filled_circle(it, left_fx, btm_fy, f_r, col_dark_gray);
-  fast_circle(it, left_fx, btm_fy, f_r, col_gray);
+  render_glass_circle(it, left_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fast_line(it, left_fx + scale_s(3), btm_fy - scale_s(7), left_fx - scale_s(4), btm_fy, col_white);
   fast_line(it, left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
   fast_line(it, left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
   fast_line(it, left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
 
   // 4. VOL DOWN: Bottom-Right
-  fast_filled_circle(it, right_fx, btm_fy, f_r, col_dark_gray);
-  fast_circle(it, right_fx, btm_fy, f_r, col_gray);
+  render_glass_circle(it, right_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fill_rect_row_major(it, right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
 
   // Adaptive Concentric D-Pad
@@ -295,8 +290,8 @@ inline void render_tv_remote_page(
   fast_filled_triangle(it, cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
   fast_filled_triangle(it, cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
 
-  fast_filled_circle(it, cx, dpad_cy, ok_r, col_dark_gray);
-  fast_circle(it, cx, dpad_cy, ok_r, theme_primary);
+  render_glass_circle(it, cx, dpad_cy, ok_r, kChromeGlassTint, theme_primary);
+  fast_print(it, cx + 1, dpad_cy + 1, font_date, kChromeShadow, esphome::display::TextAlign::CENTER, "OK");
   fast_print(it, cx, dpad_cy, font_date, col_white, esphome::display::TextAlign::CENTER, "OK");
 }
 

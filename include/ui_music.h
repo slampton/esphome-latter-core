@@ -122,11 +122,9 @@ inline void render_music_now_playing(
 
   if (show_controls || music_hud_active) {
     int hdr_y = scale_y(50);
-    if (rendered_art) {
-      int pill_w = std::min(scale_x(268), std::max(scale_x(136), static_cast<int>(spk_title.size()) * scale_x(11) + scale_x(34)));
-      render_modern_card(it, cx - pill_w / 2, hdr_y - scale_y(15), pill_w, scale_y(30), glass_bg,
-                         is_feedback ? theme_primary : glass_brd, scale_s(15));
-    }
+    int pill_w = std::min(scale_x(268), std::max(scale_x(136), static_cast<int>(spk_title.size()) * scale_x(11) + scale_x(34)));
+    render_modern_card(it, cx - pill_w / 2, hdr_y - scale_y(15), pill_w, scale_y(30), glass_bg,
+                       is_feedback ? theme_primary : glass_brd, scale_s(15));
     fast_print(it, cx + 1, hdr_y + 1, font_small, col_black, esphome::display::TextAlign::CENTER, spk_title.c_str());
     fast_print(it, cx, hdr_y, font_small, is_feedback ? theme_secondary : col_white, esphome::display::TextAlign::CENTER, spk_title.c_str());
   }

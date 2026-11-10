@@ -916,13 +916,19 @@ inline void render_offline_pill(DisplayT &it, int cx, uint32_t now_ms, FontT *fo
   const int y0 = 0;
   const bool round_top = false;
 #endif
-  // Anti-aliased card with a 1 px border; the tab's top corners lie above the screen edge.
+  // Translucent frosted-glass pill/tab; on rectangular panels the top corners lie above the screen edge.
   const float rad = 0.5f * static_cast<float>(pill_h);
   const int sy0 = round_top ? y0 : (y0 - r);
   const int sh = round_top ? pill_h : (pill_h + r);
-  stroke_round_rect_aa(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, kChromeBarBorder, kChromeBarBorder, 1);
-  fill_round_rect_aa(it, x0, sy0, pill_w, sh, rad, kChromeBarTrack);
+  const GlassBackdrop bd = sample_glass_backdrop(x0 - 1, std::max(0, sy0 - 1), pill_w + 2, pill_h + 2);
+  const int min_gold_a = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, text_c) : 184;
+  esphome::Color eff_tint;
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_glass_fill(bd, kChromeGlassTint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, min_gold_a);
+  fill_round_rect_glass(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, kChromeGlassSheen, rim_top, rim_bot, 1);
+  fill_round_rect_glass(it, x0, sy0, pill_w, sh, rad, eff_tint, a_top, a_bot);
   const int text_top = y0 + pad_y - (base - glyph_h);
+  fast_print(it, cx + 1, text_top + 1, font, kChromeShadow, esphome::display::TextAlign::TOP_CENTER, kLabel);
   fast_print(it, cx, text_top, font, text_c, esphome::display::TextAlign::TOP_CENTER, kLabel);
 }
 
@@ -1538,23 +1544,16 @@ inline void render_in_app_mode_bar_track(
   const int right_cx = win_xs[vis_count - 1];
   const int stride   = get_dock_slot_stride(win_xs, vis_count);
   const Color track_bg = kChromeBarTrack;
-  const Color track_brd = kChromeBarBorder;
-  const Color cap_bg = kChromeBarTrack;
 
-  // 1. Anti-aliased stadium track from left_cx to right_cx with a 1 px border (or translucent glass over a backdrop). No slot separators.
+  // 1. Translucent frosted-glass stadium track from left_cx to right_cx (D-029, D-030). No slot separators.
   const int tx0 = left_cx - r_track;
   const int tw = (right_cx - left_cx) + 2 * r_track + 1;
   const int th = 2 * r_track + 1;
-  if (backdrop_active()) {
-    const GlassBackdrop bd = sample_glass_backdrop(tx0, by - r_track, tw, th);
-    const int track_alpha = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : 168;
-    render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha);
-  } else {
-    stroke_round_rect_aa(it, tx0, by - r_track, tw, th, static_cast<float>(r_track) + 0.5f, track_brd, track_brd, 1);
-    fill_round_rect_aa(it, tx0 + 1, by - r_track + 1, tw - 2, th - 2, static_cast<float>(r_track) - 0.5f, track_bg);
-  }
+  const GlassBackdrop bd = sample_glass_backdrop(tx0, by - r_track, tw, th);
+  const int track_alpha = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : 168;
+  render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha);
 
-  // 2. Smoothly gliding active-slot capsule: an anti-aliased 2 px ring on the track color.
+  // 2. Smoothly gliding active-slot glass capsule: an anti-aliased 2 px ring with a tinted glass interior.
   const float rel_active = anim_active - anim_start;
   if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
     int abx = left_cx + static_cast<int>(std::roundf(rel_active * static_cast<float>(stride)));
@@ -1569,12 +1568,8 @@ inline void render_in_app_mode_bar_track(
                      static_cast<uint8_t>(track_bg.g + (theme_primary.g - track_bg.g) * ring_alpha),
                      static_cast<uint8_t>(track_bg.b + (theme_primary.b - track_bg.b) * ring_alpha));
       stroke_round_rect_aa(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1, static_cast<float>(dr) + 0.5f, ring_col, ring_col, 2);
-      if (backdrop_active()) {
-        fill_round_rect_glass(it, abx - dr + 2, by - dr + 2, 2 * dr - 3, 2 * dr - 3,
-                              static_cast<float>(dr) - 1.5f, theme_primary, 48, 28);
-      } else {
-        fast_filled_circle_aa(it, abx, by, dr - 2, cap_bg);
-      }
+      fill_round_rect_glass(it, abx - dr + 2, by - dr + 2, 2 * dr - 3, 2 * dr - 3,
+                            static_cast<float>(dr) - 1.5f, theme_primary, 48, 28);
     }
   }
 

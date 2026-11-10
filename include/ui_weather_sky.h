@@ -2051,10 +2051,8 @@ inline void render_weather_page(
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
     const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
     const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
-    if (backdrop_active()) {
-      render_modern_card(it, cx, (hilo_y + tele_y) / 2, 328, (tele_y - hilo_y) + scale_y(54), 16,
-                         kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
-    }
+    render_modern_card(it, cx, (hilo_y + tele_y) / 2, 328, (tele_y - hilo_y) + scale_y(54), 16,
+                       kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
     const Color icon_c(185, 225, 255);
 
     // 2px-stroke outline Up/Down arrow primitive matching Humidity & Wind icon weight
@@ -2250,10 +2248,8 @@ inline void render_weather_page(
       const auto &d = fc_days[i];
       int ry_data = ry + 1;
 
-      if (backdrop_active()) {
-        render_modern_card(it, cx, ry, row_hw * 2 + 12, fc_step_y - 5, 11,
-                           kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
-      }
+      render_modern_card(it, cx, ry, row_hw * 2 + 12, fc_step_y - 5, 11,
+                         kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
 
       if (!d.cond.empty()) render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
