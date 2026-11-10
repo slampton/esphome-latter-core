@@ -53,7 +53,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026110908L
+#define LATTER_SDK_REV 2026110909L
 
 namespace latter_ui {
 
@@ -3704,7 +3704,17 @@ inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool u
 // Internal RAM low-water watch, polled every second whether or not the profiler is on: when the
 // lowest-ever internal free memory falls by 4 KB or more, log by how much and what was active in that
 // second (Bluetooth, wake word, voice turn, media, page), so the consumer behind a dip shows up in the
-// log instead of only in the low-water sensor's history.
+// log instead of only in the low-water sensor's history. A dip is a WARN only once the minimum is below
+// kLowWaterWarnBytes, where allocations start to fail (S3: the red zone is ~20 KB minimum / ~10 KB largest
+// block, so 64 KB leaves room to react; P4: ~360 KB is normal, 128 KB is proportionate). Above it the
+// dip is a [PROF:LOWWATER] INFO line with the profiler on. WARN lines are replayed to every log viewer
+// that connects (logger boot_logs), so a healthy dip such as a P4's 367 -> 360 KB must not be one. The
+// first sample is the baseline and never logs.
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+inline constexpr size_t kLowWaterWarnBytes = 128U * 1024U;
+#else
+inline constexpr size_t kLowWaterWarnBytes = 64U * 1024U;
+#endif
 inline void watch_internal_low_water(bool ble_act, bool mww_run, bool va_act, bool mp_play, int page) {
 #ifdef USE_ESP32
   static size_t last_min = 0;
@@ -3714,11 +3724,19 @@ inline void watch_internal_low_water(bool ble_act, bool mww_run, bool va_act, bo
     return;
   }
   if (cur_min + 4096U <= last_min) {
-    ESP_LOGW("PROF", "[PROF:LOWWATER] internal min %luKB -> %luKB (free=%luKB max_blk=%luKB) ble=%d mww=%d va=%d mp=%d page=%d",
-             (unsigned long)(last_min / 1024U), (unsigned long)(cur_min / 1024U),
-             (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U),
-             (unsigned long)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U),
-             (int)ble_act, (int)mww_run, (int)va_act, (int)mp_play, page);
+    const unsigned long from_kb = static_cast<unsigned long>(last_min / 1024U);
+    const unsigned long to_kb = static_cast<unsigned long>(cur_min / 1024U);
+    const unsigned long free_kb = static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U);
+    const unsigned long blk_kb =
+        static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U);
+    if (cur_min < kLowWaterWarnBytes) {
+      ESP_LOGW("PROF", "[PROF:LOWWATER] internal min %luKB -> %luKB, below %luKB (free=%luKB max_blk=%luKB) ble=%d mww=%d va=%d mp=%d page=%d",
+               from_kb, to_kb, static_cast<unsigned long>(kLowWaterWarnBytes / 1024U), free_kb, blk_kb,
+               (int)ble_act, (int)mww_run, (int)va_act, (int)mp_play, page);
+    } else {
+      LATTER_PROF_LOGI("[PROF:LOWWATER] internal min %luKB -> %luKB (free=%luKB max_blk=%luKB) ble=%d mww=%d va=%d mp=%d page=%d",
+                       from_kb, to_kb, free_kb, blk_kb, (int)ble_act, (int)mww_run, (int)va_act, (int)mp_play, page);
+    }
     last_min = cur_min;
   }
 #else
