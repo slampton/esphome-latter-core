@@ -252,8 +252,8 @@ display:
 
       float batt = id(batt_level).state;
 
-      // Home and Music paint their own base; System, Weather (Current/Forecast), Area, Tools, and
-      // Whole-Home Hub paint the active wallpaper as their base when loaded (with translucent glass UI).
+      // Home and Music paint their own base; System, Weather, Area, Tools, and Whole-Home Hub paint
+      // the active wallpaper as their base when loaded (with translucent glass UI).
       if (id(gui_page) != 1 && id(gui_page) != 2) {
         const auto &ac_wall = latter_ui::area_ctx_state();
         const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
@@ -267,7 +267,7 @@ display:
         const bool use_page_wallpaper =
             has_wallpaper && !tools_full_bleed &&
             (id(gui_page) == 4 ||
-             (id(gui_page) == 5 && id(sky_weather_subpage) <= 1) ||
+             id(gui_page) == 5 ||
              id(gui_page) == 6 ||
              id(gui_page) == 8 ||
              id(gui_page) == 9);

@@ -256,7 +256,9 @@ inline int lunar_aa_half_span(int moon_r, int my) {
 }
 
 // Shades one disc row (mx = -w_line .. +w_line) into native RGB565 with 3D spherical terminator
-// lighting, subtle earthshine ("ghost moon") on the unlit hemisphere, and sub-pixel radial limb AA.
+// lighting and subtle earthshine ("ghost moon") on the unlit hemisphere. Un-attenuated surface
+// colors are stored in the tile so render_lunar_disc() can blend the outer AA limb smoothly over
+// any backdrop (starfield, wallpaper, or solid black).
 inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
   const int moon_r = sh.r;
   const float my_sq_f = static_cast<float>(my * my);
@@ -271,7 +273,6 @@ inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_l
       row[mx + w_line] = 0;
       continue;
     }
-    const float edge_alpha = (edge_t >= 1.0f) ? 1.0f : (edge_t * edge_t * (3.0f - 2.0f * edge_t));
 
     uint8_t tex_u8;
     if (moon_r == 69) {
@@ -311,9 +312,9 @@ inline void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_l
     const float drk_g = dark_lum * 0.90f;
     const float drk_b = dark_lum * 1.12f;
 
-    const uint8_t cr = static_cast<uint8_t>(fminf(255.0f, (drk_r + (lit_r - drk_r) * shadow) * edge_alpha));
-    const uint8_t cg = static_cast<uint8_t>(fminf(255.0f, (drk_g + (lit_g - drk_g) * shadow) * edge_alpha));
-    const uint8_t cb = static_cast<uint8_t>(fminf(255.0f, (drk_b + (lit_b - drk_b) * shadow) * edge_alpha));
+    const uint8_t cr = static_cast<uint8_t>(fminf(255.0f, drk_r + (lit_r - drk_r) * shadow));
+    const uint8_t cg = static_cast<uint8_t>(fminf(255.0f, drk_g + (lit_g - drk_g) * shadow));
+    const uint8_t cb = static_cast<uint8_t>(fminf(255.0f, drk_b + (lit_b - drk_b) * shadow));
     row[mx + w_line] = static_cast<uint16_t>(((static_cast<uint16_t>(cr) & 0xF8U) << 8) |
                                              ((static_cast<uint16_t>(cg) & 0xFCU) << 3) |
                                              (static_cast<uint16_t>(cb) >> 3));
@@ -393,6 +394,9 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
     if (scratch == nullptr) return;
   }
 
+  const uint16_t *fb = active_frame_buf16();
+  const float r_in = sh.r_f - 0.90f;
+
   for (int my = -moon_r; my <= moon_r; my++) {
     const int py = moon_cy + my;
     const int w_line = lunar_aa_half_span(moon_r, my);
@@ -406,7 +410,41 @@ inline void render_lunar_disc(DisplayT &it, int moon_cx, int moon_cy, int moon_r
       row = scratch;
       shade_lunar_row(row, sh, my, w_line);
     }
-    if (visible) blit_rgb565_scanline(it, moon_cx - w_line, py, 2 * w_line + 1, row, false);
+    if (!visible) continue;
+
+    const float my_sq_f = static_cast<float>(my * my);
+    const float r_in_sq = (r_in > 0.0f) ? (r_in * r_in - my_sq_f) : -1.0f;
+    const int s_in = (r_in_sq >= 0.0f) ? std::min(w_line, static_cast<int>(floorf(sqrtf(r_in_sq)))) : -1;
+
+    auto blend_limb_px = [&](int mx) {
+      const int px = moon_cx + mx;
+      if (px < 0 || px >= SCREEN_W) return;
+      const float edge_t = ((sh.r_f + 0.45f) - sqrtf(static_cast<float>(mx * mx) + my_sq_f)) * (1.0f / 1.35f);
+      if (edge_t <= 0.0f) return;
+      const float edge_alpha = (edge_t >= 1.0f) ? 1.0f : (edge_t * edge_t * (3.0f - 2.0f * edge_t));
+      const uint16_t m565 = row[mx + w_line];
+      const int mr5 = (m565 >> 11) & 0x1F, mg6 = (m565 >> 5) & 0x3F, mb5 = m565 & 0x1F;
+      const esphome::Color mc(static_cast<uint8_t>((mr5 << 3) | (mr5 >> 2)),
+                              static_cast<uint8_t>((mg6 << 2) | (mg6 >> 4)),
+                              static_cast<uint8_t>((mb5 << 3) | (mb5 >> 2)));
+      esphome::Color bg_c = kChromeShadow;
+      if (fb != nullptr) {
+        const uint16_t p = decode_hw_rgb565_raw(fb[py * SCREEN_W + px]);
+        const int br5 = (p >> 11) & 0x1F, bg6 = (p >> 5) & 0x3F, bb5 = p & 0x1F;
+        bg_c = esphome::Color(static_cast<uint8_t>((br5 << 3) | (br5 >> 2)),
+                              static_cast<uint8_t>((bg6 << 2) | (bg6 >> 4)),
+                              static_cast<uint8_t>((bb5 << 3) | (bb5 >> 2)));
+      }
+      fast_pixel(it, px, py, mix_color_q8(bg_c, mc, static_cast<int>(roundf(edge_alpha * 256.0f))));
+    };
+
+    if (s_in >= 0) {
+      for (int mx = -w_line; mx < -s_in; mx++) blend_limb_px(mx);
+      blit_rgb565_scanline(it, moon_cx - s_in, py, 2 * s_in + 1, row + (w_line - s_in), false);
+      for (int mx = s_in + 1; mx <= w_line; mx++) blend_limb_px(mx);
+    } else {
+      for (int mx = -w_line; mx <= w_line; mx++) blend_limb_px(mx);
+    }
   }
 }
 
@@ -989,8 +1027,19 @@ inline void render_forecast_glyph(DisplayT &it, int gx, int gy, const std::strin
     fast_line(it, gx - 12, gy, gx - 10, gy, ray_c);
     fast_line(it, gx + 10, gy, gx + 12, gy, ray_c);
   } else if (c_name == "clear-night" || c_name == "clearnight") {
-    fast_filled_circle(it, gx + 2, gy, 8, esphome::Color(225, 235, 250));
-    fast_filled_circle(it, gx - 1, gy - 1, 7, esphome::Color(0, 0, 0));
+    const esphome::Color moon_c(225, 235, 250);
+    for (int dy = -8; dy <= 8; dy++) {
+      for (int dx = -6; dx <= 10; dx++) {
+        const int ox = dx - 2;
+        if (ox * ox + dy * dy <= 64) {
+          const int cx_d = dx + 1;
+          const int cy_d = dy + 1;
+          if (cx_d * cx_d + cy_d * cy_d > 49) {
+            fast_pixel(it, gx + dx, gy + dy, moon_c);
+          }
+        }
+      }
+    }
   } else if (c_name == "partlycloudy" || c_name == "partly-cloudy" || c_name == "mostlycloudy" || c_name == "mostlysunny" || c_name == "partlysunny") {
     fast_filled_circle(it, gx - 4, gy - 4, 6, esphome::Color(245, 175, 30));
     fast_filled_circle(it, gx + 2, gy + 1, 6, esphome::Color(175, 190, 210));
@@ -2051,9 +2100,8 @@ inline void render_weather_page(
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
     const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
     const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
-    render_modern_card(it, cx, (hilo_y + tele_y) / 2, 328, (tele_y - hilo_y) + scale_y(54), 16,
-                       kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
     const Color icon_c(185, 225, 255);
+    const bool has_bd_shadow = backdrop_active();
 
     // 2px-stroke outline Up/Down arrow primitive matching Humidity & Wind icon weight
     auto draw_temp_arrow_glyph = [&](int ax, int ay, bool is_up, Color c) {
@@ -2099,16 +2147,22 @@ inline void render_weather_page(
       const int dn_arr_x = hi_txt_x + w_hi + 32 + 7;
       const int lo_txt_x = dn_arr_x + 7 + 10;
 
+      if (has_bd_shadow) draw_temp_arrow_glyph(up_arr_x + 1, hilo_y + 1, true, kChromeShadow);
       draw_temp_arrow_glyph(up_arr_x, hilo_y, true,  icon_c);
       if (large_cur && font_chrono_time != nullptr) {
+        if (has_bd_shadow) fast_print(it, hi_txt_x + 1, hilo_y + 1, font_chrono_time, kChromeShadow, TextAlign::CENTER_LEFT, hi_str);
         fast_print(it, hi_txt_x, hilo_y, font_chrono_time, col_white, TextAlign::CENTER_LEFT, hi_str);
       } else {
+        if (has_bd_shadow) fast_print(it, hi_txt_x + 1, hilo_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, hi_str);
         fast_print(it, hi_txt_x, hilo_y, font_date, col_white, TextAlign::CENTER_LEFT, hi_str);
       }
+      if (has_bd_shadow) draw_temp_arrow_glyph(dn_arr_x + 1, hilo_y + 1, false, kChromeShadow);
       draw_temp_arrow_glyph(dn_arr_x, hilo_y, false, icon_c);
       if (large_cur && font_chrono_time != nullptr) {
+        if (has_bd_shadow) fast_print(it, lo_txt_x + 1, hilo_y + 1, font_chrono_time, kChromeShadow, TextAlign::CENTER_LEFT, lo_str);
         fast_print(it, lo_txt_x, hilo_y, font_chrono_time, col_slate, TextAlign::CENTER_LEFT, lo_str);
       } else {
+        if (has_bd_shadow) fast_print(it, lo_txt_x + 1, hilo_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, lo_str);
         fast_print(it, lo_txt_x, hilo_y, font_date, col_slate, TextAlign::CENTER_LEFT, lo_str);
       }
     }
@@ -2136,13 +2190,16 @@ inline void render_weather_page(
       fast_pixel(it, dx - 2, dy + 6, c);
     };
     const int drop_x = cx - ((SCREEN_W < 380) ? 96 : (large_cur ? 124 : 105));
+    if (has_bd_shadow) draw_droplet_outline(drop_x + 1, tele_y + 1, kChromeShadow);
     draw_droplet_outline(drop_x, tele_y, icon_c);
     char hum_str[20];
     if (!std::isnan(weather_humidity)) snprintf(hum_str, sizeof(hum_str), "%.0f%%", weather_humidity);
     else snprintf(hum_str, sizeof(hum_str), "%s%%", kUnknownGlyph);
     if (large_cur) {
+      if (has_bd_shadow) fast_print(it, drop_x + 19, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
       fast_print(it, drop_x + 18, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
     } else {
+      if (has_bd_shadow) fast_print(it, drop_x + 19, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
       fast_print(it, drop_x + 18, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, hum_str);
     }
 
@@ -2177,6 +2234,7 @@ inline void render_weather_page(
       }
     };
     const int w_icon_x = cx - 5;
+    if (has_bd_shadow) draw_wind_glyph(w_icon_x + 1, tele_y + 1, kChromeShadow);
     draw_wind_glyph(w_icon_x, tele_y, icon_c);
     char wind_str[28];
     const char *w_dir = wind_bearing_to_cardinal(weather_wind_bearing);
@@ -2190,8 +2248,10 @@ inline void render_weather_page(
       snprintf(wind_str, sizeof(wind_str), "%s mph", kUnknownGlyph);
     }
     if (large_cur) {
+      if (has_bd_shadow) fast_print(it, w_icon_x + 21, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
       fast_print(it, w_icon_x + 20, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);
     } else {
+      if (has_bd_shadow) fast_print(it, w_icon_x + 21, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
       fast_print(it, w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
     }
 
@@ -2242,29 +2302,41 @@ inline void render_weather_page(
     const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : (large_fc ? scale_x(114) : 92));
     const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : (large_fc ? scale_x(26) : 22));
     const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : (large_fc ? scale_x(44) : 34));
+    const bool has_bd_shadow = backdrop_active();
 
     for (int i = 0; i < fc_count && i < 5; i++) {
       int ry = fc_top_y + i * fc_step_y;
       const auto &d = fc_days[i];
       int ry_data = ry + 1;
 
-      render_modern_card(it, cx, ry, row_hw * 2 + 12, fc_step_y - 5, 11,
-                         kChromeGlassTint, kChromeCardBorder, nullptr, col_white, font_small);
-
       if (!d.cond.empty()) render_forecast_glyph(it, x_glyph, ry_data, d.cond);
 
       std::string hi_str = (d.high == kUnknownGlyph) ? d.high : d.high + "°";
       std::string lo_str = (d.low == kUnknownGlyph) ? d.low : d.low + "°";
       if (large_fc) {
-        fast_print(it, x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 56) - x_cond, font_date);
+        if (has_bd_shadow) {
+          fast_print(it, x_day + 1, ry + 1, font_date, kChromeShadow, TextAlign::CENTER, d.day.c_str());
+          fast_print(it, x_cond + 1, ry_data + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, c_txt.c_str());
+          fast_print(it, x_slash - 9, ry_data + 1, font_date, kChromeShadow, TextAlign::CENTER_RIGHT, hi_str.c_str());
+          fast_print(it, x_slash + 1, ry_data + 1, font_small, kChromeShadow, TextAlign::CENTER, "/");
+          fast_print(it, x_slash + 11, ry_data + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, lo_str.c_str());
+        }
+        fast_print(it, x_day, ry, font_date, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         fast_print(it, x_cond, ry_data, font_date, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
         fast_print(it, x_slash - 10, ry_data, font_date,  col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
         fast_print(it, x_slash,      ry_data, font_small, col_slate, TextAlign::CENTER, "/");
         fast_print(it, x_slash + 10, ry_data, font_date,  col_slate, TextAlign::CENTER_LEFT, lo_str.c_str());
       } else {
-        fast_print(it, x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         std::string c_txt = fit_text_to_width_font(format_forecast_short_name(d.cond), (x_slash - 42) - x_cond, font_small);
+        if (has_bd_shadow) {
+          fast_print(it, x_day + 1, ry + 1, font_small, kChromeShadow, TextAlign::CENTER, d.day.c_str());
+          fast_print(it, x_cond + 1, ry_data + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, c_txt.c_str());
+          fast_print(it, x_slash - 7, ry_data + 1, font_small, kChromeShadow, TextAlign::CENTER_RIGHT, hi_str.c_str());
+          fast_print(it, x_slash + 1, ry_data + 1, font_micro, kChromeShadow, TextAlign::CENTER, "/");
+          fast_print(it, x_slash + 9, ry_data + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, lo_str.c_str());
+        }
+        fast_print(it, x_day, ry, font_small, (i == 0) ? theme_primary : col_white, TextAlign::CENTER, d.day.c_str());
         fast_print(it, x_cond, ry_data, font_small, col_slate, TextAlign::CENTER_LEFT, c_txt.c_str());
         fast_print(it, x_slash - 8, ry_data, font_small, col_white, TextAlign::CENTER_RIGHT, hi_str.c_str());
         fast_print(it, x_slash,     ry_data, font_micro, col_slate, TextAlign::CENTER, "/");
@@ -2282,9 +2354,14 @@ inline void render_weather_page(
     const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
     const int arc_ry = arc_rx;
     const int arc_cy = sun_top_y + arc_ry;
+    const bool has_bd_shadow = backdrop_active();
 
     for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
       fast_line(it, hx, arc_cy, hx + 4, arc_cy, col_gray);
+    }
+    if (has_bd_shadow) {
+      fast_print(it, cx - arc_rx - 13, arc_cy + 1, font_micro, kChromeShadow, TextAlign::CENTER, "E");
+      fast_print(it, cx + arc_rx + 15, arc_cy + 1, font_micro, kChromeShadow, TextAlign::CENTER, "W");
     }
     fast_print(it, cx - arc_rx - 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "E");
     fast_print(it, cx + arc_rx + 14, arc_cy, font_micro, col_slate, TextAlign::CENTER, "W");
@@ -2299,6 +2376,9 @@ inline void render_weather_page(
 
     if (!std::isnan(sun_elevation)) {
       const char *sol_st = (sun_elevation > 0.0f) ? "Above Horizon" : "Below Horizon";
+      if (has_bd_shadow) {
+        fast_print(it, cx + 1, arc_cy + 17, font_micro, kChromeShadow, TextAlign::CENTER, sol_st);
+      }
       fast_print(it, cx, arc_cy + 16, font_micro, sun_elevation > 0.0f ? col_warm_gold : col_slate, TextAlign::CENTER, sol_st);
     }
 
@@ -2329,6 +2409,12 @@ inline void render_weather_page(
     const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + scale_y(78));
     const int val_y  = lbl_y + scale_y(30);
 
+    if (has_bd_shadow) {
+      fast_print(it, cx - col_dx + 1, lbl_y + 1, font_small, kChromeShadow, TextAlign::CENTER, "SUNRISE");
+      fast_print(it, cx - col_dx + 1, val_y + 1, font_date,  kChromeShadow, TextAlign::CENTER, s_rise.c_str());
+      fast_print(it, cx + col_dx + 1, lbl_y + 1, font_small, kChromeShadow, TextAlign::CENTER, "SUNSET");
+      fast_print(it, cx + col_dx + 1, val_y + 1, font_date,  kChromeShadow, TextAlign::CENTER, s_set.c_str());
+    }
     fast_print(it, cx - col_dx, lbl_y, font_small, col_slate, TextAlign::CENTER, "SUNRISE");
     fast_print(it, cx - col_dx, val_y, font_date,  col_warm_gold, TextAlign::CENTER, s_rise.c_str());
 
@@ -2366,10 +2452,19 @@ inline void render_weather_page(
 
     char illum_buf[32];
     snprintf(illum_buf, sizeof(illum_buf), "%d%% Illumination", illum_pct);
+    const bool has_bd_shadow = backdrop_active();
     if (large_moon_txt) {
+      if (has_bd_shadow) {
+        fast_print(it, cx + 1, phase_y + 1, font_date, kChromeShadow, TextAlign::CENTER, mp_label.c_str());
+        fast_print(it, cx + 1, illum_y + 1, font_date, kChromeShadow, TextAlign::CENTER, illum_buf);
+      }
       fast_print(it, cx, phase_y, font_date, col_slate, TextAlign::CENTER, mp_label.c_str());
       fast_print(it, cx, illum_y, font_date, col_white, TextAlign::CENTER, illum_buf);
     } else {
+      if (has_bd_shadow) {
+        fast_print(it, cx + 1, phase_y + 1, font_btn_bold, kChromeShadow, TextAlign::CENTER, mp_label.c_str());
+        fast_print(it, cx + 1, illum_y + 1, font_small,    kChromeShadow, TextAlign::CENTER, illum_buf);
+      }
       fast_print(it, cx, phase_y, font_btn_bold, col_slate, TextAlign::CENTER, mp_label.c_str());
       fast_print(it, cx, illum_y, font_small,    col_white, TextAlign::CENTER, illum_buf);
     }

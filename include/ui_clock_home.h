@@ -1527,6 +1527,15 @@ inline void render_home_page(
     const int right_cx      = win_xs[vis_count - 1];
     const int clip_pad      = stride / 2 + dock_r;
 
+    Color dock_tint = kChromeGlassTint;
+    if (eff_weather_bg) {
+      Color dock_card_bg, dock_brd, dock_btn_bg;
+      resolve_home_card_palette(eff_weather_bg, is_night, cond, dock_card_bg, dock_brd, dock_btn_bg);
+      dock_tint = mix_color_q8(dock_btn_bg, kChromeHomePill, is_night ? 18 : 24);
+    } else if (use_custom_wallpaper) {
+      dock_tint = sample_image_ambient_tint(wallpaper_art, kChromeGlassTint);
+    }
+
     for (int g_idx = 0; g_idx < dock_count; g_idx++) {
       float rel_slot = static_cast<float>(g_idx) - anim_start;
       if (rel_slot < -0.85f || rel_slot > static_cast<float>(vis_count - 1) + 0.85f) continue;
@@ -1547,7 +1556,7 @@ inline void render_home_page(
       const GlassBackdrop bd = sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d);
       Color eff_tint;
       int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-      resolve_glass_fill(bd, kChromeGlassTint, kChromeGlassSheen, eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
+      resolve_glass_fill(bd, dock_tint, kChromeGlassSheen, eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
       const int a_top     = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
       const int a_bot     = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
       const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(raw_rim_top) * alpha));

@@ -53,7 +53,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111003L
+#define LATTER_SDK_REV 2026111004L
 
 namespace latter_ui {
 
@@ -1348,26 +1348,30 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
 // Computes the frosted-glass tint, vertical alpha ramp (out_a_top -> out_a_bot), and 1 px rim
 // sheen (out_rim_top -> out_rim_bot) for any UI surface over `bd` (D-029, D-030). Over bright sky,
 // clouds, or wallpapers, glass_alpha_for_text() raises the tint alpha so text clears
-// kGlassTextContrast; over solid black (col_bg) or pitch-dark backdrops (mean < 42), a subtle frost
-// lift toward kChromeHomePill and a gentle top-lit interior alpha ramp keep every glass surface
-// clearly frosted instead of crushing into black.
+// kGlassTextContrast; over solid black, pitch-dark backdrops, or uniform mid-tone backdrops where a
+// dark tint would otherwise blend darker than its surroundings, a subtle frost lift toward
+// kChromeHomePill and a gentle top-lit interior alpha ramp keep every glass surface frosted.
 inline void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::Color ref_text,
                                esphome::Color &out_tint, int &out_a_top, int &out_a_bot,
                                int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8 = -1) {
   const int bg_lvl = bd.valid
       ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
       : 0;
+  const int tint_lvl = (static_cast<int>(tint.r) + static_cast<int>(tint.g) + static_cast<int>(tint.b)) / 3;
   const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
-  const int frost_q8 = (dark_tint && bg_lvl < 42) ? (30 - (bg_lvl * 30) / 42) : 0;
+  int frost_q8 = (dark_tint && bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
+  if (dark_tint && bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
+    frost_q8 = std::max(frost_q8, 22);
+  }
   out_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
   const esphome::Color contrast_fg = dark_tint ? kChromeGlassSheen : ref_text;
   const int base_a = (explicit_alpha_q8 >= 0)
       ? explicit_alpha_q8
       : (bd.valid ? glass_alpha_for_text(out_tint, bd.bright, contrast_fg) : 168);
-  const int da = (dark_tint && bg_lvl < 42) ? (18 - (bg_lvl * 18) / 42) : 0;
+  const int da = dark_tint ? ((bg_lvl < 42) ? (22 - (bg_lvl * 8) / 42) : 14) : 0;
   out_a_top = std::min(256, base_a + da);
-  out_a_bot = std::max(kGlassAlphaMinQ8 - 16, base_a - da / 2);
-  const int rim_boost = (bg_lvl < 24) ? ((24 - bg_lvl) * 16) / 24 : 0;
+  out_a_bot = std::max(kGlassAlphaMinQ8 - 16, base_a - (da * 2) / 3);
+  const int rim_boost = (bg_lvl < 32) ? ((32 - bg_lvl) * 18) / 32 : 8;
   out_rim_top = std::min(256, kGlassSheenTopQ8 + rim_boost);
   out_rim_bot = std::min(256, kGlassSheenBotQ8 + (rim_boost * 2) / 3);
 }
