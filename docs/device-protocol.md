@@ -43,7 +43,7 @@ The device describes itself twice. Both are built from the board's `LATTER_*` fl
 | Where | Built by | Content |
 | :--- | :--- | :--- |
 | `manifest` field of `device_hello` (emitted on `System: RPC Outbox` on every Home Assistant connection and on `latter_ping`) | `latter_ui::build_hardware_manifest_json()` | The full manifest, including the boot health keys below |
-| Text sensor **`System: Hardware Manifest`** (`text_sensor.<slug>_system_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | A compact copy (≤ 230 bytes, inside Home Assistant's 255-character state limit). No `audio` details, `beacon` block or health keys; the beacon minor is sent as `minor`. |
+| Text sensor **`System: Hardware Manifest`** (`sensor.<slug>_system_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | A compact copy (≤ 230 bytes, inside Home Assistant's 255-character state limit). No `audio` details, `beacon` block or health keys; the beacon minor is sent as `minor`. |
 
 Latter reads the `text_sensor` of the bound ESPHome device and overlays the latest `device_hello` manifest on it, so the hello wins wherever both have a key.
 

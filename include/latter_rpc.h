@@ -29,6 +29,7 @@ namespace latter_rpc {
 
 static constexpr size_t kMaxRpcFrameBytes = 230;
 static constexpr size_t kRpcQueueCapacity = 32;
+static constexpr uint32_t kMinInterFrameMs = 35U;
 
 enum class SlotChannel : uint8_t {
   MUSIC         = 0,
@@ -50,6 +51,7 @@ struct RpcQueueState {
   uint32_t last_publish_ms = 0;
   uint32_t passes_since_publish = 2;
   bool published_in_pass = false;
+  bool awaiting_publish_stamp = false;
   void *sink_ctx = nullptr;
   PublishSinkFn sink_fn = nullptr;
   std::array<int, static_cast<size_t>(SlotChannel::COUNT)> latest_req_id{{0, 0, 0, 0}};
@@ -83,7 +85,7 @@ inline bool accept_req_id(SlotChannel ch, int req_id) {
 inline SlotChannel classify_browse_mode(std::string_view mode) {
   if (mode == "area_areas" || mode == "areas") return SlotChannel::AREA_LIST;
   if (mode == "calendar_agenda") return SlotChannel::CALENDAR;
-  if (mode == "entities" || mode == "home") return SlotChannel::AREA_ENTITIES;
+  if (mode == "entities" || mode == "home" || mode.starts_with("area_")) return SlotChannel::AREA_ENTITIES;
   return SlotChannel::MUSIC;
 }
 
@@ -199,12 +201,16 @@ inline bool has_pending_frames() {
 inline bool step_outbox_loop(uint32_t now_ms) {
   RpcQueueState &st = rpc_state();
   st.published_in_pass = false;
+  if (st.awaiting_publish_stamp) {
+    st.last_publish_ms = (now_ms == 0) ? 1U : now_ms;
+    st.awaiting_publish_stamp = false;
+  }
   if (st.passes_since_publish < 1000U) {
     ++st.passes_since_publish;
   }
   if (!has_pending_frames() || st.sink_fn == nullptr || st.sink_ctx == nullptr) return false;
   if (st.passes_since_publish < 2U) return true;
-  if (st.last_publish_ms != 0 && static_cast<uint32_t>(now_ms - st.last_publish_ms) < 25U) {
+  if (st.last_publish_ms != 0 && static_cast<uint32_t>(now_ms - st.last_publish_ms) < kMinInterFrameMs) {
     return true;
   }
   std::string next_frame = std::move(st.ring[st.head]);
@@ -212,6 +218,7 @@ inline bool step_outbox_loop(uint32_t now_ms) {
   --st.count;
   st.published_in_pass = true;
   st.passes_since_publish = 0;
+  st.awaiting_publish_stamp = false;
   st.last_publish_ms = (now_ms == 0) ? 1U : now_ms;
   st.sink_fn(st.sink_ctx, next_frame);
   return has_pending_frames();
@@ -249,6 +256,7 @@ inline void emit(
     --st.count;
     st.published_in_pass = true;
     st.passes_since_publish = 0;
+    st.awaiting_publish_stamp = true;
     st.sink_fn(st.sink_ctx, first_frame);
   }
 }

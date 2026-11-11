@@ -22,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111035L;
+            constexpr long LATTER_YAML_REV = 2026111036L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -111,6 +111,7 @@ logger:
 
 api:
   reboot_timeout: ${api_reboot_timeout}
+  batch_delay: 0ms
   encryption:
   outgoing_connection:
   on_client_connected:
@@ -470,7 +471,7 @@ api:
               id(cal_slot_3_name) = n3; id(cal_slot_3_id) = i3; id(cal_slot_3_active) = a3;
               id(cal_slot_4_name) = n4; id(cal_slot_4_id) = i4; id(cal_slot_4_active) = a4;
               id(cal_slot_5_name) = n5; id(cal_slot_5_id) = i5; id(cal_slot_5_active) = a5;
-            } else if (mode == "entities" || mode == "home") {
+            } else if (mode == "entities" || mode == "home" || sv_mode.starts_with("area_")) {
               id(area_browse_mode) = "entities";
               id(area_browse_page) = page;
               id(area_browse_total_pages) = total_pages;

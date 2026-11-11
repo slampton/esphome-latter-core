@@ -228,8 +228,15 @@ void test_protocol_v3_and_rpc() {
       {"manifest", utf8_stress},
   });
   LATTER_CHECK(latter_rpc::has_pending_frames());
+  const size_t after_emit_count = outbox.frames.size();
+  // First loop pass stamps awaiting_publish_stamp; sub-interval pass (< kMinInterFrameMs) must NOT coalesce chunk 2!
+  now_ms += 2;
+  latter_rpc::step_outbox_loop(now_ms);
+  now_ms += 10;
+  latter_rpc::step_outbox_loop(now_ms);
+  LATTER_CHECK(outbox.frames.size() == after_emit_count);
   while (latter_rpc::has_pending_frames()) {
-    now_ms += 15;
+    now_ms += 20;
     latter_rpc::step_outbox_loop(now_ms);
   }
   std::string joined;
@@ -256,6 +263,7 @@ void test_protocol_v3_and_rpc() {
   // Monotonic req_id per SlotChannel
   LATTER_CHECK(latter_rpc::classify_browse_mode("areas") == latter_rpc::SlotChannel::AREA_LIST);
   LATTER_CHECK(latter_rpc::classify_browse_mode("entities") == latter_rpc::SlotChannel::AREA_ENTITIES);
+  LATTER_CHECK(latter_rpc::classify_browse_mode("area_light") == latter_rpc::SlotChannel::AREA_ENTITIES);
   LATTER_CHECK(latter_rpc::classify_browse_mode("calendar_agenda") == latter_rpc::SlotChannel::CALENDAR);
   LATTER_CHECK(latter_rpc::classify_browse_mode("favorites") == latter_rpc::SlotChannel::MUSIC);
   const int r1 = latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_ENTITIES);

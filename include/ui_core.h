@@ -85,7 +85,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111035L
+#define LATTER_SDK_REV 2026111036L
 
 // PSRAM scratch arenas allocate lazily via heap_caps_calloc(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 // rather than .ext_ram.bss so inline variables across TUs and non-EXT_RAM_BSS custom boards link cleanly.
