@@ -6,50 +6,25 @@
 // One canonical battery path for every battery board. The only board trait is LATTER_BATTERY_MAH, the
 // fitted cell's rated capacity (boards/facts power.battery_mah); everything below derives from it.
 //
-// Charge profile (AXP2101 REG61-64, applied by hal_init_axp2101 in ui_system.h), for a 3.7 V LiPo:
-//   constant current  0.5C, the standard charge rate in LiPo cell datasheets (the condition cycle life
-//                     is rated at; Sean's decision 2026-11-09), rounded up to the next AXP2101 step, never
-//                     above 0.8C, capped at 500 mA: the AXP2101 charger is linear and dissipates
-//                     (VBUS - VBAT) x I inside the enclosure
+// Charge profile (AXP2101 REG61-64, applied by hal_init_axp2101 in hal_pmu_axp2101.h), for a 3.7 V LiPo:
+//   constant current  <= 0.5C floored to the AXP2101 step (200 mA for 400/500 mAh, 500 mA for 1000 mAh),
+//                     capped at 500 mA and folded back to 100 mA above 65 C AXP2101 die temperature
 //   precharge         0.1C below the precharge threshold (floored to 25 mA steps, 25..200 mA)
 //   termination       C/20, enabled (floored to 25 mA steps, 25..200 mA)
 //   constant voltage  4.20 V (standard LiPo; no fitted cell is a 4.35 V HV type)
-//
-// State of charge. The AXP2101 fuel gauge (REG A4) needs a battery model (parameter table) loaded for the
-// fitted cell, which X-Powers doesn't publish; with its default model it sat at 99 % from 4.11 to 4.19 V
-// and fell 17 points in 2 h mid-range on the Mobile (2026-11-09). It is read only while the Telemetry
-// Profiler is on, for the [PROF:POWER] gauge= comparison.
-// The AXP2101 has no battery-current ADC and no coulomb counter (its ADC channels are VBAT, TS, VBUS,
-// VSYS and die temperature), so state of charge comes from the battery voltage:
-//   1. VBAT (REG34/35, 1 mV/LSB) is sampled by hal_poll_pmu_1s (pmu_axp2101.yaml) from the existing 1 s
-//      supervisor tick: every kSampleMs while awake or docked, every kSampleQuietMs with the screen off on
-//      battery (light-sleep quiet), and back to kSampleMs on the discharge knee (kFastSampleMv) or once a
-//      sample is below the cutoff, so the cutoff debounce keeps its 30 s.
-//   2. Load compensation estimates the rest voltage: VBAT + I_load x R_path on battery, VBAT -
-//      I_charge x R_path while charging at constant current. I_load is a per-state class (BattLoad).
-//   3. An EMA with a kEmaTauMs time constant (the weight follows the actual sample spacing) smooths it.
-//   4. kOcvCurve maps the smoothed rest voltage to percent.
-//   5. Display rules: on battery the value never rises (except in the kSettleMs window after boot or a
-//      plug change, while the estimate converges). While charging it never falls and stops at 99 %; in
-//      the constant-voltage phase (the voltage is pinned at 4.20 V and carries no charge information)
-//      it ramps to 99 % over kCvNominalMs; 100 % comes only from the PMIC's charge-done state and holds
-//      until unplug.
-//
-// Safe cutoff: hibernate cleanly (state saved, API disconnected, PMIC off) when the compensated rest
-// voltage is <= kCutoffRestMv or the raw voltage is <= kCutoffLoadedMv on every sample for at least
-// kCutoffHoldMs (kCutoffMinSamples samples), so a Wi-Fi or speaker sag never triggers it. The low-battery
-// warning (binary sensor + an on-screen notice the next time the screen is on) fires at kLowPct.
-// The reason for every PMIC power-off (and the voltage and percent at that moment) is kept in the
-// AXP2101 data buffer (REG04-07, retained while a cell is connected) and printed in [PROF:BOOT] hib=.
 // ==============================================================================
-
-#include "esphome.h"
-#include "latter_prof.h"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+
+#ifdef USE_ESP32
+#include <sdkconfig.h>
+#endif
+
+#include "hal_types.h"
+#include "latter_prof.h"
 
 #ifndef LATTER_BATTERY_MAH
 #define LATTER_BATTERY_MAH 0
@@ -63,11 +38,12 @@ static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 5000,
 namespace latter_ui {
 
 // ---------------------------------------------------------------------------------------------------
-// Charge profile
+// Charge profile (<= 0.5C standard rate, floored to AXP2101 ICC steps)
 // ---------------------------------------------------------------------------------------------------
 constexpr int kBattCapacityMah = LATTER_BATTERY_MAH;
 
 constexpr int batt_clamp_int(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
 // AXP2101 constant-charge current (REG62 bits 4:0): 25 mA steps up to 200 mA, then 100 mA steps to 1000 mA.
 constexpr int axp2101_icc_floor_ma(int ma) {
   return ma < 25 ? 25 : (ma <= 200 ? (ma / 25) * 25 : (ma >= 1000 ? 1000 : 200 + ((ma - 200) / 100) * 100));
@@ -78,37 +54,35 @@ constexpr int axp2101_icc_ceil_ma(int ma) {
 constexpr uint8_t axp2101_icc_code(int ma) {
   return static_cast<uint8_t>(ma <= 200 ? ma / 25 : 8 + (ma - 200) / 100);
 }
-// The linear charger's heat cap and the USB 2.0 default port budget.
+
 constexpr int kChargeCapMa = 500;
+constexpr int kChargeThermalFoldbackMa = 100;
 constexpr int kBattChargeMaxMa = axp2101_icc_floor_ma(
-    (kBattCapacityMah * 8 / 10) < kChargeCapMa ? (kBattCapacityMah * 8 / 10) : kChargeCapMa);  // 0.8C
-constexpr int kBattChargeStdMa = axp2101_icc_ceil_ma(kBattCapacityMah / 2);                     // 0.5C
+    (kBattCapacityMah * 8 / 10) < kChargeCapMa ? (kBattCapacityMah * 8 / 10) : kChargeCapMa);  // <= 0.8C
+constexpr int kBattChargeStdMa = axp2101_icc_floor_ma(kBattCapacityMah / 2);                    // <= 0.5C floor
 constexpr int kBattChargeMa = kBattChargeStdMa < kBattChargeMaxMa ? kBattChargeStdMa : kBattChargeMaxMa;
 constexpr int kBattPrechargeMa = batt_clamp_int((kBattCapacityMah / 10) / 25 * 25, 25, 200);   // 0.1C
 constexpr int kBattTermMa = batt_clamp_int((kBattCapacityMah / 20) / 25 * 25, 25, 200);        // C/20
-constexpr uint8_t kBattCvCode = 0x03;  // REG64 bits 2:0: 1 = 4.00 V, 2 = 4.10 V, 3 = 4.20 V, 4 = 4.35 V, 5 = 4.40 V
+constexpr uint8_t kBattCvCode = 0x03;  // REG64 bits 2:0: 3 = 4.20 V
 constexpr int kBattCvMv = 4200;
 
 // ---------------------------------------------------------------------------------------------------
-// Rest-voltage model
+// Rest-voltage model & per-capacity OCV curves
 // ---------------------------------------------------------------------------------------------------
-// Battery path resistance: cell DC internal resistance (small LiCoO2 pouch cells are about 120 mOhm at
-// 1000 mAh, scaling with 1/capacity) plus the protection MOSFETs, connector and PCB (about 80 mOhm).
 constexpr int kPathFixedMilliohm = 80;
 constexpr int kCellIrMilliohmAh = 120;
 constexpr int kBattPathMilliohm =
     kPathFixedMilliohm + (kBattCapacityMah > 0 ? kCellIrMilliohmAh * 1000 / kBattCapacityMah : 0);
 
-// Average load per class (the cell's voltage follows the average draw, not the instant of the I2C read).
-// QUIET (screen off on battery) is derived from voltage-based run-downs, pending an inline-meter measurement:
-// Mobile with light sleep (rev 2026110289) used about 90 % of 1000 mAh in 15.8 h = 55-57 mA (Link Report
-// dr about 6 %/h agrees); Pocket held awake by the RSSI gate (2026-11-09) ran 500 mAh in 9.3 h = 54 mA.
-// SCREEN and AUDIO are ESTIMATES pending calibration: read the vraw step in the Link Report bat= / [PROF:BATT]
-// when the screen or the speaker turns on or off, divide by kBattPathMilliohm, and set them from that.
 enum class BattLoad : uint8_t { QUIET = 0, SCREEN = 1, AUDIO = 2 };
-constexpr int kLoadQuietMa = 55;
-constexpr int kLoadScreenMa = 200;  // estimate
-constexpr int kLoadAudioMa = 300;   // estimate
+
+#if defined(USE_ESP32) && defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
+constexpr int kLoadQuietMa = 8;    // Automatic light-sleep standby (~5-8 mA)
+#else
+constexpr int kLoadQuietMa = 55;   // Awake modem-sleep standby (~50-55 mA)
+#endif
+constexpr int kLoadScreenMa = 200;
+constexpr int kLoadAudioMa = 300;
 
 inline int batt_load_ma(BattLoad load) {
   switch (load) {
@@ -117,6 +91,7 @@ inline int batt_load_ma(BattLoad load) {
     default: return kLoadQuietMa;
   }
 }
+
 inline const char *batt_load_name(BattLoad load) {
   switch (load) {
     case BattLoad::AUDIO: return "audio";
@@ -125,7 +100,6 @@ inline const char *batt_load_name(BattLoad load) {
   }
 }
 
-// AXP2101 REG01 bits 2:0 (charger state).
 enum class ChargePhase : uint8_t { TRICKLE = 0, PRECHARGE = 1, CC = 2, CV = 3, DONE = 4, IDLE = 5 };
 
 inline bool charge_phase_is_charging(ChargePhase p) {
@@ -133,7 +107,6 @@ inline bool charge_phase_is_charging(ChargePhase p) {
          p == ChargePhase::CV;
 }
 
-// The Battery Charge State text sensor (pmu_axp2101.yaml): REG01 read each second while VBUS is present.
 inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_state) {
   if (on_battery) return "Discharging";
   const ChargePhase p = static_cast<ChargePhase>(reg01_chg_state & 0x07);
@@ -142,94 +115,94 @@ inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_
   return "Not Charging";
 }
 
-// Compensated rest voltage -> state of charge (percent of the capacity left above the cutoff).
-// Source: a measured discharge, not a generic chart. Pocket (500 mAh LiPo), 2026-11-09 14:43 -> 2026-11-10
-// 00:01: unplugged after charge done, screen off, held awake all night (constant load, about 54 mA), until the
-// cutoff tripped; Link Report bat= every 15 min (Home Assistant history). Capacity left = the share of that
-// 9.3 h still to run (constant current), against vraw + kLoadQuietMa x kBattPathMilliohm (what the model
-// computes in that state). 0 % is the cutoff (kCutoffRestMv), 100 % is 4.15 V (the data reached 4.10 V at
-// 95 % and 4.15 V within 15 min of unplugging). The generic LiPo chart this replaces (3.83 V = 48 %,
-// 3.60 V = 5 %) read far too steep mid-range: the cell held 34 % at 3.83 V and 13-15 % at 3.60-3.62 V.
-// One cell at one low rate (about 0.1C); refit when another board's run-down disagrees.
 struct OcvPoint {
   int16_t mv;
   uint8_t pct;
 };
-constexpr OcvPoint kOcvCurve[] = {
+
+// Small wearable cells (<= 450 mAh): slightly softer knee at low temperature / higher relative IR.
+constexpr OcvPoint kOcvCurveSmall[] = {
+    {3400, 0},  {3505, 5},  {3565, 10}, {3625, 15}, {3690, 20}, {3755, 25}, {3795, 30},
+    {3835, 35}, {3860, 40}, {3880, 45}, {3895, 50}, {3915, 55}, {3955, 60}, {3995, 65},
+    {4025, 70}, {4040, 75}, {4055, 80}, {4070, 85}, {4085, 90}, {4105, 95}, {4155, 100},
+};
+// Medium handheld cells (451..750 mAh): bench-measured 500 mAh Pocket Assistant discharge curve.
+constexpr OcvPoint kOcvCurveMedium[] = {
     {3400, 0},  {3495, 5},  {3555, 10}, {3615, 15}, {3680, 20}, {3750, 25}, {3790, 30},
     {3830, 35}, {3855, 40}, {3875, 45}, {3890, 50}, {3910, 55}, {3950, 60}, {3990, 65},
     {4020, 70}, {4035, 75}, {4050, 80}, {4065, 85}, {4080, 90}, {4100, 95}, {4150, 100},
 };
-constexpr size_t kOcvPoints = sizeof(kOcvCurve) / sizeof(kOcvCurve[0]);
+// Larger pouch cells (> 750 mAh, e.g. 1000 mAh Mobile Assistant): flatter mid-band plateau.
+constexpr OcvPoint kOcvCurveLarge[] = {
+    {3400, 0},  {3485, 5},  {3545, 10}, {3605, 15}, {3670, 20}, {3740, 25}, {3780, 30},
+    {3815, 35}, {3840, 40}, {3860, 45}, {3880, 50}, {3900, 55}, {3940, 60}, {3980, 65},
+    {4010, 70}, {4030, 75}, {4045, 80}, {4060, 85}, {4080, 90}, {4100, 95}, {4150, 100},
+};
 
-inline float ocv_to_soc(float mv) {
+inline float ocv_lookup(const OcvPoint *curve, size_t n, float mv) {
   if (std::isnan(mv)) return NAN;
-  if (mv <= kOcvCurve[0].mv) return 0.0f;
-  if (mv >= kOcvCurve[kOcvPoints - 1].mv) return 100.0f;
-  for (size_t i = 1; i < kOcvPoints; i++) {
-    if (mv <= kOcvCurve[i].mv) {
-      const float v0 = kOcvCurve[i - 1].mv, v1 = kOcvCurve[i].mv;
-      const float p0 = kOcvCurve[i - 1].pct, p1 = kOcvCurve[i].pct;
+  if (mv <= curve[0].mv) return 0.0f;
+  if (mv >= curve[n - 1].mv) return 100.0f;
+  for (size_t i = 1; i < n; i++) {
+    if (mv <= curve[i].mv) {
+      const float v0 = curve[i - 1].mv, v1 = curve[i].mv;
+      const float p0 = curve[i - 1].pct, p1 = curve[i].pct;
       return p0 + (p1 - p0) * (mv - v0) / (v1 - v0);
     }
   }
   return 100.0f;
 }
 
-// Why the PMIC was last switched off (AXP2101 data buffer REG04 low nibble).
+inline float ocv_to_soc_for_capacity(float mv, int capacity_mah = kBattCapacityMah) {
+  if (capacity_mah > 0 && capacity_mah <= 450) {
+    return ocv_lookup(kOcvCurveSmall, sizeof(kOcvCurveSmall) / sizeof(kOcvCurveSmall[0]), mv);
+  }
+  if (capacity_mah > 750) {
+    return ocv_lookup(kOcvCurveLarge, sizeof(kOcvCurveLarge) / sizeof(kOcvCurveLarge[0]), mv);
+  }
+  return ocv_lookup(kOcvCurveMedium, sizeof(kOcvCurveMedium) / sizeof(kOcvCurveMedium[0]), mv);
+}
+
 enum class HibernateReason : uint8_t { OTHER = 0, CRITICAL = 1, IDLE = 2, KEY = 3, BUTTON = 4 };
 inline const char *hibernate_reason_name(uint8_t r) {
   static const char *const kNames[5] = {"other", "critical", "idle", "key", "button"};
   return r < 5 ? kNames[r] : "other";
 }
-constexpr uint8_t kHibRecordMagic = 0xB0;  // REG04 high nibble: a Latter record is present
+constexpr uint8_t kHibRecordMagic = 0xB0;
 
 struct HibernateRecord {
   bool valid = false;
   uint8_t reason = 0;
   uint16_t mv = 0;
-  uint8_t soc = 0xFF;  // 0xFF = unknown
+  uint8_t soc = 0xFF;
 };
 
-// ---------------------------------------------------------------------------------------------------
-// The model
-// ---------------------------------------------------------------------------------------------------
 struct BatteryModel {
-  static constexpr uint32_t kSampleMs = 10000U;       // awake, docked, low or near the cutoff
-  static constexpr uint32_t kSampleQuietMs = 60000U;  // screen off on battery (light-sleep quiet)
+  static constexpr uint32_t kSampleMs = 10000U;
+  static constexpr uint32_t kSampleQuietMs = 60000U;
   static constexpr float kEmaTauMs = 60000.0f;
-  static constexpr uint32_t kSettleMs = 180000U;   // after boot or a plug change the estimate may move both ways
-  static constexpr uint32_t kCvNominalMs = 40U * 60U * 1000U;  // typical CV phase, 0.5C down to C/20
-  static constexpr float kCvRampCeilPct = 99.0f;   // only the PMIC's charge-done state shows 100 %
-  // Low-battery warning, cleared once charging or after the estimate is back above kLowClearPct.
+  static constexpr uint32_t kSettleMs = 180000U;
+  static constexpr uint32_t kCvNominalMs = 40U * 60U * 1000U;
+  static constexpr float kCvRampCeilPct = 99.0f;
   static constexpr float kLowPct = 10.0f;
   static constexpr float kLowClearPct = 15.0f;
-  // Cutoff. 3.40 V at rest: below about 3.6 V a LiPo is on its discharge knee (under 5 % left) and 3.40 V
-  // leaves about 2 %, so the cell is never stored deeply discharged and the PMIC's off-state drain has
-  // weeks of margin before the cell's own protection (2.5-3.0 V). 3.30 V raw is the floor under any load:
-  // DCDC1 (the 3.3 V rail) is a buck from VSYS and is in dropout there; lower, a load step can trip the
-  // AXP2101 DCDC under-voltage cutoff (an unclean power loss, [PROF:BOOT] last_off=dcdc-undervolt).
   static constexpr int kCutoffRestMv = 3400;
   static constexpr int kCutoffLoadedMv = 3300;
   static constexpr uint32_t kCutoffHoldMs = 30000U;
-  static constexpr uint8_t kCutoffMinSamples = 4;  // 4 samples 10 s apart span 30 s
-  static constexpr int kFastSampleMv = 3500;       // knee: back to kSampleMs below this rest voltage
-  // Boot check (hal_axp2101_boot_battery_check, before Wi-Fi and the display): on battery, a cell reading
-  // at or below this at boot's light load is clearly past the cutoff and powers straight back off. 50 mV
-  // under kCutoffRestMv, so a low but usable cell (e.g. 3.46 V at rest) still boots; one near the cutoff
-  // boots and the runtime cutoff handles it.
+  static constexpr uint8_t kCutoffMinSamples = 4;
+  static constexpr int kFastSampleMv = 3500;
   static constexpr int kBootCutoffMv = kCutoffRestMv - 50;
-  static constexpr uint32_t kDrainMinMs = 30U * 60U * 1000U;  // drain rate needs 30 min on battery
+  static constexpr uint32_t kDrainMinMs = 30U * 60U * 1000U;
   static constexpr int kVbatMinValidMv = 2500;
   static constexpr int kVbatMaxValidMv = 4600;
 
   bool has_sample = false;
   uint32_t last_sample_ms = 0;
-  int vraw_mv = 0;    // last VBAT reading
-  int vrest_mv = 0;   // last compensated (rest-voltage estimate) reading
+  int vraw_mv = 0;
+  int vrest_mv = 0;
   float ema_mv = NAN;
-  float soc_model = NAN;    // the OCV curve at ema_mv
-  float soc_display = NAN;  // Battery Level
+  float soc_model = NAN;
+  float soc_display = NAN;
   bool on_battery = false;
   ChargePhase phase = ChargePhase::IDLE;
   BattLoad load = BattLoad::SCREEN;
@@ -244,12 +217,9 @@ struct BatteryModel {
   bool cutoff_tripped = false;
   uint32_t drain_t0_ms = 0;
   float drain_soc0 = NAN;
-  HibernateReason hib_reason = HibernateReason::OTHER;  // set by whoever starts a hibernate
-  HibernateRecord prev_hib;                              // read from the AXP2101 at boot
+  HibernateReason hib_reason = HibernateReason::OTHER;
+  HibernateRecord prev_hib;
 
-  // quiet = screen off on battery with no audio. The slow cadence stops on the discharge knee (rest voltage
-  // <= kFastSampleMv, about 2-3 % left) and as soon as a sample is below the cutoff, so the cutoff still trips
-  // 30 s (4 samples) after the voltage gets there.
   uint32_t sample_interval_ms(bool quiet) const {
     const bool near_cutoff = cutoff_below_count > 0 || (has_sample && vrest_mv <= kFastSampleMv);
     return (quiet && !near_cutoff) ? kSampleQuietMs : kSampleMs;
@@ -260,8 +230,8 @@ struct BatteryModel {
 
   bool settling(uint32_t now_ms) const { return static_cast<int32_t>(settle_until_ms - now_ms) > 0; }
 
-  // Feeds one VBAT sample. Returns true exactly once, when the cutoff trips.
-  bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms) {
+  bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms,
+              int hw_gauge_pct = -1, int capacity_mah = kBattCapacityMah) {
     if (now_ms == 0) now_ms = 1;
     const uint32_t dt_ms = has_sample ? now_ms - last_sample_ms : 0U;
     last_sample_ms = now_ms;
@@ -275,13 +245,20 @@ struct BatteryModel {
     phase = ph;
     load = ld;
 
+    const int path_mohm = kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
+    const int chg_std_ma = axp2101_icc_floor_ma(capacity_mah > 0 ? capacity_mah / 2 : 200);
+    const int chg_max_ma = axp2101_icc_floor_ma(
+        (capacity_mah * 8 / 10) < kChargeCapMa ? (capacity_mah * 8 / 10) : kChargeCapMa);
+    const int chg_ma = chg_std_ma < chg_max_ma ? chg_std_ma : chg_max_ma;
+    const int pre_ma = batt_clamp_int(((capacity_mah > 0 ? capacity_mah : 500) / 10) / 25 * 25, 25, 200);
+
     int comp_mv = 0;
     if (batt) {
-      comp_mv = batt_load_ma(ld) * kBattPathMilliohm / 1000;
+      comp_mv = batt_load_ma(ld) * path_mohm / 1000;
     } else if (ph == ChargePhase::CC) {
-      comp_mv = -(kBattChargeMa * kBattPathMilliohm / 1000);
+      comp_mv = -(chg_ma * path_mohm / 1000);
     } else if (ph == ChargePhase::PRECHARGE || ph == ChargePhase::TRICKLE) {
-      comp_mv = -(kBattPrechargeMa * kBattPathMilliohm / 1000);
+      comp_mv = -(pre_ma * path_mohm / 1000);
     }
     vrest_mv = vbat_mv + comp_mv;
 
@@ -292,14 +269,18 @@ struct BatteryModel {
       const float alpha = 1.0f - std::exp(-static_cast<float>(dt_ms) / kEmaTauMs);
       ema_mv += alpha * (static_cast<float>(vrest_mv) - ema_mv);
     }
-    soc_model = ocv_to_soc(ema_mv);
+    soc_model = ocv_to_soc_for_capacity(ema_mv, capacity_mah);
+    // Gentle fuel-gauge blend only when the hardware gauge agrees within +-15 % (rejects uncalibrated OTP 99 %).
+    if (hw_gauge_pct >= 0 && hw_gauge_pct <= 100 && !std::isnan(soc_model) &&
+        std::fabs(static_cast<float>(hw_gauge_pct) - soc_model) <= 15.0f) {
+      soc_model = 0.85f * soc_model + 0.15f * static_cast<float>(hw_gauge_pct);
+    }
     const bool settle = settling(now_ms);
 
     if (batt) {
       cv_start_ms = 0;
       full_latched = false;
       if (plug_change && was_full) {
-        // Unplugged after charge done: start at 100 % and only fall from here.
         soc_display = 100.0f;
         settle_until_ms = now_ms;
       } else if (first || settle || std::isnan(soc_display)) {
@@ -332,8 +313,6 @@ struct BatteryModel {
         const float s = soc_model > kCvRampCeilPct ? kCvRampCeilPct : soc_model;
         if (first || settle || std::isnan(soc_display) || s > soc_display) soc_display = s;
       } else {
-        // On USB but not charging (charger paused or disabled): the cell rests while VBUS runs the system,
-        // so the rest voltage reads true.
         cv_start_ms = 0;
         soc_display = soc_model;
       }
@@ -341,7 +320,6 @@ struct BatteryModel {
     if (soc_display < 0.0f) soc_display = 0.0f;
     if (soc_display > 100.0f) soc_display = 100.0f;
 
-    // Low-battery warning.
     if (batt && !low && soc_display <= kLowPct) {
       low = true;
       low_notice_pending = true;
@@ -350,7 +328,6 @@ struct BatteryModel {
       low_notice_pending = false;
     }
 
-    // Cutoff.
     bool tripped_now = false;
     if (!batt) {
       cutoff_below_since_ms = 0;
@@ -371,8 +348,6 @@ struct BatteryModel {
     return tripped_now;
   }
 
-  // Average discharge since the estimate settled on battery, in %/h (NAN until kDrainMinMs have passed).
-  // Derived from the voltage model, not measured current; mA = %/h x capacity / 100.
   float drain_pct_per_h(uint32_t now_ms) const {
     if (!has_sample || !on_battery || drain_t0_ms == 0 || std::isnan(drain_soc0) || std::isnan(soc_display)) {
       return NAN;
@@ -382,7 +357,6 @@ struct BatteryModel {
     return (drain_soc0 - soc_display) * 3600000.0f / static_cast<float>(dt);
   }
 
-  // d discharging, c charging (precharge or constant current), v constant voltage, f full, n not charging.
   char state_char() const {
     if (on_battery) return 'd';
     if (full_latched || phase == ChargePhase::DONE) return 'f';
@@ -392,45 +366,8 @@ struct BatteryModel {
   }
 };
 
-inline BatteryModel &battery_model() {
-  static BatteryModel m;
-  return m;
-}
-
-// Link Report tail (hal_link_report.h): " bat=<vraw mV>/<vrest mV>/<percent>/<state> dr=<%/h>", or nothing
-// before the first sample (boards without a battery never sample).
-inline void battery_report_fragment(char *buf, size_t len, uint32_t now_ms) {
-  if (buf == nullptr || len == 0) return;
-  buf[0] = '\0';
-  const BatteryModel &b = battery_model();
-  if (!b.has_sample) return;
-  char dr[16];
-  const float rate = b.drain_pct_per_h(now_ms);
-  if (std::isnan(rate)) {
-    snprintf(dr, sizeof(dr), "-");
-  } else {
-    snprintf(dr, sizeof(dr), "%.1f", rate);
-  }
-  snprintf(buf, len, " bat=%d/%d/%.0f/%c dr=%s", b.vraw_mv, b.vrest_mv,
-           std::isnan(b.soc_display) ? -1.0f : b.soc_display, b.state_char(), dr);
-}
-
-// [PROF:BATT], logged with every [PROF:POWER] line (Telemetry Profiler).
-inline void battery_log_profile(uint32_t now_ms) {
-  const BatteryModel &b = battery_model();
-  if (!b.has_sample) return;
-  const float rate = b.drain_pct_per_h(now_ms);
-  const uint32_t below_s = b.cutoff_below_count > 0 ? (now_ms - b.cutoff_below_since_ms) / 1000U : 0U;
-  const int32_t settle_left = static_cast<int32_t>(b.settle_until_ms - now_ms);
-  LATTER_PROF_LOGI(
-           "[PROF:BATT] vraw=%dmV vrest=%dmV ema=%.0fmV soc=%.1f%% disp=%.0f%% state=%c load=%s R=%dmOhm "
-           "low=%d cut=%u/%lus settle=%lds dr=%.1f%%/h (~%.0fmA) cap=%dmAh",
-           b.vraw_mv, b.vrest_mv, std::isnan(b.ema_mv) ? 0.0f : b.ema_mv,
-           std::isnan(b.soc_model) ? -1.0f : b.soc_model, std::isnan(b.soc_display) ? -1.0f : b.soc_display,
-           b.state_char(), batt_load_name(b.load), kBattPathMilliohm, (int) b.low,
-           (unsigned) b.cutoff_below_count, (unsigned long) below_s,
-           (long) (settle_left > 0 ? settle_left / 1000 : 0), std::isnan(rate) ? 0.0f : rate,
-           std::isnan(rate) ? 0.0f : rate * static_cast<float>(kBattCapacityMah) / 100.0f, kBattCapacityMah);
-}
+BatteryModel &battery_model();
+void battery_report_fragment(char *buf, size_t len, uint32_t now_ms);
+void battery_log_profile(uint32_t now_ms);
 
 }  // namespace latter_ui

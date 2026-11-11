@@ -1,6 +1,6 @@
 # Device UI design guide
 
-This guide is the standard for the on-device GUI: the universal GUI in [`guis/universal/`](../guis/universal/) and the C++ UI headers in [`include/`](../include/) (`ui_core.h`, `ui_layout.h`, `ui_touch_router.h`, and the `ui_*.h` page headers). Read it before changing the device UI. [Building a GUI](building-a-gui.md) explains how to replace the GUI; [Porting hardware](porting-hardware.md) explains how to add a board. Both defer to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
+This guide is the standard for the on-device GUI: the universal GUI in [`guis/universal/`](../guis/universal/), the compiled `latter_ui` component in [`components/latter_ui/`](../components/latter_ui/), and the C++ UI headers in [`include/`](../include/) (`ui_core.h`, `ui_layout.h`, `ui_hit_table.h`, `ui_gesture_engine.h`, `ui_widgets.h`, `ui_icons.h`, `ui_compositor.h`, `ui_touch_router.h`, and the `ui_*.h` page headers). Read it before changing the device UI. [Building a GUI](building-a-gui.md) explains how to replace the GUI; [Porting hardware](porting-hardware.md) explains how to add a board. Both defer to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
 
 Each rule is marked:
 
@@ -14,11 +14,11 @@ The [decision log](#10-decision-log) records the standing decisions behind this 
 ## 0. Principles
 
 1. **Traits, not names.** UI code branches on capability flags (`LATTER_ROUND_DISPLAY`, `LATTER_IS_WEARABLE`, `LATTER_HAS_IMU`, `LATTER_HAS_TOUCH`, `LATTER_PANEL_IPS`, screen size), never on a product or board name (D-001). **Enforced: `[TRAITS NOT NAMES]`**, **`[TERMINOLOGY]`**.
-2. **One canonical path.** Every role (a header, a back affordance, a pager, a hit-test, a motion, a debounce) has one implementation, in `ui_core.h` or `ui_layout.h`. A page that needs something new adds it there and reuses it.
-3. **Geometry is single-source.** A drawn element and its touch target come from the same `UiLayout` value or helper, and touch thresholds are millimetres (D-002, D-011).
-4. **One reference grid.** Layout values are written for the 466 × 466 reference panel and adapted with `scale_x`/`scale_y`/`scale_s` and three width buckets (D-024).
+2. **One canonical path.** Every role (a header, a back affordance, a pager, a toggle, a modal, a hit-test, a motion, a debounce) has one implementation, in `ui_core.h`, `ui_layout.h`, or `ui_widgets.h` (`components/latter_ui/`). A page that needs something new adds it there and reuses it.
+3. **Geometry is single-source.** Interactive widgets register their exact rendered bounds into `FrameHitTable` (`ui_hit_table.h`) as they draw or share `UiLayout` anchors, and touch thresholds are millimetres (D-002, D-011, D-031).
+4. **One reference grid.** Layout values are written for the 466 × 466 reference panel and adapted with `scale_x`/`scale_y`/`scale_s`/`scale_w`/`scale_min`, `safe_span(y)`, and three width buckets (D-024, D-031).
 5. **Unknown renders as unknown.** A value the device hasn't received shows `—` (`kUnknownGlyph`), never a demo default. **Enforced: `[UNKNOWN GLYPH INVARIANT]`**.
-6. **Fast and row-major.** Every pixel goes through the `fast_*` primitives in row-major order, and every frame paints its background exactly once (D-004, D-005).
+6. **Fast, row-major and band-flushed.** Every pixel goes through the `fast_*` primitives in row-major order, every frame paints its background once, and localized updates flush `2px`-aligned full-width horizontal bands via `DirtyBandTracker` (D-004, D-005, D-031).
 
 ## 1. Tokens
 
@@ -44,7 +44,7 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 
 - **Small text contrast.** Text in `font_small` or `font_micro` is at least 4.5:1 on its background; the colors below that are for large text (`font_date` and up), fills and icons. Disabled controls may use `col_gray`. **Enforced: `[TEXT CONTRAST]`** (D-019).
 - **Theme presets.** `apply_theme_preset` in [`modules/features/scripts_actions.yaml`](../modules/features/scripts_actions.yaml) writes `theme_primary` from **Display: Color Profile**: Steel Blue (default, `6B8E9E`), Blue (`456E8A`), Green (`427453`), Pink (`A87884`), or Custom (a color-wheel pick through `apply_custom_rgb_harmony`). It resets `theme_secondary` to `C0C0C0`. These two are the only color IDs the core modules write.
-- **Chrome colors** are named constants in `ui_core.h`, never literals (D-021): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeTrackDim`, `kChromeTrackBorderDim`, `kChromeBarTrack`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint`, `kChromeGlassSheen`. The page art (sky, games, weather) still carries `Color(r, g, b)` literals; their count per header may only go down. **Enforced: `[UI COLOR TOKENS]`** (ratchet).
+- **Chrome colors** are named constants in `ui_core.h` (plus semantic `ui::chrome_*()` helpers in `ui_widgets.h`), never literals (D-021): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeTrackDim`, `kChromeTrackBorderDim`, `kChromeBarTrack`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint`, `kChromeGlassSheen`. The page art (sky, games, weather) still carries `Color(r, g, b)` literals; their count per header may only go down. **Enforced: `[UI COLOR TOKENS]`** (ratchet).
 
 ### 1.2 Typography
 
@@ -118,7 +118,7 @@ Frame pacing:
 
 ### 1.6 Touch constants
 
-Every gesture threshold in `touch_handlers.yaml` comes from a millimetre constant in `UiLayout`, converted with `mm_to_px(mm) = mm × LATTER_PANEL_PPI / 25.4` (D-011). Each value is the pixel distance the 466 px reference panel (266 ppi) used, so that panel behaves exactly as before and every other panel gets the same physical distance. **Enforced: `[TOUCH MM]`**.
+Every gesture threshold in `TouchGestureEngine` ([`ui_gesture_engine.h`](../include/ui_gesture_engine.h) / [`components/latter_ui/gesture_engine.cpp`](../components/latter_ui/gesture_engine.cpp)) comes from a millimetre constant in `UiLayout`, converted with `mm_to_px(mm) = mm × LATTER_PANEL_PPI / 25.4` (D-011, D-031). Each value is the pixel distance the 466 px reference panel (266 ppi) used, so that panel behaves exactly as before and every other panel gets the same physical distance. **Enforced: `[TOUCH MM]`**.
 
 | `layout().` | mm | Use | Pocket (266) | Mobile (313) | Wrist (315) | Remote (165) | Desk (254) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -174,19 +174,23 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Viewport scrollbar | `render_viewport_scrollbar(it, cx, y, total, start_idx, thumb, dim)` | `dock_pips_y` / `app_dock_pips_y` | Under the Home dock and a mode bar when there are more than 4 items (D-016) |
 | Page pips | `render_dock_page_pips(it, cx, y, pages, active, c_active, c_inactive)` | Caller | Paged carousels: Games launcher, camera carousel (D-016) |
 | Vertical chevrons | `render_vertical_page_pips(it, show_up, show_down, bg, active, inactive)` | Right-edge column per width bucket | Paged vertical lists: 5-slot lists and the Tools launcher (D-016) |
-| Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | The same slots the page draws (the Home-dock ring uses `get_home_dock_window_xs`) | Rotary / button navigation |
+| Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | Registered `kHitFocusSlot` / `kHitFocusCircle` regions in `frame_hits()` (`FrameHitTable`), plus `UiLayout` slots | Rotary / button navigation |
 | Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Tools pages (D-007) |
 | Battery indicator | `render_battery_indicator` (`ui_clock_home.h`) | `UiLayout::battery_cx/y` | Clock and Home |
 | Time readout | `render_time_readout(it, cx, text, font_time, color)` (`ui_tools.h`) | `scale_y(142)` | The big readout on the timer, alarm editor and stopwatch pages (one component, one font) |
 | Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` | Live items (timers, stopwatch, music, alarms, calendar), filtered by the Device's Activity Card setting. One line on the round panel, two elsewhere; glass over the backdrop; rotates every 8 s, sliding upward, only when there are more items than lines (D-028, D-029) |
 | Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge (a tab on rectangular panels; floating inside the bezel on round), sized from the text and mm padding | Home Assistant disconnected for 8 s or more (D-026) |
 | Tool launcher card | `render_tool_launcher_card` (`ui_tools.h`) | `UiLayout::tools_*` | The Tools grid |
+| Toggle switch & row | `ui::toggle_switch`, `ui::toggle_card_row` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Boolean switches across Settings, Music, Area Control and Timers/Alarms (D-031) |
+| Shared pill & stepper | `ui::pill_button`, `ui::stepper_row` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Frosted-glass pill actions and 4-column steppers with co-located hit regions (D-031) |
+| HSV color wheel | `ui::hsv_color_wheel` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Single LUT-backed custom color picker ring and Save action (D-031) |
+| Modals & PIN pad | `ui::confirm_modal`, `ui::game_over_sheet`, `ui::pin_pad_modal` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Destructive confirmation sheets, game-over summaries, and the 3×4 Security PIN keypad modal (`PinPadModalState`) for 3-tier perimeter security actions (D-031) |
 
-**Icons** are monochrome solid-filled silhouettes with negative-space cutouts (D-008). *Documented only.*
+**Icons** are monochrome solid-filled silhouettes with negative-space cutouts (D-008), with shared vector glyphs (thermometer, eighth-notes, speaker, lock, shield) centralized in `ui_icons.h` (D-031). *Documented only.*
 
 **States.** Unknown values use `kUnknownGlyph` (`—`). Empty and loading cards use `render_empty_state`; status lines inside a page (for example "No updates available" under Update) stay plain sub-text.
 
-**Not yet shared.** Toggle, slider and list row are still built per page on `UiLayout` geometry. Build the shared one before adding another copy.
+**Adding shared controls.** Interactive multi-page controls live in [`ui_widgets.h`](../include/ui_widgets.h) / [`components/latter_ui/ui_widgets.cpp`](../components/latter_ui/ui_widgets.cpp) and register their hit bounds into `frame_hits()` as they draw. Add any new multi-page widget there before introducing a page-local copy.
 
 ## 3. Navigation
 
@@ -228,7 +232,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 
 ### 3.4 Takeover priority
 
-`gui.yaml` draws the first match and returns:
+`latter_ui::render_system_takeovers(...)` ([`ui_compositor.h`](../include/ui_compositor.h)) owns all global takeovers in strict priority order before `gui.yaml` renders `gui_page` (D-031):
 
 | Priority | Takeover | Condition |
 | :--- | :--- | :--- |
@@ -237,33 +241,34 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | 3 | Panel off (draws nothing, `frame_base_skip()`) | brightness off or `display_power_state == 2` |
 | 4 | **Alarm / timer ringing, Find My** | `alarm_ringing`, `timer_ringing`, `find_my_active` |
 | 5 | Voice assistant | `va_active` or a status text |
-| 6 | Notification / camera snapshot | `notif_active` |
-| 7 | Docked screensaver | `display_power_state == 1` |
-| 8 | The page | `gui_page` |
+| 6 | Security PIN pad modal | `ui::pin_pad_state().open` |
+| 7 | Notification / camera snapshot | `notif_active` |
+| 8 | Docked screensaver | `display_power_state == 1` |
+| 9 | The page | `gui_page` |
 
-After the page, `gui.yaml` draws the chrome in order: the focus overlay (not during takeovers), the home pill, and the Offline pill. Then, while a dock, mode-bar or list transition runs, it schedules the next animation frame. The alarm/timer takeover ranks above the voice assistant (D-006). *Documented only* (order is by code position).
+After the page, `gui.yaml` draws the chrome in order: the focus overlay (not during takeovers), the home pill, and the Offline pill. Then, while a dock, mode-bar or list transition runs, it schedules the next animation frame. The alarm/timer takeover ranks above the voice assistant (D-006), and custom GUIs invoke the exact same `render_system_takeovers(...)` hook. *Documented only* (order is enforced inside `ui_compositor.h`).
 
 ## 4. Gestures and hit-testing
 
-- **Pair drawing and touch.** Every touch target comes from the same `UiLayout` value or helper as the thing drawn: `hit_slot5`, `hit_area_card3`, `area_slider_pct`, `hit_tool_card3`, `hit_tools_row/col`, `hit_home_*`, the music `hit_*` and `music_scrub_frac`, `hit_map_zoom_*`, `hit_sys_color_swatch`, `is_home_pill_tap`, `dock_hit_r`. *Documented only.* Some raw coordinates remain in `touch_handlers.yaml` (for example `touch.y <= 72`, `touch.y < 220`, `SCREEN_W − 64`); move each into `UiLayout` when its page is next touched.
+- **Co-located hit registration and `UiLayout` geometry.** Interactive widgets register their exact rendered pixel bounds into `frame_hits()` (`FrameHitTable` in [`ui_hit_table.h`](../include/ui_hit_table.h), up to `kMaxRegions = 48` `HitRegion` entries tagged with `WidgetId`, `kHitTap` / `kHitHorizSlider` / `kHitFocusSlot` / `kHitFocusCircle`, and `UiActionFn` callbacks) as they draw, paired with `UiLayout` slot and zone helpers (`hit_slot5`, `hit_area_card3`, `area_slider_pct`, `hit_tool_card3`, `hit_tools_row/col`, `hit_home_*`, the music `hit_*` and `music_scrub_frac`, `hit_map_zoom_*`, `hit_sys_color_swatch`, `is_home_pill_tap`, `dock_hit_r`) (D-002, D-031).
 - **Thresholds in millimetres** ([1.6](#16-touch-constants)). **Enforced: `[TOUCH MM]`**, and **`[TOUCH PPI INVARIANT]`** requires `-DLATTER_PANEL_PPI` in every board file and example board.
 - **Home affordances.** Swipe up starting at or below `home_zone_y()`, at least `swipe_min()` and mostly vertical, or tap the pill (travel under `swipe_min()`). While the pill shows, the chin below `chin_guard_y()` belongs to it.
 - **Slider vs swipe zones (Page 6).** Above `mode_bar_zone_top()`, a drag that starts on a light, cover or fan card right of its divider scrubs that card's slider (after `drag_start()`) and never changes category. Below it, a horizontal swipe of `swipe_min()` steps the category; a swipe on the cards that isn't a slider drag needs `canvas_swipe()`.
 - **Shared zones** (`ui_core.h`): `is_back_button` (bottom band), `is_right_chevron_zone` (right edge column).
-- **Touch flow.** `TouchRouter` (`ui_touch_router.h`) forwards the first touch point to the `latter_touch_down_router`, `latter_touch_move_router` and `latter_touch_up_router` scripts in `touch_handlers.yaml`, which classify taps and swipes by page. A gesture is cancelled if the page context changes between press and release.
-- **Non-touch input.** `ui_input_event(action, delta)` takes `home`, `back`, `select`, `next`, `prev`. The focus ring shows for 8 s after the last input, and always on `LATTER_HAS_TOUCH=0` boards.
+- **Touch flow.** `TouchRouter` (`ui_touch_router.h`) forwards the first touch point to the compiled `TouchGestureEngine` (`touch_engine()` in [`ui_gesture_engine.h`](../include/ui_gesture_engine.h) / [`components/latter_ui/gesture_engine.cpp`](../components/latter_ui/gesture_engine.cpp), bound via `UiTouchRuntime`), which dispatches registered `FrameHitTable` regions and classifies taps, drags and swipes using `UiLayout` millimetre thresholds (`touch_handlers.yaml` is retired, D-031). A gesture is cancelled if the page context or active takeover changes between press and release.
+- **Non-touch input.** `touch_engine().on_input_event(...)` / `ui_input_event(action, delta)` takes `home`, `back`, `select`, `next`, `prev`. The focus ring shows for 8 s after the last input, and always on `LATTER_HAS_TOUCH=0` boards.
 - **Games** use IMU tilt on `LATTER_HAS_IMU=1` boards (touch-drag as a fallback) and touch steering on `LATTER_HAS_IMU=0` boards (D-009).
 
 ## 5. Rendering pipeline
 
 ### 5.1 Frame lifecycle (the `display:` lambda in `gui.yaml`)
 
-1. `FrameProfileScope` starts: waits for the between-frame DMA clear, timestamps the frame.
-2. **Watermark latch** on every panel (D-012): draw `(0, 0)` and `(W − 1, H − 1)` with `Color(8, 8, 8)`, then `col_bg`, so the dirty window covers the whole panel and the driver sends one full-frame transfer. These four `it.draw_pixel_at` calls are the only raw primitive calls the GUI makes.
+1. `FrameProfileScope` starts: waits for the between-frame DMA clear and timestamps the frame; `frame_hits().clear()` resets the per-frame `FrameHitTable`; `dirty_band().begin_frame(...)` (`DirtyBandTracker` in [`ui_compositor.h`](../include/ui_compositor.h)) resolves the active `2px`-aligned horizontal band `[y0, y1]` (`[0, H − 1]` on page, subpage or takeover changes and active animations; localized even-to-odd row span on partial updates).
+2. **Watermark latch** on every panel (D-012, D-031): draw `(0, y0)` and `(W − 1, y1)` with `Color(8, 8, 8)`, then `col_bg`, latching full width `x = 0 .. W − 1` across the `2px`-aligned dirty band (`y0 & ~1` to `min(H − 1, y1 | 1)`). This preserves `MipiSpiBuffer`'s contiguous `stride == SCREEN_W` zero-copy DMA fast path while cutting pixel bus traffic 5–12× on localized updates. These four `it.draw_pixel_at` calls are the only raw primitive calls the GUI makes.
 3. `bind_frame_buffer(disp1, it)` binds the software framebuffer for direct scanline writes; `frame_base_begin()` resets the base state.
-4. Takeovers in priority order ([3.4](#34-takeover-priority)), each starting with `frame_base(it, col_bg)`.
-5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` from `gui.yaml`; Home paints its own base (the daytime sky on rectangular panels), and Music's full-screen art claims the base with `frame_base_claim()`.
-6. Chrome: focus overlay, home pill, Offline pill.
+4. `latter_ui::render_system_takeovers(...)` in priority order ([3.4](#34-takeover-priority)), each starting with `frame_base(it, col_bg)` (or `frame_base_skip()` when the panel is off).
+5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` (or `render_page_wallpaper_base`) from `gui.yaml`; Home paints its own base (the daytime sky or wallpaper), and Music's full-screen art claims the base with `frame_base_claim()`.
+6. Chrome: focus overlay (`render_active_focus_overlay`), home pill, Offline pill.
 7. `FrameProfileScope` ends: logs a frame that never painted a base, records timing, and starts the next DMA clear.
 
 ### 5.2 Rules
@@ -277,13 +282,15 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 | Full 16-bit RGB565: no lossy bitmasks (`0xC718`, `0xE79C`), no skipped scanlines | **Enforced: `[UI INVARIANT]`** (masks); skipped scanlines *documented only* |
 | Smooth dimming and gradients (D-027): art scrims scale per channel in 1/256 (`compute_art_row_scale_q8`, ramped between levels) through `dim_rgb565_row_dither`; gradient fills interpolate at 8.8 fixed point; both quantize to RGB565 with a 4×4 ordered dither keyed to the screen position. Curved edges blend by coverage against the framebuffer; straight edges stay on pixel boundaries. The dither alternates adjacent RGB565 levels (one step), never lit/black, so the IPS rule below still holds. | *Documented only* |
 | IPS panels (`LATTER_PANEL_IPS=1`): no 1-px alternating lit/black row or column patterns | *Documented only* |
-| Round clipping uses `circle_half_span(y)` / `chord_half_span_int`; on rectangular panels never pass `x` into `circle_half_span` to get vertical bounds | *Documented only* |
+| Round and corner clipping uses `circle_half_span(y)`, `safe_span(y)` and `chord_half_span_int`; on rectangular panels never pass `x` into `circle_half_span` to get vertical bounds | *Documented only* |
 | No `sinf`, `cosf` or `sqrtf` in per-pixel loops: `fast_sin`/`fast_cos`/`fast_sincos` and the chord table | *Documented only* |
-| Redraws go through `schedule_disp_update` / `schedule_anim_disp_update`, never `disp1.update()`. Both accept `DispT *` and `DispT *const *`. | *Documented only* |
+| No global namespace directives for `latter_ui` in headers or docs; game and tool state structs reside in PSRAM BSS (`LATTER_PSRAM_BSS` / `EXT_RAM_BSS_ATTR`) | **Enforced: `[CORE DOCS]`**, `verify_core.py` |
+| Redraws go through `schedule_disp_update`, `schedule_band_disp_update` or `schedule_anim_disp_update`, never `disp1.update()`. All accept `DispT *` and `DispT *const *`. | *Documented only* |
 
 ### 5.3 Redraw scheduling
 
-- `schedule_disp_update`: a 0 ms one-shot under one scheduler ID. Requests made in the same loop pass collapse into one redraw.
+- `schedule_disp_update`: marks the full panel dirty (`mark_dirty_full()`) and arms a 0 ms one-shot under one scheduler ID. Requests made in the same loop pass collapse into one redraw.
+- `schedule_band_disp_update(disp, y0, y1)`: marks a `2px`-aligned horizontal band `[y0, y1]` on `dirty_band()` (`DirtyBandTracker`) and arms the same coalesced 0 ms one-shot; multiple band requests in one loop pass merge into `[min(y0), max(y1)]`.
 - `schedule_anim_disp_update`: the next frame 18 ms (P4) or 26 ms (S3) after the last frame started, under the same ID.
 - Interval-driven animation (Tools, games) keeps at least 42 ms between frames; ambient visuals use `should_step_ambient_anim`.
 - After each frame, hardware clears the framebuffer to that frame's base color while the CPU is free (the PPA solid fill on the P4, a GDMA copy on the S3). The next frame skips its CPU fill when its base color matches. Any failure falls back to the CPU fill.
@@ -303,9 +310,9 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 | `font_small` / `font_micro` | 21 / 14 | 25 / 17 | 25 / 17 | 21 / 14 | 30 / 20 |
 | IMU / battery / wearable | yes / yes / no | yes / yes / no | yes / yes / yes | no / yes / no | no / no / no |
 
-**How a value adapts** (D-024):
+**How a value adapts** (D-024, D-031):
 
-1. `scale_x`/`scale_y`/`scale_s` return the 466-grid value unchanged on panels up to 520 px and scale it proportionally above 520 px. `scale_min` always scales.
+1. `scale_x`/`scale_y`/`scale_s` return the 466-grid value unchanged on panels up to 520 px and scale it proportionally above 520 px. `scale_min` and `scale_w` always scale proportionally across all panel sizes (both down below 466 px and up above 520 px), and `safe_span(y, inset)` returns the bezel- and corner-safe horizontal span (`2 * circle_half_span(y, inset)`) on every panel.
 2. On top of that, `UiLayout` and the components branch on three **width buckets**: below 380 px, 380–520 px, and above 520 px.
 3. `LATTER_ROUND_DISPLAY` selects hand-placed round coordinates (for example the dock at x = 112, 193, 274, 355).
 4. `LATTER_IS_WEARABLE` moves the header, battery and corner radius clear of the watch's rounded corners.
@@ -422,7 +429,7 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Date:** 2026-11-07
 - **Decision:** The watermark latch at the top of the display lambda runs on round and rectangular panels.
 - **Why:** The round panel's `MipiSpiBuffer` needs the full window too; the earlier "non-round only" wording was stale.
-- **Status:** Accepted.
+- **Status:** Accepted; amended by D-031 (latches full-width `2px`-aligned horizontal dirty bands `[y0, y1]`).
 
 ### D-013: Page 9 is the Whole-Home Hub
 - **Date:** 2026-11-07
@@ -540,11 +547,14 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Why:** Switching between frosted glass when a wallpaper was shown and flat opaque buttons when no wallpaper was configured created two competing visual languages, and blending `kChromeGlassTint` at 60 % directly onto `(0, 0, 0)` crushed Home dock app buttons nearly to black. One canonical frosted-glass surface language keeps every page cohesive.
 - **Status:** Accepted; implemented 2026-11-10.
 
+### D-031: Compiled `latter_ui` component, co-located `FrameHitTable`, `TouchGestureEngine`, shared widgets and `2px` horizontal-band dirty flush
+- **Date:** 2026-11-10
+- **Decision:** (1) The on-device UI compiles as a dedicated PlatformIO ESPHome component (`components/latter_ui/`) paired with `include/ui_*.h`, placing inactive game and tool state structs (`Marbles`, `Archery`, `Bricks`, `Chomp`, `2048`, `Memory`, `Calculator`, `Stopwatch`) in PSRAM BSS (`LATTER_PSRAM_BSS` / `EXT_RAM_BSS_ATTR`) so internal SRAM stays free. (2) Interactive controls register their exact rendered pixel bounds into `frame_hits()` (`FrameHitTable`, `ui_hit_table.h`) as they draw, and the compiled `TouchGestureEngine` (`ui_gesture_engine.h`, `components/latter_ui/gesture_engine.cpp`) and `render_active_focus_overlay()` read `frame_hits()` and `UiLayout` millimetre thresholds directly—retiring the 3,556-line `touch_handlers.yaml`. (3) Reusable multi-page widgets and vector icons live in `ui_widgets.h` / `ui_widgets.cpp` and `ui_icons.h`: `ui::toggle_switch`, `ui::toggle_card_row`, `ui::pill_button`, `ui::stepper_row`, `ui::hsv_color_wheel` (single LUT-backed color wheel), `ui::confirm_modal`, `ui::game_over_sheet`, and `ui::pin_pad_modal` (on-device 3×4 PIN keypad for 3-tier perimeter security actions). (4) All system-level takeovers execute through `latter_ui::render_system_takeovers(...)` (`ui_compositor.h`) in strict priority order (inserting the Security PIN pad modal between Voice Assistant and Notification/Camera), shared identically by `guis/universal/gui.yaml` and custom GUIs. (5) Proportional multi-geometry helpers `scale_w(v466)` and `safe_span(y)` scale down below 466 px as well as up above 520 px. (6) `DirtyBandTracker` (`dirty_band()`, `schedule_band_disp_update`) tracks full-width `2px`-aligned horizontal dirty bands (`y0 & ~1` to `min(SCREEN_H - 1, y1 | 1)`) and latches `(0, y0)` and `(SCREEN_W - 1, y1)` at the top of the display lambda, amending D-012's full-panel-only corner latch for localized updates while preserving `MipiSpiBuffer`'s contiguous `stride == SCREEN_W` zero-copy DMA fast path.
+- **Why:** Separate YAML touch lambdas drifted from C++ draw coordinates on 320×480 and 720×720 panels and inflated single-TU build times; full-frame SPI/QSPI flushes sent 434 KB on localized 1 Hz clock or progress updates; and 3-tier perimeter security required a first-class modal keypad.
+- **Status:** Accepted; implemented 2026-11-10.
+
 ## Known gaps
 
 Nothing here contradicts a standing decision; these are the places the code doesn't fully reach it yet.
 
-- Some raw touch coordinates remain in `touch_handlers.yaml` (D-002); there is no check for them yet.
-- Toggle, slider and list row are not shared components (section 2).
-- The analog stopwatch draws its own "< Back" at a hand-placed row inside the dial; the Music queue header sits off center beside its Clear button.
 - Row-major loops, skipped scanlines, IPS row patterns and icon style are reviewed by hand.

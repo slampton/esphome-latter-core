@@ -1,8 +1,7 @@
 # Core Subsystem: Display Engine, Lifecycle, Latter API Contract & UI Router
 
 substitutions:
-  device_slug: "latter_device"
-  version: "2.2.1"
+  version: "3.0.0"
   screen_w: "466"
   screen_h: "466"
   font_time_size: "77"
@@ -22,14 +21,6 @@ substitutions:
   default_podcast_sort: "Newest on Top"
   api_reboot_timeout: "0s"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
-  sun_entity: "sun.sun"
-  moon_entity: "sensor.moon_phase"
-  firmware_update_entity: "update.${device_slug}_project_firmware"
-  active_media_sensor: "sensor.${device_slug}_active_media"
-  weather_forecast_sensor: "sensor.${device_slug}_weather_forecast"
-  area_context_sensor: "sensor.${device_slug}_area_context"
-  calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
-  remote_config_sensor: "sensor.${device_slug}_remote_config"
 
 packages:
   latter_pipeline: !include display_pipeline.yaml

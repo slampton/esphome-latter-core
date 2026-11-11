@@ -10,9 +10,6 @@ substitutions:
   font_micro_size: "14"
   font_games_size: "38"
 
-packages:
-  latter_touch_handlers: !include touch_handlers.yaml
-
 font:
   - file: "gfonts://Roboto"
     id: font_chrono_time
@@ -108,145 +105,79 @@ display:
       latter_ui::FrameProfileScope prof_frame_scope(id(gui_page), prof_sub, id(display_power_state));
       const int cx = latter_ui::SCREEN_CX;
       const int cy = latter_ui::SCREEN_CY;
-      const Color C_WHITE = id(col_white);
-      const Color C_SOLARIS_GOLD = id(col_solaris_gold);
-      // Latch full-frame watermarks (x_low_=0, y_low_=0, x_high_=W-1, y_high_=H-1) across both
-      // MipiDsi and MipiSpiBuffer (round and rectangular) so direct-buffer scanlines are never
-      // clipped to the text glyph bounding box and MipiSpi always takes the stride==w DMA path.
-      it.draw_pixel_at(0, 0, Color(8, 8, 8));
-      it.draw_pixel_at(0, 0, id(col_bg));
-      it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, Color(8, 8, 8));
-      it.draw_pixel_at(latter_ui::SCREEN_W - 1, latter_ui::SCREEN_H - 1, id(col_bg));
-      latter_ui::bind_frame_buffer(id(disp1), it);
-      latter_ui::frame_base_begin();
-
-      // ==========================================
-      // GLOBAL OVERLAY: OTA FIRMWARE UPDATE IN PROGRESS
-      // ==========================================
-      if (id(ota_in_progress)) {
-        latter_ui::frame_base(it, id(col_bg));
-        int pct = id(ota_progress_pct);
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
-        if (LATTER_ROUND_DISPLAY) {
-          for (int i = 0; i <= pct; i++) {
-            float rad = (static_cast<float>(i) / 100.0f) * 2.0f * latter_ui::PI_F - latter_ui::HALF_PI_F;
-            float s = 0.0f, c = 1.0f;
-            latter_ui::fast_sincos(rad, s, c);
-            latter_ui::fast_line(it, cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
-                                 cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), id(theme_secondary));
-          }
-        } else {
-          const int ota_bw = std::min(280, latter_ui::SCREEN_W - 48);
-          const int ota_bx = cx - (ota_bw / 2);
-          const int ota_fill = (ota_bw * pct) / 100;
-          latter_ui::fill_rect_row_major(it, ota_bx, cy + 104, ota_bw, 10, id(col_dark_gray));
-          if (ota_fill > 0) {
-            latter_ui::fill_rect_row_major(it, ota_bx, cy + 104, ota_fill, 10, id(theme_primary));
-          }
-        }
-
-        latter_ui::fast_print(it, cx, cy - 60, id(font_date), id(theme_primary), TextAlign::CENTER, "FIRMWARE UPDATE");
-
-        char prog_buf[32];
-        snprintf(prog_buf, sizeof(prog_buf), "%d%%", pct);
-        latter_ui::fast_print(it, cx, cy + 8, id(font_time), id(col_white), TextAlign::CENTER, prog_buf);
-
-        const char* status_msg = "Preparing flash...";
-        if (pct >= 99) {
-          status_msg = "Rebooting device...";
-        } else if (pct >= 85) {
-          status_msg = "Verifying image...";
-        } else if (pct >= 10) {
-          status_msg = "Writing flash memory...";
-        }
-        latter_ui::fast_print(it, cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, status_msg);
-        return;
-      }
-
-      // ==========================================
-      // GLOBAL OVERLAY: HIBERNATION SHUTDOWN
-      // ==========================================
-      if (id(is_hibernating)) {
-        latter_ui::frame_base(it, id(col_bg));
-        if (id(hibernate_countdown_val) > 0) {
-          latter_ui::fast_print(it, cx, cy - 65, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
-          char c_buf[16];
-          snprintf(c_buf, sizeof(c_buf), "%d", id(hibernate_countdown_val));
-          latter_ui::fast_print(it, cx, cy + 5, id(font_chrono_time), id(theme_secondary), TextAlign::CENTER, c_buf);
-          latter_ui::fast_print(it, cx, cy + 65, id(font_small), id(col_slate), TextAlign::CENTER, "Tap screen to stay awake");
-        } else {
-          latter_ui::fast_print(it, cx, cy - 10, id(font_date), id(theme_primary), TextAlign::CENTER, "HIBERNATING");
-          latter_ui::fast_print(it, cx, cy + 30, id(font_small), id(col_slate), TextAlign::CENTER, "Shutting down...");
-        }
-        return;
-      }
-
-      if (!id(display_brightness).current_values.is_on() || id(display_power_state) == 2) {
-        latter_ui::frame_base_skip();  // panel off: leave the buffer; the wake frame repaints it
-        return;
-      }
-
       auto now = id(ha_time).now();
       if (!now.is_valid()) {
         now = id(sntp_time).now();
       }
 
-      // ==========================================
-      // GLOBAL OVERLAY: ALARM / TIMER RINGING TAKEOVER (Highest Priority)
-      // ==========================================
-      if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
-        latter_ui::frame_base(it, id(col_bg));
-        latter_ui::render_alert_ringing_overlay(
-            it, cx, cy, millis(), id(alarm_ringing), id(alarm_ringing_idx),
-            id(alarm1_recurrence), id(alarm2_recurrence), id(alarm3_recurrence),
-            now, id(is_24h_format),
-            id(font_time), id(font_date), id(font_small), id(font_micro),
-            id(theme_primary), id(theme_secondary), id(col_bg), id(col_black),
-            id(col_white), id(col_gray), id(col_red),
-            id(find_my_active), id(va_timer_name));
-        return;
-      }
+      latter_ui::SystemTakeoverState takeover_st;
+      takeover_st.cx = cx;
+      takeover_st.cy = cy;
+      takeover_st.now_ms = millis();
+      takeover_st.is_24h_format = id(is_24h_format);
+      takeover_st.ota_in_progress = id(ota_in_progress);
+      takeover_st.ota_progress_pct = id(ota_progress_pct);
+      takeover_st.is_hibernating = id(is_hibernating);
+      takeover_st.hibernate_countdown_val = id(hibernate_countdown_val);
+      takeover_st.panel_is_on = id(display_brightness).current_values.is_on();
+      takeover_st.display_power_state = id(display_power_state);
+      takeover_st.alarm_ringing = id(alarm_ringing);
+      takeover_st.alarm_ringing_idx = id(alarm_ringing_idx);
+      takeover_st.alarm1_recurrence = id(alarm1_recurrence);
+      takeover_st.alarm2_recurrence = id(alarm2_recurrence);
+      takeover_st.alarm3_recurrence = id(alarm3_recurrence);
+      takeover_st.timer_ringing = id(timer_ringing);
+      takeover_st.find_my_active = id(find_my_active);
+      takeover_st.va_timer_name = id(va_timer_name);
+      takeover_st.va_active = id(va_active);
+      takeover_st.va_status_text = id(va_status_text);
+      takeover_st.va_tts_received = id(va_tts_received);
+      takeover_st.va_vad_active = id(va_vad_active);
+      takeover_st.va_visual_profile_opt = std::string(id(va_visual_profile).current_option());
+      takeover_st.notif_active = id(notif_active);
+      takeover_st.notif_title = id(notif_title);
+      takeover_st.notif_message = id(notif_message);
+      takeover_st.notif_priority = id(notif_priority);
+      takeover_st.notif_camera_url = id(notif_camera_url);
+      takeover_st.current_loaded_camera_url = id(current_loaded_camera_url);
+      takeover_st.screensaver_style_opt = std::string(id(screensaver_style_select).current_option());
+      takeover_st.theme_primary = id(theme_primary);
+      takeover_st.theme_secondary = id(theme_secondary);
+      takeover_st.col_bg = id(col_bg);
+      takeover_st.col_black = id(col_black);
+      takeover_st.col_white = id(col_white);
+      takeover_st.col_slate = id(col_slate);
+      takeover_st.col_gray = id(col_gray);
+      takeover_st.col_dark_gray = id(col_dark_gray);
+      takeover_st.col_gold = id(col_gold);
+      takeover_st.col_red = id(col_red);
+      takeover_st.col_solaris_gold = id(col_solaris_gold);
 
-      // ==========================================
-      // GLOBAL OVERLAY: VOICE ASSISTANT TAKEOVER
-      // ==========================================
-      if (id(va_active) || !id(va_status_text).empty()) {
-        latter_ui::frame_base(it, id(col_bg));
-        uint32_t now_ms = millis();
-        bool is_speaking = id(va_tts_received);
-        bool is_thinking = (!is_speaking && id(va_status_text) == "Thinking...");
-        latter_ui::render_voice_assistant_overlay(
-            it, cx, cy, now_ms, is_speaking, is_thinking, id(va_vad_active),
-            id(va_visual_profile).current_option(), C_WHITE, C_SOLARIS_GOLD);
-        return;
-      }
+      const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
+      const bool anim_or_scroll =
+          (takeover_sig != 0U) ||
+          latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage)) ||
+          id(menu_scroll_active) ||
+          (id(gui_page) == 3 && id(active_game) > 0);
+      latter_ui::dirty_band().begin_frame(id(gui_page), prof_sub, takeover_sig, anim_or_scroll);
 
-      // ==========================================
-      // GLOBAL OVERLAY: LATTER PUSH NOTIFICATION & CAMERA SNAPSHOT TAKEOVER
-      // ==========================================
-      if (id(notif_active)) {
-        latter_ui::frame_base(it, id(col_bg));
-        latter_ui::render_notification_overlay(
-            it, cx, cy, millis(),
-            id(notif_title), id(notif_message), id(notif_priority),
-            id(camera_snapshot_art), id(notif_camera_url), id(current_loaded_camera_url),
-            id(font_date), id(font_small),
-            id(theme_primary), id(theme_secondary),
-            id(col_bg), id(col_black), id(col_white),
-            id(col_slate), id(col_gold), id(col_red));
-        return;
-      }
+      // Latch full-width 2px-aligned horizontal dirty band [band_y0, band_y1] across MipiDsi and
+      // MipiSpiBuffer so MipiSpi always takes its contiguous full-width DMA fast path.
+      const int band_y0 = latter_ui::dirty_band().y0();
+      const int band_y1 = latter_ui::dirty_band().y1();
+      it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
+      it.draw_pixel_at(0, band_y0, id(col_bg));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, Color(8, 8, 8));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
+      latter_ui::bind_frame_buffer(id(disp1), it);
+      latter_ui::frame_base_begin();
 
-      // ==========================================
-      // GLOBAL OVERLAY: DOCKED SCREENSAVER (Mode 1)
-      // ==========================================
-      if (id(display_power_state) == 1) {
-        latter_ui::frame_base(it, id(col_bg));
-        latter_ui::render_docked_screensaver(
-            it, cx, cy, millis(), now, id(is_24h_format),
-            id(screensaver_style_select).current_option(),
-            id(font_time), id(font_date), id(col_slate), id(col_dark_gray));
+      // System-owned global takeovers (OTA -> Hibernate -> Panel Off -> Alarm/Timer/Find-My ->
+      // Voice Assistant -> Security PIN Pad -> Push Notification -> Docked Screensaver).
+      if (latter_ui::render_system_takeovers(
+              it, now, takeover_st, id(camera_snapshot_art),
+              id(font_time), id(font_chrono_time), id(font_date),
+              id(font_small), id(font_micro))) {
         return;
       }
 
@@ -312,7 +243,7 @@ display:
             now, id(is_24h_format), batt, id(batt_charging).state,
             eff_show_w_bg,
             std::string(id(weather_sim_condition).current_option()), eff_w_temp_h,
-            eff_w_cond_h, id(ha_sun_state).state, id(ha_moon_phase).state,
+            eff_w_cond_h, ws_h.sun_state, ws_h.moon_phase,
             id(accel_x).state, id(accel_y).state,
             id(stopwatch_running), id(stopwatch_start_time), id(stopwatch_elapsed_ms),
             mus_play_h, m_title_h, m_artist_h,
@@ -480,7 +411,8 @@ display:
             id(sleep_menu_page), id(display_menu_page),
             id(menu_scroll_active), id(menu_scroll_dir), id(menu_scroll_target_page),
             id(update_check_state), id(update_check_timer),
-            id(ha_firmware_latest_version).state, id(ha_firmware_release_summary).state,
+            latter_ui::fw_update_latest_version(&id(latter_firmware_update)),
+            latter_ui::fw_update_release_summary(&id(latter_firmware_update)),
             batt, id(batt_charging).state, id(batt_voltage).state,
             id(latter_wifi_signal).state, id(latter_ip_address).state, id(imu_temp).state,
             free_heap_kb, now.is_valid(), id(ble_ctrl).is_active(),
@@ -524,9 +456,9 @@ display:
             ws.temperature, ws.high, ws.low,
             ws.humidity, ws.wind_speed, ws.wind_bearing,
             ws.condition, ws.forecast_5d,
-            id(ha_sun_state).state, id(ha_sun_elevation).state, id(ha_sun_azimuth).state,
-            id(ha_sun_next_rising).state, id(ha_sun_next_setting).state,
-            id(ha_moon_phase).state,
+            ws.sun_state, ws.sun_elevation, ws.sun_azimuth,
+            ws.sun_next_rising, ws.sun_next_setting,
+            ws.moon_phase,
             id(font_time), id(font_date), id(font_btn_bold), id(font_small), id(font_micro),
             id(theme_primary), id(theme_secondary),
             id(col_bg), id(col_black), id(col_white), id(col_slate),
@@ -715,18 +647,21 @@ touchscreen:
     on_touch:
       then:
         - lambda: |-
+            id(sync_ui_touch_runtime).execute();
             latter_ui::touch_router().dispatch_press(touch, touches, [](int tx, int ty) {
-              id(latter_touch_down_router).execute(tx, ty);
+              latter_ui::touch_engine().on_touch(tx, ty, millis());
             });
     on_update:
       then:
         - lambda: |-
+            id(sync_ui_touch_runtime).execute();
             latter_ui::touch_router().dispatch_move(touches, [](int tx, int ty) {
-              id(latter_touch_move_router).execute(tx, ty);
+              latter_ui::touch_engine().on_update(tx, ty, millis());
             });
     on_release:
       then:
         - lambda: |-
+            id(sync_ui_touch_runtime).execute();
             latter_ui::touch_router().dispatch_release([]() {
-              id(latter_touch_up_router).execute();
+              latter_ui::touch_engine().on_release(millis());
             });

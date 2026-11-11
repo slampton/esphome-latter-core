@@ -47,6 +47,9 @@ jobs:
           restore-keys: |
             external-files-esphome-2026.11.0b2-
 
+      - name: Verify static architecture, HAL, UI, and security guardrails
+        run: python tools/verify_core.py
+
       - name: Verify Protocol v3 codegen parity
         run: python tools/gen_protocol.py --check
 
@@ -64,7 +67,9 @@ jobs:
 
       - name: Compile and run C++20 host unit tests
         run: |
-          g++ -std=c++20 -O2 tests/host/test_latter_state.cpp -o /tmp/test_latter_state
+          g++ -std=c++20 -O2 -Wall -Wextra tests/host/test_all.cpp -o /tmp/test_all
+          /tmp/test_all
+          g++ -std=c++20 -O2 -Wall -Wextra tests/host/test_latter_state.cpp -o /tmp/test_latter_state
           /tmp/test_latter_state
 
       - name: Validate Example 1 (Minimal Headless Companion)
@@ -86,11 +91,17 @@ jobs:
             echo "Validating $dev..."
             base_name=$(basename "$dev")
             cat <<EOF > "devices/.ci_${base_name}"
+          substitutions:
+            ota_password: "LatterCIOTAPassword"
           wifi:
             ssid: "LatterCIWiFi"
             password: "LatterCIPassword"
+          api:
+            encryption:
+              key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
           packages:
             device_under_test: !include ${base_name}
+            device_builder_ota: !include ../modules/ota_esphome.yaml
           EOF
             ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config ${base_name}" config "devices/.ci_${base_name}"
             rm -f "devices/.ci_${base_name}"

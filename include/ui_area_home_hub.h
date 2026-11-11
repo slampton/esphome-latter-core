@@ -6,6 +6,7 @@
 
 #include "ui_layout.h"
 #include "ui_clock_home.h"
+#include "ui_widgets.h"
 
 namespace latter_ui {
 
@@ -317,32 +318,9 @@ inline void render_area_control_page(
                        col_white, font_small);
 
     if (!is_kelvin_mode) {
-      // MODE 0: 300px 5-Ring HSV Color Wheel for RGB Lights (cy = scale_y(212))
       const int wheel_cy = scale_y(212);
-      const float ws = (SCREEN_W > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
-      fast_circle(it, cx, wheel_cy, scale_s(150), card_brd_off);
-      for (int a = 0; a < 60; a++) {
-        float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
-        float c_a = DIAL_COS[a];
-        float s_a = DIAL_SIN[a];
-        fast_filled_circle(it, cx + static_cast<int>(c_a * 134.0f * ws), wheel_cy + static_cast<int>(s_a * 134.0f * ws), scale_s(14), hsv_to_rgb(hue_01, 1.00f, 1.0f));
-        fast_filled_circle(it, cx + static_cast<int>(c_a * 112.0f * ws), wheel_cy + static_cast<int>(s_a * 112.0f * ws), scale_s(13), hsv_to_rgb(hue_01, 0.82f, 1.0f));
-        fast_filled_circle(it, cx + static_cast<int>(c_a * 90.0f * ws),  wheel_cy + static_cast<int>(s_a * 90.0f * ws),  scale_s(11), hsv_to_rgb(hue_01, 0.65f, 1.0f));
-        fast_filled_circle(it, cx + static_cast<int>(c_a * 70.0f * ws),  wheel_cy + static_cast<int>(s_a * 70.0f * ws),  scale_s(10), hsv_to_rgb(hue_01, 0.45f, 1.0f));
-      }
-      Color preview_c = hsv_to_rgb(light_insp_hue_deg() / 360.0f, light_insp_sat(), 1.0f);
-      fast_filled_circle(it, cx, wheel_cy, scale_s(44), col_black);
-      fast_filled_circle(it, cx, wheel_cy, scale_s(39), preview_c);
-      fast_circle(it, cx, wheel_cy, scale_s(39), col_white);
-
-      float rad = light_insp_hue_deg() * (PI_F / 180.0f);
-      float r_sel = (70.0f + ((light_insp_sat() - 0.35f) / 0.65f) * 64.0f) * ws;
-      r_sel = std::max(68.0f * ws, std::min(136.0f * ws, r_sel));
-      int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
-      int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-      fast_filled_circle(it, sel_x, sel_y, scale_s(11), preview_c);
-      fast_circle(it, sel_x, sel_y, scale_s(11), col_white);
-      fast_circle(it, sel_x, sel_y, scale_s(12), col_black);
+      ui::hsv_color_wheel(it, cx, wheel_cy, 140, 62, light_insp_hue_deg(), light_insp_sat(),
+                          col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
     } else {
       // MODE 1: White Color Temperature Slider (2700K Warm Amber <-> 6500K Cool Daylight) + Brightness Slider
       std::string fit_ln = fit_text_to_width_font(light_insp_name(), scale_x(260), font_small);
@@ -733,6 +711,7 @@ inline void render_whole_home_page(
                        is_disarmed ? Color(18, 36, 26) : card_bg_on,
                        is_disarmed ? col_green : card_brd_off,
                        "Disarm", col_white, font_date);
+    ui::draw_icon_shield(it, cx - scale_x(118), layout().area_card3_y(0), is_disarmed ? col_green : col_slate);
     render_modern_card(it, cx, layout().area_card3_y(1), 296, 58, 14,
                        is_home ? Color(38, 32, 16) : card_bg_on,
                        is_home ? col_gold : card_brd_off,
@@ -784,6 +763,7 @@ inline void render_whole_home_page(
       snprintf(t_val, sizeof(t_val), "—°");
     }
     fast_print(it, cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
+    ui::draw_icon_thermometer(it, cx - scale_x(58), hero_y, mode_brd, kChromeShadow);
 
     const int M_XS[4] = {cx - scale_x(129), cx - scale_x(43), cx + scale_x(43), cx + scale_x(129)};
     const char *M_NAMES[4] = {"Heat", "Cool", "Auto", "Off"};
@@ -819,6 +799,9 @@ inline void render_whole_home_page(
     render_modern_card(it, cx, scale_y(256), 308, 72, 16,
                        l_bg, l_brd, l_lbl,
                        (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
+    ui::draw_icon_lock(it, cx - scale_x(122), scale_y(256),
+                       (ls == LockState::LOCKED) ? col_green : ((ls == LockState::UNLOCKED) ? col_red : col_slate),
+                       kChromeShadow, ls != LockState::UNLOCKED);
 
   } else {
     // TAB 3: ROBOT VACUUM

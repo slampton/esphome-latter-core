@@ -7,6 +7,7 @@
 namespace latter_ui {
 
 static constexpr int kProtocolContractVersion = 3;
+static constexpr size_t kProtocolMinRequiredFields = 3;
 static constexpr char kProtocolFieldSep = '\x1f';
 static constexpr char kProtocolRecordSep = '\x1e';
 
@@ -63,7 +64,8 @@ enum class AreaCtxField : size_t {
   ALERT_CAMERA_URL = 37,  // alert_camera_url (url)
   ACTIVITY_CARD = 38,  // activity_card (bool)
   ACTIVITY_SOURCES = 39,  // activity_sources (csv)
-  COUNT = 40
+  SECURITY_PIN_POLICY = 40,  // security_pin_policy (string)
+  COUNT = 41
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -115,7 +117,13 @@ enum class WeatherField : size_t {
   HIGH = 8,  // high (f32)
   LOW = 9,  // low (f32)
   FORECAST_5D = 10,  // forecast_5d (records)
-  COUNT = 11
+  SUN_STATE = 11,  // sun_state (string)
+  SUN_ELEVATION = 12,  // sun_elevation (f32)
+  SUN_AZIMUTH = 13,  // sun_azimuth (f32)
+  SUN_NEXT_RISING = 14,  // sun_next_rising (string)
+  SUN_NEXT_SETTING = 15,  // sun_next_setting (string)
+  MOON_PHASE = 16,  // moon_phase (string)
+  COUNT = 17
 };
 
 // Domain: calendar_agenda (sensor.<device>_calendar_agenda)

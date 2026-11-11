@@ -4,6 +4,7 @@
 // Latter Core SDK: Protocol v3 Domain State & Zero-Allocation Parsers (latter_state.h)
 // ==============================================================================
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -31,8 +32,10 @@ enum class GarageState : uint8_t {
 
 struct LinkState {
   bool ha_connected = false;
+  bool wifi_connected = false;
   uint32_t last_ha_connect_ms = 0;
   uint32_t last_ha_disconnect_ms = 0;
+  uint32_t last_wifi_connect_ms = 0;
 };
 
 struct WholeHomeState {
@@ -79,6 +82,7 @@ struct AreaContextState {
   std::string alert_camera_url = "";
   std::string activity_card = "";     // "1" / "0"; empty = not set -> kDefaultActivityCard
   std::string activity_sources = "";  // csv of source keys; empty = not set -> kDefaultActivitySources
+  std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
 };
 
 struct MediaState {
@@ -123,6 +127,12 @@ struct WeatherState {
   float high = NAN;
   float low = NAN;
   std::string forecast_5d = "";
+  std::string sun_state = "";
+  float sun_elevation = NAN;
+  float sun_azimuth = NAN;
+  std::string sun_next_rising = "";
+  std::string sun_next_setting = "";
+  std::string moon_phase = "";
 };
 
 struct CalendarState {
@@ -247,6 +257,25 @@ inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_e
   return false;
 }
 
+inline uint32_t &v3_mismatch_warn_count() {
+  static uint32_t cnt = 0;
+  return cnt;
+}
+
+inline void v3_check_field_count(const char *domain, std::string_view payload, size_t expected) {
+  const size_t got = payload.empty() ? 0 : (1U + static_cast<size_t>(
+      std::count(payload.begin(), payload.end(), kProtocolFieldSep)));
+  if (got != expected) {
+    v3_mismatch_warn_count()++;
+#ifdef ESP_LOGW
+    ESP_LOGW("latter_v3", "Domain %s field count %u != expected %u (tolerated)",
+             domain, static_cast<unsigned>(got), static_cast<unsigned>(expected));
+#else
+    (void)domain;
+#endif
+  }
+}
+
 inline void reset_all_v3_rev_guards() {
   area_ctx_state().epoch = 0;
   area_ctx_state().rev = 0;
@@ -259,6 +288,7 @@ inline void reset_all_v3_rev_guards() {
   weather_state().rev = 0;
   calendar_state().epoch = 0;
   calendar_state().rev = 0;
+  v3_mismatch_warn_count() = 0;
 }
 
 inline LockState parse_lock_state_str(std::string_view sv) {
@@ -287,12 +317,13 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
                                       AreaContextState &st = area_ctx_state(),
                                       WholeHomeState &wh = whole_home_state()) {
   constexpr size_t kCount = static_cast<size_t>(AreaCtxField::COUNT);
-  std::string_view f[kCount];
+  std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
-  if (n < kCount || f[static_cast<size_t>(AreaCtxField::HEADER_VERSION)] != "v3") return false;
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(AreaCtxField::HEADER_VERSION)] != "v3") return false;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("area_context", payload, kCount);
 
   st.area_id           = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ID)]);
   st.area_name         = std::string(f[static_cast<size_t>(AreaCtxField::AREA_NAME)]);
@@ -336,6 +367,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.alert_camera_url         = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_URL)]);
   st.activity_card            = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_CARD)]);
   st.activity_sources         = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_SOURCES)]);
+  st.security_pin_policy      = std::string(f[static_cast<size_t>(AreaCtxField::SECURITY_PIN_POLICY)]);
   return true;
 }
 
@@ -370,12 +402,13 @@ inline uint8_t activity_source_mask(const AreaContextState &st = area_ctx_state(
 // Parse Protocol v3 active_media payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = media_state()) {
   constexpr size_t kCount = static_cast<size_t>(MediaField::COUNT);
-  std::string_view f[kCount];
+  std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
-  if (n < kCount || f[static_cast<size_t>(MediaField::HEADER_VERSION)] != "v3") return false;
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(MediaField::HEADER_VERSION)] != "v3") return false;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(MediaField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(MediaField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("active_media", payload, kCount);
 
   st.state               = std::string(f[static_cast<size_t>(MediaField::STATE)]);
   st.title               = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
@@ -406,12 +439,13 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
 // Parse Protocol v3 remote_config payload ("v3\x1f<epoch>\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
 inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st = remote_state()) {
   constexpr size_t kCount = static_cast<size_t>(RemoteField::COUNT);
-  std::string_view f[kCount];
+  std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
-  if (n < kCount || f[static_cast<size_t>(RemoteField::HEADER_VERSION)] != "v3") return false;
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(RemoteField::HEADER_VERSION)] != "v3") return false;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(RemoteField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(RemoteField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("remote_config", payload, kCount);
 
   int slot_1based     = v3_parse_int(f[static_cast<size_t>(RemoteField::ACTIVE_SLOT)], 1);
   st.active_slot      = (slot_1based > 0) ? (slot_1based - 1) : 0;
@@ -420,36 +454,44 @@ inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st = 
   return true;
 }
 
-// Parse Protocol v3 weather payload ("v3\x1f<epoch>\x1f<rev>\x1f<cond>\x1f<temp>\x1f<hum>\x1f<ws>\x1f<wb>\x1f<hi>\x1f<lo>\x1f<forecast_5d>")
+// Parse Protocol v3 weather payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st = weather_state()) {
   constexpr size_t kCount = static_cast<size_t>(WeatherField::COUNT);
-  std::string_view f[kCount];
+  std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
-  if (n < kCount || f[static_cast<size_t>(WeatherField::HEADER_VERSION)] != "v3") return false;
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(WeatherField::HEADER_VERSION)] != "v3") return false;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(WeatherField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(WeatherField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("weather_forecast", payload, kCount);
 
-  st.condition    = std::string(f[static_cast<size_t>(WeatherField::CONDITION)]);
-  st.temperature  = v3_parse_float(f[static_cast<size_t>(WeatherField::TEMPERATURE)], NAN);
-  st.humidity     = v3_parse_float(f[static_cast<size_t>(WeatherField::HUMIDITY)], NAN);
-  st.wind_speed   = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_SPEED)], NAN);
-  st.wind_bearing = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_BEARING)], NAN);
-  st.high         = v3_parse_float(f[static_cast<size_t>(WeatherField::HIGH)], NAN);
-  st.low          = v3_parse_float(f[static_cast<size_t>(WeatherField::LOW)], NAN);
-  st.forecast_5d  = std::string(f[static_cast<size_t>(WeatherField::FORECAST_5D)]);
+  st.condition        = std::string(f[static_cast<size_t>(WeatherField::CONDITION)]);
+  st.temperature      = v3_parse_float(f[static_cast<size_t>(WeatherField::TEMPERATURE)], NAN);
+  st.humidity         = v3_parse_float(f[static_cast<size_t>(WeatherField::HUMIDITY)], NAN);
+  st.wind_speed       = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_SPEED)], NAN);
+  st.wind_bearing     = v3_parse_float(f[static_cast<size_t>(WeatherField::WIND_BEARING)], NAN);
+  st.high             = v3_parse_float(f[static_cast<size_t>(WeatherField::HIGH)], NAN);
+  st.low              = v3_parse_float(f[static_cast<size_t>(WeatherField::LOW)], NAN);
+  st.forecast_5d      = std::string(f[static_cast<size_t>(WeatherField::FORECAST_5D)]);
+  st.sun_state        = std::string(f[static_cast<size_t>(WeatherField::SUN_STATE)]);
+  st.sun_elevation    = v3_parse_float(f[static_cast<size_t>(WeatherField::SUN_ELEVATION)], NAN);
+  st.sun_azimuth      = v3_parse_float(f[static_cast<size_t>(WeatherField::SUN_AZIMUTH)], NAN);
+  st.sun_next_rising  = std::string(f[static_cast<size_t>(WeatherField::SUN_NEXT_RISING)]);
+  st.sun_next_setting = std::string(f[static_cast<size_t>(WeatherField::SUN_NEXT_SETTING)]);
+  st.moon_phase       = std::string(f[static_cast<size_t>(WeatherField::MOON_PHASE)]);
   return true;
 }
 
 // Parse Protocol v3 calendar payload ("v3\x1f<epoch>\x1f<rev>\x1f<summary>\x1f<count>\x1f<next_event>")
 inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st = calendar_state()) {
   constexpr size_t kCount = static_cast<size_t>(CalendarField::COUNT);
-  std::string_view f[kCount];
+  std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
-  if (n < kCount || f[static_cast<size_t>(CalendarField::HEADER_VERSION)] != "v3") return false;
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(CalendarField::HEADER_VERSION)] != "v3") return false;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(CalendarField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(CalendarField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("calendar_agenda", payload, kCount);
 
   st.summary    = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
   st.count      = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);

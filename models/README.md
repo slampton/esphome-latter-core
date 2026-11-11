@@ -5,7 +5,7 @@ Latter builds load every micro_wake_word model from this folder (`https://raw.gi
 | Model | Source | License |
 |---|---|---|
 | okay_nabu, hey_jarvis, hey_mycroft, alexa, vad | [esphome/micro-wake-word-models](https://github.com/esphome/micro-wake-word-models) `models/v2/`, copied byte-for-byte | Apache License 2.0 |
-| hey_luna | [dreimer1986/micro-wake-word-models](https://github.com/dreimer1986/micro-wake-word-models) | see upstream |
+| hey_luna | [dreimer1986/micro-wake-word-models](https://github.com/dreimer1986/micro-wake-word-models) ([esphome/micro-wake-word-models#20](https://github.com/esphome/micro-wake-word-models/pull/20)) | Apache License 2.0 (Copyright Daniel Reimer) |
 
 The SHA-256 of each file is listed next to the `micro_wake_word:` block in `modules/audio_voice.yaml`.
 

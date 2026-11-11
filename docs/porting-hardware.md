@@ -1,6 +1,6 @@
 # Porting to New Hardware
 
-Each supported board is one file in `boards/`. That file describes the hardware, and everything above it is shared. Porting means writing that file, plus a short device config that combines it with the core.
+Each supported board is a concise (~80-line) file in `boards/` that includes the shared chip and audio HAL modules in [`modules/hal/`](../modules/hal/) (`chip_esp32s3.yaml`, `chip_esp32p4.yaml`, `audio_es8311_duplex.yaml`) and pairs with the compiled C++20 `latter_hal` component ([`components/latter_hal/`](../components/latter_hal/)). That board file describes only schematic-specific pins, buses, and geometry traits; everything above it is shared. Porting means writing that file, its `boards/facts/<board_id>.json` ledger, and a short device config that combines it with the core.
 
 **Start from [`examples/custom_display_template.yaml`](../examples/custom_display_template.yaml).** It's a complete 480×480 board definition with stub HAL scripts, and CI validates it on every push.
 
@@ -41,19 +41,34 @@ The core calls these. Any of them can be a no-op if the hardware doesn't need it
 - **Separate controllers per codec** (an ES8311 DAC plus an ES7210 ADC, as on the S3 boards): put both data pins on the one full-duplex bus; they share BCLK/WS/MCLK. See [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml).
 - Never put a `resampler` speaker in the output path: every source arrives at `audio_out_rate`, and the sounds come from `sounds/<audio_out_rate>/` (`python tools/gen_sounds.py` renders a new rate).
 
-## 3. PMU and IMU modules
+## 3. Shared `modules/hal/` YAML & C++20 `latter_hal` interfaces
 
-Include exactly one of each from your board file:
+### Shared YAML HAL modules (`modules/hal/`)
+
+Instead of repeating chip `sdkconfig_options` or codec wiring across board files, include the matching shared HAL modules from [`modules/hal/`](../modules/hal/) alongside your PMU and IMU modules:
 
 ```yaml
 packages:
-  latter_pmu: !include ../modules/pmu_axp2101.yaml   # or pmu_none.yaml for USB or mains power
-  latter_imu: !include ../modules/imu_qmi8658.yaml   # or imu_none.yaml
+  hal_chip:  !include ../modules/hal/chip_esp32s3.yaml        # or chip_esp32p4.yaml
+  hal_audio: !include ../modules/hal/audio_es8311_duplex.yaml # shared 48 kHz full-duplex ES8311 + mic resampler
+  latter_pmu: !include ../modules/pmu_axp2101.yaml            # or pmu_none.yaml for USB or mains power
+  latter_imu: !include ../modules/imu_qmi8658.yaml            # or imu_none.yaml
 ```
 
-- **Different PMU or IMU chip:** write a module that provides the same scripts and sensors.
-  - PMU: `hal_init_pmu`, `hal_poll_pmu_1s`, `hal_wait_pwr_key_release`, `usb_connected`, `batt_charging`, `batt_level`, `batt_voltage`. The board file defines the PWR key itself as a GPIO `binary_sensor` with `id: pwr_key`; `pmu_axp2101.yaml` adds the short and long press handling.
-  - IMU: `accel_x`, `accel_y`, `accel_z`, `imu_roll`, `imu_pitch`, `imu_temp`, `motion_mag`.
+### Compiled C++20 `latter_hal` interfaces (`components/latter_hal/` & `include/hal_types.h`)
+
+Hardware drivers compile inside [`components/latter_hal/`](../components/latter_hal/) behind clean C++20 virtual interfaces in [`include/hal_types.h`](../include/hal_types.h), registered in `latter_hal::hal_registry()` with safe no-op fallbacks when a peripheral is absent:
+
+| Interface | Reference implementation | Responsibility |
+| :--- | :--- | :--- |
+| `latter_hal::IPmu` | `pmu_axp2101.cpp` | Boot init (`init_at_boot`), 0.5C charge floor (`200 mA` on 400/500 mAh cells), `65 °C` die-temperature charge foldback, rail keep-masks, and clean power-off (`power_off`) |
+| `latter_hal::IBatteryGauge` | `battery_model.cpp` | Per-capacity (`400`, `500`, `1000+` mAh) load-compensated OCV/IR curves blended with the hardware fuel gauge (`REG 0xA4`), monotonic SoC clamping, and `3.40 V` / `3.30 V` empty cutoff |
+| `latter_hal::IImu` | `imu_qmi8658.cpp` | Active, accelerometer-only, power-down, and hardware wake-on-motion (`INT1`) modes |
+| `latter_hal::IPanelSleep` | `panel_power.cpp` | Backlight PWM (`ledc` initialized once) paired with DCS `0x10 SLPIN` / `0x11 SLPOUT` across both QSPI AMOLEDs and SPI IPS LCDs (`ST7796` / `ST7789`, saving ~8–15 mA in sleep) |
+| `latter_hal::IAudioControl` | `audio_es8311.cpp` | DAC mute and codec low-power standby |
+
+- **Community / third-party peripherals (BQ25896, MAX17048, BMI270, PDM mics):** implement the matching `latter_hal::I*` subclass (and YAML module providing `usb_connected`, `batt_charging`, `batt_level`, `batt_voltage`, or `accel_x/y/z`, `imu_roll`, `imu_pitch`, `imu_temp`, `motion_mag`) and register it with `latter_hal::hal_registry()`—without editing `latter_core` or `latter_ui`.
+- **ESPHome private-member isolation (`esphome_bridge.cpp`):** all `BridgeRob<>` accessors (`VoiceAssistant` synchronous abort / API release and `MipiDsi::buffer_` zero-copy framebuffer access) live exclusively in [`components/latter_hal/esphome_bridge.cpp`](../components/latter_hal/esphome_bridge.cpp) ([`include/esphome_bridge.h`](../include/esphome_bridge.h)) behind `ESPHOME_VERSION_CODE` `static_assert` guards, keeping `__wrap_*` symbols in a single translation unit with zero ODR conflicts.
 - **QMI8658 interrupt:** set the `imu_int1_pin` substitution to the GPIO wired to the IMU's INT1. With the screen off, raise-to-wake waits on a hardware wake-on-motion interrupt instead of polling the accelerometer.
 - **Axis inversions:** keep board-specific inversions, such as `- multiply: -1.0`, in the board file, not in the module.
 
@@ -92,7 +107,7 @@ Optional hardware flags:
 | `LATTER_TOUCH_RST_PIN` | A touch reset the HAL drives with raw `gpio_set_level` (touch platforms without `reset_pin:`), so it keeps driving in light sleep |
 | `LATTER_BATTERY_MAH` | Battery boards (`LATTER_HAS_BATTERY=1`, required): the fitted cell's rated capacity, equal to `power.battery_mah` in the board facts. `include/hal_battery.h` derives everything from it: the charge profile (0.5C, the datasheet standard charge rate, rounded up to the AXP2101 step, never above 0.8C or 500 mA; precharge 0.1C; termination C/20; 4.20 V), the battery-path resistance used for load compensation, the state of charge, the 10 % low warning and the 3.40 V rest / 3.30 V loaded cutoff. `power.charge_ma` in the facts records the derived current (`check_boards.py` checks it). |
 | `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK` | AXP2101 traits: no NTC on TS (the charger then ignores TS; keep TS enabled only when a thermistor is fitted); which DCDC and LDO rails stay on (everything else with no load is turned off). Leave a trait undefined if the schematic doesn't confirm it. |
-| `LATTER_PANEL_DCS_SLEEP` | Self-emissive QSPI DCS panels (for example CO5300 AMOLED) on `mipi_spi`: screen-off sends DISPOFF + SLPIN and screen-on sends SLPOUT + DISPON, instead of only setting brightness to 0 |
+| `LATTER_PANEL_DCS_SLEEP` | Panels on `mipi_spi` (both QSPI AMOLEDs like CO5300 and SPI IPS LCDs like ST7796/ST7789): screen-off sends DISPOFF + SLPIN and screen-on sends SLPOUT + DISPON alongside backlight off, saving ~8–15 mA |
 | `LATTER_CORNER_R` | A corner radius other than the default |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels. See [ESP32-P4](#6-esp32-p4). |
 
@@ -100,7 +115,7 @@ Copy the exact values from the closest existing board file.
 
 ### Light sleep (ESP32-S3 battery boards)
 
-A battery board on the ESP32-S3 enables automatic light sleep in screen-off quiet:
+A battery board on the ESP32-S3 includes `modules/hal/chip_esp32s3.yaml`, which enables automatic light sleep in screen-off quiet (`~5–8 mA` on home Wi-Fi, `~2–4 mA` off-site):
 
 ```yaml
 substitutions:
@@ -119,9 +134,8 @@ esp32:
       CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
       CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
       CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
-      # Fewer periodic wakes: DHCP coarse timer 10 s, mDNS timer 500 ms
+      # Fewer periodic wakes: DHCP coarse timer 10 s
       CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
-      CONFIG_MDNS_TIMER_PERIOD_MS: "500"
       # Panic handler in IRAM so a watchdog panic around light sleep still leaves a crash record
       CONFIG_ESP_PANIC_HANDLER_IRAM: "y"
 
@@ -133,7 +147,7 @@ power_management:
     profiling: ${pm_profiling}
 ```
 
-Declare the wake-pin traits above. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping, and leave the RTC sleep clock at its default (the `CONFIG_RTC_CLK_SRC_INT_8MD256` clock caused watchdog resets). Overnight, the System: Link Report sensor shows whether Wi-Fi still hears the access point in light sleep (beacon timeouts, disconnects, signal), how much of the night the chip slept (`slp`) or was held awake (`awk`), and what woke it (`wk` timer/gpio/wifi/other, `gp` per wake pin). Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
+Declare the wake-pin traits above. In screen-off quiet, `power_pm.cpp` switches Wi-Fi to `WIFI_PS_MAX_MODEM` (`listen_interval = 3`, `-75 dBm` weak-link hysteresis), stretches the main loop to `5,000 ms` (calling `esphome::App.wake_loop_threadsafe()` immediately on GPIO wake), stretches battery PMU polling to `60 s`, suspends `stall_guard_task`, puts touch controllers into low-power monitor/gesture mode, and applies off-site exponential Wi-Fi scan backoff (`15 s -> 60 s -> 300 s`) with `latter_beacon` paused whenever `!wifi_connected`. Every pin an ESPHome component owns keeps its configuration in light sleep automatically; any output the HAL drives with raw `gpio_set_level` at runtime needs a trait that `hal_power_pm.h` handles (`LATTER_TOUCH_RST_PIN`, the backlight pins). Bench-check the `[PROF:PM]` light-sleep share and the wake latency of each pin before shipping, and leave the RTC sleep clock at its default (the `CONFIG_RTC_CLK_SRC_INT_8MD256` clock caused watchdog resets). Overnight, the System: Link Report sensor shows whether Wi-Fi still hears the access point in light sleep (beacon timeouts, disconnects, signal), how much of the night the chip slept (`slp`) or was held awake (`awk`), and what woke it (`wk` timer/gpio/wifi/other, `gp` per wake pin). Don't enable light sleep on boards that must stay awake for their display bus (MIPI-DSI).
 
 ## 5. Substitutions and sdkconfig
 
@@ -160,7 +174,7 @@ esp32:
   - Enable `CONFIG_LCD_DSI_ISR_CACHE_SAFE`, `CONFIG_GDMA_ISR_IRAM_SAFE`, and `CONFIG_DW_GDMA_ISR_IRAM_SAFE`.
   - Add `-DLATTER_DSI_IRAM_SAFE=1` and `-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks`. This swaps in an IRAM-resident callback, so the panel keeps scanning out during OTA flash erases.
   - See [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml).
-- **Chip revision:** P4 boards declare a silicon profile in `substitutions:` (`p4_silicon`, `p4_engineering_sample`, `p4_cpu_frequency`), with `rev1` = `true` / `360MHz` and `rev3` = `false` / `400MHz`. Builds for one revision don't boot the other, so the release workflow publishes both. See [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml).
+- **Chip revision & DFS:** P4 boards include `modules/hal/chip_esp32p4.yaml` (`min_frequency: 40MHz`, `enable_light_sleep: false` dynamic frequency scaling) and declare a silicon profile in `substitutions:` (`p4_silicon`, `p4_engineering_sample`, `p4_cpu_frequency`), with `rev1` = `true` / `360MHz` and `rev3` = `false` / `400MHz`. Builds for one revision don't boot the other, so the release workflow publishes both. When `!LATTER_PWR_KEY_DEEP_SLEEP_WAKE` (as on `waveshare_p4_35`, where `GPIO49` is not an LP wake pin), on-battery alarms are disabled and battery hibernate powers off the AXP2101 cleanly (woken by `K1`), while USB-docked alarms stay active. See [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml).
 
 ## 7. Checklist
 

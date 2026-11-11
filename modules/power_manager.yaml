@@ -563,16 +563,22 @@ script:
                                   id(announcement_mixing_input).is_running() || id(mp_idle_debounce).is_running() ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
-          // Home Assistant link: awake until Home Assistant (a client with a state subscription; log viewers don't count) is connected, and for 60 s after it connects
-          // (entity list, state subscription and device hello run at full speed). A dropped link wakes the
-          // chip to reconnect: light sleep never runs while Home Assistant can't reach the device.
+          // Home Assistant link: awake only while Wi-Fi is up and HA API is connecting (<=30 s) or settling (<=20 s),
+          // so off-site battery carry never stays pinned awake waiting for an unreachable AP.
+          const bool wifi_up = id(wifi_ctrl).is_connected();
+          if (wifi_up != latter_ui::link_state().wifi_connected) {
+            latter_ui::link_state().wifi_connected = wifi_up;
+            if (wifi_up) latter_ui::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
+          }
           const bool api_connected = esphome::api::global_api_server != nullptr &&
                                      esphome::api::global_api_server->is_connected_with_state_subscription();
           const bool ha_link_settling =
-              !api_connected || (now_p - latter_ui::link_state().last_ha_connect_ms < 60000U);
+              wifi_up && !id(ota_in_progress) &&
+              ((!api_connected && (now_p - latter_ui::link_state().last_wifi_connect_ms < 30000U)) ||
+               (api_connected && (now_p - latter_ui::link_state().last_ha_connect_ms < 20000U)));
           // Weak Wi-Fi: Home Assistant's link drops in light sleep at weak RSSI (hal_link_report.h,
           // kWeakLinkEnterDbm), so a weak link keeps the chip awake until the v3 fix.
-          const bool weak_link = latter_ui::weak_link_update(now_p);
+          const bool weak_link = wifi_up && latter_ui::weak_link_update(now_p);
           const bool stay_awake =
               ha_link_settling || weak_link ||
               id(display_power_state) != 2 || id(usb_connected).state || id(is_hibernating) ||
@@ -589,6 +595,9 @@ script:
           #if LATTER_HAS_IMU
           if (latter_ui::imu_wom().armed) wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_IMU);
           latter_ui::pm_note_imu(latter_ui::imu_wom().armed, latter_ui::imu_wom().events);
+          #endif
+          #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
+          latter_ui::hal_set_touch_sleep_mode(id(bus_internal), id(display_power_state) == 2 && !id(usb_connected).state);
           #endif
           latter_ui::pm_apply(stay_awake, wake_mask);
 

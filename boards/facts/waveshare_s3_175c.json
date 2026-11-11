@@ -12,7 +12,7 @@
     "source": "battery",
     "pmu": "AXP2101",
     "battery_mah": 500,
-    "charge_ma": 300,
+    "charge_ma": 200,
     "rails": [
       {"rail": "DCDC1", "loads": "3V3 system (SoC, flash, PSRAM, panel logic, touch, IMU)", "confidence": "H"},
       {"rail": "ALDO1", "loads": "codec analog A3V3 (ES8311, ES7210, mics)", "confidence": "M"}

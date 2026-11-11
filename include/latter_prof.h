@@ -13,8 +13,10 @@
 #include "esphome/core/log.h"
 
 namespace latter_ui {
-// Defined in ui_core.h (the Telemetry Profiler's flight recorder state).
-inline bool &profiler_enabled();
+inline bool &profiler_enabled() {
+  static bool s_enabled = false;
+  return s_enabled;
+}
 }  // namespace latter_ui
 
 #define LATTER_PROF_LOGI(...)                    \

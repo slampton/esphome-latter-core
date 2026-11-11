@@ -43,11 +43,46 @@ color:
 
 display:
   - id: !extend disp1
+    auto_clear_enabled: false
     lambda: |-
-      it.fill(id(col_bg));
-      if (id(display_power_state) != 0) return;   // screensaver / off handled by core
-      it.printf(latter_ui::SCREEN_CX, latter_ui::SCREEN_CY, id(font_body), id(theme_primary),
-                TextAlign::CENTER, "%s", latter_ui::area_ctx_state().area_name.c_str());
+      latter_ui::frame_hits().clear();
+      const uint32_t ov_sig = latter_ui::compute_takeover_signature(
+          id(ota_in_progress), id(is_hibernating), id(display_brightness).current_values.is_on(),
+          id(display_power_state), id(alarm_ringing) || id(timer_ringing) || id(find_my_active),
+          id(va_active) || !id(va_status_text).empty(),
+          latter_ui::ui::pin_pad_state().open, id(notif_active));
+      latter_ui::dirty_band().begin_frame(id(gui_page), 0, ov_sig, false);
+      const int y0 = latter_ui::dirty_band().y0();
+      const int y1 = latter_ui::dirty_band().y1();
+      it.draw_pixel_at(0, y0, Color(8, 8, 8));
+      it.draw_pixel_at(0, y0, id(col_bg));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, y1, Color(8, 8, 8));
+      it.draw_pixel_at(latter_ui::SCREEN_W - 1, y1, id(col_bg));
+      latter_ui::bind_frame_buffer(id(disp1), it);
+      latter_ui::frame_base_begin();
+      auto now = id(ha_time).now();
+      if (!now.is_valid()) now = id(sntp_time).now();
+      if (latter_ui::render_system_takeovers(
+              it, latter_ui::SCREEN_CX, latter_ui::SCREEN_CY, millis(), now, id(is_24h_format),
+              id(ota_in_progress), id(ota_progress_pct), id(is_hibernating), id(hibernate_countdown_val),
+              id(display_brightness).current_values.is_on(), id(display_power_state),
+              id(alarm_ringing), id(alarm_ringing_idx),
+              id(alarm1_recurrence), id(alarm2_recurrence), id(alarm3_recurrence),
+              id(timer_ringing), id(find_my_active), id(va_timer_name),
+              id(va_active), id(va_status_text), id(va_tts_received), id(va_vad_active),
+              std::string(id(va_visual_profile).current_option()),
+              id(notif_active), id(notif_title), id(notif_message), id(notif_priority),
+              id(camera_snapshot_art), id(notif_camera_url), id(current_loaded_camera_url),
+              std::string(id(screensaver_style_select).current_option()),
+              id(font_body), id(font_body), id(font_body), id(font_body), id(font_body),
+              id(theme_primary), id(theme_secondary), id(col_bg), id(col_bg), id(theme_primary),
+              id(theme_secondary), id(theme_secondary), id(col_bg), id(col_gold), id(col_red), id(col_gold))) {
+        return;
+      }
+      latter_ui::frame_base(it, id(col_bg));
+      latter_ui::fast_print(it, latter_ui::SCREEN_CX, latter_ui::SCREEN_CY, id(font_body),
+                            id(theme_primary), TextAlign::CENTER,
+                            latter_ui::area_ctx_state().area_name.c_str());
 
 touchscreen:
   - id: !extend touch_screen
@@ -55,7 +90,7 @@ touchscreen:
       - script.execute: { id: ui_input_event, action: "select", delta: 0 }
 ```
 
-`latter_ui::area_ctx_state().area_name` is the active Area name parsed from `sensor.<slug>_area_context`'s Protocol v3 `payload` attribute. All five domain state structs live in [`latter_state.h`](../include/latter_state.h). Treat this as a starting shape, not a finished GUI.
+`latter_ui::render_system_takeovers(...)` ([`ui_compositor.h`](../include/ui_compositor.h)) gives any custom GUI all 8 system overlays out of the box (OTA progress, hibernation countdown, panel-off skip, ringing alarms/timers/Find My, voice assistant, the 3-tier Security PIN pad modal `ui::pin_pad_modal`, push notifications/camera snapshots, and docked screensavers; see [`examples/custom_display_template.yaml`](../examples/custom_display_template.yaml)). `latter_ui::area_ctx_state().area_name` is the active Area name pushed via `latter_push_v3` (`domain: "area_context"`). All five domain state structs live in [`latter_state.h`](../include/latter_state.h). Headless nodes without a display set `latter_core: gui: "none"`, which skips compiling `latter_ui` altogether.
 
 ---
 
@@ -70,7 +105,7 @@ touchscreen:
 | Voice | `va_active`, `va_status_text`, `va_tts_received` |
 | Alerts | `notif_*`, `alarm_*`, `timer_*` |
 | List data | `slot_*` (browse), `area_slot_*`, `cal_slot_*`, filled by `set_browse_slots` and `set_area_slots` |
-| Home Assistant data | `latter_ui::area_ctx_state()`, `latter_ui::media_state()`, `latter_ui::remote_state()`, `latter_ui::weather_state()`, and `latter_ui::calendar_state()` in [`latter_state.h`](../include/latter_state.h), populated by the `ha_*_payload` sensors in the [device protocol](device-protocol.md#3c-sensors-to-subscribe-to) (plus `ha_sun_state` and `ha_moon_phase`) |
+| Home Assistant data | `latter_ui::area_ctx_state()`, `latter_ui::media_state()`, `latter_ui::remote_state()`, `latter_ui::weather_state()` (including `sun_*` and `moon_phase`), and `latter_ui::calendar_state()` in [`latter_state.h`](../include/latter_state.h), populated by `latter_push_v3` in the [device protocol](device-protocol.md#3a-latter_push_v3-protocol-v3-domain-push) |
 | Images | `album_art` (Sendspin), `remote_album_art`, `home_wallpaper_art`, `camera_snapshot_art`. These are decoded as RGB565 at `${screen_w}x${screen_h}`. |
 
 Page IDs and sub-page enums are in [`ui_core.h`](../include/ui_core.h) as `PageId` and `ToolsSubpage`. You can reuse them or ignore them.
@@ -85,45 +120,48 @@ Page IDs and sub-page enums are in [`ui_core.h`](../include/ui_core.h) as `PageI
 | `fetch_*` | Request data pages from Latter: music, areas, calendar |
 | `play_music_slot(int)`, `remote_send_key(int, int)`, `play_game_sfx(int)` | Actions |
 
-Everything that calls `latter.*` services already lives in `latter_client.yaml`. A GUI shouldn't need to call `homeassistant.action` itself.
+Everything that emits Latter RPC calls already lives in `latter_client.yaml` (`latter_rpc::emit`). A GUI shouldn't need to emit RPC envelopes itself.
 
 ### Redraw scheduling
 
 Don't call `id(disp1).update()` directly. Use the scheduler instead:
 
 ```cpp
-latter_ui::schedule_disp_update(&id(disp1));       // coalesced: requests in one loop pass become one redraw
-latter_ui::schedule_anim_disp_update(&id(disp1));  // animation frame: 18 ms on P4, 26 ms on S3
+latter_ui::schedule_disp_update(&id(disp1));                // coalesced full-frame redraw
+latter_ui::schedule_band_disp_update(&id(disp1), y0, y1);   // coalesced 2px-aligned horizontal band [y0, y1]
+latter_ui::schedule_anim_disp_update(&id(disp1));           // animation frame: 18 ms on P4, 26 ms on S3
 ```
 
-Both functions accept either `DispT *` or `DispT *const *`, so the same call compiles from YAML action lambdas and from inside the `display:` lambda.
+All three functions accept either `DispT *` or `DispT *const *`, so the same call compiles from YAML action lambdas and from inside the `display:` lambda.
 
 > **ESPHome lambda note.** `id(foo).bar` becomes `foo->bar`, but a bare `id(foo)` becomes the raw pointer `foo`. That's why both overloads exist. For the same reason, pass `id(sel)` without `&` to a generic `[](auto *sel, ...)` helper when working with `TemplateSelect`.
 
 ---
 
-## Layout: `UiLayout` and scaling
+## Layout, `FrameHitTable`, `TouchGestureEngine` and shared widgets
 
-All geometry should go through [`ui_core.h`](../include/ui_core.h) and [`ui_layout.h`](../include/ui_layout.h), so one GUI works on every screen size. The layout anchors, touch constants and per-board rules are in the [Device UI design guide](device-ui-design.md#13-spacing-and-layout-anchors).
+All geometry and hit registration go through [`ui_core.h`](../include/ui_core.h), [`ui_layout.h`](../include/ui_layout.h), [`ui_hit_table.h`](../include/ui_hit_table.h), [`ui_gesture_engine.h`](../include/ui_gesture_engine.h), and [`ui_widgets.h`](../include/ui_widgets.h) (`components/latter_ui/`), so one GUI works across every screen size without separate YAML touch scripts. The layout anchors, touch constants and per-board rules are in the [Device UI design guide](device-ui-design.md#13-spacing-and-layout-anchors).
 
 | Symbol | Meaning |
 | :--- | :--- |
 | `SCREEN_W`, `SCREEN_H`, `SCREEN_CX`, `SCREEN_CY`, `SCREEN_R`, `SCREEN_MIN_DIM` | Compile-time screen constants from `LATTER_SCREEN_W` and `LATTER_SCREEN_H` |
 | `scale_x(v)`, `scale_y(v)`, `scale_s(v)` | Scale a value designed for the 466 px reference screen. They return the value unchanged on screens up to 520 px and scale it proportionally above that. |
-| `scale_min(v)` | Always scales proportionally |
-| `UiLayout` fields | `hdr_y`, `sub_hdr_y`, `home_bar_y`, `dock_y`, `app_dock_y`, pager rows, and `slot5_y()` |
-| `UiLayout` hit-testers | `hit_area_card3`, `area_slider_pct`, `hit_tool_card3`, `hit_tools_row`, `hit_tools_col`, `hit_home_*`, music `hit_*`, `music_scrub_frac`, `hit_4col_stepper`, `hit_4col_calc` |
-| `circle_half_span(y)`, `chord_half_span_int(y)` | Horizontal half-width of a round screen at row `y`, from the chord table |
+| `scale_min(v)`, `scale_w(v)` | Always scale proportionally across all resolutions (both down below 466 px and up above 520 px) |
+| `safe_span(y, inset)` | Bezel- and corner-safe horizontal span (`2 * circle_half_span(y, inset)`) on round and rectangular panels alike |
+| `frame_hits()` (`FrameHitTable`) | Registers up to 48 `HitRegion` boxes (`add_rect`, `add_centered_rect`, `add_circle`) as controls draw; consumed directly by `touch_engine()` (`TouchGestureEngine`) and `render_active_focus_overlay()` |
+| `ui::*` (`ui_widgets.h`, `ui_icons.h`) | Shared frosted-glass widgets: `ui::toggle_switch`, `ui::toggle_card_row`, `ui::pill_button`, `ui::stepper_row`, `ui::hsv_color_wheel`, `ui::confirm_modal`, `ui::game_over_sheet`, and `ui::pin_pad_modal` (3×4 Security PIN keypad) |
+| `UiLayout` fields & hit-testers | `hdr_y`, `sub_hdr_y`, `home_bar_y`, `dock_y`, `app_dock_y`, `slot5_y()`, `hit_area_card3`, `area_slider_pct`, `hit_tool_card3`, `hit_tools_row/col`, `hit_home_*`, music `hit_*`, `music_scrub_frac`, and millimetre gesture thresholds |
+| `circle_half_span(y)`, `chord_half_span_int(y)` | Horizontal half-width of a round screen (or rounded corner) at row `y`, from the chord table |
 
-**Pair every drawing coordinate with its hit-tester in `UiLayout`.** Raw pixel values in touch handlers are the most common cause of layouts that work on one screen and break on another.
+**Co-locate drawing and hit registration.** Register interactive widgets in `frame_hits()` as they draw (or use `UiLayout` anchors), never raw pixel coordinates in separate touch lambdas.
 
 ## Rendering on these chips
 
 What makes the universal GUI fast enough on an ESP32-S3 (the full rules are in [Device UI design guide → Rendering pipeline](device-ui-design.md#5-rendering-pipeline)):
 - **Draw row-major.** ESPHome's display buffer is row-major, so loop `y` on the outside and `x` on the inside. Draw with the `fast_*` primitives in `ui_core.h`, not ESPHome's `it.*` primitives, which cost a virtual call per pixel. Don't use `it.image()`; draw images with the row blitter (`blit_rgb565_scanline`) instead.
-- **Dim without losing color.** Halve each channel by shifting (`r >>= 1; g >>= 1; b >>= 1`). Don't use packed bitmasks, which throw away color depth.
-- **Latch the full window.** At the top of the render lambda, touch `(0,0)` and `(W−1,H−1)`. The panel driver then flushes the whole frame in one transfer. The universal GUI does this on every panel, round and rectangular.
-- **Use the lookup tables.** `fast_sin` and `fast_cos` use a 60-entry LUT with interpolation. Round-screen clipping uses `circle_half_span`. Keep `sinf` and `sqrtf` out of per-pixel loops.
+- **Dim without losing color.** Scale per channel in 1/256 with ordered Bayer dithering (`dim_rgb565_row_dither`) or exact per-channel shifts. Never use lossy packed bitmasks (`0xC718`, `0xE79C`), which throw away color depth.
+- **Latch `2px`-aligned horizontal dirty bands.** At the top of the render lambda, `dirty_band().begin_frame(...)` (`DirtyBandTracker` in [`ui_compositor.h`](../include/ui_compositor.h)) aligns `[y0, y1]` to even-to-odd rows (`y0 & ~1` to `min(H − 1, y1 | 1)`) across full width `0 .. W − 1` and touches `(0, y0)` and `(W − 1, y1)`. Full transitions transfer `[0, H − 1]`, while localized updates cut SPI/QSPI bus traffic 5–12× without breaking `MipiSpiBuffer`'s contiguous `stride == W` zero-copy DMA fast path.
+- **Use the lookup tables and PSRAM BSS.** `fast_sin` and `fast_cos` use a 60-entry LUT with interpolation. Round-screen clipping uses `circle_half_span` / `safe_span`. Keep `sinf` and `sqrtf` out of per-pixel loops, mark large inactive state structs with `LATTER_PSRAM_BSS`, and never put global namespace directives for `latter_ui` in headers.
 - **Measure.** Turn on **System: Telemetry Profiler**. `[PROF:FRAME]` logs render time per page, and slow frames are flagged `[SLOW_FRAME]`. The frame budget is in [Device UI design guide → Performance](device-ui-design.md#8-performance).
 
 ## Capability flags

@@ -5,6 +5,7 @@
 // ==============================================================================
 
 #include "ui_layout.h"
+#include "ui_widgets.h"
 
 namespace latter_ui {
 
@@ -169,11 +170,13 @@ inline void render_tv_remote_page(
       render_page_header(it, cx, "CONTROL", font_small, theme_primary);
     }
 
-    const esphome::Color card_bg(22, 27, 36);
-    const esphome::Color card_brd(52, 62, 78);
+    const esphome::Color card_bg = ui::chrome_card_bg_off();
+    const esphome::Color card_brd = ui::chrome_card_brd_on();
 
-    render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, esphome::Color(28, 18, 22), col_red,
+    render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, ui::chrome_danger_bg(), col_red,
                        "Toggle Power", col_white, font_small);
+    frame_hits().add_centered_rect(cx, layout().slot5_y(0), layout().list_card_w, 44,
+                                   WidgetId::REMOTE_PRIMARY_PWR, kHitTap | kHitFocusSlot, 0);
 
     int start_idx = cur_page * 4;
     int vis_count = std::min(4, std::max(0, valid_count - start_idx));
@@ -189,38 +192,42 @@ inline void render_tv_remote_page(
       esphome::Color border_c = is_sel ? theme_primary : card_brd;
       esphome::Color text_c = is_sel ? theme_primary : col_white;
 
-      int card_cx = is_primary_slot ? cx  : (cx - scale_x(25));
-      int card_w  = is_primary_slot ? 276 : 226;
-      int max_txt = is_primary_slot ? scale_x(228) : scale_x(182);
+      const bool narrow = (SCREEN_W < 380);
+      const int card_cx = is_primary_slot ? cx : (narrow ? (cx - 26) : (cx - scale_x(25)));
+      const int card_w  = is_primary_slot ? 276 : (narrow ? 212 : scale_x(226));
+      const int eff_w   = is_primary_slot ? layout().list_card_w : card_w;
+      const int dot_x   = narrow ? (card_cx - eff_w / 2 + 19) : (cx - scale_x(119));
+      const int txt_x   = narrow ? (dot_x + 16) : (cx - scale_x(103));
+      const int max_txt = std::max(60, (card_cx + eff_w / 2 - 12) - txt_x);
 
       render_modern_card(it, card_cx, y_mid, card_w, 44, 12, card_bg, border_c, nullptr, text_c, font_small);
+      frame_hits().add_centered_rect(card_cx, y_mid, eff_w, 44,
+                                     static_cast<uint16_t>(WidgetId::REMOTE_SLOT_CARD + row),
+                                     kHitTap | kHitFocusSlot, static_cast<int16_t>(s_idx));
       if (is_sel) {
-        fast_filled_circle(it, cx - scale_x(119), y_mid, scale_s(6), theme_primary);
+        fast_filled_circle_aa(it, dot_x, y_mid, scale_s(6), theme_primary);
       } else {
-        fast_circle(it, cx - scale_x(119), y_mid, scale_s(5), col_slate);
+        fast_circle_aa(it, dot_x, y_mid, static_cast<float>(scale_s(5)), col_slate, 1.5f);
       }
       std::string fit_lbl = fit_text_to_width_font(d_name, max_txt, font_small);
-      fast_print(it, cx - scale_x(103), y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
+      fast_print(it, txt_x, y_mid, font_small, text_c, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
 
       if (!is_primary_slot) {
-        const int p_cx = cx + scale_x(120);
+        const int p_cx = narrow ? (SCREEN_W - 36) : (cx + scale_x(120));
         const int p_r  = scale_s(18);
         const bool is_dev_on = remote_slot_states_on()[s_idx];
-        render_glass_circle(it, p_cx, y_mid, p_r, kChromeGlassTint, is_dev_on ? theme_secondary : col_red);
-        for (int i = 6; i < 54; i += 2) {
-          int x1 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i]);
-          int y1 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i]);
-          int x2 = p_cx + static_cast<int>(scale_s(7) * DIAL_SIN[i + 2]);
-          int y2 = y_mid - static_cast<int>(scale_s(7) * DIAL_COS[i + 2]);
-          fast_line(it, x1, y1, x2, y2, col_white);
-        }
-        fill_rect_row_major(it, p_cx - 1, y_mid - scale_s(9), 3, scale_s(8), col_white);
+        const esphome::Color p_surf = render_glass_circle(
+            it, p_cx, y_mid, p_r, kChromeGlassTint, is_dev_on ? theme_secondary : col_red);
+        ui::draw_icon_power(it, p_cx, y_mid, p_r, col_white, p_surf);
+        frame_hits().add_circle(p_cx, y_mid, p_r + 6,
+                                static_cast<uint16_t>(WidgetId::REMOTE_SEC_PWR + row),
+                                kHitTap | kHitFocusCircle, static_cast<int16_t>(s_idx));
       }
     }
 
     if (total_pages > 1) {
       render_vertical_page_pips(it, cur_page > 0, cur_page + 1 < total_pages,
-                                esphome::Color(0, 0, 0), theme_secondary, col_slate);
+                                kChromeShadow, theme_secondary, col_slate);
     }
 
     render_back_button(it, cx, font_small, layout().back_y, "< Back");

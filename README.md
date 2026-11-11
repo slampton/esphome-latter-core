@@ -61,12 +61,13 @@ All five run the same firmware and GUI. The only per-board code is a hardware ab
 
 ## Build on Latter Core
 
-The firmware is built in four layers, so you can replace any one without touching the others:
+The firmware is built in four YAML layers backed by three compiled C++20 PlatformIO components (`latter_hal`, `latter_core`, `latter_ui`, plus `latter_beacon`), so you can replace any layer without touching the others:
 
 ```text
-boards/      Board HAL: display, touch, audio codecs, PMU, IMU, LATTER_* capability flags
-modules/     Core: Latter protocol client, audio and voice, power management
-guis/        The GUI: rendering and touch handling (replaceable)
+components/  Compiled SDK: latter_hal (IPmu/IBatteryGauge/IImu/IAudioControl), latter_core, latter_ui, latter_beacon
+boards/      Board HAL (~80 lines each + modules/hal/): display, touch, codecs, PMU, IMU, LATTER_* flags
+modules/     Core YAML: Zero-Privilege RPC + Protocol v3 client, full-duplex audio & voice, power policy
+guis/        The GUI: display lambda + TouchGestureEngine / FrameHitTable (replaceable; gui: "none" for headless)
 devices/     Top-level configs that combine one board, the core modules, and one GUI
 ```
 
@@ -84,22 +85,23 @@ devices/     Top-level configs that combine one board, the core modules, and one
 
 These are the details worth checking if you're evaluating the codebase. Each one links to the code.
 
-- **Row-major RGB565 blitting.** Album art and full-screen images are drawn row by row. Runs of identical 16-bit pixels are grouped into single horizontal-line calls, and scrim rows are dimmed by shifting each color channel, which keeps all 16 bits of color. → [`ui_core.h`](include/ui_core.h)
-- **Full-window flushes.** Each frame first touches two opposite corner pixels, so the dirty window covers the whole panel and the driver sends it in a single DMA transfer instead of several partial ones. → [`gui.yaml`](guis/universal/gui.yaml)
+- **Row-major RGB565 blitting.** Album art and full-screen images are drawn row by row. Runs of identical 16-bit pixels are grouped into single horizontal-line calls, and scrim rows are dimmed in 1/256 with ordered Bayer dithering, keeping all 16 bits of color. → [`ui_core.h`](include/ui_core.h)
+- **`2px`-aligned horizontal-band dirty flushes & co-located `FrameHitTable`.** Localized updates (clock ticks, timers, media progress, slider drags) align dirty vertical spans `[y0, y1]` to even-to-odd rows across full width `0 .. W − 1`, preserving `MipiSpiBuffer`'s contiguous `stride == W` zero-copy DMA fast path while cutting pixel bus traffic 5–12×. Interactive widgets register their exact rendered bounds into `FrameHitTable` as they draw, driving `TouchGestureEngine` and focus rings with zero coordinate drift. → [`ui_compositor.h`](include/ui_compositor.h), [`ui_hit_table.h`](include/ui_hit_table.h), [`ui_gesture_engine.h`](include/ui_gesture_engine.h)
 - **No `sqrtf` or `sinf` in the hot path.** Trig uses a 60-entry lookup table with linear interpolation. Round-screen clipping uses a 466-entry chord table stored in flash, plus integer Newton–Raphson. → [`ui_core.h`](include/ui_core.h)
 - **Frame pacing and profiling.**
   - **Pacing:** redraw requests made in the same loop pass are merged into one redraw. Animations run at 18 ms per frame on the P4 and 26 ms on the S3. Ambient screensavers run at about 20 fps and slow down while audio plays.
   - **Profiling:** the **System: Telemetry Profiler** switch logs per-frame render times and flags slow frames. → [`ui_core.h`](include/ui_core.h), [Device UI design guide](docs/device-ui-design.md#8-performance)
-- **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`ui_layout.h`](include/ui_layout.h), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
+- **ESP32-P4 display stays alive during OTA.** The MIPI-DSI panel's frame-done callback is replaced, through a linker wrap isolated in `latter_hal`, with an IRAM-resident version. Scanout then keeps running while flash is being erased. → [`esphome_bridge.cpp`](components/latter_hal/esphome_bridge.cpp), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
+- **Zero-Privilege RPC & 3-tier Perimeter Security.** Outbound device actions emit compact frames on the diagnostic `System: RPC Outbox` (`latter_rpc::emit`) and inbound Protocol v3 domains push directly over the bound Native API (`latter_push_v3`)—requiring neither `allow_service_calls` nor `device_slug` YAML substitutions. Opening actions (unlocking doors, disarming alarms, opening garage/gate covers) prompt the on-device `ui::pin_pad_modal` when required by the device's Studio policy. → [`latter_rpc.h`](include/latter_rpc.h), [`ui_widgets.h`](include/ui_widgets.h)
 - **Voice doesn't fight music.** When a voice turn starts (button, tap, or the wake word while music plays on another speaker), the firmware pauses music and stops its mixer input so the voice response isn't stuck behind buffered music. The wake word itself is paused while this device plays media, because there is no on-device echo cancellation yet. After the reply, it resumes only once both the media player and the announcement mixer have drained. Music never resumes over a ringing alarm or timer. → [`audio_voice.yaml`](modules/audio_voice.yaml), [`latter_client.yaml`](modules/latter_client.yaml)
-- **Full-duplex 48 kHz audio on every board.** One I2S bus carries the DAC and the ADC on shared BCLK/WS/MCLK, so the microphone and speaker run at the same time and never hand the bus over. Music and announcements arrive at 48 kHz (no on-device output resampling); the microphone is resampled to 16 kHz for the wake word and Assist. → [`waveshare_s3_216.yaml`](boards/waveshare_s3_216.yaml), [`audio_voice.yaml`](modules/audio_voice.yaml)
-- **Hard power-off hibernate.** On battery boards, hibernate saves preferences, disconnects from the API cleanly, puts the codecs and IMU into standby, and then has the AXP2101 cut power. The crown button powers the device back on. → [`pmu_axp2101.yaml`](modules/pmu_axp2101.yaml)
+- **Full-duplex 48 kHz audio on every board.** One I2S bus carries the DAC and the ADC on shared BCLK/WS/MCLK, so the microphone and speaker run at the same time and never hand the bus over. Music and announcements arrive at 48 kHz (no on-device output resampling); the microphone is resampled to 16 kHz for the wake word and Assist. → [`audio_es8311_duplex.yaml`](modules/hal/audio_es8311_duplex.yaml), [`audio_voice.yaml`](modules/audio_voice.yaml)
+- **`5–8 mA` S3 light-sleep standby & clean AXP2101 hibernate.** On ESP32-S3 battery boards, screen-off quiet stretches the main loop to `5,000 ms` (woken immediately by GPIO interrupts via `App.wake_loop_threadsafe()`) in `WIFI_PS_MAX_MODEM` (`~5–8 mA` at home; `~2–4 mA` off-site with exponential Wi-Fi backoff and paused `latter_beacon`). Hibernate saves state, disconnects from the API cleanly, puts codecs and the panel (`SLPIN`) into sleep, and cuts power on the AXP2101; on `Remote Assistant` (`waveshare_p4_35`), battery hibernate powers off the PMU cleanly (woken by `K1`), while scheduled alarms run whenever USB-docked. → [`power_pm.cpp`](components/latter_hal/power_pm.cpp), [`pmu_axp2101.yaml`](modules/pmu_axp2101.yaml)
 
 ---
 
 ## Project status
 
-This is version **2.2.1**, built and maintained by one person and tested on the five devices above.
+This is version **3.0.0**, built and maintained by one person and tested on the five devices above.
 
 | Area | Status |
 | :--- | :--- |
@@ -108,7 +110,7 @@ This is version **2.2.1**, built and maintained by one person and tested on the 
 
 Known limitations:
 - **Wi-Fi setup after web flashing.** The web installer sets Wi-Fi over the USB cable (Improv Serial) on all five devices. → [Flashing](docs/flashing.md)
-- **CI coverage.** CI runs `tools/gen_protocol.py --check`, C++20 host unit tests, and `esphome config` across both examples and all five flagship device configs; full firmware binary compilation runs in the release workflow.
+- **CI coverage.** CI runs `tools/verify_core.py`, `tools/gen_protocol.py --check`, `tools/check_boards.py --release --check-docs`, `tools/gen_sounds.py --check`, C++20 host unit tests, `esphome config` across both examples and all five device configs, and full 5-device firmware compilation on `dev` before promoting `main`.
 - **Pinned to `main`.** Device configs pull the core from the `main` branch during development, and release builds pin every reference to the release tag. Work lands on `dev`; CI moves `main` forward only after every check passes and all five devices compile from that commit.
 
 Bugs and feature requests: [issues](https://github.com/slampton/esphome-latter-core/issues).

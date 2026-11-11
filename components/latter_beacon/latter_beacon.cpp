@@ -8,6 +8,8 @@
 #include <cstring>
 
 #include <esp_heap_caps.h>
+#include <nvs.h>
+#include <nvs_flash.h>
 
 #ifdef USE_LATTER_BEACON_HOSTED
 #include "esp_hosted_bt_host_stack.h"
@@ -133,7 +135,58 @@ static uint16_t adv_units(uint32_t ms) {
   return static_cast<uint16_t>(std::clamp<uint32_t>(ms * 8U / 5U, 0x00A0U, 0x4000U));
 }
 
-void LatterBeacon::setup() { this->disable_loop(); }
+static int hex_nibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+  return -1;
+}
+
+void LatterBeacon::setup() {
+  nvs_handle_t h = 0;
+  if (nvs_open("latter_cfg", NVS_READONLY, &h) == ESP_OK) {
+    std::array<uint8_t, 16> stored{};
+    size_t sz = stored.size();
+    if (nvs_get_blob(h, "ble_uuid", stored.data(), &sz) == ESP_OK && sz == stored.size()) {
+      this->uuid_ = stored;
+    }
+    nvs_close(h);
+  }
+  this->disable_loop();
+}
+
+bool LatterBeacon::set_uuid_hex(std::string_view uuid_str) {
+  std::array<uint8_t, 16> parsed{};
+  size_t nibbles = 0;
+  int hi = -1;
+  for (char ch : uuid_str) {
+    if (ch == '-' || ch == ' ') continue;
+    int v = hex_nibble(ch);
+    if (v < 0 || nibbles >= 32) return false;
+    if ((nibbles & 1U) == 0U) {
+      hi = v;
+    } else {
+      parsed[nibbles >> 1U] = static_cast<uint8_t>((hi << 4) | v);
+    }
+    ++nibbles;
+  }
+  if (nibbles != 32) return false;
+  if (parsed == this->uuid_) return true;
+
+  this->uuid_ = parsed;
+  nvs_handle_t h = 0;
+  if (nvs_open("latter_cfg", NVS_READWRITE, &h) == ESP_OK) {
+    if (nvs_set_blob(h, "ble_uuid", this->uuid_.data(), this->uuid_.size()) == ESP_OK) {
+      nvs_commit(h);
+    }
+    nvs_close(h);
+  }
+  if (this->is_active()) {
+    this->disable();
+    this->enable();
+  }
+  return true;
+}
 
 bool LatterBeacon::is_failed() const { return this->failed_ && millis() < this->retry_after_ms_; }
 

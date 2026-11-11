@@ -8,7 +8,7 @@ with the same algorithm as esphome/components/rtttl (2026.11): full-scale sine, 
 rounded up to whole cycles, a 10 ms gap between repeated notes, and a 2 ms fade at each note edge.
 
 Usage:
-  python tools/gen_sounds.py            # write sounds/16000 and sounds/48000
+  python tools/gen_sounds.py            # write sounds/48000
   python tools/gen_sounds.py --check    # exit 1 if any committed file differs from a fresh render
 """
 
@@ -22,7 +22,7 @@ import struct
 import sys
 import wave
 
-RATES = (16000, 48000)
+RATES = (48000,)
 
 # id -> RTTTL. Game sounds are sfx_<n>; play_game_sfx maps its sfx_id parameter to these ids.
 SOUNDS: dict[str, str] = {
@@ -157,6 +157,10 @@ def main() -> int:
             else:
                 path.write_bytes(data)
     if args.check:
+        expected_dirs = {str(r) for r in RATES}
+        for child in sorted(root.iterdir()):
+            if child.is_dir() and child.name not in expected_dirs:
+                stale.append(f"unexpected rate directory: {child.relative_to(root.parent)}")
         if stale:
             print("Stale sounds (run python tools/gen_sounds.py):\n  " + "\n  ".join(stale))
             return 1

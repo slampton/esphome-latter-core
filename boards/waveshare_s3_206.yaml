@@ -59,6 +59,11 @@ substitutions:
   # esp_timer fire counts and CPU time per task. Both cost time on every esp_timer callback and context
   # switch, so they stay off; profiling builds set it to "y" (a Kconfig value: y or n).
   wake_profiling: "n"
+  i2s_lrclk_pin: GPIO45
+  i2s_bclk_pin: GPIO41
+  i2s_mclk_pin: GPIO16
+  i2s_din_pin: GPIO42
+  i2s_dout_pin: GPIO40
 
 esphome:
   build_flags:
@@ -100,74 +105,10 @@ esphome:
     - "-DLATTER_AUDIO_IN_RATE=16000"
 
 esp32:
-  board: esp32-s3-devkitc-1
   flash_size: 32MB
   framework:
-    type: esp-idf
-    sdkconfig_options:
-      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
-      CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
-      CONFIG_FREERTOS_USE_TRACE_FACILITY: "y"  # task list for the System: Log Memory Report button
-      CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM: "64"
-      CONFIG_LWIP_TCP_WND_DEFAULT: "65535"
-      CONFIG_LWIP_TCP_RECVMBOX_SIZE: "64"
-      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
-      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
-      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
-      CONFIG_SPIRAM_RODATA: "y"
-      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
-      CONFIG_SPIRAM_USE_MALLOC: "y"
-      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"
-      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
-      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
-      CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
-      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
-      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
-      # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_power_pm.h)
-      CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"
-      # Light-sleep Wi-Fi wake timing. Without the IRAM options the S3 leaves light sleep through cached
-      # flash/PSRAM code at 40 MHz (ESP-IDF budgets 8.6 ms for it instead of 0.4 ms), so the radio wakes
-      # late and misses the AP's beacons at weak signal. After 2 missed beacons the receiver stays on
-      # until one arrives, and each miss widens the window (PHY on 0.5 ms earlier, off 4 ms later).
-      # Never CONFIG_RTC_CLK_SRC_INT_8MD256: that sleep clock caused hardware watchdog resets (rev ...83).
-      CONFIG_ESP_WIFI_SLP_IRAM_OPT: "y"
-      CONFIG_PM_SLP_IRAM_OPT: "y"
-      CONFIG_PM_RTOS_IDLE_OPT: "y"
-      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OPT: "y"
-      CONFIG_ESP_WIFI_SLP_BEACON_LOST_OVER_THRESHOLD_RECEIVE: "y"
-      CONFIG_ESP_WIFI_SLP_BEACON_LOST_THRESHOLD: "2"
-      CONFIG_ESP_WIFI_SLP_PHY_ON_DELTA_EARLY_TIME: "16"
-      CONFIG_ESP_WIFI_SLP_PHY_OFF_DELTA_TIMEOUT_TIME: "4"
-      # Fewer periodic wakes in light sleep: lwIP's DHCP coarse timer every 10 s (default 1 s) and the
-      # mDNS timer every 500 ms (default 100 ms).
-      CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"
-      CONFIG_MDNS_TIMER_PERIOD_MS: "500"
-      # Panic handler in IRAM: a watchdog or cache panic still records its backtrace (ESPHome's crash
-      # handler runs from IRAM too) when the flash/PSRAM cache can't serve code, e.g. a hang around a
-      # light-sleep transition (int-wdt resets with no crash record, 2026-11-08).
-      CONFIG_ESP_PANIC_HANDLER_IRAM: "y"
-      # Wake profiling for [PROF:WAKE] (Telemetry Profiler), off unless the wake_profiling substitution is "y".
-      CONFIG_ESP_TIMER_PROFILING: ${wake_profiling}
-      CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: ${wake_profiling}
     advanced:
-      enable_idf_experimental_features: true
-      nvs_cache_in_psram: true
       flash_chip: gd
-
-psram:
-  mode: octal
-  speed: 80MHz
-  ignore_not_found: false
-
-# Automatic light sleep whenever no task runs and no power-management lock is held. Latter's awake lock
-# (script apply_power_policy, include/hal_power_pm.h) keeps the chip awake except in screen-off quiet on
-# battery; the clock scales down to min_frequency only while that lock is released.
-power_management:
-  - platform: esp32_power_management
-    max_frequency: 240MHz
-    min_frequency: 40MHz
-    enable_light_sleep: true
-    profiling: ${pm_profiling}
 
 i2c:
   - id: bus_internal
@@ -186,68 +127,9 @@ spi:
       - GPIO6
       - GPIO7
 
-# One I2S port in full duplex: the ES8311 (DOUT GPIO40) and ES7210 (DIN GPIO42) share BCLK/WS/MCLK, so
-# the microphone and speaker run at the same time at audio_out_rate and never hand the bus over.
-i2s_audio:
-  - id: i2s_shared_bus
-    i2s_lrclk_pin:
-      number: GPIO45
-      ignore_strapping_warning: true
-    i2s_bclk_pin: GPIO41
-    i2s_mclk_pin: GPIO16
-    full_duplex: true
-
-audio_adc:
-  - platform: es7210
-    id: es7210_adc
-    i2c_id: bus_internal
-    address: 0x40
-    bits_per_sample: 16bit
-    sample_rate: ${audio_out_rate}
-    mic_gain: 24dB
-
-microphone:
-  - platform: i2s_audio
-    id: latter_mic_i2s
-    adc_type: external
-    i2s_audio_id: i2s_shared_bus
-    i2s_din_pin: GPIO42
-    sample_rate: ${audio_out_rate}
-    bits_per_sample: 16bit
-    channel: left
-    pdm: false
-  # Converts inside the I2S reader's data callback (no task of its own), so UI load cannot starve it.
-  - platform: resampler
-    id: latter_mic
-    microphone: latter_mic_i2s
-    sample_rate: ${audio_in_rate}
-
-audio_dac:
-  - platform: es8311
-    id: es8311_dac
-    i2c_id: bus_internal
-    address: 0x18
-    bits_per_sample: 16bit
-    sample_rate: ${audio_out_rate}
-    use_mclk: true
-
-speaker:
-  - platform: i2s_audio
-    id: physical_speaker
-    i2s_audio_id: i2s_shared_bus
-    i2s_dout_pin: GPIO40
-    dac_type: external
-    audio_dac: es8311_dac
-    sample_rate: ${audio_out_rate}
-    bits_per_sample: 16bit
-    channel: left
-    buffer_duration: 250ms
-    # Longer than mp_idle_debounce (3 s), so real idle always powers down in order (DAC mute ->
-    # amplifier off -> speaker stop) and the ~0.6 s gap between tracks never stops the I2S clocks
-    # under a powered amplifier (a click at every track change).
-    timeout: 4s
-
 packages:
+  latter_chip: !include ../modules/hal/chip_esp32s3.yaml
+  latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
   latter_imu: !include ../modules/imu_qmi8658.yaml
   latter_pmu: !include ../modules/pmu_axp2101.yaml
 
@@ -353,18 +235,6 @@ script:
           id(es8311_dac).set_volume(0.90f);
           id(es8311_dac).set_mute_on();
 
-  - id: hal_set_dac_mute
-    mode: restart
-    parameters:
-      muted: bool
-    then:
-      - lambda: |-
-          if (muted) {
-            id(es8311_dac).set_mute_on();
-          } else {
-            id(es8311_dac).set_mute_off();
-          }
-
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
@@ -397,11 +267,3 @@ script:
               id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
               id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence));
           latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);
-
-  - id: hal_set_audio_codecs_standby
-    mode: restart
-    parameters:
-      standby: bool
-    then:
-      - lambda: |-
-          latter_ui::hal_set_es8311_es7210_standby(id(bus_internal), standby, true);

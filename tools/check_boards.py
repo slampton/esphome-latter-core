@@ -91,10 +91,21 @@ def _axp2101_icc_ceil(ma: int) -> int:
 
 
 def battery_charge_ma(mah: int) -> int:
-    """Constant-charge current include/hal_battery.h derives (kBattChargeMa): 0.5C rounded up to the
+    """Constant-charge current include/hal_battery.h derives (kBattChargeMa): <=0.5C floored to the
     AXP2101 step, never above 0.8C or 500 mA."""
     cap = _axp2101_icc_floor(min(mah * 8 // 10, 500))
-    return min(_axp2101_icc_ceil(mah // 2), cap)
+    return min(_axp2101_icc_floor(mah // 2), cap)
+
+
+def _expand_board_hal_includes(text: str) -> str:
+    def _sub(match: re.Match[str]) -> str:
+        rel = match.group(1)
+        inc_path = REPO / "modules" / "hal" / rel
+        if inc_path.exists():
+            return inc_path.read_text(encoding="utf-8")
+        return match.group(0)
+
+    return re.sub(r"!include\s+\.\./modules/hal/([a-zA-Z0-9_]+\.yaml)", _sub, text)
 
 
 def strip_comments(text: str) -> str:
@@ -114,7 +125,8 @@ def strip_comments(text: str) -> str:
 def scan_board_yaml(board_id: str) -> dict[str, Any]:
     path = BOARDS_DIR / f"{board_id}.yaml"
     text = path.read_text(encoding="utf-8")
-    code = strip_comments(text)
+    expanded = _expand_board_hal_includes(text)
+    code = strip_comments(expanded)
     pins = {int(m) for m in PIN_RE.findall(code)} | {
         int(m) for m in FLAG_PIN_RE.findall(code)
     }

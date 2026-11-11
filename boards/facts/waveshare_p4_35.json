@@ -13,7 +13,7 @@
     "source": "battery",
     "pmu": "AXP2101",
     "battery_mah": 500,
-    "charge_ma": 300,
+    "charge_ma": 200,
     "rails": [
       {"rail": "DCDC1", "loads": "every 3V3 load (P4, C6, LCD, touch, backlight)", "confidence": "M"},
       {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M", "note": "rails left at boot defaults; rail-map bench test pending"}
@@ -29,9 +29,10 @@
   "latter_flags": {
     "LATTER_SCREEN_W": 320, "LATTER_SCREEN_H": 480, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 165,
     "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 0, "LATTER_HAS_BATTERY": 1,
-    "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 0, "LATTER_PANEL_IPS": 1,
+    "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 0, "LATTER_PANEL_IPS": 1, "LATTER_PANEL_DCS_SLEEP": 1,
     "LATTER_CHIP_P4": 1, "LATTER_PSRAM_MB": 32,
     "LATTER_PWR_KEY_PIN": 49, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_BATTERY_MAH": 500,
+    "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x001",
     "LATTER_C6_RESET_PIN": 54, "LATTER_BACKLIGHT_PIN": 28
   },
   "pins": [

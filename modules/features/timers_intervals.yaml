@@ -98,7 +98,7 @@ interval:
               latter_ui::weather_sim_dirty() = false;
               last_cond_eval_time = now_w_ms;
               std::string c_cond = latter_ui::weather_state().condition;
-              std::string s_sun = id(ha_sun_state).state;
+              std::string s_sun = latter_ui::weather_state().sun_state;
               const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" || (c_cond.find("night") != std::string::npos));
               latter_ui::apply_weather_sim_override(std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
@@ -137,6 +137,17 @@ interval:
                 !latter_ui::area_ctx_state().wallpaper_url.empty() &&
                 latter_ui::area_ctx_state().wallpaper_url != id(current_loaded_wallpaper_url)) {
               id(fetch_wallpaper_debounced).execute();
+            }
+          }
+
+          if (id(gui_page) == 4 && (id(system_menu_mode) == 5 || id(system_menu_mode) == 6) &&
+              id(display_power_state) == 0 && !id(is_hibernating)) {
+            static std::string s_prev_fw_ver;
+            std::string cur_fw = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+            if (cur_fw != s_prev_fw_ver) {
+              s_prev_fw_ver = std::move(cur_fw);
+              if (id(update_check_state) == 1) id(update_check_state) = 2;
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
@@ -183,8 +194,12 @@ interval:
               id(play_alarm_sound).execute();
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
             } else if (sec_changed) {
-              if (!id(va_active) && id(va_status_text).empty()) {
-                if (((id(gui_page) == 8 && id(tools_subpage) == 1) || (id(gui_page) == 1 && (id(home_subpage) == 0 || id(home_subpage) == 2))) && id(display_power_state) == 0) {
+              if (!id(va_active) && id(va_status_text).empty() && id(display_power_state) == 0) {
+                if (id(gui_page) == 8 && id(tools_subpage) == 1) {
+                  latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::scale_y(84), latter_ui::layout().back_y - 8);
+                } else if (id(gui_page) == 1 && id(home_subpage) == 0) {
+                  latter_ui::schedule_band_disp_update(&id(disp1), 0, latter_ui::SCREEN_H / 2);
+                } else if (id(gui_page) == 1 && id(home_subpage) == 2) {
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               }

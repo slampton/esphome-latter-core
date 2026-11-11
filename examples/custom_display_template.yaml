@@ -12,9 +12,9 @@
 
 substitutions:
   name: "latter-panel-demo"
-  device_slug: "latter_panel_demo"
   friendly_name: "Latter Panel Demo"
-  version: "2.2.1"
+  version: "3.0.0"
+  ota_password: "DemoOTAPassword"
   screen_w: "480"
   screen_h: "480"
   art_shape: "square"
@@ -36,7 +36,7 @@ external_components:
   - source:
       type: local
       path: ../components
-    components: [latter_core, latter_beacon]
+    components: [latter_hal, latter_core, latter_ui, latter_beacon]
 
 latter_core:
 
@@ -87,6 +87,10 @@ wifi:
   id: wifi_ctrl
   ssid: "MyHomeWiFi"
   password: "MyWiFiPassword"
+
+api:
+  encryption:
+    key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
 
 # Area presence iBeacon with raw HCI and no host stack (VHCI on an on-chip controller; on an ESP32-P4
 # it drives the esp_hosted co-processor's controller and needs esp32_hosted).
@@ -246,9 +250,55 @@ script:
 # ==============================================================================
 # SHARED LATTER CORE OS MODULES
 # ==============================================================================
+# Default below loads `display_ui.yaml` (full flagship Universal GUI + compiled
+# TouchGestureEngine). If you build a custom GUI instead (by including
+# `../modules/latter_client.yaml` in place of `../modules/display_ui.yaml`),
+# wire your `disp1` lambda to Latter's 2px-aligned dirty-band latch and
+# system-owned global takeovers so OTA, Hibernation, Alarms/Timers, Voice
+# Assistant, Security PIN Pad, Notifications, and Screensavers work natively:
+#
+#   display:
+#     - id: !extend disp1
+#       auto_clear_enabled: false
+#       lambda: |-
+#         auto now = id(ha_time).now();
+#         if (!now.is_valid()) now = id(sntp_time).now();
+#         latter_ui::SystemTakeoverState takeover_st;
+#         takeover_st.now_ms = millis();
+#         takeover_st.ota_in_progress = id(ota_in_progress);
+#         takeover_st.ota_progress_pct = id(ota_progress_pct);
+#         takeover_st.is_hibernating = id(is_hibernating);
+#         takeover_st.hibernate_countdown_val = id(hibernate_countdown_val);
+#         takeover_st.panel_is_on = id(display_brightness).current_values.is_on();
+#         takeover_st.display_power_state = id(display_power_state);
+#         takeover_st.alarm_ringing = id(alarm_ringing);
+#         takeover_st.timer_ringing = id(timer_ringing);
+#         takeover_st.find_my_active = id(find_my_active);
+#         takeover_st.va_active = id(va_active);
+#         takeover_st.va_status_text = id(va_status_text);
+#         takeover_st.notif_active = id(notif_active);
+#         const uint32_t sig = latter_ui::compute_takeover_signature(takeover_st);
+#         latter_ui::dirty_band().begin_frame(id(gui_page), 0, sig, sig != 0U);
+#         const int band_y0 = latter_ui::dirty_band().y0();
+#         const int band_y1 = latter_ui::dirty_band().y1();
+#         it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
+#         it.draw_pixel_at(0, band_y0, id(col_bg));
+#         it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, Color(8, 8, 8));
+#         it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
+#         latter_ui::bind_frame_buffer(id(disp1), it);
+#         latter_ui::frame_base_begin();
+#         if (latter_ui::render_system_takeovers(
+#                 it, now, takeover_st, id(camera_snapshot_art),
+#                 id(font_time), id(font_chrono_time), id(font_date),
+#                 id(font_small), id(font_micro))) {
+#           return;
+#         }
+#         latter_ui::frame_base(it, id(col_bg));
+#         // ... draw your custom pages here using latter_ui::fast_* primitives ...
 packages:
   latter_imu:         !include ../modules/imu_qmi8658.yaml
   latter_pmu:         !include ../modules/pmu_none.yaml
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power:       !include ../modules/power_manager.yaml
   latter_display_ui:  !include ../modules/display_ui.yaml
+  latter_ota:         !include ../modules/ota_esphome.yaml

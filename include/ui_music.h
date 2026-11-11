@@ -6,6 +6,7 @@
 
 #include "ui_layout.h"
 #include "ui_ambient_va.h"
+#include "ui_widgets.h"
 
 namespace latter_ui {
 
@@ -367,6 +368,7 @@ inline void render_music_menus(
 
     render_modern_card(it, cx, scale_y(122), 276, 44, 12, card_bg, theme_primary, "Speakers",    col_white, font_small);
     render_modern_card(it, cx, scale_y(185), 276, 44, 12, card_bg, theme_primary, "Library",     col_white, font_small);
+    ui::draw_icon_eighth_notes(it, layout().list_card_left + scale_x(22), scale_y(185), theme_primary);
     render_modern_card(it, cx, scale_y(248), 276, 44, 12, card_bg, theme_primary, "Queue",       col_white, font_small);
     render_modern_card(it, cx, scale_y(311), 276, 44, 12, card_bg, card_brd,      "Settings",    col_white, font_small);
 
@@ -510,12 +512,18 @@ inline void render_music_menus(
     if (selected_category_mode == "active_queue") {
       char q_hdr[36];
       if (music_browse_total_pages > 1) {
-        snprintf(q_hdr, sizeof(q_hdr), "QUEUE %d/%d", music_browse_page, music_browse_total_pages);
+        snprintf(q_hdr, sizeof(q_hdr), "QUEUE  %d/%d", music_browse_page, music_browse_total_pages);
       } else {
         snprintf(q_hdr, sizeof(q_hdr), "QUEUE");
       }
-      fast_print(it, cx - scale_x(48), layout().hdr_y, font_small, theme_primary, esphome::display::TextAlign::CENTER, q_hdr);
-      render_modern_card(it, cx + scale_x(93), layout().hdr_y, 84, 30, 8, card_bg, theme_primary, "Clear", col_white, font_micro);
+      render_page_header(it, cx, q_hdr, font_small, theme_primary);
+      const int clear_r = scale_s(12);
+      const int clear_hw = scale_x(34);
+      const int top_slot_top = layout().slot5_y(0) - scale_y(22);
+      const int clear_y = (layout().hdr_y + scale_y(10) + top_slot_top) / 2;
+      ui::pill_button(it, cx - clear_hw, cx + clear_hw, clear_y, clear_r,
+                      theme_primary, card_bg, "Clear", col_white, font_micro,
+                      WidgetId::MUSIC_QUEUE_CLEAR, kHitTap | kHitFocusSlot);
       if (music_browse_total_pages > 1) {
         draw_right_chevrons(music_browse_page > 1, music_browse_page < music_browse_total_pages);
       }

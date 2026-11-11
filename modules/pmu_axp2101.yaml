@@ -152,7 +152,16 @@ script:
                 if (!vbus && id(display_power_state) == 1) {
                   id(turn_screen_off).execute();
                 } else if (id(display_power_state) == 2) {
-                  if (!vbus) id(sleep_start_time) = millis();
+                  if (!vbus) {
+                    id(sleep_start_time) = millis();
+                    const bool local_audio_playing =
+                        id(speaker_enable).state || id(announcement_mixing_input).is_running() ||
+                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+                    if (id(va_wake_word_mode).current_option() != "Always On" && !local_audio_playing) {
+                      id(hal_set_audio_codecs_standby).execute(true);
+                    }
+                  }
                   id(sync_wake_word_state).execute();
                 }
                 id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
@@ -194,6 +203,7 @@ script:
           } else {
             last_stat1 = 0xFF;
           }
+          latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
           if (!id(batt_charging).has_state() || id(batt_charging).state != is_charging) {
             id(batt_charging).publish_state(is_charging);
           }
@@ -204,18 +214,15 @@ script:
             id(batt_charge_state).publish_state(chg_text);
           }
 
-          // Battery model: VBAT (REG34/35), the load class at this instant, and the cutoff.
+          // Battery model: VBAT (REG34/35), AXP2101 gauge (REG A4), load class, and cutoff.
           if (bat_present && bm.sample_due(now_b, quiet)) {
             uint8_t vreg = 0x34;
             uint8_t vbuf[2] = {0, 0};
             if (id(bus_internal).write_readv(0x34, &vreg, 1, vbuf, 2) == esphome::i2c::ERROR_OK) {
               const int vbat_mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
-              if (latter_ui::profiler_enabled()) {
-                uint8_t greg = 0xA4;
-                uint8_t gauge = 0;
-                if (id(bus_internal).write_readv(0x34, &greg, 1, &gauge, 1) == esphome::i2c::ERROR_OK && gauge <= 100) {
-                  latter_ui::pmu_telemetry().gauge_raw = gauge;  // [PROF:POWER] gauge= comparison only
-                }
+              const int hw_gauge = latter_ui::hal_axp2101_read_gauge_pct(id(bus_internal));
+              if (hw_gauge >= 0) {
+                latter_ui::pmu_telemetry().gauge_raw = static_cast<uint8_t>(hw_gauge);
               }
               latter_ui::BattLoad load = latter_ui::BattLoad::QUIET;
               if (audio_load) {
@@ -223,7 +230,7 @@ script:
               } else if (id(display_power_state) != 2) {
                 load = latter_ui::BattLoad::SCREEN;
               }
-              const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b);
+              const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b, hw_gauge);
               if (!std::isnan(bm.soc_display)) id(batt_level).publish_state(std::round(bm.soc_display));
               if (bm.vraw_mv > 0) id(batt_voltage).publish_state(static_cast<float>(bm.vraw_mv) / 1000.0f);
               if (!id(batt_low).has_state() || id(batt_low).state != bm.low) {

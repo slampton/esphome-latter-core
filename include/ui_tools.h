@@ -6,6 +6,7 @@
 
 #include "ui_layout.h"
 #include "ui_ambient_va.h"
+#include "ui_widgets.h"
 
 namespace latter_ui {
 
@@ -363,8 +364,8 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
     render_modern_card(it, cx - scale_x(70), scale_y(324), 124, 46, 12, esphome::Color(22, 27, 36),
                        (stopwatch_lap_ms > 0) ? col_red : esphome::Color(52, 62, 78),
                        "LAP / SPLIT", col_white, font_small);
-    render_modern_card(it, cx + scale_x(70), scale_y(324), 124, 46, 12, esphome::Color(28, 20, 24), col_red,
-                       "RESET", col_red, font_small);
+    render_modern_card(it, cx + scale_x(70), scale_y(324), 124, 46, 12, ui::chrome_danger_bg(), col_red,
+                       "RESET", col_white, font_small);
 
     render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back");
     return;
@@ -485,7 +486,7 @@ inline void render_tool_stopwatch(DisplayT &it, int cx, int cy, uint32_t now_ms,
   fast_filled_circle(it, cx, cy, 6, col_dark_gray);
   fast_filled_circle(it, cx, cy, 2, col_white);
 
-  fast_print(it, cx, 408, font_small, col_slate, esphome::display::TextAlign::CENTER, "< Back");
+  render_back_button(it, cx, font_small, layout().back_y, tools_direct_home() ? "Home" : "< Back");
 }
 
 template<typename DisplayT, typename FontBigT, typename FontSmallT>
@@ -717,22 +718,26 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
   bool is_level = (total_tilt <= 0.5f);
   esphome::Color ring_c = is_level ? col_green : col_slate;
 
-  // 1. Top Total-Tilt Degree Readout at y = 40
+  // 1. Top Total-Tilt Degree Readout
   char deg_buf[16];
   snprintf(deg_buf, sizeof(deg_buf), "%.1f°", total_tilt);
-  fast_print(it, cx, 40, font_date, is_level ? col_green : col_white,
+  fast_print(it, cx, layout().hdr_y + scale_y(6), font_date, is_level ? col_green : col_white,
            esphome::display::TextAlign::CENTER, deg_buf);
 
-  // 2. Enlarged 324px-Diameter Bulls-Eye Spirit Vial (outer_r = 162 at level_cy = 232)
-  //    Spans y = 70..394 with a clean 17px buffer below top degree text (y = 53)
-  //    and a 21px buffer above the bottom < Back button (y = 415).
-  const int level_cy = 232;
-  const int outer_r = 162;
+  // 2. Resolution-Adaptive Bulls-Eye Spirit Vial (fits 320x480 through 720x720)
+  const int level_cy = SCREEN_CY;
+  const int outer_r = scale_min(145);
+  const int mid_r   = scale_min(74);
+  const int inner_r = scale_min(28);
+  const int cross_out = outer_r + scale_min(5);
+  const int cross_in  = inner_r + scale_min(6);
+  const float max_bub = static_cast<float>(outer_r - scale_min(22));
+  const int bub_r   = std::max(12, scale_min(20));
 
   // 12-point 30-degree radial bezel ticks via .rodata DIAL_SIN / DIAL_COS
   for (int i = 0; i < 60; i += 5) {
-    int x1 = cx + (int)(DIAL_SIN[i] * (float)(outer_r - 8));
-    int y1 = level_cy - (int)(DIAL_COS[i] * (float)(outer_r - 8));
+    int x1 = cx + (int)(DIAL_SIN[i] * (float)(outer_r - scale_min(8)));
+    int y1 = level_cy - (int)(DIAL_COS[i] * (float)(outer_r - scale_min(8)));
     int x2 = cx + (int)(DIAL_SIN[i] * (float)outer_r);
     int y2 = level_cy - (int)(DIAL_COS[i] * (float)outer_r);
     fast_line(it, x1, y1, x2, y2, col_gray);
@@ -740,39 +745,40 @@ inline void render_tool_bubble_level(DisplayT &it, int cx, float ax, float ay, f
 
   fast_circle(it, cx, level_cy, outer_r, col_slate);
   fast_circle(it, cx, level_cy, outer_r - 1, col_dark_gray);
-  fast_circle(it, cx, level_cy, 82, col_gray);
-  fast_circle(it, cx, level_cy, 30, ring_c);
-  fast_circle(it, cx, level_cy, 29, ring_c);
+  fast_circle(it, cx, level_cy, mid_r, col_gray);
+  fast_circle(it, cx, level_cy, inner_r, ring_c);
+  fast_circle(it, cx, level_cy, inner_r - 1, ring_c);
 
   // Cardinal Crosshairs
-  fast_line(it, cx - 168, level_cy, cx - 36, level_cy, ring_c);
-  fast_line(it, cx + 36, level_cy, cx + 168, level_cy, ring_c);
-  fast_line(it, cx, level_cy - 168, cx, level_cy - 36, ring_c);
-  fast_line(it, cx, level_cy + 36, cx, level_cy + 168, ring_c);
+  fast_line(it, cx - cross_out, level_cy, cx - cross_in, level_cy, ring_c);
+  fast_line(it, cx + cross_in, level_cy, cx + cross_out, level_cy, ring_c);
+  fast_line(it, cx, level_cy - cross_out, cx, level_cy - cross_in, ring_c);
+  fast_line(it, cx, level_cy + cross_in, cx, level_cy + cross_out, ring_c);
   fast_filled_circle(it, cx, level_cy, 2, ring_c);
 
-  // Spirit Level Bubble Position (clamped inside outer vial r = 138)
-  float fbx = (float)cx - smooth_r_deg * 15.0f;
-  float fby = (float)level_cy - smooth_p_deg * 15.0f;
+  // Spirit Level Bubble Position (clamped inside outer vial)
+  const float deg_px = scale_min_f(13.5f);
+  float fbx = (float)cx - smooth_r_deg * deg_px;
+  float fby = (float)level_cy - smooth_p_deg * deg_px;
   float bdx = fbx - (float)cx;
   float bdy = fby - (float)level_cy;
   float b_dist_sq = bdx * bdx + bdy * bdy;
-  if (b_dist_sq > 138.0f * 138.0f) {
+  if (b_dist_sq > max_bub * max_bub) {
     float b_dist = std::sqrt(b_dist_sq);
-    fbx = (float)cx + (bdx / b_dist) * 138.0f;
-    fby = (float)level_cy + (bdy / b_dist) * 138.0f;
+    fbx = (float)cx + (bdx / b_dist) * max_bub;
+    fby = (float)level_cy + (bdy / b_dist) * max_bub;
   }
   int bx = (int)fbx;
   int by = (int)fby;
 
-  // 3D Glass Spirit Bubble (r = 22: Shadow, Meniscus Rim, Dual Specular Highlights)
-  fast_filled_circle(it, bx + 2, by + 3, 22, esphome::Color(12, 16, 22));
+  // 3D Glass Spirit Bubble
+  fast_filled_circle(it, bx + 2, by + 3, bub_r, esphome::Color(12, 16, 22));
   esphome::Color bub_fill = is_level ? col_green : theme_secondary;
-  fast_filled_circle(it, bx, by, 22, bub_fill);
-  fast_circle(it, bx, by, 22, col_white);
-  fast_circle(it, bx, by, 20, col_white);
-  fast_filled_circle(it, bx - 7, by - 7, 4, col_white);
-  fast_filled_circle(it, bx + 8, by + 8, 2, col_white);
+  fast_filled_circle(it, bx, by, bub_r, bub_fill);
+  fast_circle(it, bx, by, bub_r, col_white);
+  fast_circle(it, bx, by, bub_r - 2, col_white);
+  fast_filled_circle(it, bx - bub_r / 3, by - bub_r / 3, std::max(2, scale_min(4)), col_white);
+  fast_filled_circle(it, bx + bub_r / 3, by + bub_r / 3, std::max(1, scale_min(2)), col_white);
 
   render_back_button(it, cx, font_small, layout().back_y, "< Back");
 }
@@ -784,12 +790,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
                                   FontBigT *font_date, FontSmallT *font_small,
                                   esphome::Color theme_primary, esphome::Color /*theme_secondary*/,
                                   esphome::Color /*col_white*/, esphome::Color col_dark_gray) {
-  (void)now_ms;
-  static uint32_t last_start_ms = 0;
-  static int flip_frame = 0;
-  static int start_side = 0;
-
-  float scale_y = 1.0f;
+  float coin_sy = 1.0f;
   float y_hop = 0.0f;
   float z_zoom = 1.0f;
   float theta = (coin_side == 0) ? 0.0f : PI_F;
@@ -797,19 +798,13 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
   bool is_edge_flash = false;
 
   if (coin_anim_active) {
-    if (coin_anim_start_ms != last_start_ms) {
-      last_start_ms = coin_anim_start_ms;
-      flip_frame = 0;
-      // Always start opposite to final side if needed so the toss visibly turns over 4 or 5 times!
-      start_side = (coin_side == 0) ? 0 : 1;
-    }
-
-    // 11 guaranteed rendered frames per toss (~31% shorter duration, faster spin cadence):
-    // Packs 4 razor-thin milled-edge flashes and 4 full face reversals into 11 crisp frames!
+    static constexpr uint32_t kTossDurationMs = 550U;
     static constexpr int TOTAL_FRAMES = 11;
+    const uint32_t el_ms = (now_ms >= coin_anim_start_ms) ? (now_ms - coin_anim_start_ms) : kTossDurationMs;
+    const int flip_frame = static_cast<int>((el_ms * static_cast<uint32_t>(TOTAL_FRAMES)) / kTossDurationMs);
     if (flip_frame >= TOTAL_FRAMES) {
       coin_anim_active = false;
-      scale_y = 1.0f;
+      coin_sy = 1.0f;
       y_hop = 0.0f;
       z_zoom = 1.0f;
       show_heads = (coin_side == 0);
@@ -817,35 +812,31 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       static constexpr float STEP_SCALES[11] = {
         0.84f, 0.06f, 0.56f, 0.90f, 0.06f, 0.58f, 0.90f, 0.06f, 0.86f, 0.06f, 0.58f
       };
-      // 0 = coin_side, 1 = opposite side (alternates on every edge crossing at frames 1, 4, 7, 9)
       static constexpr uint8_t STEP_OPP[11] = {
         0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0
       };
 
-      float p = static_cast<float>(flip_frame + 1) / static_cast<float>(TOTAL_FRAMES + 1);
+      float p = static_cast<float>(el_ms) / static_cast<float>(kTossDurationMs);
       float arc = fast_sin(p * PI_F);
-      y_hop = -68.0f * arc;
+      y_hop = -scale_min_f(68.0f) * arc;
       z_zoom = 0.96f + 0.20f * arc;
 
-      scale_y = STEP_SCALES[flip_frame];
-      is_edge_flash = (scale_y < 0.10f);
+      coin_sy = STEP_SCALES[flip_frame];
+      is_edge_flash = (coin_sy < 0.10f);
       int cur_side = STEP_OPP[flip_frame] ? (1 - coin_side) : coin_side;
       show_heads = (cur_side == 0);
       theta = static_cast<float>(flip_frame) * (PI_F * 0.36f);
-      flip_frame++;
     }
-  } else {
-    last_start_ms = 0;
   }
-  const int coin_base_y = 216;
+  const int coin_base_y = scale_y(216);
   int coin_cy = coin_base_y + static_cast<int>(y_hop);
-  const int r_outer = static_cast<int>(116.0f * z_zoom);
+  const int r_outer = static_cast<int>(scale_min_f(108.0f) * z_zoom);
 
   // 1. Dynamic 3D Floor Shadow (shrinks as coin rises toward the viewer)
-  int sh_base_y = 312;
-  float shadow_scale = fmaxf(0.32f, 1.0f - (-y_hop / 95.0f));
-  int sh_rx = static_cast<int>(94.0f * shadow_scale);
-  int sh_ry = std::max(3, static_cast<int>((16.0f + 10.0f * scale_y) * shadow_scale));
+  int sh_base_y = scale_y(312);
+  float shadow_scale = fmaxf(0.32f, 1.0f - (-y_hop / std::max(1.0f, scale_min_f(95.0f))));
+  int sh_rx = static_cast<int>(scale_min_f(88.0f) * shadow_scale);
+  int sh_ry = std::max(3, static_cast<int>((16.0f + 10.0f * coin_sy) * shadow_scale));
   for (int sdy = -sh_ry; sdy <= sh_ry; sdy++) {
     int lut_idx = 233 + (sdy * 232) / sh_ry;
     if (lut_idx < 0) lut_idx = 0;
@@ -864,8 +855,8 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
   esphome::Color col_engrave_recess(74, 84, 98);
 
   float spec_center = -0.35f + 0.65f * fast_sin(theta * 2.0f);
-  int b_outer = std::max(4, static_cast<int>(r_outer * scale_y));
-  int edge_h = is_edge_flash ? 18 : std::max(3, static_cast<int>(15.0f * (1.0f - scale_y * 0.78f)));
+  int b_outer = std::max(4, static_cast<int>(r_outer * coin_sy));
+  int edge_h = is_edge_flash ? 18 : std::max(3, static_cast<int>(15.0f * (1.0f - coin_sy * 0.78f)));
 
   // 2. O(1) Crescent 3D Milled Silver Edge Band (prominent 18px reeded silver bar on edge-flash frames!)
   for (int dy = 1; dy <= b_outer + edge_h; dy++) {
@@ -925,7 +916,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
     fast_line(it, cx + rx_off, y_rim + 1, cx + rx_off, y_rim + edge_h - 1, reed_c);
   }
 
-  if (scale_y >= 0.96f && !coin_anim_active) {
+  if (coin_sy >= 0.96f && !coin_anim_active) {
     fast_circle(it, cx, coin_cy, r_outer, col_rim_dark);
     fast_circle(it, cx, coin_cy, r_outer - 1, col_bevel_hi);
     fast_circle(it, cx, coin_cy, r_outer - 8, col_groove_sh);
@@ -933,13 +924,13 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
   }
 
   // 4. Enlarged (+30%) All-Silver 3D Struck Bas-Relief Home Assistant Emblem & Quarter Lettering
-  if (scale_y > 0.22f) {
+  if (coin_sy > 0.22f) {
     int hx = cx;
-    int hy = coin_cy - static_cast<int>(18.0f * scale_y * z_zoom);
+    int hy = coin_cy - static_cast<int>(18.0f * coin_sy * z_zoom);
     int hw = static_cast<int>(62.0f * z_zoom);
-    int y_top = hy - static_cast<int>(56.0f * scale_y * z_zoom);
-    int y_eave = hy - static_cast<int>(2.0f * scale_y * z_zoom);
-    int y_bot = hy + static_cast<int>(54.0f * scale_y * z_zoom);
+    int y_top = hy - static_cast<int>(56.0f * coin_sy * z_zoom);
+    int y_eave = hy - static_cast<int>(2.0f * coin_sy * z_zoom);
+    int y_bot = hy + static_cast<int>(54.0f * coin_sy * z_zoom);
 
     // Pass 1: Deep 3D struck relief shadow (+3px lower-right) & gleaming upper-left bevel (-2px)
     for (int y = y_top; y <= y_bot; y++) {
@@ -950,7 +941,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
         }
       } else {
         int dy_b = y_bot - y;
-        cur_hw = (dy_b < 5 && scale_y > 0.75f) ? (hw - (5 - dy_b)) : hw;
+        cur_hw = (dy_b < 5 && coin_sy > 0.75f) ? (hw - (5 - dy_b)) : hw;
       }
       if (cur_hw > 0) {
         fast_hline(it, hx - cur_hw + 2, y + 2, 2 * cur_hw + 2, col_relief_shadow);
@@ -967,7 +958,7 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
         }
       } else {
         int dy_b = y_bot - y;
-        cur_hw = (dy_b < 5 && scale_y > 0.75f) ? (hw - (5 - dy_b)) : hw;
+        cur_hw = (dy_b < 5 && coin_sy > 0.75f) ? (hw - (5 - dy_b)) : hw;
       }
       if (cur_hw > 0) {
         float rel_u = static_cast<float>(y - y_top) / static_cast<float>(y_bot - y_top + 1);
@@ -980,8 +971,8 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
 
     if (show_heads) {
       int eye_dx = static_cast<int>(26.0f * z_zoom);
-      int eye_y = hy + static_cast<int>(7.0f * scale_y * z_zoom);
-      int eye_r = std::max(2, static_cast<int>(8.0f * scale_y * z_zoom));
+      int eye_y = hy + static_cast<int>(7.0f * coin_sy * z_zoom);
+      int eye_r = std::max(2, static_cast<int>(8.0f * coin_sy * z_zoom));
       fast_filled_circle(it, hx - eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
       fast_filled_circle(it, hx + eye_dx + 1, eye_y + 1, eye_r, col_relief_hi);
       fast_filled_circle(it, hx - eye_dx, eye_y, eye_r, col_relief_shadow);
@@ -989,9 +980,9 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       fast_filled_circle(it, hx - eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
       fast_filled_circle(it, hx + eye_dx + 1, eye_y + 1, std::max(1, eye_r - 2), col_engrave_recess);
 
-      int smile_top_y = hy + static_cast<int>(22.0f * scale_y * z_zoom);
-      int smile_mid_y = hy + static_cast<int>(28.0f * scale_y * z_zoom);
-      int smile_bot_y = hy + static_cast<int>(40.0f * scale_y * z_zoom);
+      int smile_top_y = hy + static_cast<int>(22.0f * coin_sy * z_zoom);
+      int smile_mid_y = hy + static_cast<int>(28.0f * coin_sy * z_zoom);
+      int smile_bot_y = hy + static_cast<int>(40.0f * coin_sy * z_zoom);
       int smile_hw = static_cast<int>(20.0f * z_zoom);
 
       for (int y = smile_top_y; y <= smile_mid_y; y++) {
@@ -1013,8 +1004,8 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
         }
       }
 
-      if (scale_y > 0.76f) {
-        int ty = coin_cy + static_cast<int>(74.0f * scale_y * z_zoom);
+      if (coin_sy > 0.76f) {
+        int ty = coin_cy + static_cast<int>(74.0f * coin_sy * z_zoom);
         if (!coin_anim_active) {
           fast_print(it, cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "HEADS");
           fast_print(it, cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "HEADS");
@@ -1030,9 +1021,9 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       int left_node_x  = hx - branch_x;
       int left_node_y  = y_top + static_cast<int>(0.73f * static_cast<float>(H_total));
 
-      int node_r = std::max(3, static_cast<int>(10.0f * scale_y * z_zoom));
-      int line_hw = std::max(1, static_cast<int>(3.0f * scale_y * z_zoom));
-      int branch_drop = static_cast<int>(29.0f * scale_y * z_zoom);
+      int node_r = std::max(3, static_cast<int>(10.0f * coin_sy * z_zoom));
+      int line_hw = std::max(1, static_cast<int>(3.0f * coin_sy * z_zoom));
+      int branch_drop = static_cast<int>(29.0f * coin_sy * z_zoom);
 
       for (int w = -line_hw; w <= line_hw; w++) {
         fast_line(it, hx + w + 2, top_node_y + 1, hx + w + 2, y_bot, col_relief_hi);
@@ -1052,8 +1043,8 @@ inline void render_tool_coin_flip(DisplayT &it, int cx, uint32_t now_ms,
       fast_filled_circle(it, right_node_x, right_node_y, node_r, col_relief_shadow);
       fast_filled_circle(it, left_node_x, left_node_y, node_r, col_relief_shadow);
 
-      if (scale_y > 0.76f) {
-        int ty = coin_cy + static_cast<int>(74.0f * scale_y * z_zoom);
+      if (coin_sy > 0.76f) {
+        int ty = coin_cy + static_cast<int>(74.0f * coin_sy * z_zoom);
         if (!coin_anim_active) {
           fast_print(it, cx + 2, ty + 2, font_date, col_relief_shadow, esphome::display::TextAlign::CENTER, "TAILS");
           fast_print(it, cx - 1, ty - 1, font_date, col_relief_hi,     esphome::display::TextAlign::CENTER, "TAILS");
@@ -1523,19 +1514,13 @@ inline void render_tool_timer(DisplayT &it, int cx, int cy,
                      s.running ? theme_secondary : theme_primary,
                      hero_lbl, col_white, font_btn_bold);
 
-  // 4. Modern Stepper Cards (-5m, -1m, +1m, +5m) or RESET Card at y = 324
-  esphome::Color card_bg(22, 27, 36);
-  esphome::Color card_brd(52, 62, 78);
+  // 4. Shared 4-Column Stepper Cards (-5m, -1m, +1m, +5m) or RESET Card at y = 324
   if (!s.running && !s.paused) {
-    const int step_w = (SCREEN_W < 380) ? 62 : 68;
     static constexpr const char *STEP_LBLS[4] = {"-5m", "-1m", "+1m", "+5m"};
-    for (int i = 0; i < 4; i++) {
-      render_modern_card(it, layout().stepper_x(i), scale_y(324), step_w, 46, 12, card_bg, card_brd,
-                         STEP_LBLS[i], col_white, font_small);
-    }
+    ui::stepper_row(it, cx, scale_y(324) - 23, 46, STEP_LBLS, font_small, col_white, WidgetId::STEPPER_BASE);
   } else {
-    render_modern_card(it, cx, scale_y(324), 136, 46, 12, esphome::Color(28, 20, 24), col_red,
-                       "RESET", col_red, font_small);
+    render_modern_card(it, cx, scale_y(324), 136, 46, 12, ui::chrome_danger_bg(), col_red,
+                       "RESET", col_white, font_small);
   }
 
   render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -1561,6 +1546,9 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
     // ALARMS LANDING PAGE (3 Modern Rounded Alarm Cards at y = 122, 210, 298)
     // -------------------------------------------------------------------------
     render_page_header(it, cx, "ALARMS", font_small, theme_primary);
+    if (!can_wake_for_on_battery_alarm()) {
+      render_sub_header(it, cx, "Docked wake only", font_small, kChromeBackLabel);
+    }
 
     static constexpr const char *REC_LABELS[4] = {"Daily", "Weekdays", "Weekends", "Once"};
 
@@ -1607,15 +1595,8 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
       // Subtle vertical separator between Edit Zone (left) and Toggle Switch (right)
       fast_line(it, a_div_x, y_mid - 22, a_div_x, y_mid + 22, border_c);
 
-      // Centered Modern Toggle Switch
-      const int sw_l = a_div_x + 32;
-      const int sw_r = a_div_x + 58;
-      esphome::Color sw_bg = en ? theme_primary : esphome::Color(42, 48, 58);
-      fast_filled_circle(it, sw_l, y_mid, 12, sw_bg);
-      fast_filled_circle(it, sw_r, y_mid, 12, sw_bg);
-      fill_rect_row_major(it, sw_l, y_mid - 12, 26, 25, sw_bg);
-      int knob_x = en ? sw_r : sw_l;
-      fast_filled_circle(it, knob_x, y_mid, 9, en ? col_white : esphome::Color(180, 186, 196));
+      // Shared Stadium Toggle Switch
+      ui::toggle_switch(it, a_div_x + scale_x(45), y_mid, en, theme_primary);
     };
 
     draw_modern_alarm_card(layout().tool_card3_y(0), alarm1_hour, alarm1_minute, alarm1_enabled, alarm1_recurrence, 1);
@@ -1639,14 +1620,10 @@ inline void render_tool_alarms(DisplayT &it, int cx, const TimeT &now, bool is_2
       fast_print(it, ap_x, scale_y(151), font_small, theme_secondary, esphome::display::TextAlign::LEFT, ap_buf);
     }
 
-    esphome::Color card_bg(22, 27, 36);
-    esphome::Color card_brd(52, 62, 78);
-    const int step_w = (SCREEN_W < 380) ? 62 : 68;
+    const esphome::Color card_bg = ui::chrome_card_bg_on();
+    const esphome::Color card_brd = ui::chrome_card_brd_on();
     static constexpr const char *STEP_LBLS[4] = {"-1h", "+1h", "-5m", "+5m"};
-    for (int i = 0; i < 4; i++) {
-      render_modern_card(it, layout().stepper_x(i), scale_y(236), step_w, 46, 12, card_bg, card_brd,
-                         STEP_LBLS[i], col_white, font_small);
-    }
+    ui::stepper_row(it, cx, scale_y(236) - 23, 46, STEP_LBLS, font_small, col_white, WidgetId::STEPPER_BASE);
 
     static constexpr const char *REC_NAMES[4] = {
         "Repeat: Daily", "Repeat: Weekdays", "Repeat: Weekends", "Repeat: Once"};

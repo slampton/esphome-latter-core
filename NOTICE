@@ -1,0 +1,26 @@
+Latter Core (esphome-latter-core)
+Copyright 2026 Sean Lampton
+
+This product includes software developed for the Latter project
+(https://github.com/slampton/esphome-latter-core), licensed under the
+Apache License, Version 2.0.
+
+Third-Party Attributions
+------------------------
+
+1. ESPHome Micro Wake Word Models (`models/okay_nabu.*`, `models/hey_jarvis.*`,
+   `models/hey_mycroft.*`, `models/alexa.*`, `models/vad.*`)
+   Source: https://github.com/esphome/micro-wake-word-models
+   Copyright The ESPHome Authors / Open Home Foundation
+   Licensed under the Apache License, Version 2.0.
+
+2. Hey Luna Wake Word Model (`models/hey_luna.json`, `models/hey_luna.tflite`)
+   Source: https://github.com/dreimer1986/micro-wake-word-models
+   Upstream PR: https://github.com/esphome/micro-wake-word-models/pull/20
+   Copyright Daniel Reimer
+   Licensed under the Apache License, Version 2.0.
+
+3. ESP Web Tools (loaded dynamically by `index.html` from unpkg CDN)
+   Source: https://github.com/esphome/esp-web-tools
+   Copyright Open Home Foundation
+   Licensed under the MIT License.

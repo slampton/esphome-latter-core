@@ -41,11 +41,15 @@
 #include <initializer_list>
 #include <string>
 #include "audio_router.h"
+#include "esphome_bridge.h"
+#include "hal_manifest.h"
 #include "hal_imu_qmi8658.h"
 #include "hal_power_pm.h"
 #include "hal_battery.h"
 #include "hal_link_report.h"
 #include "latter_state.h"
+#include "latter_rpc.h"
+#include "ui_hit_table.h"
 
 // SDK revision lockstep guard. The C++ headers arrive through external_components (refresh: 0s) while
 // the YAML packages arrive through packages:, which ESPHome refreshes only once per day unless the
@@ -53,9 +57,43 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111004L
+#define LATTER_SDK_REV 2026111030L
+
+#ifdef USE_ESP32
+#define LATTER_PSRAM_BSS EXT_RAM_BSS_ATTR
+#else
+#define LATTER_PSRAM_BSS
+#endif
 
 namespace latter_ui {
+
+template <typename UpdT>
+inline std::string fw_update_latest_version(const UpdT *upd) {
+  if (upd == nullptr) return "";
+  if constexpr (requires { upd->update_info.latest_version; }) {
+    return upd->update_info.latest_version;
+  }
+  return "";
+}
+
+template <typename UpdT>
+inline std::string fw_update_latest_version(UpdT *const *upd_ptr) {
+  return (upd_ptr != nullptr) ? fw_update_latest_version(*upd_ptr) : std::string{};
+}
+
+template <typename UpdT>
+inline std::string fw_update_release_summary(const UpdT *upd) {
+  if (upd == nullptr) return "";
+  if constexpr (requires { upd->update_info.summary; }) {
+    return upd->update_info.summary;
+  }
+  return "";
+}
+
+template <typename UpdT>
+inline std::string fw_update_release_summary(UpdT *const *upd_ptr) {
+  return (upd_ptr != nullptr) ? fw_update_release_summary(*upd_ptr) : std::string{};
+}
 
 inline bool &speaker_volume_boot_synced() {
   static bool synced = false;
@@ -129,28 +167,32 @@ static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_
 static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
 
 inline constexpr int mm_to_px(float mm) {
-  return static_cast<int>((mm * static_cast<float>(LATTER_PANEL_PPI)) / 25.4f + 0.5f);
+  return mm_to_px_for(mm, LATTER_PANEL_PPI);
 }
 
 inline constexpr int scale_x(int v466) {
-  return (SCREEN_W > 520) ? ((v466 * SCREEN_W + 233) / 466) : v466;
+  return scale_x_for(v466, SCREEN_W);
 }
 
 inline constexpr int scale_y(int v466) {
-  return (SCREEN_H > 520) ? ((v466 * SCREEN_H + 233) / 466) : v466;
+  return scale_y_for(v466, SCREEN_H);
 }
 
 inline constexpr int scale_s(int v466) {
-  return (SCREEN_MIN_DIM > 520) ? ((v466 * SCREEN_MIN_DIM + 233) / 466) : v466;
+  return scale_s_for(v466, SCREEN_MIN_DIM);
 }
 
 // True all-resolution proportional scaling (scales down on 320x480 / 410x502 and up on 720x720)
 inline constexpr int scale_min(int v466) {
-  return (v466 * SCREEN_MIN_DIM + 233) / 466;
+  return scale_min_for(v466, SCREEN_MIN_DIM);
 }
 
 inline constexpr float scale_min_f(float v466) {
   return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
+}
+
+inline constexpr int scale_w(int v466) {
+  return scale_w_for(v466, SCREEN_W);
 }
 
 static constexpr int STD_ART_SIZE = scale_min(264);
@@ -320,18 +362,7 @@ static constexpr int16_t CIRCLE_HW[466] = {
 // Computes floor(sqrt(r^2 - dy^2)) when round_nearest=false, or floor(sqrt(r^2 - dy^2) + 0.5)
 // when round_nearest=true, using 2-step integer Newton-Raphson (0 floating-point / libm stalls).
 inline int chord_half_span_int(int r, int dy, bool round_nearest = false) {
-  if (dy < 0) dy = -dy;
-  if (dy == 0) return (r > 0) ? r : 0;
-  if (dy >= r) return 0;
-  const int n = r * r - dy * dy;
-  int x = r - (dy * dy) / (2 * r);
-  if (x <= 0) x = 1;
-  x = (x + n / x) >> 1;
-  x = (x + n / x) >> 1;
-  while (x * x > n) x--;
-  while ((x + 1) * (x + 1) <= n) x++;
-  if (round_nearest && ((x + 1) * x < n)) x++;
-  return x;
+  return chord_half_span_constexpr(r, dy, round_nearest);
 }
 
 inline int circle_half_span(int c, int inset = 5) {
@@ -363,6 +394,10 @@ inline int circle_half_span(int c, int inset = 5) {
   }
   return (half_w > 0) ? half_w : 0;
 #endif
+}
+
+inline int safe_span(int y, int inset = 12) {
+  return 2 * circle_half_span(y, inset);
 }
 
 inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
@@ -635,20 +670,10 @@ struct DispBufferAccessor<DispT, false> : DispT {
 };
 
 #if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
-struct MipiDsiBufferTag {
-  using type = uint8_t *(esphome::mipi_dsi::MipiDsi::*);
-};
-template <typename Tag, typename Tag::type M>
-struct MipiDsiBufferRob {
-  friend constexpr typename Tag::type get_mipi_dsi_buffer_member(Tag) { return M; }
-};
-constexpr MipiDsiBufferTag::type get_mipi_dsi_buffer_member(MipiDsiBufferTag);
-template struct MipiDsiBufferRob<MipiDsiBufferTag, &esphome::mipi_dsi::MipiDsi::buffer_>;
-
 template<>
 struct DispBufferAccessor<esphome::mipi_dsi::MipiDsi, true> {
   static uint8_t *get(esphome::mipi_dsi::MipiDsi *d) {
-    return (d != nullptr) ? (d->*get_mipi_dsi_buffer_member(MipiDsiBufferTag{})) : nullptr;
+    return ::latter_hal::get_mipi_dsi_buffer(d);
   }
 };
 #endif
@@ -703,14 +728,6 @@ inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
   }
   active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
   fb_clear_bind(static_cast<esphome::Component *>(disp), active_frame_buf16());
-#if LATTER_ROUND_DISPLAY
-  if (active_frame_buf16() != nullptr) {
-    it.draw_pixel_at(0, 0, esphome::Color(8, 8, 8));
-    it.draw_pixel_at(0, 0, esphome::Color(0, 0, 0));
-    it.draw_pixel_at(SCREEN_W - 1, SCREEN_H - 1, esphome::Color(8, 8, 8));
-    it.draw_pixel_at(SCREEN_W - 1, SCREEN_H - 1, esphome::Color(0, 0, 0));
-  }
-#endif
 }
 
 template<typename DispT>
@@ -1579,16 +1596,13 @@ inline uint32_t latter_utf8_next(const char *&p) {
   return 0xFFFD;
 }
 
-// fast_print can render the text itself: framebuffer bound, font bpp <= 4 and every codepoint has a
-// glyph (Font::print draws a placeholder box for missing glyphs, so those strings use it.print).
+// fast_print renders directly into the bound RGB565 framebuffer whenever font bpp <= 4,
+// keeping DisplayBuffer's [band_y0, band_y1] 2px-aligned watermarks untouched even when
+// track metadata contains unmapped Unicode codepoints.
 template<typename FontT>
 inline bool fast_print_supported(FontT *font, const char *text) {
   if (active_frame_buf16() == nullptr || font == nullptr || text == nullptr) return false;
-  if (font->get_bpp() > 4) return false;
-  for (const char *p = text; *p != 0;) {
-    if (font->find_glyph(latter_utf8_next(p)) == nullptr) return false;
-  }
-  return true;
+  return font->get_bpp() <= 4;
 }
 
 // 1-bpp text span cache. Decoding glyph bits is most of fast_print's cost, and the same strings are
@@ -1633,6 +1647,10 @@ inline int text_decode_spans_1bpp(FontT *font, const char *text, TextSpan *out, 
   int x_at = 0;
   for (const char *p = text; *p != 0;) {
     const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    if (glyph == nullptr) {
+      x_at += std::max(4, font->get_height() / 3);
+      continue;
+    }
     const uint8_t *data = glyph->data;
     const int gx0 = x_at + glyph->offset_x;
     uint8_t bitmask = 0;
@@ -1770,6 +1788,10 @@ inline void fast_print(DisplayT &it, int x, int y, FontT *font, esphome::Color c
   int x_at = x_start;
   for (const char *p = text; *p != 0;) {
     const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    if (glyph == nullptr) {
+      x_at += std::max(4, font->get_height() / 3);
+      continue;
+    }
     const uint8_t *data = glyph->data;
     const int gx0 = x_at + glyph->offset_x;
     const int gy0 = y_start + glyph->offset_y;
@@ -3141,23 +3163,42 @@ struct DisplayUpdateScheduler : public esphome::Component {
   }
 };
 
+void mark_dirty_band(int y0, int y1);
+void mark_dirty_full();
+
 template<typename DispT>
 inline void schedule_disp_update(DispT *disp) {
+  mark_dirty_full();
   DisplayUpdateScheduler::request_ptr(disp);
 }
 
 template<typename DispT>
 inline void schedule_disp_update(DispT *const *disp_ptr) {
+  mark_dirty_full();
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_ptr(*disp_ptr);
+}
+
+template<typename DispT>
+inline void schedule_band_disp_update(DispT *disp, int y0, int y1) {
+  mark_dirty_band(y0, y1);
+  DisplayUpdateScheduler::request_ptr(disp);
+}
+
+template<typename DispT>
+inline void schedule_band_disp_update(DispT *const *disp_ptr, int y0, int y1) {
+  mark_dirty_band(y0, y1);
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_ptr(*disp_ptr);
 }
 
 template<typename DispT>
 inline void schedule_anim_disp_update(DispT *disp) {
+  mark_dirty_full();
   DisplayUpdateScheduler::request_anim_ptr(disp);
 }
 
 template<typename DispT>
 inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
+  mark_dirty_full();
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
 }
 
@@ -3170,7 +3211,6 @@ inline uint32_t &last_local_vol_tap_ms() {
 // 5. On-Demand Flight Recorder & Telemetry Profiler ([PROF:*])
 // ------------------------------------------------------------------------------
 struct FlightRecorderStats {
-  bool enabled = false;
   uint32_t window_frames = 0;
   uint32_t window_render_us = 0;
   uint32_t max_render_us = 0;
@@ -3187,10 +3227,6 @@ struct FlightRecorderStats {
 inline FlightRecorderStats &flight_recorder() {
   static FlightRecorderStats st;
   return st;
-}
-
-inline bool &profiler_enabled() {
-  return flight_recorder().enabled;
 }
 
 inline uint64_t prof_now_us() {
@@ -3601,7 +3637,7 @@ inline bool frame_base(DisplayT &it, esphome::Color c) {
   st.color_hw = encode_hw_rgb565(c);
   if (fb_clear_consume(st.color_hw)) return true;
   const uint64_t t0 = profiler_enabled() ? prof_now_us() : 0;
-  it.fill(c);
+  fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, c);
   if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t0);
   return true;
 }
@@ -3718,23 +3754,6 @@ inline void log_audio_profile(const char *event_tag, const char *detail = "") {
                        : 0U;
   LATTER_PROF_LOGI("[PROF:AUDIO] event=%s va_elapsed=%lums %s",
            event_tag, (unsigned long)va_el, detail ? detail : "");
-}
-
-// PMIC telemetry shared by the PMU module and the profiler. gauge_raw is the AXP2101 fuel gauge (REG A4),
-// kept for comparison only: Battery Level comes from the voltage model in hal_battery.h.
-// on_src / off_src are REG20 / REG21 (power-on / power-off source of the previous cycle), latched at boot.
-struct PmuTelemetry {
-  int gauge_raw = -1;
-  bool boot_valid = false;
-  uint8_t on_src = 0;
-  uint8_t off_src = 0;
-  uint8_t cv_reg = 0;
-  int icc_ma = 0;
-};
-
-inline PmuTelemetry &pmu_telemetry() {
-  static PmuTelemetry t;
-  return t;
 }
 
 // Voice sessions return the display to the state it was in before the session started:

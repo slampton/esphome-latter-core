@@ -6,22 +6,8 @@
 
 #include "ui_layout.h"
 #include "ui_music.h"
-
-#if defined(USE_ESP32)
-#include <driver/rtc_io.h>
-#include <esp_system.h>
-#include <soc/soc_caps.h>
-#endif
-
-#ifndef LATTER_PWR_KEY_ACTIVE_HIGH
-#define LATTER_PWR_KEY_ACTIVE_HIGH 1
-#endif
-#ifndef LATTER_PWR_KEY_DEEP_SLEEP_WAKE
-#define LATTER_PWR_KEY_DEEP_SLEEP_WAKE 0
-#endif
-#ifndef LATTER_PMU_TS_DISABLE
-#define LATTER_PMU_TS_DISABLE 0
-#endif
+#include "ui_widgets.h"
+#include "hal_pmu_axp2101.h"
 
 namespace latter_ui {
 
@@ -173,239 +159,6 @@ inline int32_t seconds_until_next_armed_alarm(const esphome::ESPTime &now, uint3
   return (best_sec <= 43200) ? best_sec : -1;
 }
 
-// Returns the PWR key pad to the digital GPIO matrix after an ext0 deep-sleep wake (the wake pad
-// stays in the RTC IO domain after wake until rtc_gpio_deinit(), which would freeze the
-// binary_sensor reading). No-op on boards without a deep-sleep-capable PWR key.
-inline void hal_release_pwr_key_wake_pad() {
-#if defined(USE_ESP32) && defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
-  const gpio_num_t pin = static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN);
-  if (rtc_gpio_is_valid_gpio(pin)) {
-    rtc_gpio_deinit(pin);
-  }
-#endif
-}
-
-template <typename I2cBusT>
-inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *bus, int32_t sec_until_alarm) {
-#ifdef USE_ESP32
-  BatteryModel &batt = battery_model();
-  if (batt.cutoff_tripped && sec_until_alarm > 0) {
-    // Alarm-sleep keeps every rail on and wakes into a speaker load: at the cutoff that runs the cell flat.
-    ESP_LOGW("power", "Battery at cutoff: powering off instead of alarm-sleep (alarm in %lds)", (long)sec_until_alarm);
-    sec_until_alarm = -1;
-  }
-#if defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_PM_SUPPORT_EXT0_WAKEUP
-  // Alarm-sleep keeps AXP2101 rails ON, so a PWR key press wakes the SoC through ext0.
-  esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN), LATTER_PWR_KEY_ACTIVE_HIGH ? 1 : 0);
-#endif
-  if (sec_until_alarm > 0 && sec_until_alarm <= 43200) {
-    uint64_t wake_sec = static_cast<uint64_t>((sec_until_alarm > 90) ? (sec_until_alarm - 90) : 15);
-    ESP_LOGI("power", "Armed alarm in %lds: entering timer-wake deep sleep (wake in %llus, AXP2101 rails kept ON)",
-             (long)sec_until_alarm, (unsigned long long)wake_sec);
-    esp_sleep_enable_timer_wakeup(wake_sec * 1000000ULL);
-#if defined(LATTER_C6_RESET_PIN) && !defined(CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
-    // Rails stay on in alarm-sleep, so the ESP32-C6 co-processor would keep running (its CHIP_PU has a
-    // pull-up). Hold CHIP_PU low through deep sleep (single-pad deep-sleep hold needs P4 rev >= 3.0);
-    // latter_release_c6_reset_hold() drops the hold at the next boot before esp_hosted resets the C6.
-    gpio_set_level(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN), 0);
-    gpio_hold_en(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN));
-#endif
-    esp_deep_sleep_start();
-    return;
-  }
-  if (bus != nullptr) {
-    // Power-off record in the AXP2101 data buffer (REG04-07, kept while a cell is connected), read back by
-    // hal_init_axp2101 at the next boot: magic | reason, VBAT mV (big-endian), percent (0xFF unknown).
-    const uint16_t rec_mv = batt.vraw_mv > 0 ? static_cast<uint16_t>(batt.vraw_mv) : 0U;
-    const uint8_t rec_soc = std::isnan(batt.soc_display) ? 0xFF : static_cast<uint8_t>(std::lround(batt.soc_display));
-    const uint8_t rec[4] = {static_cast<uint8_t>(kHibRecordMagic | (static_cast<uint8_t>(batt.hib_reason) & 0x0F)),
-                            static_cast<uint8_t>(rec_mv >> 8), static_cast<uint8_t>(rec_mv & 0xFF), rec_soc};
-    for (uint8_t i = 0; i < 4; i++) {
-      const uint8_t wr_rec[2] = {static_cast<uint8_t>(0x04 + i), rec[i]};
-      bus->write(0x34, wr_rec, 2);
-    }
-    ESP_LOGI("power", "AXP2101 power-off: reason=%s vbat=%umV soc=%u", hibernate_reason_name(rec[0] & 0x0F),
-             (unsigned)rec_mv, (unsigned)rec_soc);
-    uint8_t axp_pwr_off[2] = {0x10, 0x01};
-    auto err = bus->write(0x34, axp_pwr_off, 2);
-    if (err != esphome::i2c::ERROR_OK) {
-      ESP_LOGW("power", "AXP2101 power-off write (0x10=0x01) failed (err=%d); falling back to ESP deep sleep", (int)err);
-    }
-  }
-  esphome::delay(100);
-  esp_deep_sleep_start();
-#else
-  (void)bus;
-  (void)sec_until_alarm;
-#endif
-}
-
-#if defined(USE_ESP32) && defined(LATTER_C6_RESET_PIN)
-// Runs as a global constructor, before the FreeRTOS scheduler starts, so it precedes esp_hosted's C6
-// reset pulse on every ESPHome version (2026.10: inside Wi-Fi setup; 2026.11+: the esp_hosted init task
-// spawned from its own constructor). A held pad would latch CHIP_PU low and the C6 would never boot.
-// Harmless when no hold is set.
-__attribute__((constructor)) static void latter_release_c6_reset_hold() {
-  gpio_hold_dis(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN));
-}
-#endif
-
-template <typename I2cBusT>
-inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {
-  if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
-}
-
-// Boot check, first thing in on_boot (priority 800: after the I2C bus, before the display and Wi-Fi): on
-// battery (cell present, no VBUS) with VBAT at or below BatteryModel::kBootCutoffMv, write the hib=critical
-// record and switch the PMIC straight back off, so a cell past the cutoff can't run the boot (display,
-// Wi-Fi) and sag further. The best of three readings counts, so a single dip never blocks a boot.
-template <typename I2cBusT>
-inline void hal_axp2101_boot_battery_check(I2cBusT *bus) {
-#ifdef USE_ESP32
-  if (bus == nullptr) return;
-  auto rd = [bus](uint8_t reg, uint8_t *buf, size_t len) -> bool {
-    return bus->write_readv(0x34, &reg, 1, buf, len) == esphome::i2c::ERROR_OK;
-  };
-  uint8_t stat0 = 0;
-  if (!rd(0x00, &stat0, 1)) return;
-  const bool vbus_good = (stat0 & 0x20) != 0;
-  const bool bat_present = (stat0 & 0x08) != 0;
-  if (vbus_good || !bat_present) return;
-  int best_mv = -1;
-  for (int i = 0; i < 3; i++) {
-    uint8_t vbuf[2] = {0, 0};
-    if (rd(0x34, vbuf, 2)) {
-      const int mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
-      if (mv > best_mv) best_mv = mv;
-    }
-    if (i < 2) esphome::delay(20);
-  }
-  if (best_mv < BatteryModel::kVbatMinValidMv || best_mv > BatteryModel::kBootCutoffMv) return;
-  ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT_BOOT vbat=%dmV <= %dmV on battery -> power off", best_mv,
-           BatteryModel::kBootCutoffMv);
-  BatteryModel &batt = battery_model();
-  batt.vraw_mv = best_mv;
-  batt.soc_display = 0.0f;
-  batt.cutoff_tripped = true;
-  batt.hib_reason = HibernateReason::CRITICAL;
-  enter_axp2101_hibernate_or_alarm_sleep(bus, -1);
-#else
-  (void)bus;
-#endif
-}
-
-template <typename I2cBusT>
-inline void hal_axp2101_boot_battery_check(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_axp2101_boot_battery_check(*bus_pp);
-}
-
-// Canonical AXP2101 boot configuration (register map per XPowersLib AXP2101Constants.h).
-//   1. Masks every IRQ source (REG40-42) and clears latched status (REG48-4A): no supported
-//      board routes AXP_IRQ to the SoC; the PWR key is read from its own GPIO instead.
-//   2. LATTER_PMU_TS_DISABLE=1: boards with no NTC on TS -> TS is an external fixed input that does
-//      not gate the charger (REG50 = (v & 0xF0) | 0x10) and its ADC channel stops sampling (REG30 bit1).
-//   3. LATTER_PMU_DCDC_KEEP_MASK (REG80 bits0-4 = DCDC1..5) and LATTER_PMU_LDO_KEEP_MASK
-//      (bits0-7 = REG90 ALDO1-4/BLDO1-2/CPUSLDO/DLDO1, bit8 = REG91 bit0 DLDO2) only ever switch
-//      rails OFF; rails outside the mask that have no load per the schematic are disabled.
-//      Boards without a verified rail map leave both masks undefined (OTP defaults retained).
-//   4. LATTER_HAS_BATTERY=1: the charge profile derived from LATTER_BATTERY_MAH in hal_battery.h:
-//      constant current (REG62), precharge (REG61 bits 3:0), termination (REG63 bits 3:0, bit 4 enable)
-//      and the 4.20 V constant voltage (REG64 bits 2:0).
-//   5. Reads and clears the previous power-off record (data buffer REG04-07, see
-//      enter_axp2101_hibernate_or_alarm_sleep) for [PROF:BOOT] hib=.
-template <typename I2cBusT>
-inline void hal_init_axp2101(I2cBusT *bus) {
-#ifdef USE_ESP32
-  if (bus == nullptr) return;
-  constexpr uint8_t kAxpAddr = 0x34;
-  auto rd = [bus](uint8_t reg, uint8_t &val) -> bool {
-    return bus->write_readv(kAxpAddr, &reg, 1, &val, 1) == esphome::i2c::ERROR_OK;
-  };
-  auto wr = [bus](uint8_t reg, uint8_t val) -> bool {
-    const uint8_t buf[2] = {reg, val};
-    return bus->write(kAxpAddr, buf, 2) == esphome::i2c::ERROR_OK;
-  };
-
-  for (uint8_t reg = 0x40; reg <= 0x42; reg++) wr(reg, 0x00);
-  for (uint8_t reg = 0x48; reg <= 0x4A; reg++) wr(reg, 0xFF);
-
-  uint8_t v = 0;
-#if LATTER_PMU_TS_DISABLE
-  if (rd(0x50, v)) wr(0x50, static_cast<uint8_t>((v & 0xF0) | 0x10));
-  if (rd(0x30, v)) wr(0x30, static_cast<uint8_t>(v & ~0x02));
-#endif
-
-#if defined(LATTER_PMU_DCDC_KEEP_MASK)
-  static_assert((LATTER_PMU_DCDC_KEEP_MASK & 0x01) != 0, "LATTER_PMU_DCDC_KEEP_MASK must keep DCDC1 (SoC 3V3)");
-  if (rd(0x80, v)) wr(0x80, static_cast<uint8_t>(v & (0xE0 | (LATTER_PMU_DCDC_KEEP_MASK & 0x1F))));
-#endif
-#if defined(LATTER_PMU_LDO_KEEP_MASK)
-  if (rd(0x90, v)) wr(0x90, static_cast<uint8_t>(v & (LATTER_PMU_LDO_KEEP_MASK & 0xFF)));
-  if (rd(0x91, v)) wr(0x91, static_cast<uint8_t>(v & (0xFE | ((LATTER_PMU_LDO_KEEP_MASK >> 8) & 0x01))));
-#endif
-
-#if LATTER_HAS_BATTERY
-  static_assert(kBattChargeMa >= 100 && kBattChargeMa <= 1000, "charge current outside the AXP2101 range");
-  if (rd(0x62, v)) wr(0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kBattChargeMa)));
-  if (rd(0x61, v)) wr(0x61, static_cast<uint8_t>((v & 0xF0) | (kBattPrechargeMa / 25)));
-  if (rd(0x63, v)) wr(0x63, static_cast<uint8_t>((v & 0xE0) | 0x10 | (kBattTermMa / 25)));
-  if (rd(0x64, v)) wr(0x64, static_cast<uint8_t>((v & 0xF8) | kBattCvCode));
-#endif
-
-  // Previous power-off record (Latter writes it right before the REG10 power-off).
-  {
-    uint8_t rec[4] = {0, 0, 0, 0};
-    bool rec_ok = true;
-    for (uint8_t i = 0; i < 4; i++) rec_ok = rd(static_cast<uint8_t>(0x04 + i), rec[i]) && rec_ok;
-    HibernateRecord &prev = battery_model().prev_hib;
-    if (rec_ok && (rec[0] & 0xF0) == kHibRecordMagic) {
-      prev.valid = true;
-      prev.reason = rec[0] & 0x0F;
-      prev.mv = static_cast<uint16_t>((rec[1] << 8) | rec[2]);
-      prev.soc = rec[3];
-    }
-    for (uint8_t i = 0; i < 4; i++) wr(static_cast<uint8_t>(0x04 + i), 0x00);
-  }
-
-  // Configuration snapshot for the board facts ledger / bring-up log.
-  uint8_t r61 = 0, r62 = 0, r63 = 0, r64 = 0, r80 = 0, r90 = 0, r91 = 0, r30 = 0, r50 = 0, r27 = 0, r16 = 0, r18 = 0,
-          r24 = 0;
-  rd(0x61, r61);
-  rd(0x62, r62);
-  rd(0x63, r63);
-  rd(0x64, r64);
-  rd(0x16, r16);
-  rd(0x18, r18);
-  rd(0x24, r24);
-  rd(0x80, r80);
-  rd(0x90, r90);
-  rd(0x91, r91);
-  rd(0x30, r30);
-  rd(0x50, r50);
-  rd(0x27, r27);
-  const uint8_t icc = r62 & 0x1F;
-  const int icc_ma = (icc <= 8) ? (icc * 25) : (200 + (icc - 8) * 100);
-  auto &tel = pmu_telemetry();
-  rd(0x20, tel.on_src);
-  rd(0x21, tel.off_src);
-  tel.cv_reg = r64;
-  tel.icc_ma = icc_ma;
-  tel.boot_valid = true;
-  static const int kCvMv[8] = {0, 4000, 4100, 4200, 4350, 4400, 0, 0};
-  ESP_LOGI("pmu", "AXP2101: ICC=%dmA (0x62=0x%02X) IPRE=%dmA ITERM=%dmA%s CV=%dmV (0x%02X) cell=%dmAh "
-           "DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X ILIM=0x%02X CHG=0x%02X VOFF=0x%02X",
-           icc_ma, r62, (r61 & 0x0F) * 25, (r63 & 0x0F) * 25, (r63 & 0x10) ? "" : "(off)", kCvMv[r64 & 0x07], r64,
-           kBattCapacityMah, r80, r90, r91, r30, r50, r27, r16, r18, r24);
-#else
-  (void)bus;
-#endif
-}
-
-template <typename I2cBusT>
-inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_init_axp2101(*bus_pp);
-}
-
 // Boot summary, re-logged to every API client a moment after it connects so an OTA log viewer sees
 // why the device last went down and came back (boot-time logs are emitted before any client exists).
 // AXP2101 REG20 / REG21 bit names follow XPowersLib (xpower_power_on/off_source_t).
@@ -538,10 +291,10 @@ inline void render_system_page(
   (void)font_date; (void)col_dark_gray;
   char buf[64];
 
-  const esphome::Color card_bg_on(22, 27, 36);
-  const esphome::Color card_bg_off(15, 18, 24);
-  const esphome::Color card_brd_on(52, 62, 78);
-  const esphome::Color card_brd_off(34, 40, 50);
+  const esphome::Color card_bg_on  = ui::chrome_card_bg_on();
+  const esphome::Color card_bg_off = ui::chrome_card_bg_off();
+  const esphome::Color card_brd_on = ui::chrome_card_brd_on();
+  const esphome::Color card_brd_off = ui::chrome_card_brd_off();
 
   auto draw_back = [&]() {
     render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -564,12 +317,13 @@ inline void render_system_page(
     }
   };
 
-  // Binary toggle card (2 states): renders squared-off modern card (white when active, dimmed when off, zero arrows)
-  auto draw_toggle_card_y = [&](int y_mid, const char *label, bool is_on) {
-    esphome::Color bg_c  = is_on ? card_bg_on  : card_bg_off;
-    esphome::Color brd_c = is_on ? card_brd_on : card_brd_off;
-    esphome::Color txt_c = is_on ? col_white   : col_slate;
-    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, label, txt_c, font_small);
+  // Binary toggle card: shared stadium switch + hit-registered row
+  auto draw_toggle_card_y = [&](int y_mid, const char *label, bool is_on, int slot_idx = -1) {
+    const uint16_t wid = (slot_idx >= 0)
+        ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + slot_idx)
+        : WidgetId::NONE;
+    ui::toggle_card_row(it, cx, y_mid, 276, 44, label, is_on, font_small,
+                        theme_primary, col_white, col_slate, wid, static_cast<int16_t>(slot_idx));
   };
 
   // Action / Submenu drill-down card
@@ -652,9 +406,14 @@ inline void render_system_page(
       int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         if (i == 4) {
-          draw_toggle_card_y(y, sleep_labels[i], docked_ss_on);
+          draw_toggle_card_y(y, "Docked Saver", docked_ss_on, !menu_scroll_active ? 4 : -1);
         } else if (i == 8) {
-          draw_toggle_card_y(y, sleep_labels[i], LATTER_HAS_BATTERY != 0);
+#if LATTER_HAS_BATTERY
+          draw_toggle_card_y(y, instant_crown_hib ? "Hold Crown: Instant" : "Hold Crown: 5s Delay",
+                             instant_crown_hib, !menu_scroll_active ? 8 : -1);
+#else
+          draw_cycle_card_y(y, sleep_labels[i], false);
+#endif
         } else {
           bool en = (i == 0) ? true
                   : (i == 1) ? ((LATTER_HAS_IMU != 0) && (pickup_wake_opt != "Disabled"))
@@ -704,7 +463,7 @@ inline void render_system_page(
       int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         if (i <= 2) {
-          draw_toggle_card_y(y, disp_labels[i], true);
+          draw_cycle_card_y(y, disp_labels[i], true);
         } else {
           bool active = !( (i == 5 && !ab_off) || (i == 6 && !ab_sched) || ((i == 7 || i == 8) && ab_off) );
           draw_cycle_card_y(y, disp_labels[i], active);
@@ -736,15 +495,14 @@ inline void render_system_page(
     draw_action_card_y(layout().slot5_y(1), "Screen Off Now",    card_brd_on, col_white, card_bg_on);
 #endif
     draw_action_card_y(layout().slot5_y(2), "Software Update >", card_brd_on, col_white, card_bg_on);
-    snprintf(buf, sizeof(buf), "BLE Beacon: %s", ble_active ? "On" : "Off");
-    draw_toggle_card_y(layout().slot5_y(3), buf, ble_active);
-    draw_action_card_y(layout().slot5_y(4), "Restart Device",    col_red,     col_white, esphome::Color(28, 18, 22));
+    draw_toggle_card_y(layout().slot5_y(3), "BLE Beacon", ble_active, 3);
+    draw_action_card_y(layout().slot5_y(4), "Restart Device",    col_red,     col_white, ui::chrome_danger_bg());
     draw_back();
 
   } else if (system_menu_mode == 4) {
-    fast_print(it, cx, scale_y(130), font_small, theme_primary, esphome::display::TextAlign::CENTER, "RESTART?");
-    render_modern_card(it, cx - scale_x(73), scale_y(230), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
-    render_modern_card(it, cx + scale_x(73), scale_y(230), 112, 44, 12, esphome::Color(28, 18, 22), col_red, "Restart", col_white, font_small);
+    ui::confirm_modal(it, cx, "RESTART DEVICE?", "Reboot firmware now", "",
+                      "Cancel", "Restart", col_red, ui::chrome_danger_bg(),
+                      font_small, font_small, theme_primary, col_white, col_slate);
 
   } else if (system_menu_mode == 5) {
     render_page_header(it, cx, "UPDATE", font_small, theme_primary);
@@ -794,11 +552,9 @@ inline void render_system_page(
     draw_back();
 
   } else if (system_menu_mode == 6) {
-    fast_print(it, cx, scale_y(100), font_small, theme_primary, esphome::display::TextAlign::CENTER, "INSTALL UPDATE?");
-    fast_print(it, cx, scale_y(145), font_small, col_white, esphome::display::TextAlign::CENTER, "Download & flash firmware");
-    fast_print(it, cx, scale_y(175), font_small, theme_secondary, esphome::display::TextAlign::CENTER, "Keep device powered on");
-    render_modern_card(it, cx - scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, card_brd_on, "Cancel", col_white, font_small);
-    render_modern_card(it, cx + scale_x(73), scale_y(240), 112, 44, 12, card_bg_on, theme_primary, "Install", col_white, font_small);
+    ui::confirm_modal(it, cx, "INSTALL UPDATE?", "Download & flash firmware", "Keep device powered on",
+                      "Cancel", "Install", theme_primary, card_bg_on,
+                      font_small, font_small, theme_primary, col_white, theme_secondary);
 
   } else if (system_menu_mode == 7) {
     render_page_header(it, cx, "SOUND", font_small, theme_primary);
@@ -808,8 +564,7 @@ inline void render_system_page(
     draw_cycle_card_y(layout().slot5_y(1), buf, true);
     snprintf(buf, sizeof(buf), "Vol Step: %d%%", vol_step_pct);
     draw_cycle_card_y(layout().slot5_y(2), buf, true);
-    snprintf(buf, sizeof(buf), "Game Sound: %s", game_sound_on ? "On" : "Muted");
-    draw_toggle_card_y(layout().slot5_y(3), buf, game_sound_on);
+    draw_toggle_card_y(layout().slot5_y(3), "Game Sound", game_sound_on, 3);
     draw_back();
 
   } else if (system_menu_mode == 8) {
@@ -893,7 +648,7 @@ inline void render_system_page(
     snprintf(buf, sizeof(buf), "Artist Discog: %s", artist_sort_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(3), buf, true);
     snprintf(buf, sizeof(buf), "Podcast Sort: %s", podcast_sort_opt.c_str());
-    draw_toggle_card_y(layout().slot5_y(4), buf, true);
+    draw_cycle_card_y(layout().slot5_y(4), buf, true);
     draw_back();
 
   } else if (system_menu_mode == 11) {
@@ -909,8 +664,7 @@ inline void render_system_page(
                        ww_en ? card_bg_on  : card_bg_off);
     snprintf(buf, sizeof(buf), "Profile: %s", va_profile_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(3), buf, true);
-    snprintf(buf, sizeof(buf), "Wake Screen: %s", va_wake_scr ? "On" : "Off");
-    draw_toggle_card_y(layout().slot5_y(4), buf, va_wake_scr);
+    draw_toggle_card_y(layout().slot5_y(4), "Wake Screen", va_wake_scr, 4);
     draw_back();
 
   } else if (system_menu_mode == 12) {
@@ -934,51 +688,13 @@ inline void render_system_page(
 
   } else if (system_menu_mode == 13) {
     const int wheel_cy = scale_y(180);
-    const float ws = (SCREEN_MIN_DIM > 520) ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f) : 1.0f;
-    fast_circle(it, cx, wheel_cy, scale_s(166), card_brd_off);
-
-    for (int a = 0; a < 60; a++) {
-      float hue_01 = static_cast<float>(a) * (1.0f / 60.0f);
-      float c_a = DIAL_COS[a];
-      float s_a = DIAL_SIN[a];
-
-      int x1 = cx + static_cast<int>(c_a * 148.0f * ws);
-      int y1 = wheel_cy + static_cast<int>(s_a * 148.0f * ws);
-      fast_filled_circle(it, x1, y1, scale_s(16), hsv_to_rgb(hue_01, 1.00f, 1.0f));
-
-      int x2 = cx + static_cast<int>(c_a * 124.0f * ws);
-      int y2 = wheel_cy + static_cast<int>(s_a * 124.0f * ws);
-      fast_filled_circle(it, x2, y2, scale_s(14), hsv_to_rgb(hue_01, 0.84f, 1.0f));
-
-      int x3 = cx + static_cast<int>(c_a * 101.0f * ws);
-      int y3 = wheel_cy + static_cast<int>(s_a * 101.0f * ws);
-      fast_filled_circle(it, x3, y3, scale_s(12), hsv_to_rgb(hue_01, 0.68f, 1.0f));
-
-      int x4 = cx + static_cast<int>(c_a * 79.0f * ws);
-      int y4 = wheel_cy + static_cast<int>(s_a * 79.0f * ws);
-      fast_filled_circle(it, x4, y4, scale_s(11), hsv_to_rgb(hue_01, 0.52f, 1.0f));
-
-      int x5 = cx + static_cast<int>(c_a * 59.0f * ws);
-      int y5 = wheel_cy + static_cast<int>(s_a * 59.0f * ws);
-      fast_filled_circle(it, x5, y5, scale_s(9), hsv_to_rgb(hue_01, 0.36f, 1.0f));
-    }
-
-    fast_filled_circle(it, cx, wheel_cy, scale_s(49), col_black);
-    fast_filled_circle(it, cx, wheel_cy, scale_s(44), theme_primary);
-    fast_circle(it, cx, wheel_cy, scale_s(44), col_white);
-    fast_circle(it, cx, wheel_cy, scale_s(45), theme_secondary);
-
-    float rad = color_wheel_hue_deg() * (PI_F / 180.0f);
-    float r_sel = (59.0f + ((color_wheel_sat() - 0.35f) / 0.65f) * 89.0f) * ws;
-    r_sel = std::max(57.0f * ws, std::min(150.0f * ws, r_sel));
-    int sel_x = cx + static_cast<int>(fast_cos(rad) * r_sel);
-    int sel_y = wheel_cy + static_cast<int>(fast_sin(rad) * r_sel);
-    fast_filled_circle(it, sel_x, sel_y, scale_s(12), theme_primary);
-    fast_circle(it, sel_x, sel_y, scale_s(12), col_white);
-    fast_circle(it, sel_x, sel_y, scale_s(13), col_white);
-    fast_circle(it, sel_x, sel_y, scale_s(14), col_black);
-
-    render_modern_card(it, cx, scale_y(376), 224, 38, 12, card_bg_on, theme_primary, "Save Custom Color", col_white, font_small);
+    ui::hsv_color_wheel(it, cx, wheel_cy, 156, 56, color_wheel_hue_deg(), color_wheel_sat(),
+                        col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
+    const int save_r = scale_s(19);
+    const int save_hw = std::min(SCREEN_W / 2 - save_r - 16, scale_x(92));
+    ui::pill_button(it, cx - save_hw, cx + save_hw, scale_y(376), save_r,
+                    theme_primary, card_bg_on, "Save Custom Color", col_white, font_small,
+                    WidgetId::COLOR_WHEEL_SAVE, kHitTap | kHitFocusSlot);
     draw_back();
   }
 }
@@ -987,5 +703,3 @@ inline void render_system_page(
 // ==============================================================================
 
 }  // namespace latter_ui
-
-using namespace latter_ui;

@@ -4,9 +4,8 @@
 
 substitutions:
   name: "latter-device"
-  device_slug: "latter_device"
   friendly_name: "Latter Device"
-  version: "2.2.1"
+  version: "3.0.0"
   screen_w: "466"
   screen_h: "466"
   font_time_size: "77"
@@ -22,15 +21,16 @@ substitutions:
   sendspin_buffer_size: "196608"
   mww_internal_ram: "false"
   announcement_buffer_size: "65536"
-  audio_out_rate: "16000"
+  audio_out_rate: "48000"
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
-  active_media_sensor: "sensor.${device_slug}_active_media"
-  weather_forecast_sensor: "sensor.${device_slug}_weather_forecast"
-  area_context_sensor: "sensor.${device_slug}_area_context"
-  calendar_agenda_sensor: "sensor.${device_slug}_calendar_agenda"
-  remote_config_sensor: "sensor.${device_slug}_remote_config"
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: 'latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));'
 
 api:
   reboot_timeout: ${api_reboot_timeout}
@@ -47,11 +47,32 @@ api:
       id: latter_ping_action
       then:
         - logger.log: "Latter companion connected"
-        # Latter pings every bound Device once its services exist: answer with a fresh hello.
+        # Latter pings every bound Device once its RPC outbox listener is attached: answer with a fresh hello.
         - script.execute: send_device_hello
 
-# Home Assistant subscribes to device actions only after it subscribes to states: a hello sent straight from
-# on_client_connected is dropped, so wait for the state subscription first.
+    - action: latter_push_v3
+      id: latter_push_v3_action
+      variables:
+        domain: string
+        payload: string
+      then:
+        - lambda: |-
+            const std::string_view sv_dom(domain.c_str(), domain.size());
+            const std::string_view sv_pay(payload.c_str(), payload.size());
+            if (sv_dom == "area_context") {
+              latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::whole_home_state());
+            } else if (sv_dom == "active_media") {
+              latter_ui::parse_v3_media_payload(sv_pay, latter_ui::media_state());
+            } else if (sv_dom == "remote_config") {
+              latter_ui::parse_v3_remote_payload(sv_pay, latter_ui::remote_state());
+            } else if (sv_dom == "weather_forecast") {
+              latter_ui::parse_v3_weather_payload(sv_pay, latter_ui::weather_state());
+            } else if (sv_dom == "calendar_agenda") {
+              latter_ui::parse_v3_calendar_payload(sv_pay, latter_ui::calendar_state());
+            }
+
+# Publish device_hello over the bound System: RPC Outbox text_sensor once Home Assistant has subscribed
+# to entity states (zero allow_service_calls privilege needed).
 script:
   - id: send_device_hello
     mode: restart
@@ -61,14 +82,16 @@ script:
             api.connected:
               state_subscription_only: true
           timeout: 30s
-      - delay: 1500ms
-      - homeassistant.action:
-          action: latter.device_hello
-          data:
-            target_device: "${name}"
-            contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
-            boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
-            manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
+      - delay: 250ms
+      - lambda: |-
+          const std::string contract_str = std::to_string(latter_ui::kProtocolContractVersion);
+          const std::string boot_str = std::to_string(latter_ui::device_boot_id());
+          const std::string manifest_str = latter_ui::build_hardware_manifest_json();
+          latter_rpc::emit(&id(latter_rpc_outbox), "device_hello", {
+            {"contract", contract_str},
+            {"boot_id", boot_str},
+            {"manifest", manifest_str},
+          });
 
 time:
   - platform: homeassistant
@@ -84,3 +107,10 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 300s
     lambda: 'return latter_ui::build_hardware_manifest_state_json();'
+
+  - platform: template
+    name: "System: RPC Outbox"
+    id: latter_rpc_outbox
+    icon: "mdi:swap-horizontal"
+    entity_category: diagnostic
+    update_interval: never

@@ -2,9 +2,7 @@
 
 script:
   # device_hello to Home Assistant (contract, boot id, hardware manifest with reset reason, crash and
-  # rollback). Home Assistant subscribes to device actions only after it authenticates and subscribes to
-  # states, so a hello sent straight from on_client_connected is dropped ("client has not subscribed to
-  # actions (yet)") and ha-latter never sees it: wait for the state subscription, then a moment more.
+  # rollback) published over the bound System: RPC Outbox text_sensor once HA subscribes to entity states.
   - id: send_device_hello
     mode: restart
     then:
@@ -13,14 +11,438 @@ script:
             api.connected:
               state_subscription_only: true
           timeout: 30s
-      - delay: 1500ms
-      - homeassistant.action:
-          action: latter.device_hello
-          data:
-            target_device: "${name}"
-            contract: !lambda 'return std::to_string(latter_ui::kProtocolContractVersion);'
-            boot_id: !lambda 'return std::to_string(latter_ui::device_boot_id());'
-            manifest: !lambda 'return latter_ui::build_hardware_manifest_json();'
+      - delay: 250ms
+      - lambda: |-
+          const std::string contract_str = std::to_string(latter_ui::kProtocolContractVersion);
+          const std::string boot_str = std::to_string(latter_ui::device_boot_id());
+          const std::string manifest_str = latter_ui::build_hardware_manifest_json();
+          latter_rpc::emit(&id(latter_rpc_outbox), "device_hello", {
+            {"contract", contract_str},
+            {"boot_id", boot_str},
+            {"manifest", manifest_str},
+          });
+
+  - id: sync_ui_touch_runtime
+    mode: single
+    then:
+      - lambda: |-
+          auto &rt = latter_ui::touch_engine().runtime();
+          rt.friendly_name = "${friendly_name}";
+          rt.fw_version = "${version}";
+          rt.fw_latest_version = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+          rt.usb_connected = id(usb_connected).state;
+          rt.panel_is_on = id(display_brightness).current_values.is_on();
+          rt.local_mp_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          rt.local_mp_volume = id(latter_media_player).volume;
+          rt.album_art_w = id(album_art).get_width();
+          rt.track_title = id(track_title).state;
+          rt.track_artist = id(track_artist).state;
+          rt.track_album = id(track_album).state;
+          auto now_t = id(ha_time).now();
+          if (!now_t.is_valid()) now_t = id(sntp_time).now();
+          rt.time_valid = now_t.is_valid();
+          rt.time_hour = rt.time_valid ? now_t.hour : -1;
+          rt.time_minute = rt.time_valid ? now_t.minute : -1;
+          rt.time_epoch = rt.time_valid ? static_cast<uint32_t>(now_t.timestamp) : 0U;
+
+          if (!rt.bound) {
+            rt.gui_page = &id(gui_page);
+            rt.home_subpage = &id(home_subpage);
+            rt.music_overlay_mode = &id(music_overlay_mode);
+            rt.active_game = &id(active_game);
+            rt.game_carousel_idx = &id(game_carousel_idx);
+            rt.system_menu_mode = &id(system_menu_mode);
+            rt.system_dashboard_page = &id(system_dashboard_page);
+            rt.sleep_menu_page = &id(sleep_menu_page);
+            rt.display_menu_page = &id(display_menu_page);
+            rt.sky_weather_subpage = &id(sky_weather_subpage);
+            rt.area_subpage = &id(area_subpage);
+            rt.remote_subpage = &id(remote_subpage);
+            rt.active_remote_slot = &id(active_remote_slot);
+            rt.tools_subpage = &id(tools_subpage);
+            rt.tools_menu_page = &id(tools_menu_page);
+
+            rt.is_hibernating = &id(is_hibernating);
+            rt.hibernate_countdown_val = &id(hibernate_countdown_val);
+            rt.display_power_state = &id(display_power_state);
+            rt.va_active = &id(va_active);
+            rt.va_status_text = &id(va_status_text);
+            rt.notif_active = &id(notif_active);
+            rt.notif_camera_url = &id(notif_camera_url);
+            rt.current_loaded_camera_url = &id(current_loaded_camera_url);
+            rt.current_loaded_art_url = &id(current_loaded_art_url);
+
+            rt.alarm_ringing = &id(alarm_ringing);
+            rt.alarm_ringing_idx = &id(alarm_ringing_idx);
+            rt.alarm_edit_idx = &id(alarm_edit_idx);
+            rt.alarm_snooze_until = &id(alarm_snooze_until);
+            rt.alarm1_hour = &id(alarm1_hour);
+            rt.alarm1_minute = &id(alarm1_minute);
+            rt.alarm1_enabled = &id(alarm1_enabled);
+            rt.alarm1_recurrence = &id(alarm1_recurrence);
+            rt.alarm2_hour = &id(alarm2_hour);
+            rt.alarm2_minute = &id(alarm2_minute);
+            rt.alarm2_enabled = &id(alarm2_enabled);
+            rt.alarm2_recurrence = &id(alarm2_recurrence);
+            rt.alarm3_hour = &id(alarm3_hour);
+            rt.alarm3_minute = &id(alarm3_minute);
+            rt.alarm3_enabled = &id(alarm3_enabled);
+            rt.alarm3_recurrence = &id(alarm3_recurrence);
+
+            rt.timer_ringing = &id(timer_ringing);
+            rt.find_my_active = &id(find_my_active);
+            rt.timer_running = &id(timer_running);
+            rt.timer_paused = &id(timer_paused);
+            rt.timer_remaining_sec = &id(timer_remaining_sec);
+            rt.timer_duration_sec = &id(timer_duration_sec);
+            rt.timer_target_ms = &id(timer_target_ms);
+
+            rt.stopwatch_running = &id(stopwatch_running);
+            rt.stopwatch_start_time = &id(stopwatch_start_time);
+            rt.stopwatch_elapsed_ms = &id(stopwatch_elapsed_ms);
+            rt.stopwatch_lap_ms = &id(stopwatch_lap_ms);
+            rt.sleep_start_time = &id(sleep_start_time);
+
+            rt.is_24h_format = &id(is_24h_format);
+            rt.clock_face_digital = &id(clock_face_digital);
+            rt.custom_theme_rgb = &id(custom_theme_rgb);
+            rt.theme_primary = &id(theme_primary);
+            rt.theme_secondary = &id(theme_secondary);
+            rt.update_check_state = &id(update_check_state);
+            rt.update_check_timer = &id(update_check_timer);
+            rt.audio_menu_parent_page = &id(audio_menu_parent_page);
+
+            rt.menu_scroll_active = &id(menu_scroll_active);
+            rt.menu_scroll_dir = &id(menu_scroll_dir);
+            rt.menu_scroll_target_page = &id(menu_scroll_target_page);
+
+            rt.music_hud_active = &id(music_hud_active);
+            rt.music_hud_timer = &id(music_hud_timer);
+            rt.hud_wake_finger_released = &id(hud_wake_finger_released);
+            rt.music_direct_nav = &id(music_direct_nav);
+            rt.music_action_feedback = &id(music_action_feedback);
+            rt.music_feedback_timer = &id(music_feedback_timer);
+            rt.active_playback_media_type = &id(active_playback_media_type);
+            rt.music_pos_base = &id(music_pos_base);
+            rt.music_pos_sync_time = &id(music_pos_sync_time);
+            rt.selected_category_mode = &id(selected_category_mode);
+            rt.selected_category_title = &id(selected_category_title);
+            rt.music_category_page = &id(music_category_page);
+            rt.music_browse_page = &id(music_browse_page);
+            rt.music_browse_total_pages = &id(music_browse_total_pages);
+            rt.drilldown_artist_name = &id(drilldown_artist_name);
+            rt.drilldown_artist_page = &id(drilldown_artist_page);
+            rt.drilldown_album_id = &id(drilldown_album_id);
+            rt.drilldown_album_page = &id(drilldown_album_page);
+            rt.drilldown_parent_mode = &id(drilldown_parent_mode);
+            rt.target_speaker_id = &id(target_speaker_id);
+            rt.target_speaker_name = &id(target_speaker_name);
+            rt.active_speaker_entity = &id(active_speaker_entity);
+            rt.slot_names[0] = &id(slot_1_name);
+            rt.slot_names[1] = &id(slot_2_name);
+            rt.slot_names[2] = &id(slot_3_name);
+            rt.slot_names[3] = &id(slot_4_name);
+            rt.slot_names[4] = &id(slot_5_name);
+            rt.slot_ids[0] = &id(slot_1_id);
+            rt.slot_ids[1] = &id(slot_2_id);
+            rt.slot_ids[2] = &id(slot_3_id);
+            rt.slot_ids[3] = &id(slot_4_id);
+            rt.slot_ids[4] = &id(slot_5_id);
+            rt.slot_types[0] = &id(slot_1_type);
+            rt.slot_types[1] = &id(slot_2_type);
+            rt.slot_types[2] = &id(slot_3_type);
+            rt.slot_types[3] = &id(slot_4_type);
+            rt.slot_types[4] = &id(slot_5_type);
+
+            rt.marble_touch_x = &id(marble_touch_x);
+            rt.marble_touch_y = &id(marble_touch_y);
+            rt.game_btn_pressed = &id(game_btn_pressed);
+
+            rt.active_area_id = &id(active_area_id);
+            rt.active_area_name = &id(active_area_name);
+            rt.area_domain_filter = &id(area_domain_filter);
+            rt.area_browse_mode = &id(area_browse_mode);
+            rt.area_browse_page = &id(area_browse_page);
+            rt.area_browse_total_pages = &id(area_browse_total_pages);
+            rt.area_list_page = &id(area_list_page);
+            rt.area_list_total_pages = &id(area_list_total_pages);
+            rt.area_action_feedback = &id(area_action_feedback);
+            rt.area_feedback_timer = &id(area_feedback_timer);
+            rt.area_target_entity_id = &id(area_target_entity_id);
+            rt.area_target_action = &id(area_target_action);
+            rt.area_target_level = &id(area_target_level);
+            rt.area_target_code = &id(area_target_code);
+            rt.area_alarm_entity = &id(area_alarm_entity);
+            rt.area_alarm_state = &id(area_alarm_state);
+            rt.area_alarm_service = &id(area_alarm_service);
+            rt.area_slot_names[0] = &id(area_slot_1_name);
+            rt.area_slot_names[1] = &id(area_slot_2_name);
+            rt.area_slot_names[2] = &id(area_slot_3_name);
+            rt.area_slot_ids[0] = &id(area_slot_1_id);
+            rt.area_slot_ids[1] = &id(area_slot_2_id);
+            rt.area_slot_ids[2] = &id(area_slot_3_id);
+            rt.area_slot_types[0] = &id(area_slot_1_type);
+            rt.area_slot_types[1] = &id(area_slot_2_type);
+            rt.area_slot_types[2] = &id(area_slot_3_type);
+            rt.area_slot_actives[0] = &id(area_slot_1_active);
+            rt.area_slot_actives[1] = &id(area_slot_2_active);
+            rt.area_slot_actives[2] = &id(area_slot_3_active);
+            rt.area_slot_levels[0] = &id(area_slot_1_level);
+            rt.area_slot_levels[1] = &id(area_slot_2_level);
+            rt.area_slot_levels[2] = &id(area_slot_3_level);
+            rt.area_list_names[0] = &id(area_list_1_name);
+            rt.area_list_names[1] = &id(area_list_2_name);
+            rt.area_list_names[2] = &id(area_list_3_name);
+            rt.area_list_names[3] = &id(area_list_4_name);
+            rt.area_list_names[4] = &id(area_list_5_name);
+            rt.area_list_ids[0] = &id(area_list_1_id);
+            rt.area_list_ids[1] = &id(area_list_2_id);
+            rt.area_list_ids[2] = &id(area_list_3_id);
+            rt.area_list_ids[3] = &id(area_list_4_id);
+            rt.area_list_ids[4] = &id(area_list_5_id);
+
+            rt.remote_action_feedback = &id(remote_action_feedback);
+
+            rt.cal_browse_page = &id(cal_browse_page);
+            rt.cal_browse_total_pages = &id(cal_browse_total_pages);
+            rt.cal_slot_names[0] = &id(cal_slot_1_name);
+            rt.cal_slot_names[1] = &id(cal_slot_2_name);
+            rt.cal_slot_names[2] = &id(cal_slot_3_name);
+            rt.cal_slot_names[3] = &id(cal_slot_4_name);
+            rt.cal_slot_names[4] = &id(cal_slot_5_name);
+            rt.cal_slot_ids[0] = &id(cal_slot_1_id);
+            rt.cal_slot_ids[1] = &id(cal_slot_2_id);
+            rt.cal_slot_ids[2] = &id(cal_slot_3_id);
+            rt.cal_slot_ids[3] = &id(cal_slot_4_id);
+            rt.cal_slot_ids[4] = &id(cal_slot_5_id);
+            rt.cal_quick_summary = &id(cal_quick_summary);
+            rt.cal_quick_in_minutes = &id(cal_quick_in_minutes);
+            rt.cal_quick_duration_minutes = &id(cal_quick_duration_minutes);
+
+            rt.intercom_message_str = &id(intercom_message_str);
+            rt.intercom_feedback_str = &id(intercom_feedback_str);
+            rt.intercom_feedback_ms = &id(intercom_feedback_ms);
+            rt.cam_intercom_action = &id(cam_intercom_action);
+            rt.cam_intercom_message = &id(cam_intercom_message);
+            rt.cam_intercom_noise_str = &id(cam_intercom_noise_str);
+            rt.cam_intercom_code_str = &id(cam_intercom_code_str);
+            rt.cam_intercom_status_ms = &id(cam_intercom_status_ms);
+
+            rt.exec_cmd = +[](latter_ui::UiHostCmd cmd, int arg0, int arg1) {
+              using C = latter_ui::UiHostCmd;
+              switch (cmd) {
+                case C::SCHEDULE_DISP_UPDATE: latter_ui::schedule_disp_update(&id(disp1)); break;
+                case C::SCHEDULE_BAND_DISP_UPDATE: latter_ui::schedule_band_disp_update(&id(disp1), arg0, arg1); break;
+                case C::WAKE_TO_ACTIVE: id(wake_to_active_state).execute(); break;
+                case C::SCREEN_SLEEP_TIMER: id(screen_sleep_timer).execute(); break;
+                case C::APPLY_POWER_POLICY: id(apply_power_policy).execute(); break;
+                case C::CANCEL_VOICE_ASSISTANT: id(cancel_voice_assistant).execute(); break;
+                case C::ABORT_VOICE_ASSISTANT: esphome::voice_assistant::abort_voice_assistant(id(va)); break;
+                case C::CYCLE_PRIMARY_WAKE_WORD: esphome::voice_assistant::cycle_primary_wake_word(id(va), id(mww)); break;
+                case C::SYNC_WAKE_WORD_STATE: id(sync_wake_word_state).execute(); break;
+                case C::DISMISS_NOTIFICATION: id(dismiss_notification).execute(); break;
+                case C::STOP_ALARM_SOUND: id(stop_alarm_sound).execute(); break;
+                case C::SYNC_DISPLAY_BRIGHTNESS: id(sync_display_brightness).execute(); break;
+                case C::FLASHLIGHT_FULL_BRIGHTNESS: id(display_brightness).turn_on().set_brightness(1.0f).perform(); break;
+                case C::PAUSE_LOCAL_MEDIA_PLAYER: id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform(); break;
+                case C::STOP_MP_IDLE_DEBOUNCE: id(mp_idle_debounce).stop(); break;
+                case C::TOGGLE_HA_MUSIC: id(toggle_ha_music).execute(); break;
+                case C::STOP_HA_MUSIC: id(stop_ha_music).execute(); break;
+                case C::CLEAR_HA_MUSIC_QUEUE: id(clear_ha_music_queue).execute(); break;
+                case C::MUSIC_VOL_UP: id(music_vol_up).execute(); break;
+                case C::MUSIC_VOL_DOWN: id(music_vol_down).execute(); break;
+                case C::MUSIC_NEXT_TRACK: id(music_next_track).execute(); break;
+                case C::MUSIC_PREV_TRACK: id(music_prev_track).execute(); break;
+                case C::MUSIC_SEEK_RELATIVE: id(music_seek_relative).execute(arg0); break;
+                case C::MUSIC_SEEK_ABSOLUTE: id(music_seek_absolute).execute(); break;
+                case C::FETCH_MUSIC_BROWSE: id(fetch_music_browse).execute(); break;
+                case C::PLAY_MUSIC_SLOT: id(play_music_slot).execute(arg0); break;
+                case C::FETCH_REMOTE_ART_DEBOUNCED: id(fetch_remote_art_debounced).execute(); break;
+                case C::SPEAKER_TRANSFER_TO_TARGET: id(speaker_transfer_to_target).execute(); break;
+                case C::SPEAKER_CONTROL_TARGET: id(speaker_control_target).execute(); break;
+                case C::SPEAKER_JOIN_TARGET: id(speaker_join_target).execute(); break;
+                case C::SPEAKER_UNJOIN_TARGET: id(speaker_unjoin_target).execute(); break;
+                case C::REQUEST_DOCK_APPS: id(request_dock_apps).execute(); break;
+                case C::TRIGGER_SCREENSAVER_NOW: id(trigger_screensaver_now).execute(); break;
+                case C::START_HIBERNATION_COUNTDOWN: id(start_hibernation_countdown).execute(); break;
+                case C::TURN_SCREEN_OFF: id(turn_screen_off).execute(); break;
+                case C::RESTART_DEVICE: id(restart_button).press(); break;
+                case C::CHECK_FIRMWARE_UPDATE: id(check_firmware_update).execute(); break;
+                case C::TRIGGER_FIRMWARE_UPDATE: id(trigger_firmware_update).execute(); break;
+                case C::APPLY_THEME_PRESET: id(apply_theme_preset).execute(); break;
+                case C::SAVE_CUSTOM_COLOR_TO_LATTER: id(save_custom_color_to_latter).execute(); break;
+                case C::MENU_SCROLL_TRANSITION: id(menu_scroll_transition).execute(); break;
+                case C::FETCH_AREA_BROWSE: id(fetch_area_browse).execute(); break;
+                case C::FETCH_AREA_LIST_BROWSE: id(fetch_area_list_browse).execute(); break;
+                case C::SELECT_ACTIVE_AREA_LATTER: id(select_active_area_latter).execute(); break;
+                case C::EXECUTE_AREA_ACTION: id(execute_area_action).execute(); break;
+                case C::EXECUTE_ALARM_ACTION: id(execute_alarm_action).execute(); break;
+                case C::REMOTE_SEND_KEY: id(remote_send_key).execute(arg0, arg1); break;
+                case C::REMOTE_SELECT_SLOT_LATTER: id(remote_select_slot_latter).execute(arg0); break;
+                case C::FETCH_CALENDAR_BROWSE: id(fetch_calendar_browse).execute(); break;
+                case C::CREATE_CALENDAR_QUICK_EVENT: id(create_calendar_quick_event).execute(); break;
+                case C::FETCH_CALENDAR_MAP_SNAPSHOT: id(fetch_calendar_map_snapshot).execute(); break;
+                case C::SEND_INTERCOM_BROADCAST: id(send_intercom_broadcast).execute(); break;
+                case C::FETCH_ON_DEMAND_CAMERA: id(fetch_on_demand_camera).execute(); break;
+                case C::RELEASE_CAMERA_ART: latter_ui::release_art(id(camera_snapshot_art)); break;
+                case C::START_DOORBELL_CALL: id(start_doorbell_call).execute(); break;
+                case C::STOP_DOORBELL_CALL: id(stop_doorbell_call).execute(); break;
+                case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
+                case C::START_DOORBELL_PTT: id(start_doorbell_ptt).execute(); break;
+                case C::RESUME_DOORBELL_LISTEN: id(resume_doorbell_listen).execute(); break;
+                case C::SEND_DOORBELL_INTERCOM_CMD: id(send_doorbell_intercom_cmd).execute(); break;
+              }
+            };
+
+            rt.get_select = +[](latter_ui::UiSelectId sid) -> std::string {
+              using S = latter_ui::UiSelectId;
+              auto rd = [](auto *sel) -> std::string {
+                return sel != nullptr ? std::string(sel->current_option()) : std::string{};
+              };
+              switch (sid) {
+                case S::TAP_WAKE_MODE: return rd(id(tap_wake_mode));
+                case S::WEATHER_SIM_CONDITION: return rd(id(weather_sim_condition));
+                case S::MUSIC_OVERLAY_STYLE: return rd(id(music_overlay_style));
+                case S::MUSIC_FULLSCREEN_ART_MODE: return rd(id(music_fullscreen_art_mode));
+                case S::MUSIC_ALBUM_SORT_ORDER: return rd(id(music_album_sort_order));
+                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: return rd(id(music_artist_album_sort_order));
+                case S::MUSIC_PODCAST_SORT_ORDER: return rd(id(music_podcast_sort_order));
+                case S::VA_WAKE_WORD_MODE: return rd(id(va_wake_word_mode));
+                case S::VA_VISUAL_PROFILE: return rd(id(va_visual_profile));
+                case S::WW_SENS_OKAY_NABU: return rd(id(ww_sens_okay_nabu));
+                case S::WW_SENS_HEY_LUNA: return rd(id(ww_sens_hey_luna));
+                case S::WW_SENS_HEY_JARVIS: return rd(id(ww_sens_hey_jarvis));
+                case S::WW_SENS_HEY_MYCROFT: return rd(id(ww_sens_hey_mycroft));
+                case S::WW_SENS_ALEXA: return rd(id(ww_sens_alexa));
+                case S::THEME_PALETTE: return rd(id(theme_palette_select));
+                case S::POWER_PROFILE: return rd(id(power_profile_select));
+                case S::PICKUP_WAKE_MODE: return rd(id(pickup_wake_mode));
+                case S::DISPLAY_OFF_TIMEOUT: return rd(id(display_off_timeout));
+                case S::SCREENSAVER_STYLE: return rd(id(screensaver_style_select));
+                case S::SCREENSAVER_DOCKED_TIMEOUT: return rd(id(screensaver_docked_timeout));
+                case S::HIBERNATE_TIMEOUT_MODE: return rd(id(hibernate_timeout_mode));
+                case S::DEFAULT_START_APP: return rd(id(default_start_app));
+                case S::CLOCK_FACE_STYLE: return rd(id(clock_face_style));
+                case S::TIME_FORMAT: return rd(id(time_format_select));
+                case S::AUTO_BRIGHTNESS_MODE: return rd(id(auto_brightness_mode));
+                case S::DISPLAY_BRIGHTNESS_PRESET: return rd(id(display_brightness_preset));
+                case S::DAY_BRIGHTNESS_PRESET: return rd(id(day_brightness_preset));
+                case S::NIGHT_BRIGHTNESS_PRESET: return rd(id(night_brightness_preset));
+                case S::AREA_DEFAULT_CATEGORY: return rd(id(area_default_category_select));
+              }
+              return std::string{};
+            };
+
+            rt.set_select = +[](latter_ui::UiSelectId sid, const std::string &opt, bool publish_also) {
+              using S = latter_ui::UiSelectId;
+              auto wr = [&](auto *sel) {
+                if (sel == nullptr) return;
+                auto call = sel->make_call();
+                call.set_option(opt);
+                call.perform();
+                if (publish_also) sel->publish_state(opt);
+              };
+              switch (sid) {
+                case S::TAP_WAKE_MODE: wr(id(tap_wake_mode)); break;
+                case S::WEATHER_SIM_CONDITION: wr(id(weather_sim_condition)); break;
+                case S::MUSIC_OVERLAY_STYLE: wr(id(music_overlay_style)); break;
+                case S::MUSIC_FULLSCREEN_ART_MODE: wr(id(music_fullscreen_art_mode)); break;
+                case S::MUSIC_ALBUM_SORT_ORDER: wr(id(music_album_sort_order)); break;
+                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: wr(id(music_artist_album_sort_order)); break;
+                case S::MUSIC_PODCAST_SORT_ORDER: wr(id(music_podcast_sort_order)); break;
+                case S::VA_WAKE_WORD_MODE: wr(id(va_wake_word_mode)); break;
+                case S::VA_VISUAL_PROFILE: wr(id(va_visual_profile)); break;
+                case S::WW_SENS_OKAY_NABU: wr(id(ww_sens_okay_nabu)); break;
+                case S::WW_SENS_HEY_LUNA: wr(id(ww_sens_hey_luna)); break;
+                case S::WW_SENS_HEY_JARVIS: wr(id(ww_sens_hey_jarvis)); break;
+                case S::WW_SENS_HEY_MYCROFT: wr(id(ww_sens_hey_mycroft)); break;
+                case S::WW_SENS_ALEXA: wr(id(ww_sens_alexa)); break;
+                case S::THEME_PALETTE: wr(id(theme_palette_select)); break;
+                case S::POWER_PROFILE: wr(id(power_profile_select)); break;
+                case S::PICKUP_WAKE_MODE: wr(id(pickup_wake_mode)); break;
+                case S::DISPLAY_OFF_TIMEOUT: wr(id(display_off_timeout)); break;
+                case S::SCREENSAVER_STYLE: wr(id(screensaver_style_select)); break;
+                case S::SCREENSAVER_DOCKED_TIMEOUT: wr(id(screensaver_docked_timeout)); break;
+                case S::HIBERNATE_TIMEOUT_MODE: wr(id(hibernate_timeout_mode)); break;
+                case S::DEFAULT_START_APP: wr(id(default_start_app)); break;
+                case S::CLOCK_FACE_STYLE: wr(id(clock_face_style)); break;
+                case S::TIME_FORMAT: wr(id(time_format_select)); break;
+                case S::AUTO_BRIGHTNESS_MODE: wr(id(auto_brightness_mode)); break;
+                case S::DISPLAY_BRIGHTNESS_PRESET: wr(id(display_brightness_preset)); break;
+                case S::DAY_BRIGHTNESS_PRESET: wr(id(day_brightness_preset)); break;
+                case S::NIGHT_BRIGHTNESS_PRESET: wr(id(night_brightness_preset)); break;
+                case S::AREA_DEFAULT_CATEGORY: wr(id(area_default_category_select)); break;
+              }
+            };
+
+            rt.get_switch = +[](latter_ui::UiSwitchId swid) -> bool {
+              using W = latter_ui::UiSwitchId;
+              auto rd = [](auto *sw) -> bool { return sw != nullptr && sw->state; };
+              switch (swid) {
+                case W::HOME_WEATHER_BG: return rd(id(home_weather_bg_switch));
+                case W::HOME_WAKE_GREETING: return rd(id(home_wake_greeting_switch));
+                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: return rd(id(music_show_speaker_shortcut));
+                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: return rd(id(music_show_library_shortcut));
+                case W::BLE_AREA_BEACON: return rd(id(ble_area_beacon_switch));
+                case W::GAME_SOUND: return rd(id(game_sound_switch));
+                case W::VA_WAKE_SCREEN: return rd(id(va_wake_screen_switch));
+                case W::DOCKED_SCREENSAVER: return rd(id(docked_screensaver_switch));
+                case W::INSTANT_CROWN_HIBERNATE: return rd(id(instant_crown_hibernate_switch));
+                case W::AREA_SHOW_ALL_CATEGORY: return rd(id(area_show_all_category_switch));
+              }
+              return false;
+            };
+
+            rt.toggle_switch = +[](latter_ui::UiSwitchId swid) {
+              using W = latter_ui::UiSwitchId;
+              auto tg = [](auto *sw) { if (sw != nullptr) sw->toggle(); };
+              switch (swid) {
+                case W::HOME_WEATHER_BG: tg(id(home_weather_bg_switch)); break;
+                case W::HOME_WAKE_GREETING: tg(id(home_wake_greeting_switch)); break;
+                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: tg(id(music_show_speaker_shortcut)); break;
+                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: tg(id(music_show_library_shortcut)); break;
+                case W::BLE_AREA_BEACON: tg(id(ble_area_beacon_switch)); break;
+                case W::GAME_SOUND: tg(id(game_sound_switch)); break;
+                case W::VA_WAKE_SCREEN: tg(id(va_wake_screen_switch)); break;
+                case W::DOCKED_SCREENSAVER: tg(id(docked_screensaver_switch)); break;
+                case W::INSTANT_CROWN_HIBERNATE: tg(id(instant_crown_hibernate_switch)); break;
+                case W::AREA_SHOW_ALL_CATEGORY: tg(id(area_show_all_category_switch)); break;
+              }
+            };
+
+            rt.get_number = +[](latter_ui::UiNumberId nid) -> float {
+              using N = latter_ui::UiNumberId;
+              auto rd = [](auto *num) -> float { return num != nullptr ? num->state : 0.0f; };
+              switch (nid) {
+                case N::VOLUME_STEP_SIZE: return rd(id(volume_step_size));
+                case N::SPEAKER_VOLUME: return rd(id(speaker_volume));
+                case N::ALERT_VOLUME: return rd(id(alert_volume));
+                case N::DAY_START_HOUR: return rd(id(day_start_hour));
+                case N::NIGHT_START_HOUR: return rd(id(night_start_hour));
+              }
+              return 0.0f;
+            };
+
+            rt.set_number = +[](latter_ui::UiNumberId nid, float val) {
+              using N = latter_ui::UiNumberId;
+              auto wr = [](auto *num, float v, float lo, float hi) {
+                if (num == nullptr) return;
+                const float cl = std::clamp(v, lo, hi);
+                auto call = num->make_call();
+                call.set_value(cl);
+                call.perform();
+              };
+              switch (nid) {
+                case N::VOLUME_STEP_SIZE: wr(id(volume_step_size), val, 1.0f, 10.0f); break;
+                case N::SPEAKER_VOLUME: wr(id(speaker_volume), val, 10.0f, 100.0f); break;
+                case N::ALERT_VOLUME: wr(id(alert_volume), val, 20.0f, 100.0f); break;
+                case N::DAY_START_HOUR: wr(id(day_start_hour), val, 0.0f, 23.0f); break;
+                case N::NIGHT_START_HOUR: wr(id(night_start_hour), val, 0.0f, 23.0f); break;
+              }
+            };
+
+            rt.bound = true;
+          }
 
   - id: ui_input_event
     mode: queued
@@ -29,171 +451,8 @@ script:
       delta: int
     then:
       - lambda: |-
-          uint32_t now_in = millis();
-          if (id(display_power_state) != 0 || !id(display_brightness).current_values.is_on()) {
-            latter_ui::note_wake_reason(latter_ui::WakeReason::TOUCH);
-            id(wake_to_active_state).execute();
-            return;
-          }
-          id(screen_sleep_timer).execute();
-          latter_ui::activate_ui_focus(now_in);
-          if (id(va_active) || !id(va_status_text).empty()) {
-            id(cancel_voice_assistant).execute();
-            return;
-          }
-          if (id(notif_active)) {
-            id(dismiss_notification).execute();
-            return;
-          }
-          if (id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) {
-            id(alarm_ringing) = false;
-            id(timer_ringing) = false;
-            id(find_my_active) = false;
-            id(stop_alarm_sound).execute();
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
-          }
-          std::string act = action;
-          for (char &c : act) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
-          int step = delta;
-          if (step == 0) {
-            if (act == "next" || act == "right" || act == "down" || act == "cw") step = 1;
-            else if (act == "prev" || act == "left" || act == "up" || act == "ccw") step = -1;
-          }
-          if (act == "home") {
-            if (id(gui_page) == 8 && id(tools_subpage) == 12) {
-              if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
-                id(stop_doorbell_call).execute();
-              }
-              latter_ui::release_art(id(camera_snapshot_art));
-              id(current_loaded_camera_url) = "";
-            }
-            id(gui_page) = 1;
-            id(home_subpage) = 0;
-            id(active_game) = 0;
-            id(tools_subpage) = 0;
-            id(area_subpage) = 0;
-            id(remote_subpage) = 0;
-            id(music_overlay_mode) = 0;
-            id(system_menu_mode) = 0;
-            latter_ui::ui_focus_index() = 0;
-            id(sync_wake_word_state).execute();
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
-          }
-          if (act == "back") {
-            if (id(gui_page) == 8 && id(tools_subpage) > 0) {
-              if (id(tools_subpage) == 12) {
-                if (latter_ui::cam_call_active() || latter_ui::cam_listen_active()) {
-                  id(stop_doorbell_call).execute();
-                }
-                latter_ui::release_art(id(camera_snapshot_art));
-                id(current_loaded_camera_url) = "";
-              }
-              if (latter_ui::tools_direct_home()) {
-                latter_ui::tools_direct_home() = false;
-                id(tools_subpage) = 0;
-                id(gui_page) = 1;
-              } else {
-                id(tools_subpage) = 0;
-              }
-            } else if (id(gui_page) == 3 && id(active_game) > 0) {
-              id(active_game) = 0;
-            } else if (id(gui_page) == 2 && id(music_overlay_mode) > 0) {
-              id(music_overlay_mode) = 0;
-            } else if (id(gui_page) == 4 && id(system_menu_mode) > 0) {
-              id(system_menu_mode) = 0;
-            } else if (id(gui_page) == 6 && id(area_subpage) > 0) {
-              id(area_subpage) = 0;
-            } else if (id(gui_page) == 7 && id(remote_subpage) > 0) {
-              id(remote_subpage) = 0;
-            } else {
-              id(gui_page) = 1;
-              id(home_subpage) = 0;
-            }
-            latter_ui::ui_focus_index() = 0;
-            id(sync_wake_word_state).execute();
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
-          }
-          if (step != 0) {
-            int &f_idx = latter_ui::ui_focus_index();
-            f_idx = std::max(0, f_idx + step);
-            if (id(gui_page) == 5) {
-              id(sky_weather_subpage) = f_idx % 4;
-            } else if (id(gui_page) == 9) {
-              latter_ui::whole_home_tab() = f_idx % 5;
-            } else if (id(gui_page) == 8 && id(tools_subpage) == 12) {
-              std::string cam_ids[latter_ui::MAX_CAMERA_SLOTS], cam_names[latter_ui::MAX_CAMERA_SLOTS];
-              int c_cnt = std::max(1, latter_ui::parse_cameras_summary_list(latter_ui::area_ctx_state().cameras_summary, cam_ids, cam_names));
-              latter_ui::cam_carousel_idx() = (latter_ui::cam_carousel_idx() + step + c_cnt) % c_cnt;
-              id(fetch_on_demand_camera).execute();
-            }
-            latter_ui::schedule_disp_update(&id(disp1));
-            return;
-          }
-          if (act == "select" || act == "ok" || act == "click") {
-            const int f_idx = std::max(0, latter_ui::ui_focus_index());
-            if (id(gui_page) == 1) {
-              int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-              int dock_count = latter_ui::collect_home_dock_apps(dock_apps);
-              if (dock_count > 0) {
-                int start_idx = latter_ui::get_home_dock_start_index(dock_count, latter_ui::home_dock_page());
-                int vis_count = std::min(4, dock_count - start_idx);
-                int chosen_app = dock_apps[start_idx + (f_idx % std::max(1, vis_count))];
-                if (chosen_app == 12) {
-                  id(gui_page) = 8;
-                  id(tools_subpage) = 12;
-                  latter_ui::tools_direct_home() = true;
-                  id(fetch_on_demand_camera).execute();
-                } else {
-                  id(gui_page) = chosen_app;
-                }
-              }
-              latter_ui::ui_focus_index() = 0;
-              if (id(gui_page) == 6) id(fetch_area_browse).execute();
-            } else if (id(gui_page) == 2) {
-              if (id(music_overlay_mode) == 0) {
-                const int m_act = f_idx % 5;
-                if (m_act == 0) id(music_prev_track).execute();
-                else if (m_act == 1) id(toggle_ha_music).execute();
-                else if (m_act == 2) id(music_next_track).execute();
-                else if (m_act == 3) { id(music_overlay_mode) = 2; id(selected_category_mode) = "favorites"; id(fetch_music_browse).execute(); }
-                else { id(music_overlay_mode) = 3; id(selected_category_mode) = "speakers"; id(fetch_music_browse).execute(); }
-              } else {
-                id(play_music_slot).execute((f_idx % 5) + 1);
-              }
-            } else if (id(gui_page) == 3 && id(active_game) == 0) {
-              id(active_game) = (f_idx % 6) + 1;
-            } else if (id(gui_page) == 6 && id(area_subpage) == 0) {
-              const int slot = f_idx % 7;
-              auto resolve_slot_action = [](const std::string &s_type, bool &s_act) -> const char * {
-                s_act = !s_act;
-                if (s_type == "lock") return s_act ? "lock" : "unlock";
-                if (s_type == "alarm_control_panel") return s_act ? "arm_home" : "disarm";
-                return "toggle";
-              };
-              if (slot == 0 && !id(area_slot_1_id).empty()) { id(area_target_entity_id) = id(area_slot_1_id); id(area_target_action) = resolve_slot_action(id(area_slot_1_type), id(area_slot_1_active)); id(execute_area_action).execute(); }
-              else if (slot == 1 && !id(area_slot_2_id).empty()) { id(area_target_entity_id) = id(area_slot_2_id); id(area_target_action) = resolve_slot_action(id(area_slot_2_type), id(area_slot_2_active)); id(execute_area_action).execute(); }
-              else if (slot == 2 && !id(area_slot_3_id).empty()) { id(area_target_entity_id) = id(area_slot_3_id); id(area_target_action) = resolve_slot_action(id(area_slot_3_type), id(area_slot_3_active)); id(execute_area_action).execute(); }
-            } else if (id(gui_page) == 7) {
-              const int key_map[8] = {9, 0, 2, 4, 3, 1, 5, 6};
-              id(remote_send_key).execute(key_map[f_idx % 8], id(active_remote_slot));
-            } else if (id(gui_page) == 8 && id(tools_subpage) == 0) {
-              #if LATTER_HAS_IMU
-              static constexpr int kToolsP0[6] = {1, 2, 3, 7, 5, 6};
-              static constexpr int kToolsP1[5] = {4, 8, 9, 10, 12};
-              id(tools_subpage) = (id(tools_menu_page) == 0) ? kToolsP0[f_idx % 6] : kToolsP1[f_idx % 5];
-              #else
-              static constexpr int kToolsP0[6] = {1, 2, 3, 5, 6, 9};
-              static constexpr int kToolsP1[4] = {10, 12, 4, 8};
-              id(tools_subpage) = (id(tools_menu_page) == 0) ? kToolsP0[f_idx % 6] : kToolsP1[f_idx % 4];
-              #endif
-              if (id(tools_subpage) == 12) id(fetch_on_demand_camera).execute();
-            }
-            id(sync_wake_word_state).execute();
-            latter_ui::schedule_disp_update(&id(disp1));
-          }
+          id(sync_ui_touch_runtime).execute();
+          latter_ui::touch_engine().on_input_event(action, delta, millis());
   - id: pause_all_music
     mode: restart
     then:
@@ -215,11 +474,10 @@ script:
                 id: media_mixing_input
                 decibel_reduction: 50
                 duration: 0.1s
-            - homeassistant.action:
-                action: latter.media_command
-                data:
-                  target_device: "${name}"
-                  command: "pause"
+            - lambda: |-
+                latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+                  {"command", "pause"},
+                });
 
   - id: resume_music_after_va
     mode: restart
@@ -244,12 +502,10 @@ script:
                   - lambda: |-
                       id(va_was_cancelled) = false;
                       id(apply_power_policy).execute();
-                  - homeassistant.action:
-                      action: latter.media_command
-                      data:
-                        target_device: "${name}"
-                        command: "play"
-                  - lambda: 'id(hal_set_dac_mute).execute(true);'
+                      latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+                        {"command", "play"},
+                      });
+                      id(hal_set_dac_mute).execute(true);
                   - script.execute: route_i2s_to_mic
                   - script.execute: sync_wake_word_state
                 else:
@@ -271,12 +527,11 @@ script:
                             float v = id(latter_media_player).volume;
                             if (std::isnan(v) || v <= 0.0f) v = 0.60f;
                             id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
-                  # Dispatch play via latter.media_command so it never double-triggers with the media_play interceptor
-                  - homeassistant.action:
-                      action: latter.media_command
-                      data:
-                        target_device: "${name}"
-                        command: "play"
+                  # Dispatch play via media_command so it never double-triggers with the media_play interceptor
+                  - lambda: |-
+                      latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+                        {"command", "play"},
+                      });
                   # If VA was terminated early, keep speaker DAC muted for 700ms while Sendspin
                   # handshakes so any residual TTS audio still in the speaker and mixer buffers
                   # drains completely silently instead of playing a 0.4s burst before music starts
@@ -391,24 +646,27 @@ script:
   - id: fetch_calendar_browse
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.calendar_fetch
-          data:
-            target_device: "${name}"
-            days: "30"
-            page: !lambda 'return to_string(id(cal_browse_page));'
-            page_size: "5"
+      - lambda: |-
+          const std::string req_str = std::to_string(latter_rpc::issue_req_id(latter_rpc::SlotChannel::CALENDAR));
+          const std::string page_str = std::to_string(id(cal_browse_page));
+          latter_rpc::emit(&id(latter_rpc_outbox), "calendar_fetch", {
+            {"req_id", req_str},
+            {"days", "30"},
+            {"page", page_str},
+            {"page_size", "5"},
+          });
 
   - id: create_calendar_quick_event
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.calendar_create_event
-          data:
-            target_device: "${name}"
-            summary: !lambda 'return id(cal_quick_summary).c_str();'
-            in_minutes: !lambda 'return to_string(id(cal_quick_in_minutes));'
-            duration_minutes: !lambda 'return to_string(id(cal_quick_duration_minutes));'
+      - lambda: |-
+          const std::string in_min_str = std::to_string(id(cal_quick_in_minutes));
+          const std::string dur_min_str = std::to_string(id(cal_quick_duration_minutes));
+          latter_rpc::emit(&id(latter_rpc_outbox), "calendar_create_event", {
+            {"summary", id(cal_quick_summary)},
+            {"in_minutes", in_min_str},
+            {"duration_minutes", dur_min_str},
+          });
       - delay: 650ms
       - script.execute: fetch_calendar_browse
 
@@ -434,11 +692,10 @@ script:
   - id: send_intercom_broadcast
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.intercom_broadcast
-          data:
-            target_device: "${name}"
-            message: !lambda 'return id(intercom_message_str).c_str();'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "intercom_broadcast", {
+            {"message", id(intercom_message_str)},
+          });
 
   - id: fetch_on_demand_camera
     mode: restart
@@ -479,22 +736,20 @@ script:
   - id: send_doorbell_intercom_cmd
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.doorbell_intercom
-          data:
-            target_device: "${name}"
-            action: !lambda 'return id(cam_intercom_action).c_str();'
-            camera_entity: !lambda |-
-              // Return the std::string itself: .c_str() of this temporary dangles once the lambda returns
-              // (the action copies the value afterwards), which sent garbage that Home Assistant rejected
-              // as invalid UTF-8 and answered by dropping the API connection.
-              const auto &ac = latter_ui::area_ctx_state();
-              return latter_ui::resolve_active_carousel_camera_id(
-                  ac.cameras_summary,
-                  ac.camera_snapshot_url);
-            camera_index: !lambda 'return to_string(latter_ui::cam_carousel_idx());'
-            message: !lambda 'return id(cam_intercom_message).c_str();'
-            noise_reduction: !lambda 'return id(cam_intercom_noise_str).c_str();'
+      - lambda: |-
+          const auto &ac = latter_ui::area_ctx_state();
+          const std::string cam_ent = latter_ui::resolve_active_carousel_camera_id(
+              ac.cameras_summary, ac.camera_snapshot_url);
+          const std::string cam_idx_str = std::to_string(latter_ui::cam_carousel_idx());
+          latter_rpc::emit(&id(latter_rpc_outbox), "doorbell_intercom", {
+            {"action", id(cam_intercom_action)},
+            {"camera_entity", cam_ent},
+            {"camera_index", cam_idx_str},
+            {"message", id(cam_intercom_message)},
+            {"noise_reduction", id(cam_intercom_noise_str)},
+            {"code", id(cam_intercom_code_str)},
+          });
+          id(cam_intercom_code_str) = "";
 
   # A doorbell call listens to the door until the user taps Talk; each tap is one push-to-talk turn.
   - id: start_doorbell_call
@@ -519,6 +774,7 @@ script:
           latter_ui::cam_intercom_ptt_active() = false;
           latter_ui::cam_listen_active() = false;
           id(va_intercom_turn) = false;
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
           id(latter_mic).set_mute_state(false);
           latter_ui::cam_intercom_status() = "CALL ENDED";
           id(cam_intercom_status_ms) = millis();
@@ -658,14 +914,12 @@ script:
   - id: save_custom_color_to_latter
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.save_custom_color
-          data:
-            target_device: "${name}"
-            hex_color: !lambda |-
-              char buf[12];
-              snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(id(custom_theme_rgb) & 0xFFFFFFUL));
-              return std::string(buf);
+      - lambda: |-
+          char buf[12];
+          snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(id(custom_theme_rgb) & 0xFFFFFFUL));
+          latter_rpc::emit(&id(latter_rpc_outbox), "save_custom_color", {
+            {"hex_color", buf},
+          });
 
   - id: sync_display_brightness
     mode: restart
@@ -684,7 +938,7 @@ script:
           std::string mode = id(auto_brightness_mode).current_option();
 
           if (mode == "Sun Synchronized") {
-            std::string sun = id(ha_sun_state).state;
+            std::string sun = latter_ui::weather_state().sun_state;
             bool is_night = (sun == "below_horizon");
             std::string opt = is_night ? id(night_brightness_preset).current_option()
                                        : id(day_brightness_preset).current_option();
@@ -743,13 +997,13 @@ script:
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
-            - homeassistant.action:
-                action: latter.media_volume
-                data:
-                  target_device: "${name}"
-                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-                  action: "up"
-                  volume_level: !lambda 'return (latter_ui::remote_vol_pct() >= 0) ? to_string(latter_ui::remote_vol_pct()) : "";'
+            - lambda: |-
+                const std::string vol_str = (latter_ui::remote_vol_pct() >= 0) ? std::to_string(latter_ui::remote_vol_pct()) : std::string{};
+                latter_rpc::emit(&id(latter_rpc_outbox), "media_volume", {
+                  {"entity_id", id(active_speaker_entity)},
+                  {"action", "up"},
+                  {"volume_level", vol_str},
+                });
 
   - id: music_vol_down
     mode: restart
@@ -770,13 +1024,13 @@ script:
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
           else:
-            - homeassistant.action:
-                action: latter.media_volume
-                data:
-                  target_device: "${name}"
-                  entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-                  action: "down"
-                  volume_level: !lambda 'return (latter_ui::remote_vol_pct() >= 0) ? to_string(latter_ui::remote_vol_pct()) : "";'
+            - lambda: |-
+                const std::string vol_str = (latter_ui::remote_vol_pct() >= 0) ? std::to_string(latter_ui::remote_vol_pct()) : std::string{};
+                latter_rpc::emit(&id(latter_rpc_outbox), "media_volume", {
+                  {"entity_id", id(active_speaker_entity)},
+                  {"action", "down"},
+                  {"volume_level", vol_str},
+                });
   - id: toggle_ha_music
     mode: restart
     then:
@@ -794,24 +1048,21 @@ script:
                   lambda: 'return latter_ui::media_state().is_local;'
                 then:
                   - media_player.pause: latter_media_player
-            - homeassistant.action:
-                action: latter.media_command
-                data:
-                  target_device: "${name}"
-                  command: "pause"
-            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+            - lambda: |-
+                latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+                  {"command", "pause"},
+                });
+                latter_ui::schedule_disp_update(&id(disp1));
           else:
             - lambda: |-
                 latter_ui::set_remote_play_override(true, millis());
                 if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
                   id(mww).stop();
                 }
-            - homeassistant.action:
-                action: latter.media_command
-                data:
-                  target_device: "${name}"
-                  command: "play"
-            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+                latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+                  {"command", "play"},
+                });
+                latter_ui::schedule_disp_update(&id(disp1));
 
   - id: stop_ha_music
     mode: restart
@@ -828,12 +1079,11 @@ script:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - media_player.pause: latter_media_player
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "pause"
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "pause"},
+          });
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: clear_ha_music_queue
     mode: restart
@@ -861,13 +1111,12 @@ script:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - media_player.stop: latter_media_player
-      - lambda: 'latter_ui::release_art(id(remote_album_art));'
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "clear_queue"
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - lambda: |-
+          latter_ui::release_art(id(remote_album_art));
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "clear_queue"},
+          });
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: music_next_track
     mode: restart
@@ -878,11 +1127,9 @@ script:
           id(music_feedback_timer) = millis();
           id(music_pos_base) = 0.0f;
           id(music_pos_sync_time) = millis();
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "next"
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "next"},
+          });
 
   - id: music_prev_track
     mode: restart
@@ -893,11 +1140,9 @@ script:
           id(music_feedback_timer) = millis();
           id(music_pos_base) = 0.0f;
           id(music_pos_sync_time) = millis();
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "previous"
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "previous"},
+          });
 
   - id: music_seek_relative
     mode: restart
@@ -950,97 +1195,92 @@ script:
           }
           id(music_pos_base) = new_pos;
           id(music_pos_sync_time) = now_ms;
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "seek"
-            seek_position: !lambda |-
-              float cur_pos = id(music_pos_base);
-              return to_string((int)std::max(0.0f, cur_pos));
+          const std::string seek_str = std::to_string(static_cast<int>(std::max(0.0f, new_pos)));
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "seek"},
+            {"seek_position", seek_str},
+          });
 
   - id: music_seek_absolute
     mode: restart
     then:
       - delay: 0ms
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "seek"
-            seek_position: !lambda |-
-              float cur_pos = id(music_pos_base);
-              return to_string((int)std::max(0.0f, cur_pos));
+      - lambda: |-
+          const std::string seek_str = std::to_string(static_cast<int>(std::max(0.0f, id(music_pos_base))));
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "seek"},
+            {"seek_position", seek_str},
+          });
   - id: fetch_music_browse
     mode: restart
     then:
-      - lambda: 'latter_ui::last_music_page_req_ms() = millis();'
-      - homeassistant.action:
-          action: latter.music_browse
-          data:
-            target_device: "${name}"
-            mode: !lambda 'return id(selected_category_mode).c_str();'
-            page: !lambda 'return to_string(id(music_browse_page));'
-            page_size: "5"
-            search: !lambda |-
-              if (id(selected_category_mode) == "artist_albums") {
-                return id(drilldown_artist_name).c_str();
-              } else if (id(selected_category_mode) == "current_album_tracks" || id(selected_category_mode) == "album_tracks" ||
-                         id(selected_category_mode) == "podcast_episodes" || id(selected_category_mode) == "lyrics" ||
-                         id(selected_category_mode) == "bio") {
-                return id(drilldown_album_id).c_str();
-              }
-              return "";
-            speaker: !lambda 'return id(active_speaker_entity).c_str();'
-            last_speaker: !lambda 'return id(last_speaker_entity).c_str();'
-            album_sort: !lambda |-
-              auto sort = id(music_album_sort_order).current_option();
-              if (sort == "Newest on Top") return "year_desc";
-              if (sort == "Oldest on Top") return "year";
-              return "name";
-            artist_album_sort: !lambda |-
-              auto sort = id(music_artist_album_sort_order).current_option();
-              if (sort == "Alphabetical") return "name";
-              if (sort == "Newest on Top") return "year_desc";
-              return "year";
-            podcast_sort: !lambda |-
-              auto sort = id(music_podcast_sort_order).current_option();
-              if (sort == "Oldest on Top") return "oldest";
-              return "newest";
+      - lambda: |-
+          latter_ui::last_music_page_req_ms() = millis();
+          const std::string &mode_s = id(selected_category_mode);
+          const std::string req_str = std::to_string(latter_rpc::issue_req_id(latter_rpc::classify_browse_mode(mode_s)));
+          const std::string page_str = std::to_string(id(music_browse_page));
+          std::string search_str;
+          if (mode_s == "artist_albums") {
+            search_str = id(drilldown_artist_name);
+          } else if (mode_s == "current_album_tracks" || mode_s == "album_tracks" ||
+                     mode_s == "podcast_episodes" || mode_s == "lyrics" || mode_s == "bio") {
+            search_str = id(drilldown_album_id);
+          }
+          auto alb_opt = id(music_album_sort_order).current_option();
+          const char *alb_sort = (alb_opt == "Newest on Top") ? "year_desc" : ((alb_opt == "Oldest on Top") ? "year" : "name");
+          auto art_opt = id(music_artist_album_sort_order).current_option();
+          const char *art_sort = (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
+          auto pod_opt = id(music_podcast_sort_order).current_option();
+          const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
+          latter_rpc::emit(&id(latter_rpc_outbox), "music_browse", {
+            {"req_id", req_str},
+            {"mode", mode_s},
+            {"page", page_str},
+            {"page_size", "5"},
+            {"search", search_str},
+            {"speaker", id(active_speaker_entity)},
+            {"last_speaker", id(last_speaker_entity)},
+            {"album_sort", alb_sort},
+            {"artist_album_sort", art_sort},
+            {"podcast_sort", pod_sort},
+          });
 
   - id: fetch_area_browse
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.area_browse
-          data:
-            target_device: "${name}"
-            mode: "entities"
-            area_id: !lambda 'return id(active_area_id).c_str();'
-            domain_filter: !lambda 'return id(area_domain_filter).c_str();'
-            page: !lambda 'return to_string(id(area_browse_page));'
-            page_size: "3"
+      - lambda: |-
+          const std::string req_str = std::to_string(latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_ENTITIES));
+          const std::string page_str = std::to_string(id(area_browse_page));
+          latter_rpc::emit(&id(latter_rpc_outbox), "area_browse", {
+            {"req_id", req_str},
+            {"mode", "entities"},
+            {"area_id", id(active_area_id)},
+            {"domain_filter", id(area_domain_filter)},
+            {"page", page_str},
+            {"page_size", "3"},
+          });
 
   - id: fetch_area_list_browse
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.area_browse
-          data:
-            target_device: "${name}"
-            mode: "areas"
-            area_id: !lambda 'return id(active_area_id).c_str();'
-            page: !lambda 'return to_string(id(area_list_page));'
-            page_size: "5"
+      - lambda: |-
+          const std::string req_str = std::to_string(latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_LIST));
+          const std::string page_str = std::to_string(id(area_list_page));
+          latter_rpc::emit(&id(latter_rpc_outbox), "area_browse", {
+            {"req_id", req_str},
+            {"mode", "areas"},
+            {"area_id", id(active_area_id)},
+            {"page", page_str},
+            {"page_size", "5"},
+          });
 
   - id: select_active_area_latter
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.set_active_area
-          data:
-            target_device: "${name}"
-            area_id: !lambda 'return id(active_area_id).c_str();'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "set_active_area", {
+            {"area_id", id(active_area_id)},
+          });
       - script.execute: fetch_area_browse
 
   # Home settings on the device: save the dock apps as the Device's Latter setting (Latter pushes it back
@@ -1048,33 +1288,34 @@ script:
   - id: request_dock_apps
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.set_dock_apps
-          data:
-            target_device: "${name}"
-            dock_apps: !lambda 'return latter_ui::latter_dock_order_csv();'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "set_dock_apps", {
+            {"dock_apps", latter_ui::latter_dock_order_csv()},
+          });
 
   - id: execute_alarm_action
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.area_action
-          data:
-            target_device: "${name}"
-            action: !lambda 'return id(area_alarm_service).c_str();'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "area_action", {
+            {"action", id(area_alarm_service)},
+            {"code", id(area_target_code)},
+          });
+          id(area_target_code) = "";
 
   - id: execute_area_action
     mode: restart
     then:
-      - homeassistant.action:
-          action: latter.area_action
-          data:
-            target_device: "${name}"
-            entity_id: !lambda 'return id(area_target_entity_id).c_str();'
-            action: !lambda 'return id(area_target_action).c_str();'
-            level: !lambda 'return to_string(id(area_target_level));'
-            area_id: !lambda 'return id(active_area_id).c_str();'
-            code: !lambda 'return id(area_target_code).c_str();'
+      - lambda: |-
+          const std::string lvl_str = std::to_string(id(area_target_level));
+          latter_rpc::emit(&id(latter_rpc_outbox), "area_action", {
+            {"entity_id", id(area_target_entity_id)},
+            {"action", id(area_target_action)},
+            {"level", lvl_str},
+            {"area_id", id(active_area_id)},
+            {"code", id(area_target_code)},
+          });
+          id(area_target_code) = "";
 
   - id: activate_selected_speaker
     mode: restart
@@ -1105,12 +1346,10 @@ script:
           id(music_direct_nav) = false;
           id(music_hud_active) = true;
           id(music_hud_timer) = millis();
-      - homeassistant.action:
-          action: latter.set_active_speaker
-          data:
-            target_device: "${name}"
-            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-            transfer_queue: !lambda 'return transfer_queue;'
+          latter_rpc::emit(&id(latter_rpc_outbox), "set_active_speaker", {
+            {"entity_id", id(active_speaker_entity)},
+            {"transfer_queue", transfer_queue},
+          });
       - if:
           condition:
             lambda: 'return !latter_ui::media_state().is_local;'
@@ -1149,12 +1388,12 @@ script:
           if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
             id(mww).stop();
           }
-      - homeassistant.action:
-          action: media_player.join
-          data:
-            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-            group_members: !lambda 'return id(target_speaker_id).c_str();'
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "join"},
+            {"entity_id", id(active_speaker_entity)},
+            {"group_members", id(target_speaker_id)},
+          });
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: speaker_unjoin_target
     mode: restart
@@ -1163,11 +1402,10 @@ script:
       - lambda: |-
           id(music_action_feedback) = "Unjoining -> " + id(target_speaker_name);
           id(music_feedback_timer) = millis();
-      - homeassistant.action:
-          action: media_player.unjoin
-          data:
-            entity_id: !lambda 'return id(target_speaker_id).c_str();'
-      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "unjoin"},
+            {"entity_id", id(target_speaker_id)},
+          });
           const std::string &loc_spk = latter_ui::media_state().local_speaker;
           if (id(target_speaker_id) == id(active_speaker_entity) ||
               (!loc_spk.empty() && id(target_speaker_id) == loc_spk)) {
@@ -1177,14 +1415,12 @@ script:
             id(current_loaded_art_url) = "";
           }
           id(music_overlay_mode) = 0;
-      - homeassistant.action:
-          action: latter.set_active_speaker
-          data:
-            target_device: "${name}"
-            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-            transfer_queue: "false"
-      - lambda: 'latter_ui::release_art(id(remote_album_art));'
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+          latter_rpc::emit(&id(latter_rpc_outbox), "set_active_speaker", {
+            {"entity_id", id(active_speaker_entity)},
+            {"transfer_queue", "false"},
+          });
+          latter_ui::release_art(id(remote_album_art));
+          latter_ui::schedule_disp_update(&id(disp1));
   - id: play_music_slot
     mode: restart
     parameters:
@@ -1241,16 +1477,14 @@ script:
           if (latter_ui::media_state().is_local && id(mww).is_running()) {  // media pauses the wake word
             id(mww).stop();
           }
-      - homeassistant.action:
-          action: latter.media_command
-          data:
-            target_device: "${name}"
-            command: "play_media"
-            entity_id: !lambda 'return id(active_speaker_entity).c_str();'
-            media_id: !lambda 'return id(selected_slot_id).c_str();'
-            media_type: !lambda 'return id(selected_slot_type).c_str();'
-            enqueue: "replace"
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+          latter_rpc::emit(&id(latter_rpc_outbox), "media_command", {
+            {"command", "play_media"},
+            {"entity_id", id(active_speaker_entity)},
+            {"media_id", id(selected_slot_id)},
+            {"media_type", id(selected_slot_type)},
+            {"enqueue", "replace"},
+          });
+          latter_ui::schedule_disp_update(&id(disp1));
 
   # Debounced: the ~0.6 s gap between tracks must never power the speaker path down or start the wake word.
   - id: mp_idle_debounce
@@ -1381,6 +1615,7 @@ script:
       - script.stop: va_echo_gate
       - script.stop: mp_idle_debounce
       - lambda: |-
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
           id(latter_mic).set_mute_state(false);
           id(va_intercom_turn) = false;
           id(va_was_cancelled) = true;
@@ -1413,6 +1648,7 @@ script:
       - script.stop: mp_idle_debounce
       - lambda: |-
           esphome::voice_assistant::abort_voice_assistant(id(va));
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
           id(latter_mic).set_mute_state(false);
           id(va_intercom_turn) = false;
           id(va_was_cancelled) = true;
@@ -1483,12 +1719,12 @@ script:
           condition:
             lambda: 'return !latter_ui::remote_state().slots_summary.empty();'
           then:
-            - homeassistant.action:
-                action: latter.remote_action
-                data:
-                  target_device: "${name}"
-                  slot: !lambda 'return to_string(slot_num);'
-                  action: "select_slot"
+            - lambda: |-
+                const std::string slot_str = std::to_string(slot_num);
+                latter_rpc::emit(&id(latter_rpc_outbox), "remote_action", {
+                  {"slot", slot_str},
+                  {"action", "select_slot"},
+                });
 
   - id: remote_send_key
     mode: restart
@@ -1520,14 +1756,11 @@ script:
             id(remote_action_feedback) = kFeedback[k];
           }
           id(remote_feedback_timer) = millis();
-      - if:
-          condition:
-            lambda: 'return !latter_ui::remote_state().slots_summary.empty();'
-          then:
-            - homeassistant.action:
-                action: latter.remote_action
-                data:
-                  target_device: "${name}"
-                  slot: !lambda 'return to_string(id(remote_latter_slot_num));'
-                  action: !lambda 'return id(remote_latter_act);'
-                  command: !lambda 'return id(remote_latter_cmd);'
+          if (!latter_ui::remote_state().slots_summary.empty()) {
+            const std::string slot_str = std::to_string(id(remote_latter_slot_num));
+            latter_rpc::emit(&id(latter_rpc_outbox), "remote_action", {
+              {"slot", slot_str},
+              {"action", id(remote_latter_act)},
+              {"command", id(remote_latter_cmd)},
+            });
+          }

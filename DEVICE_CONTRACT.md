@@ -8,11 +8,13 @@
 - **Field Separator**: `0x1F` (`\x1f`, ASCII Unit Separator `␟`)
 - **Record Separator**: `0x1E` (`\x1e`, ASCII Record Separator `␞`) with pipe (`|`) subfields inside record lists
 - **Absent Values**: A field with no value is the empty string, never a placeholder (none, NONE, None, unknown, unavailable, Idle, Unassigned) or a made-up number. A state field carries only the values its description lists.
-- **Inbound Channel**: Each domain publishes a single `payload` attribute on `sensor.<device>_<domain>` prefixed with `v3␟<epoch>␟<rev>`.
-- **Revision Guard Semantics**:
+- **Inbound Channel (`HA -> Device`)**: Home Assistant pushes each domain's `payload` (`v3␟<epoch>␟<rev>␟...`) directly via the bound ESPHome Native API action `esphome.<node>_latter_push_v3` (`domain`, `payload`) resolved by `esphome_device_id`.
+- **Outbound Channel (`Device -> HA`)**: Devices emit bound RPC frames (`<boot_hex>:<seq>:<part>/<total>|<json>`) on their diagnostic `text_sensor` (`System: RPC Outbox`), eliminating `allow_service_calls` and `target_device` spoofing.
+- **Revision Guard & Version Tolerance**:
   - `epoch` (`u32`, non-zero): Generated randomly when the Home Assistant coordinator starts. If `in_epoch != cur_epoch`, the device accepts the frame unconditionally and updates `cur_epoch` and `cur_rev`.
   - `rev` (`u32`, `>= 1`): Monotonic per-domain revision counter bumped only when that domain's body fields change. Frames with `rev == 0` are rejected; within the same `epoch`, frames with `in_rev <= cur_rev` are ignored.
-  - On ESPHome API reconnect (`on_client_connected` from Home Assistant), the device calls `latter_ui::reset_all_v3_rev_guards()` and sends `latter.device_hello`.
+  - Parsers accept any frame with `n >= kProtocolMinRequiredFields` (`3`), defaulting missing trailing fields to `""` and logging a warning on field-count mismatch.
+  - On ESPHome API reconnect (`on_client_connected` from Home Assistant), the device calls `latter_ui::reset_all_v3_rev_guards()` and sends `device_hello`.
 
 ### Header Fields (All Domains)
 
@@ -34,7 +36,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `40` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `41` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -77,6 +79,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `37` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
 | `38` | `activity_card` | `AreaCtxField::ACTIVITY_CARD` | `bool` | 1 = show the Home Activity Card, 0 = hide it (also sent when every source is off); empty until set: the device uses defaults.activity_card |
 | `39` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
+| `40` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
 
 ### `sensor.<device>_active_media` (`MediaField`, `20` total fields)
 
@@ -112,7 +115,7 @@ Universal TV/AV remote slot directory and active remote selection.
 | `4` | `configured_count` | `RemoteField::CONFIGURED_COUNT` | `u16` | Number of configured remotes in active group |
 | `5` | `slots_summary` | `RemoteField::SLOTS_SUMMARY` | `records` | 0x1E-joined index|label|entity_id|kind|area_id|state remote records (configured slots only, up to 10; index is the 1-based slot; kind is remote or media_player, the domain of entity_id) |
 
-### `sensor.<device>_weather_forecast` (`WeatherField`, `11` total fields)
+### `sensor.<device>_weather_forecast` (`WeatherField`, `17` total fields)
 
 Current outdoor weather telemetry and 5-day daily forecast.
 
@@ -126,6 +129,12 @@ Current outdoor weather telemetry and 5-day daily forecast.
 | `8` | `high` | `WeatherField::HIGH` | `f32` | Today's forecast high temperature |
 | `9` | `low` | `WeatherField::LOW` | `f32` | Today's forecast low temperature |
 | `10` | `forecast_5d` | `WeatherField::FORECAST_5D` | `records` | 0x1E-joined day|cond|high|low daily forecast records (up to 5; day MON..SUN in local time; cond is the Home Assistant condition; high and low are whole degrees in the weather entity's unit, empty when unknown) |
+| `11` | `sun_state` | `WeatherField::SUN_STATE` | `string` | Sun horizon state from Home Assistant (above_horizon|below_horizon) |
+| `12` | `sun_elevation` | `WeatherField::SUN_ELEVATION` | `f32` | Solar elevation angle in degrees |
+| `13` | `sun_azimuth` | `WeatherField::SUN_AZIMUTH` | `f32` | Solar azimuth angle in degrees (0..360) |
+| `14` | `sun_next_rising` | `WeatherField::SUN_NEXT_RISING` | `string` | Next sunrise ISO-8601 UTC timestamp |
+| `15` | `sun_next_setting` | `WeatherField::SUN_NEXT_SETTING` | `string` | Next sunset ISO-8601 UTC timestamp |
+| `16` | `moon_phase` | `WeatherField::MOON_PHASE` | `string` | Lunar phase slug (new_moon|waxing_crescent|first_quarter|waxing_gibbous|full_moon|waning_gibbous|last_quarter|waning_crescent) |
 
 ### `sensor.<device>_calendar_agenda` (`CalendarField`, `6` total fields)
 
@@ -142,10 +151,12 @@ Upcoming calendar agenda events and next-event headline.
 | Action | Variables | Description |
 | :--- | :--- | :--- |
 | `latter_ping` | *(none)* | No-op discovery marker action announcing Latter Protocol v3 compatibility and hardware manifest |
+| `latter_push_v3` | `domain: string`, `payload: string` | Push a revision-guarded Protocol v3 domain payload directly to the bound Device over the ESPHome Native API |
+| `latter_set_beacon_uuid` | `uuid: string` | Provision the System's random 128-bit BLE iBeacon UUID into NVS and restart advertising if active |
 | `latter_factory_reset` | *(none)* | Reset to defaults: erases every saved setting (the whole NVS partition, including the Wi-Fi driver's cached network data and RF calibration) and reboots. Compiled-in Wi-Fi credentials and the API key are kept, so the device rejoins Home Assistant unchanged |
 | `ui_input` | `action: string`, `delta: int` | Remote navigation input: action home|back|select|next|prev|left|right|up|down|cw|ccw (ok/click alias select); delta overrides the step for next/prev-style actions (0 = derive from action) |
-| `set_browse_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots to the device |
-| `set_area_slots` | `contract: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated Area/Site entity control slots to the device |
+| `set_browse_slots` | `contract: int`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots to the device |
+| `set_area_slots` | `contract: int`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated Area/Site entity control slots to the device |
 | `show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot; alert_id > 0 deduplicates repeats |
 
 ## 4. Outbound Home Assistant Services (`latter.<service>`)
@@ -153,17 +164,17 @@ Upcoming calendar agenda events and next-event headline.
 | Service | Canonical Fields | Description |
 | :--- | :--- | :--- |
 | `latter.device_hello` | `target_device`, `contract`, `boot_id`, `manifest` | Device-initiated handshake sent when Home Assistant connects to the ESPHome API |
-| `latter.music_browse` | `target_device`, `mode`, `page`, `page_size`, `speaker`, `last_speaker`, `search`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse speakers, favorites, playlists, artists, albums, tracks, radio, or search |
+| `latter.music_browse` | `target_device`, `req_id`, `mode`, `page`, `page_size`, `speaker`, `last_speaker`, `search`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse speakers, favorites, playlists, artists, albums, tracks, radio, or search |
 | `latter.set_active_speaker` | `target_device`, `entity_id`, `transfer_queue` | Select the active media_player target for a Latter device |
-| `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue` | Execute transport, seek, queue, or play_media command on the active speaker |
+| `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue`, `group_members` | Execute transport, seek, queue, speaker grouping, or play_media command on the active speaker |
 | `latter.media_volume` | `target_device`, `entity_id`, `action`, `volume_level` | Adjust or set volume on the active speaker or volume override target |
-| `latter.area_browse` | `target_device`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Areas, Area domains, or paginated controllable entities |
+| `latter.area_browse` | `target_device`, `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Areas, Area domains, or paginated controllable entities |
 | `latter.area_action` | `target_device`, `entity_id`, `area_id`, `action`, `level`, `code` | Execute an explicit domain action on an Area or specific entity |
 | `latter.set_active_area` | `target_device`, `area_id` | Set the active Area context for a Latter device (an on-device Area pick). Whether media follows is the Device's Latter setting |
 | `latter.remote_action` | `target_device`, `slot`, `action`, `command` | Send a TV/AV remote command or select active remote slot |
-| `latter.calendar_fetch` | `target_device`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
+| `latter.calendar_fetch` | `target_device`, `req_id`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
 | `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `in_minutes`, `duration_minutes`, `description` | Create a new event on the primary configured calendar |
 | `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a voice announcement to chosen speakers, the speakers in occupied Areas (target_device: occupied_areas), or every speaker |
-| `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction` | Doorbell talkback and requests. action: talk_message (push-to-talk speech transcribed on the device, spoken at the door by Home Assistant), quick_reply, listen_start|listen_stop (door audio played on the device), call_target (rings other displays with a notification; no display-to-display audio), unlock_door (unlock request to Home Assistant), set_noise_reduction. noise_reduction: strong|light|off, the noise filter preset Home Assistant applies to door audio (FFmpeg). No echo cancellation; camera is auto-refreshing snapshots |
+| `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction`, `code` | Doorbell talkback and requests. action: talk_message (push-to-talk speech transcribed on the device, spoken at the door by Home Assistant), quick_reply, listen_start|listen_stop (door audio played on the device), call_target (rings other displays with a notification; no display-to-display audio), unlock_door (unlock request to Home Assistant), set_noise_reduction. noise_reduction: strong|light|off, the noise filter preset Home Assistant applies to door audio (FFmpeg). No echo cancellation; camera is auto-refreshing snapshots |
 | `latter.save_custom_color` | `target_device`, `hex_color`, `name` | Save a custom RGB accent color from the on-device color wheel |
 | `latter.set_dock_apps` | `target_device`, `dock_apps` | Save the Home dock apps chosen on the device (Home settings) as the Device's Latter dock setting |

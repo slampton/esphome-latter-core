@@ -1,0 +1,50 @@
+# ==============================================================================
+# Latter Core Module: Authenticated ESPHome LAN Push-OTA (modules/ota_esphome.yaml)
+# Include in ESPHome Device Builder configurations alongside devices/<board>.yaml.
+# Pre-built Web Installer factory binaries omit this module so TCP port 3232 is
+# never exposed unauthenticated on the LAN (they update via HTTPS http_request).
+# ==============================================================================
+
+substitutions:
+  ota_password: ""
+
+ota:
+  - platform: esphome
+    id: ota_esphome
+    password: "${ota_password}"
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        # Wake the screen through the canonical light path (panel DCS wake + light state) first.
+        - light.turn_on: display_brightness
+        - lambda: |-
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
+        # OTA blocks the main loop for the whole transfer: take the light-sleep awake lock (and the
+        # normal loop interval) now, through the single power-policy owner.
+        - script.execute: apply_power_policy
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
+    on_end:
+      then:
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+    on_error:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
+        - script.execute: screen_sleep_timer
+    on_abort:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
+        - script.execute: screen_sleep_timer

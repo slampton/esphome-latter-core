@@ -934,7 +934,7 @@ inline void render_home_page(
       render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12, bg_c, brd_c, label, txt_c, font_small);
     };
 
-    // The five rows match kHomeSettingsDockTokens (touch_handlers.yaml toggles the same tokens).
+    // The five rows match kHomeSettingsDockTokens (TouchGestureEngine toggles the same tokens).
     static const char *const kLabels[5] = {"Music", "Area", "Remote", "Games", "Tools"};
     char buf[48];
     for (int i = 0; i < 5; i++) {
@@ -1103,7 +1103,7 @@ inline void render_home_page(
     } else {
       snprintf(w_line, sizeof(w_line), "%s", cond_title.c_str());
     }
-    std::string fit_w = fit_text_to_width_font(std::string(w_line), 340, font_date);
+    std::string fit_w = fit_text_to_width_font(std::string(w_line), std::min(scale_x(340), safe_span(z_weath_y)), font_date);
     if (!is_dim_backdrop) {
       fast_print(it, cx + 1, z_weath_y + 1, font_date, col_black, TextAlign::CENTER, fit_w.c_str());
     }
@@ -1244,7 +1244,7 @@ inline void render_home_page(
   if (greeting_active) {
     const char *raw_greet = resolve_wake_greeting(
         now.hour, now.minute, now.day_of_year, cond, weather_temp);
-    std::string fit_greet = fit_text_to_width_font(std::string(raw_greet), 340, font_date);
+    std::string fit_greet = fit_text_to_width_font(std::string(raw_greet), std::min(scale_x(340), safe_span(act_card_cy)), font_date);
     int greet_y = act_card_cy - 2;
 
     // 0..8000ms = 1.0f full brightness; 8000..10500ms = smooth 2.5s Hermite fade into background sky color

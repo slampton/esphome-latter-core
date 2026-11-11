@@ -499,6 +499,7 @@ voice_assistant:
           id(va_vad_active) = false;
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
             id(va_echo_gate).stop();
+            latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
             id(latter_mic).set_mute_state(false);
             id(va_intercom_turn) = true;
             id(va_active) = false;
@@ -681,6 +682,7 @@ voice_assistant:
             # A push-to-talk turn that failed (usually no speech recognised): the call goes back to
             # listening, on the camera page.
             - lambda: |-
+                latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
                 id(latter_mic).set_mute_state(false);
                 id(va_intercom_turn) = false;
                 esphome::voice_assistant::abort_voice_assistant(id(va));
@@ -699,6 +701,7 @@ voice_assistant:
                       announcement: true
                   - speaker.stop: announcement_mixing_input
             - lambda: |-
+                latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
                 id(latter_mic).set_mute_state(false);
                 id(va_intercom_turn) = false;
                 esphome::voice_assistant::abort_voice_assistant(id(va));
@@ -859,6 +862,7 @@ script:
       - lambda: |-
           latter_ui::log_audio_profile("VA_DRAIN_FINISH");
           id(va_echo_gate).stop();
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
           id(latter_mic).set_mute_state(false);  // va_echo_gate never outlives the session
           const bool was_va_session = id(va_active);
           id(va_vad_active) = false;
@@ -927,6 +931,7 @@ script:
       - lambda: |-
           id(latter_mic).set_mute_state(true);
           latter_ui::echo_last_loud_ms().store(millis());  // quiet must be measured, not assumed
+          latter_ui::echo_meter_active().store(true, std::memory_order_relaxed);
       # The reply leaves the mixer inputs (the announcement buffer, ${announcement_buffer_s} s): what is left
       # is the speaker buffer and DMA (~0.3 s), which hold the reply's last moment and its padding.
       - wait_until:
@@ -945,7 +950,9 @@ script:
       - script.execute: route_i2s_to_mic  # DAC mute silences whatever padding is still buffered
       - script.wait: route_i2s_to_mic
       - delay: 30ms  # the amplifier's power-down transient
-      - lambda: 'id(latter_mic).set_mute_state(false);'
+      - lambda: |-
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
+          id(latter_mic).set_mute_state(false);
 
   # Flight recorder for a reply that never reaches the speaker: the player is ANNOUNCING but the
   # announcement input never started (seen on Pocket, cured by a reboot; cause unknown). Logs at
@@ -1089,6 +1096,7 @@ script:
     then:
       - lambda: |-
           latter_ui::va_display_restore().armed = false;
+          latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
           id(latter_mic).set_mute_state(false);
       - script.stop: va_restore_display
       - script.stop: stop_alarm_sound

@@ -5,7 +5,7 @@
 - **Files:** `esphome/components/voice_assistant/voice_assistant.h` and `voice_assistant.cpp`
 
 ## Motivation
-`include/va_cancel_helper.h` reaches three private `VoiceAssistant` members through explicit template instantiation (`Rob<>` tags): `set_state_`, `mic_source_` and `api_client_`. Public hooks would let it drop them.
+`components/latter_hal/esphome_bridge.cpp` (`include/esphome_bridge.h`, called through `include/va_cancel_helper.h`) reaches three private `VoiceAssistant` members through explicit template instantiation (`BridgeRob<>` tags): `set_state_`, `mic_source_` and `api_client_` (alongside `MipiDsi::buffer_` for zero-copy DSI scanlines). Public hooks would let it drop the `VoiceAssistant` bridge tags completely.
 
 1. **Synchronous session abort.** When the user cancels a voice turn (a tap on the overlay, an alarm or timer takeover, a doorbell talk turn whose reply must be dropped), the device needs to stop the microphone, tell Home Assistant to stop the pipeline, and return to `IDLE` *now*, not after the next event. Today that needs `mic_source_` and `set_state_`.
 2. **API connection release before hibernate.** A battery device that hibernates or reconnects before the server's TCP keepalive expires can keep `api_client_` bound to a dead `APIConnection *` and reject the new session. The helper clears it before the AXP2101 cuts power.
@@ -31,4 +31,4 @@ class VoiceAssistant : public Component, ... {
 ```
 
 ## Migration in `esphome-latter-core`
-Until this is merged, `include/va_cancel_helper.h` keeps the three `Rob<>` tags (`VA_SetState_Tag`, `VA_MicSource_Tag`, `VA_ApiClient_Tag`). They are guarded by a `static_assert` requiring ESPHome ≥ 2026.11.0 and a `#warning` from 2027.1. Once merged, `abort_voice_assistant()` becomes `va->abort_session()`, the hibernate path calls `va->release_api_connection()`, and all `Rob<>` instantiations are deleted.
+Until this is merged, `components/latter_hal/esphome_bridge.cpp` isolates the `BridgeRob<>` tags in a single translation unit guarded by a `static_assert` requiring ESPHome ≥ 2026.11.0 and a `#warning` from 2027.1 (`include/esphome_bridge.h` / `include/va_cancel_helper.h`). Once merged, `abort_voice_assistant()` becomes `va->abort_session()`, the hibernate path calls `va->release_api_connection()`, and the `VoiceAssistant` `BridgeRob<>` instantiations are deleted.

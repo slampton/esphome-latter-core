@@ -11,9 +11,8 @@ substitutions:
   # latter_ref: dev in its own substitutions, so YAML and C++ headers come from one revision.
   latter_ref: main
   name: "mobile-assistant"
-  device_slug: "mobile_assistant"
   friendly_name: "Mobile Assistant"
-  version: "2.2.1"
+  version: "3.0.0"
   screen_w: "480"
   screen_h: "480"
   art_shape: "square"
@@ -30,7 +29,7 @@ external_components:
       type: git
       url: https://github.com/slampton/esphome-latter-core
       ref: ${latter_ref}
-    components: [latter_core, latter_beacon]
+    components: [latter_hal, latter_core, latter_ui, latter_beacon]
     refresh: 0s
 
 latter_core:

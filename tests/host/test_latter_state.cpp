@@ -8,6 +8,7 @@
 
 #include "../../include/latter_protocol.h"
 #include "../../include/latter_state.h"
+#include "../../include/latter_rpc.h"
 
 namespace {
 
@@ -130,16 +131,40 @@ void test_all_five_domain_parsers() {
   assert(latter_ui::parse_v3_media_payload(build_v3_packet(10, 4, media_t)));
   assert(std::abs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
 
-  // Weather Forecast (COUNT = 11)
+  // Weather Forecast (COUNT = 17, including sun + moon fields)
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::TEMPERATURE)] = "68";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::HIGH)] = "72";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::LOW)] = "54";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::FORECAST_5D)] = "Mon|sunny|72|54";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_STATE)] = "above_horizon";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_ELEVATION)] = "42.5";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_AZIMUTH)] = "198.2";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_NEXT_RISING)] = "2026-11-11T14:45:00Z";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_NEXT_SETTING)] = "2026-11-11T01:02:00Z";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::MOON_PHASE)] = "waxing_gibbous";
   assert(latter_ui::parse_v3_weather_payload(build_v3_packet(10, 1, weather_t)));
   assert(latter_ui::weather_state().condition == "sunny");
   assert(latter_ui::weather_state().forecast_5d == "Mon|sunny|72|54");
+  assert(latter_ui::weather_state().sun_state == "above_horizon");
+  assert(std::abs(latter_ui::weather_state().sun_elevation - 42.5f) < 0.01f);
+  assert(std::abs(latter_ui::weather_state().sun_azimuth - 198.2f) < 0.01f);
+  assert(latter_ui::weather_state().moon_phase == "waxing_gibbous");
+
+  // Security PIN policy field on area_context
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::SECURITY_PIN_POLICY)] = "require_pin";
+  assert(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 5, area_t)));
+  assert(latter_ui::area_ctx_state().security_pin_policy == "require_pin");
+  assert(latter_ui::v3_mismatch_warn_count() == 0);
+
+  // Version skew tolerance: shorter payload (>= kProtocolMinRequiredFields) defaults trailing fields and records warning
+  std::vector<std::string> short_weather(11, "");
+  short_weather[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "clear-night";
+  assert(latter_ui::parse_v3_weather_payload(build_v3_packet(10, 2, short_weather)));
+  assert(latter_ui::weather_state().condition == "clear-night");
+  assert(latter_ui::weather_state().sun_state.empty());
+  assert(latter_ui::v3_mismatch_warn_count() == 1);
 
   // Calendar Agenda (COUNT = 6)
   std::vector<std::string> cal_t(static_cast<size_t>(latter_ui::CalendarField::COUNT), "");
@@ -151,11 +176,65 @@ void test_all_five_domain_parsers() {
   assert(latter_ui::calendar_state().next_event == "Architecture Review (14:00)");
 }
 
+struct FakeOutboxSensor {
+  std::vector<std::string> published;
+  void publish_state(const std::string &s) { published.push_back(s); }
+};
+
+void test_rpc_outbox_framing_and_req_id() {
+  FakeOutboxSensor outbox;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+
+  // Single-frame RPC dispatches immediately on emit()
+  latter_rpc::emit(&outbox, "set_active_area", {{"area_id", "kitchen"}});
+  assert(outbox.published.size() == 1);
+  assert(outbox.published[0].size() <= latter_rpc::kMaxRpcFrameBytes);
+  assert(outbox.published[0].find(":1:1/1|{\"s\":\"set_active_area\",\"d\":{\"area_id\":\"kitchen\"}}") != std::string::npos);
+
+  // Multi-chunk RPC (> 230 B, with multi-byte UTF-8 glyphs) splits cleanly across loop ticks
+  std::string big_manifest(380, 'x');
+  big_manifest.replace(195, 9, "\xE2\x80\x94\xE2\x80\x94\xE2\x80\x94");  // UTF-8 em-dashes across cut zone
+  uint32_t t = 100;
+  latter_rpc::step_outbox_loop(t);
+  t += 30;
+  latter_rpc::step_outbox_loop(t);
+  latter_rpc::emit(&outbox, "device_hello", {
+      {"contract", "3"},
+      {"boot_id", "12345"},
+      {"manifest", big_manifest},
+  });
+  // First chunk published immediately; remaining chunks wait for >= 2 loop passes and >= 25 ms
+  assert(outbox.published.size() == 2);
+  assert(latter_rpc::has_pending_frames());
+  while (latter_rpc::has_pending_frames()) {
+    t += 15;
+    latter_rpc::step_outbox_loop(t);
+  }
+  assert(outbox.published.size() >= 4);
+  std::string reassembled;
+  for (size_t i = 1; i < outbox.published.size(); ++i) {
+    assert(outbox.published[i].size() <= latter_rpc::kMaxRpcFrameBytes);
+    size_t bar = outbox.published[i].find('|');
+    assert(bar != std::string::npos);
+    reassembled += outbox.published[i].substr(bar + 1);
+  }
+  assert(reassembled.find("\"s\":\"device_hello\"") != std::string::npos);
+  assert(reassembled.find(big_manifest) != std::string::npos);
+
+  // Request-ID monotonic guard discards out-of-order responses
+  int r1 = latter_rpc::issue_req_id(latter_rpc::SlotChannel::MUSIC);
+  int r2 = latter_rpc::issue_req_id(latter_rpc::SlotChannel::MUSIC);
+  assert(!latter_rpc::accept_req_id(latter_rpc::SlotChannel::MUSIC, r1));
+  assert(latter_rpc::accept_req_id(latter_rpc::SlotChannel::MUSIC, r2));
+  assert(latter_rpc::accept_req_id(latter_rpc::SlotChannel::MUSIC, 0));
+}
+
 }  // namespace
 
 int main() {
   test_epoch_and_rev_monotonicity();
   test_all_five_domain_parsers();
-  std::printf("[HOST TEST PASS] All Protocol v3 parsers and epoch/rev guards verified.\n");
+  test_rpc_outbox_framing_and_req_id();
+  std::printf("[HOST TEST PASS] All Protocol v3 parsers, version tolerance, and RPC outbox verified.\n");
   return 0;
 }

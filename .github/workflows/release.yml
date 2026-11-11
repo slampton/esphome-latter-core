@@ -174,7 +174,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
             VERSION="${BASE_VER}"
           fi
-          sed "s/v2\.[0-9]\+\.[0-9]\+/v${VERSION}/g" index.html > _site/index.html
+          sed "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v${VERSION}/g" index.html > _site/index.html
 
       - name: Fast-forward stable branch on tagged release
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')

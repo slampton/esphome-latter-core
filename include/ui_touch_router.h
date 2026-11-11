@@ -3,8 +3,8 @@
 // Latter Core SDK - Touch Gesture & Dispatch Router (include/ui_touch_router.h)
 // ==============================================================================
 // Bridges ESPHome's touchscreen callbacks (on_touch, on_update, on_release) in
-// guis/universal/gui.yaml to the centralized gesture & page-routing scripts in
-// guis/universal/touch_handlers.yaml while keeping gui.yaml lambdas concise.
+// guis/universal/gui.yaml to TouchGestureEngine (components/latter_ui/gesture_engine.cpp)
+// while centralizing tap debounce and active touch point count.
 // ==============================================================================
 
 #include "ui_core.h"

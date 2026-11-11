@@ -1,6 +1,6 @@
 # ==============================================================================
 # Latter Core Module: Headless Area Control Helper (modules/area_control.yaml)
-# Provides outbound action script for triggering area actions
+# Provides outbound action script for triggering area actions over System: RPC Outbox
 # ==============================================================================
 
 script:
@@ -10,9 +10,8 @@ script:
       entity_id: string
       action_name: string
     then:
-      - homeassistant.action:
-          action: latter.area_action
-          data:
-            target_device: "${name}"
-            entity_id: !lambda 'return entity_id;'
-            action: !lambda 'return action_name;'
+      - lambda: |-
+          latter_rpc::emit(&id(latter_rpc_outbox), "area_action", {
+            {"entity_id", entity_id},
+            {"action", action_name},
+          });

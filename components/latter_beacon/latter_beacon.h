@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 #ifndef USE_LATTER_BEACON_HOSTED
 #include <esp_bt.h>
@@ -46,6 +47,8 @@ class LatterBeacon : public Component {
   bool is_failed() const;
   /// [PROF:BLE] heap lines on/off (follows the Telemetry Profiler switch).
   void set_profile_logging(bool on) { this->profile_logging_ = on; }
+  /// Update the 128-bit iBeacon UUID from a canonical hex/UUID string, persist in NVS if changed, and restart if active.
+  bool set_uuid_hex(std::string_view uuid_str);
 
  protected:
   enum class State : uint8_t { OFF, CONFIGURING, ADVERTISING };

@@ -5,17 +5,17 @@
 
 substitutions:
   name: "latter-headless-node"
-  device_slug: "latter_headless_node"
   friendly_name: "Latter Headless Node"
-  version: "2.2.1"
+  version: "3.0.0"
 
 external_components:
   - source:
       type: local
       path: ../components
-    components: [latter_core]
+    components: [latter_hal, latter_core]
 
 latter_core:
+  gui: "none"
 
 esphome:
   name: ${name}
@@ -41,6 +41,10 @@ logger:
 wifi:
   ssid: "MyHomeWiFi"
   password: "MyWiFiPassword"
+
+api:
+  encryption:
+    key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
 
 packages:
   latter_base: !include ../modules/base.yaml

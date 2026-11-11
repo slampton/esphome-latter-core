@@ -1,4 +1,4 @@
-"""Latter Core SDK component: stages shared C++20 headers into the ESPHome build directory."""
+"""Latter Core SDK component: Protocol v3 state, zero-privilege RPC outbox, and headless/GUI orchestration."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ CODEOWNERS = ["@slampton"]
 CONF_GUI = "gui"
 
 latter_core_ns = cg.esphome_ns.namespace("latter_core")
-# Main-loop pass probe for [PROF:WAKE] (latter_core.h): counts component-phase passes, nothing else.
 LatterLoopProbe = latter_core_ns.class_("LatterLoopProbe", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
@@ -27,32 +26,21 @@ CONFIG_SCHEMA = cv.Schema(
 ).extend(cv.COMPONENT_SCHEMA)
 
 CORE_HEADERS: tuple[str, ...] = (
-    "latter_prof.h",
-    "audio_router.h",
-    "va_cancel_helper.h",
     "latter_protocol.h",
     "latter_state.h",
-    "hal_imu_qmi8658.h",
-    "hal_power_pm.h",
-    "hal_battery.h",
-    "hal_link_report.h",
-    "ui_core.h",
-    "ui_layout.h",
-    "ui_touch_router.h",
-    "ui_ambient_va.h",
-    "ui_weather_sky.h",
-    "ui_games.h",
-    "ui_tools.h",
-    "ui_music.h",
-    "ui_clock_home.h",
-    "ui_area_home_hub.h",
-    "ui_remote.h",
-    "ui_system.h",
+    "latter_rpc.h",
 )
 
 
+def AUTO_LOAD(config: dict[str, Any]) -> list[str]:
+    """Load latter_hal always, and latter_ui only when a display GUI is enabled."""
+    if str(config.get(CONF_GUI, "universal")).strip().lower() == "none":
+        return ["latter_hal"]
+    return ["latter_hal", "latter_ui"]
+
+
 async def to_code(config: dict[str, Any]) -> None:
-    """Copy Latter Core C++20 headers into the build src/ directory and register global includes."""
+    """Stage Latter Core protocol/RPC headers and configure headless traits when gui == 'none'."""
     comp_dir = Path(__file__).resolve().parent
     repo_root = comp_dir.parent.parent
     inc_dir = repo_root / "include"
@@ -61,6 +49,14 @@ async def to_code(config: dict[str, Any]) -> None:
 
     dst_src_dir = Path(CORE.relative_src_path(""))
     dst_src_dir.mkdir(parents=True, exist_ok=True)
+    cg.add_build_flag(f"-I{dst_src_dir.as_posix()}")
+
+    gui_mode = str(config.get(CONF_GUI, "universal")).strip().lower()
+    if gui_mode == "none":
+        cg.add_define("LATTER_HAS_DISPLAY", 0)
+        cg.add_define("LATTER_HAS_TOUCH", 0)
+        cg.add_define("LATTER_SCREEN_W", 0)
+        cg.add_define("LATTER_SCREEN_H", 0)
 
     for hdr in CORE_HEADERS:
         src_file = comp_dir / hdr
@@ -74,18 +70,6 @@ async def to_code(config: dict[str, Any]) -> None:
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
-    if CORE.is_esp32:
-        # Flash-write counters for System: Link Report (nvs=, hal_link_report.h defines the wraps).
-        cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
-        cg.add_build_flag("-Wl,--wrap=esp_flash_erase_region")
-
     probe = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(probe, config)
     cg.add_define("USE_LATTER_LOOP_PROBE")
-
-    if "wifi" in CORE.config:
-        # Latter drives Wi-Fi modem power save through ESPHome's request_high_performance() /
-        # set_power_save_mode() (latter_ui::apply_wifi_power_policy in ui_layout.h).
-        from esphome.components import wifi
-
-        wifi.enable_runtime_power_save_control()

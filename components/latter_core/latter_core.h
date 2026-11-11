@@ -1,29 +1,16 @@
 #pragma once
 
-// Latter Core main-loop probe for [PROF:WAKE] (include/hal_power_pm.h, Telemetry Profiler).
-// A do-nothing component whose loop() counts ESPHome's component-phase passes: how often they run, the
-// gaps between them, and how many ran while a HighFrequencyLoopRequester was held (which keeps the main
-// loop from sleeping between passes). Counting only: no work, no logging, no locks.
+// Latter Core main-loop probe for [PROF:WAKE] (include/hal_power_pm.h) & paced RPC outbox drain.
 
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
+#include "hal_power_pm.h"
+#include "latter_rpc.h"
 
 #include <cstdint>
 
 namespace esphome::latter_core {
-
-struct LoopProbeStats {
-  uint32_t passes{0};
-  uint32_t hf_passes{0};    // passes with a HighFrequencyLoopRequester held
-  uint32_t gaps[5]{};       // gap since the previous pass: <20 ms, <50 ms, <200 ms, <1 s, >=1 s
-  uint32_t last_ms{0};
-};
-
-inline LoopProbeStats &loop_probe_stats() {
-  static LoopProbeStats s;
-  return s;
-}
 
 class LatterLoopProbe : public Component {
  public:
@@ -38,8 +25,22 @@ class LatterLoopProbe : public Component {
     s.last_ms = now;
     s.passes++;
     if (HighFrequencyLoopRequester::is_high_frequency()) s.hf_passes++;
+
+    // Drain paced multi-chunk RPC outbox frames with zero timers while idle.
+    const bool more_rpc = ::latter_rpc::step_outbox_loop(now);
+    if (more_rpc && !this->rpc_hf_held_) {
+      this->rpc_hf_.start();
+      this->rpc_hf_held_ = true;
+    } else if (!more_rpc && this->rpc_hf_held_) {
+      this->rpc_hf_.stop();
+      this->rpc_hf_held_ = false;
+    }
   }
   float get_setup_priority() const override { return setup_priority::LATE; }
+
+ protected:
+  HighFrequencyLoopRequester rpc_hf_{};
+  bool rpc_hf_held_{false};
 };
 
 }  // namespace esphome::latter_core

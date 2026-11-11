@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Check that the firmware and protocol/latter_v3.json describe the same device <-> Home Assistant contract.
 
-Outbound: every `homeassistant.action` calling `latter.<service>` must name a service in `services`, and
-send only that service's `fields`; every protocol service must be called by the firmware.
+Outbound: every `latter_rpc::emit(..., "<service>", { ... })` call must name a service in `services`, and
+send only that service's `fields`; every protocol service must be called by the firmware; and legacy
+`homeassistant.action` calls are forbidden across firmware YAML.
 Inbound: every `api: actions:` entry must match a `device_actions` entry, with identical variable names
 and types, and every protocol device action must exist in the firmware.
 
-Standard library only (a small indentation scanner, not a YAML parser), so it runs anywhere.
+Standard library only (zero external dependencies), so it runs anywhere.
 Usage: python tools/check_protocol_usage.py
 """
 
@@ -18,8 +19,11 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-SCAN_DIRS = ("modules", "guis", "devices", "boards")
+YAML_SCAN_DIRS = ("modules", "guis", "devices", "boards", "examples")
+CPP_SCAN_DIRS = ("include", "components")
 KEY_RE = re.compile(r"^(\s*)(?:-\s+)?([A-Za-z_][A-Za-z0-9_]*):(?:\s+(.*))?$")
+EMIT_HEAD_RE = re.compile(r'(?:::)?latter_rpc::emit\s*\([^,]+,\s*"([a-z_][a-z0-9_]*)"')
+PAIR_KEY_RE = re.compile(r'\{\s*"([a-z_][a-z0-9_]*)"\s*,')
 
 
 def _indent(line: str) -> int:
@@ -49,32 +53,59 @@ def _child_keys(lines: list[str], start: int, parent_indent: int) -> tuple[dict[
     return keys, i
 
 
-def scan_file(path: Path, calls: list[tuple[str, str, set[str]]], actions: dict[str, list[tuple[str, dict[str, str]]]]) -> None:
-    lines = path.read_text(encoding="utf-8").splitlines()
+def _extract_emit_calls(text: str, rel: str, calls: list[tuple[str, str, set[str]]]) -> None:
+    for m in EMIT_HEAD_RE.finditer(text):
+        svc = m.group(1)
+        line_no = text.count("\n", 0, m.start()) + 1
+        open_paren = text.find("(", m.start())
+        depth = 0
+        in_str = False
+        esc = False
+        end_pos = len(text)
+        for idx in range(open_paren, len(text)):
+            ch = text[idx]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    end_pos = idx + 1
+                    break
+        call_slice = text[m.end() : end_pos]
+        data_keys = set(PAIR_KEY_RE.findall(call_slice))
+        calls.append((f"{rel}:{line_no}", svc, data_keys))
+
+
+def scan_yaml_file(
+    path: Path,
+    calls: list[tuple[str, str, set[str]]],
+    actions: dict[str, list[tuple[str, dict[str, str]]]],
+    errors: list[str],
+) -> None:
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
     rel = path.relative_to(ROOT).as_posix()
+    _extract_emit_calls(text, rel, calls)
     for n, line in enumerate(lines):
         stripped = line.strip()
         if stripped in ("- homeassistant.action:", "homeassistant.action:"):
-            # Options sit one level deeper than the action key (after "- " when it is a list item).
-            base = _indent(line) + (2 if stripped.startswith("- ") else 0)
-            opts, _ = _child_keys(lines, n + 1, base)
-            service = opts.get("action", "")
-            if not service.startswith("latter."):
-                continue
-            data_keys: set[str] = set()
-            for j in range(n + 1, len(lines)):
-                if lines[j].strip() == "data:" and _indent(lines[j]) > base:
-                    data, _ = _child_keys(lines, j + 1, _indent(lines[j]))
-                    data_keys = set(data)
-                    break
-                if lines[j].strip() and _indent(lines[j]) <= base:
-                    break
-            calls.append((f"{rel}:{n + 1}", service.split(".", 1)[1], data_keys))
+            errors.append(
+                f"{rel}:{n + 1}: forbidden homeassistant.action block (use latter_rpc::emit on latter_rpc_outbox)"
+            )
         m = re.match(r"^(\s*)-\s+action:\s+([a-z_][a-z0-9_]*)\s*$", line)
         if m:
             item_indent = len(m.group(1)) + 2
             opts, _ = _child_keys(lines, n + 1, item_indent - 1)
-            # Device actions declare variables (or nothing); script/automation steps never use "- action:".
             variables: dict[str, str] = {}
             for j in range(n + 1, len(lines)):
                 if lines[j].strip() and _indent(lines[j]) < item_indent:
@@ -93,11 +124,21 @@ def main() -> int:
 
     calls: list[tuple[str, str, set[str]]] = []
     actions: dict[str, list[tuple[str, dict[str, str]]]] = {}
-    for d in SCAN_DIRS:
-        for path in sorted((ROOT / d).rglob("*.yaml")):
-            scan_file(path, calls, actions)
-
     errors: list[str] = []
+
+    for d in YAML_SCAN_DIRS:
+        base = ROOT / d
+        if base.is_dir():
+            for path in sorted(base.rglob("*.yaml")):
+                scan_yaml_file(path, calls, actions, errors)
+
+    for d in CPP_SCAN_DIRS:
+        base = ROOT / d
+        if base.is_dir():
+            for path in sorted(base.rglob("*")):
+                if path.is_file() and path.suffix in {".h", ".hpp", ".cpp"}:
+                    _extract_emit_calls(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix(), calls)
+
     called: set[str] = set()
     for where, svc, keys in calls:
         called.add(svc)
@@ -124,7 +165,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors))
         return 1
-    print(f"protocol usage OK: {len(calls)} service calls, {sum(map(len, actions.values()))} device action declarations")
+    print(f"protocol usage OK: {len(calls)} RPC emit calls, {sum(map(len, actions.values()))} device action declarations")
     return 0
 
 

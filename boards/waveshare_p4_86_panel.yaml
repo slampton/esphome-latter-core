@@ -58,6 +58,12 @@ substitutions:
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
+  wake_profiling: "n"
+  i2s_lrclk_pin: GPIO10
+  i2s_bclk_pin: GPIO12
+  i2s_mclk_pin: GPIO13
+  i2s_din_pin: GPIO11
+  i2s_dout_pin: GPIO9
 
 esphome:
   build_flags:
@@ -93,67 +99,12 @@ esphome:
     - "-DLATTER_AUDIO_IN_RATE=16000"
 
 esp32:
-  variant: esp32p4
-  # rev1.x builds only boot rev1.x silicon and rev3.x builds only boot rev3.x silicon (see p4_silicon).
-  engineering_sample: ${p4_engineering_sample}
-  cpu_frequency: ${p4_cpu_frequency}
   flash_size: 32MB
   framework:
-    type: esp-idf
     sdkconfig_options:
-      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
-      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "60"
-      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0: "n"
-      CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1: "n"
-      CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
-      CONFIG_FREERTOS_USE_TRACE_FACILITY: "y"  # task list for the System: Log Memory Report button
-      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
-      CONFIG_SPIRAM_USE_MALLOC: "y"
-      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"
-      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
-      CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
-      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
-      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
       CONFIG_LCD_DSI_ISR_CACHE_SAFE: "y"
       CONFIG_GDMA_ISR_IRAM_SAFE: "y"
       CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"
-    advanced:
-      enable_idf_experimental_features: true
-      flash_chip: generic
-
-psram:
-  speed: 200MHz
-  ignore_not_found: false
-
-# Console: the USB-C port is a CH343 USB-UART bridge on UART0 (GPIO37/38). The P4's USB-Serial-JTAG
-# pins (GPIO24/25) are not wired to a USB connector, so logs and the bootloader console use UART0.
-logger:
-  hardware_uart: UART0
-
-esp_ldo:
-  - channel: 3
-    voltage: 2.5V
-
-esp32_hosted:
-  variant: esp32c6
-  use_psram: true
-  clk_pin: GPIO18
-  cmd_pin: GPIO19
-  d0_pin: GPIO14
-  d1_pin: GPIO15
-  d2_pin: GPIO16
-  d3_pin: GPIO17
-  reset_pin: GPIO54
-
-update:
-  - platform: esp32_hosted
-    id: update_c6_coprocessor
-    name: "System: C6 Co-Processor Firmware"
-    icon: "mdi:chip"
-    entity_category: config
-    type: http
-    source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
-    update_interval: never
 
 i2c:
   - id: bus_internal
@@ -162,65 +113,9 @@ i2c:
     frequency: 400kHz
     scan: false
 
-# One I2S port in full duplex: the ES8311 (DOUT GPIO9) and ES7210 (DIN GPIO11) share BCLK/WS/MCLK, so
-# the microphone and speaker run at the same time at audio_out_rate and never hand the bus over.
-i2s_audio:
-  - id: i2s_shared_bus
-    i2s_lrclk_pin: GPIO10
-    i2s_bclk_pin: GPIO12
-    i2s_mclk_pin: GPIO13
-    full_duplex: true
-
-audio_adc:
-  - platform: es7210
-    id: es7210_adc
-    i2c_id: bus_internal
-    address: 0x40
-    bits_per_sample: 16bit
-    sample_rate: ${audio_out_rate}
-    mic_gain: 24dB
-
-microphone:
-  - platform: i2s_audio
-    id: latter_mic_i2s
-    adc_type: external
-    i2s_audio_id: i2s_shared_bus
-    i2s_din_pin: GPIO11
-    sample_rate: ${audio_out_rate}
-    bits_per_sample: 16bit
-    channel: left
-  # Converts inside the I2S reader's data callback (no task of its own), so UI load cannot starve it.
-  - platform: resampler
-    id: latter_mic
-    microphone: latter_mic_i2s
-    sample_rate: ${audio_in_rate}
-
-audio_dac:
-  - platform: es8311
-    id: es8311_dac
-    i2c_id: bus_internal
-    address: 0x18
-    bits_per_sample: 16bit
-    sample_rate: ${audio_out_rate}
-    use_mclk: true
-
-speaker:
-  - platform: i2s_audio
-    id: physical_speaker
-    i2s_audio_id: i2s_shared_bus
-    i2s_dout_pin: GPIO9
-    dac_type: external
-    audio_dac: es8311_dac
-    sample_rate: ${audio_out_rate}
-    bits_per_sample: 16bit
-    channel: left
-    buffer_duration: 250ms
-    # Longer than mp_idle_debounce (3 s), so real idle always powers down in order (DAC mute ->
-    # amplifier off -> speaker stop) and the ~0.6 s gap between tracks never stops the I2S clocks
-    # under a powered amplifier (a click at every track change).
-    timeout: 4s
-
 packages:
+  latter_chip: !include ../modules/hal/chip_esp32p4.yaml
+  latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
   latter_imu: !include ../modules/imu_none.yaml
   latter_pmu: !include ../modules/pmu_none.yaml
 
@@ -267,25 +162,7 @@ script:
       - lambda: |-
           id(es8311_dac).set_volume(0.90f);
           id(es8311_dac).set_mute_on();
-  - id: hal_set_dac_mute
-    mode: restart
-    parameters:
-      muted: bool
-    then:
-      - lambda: |-
-          if (muted) {
-            id(es8311_dac).set_mute_on();
-          } else {
-            id(es8311_dac).set_mute_off();
-          }
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:
       - lambda: 'return;'
-  - id: hal_set_audio_codecs_standby
-    mode: restart
-    parameters:
-      standby: bool
-    then:
-      - lambda: |-
-          latter_ui::hal_set_es8311_es7210_standby(id(bus_internal), standby, true);
