@@ -212,6 +212,22 @@ def check_board(
             )
         if not pin.get("role"):
             err(f"GPIO{g} has no role")
+        if pin.get("strapping") and g not in STRAPPING[soc]:
+            err(f"GPIO{g} is marked strapping in facts, which is invalid on {soc}")
+
+    # 1b. 1-lane SPI panels using DCS sleep must declare LATTER_DISPLAY_DC_PIN pointing at display_dc.
+    if (
+        scan["flags"].get("LATTER_PANEL_IPS") == "1"
+        and scan["flags"].get("LATTER_PANEL_DCS_SLEEP") == "1"
+        and facts.get("display", {}).get("bus") == "spi"
+    ):
+        dc_val = scan["flags"].get("LATTER_DISPLAY_DC_PIN")
+        if dc_val is None:
+            err("1-lane SPI panel with LATTER_PANEL_DCS_SLEEP=1 must define LATTER_DISPLAY_DC_PIN")
+        else:
+            dc_pin = by_gpio.get(int(dc_val))
+            if dc_pin is None or dc_pin.get("role") != "display_dc":
+                err(f"LATTER_DISPLAY_DC_PIN={dc_val} does not point at display_dc in the facts")
 
     # 2. Every GPIO the HAL touches is a known, usable net.
     for g in sorted(scan["pins"]):

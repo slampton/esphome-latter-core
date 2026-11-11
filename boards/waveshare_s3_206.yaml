@@ -133,6 +133,12 @@ packages:
   latter_imu: !include ../modules/imu_qmi8658.yaml
   latter_pmu: !include ../modules/pmu_axp2101.yaml
 
+i2s_audio:
+  - id: !extend i2s_shared_bus
+    i2s_lrclk_pin:
+      number: ${i2s_lrclk_pin}
+      ignore_strapping_warning: true
+
 sensor:
   - id: !extend accel_x
     filters:

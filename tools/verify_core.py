@@ -47,6 +47,203 @@ RETIRED_HALF_DUPLEX_RE = re.compile(
 LOSSY_UI_RE = re.compile(r"\bit\.(?:image|draw_pixels_at)\s*\(|0x[cC]718\b|0x[eE]79[cC]\b")
 BANNED_TERMS_RE = re.compile(r"\b(household|households)\b", re.IGNORECASE)
 INCLUDE_RE = re.compile(r"!include\s+([^\s#]+)")
+STRAPPING_PINS: dict[str, set[int]] = {
+    "ESP32-S3": {0, 3, 45, 46},
+    "ESP32-P4": {34, 35, 36, 37, 38},
+}
+
+
+def collect_yaml_include_chain(yaml_path: Path, seen: set[Path] | None = None) -> list[Path]:
+    """Return included YAML files in package merge order (dependencies first, root file last)."""
+    if seen is None:
+        seen = set()
+    resolved = yaml_path.resolve()
+    if resolved in seen or not resolved.is_file():
+        return []
+    seen.add(resolved)
+    text = resolved.read_text(encoding="utf-8")
+    chain: list[Path] = []
+    for raw_line in text.splitlines():
+        uncommented = raw_line.split("#", 1)[0]
+        for match in INCLUDE_RE.finditer(uncommented):
+            rel = match.group(1).strip("'\"")
+            inc_path = (resolved.parent / rel).resolve()
+            if inc_path.is_file() and ROOT in inc_path.parents:
+                chain.extend(collect_yaml_include_chain(inc_path, seen))
+    chain.append(resolved)
+    return chain
+
+
+def extract_substitutions(chain: list[Path]) -> dict[str, str]:
+    """Extract merged ESPHome substitutions across an include chain (later files override earlier defaults)."""
+    subs: dict[str, str] = {}
+    for yf in chain:
+        in_subs = False
+        subs_indent = -1
+        for raw_line in yf.read_text(encoding="utf-8").splitlines():
+            code = raw_line.split(" #", 1)[0] if " #" in raw_line and raw_line.count('"') % 2 == 0 else raw_line
+            if code.lstrip().startswith("#") or not code.strip():
+                continue
+            indent = len(code) - len(code.lstrip(" "))
+            m_hdr = re.match(r"^(\s*)substitutions\s*:\s*$", code.rstrip())
+            if m_hdr:
+                in_subs = True
+                subs_indent = len(m_hdr.group(1))
+                continue
+            if in_subs:
+                if indent <= subs_indent:
+                    in_subs = False
+                else:
+                    m_kv = re.match(r"^\s*([A-Za-z0-9_]+)\s*:\s*(.+?)\s*$", code.rstrip())
+                    if m_kv:
+                        val = m_kv.group(2).strip().strip('"').strip("'")
+                        subs[m_kv.group(1)] = val
+    return subs
+
+
+def resolve_substitutions(value: str, subs: dict[str, str]) -> str:
+    def _repl(m: re.Match[str]) -> str:
+        key = m.group(1)
+        return subs.get(key, m.group(0))
+
+    out = value
+    for _ in range(4):
+        nxt = re.sub(r"\$\{([A-Za-z0-9_]+)\}", _repl, out)
+        if nxt == out:
+            break
+        out = nxt
+    return out
+
+
+def verify_strapping_pins(failures: list[str]) -> None:
+    """Ensure ignore_strapping_warning: true only appears on genuine strapping GPIOs for each target SoC."""
+    facts_dir = ROOT / "boards" / "facts"
+    if facts_dir.is_dir():
+        for fp in sorted(facts_dir.glob("*.json")):
+            if fp.name == "schema.json":
+                continue
+            fdata = json.loads(fp.read_text(encoding="utf-8"))
+            soc = fdata.get("silicon", {}).get("soc", "")
+            allowed = STRAPPING_PINS.get(soc)
+            if allowed is None:
+                continue
+            for pin in fdata.get("pins", []):
+                g = pin.get("gpio")
+                if pin.get("strapping") and isinstance(g, int) and g not in allowed:
+                    failures.append(
+                        f"[STRAPPING PIN] boards/facts/{fp.name}: GPIO{g} has strapping=true, "
+                        f"which is invalid on {soc} (valid: {sorted(allowed)})"
+                    )
+
+    targets: list[Path] = (
+        sorted((ROOT / "boards").glob("*.yaml"))
+        + sorted((ROOT / "devices").glob("*.yaml"))
+        + sorted((ROOT / "examples").glob("*.yaml"))
+        + sorted((ROOT / "examples" / "bringup").glob("*.yaml"))
+    )
+    reported: set[tuple[str, str, int]] = set()
+    for target in targets:
+        chain = collect_yaml_include_chain(target)
+        subs = extract_substitutions(chain)
+        merged_uncommented = "\n".join(
+            ln
+            for yf in chain
+            for ln in yf.read_text(encoding="utf-8").splitlines()
+            if not ln.lstrip().startswith("#")
+        )
+        soc = "ESP32-P4" if re.search(r"(?m)^\s*variant\s*:\s*esp32p4\b", merged_uncommented) else "ESP32-S3"
+        allowed = STRAPPING_PINS[soc]
+        target_rel = target.relative_to(ROOT).as_posix()
+
+        for yf in chain:
+            yf_rel = yf.relative_to(ROOT).as_posix()
+            lines = yf.read_text(encoding="utf-8").splitlines()
+            for idx, raw_line in enumerate(lines):
+                if raw_line.lstrip().startswith("#"):
+                    continue
+                code = raw_line.split(" #", 1)[0] if " #" in raw_line and raw_line.count('"') % 2 == 0 else raw_line
+                if not re.search(r"\bignore_strapping_warning\s*:\s*(?:true|True|yes|1)\b", code):
+                    continue
+
+                pin_expr: str | None = None
+                # Inline mapping form: { number: GPIO10, ignore_strapping_warning: true }
+                m_inline = re.search(r"\bnumber\s*:\s*([^\s,}#]+)", code)
+                if m_inline:
+                    pin_expr = m_inline.group(1).strip("'\"")
+                else:
+                    # Multi-line mapping form: find sibling `number:` at the same mapping indentation.
+                    stripped = code.lstrip(" ")
+                    if stripped.startswith("- "):
+                        key_indent = len(code) - len(stripped) + 2
+                    else:
+                        key_indent = len(code) - len(stripped)
+                    # Search upward to start of enclosing mapping block
+                    for up in range(idx - 1, -1, -1):
+                        ul = lines[up]
+                        if ul.lstrip().startswith("#") or not ul.strip():
+                            continue
+                        ucode = ul.split(" #", 1)[0] if " #" in ul and ul.count('"') % 2 == 0 else ul
+                        u_indent = len(ucode) - len(ucode.lstrip(" "))
+                        if ucode.lstrip(" ").startswith("- ") and u_indent + 2 == key_indent:
+                            m_num = re.match(r"^\s*-\s*number\s*:\s*(\S+)", ucode.rstrip())
+                            if m_num:
+                                pin_expr = m_num.group(1).strip("'\"")
+                            break
+                        if u_indent < key_indent:
+                            break
+                        if u_indent == key_indent:
+                            m_num = re.match(r"^\s*number\s*:\s*(\S+)", ucode.rstrip())
+                            if m_num:
+                                pin_expr = m_num.group(1).strip("'\"")
+                                break
+                    # Search downward in same mapping block if `number:` came after `ignore_strapping_warning:`
+                    if pin_expr is None:
+                        for dn in range(idx + 1, len(lines)):
+                            dl = lines[dn]
+                            if dl.lstrip().startswith("#") or not dl.strip():
+                                continue
+                            dcode = dl.split(" #", 1)[0] if " #" in dl and dl.count('"') % 2 == 0 else dl
+                            d_indent = len(dcode) - len(dcode.lstrip(" "))
+                            if d_indent < key_indent or dcode.lstrip(" ").startswith("- "):
+                                break
+                            if d_indent == key_indent:
+                                m_num = re.match(r"^\s*number\s*:\s*(\S+)", dcode.rstrip())
+                                if m_num:
+                                    pin_expr = m_num.group(1).strip("'\"")
+                                    break
+
+                key = (soc, yf_rel, idx + 1)
+                if pin_expr is None:
+                    if key not in reported:
+                        reported.add(key)
+                        failures.append(
+                            f"[STRAPPING PIN] {target_rel} ({yf_rel}:{idx + 1}): "
+                            "ignore_strapping_warning: true without resolvable sibling number:"
+                        )
+                    continue
+
+                resolved_pin = resolve_substitutions(pin_expr, subs)
+                m_gpio = re.match(r"^(?:GPIO)?(\d+)$", resolved_pin)
+                if not m_gpio:
+                    if key not in reported:
+                        reported.add(key)
+                        failures.append(
+                            f"[STRAPPING PIN] {target_rel} ({yf_rel}:{idx + 1}): "
+                            f"could not resolve GPIO number from {pin_expr!r} (-> {resolved_pin!r})"
+                        )
+                    continue
+
+                gpio_num = int(m_gpio.group(1))
+                if gpio_num not in allowed:
+                    sig = (f"{soc}:{gpio_num}", yf_rel, idx + 1)
+                    if sig not in reported:
+                        reported.add(sig)
+                        valid_str = ", ".join(f"GPIO{n}" for n in sorted(allowed))
+                        failures.append(
+                            f"[STRAPPING PIN] {target_rel} ({yf_rel}:{idx + 1}): "
+                            f"GPIO{gpio_num} has ignore_strapping_warning: true, which is invalid on {soc} "
+                            f"(strapping pins: {valid_str})"
+                        )
 
 
 def iter_repo_files(base: Path) -> list[Path]:
@@ -259,6 +456,9 @@ def main() -> int:
             failures.append(f"[LIGHT SLEEP] {bf.name} must never enable CONFIG_RTC_CLK_SRC_INT_8MD256")
         if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:", uncommented_yaml):
             failures.append(f"[P4 SDIO DMA] {bf.name} must never enable CONFIG_CACHE_L2_CACHE_LINE_128B")
+
+    # 7b. Strapping-pin validation across all boards, devices, examples, bring-up probes, and facts
+    verify_strapping_pins(failures)
 
     # 8. Retired half-duplex names, zero-privilege RPC invariants & UI rendering invariants
     for folder in ("include", "components", "modules", "boards", "guis", "devices", "examples"):

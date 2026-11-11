@@ -70,15 +70,28 @@ inline void hal_panel_dcs_service(DispT *disp) {
     }
     auto dcs = [disp](uint8_t cmd) {
       uint8_t dummy = cmd;
-      disp->enable();
 #if LATTER_PANEL_IPS
-      // Standard 1-lane SPI DBI framing (DCX=0 command byte, 0 addr bits, 0 data bytes).
+      static_assert(
+          false
+#if defined(LATTER_DISPLAY_DC_PIN)
+              || true
+#endif
+          ,
+          "1-lane SPI panel with LATTER_PANEL_DCS_SLEEP=1 must define LATTER_DISPLAY_DC_PIN so DCX=0 is asserted");
+#if defined(LATTER_DISPLAY_DC_PIN)
+      // MipiSpi leaves dc_pin HIGH (data mode) after every GRAM pixel flush; drive DCX=0 before
+      // CS goes active so the ST7796 latches 0x28/0x10/0x11/0x29 as DCS commands rather than GRAM data.
+      gpio_set_level(static_cast<gpio_num_t>(LATTER_DISPLAY_DC_PIN), 0);
+#endif
+      disp->enable();
       disp->write_cmd_addr_data(8, static_cast<uint32_t>(cmd), 0, 0, &dummy, 0);
+      disp->disable();
 #else
       // QSPI MIPI framing (opcode 0x02, 24-bit address = DCS << 8).
+      disp->enable();
       disp->write_cmd_addr_data(8, 0x02, 24, static_cast<uint32_t>(cmd) << 8, &dummy, 0);
-#endif
       disp->disable();
+#endif
     };
     auto service_in = [disp](uint32_t delay_ms) {
       esphome::App.scheduler.set_timeout(static_cast<esphome::Component *>(disp),
