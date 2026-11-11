@@ -22,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111036L;
+            constexpr long LATTER_YAML_REV = 2026111037L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -109,11 +109,17 @@ logger:
     pmu: INFO
     power: INFO
 
+# Client-initiated dial-back (outgoing_connection -> HA TCP :6054, Noise PSK verified on both sides):
+# ESPHome 2026.11 only skips the 60 s default delay under USE_DEEP_SLEEP, whereas Latter battery
+# hibernation calls esp_deep_sleep_start() / PMU power-off directly. A 10 s delay gives normal LAN mDNS
+# inbound connects a clean head start (3-8 s) while dialing HA:6054 well inside the 30 s ha_link_settling
+# light-sleep awake window on hibernation wake, off-site return, or mDNS-blocked VLANs.
 api:
   reboot_timeout: ${api_reboot_timeout}
   batch_delay: 0ms
   encryption:
   outgoing_connection:
+    delay: ${api_outgoing_delay}
   on_client_connected:
     then:
       - lambda: |-

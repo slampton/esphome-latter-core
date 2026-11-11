@@ -20,6 +20,7 @@ substitutions:
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
   api_reboot_timeout: "0s"
+  api_outgoing_delay: "10s"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
 
 packages:

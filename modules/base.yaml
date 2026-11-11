@@ -18,6 +18,7 @@ substitutions:
   default_clock_face: "Minimal Digital"
   default_power_profile: "Portable Carry"
   api_reboot_timeout: "0s"
+  api_outgoing_delay: "10s"
   sendspin_buffer_size: "196608"
   mww_internal_ram: "false"
   announcement_buffer_size: "65536"
@@ -35,6 +36,9 @@ esphome:
 api:
   reboot_timeout: ${api_reboot_timeout}
   batch_delay: 0ms
+  encryption:
+  outgoing_connection:
+    delay: ${api_outgoing_delay}
   on_client_connected:
     then:
       - if:

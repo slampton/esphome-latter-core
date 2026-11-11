@@ -671,6 +671,24 @@ def main() -> int:
             "[OTA SECURITY] .github/workflows/validate.yml Device Builder wrapper must extend ota_esphome with Noise encryption:"
         )
 
+    # 9b. ESPHome 2026.11 Native API standards: Noise encryption, client-initiated outgoing_connection, and batch_delay: 0ms
+    for api_mod_rel in ("modules/features/core_system.yaml", "modules/base.yaml"):
+        api_mod_txt = (ROOT / api_mod_rel).read_text(encoding="utf-8")
+        api_mod_uncommented = "\n".join(
+            ln for ln in api_mod_txt.splitlines() if not ln.lstrip().startswith("#")
+        )
+        if not re.search(r"(?m)^\s*batch_delay:\s*0ms\b", api_mod_uncommented):
+            failures.append(f"[API STANDARDS] {api_mod_rel} must set batch_delay: 0ms under api:")
+        if not re.search(r"(?m)^\s*encryption:\s*$", api_mod_uncommented):
+            failures.append(f"[API STANDARDS] {api_mod_rel} must declare encryption: under api:")
+        if not re.search(
+            r"(?m)^\s*outgoing_connection:\s*\n\s*delay:\s*\$\{api_outgoing_delay\}",
+            api_mod_uncommented,
+        ):
+            failures.append(
+                f"[API STANDARDS] {api_mod_rel} must declare outgoing_connection: with delay: ${{api_outgoing_delay}}"
+            )
+
     # 10. Stage 4 compiled UI architecture, dirty-band DMA invariants, and C++20 host unit tests
     if (ROOT / "guis" / "universal" / "touch_handlers.yaml").exists():
         failures.append("[TOUCH ENGINE] guis/universal/touch_handlers.yaml must not exist (replaced by gesture_engine.cpp)")
