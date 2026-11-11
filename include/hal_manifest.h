@@ -31,7 +31,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111034L
+#define LATTER_SDK_REV 2026111035L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)

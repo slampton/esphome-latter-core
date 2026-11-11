@@ -22,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111034L;
+            constexpr long LATTER_YAML_REV = 2026111035L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -561,6 +561,9 @@ api:
             }
             latter_ui::schedule_disp_update(&id(disp1));
 
+# Both OTA paths share the display wake, progress takeover, and light-sleep awake-lock hooks.
+# api.encryption supplies the Noise PSK for ota_esphome (runtime-provisioned on factory builds;
+# static + USE_OTA_ENCRYPTION_REQUIRED when Device Builder configs extend ota_esphome with encryption:).
 ota:
   - platform: http_request
     id: ota_http
@@ -572,6 +575,45 @@ ota:
         - lambda: |-
             latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
                                         id(sleep_start_time), id(display_power_state));
+        - script.execute: apply_power_policy
+        - component.update: disp1
+    on_progress:
+      then:
+        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, id(ota_progress_pct), millis());'
+    on_end:
+      then:
+        - lambda: 'latter_ui::handle_ota_end(&id(disp1), id(ota_in_progress), id(ota_progress_pct));'
+    on_error:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
+        - script.execute: screen_sleep_timer
+    on_abort:
+      then:
+        - lambda: |-
+            latter_ui::handle_ota_error(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(notif_active), id(notif_title), id(notif_message),
+                                        id(notif_priority), id(notif_duration_ms),
+                                        id(notif_start_ms), millis());
+        - script.execute: apply_power_policy
+        - script.execute: screen_sleep_timer
+
+  - platform: esphome
+    id: ota_esphome
+    on_begin:
+      then:
+        - script.stop: screen_sleep_timer
+        # Wake the screen through the canonical light path (panel DCS wake + light state) first.
+        - light.turn_on: display_brightness
+        - lambda: |-
+            latter_ui::handle_ota_begin(&id(disp1), id(ota_in_progress), id(ota_progress_pct),
+                                        id(sleep_start_time), id(display_power_state));
+        # OTA blocks the main loop for the whole transfer: take the light-sleep awake lock (and the
+        # normal loop interval) now, through the single power-policy owner.
         - script.execute: apply_power_policy
         - component.update: disp1
     on_progress:

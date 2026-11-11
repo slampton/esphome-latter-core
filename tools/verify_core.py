@@ -616,17 +616,60 @@ def main() -> int:
                 if LOSSY_UI_RE.search(uncommented):
                     failures.append(f"[UI INVARIANT] {rel} uses forbidden it.image/draw_pixels_at or lossy mask")
 
-    # 9. Factory builds omit TCP 3232 ota: esphome; Device Builder ota_esphome.yaml requires password & display hooks
+    # 9. Noise-encrypted ESPHome OTA + HTTPS pull-OTA in core_system.yaml; zero legacy OTA module or password
+    retired_ota_mod = "ota_" + "esphome.yaml"
+    retired_ota_pwd = "ota_" + "password"
+    retired_ota_pwd_re = re.compile(r"\b" + retired_ota_pwd + r"\b")
+    if (ROOT / "modules" / retired_ota_mod).exists():
+        failures.append(f"[OTA SECURITY] modules/{retired_ota_mod} must not exist (folded into core_system.yaml)")
+    for ypath in iter_repo_files(ROOT):
+        if ypath.suffix.lower() not in {".yaml", ".yml"}:
+            continue
+        yrel = ypath.relative_to(ROOT).as_posix()
+        ytxt = ypath.read_text(encoding="utf-8")
+        if retired_ota_pwd_re.search(ytxt):
+            failures.append(f"[OTA SECURITY] {yrel} references retired {retired_ota_pwd}")
+        in_ota = False
+        ota_indent = -1
+        for line_no, raw_line in enumerate(ytxt.splitlines(), 1):
+            stripped = raw_line.split("#", 1)[0].rstrip()
+            if not stripped.strip():
+                continue
+            indent = len(stripped) - len(stripped.lstrip(" "))
+            m_ota = re.match(r"^(\s*)ota\s*:\s*$", stripped)
+            if m_ota:
+                in_ota = True
+                ota_indent = len(m_ota.group(1))
+                continue
+            if in_ota:
+                if indent <= ota_indent:
+                    in_ota = False
+                elif re.match(r"^\s*(?:-\s*)?password\s*:", stripped):
+                    failures.append(
+                        f"[OTA SECURITY] {yrel}:{line_no} sets legacy password: under ota: (use Noise encryption:)"
+                    )
+
     core_sys_txt = (ROOT / "modules" / "features" / "core_system.yaml").read_text(encoding="utf-8")
-    if re.search(r"(?m)^\s*-\s*platform:\s*esphome\b", core_sys_txt):
-        failures.append("[OTA SECURITY] modules/features/core_system.yaml must not enable unauthenticated TCP 3232 ota: esphome")
-    ota_mod_path = ROOT / "modules" / "ota_esphome.yaml"
-    if not ota_mod_path.is_file():
-        failures.append("[OTA SECURITY] modules/ota_esphome.yaml missing")
-    else:
-        ota_mod_txt = ota_mod_path.read_text(encoding="utf-8")
-        if 'password: "${ota_password}"' not in ota_mod_txt or "handle_ota_begin" not in ota_mod_txt or "handle_ota_progress" not in ota_mod_txt:
-            failures.append("[OTA SECURITY] modules/ota_esphome.yaml must require ${ota_password} and call handle_ota_begin/progress")
+    core_sys_uncommented = "\n".join(
+        ln for ln in core_sys_txt.splitlines() if not ln.lstrip().startswith("#")
+    )
+    if not re.search(r"(?m)^\s*-\s*platform:\s*http_request\b", core_sys_uncommented) or not re.search(
+        r"(?m)^\s*-\s*platform:\s*esphome\s*\n\s*id:\s*ota_esphome\b", core_sys_uncommented
+    ):
+        failures.append(
+            "[OTA SECURITY] modules/features/core_system.yaml must define both ota http_request and esphome (id: ota_esphome)"
+        )
+    if (
+        len(re.findall(r"\bhandle_ota_begin\s*\(", core_sys_uncommented)) != 2
+        or len(re.findall(r"\bhandle_ota_progress\s*\(", core_sys_uncommented)) != 2
+    ):
+        failures.append(
+            "[OTA SECURITY] modules/features/core_system.yaml must wire handle_ota_begin and handle_ota_progress on both OTA platforms"
+        )
+    if not re.search(r"(?m)^\s*ota:\s*\n\s*-\s*id:\s*!extend\s+ota_esphome\s*\n\s*encryption:\s*$", val_txt):
+        failures.append(
+            "[OTA SECURITY] .github/workflows/validate.yml Device Builder wrapper must extend ota_esphome with Noise encryption:"
+        )
 
     # 10. Stage 4 compiled UI architecture, dirty-band DMA invariants, and C++20 host unit tests
     if (ROOT / "guis" / "universal" / "touch_handlers.yaml").exists():

@@ -14,7 +14,6 @@ substitutions:
   name: "latter-panel-demo"
   friendly_name: "Latter Panel Demo"
   version: "3.0.0"
-  ota_password: "DemoOTAPassword"
   screen_w: "480"
   screen_h: "480"
   art_shape: "square"
@@ -43,7 +42,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b2
+  min_version: 2026.11.0b3
   build_flags:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"
@@ -91,6 +90,10 @@ wifi:
 api:
   encryption:
     key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
+ota:
+  - id: !extend ota_esphome
+    encryption:
 
 # Area presence iBeacon with raw HCI and no host stack (VHCI on an on-chip controller; on an ESP32-P4
 # it drives the esp_hosted co-processor's controller and needs esp32_hosted).
@@ -301,4 +304,3 @@ packages:
   latter_audio_voice: !include ../modules/audio_voice.yaml
   latter_power:       !include ../modules/power_manager.yaml
   latter_display_ui:  !include ../modules/display_ui.yaml
-  latter_ota:         !include ../modules/ota_esphome.yaml

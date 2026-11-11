@@ -5,9 +5,9 @@ There are two ways to install Latter firmware:
 | | Web installer | ESPHome Device Builder |
 | :--- | :--- | :--- |
 | **Best for** | Getting started quickly | Customizing, or local network push-OTA |
-| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0b2 or newer |
+| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0b3 or newer |
 | **Wi-Fi setup** | Over the USB cable (Improv Serial), all five devices | Your `secrets.yaml` |
-| **Updates** | HTTPS pull-OTA via the **Project Firmware** update entity in Home Assistant (no open LAN OTA port) | Authenticated push-OTA (`modules/ota_esphome.yaml`) in Device Builder |
+| **Updates** | HTTPS pull-OTA via the **Project Firmware** update entity in Home Assistant, plus wireless 1-click **Adopt** in Device Builder (runtime Noise PSK) | Noise-encrypted push-OTA (`ota_esphome` using `api.encryption.key`) alongside HTTPS pull-OTA |
 
 ---
 
@@ -35,7 +35,6 @@ Once the device is on Wi-Fi, continue with [Getting started](https://github.com/
 substitutions:
   name: pocket-assistant          # unique network hostname
   friendly_name: Pocket Assistant # name shown in Home Assistant (rename freely anytime)
-  ota_password: !secret ota_password
 
 packages:
   latter:
@@ -43,12 +42,15 @@ packages:
     ref: main
     files:
       - devices/pocket-assistant.yaml
-      - modules/ota_esphome.yaml
     refresh: 0s   # pull the latest YAML on every build (the shorthand github:// form caches for a day)
 
 api:
   encryption:
     key: !secret api_key
+
+ota:
+  - id: !extend ota_esphome
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid
@@ -63,12 +65,12 @@ wifi:
 | Remote Assistant | `devices/remote-assistant.yaml` |
 | Desk Assistant | `devices/desk-assistant.yaml` |
 
-3. Click **Install → Plug into this computer** for the first flash. After that, updates go over Wi-Fi authenticated with `ota_password`.
+3. Click **Install → Plug into this computer** for the first flash (or **Wirelessly** if adopting an already-paired Web-Installer device). After that, wireless updates go over Noise-encrypted OTA authenticated by `api.encryption.key`—no separate OTA password is needed.
 
 > [!NOTE]
 > **Multiple identical devices & free renaming.** Latter binds every Device by its ESPHome `device_id` and MAC address and pushes Protocol v3 state directly over the Native API (`latter_push_v3`). You can run multiple identical displays (e.g. `pocket-assistant-1`, `pocket-assistant-2`) and rename them in Home Assistant at any time without editing YAML.
 
-If the device was flashed with the web installer and is already on your network, Device Builder shows it under **Discovered** and offers **Adopt**. Adopting generates a short `github://` package line; replace it with the long form above (including `modules/ota_esphome.yaml`, `api.encryption.key`, and `refresh: 0s`).
+If the device was flashed with the web installer and paired with Home Assistant, `api.encryption` has already provisioned a runtime Noise key—Device Builder discovers it on your network and offers wireless 1-click **Adopt**. Adopting generates a short `github://` package line; replace it with the long form above (keeping the generated `api.encryption.key`, adding the 3-line `ota:` `encryption:` extension, and setting `refresh: 0s`).
 
 > [!WARNING]
 > **Use `refresh: 0s` on the package.** The firmware's C++ code always comes from `main`, but ESPHome caches `github://` packages for a day. Without `refresh: 0s` a build can combine new C++ code with day-old YAML. The build stops with a "different revisions" error when that happens.
@@ -82,8 +84,8 @@ The first build downloads the toolchain and compiles the 3-component Latter C++2
 
 ## Updates
 
-- **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity backed by HTTPS `http_request` pull-OTA (TCP port 3232 is closed on pre-built factory binaries). Each device also checks for updates in the background every 6 hours while on USB power and idle.
-- **Device Builder devices:** including `modules/ota_esphome.yaml` enables password-authenticated ESPHome push-OTA alongside HTTPS pull-OTA. With `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
+- **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity backed by HTTPS `http_request` pull-OTA, and each device checks for updates in the background every 6 hours while on USB power and idle. Once paired with Home Assistant, the runtime-provisioned `api.encryption` Noise PSK also secures wireless 1-click **Adopt** in Device Builder.
+- **Device Builder devices:** `core_system.yaml` includes both `ota: - platform: http_request` and `ota: - platform: esphome` (`id: ota_esphome`), and extending `ota_esphome` with `encryption:` locks push-OTA down to `Encryption: required` using `api.encryption.key` alongside HTTPS pull-OTA. With `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
 - **Placement:** wireless updates need a good link. Keep docked devices at least 30 cm apart (neighbouring devices detune each other's antennas) and check the **Wi-Fi Signal** sensor: below about -70 dBm an update can slow to several minutes or stall. Update one device at a time.
 
 ## Recovery

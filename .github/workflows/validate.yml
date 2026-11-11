@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0b2
-        run: pip install --upgrade pip esphome==2026.11.0b2
+      - name: Install ESPHome 2026.11.0b3
+        run: pip install --upgrade pip esphome==2026.11.0b3
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -43,9 +43,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0b2-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          key: external-files-esphome-2026.11.0b3-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
           restore-keys: |
-            external-files-esphome-2026.11.0b2-
+            external-files-esphome-2026.11.0b3-
 
       - name: Verify static architecture, HAL, UI, and security guardrails
         run: python tools/verify_core.py
@@ -91,17 +91,17 @@ jobs:
             echo "Validating $dev..."
             base_name=$(basename "$dev")
             cat <<EOF > "devices/.ci_${base_name}"
-          substitutions:
-            ota_password: "LatterCIOTAPassword"
           wifi:
             ssid: "LatterCIWiFi"
             password: "LatterCIPassword"
           api:
             encryption:
               key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+          ota:
+            - id: !extend ota_esphome
+              encryption:
           packages:
             device_under_test: !include ${base_name}
-            device_builder_ota: !include ../modules/ota_esphome.yaml
           EOF
             ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config ${base_name}" config "devices/.ci_${base_name}"
             rm -f "devices/.ci_${base_name}"
@@ -127,8 +127,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0b2
-        run: pip install --upgrade pip esphome==2026.11.0b2
+      - name: Install ESPHome 2026.11.0b3
+        run: pip install --upgrade pip esphome==2026.11.0b3
 
       # ESP-IDF framework, toolchains, component mirror and its Python environment (~/.cache/esphome/idf),
       # shared by every device. The key carries the exact Python build because that environment points
@@ -138,7 +138,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/esphome
-          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b2
+          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b3
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -150,9 +150,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0b2-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          key: external-files-esphome-2026.11.0b3-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
           restore-keys: |
-            external-files-esphome-2026.11.0b2-
+            external-files-esphome-2026.11.0b3-
 
       - name: Compile
         run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml

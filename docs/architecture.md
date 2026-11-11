@@ -55,12 +55,11 @@ A board file defines:
 
 | File | Role |
 | :--- | :--- |
-| `latter_client.yaml` | The Latter protocol client. Covers boot sequence, Native API actions (`latter_push_v3`, `set_browse_slots`, `set_area_slots`, `show_notification`, `latter_set_beacon_uuid`, `latter_factory_reset`), the diagnostic `System: RPC Outbox` (`latter_rpc_outbox`), global state, user-facing selects, switches, and numbers, the input router (`ui_input_event`), theme and brightness, and OTA hooks. Includes `display_pipeline.yaml`. |
+| `latter_client.yaml` | The Latter protocol client. Covers boot sequence, Native API actions (`latter_push_v3`, `set_browse_slots`, `set_area_slots`, `show_notification`, `latter_set_beacon_uuid`, `latter_factory_reset`), the diagnostic `System: RPC Outbox` (`latter_rpc_outbox`), global state, user-facing selects, switches, and numbers, the input router (`ui_input_event`), theme and brightness, and both OTA platforms (`http_request` pull-OTA and `esphome` `id: ota_esphome` Noise push-OTA secured by `api.encryption`, locked to `Encryption: required` when Device Builder configs extend `ota_esphome` with `encryption:`). Includes `display_pipeline.yaml`. |
 | `display_pipeline.yaml` | `http_request`, Sendspin album art, 3 `online_image` slots (artwork, wallpaper, camera; JPEG decoded to RGB565 at screen size), backlight output with a gamma curve, and the Display light |
 | `audio_voice.yaml` | Mixer (no on-device resampling: every source arrives at the board's output rate), Sendspin media source, media player, micro_wake_word, voice_assistant, the internal sound player for alarms, chimes and game sounds (WAVs rendered per rate by `tools/gen_sounds.py`), plus the voice and TTS lifecycle scripts |
 | `power_manager.yaml` | The power state machine (active, screensaver, screen off, hibernate), sleep and wake selects, 1 s and 50 ms supervisors, hibernate sequencing, and script `apply_power_policy`, the single owner of every power actuator (Wi-Fi modem sleep, off-site scan backoff, the BLE beacon, the IMU mode, tick gating, battery polling, the light-sleep awake lock and wake pins) |
 | `hal/chip_esp32s3.yaml`, `hal/chip_esp32p4.yaml`, `hal/audio_es8311_duplex.yaml` | Shared chip `sdkconfig_options`, light-sleep / P4 DFS setup, and full-duplex 48 kHz ES8311 + resampler microphone blocks included by `boards/*.yaml` |
-| `ota_esphome.yaml` | Password-authenticated ESPHome push-OTA (`ota: - platform: esphome`) included by Device Builder configs (omitted from Web-Installer `.bin`s, which update via HTTPS `http_request` pull-OTA) |
 | `pmu_axp2101.yaml` / `pmu_none.yaml` | Battery, USB, and crown-button handling, or stubs for mains-powered boards |
 | `imu_qmi8658.yaml` / `imu_none.yaml` | Accelerometer, tilt, and shake detection, or stubs that return constants |
 | `base.yaml` | Minimal identity, time sync, `latter_ping`, `latter_push_v3`, `System: Hardware Manifest`, and `System: RPC Outbox`, for headless nodes |
@@ -107,14 +106,14 @@ The ESP32-S3 battery boards declare ESPHome's `power_management:` (`modules/hal/
 
 - **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs on every push and PR: `tools/verify_core.py`, `tools/gen_protocol.py --check`, `tools/check_boards.py --release --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, C++20 host unit tests, `esphome config` across both examples and all five device configs, and full 5-device firmware compilation on `dev` before fast-forwarding `main`.
 - **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
-  1. Compiles all five devices with the `esphome/esphome:2026.11.0b2` container.
+  1. Compiles all five devices with the `esphome/esphome:2026.11.0b3` container.
   2. Writes manifests with each OTA image's MD5.
   3. Publishes the binaries, manifests, and installer page to GitHub Pages.
 - **Device configs pull `latter_core` and the packages from `main`.** A build always uses the current `main`, even when it's triggered from a tag.
 
 ## Requirements for building
 
-- **ESPHome:** 2026.11.0b2 or newer (esp_hosted 3.1.0 on the P4 boards, `micro_wake_word` `prefer_internal_ram`, and the logger boot-log replay). `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
+- **ESPHome:** 2026.11.0b3 or newer (Noise-encrypted `esphome` OTA sharing `api.encryption`, esp_hosted 3.1.0 on the P4 boards, `micro_wake_word` `prefer_internal_ram`, and the logger boot-log replay). `min_version` is set in the device configs, and `va_cancel_helper.h` enforces the same version with a `static_assert`.
 - **Framework:** ESP-IDF, with C++20. The default for ESPHome 2026.11 (ESP-IDF 5.5.6) is sufficient.
 - **PSRAM:** required on every board.
 - **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256` on every board.
