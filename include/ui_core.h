@@ -6,12 +6,36 @@
 // Zero-exception (-fno-exceptions), zero-heap-churn embedded graphics primitives
 // ==============================================================================
 
-#include "esphome.h"
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#include "esphome/core/application.h"
+#include "esphome/core/color.h"
+#include "esphome/core/component.h"
+#include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
+#if __has_include("esphome/core/time.h")
+#include "esphome/core/time.h"
+#endif
+#if __has_include("esphome/components/display/display.h")
+#include "esphome/components/display/display.h"
+#endif
+#if defined(USE_API) && __has_include("esphome/components/api/api_server.h")
+#include "esphome/components/api/api_server.h"
+#endif
+#if defined(USE_WIFI) && __has_include("esphome/components/wifi/wifi_component.h")
+#include "esphome/components/wifi/wifi_component.h"
+#endif
+#if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
+#include "esphome/components/mipi_dsi/mipi_dsi.h"
+#endif
 #include "latter_prof.h"
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
+#include <esp_system.h>
 #include <esp_timer.h>
 #include <esp_wifi.h>
 #if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
@@ -41,6 +65,7 @@
 #include <functional>
 #include <initializer_list>
 #include <string>
+#include <type_traits>
 #include "audio_router.h"
 #include "esphome_bridge.h"
 #include "hal_manifest.h"
@@ -60,17 +85,16 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111032L
+#define LATTER_SDK_REV 2026111033L
 
-#ifdef USE_ESP32
-#define LATTER_PSRAM_BSS EXT_RAM_BSS_ATTR
-#else
+// PSRAM scratch arenas allocate lazily via heap_caps_calloc(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+// rather than .ext_ram.bss so inline variables across TUs and non-EXT_RAM_BSS custom boards link cleanly.
 #define LATTER_PSRAM_BSS
-#endif
 
 namespace latter_ui {
 
 template <typename UpdT>
+  requires(!std::is_pointer_v<UpdT>)
 inline std::string fw_update_latest_version(const UpdT *upd) {
   if (upd == nullptr) return "";
   if constexpr (requires { upd->update_info.latest_version; }) {
@@ -85,6 +109,7 @@ inline std::string fw_update_latest_version(UpdT *const *upd_ptr) {
 }
 
 template <typename UpdT>
+  requires(!std::is_pointer_v<UpdT>)
 inline std::string fw_update_release_summary(const UpdT *upd) {
   if (upd == nullptr) return "";
   if constexpr (requires { upd->update_info.summary; }) {
@@ -698,6 +723,7 @@ inline void fb_clear_bind(esphome::Component *owner, uint16_t *fb);
 inline void fb_clear_after_update();
 
 template<typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
   fb_clear_bind(nullptr, nullptr);
   if (disp == nullptr || it.get_rotation() != esphome::display::DISPLAY_ROTATION_0_DEGREES) {
@@ -3170,6 +3196,7 @@ void mark_dirty_band(int y0, int y1);
 void mark_dirty_full();
 
 template<typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void schedule_disp_update(DispT *disp) {
   mark_dirty_full();
   DisplayUpdateScheduler::request_ptr(disp);
@@ -3182,6 +3209,7 @@ inline void schedule_disp_update(DispT *const *disp_ptr) {
 }
 
 template<typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void schedule_band_disp_update(DispT *disp, int y0, int y1) {
   mark_dirty_band(y0, y1);
   DisplayUpdateScheduler::request_ptr(disp);
@@ -3194,6 +3222,7 @@ inline void schedule_band_disp_update(DispT *const *disp_ptr, int y0, int y1) {
 }
 
 template<typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void schedule_anim_disp_update(DispT *disp) {
   mark_dirty_full();
   DisplayUpdateScheduler::request_anim_ptr(disp);

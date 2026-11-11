@@ -5,6 +5,10 @@
 
 #include "ui_gesture_engine.h"
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>

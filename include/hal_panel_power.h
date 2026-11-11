@@ -5,22 +5,40 @@
 // (hal_panel_power.h)
 // ==============================================================================
 
-#include "esphome.h"
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#include "esphome/core/component.h"
+#include "esphome/core/hal.h"
+#include "esphome/core/log.h"
 #include "hal_manifest.h"
 #include "hal_types.h"
 #include "latter_prof.h"
 
 #include <cstdint>
+#include <functional>
+#include <type_traits>
+#include <utility>
 
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <sdkconfig.h>
 #endif
 #ifdef USE_I2C
 #include "esphome/components/i2c/i2c_bus.h"
 #endif
 
 namespace latter_ui {
+
+struct PanelTimeoutScheduler : public esphome::Component {
+  static constexpr uint32_t kTimeoutPanelDcs = 0x4C410003U;
+
+  static void request(esphome::Component *comp, uint32_t delay_ms, std::function<void()> &&fn) {
+    if (comp == nullptr) return;
+    static_cast<PanelTimeoutScheduler *>(comp)->set_timeout(kTimeoutPanelDcs, delay_ms, std::move(fn));
+  }
+};
 
 struct PanelDcsState {
   enum Phase : uint8_t { AWAKE, WAKING, ASLEEP };
@@ -94,9 +112,8 @@ inline void hal_panel_dcs_service(DispT *disp) {
 #endif
     };
     auto service_in = [disp](uint32_t delay_ms) {
-      esphome::App.scheduler.set_timeout(static_cast<esphome::Component *>(disp),
-                                         "latter_panel_dcs", delay_ms,
-                                         [disp]() { hal_panel_dcs_service(disp); });
+      PanelTimeoutScheduler::request(static_cast<esphome::Component *>(disp), delay_ms,
+                                     [disp]() { hal_panel_dcs_service(disp); });
     };
     const uint32_t now = esphome::millis();
     if (st.want_bri > 0) {
@@ -151,6 +168,7 @@ inline void hal_panel_dcs_set_brightness(DispT *disp, uint8_t bri_byte) {
 }
 
 template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
   gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
@@ -233,6 +251,7 @@ inline void hal_set_display_brightness(DispT *const *disp_pp, uint8_t bri) {
 
 // Completes a pending DCS transition now, waiting out the SLPOUT settle time (OTA begin/end only).
 template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void hal_panel_dcs_flush(DispT *disp) {
 #if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
   const auto &st = panel_dcs_state();
@@ -259,6 +278,7 @@ inline void hal_panel_dcs_flush(DispT *const *disp_pp) {
 void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep);
 
 template <typename I2cBusT>
+  requires(!std::is_pointer_v<I2cBusT>)
 inline void hal_set_touch_sleep_mode(I2cBusT *bus, bool sleep) {
   hal_set_touch_sleep_mode_bus(bus, sleep);
 }

@@ -10,7 +10,34 @@
 // IMU / battery faults) use ESP_LOGW("PROF", ...) and always log. latter-verify [PROF GATE] enforces this.
 // ==============================================================================
 
+#include <cstdint>
+
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#if __has_include("esphome/core/log.h")
 #include "esphome/core/log.h"
+#else
+#ifndef ESP_LOGI
+#define ESP_LOGI(tag, ...) ((void)(tag))
+#endif
+#endif
+
+namespace esphome::latter_core {
+
+struct LoopProbeStats {
+  uint32_t passes{0};
+  uint32_t hf_passes{0};    // passes with a HighFrequencyLoopRequester held
+  uint32_t gaps[5]{};       // gap since the previous pass: <20 ms, <50 ms, <200 ms, <1 s, >=1 s
+  uint32_t last_ms{0};
+};
+
+inline LoopProbeStats &loop_probe_stats() {
+  static LoopProbeStats s;
+  return s;
+}
+
+}  // namespace esphome::latter_core
 
 namespace latter_ui {
 inline bool &profiler_enabled() {

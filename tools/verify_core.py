@@ -256,6 +256,87 @@ def iter_repo_files(base: Path) -> list[Path]:
     return files
 
 
+def _strip_cpp_comments(text: str) -> str:
+    no_block = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", "", no_block)
+
+
+def _header_provides_esphome_defines(hdr_path: Path, seen: set[Path] | None = None) -> bool:
+    """Return True if `hdr_path` includes esphome/core/defines.h (directly or transitively) before any USE_* guard."""
+    if seen is None:
+        seen = set()
+    resolved = hdr_path.resolve()
+    if resolved in seen or not resolved.is_file():
+        return False
+    seen.add(resolved)
+    clean = _strip_cpp_comments(resolved.read_text(encoding="utf-8"))
+    for line in clean.splitlines():
+        if re.match(r"^\s*#\s*(?:if|ifdef|ifndef|elif)\b.*\bUSE_[A-Z0-9_]+\b", line):
+            return False
+        m_inc = re.match(r'^\s*#\s*include\s*"([^"]+)"', line)
+        if not m_inc:
+            continue
+        inc_target = m_inc.group(1)
+        if inc_target == "esphome/core/defines.h":
+            return True
+        for cand in (resolved.parent / inc_target, ROOT / "include" / inc_target):
+            if cand.is_file() and _header_provides_esphome_defines(cand, set(seen)):
+                return True
+    return False
+
+
+def verify_header_order(failures: list[str]) -> None:
+    """Ban circular #include \"esphome.h\" in headers and ensure esphome/core/defines.h precedes #ifdef USE_*."""
+    core_init = (ROOT / "components" / "latter_core" / "__init__.py").read_text(encoding="utf-8")
+    if not re.search(r'(?m)^DEPENDENCIES\s*=\s*\[[^\]]*"latter_hal"', core_init):
+        failures.append(
+            "[HEADER ORDER] components/latter_core/__init__.py must declare DEPENDENCIES = [\"latter_hal\"]"
+        )
+
+    for folder in ("include", "components"):
+        base = ROOT / folder
+        if not base.is_dir():
+            continue
+        for path in iter_repo_files(base):
+            ext = path.suffix.lower()
+            if ext not in {".h", ".hpp", ".cpp"}:
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            clean = _strip_cpp_comments(path.read_text(encoding="utf-8"))
+
+            if ext in {".h", ".hpp"}:
+                if re.search(r'#\s*include\s*[<"]esphome\.h[>"]', clean) or re.search(
+                    r'__has_include\s*\(\s*[<"]esphome\.h[>"]\s*\)', clean
+                ):
+                    failures.append(
+                        f"[HEADER ORDER] {rel} must not reference esphome.h "
+                        "(prevents circular #pragma once truncation)"
+                    )
+
+            lines = clean.splitlines()
+            defines_seen = False
+            for idx, line in enumerate(lines):
+                if re.match(r"^\s*#\s*(?:if|ifdef|ifndef|elif)\b.*\bUSE_[A-Z0-9_]+\b", line):
+                    if not defines_seen:
+                        failures.append(
+                            f"[HEADER ORDER] {rel}:{idx + 1} checks USE_* before including esphome/core/defines.h"
+                        )
+                    break
+                m_inc = re.match(r'^\s*#\s*include\s*"([^"]+)"', line)
+                if not m_inc:
+                    continue
+                inc_target = m_inc.group(1)
+                if inc_target == "esphome/core/defines.h":
+                    defines_seen = True
+                    break
+                for cand in (path.parent / inc_target, ROOT / "include" / inc_target):
+                    if cand.is_file() and _header_provides_esphome_defines(cand):
+                        defines_seen = True
+                        break
+                if defines_seen:
+                    break
+
+
 def expand_local_yaml_includes(yaml_path: Path, seen: set[Path] | None = None) -> str:
     """Read a YAML file and recursively append local !include targets for trait verification."""
     if seen is None:
@@ -457,8 +538,9 @@ def main() -> int:
         if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:", uncommented_yaml):
             failures.append(f"[P4 SDIO DMA] {bf.name} must never enable CONFIG_CACHE_L2_CACHE_LINE_128B")
 
-    # 7b. Strapping-pin validation across all boards, devices, examples, bring-up probes, and facts
+    # 7b. Strapping-pin & C++ header-order validation across all boards, headers, and sources
     verify_strapping_pins(failures)
+    verify_header_order(failures)
 
     # 8. Retired half-duplex names, zero-privilege RPC invariants & UI rendering invariants
     for folder in ("include", "components", "modules", "boards", "guis", "devices", "examples"):

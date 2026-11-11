@@ -1,5 +1,6 @@
 #include "hal_imu_qmi8658.h"
 
+#include "esphome/core/defines.h"
 #include "esphome/core/hal.h"
 
 namespace latter_ui {

@@ -6,8 +6,8 @@
 //   - esp_hosted co-processor (ESP32-P4 + C6): esp_hosted's custom-stack HCI byte pipe.
 // Everything else (state machine, commands, payload, logs, control surface) is shared. See __init__.py.
 
-#include "esphome/core/component.h"
 #include "esphome/core/defines.h"
+#include "esphome/core/component.h"
 
 #include <array>
 #include <cstdint>

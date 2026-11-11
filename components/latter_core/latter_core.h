@@ -1,11 +1,12 @@
 #pragma once
 
-// Latter Core main-loop probe for [PROF:WAKE] (include/hal_power_pm.h) & paced RPC outbox drain.
+// Latter Core main-loop probe for [PROF:WAKE] (include/latter_prof.h) & paced RPC outbox drain.
 
+#include "esphome/core/defines.h"
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
-#include "hal_power_pm.h"
+#include "latter_prof.h"
 #include "latter_rpc.h"
 
 #include <cstdint>
@@ -15,7 +16,7 @@ namespace esphome::latter_core {
 class LatterLoopProbe : public Component {
  public:
   void loop() override {
-    LoopProbeStats &s = loop_probe_stats();
+    ::esphome::latter_core::LoopProbeStats &s = ::esphome::latter_core::loop_probe_stats();
     const uint32_t now = millis();
     if (s.last_ms != 0) {
       const uint32_t gap = now - s.last_ms;

@@ -56,6 +56,8 @@ async def to_code(config: dict[str, Any]) -> None:
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
     if CORE.is_esp32:
+        if hasattr(CORE, "require_wake_loop_threadsafe"):
+            CORE.require_wake_loop_threadsafe()
         # Flash-write counters for System: Link Report (nvs=, power_pm.cpp defines the wraps).
         cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
         cg.add_build_flag("-Wl,--wrap=esp_flash_erase_region")

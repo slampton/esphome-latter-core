@@ -4,7 +4,15 @@
 // Latter Core Link Report: Wi-Fi and Home Assistant Link Counters (hal_link_report.h)
 // ==============================================================================
 
-#include "esphome.h"
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#if __has_include("esphome/core/hal.h")
+#include "esphome/core/hal.h"
+#endif
+#if __has_include("esphome/core/log.h")
+#include "esphome/core/log.h"
+#endif
 
 #include <atomic>
 #include <cstdint>
@@ -14,6 +22,9 @@
 #ifdef USE_ESP32
 #include <esp_event.h>
 #include <esp_wifi.h>
+#endif
+#if defined(USE_WIFI) && __has_include("esphome/components/wifi/wifi_component.h")
+#include "esphome/components/wifi/wifi_component.h"
 #endif
 
 #include "hal_battery.h"

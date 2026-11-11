@@ -1,5 +1,6 @@
 #include "latter_beacon.h"
 
+#include "esphome/core/defines.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
@@ -217,8 +218,9 @@ void LatterBeacon::stop_(const char *log_what) {
   this->log_internal_heap_("disabled");
   this->state_ = State::OFF;
   this->disable_loop();
-  if (log_what != nullptr)
+  if (log_what != nullptr) {
     ESP_LOGD(TAG, "%s", log_what);
+  }
 }
 
 void LatterBeacon::loop() {
@@ -311,15 +313,16 @@ void LatterBeacon::fail_(const char *what, int err) {
 }
 
 void LatterBeacon::dump_config() {
+#ifdef USE_LATTER_BEACON_HOSTED
+  constexpr const char *transport = "esp_hosted";
+#else
+  constexpr const char *transport = "VHCI";
+#endif
   ESP_LOGCONFIG(TAG,
                 "Latter Beacon (iBeacon, raw HCI over %s):\n"
                 "  Major: %u, Minor: %u, Measured power: %d dBm\n"
                 "  Interval: %u-%u ms",
-#ifdef USE_LATTER_BEACON_HOSTED
-                "esp_hosted",
-#else
-                "VHCI",
-#endif
+                transport,
                 this->major_, this->minor_, this->measured_power_,
                 static_cast<unsigned>(this->min_interval_ms_), static_cast<unsigned>(this->max_interval_ms_));
 }

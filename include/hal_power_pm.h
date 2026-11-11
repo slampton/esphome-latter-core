@@ -5,7 +5,12 @@
 // (hal_power_pm.h)
 // ==============================================================================
 
-#include "esphome.h"
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#if __has_include("esphome/core/log.h")
+#include "esphome/core/log.h"
+#endif
 #include "hal_manifest.h"
 #include "latter_prof.h"
 
@@ -17,22 +22,9 @@
 #include <esp_wifi.h>
 #include <sdkconfig.h>
 #endif
-
-namespace esphome::latter_core {
-
-struct LoopProbeStats {
-  uint32_t passes{0};
-  uint32_t hf_passes{0};    // passes with a HighFrequencyLoopRequester held
-  uint32_t gaps[5]{};       // gap since the previous pass: <20 ms, <50 ms, <200 ms, <1 s, >=1 s
-  uint32_t last_ms{0};
-};
-
-inline LoopProbeStats &loop_probe_stats() {
-  static LoopProbeStats s;
-  return s;
-}
-
-}  // namespace esphome::latter_core
+#if defined(USE_WIFI) && __has_include("esphome/components/wifi/wifi_component.h")
+#include "esphome/components/wifi/wifi_component.h"
+#endif
 
 namespace latter_ui {
 

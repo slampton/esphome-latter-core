@@ -58,7 +58,19 @@ struct GameArenaScratch {
   bool mem_matched[16];
 };
 
-inline LATTER_PSRAM_BSS GameArenaScratch g_game_arena{};
+inline GameArenaScratch &game_arena() {
+  static GameArenaScratch *s_ptr = []() -> GameArenaScratch * {
+#ifdef USE_ESP32
+    void *p = heap_caps_calloc(1, sizeof(GameArenaScratch), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p == nullptr) {
+      p = heap_caps_calloc(1, sizeof(GameArenaScratch), MALLOC_CAP_8BIT);
+    }
+    if (p != nullptr) return static_cast<GameArenaScratch *>(p);
+#endif
+    return new GameArenaScratch{};
+  }();
+  return *s_ptr;
+}
 
 inline int load_nvs_game_high_score(const char *key) {
 #ifdef USE_ESP32
@@ -241,7 +253,7 @@ inline void render_game_marbles(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                 esphome::Color col_orange, esphome::Color col_magenta,
                                 esphome::Color col_slate, esphome::Color col_gray,
                                 esphome::Color col_dark_gray) {
-  auto *balls = g_game_arena.balls;
+  auto *balls = game_arena().balls;
   static uint32_t last_phys_ms = 0;
   static uint32_t last_sink_ms = 0;
   static uint32_t wave_clear_ms = 0;
@@ -783,7 +795,7 @@ inline void render_game_archery(DisplayT &it, int cx, int cy, uint32_t now_ms,
   static uint32_t round_banner_ms = 0;
   static bool round_over = false;
   static bool is_new_high = false;
-  auto *pinned = g_game_arena.pinned;
+  auto *pinned = game_arena().pinned;
   static int pinned_count = 0;
 
   auto clear_pinned = [&]() {
@@ -1217,7 +1229,7 @@ inline void render_game_bricks(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                  esphome::Color col_red, esphome::Color col_slate,
                                  esphome::Color col_dark_gray) {
   static constexpr int NUM_BRICKS = 18;
-  auto *bricks = g_game_arena.bricks;
+  auto *bricks = game_arena().bricks;
   static uint32_t last_phys_ms = 0;
   static int wave_num = 1;
   static int lives_left = 3;
@@ -1237,7 +1249,7 @@ inline void render_game_bricks(DisplayT &it, int cx, int cy, uint32_t now_ms,
   static float smooth_paddle_x = 233.0f;
 
   // Shattering brick shrapnel + floating combo popup
-  auto *shrapnel = g_game_arena.shrapnel;
+  auto *shrapnel = game_arena().shrapnel;
   static uint32_t shrapnel_ms = 0;
   static int popup_x = 233;
   static int popup_y = 140;
@@ -1901,7 +1913,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
                               esphome::Color col_green, esphome::Color col_magenta,
                               esphome::Color col_orange, esphome::Color col_dark_gray) {
   static constexpr int NUM_TREATS = 7;
-  auto *treats = g_game_arena.treats;
+  auto *treats = game_arena().treats;
   static float mon_x = 233.0f;
   static float mon_y = 233.0f;
   static float mon_vx = 0.0f;
@@ -1916,7 +1928,7 @@ inline void render_game_chomp(DisplayT &it, int cx, int cy, uint32_t now_ms,
   static uint32_t chomp_timer = 0;
   static int chomp_word_idx = 0;
   static uint32_t level_clear_until_ms = 0;
-  auto *confetti = g_game_arena.confetti;
+  auto *confetti = game_arena().confetti;
 
   const int bot_wall_y = layout().back_y - scale_y(60);
 
@@ -2261,7 +2273,7 @@ inline void render_game_2048(DisplayT &it, int cx, int cy, uint32_t now_ms,
                              esphome::Color col_green, esphome::Color col_orange,
                              esphome::Color col_red, esphome::Color col_magenta,
                              esphome::Color col_slate, esphome::Color col_dark_gray) {
-  auto &grid = g_game_arena.grid_2048;
+  auto &grid = game_arena().grid_2048;
   static int score_2048 = 0;
   static bool game_over = false;
   static bool won_2048 = false;
@@ -2470,8 +2482,8 @@ inline void render_game_memory(DisplayT &it, int cx, int cy, uint32_t now_ms,
                                esphome::Color col_green, esphome::Color col_orange,
                                esphome::Color col_red, esphome::Color col_magenta,
                                esphome::Color col_slate, esphome::Color col_dark_gray) {
-  auto *cards = g_game_arena.mem_cards;
-  auto *matched = g_game_arena.mem_matched;
+  auto *cards = game_arena().mem_cards;
+  auto *matched = game_arena().mem_matched;
   static int first_pick = -1;
   static int second_pick = -1;
   static uint32_t mismatch_until_ms = 0;

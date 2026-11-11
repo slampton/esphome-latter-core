@@ -65,7 +65,8 @@ inline void toggle_card_row(DisplayT &it, int cx, int y_mid, int w, int h,
   const int text_x = cx - eff_w / 2 + scale_x(14);
   const int sw_cx = cx + eff_w / 2 - scale_x(28);
   const int max_lbl_px = std::max(60, (sw_cx - scale_x(26)) - text_x);
-  const std::string fit_lbl = truncate_to_px(font, label != nullptr ? std::string(label) : std::string(), max_lbl_px);
+  const std::string fit_lbl = fit_text_to_width_font(
+      label != nullptr ? std::string(label) : std::string(), max_lbl_px, font);
   const esphome::Color fg = is_on ? text_on : text_off;
   fast_print(it, text_x + 1, y_mid + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
   fast_print(it, text_x, y_mid, font, fg, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());

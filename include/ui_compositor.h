@@ -11,7 +11,8 @@
 //    Security PIN Pad Modal -> Push Notification -> Docked Screensaver.
 // ==============================================================================
 
-#if __has_include("esphome.h")
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
 #include "ui_ambient_va.h"
 #include "ui_core.h"
 #include "ui_hit_table.h"
@@ -65,7 +66,7 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active);
 
-#if __has_include("esphome.h")
+#if __has_include("esphome/core/defines.h")
 
 struct SystemTakeoverState {
   int cx{SCREEN_CX};
@@ -293,6 +294,6 @@ inline bool render_system_takeovers(
       st.col_gold, st.col_red, st.col_solaris_gold);
 }
 
-#endif  // __has_include("esphome.h")
+#endif  // __has_include("esphome/core/defines.h")
 
 }  // namespace latter_ui

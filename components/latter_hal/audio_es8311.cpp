@@ -1,5 +1,7 @@
 #include "audio_router.h"
 
+#include "esphome/core/defines.h"
+
 namespace latter_ui {
 
 std::atomic<uint32_t> &echo_last_loud_ms() {

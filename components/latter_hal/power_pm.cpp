@@ -1,5 +1,12 @@
 #include "hal_power_pm.h"
 
+#include "esphome/core/defines.h"
+#include "esphome/core/application.h"
+#include "esphome/core/component.h"
+#include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
+
 #include <cstdio>
 #include <cstring>
 
@@ -209,7 +216,9 @@ void start_stall_guard() {
   if (g.started) return;
   g_stall_loop_task = xTaskGetCurrentTaskHandle();
   g.started = xTaskCreate(stall_guard_task, "latter_stall", 2560, nullptr, 15, &g_stall_guard_task_handle) == pdPASS;
-  if (!g.started) ESP_LOGW("latter", "Stall guard task could not start");
+  if (!g.started) {
+    ESP_LOGW("latter", "Stall guard task could not start");
+  }
 #endif
 }
 
@@ -339,7 +348,11 @@ struct PmWakeHist {
 static PmWakeHist g_pm_wake_hist = {0U, 0U, 0U, {0U, 0U, 0U, 0U, 0U}};
 
 static void pm_wake_loop_timer_cb(void *) {
-  esphome::App.wake_loop_threadsafe();
+  [](auto &app) {
+    if constexpr (requires { app.wake_loop_threadsafe(); }) {
+      app.wake_loop_threadsafe();
+    }
+  }(esphome::App);
 }
 
 static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
@@ -707,7 +720,9 @@ static void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *
     fclose(f);
     char *save = nullptr;
     for (char *line = strtok_r(buf, "\n", &save); line != nullptr; line = strtok_r(nullptr, "\n", &save)) {
-      if (line[0] != '\0') LATTER_PROF_LOGI("%s %s", label, line);
+      if (line[0] != '\0') {
+        LATTER_PROF_LOGI("%s %s", label, line);
+      }
     }
   }
   heap_caps_free(buf);

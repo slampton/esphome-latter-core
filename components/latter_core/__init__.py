@@ -12,6 +12,7 @@ from esphome.const import CONF_ID
 from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
+DEPENDENCIES = ["latter_hal"]
 
 CONF_GUI = "gui"
 

@@ -15,8 +15,12 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
 #ifdef USE_ESP32
 #include <esp_random.h>
 #endif
@@ -214,6 +218,7 @@ inline bool step_outbox_loop(uint32_t now_ms) {
 }
 
 template <typename SensorT>
+  requires(!std::is_pointer_v<SensorT>)
 inline void bind_sensor_sink(SensorT *sensor) {
   if (sensor == nullptr) return;
   RpcQueueState &st = rpc_state();
@@ -229,6 +234,7 @@ inline void bind_sensor_sink(SensorT *const *sensor_ptr) {
 }
 
 template <typename SensorT>
+  requires(!std::is_pointer_v<SensorT>)
 inline void emit(
     SensorT *sensor,
     std::string_view service,

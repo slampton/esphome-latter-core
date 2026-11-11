@@ -1,5 +1,7 @@
 #include "hal_panel_power.h"
 
+#include "esphome/core/defines.h"
+
 #if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && defined(LATTER_DSI_IRAM_SAFE)
 #include <esp_attr.h>
 #include <esp_lcd_mipi_dsi.h>

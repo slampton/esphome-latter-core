@@ -19,6 +19,9 @@
 #include <cstdint>
 #include <cstdio>
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
 #ifdef USE_ESP32
 #include <sdkconfig.h>
 #endif
