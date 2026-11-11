@@ -95,7 +95,7 @@ jobs:
         run: |
           VERSION="${{ steps.rel_meta.outputs.version }}"
           mkdir -p dist/firmware dist/manifests
-          BUILD_DIR=".esphome/build/${{ matrix.device.file }}/.pioenvs/${{ matrix.device.file }}"
+          BUILD_DIR="devices/.esphome/build/${{ matrix.device.file }}/build"
           cp "${BUILD_DIR}/firmware.factory.bin" "dist/firmware/${{ matrix.device.slug }}.factory.bin"
           cp "${BUILD_DIR}/firmware.ota.bin" "dist/firmware/${{ matrix.device.slug }}.ota.bin"
           # Debug symbols for this exact binary: decode the crash backtrace a device logs after a panic.

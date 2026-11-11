@@ -222,9 +222,9 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   char batt[48];
   battery_report_fragment(batt, sizeof(batt), now_ms);
   const FlashWriteStats &fw = g_flash_write_stats;
-  char line[256];
+  char line[640];
   snprintf(line, sizeof(line),
-           "up=%lu rst=%s%s%s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu nvs=%lu/%lu/%lu%s",
+           "up=%lu rst=%.32s%s%.32s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu nvs=%lu/%lu/%lu%s",
            static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
            where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
            static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),

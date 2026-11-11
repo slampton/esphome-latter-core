@@ -12,7 +12,6 @@ from esphome.const import CONF_ID
 from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
-DEPENDENCIES = ["latter_hal"]
 
 CONF_GUI = "gui"
 
@@ -50,7 +49,6 @@ async def to_code(config: dict[str, Any]) -> None:
 
     dst_src_dir = Path(CORE.relative_src_path(""))
     dst_src_dir.mkdir(parents=True, exist_ok=True)
-    cg.add_build_flag(f"-I{dst_src_dir.as_posix()}")
 
     gui_mode = str(config.get(CONF_GUI, "universal")).strip().lower()
     if gui_mode == "none":

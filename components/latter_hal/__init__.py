@@ -41,7 +41,6 @@ async def to_code(config: dict[str, Any]) -> None:
 
     dst_src_dir = Path(CORE.relative_src_path(""))
     dst_src_dir.mkdir(parents=True, exist_ok=True)
-    cg.add_build_flag(f"-I{dst_src_dir.as_posix()}")
 
     for hdr in HAL_HEADERS:
         src_file = comp_dir / hdr

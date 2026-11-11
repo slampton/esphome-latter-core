@@ -7,6 +7,7 @@ enforcing repository guardrails identically in local development and GitHub Acti
 
 from __future__ import annotations
 
+import ast
 import base64
 import json
 import os
@@ -285,14 +286,60 @@ def _header_provides_esphome_defines(hdr_path: Path, seen: set[Path] | None = No
     return False
 
 
+def verify_component_deps(failures: list[str]) -> None:
+    """Ensure no component lists any of its own AUTO_LOAD targets in DEPENDENCIES.
+
+    ESPHome validates DEPENDENCIES against explicit top-level YAML keys before running a component's
+    AUTO_LOAD, so placing an AUTO_LOAD target in DEPENDENCIES fails whenever users omit the auto-loaded
+    sub-component from YAML.
+    """
+    comp_root = ROOT / "components"
+    if not comp_root.is_dir():
+        return
+    for init_py in sorted(comp_root.glob("*/__init__.py")):
+        rel = init_py.relative_to(ROOT).as_posix()
+        comp_name = init_py.parent.name
+        try:
+            tree = ast.parse(init_py.read_text(encoding="utf-8"), filename=rel)
+        except SyntaxError as exc:
+            failures.append(f"[COMPONENT DEPS] {rel} failed Python AST parse: {exc}")
+            continue
+
+        deps: set[str] = set()
+        autoloads: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                names = {t.id for t in targets if isinstance(t, ast.Name)}
+                if "DEPENDENCIES" in names and node.value is not None:
+                    for sub in ast.walk(node.value):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            deps.add(sub.value)
+                if "AUTO_LOAD" in names and node.value is not None:
+                    for sub in ast.walk(node.value):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            autoloads.add(sub.value)
+            elif isinstance(node, ast.FunctionDef) and node.name == "AUTO_LOAD":
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Return) and sub.value is not None:
+                        for lit in ast.walk(sub.value):
+                            if isinstance(lit, ast.Constant) and isinstance(lit.value, str):
+                                autoloads.add(lit.value)
+
+        overlap = sorted(deps & autoloads)
+        if overlap:
+            failures.append(
+                f"[COMPONENT DEPS] {rel}: DEPENDENCIES {sorted(deps)} overlaps AUTO_LOAD {sorted(autoloads)} "
+                f"on {overlap} (ESPHome validates DEPENDENCIES before running AUTO_LOAD)"
+            )
+        if comp_name == "latter_core" and not {"latter_hal", "latter_ui"}.issubset(autoloads):
+            failures.append(
+                f"[COMPONENT DEPS] {rel}: AUTO_LOAD must wire latter_hal and latter_ui (found {sorted(autoloads)})"
+            )
+
+
 def verify_header_order(failures: list[str]) -> None:
     """Ban circular #include \"esphome.h\" in headers and ensure esphome/core/defines.h precedes #ifdef USE_*."""
-    core_init = (ROOT / "components" / "latter_core" / "__init__.py").read_text(encoding="utf-8")
-    if not re.search(r'(?m)^DEPENDENCIES\s*=\s*\[[^\]]*"latter_hal"', core_init):
-        failures.append(
-            "[HEADER ORDER] components/latter_core/__init__.py must declare DEPENDENCIES = [\"latter_hal\"]"
-        )
-
     for folder in ("include", "components"):
         base = ROOT / folder
         if not base.is_dir():
@@ -538,8 +585,9 @@ def main() -> int:
         if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:", uncommented_yaml):
             failures.append(f"[P4 SDIO DMA] {bf.name} must never enable CONFIG_CACHE_L2_CACHE_LINE_128B")
 
-    # 7b. Strapping-pin & C++ header-order validation across all boards, headers, and sources
+    # 7b. Strapping-pin, component dependency & C++ header-order validation across all boards, headers, and sources
     verify_strapping_pins(failures)
+    verify_component_deps(failures)
     verify_header_order(failures)
 
     # 8. Retired half-duplex names, zero-privilege RPC invariants & UI rendering invariants
