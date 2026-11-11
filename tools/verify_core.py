@@ -7,6 +7,7 @@ enforcing repository guardrails identically in local development and GitHub Acti
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -110,6 +111,39 @@ def main() -> int:
                 json.loads(txt)
             except ValueError as exc:
                 failures.append(f"[JSON] {rel} failed JSON parse: {exc}")
+        if path.suffix.lower() in {".yaml", ".yml"}:
+            in_enc = False
+            enc_indent = -1
+            for line_no, raw_line in enumerate(txt.splitlines(), 1):
+                stripped = raw_line.split("#", 1)[0].rstrip()
+                if not stripped.strip():
+                    continue
+                indent = len(stripped) - len(stripped.lstrip(" "))
+                m_enc = re.match(r"^(\s*)encryption\s*:\s*$", stripped)
+                if m_enc:
+                    in_enc = True
+                    enc_indent = len(m_enc.group(1))
+                    continue
+                if in_enc:
+                    if indent <= enc_indent:
+                        in_enc = False
+                    else:
+                        m_key = re.match(r"^\s*key\s*:\s*(.+?)\s*$", stripped)
+                        if m_key:
+                            val = m_key.group(1).strip().strip('"').strip("'")
+                            if not val.startswith("${") and not val.startswith("!secret"):
+                                try:
+                                    decoded_key = base64.b64decode(val, validate=True)
+                                except ValueError as exc:
+                                    failures.append(
+                                        f"[API KEY] {rel}:{line_no} encryption key is not valid base64: {exc}"
+                                    )
+                                else:
+                                    if len(decoded_key) != 32:
+                                        failures.append(
+                                            f"[API KEY] {rel}:{line_no} encryption key decodes to "
+                                            f"{len(decoded_key)} bytes (must be 32)"
+                                        )
 
     # 2. No mixins/ directory
     if (ROOT / "mixins").exists():
@@ -283,26 +317,31 @@ def main() -> int:
             "render_system_takeovers, touch_engine(), and 2..4 it.draw_pixel_at latch calls"
         )
 
-    host_test_cpp = ROOT / "tests" / "host" / "test_all.cpp"
-    if not host_test_cpp.is_file():
-        failures.append("[HOST TESTS] tests/host/test_all.cpp missing")
+    host_test_targets = [
+        ROOT / "tests" / "host" / "test_all.cpp",
+        ROOT / "tests" / "host" / "test_latter_state.cpp",
+    ]
+    missing_tests = [p.name for p in host_test_targets if not p.is_file()]
+    if missing_tests:
+        failures.append(f"[HOST TESTS] tests/host missing: {', '.join(missing_tests)}")
     else:
         gpp = shutil.which("g++") or shutil.which("clang++")
         if gpp:
             with tempfile.TemporaryDirectory() as td:
-                bin_path = Path(td) / ("latter_host_tests.exe" if os.name == "nt" else "latter_host_tests")
-                comp = subprocess.run(
-                    [gpp, "-std=c++20", "-O2", "-Wall", "-Wextra", str(host_test_cpp), "-o", str(bin_path)],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if comp.returncode != 0:
-                    failures.append(f"[HOST TESTS COMPILE] {(comp.stderr or comp.stdout).strip()}")
-                else:
-                    run = subprocess.run([str(bin_path)], capture_output=True, text=True, check=False)
-                    if run.returncode != 0:
-                        failures.append(f"[HOST TESTS RUN] {(run.stderr or run.stdout).strip()}")
+                for idx, test_cpp in enumerate(host_test_targets):
+                    bin_path = Path(td) / (f"latter_host_test_{idx}.exe" if os.name == "nt" else f"latter_host_test_{idx}")
+                    comp = subprocess.run(
+                        [gpp, "-std=c++20", "-O2", "-Wall", "-Wextra", str(test_cpp), "-o", str(bin_path)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if comp.returncode != 0:
+                        failures.append(f"[HOST TESTS COMPILE] {test_cpp.name}: {(comp.stderr or comp.stdout).strip()}")
+                    else:
+                        run = subprocess.run([str(bin_path)], capture_output=True, text=True, check=False)
+                        if run.returncode != 0:
+                            failures.append(f"[HOST TESTS RUN] {test_cpp.name}: {(run.stderr or run.stdout).strip()}")
         elif os.name == "nt":
             vcvars_candidates = [
                 Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"),
@@ -313,19 +352,23 @@ def main() -> int:
             if vcvars is not None:
                 with tempfile.TemporaryDirectory() as td:
                     td_path = Path(td)
-                    exe_path = td_path / "latter_host_tests.exe"
-                    obj_path = td_path / "latter_host_tests.obj"
+                    bat_lines = [
+                        "@echo off",
+                        f'call "{vcvars}" >nul',
+                        "if errorlevel 1 exit /b 1",
+                    ]
+                    for idx, test_cpp in enumerate(host_test_targets):
+                        exe_path = td_path / f"latter_host_test_{idx}.exe"
+                        obj_path = td_path / f"latter_host_test_{idx}.obj"
+                        bat_lines.append(
+                            f'cl /nologo /utf-8 /std:c++20 /O2 /W4 /EHsc "{test_cpp}" '
+                            f'"/Fe:{exe_path}" "/Fo:{obj_path}"'
+                        )
+                        bat_lines.append("if errorlevel 1 exit /b 1")
+                        bat_lines.append(f'"{exe_path}"')
+                        bat_lines.append("if errorlevel 1 exit /b 1")
                     bat_path = td_path / "run_host_tests.cmd"
-                    bat_path.write_text(
-                        f'@echo off\r\n'
-                        f'call "{vcvars}" >nul\r\n'
-                        f'if errorlevel 1 exit /b 1\r\n'
-                        f'cl /nologo /utf-8 /std:c++20 /O2 /W4 /EHsc "{host_test_cpp}" '
-                        f'"/Fe:{exe_path}" "/Fo:{obj_path}"\r\n'
-                        f'if errorlevel 1 exit /b 1\r\n'
-                        f'"{exe_path}"\r\n',
-                        encoding="utf-8",
-                    )
+                    bat_path.write_text("\r\n".join(bat_lines) + "\r\n", encoding="utf-8")
                     res = subprocess.run(["cmd.exe", "/c", str(bat_path)], capture_output=True, text=True, check=False)
                     if res.returncode != 0:
                         failures.append(f"[HOST TESTS MSVC] {(res.stderr or res.stdout).strip()}")

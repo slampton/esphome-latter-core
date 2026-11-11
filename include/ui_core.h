@@ -38,12 +38,15 @@
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
 #include <string>
 #include "audio_router.h"
 #include "esphome_bridge.h"
 #include "hal_manifest.h"
 #include "hal_imu_qmi8658.h"
+#include "hal_pmu_axp2101.h"
+#include "hal_panel_power.h"
 #include "hal_power_pm.h"
 #include "hal_battery.h"
 #include "hal_link_report.h"
@@ -57,7 +60,7 @@
 // but behave like neither revision, so an on_boot lambda in modules/features/core_system.yaml
 // static_asserts its LATTER_YAML_REV against this value and any mismatch fails the build. Bump both
 // values together on every core commit.
-#define LATTER_SDK_REV 2026111030L
+#define LATTER_SDK_REV 2026111031L
 
 #ifdef USE_ESP32
 #define LATTER_PSRAM_BSS EXT_RAM_BSS_ATTR

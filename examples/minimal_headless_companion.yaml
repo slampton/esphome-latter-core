@@ -44,7 +44,7 @@ wifi:
 
 api:
   encryption:
-    key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
+    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 packages:
   latter_base: !include ../modules/base.yaml

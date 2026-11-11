@@ -122,6 +122,7 @@ def _code_runs_from_psram() -> bool:
 
 
 async def to_code(config: ConfigType) -> None:
+    cg.add_global(cg.RawStatement('#include "esphome/components/latter_beacon/latter_beacon.h"'))
     uuid = config[CONF_UUID].hex
     uuid_bytes = ", ".join(f"0x{uuid[i : i + 2]}" for i in range(0, len(uuid), 2))
     var = cg.new_Pvariable(

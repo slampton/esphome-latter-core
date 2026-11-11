@@ -70,6 +70,7 @@ async def to_code(config: dict[str, Any]) -> None:
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
+    cg.add_global(cg.RawStatement('#include "esphome/components/latter_core/latter_core.h"'))
     probe = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(probe, config)
     cg.add_define("USE_LATTER_LOOP_PROBE")

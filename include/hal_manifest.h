@@ -31,7 +31,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111030L
+#define LATTER_SDK_REV 2026111031L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -173,16 +173,7 @@ inline PmuTelemetry &pmu_telemetry() {
   return t;
 }
 
-inline uint32_t device_boot_id() {
-  static uint32_t s_boot_id = 0;
-  if (s_boot_id == 0) {
-#ifdef USE_ESP32
-    s_boot_id = esp_random() & 0x7FFFFFFFU;
-#endif
-    if (s_boot_id == 0) s_boot_id = 1U;
-  }
-  return s_boot_id;
-}
+uint32_t device_boot_id();
 
 // ------------------------------------------------------------------------------
 // Main-loop stall guard (compiled implementation in components/latter_hal/power_pm.cpp)
@@ -203,21 +194,9 @@ struct StallRecord {
   char loop_state;
 };
 
-inline void stall_copy_str(char *dst, size_t n, const char *src) {
-  size_t i = 0;
-  if (src != nullptr) {
-    for (; i + 1 < n && src[i] != '\0'; i++) dst[i] = src[i];
-  }
-  dst[i] = '\0';
-}
-
-inline void stall_terminate(StallRecord &rec) {
-  rec.source[sizeof(rec.source) - 1] = '\0';
-  rec.cpu0[sizeof(rec.cpu0) - 1] = '\0';
-  rec.cpu1[sizeof(rec.cpu1) - 1] = '\0';
-}
-
 struct StallGuardState {
+  StallGuardState();
+
   std::atomic<bool> paused{false};
   std::atomic<uint32_t> resumed_ms{0};
   bool started{false};
@@ -236,41 +215,9 @@ void stall_guard_pause(bool paused);
 void start_stall_guard();
 void log_stall_summary();
 
-inline const char *last_reset_reason() {
-#ifdef USE_ESP32
-  if (previous_boot_stalled()) return "stall";
-  switch (esp_reset_reason()) {
-    case ESP_RST_POWERON: return "power-on";
-    case ESP_RST_EXT: return "external";
-    case ESP_RST_SW: return "software";
-    case ESP_RST_PANIC: return "panic";
-    case ESP_RST_INT_WDT: return "int-wdt";
-    case ESP_RST_TASK_WDT: return "task-wdt";
-    case ESP_RST_WDT: return "wdt";
-    case ESP_RST_DEEPSLEEP: return "deep-sleep";
-    case ESP_RST_BROWNOUT: return "brownout";
-    case ESP_RST_USB: return "usb";
-    default: break;
-  }
-#endif
-  return "unknown";
-}
-
-inline bool crash_record_present() {
-#ifdef USE_ESP32_CRASH_HANDLER
-  return esphome::esp32::crash_handler_has_data();
-#else
-  return false;
-#endif
-}
-
-inline bool firmware_rolled_back() {
-#ifdef USE_ESP32
-  return esp_ota_get_last_invalid_partition() != nullptr;
-#else
-  return false;
-#endif
-}
+const char *last_reset_reason();
+bool crash_record_present();
+bool firmware_rolled_back();
 
 inline std::string build_hardware_manifest_json() {
   const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;

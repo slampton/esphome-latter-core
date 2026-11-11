@@ -29,6 +29,8 @@ namespace WidgetId {
   static constexpr uint16_t CONFIRM_CANCEL     = 100;
   static constexpr uint16_t CONFIRM_ACCEPT     = 101;
   static constexpr uint16_t GAME_OVER_CTA      = 110;
+  static constexpr uint16_t GAMES_PLAY_BTN     = 111;
+  static constexpr uint16_t GAMES_SOUND_BTN    = 112;
   static constexpr uint16_t MUSIC_QUEUE_CLEAR  = 120;
   static constexpr uint16_t COLOR_WHEEL_RING   = 130;
   static constexpr uint16_t COLOR_WHEEL_SAVE   = 131;

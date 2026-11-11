@@ -90,7 +90,7 @@ wifi:
 
 api:
   encryption:
-    key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
+    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 # Area presence iBeacon with raw HCI and no host stack (VHCI on an on-chip controller; on an ESP32-P4
 # it drives the esp_hosted co-processor's controller and needs esp32_hosted).

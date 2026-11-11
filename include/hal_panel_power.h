@@ -16,6 +16,9 @@
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #endif
+#ifdef USE_I2C
+#include "esphome/components/i2c/i2c_bus.h"
+#endif
 
 namespace latter_ui {
 
@@ -239,6 +242,7 @@ inline void hal_panel_dcs_flush(DispT *const *disp_pp) {
 // Switches FocalTech FT6336/FT3168 touch controllers (0x38) into low-power Period Monitor mode (REG 0x86=0x01)
 // during screen-off standby on battery (~2.5 mA -> ~0.15 mA while preserving INT tap-to-wake), and back to
 // active scan on wake. Safe no-op on other touch ICs if 0x38 does not ACK.
+#ifdef USE_I2C
 void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep);
 
 template <typename I2cBusT>
@@ -250,5 +254,6 @@ template <typename I2cBusT>
 inline void hal_set_touch_sleep_mode(I2cBusT *const *bus_pp, bool sleep) {
   if (bus_pp != nullptr) hal_set_touch_sleep_mode_bus(*bus_pp, sleep);
 }
+#endif
 
 }  // namespace latter_ui

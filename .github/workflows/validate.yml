@@ -98,7 +98,7 @@ jobs:
             password: "LatterCIPassword"
           api:
             encryption:
-              key: "dGhpcyBpcyBhIDMyLWJ5dGUgZGVtbyBrZXkgZm9yIGNp"
+              key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
           packages:
             device_under_test: !include ${base_name}
             device_builder_ota: !include ../modules/ota_esphome.yaml

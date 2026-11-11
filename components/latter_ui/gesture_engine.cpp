@@ -16,8 +16,17 @@
 #endif
 
 #include "latter_state.h"
+#include "ui_ambient_va.h"
+#include "ui_area_home_hub.h"
+#include "ui_clock_home.h"
 #include "ui_compositor.h"
+#include "ui_games.h"
+#include "ui_music.h"
+#include "ui_remote.h"
 #include "ui_system.h"
+#include "ui_tools.h"
+#include "ui_touch_router.h"
+#include "ui_weather_sky.h"
 
 namespace latter_ui {
 

@@ -50,6 +50,7 @@ esp_err_t __wrap_esp_lcd_dpi_panel_register_event_callbacks(
 }  // extern "C"
 #endif
 
+#ifdef USE_I2C
 namespace latter_ui {
 
 void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
@@ -87,3 +88,4 @@ void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
 }
 
 }  // namespace latter_ui
+#endif  // USE_I2C
