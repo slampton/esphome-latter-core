@@ -39,11 +39,12 @@ enum PmWakeSlot : uint8_t {
 
 inline constexpr uint32_t pm_wake_bit(PmWakeSlot slot) { return 1UL << static_cast<uint32_t>(slot); }
 
-// Main loop interval while the awake lock is released. An IRAM-safe esp_timer started on GPIO wake
-// calls App.wake_loop_threadsafe() within 50 us of cache restore, so stretching quiet loop intervals
-// to 5,000 ms (1,000 ms when touch wake is armed) cuts idle CPU wakeups 4-5x with zero input lag.
-constexpr uint32_t kPmQuietLoopIntervalMs = 5000U;
-constexpr uint32_t kPmQuietTouchLoopIntervalMs = 1000U;
+// Main loop interval while the awake lock is released. Phase A (scheduler) already runs the 1 s
+// supervisor tick, and an IRAM-safe esp_timer started on GPIO wake calls App.wake_loop_threadsafe()
+// within 50 us of cache restore, so 1,000 ms (250 ms when touch wake is armed, bounding rare DTIM-wake
+// tap collisions because upstream TouchscreenInterrupt skips wake_loop_isrsafe) keeps idle current minimal.
+constexpr uint32_t kPmQuietLoopIntervalMs = 1000U;
+constexpr uint32_t kPmQuietTouchLoopIntervalMs = 250U;
 
 inline constexpr uint32_t pm_quiet_loop_interval(uint32_t arm_mask) {
   return (arm_mask & pm_wake_bit(PM_WAKE_TOUCH)) != 0 ? kPmQuietTouchLoopIntervalMs : kPmQuietLoopIntervalMs;

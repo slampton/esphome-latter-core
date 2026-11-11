@@ -42,7 +42,7 @@ RETIRED_HALF_DUPLEX_RE = re.compile(
     + "FullDuplex|"
     + "USE_I2S_AUDIO_"
     + "FULL_DUPLEX|"
-    + "hal_route_i2s_"
+    + "(?:hal_)?route_i2s_"
     + r"to_(?:spk|mic))\b"
 )
 LOSSY_UI_RE = re.compile(r"\bit\.(?:image|draw_pixels_at)\s*\(|0x[cC]718\b|0x[eE]79[cC]\b")

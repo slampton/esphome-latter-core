@@ -18,7 +18,7 @@ The core modules refer to these IDs. Your board or device file must define each 
 | `bus_internal` | `i2c` | The bus shared by the PMU, IMU, codecs, and touch |
 | `latter_mic` | `microphone` | 16 kHz (`audio_in_rate`) mono: a `resampler` microphone over the I2S mic when the bus runs faster |
 | `physical_speaker` | `speaker` | Set `timeout: 4s` (longer than the 3 s idle power-down, so gaps between tracks never stop the I2S clocks under a powered amplifier) |
-| `speaker_enable` | `switch` | Amplifier enable. Only `route_i2s_to_spk` turns it on, after the I2S clocks run |
+| `speaker_enable` | `switch` | Amplifier enable. Only `enable_speaker_path` turns it on, after the I2S clocks run |
 | `wifi_ctrl` | `wifi` | Usually defined in the device file |
 | `ble_ctrl` | `latter_beacon` (advertising only, no host stack: VHCI on an on-chip controller, esp_hosted on the ESP32-P4) | Defined in the device file |
 | `latter_firmware_update` | `update` | Usually defined in the device file |

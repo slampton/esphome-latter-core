@@ -506,11 +506,11 @@ script:
                         {"command", "play"},
                       });
                       id(hal_set_dac_mute).execute(true);
-                  - script.execute: route_i2s_to_mic
+                  - script.execute: mute_speaker_path
                   - script.execute: sync_wake_word_state
                 else:
-                  - script.execute: route_i2s_to_spk
-                  - script.wait: route_i2s_to_spk
+                  - script.execute: enable_speaker_path
+                  - script.wait: enable_speaker_path
                   - if:
                       condition:
                         lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
@@ -576,8 +576,7 @@ script:
                       condition:
                         lambda: 'return !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();'
                       then:
-                        - lambda: 'id(hal_set_dac_mute).execute(true);'
-                        - script.execute: route_i2s_to_mic
+                        - script.execute: mute_speaker_path
                         - script.execute: sync_wake_word_state
   # A Home Assistant announcement outside a voice turn (assist_satellite.announce, TTS to the music player).
   # When music keeps playing, the player goes from announcing back to playing, never idle, so on_idle never
@@ -838,12 +837,6 @@ script:
       - script.stop: va_tts_drain_and_finish
       - script.stop: va_echo_gate
       - script.execute: stop_doorbell_audio
-      - if:
-          condition:
-            micro_wake_word.is_running:
-          then:
-            - micro_wake_word.stop:
-            - delay: 20ms
       - lambda: |-
           latter_ui::cam_intercom_ptt_active() = true;
           latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
@@ -851,8 +844,8 @@ script:
           latter_ui::schedule_disp_update(&id(disp1));
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
-      - script.execute: route_i2s_to_mic
-      - script.wait: route_i2s_to_mic
+      - script.execute: mute_speaker_path
+      - script.wait: mute_speaker_path
       - voice_assistant.start:
 
   - id: fetch_camera_snapshot
@@ -1529,9 +1522,8 @@ script:
                      !id(find_my_active) &&
                      (id(active_game) == 0);
           then:
-            - lambda: 'id(hal_set_dac_mute).execute(true);'
-            - switch.turn_off: speaker_enable
-            - script.execute: route_i2s_to_mic
+            - script.execute: mute_speaker_path
+            - script.wait: mute_speaker_path
             - script.execute: sync_wake_word_state
             - lambda: |-
                 auto ww_mode = id(va_wake_word_mode).current_option();
@@ -1591,12 +1583,6 @@ script:
                 id(va_tts_received) = false;
             - if:
                 condition:
-                  micro_wake_word.is_running:
-                then:
-                  - micro_wake_word.stop:
-                  - delay: 20ms
-            - if:
-                condition:
                   lambda: |-
                     return !id(va_resume_music_after) &&
                            ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -1604,8 +1590,8 @@ script:
                 then:
                   - script.execute: pause_all_music
                   - delay: 160ms
-            - script.execute: route_i2s_to_mic
-            - script.wait: route_i2s_to_mic
+            - script.execute: mute_speaker_path
+            - script.wait: mute_speaker_path
             - voice_assistant.start:
 
   - id: cancel_voice_assistant

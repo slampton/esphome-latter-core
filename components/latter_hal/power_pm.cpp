@@ -494,8 +494,10 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
   return ESP_OK;
 }
 
+#ifdef CONFIG_ESP_TIMER_PROFILING
 static void IRAM_ATTR pm_tick_hook_cpu0() { s_pm_crumb.tick_us[0] = static_cast<uint32_t>(esp_timer_get_time()); }
 static void IRAM_ATTR pm_tick_hook_cpu1() { s_pm_crumb.tick_us[1] = static_cast<uint32_t>(esp_timer_get_time()); }
+#endif
 
 static inline void pm_keep_raw_outputs_driven() {
 #ifdef LATTER_TOUCH_RST_PIN
@@ -535,11 +537,13 @@ void pm_init() {
   }
   memset(&s_pm_crumb, 0, sizeof(s_pm_crumb));
 #if !defined(CONFIG_ESP_TIMER_IN_IRAM)
-#error "Latter's light-sleep tick hooks need CONFIG_ESP_TIMER_IN_IRAM (selected by CONFIG_PM_SLP_IRAM_OPT)"
+#error "Latter's light-sleep wake timer needs CONFIG_ESP_TIMER_IN_IRAM (selected by CONFIG_PM_SLP_IRAM_OPT)"
 #endif
+#ifdef CONFIG_ESP_TIMER_PROFILING
   esp_register_freertos_tick_hook_for_cpu(pm_tick_hook_cpu0, 0);
 #if !CONFIG_FREERTOS_UNICORE
   esp_register_freertos_tick_hook_for_cpu(pm_tick_hook_cpu1, 1);
+#endif
 #endif
   if (s_pm_wake_loop_timer == nullptr) {
     esp_timer_create_args_t targs = {};
@@ -589,22 +593,17 @@ void pm_init() {
            st.pins[PM_WAKE_IMU].gpio, static_cast<unsigned long>(kPmQuietLoopIntervalMs),
            static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
 #elif LATTER_PM_DFS_ONLY
+  // esp32_power_management configures 40 MHz DFS at setup_priority::POWER (ahead of on_boot: 800);
+  // pm_init() holds the MAX-frequency lock while active and pm_apply() releases it in battery quiet.
   if (s_p4_dfs_lock != nullptr) return;
-  esp_pm_config_t pm_cfg = {};
-#ifdef CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
-  pm_cfg.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
-#else
-  pm_cfg.max_freq_mhz = 360;
-#endif
-  pm_cfg.min_freq_mhz = 40;
-  pm_cfg.light_sleep_enable = false;
-  if (esp_pm_configure(&pm_cfg) == ESP_OK &&
-      esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "latter_awake", &s_p4_dfs_lock) == ESP_OK &&
+  if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "latter_awake", &s_p4_dfs_lock) == ESP_OK &&
       s_p4_dfs_lock != nullptr) {
     esp_pm_lock_acquire(s_p4_dfs_lock);
     s_p4_dfs_awake = true;
     s_p4_loop_interval_awake = esphome::App.get_loop_interval();
-    ESP_LOGI("power", "ESP32-P4 DFS configured (%dMHz..40MHz, awake lock held at boot)", pm_cfg.max_freq_mhz);
+    ESP_LOGI("power", "ESP32-P4 DFS awake lock held at boot (quiet loop %lums, %lums with touch wake)",
+             static_cast<unsigned long>(kPmQuietLoopIntervalMs),
+             static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
   }
 #endif
 }
@@ -650,13 +649,19 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
              static_cast<unsigned long>(arm), static_cast<unsigned long>(esphome::App.get_loop_interval()));
   }
 #elif LATTER_PM_DFS_ONLY
-  (void) wake_mask;
-  if (s_p4_dfs_lock == nullptr || stay_awake == s_p4_dfs_awake) return;
+  if (s_p4_dfs_lock == nullptr) return;
+  const uint32_t target_quiet_loop = pm_quiet_loop_interval(wake_mask);
+  if (stay_awake == s_p4_dfs_awake) {
+    if (!stay_awake && esphome::App.get_loop_interval() != target_quiet_loop) {
+      esphome::App.set_loop_interval(target_quiet_loop);
+    }
+    return;
+  }
   if (stay_awake) {
     esp_pm_lock_acquire(s_p4_dfs_lock);
     esphome::App.set_loop_interval(s_p4_loop_interval_awake);
   } else {
-    esphome::App.set_loop_interval(250U);
+    esphome::App.set_loop_interval(target_quiet_loop);
     esp_pm_lock_release(s_p4_dfs_lock);
   }
   s_p4_dfs_awake = stay_awake;

@@ -669,9 +669,7 @@ script:
           id(sync_wake_word_state).execute();
 
           if (!local_audio_playing) {
-            id(hal_set_dac_mute).execute(true);
-            id(speaker_enable).turn_off();
-            id(route_i2s_to_mic).execute();
+            id(mute_speaker_path).execute();
             if (!ww_active) {
               id(hal_set_audio_codecs_standby).execute(true);
             }
@@ -717,10 +715,10 @@ script:
           id(display_power_state) = 0; // ACTIVE
           id(disp1).start_poller();
           id(apply_power_policy).execute();  // full-throughput Wi-Fi (fresh interaction), beacon, IMU, ticks
-          // Codec power follows audio demand, not screen state: route_i2s_to_spk / sync_wake_word_state /
+          // Codec power follows audio demand, not screen state: enable_speaker_path / sync_wake_word_state /
           // voice entry points wake the codecs when audio actually starts.
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
-            id(route_i2s_to_spk).execute();
+            id(enable_speaker_path).execute();
           }
           const std::string &art_u = latter_ui::media_state().art_url;
           if (id(gui_page) == 2 &&

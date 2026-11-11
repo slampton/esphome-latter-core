@@ -22,7 +22,7 @@ esphome:
         # (latter-verify enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111037L;
+            constexpr long LATTER_YAML_REV = 2026111038L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -55,10 +55,8 @@ esphome:
             id(current_loaded_art_url) = "";
             id(current_loaded_wallpaper_url) = "";
             id(current_loaded_camera_url) = "";
-            id(hal_set_dac_mute).execute(true);
             id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_state_json());
-        - script.execute: route_i2s_to_mic
-        - switch.turn_off: speaker_enable
+        - script.execute: mute_speaker_path
         - script.execute: apply_default_start_page
         - script.execute: apply_theme_preset
         - lambda: |-

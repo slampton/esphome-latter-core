@@ -200,7 +200,7 @@ media_player:
               - script.stop: mp_idle_debounce
               - script.stop: sync_wake_word_state
               - script.stop: va_echo_gate
-              - script.stop: route_i2s_to_mic
+              - script.stop: mute_speaker_path
               - script.stop: screen_sleep_timer
               - mixer_speaker.apply_ducking:
                   id: media_mixing_input
@@ -210,8 +210,8 @@ media_player:
                   id: announcement_mixing_input
                   decibel_reduction: 0
                   duration: 0.05s
-              - script.execute: route_i2s_to_spk
-              - script.wait: route_i2s_to_spk
+              - script.execute: enable_speaker_path
+              - script.wait: enable_speaker_path
               - lambda: |-
                   if (!latter_ui::cam_call_active() && !latter_ui::cam_listen_active()) {
                     id(va_tts_received) = true;
@@ -260,7 +260,7 @@ media_player:
               - script.stop: mp_idle_debounce
               - script.stop: sync_wake_word_state
               - script.stop: va_echo_gate
-              - script.stop: route_i2s_to_mic
+              - script.stop: mute_speaker_path
               - if:
                   condition:
                     lambda: 'return !id(alarm_ringing) && !id(timer_ringing) && !id(find_my_active);'
@@ -281,8 +281,8 @@ media_player:
                   condition:
                     lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
                   then:
-                    - script.execute: route_i2s_to_spk
-                    - script.wait: route_i2s_to_spk
+                    - script.execute: enable_speaker_path
+                    - script.wait: enable_speaker_path
               - lambda: 'id(hal_set_dac_mute).execute(false);'
               - if:
                   condition:
@@ -425,12 +425,17 @@ voice_assistant:
           then:
             - script.execute: va_echo_gate
           else:
-            - script.execute: route_i2s_to_mic
+            - script.execute: mute_speaker_path
       - mixer_speaker.apply_ducking:
           id: announcement_mixing_input
           decibel_reduction: 0
           duration: 0.1s
       - lambda: |-
+          // On cold-mic PTT turns (wake word was off), voice_assistant.start just started latter_mic and I2S MCLK;
+          // re-sync ES7210 CSM now that MCLK is running without touching continuous wake-word turns.
+          if (!id(mww).is_running()) {
+            id(hal_set_audio_codecs_standby).execute(false);
+          }
           id(va_was_cancelled) = false;
           id(va_vad_active) = false;
           id(va_tts_received) = false;
@@ -493,7 +498,7 @@ voice_assistant:
           condition:
             lambda: 'return !latter_ui::cam_intercom_ptt_active() && !latter_ui::cam_call_active();'
           then:
-            - script.execute: route_i2s_to_spk
+            - script.execute: enable_speaker_path
       - lambda: |-
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());
           id(va_vad_active) = false;
@@ -578,8 +583,8 @@ voice_assistant:
                       decibel_reduction: 0
                       duration: 0.05s
                   - script.stop: screen_sleep_timer
-                  - script.execute: route_i2s_to_spk
-                  - script.wait: route_i2s_to_spk
+                  - script.execute: enable_speaker_path
+                  - script.wait: enable_speaker_path
                   # The DAC rises to the voice level in on_announcement, when the reply actually plays.
                   - lambda: |-
                       id(hal_set_dac_mute).execute(false);
@@ -620,8 +625,8 @@ voice_assistant:
                 decibel_reduction: 0
                 duration: 0.05s
             - script.stop: screen_sleep_timer
-            - script.execute: route_i2s_to_spk
-            - script.wait: route_i2s_to_spk
+            - script.execute: enable_speaker_path
+            - script.wait: enable_speaker_path
             # The music ducks here, seconds before the audio arrives (an announcement's TTS start comes
             # ~2 s before it plays). The DAC rises to the voice level in on_announcement, when it actually
             # plays: raising it here played the not-yet-ducked music louder before the chime.
@@ -658,8 +663,8 @@ voice_assistant:
                 announcement: true
           else:
             - script.stop: screen_sleep_timer
-            - script.execute: route_i2s_to_spk
-            - script.wait: route_i2s_to_spk
+            - script.execute: enable_speaker_path
+            - script.wait: enable_speaker_path
             - lambda: 'id(hal_set_dac_mute).execute(false);'
             - lambda: |-
                 if (!id(va_active)) {
@@ -855,7 +860,7 @@ script:
             lambda: 'return id(va).is_running();'
           then:
             # Mute the speaker path and drop the amplifier before the next listening turn.
-            - script.execute: route_i2s_to_mic
+            - script.execute: mute_speaker_path
             - script.stop: va_tts_drain_and_finish
       # 3. Normal completion: exit the overlay without calling abort_voice_assistant(id(va)),
       #    preserving conversation_id and native continued-conversation state.
@@ -879,16 +884,21 @@ script:
           id(apply_power_policy).execute();
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
-      # 4. Smoothly restore music playback or mute & route I2S back to mic, then restore the display
+      # 4. Smoothly restore music playback or silence the speaker path, then restore the display
       - script.execute: resume_music_after_va
       - script.execute: va_restore_display
   # Powers the speaker path up. The full-duplex bus keeps the microphone and the wake word running (the
   # wake word is paused by sync_wake_word_state while media plays).
-  - id: route_i2s_to_spk
+  - id: enable_speaker_path
     mode: restart
     then:
-      - script.stop: route_i2s_to_mic
-      - lambda: 'id(hal_set_audio_codecs_standby).execute(false);'
+      - script.stop: mute_speaker_path
+      # Wake codecs only when both mic and speaker were idle, avoiding redundant I2C writes and mid-capture
+      # ES7210 CSM resets while wake word, Assist, or playback already owns the bus.
+      - lambda: |-
+          if (!id(latter_mic).is_running() && !id(physical_speaker).is_running()) {
+            id(hal_set_audio_codecs_standby).execute(false);
+          }
       # Amplifier sequencing (the one place the speaker path powers up). On a cold start the I2S
       # clocks start first with the amplifier off, so the DAC output settles unamplified; then the
       # amplifier turns on. Starting the clocks with the amplifier already on is what pops. A running
@@ -911,7 +921,7 @@ script:
             - delay: 30ms
       - switch.turn_on: speaker_enable
   # Silences the speaker path (DAC mute, amplifier off). The speaker is left to its own idle timeout.
-  - id: route_i2s_to_mic
+  - id: mute_speaker_path
     mode: restart
     then:
       - lambda: 'id(hal_set_dac_mute).execute(true);'
@@ -947,8 +957,8 @@ script:
               return !id(physical_speaker).has_buffered_data() ||
                      (millis() - latter_ui::echo_last_loud_ms().load()) > 100;
           timeout: 500ms
-      - script.execute: route_i2s_to_mic  # DAC mute silences whatever padding is still buffered
-      - script.wait: route_i2s_to_mic
+      - script.execute: mute_speaker_path  # DAC mute silences whatever padding is still buffered
+      - script.wait: mute_speaker_path
       - delay: 30ms  # the amplifier's power-down transient
       - lambda: |-
           latter_ui::echo_meter_active().store(false, std::memory_order_relaxed);
@@ -1086,8 +1096,8 @@ script:
             id(screen_sleep_timer).execute();
           }
           id(va_tts_received) = false;
-      - script.execute: route_i2s_to_mic
-      - script.wait: route_i2s_to_mic
+      - script.execute: mute_speaker_path
+      - script.wait: mute_speaker_path
       - voice_assistant.start:
           wake_word: !lambda 'return id(last_detected_wake_word);'
 
@@ -1117,13 +1127,13 @@ script:
                 decibel_reduction: 50
                 duration: 0.05s
             - delay: 400ms
-      # Only re-route when the speaker path is not already active (music already owns it).
+      # Only power up when the speaker path is not already active (music already owns it).
       - if:
           condition:
             lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
           then:
-            - script.execute: route_i2s_to_spk
-            - script.wait: route_i2s_to_spk
+            - script.execute: enable_speaker_path
+            - script.wait: enable_speaker_path
       - lambda: |-
           // Find My Device always plays at the 0.90 ceiling; alarms/timers follow the Alert Volume model.
           const float alert_v = id(find_my_active)
@@ -1166,8 +1176,8 @@ script:
           condition:
             lambda: 'return !id(speaker_enable).state;'
           then:
-            - script.execute: route_i2s_to_spk
-            - script.wait: route_i2s_to_spk
+            - script.execute: enable_speaker_path
+            - script.wait: enable_speaker_path
             - lambda: |-
                 const float sfx_v = latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
                 id(physical_speaker).set_volume(sfx_v);
@@ -1234,9 +1244,8 @@ script:
                                  !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
                                  (id(active_game) == 0);
                       then:
-                        - lambda: 'id(hal_set_dac_mute).execute(true);'
-                        - switch.turn_off: speaker_enable
-                        - script.execute: route_i2s_to_mic
+                        - script.execute: mute_speaker_path
+                        - script.wait: mute_speaker_path
                         - script.execute: sync_wake_word_state
 
 number:
