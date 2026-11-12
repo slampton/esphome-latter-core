@@ -118,7 +118,7 @@ Optional hardware flags:
 
 ### Light sleep (ESP32-S3 battery boards)
 
-ESP32-S3 battery boards include `modules/hal/chip_esp32s3.yaml`, which configures `esp32_power_management` (`max_frequency: 240MHz`, `min_frequency: 40MHz`, `enable_light_sleep: true`, `profiling: ${pm_profiling}`), `CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"`, Wi-Fi sleep IRAM/beacon-window options, `CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"`, `CONFIG_MDNS_TIMER_PERIOD_MS: "500"`, and `CONFIG_ESP_PANIC_HANDLER_IRAM: "y"` (never enable `CONFIG_RTC_CLK_SRC_INT_8MD256`, which causes watchdog resets).
+ESP32-S3 battery boards include `modules/hal/chip_esp32s3.yaml`, which configures `esp32_power_management` (`max_frequency: 240MHz`, `min_frequency: 80MHz`, `enable_light_sleep: true`, `profiling: ${pm_profiling}`), `CONFIG_PM_LIGHT_SLEEP_CALLBACKS: "y"`, `CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"`, Wi-Fi sleep IRAM/beacon-window options, `CONFIG_LWIP_DHCP_COARSE_TIMER_SECS: "10"`, `CONFIG_MDNS_TIMER_PERIOD_MS: "500"`, and `CONFIG_ESP_PANIC_HANDLER_IRAM: "y"` (never enable `CONFIG_RTC_CLK_SRC_INT_8MD256`, which causes watchdog resets).
 
 In screen-off quiet on battery, `apply_power_policy` releases `latter_awake` via `latter_ui::pm_apply()` (`components/latter_core/power_pm.cpp`), arms the light-sleep wake pins, and stretches the main loop interval to **`1,000 ms`** (**`250 ms`** while touch wake is armed). If smoothed Wi-Fi RSSI drops below **`-65 dBm`** (clearing only after staying above **`-61 dBm`** for 2 minutes; `kWeakLink*` in `include/hal_link_report.h`), `weak_link` holds `latter_awake` so the Home Assistant API link stays stable at weak signal. Never enable light sleep on MIPI-DSI boards.
 

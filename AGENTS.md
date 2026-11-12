@@ -38,7 +38,7 @@ python tools/gen_sounds.py --check           # Verify rendered WAV chimes/alarms
   - During OTA (`handle_ota_begin` / `handle_ota_progress` in `esphome_bridge.cpp`), stop the display poller on begin and throttle progress redraws (`>= 5%` / `>= 400 ms` on SPI/QSPI; `>= 10%` / `>= 800 ms` on MIPI-DSI). Configure `ledc_channel_config()` only once.
 - **Power Management & Light Sleep**:
   - Script `apply_power_policy` (`power_manager.yaml` -> `latter_ui::pm_apply()` in `power_pm.cpp`) is the sole owner of the `latter_awake` lock.
-  - S3 battery boards enable automatic light sleep (`1,000 ms` quiet loop, `250 ms` while touch wake is armed; never `CONFIG_RTC_CLK_SRC_INT_8MD256`), holding `weak_link` awake below `-65 dBm` smoothed RSSI (clearing above `-61 dBm` for 2 minutes). P4 boards run DFS (`min_frequency: 40MHz`, `enable_light_sleep: false`). Mobile Devices (`LATTER_IS_STATIONARY=0`) set `reboot_timeout: 0s`.
+  - S3 battery boards enable automatic light sleep (`min_frequency: 80MHz`, `CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"`, `1,000 ms` quiet loop, `250 ms` while touch wake is armed; never `CONFIG_RTC_CLK_SRC_INT_8MD256`), holding `weak_link` awake below `-65 dBm` smoothed RSSI (clearing above `-61 dBm` for 2 minutes). P4 boards run DFS (`min_frequency: 40MHz`, `enable_light_sleep: false`). Mobile Devices (`LATTER_IS_STATIONARY=0`) set `reboot_timeout: 0s`.
 - **Full-Duplex 48 kHz Audio & Voice**:
   - Every board runs one `full_duplex: true` I2S bus at `audio_out_rate: "48000"` with `latter_mic` resampling microphone input to `16000` Hz. Never add a `resampler` speaker or `rtttl:`.
   - Render alarm/timer takeovers above the Voice Assistant takeover, stop VA teardown scripts when an alarm rings, and never clear `continue_conversation_`.

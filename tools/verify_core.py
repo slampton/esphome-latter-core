@@ -954,6 +954,16 @@ def main(argv: list[str] | None = None) -> int:
             failures.append(f"[LIGHT SLEEP] {bf.name} must never enable CONFIG_RTC_CLK_SRC_INT_8MD256")
         if re.search(r"\bCONFIG_PM_SLP_SPIRAM_HALFSLEEP", uncommented_yaml):
             failures.append(f"[LIGHT SLEEP] {bf.name} must never enable unimplemented CONFIG_PM_SLP_SPIRAM_HALFSLEEP_*")
+        if re.search(r"(?m)^\s*enable_light_sleep:\s*true\b", uncommented_yaml):
+            if 'CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"' not in uncommented_yaml:
+                failures.append(
+                    f"[LIGHT SLEEP] {bf.name} with enable_light_sleep: true must set "
+                    'CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"'
+                )
+            if not re.search(r"(?m)^\s*min_frequency:\s*80MHz\b", uncommented_yaml):
+                failures.append(
+                    f"[LIGHT SLEEP] {bf.name} with enable_light_sleep: true must set min_frequency: 80MHz"
+                )
         if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:", uncommented_yaml):
             failures.append(f"[P4 DMA] {bf.name} must never enable CONFIG_CACHE_L2_CACHE_LINE_128B")
         if re.search(r"\bCONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM\b", uncommented_yaml):
