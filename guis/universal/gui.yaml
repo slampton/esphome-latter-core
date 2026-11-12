@@ -236,7 +236,7 @@ display:
         const bool use_page_wallpaper =
             has_wallpaper && !tools_full_bleed &&
             (rs.nav.gui_page == 4 || rs.nav.gui_page == 5 || rs.nav.gui_page == 6 ||
-             rs.nav.gui_page == 8 || rs.nav.gui_page == 9);
+             rs.nav.gui_page == 7 || rs.nav.gui_page == 8 || rs.nav.gui_page == 9);
         latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
       }
 

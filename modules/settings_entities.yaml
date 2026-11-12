@@ -358,8 +358,18 @@ select:
       - "Full Screen"
       - "Letterbox"
       - "Standard"
+      - "None"
     set_action:
       - lambda: |-
+          latter_ui::mark_dirty_full();
+          if (x != "None") {
+            const auto &rs = latter_ui::runtime_state();
+            const auto &ms = latter_ui::media_state();
+            if (rs.nav.gui_page == 2 && (!ms.is_local || id(album_art).get_width() == 0) &&
+                !ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
+              id(fetch_remote_art_debounced).execute();
+            }
+          }
           latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template

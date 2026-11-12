@@ -271,8 +271,8 @@ struct UiFrameContext {
   // Select options
   std::string clock_face_style_opt{"Analog"};
   std::string weather_sim_opt{"Live (Home Assistant)"};
-  std::string music_overlay_style_opt{"Frosted Card"};
-  std::string music_fullscreen_art_opt{"Always"};
+  std::string music_overlay_style_opt{"Art + Metadata"};
+  std::string music_fullscreen_art_opt{"Full Screen"};
   std::string music_album_sort_opt{"A-Z"};
   std::string music_artist_album_sort_opt{"Release Year"};
   std::string music_podcast_sort_opt{"Latest Episode"};

@@ -74,7 +74,8 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
     rs.music.hud_active = true;
     rs.music.hud_timer = now_ms;
     const auto &ms = media_state();
-    if ((!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
+    if (rt.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE) != "None" &&
+        (!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
       rt.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
     }
   } else if (chosen_app == PageId::SYSTEM) {
@@ -175,7 +176,8 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     rs.music.hud_active = true;
     rs.music.hud_timer = now_ms;
     const auto &ms = media_state();
-    if ((!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
+    if (rt.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE) != "None" &&
+        (!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
       rt.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
     }
   } else if (kind == 4) {
@@ -1315,6 +1317,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.music.overlay_mode = 5;
           rs.nav.audio_menu_parent_page = PageId::SYSTEM;
           rs.nav.system_menu_mode = 0;
+          const auto &ms = media_state();
+          if (rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE) != "None" &&
+              (!ms.is_local || rt_.album_art_w == 0) &&
+              !ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
+            rt_.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
+          }
         } else {
           rs.nav.system_menu_mode = 0;
         }
@@ -1328,7 +1336,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           if (slot == 0) {
             rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
                                cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
-                                            {"Full Screen", "Letterbox", "Standard"}));
+                                            {"Full Screen", "Letterbox", "Standard", "None"}));
           } else if (slot == 1) {
             rt_.set_select_opt(UiSelectId::MUSIC_OVERLAY_STYLE,
                                cycle_option(rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),

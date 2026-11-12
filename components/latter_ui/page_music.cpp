@@ -17,13 +17,19 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
 
   const auto &rs = runtime_state();
   const auto &ms = media_state();
+  const auto &ac = area_ctx_state();
   const int cx = ctx.cx;
   const int cy = ctx.cy;
   const uint32_t now_ms = ctx.now_ms;
 
+  const bool has_wallpaper = (!ac.wallpaper_url.empty() &&
+                              ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                              ctx.home_wallpaper_art.valid());
+
   const std::string art_mode = ctx.music_fullscreen_art_opt.empty()
                                    ? std::string("Full Screen")
                                    : ctx.music_fullscreen_art_opt;
+  const bool is_none      = (art_mode == "None");
   const bool is_standard  = (art_mode == "Standard");
   const bool is_letterbox = (art_mode == "Letterbox");
 
@@ -43,37 +49,42 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
   const bool apply_scrim = always_visible || music_hud_active;
   bool has_art = false;
   bool rendered_art = false;
+  bool rendered_wall = false;
   bool used_remote_art = false;
 
   const bool remote_art_ready = (!ms.art_url.empty() && ctx.remote_album_art.get_width() > 0);
   const bool local_art_ready  = (ctx.album_art.get_width() > 0);
 
-  if (is_remote) {
-    if (remote_art_ready) {
-      has_art = true;
-      used_remote_art = true;
-      rendered_art = render_album_art_canvas(
-          it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
-    }
+  if (is_none) {
+    rendered_wall = render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg);
   } else {
-    if (local_art_ready) {
-      has_art = true;
-      rendered_art = render_album_art_canvas(
-          it, ctx.album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
-    } else if (remote_art_ready) {
-      has_art = true;
-      used_remote_art = true;
-      rendered_art = render_album_art_canvas(
-          it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
+    if (is_remote) {
+      if (remote_art_ready) {
+        has_art = true;
+        used_remote_art = true;
+        rendered_art = render_album_art_canvas(
+            it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
+      }
+    } else {
+      if (local_art_ready) {
+        has_art = true;
+        rendered_art = render_album_art_canvas(
+            it, ctx.album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
+      } else if (remote_art_ready) {
+        has_art = true;
+        used_remote_art = true;
+        rendered_art = render_album_art_canvas(
+            it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
+      }
     }
+    frame_base(it, ctx.col_bg);
   }
-
-  frame_base(it, ctx.col_bg);
 
   const Color glass_bg = rendered_art
       ? (used_remote_art ? sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34))
                          : sample_image_ambient_tint(ctx.album_art, Color(20, 25, 34)))
-      : kChromeGlassTint;
+      : (rendered_wall ? sample_image_ambient_tint(ctx.home_wallpaper_art, kChromeGlassTint)
+                       : kChromeGlassTint);
   const Color glass_brd(62, 74, 92);
 
   std::string spk_title = rs.music.active_speaker_name.empty() ? ms.speaker_name : rs.music.active_speaker_name;
@@ -264,7 +275,7 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
     if (title.empty()) title = is_playing ? "Playing Audio" : "Idle";
     title = fit_text_to_width_font(title, scale_x(280), ctx.font_small);
 
-    const bool has_shadow = has_art;
+    const bool has_shadow = has_art || backdrop_active();
     const int y_t  = scale_y(352);
     const int y_ar = scale_y(374);
     const int y_al = scale_y(395);
@@ -315,23 +326,38 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
   Color card_bg = kChromeGlassTint;
   const Color card_brd(56, 68, 84);
 
-  if (!rs.nav.menu_scroll_active) {
-    const bool rem_ready = (!ms.art_url.empty() && ctx.remote_album_art.get_width() > 0);
-    const bool loc_ready = (ctx.album_art.get_width() > 0);
-    if (is_rem) {
-      if (rem_ready) {
+  const auto &ac = area_ctx_state();
+  const bool has_wallpaper = (!ac.wallpaper_url.empty() &&
+                              ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                              ctx.home_wallpaper_art.valid());
+  const std::string art_mode = ctx.music_fullscreen_art_opt.empty()
+                                   ? std::string("Full Screen")
+                                   : ctx.music_fullscreen_art_opt;
+  const bool is_none = (art_mode == "None");
+
+  if (is_none) {
+    if (render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg)) {
+      card_bg = sample_image_ambient_tint(ctx.home_wallpaper_art, kChromeGlassTint);
+    }
+  } else {
+    if (!rs.nav.menu_scroll_active) {
+      const bool rem_ready = (!ms.art_url.empty() && ctx.remote_album_art.get_width() > 0);
+      const bool loc_ready = (ctx.album_art.get_width() > 0);
+      if (is_rem) {
+        if (rem_ready) {
+          render_album_art_canvas(it, ctx.remote_album_art, cx, false, false, true, false, 2);
+          card_bg = sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34));
+        }
+      } else if (loc_ready) {
+        render_album_art_canvas(it, ctx.album_art, cx, false, false, true, false, 2);
+        card_bg = sample_image_ambient_tint(ctx.album_art, Color(20, 25, 34));
+      } else if (rem_ready) {
         render_album_art_canvas(it, ctx.remote_album_art, cx, false, false, true, false, 2);
         card_bg = sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34));
       }
-    } else if (loc_ready) {
-      render_album_art_canvas(it, ctx.album_art, cx, false, false, true, false, 2);
-      card_bg = sample_image_ambient_tint(ctx.album_art, Color(20, 25, 34));
-    } else if (rem_ready) {
-      render_album_art_canvas(it, ctx.remote_album_art, cx, false, false, true, false, 2);
-      card_bg = sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34));
     }
+    frame_base(it, ctx.col_bg);
   }
-  frame_base(it, ctx.col_bg);
 
   const int row0_y = layout().slot5_y(0);
   const int row_s  = layout().slot5_stride;
@@ -399,7 +425,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       }
     }
 
-    if (rs.nav.menu_scroll_active) {
+    if (rs.nav.menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, ctx.col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, ctx.col_bg);
     }
@@ -442,7 +468,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       }
     }
 
-    if (rs.nav.menu_scroll_active) {
+    if (rs.nav.menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, ctx.col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, ctx.col_bg);
     }
@@ -531,7 +557,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       }
     }
 
-    if (rs.nav.menu_scroll_active) {
+    if (rs.nav.menu_scroll_active && !backdrop_active()) {
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, ctx.col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, ctx.col_bg);
     }
@@ -650,6 +676,9 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
                     el_s / 60, el_s % 60, tot_s / 60, tot_s % 60, static_cast<int>(prog * 100.0f));
     } else {
       std::snprintf(time_buf, sizeof(time_buf), "%02d:%02d  /  %s", el_s / 60, el_s % 60, kUnknownGlyph);
+    }
+    if (backdrop_active()) {
+      fast_print(it, cx + 1, scale_y(196) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, time_buf);
     }
     fast_print(it, cx, scale_y(196), ctx.font_small, ctx.col_white, TextAlign::CENTER, time_buf);
 

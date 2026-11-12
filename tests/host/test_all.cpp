@@ -618,6 +618,17 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(touch_cpp.find("step_music_volume_feedback(") != std::string::npos);
   LATTER_CHECK(touch_cpp.find("touch_router().note_tap(") != std::string::npos);
   LATTER_CHECK(touch_cpp.find(".last_tap_ms") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("{\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"}") != std::string::npos);
+
+  const std::string music_cpp = read_repo_file("../../components/latter_ui/page_music.cpp");
+  const std::string remote_cpp = read_repo_file("../../components/latter_ui/page_remote.cpp");
+  const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string settings_yaml = read_repo_file("../../modules/settings_entities.yaml");
+  LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
+  LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
+  LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") != std::string::npos);
+  LATTER_CHECK(gui_yaml.find("rs.nav.gui_page == 7") != std::string::npos);
+  LATTER_CHECK(settings_yaml.find("- \"None\"") != std::string::npos);
 
   // TouchRouter::note_tap() stamps debounce timestamp on HUD wake without gating the wake itself
   latter_ui::touch_router().note_tap(10000U);

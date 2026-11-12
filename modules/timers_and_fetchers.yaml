@@ -389,6 +389,7 @@ script:
               const auto &rs = latter_ui::runtime_state();
               const auto &ms = latter_ui::media_state();
               return (rs.nav.gui_page == 2) &&
+                     (id(music_fullscreen_art_mode).current_option() != "None") &&
                      (rs.nav.display_power_state == 0) &&
                      !rs.voice.active && rs.voice.status_text.empty() &&
                      (!ms.is_local || id(album_art).get_width() == 0) &&

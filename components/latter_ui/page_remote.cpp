@@ -12,8 +12,16 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   using esphome::display::TextAlign;
 
   auto &rs = runtime_state();
+  const auto &ac = area_ctx_state();
   const int cx = ctx.cx;
   const int cy = ctx.cy;
+
+  if (!frame_base_state().painted) {
+    const bool has_wall = (!ac.wallpaper_url.empty() &&
+                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                           ctx.home_wallpaper_art.valid());
+    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, cx, ctx.col_bg);
+  }
   const uint32_t now_ms = ctx.now_ms;
   const int remote_subpage = rs.nav.remote_subpage;
   const std::string &remote_action_feedback = rs.remote.action_feedback;
@@ -25,7 +33,6 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   const Color &theme_secondary = ctx.theme_secondary;
   const Color &col_white = ctx.col_white;
   const Color &col_slate = ctx.col_slate;
-  const Color &col_gray = ctx.col_gray;
   const Color &col_red = ctx.col_red;
 
   const std::string *t_ents = remote_slots_ent();
@@ -178,25 +185,39 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fill_rect_row_major(it, right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
   frame_hits().add_circle(right_fx, btm_fy, f_r, WidgetId::REMOTE_VOL_DOWN, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
-  // Adaptive Concentric D-Pad
+  // Adaptive Frosted-Glass Concentric D-Pad
   const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));
   const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((SCREEN_W > 520) ?  86 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50));
   const int ok_r       = dpad_r_in - scale_s(8);
-  fast_circle(it, cx, dpad_cy, dpad_r_out, col_gray);
-  fast_circle(it, cx, dpad_cy, dpad_r_in, col_gray);
+  render_glass_circle(it, cx, dpad_cy, dpad_r_out, kChromeGlassTint, kChromeCardBorder);
+  fast_circle_aa(it, cx, dpad_cy, static_cast<float>(dpad_r_in), kChromeCardBorder, 1.5f);
 
   const int d_in  = (dpad_r_in * 707) / 1000;
-  const int d_out = (dpad_r_out * 707) / 1000;
-  fast_line(it, cx + d_in, dpad_cy + d_in, cx + d_out, dpad_cy + d_out, col_gray);
-  fast_line(it, cx - d_in, dpad_cy + d_in, cx - d_out, dpad_cy + d_out, col_gray);
-  fast_line(it, cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, col_gray);
-  fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, col_gray);
+  const int d_out = ((dpad_r_out - 1) * 707) / 1000;
+  fast_line(it, cx + d_in, dpad_cy + d_in, cx + d_out, dpad_cy + d_out, kChromeCardBorder);
+  fast_line(it, cx - d_in, dpad_cy + d_in, cx - d_out, dpad_cy + d_out, kChromeCardBorder);
+  fast_line(it, cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, kChromeCardBorder);
+  fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, kChromeCardBorder);
 
   const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
-  fast_filled_triangle(it, cx, dpad_cy - arr_mid - 8, cx - 10, dpad_cy - arr_mid + 8, cx + 10, dpad_cy - arr_mid + 8, col_white);
-  fast_filled_triangle(it, cx, dpad_cy + arr_mid + 8, cx - 10, dpad_cy + arr_mid - 8, cx + 10, dpad_cy + arr_mid - 8, col_white);
-  fast_filled_triangle(it, cx - arr_mid - 8, dpad_cy, cx - arr_mid + 8, dpad_cy - 10, cx - arr_mid + 8, dpad_cy + 10, col_white);
-  fast_filled_triangle(it, cx + arr_mid + 8, dpad_cy, cx + arr_mid - 8, dpad_cy - 10, cx + arr_mid - 8, dpad_cy + 10, col_white);
+  const int arr_h   = scale_s(8);
+  const int arr_w   = scale_s(10);
+  auto draw_dpad_arrows = [&](int ox, int oy, Color c) {
+    fast_filled_triangle(it, cx + ox, dpad_cy - arr_mid - arr_h + oy,
+                         cx - arr_w + ox, dpad_cy - arr_mid + arr_h + oy,
+                         cx + arr_w + ox, dpad_cy - arr_mid + arr_h + oy, c);
+    fast_filled_triangle(it, cx + ox, dpad_cy + arr_mid + arr_h + oy,
+                         cx - arr_w + ox, dpad_cy + arr_mid - arr_h + oy,
+                         cx + arr_w + ox, dpad_cy + arr_mid - arr_h + oy, c);
+    fast_filled_triangle(it, cx - arr_mid - arr_h + ox, dpad_cy + oy,
+                         cx - arr_mid + arr_h + ox, dpad_cy - arr_w + oy,
+                         cx - arr_mid + arr_h + ox, dpad_cy + arr_w + oy, c);
+    fast_filled_triangle(it, cx + arr_mid + arr_h + ox, dpad_cy + oy,
+                         cx + arr_mid - arr_h + ox, dpad_cy - arr_w + oy,
+                         cx + arr_mid - arr_h + ox, dpad_cy + arr_w + oy, c);
+  };
+  draw_dpad_arrows(1, 1, kChromeShadow);
+  draw_dpad_arrows(0, 0, col_white);
 
   frame_hits().add_centered_rect(cx, dpad_cy - arr_mid, scale_x(56), scale_y(44), WidgetId::REMOTE_DPAD_UP, kHitTap | kHitFocusSlot);
   frame_hits().add_centered_rect(cx, dpad_cy + arr_mid, scale_x(56), scale_y(44), WidgetId::REMOTE_DPAD_DOWN, kHitTap | kHitFocusSlot);

@@ -55,7 +55,8 @@ image:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           rs.music.loaded_wallpaper_url = latter_ui::area_ctx_state().wallpaper_url;
-          if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 1) {
+          if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
+            latter_ui::mark_dirty_full();
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: sync_wake_word_state
