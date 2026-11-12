@@ -185,7 +185,7 @@ switch:
   - platform: gpio
     name: "Speaker Enable"
     id: speaker_enable
-    entity_category: config
+    internal: true
     pin: { number: GPIO46, ignore_strapping_warning: true }
 
 binary_sensor:

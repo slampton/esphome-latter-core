@@ -123,9 +123,9 @@ text_sensor:
 
 button:
   - platform: template
-    name: "Actions: Hibernate Now"
+    name: "Actions: Hibernate Device"
     id: enter_deep_sleep_btn
-    icon: "mdi:sleep"
+    icon: "mdi:power-sleep"
     entity_category: config
     on_press:
       - lambda: 'latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::BUTTON;'

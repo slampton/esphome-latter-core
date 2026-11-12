@@ -17,6 +17,9 @@
 #if defined(USE_ESP32) && __has_include("esphome/core/hal.h")
 #include "esphome/core/hal.h"
 #endif
+#if __has_include("esphome/core/log.h")
+#include "esphome/core/log.h"
+#endif
 
 #include "hal_manifest.h"
 #include "latter_prof.h"
@@ -293,5 +296,47 @@ inline void hal_set_touch_sleep_mode(I2cBusT *const *bus_pp, bool sleep) {
   if (bus_pp != nullptr) hal_set_touch_sleep_mode_bus(*bus_pp, sleep);
 }
 #endif
+
+// Pulses the touch controller hardware reset line cleanly before a warm software restart so capacitive touch
+// controllers (e.g. CST9217/CST9220) exit active finger-scan/I2C streaming prior to esp_restart().
+inline void hal_prepare_touch_for_restart() {
+#if defined(USE_ESP32) && defined(LATTER_TOUCH_RST_PIN)
+  const auto rst_pin = static_cast<gpio_num_t>(LATTER_TOUCH_RST_PIN);
+  gpio_set_direction(rst_pin, GPIO_MODE_OUTPUT);
+  gpio_set_level(rst_pin, 0);
+  esphome::delay(25);
+  gpio_set_level(rst_pin, 1);
+#endif
+}
+
+// Re-runs touchscreen setup (up to 2 attempts, >= 2 s apart) if post-reset I2C init failed during boot.
+template <typename TouchT>
+  requires(!std::is_pointer_v<TouchT>)
+inline void hal_recover_touchscreen_if_failed(TouchT *ts, uint32_t now_ms) {
+#if defined(USE_ESP32) && LATTER_HAS_ESPHOME_COMPONENT && LATTER_HAS_TOUCH
+  if (ts == nullptr || !ts->is_failed() || now_ms <= 1500U) return;
+  static uint8_t s_attempts = 0;
+  static uint32_t s_last_attempt_ms = 0;
+  if (s_attempts >= 2 || (s_last_attempt_ms != 0U && (now_ms - s_last_attempt_ms) < 2000U)) return;
+  ++s_attempts;
+  s_last_attempt_ms = now_ms;
+  ESP_LOGW("touch", "Touch controller failed at boot; re-running setup (attempt %u)", static_cast<unsigned>(s_attempts));
+#ifdef LATTER_TOUCH_RST_PIN
+  const auto rst_pin = static_cast<gpio_num_t>(LATTER_TOUCH_RST_PIN);
+  gpio_set_direction(rst_pin, GPIO_MODE_OUTPUT);
+  gpio_set_level(rst_pin, 0);
+  esphome::delay(25);
+  gpio_set_level(rst_pin, 1);
+  esphome::delay(10);
+#endif
+  ts->reset_to_construction_state();
+  ts->call();
+  ts->disable_loop();
+  ts->enable_loop();
+#else
+  (void)ts;
+  (void)now_ms;
+#endif
+}
 
 }  // namespace latter_ui

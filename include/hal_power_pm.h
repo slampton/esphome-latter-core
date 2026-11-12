@@ -607,11 +607,24 @@ inline int beacon_mode_index(const std::string &opt) {
   return 0;  // "Handheld Only"
 }
 
+inline constexpr uint32_t kBeaconHaSettleMs = 2000U;
+inline constexpr uint32_t kBeaconWifiFallbackMs = 12000U;
+
+// Opens once the Home Assistant API stream has had 2 s to finish its post-connect replay, or after 12 s on Wi-Fi
+// when HA has not connected yet (instead of holding BLE off for a blind 20 s after boot or hibernate wake).
+inline constexpr bool beacon_boot_gate_open(bool wifi_connected, bool ha_connected, uint32_t last_ha_connect_ms,
+                                            uint32_t now_ms) {
+  if (!wifi_connected) return false;
+  if (ha_connected && last_ha_connect_ms > 0U && (now_ms - last_ha_connect_ms) >= kBeaconHaSettleMs) return true;
+  return now_ms > kBeaconWifiFallbackMs;
+}
+
 template <typename BleCtrlT, typename WifiT>
 inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_connected, bool ble_beacon_switch_on,
                                   int beacon_mode, bool usb_powered,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,
-                                  bool high_tput_needed, uint32_t now_ms) {
+                                  bool high_tput_needed, uint32_t now_ms,
+                                  bool ha_connected = false, uint32_t last_ha_connect_ms = 0U) {
   if (is_hibernating || ota_in_progress) return;
 
 #if LATTER_HAS_BATTERY
@@ -623,7 +636,8 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
   const bool beacon_context_ok = true;
 #endif
   const bool beacon_paused = ble_beacon_switch_on && (!beacon_context_ok || !wifi_connected);
-  const bool beacon_wanted = ble_beacon_switch_on && !beacon_paused && (now_ms > 20000U);
+  const bool beacon_wanted =
+      ble_beacon_switch_on && !beacon_paused && beacon_boot_gate_open(wifi_connected, ha_connected, last_ha_connect_ms, now_ms);
   if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
     const bool radio_ready = wifi_connected && (now_ms > 8000U);

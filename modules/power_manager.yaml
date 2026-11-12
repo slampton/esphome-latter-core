@@ -168,6 +168,11 @@ interval:
 
           // 4. [PROF:*] Flight Recorder Power & Heap Telemetry
           uint32_t now_1s_ms = millis();
+          #if LATTER_HAS_TOUCH
+          if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
+            latter_ui::hal_recover_touchscreen_if_failed(&id(touch_screen), now_1s_ms);
+          }
+          #endif
           static uint32_t last_prof_10s_ms = 0;
           static int last_prof_pwr_state = -1;
           if (latter_ui::profiler_enabled() &&
@@ -341,7 +346,8 @@ script:
               id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
               latter_ui::beacon_mode_index(id(ble_beacon_mode_select).current_option()), rs.hw_usb_connected,
               rs.nav.is_hibernating, rs.nav.ota_in_progress, rs.nav.display_power_state,
-              high_tput_needed, now_p);
+              high_tput_needed, now_p,
+              latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms);
 
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
@@ -697,6 +703,7 @@ script:
             - light.turn_off: display_brightness
             - component.update: disp1
             - lambda: |-
+                id(sys_link_report).publish_state("hibernating");
                 esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));
             - delay: 250ms
             - safe_mode.mark_successful:

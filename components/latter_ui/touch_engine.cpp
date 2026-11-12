@@ -1219,14 +1219,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
 
     if (rs.nav.system_menu_mode == 4) {
-      if (wid == WidgetId::CONFIRM_CANCEL && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rs.nav.system_menu_mode = 3;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rt_.cmd(UiHostCmd::RESTART_DEVICE);
-      }
-      return;
+      return;  // Confirm modal resolves in on_touch_up so finger is off glass before restart
     }
 
     if (rs.nav.system_menu_mode == 5) {
@@ -1255,14 +1248,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
 
     if (rs.nav.system_menu_mode == 6) {
-      if (wid == WidgetId::CONFIRM_CANCEL && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rs.nav.system_menu_mode = 5;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rt_.cmd(UiHostCmd::TRIGGER_FIRMWARE_UPDATE);
-      }
-      return;
+      return;  // Confirm modal resolves in on_touch_up
     }
 
     if (rs.nav.system_menu_mode == 7) {
@@ -2793,6 +2779,20 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           }
           rt_.schedule_disp();
         }
+      }
+
+    // 7b. Page 4 System Confirm Modals (Mode 4 Reboot / Mode 6 Firmware Update — release-triggered)
+    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::SYSTEM &&
+               !rs.nav.menu_scroll_active &&
+               (rs.nav.system_menu_mode == 4 || rs.nav.system_menu_mode == 6) &&
+               gest.max_travel <= ly.tap_max()) {
+      if (wid == WidgetId::CONFIRM_CANCEL && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+        rs.nav.system_menu_mode = (rs.nav.system_menu_mode == 4) ? 3 : 5;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+        rt_.cmd((rs.nav.system_menu_mode == 4) ? UiHostCmd::RESTART_DEVICE
+                                               : UiHostCmd::TRIGGER_FIRMWARE_UPDATE);
       }
 
     // 8. Page 5 Weather Mode Bar Taps

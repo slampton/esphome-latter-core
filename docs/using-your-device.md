@@ -77,17 +77,16 @@ These appear as entities on the ESPHome device. Most of them can also be changed
 
 | Group | Entities |
 | :--- | :--- |
-| **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and the Display light |
-| **Home** | Weather Background, Wake Greeting (the dock and the activity card are Latter settings, not entities) |
+| **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and Screen Backlight |
+| **Home** | Weather Background, Sun, Moon, Wake Greeting (the dock and the activity card are Latter settings, not entities) |
 | **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Hold Crown Power Off (to never hibernate, set Battery Hibernate Timeout to Disabled) |
 | **Voice** | Wake Word Mode, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist (the wake words themselves are Home Assistant's Assist satellite Wake word selects) |
-| **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Speaker Shortcut and Library Shortcut |
-| **Sound** | Volume Step Size, Alert Volume, Game Sound Effects |
-| **Area** | Default Category, Show All Category, BLE Presence Beacon (off out of the box; Latter turns it on for devices with BLE presence tracking), Presence Beacon Mode |
-| **Weather** | Condition Simulation, which forces any of 16 conditions so you can preview them |
-| **Actions** | Trigger Voice Assistant, Find My Device, Screensaver Now, Hibernate Now (battery boards), Restart Device |
+| **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Show Speaker Shortcut, Show Library Shortcut |
+| **Sound** | Speaker Volume, Volume Step Size, Alert Volume, Game Sound Effects |
+| **Area** | Default Category, Show All Category, BLE Presence Beacon (off out of the box; Latter turns it on for devices with BLE presence tracking), BLE Presence Beacon Mode |
+| **Actions** | Trigger Voice Assistant, Find My Device, Activate Screensaver, Hibernate Device (battery boards), Restart Device |
 | **Status** | Battery Level, Battery Voltage, Battery Charging, Battery Charge State, Battery Low and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
-| **Diagnostics** | System: RPC Outbox (the bound Zero-Privilege RPC channel read by Latter; leave enabled). System: Telemetry Profiler, which logs per-frame render times, touch, audio, power, and memory. System: Internal RAM Low Water, Internal RAM Largest Block and PSRAM Low Water, which Home Assistant keeps in history. System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device, and on battery boards the battery voltage, level, charge state and average drain) refreshed every 15 minutes |
+| **Diagnostics & Developer** | System: RPC Outbox (the bound Zero-Privilege RPC channel read by Latter; leave enabled). System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device, and on battery boards the battery voltage, level, charge state and average drain) refreshed every 15 minutes. Developer group: System: Telemetry Profiler (logs per-frame render times, touch, audio, power, and memory), System: Log Memory Report, System: Internal RAM Low Water, Internal RAM Largest Block, PSRAM Low Water, and Developer: Weather Simulation (forces any of 16 weather conditions to preview them) |
 
 ### Logs
 

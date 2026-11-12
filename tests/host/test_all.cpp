@@ -649,6 +649,64 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(latter_ui::remote_vol_pct() == 65 && m.action_feedback == "Volume: 65%");
 }
 
+struct MockBleCtrl {
+  bool active{false};
+  bool failed{false};
+  int enables{0};
+  int disables{0};
+  bool is_active() const { return active; }
+  bool is_failed() const { return failed; }
+  void enable() {
+    active = true;
+    ++enables;
+  }
+  void disable() {
+    active = false;
+    ++disables;
+  }
+};
+
+struct MockWifiCtrl {};
+
+void test_beacon_boot_gate_and_touch_reboot_safety() {
+  // 1. beacon_boot_gate_open: opens 2s after HA API connect instead of waiting a blind 20s,
+  //    or falls back to 12s on Wi-Fi when HA has not connected yet.
+  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(false, true, 4000U, 8000U));
+  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(true, false, 0U, 8000U));
+  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(true, true, 4500U, 6000U));   // 1.5s < 2.0s settle
+  LATTER_CHECK(latter_ui::beacon_boot_gate_open(true, true, 4500U, 6500U));    // 2.0s settle met at 6.5s!
+  LATTER_CHECK(latter_ui::beacon_boot_gate_open(true, false, 0U, 12500U));     // 12s Wi-Fi-only fallback
+
+  MockBleCtrl ble{};
+  MockWifiCtrl wifi{};
+  // At t=5.5s with HA connected at t=4.5s (<2s settle), BLE stays off
+  latter_ui::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 5500U, true, 4500U);
+  LATTER_CHECK(!ble.is_active() && ble.enables == 0);
+  // At t=6.6s (>=2s settle), BLE enables immediately on wake without waiting 20s
+  latter_ui::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 6600U, true, 4500U);
+  LATTER_CHECK(ble.is_active() && ble.enables == 1);
+
+  // 2. Verify production YAML & touch confirm-release / CST9217 warm-reboot protections
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string panel_h = read_repo_file("../../include/hal_panel_power.h");
+  const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");
+  const std::string pwr_yaml = read_repo_file("../../modules/power_manager.yaml");
+  const std::string set_yaml = read_repo_file("../../modules/settings_entities.yaml");
+
+  // Confirm modal (modes 4 & 6) must NOT dispatch RESTART_DEVICE on finger-down; must resolve on_touch_up
+  const auto on_up_pos = touch_cpp.find("void TouchGestureEngine::on_touch_up(");
+  LATTER_CHECK(on_up_pos != std::string::npos);
+  LATTER_CHECK(touch_cpp.substr(0, on_up_pos).find("UiHostCmd::RESTART_DEVICE") == std::string::npos);
+  LATTER_CHECK(touch_cpp.substr(on_up_pos).find("UiHostCmd::RESTART_DEVICE") != std::string::npos);
+
+  LATTER_CHECK(panel_h.find("hal_prepare_touch_for_restart()") != std::string::npos);
+  LATTER_CHECK(panel_h.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
+  LATTER_CHECK(set_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("publish_state(\"hibernating\")") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -656,8 +714,9 @@ int main() {
   test_ui_layout_hit_table_and_dirty_band();
   test_battery_model_and_power_policy();
   test_music_remote_override_and_volume_feedback();
+  test_beacon_boot_gate_and_touch_reboot_safety();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "music override/volume feedback, and production hal_battery/hal_link_report verified.\n");
+      "music override/volume feedback, beacon boot gate + touch reboot safety, and hal_battery/hal_link_report verified.\n");
   return 0;
 }

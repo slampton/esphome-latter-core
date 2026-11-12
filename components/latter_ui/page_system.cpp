@@ -136,7 +136,8 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                                 esphome::Color txt_c, esphome::Color bg_c,
                                 uint16_t wid = WidgetId::NONE,
                                 int16_t param = 0) {
-    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, label, txt_c, font_small);
+    const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", hit_w - 20, font_small);
+    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, fit_lbl.c_str(), txt_c, font_small);
     add_row_hit(y_mid, wid, kHitTap | kHitFocusSlot, param);
   };
 
@@ -331,13 +332,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 3) {
     render_page_header(it, cx, "ACTIONS", font_small, theme_primary);
-    draw_action_card_y(layout().slot5_y(0), "Screensaver Now", card_brd_on, col_white, card_bg_on,
+    draw_action_card_y(layout().slot5_y(0), "Activate Screensaver", card_brd_on, col_white, card_bg_on,
                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), 0);
 #if LATTER_HAS_BATTERY
-    draw_action_card_y(layout().slot5_y(1), "Hibernate Now", card_brd_on, col_white, card_bg_on,
+    draw_action_card_y(layout().slot5_y(1), "Hibernate Device", card_brd_on, col_white, card_bg_on,
                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), 1);
 #else
-    draw_action_card_y(layout().slot5_y(1), "Screen Off Now", card_brd_on, col_white, card_bg_on,
+    draw_action_card_y(layout().slot5_y(1), "Turn Screen Off", card_brd_on, col_white, card_bg_on,
                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), 1);
 #endif
     draw_action_card_y(layout().slot5_y(2), "Software Update >", card_brd_on, col_white, card_bg_on,

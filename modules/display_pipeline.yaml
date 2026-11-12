@@ -113,7 +113,7 @@ output:
 light:
   - platform: monochromatic
     id: display_brightness
-    name: "Display"
+    name: "Display: Screen Backlight"
     entity_category: config
     output: backlight_brightness
     default_transition_length: 0s

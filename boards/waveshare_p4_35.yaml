@@ -85,6 +85,7 @@ esphome:
     # from it (include/hal_battery.h)
     - "-DLATTER_BATTERY_MAH=500"
     - "-DLATTER_BACKLIGHT_PIN=28"
+    - "-DLATTER_TOUCH_RST_PIN=29"
     - "-DLATTER_AUDIO_OUT_RATE=48000"
     - "-DLATTER_AUDIO_OUT_CH=1"
     - "-DLATTER_AUDIO_OUT_BITS=16"
@@ -121,7 +122,7 @@ switch:
   - platform: gpio
     name: "Speaker Enable"
     id: speaker_enable
-    entity_category: config
+    internal: true
     pin: GPIO53
     restore_mode: ALWAYS_OFF
 

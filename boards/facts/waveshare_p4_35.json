@@ -33,7 +33,7 @@
     "LATTER_CHIP_P4": 1, "LATTER_PSRAM_MB": 32,
     "LATTER_PWR_KEY_PIN": 49, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_BATTERY_MAH": 500,
     "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x001",
-    "LATTER_C6_RESET_PIN": 54, "LATTER_BACKLIGHT_PIN": 28
+    "LATTER_C6_RESET_PIN": 54, "LATTER_BACKLIGHT_PIN": 28, "LATTER_TOUCH_RST_PIN": 29
   },
   "pins": [
     {"gpio": 6, "role": "c6_io2_host_wake", "confidence": "M", "note": "LP-capable; unused"},

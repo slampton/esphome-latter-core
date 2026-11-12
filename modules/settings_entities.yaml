@@ -12,7 +12,7 @@ select:
   # off with the screen off on battery, where it would block automatic light sleep. "Always" is the
   # user's override: Bluetooth then runs alongside the docked wake word.
   - platform: template
-    name: "Area: Presence Beacon Mode"
+    name: "Area: BLE Presence Beacon Mode"
     id: ble_beacon_mode_select
     icon: "mdi:bluetooth-connect"
     entity_category: config
@@ -164,7 +164,7 @@ select:
           latter_ui::schedule_disp_update(&id(disp1));
 
   - platform: template
-    name: "Weather: Condition Simulation"
+    name: "Developer: Weather Simulation"
     id: weather_sim_condition
     icon: "mdi:weather-partly-cloudy"
     entity_category: config
@@ -625,24 +625,28 @@ button:
   - platform: template
     name: "Actions: Restart Device"
     id: restart_button
-    entity_category: diagnostic
+    icon: "mdi:restart"
+    entity_category: config
     on_press:
       - light.turn_off: display_brightness
       - component.update: disp1
-      - delay: 100ms
+      - delay: 150ms
+      - lambda: 'latter_ui::hal_prepare_touch_for_restart();'
+      - delay: 20ms
       - button.press: internal_restart
 
   - platform: template
     name: "Actions: Trigger Voice Assistant"
     id: trigger_va_button
+    icon: "mdi:microphone"
     entity_category: config
     on_press:
       - script.execute: toggle_voice_assistant
 
   - platform: template
-    name: "Actions: Screensaver Now"
+    name: "Actions: Activate Screensaver"
     id: trigger_screensaver_btn
-    icon: "mdi:weather-night"
+    icon: "mdi:monitor-shimmer"
     entity_category: config
     on_press:
       - script.execute: trigger_screensaver_now
