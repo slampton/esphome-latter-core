@@ -297,38 +297,46 @@ inline void hal_set_touch_sleep_mode(I2cBusT *const *bus_pp, bool sleep) {
 }
 #endif
 
-// Pulses the touch controller hardware reset line cleanly before a warm software restart so capacitive touch
-// controllers (e.g. CST9217/CST9220) exit active finger-scan/I2C streaming prior to esp_restart().
-inline void hal_prepare_touch_for_restart() {
+// Pulses the touch controller hardware reset line cleanly before a warm software restart (or post-boot retry)
+// so capacitive touch controllers (e.g. CST9217/CST9220) exit active finger-scan/I2C streaming cleanly.
+inline void hal_pulse_touch_reset_pin(uint32_t settle_after_ms = 0U) {
 #if defined(USE_ESP32) && defined(LATTER_TOUCH_RST_PIN)
   const auto rst_pin = static_cast<gpio_num_t>(LATTER_TOUCH_RST_PIN);
   gpio_set_direction(rst_pin, GPIO_MODE_OUTPUT);
   gpio_set_level(rst_pin, 0);
   esphome::delay(25);
   gpio_set_level(rst_pin, 1);
+  if (settle_after_ms > 0U) esphome::delay(settle_after_ms);
+#else
+  (void)settle_after_ms;
 #endif
+}
+
+inline void hal_prepare_touch_for_restart() {
+  hal_pulse_touch_reset_pin(0U);
 }
 
 // Re-runs touchscreen setup (up to 2 attempts, >= 2 s apart) if post-reset I2C init failed during boot.
 template <typename TouchT>
   requires(!std::is_pointer_v<TouchT>)
-inline void hal_recover_touchscreen_if_failed(TouchT *ts, uint32_t now_ms) {
-#if defined(USE_ESP32) && LATTER_HAS_ESPHOME_COMPONENT && LATTER_HAS_TOUCH
-  if (ts == nullptr || !ts->is_failed() || now_ms <= 1500U) return;
+inline void hal_recover_touchscreen_if_failed(TouchT *ts, uint32_t now_ms, bool reset_counter = false) {
   static uint8_t s_attempts = 0;
   static uint32_t s_last_attempt_ms = 0;
+  if (reset_counter) {
+    s_attempts = 0;
+    s_last_attempt_ms = 0;
+    return;
+  }
+#if !defined(USE_ESP32) || (LATTER_HAS_ESPHOME_COMPONENT && LATTER_HAS_TOUCH)
+  if (ts == nullptr || !ts->is_failed() || now_ms <= 1500U) return;
   if (s_attempts >= 2 || (s_last_attempt_ms != 0U && (now_ms - s_last_attempt_ms) < 2000U)) return;
   ++s_attempts;
   s_last_attempt_ms = now_ms;
+#ifdef ESP_LOGW
   ESP_LOGW("touch", "Touch controller failed at boot; re-running setup (attempt %u)", static_cast<unsigned>(s_attempts));
-#ifdef LATTER_TOUCH_RST_PIN
-  const auto rst_pin = static_cast<gpio_num_t>(LATTER_TOUCH_RST_PIN);
-  gpio_set_direction(rst_pin, GPIO_MODE_OUTPUT);
-  gpio_set_level(rst_pin, 0);
-  esphome::delay(25);
-  gpio_set_level(rst_pin, 1);
-  esphome::delay(10);
 #endif
+  hal_pulse_touch_reset_pin(10U);
+  ts->status_clear_error();
   ts->reset_to_construction_state();
   ts->call();
   ts->disable_loop();
@@ -337,6 +345,11 @@ inline void hal_recover_touchscreen_if_failed(TouchT *ts, uint32_t now_ms) {
   (void)ts;
   (void)now_ms;
 #endif
+}
+
+template <typename TouchT>
+inline void hal_recover_touchscreen_if_failed(TouchT *const *ts_pp, uint32_t now_ms, bool reset_counter = false) {
+  if (ts_pp != nullptr) hal_recover_touchscreen_if_failed(*ts_pp, now_ms, reset_counter);
 }
 
 }  // namespace latter_ui

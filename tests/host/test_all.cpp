@@ -35,6 +35,7 @@
 #include "../../include/latter_rpc.h"
 #include "../../include/hal_battery.h"
 #include "../../include/hal_link_report.h"
+#include "../../include/hal_panel_power.h"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
 #include "../../include/ui_compositor.h"
@@ -668,6 +669,21 @@ struct MockBleCtrl {
 
 struct MockWifiCtrl {};
 
+struct MockTouchscreen {
+  bool failed{true};
+  int clear_err_calls{0};
+  int reset_calls{0};
+  int setup_calls{0};
+  int disable_loop_calls{0};
+  int enable_loop_calls{0};
+  bool is_failed() const { return failed; }
+  void status_clear_error() { ++clear_err_calls; }
+  void reset_to_construction_state() { ++reset_calls; }
+  void call() { ++setup_calls; }
+  void disable_loop() { ++disable_loop_calls; }
+  void enable_loop() { ++enable_loop_calls; }
+};
+
 void test_beacon_boot_gate_and_touch_reboot_safety() {
   // 1. beacon_boot_gate_open: opens 2s after HA API connect instead of waiting a blind 20s,
   //    or falls back to 12s on Wi-Fi when HA has not connected yet.
@@ -686,7 +702,22 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   latter_ui::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 6600U, true, 4500U);
   LATTER_CHECK(ble.is_active() && ble.enables == 1);
 
-  // 2. Verify production YAML & touch confirm-release / CST9217 warm-reboot protections
+  // 2. hal_recover_touchscreen_if_failed: test both TouchT* (id(touch_screen)) and TouchT* const* (&id(touch_screen))
+  MockTouchscreen ts{};
+  MockTouchscreen *const ts_const_ptr = &ts;
+  latter_ui::hal_recover_touchscreen_if_failed(&ts, 0U, true);
+  latter_ui::hal_recover_touchscreen_if_failed(&ts, 1000U);  // <= 1500ms boot guard
+  LATTER_CHECK(ts.setup_calls == 0);
+  latter_ui::hal_recover_touchscreen_if_failed(&ts, 2000U);  // attempt 1 via TouchT*
+  LATTER_CHECK(ts.setup_calls == 1 && ts.clear_err_calls == 1 && ts.reset_calls == 1 && ts.enable_loop_calls == 1);
+  latter_ui::hal_recover_touchscreen_if_failed(&ts_const_ptr, 3200U);  // < 2000ms cooldown
+  LATTER_CHECK(ts.setup_calls == 1);
+  latter_ui::hal_recover_touchscreen_if_failed(&ts_const_ptr, 4100U);  // attempt 2 via TouchT* const*
+  LATTER_CHECK(ts.setup_calls == 2 && ts.enable_loop_calls == 2);
+  latter_ui::hal_recover_touchscreen_if_failed(&ts, 7000U);  // capped at 2 attempts per boot
+  LATTER_CHECK(ts.setup_calls == 2);
+
+  // 3. Verify production YAML & touch confirm-release / CST9217 warm-reboot protections
   const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   const std::string panel_h = read_repo_file("../../include/hal_panel_power.h");
   const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");

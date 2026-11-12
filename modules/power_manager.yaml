@@ -170,7 +170,7 @@ interval:
           uint32_t now_1s_ms = millis();
           #if LATTER_HAS_TOUCH
           if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
-            latter_ui::hal_recover_touchscreen_if_failed(&id(touch_screen), now_1s_ms);
+            latter_ui::hal_recover_touchscreen_if_failed(id(touch_screen), now_1s_ms);
           }
           #endif
           static uint32_t last_prof_10s_ms = 0;
