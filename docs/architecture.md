@@ -67,7 +67,7 @@ Fonts, color palette, the `display:` render lambda (an `!extend` of `disp1` call
 
 | Component / Header | Contents |
 | :--- | :--- |
-| `components/latter_core/` + `include/{esphome_bridge,hal_*,audio_router,latter_*}.h` | Compiled HAL & core runtime: `power_battery.cpp` (AXP2101 charger/rails + capacity-derived OCV/fuel-gauge model), `audio_es8311.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp` (backlight LEDC, SPI/QSPI DCS sleep, MIPI-DSI IRAM scanout callback wrapper), `power_pm.cpp` (light-sleep awake lock, wake pins, Wi-Fi power policy), and `esphome_bridge.cpp` (`VoiceAssistant` synchronous abort, `MipiDsi` framebuffer pointer, OTA lifecycle helpers). Also provides Protocol v3 state (`latter_state.h`), zero-privilege RPC helpers (`latter_rpc.h`, `latter_actions.h`), hardware manifest builder (`hal_manifest.h`), link diagnostics (`hal_link_report.h`), and `[PROF:*]` flight recorder (`latter_prof.h`). Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
+| `components/latter_core/` + `include/{esphome_bridge,hal_*,audio_router,latter_*}.h` | Compiled HAL & core runtime: `power_battery.cpp` (AXP2101 charger/rails + capacity-derived OCV/fuel-gauge model), `audio_es8311.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp` (backlight LEDC, SPI/QSPI DCS sleep, FocalTech touch monitor mode), `power_pm.cpp` (light-sleep awake lock, wake pins, Wi-Fi power policy), and `esphome_bridge.cpp` (`VoiceAssistant` synchronous abort, `MipiDsi` framebuffer pointer, OTA lifecycle helpers). Also provides Protocol v3 state (`latter_state.h`), zero-privilege RPC helpers (`latter_rpc.h`, `latter_actions.h`), hardware manifest builder (`hal_manifest.h`), link diagnostics (`hal_link_report.h`), and `[PROF:*]` flight recorder (`latter_prof.h`). Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
 | `components/latter_ui/` + `include/ui_*.h` | Compiled C++20 UI engine: per-domain page translation units (`page_*.cpp`), `FrameHitTable` (`hit_table.cpp`), `UiTouchEngine` (`touch_engine.cpp`), frosted-glass widgets (`ui_widgets.cpp`), `DirtyBandTracker` `2px` dirty-band compositor (`ui_compositor.cpp`), row-major RGB565 `fast_*` primitives (`ui_gfx.h`), and `UiLayout` anchors and millimetre gesture thresholds (`ui_layout.h`). |
 | `components/latter_beacon/` | Raw-HCI BLE iBeacon advertiser (`ble_ctrl`) over VHCI on ESP32-S3 or `esp_hosted` on ESP32-P4, requiring zero Bluedroid/NimBLE host stack RAM. |
 
@@ -97,13 +97,13 @@ The ESP32-S3 battery boards declare ESPHome's `power_management:` (`modules/hal/
 
 - **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs on every push and PR: `tools/verify_core.py`, `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, C++20 host unit tests (`tests/host/test_all.cpp`), `esphome config` across examples, bring-up probes, and all five device configs, and full 5-device firmware compilation on `dev` before fast-forwarding `main`.
 - **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
-  1. Verifies zero `L`-confidence board facts (`tools/check_boards.py --release --check-docs`) and compiles all device variants with the `esphome/esphome:2026.11.0b3` container.
+  1. Verifies zero `L`-confidence board facts (`tools/check_boards.py --release --check-docs`) and compiles all device variants with the `esphome/esphome:2026.11.0b4` container.
   2. Writes manifests with each OTA image's MD5 and attaches debug `.elf` symbols.
   3. Publishes binaries, manifests, and the installer page to GitHub Pages.
 
 ## Requirements for building
 
-- **ESPHome:** 2026.11.0b3 or newer. `min_version` is set in every device config, and [`include/esphome_bridge.h`](../include/esphome_bridge.h) enforces `ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)` alongside `LATTER_SDK_REV == LATTER_YAML_REV`.
+- **ESPHome:** 2026.11.0b4 or newer. `min_version` is set in every device config, and [`include/esphome_bridge.h`](../include/esphome_bridge.h) enforces `ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)` alongside `LATTER_SDK_REV == LATTER_YAML_REV`.
 - **Framework:** ESP-IDF with C++20.
 - **PSRAM:** required on every board (full-frame RGB565 display buffers live in PSRAM).
 - **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"` on every board.

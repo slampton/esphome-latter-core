@@ -1,6 +1,6 @@
 # esphome-latter-core Agent Engineering Guide
 
-Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter companion displays and headless nodes (ESPHome `2026.11.0b3+`, ESP-IDF 5.5+, C++20).
+Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter companion displays and headless nodes (ESPHome `2026.11.0b4+`, ESP-IDF 5.5+, C++20).
 
 ## 1. Repository Architecture
 
@@ -34,7 +34,7 @@ python tools/gen_sounds.py --check           # Verify rendered WAV chimes/alarms
 - **Display Buffers, P4 DMA & MIPI-DSI IRAM Safety**:
   - Every board uses 100% full-frame PSRAM display buffers, `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`), and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"`.
   - On ESP32-P4 boards, set `use_psram: true` under `esp32_hosted:` and **never** set `CONFIG_CACHE_L2_CACHE_LINE_128B: "y"`.
-  - On MIPI-DSI (`waveshare_p4_86_panel.yaml`), pair `CONFIG_LCD_DSI_ISR_CACHE_SAFE: "y"`, `CONFIG_GDMA_ISR_IRAM_SAFE: "y"`, and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"` with `-DLATTER_DSI_IRAM_SAFE=1` and `-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks` (`components/latter_core/panel_power.cpp`).
+  - On MIPI-DSI (`waveshare_p4_86_panel.yaml`), pair `CONFIG_GDMA_ISR_IRAM_SAFE: "y"` and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"` with `-DLATTER_DSI_IRAM_SAFE=1` (ESPHome `2026.11.0b4+` `mipi_dsi` sets `CONFIG_LCD_DSI_ISR_CACHE_SAFE` and `IRAM_ATTR` DPI callback natively).
   - During OTA (`handle_ota_begin` / `handle_ota_progress` in `esphome_bridge.cpp`), stop the display poller on begin and throttle progress redraws (`>= 5%` / `>= 400 ms` on SPI/QSPI; `>= 10%` / `>= 800 ms` on MIPI-DSI). Configure `ledc_channel_config()` only once.
 - **Power Management & Light Sleep**:
   - Script `apply_power_policy` (`power_manager.yaml` -> `latter_ui::pm_apply()` in `power_pm.cpp`) is the sole owner of the `latter_awake` lock.

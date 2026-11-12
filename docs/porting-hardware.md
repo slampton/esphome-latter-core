@@ -63,7 +63,7 @@ Hardware support compiles directly inside [`components/latter_core/`](../compone
 | :--- | :--- | :--- |
 | `power_battery.cpp` | `include/hal_battery.h` | AXP2101 boot init, 0.5C charge current derived from `LATTER_BATTERY_MAH`, `65 °C` die-temperature foldback, rail keep-masks, hibernate/alarm-sleep entry, and load-compensated OCV + fuel-gauge state-of-charge modeling |
 | `imu_qmi8658.cpp` | `include/hal_imu_qmi8658.h` | QMI8658 active, accelerometer-only, power-down, and hardware wake-on-motion (`INT1`) register programming |
-| `panel_power.cpp` | `include/hal_panel_power.h` | Backlight PWM (`ledc_channel_config` initialized once), `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep, and MIPI-DSI IRAM-safe `esp_lcd_dpi_panel_register_event_callbacks` wrapper |
+| `panel_power.cpp` | `include/hal_panel_power.h` | Backlight PWM (`ledc_channel_config` initialized once), `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep, and FocalTech touch low-power monitor mode |
 | `audio_es8311.cpp` | `include/audio_router.h` | ES8311 / ES7210 low-power standby and wake register transitions |
 | `power_pm.cpp` | `include/hal_power_pm.h` | `latter_awake` power-management lock, light-sleep wake-pin critical section and ISR edge re-delivery, raw runtime GPIO retention (`LATTER_TOUCH_RST_PIN`), Wi-Fi modem-sleep policy, and wake/memory diagnostics |
 | `esphome_bridge.cpp` | `include/esphome_bridge.h` | `ESPHOME_VERSION_CODE` `static_assert` guard, `VoiceAssistant` synchronous abort, `MipiDsi` zero-copy framebuffer access, and throttled OTA lifecycle handlers (`handle_ota_*`) |
@@ -114,7 +114,7 @@ Optional hardware flags:
 | `LATTER_BATTERY_MAH` | Required when `LATTER_HAS_BATTERY=1`; `include/hal_battery.h` derives the charge current (`power.charge_ma`), internal resistance, state-of-charge curve, and empty cutoff |
 | `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK` | AXP2101 thermistor and rail keep-mask traits confirmed from the schematic |
 | `LATTER_PANEL_DCS_SLEEP` | `mipi_spi` panels supporting `DISPOFF`/`SLPIN` in screen-off |
-| `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels on ESP32-P4 (paired with `-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks` implemented in `components/latter_core/panel_power.cpp`) |
+| `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels on ESP32-P4 (`800 ms` / `10%` OTA progress redraw throttle in `include/esphome_bridge.h`, paired with `CONFIG_GDMA_ISR_IRAM_SAFE` + `CONFIG_DW_GDMA_ISR_IRAM_SAFE`) |
 
 ### Light sleep (ESP32-S3 battery boards)
 
@@ -133,8 +133,8 @@ In screen-off quiet on battery, `apply_power_policy` releases `latter_awake` via
 - **Wi-Fi co-processor (`chip_esp32p4.yaml`):** `use_psram: true` under `esp32_hosted:`.
 - **Cache line size:** **never** set `CONFIG_CACHE_L2_CACHE_LINE_128B: "y"` (breaks 64-byte-aligned `esp_hosted` PSRAM SDIO buffers with `ESP_ERR_INVALID_ARG`).
 - **MIPI-DSI panels (`waveshare_p4_86_panel.yaml`):**
-  - Enable `CONFIG_LCD_DSI_ISR_CACHE_SAFE: "y"`, `CONFIG_GDMA_ISR_IRAM_SAFE: "y"`, and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"`.
-  - Add `-DLATTER_DSI_IRAM_SAFE=1` and `-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks` (implemented in `IRAM_ATTR` in [`components/latter_core/panel_power.cpp`](../components/latter_core/panel_power.cpp)) so DW-GDMA DPI scanout continues cleanly during OTA flash erases.
+  - Enable `CONFIG_GDMA_ISR_IRAM_SAFE: "y"` and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"` (ESPHome `2026.11.0b4+` `mipi_dsi` automatically enables `CONFIG_LCD_DSI_ISR_CACHE_SAFE` and marks its DPI refresh callback `IRAM_ATTR`).
+  - Add `-DLATTER_DSI_IRAM_SAFE=1` so OTA progress redraws throttle to `>= 10%` / `>= 800 ms` while DW-GDMA DPI scanout continues cleanly across flash erases.
 - **Chip revision & DFS:** P4 boards run `esp32_power_management` in DFS-only mode (`min_frequency: 40MHz`, `enable_light_sleep: false`) and declare `p4_silicon` (`rev1` = `true` / `360MHz`, `rev3` = `false` / `400MHz`). Release CI publishes both silicon variants.
 
 ## 7. Device config, board facts, and validation

@@ -20,7 +20,7 @@ latter_core:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b3
+  min_version: 2026.11.0b4
   build_flags:
     - "-DLATTER_HAS_DISPLAY=0"
     - "-DLATTER_HAS_TOUCH=0"

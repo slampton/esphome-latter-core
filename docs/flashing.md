@@ -5,7 +5,7 @@ There are two ways to install Latter firmware:
 | | Web installer | ESPHome Device Builder |
 | :--- | :--- | :--- |
 | **Best for** | Getting started quickly | Customizing, or local network push-OTA |
-| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0b3 or newer |
+| **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0b4 or newer |
 | **Wi-Fi setup** | Over the USB cable (Improv Serial), all five devices | Your `secrets.yaml` |
 | **Updates** | HTTPS pull-OTA via the **Project Firmware** update entity in Home Assistant, plus wireless 1-click **Adopt** in Device Builder (runtime Noise PSK) | Noise-encrypted push-OTA (`ota_esphome` using `api.encryption.key`) alongside HTTPS pull-OTA |
 

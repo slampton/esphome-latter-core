@@ -963,14 +963,16 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(f"[P4 DMA] {bf.name} must set use_psram: true under esp32_hosted:")
         if "platform: mipi_dsi" in uncommented_yaml:
             for dsi_req in (
-                'CONFIG_LCD_DSI_ISR_CACHE_SAFE: "y"',
                 'CONFIG_GDMA_ISR_IRAM_SAFE: "y"',
                 'CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"',
                 "-DLATTER_DSI_IRAM_SAFE=1",
-                "-Wl,--wrap=esp_lcd_dpi_panel_register_event_callbacks",
             ):
                 if dsi_req not in uncommented_yaml:
                     failures.append(f"[DSI IRAM] {bf.name} missing required MIPI-DSI IRAM option: {dsi_req}")
+            if "esp_lcd_dpi_panel_register_event_callbacks" in uncommented_yaml:
+                failures.append(
+                    f"[DSI IRAM] {bf.name} still wraps retired esp_lcd_dpi_panel_register_event_callbacks"
+                )
 
     panel_cpp = (ROOT / "components" / "latter_core" / "panel_power.cpp").read_text(encoding="utf-8")
     panel_hdr = (
@@ -978,14 +980,14 @@ def main(argv: list[str] | None = None) -> int:
         if (ROOT / "include" / "hal_panel_power.h").is_file()
         else ""
     )
-    if (
-        "__wrap_esp_lcd_dpi_panel_register_event_callbacks" not in panel_cpp
-        or "IRAM_ATTR" not in panel_cpp
-        or "ledc_channel_inited" not in (panel_cpp + panel_hdr)
-    ):
+    if "ledc_channel_inited" not in (panel_cpp + panel_hdr):
         failures.append(
-            "[DSI IRAM / OTA SAFETY] panel_power.cpp / hal_panel_power.h must provide IRAM_ATTR DSI callback "
-            "wrapper and one-time ledc_channel_inited guard"
+            "[OTA SAFETY] panel_power.cpp / hal_panel_power.h must provide one-time ledc_channel_inited guard"
+        )
+    if "esp_lcd_dpi_panel_register_event_callbacks" in (panel_cpp + panel_hdr):
+        failures.append(
+            "[DSI IRAM] panel_power.cpp / hal_panel_power.h still contains retired "
+            "esp_lcd_dpi_panel_register_event_callbacks wrapper"
         )
 
     bridge_cpp = (ROOT / "components" / "latter_core" / "esphome_bridge.cpp").read_text(encoding="utf-8")

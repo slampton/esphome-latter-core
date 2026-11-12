@@ -3,7 +3,7 @@
 # Target: Waveshare ESP32-P4-86-Panel-ETH-2RO (720x720 Square Display, SKU 31570)
 #         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_86_panel.yaml
 #         (default rev1 = v1.x engineering silicon; CI also publishes a rev3 build).
-# Framework: ESPHome 2026.11.0b3+ (ESP-IDF 5.5+)
+# Framework: ESPHome 2026.11.0b4+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
 
@@ -40,7 +40,7 @@ external_components:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b3
+  min_version: 2026.11.0b4
   project:
     name: "slampton.desk-assistant-p4-86"
     version: "${version}"
