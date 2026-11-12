@@ -126,25 +126,20 @@ void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_char
   const float temp_c = hal_axp2101_read_die_temp_c(bus, ok);
   if (!ok) return;
   tel.die_temp_c = temp_c;
-  const bool next_foldback =
-      step_thermal_foldback_policy(tel.thermal_foldback_active, true, temp_c, kBattChargeMa);
-  if (!tel.thermal_foldback_active && next_foldback) {
-    uint8_t v = 0;
-    if (axp_rd(bus, 0x62, &v)) {
-      axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kChargeThermalFoldbackMa)));
-      tel.thermal_foldback_active = true;
-      tel.icc_ma = kChargeThermalFoldbackMa;
+  bool next_foldback = tel.thermal_foldback_active;
+  int next_icc_ma = tel.icc_ma;
+  if (!step_thermal_foldback_policy(true, temp_c, kBattChargeMa, next_foldback, next_icc_ma)) return;
+  uint8_t v = 0;
+  if (axp_rd(bus, 0x62, &v)) {
+    axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(next_icc_ma)));
+    tel.thermal_foldback_active = next_foldback;
+    tel.icc_ma = next_icc_ma;
+    if (next_foldback) {
       ESP_LOGW("PROF", "[PROF:POWER] trig=PMU_THERMAL_FOLDBACK die=%.1fC >= %.0fC -> ICC=%dmA",
-               temp_c, kAxpThermalFoldbackEnterC, kChargeThermalFoldbackMa);
-    }
-  } else if (tel.thermal_foldback_active && !next_foldback) {
-    uint8_t v = 0;
-    if (axp_rd(bus, 0x62, &v)) {
-      axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kBattChargeMa)));
-      tel.thermal_foldback_active = false;
-      tel.icc_ma = kBattChargeMa;
+               temp_c, kAxpThermalFoldbackEnterC, next_icc_ma);
+    } else {
       LATTER_PROF_LOGI("[PROF:POWER] trig=PMU_THERMAL_RESTORE die=%.1fC <= %.0fC -> ICC=%dmA",
-                       temp_c, kAxpThermalFoldbackClearC, kBattChargeMa);
+                       temp_c, kAxpThermalFoldbackClearC, next_icc_ma);
     }
   }
 #else

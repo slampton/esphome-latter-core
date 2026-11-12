@@ -1500,7 +1500,8 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
 
   if (st.alarm_ringing && ctx.now.is_valid()) {
     char clk_buf[16];
-    ctx.now.strftime(clk_buf, sizeof(clk_buf), st.is_24h_format ? "%H:%M" : "%I:%M");
+    esphome::ESPTime now_copy = ctx.now;
+    now_copy.strftime(clk_buf, sizeof(clk_buf), st.is_24h_format ? "%H:%M" : "%I:%M");
     const char *p_str = (!st.is_24h_format && clk_buf[0] == '0') ? (clk_buf + 1) : clk_buf;
     render_time_readout(it, st.cx, p_str, ctx.font_chrono_time, st.col_white);
 

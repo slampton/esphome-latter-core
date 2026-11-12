@@ -2,7 +2,7 @@
 # Point every remote reference to this repository at the local checkout being tested, so CI validates
 # and compiles this exact worktree cleanly (including on external contributor fork PRs where the head
 # SHA does not exist on slampton/esphome-latter-core):
-#   - external_components (latter_hal, latter_core, latter_ui, latter_beacon): rewritten to type: local
+#   - external_components (latter_core, latter_ui, latter_beacon): rewritten to type: local
 #     pointing at the checked-out components/ directory (with git-only refresh: stripped);
 #   - sounds, models, and github:// package includes: rewritten to local relative paths;
 #   - dashboard_import package_import_url keeps @main (metadata only, not part of the build).

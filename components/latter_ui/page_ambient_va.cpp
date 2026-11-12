@@ -652,7 +652,8 @@ void render_docked_screensaver(esphome::display::Display &it, const UiFrameConte
       fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, ctx.font_time, st.col_slate,
                  esphome::display::TextAlign::CENTER, amb_time);
       char date_buf[24];
-      ctx.now.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
+      esphome::ESPTime now_copy = ctx.now;
+      now_copy.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
       fast_print(it, cx + drift_x, cy + scale_y(48) + drift_y, ctx.font_date, kChromePipInactive,
                  esphome::display::TextAlign::CENTER, date_buf);
     } else {
