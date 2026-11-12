@@ -783,7 +783,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         rs.music.hud_timer = now_touch;
         rs.nav.hud_wake_finger_released = false;
         hud_just_woken_ms_ = now_touch;
-        touch_router().last_tap_ms = now_touch;
+        touch_router().note_tap(now_touch);
         rt_.schedule_disp();
         return;
       }

@@ -22,75 +22,10 @@
 namespace latter_ui {
 
 // ------------------------------------------------------------------------------
-// 1. Standardized Touch Timing Constants & Single Tap Debounce Gate
+// 1. Touch Timing Constants, TouchGestureState & TouchRouter
+//    Defined in include/ui_hit_table.h (TOUCH_DEBOUNCE_*, touch_router(),
+//    touch_gesture(), TouchPt) so host unit tests exercise them directly.
 // ------------------------------------------------------------------------------
-static constexpr uint32_t TOUCH_DEBOUNCE_RAPID     = 100;  // ms: Rapid steppers
-static constexpr uint32_t TOUCH_DEBOUNCE_BUTTON    = 150;  // ms: Standard buttons & pills
-static constexpr uint32_t TOUCH_DEBOUNCE_WAKE      = 180;  // ms: Post-wake settling lockout
-static constexpr uint32_t TOUCH_DEBOUNCE_DISMISS   = 200;  // ms: Overlay/HUD dismissal
-static constexpr uint32_t TOUCH_DEBOUNCE_SCROLL    = 250;  // ms: Page transitions & chevrons
-static constexpr uint32_t TOUCH_GUARD_DISMISS      = 250;  // ms: Minimum post-wake delay
-static constexpr uint32_t TOUCH_POST_SWIPE_LOCKOUT = 200;  // ms: Ignore moves right after swipe
-
-inline bool touch_allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) {
-  static uint32_t s_last_tap_ms = 0;
-  if (now_ms - s_last_tap_ms <= cooldown_ms) return false;
-  s_last_tap_ms = now_ms;
-  return true;
-}
-
-struct TouchPt {
-  int x = 0;
-  int y = 0;
-};
-
-struct TouchGestureState {
-  int start_x = 0;
-  int start_y = 0;
-  int last_x = 0;
-  int last_y = 0;
-  int max_travel = 0;
-  int sample_count = 0;
-  uint32_t start_ms = 0;
-  uint32_t last_touch_ms = 0;
-  uint32_t last_swipe_ms = 0;
-  int start_page = 0;
-  int start_context = 0;
-  bool active = false;
-  bool swipe_committed = false;
-};
-
-inline TouchGestureState &touch_gesture() {
-  static TouchGestureState st;
-  return st;
-}
-
-struct TouchRouter {
-  inline bool allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) const {
-    return touch_allow_tap(now_ms, cooldown_ms);
-  }
-
-  template <typename TouchT, typename TouchesT, typename HandlerFn>
-  inline void dispatch_press(const TouchT &touch, const TouchesT & /*touches*/, HandlerFn &&handler) {
-    handler(static_cast<int>(touch.x), static_cast<int>(touch.y));
-  }
-
-  template <typename TouchesT, typename HandlerFn>
-  inline void dispatch_move(const TouchesT &touches, HandlerFn &&handler) {
-    if (touches.empty()) return;
-    handler(static_cast<int>(touches[0].x), static_cast<int>(touches[0].y));
-  }
-
-  template <typename HandlerFn>
-  inline void dispatch_release(HandlerFn &&handler) {
-    handler();
-  }
-};
-
-inline TouchRouter &touch_router() {
-  static TouchRouter s_router;
-  return s_router;
-}
 
 // ------------------------------------------------------------------------------
 // 2. Host Hardware / Entity Bridge Enums (implemented in modules/system_core.yaml)

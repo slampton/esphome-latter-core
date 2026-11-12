@@ -616,6 +616,13 @@ void test_music_remote_override_and_volume_feedback() {
   const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   LATTER_CHECK(touch_cpp.find("set_remote_play_override(") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("step_music_volume_feedback(") != std::string::npos);
+  LATTER_CHECK(touch_cpp.find("touch_router().note_tap(") != std::string::npos);
+  LATTER_CHECK(touch_cpp.find(".last_tap_ms") == std::string::npos);
+
+  // TouchRouter::note_tap() stamps debounce timestamp on HUD wake without gating the wake itself
+  latter_ui::touch_router().note_tap(10000U);
+  LATTER_CHECK(!latter_ui::touch_router().allow_tap(10080U, latter_ui::TOUCH_DEBOUNCE_BUTTON));
+  LATTER_CHECK(latter_ui::touch_router().allow_tap(10200U, latter_ui::TOUCH_DEBOUNCE_BUTTON));
 
   // Volume percentage display feedback ("Volume: XX%") + consecutive remote_vol_pct() stepping
   latter_ui::MusicRuntimeState m{};

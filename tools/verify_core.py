@@ -537,7 +537,7 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
 
     if "mm_to_px_for(" not in hit_h or "mm_to_px(" not in (types_h + layout_h):
         failures.append("[TOUCH MM] Millimetre conversion helpers (mm_to_px_for / mm_to_px) missing in UI headers")
-    if "allow_tap(" not in (touch_h + touch_cpp) or "TOUCH_DEBOUNCE_" not in (touch_h + touch_cpp):
+    if "allow_tap(" not in (hit_h + touch_h + touch_cpp) or "TOUCH_DEBOUNCE_" not in (hit_h + touch_h + touch_cpp):
         failures.append("[TOUCH DEBOUNCE] touch_router().allow_tap(..., TOUCH_DEBOUNCE_*) missing in touch engine")
     if "can_go_home(" not in gui_uncommented or "can_go_home(" not in (layout_h + touch_cpp):
         failures.append("[HOME PREDICATE] Shared can_go_home() predicate must gate both gui.yaml and touch_engine.cpp")

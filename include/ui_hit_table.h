@@ -418,4 +418,85 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   return L;
 }
 
+// ==============================================================================
+// Pure C++20 Standardized Touch Timing Constants, Gesture State & TouchRouter
+// Shared between TouchGestureEngine (ui_touch_engine.h) and host unit tests.
+// ==============================================================================
+static constexpr uint32_t TOUCH_DEBOUNCE_RAPID     = 100;  // ms: Rapid steppers
+static constexpr uint32_t TOUCH_DEBOUNCE_BUTTON    = 150;  // ms: Standard buttons & pills
+static constexpr uint32_t TOUCH_DEBOUNCE_WAKE      = 180;  // ms: Post-wake settling lockout
+static constexpr uint32_t TOUCH_DEBOUNCE_DISMISS   = 200;  // ms: Overlay/HUD dismissal
+static constexpr uint32_t TOUCH_DEBOUNCE_SCROLL    = 250;  // ms: Page transitions & chevrons
+static constexpr uint32_t TOUCH_GUARD_DISMISS      = 250;  // ms: Minimum post-wake delay
+static constexpr uint32_t TOUCH_POST_SWIPE_LOCKOUT = 200;  // ms: Ignore moves right after swipe
+
+inline uint32_t &touch_last_tap_ms() {
+  static uint32_t s_last_tap_ms = 0;
+  return s_last_tap_ms;
+}
+
+inline bool touch_allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) {
+  uint32_t &last = touch_last_tap_ms();
+  if (now_ms - last <= cooldown_ms) return false;
+  last = now_ms;
+  return true;
+}
+
+struct TouchPt {
+  int x = 0;
+  int y = 0;
+};
+
+struct TouchGestureState {
+  int start_x = 0;
+  int start_y = 0;
+  int last_x = 0;
+  int last_y = 0;
+  int max_travel = 0;
+  int sample_count = 0;
+  uint32_t start_ms = 0;
+  uint32_t last_touch_ms = 0;
+  uint32_t last_swipe_ms = 0;
+  int start_page = 0;
+  int start_context = 0;
+  bool active = false;
+  bool swipe_committed = false;
+};
+
+inline TouchGestureState &touch_gesture() {
+  static TouchGestureState st;
+  return st;
+}
+
+struct TouchRouter {
+  inline bool allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) const {
+    return touch_allow_tap(now_ms, cooldown_ms);
+  }
+
+  inline void note_tap(uint32_t now_ms) const {
+    touch_last_tap_ms() = now_ms;
+  }
+
+  template <typename TouchT, typename TouchesT, typename HandlerFn>
+  inline void dispatch_press(const TouchT &touch, const TouchesT & /*touches*/, HandlerFn &&handler) {
+    handler(static_cast<int>(touch.x), static_cast<int>(touch.y));
+  }
+
+  template <typename TouchesT, typename HandlerFn>
+  inline void dispatch_move(const TouchesT &touches, HandlerFn &&handler) {
+    if (touches.empty()) return;
+    handler(static_cast<int>(touches[0].x), static_cast<int>(touches[0].y));
+  }
+
+  template <typename HandlerFn>
+  inline void dispatch_release(HandlerFn &&handler) {
+    handler();
+  }
+};
+
+inline TouchRouter &touch_router() {
+  static TouchRouter s_router;
+  return s_router;
+}
+
 }  // namespace latter_ui
