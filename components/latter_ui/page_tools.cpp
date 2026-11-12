@@ -623,10 +623,11 @@ void render_alarms_subpage(esphome::display::Display &it, const UiFrameContext &
   }
 
   const int rec_w = scale_x(216);
-  render_card_box(it, ctx.cx - rec_w / 2, scale_y(242), rec_w, 34,
-                     ui::chrome_card_bg_on(), ctx.theme_primary, 17);
-  frame_hits().add_rect(ctx.cx - rec_w / 2, scale_y(242), rec_w, 34,
-                        WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot);
+  const int rec_h = scale_y(34);
+  render_card_box(it, ctx.cx - rec_w / 2, scale_y(242), rec_w, rec_h,
+                     ui::chrome_card_bg_on(), ctx.theme_primary, scale_s(17));
+  frame_hits().add_rect(ctx.cx - rec_w / 2, scale_y(242), rec_w, rec_h,
+                        WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
   char rec_b[36];
   std::snprintf(rec_b, sizeof(rec_b), "Schedule: %s", rec_label(ap.recurrence));
   fast_print(it, ctx.cx, scale_y(259), ctx.font_small, ctx.col_white, TextAlign::CENTER, rec_b);
@@ -1066,20 +1067,21 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
     const int zl_x = ly.map_zoom_left_x();
     const int zr_x = ly.map_zoom_right_x();
     const int zy   = ly.map_zoom_y;
-    render_glass_circle(it, zl_x, zy, 22, kChromeGlassTint, ui::chrome_card_brd_on());
-    fast_hline(it, zl_x - 7, zy, 15, (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
-    fast_hline(it, zl_x - 7, zy + 1, 15, (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
-    frame_hits().add_circle(zl_x, zy, 28, WidgetId::CAL_ZOOM_OUT_BTN,
-                            kHitTap | kHitFocusCircle);
+    const int z_r  = scale_s(22);
+    render_glass_circle(it, zl_x, zy, z_r, kChromeGlassTint, ui::chrome_card_brd_on());
+    fast_hline(it, zl_x - scale_s(7), zy, scale_s(15), (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
+    fast_hline(it, zl_x - scale_s(7), zy + 1, scale_s(15), (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
+    frame_hits().add_circle(zl_x, zy, z_r, WidgetId::CAL_ZOOM_OUT_BTN,
+                            kHitTap | kHitFocusCircle, 0, scale_s(16));
 
-    render_glass_circle(it, zr_x, zy, 22, kChromeGlassTint, ui::chrome_card_brd_on());
+    render_glass_circle(it, zr_x, zy, z_r, kChromeGlassTint, ui::chrome_card_brd_on());
     const Color zi_c = (cal_map_zoom() < 18) ? ctx.col_white : ctx.col_slate;
-    fast_hline(it, zr_x - 7, zy, 15, zi_c);
-    fast_hline(it, zr_x - 7, zy + 1, 15, zi_c);
-    fast_vline(it, zr_x, zy - 7, 15, zi_c);
-    fast_vline(it, zr_x + 1, zy - 7, 15, zi_c);
-    frame_hits().add_circle(zr_x, zy, 28, WidgetId::CAL_ZOOM_IN_BTN,
-                            kHitTap | kHitFocusCircle);
+    fast_hline(it, zr_x - scale_s(7), zy, scale_s(15), zi_c);
+    fast_hline(it, zr_x - scale_s(7), zy + 1, scale_s(15), zi_c);
+    fast_vline(it, zr_x, zy - scale_s(7), scale_s(15), zi_c);
+    fast_vline(it, zr_x + 1, zy - scale_s(7), scale_s(15), zi_c);
+    frame_hits().add_circle(zr_x, zy, z_r, WidgetId::CAL_ZOOM_IN_BTN,
+                            kHitTap | kHitFocusCircle, 0, scale_s(16));
 
     render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Event");
     return;
@@ -1141,13 +1143,13 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
 
     for (int i = 0; i < 4; i++) {
       const int ym = ly.slot5_y(i);
-      render_card_box(it, card_x, ym - 22, card_w, 44,
-                         ui::chrome_card_bg_on(), ui::chrome_card_brd_on(), 14);
-      fast_print(it, card_x + 18, ym, ctx.font_small, ctx.col_white,
+      render_card_box(it, card_x, ym - ly.slot5_h / 2, card_w, ly.slot5_h,
+                         ui::chrome_card_bg_on(), ui::chrome_card_brd_on(), scale_s(14));
+      fast_print(it, card_x + scale_x(18), ym, ctx.font_small, ctx.col_white,
                  TextAlign::CENTER_LEFT, kQuickLabels[i]);
-      fast_print(it, card_x + card_w - 16, ym, ctx.font_small, ctx.col_gold,
+      fast_print(it, card_x + card_w - scale_x(16), ym, ctx.font_small, ctx.col_gold,
                  TextAlign::CENTER_RIGHT, "+");
-      frame_hits().add_rect(card_x, ym - 22, card_w, 44,
+      frame_hits().add_rect(card_x, ym - ly.slot5_h / 2, card_w, ly.slot5_h,
                             WidgetId::CAL_PRESET_BASE + static_cast<uint16_t>(i),
                             kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
     }

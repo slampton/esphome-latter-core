@@ -186,6 +186,7 @@ struct HitRegion {
   uint16_t widget_id{0};
   int16_t param{0};
   uint8_t flags{0};
+  uint8_t hit_pad{0};
 
   constexpr int cx() const { return (static_cast<int>(x0) + static_cast<int>(x1)) / 2; }
   constexpr int cy() const { return (static_cast<int>(y0) + static_cast<int>(y1)) / 2; }
@@ -199,6 +200,11 @@ struct HitRegion {
   constexpr bool contains(int tx, int ty) const {
     return tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1;
   }
+  constexpr bool contains_padded(int tx, int ty) const {
+    const int pad = static_cast<int>(hit_pad);
+    return tx >= (static_cast<int>(x0) - pad) && tx <= (static_cast<int>(x1) + pad) &&
+           ty >= (static_cast<int>(y0) - pad) && ty <= (static_cast<int>(y1) + pad);
+  }
   float norm_x(int tx) const {
     const int span = static_cast<int>(x1) - static_cast<int>(x0);
     if (span <= 0) return 0.0f;
@@ -207,6 +213,7 @@ struct HitRegion {
     return static_cast<float>(tx - x0) / static_cast<float>(span);
   }
 };
+static_assert(sizeof(HitRegion) == 14, "HitRegion must stay compact at 14 bytes");
 
 struct FrameHitTable {
   static constexpr uint8_t kMaxRegions = 48;
@@ -216,15 +223,15 @@ struct FrameHitTable {
   void clear() { count = 0; }
 
   void add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
-                uint8_t flags = kHitTap, int16_t param = 0);
+                uint8_t flags = kHitTap, int16_t param = 0, int hit_pad = 0);
 
   void add_centered_rect(int cx, int cy, int w, int h, uint16_t widget_id,
-                         uint8_t flags = kHitTap, int16_t param = 0) {
-    add_rect(cx - w / 2, cy - h / 2, w, h, widget_id, flags, param);
+                         uint8_t flags = kHitTap, int16_t param = 0, int hit_pad = 0) {
+    add_rect(cx - w / 2, cy - h / 2, w, h, widget_id, flags, param, hit_pad);
   }
 
   void add_circle(int cx, int cy, int r, uint16_t widget_id,
-                  uint8_t flags = kHitTap, int16_t param = 0);
+                  uint8_t flags = kHitTap, int16_t param = 0, int hit_pad = 0);
 
   const HitRegion *hit_test(int tx, int ty, uint8_t required_flags = kHitTap) const;
   const HitRegion *find_by_id(uint16_t widget_id) const;

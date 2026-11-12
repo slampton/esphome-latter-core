@@ -561,9 +561,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       fast_filled_circle(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
       fast_filled_circle(it, ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
       fast_circle(it, ox, y_mid, orb_r, is_act ? col_white : col_slate);
-      frame_hits().add_circle(ox, y_mid, orb_r + 4,
+      frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
-                              static_cast<int16_t>(idx));
+                              static_cast<int16_t>(idx), scale_s(14));
     }
 
     const int body_w = std::max(8, right_limit - (r_div_x + 1));
@@ -695,14 +695,16 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     render_glass_circle(it, minus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
     fast_hline(it, minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
-    frame_hits().add_circle(minus_x, hero_y, btn_r + 6, WidgetId::CLIMATE_MINUS_BTN, kHitTap | kHitFocusCircle);
+    frame_hits().add_circle(minus_x, hero_y, btn_r, WidgetId::CLIMATE_MINUS_BTN,
+                            kHitTap | kHitFocusCircle, 0, scale_s(14));
 
     render_glass_circle(it, plus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
     fast_hline(it, plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
     fast_vline(it, plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
     fast_vline(it, plus_x + 1, hero_y - gl_s, gl_s * 2 + 1, col_white);
-    frame_hits().add_circle(plus_x, hero_y, btn_r + 6, WidgetId::CLIMATE_PLUS_BTN, kHitTap | kHitFocusCircle);
+    frame_hits().add_circle(plus_x, hero_y, btn_r, WidgetId::CLIMATE_PLUS_BTN,
+                            kHitTap | kHitFocusCircle, 0, scale_s(14));
 
     char t_val[16];
     if (sim_thermostat_target_f() > 0) {

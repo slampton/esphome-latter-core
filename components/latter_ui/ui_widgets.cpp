@@ -515,11 +515,13 @@ void render_in_app_mode_bar_track(esphome::display::Display &it, int cx, const i
     }
   }
 
+  const int mode_pad = std::max(scale_s(8), layout().dock_hit_r() - dr);
   for (int i = 0; i < vis_count && i < 4; i++) {
-    frame_hits().add_circle(win_xs[i], by, dr + scale_s(4),
+    frame_hits().add_circle(win_xs[i], by, dr,
                             static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
                             kHitTap | kHitFocusSlot | kHitFocusCircle,
-                            static_cast<int16_t>(win_start_idx + i));
+                            static_cast<int16_t>(win_start_idx + i),
+                            mode_pad);
   }
 
   const int chev_off = dr + ((SCREEN_W < 380) ? 10 : scale_x(13));

@@ -70,7 +70,7 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 
     render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, ui::chrome_danger_bg(), col_red,
                        "Toggle Power", col_white, font_small);
-    frame_hits().add_centered_rect(cx, layout().slot5_y(0), layout().list_card_w, 44,
+    frame_hits().add_centered_rect(cx, layout().slot5_y(0), layout().list_card_w, layout().slot5_h,
                                    WidgetId::REMOTE_PRIMARY_PWR, kHitTap | kHitFocusSlot, 0);
 
     const int start_idx = cur_page * 4;
@@ -96,7 +96,7 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
       const int max_txt = std::max(60, (card_cx + eff_w / 2 - 12) - txt_x);
 
       render_modern_card(it, card_cx, y_mid, card_w, 44, 12, card_bg, border_c, nullptr, text_c, font_small);
-      frame_hits().add_centered_rect(card_cx, y_mid, eff_w, 44,
+      frame_hits().add_centered_rect(card_cx, y_mid, eff_w, layout().slot5_h,
                                      static_cast<uint16_t>(WidgetId::REMOTE_SLOT_CARD + row),
                                      kHitTap | kHitFocusSlot, static_cast<int16_t>(s_idx));
       if (is_sel) {
@@ -114,9 +114,9 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
         const Color p_surf = render_glass_circle(
             it, p_cx, y_mid, p_r, kChromeGlassTint, is_dev_on ? theme_secondary : col_red);
         ui::draw_icon_power(it, p_cx, y_mid, p_r, col_white, p_surf);
-        frame_hits().add_circle(p_cx, y_mid, p_r + 6,
+        frame_hits().add_circle(p_cx, y_mid, p_r,
                                 static_cast<uint16_t>(WidgetId::REMOTE_SEC_PWR + row),
-                                kHitTap | kHitFocusCircle, static_cast<int16_t>(s_idx));
+                                kHitTap | kHitFocusCircle, static_cast<int16_t>(s_idx), scale_s(16));
       }
     }
 
@@ -155,7 +155,7 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fast_filled_triangle(it, left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
   fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
   fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), home_surf);
-  frame_hits().add_circle(left_fx, top_fy, f_r + 6, WidgetId::REMOTE_NAV_HOME, kHitTap | kHitFocusCircle);
+  frame_hits().add_circle(left_fx, top_fy, f_r, WidgetId::REMOTE_NAV_HOME, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
   // 2. VOL UP: Top-Right
   const int pls = scale_s(7);
@@ -163,7 +163,7 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   render_glass_circle(it, right_fx, top_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fill_rect_row_major(it, right_fx - pls, top_fy - pth / 2, pls * 2 + 1, pth, col_white);
   fill_rect_row_major(it, right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
-  frame_hits().add_circle(right_fx, top_fy, f_r + 6, WidgetId::REMOTE_VOL_UP, kHitTap | kHitFocusCircle);
+  frame_hits().add_circle(right_fx, top_fy, f_r, WidgetId::REMOTE_VOL_UP, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
   // 3. BACK: Bottom-Left
   render_glass_circle(it, left_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
@@ -171,12 +171,12 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fast_line(it, left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
   fast_line(it, left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
   fast_line(it, left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
-  frame_hits().add_circle(left_fx, btm_fy, f_r + 6, WidgetId::REMOTE_NAV_BACK, kHitTap | kHitFocusCircle);
+  frame_hits().add_circle(left_fx, btm_fy, f_r, WidgetId::REMOTE_NAV_BACK, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
   // 4. VOL DOWN: Bottom-Right
   render_glass_circle(it, right_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
   fill_rect_row_major(it, right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
-  frame_hits().add_circle(right_fx, btm_fy, f_r + 6, WidgetId::REMOTE_VOL_DOWN, kHitTap | kHitFocusCircle);
+  frame_hits().add_circle(right_fx, btm_fy, f_r, WidgetId::REMOTE_VOL_DOWN, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
   // Adaptive Concentric D-Pad
   const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));

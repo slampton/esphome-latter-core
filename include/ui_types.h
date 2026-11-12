@@ -609,11 +609,6 @@ inline uint32_t &last_music_page_req_ms() {
   return runtime_state().last_music_page_req_ms;
 }
 
-inline uint32_t &last_local_vol_tap_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
-
 inline uint32_t &music_scroll_tap_lockout_until_ms() {
   static uint32_t ts = 0;
   return ts;

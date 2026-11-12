@@ -468,6 +468,25 @@ void test_ui_layout_hit_table_and_dirty_band() {
   latter_ui::mark_dirty_band(40, 80);
   db.begin_frame(1, home_sub_dock1, sig_va, false);
   LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Two-pass FrameHitTable hit_pad halo (D-019 >= 7 mm) + exact visual radius preservation
+  static_assert(sizeof(latter_ui::HitRegion) == 14, "HitRegion must stay 14 bytes");
+  latter_ui::FrameHitTable pad_ht{};
+  pad_ht.add_circle(638, 216, 28, latter_ui::WidgetId::MUSIC_VOL_SLIDER,
+                    latter_ui::kHitTap | latter_ui::kHitFocusSlot | latter_ui::kHitFocusCircle, 1, 40);
+  pad_ht.add_circle(540, 216, 34, latter_ui::WidgetId::MUSIC_NEXT_BTN,
+                    latter_ui::kHitTap | latter_ui::kHitFocusSlot | latter_ui::kHitFocusCircle, 0, 28);
+  const auto *vol_reg = pad_ht.find_by_id_param(latter_ui::WidgetId::MUSIC_VOL_SLIDER, 1);
+  LATTER_CHECK(vol_reg != nullptr && vol_reg->radius() == 28);
+  // Touch 52px away from Vol+ center: outside 28px visual glass circle, inside 68px padded halo
+  const auto *halo_hit = pad_ht.hit_test(638, 216 - 52, latter_ui::kHitTap);
+  LATTER_CHECK(halo_hit != nullptr && halo_hit->widget_id == latter_ui::WidgetId::MUSIC_VOL_SLIDER);
+  // Touch inside Next exact circle wins Pass 1 even where Vol+ padded halo overlaps
+  const auto *exact_next = pad_ht.hit_test(540 + 30, 216, latter_ui::kHitTap);
+  LATTER_CHECK(exact_next != nullptr && exact_next->widget_id == latter_ui::WidgetId::MUSIC_NEXT_BTN);
+  // Midpoint tie-breaker in Pass 2 picks nearest button center
+  const auto *near_vol = pad_ht.hit_test(602, 216, latter_ui::kHitTap);
+  LATTER_CHECK(near_vol != nullptr && near_vol->widget_id == latter_ui::WidgetId::MUSIC_VOL_SLIDER);
 }
 
 // ==============================================================================
@@ -579,14 +598,48 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(link_h.find("kWeakLinkClearHoldMs = 120000U") != std::string::npos);
 }
 
+void test_music_remote_override_and_volume_feedback() {
+  latter_ui::clear_remote_play_override();
+
+  // Remote "playing" and "buffering" both report effective playing when no override is active
+  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "playing", 1000U));
+  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "buffering", 1000U));
+  LATTER_CHECK(!latter_ui::is_music_playing_effective(true, true, "idle", 1000U));
+  LATTER_CHECK(latter_ui::is_music_playing_effective(false, true, "idle", 1000U));
+
+  // Single-owner optimistic remote pause override (must NOT double-flip before toggle_ha_music)
+  latter_ui::set_remote_play_override(false, 2000U);
+  LATTER_CHECK(!latter_ui::is_music_playing_effective(true, false, "playing", 3500U));
+  // Expires cleanly at >= 2500 ms, falling back to authoritative remote_state_str
+  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "playing", 4600U));
+
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  LATTER_CHECK(touch_cpp.find("set_remote_play_override(") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("step_music_volume_feedback(") != std::string::npos);
+
+  // Volume percentage display feedback ("Volume: XX%") + consecutive remote_vol_pct() stepping
+  latter_ui::MusicRuntimeState m{};
+  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, true, 0.55f, 5000U, m) == 60);
+  LATTER_CHECK(m.action_feedback == "Volume: 60%" && m.feedback_timer == 5000U);
+  LATTER_CHECK(latter_ui::step_music_volume_feedback(-1, 5.0f, true, 0.12f, 5200U, m) == 10);
+  LATTER_CHECK(m.action_feedback == "Volume: 10%");
+
+  latter_ui::remote_vol_pct() = 55;
+  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6000U, m) == 60);
+  LATTER_CHECK(latter_ui::remote_vol_pct() == 60 && m.action_feedback == "Volume: 60%");
+  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6200U, m) == 65);
+  LATTER_CHECK(latter_ui::remote_vol_pct() == 65 && m.action_feedback == "Volume: 65%");
+}
+
 }  // namespace
 
 int main() {
   test_protocol_v3_and_rpc();
   test_ui_layout_hit_table_and_dirty_band();
   test_battery_model_and_power_policy();
+  test_music_remote_override_and_volume_feedback();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "and production hal_battery/hal_link_report verified.\n");
+      "music override/volume feedback, and production hal_battery/hal_link_report verified.\n");
   return 0;
 }

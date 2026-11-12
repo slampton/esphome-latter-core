@@ -1111,4 +1111,75 @@ inline bool trigger_alert_banner(std::string_view title, std::string_view messag
   return true;
 }
 
+// ==============================================================================
+// Canonical Music Playback Override & Volume Feedback Helpers
+// ==============================================================================
+
+inline int &remote_vol_pct() {
+  static int pct = 70;
+  return pct;
+}
+
+inline uint32_t &last_local_vol_tap_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+inline uint32_t &remote_play_override_ms() {
+  static uint32_t ms = 0;
+  return ms;
+}
+
+inline bool &remote_play_override_state() {
+  static bool st = false;
+  return st;
+}
+
+inline void set_remote_play_override(bool playing, uint32_t now_ms) {
+  remote_play_override_state() = playing;
+  remote_play_override_ms() = now_ms;
+}
+
+inline void clear_remote_play_override() {
+  remote_play_override_ms() = 0;
+  remote_play_override_state() = false;
+}
+
+inline bool is_music_playing_effective(bool is_remote, bool local_playing,
+                                       std::string_view remote_state_str, uint32_t now_ms) {
+  if (!is_remote) {
+    return local_playing;
+  }
+  if (remote_play_override_ms() > 0U && (now_ms - remote_play_override_ms() < 2500U)) {
+    return remote_play_override_state();
+  }
+  return (remote_state_str == "playing" || remote_state_str == "buffering");
+}
+
+inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local,
+                                      float local_mp_vol, uint32_t now_ms,
+                                      MusicRuntimeState &m = runtime_state().music) {
+  const int v_step = (std::isnan(step_pct_cfg) || step_pct_cfg <= 0.0f)
+                         ? 5
+                         : std::max(1, static_cast<int>(std::lround(step_pct_cfg)));
+  const int delta = (dir >= 0) ? v_step : -v_step;
+  last_local_vol_tap_ms() = now_ms;
+  int next_pct = -1;
+  if (is_local) {
+    const int cur_pct = (std::isnan(local_mp_vol) || local_mp_vol <= 0.0f)
+                            ? 70
+                            : static_cast<int>(std::lround(local_mp_vol * 100.0f));
+    next_pct = std::clamp(cur_pct + delta, 10, 100);
+    m.action_feedback = "Volume: " + std::to_string(next_pct) + "%";
+  } else if (remote_vol_pct() >= 0) {
+    next_pct = std::clamp(remote_vol_pct() + delta, 0, 100);
+    remote_vol_pct() = next_pct;
+    m.action_feedback = "Volume: " + std::to_string(next_pct) + "%";
+  } else {
+    m.action_feedback = (dir >= 0) ? "Volume +" : "Volume -";
+  }
+  m.feedback_timer = now_ms;
+  return next_pct;
+}
+
 }  // namespace latter_ui

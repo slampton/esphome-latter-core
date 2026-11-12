@@ -301,14 +301,14 @@ struct UiLayout {
   constexpr int tap_max_loose() const { return mm_to_px(3.45f); }      // 36 px: music browser taps
   constexpr int fast_pan() const { return mm_to_px(10.5f); }           // 110 px: a map drag pans two tiles
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
-  constexpr int home_zone_y() const { return is_round ? 412 : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
-  constexpr int chin_guard_y() const { return is_round ? 412 : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
+  constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
+  constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
   constexpr int dock_hit_r() const { return std::max(dock_r + 16, mm_to_px(3.6f)); }
 
   template <typename TouchT>
   constexpr bool is_home_pill_tap(const TouchT &t) const {
-    const int pill_y = is_round ? 422 : (h - mm_to_px(2.8f));
+    const int pill_y = is_round ? scale_min(422) : (h - mm_to_px(2.8f));
     const int pill_hw = std::max(scale_x(64), mm_to_px(6.5f));
     return (t.y >= pill_y && std::abs(t.x - cx) <= pill_hw);
   }
@@ -372,11 +372,6 @@ inline bool *remote_slot_states_on() {
 inline int &remote_control_page() {
   static int pg = 0;
   return pg;
-}
-
-inline int &remote_vol_pct() {
-  static int pct = 70;
-  return pct;
 }
 
 inline bool is_configured_remote_slot(const std::string &ent) {

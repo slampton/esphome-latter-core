@@ -11,16 +11,6 @@ namespace latter_ui {
 
 namespace {
 
-uint32_t &remote_play_override_ms() {
-  static uint32_t ms = 0;
-  return ms;
-}
-
-bool &remote_play_override_state() {
-  static bool st = false;
-  return st;
-}
-
 void render_music_now_playing(esphome::display::Display &it, const UiFrameContext &ctx) {
   using esphome::Color;
   using esphome::display::TextAlign;
@@ -108,8 +98,8 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
     fast_print(it, cx + 1, hdr_y + 1, ctx.font_small, ctx.col_black, TextAlign::CENTER, spk_title.c_str());
     fast_print(it, cx, hdr_y, ctx.font_small,
                is_feedback ? ctx.theme_secondary : ctx.col_white, TextAlign::CENTER, spk_title.c_str());
-    frame_hits().add_centered_rect(cx, hdr_y, pill_w, pill_h + 8,
-                                   WidgetId::MUSIC_QUEUE_BTN, kHitTap | kHitFocusSlot);
+    frame_hits().add_centered_rect(cx, hdr_y, pill_w, pill_h + scale_y(8),
+                                   WidgetId::MUSIC_QUEUE_BTN, kHitTap | kHitFocusSlot, 0, scale_s(10));
   } else {
     frame_hits().add_centered_rect(cx, art_center_y, SCREEN_W - 32, scale_y(240),
                                    WidgetId::MUSIC_ART_TAP, kHitTap);
@@ -206,7 +196,8 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
       ui::draw_icon_speaker(it, left_flank_x + 1, top_fy + 1, ctx.col_black, true);
       ui::draw_icon_speaker(it, left_flank_x,     top_fy,     ctx.col_white, true);
       frame_hits().add_circle(left_flank_x, top_fy, flank_r,
-                              WidgetId::MUSIC_SPEAKER_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                              WidgetId::MUSIC_SPEAKER_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                              0, scale_s(26));
     }
 
     if (ctx.music_show_library_shortcut) {
@@ -223,7 +214,8 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
       draw_lib(1, 1, ctx.col_black);
       draw_lib(0, 0, ctx.col_white);
       frame_hits().add_circle(left_flank_x, btm_fy, flank_r,
-                              WidgetId::MUSIC_BROWSE_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                              WidgetId::MUSIC_BROWSE_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                              0, scale_s(26));
     }
 
     render_glass_circle(it, cx, art_center_y, pp_r, glass_bg, ctx.theme_primary);
@@ -237,15 +229,20 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
     }
 
     frame_hits().add_circle(prev_btn_x, art_center_y, nav_r,
-                            WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                            WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(18));
     frame_hits().add_circle(cx, art_center_y, pp_r,
-                            WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                            WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(12));
     frame_hits().add_circle(next_btn_x, art_center_y, nav_r,
-                            WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                            WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(18));
     frame_hits().add_circle(right_flank_x, top_fy, flank_r,
-                            WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitFocusSlot | kHitFocusCircle, 1);
+                            WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            1, scale_s(26));
     frame_hits().add_circle(right_flank_x, btm_fy, flank_r,
-                            WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitFocusSlot | kHitFocusCircle, -1);
+                            WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            -1, scale_s(26));
   }
 
   if (show_metadata) {
@@ -363,7 +360,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       if (i == 1) {
         ui::draw_icon_eighth_notes(it, layout().list_card_left + scale_x(22), ym, ctx.theme_primary);
       }
-      frame_hits().add_centered_rect(cx, ym, layout().list_card_w, 44,
+      frame_hits().add_centered_rect(cx, ym, layout().list_card_w, layout().slot5_h,
                                      WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                      static_cast<int16_t>(i));
     }
@@ -393,10 +390,10 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       fast_print(it, c_left + scale_x(35), y_mid, ctx.font_small, txt_c, TextAlign::CENTER_LEFT, disp_name.c_str());
 
       if (!rs.nav.menu_scroll_active) {
-        frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, 44,
+        frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                        WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                        static_cast<int16_t>(i));
-        frame_hits().add_circle(c_left + scale_x(19), y_mid, scale_s(14),
+        frame_hits().add_circle(c_left + scale_x(19), y_mid, scale_s(18),
                                 WidgetId::MUSIC_SPK_GROUP + i, kHitTap | kHitFocusCircle,
                                 static_cast<int16_t>(i));
       }
@@ -437,7 +434,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
         render_modern_card(it, cx, y, 276, 44, 12, card_bg, card_brd,
                            CAT_LABELS[i], ctx.col_white, ctx.font_small);
         if (!rs.nav.menu_scroll_active && vis_slot < 5) {
-          frame_hits().add_centered_rect(cx, y, layout().list_card_w, 44,
+          frame_hits().add_centered_rect(cx, y, layout().list_card_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + vis_slot, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(i));
           vis_slot++;
@@ -496,8 +493,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
         if (!rs.nav.menu_scroll_active) {
           frame_hits().add_circle(play_cx, y_mid, play_r,
                                   WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                                  static_cast<int16_t>(i));
-          frame_hits().add_centered_rect(dr_cx, y_mid, dr_w, 44,
+                                  static_cast<int16_t>(i), scale_s(12));
+          frame_hits().add_centered_rect(dr_cx, y_mid, dr_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(i));
         }
@@ -508,7 +505,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
                    TextAlign::CENTER_LEFT, disp_name.c_str());
         draw_drilldown_icon(c_right - 26, y_mid);
         if (!rs.nav.menu_scroll_active) {
-          frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, 44,
+          frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(i));
         }
@@ -527,7 +524,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
         const std::string disp_name = fit_text_to_width_font(sl.name, layout().list_card_w - 50, ctx.font_small);
         fast_print(it, c_left + 35, y_mid, ctx.font_small, txt_c, TextAlign::CENTER_LEFT, disp_name.c_str());
         if (!rs.nav.menu_scroll_active) {
-          frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, 44,
+          frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(i));
         }
@@ -584,7 +581,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
         for (int r = 0; r < 3; r++) {
           const int ym = scale_y(kRemYs[r]);
           render_modern_card(it, cx, ym, 276, 44, 12, card_bg, card_brd, kRemLbls[r], ctx.col_white, ctx.font_small);
-          frame_hits().add_centered_rect(cx, ym, layout().list_card_w, 44,
+          frame_hits().add_centered_rect(cx, ym, layout().list_card_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + r, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(r));
         }
@@ -594,7 +591,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
         for (int r = 0; r < 2; r++) {
           const int ym = scale_y(kLocYs[r]);
           render_modern_card(it, cx, ym, 276, 44, 12, card_bg, card_brd, kLocLbls[r], ctx.col_white, ctx.font_small);
-          frame_hits().add_centered_rect(cx, ym, layout().list_card_w, 44,
+          frame_hits().add_centered_rect(cx, ym, layout().list_card_w, layout().slot5_h,
                                          WidgetId::LIST_SLOT_BASE + r, kHitTap | kHitFocusSlot,
                                          static_cast<int16_t>(r));
         }
@@ -607,7 +604,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       for (int r = 0; r < 4; r++) {
         const int ym = scale_y(kActYs[r]);
         render_modern_card(it, cx, ym, 276, 44, 12, card_bg, card_brd, kActLbls[r], ctx.col_white, ctx.font_small);
-        frame_hits().add_centered_rect(cx, ym, layout().list_card_w, 44,
+        frame_hits().add_centered_rect(cx, ym, layout().list_card_w, layout().slot5_h,
                                        WidgetId::LIST_SLOT_BASE + r, kHitTap | kHitFocusSlot,
                                        static_cast<int16_t>(r));
       }
@@ -633,7 +630,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     for (int dy : {-4, 0, 4}) {
       fill_rect_row_major(it, cx + scale_x(109), trk_card_y + scale_y(dy), scale_x(13), 2, ctx.theme_secondary);
     }
-    frame_hits().add_centered_rect(cx, trk_card_y, layout().list_card_w, 44,
+    frame_hits().add_centered_rect(cx, trk_card_y, layout().list_card_w, layout().slot5_h,
                                    WidgetId::LIST_SLOT_BASE + 0, kHitTap | kHitFocusSlot, 0);
 
     float cur_pos = rs.music.pos_base;
@@ -670,7 +667,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     fast_line(it, l_seek_x - 2, scrub_y - 6, l_seek_x - 8, scrub_y,     ctx.theme_secondary);
     fast_line(it, l_seek_x - 8, scrub_y,     l_seek_x - 2, scrub_y + 6, ctx.theme_secondary);
     frame_hits().add_circle(l_seek_x, scrub_y, scale_s(20),
-                            WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                            WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(16));
 
     render_glass_circle(it, r_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
     fast_line(it, r_seek_x - 4, scrub_y - 6, r_seek_x + 2, scrub_y,     ctx.col_white);
@@ -678,7 +676,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     fast_line(it, r_seek_x + 2, scrub_y - 6, r_seek_x + 8, scrub_y,     ctx.theme_secondary);
     fast_line(it, r_seek_x + 8, scrub_y,     r_seek_x + 2, scrub_y + 6, ctx.theme_secondary);
     frame_hits().add_circle(r_seek_x, scrub_y, scale_s(20),
-                            WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+                            WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(16));
 
     fast_filled_circle(it, bar_x0, scrub_y, 5, ctx.col_dark_gray);
     fast_filled_circle(it, bar_x1, scrub_y, 5, ctx.col_dark_gray);
@@ -700,7 +699,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     fast_filled_circle(it, knob_x, scrub_y, 9, ctx.col_white);
     fast_filled_circle(it, knob_x, scrub_y, 6, ctx.theme_secondary);
     fast_filled_circle(it, knob_x, scrub_y, 2, ctx.col_black);
-    frame_hits().add_rect(bar_x0, scrub_y - 14, bar_w, 28,
+    frame_hits().add_rect(bar_x0, scrub_y - scale_y(20), bar_w, scale_y(40),
                           WidgetId::MUSIC_SCRUB_BAR, kHitTap | kHitHorizSlider | kHitFocusSlot);
 
     auto draw_inspector_tool_card = [&](int card_cx, int card_cy, bool is_bio, const char *label, int slot_i) {
@@ -772,24 +771,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
 }  // namespace
 
 // ==============================================================================
-// Public Music Cross-Page Helpers & Page 2 Entry Point
+// Page 2 Entry Point
 // ==============================================================================
-
-void set_remote_play_override(bool playing, uint32_t now_ms) {
-  remote_play_override_state() = playing;
-  remote_play_override_ms() = now_ms;
-}
-
-bool is_music_playing_effective(bool is_remote, bool local_playing,
-                                const std::string &remote_state_str, uint32_t now_ms) {
-  if (!is_remote) {
-    return local_playing;
-  }
-  if (remote_play_override_ms() > 0 && (now_ms - remote_play_override_ms() < 2500U)) {
-    return remote_play_override_state();
-  }
-  return (remote_state_str == "playing");
-}
 
 void render_music_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   if (runtime_state().music.overlay_mode == 0) {

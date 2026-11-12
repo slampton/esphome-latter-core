@@ -1597,13 +1597,21 @@ script:
     mode: restart
     then:
       - delay: 0ms
+      - lambda: |-
+          auto &m = latter_ui::runtime_state().music;
+          const uint32_t now_ms = millis();
+          if (now_ms - m.feedback_timer > 80U) {
+            latter_ui::step_music_volume_feedback(
+                1, id(volume_step_size).state, latter_ui::media_state().is_local,
+                id(latter_media_player).volume, now_ms, m);
+          }
       - if:
           condition:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
-                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.05f;
                 latter_ui::last_local_vol_tap_ms() = millis();
                 float cur = id(latter_media_player).volume;
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
@@ -1611,22 +1619,35 @@ script:
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
+                auto &m = latter_ui::runtime_state().music;
+                m.action_feedback = "Volume: " + std::to_string(static_cast<int>(std::lround(new_vol * 100.0f))) + "%";
+                m.feedback_timer = millis();
+                latter_ui::schedule_disp_update(&id(disp1));
           else:
             - lambda: |-
                 latter_actions::emit_media_volume(
                     latter_ui::runtime_state().music.active_speaker_entity, "up", latter_ui::remote_vol_pct());
+                latter_ui::schedule_disp_update(&id(disp1));
 
   - id: music_vol_down
     mode: restart
     then:
       - delay: 0ms
+      - lambda: |-
+          auto &m = latter_ui::runtime_state().music;
+          const uint32_t now_ms = millis();
+          if (now_ms - m.feedback_timer > 80U) {
+            latter_ui::step_music_volume_feedback(
+                -1, id(volume_step_size).state, latter_ui::media_state().is_local,
+                id(latter_media_player).volume, now_ms, m);
+          }
       - if:
           condition:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
                 float step = id(volume_step_size).state / 100.0f;
-                if (std::isnan(step) || step <= 0.0f) step = 0.02f;
+                if (std::isnan(step) || step <= 0.0f) step = 0.05f;
                 latter_ui::last_local_vol_tap_ms() = millis();
                 float cur = id(latter_media_player).volume;
                 if (std::isnan(cur) || cur <= 0.0f) cur = 0.70f;
@@ -1634,10 +1655,15 @@ script:
                 id(latter_media_player).make_call().set_volume(new_vol).perform();
                 id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
                 id(media_mixing_input).apply_ducking(0.0f, 0);
+                auto &m = latter_ui::runtime_state().music;
+                m.action_feedback = "Volume: " + std::to_string(static_cast<int>(std::lround(new_vol * 100.0f))) + "%";
+                m.feedback_timer = millis();
+                latter_ui::schedule_disp_update(&id(disp1));
           else:
             - lambda: |-
                 latter_actions::emit_media_volume(
                     latter_ui::runtime_state().music.active_speaker_entity, "down", latter_ui::remote_vol_pct());
+                latter_ui::schedule_disp_update(&id(disp1));
 
   - id: toggle_ha_music
     mode: restart
@@ -1886,6 +1912,10 @@ script:
       - lambda: |-
           auto &m = latter_ui::runtime_state().music;
           auto &ms = latter_ui::media_state();
+          const uint32_t now_ms = millis();
+          const bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+          const bool was_playing = latter_ui::is_music_playing_effective(
+              !ms.is_local, local_playing, ms.state, now_ms);
           if (m.target_speaker_id.rfind("media_player.", 0) == 0) {
             if (m.active_speaker_entity != m.target_speaker_id && !m.active_speaker_entity.empty()) {
               ms.last_speaker = m.active_speaker_entity;
@@ -1897,16 +1927,22 @@ script:
             ESP_LOGW("ui", "Rejecting non-media_player target: %s", m.target_speaker_id.c_str());
             m.action_feedback = "Invalid Speaker";
           }
-          m.feedback_timer = millis();
+          m.feedback_timer = now_ms;
           const std::string &loc_spk = ms.local_speaker;
           const bool new_is_local = (!loc_spk.empty() && m.active_speaker_entity == loc_spk);
           ms.active_speaker = m.active_speaker_entity;
           ms.speaker_name = m.active_speaker_name;
           ms.is_local = new_is_local;
+          if (transfer_queue == "true" && was_playing && !new_is_local) {
+            ms.state = "playing";
+            latter_ui::set_remote_play_override(true, now_ms);
+          } else {
+            latter_ui::clear_remote_play_override();
+          }
           m.overlay_mode = 0;
           m.direct_nav = false;
           m.hud_active = true;
-          m.hud_timer = millis();
+          m.hud_timer = now_ms;
           latter_actions::emit_set_active_speaker(m.active_speaker_entity, transfer_queue == "true");
       - if:
           condition:

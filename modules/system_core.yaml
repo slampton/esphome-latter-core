@@ -198,7 +198,7 @@ esphome:
                   r.music.active_speaker_name = s;
                 }
                 if (ms.has_volume && ms.volume >= 0.0f && ms.volume <= 1.0f) {
-                  if (millis() - latter_ui::last_local_vol_tap_ms() > 3000U) {
+                  if (millis() - latter_ui::last_local_vol_tap_ms() > 3000U || ms.active_speaker != s_prev_spk) {
                     latter_ui::remote_vol_pct() = static_cast<int>(std::round(ms.volume * 100.0f));
                     if (ms.is_local) {
                       id(latter_media_player).volume = ms.volume;
@@ -288,7 +288,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111039L;
+            constexpr long LATTER_YAML_REV = 2026111040L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "

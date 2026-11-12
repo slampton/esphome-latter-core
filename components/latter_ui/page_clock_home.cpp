@@ -788,7 +788,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       const Color txt_c = shown ? ctx.col_white    : ctx.col_slate;
       render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12,
                          bg_c, brd_c, buf, txt_c, ctx.font_small);
-      frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, 44,
+      frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                      WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
                                      static_cast<int16_t>(i));
     }
@@ -896,20 +896,20 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         render_home_activity_card_row(
             it, cx, y_mid, act_items[start_i + row], false, ctx.font_small,
             ctx.theme_secondary, ctx.col_white, true, ov_bg, ov_brd, ov_btn);
-        frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, 44,
+        frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                        WidgetId::LIST_SLOT_BASE + row, kHitTap | kHitFocusSlot,
                                        static_cast<int16_t>(start_i + row));
       }
 
       if (total_pages > 1) {
-        const int chev_x = LATTER_ROUND_DISPLAY ? 415 : (SCREEN_W - scale_x(36));
+        const int chev_x = LATTER_ROUND_DISPLAY ? scale_min(415) : (SCREEN_W - scale_x(36));
         if (home_activity_overlay_page() > 0) {
           render_scroll_chevron(it, chev_x, scale_y(162), true, ctx.theme_secondary, ctx.col_black, true);
-          frame_hits().add_circle(chev_x, scale_y(162), 28, WidgetId::HOME_ACTIVITY_PREV, kHitTap);
+          frame_hits().add_circle(chev_x, scale_y(162), scale_s(28), WidgetId::HOME_ACTIVITY_PREV, kHitTap);
         }
         if (home_activity_overlay_page() + 1 < total_pages) {
           render_scroll_chevron(it, chev_x, scale_y(278), false, ctx.theme_secondary, ctx.col_black, true);
-          frame_hits().add_circle(chev_x, scale_y(278), 28, WidgetId::HOME_ACTIVITY_NEXT, kHitTap);
+          frame_hits().add_circle(chev_x, scale_y(278), scale_s(28), WidgetId::HOME_ACTIVITY_NEXT, kHitTap);
         }
       }
     }
@@ -919,8 +919,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 
   if (eff_weather_bg && show_celestial) {
-    frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? 30 : scale_min(34),
-                            WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+    frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? scale_min(30) : scale_min(34),
+                            WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(10));
   }
 
   const Color fg_home_white = ctx.col_white;
@@ -1150,11 +1151,13 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int dock_y = layout().dock_y;
     const int dock_r = layout().dock_r;
 
+    const int dock_pad = std::max(0, layout().dock_hit_r() - dock_r);
     for (int v = 0; v < vis_count; v++) {
       frame_hits().add_circle(win_xs[v], dock_y, dock_r,
                               WidgetId::DOCK_SLOT_BASE + v,
                               kHitTap | kHitFocusSlot | kHitFocusCircle,
-                              static_cast<int16_t>(dock_apps[start_idx + v]));
+                              static_cast<int16_t>(dock_apps[start_idx + v]),
+                              dock_pad);
     }
 
     auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow, Color cut_c) {

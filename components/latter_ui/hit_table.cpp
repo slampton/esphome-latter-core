@@ -15,10 +15,12 @@ FrameHitTable &frame_hits() {
 }
 
 void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
-                             uint8_t flags, int16_t param) {
+                             uint8_t flags, int16_t param, int hit_pad) {
   if (w <= 0 || h <= 0 || count >= kMaxRegions) return;
   const int rx1 = x0 + w - 1;
   const int ry1 = y0 + h - 1;
+  const uint8_t pad_u8 = static_cast<uint8_t>(
+      hit_pad < 0 ? 0 : (hit_pad > 255 ? 255 : hit_pad));
   if (widget_id != 0) {
     for (uint8_t i = 0; i < count; i++) {
       if (regions[i].widget_id == widget_id && regions[i].param == param) {
@@ -27,6 +29,7 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
         regions[i].x1 = static_cast<int16_t>(rx1);
         regions[i].y1 = static_cast<int16_t>(ry1);
         regions[i].flags = flags;
+        regions[i].hit_pad = pad_u8;
         return;
       }
     }
@@ -39,16 +42,17 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
   reg.widget_id = widget_id;
   reg.param = param;
   reg.flags = flags;
+  reg.hit_pad = pad_u8;
 }
 
 void FrameHitTable::add_circle(int cx, int cy, int r, uint16_t widget_id,
-                               uint8_t flags, int16_t param) {
+                               uint8_t flags, int16_t param, int hit_pad) {
   if (r <= 0) return;
-  add_rect(cx - r, cy - r, 2 * r + 1, 2 * r + 1, widget_id, flags, param);
+  add_rect(cx - r, cy - r, 2 * r + 1, 2 * r + 1, widget_id, flags, param, hit_pad);
 }
 
 const HitRegion *FrameHitTable::hit_test(int tx, int ty, uint8_t required_flags) const {
-  // Reverse iteration respects z-order: top-most drawn widgets win first.
+  // Pass 1: exact drawn bounds in reverse z-order (top-most drawn widgets win first).
   for (int i = static_cast<int>(count) - 1; i >= 0; i--) {
     const HitRegion &reg = regions[i];
     if ((reg.flags & required_flags) != required_flags) continue;
@@ -61,7 +65,28 @@ const HitRegion *FrameHitTable::hit_test(int tx, int ty, uint8_t required_flags)
     }
     return &reg;
   }
-  return nullptr;
+
+  // Pass 2: ergonomic hit_pad halo (D-019 >= 7 mm touch targets) with nearest-center tie-break.
+  const HitRegion *best = nullptr;
+  int best_d2 = 0x7fffffff;
+  for (int i = static_cast<int>(count) - 1; i >= 0; i--) {
+    const HitRegion &reg = regions[i];
+    if (reg.hit_pad == 0U) continue;
+    if ((reg.flags & required_flags) != required_flags) continue;
+    if (!reg.contains_padded(tx, ty)) continue;
+    const int dx = tx - reg.cx();
+    const int dy = ty - reg.cy();
+    const int d2 = dx * dx + dy * dy;
+    if ((reg.flags & kHitFocusCircle) != 0U) {
+      const int r = reg.radius() + static_cast<int>(reg.hit_pad);
+      if (d2 > r * r) continue;
+    }
+    if (d2 < best_d2) {
+      best_d2 = d2;
+      best = &reg;
+    }
+  }
+  return best;
 }
 
 const HitRegion *FrameHitTable::find_by_id(uint16_t widget_id) const {

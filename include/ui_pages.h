@@ -96,11 +96,9 @@ HomeActivityView resolve_home_activity_view(const HomeActivityItem items[8], int
 int get_activity_overlay_card_y(int vis_count, int row_idx);
 
 // ------------------------------------------------------------------------------
-// 4. Shared Music & Weather Cross-Page Helpers (page_music.cpp / page_weather.cpp)
+// 4. Shared Weather Cross-Page Helpers (page_weather.cpp)
+//    (Music playback override & volume helpers live in include/latter_state.h)
 // ------------------------------------------------------------------------------
-void set_remote_play_override(bool playing, uint32_t now_ms);
-bool is_music_playing_effective(bool is_remote, bool local_playing,
-                                const std::string &remote_state_str, uint32_t now_ms);
 
 bool &weather_sim_dirty();
 void apply_weather_sim_override(const std::string &sim_opt, std::string &cond, bool &is_night);

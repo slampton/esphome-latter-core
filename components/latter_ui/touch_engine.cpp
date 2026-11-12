@@ -597,7 +597,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
 
   // Universal bottom-edge swipe-up home guard: defer chin touches to on_touch_move / on_touch_up
-  if (can_go_home(rs) && touch.y >= ly.chin_guard_y()) {
+  // without swallowing direct taps on an explicit < Back button near the bottom bezel.
+  if (can_go_home(rs) && wid != WidgetId::BACK_BUTTON && touch.y >= ly.chin_guard_y()) {
     return;
   }
 
@@ -778,13 +779,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       const bool controls_shown = always_vis || rs.music.hud_active;
 
       if (!controls_shown) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-          rs.music.hud_active = true;
-          rs.music.hud_timer = now_touch;
-          rs.nav.hud_wake_finger_released = false;
-          hud_just_woken_ms_ = now_touch;
-          rt_.schedule_disp();
-        }
+        rs.music.hud_active = true;
+        rs.music.hud_timer = now_touch;
+        rs.nav.hud_wake_finger_released = false;
+        hud_just_woken_ms_ = now_touch;
+        touch_router().last_tap_ms = now_touch;
+        rt_.schedule_disp();
         return;
       }
 
@@ -802,7 +802,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
           rs.music.selected_category_mode = "speakers";
           rs.music.selected_category_title = "SPEAKERS";
+          reset_music_loading_slots(rs, "Loading...");
           rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+          rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
           rs.music.direct_nav = true;
           rs.music.overlay_mode = 1;
           rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
@@ -827,9 +829,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           const auto &ms = media_state();
           const bool was_playing = is_music_playing_effective(
               !ms.is_local, rt_.local_mp_playing, ms.state, now_touch);
-          if (!ms.is_local) set_remote_play_override(!was_playing, now_touch);
-          rt_.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
+          rs.music.action_feedback = was_playing ? "Pausing..." : "Playing...";
+          rs.music.feedback_timer = now_touch;
           rs.music.hud_timer = now_touch;
+          rt_.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
           rt_.schedule_disp();
         }
         return;
@@ -853,8 +856,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       if (wid == WidgetId::MUSIC_VOL_SLIDER) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
-          rt_.cmd((hit->param > 0) ? UiHostCmd::MUSIC_VOL_UP : UiHostCmd::MUSIC_VOL_DOWN);
+          step_music_volume_feedback(
+              hit->param, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
+              media_state().is_local, rt_.local_mp_volume, now_touch, rs.music);
           rs.music.hud_timer = now_touch;
+          rt_.cmd((hit->param > 0) ? UiHostCmd::MUSIC_VOL_UP : UiHostCmd::MUSIC_VOL_DOWN);
           rt_.schedule_disp();
         }
         return;
@@ -868,15 +874,14 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           }
           return;
         }
-        if (!always_vis && rs.music.hud_active &&
-            (now_touch - rs.music.hud_timer >= TOUCH_GUARD_DISMISS) &&
-            (now_touch - hud_just_woken_ms_ >= TOUCH_GUARD_DISMISS)) {
-          if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_DISMISS)) {
-            rs.music.hud_active = false;
-            rt_.schedule_disp();
-          }
+      }
+      if (wid == WidgetId::NONE && !always_vis && rs.music.hud_active &&
+          (now_touch - rs.music.hud_timer >= TOUCH_GUARD_DISMISS) &&
+          (now_touch - hud_just_woken_ms_ >= TOUCH_GUARD_DISMISS)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_DISMISS)) {
+          rs.music.hud_active = false;
+          rt_.schedule_disp();
         }
-        return;
       }
       return;
     }
@@ -900,7 +905,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           if (row == 0) {
             rs.music.selected_category_mode = "speakers";
             rs.music.selected_category_title = "SPEAKERS";
+            reset_music_loading_slots(rs, "Loading...");
             rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+            rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
             rs.music.direct_nav = false;
             rs.music.overlay_mode = 1;
             rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
@@ -2348,6 +2355,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
   const int dy = gest.last_y - gest.start_y;
   const TouchPt tp{gest.last_x, gest.last_y};
   const HitRegion *hit = frame_hits().hit_test(tp.x, tp.y, kHitTap);
+  if (hit == nullptr && gest.max_travel <= ly.tap_max_loose()) {
+    hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap);
+  }
   const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
   const HitRegion *start_slider = frame_hits().hit_test(gest.start_x, gest.start_y, kHitHorizSlider);
 
