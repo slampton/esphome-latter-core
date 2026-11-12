@@ -1,13 +1,13 @@
 # ==============================================================================
 # Latter Core Module: Base Identity, Time Sync & Contract Handshake (modules/base.yaml)
+# Shared foundation for headless companions, custom display templates, and
+# full Latter display firmware (included by modules/system_core.yaml).
 # ==============================================================================
 
 substitutions:
   name: "latter-device"
   friendly_name: "Latter Device"
   version: "3.0.0"
-  screen_w: "466"
-  screen_h: "466"
   font_time_size: "77"
   font_chrono_size: "38"
   font_date_size: "27"
@@ -33,6 +33,11 @@ esphome:
       then:
         - lambda: 'latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));'
 
+# Client-initiated dial-back (outgoing_connection -> HA TCP :6054, Noise PSK verified on both sides):
+# ESPHome 2026.11 only skips the 60 s default delay under USE_DEEP_SLEEP, whereas Latter battery
+# hibernation calls esp_deep_sleep_start() / PMU power-off directly. A 10 s delay gives normal LAN mDNS
+# inbound connects a clean head start (3-8 s) while dialing HA:6054 well inside the 30 s ha_link_settling
+# light-sleep awake window on hibernation wake, off-site return, or mDNS-blocked VLANs.
 api:
   reboot_timeout: ${api_reboot_timeout}
   batch_delay: 0ms
@@ -41,12 +46,27 @@ api:
     delay: ${api_outgoing_delay}
   on_client_connected:
     then:
+      - lambda: |-
+          const bool is_ha = client_info.find("Home Assistant") != std::string::npos;
+          if (is_ha) {
+            latter_ui::reset_all_v3_rev_guards();
+          }
+          auto &rs = latter_ui::runtime_state();
+          if (rs.on_ha_client_connected != nullptr) {
+            rs.on_ha_client_connected(client_info, client_address);
+          }
       - if:
           condition:
             lambda: 'return client_info.find("Home Assistant") != std::string::npos;'
           then:
-            - lambda: 'latter_ui::reset_all_v3_rev_guards();'
             - script.execute: send_device_hello
+  on_client_disconnected:
+    then:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          if (rs.on_ha_client_disconnected != nullptr) {
+            rs.on_ha_client_disconnected(client_info);
+          }
   actions:
     - action: latter_ping
       id: latter_ping_action
@@ -64,16 +84,22 @@ api:
         - lambda: |-
             const std::string_view sv_dom(domain.c_str(), domain.size());
             const std::string_view sv_pay(payload.c_str(), payload.size());
+            const std::string prev_dock = latter_ui::area_ctx_state().dock_apps;
+            bool parsed = false;
             if (sv_dom == "area_context") {
-              latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::whole_home_state());
+              parsed = latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::whole_home_state());
             } else if (sv_dom == "active_media") {
-              latter_ui::parse_v3_media_payload(sv_pay, latter_ui::media_state());
+              parsed = latter_ui::parse_v3_media_payload(sv_pay, latter_ui::media_state());
             } else if (sv_dom == "remote_config") {
-              latter_ui::parse_v3_remote_payload(sv_pay, latter_ui::remote_state());
+              parsed = latter_ui::parse_v3_remote_payload(sv_pay, latter_ui::remote_state());
             } else if (sv_dom == "weather_forecast") {
-              latter_ui::parse_v3_weather_payload(sv_pay, latter_ui::weather_state());
+              parsed = latter_ui::parse_v3_weather_payload(sv_pay, latter_ui::weather_state());
             } else if (sv_dom == "calendar_agenda") {
-              latter_ui::parse_v3_calendar_payload(sv_pay, latter_ui::calendar_state());
+              parsed = latter_ui::parse_v3_calendar_payload(sv_pay, latter_ui::calendar_state());
+            }
+            auto &rs = latter_ui::runtime_state();
+            if (parsed && rs.on_v3_domain_pushed != nullptr) {
+              rs.on_v3_domain_pushed(sv_dom, prev_dock);
             }
 
 # Publish device_hello over the bound System: RPC Outbox text_sensor once Home Assistant has subscribed
@@ -89,14 +115,8 @@ script:
           timeout: 30s
       - delay: 250ms
       - lambda: |-
-          const std::string contract_str = std::to_string(latter_ui::kProtocolContractVersion);
-          const std::string boot_str = std::to_string(latter_ui::device_boot_id());
-          const std::string manifest_str = latter_ui::build_hardware_manifest_json();
-          latter_rpc::emit(&id(latter_rpc_outbox), "device_hello", {
-            {"contract", contract_str},
-            {"boot_id", boot_str},
-            {"manifest", manifest_str},
-          });
+          latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
+          latter_actions::emit_device_hello();
 
 time:
   - platform: homeassistant

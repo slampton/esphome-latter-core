@@ -69,8 +69,6 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/host/test_all.cpp -o /tmp/test_all
           /tmp/test_all
-          g++ -std=c++20 -O2 -Wall -Wextra tests/host/test_latter_state.cpp -o /tmp/test_latter_state
-          /tmp/test_latter_state
 
       - name: Validate Example 1 (Minimal Headless Companion)
         run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 1" config examples/minimal_headless_companion.yaml

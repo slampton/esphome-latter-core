@@ -14,8 +14,6 @@
 # ==============================================================================
 
 substitutions:
-  screen_w: "480"
-  screen_h: "480"
   font_time_size: "77"
   font_chrono_size: "38"
   font_date_size: "27"
@@ -25,7 +23,6 @@ substitutions:
   font_games_size: "38"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"
-  art_shape: "square"
   default_start_app: "Home"
   default_clock_face: "Minimal Digital"
   default_art_mode: "Full Screen"
@@ -48,7 +45,7 @@ substitutions:
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
-  imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion, modules/imu_qmi8658.yaml)
+  imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion, modules/hal/imu_qmi8658.yaml)
   # Light-sleep PM profiling (CONFIG_PM_PROFILING): per-lock and per-mode times in [PROF:PM_LOCKS].
   # Bench builds only: set it to "true" in the device config's substitutions.
   pm_profiling: "false"
@@ -126,8 +123,8 @@ spi:
 packages:
   latter_chip: !include ../modules/hal/chip_esp32s3.yaml
   latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
-  latter_imu: !include ../modules/imu_qmi8658.yaml
-  latter_pmu: !include ../modules/pmu_axp2101.yaml
+  latter_imu: !include ../modules/hal/imu_qmi8658.yaml
+  latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
 
 i2s_audio:
   - id: !extend i2s_shared_bus
@@ -156,7 +153,7 @@ binary_sensor:
     entity_category: diagnostic
 
   # PWR key state (AXP PWRON -> BSS138 -> SYS_OUT -> GPIO16, HIGH while pressed). Press timing lives
-  # in modules/pmu_axp2101.yaml. GPIO16 is an RTC GPIO, so it also arms the ext0 deep-sleep wake.
+  # in modules/hal/pmu_axp2101.yaml. GPIO16 is an RTC GPIO, so it also arms the ext0 deep-sleep wake.
   - platform: gpio
     id: pwr_key
     name: "Power Key"
@@ -234,10 +231,12 @@ script:
           gpio_deep_sleep_hold_en();
           global_preferences->sync();
 
+          const auto &rs = latter_ui::runtime_state();
+          const auto &ap = latter_ui::persisted_prefs().alarms;
           int32_t sec_to_alarm = latter_ui::seconds_until_next_armed_alarm(
               id(ha_time).now().is_valid() ? id(ha_time).now() : id(sntp_time).now(),
-              id(alarm_snooze_until),
-              id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
-              id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
-              id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence));
+              rs.alarms.snooze_until,
+              ap[0].hour, ap[0].minute, ap[0].enabled, ap[0].recurrence,
+              ap[1].hour, ap[1].minute, ap[1].enabled, ap[1].recurrence,
+              ap[2].hour, ap[2].minute, ap[2].enabled, ap[2].recurrence);
           latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);

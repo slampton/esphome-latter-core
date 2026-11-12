@@ -1,0 +1,52 @@
+# ==============================================================================
+# Latter Core Umbrella Module: Full Display Firmware
+# (modules/latter_display_firmware.yaml)
+# Single entry point included by devices/*.yaml and custom display builds.
+# Pulls in Latter Core OS (system_core, power_manager, audio_voice,
+# display_pipeline, settings_entities, timers_and_fetchers) + Universal GUI.
+# ==============================================================================
+
+substitutions:
+  version: "3.0.0"
+  default_start_app: "Home"
+  default_clock_face: "Minimal Digital"
+  default_art_mode: "Full Screen"
+  default_screensaver_style: "Ambient Clock"
+  default_album_sort: "Alphabetical"
+  default_artist_album_sort: "Oldest on Top"
+  default_podcast_sort: "Newest on Top"
+  default_power_profile: "Portable Carry"
+  art_resize: "466x466"
+  sendspin_art_resize: "466x466"
+  initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"
+
+latter_core:
+
+# Boot lines are usually logged before any API log viewer connects. Keep warnings plus the one-shot
+# boot status lines and replay them to every client that connects (fixed buffer, no heap): display
+# buffers, audio, SDK revision, [PROF:BOOT] (reset reason, crash flag, previous power-off; [PROF:*] INFO
+# lines are otherwise gated on the Telemetry Profiler), the AXP2101 charger setup and the light-sleep setup.
+# Steady state at the default INFO level is quiet: per-touch, per-frame, per-turn and per-cycle lines log at
+# DEBUG, [PROF:*] diagnostics only while the Telemetry Profiler is on ([PROF GATE]).
+logger:
+  level: INFO
+  boot_log_buffer_size: 2kB
+  boot_logs:
+    disp_fb: INFO
+    audio: INFO
+    latter: INFO
+    PROF: INFO
+    pmu: INFO
+    power: INFO
+
+safe_mode:
+  boot_is_good_after: 60s
+
+packages:
+  latter_system:   !include system_core.yaml
+  latter_power:    !include power_manager.yaml
+  latter_audio:    !include audio_voice.yaml
+  latter_pipeline: !include display_pipeline.yaml
+  latter_settings: !include settings_entities.yaml
+  latter_timers:   !include timers_and_fetchers.yaml
+  latter_gui:      !include ../guis/universal/gui.yaml

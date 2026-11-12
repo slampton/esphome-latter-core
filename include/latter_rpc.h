@@ -240,14 +240,7 @@ inline void bind_sensor_sink(SensorT *const *sensor_ptr) {
   if (sensor_ptr != nullptr) bind_sensor_sink(*sensor_ptr);
 }
 
-template <typename SensorT>
-  requires(!std::is_pointer_v<SensorT>)
-inline void emit(
-    SensorT *sensor,
-    std::string_view service,
-    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
-  bind_sensor_sink(sensor);
-  enqueue_chunked_json(build_rpc_json(service, fields));
+inline void flush_first_frame_if_idle() {
   RpcQueueState &st = rpc_state();
   if (!st.published_in_pass && st.passes_since_publish >= 2U &&
       st.count > 0 && st.sink_fn != nullptr && st.sink_ctx != nullptr) {
@@ -259,6 +252,25 @@ inline void emit(
     st.awaiting_publish_stamp = true;
     st.sink_fn(st.sink_ctx, first_frame);
   }
+}
+
+inline void emit(
+    std::nullptr_t,
+    std::string_view service,
+    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
+  enqueue_chunked_json(build_rpc_json(service, fields));
+  flush_first_frame_if_idle();
+}
+
+template <typename SensorT>
+  requires(!std::is_pointer_v<SensorT>)
+inline void emit(
+    SensorT *sensor,
+    std::string_view service,
+    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
+  bind_sensor_sink(sensor);
+  enqueue_chunked_json(build_rpc_json(service, fields));
+  flush_first_frame_if_idle();
 }
 
 template <typename SensorT>

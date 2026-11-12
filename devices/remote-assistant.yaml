@@ -1,6 +1,5 @@
-# Build-Stamp: 2026-10-29 21:09:05
 # ==============================================================================
-# Remote Assistant (v2.2 Modular Architecture)
+# Remote Assistant (v3.0 Modular Architecture)
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (320x480 IPS LCD + Camera, SKU 33360)
 #         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_35.yaml
 #         (default rev3 = v3.x production silicon; CI also publishes a rev1 build).
@@ -9,15 +8,12 @@
 # ==============================================================================
 
 substitutions:
-  # Branch of latter_core / latter_beacon. A test device that builds the package from dev sets
-  # latter_ref: dev in its own substitutions, so YAML and C++ headers come from one revision.
+  # Branch of latter_core / latter_ui / latter_beacon. A test device that builds the package from dev
+  # sets latter_ref: dev in its own substitutions, so YAML and C++ headers come from one revision.
   latter_ref: main
   name: "remote-assistant"
   friendly_name: "Remote Assistant"
   version: "3.0.0"
-  screen_w: "320"
-  screen_h: "480"
-  art_shape: "square"
   default_clock_face: "Minimal Digital"
   default_power_profile: "Tabletop Dock"
   api_reboot_timeout: "0s"
@@ -31,10 +27,8 @@ external_components:
       type: git
       url: https://github.com/slampton/esphome-latter-core
       ref: ${latter_ref}
-    components: [latter_hal, latter_core, latter_ui, latter_beacon]
+    components: [latter_core, latter_ui, latter_beacon]
     refresh: 0s
-
-latter_core:
 
 esphome:
   name: ${name}
@@ -43,9 +37,6 @@ esphome:
   project:
     name: "slampton.remote-assistant-p4-35"
     version: "${version}"
-
-logger:
-  level: INFO
 
 update:
   - platform: http_request
@@ -74,12 +65,6 @@ latter_beacon:
 # Wi-Fi provisioning over the USB cable: the web installer asks for Wi-Fi right after flashing.
 improv_serial:
 
-safe_mode:
-  boot_is_good_after: 60s
-
 packages:
   hal: !include ../boards/waveshare_p4_35.yaml
-  latter_audio_voice: !include ../modules/audio_voice.yaml
-  latter_power:       !include ../modules/power_manager.yaml
-  latter_client:      !include ../modules/latter_client.yaml
-  latter_gui:         !include ../guis/universal/gui.yaml
+  latter_firmware: !include ../modules/latter_display_firmware.yaml

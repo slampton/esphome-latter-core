@@ -33,14 +33,15 @@ image:
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
+          auto &rs = latter_ui::runtime_state();
           const auto &ms = latter_ui::media_state();
-          if (!ms.art_url.empty() && ms.art_url != id(current_loaded_art_url)) {
+          if (!ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
             id(fetch_remote_art_debounced).execute();
           }
       - script.execute: throttled_disp_update
       - script.execute: sync_wake_word_state
     on_error:
-      - lambda: 'id(current_loaded_art_url) = "";'
+      - lambda: 'latter_ui::runtime_state().music.loaded_art_url = "";'
       - script.execute: sync_wake_word_state
 
   - platform: online_image
@@ -52,13 +53,14 @@ image:
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
-          id(current_loaded_wallpaper_url) = latter_ui::area_ctx_state().wallpaper_url;
-          if (id(display_power_state) == 0 && id(gui_page) == 1) {
+          auto &rs = latter_ui::runtime_state();
+          rs.music.loaded_wallpaper_url = latter_ui::area_ctx_state().wallpaper_url;
+          if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 1) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: sync_wake_word_state
     on_error:
-      - lambda: 'id(current_loaded_wallpaper_url) = "";'
+      - lambda: 'latter_ui::runtime_state().music.loaded_wallpaper_url = "";'
       - script.execute: sync_wake_word_state
 
   - platform: online_image
@@ -70,11 +72,12 @@ image:
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-
+          auto &rs = latter_ui::runtime_state();
           latter_ui::cam_download_in_progress() = false;
           latter_ui::last_cam_live_fetch_ms() = millis();
-          id(current_loaded_camera_url) = id(notif_camera_url);
-          if (id(display_power_state) == 0 &&
-              (id(notif_active) || (id(gui_page) == 8 && (id(tools_subpage) == 9 || id(tools_subpage) == 12)))) {
+          rs.alert.loaded_camera_url = rs.alert.camera_url;
+          if (rs.nav.display_power_state == 0 &&
+              (rs.alert.active || (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 9 || rs.nav.tools_subpage == 12)))) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: release_hidden_camera
@@ -83,7 +86,7 @@ image:
       - lambda: |-
           latter_ui::cam_download_in_progress() = false;
           latter_ui::last_cam_live_fetch_ms() = millis();
-          id(current_loaded_camera_url) = "";
+          latter_ui::runtime_state().alert.loaded_camera_url = "";
       - script.execute: sync_wake_word_state
 
 output:

@@ -1,37 +1,27 @@
 #pragma once
 
 // ==============================================================================
-// Latter HAL Hardware Capabilities, Manifest & Stall Guard Declarations (hal_manifest.h)
+// Latter HAL Hardware Capabilities & Manifest v2 Builders (hal_manifest.h)
 // ==============================================================================
-// GUI-agnostic hardware trait defaults, Hardware Manifest v2 JSON builders, and
-// StallGuard / reset diagnostics shared by headless latter_core and display builds.
+// GUI-agnostic hardware trait defaults, PMU boot telemetry, and Hardware Manifest v2
+// JSON builders shared by headless latter_core and display builds.
 // ==============================================================================
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <string>
 
+#if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
-#include "esphome/core/hal.h"
-#include "esphome/core/log.h"
+#endif
 
 #ifdef USE_ESP32
-#include <esp_attr.h>
-#include <esp_ota_ops.h>
-#include <esp_random.h>
-#include <esp_system.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#endif
-#ifdef USE_ESP32_CRASH_HANDLER
-#include "esphome/components/esp32/crash_handler.h"
+#include <sdkconfig.h>
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111038L
+#define LATTER_SDK_REV 2026111039L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -138,25 +128,7 @@ namespace latter_ui {
 
 inline constexpr int kManifestProtocolContractVersion = 3;
 
-struct HardwareCapabilities {
-  bool is_round = (LATTER_ROUND_DISPLAY != 0);
-  bool has_display = (LATTER_HAS_DISPLAY != 0);
-  bool has_touch = (LATTER_HAS_TOUCH != 0);
-  bool has_audio = (LATTER_HAS_AUDIO != 0);
-  bool has_mic = (LATTER_HAS_MIC != 0);
-  bool has_speaker = (LATTER_HAS_SPEAKER != 0);
-  bool has_imu = (LATTER_HAS_IMU != 0);
-  bool has_battery = (LATTER_HAS_BATTERY != 0);
-  bool is_stationary = (LATTER_IS_STATIONARY != 0);
-  bool is_wearable = (LATTER_IS_WEARABLE != 0);
-  bool is_ips_panel = (LATTER_PANEL_IPS != 0);
-  bool is_chip_p4 = (LATTER_CHIP_P4 != 0);
-  int psram_mb = LATTER_PSRAM_MB;
-};
-
-inline constexpr HardwareCapabilities caps() { return HardwareCapabilities{}; }
-
-// PMIC telemetry shared by the PMU module and the profiler.
+// PMIC telemetry shared by the PMU driver and the profiler.
 struct PmuTelemetry {
   int gauge_raw = -1;
   bool boot_valid = false;
@@ -173,51 +145,17 @@ inline PmuTelemetry &pmu_telemetry() {
   return t;
 }
 
-uint32_t device_boot_id();
-
-// ------------------------------------------------------------------------------
-// Main-loop stall guard (compiled implementation in components/latter_hal/power_pm.cpp)
-// ------------------------------------------------------------------------------
-constexpr uint32_t kStallAbortMs = 30000U;
-constexpr uint32_t kStallReportMs = 2000U;
-constexpr uint32_t kStallRecordMagic = 0x5354414CU;  // "STAL"
-constexpr uint32_t kStallLiveMagic = 0x53544C56U;    // "STLV"
-constexpr uint32_t kTwdtRecordMagic = 0x54574454U;   // "TWDT"
-
-struct StallRecord {
-  uint32_t magic;
-  uint32_t blocked_ms;
-  uint32_t uptime_s;
-  char source[40];
-  char cpu0[16];
-  char cpu1[16];
-  char loop_state;
-};
-
-struct StallGuardState {
-  StallGuardState();
-
-  std::atomic<bool> paused{false};
-  std::atomic<uint32_t> resumed_ms{0};
-  bool started{false};
-  StallRecord previous_boot{};
-  StallRecord previous_live{};
-  StallRecord previous_twdt{};
-  StallRecord longest{};
 #ifdef USE_ESP32
-  portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-#endif
-};
-
-StallGuardState &stall_guard();
-bool previous_boot_stalled();
-void stall_guard_pause(bool paused);
-void start_stall_guard();
-void log_stall_summary();
-
+uint32_t device_boot_id();
 const char *last_reset_reason();
 bool crash_record_present();
 bool firmware_rolled_back();
+#else
+inline uint32_t device_boot_id() { return 1U; }
+inline const char *last_reset_reason() { return "host"; }
+inline bool crash_record_present() { return false; }
+inline bool firmware_rolled_back() { return false; }
+#endif
 
 inline std::string build_hardware_manifest_json() {
   const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;

@@ -20,8 +20,6 @@ substitutions:
   p4_silicon: "rev3"
   p4_engineering_sample: "false"
   p4_cpu_frequency: "400MHz"
-  screen_w: "320"
-  screen_h: "480"
   font_time_size: "77"
   font_chrono_size: "38"
   font_date_size: "27"
@@ -31,7 +29,6 @@ substitutions:
   font_games_size: "38"
   art_resize: "320x480"
   sendspin_art_resize: "480x480"
-  art_shape: "square"
   default_start_app: "Home"
   default_clock_face: "Minimal Digital"
   default_art_mode: "Full Screen"
@@ -118,8 +115,7 @@ spi:
 packages:
   latter_chip: !include ../modules/hal/chip_esp32p4.yaml
   latter_audio_hal: !include ../modules/hal/audio_es8311_duplex.yaml
-  latter_imu: !include ../modules/imu_none.yaml
-  latter_pmu: !include ../modules/pmu_axp2101.yaml
+  latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
 
 switch:
   - platform: gpio
@@ -141,7 +137,7 @@ binary_sensor:
     entity_category: diagnostic
 
   # PWR key state (K1 -> BSS138 inverter -> GPIO49, HIGH while pressed). Press timing lives in
-  # modules/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep (alarm-sleep
+  # modules/hal/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep (alarm-sleep
   # wakes on its timer). Wake from hibernate needs no GPIO: hibernate powers the AXP2101 off, and K1 also
   # drives AXP PWRON, which powers the rails back up and cold-boots the P4 (bench-verified 2026-11-09).
   - platform: gpio
@@ -249,10 +245,12 @@ script:
 
           global_preferences->sync();
 
+          const auto &rs = latter_ui::runtime_state();
+          const auto &ap = latter_ui::persisted_prefs().alarms;
           int32_t sec_to_alarm = latter_ui::seconds_until_next_armed_alarm(
               id(ha_time).now().is_valid() ? id(ha_time).now() : id(sntp_time).now(),
-              id(alarm_snooze_until),
-              id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
-              id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
-              id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence));
+              rs.alarms.snooze_until,
+              ap[0].hour, ap[0].minute, ap[0].enabled, ap[0].recurrence,
+              ap[1].hour, ap[1].minute, ap[1].enabled, ap[1].recurrence,
+              ap[2].hour, ap[2].minute, ap[2].enabled, ap[2].recurrence);
           latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);

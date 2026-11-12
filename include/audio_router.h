@@ -11,18 +11,31 @@
 #include <cstdint>
 #include <string>
 
+#if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
-#include "esphome/core/hal.h"
+#endif
 #ifdef USE_I2C
 #include "esphome/components/i2c/i2c_bus.h"
 #endif
 
-#include "hal_types.h"
+#include "hal_manifest.h"
+#include "latter_prof.h"
 
 namespace latter_ui {
 
+#ifdef USE_ESP32
 std::atomic<uint32_t> &echo_last_loud_ms();
 std::atomic<bool> &echo_meter_active();
+#else
+inline std::atomic<uint32_t> &echo_last_loud_ms() {
+  static std::atomic<uint32_t> last{0};
+  return last;
+}
+inline std::atomic<bool> &echo_meter_active() {
+  static std::atomic<bool> active{false};
+  return active;
+}
+#endif
 
 inline constexpr int64_t kEchoLoudMeanSquare = 33LL * 33LL;
 
@@ -35,7 +48,7 @@ inline void echo_meter_feed(const uint8_t *data, size_t len) {
   int64_t acc = 0;
   for (size_t i = 0; i < n; i++) acc += static_cast<int32_t>(s[i]) * s[i];
   if (acc / static_cast<int64_t>(n) > kEchoLoudMeanSquare) {
-    echo_last_loud_ms().store(esphome::millis(), std::memory_order_relaxed);
+    echo_last_loud_ms().store(hal_millis_now(), std::memory_order_relaxed);
   }
 }
 
@@ -50,7 +63,7 @@ inline bool wake_word_should_run(const std::string &ww_mode,
   return mode_allowed && !va_busy && !media_busy && !alert_or_tool_busy && !sys_busy;
 }
 
-// Must match volume_min / volume_max of latter_media_player in modules/audio_voice.yaml (latter-verify).
+// Must match volume_min / volume_max of latter_media_player in modules/audio_voice.yaml.
 inline constexpr float kMediaVolumeMin = 0.10f;
 inline constexpr float kMediaVolumeMax = 1.00f;
 
@@ -85,32 +98,6 @@ inline void hal_set_es8311_es7210_standby(I2cBusT *const *bus_pp, bool standby, 
 template <typename I2cBusT>
 inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *const *bus_pp, bool has_imu, bool has_es7210 = true) {
   if (bus_pp != nullptr) hal_power_down_audio_and_imu_for_hibernate(*bus_pp, has_imu, has_es7210);
-}
-
-class Es8311AudioControl final : public latter_hal::IAudioControl {
- public:
-  explicit Es8311AudioControl(esphome::i2c::I2CBus *bus = nullptr, bool has_es7210 = true, bool has_imu = false)
-      : bus_(bus), has_es7210_(has_es7210), has_imu_(has_imu) {}
-  void configure(esphome::i2c::I2CBus *bus, bool has_es7210, bool has_imu) {
-    bus_ = bus;
-    has_es7210_ = has_es7210;
-    has_imu_ = has_imu;
-  }
-
-  void set_standby(bool standby) override { hal_set_es8311_es7210_standby(bus_, standby, has_es7210_); }
-  void power_down_for_hibernate() override {
-    hal_power_down_audio_and_imu_for_hibernate(bus_, has_imu_, has_es7210_);
-  }
-
- private:
-  esphome::i2c::I2CBus *bus_{nullptr};
-  bool has_es7210_{true};
-  bool has_imu_{false};
-};
-
-inline Es8311AudioControl &es8311_audio_driver() {
-  static Es8311AudioControl s_drv;
-  return s_drv;
 }
 #endif  // USE_I2C
 

@@ -3,6 +3,10 @@
 # Included by ESP32-P4 display board HALs under boards/
 # ==============================================================================
 
+substitutions:
+  pm_profiling: "false"
+  wake_profiling: "n"
+
 esp32:
   variant: esp32p4
   # rev1.x builds only boot rev1.x silicon and rev3.x builds only boot rev3.x silicon (see p4_silicon).

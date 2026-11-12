@@ -7,16 +7,13 @@
 #      (Clock faces, 20 FPS Weather, Assist, Music Assistant, Area Control,
 #      Whole-Home Hub, up to 10 remotes, 6 Games, 11 Tools) to a new screen.
 #   2. Automated CI target verifying that all C++20 headers in include/
-#      and modules/{audio_voice,power_manager,display_ui}.yaml validate cleanly.
+#      and modules/latter_display_firmware.yaml validate cleanly.
 # ==============================================================================
 
 substitutions:
   name: "latter-panel-demo"
   friendly_name: "Latter Panel Demo"
   version: "3.0.0"
-  screen_w: "480"
-  screen_h: "480"
-  art_shape: "square"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
@@ -28,14 +25,14 @@ substitutions:
   audio_out_channels: "1"
   audio_out_bits: "16"
   audio_in_rate: "16000"
-  imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion); required by modules/imu_qmi8658.yaml
+  imu_int1_pin: GPIO17  # QMI8658 INT1 (hardware wake-on-motion); required by modules/hal/imu_qmi8658.yaml
 
-# Load the Latter Core C++20 header staging component (use github://slampton/esphome-latter-core@main in external repos)
+# Load the Latter Core C++20 components (use github://slampton/esphome-latter-core@main in external repos)
 external_components:
   - source:
       type: local
       path: ../components
-    components: [latter_hal, latter_core, latter_ui, latter_beacon]
+    components: [latter_core, latter_ui, latter_beacon]
 
 latter_core:
 
@@ -182,7 +179,7 @@ speaker:
     buffer_duration: 250ms
     timeout: 4s  # longer than the 3 s idle power-down (see docs/porting-hardware.md)
 
-# IMU sensors included via modules/imu_qmi8658.yaml in packages below
+# IMU sensors included via modules/hal/imu_qmi8658.yaml in packages below
 
 switch:
   - platform: gpio
@@ -253,35 +250,42 @@ script:
 # ==============================================================================
 # SHARED LATTER CORE OS MODULES
 # ==============================================================================
-# Default below loads `display_ui.yaml` (full flagship Universal GUI + compiled
-# TouchGestureEngine). If you build a custom GUI instead (by including
-# `../modules/latter_client.yaml` in place of `../modules/display_ui.yaml`),
-# wire your `disp1` lambda to Latter's 2px-aligned dirty-band latch and
-# system-owned global takeovers so OTA, Hibernation, Alarms/Timers, Voice
-# Assistant, Security PIN Pad, Notifications, and Screensavers work natively:
+# Default below loads `latter_display_firmware.yaml` (full flagship Universal GUI
+# + compiled TouchGestureEngine). If you build a custom GUI instead (by omitting
+# `guis/universal/gui.yaml`), wire your `disp1` lambda to Latter's 2px-aligned
+# dirty-band latch and `render_system_takeovers(it, ctx, takeover_st)` so OTA,
+# Hibernation, Alarms/Timers, Voice Assistant, Security PIN Pad, Notifications,
+# and Screensavers work natively:
 #
 #   display:
 #     - id: !extend disp1
 #       auto_clear_enabled: false
 #       lambda: |-
-#         auto now = id(ha_time).now();
-#         if (!now.is_valid()) now = id(sntp_time).now();
-#         latter_ui::SystemTakeoverState takeover_st;
-#         takeover_st.now_ms = millis();
-#         takeover_st.ota_in_progress = id(ota_in_progress);
-#         takeover_st.ota_progress_pct = id(ota_progress_pct);
-#         takeover_st.is_hibernating = id(is_hibernating);
-#         takeover_st.hibernate_countdown_val = id(hibernate_countdown_val);
-#         takeover_st.panel_is_on = id(display_brightness).current_values.is_on();
-#         takeover_st.display_power_state = id(display_power_state);
-#         takeover_st.alarm_ringing = id(alarm_ringing);
-#         takeover_st.timer_ringing = id(timer_ringing);
-#         takeover_st.find_my_active = id(find_my_active);
-#         takeover_st.va_active = id(va_active);
-#         takeover_st.va_status_text = id(va_status_text);
-#         takeover_st.notif_active = id(notif_active);
+#         const auto &rs = latter_ui::runtime_state();
+#         latter_ui::UiFrameContext ctx;
+#         ctx.now = id(ha_time).now();
+#         if (!ctx.now.is_valid()) ctx.now = id(sntp_time).now();
+#         ctx.now_ms = millis();
+#         ctx.panel_is_on = id(display_brightness).current_values.is_on();
+#         ctx.camera_snapshot_art = latter_ui::make_art_view(id(camera_snapshot_art));
+#         ctx.font_time = id(font_time);
+#         ctx.font_chrono_time = id(font_chrono_time);
+#         ctx.font_date = id(font_date);
+#         ctx.font_small = id(font_small);
+#         ctx.font_micro = id(font_micro);
+#         ctx.theme_primary = id(theme_primary);
+#         ctx.theme_secondary = id(theme_secondary);
+#         ctx.col_bg = id(col_bg);
+#         ctx.col_white = id(col_white);
+#         ctx.col_slate = id(col_slate);
+#         ctx.col_gray = id(col_gray);
+#         ctx.col_dark_gray = id(col_dark_gray);
+#         ctx.col_gold = id(col_gold);
+#         ctx.col_red = id(col_red);
+#         ctx.col_solaris_gold = id(col_solaris_gold);
+#         const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
 #         const uint32_t sig = latter_ui::compute_takeover_signature(takeover_st);
-#         latter_ui::dirty_band().begin_frame(id(gui_page), 0, sig, sig != 0U);
+#         latter_ui::dirty_band().begin_frame(rs.nav.gui_page, 0, sig, sig != 0U);
 #         const int band_y0 = latter_ui::dirty_band().y0();
 #         const int band_y1 = latter_ui::dirty_band().y1();
 #         it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
@@ -290,17 +294,9 @@ script:
 #         it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
 #         latter_ui::bind_frame_buffer(id(disp1), it);
 #         latter_ui::frame_base_begin();
-#         if (latter_ui::render_system_takeovers(
-#                 it, now, takeover_st, id(camera_snapshot_art),
-#                 id(font_time), id(font_chrono_time), id(font_date),
-#                 id(font_small), id(font_micro))) {
-#           return;
-#         }
+#         if (latter_ui::render_system_takeovers(it, ctx, takeover_st)) return;
 #         latter_ui::frame_base(it, id(col_bg));
 #         // ... draw your custom pages here using latter_ui::fast_* primitives ...
 packages:
-  latter_imu:         !include ../modules/imu_qmi8658.yaml
-  latter_pmu:         !include ../modules/pmu_none.yaml
-  latter_audio_voice: !include ../modules/audio_voice.yaml
-  latter_power:       !include ../modules/power_manager.yaml
-  latter_display_ui:  !include ../modules/display_ui.yaml
+  latter_imu:      !include ../modules/hal/imu_qmi8658.yaml
+  latter_firmware: !include ../modules/latter_display_firmware.yaml

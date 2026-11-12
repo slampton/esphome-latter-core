@@ -6,16 +6,16 @@
 //
 // Coverage:
 //   1. Protocol v3 pack/unpack across all 5 domains, epoch/rev monotonicity,
-//      reconnect reset, kProtocolMinRequiredFields version-skew floor, and
-//      latter_rpc <=240B UTF-8-safe chunking, pacing, saturation, & req_id guards.
+//      reconnect reset, ACTIVITY_CARD "0"/"" mask reset, VOLUME "1" & "100"
+//      normalization, kProtocolMinRequiredFields version-skew floor, and
+//      latter_rpc <=240B UTF-8-safe chunking, pacing, saturation, & req_id=0/monotonic guards.
 //   2. Multi-geometry UiPanelLayout / scale_w_for / safe_span_for / FrameHitTable
-//      across all 5 flagship resolutions (320x480, 360x360, 412x412, 466x466,
-//      720x720) + DirtyBandTracker 2px horizontal DMA band alignment.
-//   3. BatteryModel (0.5C floor, 65C thermal foldback / 58C hysteresis, 0mAh
-//      zero-division guard, OCV curves, 30s/4-sample cutoff) & PowerPolicy
-//      (!can_wake_for_on_battery_alarm() on non-LP-wake battery boards vs USB
-//      docked, WeakLinkGate -65dBm/-61dBm 120s RSSI hysteresis) + production
-//      header/source constant parity check.
+//      across all 7 panel profiles (320x480..720x720) + DirtyBandTracker 2px
+//      horizontal DMA band alignment & compute_subpage_id folding.
+//   3. Production hal_battery.h (BatteryModel, 0.5C floor, 65C thermal foldback /
+//      58C hysteresis, 0mAh zero-division guard, OCV curves, 30s/4-sample cutoff,
+//      !can_wake_for_on_battery_alarm() policy) & production hal_link_report.h
+//      (WeakLinkGate -65dBm/-61dBm 120s RSSI hysteresis).
 // ==============================================================================
 
 #include <algorithm>
@@ -33,7 +33,8 @@
 #include "../../include/latter_protocol.h"
 #include "../../include/latter_state.h"
 #include "../../include/latter_rpc.h"
-#include "../../include/hal_types.h"
+#include "../../include/hal_battery.h"
+#include "../../include/hal_link_report.h"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
 #include "../../include/ui_compositor.h"
@@ -153,25 +154,43 @@ void test_protocol_v3_and_rpc() {
   LATTER_CHECK(latter_ui::area_ctx_state().security_pin_policy == "require_pin");
   LATTER_CHECK(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
 
+  // ACTIVITY_CARD "1" custom mask, "0" explicit zero mask, and "" spec-default reset
   area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "1";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "calendar,timers";
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "calendar,timers,future_key";
   LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 2, area_t)));
   LATTER_CHECK(latter_ui::activity_source_mask() == ((1U << 5) | (1U << 1)));
 
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "0";
+  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 3, area_t)));
+  LATTER_CHECK(latter_ui::activity_source_mask() == 0);
+
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "";
+  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "";
+  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 4, area_t)));
+  LATTER_CHECK(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
+
+  // Media domain: VOLUME "1" -> 0.01f, "" preserves volume & clears has_volume, "100" -> 1.00f, last_speaker wired
   std::vector<std::string> media_t(static_cast<size_t>(latter_ui::MediaField::COUNT), "");
   media_t[static_cast<size_t>(latter_ui::MediaField::STATE)] = "playing";
   media_t[static_cast<size_t>(latter_ui::MediaField::TITLE)] = "Time";
   media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "1";
+  media_t[static_cast<size_t>(latter_ui::MediaField::LAST_SPEAKER)] = "media_player.office_speaker";
   media_t[static_cast<size_t>(latter_ui::MediaField::IS_LOCAL)] = "1";
   LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 1, media_t)));
   LATTER_CHECK(latter_ui::media_state().has_volume);
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
+  LATTER_CHECK(latter_ui::media_state().last_speaker == "media_player.office_speaker");
   LATTER_CHECK(latter_ui::media_state().is_local);
 
   media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "";
   LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 2, media_t)));
   LATTER_CHECK(!latter_ui::media_state().has_volume);
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
+
+  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "100";
+  LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
+  LATTER_CHECK(latter_ui::media_state().has_volume);
+  LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
 
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";
@@ -260,7 +279,7 @@ void test_protocol_v3_and_rpc() {
     latter_rpc::step_outbox_loop(now_ms);
   }
 
-  // Monotonic req_id per SlotChannel
+  // Monotonic req_id per SlotChannel + req_id == 0 unsolicited push acceptance
   LATTER_CHECK(latter_rpc::classify_browse_mode("areas") == latter_rpc::SlotChannel::AREA_LIST);
   LATTER_CHECK(latter_rpc::classify_browse_mode("entities") == latter_rpc::SlotChannel::AREA_ENTITIES);
   LATTER_CHECK(latter_rpc::classify_browse_mode("area_light") == latter_rpc::SlotChannel::AREA_ENTITIES);
@@ -270,10 +289,12 @@ void test_protocol_v3_and_rpc() {
   const int r2 = latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_ENTITIES);
   LATTER_CHECK(!latter_rpc::accept_req_id(latter_rpc::SlotChannel::AREA_ENTITIES, r1));
   LATTER_CHECK(latter_rpc::accept_req_id(latter_rpc::SlotChannel::AREA_ENTITIES, r2));
+  LATTER_CHECK(latter_rpc::accept_req_id(latter_rpc::SlotChannel::AREA_ENTITIES, 0));
+  LATTER_CHECK(latter_rpc::accept_req_id(latter_rpc::SlotChannel::MUSIC, 0));
 }
 
 // ==============================================================================
-// 2. MULTI-GEOMETRY UI LAYOUT, HIT TABLE & 2PX DIRTY BAND TESTS (ALL 5 PANELS)
+// 2. MULTI-GEOMETRY UI LAYOUT, HIT TABLE & 2PX DIRTY BAND TESTS (ALL PANELS)
 // ==============================================================================
 
 struct PanelSpec {
@@ -411,166 +432,47 @@ void test_ui_layout_hit_table_and_dirty_band() {
     LATTER_CHECK(((ay1 - ay0 + 1) % 2) == 0);
   }
 
-  // Stateful DirtyBandTracker transitions (466px default SCREEN_H)
+  // Stateful DirtyBandTracker transitions & compute_subpage_id folding
   auto &db = latter_ui::dirty_band();
   db = latter_ui::DirtyBandTracker{};
   const uint32_t sig_idle = latter_ui::compute_takeover_signature(false, false, true, 0, false, false, false, false);
   const uint32_t sig_va   = latter_ui::compute_takeover_signature(false, false, true, 0, false, true,  false, false);
   LATTER_CHECK(sig_idle != sig_va);
 
+  const int home_sub_dock0 = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  const int home_sub_dock1 = latter_ui::compute_subpage_id(1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  const int tools_slot0    = latter_ui::compute_subpage_id(8, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0);
+  const int tools_slot2    = latter_ui::compute_subpage_id(8, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 2, 0);
+  const int cal_list       = latter_ui::compute_subpage_id(8, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 11, 0, 0, 0, 0);
+  const int cal_detail     = latter_ui::compute_subpage_id(8, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 11, 0, 1, 0, 0);
+  LATTER_CHECK(home_sub_dock0 != home_sub_dock1);
+  LATTER_CHECK(tools_slot0 != tools_slot2);
+  LATTER_CHECK(cal_list != cal_detail);
+
   // Frame 1: initial page promotes to full-frame [0, SCREEN_H - 1]
-  db.begin_frame(1, 0, sig_idle, false);
+  db.begin_frame(1, home_sub_dock0, sig_idle, false);
   LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
 
   // Frame 2: localized 1s countdown band + marquee band union into 2px-aligned [12, 233]
   latter_ui::mark_dirty_band(13, 60);
   latter_ui::mark_dirty_band(180, 232);
-  db.begin_frame(1, 0, sig_idle, false);
+  db.begin_frame(1, home_sub_dock0, sig_idle, false);
   LATTER_CHECK(!db.is_full() && db.y0() == 12 && db.y1() == 233);
 
-  // Frame 3: takeover transition (VA active) promotes localized band to full frame
+  // Frame 3: dock page flip promotes localized band to full frame via compute_subpage_id
   latter_ui::mark_dirty_band(40, 80);
-  db.begin_frame(1, 0, sig_va, false);
+  db.begin_frame(1, home_sub_dock1, sig_idle, false);
+  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Frame 4: takeover transition (VA active) promotes localized band to full frame
+  latter_ui::mark_dirty_band(40, 80);
+  db.begin_frame(1, home_sub_dock1, sig_va, false);
   LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
 }
 
 // ==============================================================================
-// 3. BATTERY MODEL & POWER POLICY TESTS (+ SOURCE PARITY VERIFICATION)
+// 3. PRODUCTION HAL BATTERY MODEL, POWER POLICY & WEAK-LINK GATE TESTS
 // ==============================================================================
-
-struct HostBatterySim {
-  static constexpr int kPathFixedMilliohm = 80;
-  static constexpr int kCellIrMilliohmAh = 120;
-  static constexpr int kChargeCapMa = 500;
-  static constexpr int kChargeThermalFoldbackMa = 100;
-  static constexpr float kThermalEnterC = 65.0f;
-  static constexpr float kThermalClearC = 58.0f;
-  static constexpr int kCutoffRestMv = 3400;
-  static constexpr int kCutoffLoadedMv = 3300;
-  static constexpr uint32_t kCutoffHoldMs = 30000U;
-  static constexpr uint8_t kCutoffMinSamples = 4;
-
-  static constexpr int icc_floor_ma(int ma) {
-    return ma < 25 ? 25
-                   : (ma <= 200 ? (ma / 25) * 25
-                                : (ma >= 1000 ? 1000 : 200 + ((ma - 200) / 100) * 100));
-  }
-  static constexpr uint8_t icc_code(int ma) {
-    return static_cast<uint8_t>(ma <= 200 ? ma / 25 : 8 + (ma - 200) / 100);
-  }
-  static constexpr int charge_ma_for_capacity(int capacity_mah) {
-    const int std_ma = icc_floor_ma(capacity_mah > 0 ? capacity_mah / 2 : 200);
-    const int max_raw = (capacity_mah * 8 / 10) < kChargeCapMa ? (capacity_mah * 8 / 10) : kChargeCapMa;
-    const int max_ma = icc_floor_ma(max_raw);
-    return std_ma < max_ma ? std_ma : max_ma;
-  }
-  static constexpr int path_mohm_for_capacity(int capacity_mah) {
-    return kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
-  }
-  static constexpr int precharge_ma_for_capacity(int capacity_mah) {
-    const int v = ((capacity_mah > 0 ? capacity_mah : 500) / 10) / 25 * 25;
-    return std::clamp(v, 25, 200);
-  }
-
-  bool foldback_active{false};
-  int active_icc_ma{0};
-
-  void step_thermal(bool is_charging, float die_temp_c, int nominal_ma) {
-    if (!is_charging) {
-      foldback_active = false;
-      active_icc_ma = nominal_ma;
-      return;
-    }
-    if (!foldback_active && die_temp_c >= kThermalEnterC && nominal_ma > kChargeThermalFoldbackMa) {
-      foldback_active = true;
-      active_icc_ma = kChargeThermalFoldbackMa;
-    } else if (foldback_active && die_temp_c <= kThermalClearC) {
-      foldback_active = false;
-      active_icc_ma = nominal_ma;
-    } else if (!foldback_active) {
-      active_icc_ma = nominal_ma;
-    }
-  }
-
-  uint32_t cutoff_since_ms{0};
-  uint8_t cutoff_samples{0};
-  bool cutoff_tripped{false};
-
-  bool step_cutoff(bool on_battery, int vrest_mv, int vraw_mv, uint32_t now_ms) {
-    if (!on_battery) {
-      cutoff_since_ms = 0;
-      cutoff_samples = 0;
-      cutoff_tripped = false;
-      return false;
-    }
-    if (vrest_mv <= kCutoffRestMv || vraw_mv <= kCutoffLoadedMv) {
-      if (cutoff_samples == 0) cutoff_since_ms = now_ms;
-      if (cutoff_samples < 255) ++cutoff_samples;
-      if (!cutoff_tripped && cutoff_samples >= kCutoffMinSamples &&
-          (now_ms - cutoff_since_ms) >= kCutoffHoldMs) {
-        cutoff_tripped = true;
-        return true;
-      }
-    } else {
-      cutoff_since_ms = 0;
-      cutoff_samples = 0;
-    }
-    return false;
-  }
-};
-
-constexpr bool can_wake_for_on_battery_alarm_policy(int pwr_key_deep_sleep_wake, int has_battery) {
-  return (pwr_key_deep_sleep_wake != 0) || (has_battery == 0);
-}
-
-int32_t resolve_alarm_sleep_seconds(int pwr_key_deep_sleep_wake, int has_battery,
-                                    bool cutoff_tripped, bool vbus_present, int32_t sec_until_alarm) {
-  if (cutoff_tripped && sec_until_alarm > 0) return -1;
-  if (!can_wake_for_on_battery_alarm_policy(pwr_key_deep_sleep_wake, has_battery) &&
-      sec_until_alarm > 0 && !vbus_present) {
-    return -1;
-  }
-  return sec_until_alarm;
-}
-
-struct HostWeakLinkGate {
-  static constexpr int32_t kEnterDbm = -65;
-  static constexpr int32_t kClearDbm = -61;
-  static constexpr uint32_t kClearHoldMs = 120000U;
-  static constexpr uint32_t kSampleMs = 10000U;
-  static constexpr float kAlpha = 0.3f;
-
-  bool weak{false};
-  bool have{false};
-  float ema{0.0f};
-  uint32_t last_sample_ms{0};
-  uint32_t above_since_ms{0};
-
-  bool step(int32_t rssi_dbm, uint32_t now_ms) {
-    if (last_sample_ms != 0 && now_ms - last_sample_ms < kSampleMs) return weak;
-    last_sample_ms = now_ms | 1U;
-    if (rssi_dbm <= -127 || rssi_dbm >= 0) return weak;
-    const float r = static_cast<float>(rssi_dbm);
-    ema = have ? (ema + kAlpha * (r - ema)) : r;
-    have = true;
-    if (!weak) {
-      if (ema < static_cast<float>(kEnterDbm)) {
-        weak = true;
-        above_since_ms = 0;
-      }
-    } else if (ema > static_cast<float>(kClearDbm)) {
-      if (above_since_ms == 0) {
-        above_since_ms = now_ms | 1U;
-      } else if (now_ms - above_since_ms >= kClearHoldMs) {
-        weak = false;
-        above_since_ms = 0;
-      }
-    } else {
-      above_since_ms = 0;
-    }
-    return weak;
-  }
-};
 
 std::string read_repo_file(const std::filesystem::path &rel_from_test_dir) {
   const auto base = std::filesystem::path(__FILE__).parent_path();
@@ -583,76 +485,76 @@ std::string read_repo_file(const std::filesystem::path &rel_from_test_dir) {
 }
 
 void test_battery_model_and_power_policy() {
-  // 1. 0.5C charge floor & 500 mA cap across fitted capacities + 0 mAh guard
-  LATTER_CHECK(HostBatterySim::path_mohm_for_capacity(0) == 80);       // 0 mAh guard: no div-by-zero
-  LATTER_CHECK(HostBatterySim::precharge_ma_for_capacity(0) == 50);    // 0 mAh guard -> 500 mAh fallback
-  LATTER_CHECK(HostBatterySim::charge_ma_for_capacity(0) == 25);       // 0.8C of 0 floored safely to 25 mA
-  LATTER_CHECK(HostBatterySim::charge_ma_for_capacity(400) == 200);    // Wrist 400 mAh -> 200 mA (0.5C)
-  LATTER_CHECK(HostBatterySim::charge_ma_for_capacity(500) == 200);    // Pocket 500 mAh -> 250 mA floored to 200 mA
-  LATTER_CHECK(HostBatterySim::charge_ma_for_capacity(1000) == 500);   // Mobile 1000 mAh -> 500 mA (0.5C)
-  LATTER_CHECK(HostBatterySim::charge_ma_for_capacity(2000) == 500);   // Capped at 500 mA
-  LATTER_CHECK(HostBatterySim::icc_code(100) == 4);
-  LATTER_CHECK(HostBatterySim::icc_code(200) == 8);
-  LATTER_CHECK(HostBatterySim::icc_code(500) == 11);
+  // 1. Production 0.5C charge floor & 500 mA cap across fitted capacities + 0 mAh guard (hal_battery.h)
+  LATTER_CHECK(latter_ui::path_mohm_for_capacity(0) == 80);       // 0 mAh guard: no div-by-zero
+  LATTER_CHECK(latter_ui::precharge_ma_for_capacity(0) == 50);    // 0 mAh guard -> 500 mAh fallback
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(0) == 25);       // 0.8C of 0 floored safely to 25 mA
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(400) == 200);    // Wrist 400 mAh -> 200 mA (0.5C)
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(500) == 200);    // Pocket 500 mAh -> 250 mA floored to 200 mA
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(1000) == 500);   // Mobile 1000 mAh -> 500 mA (0.5C)
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(2000) == 500);   // Capped at 500 mA
+  LATTER_CHECK(latter_ui::axp2101_icc_code(100) == 4);
+  LATTER_CHECK(latter_ui::axp2101_icc_code(200) == 8);
+  LATTER_CHECK(latter_ui::axp2101_icc_code(500) == 11);
 
-  // 2. 65C thermal foldback to 100 mA & 58C hysteresis restore
-  HostBatterySim sim;
-  sim.step_thermal(true, 45.0f, 500);
-  LATTER_CHECK(!sim.foldback_active && sim.active_icc_ma == 500);
-  sim.step_thermal(true, 64.9f, 500);
-  LATTER_CHECK(!sim.foldback_active && sim.active_icc_ma == 500);
-  sim.step_thermal(true, 65.0f, 500);
-  LATTER_CHECK(sim.foldback_active && sim.active_icc_ma == 100);
-  sim.step_thermal(true, 60.0f, 500);  // Hysteresis band (58..65C) stays folded back
-  LATTER_CHECK(sim.foldback_active && sim.active_icc_ma == 100);
-  sim.step_thermal(true, 58.0f, 500);  // <= 58C restores nominal 0.5C current
-  LATTER_CHECK(!sim.foldback_active && sim.active_icc_ma == 500);
-  sim.step_thermal(true, 68.0f, 500);
-  LATTER_CHECK(sim.foldback_active && sim.active_icc_ma == 100);
-  sim.step_thermal(false, 68.0f, 500);  // Unplug resets foldback latch
-  LATTER_CHECK(!sim.foldback_active && sim.active_icc_ma == 500);
+  // 2. Production 65C thermal foldback to 100 mA & 58C hysteresis restore (hal_battery.h)
+  bool foldback_active = false;
+  int active_icc_ma = 0;
+  latter_ui::step_thermal_foldback_policy(true, 45.0f, 500, foldback_active, active_icc_ma);
+  LATTER_CHECK(!foldback_active && active_icc_ma == 500);
+  latter_ui::step_thermal_foldback_policy(true, 64.9f, 500, foldback_active, active_icc_ma);
+  LATTER_CHECK(!foldback_active && active_icc_ma == 500);
+  LATTER_CHECK(latter_ui::step_thermal_foldback_policy(true, 65.0f, 500, foldback_active, active_icc_ma));
+  LATTER_CHECK(foldback_active && active_icc_ma == 100);
+  latter_ui::step_thermal_foldback_policy(true, 60.0f, 500, foldback_active, active_icc_ma);
+  LATTER_CHECK(foldback_active && active_icc_ma == 100);
+  LATTER_CHECK(latter_ui::step_thermal_foldback_policy(true, 58.0f, 500, foldback_active, active_icc_ma));
+  LATTER_CHECK(!foldback_active && active_icc_ma == 500);
+  latter_ui::step_thermal_foldback_policy(true, 68.0f, 500, foldback_active, active_icc_ma);
+  LATTER_CHECK(foldback_active && active_icc_ma == 100);
+  latter_ui::step_thermal_foldback_policy(false, 68.0f, 500, foldback_active, active_icc_ma);
+  LATTER_CHECK(!foldback_active && active_icc_ma == 500);
 
-  // 3. 30s + 4-sample critical battery cutoff debounce
-  LATTER_CHECK(!sim.step_cutoff(true, 3380, 3320, 1000));
-  LATTER_CHECK(!sim.step_cutoff(true, 3380, 3320, 11000));
-  LATTER_CHECK(!sim.step_cutoff(true, 3380, 3320, 21000));
-  LATTER_CHECK(sim.step_cutoff(true, 3380, 3320, 31000));   // 4th sample at +30,000 ms trips once
-  LATTER_CHECK(!sim.step_cutoff(true, 3380, 3320, 41000));  // Already latched -> returns false
+  // 3. Production BatteryModel 30s + 4-sample critical battery cutoff debounce (hal_battery.h)
+  latter_ui::BatteryModel bm;
+  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 1000, -1, 500));
+  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 11000, -1, 500));
+  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 21000, -1, 500));
+  // 4th sample at +30,000 ms trips once
+  LATTER_CHECK(bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 31000, -1, 500));
+  LATTER_CHECK(bm.cutoff_tripped);
+  // Already latched -> returns false
+  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 41000, -1, 500));
 
-  // 4. !can_wake_for_on_battery_alarm() policy (non-LP-wake battery boards vs USB docked)
-  LATTER_CHECK(!can_wake_for_on_battery_alarm_policy(0, 1));
-  LATTER_CHECK(can_wake_for_on_battery_alarm_policy(1, 1));
-  LATTER_CHECK(can_wake_for_on_battery_alarm_policy(0, 0));
-  // On battery without LP wake key: skips alarm standby (-1 -> clean AXP2101 rail cut)
-  LATTER_CHECK(resolve_alarm_sleep_seconds(0, 1, false, false, 3600) == -1);
-  // Docked on USB without LP wake key: keeps RTC timer-wake alarm standby active
-  LATTER_CHECK(resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
-  // Battery at cutoff always powers off regardless of alarm
-  LATTER_CHECK(resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
+  // 4. Production !can_wake_for_on_battery_alarm_policy() & resolve_alarm_sleep_seconds() (hal_battery.h)
+  LATTER_CHECK(!latter_ui::can_wake_for_on_battery_alarm_policy(0, 1));
+  LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(1, 1));
+  LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(0, 0));
+  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, false, 3600) == -1);
+  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
+  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
 
-  // 5. WeakLinkGate RSSI hysteresis (-65 dBm enter, -61 dBm clear after 120s hold)
-  HostWeakLinkGate gate;
+  // 5. Production WeakLinkGate RSSI hysteresis (-65 dBm enter, -61 dBm clear after 120s hold) (hal_link_report.h)
+  latter_ui::WeakLinkGate gate{};
   uint32_t t = 10000;
-  LATTER_CHECK(!gate.step(-55, t));
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-55, t, gate));
   for (int i = 0; i < 6; ++i) {
     t += 10000;
-    gate.step(-74, t);
+    latter_ui::weak_link_feed_rssi(-74, t, gate);
   }
-  LATTER_CHECK(gate.weak);  // Smoothed EMA dropped below -65 dBm
+  LATTER_CHECK(gate.weak);
 
-  // Partial improvement to -63 dBm (inside -65..-61 deadband) keeps weak_link active
   for (int i = 0; i < 5; ++i) {
     t += 10000;
-    LATTER_CHECK(gate.step(-63, t));
+    LATTER_CHECK(latter_ui::weak_link_feed_rssi(-63, t, gate));
   }
   LATTER_CHECK(gate.above_since_ms == 0);
 
-  // Strong recovery (-50 dBm): stays weak until 120,000 ms above -61 dBm has elapsed
   bool saw_hold_before_clear = false;
   for (int i = 0; i < 20; ++i) {
     t += 10000;
-    const bool w = gate.step(-50, t);
-    if (gate.above_since_ms != 0 && (t - gate.above_since_ms) < 120000U) {
+    const bool w = latter_ui::weak_link_feed_rssi(-50, t, gate);
+    if (gate.above_since_ms != 0 && (t - gate.above_since_ms) < latter_ui::kWeakLinkClearHoldMs) {
       LATTER_CHECK(w);
       saw_hold_before_clear = true;
     }
@@ -660,17 +562,17 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(saw_hold_before_clear);
   LATTER_CHECK(!gate.weak);
 
-  // 6. Verify production HAL headers/sources declare the exact same constants & guards
+  // 6. Verify production C++ sources reference the shared policies
   const std::string batt_h = read_repo_file("../../include/hal_battery.h");
-  const std::string pmu_h = read_repo_file("../../include/hal_pmu_axp2101.h");
-  const std::string pmu_cpp = read_repo_file("../../components/latter_hal/pmu_axp2101.cpp");
+  const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
   const std::string link_h = read_repo_file("../../include/hal_link_report.h");
 
   LATTER_CHECK(batt_h.find("kChargeCapMa = 500") != std::string::npos);
   LATTER_CHECK(batt_h.find("kChargeThermalFoldbackMa = 100") != std::string::npos);
-  LATTER_CHECK(batt_h.find("capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0") != std::string::npos);
-  LATTER_CHECK(pmu_h.find("can_wake_for_on_battery_alarm()") != std::string::npos);
-  LATTER_CHECK(pmu_cpp.find("65.0f") != std::string::npos && pmu_cpp.find("58.0f") != std::string::npos);
+  LATTER_CHECK(batt_h.find("kAxpThermalFoldbackEnterC = 65.0f") != std::string::npos);
+  LATTER_CHECK(batt_h.find("kAxpThermalFoldbackClearC = 58.0f") != std::string::npos);
+  LATTER_CHECK(batt_h.find("can_wake_for_on_battery_alarm()") != std::string::npos);
+  LATTER_CHECK(pmu_cpp.find("step_thermal_foldback_policy") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("!can_wake_for_on_battery_alarm()") != std::string::npos);
   LATTER_CHECK(link_h.find("kWeakLinkEnterDbm = -65") != std::string::npos);
   LATTER_CHECK(link_h.find("kWeakLinkClearDbm = -61") != std::string::npos);
@@ -684,7 +586,7 @@ int main() {
   test_ui_layout_hit_table_and_dirty_band();
   test_battery_model_and_power_policy();
   std::printf(
-      "[HOST TEST PASS] Protocol v3 + RPC (<=240B UTF-8), 5-panel UiLayout/HitTable/DirtyBand, "
-      "and BatteryModel/PowerPolicy verified.\n");
+      "[HOST TEST PASS] Protocol v3 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
+      "and production hal_battery/hal_link_report verified.\n");
   return 0;
 }

@@ -1,5 +1,7 @@
 # ==============================================================================
 # Latter Universal Multi-Geometry GUI Shell (guis/universal/gui.yaml)
+# Thin declarative font/palette shell + compositor dispatch to compiled page_*.cpp
+# and touch_engine.cpp translation units in components/latter_ui/.
 # ==============================================================================
 substitutions:
   font_time_size: "77"
@@ -41,8 +43,6 @@ font:
     size: ${font_btn_bold_size}
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
-
-
   - file: "gfonts://Orbitron@700"
     id: font_games_title
     size: ${font_games_size}
@@ -67,13 +67,13 @@ color:
   - id: col_slate
     hex: "9E9E9E"
   - id: col_cyan
-    hex: "456E8A"  # Distinctly muted vintage steel/slate blue (was electric cyan 00E5FF)
+    hex: "456E8A"  # Distinctly muted vintage steel/slate blue
   - id: col_green
-    hex: "427453"  # Distinctly muted heritage sage/moss green (was neon 00E676)
+    hex: "427453"  # Distinctly muted heritage sage/moss green
   - id: col_orange
     hex: "B85C24"  # Muted earthy terracotta orange
   - id: col_red
-    hex: "A84338"  # Vibrant antique vermilion crimson (rich, clearly red, calibrated antique tone)
+    hex: "A84338"  # Vibrant antique vermilion crimson
   - id: col_purple
     hex: "6D4B7D"  # Muted vintage plum amethyst
   - id: col_magenta
@@ -89,77 +89,122 @@ color:
 
 display:
   - id: !extend disp1
-    # Every frame paints its own background once through latter_ui::frame_base() (see ui_core.h).
+    # Every frame paints its own background once through latter_ui::frame_base() (ui_gfx.h).
     auto_clear_enabled: false
     lambda: |-
-      int prof_sub = 0;
-      if (id(gui_page) == 1) prof_sub = id(home_subpage);
-      else if (id(gui_page) == 2) prof_sub = id(music_overlay_mode);
-      else if (id(gui_page) == 3) prof_sub = id(active_game);
-      else if (id(gui_page) == 4) prof_sub = id(system_menu_mode);
-      else if (id(gui_page) == 5) prof_sub = id(sky_weather_subpage);
-      else if (id(gui_page) == 6) prof_sub = id(area_subpage);
-      else if (id(gui_page) == 7) prof_sub = id(remote_subpage);
-      else if (id(gui_page) == 8) prof_sub = id(tools_subpage);
-      else if (id(gui_page) == 9) prof_sub = latter_ui::whole_home_tab();
-      latter_ui::FrameProfileScope prof_frame_scope(id(gui_page), prof_sub, id(display_power_state));
-      const int cx = latter_ui::SCREEN_CX;
-      const int cy = latter_ui::SCREEN_CY;
-      auto now = id(ha_time).now();
-      if (!now.is_valid()) {
-        now = id(sntp_time).now();
-      }
+      const auto &rs = latter_ui::runtime_state();
+      const int prof_sub = latter_ui::compute_active_subpage_id();
+      latter_ui::FrameProfileScope prof_frame_scope(rs.nav.gui_page, prof_sub, rs.nav.display_power_state);
 
-      latter_ui::SystemTakeoverState takeover_st;
-      takeover_st.cx = cx;
-      takeover_st.cy = cy;
-      takeover_st.now_ms = millis();
-      takeover_st.is_24h_format = id(is_24h_format);
-      takeover_st.ota_in_progress = id(ota_in_progress);
-      takeover_st.ota_progress_pct = id(ota_progress_pct);
-      takeover_st.is_hibernating = id(is_hibernating);
-      takeover_st.hibernate_countdown_val = id(hibernate_countdown_val);
-      takeover_st.panel_is_on = id(display_brightness).current_values.is_on();
-      takeover_st.display_power_state = id(display_power_state);
-      takeover_st.alarm_ringing = id(alarm_ringing);
-      takeover_st.alarm_ringing_idx = id(alarm_ringing_idx);
-      takeover_st.alarm1_recurrence = id(alarm1_recurrence);
-      takeover_st.alarm2_recurrence = id(alarm2_recurrence);
-      takeover_st.alarm3_recurrence = id(alarm3_recurrence);
-      takeover_st.timer_ringing = id(timer_ringing);
-      takeover_st.find_my_active = id(find_my_active);
-      takeover_st.va_timer_name = id(va_timer_name);
-      takeover_st.va_active = id(va_active);
-      takeover_st.va_status_text = id(va_status_text);
-      takeover_st.va_tts_received = id(va_tts_received);
-      takeover_st.va_vad_active = id(va_vad_active);
-      takeover_st.va_visual_profile_opt = std::string(id(va_visual_profile).current_option());
-      takeover_st.notif_active = id(notif_active);
-      takeover_st.notif_title = id(notif_title);
-      takeover_st.notif_message = id(notif_message);
-      takeover_st.notif_priority = id(notif_priority);
-      takeover_st.notif_camera_url = id(notif_camera_url);
-      takeover_st.current_loaded_camera_url = id(current_loaded_camera_url);
-      takeover_st.screensaver_style_opt = std::string(id(screensaver_style_select).current_option());
-      takeover_st.theme_primary = id(theme_primary);
-      takeover_st.theme_secondary = id(theme_secondary);
-      takeover_st.col_bg = id(col_bg);
-      takeover_st.col_black = id(col_black);
-      takeover_st.col_white = id(col_white);
-      takeover_st.col_slate = id(col_slate);
-      takeover_st.col_gray = id(col_gray);
-      takeover_st.col_dark_gray = id(col_dark_gray);
-      takeover_st.col_gold = id(col_gold);
-      takeover_st.col_red = id(col_red);
-      takeover_st.col_solaris_gold = id(col_solaris_gold);
+      latter_ui::UiFrameContext ctx;
+      ctx.now = id(ha_time).now();
+      if (!ctx.now.is_valid()) ctx.now = id(sntp_time).now();
+      ctx.now_ms = millis();
+      ctx.cx = latter_ui::SCREEN_CX;
+      ctx.cy = latter_ui::SCREEN_CY;
+      ctx.friendly_name = "${friendly_name}";
+      ctx.fw_version = "${version}";
 
+      ctx.font_time = id(font_time);
+      ctx.font_chrono_time = id(font_chrono_time);
+      ctx.font_date = id(font_date);
+      ctx.font_btn_bold = id(font_btn_bold);
+      ctx.font_small = id(font_small);
+      ctx.font_micro = id(font_micro);
+      ctx.font_games_title = id(font_games_title);
+
+      ctx.album_art = latter_ui::make_art_view(id(album_art));
+      ctx.remote_album_art = latter_ui::make_art_view(id(remote_album_art));
+      ctx.home_wallpaper_art = latter_ui::make_art_view(id(home_wallpaper_art));
+      ctx.camera_snapshot_art = latter_ui::make_art_view(id(camera_snapshot_art));
+
+      ctx.theme_primary = id(theme_primary);
+      ctx.theme_secondary = id(theme_secondary);
+      ctx.col_bg = id(col_bg);
+      ctx.col_black = id(col_black);
+      ctx.col_white = id(col_white);
+      ctx.col_slate = id(col_slate);
+      ctx.col_gray = id(col_gray);
+      ctx.col_dark_gray = id(col_dark_gray);
+      ctx.col_gold = id(col_gold);
+      ctx.col_warm_gold = id(col_warm_gold);
+      ctx.col_solaris_gold = id(col_solaris_gold);
+      ctx.col_cyan = id(col_cyan);
+      ctx.col_accent_cyan = id(col_accent_cyan);
+      ctx.col_green = id(col_green);
+      ctx.col_orange = id(col_orange);
+      ctx.col_red = id(col_red);
+      ctx.col_purple = id(col_purple);
+      ctx.col_magenta = id(col_magenta);
+
+      ctx.panel_is_on = id(display_brightness).current_values.is_on();
+      ctx.local_media_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+      ctx.spk_vol_pct = static_cast<int>(std::round(id(latter_media_player).volume * 100.0f));
+      const float a_st = id(alert_volume).state;
+      ctx.alert_vol_pct = (std::isnan(a_st) || a_st < 20.0f) ? 70 : static_cast<int>(std::round(a_st));
+      ctx.vol_step_pct = static_cast<int>(std::round(id(volume_step_size).state));
+      if (ctx.vol_step_pct < 1 || ctx.vol_step_pct > 10) ctx.vol_step_pct = 5;
+      ctx.free_heap_kb = static_cast<int>(esp_get_free_heap_size() / 1024U);
+      ctx.wifi_rssi = id(latter_wifi_signal).state;
+      ctx.ip_addr = id(latter_ip_address).state;
+      ctx.ble_active = id(ble_ctrl).is_active();
+      ctx.track_title = id(track_title).state;
+      ctx.track_artist = id(track_artist).state;
+      ctx.track_album = id(track_album).state;
+      ctx.fw_latest_ver = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+      ctx.fw_release_summary = latter_ui::fw_update_release_summary(&id(latter_firmware_update));
+      ctx.primary_wake_word = esphome::voice_assistant::primary_wake_word_name(id(mww));
+
+      ctx.clock_face_style_opt = std::string(id(clock_face_style).current_option());
+      ctx.weather_sim_opt = std::string(id(weather_sim_condition).current_option());
+      ctx.music_overlay_style_opt = std::string(id(music_overlay_style).current_option());
+      ctx.music_fullscreen_art_opt = std::string(id(music_fullscreen_art_mode).current_option());
+      ctx.music_album_sort_opt = std::string(id(music_album_sort_order).current_option());
+      ctx.music_artist_album_sort_opt = std::string(id(music_artist_album_sort_order).current_option());
+      ctx.music_podcast_sort_opt = std::string(id(music_podcast_sort_order).current_option());
+      ctx.theme_palette_opt = std::string(id(theme_palette_select).current_option());
+      ctx.power_profile_opt = std::string(id(power_profile_select).current_option());
+      ctx.tap_wake_opt = std::string(id(tap_wake_mode).current_option());
+      ctx.pickup_wake_opt = std::string(id(pickup_wake_mode).current_option());
+      ctx.display_off_timeout_opt = std::string(id(display_off_timeout).current_option());
+      ctx.screensaver_style_opt = std::string(id(screensaver_style_select).current_option());
+      ctx.screensaver_docked_timeout_opt = std::string(id(screensaver_docked_timeout).current_option());
+      ctx.hibernate_timeout_opt = std::string(id(hibernate_timeout_mode).current_option());
+      ctx.default_start_app_opt = std::string(id(default_start_app).current_option());
+      ctx.auto_brightness_opt = std::string(id(auto_brightness_mode).current_option());
+      ctx.display_brightness_opt = std::string(id(display_brightness_preset).current_option());
+      ctx.day_brightness_opt = std::string(id(day_brightness_preset).current_option());
+      ctx.night_brightness_opt = std::string(id(night_brightness_preset).current_option());
+      ctx.va_wake_word_mode_opt = std::string(id(va_wake_word_mode).current_option());
+      ctx.va_visual_profile_opt = std::string(id(va_visual_profile).current_option());
+      ctx.ww_sens_okay_nabu_opt = std::string(id(ww_sens_okay_nabu).current_option());
+      ctx.ww_sens_hey_luna_opt = std::string(id(ww_sens_hey_luna).current_option());
+      ctx.ww_sens_hey_jarvis_opt = std::string(id(ww_sens_hey_jarvis).current_option());
+      ctx.ww_sens_hey_mycroft_opt = std::string(id(ww_sens_hey_mycroft).current_option());
+      ctx.ww_sens_alexa_opt = std::string(id(ww_sens_alexa).current_option());
+
+      ctx.day_start_hr = static_cast<int>(id(day_start_hour).state);
+      ctx.night_start_hr = static_cast<int>(id(night_start_hour).state);
+      ctx.home_weather_bg = id(home_weather_bg_switch).state;
+      ctx.home_wake_greeting = id(home_wake_greeting_switch).state;
+      ctx.home_sun_arc = id(home_sun_switch).state;
+      ctx.home_moon_phase = id(home_moon_switch).state;
+      ctx.music_show_speaker_shortcut = id(music_show_speaker_shortcut).state;
+      ctx.music_show_library_shortcut = id(music_show_library_shortcut).state;
+      ctx.game_sound_enabled = id(game_sound_switch).state;
+      ctx.va_wake_screen = id(va_wake_screen_switch).state;
+      ctx.docked_screensaver_enabled = id(docked_screensaver_switch).state;
+      ctx.instant_crown_hibernate = id(instant_crown_hibernate_switch).state;
+      ctx.area_show_all_category = id(area_show_all_category_switch).state;
+
+      const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
-          latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage)) ||
-          id(menu_scroll_active) ||
-          (id(gui_page) == 3 && id(active_game) > 0);
-      latter_ui::dirty_band().begin_frame(id(gui_page), prof_sub, takeover_sig, anim_or_scroll);
+          latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+          rs.nav.menu_scroll_active ||
+          (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
+      latter_ui::dirty_band().begin_frame(rs.nav.gui_page, prof_sub, takeover_sig, anim_or_scroll);
 
       // Latch full-width 2px-aligned horizontal dirty band [band_y0, band_y1] across MipiDsi and
       // MipiSpiBuffer so MipiSpi always takes its contiguous full-width DMA fast path.
@@ -174,473 +219,60 @@ display:
 
       // System-owned global takeovers (OTA -> Hibernate -> Panel Off -> Alarm/Timer/Find-My ->
       // Voice Assistant -> Security PIN Pad -> Push Notification -> Docked Screensaver).
-      if (latter_ui::render_system_takeovers(
-              it, now, takeover_st, id(camera_snapshot_art),
-              id(font_time), id(font_chrono_time), id(font_date),
-              id(font_small), id(font_micro))) {
+      if (latter_ui::render_system_takeovers(it, ctx, takeover_st)) {
         return;
       }
 
-      float batt = id(batt_level).state;
-
-      // Home and Music paint their own base; System, Weather, Area, Tools, and Whole-Home Hub paint
-      // the active wallpaper as their base when loaded (with translucent glass UI).
-      if (id(gui_page) != 1 && id(gui_page) != 2) {
+      if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
         const auto &ac_wall = latter_ui::area_ctx_state();
         const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
-                                    ac_wall.wallpaper_url == id(current_loaded_wallpaper_url) &&
-                                    id(home_wallpaper_art)->get_width() > 0);
+                                    ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                                    ctx.home_wallpaper_art.width > 0);
         const bool tools_full_bleed =
-            (id(gui_page) == 8) &&
-            ((id(tools_subpage) == 5) ||
-             (id(tools_subpage) == 9 && latter_ui::cal_detail_mode() == 2 && id(camera_snapshot_art)->get_width() > 16) ||
-             (id(tools_subpage) == 12 && !latter_ui::cam_quick_reply_open() && id(camera_snapshot_art)->get_width() > 16));
+            (rs.nav.gui_page == 8) &&
+            ((rs.nav.tools_subpage == 5) ||
+             (rs.nav.tools_subpage == 9 && latter_ui::cal_detail_mode() == 2 && ctx.camera_snapshot_art.width > 16) ||
+             (rs.nav.tools_subpage == 12 && !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16));
         const bool use_page_wallpaper =
             has_wallpaper && !tools_full_bleed &&
-            (id(gui_page) == 4 ||
-             id(gui_page) == 5 ||
-             id(gui_page) == 6 ||
-             id(gui_page) == 8 ||
-             id(gui_page) == 9);
-        latter_ui::render_page_wallpaper_base(it, id(home_wallpaper_art), use_page_wallpaper, cx, id(col_bg));
+            (rs.nav.gui_page == 4 || rs.nav.gui_page == 5 || rs.nav.gui_page == 6 ||
+             rs.nav.gui_page == 8 || rs.nav.gui_page == 9);
+        latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
       }
 
-      // ==========================================
-      // PAGE 0: WATCH FACE (ANALOG & DIGITAL)
-      // ==========================================
-      if (id(gui_page) == 0) {
-        latter_ui::render_clock_page(
-            it, cx, cy, now, id(clock_face_digital), id(is_24h_format),
-            batt, id(batt_charging).state,
-            id(font_time), id(font_date), (latter_ui::SCREEN_W < 380) ? id(font_micro) : id(font_small),
-            id(theme_primary), id(theme_secondary),
-            id(col_white), id(col_slate), id(col_gray), id(col_dark_gray),
-            id(col_red), id(col_gold), id(col_green),
-            std::string(id(clock_face_style).current_option()));
+      latter_ui::render_active_page(it, ctx);
 
-      // ==========================================
-      // PAGE 1: INTERACTIVE HOME HUB
-      // ==========================================
-      } else if (id(gui_page) == 1) {
-        uint32_t now_h_ms = millis();
-        const auto &ms_h = latter_ui::media_state();
-        const auto &ws_h = latter_ui::weather_state();
-        const auto &ac_h = latter_ui::area_ctx_state();
-        const auto &cs_h = latter_ui::calendar_state();
-        bool is_rem_h = !ms_h.is_local;
-        bool loc_play_h = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-        bool mus_play_h = latter_ui::is_music_playing_effective(is_rem_h, loc_play_h, ms_h.state, now_h_ms);
-        std::string m_title_h = (is_rem_h || id(track_title).state.empty())
-                                    ? ms_h.title : id(track_title).state;
-        std::string m_artist_h = (is_rem_h || id(track_artist).state.empty())
-                                     ? ms_h.artist : id(track_artist).state;
-        float eff_w_temp_h = ws_h.temperature;
-        std::string eff_w_cond_h = ws_h.condition;
-        bool eff_show_w_bg = id(home_weather_bg_switch).state ||
-                             (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
-        latter_ui::render_home_page(
-            it, cx, cy, now_h_ms, id(home_subpage), id(home_activity_idx),
-            now, id(is_24h_format), batt, id(batt_charging).state,
-            eff_show_w_bg,
-            std::string(id(weather_sim_condition).current_option()), eff_w_temp_h,
-            eff_w_cond_h, ws_h.sun_state, ws_h.moon_phase,
-            id(accel_x).state, id(accel_y).state,
-            id(stopwatch_running), id(stopwatch_start_time), id(stopwatch_elapsed_ms),
-            mus_play_h, m_title_h, m_artist_h,
-            id(alarm_snooze_until),
-            id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled),
-            id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled),
-            id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled),
-            id(font_time), id(font_date), id(font_small),
-            id(theme_primary), id(theme_secondary),
-            id(col_bg), id(col_black), id(col_white), id(col_slate),
-            id(col_dark_gray), id(col_gold), id(col_green),
-            id(home_wake_greeting_switch).state,
-            id(home_wallpaper_art), ac_h.wallpaper_url,
-            id(current_loaded_wallpaper_url), cs_h.summary,
-            id(area_alarm_state), id(font_micro),
-            id(home_sun_switch).state, id(home_moon_switch).state);
-
-      // ==========================================
-      // PAGE 2: MUSIC PLAYER & LIBRARY BROWSER
-      // ==========================================
-      } else if (id(gui_page) == 2) {
-        uint32_t now_p2_ms = millis();
-        latter_ui::last_page2_draw_ms() = now_p2_ms;
-        const auto &ms_p2 = latter_ui::media_state();
-        bool is_remote = !ms_p2.is_local;
-        bool local_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-        bool is_playing = latter_ui::is_music_playing_effective(
-            is_remote, local_playing, ms_p2.state, now_p2_ms);
-        if (id(music_overlay_mode) == 0) {
-          latter_ui::render_music_now_playing(
-              it, cx, cy, now_p2_ms,
-              id(music_fullscreen_art_mode).current_option().c_str(),
-              id(music_overlay_style).current_option().c_str(),
-              id(music_hud_active), is_remote, is_playing,
-              id(album_art), id(remote_album_art),
-              ms_p2.art_url, id(current_loaded_art_url),
-              id(active_speaker_name), "${friendly_name}",
-              id(music_action_feedback), id(music_feedback_timer),
-              id(active_playback_media_type),
-              id(music_show_speaker_shortcut).state, id(music_show_library_shortcut).state,
-              ms_p2.duration, id(music_pos_base), id(music_pos_sync_time),
-              id(track_title).state, id(track_artist).state, id(track_album).state,
-              ms_p2.title, ms_p2.artist, ms_p2.album,
-              id(font_small), id(font_micro), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_black), id(col_white), id(col_gray), id(col_dark_gray));
-        } else {
-          latter_ui::render_music_menus(
-              it, cx, id(music_overlay_mode),
-              id(active_speaker_entity), id(active_speaker_name), is_remote,
-              id(selected_category_mode), id(selected_category_title),
-              id(music_category_page), id(music_browse_page), id(music_browse_total_pages),
-              id(menu_scroll_active), id(menu_scroll_dir), id(menu_scroll_target_page),
-              id(slot_1_name), id(slot_1_id), id(slot_1_type), id(slot_1_active),
-              id(slot_2_name), id(slot_2_id), id(slot_2_type), id(slot_2_active),
-              id(slot_3_name), id(slot_3_id), id(slot_3_type), id(slot_3_active),
-              id(slot_4_name), id(slot_4_id), id(slot_4_type), id(slot_4_active),
-              id(slot_5_name), id(slot_5_id), id(slot_5_type), id(slot_5_active),
-              id(target_speaker_id), id(target_speaker_name),
-              id(font_date), id(font_small), id(font_micro),
-              id(theme_primary), id(theme_secondary), id(col_bg), id(col_black),
-              id(col_white), id(col_slate), id(col_dark_gray),
-              now_p2_ms, is_playing,
-              ms_p2.duration, id(music_pos_base), id(music_pos_sync_time),
-              (is_remote || id(track_title).state.empty()) ? ms_p2.title : id(track_title).state,
-              (is_remote || id(track_artist).state.empty()) ? ms_p2.artist : id(track_artist).state,
-              (is_remote || id(track_album).state.empty()) ? ms_p2.album : id(track_album).state,
-              id(album_art), id(remote_album_art),
-              ms_p2.art_url, id(current_loaded_art_url));
-        }
-
-      // ==========================================
-      // PAGE 3: GAMES SUITE (LAUNCHER & 6 GAMES)
-      // ==========================================
-      } else if (id(gui_page) == 3) {
-        static int prev_game_state = 0;
-        bool game_just_entered = false;
-        if (id(active_game) != prev_game_state) {
-          prev_game_state = id(active_game);
-          game_just_entered = true;
-        }
-
-        float roll_delta = 0.0f;
-        float pitch_delta = 0.0f;
-        latter_ui::compute_3d_game_tilt(
-            id(accel_x).state, id(accel_y).state, id(accel_z).state,
-            id(imu_roll).state, id(imu_pitch).state,
-            game_just_entered && (id(active_game) > 0),
-            roll_delta, pitch_delta);
-
-        if (id(active_game) == 0) {
-          latter_ui::render_games_launcher(
-              it, cx, id(game_carousel_idx), id(menu_scroll_active),
-              id(menu_scroll_dir), id(menu_scroll_target_page),
-              id(high_score_marbles), id(high_score_archery), id(high_score_bricks),
-              id(high_score_chomp),
-              id(font_games_title), id(font_btn_bold), id(font_small),
-              id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_black), id(col_white),
-              id(col_slate), id(col_dark_gray),
-              id(col_gold), id(col_cyan), id(col_green),
-              id(col_orange), id(col_red), id(col_magenta), id(game_sound_switch).state);
-        } else if (id(active_game) == 1) {
-          latter_ui::render_game_marbles(
-              it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
-              id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed), id(high_score_marbles),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_gold), id(col_cyan), id(col_green),
-              id(col_red), id(col_orange), id(col_magenta), id(col_slate), id(col_gray), id(col_dark_gray));
-        } else if (id(active_game) == 2) {
-          latter_ui::render_game_archery(
-              it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
-              id(marble_touch_x), id(game_btn_pressed), id(high_score_archery),
-              id(font_date), id(font_small), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_black), id(col_gold),
-              id(col_cyan), id(col_red), id(col_slate), id(col_dark_gray));
-        } else if (id(active_game) == 3) {
-          latter_ui::render_game_bricks(
-              it, cx, cy, millis(), game_just_entered, roll_delta,
-              id(marble_touch_x), id(game_btn_pressed), id(high_score_bricks),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_gold), id(col_cyan),
-              id(col_orange), id(col_green), id(col_red), id(col_slate), id(col_dark_gray));
-        } else if (id(active_game) == 4) {
-          latter_ui::render_game_chomp(
-              it, cx, cy, millis(), game_just_entered, roll_delta, pitch_delta,
-              id(marble_touch_x), id(game_btn_pressed), id(high_score_chomp),
-              id(font_date), id(font_small), id(col_bg), id(col_white),
-              id(col_black), id(col_gold), id(col_cyan), id(col_red),
-              id(col_green), id(col_magenta), id(col_orange), id(col_dark_gray));
-        } else if (id(active_game) == 5) {
-          latter_ui::render_game_2048(
-              it, cx, cy, millis(), game_just_entered,
-              id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_gold), id(col_cyan),
-              id(col_green), id(col_orange), id(col_red), id(col_magenta),
-              id(col_slate), id(col_dark_gray));
-        } else if (id(active_game) == 6) {
-          latter_ui::render_game_memory(
-              it, cx, cy, millis(), game_just_entered,
-              id(marble_touch_x), id(marble_touch_y), id(game_btn_pressed),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_gold), id(col_cyan),
-              id(col_green), id(col_orange), id(col_red), id(col_magenta),
-              id(col_slate), id(col_dark_gray));
-        }
-        if (id(active_game) > 0 && game_just_entered) {
-          latter_ui::pending_game_sfx() = 0;
-        }
-
-      // ==========================================
-      // PAGE 4: SYSTEM SETTINGS & DIAGNOSTICS
-      // ==========================================
-      } else if (id(gui_page) == 4) {
-        int spk_vol_pct = (int)std::round(id(latter_media_player).volume * 100.0f);
-        float a_st = id(alert_volume).state;
-        int alert_vol_pct = (std::isnan(a_st) || a_st < 20.0f) ? 70 : (int)std::round(a_st);
-        int vol_step_pct = (int)std::round(id(volume_step_size).state);
-        if (vol_step_pct < 1 || vol_step_pct > 10) vol_step_pct = 5;
-        uint32_t free_heap_kb = (uint32_t)(esp_get_free_heap_size() / 1024U);
-
-        latter_ui::render_system_page(
-            it, cx, millis(), "${version}",
-            id(system_menu_mode), id(system_dashboard_page),
-            id(sleep_menu_page), id(display_menu_page),
-            id(menu_scroll_active), id(menu_scroll_dir), id(menu_scroll_target_page),
-            id(update_check_state), id(update_check_timer),
-            latter_ui::fw_update_latest_version(&id(latter_firmware_update)),
-            latter_ui::fw_update_release_summary(&id(latter_firmware_update)),
-            batt, id(batt_charging).state, id(batt_voltage).state,
-            id(latter_wifi_signal).state, id(latter_ip_address).state, id(imu_temp).state,
-            free_heap_kb, now.is_valid(), id(ble_ctrl).is_active(),
-            id(power_profile_select).current_option(),
-            id(pickup_wake_mode).current_option(), id(tap_wake_mode).current_option(),
-            id(display_off_timeout).current_option(), id(docked_screensaver_switch).state,
-            id(screensaver_style_select).current_option(), id(screensaver_docked_timeout).current_option(),
-            id(hibernate_timeout_mode).current_option(), id(instant_crown_hibernate_switch).state,
-            id(clock_face_digital), id(is_24h_format),
-            id(theme_palette_select).current_option(), id(default_start_app).current_option(),
-            id(auto_brightness_mode).current_option(), id(display_brightness_preset).current_option(),
-            (int)id(day_start_hour).state, (int)id(night_start_hour).state,
-            id(day_brightness_preset).current_option(), id(night_brightness_preset).current_option(),
-            spk_vol_pct, alert_vol_pct, vol_step_pct,
-            id(music_fullscreen_art_mode).current_option(), id(music_overlay_style).current_option(),
-            id(music_album_sort_order).current_option(), id(music_artist_album_sort_order).current_option(),
-            id(music_podcast_sort_order).current_option(),
-            id(va_wake_word_mode).current_option(), esphome::voice_assistant::primary_wake_word_name(id(mww)),
-            id(ww_sens_okay_nabu).current_option(), id(ww_sens_hey_luna).current_option(),
-            id(ww_sens_hey_jarvis).current_option(), id(ww_sens_hey_mycroft).current_option(),
-            id(ww_sens_alexa).current_option(),
-            id(va_visual_profile).current_option(), id(va_wake_screen_switch).state,
-            id(font_date), id(font_small),
-            id(theme_primary), id(theme_secondary),
-            id(col_bg), id(col_black), id(col_white), id(col_slate),
-            id(col_dark_gray), id(col_gold), id(col_red), id(game_sound_switch).state);
-
-      // ==========================================
-      // PAGE 5: SKY & WEATHER SUITE
-      // ==========================================
-      } else if (id(gui_page) == 5) {
-        const auto &ws = latter_ui::weather_state();
-        #if LATTER_PANEL_IPS
-        const Color eff_warm_gold(255, 178, 28);
-        #else
-        const Color eff_warm_gold = id(col_warm_gold);
-        #endif
-        latter_ui::render_weather_page(
-            it, cx, cy, millis(), id(sky_weather_subpage), now, id(is_24h_format),
-            std::string(id(weather_sim_condition).current_option()),
-            ws.temperature, ws.high, ws.low,
-            ws.humidity, ws.wind_speed, ws.wind_bearing,
-            ws.condition, ws.forecast_5d,
-            ws.sun_state, ws.sun_elevation, ws.sun_azimuth,
-            ws.sun_next_rising, ws.sun_next_setting,
-            ws.moon_phase,
-            id(font_time), id(font_date), id(font_btn_bold), id(font_small), id(font_micro),
-            id(theme_primary), id(theme_secondary),
-            id(col_bg), id(col_black), id(col_white), id(col_slate),
-            id(col_gray), id(col_dark_gray), eff_warm_gold, id(accel_x).state, id(accel_y).state,
-            id(font_chrono_time));
-
-      // ==========================================
-      // PAGE 6: AREA CONTROL (LATTER)
-      // ==========================================
-      } else if (id(gui_page) == 6) {
-        const bool is_area_picker = (id(area_subpage) == 1);
-        const auto &ac = latter_ui::area_ctx_state();
-        latter_ui::render_area_control_page(
-            it, cx, millis(), id(area_subpage), is_area_picker ? "areas" : "entities", id(area_domain_filter),
-            id(active_area_name), ac.area_temp, ac.area_humidity,
-            id(area_alarm_entity), id(area_alarm_state),
-            is_area_picker ? id(area_list_page) : id(area_browse_page),
-            is_area_picker ? id(area_list_total_pages) : id(area_browse_total_pages),
-            id(area_action_feedback), id(area_feedback_timer),
-            is_area_picker ? id(area_list_1_name) : id(area_slot_1_name),
-            is_area_picker ? id(area_list_1_id)   : id(area_slot_1_id),
-            is_area_picker ? "area"               : id(area_slot_1_type),
-            is_area_picker ? id(area_list_1_active) : id(area_slot_1_active), id(area_slot_1_level),
-            is_area_picker ? id(area_list_2_name) : id(area_slot_2_name),
-            is_area_picker ? id(area_list_2_id)   : id(area_slot_2_id),
-            is_area_picker ? "area"               : id(area_slot_2_type),
-            is_area_picker ? id(area_list_2_active) : id(area_slot_2_active), id(area_slot_2_level),
-            is_area_picker ? id(area_list_3_name) : id(area_slot_3_name),
-            is_area_picker ? id(area_list_3_id)   : id(area_slot_3_id),
-            is_area_picker ? "area"               : id(area_slot_3_type),
-            is_area_picker ? id(area_list_3_active) : id(area_slot_3_active), id(area_slot_3_level),
-            is_area_picker ? id(area_list_4_name) : std::string(""),
-            is_area_picker ? id(area_list_4_id)   : std::string(""),
-            is_area_picker ? "area"               : std::string(""),
-            is_area_picker ? id(area_list_4_active) : false, -1,
-            is_area_picker ? id(area_list_5_name) : std::string(""),
-            is_area_picker ? id(area_list_5_id)   : std::string(""),
-            is_area_picker ? "area"               : std::string(""),
-            is_area_picker ? id(area_list_5_active) : false, -1,
-            id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-            id(col_bg), id(col_black), id(col_white), id(col_slate), id(col_dark_gray),
-            id(col_gold), id(col_green), id(col_red),
-            id(area_show_all_category_switch).state);
-        if (id(area_subpage) > 0) {
-          latter_ui::render_back_button(it, cx, id(font_small), latter_ui::layout().back_y, "< Back");
-        }
-
-      // ==========================================
-      // PAGE 7: UNIVERSAL TV & MEDIA REMOTE CONTROL
-      // ==========================================
-      } else if (id(gui_page) == 7) {
-        latter_ui::render_tv_remote_page(
-            it, cx, cy, millis(), id(remote_subpage), id(active_remote_slot),
-            id(remote_action_feedback), id(remote_feedback_timer),
-            id(font_date), id(font_small),
-            id(theme_primary), id(theme_secondary),
-            id(col_white), id(col_slate), id(col_gray), id(col_dark_gray), id(col_red));
-
-      // ==========================================
-      // PAGE 8: TOOLS SUITE (8 UTILITIES)
-      // ==========================================
-      } else if (id(gui_page) == 8) {
-        if (id(tools_subpage) == 0) {
-          latter_ui::render_tools_launcher(
-              it, cx, id(tools_menu_page), id(menu_scroll_active),
-              id(menu_scroll_dir), id(menu_scroll_target_page),
-              id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_black), id(col_white));
-        } else if (id(tools_subpage) == 1) {
-          latter_ui::render_tool_timer(
-              it, cx, cy, id(timer_running), id(timer_paused),
-              id(timer_remaining_sec), id(timer_duration_sec),
-              id(font_time), id(font_date), id(font_btn_bold), id(font_small),
-              id(theme_primary), id(theme_secondary), id(col_black),
-              id(col_white), id(col_slate), id(col_dark_gray), id(col_red),
-              id(va_timer_name), id(font_chrono_time), id(col_gray));
-        } else if (id(tools_subpage) == 2) {
-          latter_ui::render_tool_alarms(
-              it, cx, now, id(is_24h_format), id(alarm_edit_idx),
-              id(alarm_snooze_until), id(alarm_ringing_idx),
-              id(alarm1_hour), id(alarm1_minute), id(alarm1_enabled), id(alarm1_recurrence),
-              id(alarm2_hour), id(alarm2_minute), id(alarm2_enabled), id(alarm2_recurrence),
-              id(alarm3_hour), id(alarm3_minute), id(alarm3_enabled), id(alarm3_recurrence),
-              id(font_time), id(font_chrono_time), id(font_date), id(font_small),
-              id(theme_primary), id(theme_secondary), id(col_black),
-              id(col_white), id(col_gray), id(col_dark_gray), id(col_gold));
-        } else if (id(tools_subpage) == 3) {
-          latter_ui::render_tool_stopwatch(
-              it, cx, cy, millis(), id(stopwatch_running),
-              id(stopwatch_start_time), id(stopwatch_elapsed_ms), id(stopwatch_lap_ms),
-              id(font_time), id(font_date), id(font_small), id(theme_primary), id(theme_secondary), id(col_white),
-              id(col_slate), id(col_dark_gray), id(col_red));
-        } else if (id(tools_subpage) == 4) {
-          latter_ui::render_tool_dice_roll(
-              it, cx, millis(), id(font_date), id(font_small),
-              id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
-        } else if (id(tools_subpage) == 5) {
-          latter_ui::fill_rect_row_major(it, 0, 0, latter_ui::SCREEN_W, latter_ui::SCREEN_H, id(col_white));
-        } else if (id(tools_subpage) == 6) {
-          latter_ui::render_tool_calculator(
-              it, cx, id(font_date), id(font_btn_bold), id(font_small),
-              id(theme_primary), id(col_white), id(col_slate), id(col_dark_gray));
-        } else if (id(tools_subpage) == 7) {
-          latter_ui::render_tool_bubble_level(
-              it, cx, id(accel_x).state, id(accel_y).state, id(accel_z).state,
-              id(font_date), id(font_small),
-              id(theme_primary), id(theme_secondary), id(col_white),
-              id(col_gray), id(col_slate), id(col_dark_gray), id(col_green));
-        } else if (id(tools_subpage) == 8) {
-          latter_ui::render_tool_coin_flip(
-              it, cx, millis(), id(font_date), id(font_small),
-              id(theme_primary), id(theme_secondary), id(col_white), id(col_dark_gray));
-        } else if (id(tools_subpage) == 9) {
-          latter_ui::render_tool_calendar(
-              it, cx, latter_ui::calendar_state().summary,
-              id(cal_browse_page), id(cal_browse_total_pages),
-              id(cal_slot_1_name), id(cal_slot_1_active),
-              id(cal_slot_2_name), id(cal_slot_2_active),
-              id(cal_slot_3_name), id(cal_slot_3_active),
-              id(cal_slot_4_name), id(cal_slot_4_active),
-              id(cal_slot_5_name), id(cal_slot_5_active),
-              id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_black), id(col_white), id(col_slate), millis(),
-              id(camera_snapshot_art));
-        } else if (id(tools_subpage) == 10) {
-          latter_ui::render_tool_intercom(
-              it, cx, millis(), id(intercom_feedback_str), id(intercom_feedback_ms),
-              id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_white), id(col_slate),
-              latter_ui::area_ctx_state().intercom_targets_summary);
-        } else if (id(tools_subpage) == 12) {
-          const auto &ac_cam = latter_ui::area_ctx_state();
-          latter_ui::render_tool_camera(
-              it, cx, cy, id(camera_snapshot_art), ac_cam.camera_snapshot_url,
-              id(font_small), id(theme_primary), id(theme_secondary),
-              id(col_bg), id(col_white), id(col_slate),
-              ac_cam.cameras_summary,
-              millis());
-        }
-      } else if (id(gui_page) == 9) {
-        // ==========================================
-        // PAGE 9: WHOLE-HOME HUB (alarm, thermostat, garage & locks, vacuum)
-        // ==========================================
-        latter_ui::render_whole_home_page(
-            it, cx, millis(), id(area_alarm_entity), id(area_alarm_state),
-            id(area_action_feedback), id(area_feedback_timer),
-            id(font_date), id(font_small), id(theme_primary), id(theme_secondary),
-            id(col_white), id(col_slate), id(col_gold), id(col_green), id(col_red));
-      }
-
-      // HOME PILL on top-level pages (latter_ui::can_go_home), hidden in Music's art-only view.
+      const bool alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
+      const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
       const bool show_home_pill =
-          !id(is_hibernating) && !id(ota_in_progress) && !id(va_active) && id(va_status_text).empty() &&
-          id(display_power_state) == 0 &&
+          !rs.nav.is_hibernating && !rs.nav.ota_in_progress && !va_visible &&
+          rs.nav.display_power_state == 0 &&
           latter_ui::can_go_home(
-              id(gui_page), id(system_menu_mode), id(active_game), id(music_overlay_mode),
-              id(area_subpage), id(area_browse_mode) == "areas", id(remote_subpage), id(tools_subpage),
-              id(alarm_edit_idx), id(alarm_ringing) || id(timer_ringing) || id(find_my_active)) &&
-          !latter_ui::music_art_only(id(gui_page), id(music_overlay_style).current_option() == "Always Visible",
-                                     id(music_hud_active));
+              rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game, rs.music.overlay_mode,
+              rs.nav.area_subpage, rs.area.browse_mode == "areas", rs.nav.remote_subpage, rs.nav.tools_subpage,
+              rs.alarms.edit_idx, alert_ringing) &&
+          !latter_ui::music_art_only(rs.nav.gui_page, ctx.music_overlay_style_opt == "Always Visible",
+                                     rs.music.hud_active);
 
-      if (!id(is_hibernating) && !id(ota_in_progress) && !id(va_active) &&
-          id(va_status_text).empty() && id(display_power_state) == 0 &&
-          !(id(alarm_ringing) || id(timer_ringing) || id(find_my_active))) {
-        latter_ui::render_active_focus_overlay(it, id(gui_page), prof_sub, millis(), id(theme_primary), id(col_white));
+      if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && !va_visible &&
+          rs.nav.display_power_state == 0 && !alert_ringing) {
+        latter_ui::render_active_focus_overlay(it, ctx.now_ms, ctx.theme_primary, ctx.col_white);
       }
 
       if (show_home_pill) {
-        latter_ui::render_home_indicator_bar(it, cx, latter_ui::layout().home_bar_y);
+        latter_ui::render_home_indicator_bar(it, ctx.cx, latter_ui::layout().home_bar_y);
       }
 
-      if (!id(is_hibernating) && !id(ota_in_progress) && id(display_power_state) == 0) {
-        latter_ui::render_offline_pill(it, cx, millis(), id(font_micro), id(col_gold));
+      if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.nav.display_power_state == 0) {
+        latter_ui::render_offline_pill(it, ctx.cx, ctx.now_ms, ctx.font_micro, ctx.col_gold);
       }
 
-      uint32_t end_draw_ms = millis();
+      const uint32_t end_draw_ms = millis();
       latter_ui::last_disp_update_ms() = end_draw_ms;
       latter_ui::record_ambient_frame_ms(end_draw_ms);
-      if (latter_ui::any_dock_anim_active(id(gui_page), id(home_subpage)) || id(menu_scroll_active)) {
+      if (latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) || rs.nav.menu_scroll_active) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
       }
-
 
 touchscreen:
   - id: !extend touch_screen

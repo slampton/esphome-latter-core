@@ -1,4 +1,4 @@
-"""Latter Core SDK component: Protocol v3 state, zero-privilege RPC outbox, and headless/GUI orchestration."""
+"""Latter Core SDK component: HAL drivers, Protocol v3 state, RPC outbox, typed actions, and headless/GUI orchestration."""
 
 from __future__ import annotations
 
@@ -26,21 +26,31 @@ CONFIG_SCHEMA = cv.Schema(
 ).extend(cv.COMPONENT_SCHEMA)
 
 CORE_HEADERS: tuple[str, ...] = (
+    "latter_prof.h",
+    "hal_manifest.h",
+    "esphome_bridge.h",
+    "audio_router.h",
+    "hal_imu_qmi8658.h",
+    "hal_battery.h",
+    "hal_panel_power.h",
+    "hal_power_pm.h",
+    "hal_link_report.h",
     "latter_protocol.h",
     "latter_state.h",
     "latter_rpc.h",
+    "latter_actions.h",
 )
 
 
 def AUTO_LOAD(config: dict[str, Any]) -> list[str]:
-    """Load latter_hal always, and latter_ui only when a display GUI is enabled."""
+    """Load latter_ui only when a display GUI is enabled."""
     if str(config.get(CONF_GUI, "universal")).strip().lower() == "none":
-        return ["latter_hal"]
-    return ["latter_hal", "latter_ui"]
+        return []
+    return ["latter_ui"]
 
 
 async def to_code(config: dict[str, Any]) -> None:
-    """Stage Latter Core protocol/RPC headers and configure headless traits when gui == 'none'."""
+    """Stage Latter Core HAL/protocol/state/action headers and register ESP32 linker/power hooks."""
     comp_dir = Path(__file__).resolve().parent
     repo_root = comp_dir.parent.parent
     inc_dir = repo_root / "include"
@@ -68,6 +78,18 @@ async def to_code(config: dict[str, Any]) -> None:
         dst_file = Path(CORE.relative_src_path(hdr))
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
+
+    if CORE.is_esp32:
+        if hasattr(CORE, "require_wake_loop_threadsafe"):
+            CORE.require_wake_loop_threadsafe()
+        # Flash-write counters for System: Link Report (nvs=, power_pm.cpp defines the wraps).
+        cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
+        cg.add_build_flag("-Wl,--wrap=esp_flash_erase_region")
+
+    if "wifi" in CORE.config:
+        from esphome.components import wifi
+
+        wifi.enable_runtime_power_save_control()
 
     cg.add_global(cg.RawStatement('#include "esphome/components/latter_core/latter_core.h"'))
     probe = cg.new_Pvariable(config[CONF_ID])

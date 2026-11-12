@@ -1,22 +1,30 @@
 #pragma once
 
 // ==============================================================================
-// Latter UI Compositor & 2px-Aligned Horizontal Band Dirty Flush (include/ui_compositor.h)
-// 1. Tracks full-width 2px-aligned horizontal dirty bands [band_y0, band_y1] so
-//    MipiSpi keeps its contiguous stride == SCREEN_W DMA fast path while cutting
-//    SPI/QSPI pixel bus traffic 5-12x on localized updates (clock ticks, media
-//    progress, marquee, slider drags).
-// 2. Owns all system-level display takeovers in strict priority order:
-//    OTA -> Hibernation -> Panel Off -> Alarm/Timer/Find-My -> Voice Assistant ->
-//    Security PIN Pad Modal -> Push Notification -> Docked Screensaver.
+// Latter UI Compositor, Frame Context & 2px-Aligned Dirty-Band Flush
+// (include/ui_compositor.h)
+// 1. Pure C++20 DirtyBandTracker + subpage/takeover signature helpers (compiles
+//    standalone on host with zero ESPHome dependencies for tests/host/test_all.cpp).
+// 2. Concrete UiFrameContext & SystemTakeoverState for compiled page_*.cpp TUs.
+// 3. DisplayUpdateScheduler (both DispT* and DispT*const* overloads) and
+//    FrameHitTable-driven render_active_focus_overlay().
 // ==============================================================================
 
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
-#include "ui_ambient_va.h"
-#include "ui_core.h"
+#include <cmath>
+#include <cstdint>
+#include <string>
+#include <type_traits>
+#include "esphome/core/component.h"
+#include "esphome/core/hal.h"
+#include "esphome/core/time.h"
+#include "hal_power_pm.h"
+#include "latter_state.h"
+#include "ui_types.h"
+#include "ui_gfx.h"
 #include "ui_hit_table.h"
-#include "ui_tools.h"
+#include "ui_layout.h"
 #include "ui_widgets.h"
 #else
 #include <cstdint>
@@ -62,11 +70,250 @@ DirtyBandTracker &dirty_band();
 void mark_dirty_band(int y0, int y1);
 void mark_dirty_full();
 
+// Folds all secondary subpage dimensions (home_subpage + home_dock_page,
+// tools_subpage + tools_menu_page + cal_detail_mode + timer_view_slot,
+// system_menu_mode + system_dashboard_page + sleep_menu_page + display_menu_page,
+// whole_home_tab) into one unambiguous sub_id for DirtyBandTracker::begin_frame.
+constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_pg,
+                                 int music_mode, int active_game,
+                                 int sys_mode, int sys_dash_pg, int sleep_pg, int disp_pg,
+                                 int weather_sub, int area_sub, int rem_sub,
+                                 int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
+                                 int wh_tab) {
+  switch (gui_page) {
+    case 1:
+      return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8);
+    case 2:
+      return music_mode;
+    case 3:
+      return active_game;
+    case 4:
+      return (sys_mode & 0xFF) | ((sys_dash_pg & 0x0F) << 8) |
+             ((sleep_pg & 0x0F) << 12) | ((disp_pg & 0x0F) << 16);
+    case 5:
+      return weather_sub;
+    case 6:
+      return area_sub;
+    case 7:
+      return rem_sub;
+    case 8:
+      return (tools_sub & 0xFF) | ((tools_menu_pg & 0xFF) << 8) |
+             ((cal_detail & 0x0F) << 16) | ((timer_slot & 0x0F) << 20);
+    case 9:
+      return wh_tab;
+    default:
+      return 0;
+  }
+}
+
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active);
 
 #if __has_include("esphome/core/defines.h")
+
+// ------------------------------------------------------------------------------
+// Display Update Scheduler (ESPHome 2026.11+ numeric timeout IDs)
+// ------------------------------------------------------------------------------
+inline uint32_t &last_disp_update_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+struct DisplayUpdateScheduler : public esphome::Component {
+  static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
+  static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
+
+  // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
+  static void request_post_frame(esphome::Component *comp, void (*fn)()) {
+    if (comp == nullptr || fn == nullptr) return;
+    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(kTimeoutFbClear, 0, [fn]() { fn(); });
+  }
+
+  template <typename DispT>
+  static void request_ptr(DispT *disp) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+      auto *comp = static_cast<esphome::Component *>(disp);
+      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+          kTimeoutAsyncDraw, 0, [disp]() {
+            if (screen_is_off_standby() || disp_poller_held()) return;
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
+
+  template <typename DispT>
+  static void request_anim_ptr(DispT *disp) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      constexpr uint32_t kFrameMs = 18U;
+#else
+      constexpr uint32_t kFrameMs = 26U;
+#endif
+      const uint32_t now_m = esphome::millis();
+      const bool inside_render = (last_disp_update_ms() > last_disp_update_end_ms());
+      const uint32_t elapsed = now_m - last_disp_update_ms();
+      const uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : (inside_render ? 4U : 0U);
+      auto *comp = static_cast<esphome::Component *>(disp);
+      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+          kTimeoutAsyncDraw, delay_ms, [disp]() {
+            if (screen_is_off_standby() || disp_poller_held()) return;
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
+};
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_disp_update(DispT *disp) {
+  mark_dirty_full();
+  DisplayUpdateScheduler::request_ptr(disp);
+}
+
+template <typename DispT>
+inline void schedule_disp_update(DispT *const *disp_ptr) {
+  mark_dirty_full();
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_ptr(*disp_ptr);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_band_disp_update(DispT *disp, int y0, int y1) {
+  mark_dirty_band(y0, y1);
+  DisplayUpdateScheduler::request_ptr(disp);
+}
+
+template <typename DispT>
+inline void schedule_band_disp_update(DispT *const *disp_ptr, int y0, int y1) {
+  mark_dirty_band(y0, y1);
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_ptr(*disp_ptr);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_anim_disp_update(DispT *disp) {
+  mark_dirty_full();
+  DisplayUpdateScheduler::request_anim_ptr(disp);
+}
+
+template <typename DispT>
+inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
+  mark_dirty_full();
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
+// ------------------------------------------------------------------------------
+// Concrete Per-Frame Render Context (passed to all compiled page_*.cpp TUs)
+// ------------------------------------------------------------------------------
+struct UiFrameContext {
+  esphome::ESPTime now{};
+  uint32_t now_ms{0};
+  int cx{SCREEN_CX};
+  int cy{SCREEN_CY};
+  const char *friendly_name{""};
+  const char *fw_version{""};
+
+  // Fonts (concrete BaseFont*)
+  esphome::display::BaseFont *font_time{nullptr};
+  esphome::display::BaseFont *font_chrono_time{nullptr};
+  esphome::display::BaseFont *font_date{nullptr};
+  esphome::display::BaseFont *font_btn_bold{nullptr};
+  esphome::display::BaseFont *font_small{nullptr};
+  esphome::display::BaseFont *font_micro{nullptr};
+  esphome::display::BaseFont *font_games_title{nullptr};
+
+  // Decoded RGB565 image views
+  ArtImageView album_art{};
+  ArtImageView remote_album_art{};
+  ArtImageView home_wallpaper_art{};
+  ArtImageView camera_snapshot_art{};
+
+  // Palette colors
+  esphome::Color theme_primary{};
+  esphome::Color theme_secondary{};
+  esphome::Color col_bg{};
+  esphome::Color col_black{};
+  esphome::Color col_white{};
+  esphome::Color col_slate{};
+  esphome::Color col_gray{};
+  esphome::Color col_dark_gray{};
+  esphome::Color col_gold{};
+  esphome::Color col_warm_gold{};
+  esphome::Color col_solaris_gold{};
+  esphome::Color col_cyan{};
+  esphome::Color col_accent_cyan{};
+  esphome::Color col_green{};
+  esphome::Color col_orange{};
+  esphome::Color col_red{};
+  esphome::Color col_purple{};
+  esphome::Color col_magenta{};
+
+  // Live ESPHome component/entity snapshots
+  bool panel_is_on{true};
+  bool local_media_playing{false};
+  int spk_vol_pct{60};
+  int alert_vol_pct{80};
+  int vol_step_pct{5};
+  int free_heap_kb{0};
+  float wifi_rssi{NAN};
+  std::string ip_addr{};
+  bool ble_active{false};
+  std::string track_title{};
+  std::string track_artist{};
+  std::string track_album{};
+  std::string fw_latest_ver{};
+  std::string fw_release_summary{};
+  std::string primary_wake_word{"Okay Nabu"};
+
+  // Select options
+  std::string clock_face_style_opt{"Analog"};
+  std::string weather_sim_opt{"Live (Home Assistant)"};
+  std::string music_overlay_style_opt{"Frosted Card"};
+  std::string music_fullscreen_art_opt{"Always"};
+  std::string music_album_sort_opt{"A-Z"};
+  std::string music_artist_album_sort_opt{"Release Year"};
+  std::string music_podcast_sort_opt{"Latest Episode"};
+  std::string theme_palette_opt{"Steel & Silver"};
+  std::string power_profile_opt{"Balanced"};
+  std::string tap_wake_opt{"Always On"};
+  std::string pickup_wake_opt{"Medium"};
+  std::string display_off_timeout_opt{"30 Seconds"};
+  std::string screensaver_style_opt{"Ambient Clock"};
+  std::string screensaver_docked_timeout_opt{"5 Minutes"};
+  std::string hibernate_timeout_opt{"30 Minutes"};
+  std::string default_start_app_opt{"Home"};
+  std::string auto_brightness_opt{"Time Schedule"};
+  std::string display_brightness_opt{"High (80%)"};
+  std::string day_brightness_opt{"High (80%)"};
+  std::string night_brightness_opt{"Low (25%)"};
+  std::string va_wake_word_mode_opt{"Always On"};
+  std::string va_visual_profile_opt{"Nebula"};
+  std::string ww_sens_okay_nabu_opt{"Medium"};
+  std::string ww_sens_hey_luna_opt{"Off"};
+  std::string ww_sens_hey_jarvis_opt{"Off"};
+  std::string ww_sens_hey_mycroft_opt{"Off"};
+  std::string ww_sens_alexa_opt{"Off"};
+
+  // Numbers
+  int day_start_hr{7};
+  int night_start_hr{21};
+
+  // Switches
+  bool home_weather_bg{true};
+  bool home_wake_greeting{true};
+  bool home_sun_arc{true};
+  bool home_moon_phase{true};
+  bool music_show_speaker_shortcut{true};
+  bool music_show_library_shortcut{true};
+  bool game_sound_enabled{true};
+  bool va_wake_screen{true};
+  bool docked_screensaver_enabled{true};
+  bool instant_crown_hibernate{false};
+  bool area_show_all_category{false};
+};
 
 struct SystemTakeoverState {
   int cx{SCREEN_CX};
@@ -110,6 +357,54 @@ struct SystemTakeoverState {
   esphome::Color col_gold{};
   esphome::Color col_red{};
   esphome::Color col_solaris_gold{};
+
+  static inline SystemTakeoverState from_context(const UiFrameContext &ctx) {
+    const auto &rs = runtime_state();
+    const auto &prefs = persisted_prefs();
+    SystemTakeoverState st{};
+    st.cx = ctx.cx;
+    st.cy = ctx.cy;
+    st.now_ms = ctx.now_ms;
+    st.is_24h_format = prefs.is_24h_format;
+    st.ota_in_progress = rs.nav.ota_in_progress;
+    st.ota_progress_pct = rs.nav.ota_progress_pct;
+    st.is_hibernating = rs.nav.is_hibernating;
+    st.hibernate_countdown_val = rs.nav.hibernate_countdown_val;
+    st.panel_is_on = ctx.panel_is_on;
+    st.display_power_state = rs.nav.display_power_state;
+    st.alarm_ringing = rs.alarms.ringing;
+    st.alarm_ringing_idx = rs.alarms.ringing_idx;
+    st.alarm1_recurrence = prefs.alarms[0].recurrence;
+    st.alarm2_recurrence = prefs.alarms[1].recurrence;
+    st.alarm3_recurrence = prefs.alarms[2].recurrence;
+    st.timer_ringing = rs.timers.ringing;
+    st.find_my_active = rs.alarms.find_my_active;
+    st.va_timer_name = rs.timers.va_timer_name;
+    st.va_active = rs.voice.active;
+    st.va_status_text = rs.voice.status_text;
+    st.va_tts_received = rs.voice.tts_received;
+    st.va_vad_active = rs.voice.vad_active;
+    st.va_visual_profile_opt = ctx.va_visual_profile_opt;
+    st.notif_active = rs.alert.active;
+    st.notif_title = rs.alert.title;
+    st.notif_message = rs.alert.message;
+    st.notif_priority = rs.alert.priority;
+    st.notif_camera_url = rs.alert.camera_url;
+    st.current_loaded_camera_url = rs.alert.loaded_camera_url;
+    st.screensaver_style_opt = ctx.screensaver_style_opt;
+    st.theme_primary = ctx.theme_primary;
+    st.theme_secondary = ctx.theme_secondary;
+    st.col_bg = ctx.col_bg;
+    st.col_black = ctx.col_black;
+    st.col_white = ctx.col_white;
+    st.col_slate = ctx.col_slate;
+    st.col_gray = ctx.col_gray;
+    st.col_dark_gray = ctx.col_dark_gray;
+    st.col_gold = ctx.col_gold;
+    st.col_red = ctx.col_red;
+    st.col_solaris_gold = ctx.col_solaris_gold;
+    return st;
+  }
 };
 
 inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
@@ -121,178 +416,34 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
       ui::pin_pad_state().open, st.notif_active);
 }
 
-// Renders all system-owned global takeovers in strict priority order.
-// Returns true when a takeover owned the frame (caller returns immediately).
-template <typename DisplayT, typename TimeT, typename CamImgT,
-          typename FontTimeT, typename FontChronoT, typename FontDateT,
-          typename FontSmallT, typename FontMicroT>
-inline bool render_system_takeovers(
-    DisplayT &it, int cx, int cy, uint32_t now_ms, const TimeT &now, bool is_24h_format,
-    bool ota_in_progress, int ota_progress_pct,
-    bool is_hibernating, int hibernate_countdown_val,
-    bool panel_is_on, int display_power_state,
-    bool alarm_ringing, int alarm_ringing_idx,
-    int alarm1_recurrence, int alarm2_recurrence, int alarm3_recurrence,
-    bool timer_ringing, bool find_my_active, const std::string &va_timer_name,
-    bool va_active, const std::string &va_status_text, bool va_tts_received, bool va_vad_active,
-    const std::string &va_visual_profile_opt,
-    bool notif_active, const std::string &notif_title, const std::string &notif_message,
-    const std::string &notif_priority, CamImgT *camera_snapshot_art,
-    const std::string &notif_camera_url, const std::string &current_loaded_camera_url,
-    const std::string &screensaver_style_opt,
-    FontTimeT *font_time, FontChronoT *font_chrono_time, FontDateT *font_date,
-    FontSmallT *font_small, FontMicroT *font_micro,
-    esphome::Color theme_primary, esphome::Color theme_secondary,
-    esphome::Color col_bg, esphome::Color col_black, esphome::Color col_white,
-    esphome::Color col_slate, esphome::Color col_gray, esphome::Color col_dark_gray,
-    esphome::Color col_gold, esphome::Color col_red, esphome::Color col_solaris_gold) {
-  using esphome::display::TextAlign;
-
-  // 1. OTA Firmware Update In Progress
-  if (ota_in_progress) {
-    frame_base(it, col_bg);
-    int pct = ota_progress_pct;
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    if (LATTER_ROUND_DISPLAY) {
-      for (int i = 0; i <= pct; i++) {
-        const float rad = (static_cast<float>(i) / 100.0f) * 2.0f * PI_F - HALF_PI_F;
-        float s = 0.0f, c = 1.0f;
-        fast_sincos(rad, s, c);
-        fast_line(it, cx + static_cast<int>(220.0f * c), cy + static_cast<int>(220.0f * s),
-                  cx + static_cast<int>(228.0f * c), cy + static_cast<int>(228.0f * s), theme_secondary);
-      }
-    } else {
-      const int ota_bw = std::min(scale_w(280), SCREEN_W - 48);
-      const int ota_bx = cx - (ota_bw / 2);
-      const int ota_fill = (ota_bw * pct) / 100;
-      fill_rect_row_major(it, ota_bx, cy + scale_y(104), ota_bw, scale_y(10), col_dark_gray);
-      if (ota_fill > 0) {
-        fill_rect_row_major(it, ota_bx, cy + scale_y(104), ota_fill, scale_y(10), theme_primary);
-      }
-    }
-    fast_print(it, cx, cy - scale_y(60), font_date, theme_primary, TextAlign::CENTER, "FIRMWARE UPDATE");
-    char prog_buf[32];
-    snprintf(prog_buf, sizeof(prog_buf), "%d%%", pct);
-    fast_print(it, cx, cy + scale_y(8), font_time, col_white, TextAlign::CENTER, prog_buf);
-    const char *status_msg = "Preparing flash...";
-    if (pct >= 99) status_msg = "Rebooting device...";
-    else if (pct >= 85) status_msg = "Verifying image...";
-    else if (pct >= 10) status_msg = "Writing flash memory...";
-    fast_print(it, cx, cy + scale_y(65), font_small, col_slate, TextAlign::CENTER, status_msg);
-    return true;
-  }
-
-  // 2. Hibernation Shutdown Countdown
-  if (is_hibernating) {
-    frame_base(it, col_bg);
-    if (hibernate_countdown_val > 0) {
-      fast_print(it, cx, cy - scale_y(65), font_date, theme_primary, TextAlign::CENTER, "HIBERNATING");
-      char c_buf[16];
-      snprintf(c_buf, sizeof(c_buf), "%d", hibernate_countdown_val);
-      fast_print(it, cx, cy + scale_y(5), font_chrono_time, theme_secondary, TextAlign::CENTER, c_buf);
-      fast_print(it, cx, cy + scale_y(65), font_small, col_slate, TextAlign::CENTER, "Tap screen to stay awake");
-    } else {
-      fast_print(it, cx, cy - scale_y(10), font_date, theme_primary, TextAlign::CENTER, "HIBERNATING");
-      fast_print(it, cx, cy + scale_y(30), font_small, col_slate, TextAlign::CENTER, "Shutting down...");
-    }
-    return true;
-  }
-
-  // 3. Panel Off / Standby: skip buffer writes until wake frame
-  if (!panel_is_on || display_power_state == 2) {
-    frame_base_skip();
-    return true;
-  }
-
-  // 4. ALARM / TIMER RINGING TAKEOVER (Highest Active Priority — always above Voice Assistant!)
-  if (alarm_ringing || timer_ringing || find_my_active) {
-    frame_base(it, col_bg);
-    render_alert_ringing_overlay(
-        it, cx, cy, now_ms, alarm_ringing, alarm_ringing_idx,
-        alarm1_recurrence, alarm2_recurrence, alarm3_recurrence,
-        now, is_24h_format,
-        font_time, font_date, font_small, font_micro,
-        theme_primary, theme_secondary, col_bg, col_black,
-        col_white, col_gray, col_red,
-        find_my_active, va_timer_name);
-    return true;
-  }
-
-  // 5. VOICE ASSISTANT TAKEOVER
-  if (va_active || !va_status_text.empty()) {
-    frame_base(it, col_bg);
-    const bool is_speaking = va_tts_received;
-    const bool is_thinking = (!is_speaking && va_status_text == "Thinking...");
-    render_voice_assistant_overlay(
-        it, cx, cy, now_ms, is_speaking, is_thinking, va_vad_active,
-        va_visual_profile_opt, col_white, col_solaris_gold);
-    return true;
-  }
-
-  // 6. 3-TIER SECURITY PIN PAD MODAL
-  if (ui::pin_pad_state().open) {
-    frame_base(it, col_bg);
-    ui::pin_pad_modal(it, cx, cy, now_ms, font_date, font_date, font_small,
-                      theme_primary, col_white, col_slate, col_red);
-    render_active_focus_overlay(it, 0, 0, now_ms, theme_primary, col_white);
-    return true;
-  }
-
-  // 7. PUSH NOTIFICATION & CAMERA SNAPSHOT TAKEOVER
-  if (notif_active) {
-    frame_base(it, col_bg);
-    render_notification_overlay(
-        it, cx, cy, now_ms,
-        notif_title, notif_message, notif_priority,
-        camera_snapshot_art, notif_camera_url, current_loaded_camera_url,
-        font_date, font_small,
-        theme_primary, theme_secondary,
-        col_bg, col_black, col_white,
-        col_slate, col_gold, col_red);
-    return true;
-  }
-
-  // 8. DOCKED SCREENSAVER (Mode 1)
-  if (display_power_state == 1) {
-    frame_base(it, col_bg);
-    render_docked_screensaver(
-        it, cx, cy, now_ms, now, is_24h_format,
-        screensaver_style_opt,
-        font_time, font_date, col_slate, col_dark_gray);
-    return true;
-  }
-
-  return false;
+inline int compute_active_subpage_id() {
+  const auto &rs = runtime_state();
+  return compute_subpage_id(
+      rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
+      rs.music.overlay_mode, rs.nav.active_game,
+      rs.nav.system_menu_mode, rs.nav.system_dashboard_page,
+      rs.nav.sleep_menu_page, rs.nav.display_menu_page,
+      rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
+      rs.nav.tools_subpage, rs.nav.tools_menu_page,
+      cal_detail_mode(), timer_view_slot(), whole_home_tab());
 }
 
-template <typename DisplayT, typename TimeT, typename CamImgT,
-          typename FontTimeT, typename FontChronoT, typename FontDateT,
-          typename FontSmallT, typename FontMicroT>
-inline bool render_system_takeovers(
-    DisplayT &it, const TimeT &now, const SystemTakeoverState &st,
-    CamImgT *camera_snapshot_art,
-    FontTimeT *font_time, FontChronoT *font_chrono_time, FontDateT *font_date,
-    FontSmallT *font_small, FontMicroT *font_micro) {
-  return render_system_takeovers(
-      it, st.cx, st.cy, st.now_ms, now, st.is_24h_format,
-      st.ota_in_progress, st.ota_progress_pct,
-      st.is_hibernating, st.hibernate_countdown_val,
-      st.panel_is_on, st.display_power_state,
-      st.alarm_ringing, st.alarm_ringing_idx,
-      st.alarm1_recurrence, st.alarm2_recurrence, st.alarm3_recurrence,
-      st.timer_ringing, st.find_my_active, st.va_timer_name,
-      st.va_active, st.va_status_text, st.va_tts_received, st.va_vad_active,
-      st.va_visual_profile_opt,
-      st.notif_active, st.notif_title, st.notif_message, st.notif_priority,
-      camera_snapshot_art, st.notif_camera_url, st.current_loaded_camera_url,
-      st.screensaver_style_opt,
-      font_time, font_chrono_time, font_date, font_small, font_micro,
-      st.theme_primary, st.theme_secondary,
-      st.col_bg, st.col_black, st.col_white,
-      st.col_slate, st.col_gray, st.col_dark_gray,
-      st.col_gold, st.col_red, st.col_solaris_gold);
+// Draws rotary/touchless focus ring from FrameHitTable::focus_at(ui_focus_index()).
+void render_active_focus_overlay(esphome::display::Display &it, uint32_t now_ms,
+                                 esphome::Color theme_primary, esphome::Color col_white);
+
+inline void render_active_focus_overlay(esphome::display::Display &it, int /*page*/, int /*subpage*/,
+                                        uint32_t now_ms, esphome::Color theme_primary,
+                                        esphome::Color col_white) {
+  render_active_focus_overlay(it, now_ms, theme_primary, col_white);
 }
+
+// Renders all system-owned global takeovers in strict priority order:
+//   OTA -> Hibernation -> Panel Off -> Alarm/Timer/Find-My -> Voice Assistant ->
+//   PIN Pad Modal -> Push Notification -> Docked Screensaver.
+// Returns true when a takeover owned the frame.
+bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext &ctx,
+                             const SystemTakeoverState &st);
 
 #endif  // __has_include("esphome/core/defines.h")
 

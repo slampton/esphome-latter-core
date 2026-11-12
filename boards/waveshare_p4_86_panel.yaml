@@ -28,8 +28,6 @@ substitutions:
   p4_silicon: "rev1"
   p4_engineering_sample: "true"
   p4_cpu_frequency: "360MHz"
-  screen_w: "720"
-  screen_h: "720"
   font_time_size: "112"
   font_chrono_size: "56"
   font_date_size: "38"
@@ -39,7 +37,6 @@ substitutions:
   font_games_size: "56"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"
-  art_shape: "square"
   default_start_app: "Home"
   default_clock_face: "Minimal Digital"
   default_art_mode: "Full Screen"
@@ -116,8 +113,6 @@ i2c:
 packages:
   latter_chip: !include ../modules/hal/chip_esp32p4.yaml
   latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
-  latter_imu: !include ../modules/imu_none.yaml
-  latter_pmu: !include ../modules/pmu_none.yaml
 
 switch:
   - platform: gpio

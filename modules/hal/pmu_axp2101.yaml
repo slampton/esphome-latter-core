@@ -1,0 +1,427 @@
+# ==============================================================================
+# Latter Board HAL Submodule: AXP2101 PMIC Hardware Driver (modules/hal/pmu_axp2101.yaml)
+# Included by boards with an AXP2101 PMU @ 0x34 (S3-1.75C, S3-2.06, S3-2.16, P4-3.5)
+#
+# Board contract:
+#   - No supported board routes AXP_IRQ to the SoC. All AXP2101 IRQs are masked at boot and the
+#     PWR key is read directly from its GPIO (SYS_OUT / PWR_KEY net) as binary_sensor `pwr_key`,
+#     defined in the board HAL with LATTER_PWR_KEY_PIN / LATTER_PWR_KEY_ACTIVE_HIGH build flags.
+#   - Optional rail / TS traits consumed by latter_ui::hal_init_axp2101() (include/hal_battery.h):
+#     LATTER_PMU_TS_DISABLE, LATTER_PMU_DCDC_KEEP_MASK, LATTER_PMU_LDO_KEEP_MASK.
+#   - LATTER_BATTERY_MAH (the fitted cell): the charge profile, state of charge, low-battery warning and
+#     cutoff all derive from it in include/hal_battery.h (one battery model for every battery board).
+#   - Registers live telemetry and hooks on latter_ui::runtime_state() at boot priority 850 so
+#     shared firmware modules never reference PMU entity/script IDs on mains-only boards.
+# ==============================================================================
+
+esphome:
+  on_boot:
+    - priority: 850
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            rs.hw_usb_connected = false;
+            rs.hw_batt_charging = false;
+            rs.hw_batt_level = NAN;
+            rs.hw_batt_voltage = NAN;
+            rs.hw_boot_battery_check = +[]() {
+              id(hal_boot_battery_check).execute();
+            };
+            rs.hw_init_pmu = +[]() {
+              id(hal_init_pmu).execute();
+            };
+            rs.hw_poll_pmu_1s = +[]() {
+              id(hal_poll_pmu_1s).execute();
+            };
+            rs.hw_wait_pwr_key_release = +[]() {
+              id(hal_wait_pwr_key_release).execute();
+            };
+            rs.hw_pwr_key_pressed = +[]() -> bool {
+              return id(pwr_key).state;
+            };
+            rs.hw_update_batt_level = +[]() {
+              const auto &bm = latter_ui::battery_model();
+              if (!std::isnan(bm.soc_display)) {
+                const float lvl = std::round(bm.soc_display);
+                latter_ui::runtime_state().hw_batt_level = lvl;
+                id(batt_level).publish_state(lvl);
+              }
+            };
+
+binary_sensor:
+  - platform: template
+    name: "USB Power Connected"
+    id: usb_connected
+    device_class: power
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Battery Charging"
+    id: batt_charging
+    device_class: battery_charging
+    entity_category: diagnostic
+
+  # On at or below latter_ui::BatteryModel::kLowPct on battery; off once charging (hal_battery.h).
+  - platform: template
+    name: "Battery Low"
+    id: batt_low
+    device_class: battery
+    entity_category: diagnostic
+
+  # PWR key press timing: short press fires on release (< 1.5 s), long press fires while held (>= 1.5 s).
+  # The AXP2101 keeps its own hardware power-on and hard power-off (PWRON long hold) behavior.
+  - id: !extend pwr_key
+    on_press:
+      - script.execute: pwr_key_long_press_watch
+    on_release:
+      - if:
+          condition:
+            script.is_running: pwr_key_long_press_watch
+          then:
+            - script.stop: pwr_key_long_press_watch
+            - script.execute:
+                id: handle_crown_button_press
+                is_long: false
+
+sensor:
+  - platform: template
+    name: "Battery Level"
+    id: batt_level
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    # Published by hal_poll_pmu_1s after each battery-model sample (include/hal_battery.h: load-compensated,
+    # smoothed, never rising on battery, 100 % only from the PMIC's charge-done state). No poller of its own,
+    # and only whole-percent changes go out, so an idle device doesn't send a state every minute.
+    update_interval: never
+    filters:
+      - delta: 1.0
+
+  - platform: template
+    name: "Battery Voltage"
+    id: batt_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    # The raw VBAT of each battery-model sample, published by hal_poll_pmu_1s (in every power state): the
+    # screen-off battery voltage is the drain metric for power work, and [PROF:POWER] reports it.
+    update_interval: never
+    filters:
+      - throttle: 120s
+
+text_sensor:
+  - platform: template
+    name: "Battery Charge State"
+    id: batt_charge_state
+    icon: "mdi:battery-charging-outline"
+    entity_category: diagnostic
+    update_interval: never
+
+button:
+  - platform: template
+    name: "Actions: Hibernate Now"
+    id: enter_deep_sleep_btn
+    icon: "mdi:sleep"
+    entity_category: config
+    on_press:
+      - lambda: 'latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::BUTTON;'
+      - script.execute: enter_deep_sleep
+
+script:
+  # First thing in on_boot (system_core.yaml, priority 800): a cell clearly past the cutoff on battery powers
+  # straight back off before the display and Wi-Fi start (latter_ui::hal_axp2101_boot_battery_check).
+  - id: hal_boot_battery_check
+    mode: single
+    then:
+      - lambda: 'latter_ui::hal_axp2101_boot_battery_check(id(bus_internal));'
+
+  - id: hal_init_pmu
+    mode: restart
+    then:
+      - lambda: |-
+          // Mask all AXP2101 IRQs (no IRQ line is routed), apply board rail / TS / charger traits,
+          // and log the resulting PMIC configuration for the board facts ledger.
+          latter_ui::hal_init_axp2101(id(bus_internal));
+
+  - id: hal_poll_pmu_1s
+    mode: restart
+    then:
+      - lambda: |-
+          // AXP2101 polling, all from the existing 1 s supervisor tick (no timers of its own, never the awake
+          // lock): REG00 (VBUS, battery present) every second, every 5 s in screen-off quiet on battery;
+          // REG01 (charger) only while VBUS is present; VBAT into the battery model on its own cadence
+          // (include/hal_battery.h: 10 s awake or docked, 60 s in quiet, 10 s again near the cutoff); the fuel
+          // gauge only with the Telemetry Profiler on. Skipped during an active voice turn to keep bus_internal
+          // quiet: the model's cutoff and smoothing are debounced well past a voice turn.
+          auto &rs = latter_ui::runtime_state();
+          if (rs.voice.active || rs.voice.tts_received) return;
+          auto &bm = latter_ui::battery_model();
+          const uint32_t now_b = millis();
+          const bool audio_load = id(speaker_enable).state ||
+                                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                                  id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
+          const bool quiet = !rs.hw_usb_connected && rs.nav.display_power_state == 2 && !audio_load;
+
+          static uint32_t last_stat0_ms = 0;
+          static bool bat_present = true;
+          bool vbus = rs.hw_usb_connected;
+          if (!quiet || last_stat0_ms == 0 || (now_b - last_stat0_ms) >= 5000U) {
+            last_stat0_ms = (now_b == 0) ? 1U : now_b;
+            uint8_t reg0 = 0x00;
+            uint8_t stat0 = 0;
+            if (id(bus_internal).write_readv(0x34, &reg0, 1, &stat0, 1) == esphome::i2c::ERROR_OK) {
+              bool vbus_good = (stat0 & 0x20) != 0;
+              bat_present = (stat0 & 0x08) != 0;
+              // If powered via the UART USB-C port with no LiPo battery attached (bat_present == false),
+              // the board is running on USB 5V power even though AXP2101 VBUS_IN is unpowered!
+              vbus = vbus_good || !bat_present;
+              if (!id(usb_connected).has_state() || rs.hw_usb_connected != vbus) {
+                rs.hw_usb_connected = vbus;
+                id(usb_connected).publish_state(vbus);
+                if (rs.nav.display_power_state == 0) {
+                  id(screen_sleep_timer).execute();
+                }
+                // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
+                // so the screensaver never stays awake draining the battery.
+                if (!vbus && rs.nav.display_power_state == 1) {
+                  id(turn_screen_off).execute();
+                } else if (rs.nav.display_power_state == 2) {
+                  if (!vbus) {
+                    rs.nav.sleep_start_time = millis();
+                    const bool local_audio_playing =
+                        id(speaker_enable).state || id(announcement_mixing_input).is_running() ||
+                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+                    if (id(va_wake_word_mode).current_option() != "Always On" && !local_audio_playing) {
+                      id(hal_set_audio_codecs_standby).execute(true);
+                    }
+                  }
+                  id(sync_wake_word_state).execute();
+                }
+                id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
+              }
+            }
+          }
+
+          // Charger state (REG01, only while VBUS is present): bits 6:5 current direction (1 = charging),
+          // bits 2:0 charger phase. On battery the charger is idle by definition.
+          uint8_t chg_state = static_cast<uint8_t>(latter_ui::ChargePhase::IDLE);
+          bool is_charging = false;
+          static uint8_t last_stat1 = 0xFF;
+          if (vbus) {
+            uint8_t reg1 = 0x01;
+            uint8_t stat1 = 0;
+            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) != esphome::i2c::ERROR_OK) return;
+            chg_state = stat1 & 0x07;
+            is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
+            if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
+              uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
+              uint8_t rr = 0x00;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
+              rr = 0x50;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
+              rr = 0x48;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
+              rr = 0x36;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
+              rr = 0x37;
+              id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
+              LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
+                       r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
+                       (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
+              last_stat1 = stat1 & 0x67;
+            }
+          } else {
+            last_stat1 = 0xFF;
+          }
+          latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
+          rs.hw_batt_charging = is_charging;
+          if (!id(batt_charging).has_state() || id(batt_charging).state != is_charging) {
+            id(batt_charging).publish_state(is_charging);
+          }
+          const char *chg_text = bat_present ? latter_ui::battery_charge_state_text(!vbus, chg_state) : "No Battery";
+          static const char *last_chg_text = nullptr;  // string literals: compare by pointer
+          if (chg_text != last_chg_text) {
+            last_chg_text = chg_text;
+            id(batt_charge_state).publish_state(chg_text);
+          }
+
+          // Battery model: VBAT (REG34/35), AXP2101 gauge (REG A4), load class, and cutoff.
+          if (bat_present && bm.sample_due(now_b, quiet)) {
+            uint8_t vreg = 0x34;
+            uint8_t vbuf[2] = {0, 0};
+            if (id(bus_internal).write_readv(0x34, &vreg, 1, vbuf, 2) == esphome::i2c::ERROR_OK) {
+              const int vbat_mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
+              const int hw_gauge = latter_ui::hal_axp2101_read_gauge_pct(id(bus_internal));
+              if (hw_gauge >= 0) {
+                latter_ui::pmu_telemetry().gauge_raw = static_cast<uint8_t>(hw_gauge);
+              }
+              latter_ui::BattLoad load = latter_ui::BattLoad::QUIET;
+              if (audio_load) {
+                load = latter_ui::BattLoad::AUDIO;
+              } else if (rs.nav.display_power_state != 2) {
+                load = latter_ui::BattLoad::SCREEN;
+              }
+              const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b, hw_gauge);
+              if (!std::isnan(bm.soc_display)) {
+                const float lvl = std::round(bm.soc_display);
+                rs.hw_batt_level = lvl;
+                id(batt_level).publish_state(lvl);
+              }
+              if (bm.vraw_mv > 0) {
+                const float volts = static_cast<float>(bm.vraw_mv) / 1000.0f;
+                rs.hw_batt_voltage = volts;
+                id(batt_voltage).publish_state(volts);
+              }
+              if (!id(batt_low).has_state() || id(batt_low).state != bm.low) {
+                id(batt_low).publish_state(bm.low);
+              }
+              static bool low_logged = false;
+              if (bm.low && !low_logged) {
+                ESP_LOGW("PROF", "[PROF:POWER] trig=LOW_BATT vraw=%dmV vrest=%dmV soc=%.0f%%", bm.vraw_mv, bm.vrest_mv,
+                         bm.soc_display);
+              }
+              low_logged = bm.low;
+              // Cutoff: hibernate cleanly (state saved, API disconnected, PMIC off; never alarm-sleep) instead of
+              // letting the cell run into the PMIC's under-voltage cutoff.
+              if (cutoff && !rs.nav.ota_in_progress && !(rs.nav.is_hibernating && rs.nav.hibernate_countdown_val == 0)) {
+                ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT vraw=%dmV vrest=%dmV soc=%.0f%% -> hibernate",
+                         bm.vraw_mv, bm.vrest_mv, bm.soc_display);
+                bm.hib_reason = latter_ui::HibernateReason::CRITICAL;
+                id(start_instant_hibernation).execute();
+                return;
+              }
+            }
+          }
+
+          // Low-battery notice: once per discharge, the next time the screen is on (never wakes the screen).
+          if (bm.low_notice_pending && rs.nav.display_power_state == 0 && !rs.alert.active && !rs.nav.is_hibernating &&
+              !rs.voice.active && !rs.alarms.ringing && !rs.timers.ringing &&
+              !(rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12)) {
+            bm.low_notice_pending = false;
+            char msg[48];
+            snprintf(msg, sizeof(msg), "%.0f%% left. Charge soon.", bm.soc_display);
+            rs.alert.title = "Battery Low";
+            rs.alert.message = msg;
+            rs.alert.priority = "warning";
+            rs.alert.duration_ms = 10000U;
+            rs.alert.start_ms = millis();
+            rs.alert.camera_url = "";
+            rs.alert.loaded_camera_url = "";
+            latter_ui::release_art(id(camera_snapshot_art));
+            rs.alert.active = true;
+            id(screen_sleep_timer).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+
+  - id: pwr_key_long_press_watch
+    mode: restart
+    then:
+      - delay: 1500ms
+      - script.execute:
+          id: handle_crown_button_press
+          is_long: true
+
+  - id: hal_wait_pwr_key_release
+    mode: restart
+    then:
+      # Wait (up to 3 s) for the PWR key to be released so the AXP2101 PWRON input does not
+      # immediately re-power the PMIC after the hibernate power-off write.
+      - wait_until:
+          condition:
+            binary_sensor.is_off: pwr_key
+          timeout: 3s
+      - delay: 100ms
+
+  - id: handle_crown_button_press
+    mode: restart
+    parameters:
+      is_long: bool
+    then:
+      - lambda: |-
+          static uint32_t last_crown_press = 0;
+          uint32_t now_c = millis();
+          if (now_c - last_crown_press < 150) return;
+          last_crown_press = now_c;
+
+          auto &rs = latter_ui::runtime_state();
+          if (rs.nav.is_hibernating) {
+            if (rs.nav.hibernate_countdown_val > 0) {
+              rs.nav.is_hibernating = false;
+              rs.nav.hibernate_countdown_val = 0;
+              latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::OTHER;
+              latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
+              id(wake_to_active_state).execute();
+            }
+            return;
+          }
+
+          if (is_long) {
+            latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::KEY;
+            if (id(instant_crown_hibernate_switch).state) {
+              id(start_instant_hibernation).execute();
+            } else {
+              id(start_hibernation_countdown).execute();
+            }
+            return;
+          }
+
+          if (rs.alarms.ringing) {
+            auto now = id(ha_time).now();
+            if (now.is_valid()) {
+              rs.alarms.snooze_until = now.timestamp + 300;
+            } else {
+              rs.alarms.snooze_until = (millis() / 1000) + 300;
+            }
+            rs.alarms.ringing = false;
+            id(stop_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+            return;
+          }
+          if (rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active) {
+            if (rs.alert.active) {
+              id(dismiss_notification).execute();
+              return;
+            }
+            rs.timers.ringing = false;
+            rs.alarms.find_my_active = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
+            return;
+          }
+
+          if (!id(display_brightness).current_values.is_on() || rs.nav.display_power_state != 0) {
+            latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
+            id(wake_to_active_state).execute();
+            return;
+          }
+
+          if (rs.voice.active || !rs.voice.status_text.empty()) {
+            id(cancel_voice_assistant).execute();
+            return;
+          }
+
+          if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3) {
+            id(screen_sleep_timer).execute();
+            if (!rs.stopwatch.running) {
+              rs.stopwatch.running = true;
+              rs.stopwatch.start_time_ms = millis() - rs.stopwatch.elapsed_ms;
+              rs.nav.sleep_start_time = 0;
+              id(display_brightness).turn_on().perform();
+            } else {
+              rs.stopwatch.running = false;
+              rs.stopwatch.elapsed_ms = millis() - rs.stopwatch.start_time_ms;
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+
+          id(turn_screen_off).execute();
+          return;

@@ -4,8 +4,6 @@
 #include "../../include/ui_hit_table.h"
 #endif
 
-#include <algorithm>
-
 namespace latter_ui {
 
 namespace {
@@ -17,12 +15,10 @@ FrameHitTable &frame_hits() {
 }
 
 void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
-                             uint8_t flags, int16_t param,
-                             UiActionFn on_event, void *ctx) {
+                             uint8_t flags, int16_t param) {
   if (w <= 0 || h <= 0 || count >= kMaxRegions) return;
   const int rx1 = x0 + w - 1;
   const int ry1 = y0 + h - 1;
-  // Deduplicate if the same non-zero widget_id + param is re-registered in the same frame
   if (widget_id != 0) {
     for (uint8_t i = 0; i < count; i++) {
       if (regions[i].widget_id == widget_id && regions[i].param == param) {
@@ -31,8 +27,6 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
         regions[i].x1 = static_cast<int16_t>(rx1);
         regions[i].y1 = static_cast<int16_t>(ry1);
         regions[i].flags = flags;
-        regions[i].on_event = on_event;
-        regions[i].ctx = ctx;
         return;
       }
     }
@@ -43,17 +37,14 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
   reg.x1 = static_cast<int16_t>(rx1);
   reg.y1 = static_cast<int16_t>(ry1);
   reg.widget_id = widget_id;
-  reg.flags = flags;
   reg.param = param;
-  reg.on_event = on_event;
-  reg.ctx = ctx;
+  reg.flags = flags;
 }
 
 void FrameHitTable::add_circle(int cx, int cy, int r, uint16_t widget_id,
-                               uint8_t flags, int16_t param,
-                               UiActionFn on_event, void *ctx) {
+                               uint8_t flags, int16_t param) {
   if (r <= 0) return;
-  add_rect(cx - r, cy - r, 2 * r + 1, 2 * r + 1, widget_id, flags, param, on_event, ctx);
+  add_rect(cx - r, cy - r, 2 * r + 1, 2 * r + 1, widget_id, flags, param);
 }
 
 const HitRegion *FrameHitTable::hit_test(int tx, int ty, uint8_t required_flags) const {
@@ -77,6 +68,14 @@ const HitRegion *FrameHitTable::find_by_id(uint16_t widget_id) const {
   if (widget_id == 0) return nullptr;
   for (int i = static_cast<int>(count) - 1; i >= 0; i--) {
     if (regions[i].widget_id == widget_id) return &regions[i];
+  }
+  return nullptr;
+}
+
+const HitRegion *FrameHitTable::find_by_id_param(uint16_t widget_id, int16_t param) const {
+  if (widget_id == 0) return nullptr;
+  for (int i = static_cast<int>(count) - 1; i >= 0; i--) {
+    if (regions[i].widget_id == widget_id && regions[i].param == param) return &regions[i];
   }
   return nullptr;
 }

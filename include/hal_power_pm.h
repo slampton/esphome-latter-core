@@ -1,25 +1,31 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core Power Management, Light Sleep, DFS, Stall Guard & Radio Policy
-// (hal_power_pm.h)
+// Latter Core Power Management, Light Sleep, DFS, Stall Guard, Wake Attribution,
+// Power Profiles & Radio Policy (hal_power_pm.h)
 // ==============================================================================
 
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #endif
-#if __has_include("esphome/core/log.h")
-#include "esphome/core/log.h"
-#endif
+
+#include "hal_battery.h"
+#include "hal_imu_qmi8658.h"
 #include "hal_manifest.h"
 #include "latter_prof.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
 
 #ifdef USE_ESP32
 #include <esp_wifi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <sdkconfig.h>
 #endif
 #if defined(USE_WIFI) && __has_include("esphome/components/wifi/wifi_component.h")
@@ -28,7 +34,61 @@
 
 namespace latter_ui {
 
-// Wake-pin slots, in arming-mask bit order (pm_wake_bit).
+// ------------------------------------------------------------------------------
+// 1. Main-loop Stall Guard (compiled implementation in components/latter_core/power_pm.cpp)
+// ------------------------------------------------------------------------------
+constexpr uint32_t kStallAbortMs = 30000U;
+constexpr uint32_t kStallReportMs = 2000U;
+constexpr uint32_t kStallRecordMagic = 0x5354414CU;  // "STAL"
+constexpr uint32_t kStallLiveMagic = 0x53544C56U;    // "STLV"
+constexpr uint32_t kTwdtRecordMagic = 0x54574454U;   // "TWDT"
+
+struct StallRecord {
+  uint32_t magic;
+  uint32_t blocked_ms;
+  uint32_t uptime_s;
+  char source[40];
+  char cpu0[16];
+  char cpu1[16];
+  char loop_state;
+};
+
+struct StallGuardState {
+  StallGuardState();
+
+  std::atomic<bool> paused{false};
+  std::atomic<uint32_t> resumed_ms{0};
+  bool started{false};
+  StallRecord previous_boot{};
+  StallRecord previous_live{};
+  StallRecord previous_twdt{};
+  StallRecord longest{};
+#ifdef USE_ESP32
+  portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+};
+
+#ifdef USE_ESP32
+StallGuardState &stall_guard();
+bool previous_boot_stalled();
+void stall_guard_pause(bool paused);
+void start_stall_guard();
+void log_stall_summary();
+#else
+inline StallGuardState::StallGuardState() = default;
+inline StallGuardState &stall_guard() {
+  static StallGuardState s;
+  return s;
+}
+inline bool previous_boot_stalled() { return false; }
+inline void stall_guard_pause(bool p) { stall_guard().paused.store(p, std::memory_order_relaxed); }
+inline void start_stall_guard() {}
+inline void log_stall_summary() {}
+#endif
+
+// ------------------------------------------------------------------------------
+// 2. Automatic Light Sleep (S3 Battery) & 40 MHz DFS (P4 Battery)
+// ------------------------------------------------------------------------------
 enum PmWakeSlot : uint8_t {
   PM_WAKE_PWR_KEY = 0,
   PM_WAKE_ACTION_BTN = 1,
@@ -39,10 +99,7 @@ enum PmWakeSlot : uint8_t {
 
 inline constexpr uint32_t pm_wake_bit(PmWakeSlot slot) { return 1UL << static_cast<uint32_t>(slot); }
 
-// Main loop interval while the awake lock is released. Phase A (scheduler) already runs the 1 s
-// supervisor tick, and an IRAM-safe esp_timer started on GPIO wake calls App.wake_loop_threadsafe()
-// within 50 us of cache restore, so 1,000 ms (250 ms when touch wake is armed, bounding rare DTIM-wake
-// tap collisions because upstream TouchscreenInterrupt skips wake_loop_isrsafe) keeps idle current minimal.
+// Main loop interval while the awake lock is released: 1,000 ms quiet, 250 ms with touch wake armed.
 constexpr uint32_t kPmQuietLoopIntervalMs = 1000U;
 constexpr uint32_t kPmQuietTouchLoopIntervalMs = 250U;
 
@@ -63,7 +120,7 @@ constexpr uint32_t kPmCrumbRing = 5U;
 
 struct PmCrumb {
   uint32_t magic;
-  uint32_t phase;       // 1 entered, 2 exited
+  uint32_t phase;  // 1 entered, 2 exited
   uint32_t seq;
   uint32_t imu_armed;
   uint32_t imu_events;
@@ -93,8 +150,8 @@ struct FlashWriteStats {
   std::atomic<uint32_t> nvs_max_us{0};
 };
 
+#ifdef USE_ESP32
 extern FlashWriteStats g_flash_write_stats;
-
 PmCrumb &pm_previous_crumb();
 void pm_init();
 void pm_apply(bool stay_awake, uint32_t wake_mask);
@@ -103,16 +160,365 @@ const char *pm_crash_where();
 bool pm_sleep_stats(PmSleepStats &out, uint32_t now_ms);
 void pm_log_profile();
 void pm_log_wake_profile();
+#else
+inline FlashWriteStats g_flash_write_stats{};
+inline PmCrumb &pm_previous_crumb() {
+  static PmCrumb c{};
+  return c;
+}
+inline void pm_init() {}
+inline void pm_apply(bool /*stay_awake*/, uint32_t /*wake_mask*/) {}
+inline void pm_note_imu(bool /*armed*/, uint32_t /*events*/) {}
+inline const char *pm_crash_where() { return ""; }
+inline bool pm_sleep_stats(PmSleepStats & /*out*/, uint32_t /*now_ms*/) { return false; }
+inline void pm_log_profile() {}
+inline void pm_log_wake_profile() {}
+#endif
 
 // ------------------------------------------------------------------------------
-// Wi-Fi Modem Power Save & Smart Off-Site Radio Policy (Single Policy Owner)
+// 3. Shared Display Standby / Poller Flags & Voice Display Restore
+// ------------------------------------------------------------------------------
+inline uint32_t &last_screen_wake_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+inline uint32_t &last_user_touch_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
+inline bool &screen_is_off_standby() {
+  static bool off = false;
+  return off;
+}
+
+inline bool &disp_poller_held() {
+  static bool held = false;
+  return held;
+}
+
+struct VaDisplayRestore {
+  bool armed = false;
+  int prior_state = 0;  // 0 active, 1 screensaver, 2 off
+  uint32_t session_start_ms = 0;
+
+  void capture(int display_power_state, bool brightness_on, uint32_t now_ms, bool force) {
+    if (armed && !force) return;
+    armed = true;
+    prior_state = brightness_on ? display_power_state : 2;
+    session_start_ms = (now_ms == 0) ? 1U : now_ms;
+  }
+  bool touched_since_start(uint32_t last_touch_ms) const {
+    return armed && last_touch_ms != 0 && static_cast<int32_t>(last_touch_ms - session_start_ms) > 0;
+  }
+};
+
+inline VaDisplayRestore &va_display_restore() {
+  static VaDisplayRestore r;
+  return r;
+}
+
+// ------------------------------------------------------------------------------
+// 4. Power Profiles & Capability Clamping
+// ------------------------------------------------------------------------------
+enum class PowerProfile : uint8_t {
+  PORTABLE_CARRY = 0,
+  HANDHELD_ROAMING = 1,
+  WEARABLE_WATCH = 2,
+  TABLETOP_DOCK = 3,
+  ALWAYS_ON_STATIONARY = 4,
+  CUSTOM = 5,
+};
+
+inline PowerProfile parse_power_profile(const std::string &opt) {
+  if (opt == "Portable Carry") return PowerProfile::PORTABLE_CARRY;
+  if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
+  if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
+  if (opt == "Tabletop Dock") return PowerProfile::TABLETOP_DOCK;
+  if (opt == "Always-On Wall / Desk") return PowerProfile::ALWAYS_ON_STATIONARY;
+  return PowerProfile::CUSTOM;
+}
+
+inline const char *power_profile_short_label(const std::string &opt) {
+  switch (parse_power_profile(opt)) {
+    case PowerProfile::PORTABLE_CARRY:       return "Portable";
+    case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
+    case PowerProfile::WEARABLE_WATCH:       return "Watch";
+    case PowerProfile::TABLETOP_DOCK:        return "Tabletop";
+    case PowerProfile::ALWAYS_ON_STATIONARY: return "Wall/Desk";
+    case PowerProfile::CUSTOM:               return "Custom";
+  }
+  return opt.c_str();
+}
+
+struct PowerProfileSpec {
+  PowerProfile profile;
+  const char *name;
+  const char *va_wake_word_mode;
+  const char *tap_wake_mode;
+  const char *pickup_wake_mode;
+  const char *display_off_timeout;
+  const char *screensaver_docked_timeout;
+  const char *hibernate_timeout_mode;
+  bool docked_screensaver_enabled;
+};
+
+inline constexpr PowerProfileSpec kPowerProfiles[] = {
+    {PowerProfile::PORTABLE_CARRY,       "Portable Carry",        "Docked Only", "Docked Only", "Docked Only", "30s",   "1 min", "15 min",   true},
+    {PowerProfile::HANDHELD_ROAMING,     "Handheld Roaming",      "Docked Only", "Always On",   "Always On",   "30s",   "1 min", "30 min",   true},
+    {PowerProfile::WEARABLE_WATCH,       "Wearable Watch",        "Docked Only", "Always On",   "Always On",   "15s",   "1 min", "15 min",   true},
+    {PowerProfile::TABLETOP_DOCK,        "Tabletop Dock",         "Docked Only", "Docked Only", "Disabled",    "30s",   "5 min", "15 min",   true},
+    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On",   "Always On",   "Disabled",    "Never", "5 min", "Disabled", true},
+};
+
+inline const PowerProfileSpec *get_power_profile_spec(PowerProfile p) {
+  for (const auto &spec : kPowerProfiles) {
+    if (spec.profile == p) return &spec;
+  }
+  return nullptr;
+}
+
+inline const PowerProfileSpec *get_power_profile_spec(const std::string &opt) {
+  return get_power_profile_spec(parse_power_profile(opt));
+}
+
+inline bool &applying_power_profile() {
+  static bool v = false;
+  return v;
+}
+
+template <typename SelT>
+inline void mark_power_profile_custom_if_manual(SelT *prof_sel) {
+  if (prof_sel == nullptr || applying_power_profile() || hal_millis_now() < 3500U) return;
+  if (prof_sel->current_option() != "Custom") {
+    prof_sel->publish_state("Custom");
+  }
+}
+
+template <typename WwSelT, typename TapSelT, typename PickupSelT, typename BattToSelT,
+          typename DockToSelT, typename HibToSelT, typename DockSwT>
+inline bool apply_power_profile_spec(const std::string &opt,
+                                     WwSelT *ww_sel, TapSelT *tap_sel, PickupSelT *pickup_sel,
+                                     BattToSelT *batt_to_sel, DockToSelT *dock_to_sel,
+                                     HibToSelT *hib_to_sel, DockSwT *dock_sw) {
+  const PowerProfileSpec *spec = get_power_profile_spec(opt);
+  if (spec == nullptr) return false;
+  applying_power_profile() = true;
+  auto set_sel = [](auto *sel, const char *val) {
+    if (sel != nullptr && sel->current_option() != val) {
+      auto call = sel->make_call();
+      call.set_option(val);
+      call.perform();
+    }
+  };
+  set_sel(ww_sel, spec->va_wake_word_mode);
+  set_sel(tap_sel, spec->tap_wake_mode);
+  const char *eff_pickup = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? spec->pickup_wake_mode : "Disabled";
+  set_sel(pickup_sel, eff_pickup);
+  set_sel(batt_to_sel, spec->display_off_timeout);
+  set_sel(dock_to_sel, spec->screensaver_docked_timeout);
+  const char *eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? spec->hibernate_timeout_mode : "Disabled";
+  set_sel(hib_to_sel, eff_hib);
+  if (dock_sw != nullptr && !dock_sw->state && spec->docked_screensaver_enabled) {
+    dock_sw->turn_on();
+  }
+  applying_power_profile() = false;
+  return true;
+}
+
+template <typename PickupSelT, typename HibToSelT>
+inline void clamp_power_capabilities(PickupSelT *pickup_sel, HibToSelT *hib_to_sel) {
+  applying_power_profile() = true;
+  auto set_sel = [](auto *sel, const char *val) {
+    if (sel != nullptr && sel->current_option() != val) {
+      auto call = sel->make_call();
+      call.set_option(val);
+      call.perform();
+    }
+  };
+  if (!LATTER_HAS_IMU || LATTER_IS_STATIONARY) {
+    set_sel(pickup_sel, "Disabled");
+  }
+  if (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY) {
+    set_sel(hib_to_sel, "Disabled");
+  }
+  applying_power_profile() = false;
+}
+
+template <typename TimeT>
+inline int32_t seconds_until_next_armed_alarm(const TimeT &now, uint32_t snooze_until,
+                                              int a1_h, int a1_m, bool a1_en, int a1_rec,
+                                              int a2_h, int a2_m, bool a2_en, int a2_rec,
+                                              int a3_h, int a3_m, bool a3_en, int a3_rec) {
+  if (!now.is_valid()) return -1;
+  int32_t best_sec = 43201;  // > 12h sentinel
+  if (snooze_until > static_cast<uint32_t>(now.timestamp)) {
+    int32_t s_rem = static_cast<int32_t>(snooze_until - static_cast<uint32_t>(now.timestamp));
+    if (s_rem > 0 && s_rem <= 43200) best_sec = s_rem;
+  }
+  const int32_t now_tod = now.hour * 3600 + now.minute * 60 + now.second;
+  auto eval_alarm = [&](int a_hr, int a_min, bool a_en, int a_rec) {
+    if (!a_en) return;
+    const int32_t alarm_tod = a_hr * 3600 + a_min * 60;
+    int32_t delta_sec = 0;
+    int target_dow = now.day_of_week;  // 1=SUN .. 7=SAT
+    if (alarm_tod > now_tod) {
+      delta_sec = alarm_tod - now_tod;
+    } else {
+      delta_sec = (86400 - now_tod) + alarm_tod;
+      target_dow = (now.day_of_week % 7) + 1;
+    }
+    if (delta_sec <= 0 || delta_sec > 43200) return;
+    if (a_rec == 1 && (target_dow < 2 || target_dow > 6)) return;
+    if (a_rec == 2 && (target_dow != 1 && target_dow != 7)) return;
+    if (delta_sec < best_sec) best_sec = delta_sec;
+  };
+  eval_alarm(a1_h, a1_m, a1_en, a1_rec);
+  eval_alarm(a2_h, a2_m, a2_en, a2_rec);
+  eval_alarm(a3_h, a3_m, a3_en, a3_rec);
+  return (best_sec <= 43200) ? best_sec : -1;
+}
+
+// ------------------------------------------------------------------------------
+// 5. Wake Attribution, Raise-to-Wake, Double-Tap & Battery Render Budget
+// ------------------------------------------------------------------------------
+enum class WakeReason : uint8_t { TOUCH = 0, RAISE, CROWN, VOICE, NOTIFY, ALERT, MEDIA, OTHER, COUNT };
+
+inline const char *wake_reason_name(WakeReason r) {
+  switch (r) {
+    case WakeReason::TOUCH:  return "touch";
+    case WakeReason::RAISE:  return "raise";
+    case WakeReason::CROWN:  return "crown";
+    case WakeReason::VOICE:  return "voice";
+    case WakeReason::NOTIFY: return "notify";
+    case WakeReason::ALERT:  return "alert";
+    case WakeReason::MEDIA:  return "media";
+    default:                 return "other";
+  }
+}
+
+struct WakeStats {
+  uint32_t counts[static_cast<int>(WakeReason::COUNT)] = {};
+  WakeReason pending = WakeReason::OTHER;
+};
+
+inline WakeStats &wake_stats() {
+  static WakeStats st;
+  return st;
+}
+
+inline void note_wake_reason(WakeReason r) { wake_stats().pending = r; }
+
+inline void record_screen_wake() {
+  auto &ws = wake_stats();
+  const WakeReason r = ws.pending;
+  ws.pending = WakeReason::OTHER;
+  ws.counts[static_cast<int>(r)]++;
+  if (!profiler_enabled()) return;
+  LATTER_PROF_LOGI("[PROF:WAKE] reason=%s total_touch=%lu raise=%lu crown=%lu voice=%lu notify=%lu alert=%lu media=%lu other=%lu",
+                   wake_reason_name(r),
+                   (unsigned long)ws.counts[0], (unsigned long)ws.counts[1], (unsigned long)ws.counts[2],
+                   (unsigned long)ws.counts[3], (unsigned long)ws.counts[4], (unsigned long)ws.counts[5],
+                   (unsigned long)ws.counts[6], (unsigned long)ws.counts[7]);
+}
+
+inline float get_pickup_motion_threshold(bool screen_is_active) {
+#if LATTER_IS_WEARABLE
+  return screen_is_active ? 0.22f : 0.38f;
+#else
+  return screen_is_active ? 0.068f : 0.15f;
+#endif
+}
+
+inline bool should_in_hand_block_sleep(bool on_battery_and_picked_up) {
+#if LATTER_IS_WEARABLE
+  (void)on_battery_and_picked_up;
+  return false;
+#else
+  return on_battery_and_picked_up;
+#endif
+}
+
+struct RaiseToWakeDetector {
+  uint32_t motion_ms = 0;
+  uint32_t face_up_since_ms = 0;
+
+  void reset() {
+    motion_ms = 0;
+    face_up_since_ms = 0;
+  }
+
+  bool update(float dyn, float thresh, float ax, float ay, float az, uint32_t now_ms) {
+    if (std::isnan(dyn) || std::isnan(ax) || std::isnan(ay) || std::isnan(az)) return false;
+    if (dyn > thresh) motion_ms = (now_ms == 0) ? 1U : now_ms;
+    if (motion_ms == 0 || (now_ms - motion_ms) > 1500U) {
+      face_up_since_ms = 0;
+      return false;
+    }
+    const float horiz = std::sqrt(ax * ax + ay * ay);
+    const float vert = std::fabs(az);
+    const bool face_up = (vert >= 0.5f) && (vert >= horiz * 0.7f);
+    if (!face_up) {
+      face_up_since_ms = 0;
+      return false;
+    }
+    if (face_up_since_ms == 0) face_up_since_ms = (now_ms == 0) ? 1U : now_ms;
+    if ((now_ms - face_up_since_ms) >= 200U) {
+      reset();
+      return true;
+    }
+    return false;
+  }
+};
+
+inline RaiseToWakeDetector &raise_to_wake() {
+  static RaiseToWakeDetector det;
+  return det;
+}
+
+inline bool tap_wake_needs_double_tap(bool usb_on) {
+#if LATTER_IS_WEARABLE
+  return !usb_on;
+#else
+  (void)usb_on;
+  return false;
+#endif
+}
+
+inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
+  if (!tap_wake_needs_double_tap(usb_on)) return true;
+  static uint32_t first_tap_ms = 0;
+  if (first_tap_ms == 0 || (now_ms - first_tap_ms) > 450U) {
+    first_tap_ms = (now_ms == 0) ? 1U : now_ms;
+    return false;
+  }
+  if ((now_ms - first_tap_ms) < 40U) return false;
+  first_tap_ms = 0;
+  return true;
+}
+
+inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms, uint32_t last_touch_ms = 0) {
+#if LATTER_IS_STATIONARY
+  (void)usb_on;
+  (void)now_ms;
+  (void)last_touch_ms;
+  return true;
+#else
+  if (usb_on) return true;
+  const uint32_t last = std::max({last_screen_wake_ms(), last_user_touch_ms(), last_touch_ms});
+  return (now_ms - last) < 10000U;
+#endif
+}
+
+// ------------------------------------------------------------------------------
+// 6. Wi-Fi Modem Power Save & Smart Off-Site Radio Policy (Single Policy Owner)
 // ------------------------------------------------------------------------------
 struct WifiPowerState {
   bool hp_held{false};
   bool base_valid{false};
   int base{-1};
   bool pulse{false};
-  // Off-site exponential Wi-Fi scan backoff when carried away from configured APs on battery:
   uint32_t offsite_since_ms{0};
   uint32_t scan_window_start_ms{0};
   uint32_t pause_until_ms{0};
@@ -124,6 +530,14 @@ inline WifiPowerState &wifi_power_state() {
   return s;
 }
 
+inline int wifi_ps_mode_now() {
+#ifdef USE_ESP32
+  wifi_ps_type_t t;
+  if (esp_wifi_get_ps(&t) == ESP_OK) return static_cast<int>(t);
+#endif
+  return -1;
+}
+
 #ifdef USE_WIFI
 template <typename WifiT>
 inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int display_power_state) {
@@ -133,7 +547,6 @@ inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int disp
   (void)display_power_state;
   const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #elif defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
-  // Automatic light sleep idles the CPU between DTIM beacons; WIFI_POWER_SAVE_LIGHT keeps HA API rock-solid.
   (void)display_power_state;
   const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #else
@@ -201,9 +614,6 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
                                   bool high_tput_needed, uint32_t now_ms) {
   if (is_hibernating || ota_in_progress) return;
 
-  // 1. BLE Presence Beacon:
-  // Always paused when !wifi_connected (off-site: no HA / BLE proxies reachable, and pausing frees
-  // the BT controller on S3 so automatic light sleep engages cleanly).
 #if LATTER_HAS_BATTERY
   const bool beacon_context_ok = (beacon_mode == 2) ||
                                  (!usb_powered && (beacon_mode == 1 || display_power_state != 2));
@@ -234,14 +644,12 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
     }
   }
 
-  // 2. Smart Off-Site Wi-Fi Scan Backoff (15 s -> 60 s -> 300 s) & Modem Power Save
 #ifdef USE_WIFI
   if (wifi != nullptr && now_ms > 6000U) {
     auto &ws = wifi_power_state();
 #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
     if constexpr (requires { wifi->enable(); wifi->disable(); wifi->is_disabled(); }) {
       if (wifi_connected || usb_powered || display_power_state != 2) {
-        // Connected, docked, or user woke the screen -> ensure Wi-Fi is immediately enabled & reset backoff.
         ws.offsite_since_ms = 0;
         ws.scan_window_start_ms = 0;
         ws.pause_until_ms = 0;
@@ -252,8 +660,6 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
           wifi->enable();
         }
       } else {
-        // Unplugged + screen-off + not connected: allow 30 s initial reconnect window, then pace 12 s scans
-        // with 15 s -> 60 s -> 300 s exponential quiet intervals so off-site carry sips battery.
         if (ws.offsite_since_ms == 0) {
           ws.offsite_since_ms = now_ms | 1U;
           ws.scan_window_start_ms = now_ms | 1U;
@@ -289,6 +695,107 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
   (void)display_power_state;
   (void)high_tput_needed;
 #endif
+}
+
+// ------------------------------------------------------------------------------
+// 7. Power & Boot Flight Recorder Summaries
+// ------------------------------------------------------------------------------
+inline void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
+                                      float batt_pct, float batt_v, bool spk_pa, bool mww_run,
+                                      bool va_act, bool mp_play, bool ble_act, int game_id,
+                                      uint32_t sleep_start_ms) {
+  if (!profiler_enabled()) return;
+  const uint32_t now_m = hal_millis_now();
+  const uint32_t sleep_age_s = (sleep_start_ms > 0 && now_m >= sleep_start_ms)
+                                   ? ((now_m - sleep_start_ms) / 1000U)
+                                   : 0U;
+  LATTER_PROF_LOGI(
+      "[PROF:POWER] trig=%s pwr=%d usb=%d chg=%d batt=%.0f%%(%.2fV) gauge=%d%% spk_pa=%d mww=%d va=%d mp=%d ble=%d game=%d sleep_age=%lus wom=%d/%lu wifi_ps=%d",
+      trigger, pwr_state, (int)usb, (int)chg,
+      std::isnan(batt_pct) ? -1.0f : batt_pct,
+      std::isnan(batt_v) ? 0.0f : batt_v, pmu_telemetry().gauge_raw,
+      (int)spk_pa, (int)mww_run, (int)va_act, (int)mp_play, (int)ble_act, game_id,
+      (unsigned long)sleep_age_s, (int)imu_wom().armed, (unsigned long)imu_wom().events,
+      wifi_ps_mode_now());
+  battery_log_profile(now_m);
+  pm_log_profile();
+  pm_log_wake_profile();
+#ifdef USE_ESP32
+  size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t int_max  = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t ps_free  = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024U;
+  size_t ps_min   = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U;
+  size_t int_min  = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U;
+  size_t dma_free = heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL) / 1024U;
+  LATTER_PROF_LOGI("[PROF:MEM] int_free=%luKB int_max_blk=%luKB int_min=%luKB dma_free=%luKB psram_free=%luKB psram_min=%luKB",
+                   (unsigned long)int_free, (unsigned long)int_max, (unsigned long)int_min, (unsigned long)dma_free,
+                   (unsigned long)ps_free, (unsigned long)ps_min);
+#endif
+}
+
+inline void log_boot_summary() {
+  log_stall_summary();
+  const PmCrumb &crumb = pm_previous_crumb();
+  if (crumb.magic == kPmCrumbMagic && crumb.ring_head < kPmCrumbRing) {
+    const PmCrumbSleep &last_entry = crumb.ring[crumb.ring_head];
+    ESP_LOGW("PROF", "[PROF:BOOT] previous reset at light sleep %s: seq=%lu imu_wom=%lu imu_events=%lu tick0=%+ldus tick1=%+ldus",
+             pm_crash_where(), (unsigned long)crumb.seq, (unsigned long)crumb.imu_armed,
+             (unsigned long)crumb.imu_events, (long)(int32_t)(crumb.tick_us[0] - last_entry.t_us),
+             (long)(int32_t)(crumb.tick_us[1] - last_entry.t_us));
+    for (uint32_t k = 0; k < kPmCrumbRing; k++) {
+      const uint32_t idx = (crumb.ring_head + 1U + k) % kPmCrumbRing;
+      const PmCrumbSleep &e = crumb.ring[idx];
+      const bool last = idx == crumb.ring_head;
+      if (e.t_us == 0 && e.req_us == 0) continue;
+      ESP_LOGW("PROF", "[PROF:BOOT]   %s t=%luus req=%luus slept=%luus cause=0x%04x arm=0x%02x lv=0x%02x",
+               last ? (crumb.phase == 1U ? "in-flight" : "last") : "sleep", (unsigned long)e.t_us,
+               (unsigned long)e.req_us, (unsigned long)e.slept_us, (unsigned)e.cause, (unsigned)e.arm,
+               (unsigned)e.levels);
+    }
+  }
+  const uint32_t up_s = hal_millis_now() / 1000U;
+  const char *rr = last_reset_reason();
+  const int crash = crash_record_present() ? 1 : 0;
+  const int rollback = firmware_rolled_back() ? 1 : 0;
+  const auto &tel = pmu_telemetry();
+  if (!tel.boot_valid) {
+    ESP_LOGI("PROF", "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_SDK_REV,
+             (unsigned long)up_s, rr, crash, rollback);
+    return;
+  }
+  static const char *const kOff[8] = {"pwrkey-long", "software", "pwrkey-low", "vsys-undervolt",
+                                      "vbus-overvolt", "dcdc-undervolt", "dcdc-overvolt", "over-temp"};
+  static const char *const kOn[6] = {"pwrkey", "irq", "vbus-insert", "batt-charge", "batt-insert", "en-mode"};
+  char off_s[96] = {0};
+  char on_s[64] = {0};
+  size_t off_len = 0;
+  for (int b = 0; b < 8; b++) {
+    if (tel.off_src & (1U << b)) {
+      int n = std::snprintf(off_s + off_len, sizeof(off_s) - off_len, "%s%s", off_len ? "," : "", kOff[b]);
+      if (n > 0) off_len = std::min(sizeof(off_s) - 1, off_len + static_cast<size_t>(n));
+    }
+  }
+  size_t on_len = 0;
+  for (int b = 0; b < 6; b++) {
+    if (tel.on_src & (1U << b)) {
+      int n = std::snprintf(on_s + on_len, sizeof(on_s) - on_len, "%s%s", on_len ? "," : "", kOn[b]);
+      if (n > 0) on_len = std::min(sizeof(on_s) - 1, on_len + static_cast<size_t>(n));
+    }
+  }
+  char hib_s[48] = "-";
+  const HibernateRecord &prev = battery_model().prev_hib;
+  if (prev.valid) {
+    if (prev.soc <= 100) {
+      std::snprintf(hib_s, sizeof(hib_s), "%s@%umV/%u%%", hibernate_reason_name(prev.reason), (unsigned)prev.mv,
+                    (unsigned)prev.soc);
+    } else {
+      std::snprintf(hib_s, sizeof(hib_s), "%s@%umV", hibernate_reason_name(prev.reason), (unsigned)prev.mv);
+    }
+  }
+  ESP_LOGI("PROF",
+           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
+           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
+           tel.on_src, on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
 }
 
 }  // namespace latter_ui

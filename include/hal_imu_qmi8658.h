@@ -7,12 +7,14 @@
 #include <algorithm>
 #include <cstdint>
 
+#if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
+#endif
 #ifdef USE_I2C
 #include "esphome/components/i2c/i2c_bus.h"
 #endif
 
-#include "hal_types.h"
+#include "hal_manifest.h"
 #include "latter_prof.h"
 
 namespace latter_ui {
@@ -27,7 +29,14 @@ struct ImuWomState {
   uint8_t threshold_mg = 0;
 };
 
+#ifdef USE_ESP32
 ImuWomState &imu_wom();
+#else
+inline ImuWomState &imu_wom() {
+  static ImuWomState st;
+  return st;
+}
+#endif
 
 inline uint8_t imu_wom_threshold_mg(float software_thresh_g) {
   const int mg = static_cast<int>(software_thresh_g * 1000.0f * 0.5f);
@@ -55,24 +64,6 @@ inline void hal_imu_wom_exit(I2cBusT *const *bus_pp) {
 template <typename I2cBusT>
 inline bool hal_imu_wom_event(I2cBusT *const *bus_pp) {
   return bus_pp != nullptr && hal_imu_wom_event(*bus_pp);
-}
-
-class Qmi8658Imu final : public latter_hal::IImu {
- public:
-  explicit Qmi8658Imu(esphome::i2c::I2CBus *bus = nullptr) : bus_(bus) {}
-  void set_bus(esphome::i2c::I2CBus *bus) { bus_ = bus; }
-
-  bool enter_wom(uint8_t threshold_mg) override { return hal_imu_wom_enter(bus_, threshold_mg); }
-  void exit_wom() override { hal_imu_wom_exit(bus_); }
-  bool poll_wom_event() override { return hal_imu_wom_event(bus_); }
-
- private:
-  esphome::i2c::I2CBus *bus_{nullptr};
-};
-
-inline Qmi8658Imu &qmi8658_imu_driver() {
-  static Qmi8658Imu s_drv;
-  return s_drv;
 }
 #endif  // USE_I2C
 

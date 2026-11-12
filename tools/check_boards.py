@@ -326,8 +326,8 @@ def check_board(
                 err(
                     f"power.charge_ma must be {battery_charge_ma(mah)} mA, the profile include/hal_battery.h derives from {mah} mAh"
                 )
-        if "pmu_axp2101.yaml" not in scan["code"] and power.get("pmu") == "AXP2101":
-            err("AXP2101 battery board does not include modules/pmu_axp2101.yaml")
+        if "pmu_axp2101.yaml" not in strip_comments(scan["text"]) and power.get("pmu") == "AXP2101":
+            err("AXP2101 battery board does not include modules/hal/pmu_axp2101.yaml")
 
     # 9. Device file, unique BLE minor and release wiring.
     dev = device_for_board(board_id)
@@ -352,10 +352,10 @@ def check_board(
             facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY")
         ) == "0" and "reboot_timeout: 0s" not in (dev_text + scan["text"]):
             # Mobile devices must never reboot when Home Assistant is unreachable.
-            core_sys = (REPO / "modules" / "features" / "core_system.yaml").read_text(
+            base_mod = (REPO / "modules" / "base.yaml").read_text(
                 encoding="utf-8"
             )
-            if "${api_reboot_timeout}" not in core_sys:
+            if "${api_reboot_timeout}" not in base_mod:
                 err("mobile board without reboot_timeout: 0s")
     release_yml = (REPO / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"

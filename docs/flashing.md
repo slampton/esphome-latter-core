@@ -75,7 +75,7 @@ If the device was flashed with the web installer and paired with Home Assistant,
 > [!WARNING]
 > **Use `refresh: 0s` on the package.** The firmware's C++ code always comes from `main`, but ESPHome caches `github://` packages for a day. Without `refresh: 0s` a build can combine new C++ code with day-old YAML. The build stops with a "different revisions" error when that happens.
 
-The first build downloads the toolchain and compiles the 3-component Latter C++20 SDK (`latter_hal`, `latter_core`, and `latter_ui`, plus `latter_beacon`), taking several minutes. Later builds reuse PlatformIO's compiled object cache and finish much faster.
+The first build downloads the toolchain and compiles the 3-component Latter C++20 SDK (`latter_core`, `latter_ui`, and `latter_beacon`), taking several minutes. Later builds reuse PlatformIO's compiled object cache and finish much faster.
 
 > [!TIP]
 > **Remote Assistant (`waveshare_p4_35`) battery hibernate vs. USB alarms.** On the Remote Assistant, `K1` (`GPIO49`) is wired to the AXP2101 PMU's `PWRON` pin rather than an ESP32-P4 LP deep-sleep wake pin (`!LATTER_PWR_KEY_DEEP_SLEEP_WAKE`). On battery, hibernate powers the AXP2101 cleanly off—press `K1` once to power back on—and on-battery wake alarms are disabled; scheduled alarms stay active whenever the Remote Assistant is docked on USB power.
@@ -85,7 +85,7 @@ The first build downloads the toolchain and compiles the 3-component Latter C++2
 ## Updates
 
 - **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity backed by HTTPS `http_request` pull-OTA, and each device checks for updates in the background every 6 hours while on USB power and idle. Once paired with Home Assistant, the runtime-provisioned `api.encryption` Noise PSK also secures wireless 1-click **Adopt** in Device Builder.
-- **Device Builder devices:** `core_system.yaml` includes both `ota: - platform: http_request` and `ota: - platform: esphome` (`id: ota_esphome`), and extending `ota_esphome` with `encryption:` locks push-OTA down to `Encryption: required` using `api.encryption.key` alongside HTTPS pull-OTA. With `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
+- **Device Builder devices:** `system_core.yaml` includes both `ota: - platform: http_request` and `ota: - platform: esphome` (`id: ota_esphome`), and extending `ota_esphome` with `encryption:` locks push-OTA down to `Encryption: required` using `api.encryption.key` alongside HTTPS pull-OTA. With `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
 - **Placement:** wireless updates need a good link. Keep docked devices at least 30 cm apart (neighbouring devices detune each other's antennas) and check the **Wi-Fi Signal** sensor: below about -70 dBm an update can slow to several minutes or stall. Update one device at a time.
 
 ## Recovery

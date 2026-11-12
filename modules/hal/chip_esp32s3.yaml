@@ -3,6 +3,10 @@
 # Included by ESP32-S3 battery display board HALs under boards/
 # ==============================================================================
 
+substitutions:
+  pm_profiling: "false"
+  wake_profiling: "n"
+
 esp32:
   board: esp32-s3-devkitc-1
   framework:

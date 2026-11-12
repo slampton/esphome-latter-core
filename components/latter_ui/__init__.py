@@ -1,4 +1,4 @@
-"""Latter UI component: stages Latter on-device GUI C++20 headers and compiled widgets."""
+"""Latter UI component: stages the 8 clean Latter UI C++20 headers and compiles page/widget TUs."""
 
 from __future__ import annotations
 
@@ -11,28 +11,19 @@ import esphome.config_validation as cv
 from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
-DEPENDENCIES = ["latter_hal", "latter_core"]
+DEPENDENCIES = ["latter_core"]
 
 CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
 
 UI_HEADERS: tuple[str, ...] = (
-    "ui_core.h",
+    "ui_types.h",
+    "ui_gfx.h",
     "ui_hit_table.h",
-    "ui_icons.h",
     "ui_layout.h",
-    "ui_touch_router.h",
     "ui_widgets.h",
-    "ui_ambient_va.h",
-    "ui_weather_sky.h",
-    "ui_games.h",
-    "ui_tools.h",
-    "ui_music.h",
-    "ui_clock_home.h",
-    "ui_area_home_hub.h",
-    "ui_remote.h",
-    "ui_system.h",
     "ui_compositor.h",
-    "ui_gesture_engine.h",
+    "ui_touch_engine.h",
+    "ui_pages.h",
 )
 
 

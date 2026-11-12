@@ -338,8 +338,6 @@ def render_board(facts: dict[str, Any]) -> str:
     body = [
         "",
         "substitutions:",
-        f'  screen_w: "{flags.get("LATTER_SCREEN_W", "TODO")}"',
-        f'  screen_h: "{flags.get("LATTER_SCREEN_H", "TODO")}"',
         # Full-duplex I2S bus rate; latter_mic is a resampler microphone down to audio_in_rate
         '  audio_out_rate: "48000"',
         '  audio_out_channels: "1"',
@@ -372,16 +370,23 @@ def render_board(facts: dict[str, Any]) -> str:
             "    scan: false",
             "",
         ]
+    pkg_lines = [
+        "packages:",
+        f"  latter_chip: !include ../modules/hal/{'chip_esp32p4' if is_p4(facts) else 'chip_esp32s3'}.yaml",
+    ]
+    if str(flags.get("LATTER_HAS_IMU")) == "1":
+        pkg_lines.append("  latter_imu: !include ../modules/hal/imu_qmi8658.yaml")
+    if facts["power"].get("pmu") == "AXP2101":
+        pkg_lines.append("  latter_pmu: !include ../modules/hal/pmu_axp2101.yaml")
     body += [
         "# TODO display: id disp1, full-frame PSRAM buffer (docs/porting-hardware.md section 1).",
         "# TODO touchscreen: id touch_screen, interrupt-driven if INT is routed.",
-        "# TODO audio: one i2s_audio bus with full_duplex: true; latter_mic_i2s + resampler latter_mic,",
-        "#      physical_speaker (timeout: 4s), speaker_enable (amplifier) and the codecs at audio_out_rate.",
+        "# TODO audio: include ../modules/hal/audio_es8311_duplex.yaml or audio_es8311_es7210_duplex.yaml",
+        "#      (or define one i2s_audio bus with full_duplex: true, latter_mic_i2s + resampler latter_mic,",
+        "#      physical_speaker, speaker_enable, and codecs at audio_out_rate).",
         "# TODO binary_sensor boot_button (and pwr_key on AXP2101 boards).",
         "",
-        "packages:",
-        f"  latter_pmu: !include ../modules/{'pmu_axp2101' if facts['power'].get('pmu') == 'AXP2101' else 'pmu_none'}.yaml",
-        f"  latter_imu: !include ../modules/{'imu_qmi8658' if str(flags.get('LATTER_HAS_IMU')) == '1' else 'imu_none'}.yaml",
+        *pkg_lines,
         "",
         "script:",
     ]
@@ -417,10 +422,8 @@ def render_device(facts: dict[str, Any]) -> str:
             "      type: git",
             "      url: https://github.com/slampton/esphome-latter-core",
             "      ref: main",
-            "    components: [latter_hal, latter_core, latter_ui, latter_beacon]",
+            "    components: [latter_core, latter_ui, latter_beacon]",
             "    refresh: 0s",
-            "",
-            "latter_core:",
             "",
             "esphome:",
             "  name: ${name}",
@@ -442,12 +445,11 @@ def render_device(facts: dict[str, Any]) -> str:
             "",
             *beacon_lines(facts, minor),
             "",
+            "improv_serial:",
+            "",
             "packages:",
             f"  hal: !include ../boards/{bid}.yaml",
-            "  latter_audio_voice: !include ../modules/audio_voice.yaml",
-            "  latter_power: !include ../modules/power_manager.yaml",
-            "  latter_client: !include ../modules/latter_client.yaml",
-            "  latter_gui: !include ../guis/universal/gui.yaml",
+            "  latter_firmware: !include ../modules/latter_display_firmware.yaml",
             "",
         ]
     )

@@ -1,21 +1,37 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Protocol v3 Domain State & Zero-Allocation Parsers (latter_state.h)
+// Latter Core SDK: Protocol v3 Domain State, Runtime State & Persisted POD Prefs
+// (include/latter_state.h)
 // ==============================================================================
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
+
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#if defined(USE_ESP32) && __has_include("esphome/core/preferences.h")
+#include "esphome/core/preferences.h"
+#define LATTER_HAS_ESP_PREFS 1
+#else
+#define LATTER_HAS_ESP_PREFS 0
+#endif
 
 #include "latter_protocol.h"
+#include "latter_rpc.h"
 
 namespace latter_ui {
 
+// Em-dash placeholder rendered when Home Assistant / Protocol v3 state is not yet populated.
 inline constexpr const char *kUnknownGlyph = "—";
 
 enum class LockState : uint8_t {
@@ -48,6 +64,8 @@ struct WholeHomeState {
   std::string vacuum_state = "";
 };
 
+// Protocol v3 area_context state (unread wire fields covers_open, thermostat_entity,
+// lock_entity, garage_entity, vacuum_entity are parsed on the wire without heap storage).
 struct AreaContextState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -62,13 +80,8 @@ struct AreaContextState {
   float area_temp = NAN;
   float area_humidity = NAN;
   int lights_on = 0;
-  int covers_open = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "";
-  std::string thermostat_entity = "";
-  std::string lock_entity = "";
-  std::string garage_entity = "";
-  std::string vacuum_entity = "";
   std::string camera_snapshot_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
@@ -80,11 +93,13 @@ struct AreaContextState {
   int alert_duration = 10;
   bool alert_chime = true;
   std::string alert_camera_url = "";
-  std::string activity_card = "";     // "1" / "0"; empty = not set -> kDefaultActivityCard
-  std::string activity_sources = "";  // csv of source keys; empty = not set -> kDefaultActivitySources
+  std::string activity_card = "";        // "1" / "0"; empty = not set -> kDefaultActivityCard
+  std::string activity_sources = "";     // csv of source keys; empty = not set -> kDefaultActivitySources
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
 };
 
+// Protocol v3 active_media state (unread wire fields position_updated_at, supported_features,
+// volume_entity are dropped; last_speaker is retained and wired to music_browse).
 struct MediaState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -94,17 +109,14 @@ struct MediaState {
   std::string album = "";
   float duration = 0.0f;
   float position = 0.0f;
-  uint32_t position_updated_at = 0;
   float volume = 0.5f;
   bool has_volume = false;
   std::string media_type = "";
-  int supported_features = 0;
   std::string art_url = "";
   std::string active_speaker = "";
   std::string speaker_name = "";
   std::string last_speaker = "";
   std::string local_speaker = "";
-  std::string volume_entity = "";
   bool is_local = false;
 };
 
@@ -135,12 +147,12 @@ struct WeatherState {
   std::string moon_phase = "";
 };
 
+// Protocol v3 calendar_agenda state (unread next_event wire field is not heap-stored).
 struct CalendarState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string summary = "";
   int count = 0;
-  std::string next_event = "";
 };
 
 struct BrowseSlotItem {
@@ -150,6 +162,494 @@ struct BrowseSlotItem {
   bool active = false;
   int level = -1;
 };
+
+// ==============================================================================
+// Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
+// ==============================================================================
+static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
+static constexpr uint16_t kPersistedPrefsVersion = 1U;
+static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
+
+struct PersistedAlarmPref {
+  uint8_t hour = 7;
+  uint8_t minute = 0;
+  bool enabled = false;
+  uint8_t recurrence = 1;  // 0 = Daily, 1 = Weekdays, 2 = Weekends, 3 = Once
+};
+
+struct PersistedDevicePrefs {
+  uint32_t magic = kPersistedPrefsMagic;
+  uint16_t version = kPersistedPrefsVersion;
+  bool clock_face_digital = false;
+  bool is_24h_format = false;
+  bool power_profile_seeded = false;
+  uint8_t reserved_pad[3] = {0, 0, 0};
+  uint32_t custom_theme_rgb = 0x3898FFU;
+  int32_t high_score_marbles = 0;
+  int32_t high_score_archery = 0;
+  int32_t high_score_bricks = 0;
+  int32_t high_score_chomp = 0;
+  int32_t high_score_2048 = 0;
+  int32_t high_score_memory = 0;
+  PersistedAlarmPref alarms[3] = {
+      {7, 0, false, 1},
+      {8, 30, false, 2},
+      {9, 0, false, 2},
+  };
+};
+
+static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
+              "PersistedDevicePrefs must remain a POD blob for ESPPreferenceObject.");
+
+inline PersistedDevicePrefs &persisted_prefs() {
+  static PersistedDevicePrefs prefs{};
+  return prefs;
+}
+
+#if LATTER_HAS_ESP_PREFS
+inline esphome::ESPPreferenceObject &persisted_prefs_handle() {
+  static esphome::ESPPreferenceObject pref;
+  static bool inited = false;
+  if (!inited && esphome::global_preferences != nullptr) {
+    pref = esphome::global_preferences->make_preference<PersistedDevicePrefs>(kPersistedPrefsHash);
+    inited = true;
+  }
+  return pref;
+}
+#endif
+
+inline bool load_persisted_prefs() {
+#if LATTER_HAS_ESP_PREFS
+  if (esphome::global_preferences == nullptr) return false;
+  PersistedDevicePrefs loaded{};
+  if (persisted_prefs_handle().load(&loaded) &&
+      loaded.magic == kPersistedPrefsMagic &&
+      loaded.version == kPersistedPrefsVersion) {
+    for (auto &a : loaded.alarms) {
+      if (a.hour > 23) a.hour = 7;
+      if (a.minute > 59) a.minute = 0;
+      if (a.recurrence > 3) a.recurrence = 0;
+    }
+    persisted_prefs() = loaded;
+    return true;
+  }
+#endif
+  persisted_prefs() = PersistedDevicePrefs{};
+  return false;
+}
+
+inline bool save_persisted_prefs() {
+  auto &p = persisted_prefs();
+  p.magic = kPersistedPrefsMagic;
+  p.version = kPersistedPrefsVersion;
+#if LATTER_HAS_ESP_PREFS
+  if (esphome::global_preferences == nullptr) return false;
+  return persisted_prefs_handle().save(&p);
+#else
+  return true;
+#endif
+}
+
+// Unified 6-game high-score accessors (1=Marbles, 2=Archery, 3=Bricks, 4=Chomp, 5=2048, 6=Memory Match)
+inline int get_game_high_score(int game_id) {
+  const auto &p = persisted_prefs();
+  switch (game_id) {
+    case 1: return p.high_score_marbles;
+    case 2: return p.high_score_archery;
+    case 3: return p.high_score_bricks;
+    case 4: return p.high_score_chomp;
+    case 5: return p.high_score_2048;
+    case 6: return p.high_score_memory;
+    default: return 0;
+  }
+}
+
+inline bool update_game_high_score(int game_id, int score) {
+  if (score <= 0) return false;
+  auto &p = persisted_prefs();
+  int32_t *slot = nullptr;
+  switch (game_id) {
+    case 1: slot = &p.high_score_marbles; break;
+    case 2: slot = &p.high_score_archery; break;
+    case 3: slot = &p.high_score_bricks; break;
+    case 4: slot = &p.high_score_chomp; break;
+    case 5: slot = &p.high_score_2048; break;
+    case 6: slot = &p.high_score_memory; break;
+    default: return false;
+  }
+  if (score <= *slot) return false;
+  *slot = score;
+  save_persisted_prefs();
+  return true;
+}
+
+// ==============================================================================
+// Typed C++ Volatile Runtime State (replaces ~199 YAML globals)
+// ==============================================================================
+struct AlertBannerState {
+  bool active = false;
+  std::string title = "";
+  std::string message = "";
+  std::string priority = "normal";
+  std::string camera_url = "";
+  std::string loaded_camera_url = "";
+  uint32_t start_ms = 0;
+  uint32_t duration_ms = 10000U;
+  int last_seen_alert_id = -1;
+};
+
+struct MultiTimerSlot {
+  std::string id = "";
+  std::string name = "";
+  int duration_sec = 300;
+  int remaining_sec = 300;
+  uint32_t target_ms = 0;
+  bool running = false;
+  bool paused = false;
+};
+
+struct TimerRuntimeState {
+  MultiTimerSlot slots[3] = {
+      {"", "", 300, 300, 0, false, false},
+      {"", "", 600, 600, 0, false, false},
+      {"", "", 900, 900, 0, false, false},
+  };
+  int view_slot = 0;  // 0 = 3-Timer Landing Page, 1..3 = Single-Timer Detail/Editor
+  int duration_sec = 300;
+  int remaining_sec = 300;
+  uint32_t target_ms = 0;
+  bool running = false;
+  bool paused = false;
+  bool ringing = false;
+  std::string va_timer_name = "";
+};
+
+struct StopwatchRuntimeState {
+  bool running = false;
+  uint32_t start_time_ms = 0;
+  uint32_t elapsed_ms = 0;
+  uint32_t lap_ms = 0;
+};
+
+struct AlarmRuntimeState {
+  int edit_idx = 0;
+  bool ringing = false;
+  int ringing_idx = 0;
+  uint32_t snooze_until = 0;
+  uint32_t last_fired_epoch_min = 0;
+  bool find_my_active = false;
+  uint32_t find_my_start_ms = 0;
+};
+
+struct VoiceSessionState {
+  bool active = false;
+  bool vad_active = false;
+  bool tts_received = false;
+  bool resume_music_after = false;
+  bool was_cancelled = false;
+  bool intercom_turn = false;
+  int return_page = 0;
+  std::string status_text = "";
+  std::string last_detected_wake_word = "";
+};
+
+struct NavRuntimeState {
+  int gui_page = 1;
+  int home_subpage = 0;
+  int home_activity_idx = 0;
+  int sky_weather_subpage = 0;
+  int area_subpage = 0;
+  int remote_subpage = 0;
+  int tools_subpage = 0;
+  int tools_menu_page = 0;
+  int display_menu_page = 1;
+  int system_dashboard_page = 1;
+  int system_menu_mode = 0;
+  int sleep_menu_page = 1;
+  int audio_menu_parent_page = 4;
+  bool menu_scroll_active = false;
+  int menu_scroll_dir = 1;
+  int menu_scroll_target_page = 1;
+  int display_power_state = 0;  // 0 = ACTIVE, 1 = SCREENSAVER, 2 = SCREEN_OFF / STANDBY
+  uint32_t sleep_start_time = 0;
+  bool is_hibernating = false;
+  int hibernate_countdown_val = 0;
+  bool hud_wake_finger_released = true;
+  bool ota_in_progress = false;
+  int ota_progress_pct = 0;
+  int update_check_state = 0;   // 0 = Idle, 1 = Checking..., 2 = Checked
+  uint32_t update_check_timer = 0;
+  int game_carousel_idx = 0;
+  int active_game = 0;
+  float marble_touch_x = -1.0f;
+  float marble_touch_y = -1.0f;
+  bool game_btn_pressed = false;
+};
+
+struct MusicRuntimeState {
+  int overlay_mode = 0;
+  bool direct_nav = false;
+  bool hud_active = false;
+  uint32_t hud_timer = 0;
+  int category_page = 1;
+  std::string selected_category_mode = "speakers";
+  std::string selected_category_title = "SPEAKERS";
+  std::string drilldown_artist_name = "";
+  std::string drilldown_album_id = "";
+  std::string drilldown_parent_mode = "";
+  int drilldown_artist_page = 1;
+  int drilldown_album_page = 1;
+  std::string active_playback_media_type = "music";
+  std::string active_speaker_entity = "";
+  std::string active_speaker_name = "";
+  std::string target_speaker_id = "";
+  std::string target_speaker_name = "";
+  std::string selected_slot_name = "";
+  std::string selected_slot_id = "";
+  std::string selected_slot_type = "";
+  std::string action_feedback = "";
+  uint32_t feedback_timer = 0;
+  float pos_base = 0.0f;
+  uint32_t pos_sync_time = 0;
+  int skip_burst_count = 0;
+  uint32_t skip_last_tap_ms = 0;
+  std::string loaded_art_url = "";
+  std::string loaded_wallpaper_url = "";
+};
+
+struct AreaRuntimeState {
+  std::string browse_mode = "entities";
+  std::string domain_filter = "all";
+  std::string active_area_id = "";
+  std::string active_area_name = "Area Control";
+  std::string alarm_entity = "";
+  std::string alarm_state = "disarmed";
+  std::string alarm_service = "alarm_control_panel.alarm_disarm";
+  std::string target_entity_id = "";
+  std::string target_action = "toggle";
+  int target_level = -1;
+  std::string target_code = "";
+  std::string action_feedback = "";
+  uint32_t feedback_timer = 0;
+};
+
+struct RemoteRuntimeState {
+  int active_slot = 0;
+  std::string action_feedback = "";
+  uint32_t feedback_timer = 0;
+};
+
+struct CalendarUiState {
+  std::string quick_summary = "Reminder";
+  int quick_in_minutes = 30;
+  int quick_duration_minutes = 30;
+};
+
+struct IntercomRuntimeState {
+  std::string broadcast_message = "Dinner is ready";
+  std::string broadcast_feedback = "";
+  uint32_t broadcast_feedback_ms = 0;
+  std::string cam_action = "listen_start";
+  std::string cam_message = "Please leave it at the door.";
+  std::string cam_noise_reduction = "strong";
+  std::string cam_code = "";
+  uint32_t cam_status_ms = 0;
+};
+
+struct DeviceRuntimeState {
+  static constexpr size_t kSlotChannelCount = static_cast<size_t>(latter_rpc::SlotChannel::COUNT);
+  static constexpr size_t kSlotsPerPage = 5;
+
+  BrowseSlotItem slots[kSlotChannelCount][kSlotsPerPage]{};
+  int slot_page[kSlotChannelCount] = {1, 1, 1, 1};
+  int slot_total_pages[kSlotChannelCount] = {1, 1, 1, 1};
+  uint32_t last_music_page_req_ms = 0;
+
+  AlertBannerState alert{};
+  TimerRuntimeState timers{};
+  StopwatchRuntimeState stopwatch{};
+  AlarmRuntimeState alarms{};
+  VoiceSessionState voice{};
+  NavRuntimeState nav{};
+  MusicRuntimeState music{};
+  AreaRuntimeState area{};
+  RemoteRuntimeState remote{};
+  CalendarUiState cal{};
+  IntercomRuntimeState intercom{};
+
+  // Live hardware telemetry & optional peripheral hooks (populated by modules/hal/pmu_axp2101.yaml and
+  // modules/hal/imu_qmi8658.yaml when included; safe mains-powered / no-IMU defaults otherwise so
+  // pmu_none.yaml & imu_none.yaml are retired without ESPHome Python lambda id(...) lookup errors).
+  bool hw_usb_connected = true;
+  bool hw_batt_charging = false;
+  float hw_batt_level = NAN;
+  float hw_batt_voltage = NAN;
+  float hw_accel_x = 0.0f;
+  float hw_accel_y = 0.0f;
+  float hw_accel_z = 1.0f;
+  float hw_imu_roll = 0.0f;
+  float hw_imu_pitch = 0.0f;
+  float hw_imu_temp = 30.0f;
+  float hw_motion_mag = 0.0f;
+  void (*hw_boot_battery_check)() = nullptr;
+  void (*hw_init_pmu)() = nullptr;
+  void (*hw_poll_pmu_1s)() = nullptr;
+  void (*hw_wait_pwr_key_release)() = nullptr;
+  bool (*hw_pwr_key_pressed)() = nullptr;
+  void (*hw_update_batt_level)() = nullptr;
+  void (*hw_set_imu_power_mode)(int ctrl7_val) = nullptr;
+
+  // Display/session lifecycle hooks bound by modules/system_core.yaml on top of modules/base.yaml
+  void (*on_ha_client_connected)(const std::string &client_info, const std::string &client_address) = nullptr;
+  void (*on_ha_client_disconnected)(const std::string &client_info) = nullptr;
+  void (*on_v3_domain_pushed)(std::string_view domain, const std::string &prev_dock) = nullptr;
+
+  DeviceRuntimeState() {
+    for (size_t i = 0; i < kSlotsPerPage; ++i) {
+      slots[static_cast<size_t>(latter_rpc::SlotChannel::MUSIC)][i].type = "player";
+    }
+    slots[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)][0].name = "Tap Header for Areas";
+    slots[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)][0].type = "text";
+  }
+
+  BrowseSlotItem *slots_for(latter_rpc::SlotChannel ch) {
+    return slots[static_cast<size_t>(ch)];
+  }
+  const BrowseSlotItem *slots_for(latter_rpc::SlotChannel ch) const {
+    return slots[static_cast<size_t>(ch)];
+  }
+  BrowseSlotItem *music_slots() { return slots_for(latter_rpc::SlotChannel::MUSIC); }
+  BrowseSlotItem *area_list_slots() { return slots_for(latter_rpc::SlotChannel::AREA_LIST); }
+  BrowseSlotItem *area_entity_slots() { return slots_for(latter_rpc::SlotChannel::AREA_ENTITIES); }
+  BrowseSlotItem *calendar_slots() { return slots_for(latter_rpc::SlotChannel::CALENDAR); }
+
+  int &slot_page_for(latter_rpc::SlotChannel ch) { return slot_page[static_cast<size_t>(ch)]; }
+  int &slot_total_pages_for(latter_rpc::SlotChannel ch) { return slot_total_pages[static_cast<size_t>(ch)]; }
+};
+
+inline DeviceRuntimeState &runtime_state() {
+  static DeviceRuntimeState st;
+  return st;
+}
+
+inline MultiTimerSlot *timer_slots() {
+  return runtime_state().timers.slots;
+}
+
+inline std::string format_timer_slot_label(int slot_idx) {
+  if (slot_idx < 0 || slot_idx >= 3) return "Timer";
+  const auto &s = timer_slots()[slot_idx];
+  if (!s.name.empty()) return s.name;
+  char buf[24];
+  int mins = s.duration_sec / 60;
+  int secs = s.duration_sec % 60;
+  if (secs == 0) std::snprintf(buf, sizeof(buf), "%d Min Timer", mins);
+  else std::snprintf(buf, sizeof(buf), "%dm %ds Timer", mins, secs);
+  return std::string(buf);
+}
+
+inline std::string format_timer_header_upper(int slot_idx) {
+  if (slot_idx < 0 || slot_idx >= 3) return "TIMER";
+  const auto &s = timer_slots()[slot_idx];
+  if (!s.name.empty()) {
+    std::string up = s.name;
+    for (char &c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return up;
+  }
+  char buf[20];
+  std::snprintf(buf, sizeof(buf), "TIMER %d", slot_idx + 1);
+  return std::string(buf);
+}
+
+inline void sync_multi_timer_globals(bool &out_any_running, bool &out_any_paused,
+                                     int &out_min_rem_sec, int &out_active_dur_sec,
+                                     uint32_t &out_min_target_ms, int view_slot = -1) {
+  auto *slots = timer_slots();
+  const int eff_view = (view_slot >= 0) ? view_slot : runtime_state().timers.view_slot;
+  bool any_run = false;
+  bool any_pau = false;
+  int min_rem = 0;
+  int act_dur = slots[0].duration_sec;
+  uint32_t min_t = 0;
+
+  for (int i = 0; i < 3; i++) {
+    if (slots[i].running) {
+      if (!any_run || slots[i].remaining_sec < min_rem) {
+        min_rem = slots[i].remaining_sec;
+        act_dur = slots[i].duration_sec;
+        min_t   = slots[i].target_ms;
+      }
+      any_run = true;
+    } else if (slots[i].paused && !any_run) {
+      if (!any_pau) {
+        min_rem = slots[i].remaining_sec;
+        act_dur = slots[i].duration_sec;
+      }
+      any_pau = true;
+    }
+  }
+  if (!any_run && !any_pau) {
+    int v_idx = (eff_view >= 1 && eff_view <= 3) ? (eff_view - 1) : 0;
+    min_rem = slots[v_idx].duration_sec;
+    act_dur = slots[v_idx].duration_sec;
+  }
+  out_any_running    = any_run;
+  out_any_paused     = any_pau;
+  out_min_rem_sec    = min_rem;
+  out_active_dur_sec = act_dur;
+  out_min_target_ms  = min_t;
+}
+
+inline void sync_multi_timer_state(int view_slot = -1, TimerRuntimeState &ts = runtime_state().timers) {
+  sync_multi_timer_globals(ts.running, ts.paused, ts.remaining_sec, ts.duration_sec, ts.target_ms,
+                           view_slot >= 0 ? view_slot : ts.view_slot);
+}
+
+inline int upsert_voice_timer_slot(const std::string &id_str, const std::string &name_str,
+                                   int total_sec, int left_sec, bool is_act, uint32_t now_ms) {
+  auto *slots = timer_slots();
+  int target = -1;
+
+  for (int i = 0; i < 3; i++) {
+    if (!id_str.empty() && slots[i].id == id_str) { target = i; break; }
+    if (!name_str.empty() && !slots[i].name.empty()) {
+      std::string a = slots[i].name, b = name_str;
+      for (char &c : a) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      for (char &c : b) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      if (a == b) { target = i; break; }
+    }
+  }
+
+  if (target < 0) {
+    if (!slots[0].running && !slots[0].paused) {
+      if (!slots[1].running && !slots[1].paused && !slots[2].running && !slots[2].paused) {
+        slots[2] = slots[1];
+        slots[1] = slots[0];
+      }
+      target = 0;
+    } else if (!slots[1].running && !slots[1].paused) {
+      if (!slots[2].running && !slots[2].paused) {
+        slots[2] = slots[1];
+      }
+      target = 1;
+    } else {
+      target = 2;
+    }
+  }
+
+  if (total_sec <= 0) total_sec = std::max(60, left_sec);
+  bool same_id = (!id_str.empty() && slots[target].id == id_str);
+  slots[target].id = id_str;
+  if (!name_str.empty() || !same_id) {
+    slots[target].name = name_str;
+  }
+  slots[target].duration_sec  = total_sec;
+  slots[target].remaining_sec = left_sec;
+  slots[target].target_ms     = now_ms + static_cast<uint32_t>(left_sec) * 1000U;
+  slots[target].running       = is_act;
+  slots[target].paused        = !is_act;
+  return target;
+}
 
 inline LinkState &link_state() {
   static LinkState st;
@@ -280,6 +780,7 @@ inline void reset_all_v3_rev_guards() {
   area_ctx_state().epoch = 0;
   area_ctx_state().rev = 0;
   area_ctx_state().alert_id = -1;
+  runtime_state().alert.last_seen_alert_id = -1;
   media_state().epoch = 0;
   media_state().rev = 0;
   remote_state().epoch = 0;
@@ -336,10 +837,8 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.area_temp         = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_TEMP)], NAN);
   st.area_humidity     = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_HUMIDITY)], NAN);
   st.lights_on         = v3_parse_int(f[static_cast<size_t>(AreaCtxField::LIGHTS_ON)], 0);
-  st.covers_open       = v3_parse_int(f[static_cast<size_t>(AreaCtxField::COVERS_OPEN)], 0);
   st.alarm_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_ENTITY)]);
   st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
-  st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
 
   wh.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
   float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
@@ -347,11 +846,8 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
                                ? static_cast<int>(std::round(th_temp))
                                : -1;  // no setpoint: unknown
   wh.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
-  st.lock_entity          = std::string(f[static_cast<size_t>(AreaCtxField::LOCK_ENTITY)]);
   wh.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);
-  st.garage_entity        = std::string(f[static_cast<size_t>(AreaCtxField::GARAGE_ENTITY)]);
   wh.garage_state         = parse_garage_state_str(f[static_cast<size_t>(AreaCtxField::GARAGE_STATE)]);
-  st.vacuum_entity        = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
   wh.vacuum_state         = normalize_vacuum_state_str(f[static_cast<size_t>(AreaCtxField::VACUUM_STATE)]);
 
   st.camera_snapshot_url      = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_SNAPSHOT_URL)]);
@@ -371,10 +867,6 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   return true;
 }
 
-// Home Activity Card sources enabled by the Device's Latter setting (area_context.activity_card /
-// activity_sources). One bit per Home activity kind: 1 << 1 timers, 1 << 2 stopwatch,
-// 1 << 3 music_queue, 1 << 4 alarms, 1 << 5 calendar. 0 = the card is off. An empty field (not set,
-// or no payload yet) takes the spec default; unknown keys are ignored.
 static constexpr uint8_t kActivitySourceAll = 0x3E;
 
 inline uint8_t activity_source_mask(const AreaContextState &st = area_ctx_state()) {
@@ -410,29 +902,26 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("active_media", payload, kCount);
 
-  st.state               = std::string(f[static_cast<size_t>(MediaField::STATE)]);
-  st.title               = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
-  st.artist              = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
-  st.album               = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
-  st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
-  st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
-  st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
-  float raw_vol          = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
+  st.state          = std::string(f[static_cast<size_t>(MediaField::STATE)]);
+  st.title          = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
+  st.artist         = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
+  st.album          = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
+  st.duration       = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
+  st.position       = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
+  float raw_vol     = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
   if (!std::isnan(raw_vol)) {
     st.volume     = std::max(0.0f, std::min(1.0f, raw_vol * 0.01f));
     st.has_volume = true;
   } else {
     st.has_volume = false;
   }
-  st.media_type          = std::string(f[static_cast<size_t>(MediaField::MEDIA_TYPE)]);
-  st.supported_features  = v3_parse_int(f[static_cast<size_t>(MediaField::SUPPORTED_FEATURES)], 0);
-  st.art_url             = std::string(f[static_cast<size_t>(MediaField::ART_URL)]);
-  st.active_speaker      = std::string(f[static_cast<size_t>(MediaField::ACTIVE_SPEAKER)]);
-  st.speaker_name        = std::string(f[static_cast<size_t>(MediaField::SPEAKER_NAME)]);
-  st.last_speaker        = std::string(f[static_cast<size_t>(MediaField::LAST_SPEAKER)]);
-  st.local_speaker       = std::string(f[static_cast<size_t>(MediaField::LOCAL_SPEAKER)]);
-  st.volume_entity       = std::string(f[static_cast<size_t>(MediaField::VOLUME_ENTITY)]);
-  st.is_local            = v3_parse_bool(f[static_cast<size_t>(MediaField::IS_LOCAL)]);
+  st.media_type     = std::string(f[static_cast<size_t>(MediaField::MEDIA_TYPE)]);
+  st.art_url        = std::string(f[static_cast<size_t>(MediaField::ART_URL)]);
+  st.active_speaker = std::string(f[static_cast<size_t>(MediaField::ACTIVE_SPEAKER)]);
+  st.speaker_name   = std::string(f[static_cast<size_t>(MediaField::SPEAKER_NAME)]);
+  st.last_speaker   = std::string(f[static_cast<size_t>(MediaField::LAST_SPEAKER)]);
+  st.local_speaker  = std::string(f[static_cast<size_t>(MediaField::LOCAL_SPEAKER)]);
+  st.is_local       = v3_parse_bool(f[static_cast<size_t>(MediaField::IS_LOCAL)]);
   return true;
 }
 
@@ -493,17 +982,11 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("calendar_agenda", payload, kCount);
 
-  st.summary    = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
-  st.count      = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
-  st.next_event = std::string(f[static_cast<size_t>(CalendarField::NEXT_EVENT)]);
+  st.summary = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
+  st.count   = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
   return true;
 }
 
-// Calendar agenda summary (Protocol v3 calendar_agenda field 3): up to 5 records joined by
-// kProtocolRecordSep, each "time|title|location|all_day". ha-latter replaces '|' and every control
-// character in each subfield, so a record always splits into exactly 4 parts. time is a preformatted
-// local label ("TODAY 14:30", "TOM ALL DAY", "NOV 20 08:05"); all_day is "1" or "0"; location may be
-// empty. The views point into summary, which must outlive them. Empty summary = no events.
 struct CalendarRecord {
   std::string_view time;
   std::string_view title;
@@ -556,10 +1039,70 @@ inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem
   return valid_cnt;
 }
 
-// Overload for ESPHome 2026.10+ api action string parameters (esphome::StringRef)
 template <typename StrT, typename = decltype(std::declval<const StrT &>().c_str())>
 inline size_t parse_v3_slots_payload(const StrT &slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
   return parse_v3_slots_payload(std::string_view(slots_blob.c_str(), slots_blob.size()), out_slots, max_slots);
+}
+
+// Shared slot-response applier for both set_browse_slots and set_area_slots.
+inline bool apply_slots_action(int contract, int req_id, std::string_view mode,
+                               int page, int total_pages, std::string_view slots_blob,
+                               uint32_t now_ms = 0, bool force_area_entities = false,
+                               DeviceRuntimeState &rt = runtime_state()) {
+  (void)contract;
+  const latter_rpc::SlotChannel ch =
+      force_area_entities ? latter_rpc::SlotChannel::AREA_ENTITIES
+                          : latter_rpc::classify_browse_mode(mode);
+  if (!latter_rpc::accept_req_id(ch, req_id)) return false;
+
+  const size_t max_items = (ch == latter_rpc::SlotChannel::AREA_ENTITIES) ? 3U : DeviceRuntimeState::kSlotsPerPage;
+  parse_v3_slots_payload(slots_blob, rt.slots_for(ch), max_items);
+
+  if (ch == latter_rpc::SlotChannel::MUSIC) {
+    if (now_ms == 0 || (now_ms - rt.last_music_page_req_ms) > 350U || page == rt.slot_page_for(ch)) {
+      rt.slot_page_for(ch) = page;
+    }
+  } else {
+    rt.slot_page_for(ch) = page;
+  }
+  rt.slot_total_pages_for(ch) = total_pages;
+
+  if (ch == latter_rpc::SlotChannel::AREA_ENTITIES) {
+    rt.area.browse_mode = force_area_entities ? std::string(mode) : std::string("entities");
+  }
+  return true;
+}
+
+// Shared notification/alert banner populator for area_context push and show_notification action.
+inline bool trigger_alert_banner(std::string_view title, std::string_view message,
+                                 std::string_view priority, int duration_s,
+                                 std::string_view camera_url, int alert_id,
+                                 uint32_t now_ms, bool seed_only_if_unseen = false,
+                                 AlertBannerState &ab = runtime_state().alert) {
+  if (seed_only_if_unseen) {
+    if (alert_id < 0) return false;
+    if (ab.last_seen_alert_id < 0) {
+      ab.last_seen_alert_id = alert_id;
+      return false;
+    }
+    if (alert_id <= ab.last_seen_alert_id) return false;
+    ab.last_seen_alert_id = alert_id;
+  } else {
+    if (alert_id > 0 && alert_id <= ab.last_seen_alert_id) return false;
+    if (alert_id > 0) ab.last_seen_alert_id = alert_id;
+  }
+
+  ab.title = title.empty() ? std::string("Notification") : std::string(title);
+  ab.message = std::string(message);
+  ab.priority = priority.empty() ? std::string("normal") : std::string(priority);
+  int dur = (duration_s > 0) ? duration_s : 10;
+  if (dur < 3) dur = 3;
+  if (dur > 60) dur = 60;
+  ab.duration_ms = static_cast<uint32_t>(dur) * 1000U;
+  ab.start_ms = now_ms;
+  ab.camera_url = std::string(camera_url);
+  ab.active = true;
+  return true;
 }
 
 }  // namespace latter_ui

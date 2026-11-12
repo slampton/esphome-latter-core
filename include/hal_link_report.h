@@ -7,12 +7,6 @@
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #endif
-#if __has_include("esphome/core/hal.h")
-#include "esphome/core/hal.h"
-#endif
-#if __has_include("esphome/core/log.h")
-#include "esphome/core/log.h"
-#endif
 
 #include <atomic>
 #include <cstdint>
@@ -29,6 +23,7 @@
 
 #include "hal_battery.h"
 #include "hal_power_pm.h"
+#include "latter_prof.h"
 
 namespace latter_ui {
 
@@ -55,8 +50,8 @@ inline LinkReport &link_report() {
 
 #ifdef USE_ESP32
 inline void link_report_on_wifi_event(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
-  (void) arg;
-  (void) base;
+  (void)arg;
+  (void)base;
   LinkReport &r = link_report();
   if (event_id == WIFI_EVENT_STA_BEACON_TIMEOUT) {
     r.beacon_timeouts.fetch_add(1U, std::memory_order_relaxed);
@@ -89,7 +84,7 @@ inline void link_report_init() {
 
 inline void link_report_sample() {
   PmSleepStats pm;
-  (void) pm_sleep_stats(pm, esphome::millis());
+  (void)pm_sleep_stats(pm, hal_millis_now());
 #ifdef USE_WIFI
   auto *wifi = esphome::wifi::global_wifi_component;
   if (wifi == nullptr || !wifi->is_connected()) return;
@@ -124,14 +119,9 @@ inline WeakLinkGate &weak_link_gate() {
   return g;
 }
 
-inline bool weak_link_update(uint32_t now_ms) {
-  WeakLinkGate &g = weak_link_gate();
-#ifdef USE_WIFI
+inline bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g = weak_link_gate()) {
   if (g.last_sample_ms != 0 && now_ms - g.last_sample_ms < kWeakLinkSampleMs) return g.weak;
   g.last_sample_ms = now_ms | 1U;
-  auto *wifi = esphome::wifi::global_wifi_component;
-  if (wifi == nullptr || !wifi->is_connected()) return g.weak;
-  const int32_t rssi = wifi->wifi_rssi();
   if (rssi <= -127 || rssi >= 0) return g.weak;
   const float r = static_cast<float>(rssi);
   g.ema = g.have ? g.ema + kWeakLinkEmaAlpha * (r - g.ema) : r;
@@ -155,10 +145,19 @@ inline bool weak_link_update(uint32_t now_ms) {
   } else {
     g.above_since_ms = 0;
   }
-#else
-  (void) now_ms;
-#endif
   return g.weak;
+}
+
+inline bool weak_link_update(uint32_t now_ms) {
+  WeakLinkGate &g = weak_link_gate();
+#ifdef USE_WIFI
+  auto *wifi = esphome::wifi::global_wifi_component;
+  if (wifi == nullptr || !wifi->is_connected()) return g.weak;
+  return weak_link_feed_rssi(wifi->wifi_rssi(), now_ms, g);
+#else
+  (void)now_ms;
+  return g.weak;
+#endif
 }
 
 inline uint32_t weak_link_ms(uint32_t now_ms) {
@@ -197,25 +196,25 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   const uint32_t gap_ms = (down_ms > r.ha_gap_max_ms) ? down_ms : r.ha_gap_max_ms;
   char rssi[32];
   if (r.rssi_samples > 0) {
-    snprintf(rssi, sizeof(rssi), "%ld/%ld", static_cast<long>(r.rssi_sum / static_cast<int32_t>(r.rssi_samples)),
-             static_cast<long>(r.rssi_min));
+    std::snprintf(rssi, sizeof(rssi), "%ld/%ld", static_cast<long>(r.rssi_sum / static_cast<int32_t>(r.rssi_samples)),
+                  static_cast<long>(r.rssi_min));
   } else {
-    snprintf(rssi, sizeof(rssi), "na");
+    std::snprintf(rssi, sizeof(rssi), "na");
   }
   char sleep[160] = "";
   PmSleepStats pm;
   if (pm_sleep_stats(pm, now_ms)) {
     const uint32_t slp = link_report_permille(pm.slept_us, static_cast<uint64_t>(now_ms) * 1000ULL);
     const uint32_t awk = link_report_permille(pm.awake_ms, now_ms);
-    snprintf(sleep, sizeof(sleep), " ls=%lu slp=%lu.%lu awk=%lu.%lu wk=%lu/%lu/%lu/%lu gp=%lu/%lu/%lu/%lu/%lu",
-             static_cast<unsigned long>(pm.sleeps), static_cast<unsigned long>(slp / 10U),
-             static_cast<unsigned long>(slp % 10U), static_cast<unsigned long>(awk / 10U),
-             static_cast<unsigned long>(awk % 10U), static_cast<unsigned long>(pm.timer_wakes),
-             static_cast<unsigned long>(pm.gpio_wakes), static_cast<unsigned long>(pm.wifi_wakes),
-             static_cast<unsigned long>(pm.other_wakes), static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_PWR_KEY]),
-             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_ACTION_BTN]),
-             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_TOUCH]),
-             static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_IMU]), static_cast<unsigned long>(pm.gpio_unattributed));
+    std::snprintf(sleep, sizeof(sleep), " ls=%lu slp=%lu.%lu awk=%lu.%lu wk=%lu/%lu/%lu/%lu gp=%lu/%lu/%lu/%lu/%lu",
+                  static_cast<unsigned long>(pm.sleeps), static_cast<unsigned long>(slp / 10U),
+                  static_cast<unsigned long>(slp % 10U), static_cast<unsigned long>(awk / 10U),
+                  static_cast<unsigned long>(awk % 10U), static_cast<unsigned long>(pm.timer_wakes),
+                  static_cast<unsigned long>(pm.gpio_wakes), static_cast<unsigned long>(pm.wifi_wakes),
+                  static_cast<unsigned long>(pm.other_wakes), static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_PWR_KEY]),
+                  static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_ACTION_BTN]),
+                  static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_TOUCH]),
+                  static_cast<unsigned long>(pm.pin_wakes[PM_WAKE_IMU]), static_cast<unsigned long>(pm.gpio_unattributed));
   }
   const uint32_t wlk = link_report_permille(weak_link_ms(now_ms), now_ms);
   const char *where = pm_crash_where();
@@ -223,19 +222,19 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
   battery_report_fragment(batt, sizeof(batt), now_ms);
   const FlashWriteStats &fw = g_flash_write_stats;
   char line[640];
-  snprintf(line, sizeof(line),
-           "up=%lu rst=%.32s%s%.32s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu nvs=%lu/%lu/%lu%s",
-           static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
-           where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
-           static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
-           static_cast<unsigned long>(r.last_reason.load(std::memory_order_relaxed)), rssi,
-           static_cast<unsigned long>(r.rssi_samples), static_cast<unsigned long>(wlk / 10U),
-           static_cast<unsigned long>(wlk % 10U), sleep, static_cast<unsigned long>(r.api_connects),
-           static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
-           static_cast<unsigned long>(down_ms / 1000U),
-           static_cast<unsigned long>(fw.nvs_writes.load(std::memory_order_relaxed)),
-           static_cast<unsigned long>(fw.erases.load(std::memory_order_relaxed)),
-           static_cast<unsigned long>((fw.nvs_max_us.load(std::memory_order_relaxed) + 999U) / 1000U), batt);
+  std::snprintf(line, sizeof(line),
+                "up=%lu rst=%.32s%s%.32s bto=%lu disc=%lu rsn=%lu rssi=%s n=%lu wlk=%lu.%lu%s api=%lu ha=%lu gap=%lu down=%lu nvs=%lu/%lu/%lu%s",
+                static_cast<unsigned long>(now_ms / 1000U), reset_reason != nullptr ? reset_reason : "", where[0] ? "@" : "",
+                where, static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(r.last_reason.load(std::memory_order_relaxed)), rssi,
+                static_cast<unsigned long>(r.rssi_samples), static_cast<unsigned long>(wlk / 10U),
+                static_cast<unsigned long>(wlk % 10U), sleep, static_cast<unsigned long>(r.api_connects),
+                static_cast<unsigned long>(r.ha_connects), static_cast<unsigned long>(gap_ms / 1000U),
+                static_cast<unsigned long>(down_ms / 1000U),
+                static_cast<unsigned long>(fw.nvs_writes.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(fw.erases.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>((fw.nvs_max_us.load(std::memory_order_relaxed) + 999U) / 1000U), batt);
   return std::string(line);
 }
 

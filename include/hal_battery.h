@@ -1,12 +1,12 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core Battery Model: Charge Profile, State of Charge, Low Warning & Cutoff (hal_battery.h)
+// Latter Core Battery Model & AXP2101 PMU Driver Declarations (hal_battery.h)
 // ==============================================================================
 // One canonical battery path for every battery board. The only board trait is LATTER_BATTERY_MAH, the
 // fitted cell's rated capacity (boards/facts power.battery_mah); everything below derives from it.
 //
-// Charge profile (AXP2101 REG61-64, applied by hal_init_axp2101 in hal_pmu_axp2101.h), for a 3.7 V LiPo:
+// Charge profile (AXP2101 REG61-64, applied by hal_init_axp2101), for a 3.7 V LiPo:
 //   constant current  <= 0.5C floored to the AXP2101 step (200 mA for 400/500 mAh, 500 mA for 1000 mAh),
 //                     capped at 500 mA and folded back to 100 mA above 65 C AXP2101 die temperature
 //   precharge         0.1C below the precharge threshold (floored to 25 mA steps, 25..200 mA)
@@ -25,15 +25,18 @@
 #ifdef USE_ESP32
 #include <sdkconfig.h>
 #endif
+#ifdef USE_I2C
+#include "esphome/components/i2c/i2c_bus.h"
+#endif
 
-#include "hal_types.h"
+#include "hal_manifest.h"
 #include "latter_prof.h"
 
 #ifndef LATTER_BATTERY_MAH
 #define LATTER_BATTERY_MAH 0
 #endif
 
-#if defined(LATTER_HAS_BATTERY) && LATTER_HAS_BATTERY
+#if defined(USE_ESP32) && defined(LATTER_HAS_BATTERY) && LATTER_HAS_BATTERY
 static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 5000,
               "Battery boards declare LATTER_BATTERY_MAH (the fitted cell, boards/facts power.battery_mah)");
 #endif
@@ -51,15 +54,25 @@ constexpr int batt_clamp_int(int v, int lo, int hi) { return v < lo ? lo : (v > 
 constexpr int axp2101_icc_floor_ma(int ma) {
   return ma < 25 ? 25 : (ma <= 200 ? (ma / 25) * 25 : (ma >= 1000 ? 1000 : 200 + ((ma - 200) / 100) * 100));
 }
-constexpr int axp2101_icc_ceil_ma(int ma) {
-  return ma <= 25 ? 25 : (ma <= 200 ? ((ma + 24) / 25) * 25 : (ma >= 1000 ? 1000 : 200 + ((ma - 200 + 99) / 100) * 100));
-}
 constexpr uint8_t axp2101_icc_code(int ma) {
   return static_cast<uint8_t>(ma <= 200 ? ma / 25 : 8 + (ma - 200) / 100);
 }
 
 constexpr int kChargeCapMa = 500;
 constexpr int kChargeThermalFoldbackMa = 100;
+constexpr float kAxpThermalFoldbackEnterC = 65.0f;
+constexpr float kAxpThermalFoldbackClearC = 58.0f;
+
+constexpr int charge_ma_for_capacity(int capacity_mah) {
+  const int std_ma = axp2101_icc_floor_ma(capacity_mah > 0 ? capacity_mah / 2 : 200);
+  const int max_raw = (capacity_mah * 8 / 10) < kChargeCapMa ? (capacity_mah * 8 / 10) : kChargeCapMa;
+  const int max_ma = axp2101_icc_floor_ma(max_raw);
+  return std_ma < max_ma ? std_ma : max_ma;
+}
+constexpr int precharge_ma_for_capacity(int capacity_mah) {
+  return batt_clamp_int(((capacity_mah > 0 ? capacity_mah : 500) / 10) / 25 * 25, 25, 200);
+}
+
 constexpr int kBattChargeMaxMa = axp2101_icc_floor_ma(
     (kBattCapacityMah * 8 / 10) < kChargeCapMa ? (kBattCapacityMah * 8 / 10) : kChargeCapMa);  // <= 0.8C
 constexpr int kBattChargeStdMa = axp2101_icc_floor_ma(kBattCapacityMah / 2);                    // <= 0.5C floor
@@ -67,22 +80,24 @@ constexpr int kBattChargeMa = kBattChargeStdMa < kBattChargeMaxMa ? kBattChargeS
 constexpr int kBattPrechargeMa = batt_clamp_int((kBattCapacityMah / 10) / 25 * 25, 25, 200);   // 0.1C
 constexpr int kBattTermMa = batt_clamp_int((kBattCapacityMah / 20) / 25 * 25, 25, 200);        // C/20
 constexpr uint8_t kBattCvCode = 0x03;  // REG64 bits 2:0: 3 = 4.20 V
-constexpr int kBattCvMv = 4200;
 
 // ---------------------------------------------------------------------------------------------------
 // Rest-voltage model & per-capacity OCV curves
 // ---------------------------------------------------------------------------------------------------
 constexpr int kPathFixedMilliohm = 80;
 constexpr int kCellIrMilliohmAh = 120;
+constexpr int path_mohm_for_capacity(int capacity_mah) {
+  return kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
+}
 constexpr int kBattPathMilliohm =
     kPathFixedMilliohm + (kBattCapacityMah > 0 ? kCellIrMilliohmAh * 1000 / kBattCapacityMah : 0);
 
 enum class BattLoad : uint8_t { QUIET = 0, SCREEN = 1, AUDIO = 2 };
 
 #if defined(USE_ESP32) && defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
-constexpr int kLoadQuietMa = 8;    // Automatic light-sleep standby (~5-8 mA)
+constexpr int kLoadQuietMa = 8;   // Automatic light-sleep standby (~5-8 mA)
 #else
-constexpr int kLoadQuietMa = 55;   // Awake modem-sleep standby (~50-55 mA)
+constexpr int kLoadQuietMa = 55;  // Awake modem-sleep standby (~50-55 mA)
 #endif
 constexpr int kLoadScreenMa = 200;
 constexpr int kLoadAudioMa = 300;
@@ -249,11 +264,8 @@ struct BatteryModel {
     load = ld;
 
     const int path_mohm = kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
-    const int chg_std_ma = axp2101_icc_floor_ma(capacity_mah > 0 ? capacity_mah / 2 : 200);
-    const int chg_max_ma = axp2101_icc_floor_ma(
-        (capacity_mah * 8 / 10) < kChargeCapMa ? (capacity_mah * 8 / 10) : kChargeCapMa);
-    const int chg_ma = chg_std_ma < chg_max_ma ? chg_std_ma : chg_max_ma;
-    const int pre_ma = batt_clamp_int(((capacity_mah > 0 ? capacity_mah : 500) / 10) / 25 * 25, 25, 200);
+    const int chg_ma = charge_ma_for_capacity(capacity_mah);
+    const int pre_ma = precharge_ma_for_capacity(capacity_mah);
 
     int comp_mv = 0;
     if (batt) {
@@ -369,8 +381,108 @@ struct BatteryModel {
   }
 };
 
+// Pure thermal foldback state machine step (65 C enter -> 100 mA, 58 C clear -> nominal_ma).
+inline bool step_thermal_foldback_policy(bool is_charging, float die_temp_c, int nominal_ma,
+                                         bool &foldback_active, int &active_icc_ma) {
+  if (!is_charging) {
+    const bool changed = foldback_active;
+    foldback_active = false;
+    active_icc_ma = nominal_ma;
+    return changed;
+  }
+  if (!foldback_active && die_temp_c >= kAxpThermalFoldbackEnterC && nominal_ma > kChargeThermalFoldbackMa) {
+    foldback_active = true;
+    active_icc_ma = kChargeThermalFoldbackMa;
+    return true;
+  }
+  if (foldback_active && die_temp_c <= kAxpThermalFoldbackClearC) {
+    foldback_active = false;
+    active_icc_ma = nominal_ma;
+    return true;
+  }
+  if (!foldback_active) {
+    active_icc_ma = nominal_ma;
+  }
+  return false;
+}
+
+// True when the board's PWR key can wake the SoC from ESP32 deep sleep (RTC/LP GPIO).
+inline constexpr bool can_wake_for_on_battery_alarm_policy(int pwr_key_deep_sleep_wake, int has_battery) {
+  return (pwr_key_deep_sleep_wake != 0) || (has_battery == 0);
+}
+
+inline constexpr bool can_wake_for_on_battery_alarm() {
+  return can_wake_for_on_battery_alarm_policy(LATTER_PWR_KEY_DEEP_SLEEP_WAKE, LATTER_HAS_BATTERY);
+}
+
+inline constexpr int32_t resolve_alarm_sleep_seconds(int pwr_key_deep_sleep_wake, int has_battery,
+                                                     bool cutoff_tripped, bool vbus_present,
+                                                     int32_t sec_until_alarm) {
+  if (cutoff_tripped && sec_until_alarm > 0) return -1;
+  if (!can_wake_for_on_battery_alarm_policy(pwr_key_deep_sleep_wake, has_battery) &&
+      sec_until_alarm > 0 && !vbus_present) {
+    return -1;
+  }
+  return sec_until_alarm;
+}
+
+#ifdef USE_ESP32
 BatteryModel &battery_model();
 void battery_report_fragment(char *buf, size_t len, uint32_t now_ms);
 void battery_log_profile(uint32_t now_ms);
+void hal_release_pwr_key_wake_pad();
+#else
+inline BatteryModel &battery_model() {
+  static BatteryModel m;
+  return m;
+}
+inline void battery_report_fragment(char *buf, size_t len, uint32_t now_ms) {
+  if (buf == nullptr || len == 0) return;
+  buf[0] = '\0';
+  const BatteryModel &b = battery_model();
+  if (!b.has_sample) return;
+  char dr[16];
+  const float rate = b.drain_pct_per_h(now_ms);
+  if (std::isnan(rate)) {
+    std::snprintf(dr, sizeof(dr), "-");
+  } else {
+    std::snprintf(dr, sizeof(dr), "%.1f", rate);
+  }
+  std::snprintf(buf, len, " bat=%d/%d/%.0f/%c dr=%s", b.vraw_mv, b.vrest_mv,
+                std::isnan(b.soc_display) ? -1.0f : b.soc_display, b.state_char(), dr);
+}
+inline void battery_log_profile(uint32_t /*now_ms*/) {}
+inline void hal_release_pwr_key_wake_pad() {}
+#endif
+
+#ifdef USE_I2C
+void hal_axp2101_boot_battery_check(esphome::i2c::I2CBus *bus);
+void hal_init_axp2101(esphome::i2c::I2CBus *bus);
+void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t sec_until_alarm);
+float hal_axp2101_read_die_temp_c(esphome::i2c::I2CBus *bus, bool &ok);
+void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_charging);
+int hal_axp2101_read_gauge_pct(esphome::i2c::I2CBus *bus);
+
+template <typename I2cBusT>
+inline void hal_axp2101_boot_battery_check(I2cBusT *const *bus_pp) {
+  if (bus_pp != nullptr) hal_axp2101_boot_battery_check(*bus_pp);
+}
+template <typename I2cBusT>
+inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
+  if (bus_pp != nullptr) hal_init_axp2101(*bus_pp);
+}
+template <typename I2cBusT>
+inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {
+  if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
+}
+template <typename I2cBusT>
+inline void hal_axp2101_thermal_charge_foldback(I2cBusT *const *bus_pp, bool is_charging) {
+  if (bus_pp != nullptr) hal_axp2101_thermal_charge_foldback(*bus_pp, is_charging);
+}
+template <typename I2cBusT>
+inline int hal_axp2101_read_gauge_pct(I2cBusT *const *bus_pp) {
+  return (bus_pp != nullptr) ? hal_axp2101_read_gauge_pct(*bus_pp) : -1;
+}
+#endif  // USE_I2C
 
 }  // namespace latter_ui

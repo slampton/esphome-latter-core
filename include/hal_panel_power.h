@@ -8,11 +8,17 @@
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #endif
+#if __has_include("esphome/core/component.h")
 #include "esphome/core/component.h"
+#define LATTER_HAS_ESPHOME_COMPONENT 1
+#else
+#define LATTER_HAS_ESPHOME_COMPONENT 0
+#endif
+#if defined(USE_ESP32) && __has_include("esphome/core/hal.h")
 #include "esphome/core/hal.h"
-#include "esphome/core/log.h"
+#endif
+
 #include "hal_manifest.h"
-#include "hal_types.h"
 #include "latter_prof.h"
 
 #include <cstdint>
@@ -31,6 +37,7 @@
 
 namespace latter_ui {
 
+#if LATTER_HAS_ESPHOME_COMPONENT
 struct PanelTimeoutScheduler : public esphome::Component {
   static constexpr uint32_t kTimeoutPanelDcs = 0x4C410003U;
 
@@ -39,6 +46,7 @@ struct PanelTimeoutScheduler : public esphome::Component {
     static_cast<PanelTimeoutScheduler *>(comp)->set_timeout(kTimeoutPanelDcs, delay_ms, std::move(fn));
   }
 };
+#endif
 
 struct PanelDcsState {
   enum Phase : uint8_t { AWAKE, WAKING, ASLEEP };
@@ -76,7 +84,7 @@ inline void hal_panel_dcs_service(DispT *disp) {
       (void)b;
     }
   };
-#if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
+#if defined(USE_ESP32) && LATTER_HAS_ESPHOME_COMPONENT && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
   if constexpr (requires(DispT *d, const uint8_t *b) {
                   d->enable();
                   d->disable();
@@ -97,15 +105,12 @@ inline void hal_panel_dcs_service(DispT *disp) {
           ,
           "1-lane SPI panel with LATTER_PANEL_DCS_SLEEP=1 must define LATTER_DISPLAY_DC_PIN so DCX=0 is asserted");
 #if defined(LATTER_DISPLAY_DC_PIN)
-      // MipiSpi leaves dc_pin HIGH (data mode) after every GRAM pixel flush; drive DCX=0 before
-      // CS goes active so the ST7796 latches 0x28/0x10/0x11/0x29 as DCS commands rather than GRAM data.
       gpio_set_level(static_cast<gpio_num_t>(LATTER_DISPLAY_DC_PIN), 0);
 #endif
       disp->enable();
       disp->write_cmd_addr_data(8, static_cast<uint32_t>(cmd), 0, 0, &dummy, 0);
       disp->disable();
 #else
-      // QSPI MIPI framing (opcode 0x02, 24-bit address = DCS << 8).
       disp->enable();
       disp->write_cmd_addr_data(8, 0x02, 24, static_cast<uint32_t>(cmd) << 8, &dummy, 0);
       disp->disable();
@@ -115,7 +120,7 @@ inline void hal_panel_dcs_service(DispT *disp) {
       PanelTimeoutScheduler::request(static_cast<esphome::Component *>(disp), delay_ms,
                                      [disp]() { hal_panel_dcs_service(disp); });
     };
-    const uint32_t now = esphome::millis();
+    const uint32_t now = hal_millis_now();
     if (st.want_bri > 0) {
       if (st.phase == PanelDcsState::ASLEEP) {
         dcs(0x11);
@@ -258,7 +263,7 @@ inline void hal_panel_dcs_flush(DispT *disp) {
   const bool pending = (st.phase == PanelDcsState::WAKING) ||
                        (st.want_bri == 0 && st.phase != PanelDcsState::ASLEEP);
   if (!pending || disp == nullptr) return;
-  const uint32_t left = panel_dcs_settle_left_ms(esphome::millis());
+  const uint32_t left = panel_dcs_settle_left_ms(hal_millis_now());
   if (left > 0) esphome::delay(left);
   hal_panel_dcs_service(disp);
 #else
