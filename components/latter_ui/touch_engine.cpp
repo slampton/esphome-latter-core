@@ -1689,7 +1689,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
 
-      if (wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3) {
+      if (rs.alarms.edit_idx == 0 &&
+          wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
           const int a_idx = std::clamp(static_cast<int>(wid - WidgetId::ALARM_TOGGLE_BASE), 0, 2);
           if (rs.alarms.snooze_until > 0 &&
@@ -1799,6 +1800,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (sub == ToolsSubpage::DICE) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
+        rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1841,6 +1843,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (sub == ToolsSubpage::LEVEL) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
+        rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1850,6 +1853,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (sub == ToolsSubpage::COIN_FLIP) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
+        rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -2019,6 +2023,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         }
         rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
         rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
+        rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -2986,6 +2991,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               cam_quick_reply_open() = false;
               rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             }
+            rt_.apply_power_policy();
             mark_dirty_full();
             rt_.schedule_disp();
           }
@@ -3043,6 +3049,18 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               cal_detail_mode() = 1;
               mark_dirty_full();
               rt_.schedule_disp();
+            } else {
+              CalendarRecord recs[5];
+              const size_t n_rec = parse_calendar_records(calendar_state().summary, recs, 5);
+              if (static_cast<size_t>(slot_idx) < n_rec) {
+                cal_detail_time() = std::string(recs[slot_idx].time);
+                cal_detail_title() = std::string(recs[slot_idx].title);
+                cal_detail_location() = std::string(recs[slot_idx].location);
+                cal_detail_map_url().clear();
+                cal_detail_mode() = 1;
+                mark_dirty_full();
+                rt_.schedule_disp();
+              }
             }
           }
         }

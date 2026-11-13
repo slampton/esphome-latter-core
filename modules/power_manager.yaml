@@ -370,7 +370,9 @@ script:
               const bool need_accel = pw_allowed ||
                                       (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) ||
                                       (rs.nav.gui_page == 5) ||
-                                      (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12));
+                                      (rs.nav.gui_page == 8 &&
+                                       (rs.nav.tools_subpage == 4 || rs.nav.tools_subpage == 7 ||
+                                        rs.nav.tools_subpage == 8 || rs.nav.tools_subpage == 12));
               rs.hw_set_imu_power_mode(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
             }
           }
