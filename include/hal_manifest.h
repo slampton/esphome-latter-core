@@ -21,7 +21,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111203L
+#define LATTER_SDK_REV 2026111204L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -33,6 +33,9 @@
 #endif
 #ifndef LATTER_SLOT_COUNT
 #define LATTER_SLOT_COUNT 5
+#endif
+#ifndef LATTER_CARD_SLOT_COUNT
+#define LATTER_CARD_SLOT_COUNT 3
 #endif
 #ifndef LATTER_SCREEN_W
 #define LATTER_SCREEN_W 466
@@ -178,7 +181,7 @@ inline std::string build_hardware_manifest_json() {
                 "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
-                "\"slot_count\":%d,\"max_payload_bytes\":2048,"
+                "\"slot_count\":%d,\"card_slot_count\":%d,\"max_payload_bytes\":2048,"
                 "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
                 "\"sdk\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
                 kManifestProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
@@ -188,7 +191,7 @@ inline std::string build_hardware_manifest_json() {
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
-                (int)LATTER_SLOT_COUNT, (int)LATTER_BLE_MINOR,
+                (int)LATTER_SLOT_COUNT, (int)LATTER_CARD_SLOT_COUNT, (int)LATTER_BLE_MINOR,
                 (long)LATTER_SDK_REV, last_reset_reason(), (int)crash_record_present(), (int)firmware_rolled_back());
   return std::string(buf);
 }

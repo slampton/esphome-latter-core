@@ -196,7 +196,6 @@ display:
       ctx.va_wake_screen = prefs.wake_screen_on_assist;
       ctx.docked_screensaver_enabled = prefs.docked_screensaver;
       ctx.instant_crown_hibernate = prefs.hold_crown_power_off;
-      ctx.area_show_all_category = prefs.area_show_all_category;
 
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);

@@ -36,6 +36,7 @@
 #include "../../include/latter_actions.h"
 #include "../../include/hal_battery.h"
 #include "../../include/hal_link_report.h"
+#include "../../include/hal_manifest.h"
 #include "../../include/hal_panel_power.h"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
@@ -746,7 +747,24 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 2U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 3U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 43U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 49U);
+
+  // Manifest slot capacities (LATTER_SLOT_COUNT=5, LATTER_CARD_SLOT_COUNT=3) + compact <=230B state guard
+  const std::string full_manifest = latter_ui::build_hardware_manifest_json();
+  const std::string compact_manifest = latter_ui::build_hardware_manifest_state_json();
+  LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
+  LATTER_CHECK(compact_manifest.size() <= 230U);
+
+  // Ordered Area category CSV parser (custom order, dedup, unknown filtering, empty Area)
+  std::string parsed_cats[8];
+  const int parsed_n = latter_ui::parse_area_categories_csv("media,light,unknown,media,all", parsed_cats, 8);
+  LATTER_CHECK(parsed_n == 3 && parsed_cats[0] == "media" && parsed_cats[1] == "light" && parsed_cats[2] == "all");
+  LATTER_CHECK(latter_ui::parse_area_categories_csv("", parsed_cats, 8) == 0);
+  const int def_n = latter_ui::parse_area_categories_csv(latter_ui::kDefaultAreaCategories, parsed_cats, 8);
+  LATTER_CHECK(def_n == 7 && parsed_cats[0] == "scene" && parsed_cats[6] == "media");
 
   auto &p = latter_ui::persisted_prefs();
   p = latter_ui::PersistedDevicePrefs{};

@@ -75,7 +75,6 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   const float area_humidity = ac.area_humidity;
   const std::string &area_action_feedback = rs.area.action_feedback;
   const uint32_t area_feedback_timer = rs.area.feedback_timer;
-  const bool show_all_cat = ctx.area_show_all_category;
 
   auto *font_small = ctx.font_small;
   const Color &theme_primary = ctx.theme_primary;
@@ -94,7 +93,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   // Helper: Draw Unified Area Category Mode Bar at layout().app_dock_y (1..4 Icon Conveyor Window)
   auto render_area_bottom_dock = [&](const std::string &active_domain) {
     std::string cats[8];
-    const int cat_count = collect_area_categories(show_all_cat, cats);
+    const int cat_count = collect_area_categories(cats);
     if (cat_count <= 0) return;
 
     int active_global_idx = 0;
@@ -465,8 +464,10 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   const auto *ent_slots = rs.slots_for(latter_rpc::SlotChannel::AREA_ENTITIES);
   const int browse_page = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)];
   const int browse_total_pages = rs.slot_total_pages[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)];
+  const int card_slots = static_cast<int>(std::min<size_t>(DeviceRuntimeState::kCardSlotsPerPage, 3));
+  bool any_card = false;
 
-  for (int idx = 0; idx < 3; idx++) {
+  for (int idx = 0; idx < card_slots; idx++) {
     const auto &s = ent_slots[idx];
     const std::string &raw_name = s.name;
     const std::string &id_str = s.id;
@@ -476,6 +477,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const int y_mid = layout().area_card3_y(idx);
 
     if (raw_name.empty() && id_str.empty()) continue;
+    any_card = true;
 
     if (dtype == "text" || id_str.empty()) {
       std::string fit_msg = fit_text_to_width_font(raw_name, scale_x(280), font_small);
@@ -576,6 +578,10 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
                             static_cast<uint16_t>(WidgetId::AREA_CARD_TAP + idx),
                             kHitTap, static_cast<int16_t>(idx));
     }
+  }
+
+  if (!any_card) {
+    render_empty_state(it, cx, layout().area_card3_y(1), "No controls in this Area", font_small, col_slate);
   }
 
   if (browse_total_pages > 1) {

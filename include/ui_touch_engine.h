@@ -122,7 +122,6 @@ enum class UiSelectId : uint8_t {
   DISPLAY_BRIGHTNESS_PRESET,
   DAY_BRIGHTNESS_PRESET,
   NIGHT_BRIGHTNESS_PRESET,
-  AREA_DEFAULT_CATEGORY,
 };
 
 enum class UiSwitchId : uint8_t {
@@ -135,7 +134,6 @@ enum class UiSwitchId : uint8_t {
   VA_WAKE_SCREEN,
   DOCKED_SCREENSAVER,
   INSTANT_CROWN_HIBERNATE,
-  AREA_SHOW_ALL_CATEGORY,
 };
 
 enum class UiNumberId : uint8_t {

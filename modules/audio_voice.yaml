@@ -1872,7 +1872,7 @@ script:
           const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
           latter_actions::emit_music_browse(
               mode_s, page, search_str, rs.music.active_speaker_entity,
-              latter_ui::media_state().last_speaker, alb_sort, art_sort, pod_sort, 5, millis());
+              latter_ui::media_state().last_speaker, alb_sort, art_sort, pod_sort, LATTER_SLOT_COUNT, millis());
 
   - id: play_music_slot
     mode: restart

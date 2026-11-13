@@ -83,29 +83,42 @@ esphome:
                   latter_ui::mark_dirty_full();
                 }
                 {
+                  const bool domains_changed = (st.available_domains != latter_ui::area_available_domains_csv());
                   latter_ui::area_available_domains_csv() = st.available_domains;
-                  std::string valid_cat = latter_ui::resolve_preferred_area_category(
-                      std::string(latter_ui::pref_area_default_category_cstr(prefs)),
-                      prefs.area_show_all_category);
                   std::string cats[8];
-                  int cnt = latter_ui::collect_area_categories(prefs.area_show_all_category, cats);
-                  bool cur_ok = false;
-                  int act_idx = 0;
-                  for (int i = 0; i < cnt; i++) {
-                    if (cats[i] == r.area.domain_filter) { cur_ok = true; act_idx = i; break; }
-                  }
-                  if (!cur_ok && !valid_cat.empty()) {
-                    r.area.domain_filter = valid_cat;
-                    for (int i = 0; i < cnt; i++) {
-                      if (cats[i] == valid_cat) { act_idx = i; break; }
+                  const int cnt = latter_ui::collect_area_categories(cats);
+                  if (cnt <= 0) {
+                    r.area.domain_filter.clear();
+                    auto *eslots = r.slots_for(latter_rpc::SlotChannel::AREA_ENTITIES);
+                    for (size_t si = 0; si < latter_ui::DeviceRuntimeState::kSlotsPerPage; ++si) {
+                      eslots[si] = latter_ui::BrowseSlotItem{};
                     }
-                  }
-                  if ((area_changed || (!cur_ok && !valid_cat.empty())) &&
-                      r.nav.gui_page == 6 && r.nav.area_subpage == 0) {
                     r.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-                    id(fetch_area_browse).execute();
+                    r.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+                    latter_ui::area_cat_dock_page() = 0;
+                    if (domains_changed && r.nav.gui_page == 6 && r.nav.area_subpage == 0) {
+                      latter_ui::mark_dirty_full();
+                    }
+                  } else {
+                    bool cur_ok = false;
+                    int act_idx = 0;
+                    for (int i = 0; i < cnt; i++) {
+                      if (cats[i] == r.area.domain_filter) { cur_ok = true; act_idx = i; break; }
+                    }
+                    if (area_changed || !cur_ok) {
+                      r.area.domain_filter = cats[0];
+                      act_idx = 0;
+                    }
+                    if ((area_changed || !cur_ok) &&
+                        r.nav.gui_page == 6 && r.nav.area_subpage == 0) {
+                      r.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+                      id(fetch_area_browse).execute();
+                    }
+                    if (domains_changed && r.nav.gui_page == 6 && r.nav.area_subpage == 0) {
+                      latter_ui::mark_dirty_full();
+                    }
+                    latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), act_idx, cnt);
                   }
-                  latter_ui::sync_mode_bar_window(latter_ui::area_cat_dock_page(), act_idx, cnt);
                 }
                 if (!st.dock_apps.empty() && st.dock_apps != prev_dock) {
                   latter_ui::latter_dock_order_csv() = st.dock_apps;
@@ -317,7 +330,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111203L;
+            constexpr long LATTER_YAML_REV = 2026111204L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -856,7 +869,6 @@ script:
                 case S::DISPLAY_BRIGHTNESS_PRESET: return latter_ui::pref_manual_brightness_cstr(p);
                 case S::DAY_BRIGHTNESS_PRESET: return latter_ui::pref_day_brightness_cstr(p);
                 case S::NIGHT_BRIGHTNESS_PRESET: return latter_ui::pref_night_brightness_cstr(p);
-                case S::AREA_DEFAULT_CATEGORY: return latter_ui::pref_area_default_category_cstr(p);
               }
               return std::string{};
             };
@@ -915,20 +927,10 @@ script:
                 case S::DISPLAY_BRIGHTNESS_PRESET: pk = K::MANUAL_BRIGHTNESS; break;
                 case S::DAY_BRIGHTNESS_PRESET: pk = K::DAY_BRIGHTNESS; break;
                 case S::NIGHT_BRIGHTNESS_PRESET: pk = K::NIGHT_BRIGHTNESS; break;
-                case S::AREA_DEFAULT_CATEGORY: pk = K::AREA_DEFAULT_CATEGORY; break;
               }
               if (pk == K::COUNT) return;
               uint32_t eff = 0;
               if (latter_actions::record_local_pref_edit(pk, opt, now_ms, eff)) {
-                if (pk == K::AREA_DEFAULT_CATEGORY) {
-                  auto &rs = latter_ui::runtime_state();
-                  if (rs.nav.gui_page == 6 && rs.nav.area_subpage == 0) {
-                    rs.area.domain_filter = latter_ui::resolve_preferred_area_category(
-                        opt, latter_ui::persisted_prefs().area_show_all_category);
-                    rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-                    id(fetch_area_browse).execute();
-                  }
-                }
                 latter_ui::device_prefs_state().last_effects = eff;
                 id(apply_device_prefs_effects).execute();
               }
@@ -947,7 +949,6 @@ script:
                 case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
                 case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
                 case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
-                case W::AREA_SHOW_ALL_CATEGORY: return p.area_show_all_category;
               }
               return false;
             };
@@ -968,7 +969,6 @@ script:
                 case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
                 case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
                 case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
-                case W::AREA_SHOW_ALL_CATEGORY: pk = K::AREA_SHOW_ALL_CATEGORY; next_val = !p.area_show_all_category; break;
               }
               if (pk == K::COUNT) return;
               uint32_t eff = 0;

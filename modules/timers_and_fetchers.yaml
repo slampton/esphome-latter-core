@@ -526,7 +526,7 @@ script:
       - lambda: |-
           const auto &rs = latter_ui::runtime_state();
           const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-          latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, 3);
+          latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
 
   - id: fetch_area_list_browse
     mode: restart
@@ -534,7 +534,7 @@ script:
       - lambda: |-
           const auto &rs = latter_ui::runtime_state();
           const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
-          latter_actions::emit_area_browse_list(rs.area.active_area_id, page, 5);
+          latter_actions::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
 
   - id: select_active_area_latter
     mode: restart

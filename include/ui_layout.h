@@ -480,44 +480,17 @@ inline GarageState &wh_garage_state() { return whole_home_state().garage_state; 
 inline LockState &wh_lock_state() { return whole_home_state().lock_state; }
 inline std::string &sim_vacuum_state() { return whole_home_state().vacuum_state; }
 
-inline const char *map_area_default_label_to_domain(const std::string &opt) {
-  if (opt == "Lights") return "light";
-  if (opt == "Blinds & Curtains") return "cover";
-  if (opt == "Fans") return "fan";
-  if (opt == "Switches") return "switch";
-  if (opt == "Climate") return "climate";
-  if (opt == "Media") return "media";
-  if (opt == "All Devices") return "all";
-  return "scene";
+inline int collect_area_categories(std::string *out_cats) {
+  const std::string_view src =
+      (area_ctx_state().epoch == 0U) ? std::string_view(kDefaultAreaCategories)
+                                     : std::string_view(area_available_domains_csv());
+  return parse_area_categories_csv(src, out_cats, 8);
 }
 
-inline int collect_area_categories(bool show_all_cat, std::string *out_cats) {
-  int n = 0;
-  const std::string &csv = area_available_domains_csv();
-  auto has_tok = [&](const char *tok) -> bool {
-    if (csv.empty()) return true;
-    return (csv.find(tok) != std::string::npos);
-  };
-  if (show_all_cat) out_cats[n++] = "all";
-  if (has_tok("scene")   && n < 8) out_cats[n++] = "scene";
-  if (has_tok("light")   && n < 8) out_cats[n++] = "light";
-  if (has_tok("cover")   && n < 8) out_cats[n++] = "cover";
-  if (has_tok("fan")     && n < 8) out_cats[n++] = "fan";
-  if (has_tok("switch")  && n < 8) out_cats[n++] = "switch";
-  if (has_tok("climate") && n < 8) out_cats[n++] = "climate";
-  if (has_tok("media")   && n < 8) out_cats[n++] = "media";
-  if (n == 0) out_cats[n++] = "light";
-  return n;
-}
-
-inline std::string resolve_preferred_area_category(const std::string &pref_label, bool show_all_cat) {
+inline std::string resolve_preferred_area_category() {
   std::string cats[8];
-  const int cnt = collect_area_categories(show_all_cat, cats);
-  const std::string wanted = map_area_default_label_to_domain(pref_label);
-  for (int i = 0; i < cnt; i++) {
-    if (cats[i] == wanted) return wanted;
-  }
-  return cats[0];
+  const int cnt = collect_area_categories(cats);
+  return (cnt > 0) ? cats[0] : std::string{};
 }
 
 inline std::string &latter_site_id() {

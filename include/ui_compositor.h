@@ -312,7 +312,6 @@ struct UiFrameContext {
   bool va_wake_screen{true};
   bool docked_screensaver_enabled{true};
   bool instant_crown_hibernate{false};
-  bool area_show_all_category{false};
 };
 
 struct SystemTakeoverState {

@@ -168,7 +168,7 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 2U;
+static constexpr uint16_t kPersistedPrefsVersion = 3U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -197,27 +197,25 @@ enum class PrefKey : uint8_t {
   HOME_SUN = 22,
   HOME_MOON = 23,
   WAKE_GREETING = 24,
-  AREA_DEFAULT_CATEGORY = 25,
-  AREA_SHOW_ALL_CATEGORY = 26,
-  ALBUM_ART_STYLE = 27,
-  MUSIC_OVERLAY_STYLE = 28,
-  SHOW_SPEAKER_SHORTCUT = 29,
-  SHOW_LIBRARY_SHORTCUT = 30,
-  ALBUM_SORT_ORDER = 31,
-  ARTIST_ALBUM_SORT_ORDER = 32,
-  PODCAST_SORT_ORDER = 33,
-  WW_SENS_OKAY_NABU = 34,
-  WW_SENS_HEY_LUNA = 35,
-  WW_SENS_HEY_JARVIS = 36,
-  WW_SENS_HEY_MYCROFT = 37,
-  WW_SENS_ALEXA = 38,
-  WAKE_SCREEN_ON_ASSIST = 39,
-  ALERT_VOLUME = 40,
-  VOLUME_STEP_SIZE = 41,
-  GAME_SOUND_EFFECTS = 42,
-  BLE_BEACON_ENABLED = 43,
-  BLE_BEACON_MODE = 44,
-  COUNT = 45,
+  ALBUM_ART_STYLE = 25,
+  MUSIC_OVERLAY_STYLE = 26,
+  SHOW_SPEAKER_SHORTCUT = 27,
+  SHOW_LIBRARY_SHORTCUT = 28,
+  ALBUM_SORT_ORDER = 29,
+  ARTIST_ALBUM_SORT_ORDER = 30,
+  PODCAST_SORT_ORDER = 31,
+  WW_SENS_OKAY_NABU = 32,
+  WW_SENS_HEY_LUNA = 33,
+  WW_SENS_HEY_JARVIS = 34,
+  WW_SENS_HEY_MYCROFT = 35,
+  WW_SENS_ALEXA = 36,
+  WAKE_SCREEN_ON_ASSIST = 37,
+  ALERT_VOLUME = 38,
+  VOLUME_STEP_SIZE = 39,
+  GAME_SOUND_EFFECTS = 40,
+  BLE_BEACON_ENABLED = 41,
+  BLE_BEACON_MODE = 42,
+  COUNT = 43,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -274,8 +272,6 @@ struct PersistedDevicePrefs {
   bool home_sun = true;
   bool home_moon = true;
   bool wake_greeting = true;
-  uint8_t area_default_category = 0;       // 0..7 ("Scenes" .. "All Devices")
-  bool area_show_all_category = false;
   uint8_t album_art_style = 0;             // 0..3 ("Full Screen", "Letterbox", "Standard", "None")
   uint8_t music_overlay_style = 1;         // 0..2 ("Art Only", "Art + Metadata", "Always Visible")
   bool show_speaker_shortcut = true;
@@ -365,8 +361,6 @@ inline constexpr const char *const kStartScreenOpts[2] = {"Home", "Clock"};
 inline constexpr const char *const kClockFaceOpts[3] = {
     "Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"};
 inline constexpr const char *const kTimeFormatOpts[2] = {"12-Hour (AM/PM)", "24-Hour"};
-inline constexpr const char *const kAreaCategoryOpts[8] = {
-    "Scenes", "Lights", "Blinds & Curtains", "Fans", "Switches", "Climate", "Media", "All Devices"};
 inline constexpr const char *const kAlbumArtStyleOpts[4] = {
     "Full Screen", "Letterbox", "Standard", "None"};
 inline constexpr const char *const kMusicOverlayStyleOpts[3] = {
@@ -420,7 +414,6 @@ inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = p
 inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
-inline const char *pref_area_default_category_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAreaCategoryOpts, p.area_default_category); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
 inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
@@ -450,7 +443,6 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.start_screen >= 2) p.start_screen = 0;
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
-  if (p.area_default_category >= 8) p.area_default_category = 0;
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
   if (p.album_sort_order >= 3) p.album_sort_order = 0;
@@ -791,7 +783,7 @@ struct MusicRuntimeState {
 
 struct AreaRuntimeState {
   std::string browse_mode = "entities";
-  std::string domain_filter = "all";
+  std::string domain_filter = "scene";
   std::string active_area_id = "";
   std::string active_area_name = "Area Control";
   std::string alarm_entity = "";
@@ -830,7 +822,10 @@ struct IntercomRuntimeState {
 
 struct DeviceRuntimeState {
   static constexpr size_t kSlotChannelCount = static_cast<size_t>(latter_rpc::SlotChannel::COUNT);
-  static constexpr size_t kSlotsPerPage = 5;
+  static constexpr size_t kListSlotsPerPage = static_cast<size_t>(LATTER_SLOT_COUNT);
+  static constexpr size_t kCardSlotsPerPage = static_cast<size_t>(LATTER_CARD_SLOT_COUNT);
+  static constexpr size_t kSlotsPerPage =
+      (kListSlotsPerPage > kCardSlotsPerPage) ? kListSlotsPerPage : kCardSlotsPerPage;
 
   BrowseSlotItem slots[kSlotChannelCount][kSlotsPerPage]{};
   int slot_page[kSlotChannelCount] = {1, 1, 1, 1};
@@ -1120,6 +1115,42 @@ inline float v3_parse_float(std::string_view sv, float fallback = NAN) {
 
 inline bool v3_parse_bool(std::string_view sv) {
   return (sv == "1" || sv == "true" || sv == "True" || sv == "on");
+}
+
+inline constexpr const char *const kCanonicalAreaCategoryTokens[8] = {
+    "scene", "light", "cover", "fan", "switch", "climate", "media", "all"};
+
+inline bool is_canonical_area_category_token(std::string_view sv) {
+  for (const char *tok : kCanonicalAreaCategoryTokens) {
+    if (sv == tok) return true;
+  }
+  return false;
+}
+
+inline int parse_area_categories_csv(std::string_view csv, std::string *out_cats, int max_cats = 8) {
+  if (csv.empty() || out_cats == nullptr || max_cats <= 0) return 0;
+  int n = 0;
+  size_t start = 0;
+  while (start <= csv.size() && n < max_cats) {
+    size_t pos = csv.find(',', start);
+    std::string_view part =
+        (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start);
+    while (!part.empty() && (part.front() == ' ' || part.front() == '\t')) part.remove_prefix(1);
+    while (!part.empty() && (part.back() == ' ' || part.back() == '\t')) part.remove_suffix(1);
+    if (!part.empty() && is_canonical_area_category_token(part)) {
+      bool dup = false;
+      for (int i = 0; i < n; ++i) {
+        if (out_cats[i] == part) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) out_cats[n++] = std::string(part);
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  return n;
 }
 
 inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_epoch, uint32_t in_rev) {
@@ -1412,8 +1443,6 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::HOME_SUN: return "home_sun";
     case PrefKey::HOME_MOON: return "home_moon";
     case PrefKey::WAKE_GREETING: return "wake_greeting";
-    case PrefKey::AREA_DEFAULT_CATEGORY: return "area_default_category";
-    case PrefKey::AREA_SHOW_ALL_CATEGORY: return "area_show_all_category";
     case PrefKey::ALBUM_ART_STYLE: return "album_art_style";
     case PrefKey::MUSIC_OVERLAY_STYLE: return "music_overlay_style";
     case PrefKey::SHOW_SPEAKER_SHORTCUT: return "show_speaker_shortcut";
@@ -1464,8 +1493,6 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::HOME_SUN: return p.home_sun ? "1" : "0";
     case PrefKey::HOME_MOON: return p.home_moon ? "1" : "0";
     case PrefKey::WAKE_GREETING: return p.wake_greeting ? "1" : "0";
-    case PrefKey::AREA_DEFAULT_CATEGORY: return pref_area_default_category_cstr(p);
-    case PrefKey::AREA_SHOW_ALL_CATEGORY: return p.area_show_all_category ? "1" : "0";
     case PrefKey::ALBUM_ART_STYLE: return pref_album_art_style_cstr(p);
     case PrefKey::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
     case PrefKey::SHOW_SPEAKER_SHORTCUT: return p.show_speaker_shortcut ? "1" : "0";
@@ -1594,10 +1621,6 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_bool(p.home_moon, 0);
     case PrefKey::WAKE_GREETING:
       return apply_bool(p.wake_greeting, 0);
-    case PrefKey::AREA_DEFAULT_CATEGORY:
-      return apply_enum(p.area_default_category, kAreaCategoryOpts, 0);
-    case PrefKey::AREA_SHOW_ALL_CATEGORY:
-      return apply_bool(p.area_show_all_category, 0);
     case PrefKey::ALBUM_ART_STYLE:
       return apply_enum(p.album_art_style, kAlbumArtStyleOpts, 0);
     case PrefKey::MUSIC_OVERLAY_STYLE:
@@ -1714,8 +1737,6 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::HOME_SUN, PrefKey::HOME_SUN);
   apply_f(DevicePrefsField::HOME_MOON, PrefKey::HOME_MOON);
   apply_f(DevicePrefsField::WAKE_GREETING, PrefKey::WAKE_GREETING);
-  apply_f(DevicePrefsField::AREA_DEFAULT_CATEGORY, PrefKey::AREA_DEFAULT_CATEGORY);
-  apply_f(DevicePrefsField::AREA_SHOW_ALL_CATEGORY, PrefKey::AREA_SHOW_ALL_CATEGORY);
   apply_f(DevicePrefsField::ALBUM_ART_STYLE, PrefKey::ALBUM_ART_STYLE);
   apply_f(DevicePrefsField::MUSIC_OVERLAY_STYLE, PrefKey::MUSIC_OVERLAY_STYLE);
   apply_f(DevicePrefsField::SHOW_SPEAKER_SHORTCUT, PrefKey::SHOW_SPEAKER_SHORTCUT);
@@ -1835,7 +1856,9 @@ inline bool apply_slots_action(int contract, int req_id, std::string_view mode,
                           : latter_rpc::classify_browse_mode(mode);
   if (!latter_rpc::accept_req_id(ch, req_id)) return false;
 
-  const size_t max_items = (ch == latter_rpc::SlotChannel::AREA_ENTITIES) ? 3U : DeviceRuntimeState::kSlotsPerPage;
+  const size_t max_items =
+      (ch == latter_rpc::SlotChannel::AREA_ENTITIES) ? DeviceRuntimeState::kCardSlotsPerPage
+                                                     : DeviceRuntimeState::kListSlotsPerPage;
   parse_v3_slots_payload(slots_blob, rt.slots_for(ch), max_items);
 
   if (ch == latter_rpc::SlotChannel::MUSIC) {

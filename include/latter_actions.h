@@ -48,7 +48,7 @@ inline int emit_music_browse(std::string_view mode,
                              std::string_view album_sort = "name",
                              std::string_view artist_album_sort = "year",
                              std::string_view podcast_sort = "newest",
-                             int page_size = 5,
+                             int page_size = LATTER_SLOT_COUNT,
                              uint32_t now_ms = 0,
                              OutboxT outbox = nullptr) {
   auto &rt = latter_ui::runtime_state();
@@ -158,7 +158,7 @@ template <typename OutboxT = std::nullptr_t>
 inline int emit_area_browse_entities(std::string_view area_id,
                                      std::string_view domain_filter,
                                      int page = 1,
-                                     int page_size = 3,
+                                     int page_size = LATTER_CARD_SLOT_COUNT,
                                      OutboxT outbox = nullptr) {
   const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_ENTITIES);
   const std::string req_str = std::to_string(req_id);
@@ -178,7 +178,7 @@ inline int emit_area_browse_entities(std::string_view area_id,
 template <typename OutboxT = std::nullptr_t>
 inline int emit_area_browse_list(std::string_view area_id,
                                  int page = 1,
-                                 int page_size = 5,
+                                 int page_size = LATTER_SLOT_COUNT,
                                  OutboxT outbox = nullptr) {
   const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::AREA_LIST);
   const std::string req_str = std::to_string(req_id);
@@ -250,7 +250,7 @@ inline void emit_remote_action(int slot_1based,
 template <typename OutboxT = std::nullptr_t>
 inline int emit_calendar_fetch(int page = 1,
                                int days = 30,
-                               int page_size = 5,
+                               int page_size = LATTER_SLOT_COUNT,
                                OutboxT outbox = nullptr) {
   const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::CALENDAR);
   const std::string req_str = std::to_string(req_id);

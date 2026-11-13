@@ -86,9 +86,7 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
     rs.nav.menu_scroll_active = false;
   } else if (chosen_app == PageId::AREA) {
     area_cat_dock_page() = 0;
-    rs.area.domain_filter = resolve_preferred_area_category(
-        rt.select_opt(UiSelectId::AREA_DEFAULT_CATEGORY),
-        rt.sw_state(UiSwitchId::AREA_SHOW_ALL_CATEGORY));
+    rs.area.domain_filter = resolve_preferred_area_category();
     if (rs.area.active_area_id.empty()) {
       rs.nav.area_subpage = AreaSubpage::PICKER;
       rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
@@ -97,7 +95,15 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
       rs.nav.area_subpage = AreaSubpage::OVERVIEW;
       rs.area.browse_mode = "entities";
       rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-      rt.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+      if (rs.area.domain_filter.empty()) {
+        auto *eslots = rs.slots_for(latter_rpc::SlotChannel::AREA_ENTITIES);
+        for (size_t si = 0; si < DeviceRuntimeState::kSlotsPerPage; ++si) {
+          eslots[si] = BrowseSlotItem{};
+        }
+        rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+      } else {
+        rt.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+      }
     }
   }
 
@@ -2280,7 +2286,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     if (gest.start_y >= ly.mode_bar_zone_top() && gest.start_y < ly.edge_guard_y() &&
         std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
       std::string cats[8];
-      const int cat_cnt = collect_area_categories(rt_.sw_state(UiSwitchId::AREA_SHOW_ALL_CATEGORY), cats);
+      const int cat_cnt = collect_area_categories(cats);
       if (cat_cnt > 4) {
         gest.swipe_committed = true;
         gest.last_swipe_ms = now_u;
@@ -2292,7 +2298,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     if (gest.start_y < ly.mode_bar_zone_top() &&
         std::abs(dx) >= ly.canvas_swipe() && std::abs(dx) > std::abs(dy)) {
       std::string cats[8];
-      const int cat_cnt = collect_area_categories(rt_.sw_state(UiSwitchId::AREA_SHOW_ALL_CATEGORY), cats);
+      const int cat_cnt = collect_area_categories(cats);
       if (cat_cnt > 1) {
         int cur_c = 0;
         for (int i = 0; i < cat_cnt; i++) {
@@ -2863,8 +2869,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       } else if (rs.nav.area_subpage == AreaSubpage::OVERVIEW && gest.max_travel <= ly.tap_max()) {
         std::string cats[8];
-        const int cat_cnt = collect_area_categories(
-            rt_.sw_state(UiSwitchId::AREA_SHOW_ALL_CATEGORY), cats);
+        const int cat_cnt = collect_area_categories(cats);
         if (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) {
           if (cat_cnt > 4) {
             area_cat_dock_page() = std::clamp(
@@ -2872,12 +2877,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
-          const int c_idx = std::clamp(static_cast<int>(hit->param), 0, cat_cnt - 1);
-          if (cats[c_idx] != rs.area.domain_filter) {
-            rs.area.domain_filter = cats[c_idx];
-            rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-            rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
-            rt_.schedule_disp();
+          if (cat_cnt > 0) {
+            const int c_idx = std::clamp(static_cast<int>(hit->param), 0, cat_cnt - 1);
+            if (cats[c_idx] != rs.area.domain_filter) {
+              rs.area.domain_filter = cats[c_idx];
+              rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+              rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+              rt_.schedule_disp();
+            }
           }
         } else if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
           int &pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
