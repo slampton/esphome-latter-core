@@ -57,6 +57,18 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
   if (chosen_app == 9) {
     rs.nav.gui_page = PageId::WHOLE_HOME;
     rs.nav.home_subpage = 0;
+    int wh_tabs[4] = {0, 0, 0, 0};
+    const int wh_cnt = collect_home_hub_tabs(wh_tabs);
+    if (wh_cnt > 0) {
+      bool cur_ok = false;
+      for (int i = 0; i < wh_cnt; i++) {
+        if (wh_tabs[i] == whole_home_tab()) {
+          cur_ok = true;
+          break;
+        }
+      }
+      if (!cur_ok) whole_home_tab() = wh_tabs[0];
+    }
   } else if (chosen_app == 12) {
     tools_direct_home() = true;
     cam_quick_reply_open() = false;
@@ -78,6 +90,14 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
         (!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
       rt.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
     }
+  } else if (chosen_app == PageId::WEATHER) {
+    rs.nav.sky_weather_subpage = 0;
+  } else if (chosen_app == PageId::GAMES) {
+    rs.nav.game_carousel_idx = 0;
+    rs.nav.menu_scroll_active = false;
+  } else if (chosen_app == PageId::TOOLS) {
+    rs.nav.tools_menu_page = 0;
+    rs.nav.menu_scroll_active = false;
   } else if (chosen_app == PageId::SYSTEM) {
     rs.nav.system_menu_mode = 0;
     rs.nav.system_dashboard_page = 1;
@@ -240,7 +260,72 @@ TouchGestureEngine &touch_engine() {
   return s_engine;
 }
 
-void TouchGestureEngine::navigate_home(uint32_t /*now_ms*/) {
+void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
+  auto &rs = runtime_state();
+  const auto &prefs = persisted_prefs();
+  const int anchor = resolve_anchor_dock_app(prefs);
+  if (rs.nav.active_game > 0) {
+    rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
+  }
+  if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
+    rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+  }
+  const bool was_cam_page = (rs.nav.gui_page == PageId::TOOLS &&
+                             rs.nav.tools_subpage == ToolsSubpage::CAMERAS);
+  ui::pin_pad_scrub();
+  tools_direct_home() = false;
+  timer_view_slot() = 0;
+  rs.alarms.edit_idx = 0;
+  cal_detail_mode() = 0;
+  cal_quick_add_open() = false;
+  cam_quick_reply_open() = false;
+  rs.music.overlay_mode = 0;
+  rs.nav.system_menu_mode = 0;
+  rs.nav.active_game = 0;
+  rs.music.direct_nav = false;
+  rs.nav.sleep_menu_page = 1;
+  rs.nav.display_menu_page = 1;
+  rs.nav.system_dashboard_page = 1;
+  rs.nav.menu_scroll_active = false;
+  rs.music.hud_active = false;
+  rs.nav.remote_subpage = 0;
+  rs.nav.tools_subpage = 0;
+  rs.nav.tools_menu_page = 0;
+  rs.nav.sky_weather_subpage = 0;
+  if (was_cam_page && anchor != 12) {
+    rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+    rs.alert.loaded_camera_url.clear();
+    rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
+  }
+  if (anchor == PageId::HOME) {
+    rs.nav.gui_page = PageId::HOME;
+    rs.nav.home_subpage = 0;
+    mark_dirty_full();
+    rt_.schedule_disp();
+    return;
+  }
+  if (anchor == PageId::CLOCK) {
+    rs.nav.gui_page = PageId::CLOCK;
+    rs.nav.home_subpage = 0;
+    mark_dirty_full();
+    rt_.schedule_disp();
+    return;
+  }
+  if (anchor == PageId::REMOTE && !has_any_configured_remote()) {
+    rs.nav.gui_page = prefs.home_screen_enabled ? PageId::HOME : PageId::CLOCK;
+    rs.nav.home_subpage = 0;
+    mark_dirty_full();
+    rt_.schedule_disp();
+    return;
+  }
+  launch_dock_app(anchor, rs, rt_, now_ms);
+}
+
+void TouchGestureEngine::navigate_home(uint32_t now_ms) {
+  if (!persisted_prefs().home_screen_enabled) {
+    navigate_to_start_screen(now_ms);
+    return;
+  }
   auto &rs = runtime_state();
   if (rs.nav.active_game > 0) {
     rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
@@ -634,7 +719,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   // Page 0: Standalone Clock Face
   if (rs.nav.gui_page == PageId::CLOCK) {
-    if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+    if (prefs.home_screen_enabled && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
       rs.nav.gui_page = PageId::HOME;
       rs.nav.home_subpage = 0;
       mark_dirty_full();
@@ -1465,12 +1550,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (rs.nav.area_subpage > 0 && wid == WidgetId::BACK_BUTTON) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (rs.nav.area_subpage == AreaSubpage::PICKER && rs.area.active_area_id.empty()) {
+          if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
           rs.nav.area_subpage = AreaSubpage::OVERVIEW;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
-        } else {
-          rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+          navigate_home(now_touch);
+          return;
         }
+        rs.nav.area_subpage = AreaSubpage::OVERVIEW;
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1480,12 +1565,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (rs.nav.area_subpage == AreaSubpage::PICKER) {
           if (rs.area.active_area_id.empty()) {
+            if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
             rs.nav.area_subpage = AreaSubpage::OVERVIEW;
-            rs.nav.gui_page = PageId::HOME;
-            rs.nav.home_subpage = 0;
-          } else {
-            rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+            navigate_home(now_touch);
+            return;
           }
+          rs.nav.area_subpage = AreaSubpage::OVERVIEW;
         } else {
           rs.nav.area_subpage = AreaSubpage::PICKER;
           rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
@@ -1607,12 +1692,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (tools_direct_home()) {
-          tools_direct_home() = false;
-          view_idx = 0;
-          rs.nav.tools_subpage = 0;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
-        } else if (view_idx > 0) {
+          navigate_home(now_touch);
+          return;
+        }
+        if (view_idx > 0) {
           view_idx = 0;
         } else {
           rs.nav.tools_subpage = 0;
@@ -1680,12 +1763,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (sub == ToolsSubpage::ALARMS) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (tools_direct_home()) {
-          tools_direct_home() = false;
-          rs.alarms.edit_idx = 0;
-          rs.nav.tools_subpage = 0;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
-        } else if (rs.alarms.edit_idx > 0) {
+          navigate_home(now_touch);
+          return;
+        }
+        if (rs.alarms.edit_idx > 0) {
           rs.alarms.edit_idx = 0;
         } else {
           rs.nav.tools_subpage = 0;
@@ -1756,13 +1837,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (sub == ToolsSubpage::STOPWATCH) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (tools_direct_home()) {
-          tools_direct_home() = false;
-          rs.nav.tools_subpage = 0;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
-        } else {
-          rs.nav.tools_subpage = 0;
+          navigate_home(now_touch);
+          return;
         }
+        rs.nav.tools_subpage = 0;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1883,10 +1961,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         } else if (cal_quick_add_open()) {
           cal_quick_add_open() = false;
         } else if (tools_direct_home()) {
-          tools_direct_home() = false;
-          rs.nav.tools_subpage = 0;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
+          navigate_home(now_touch);
+          return;
         } else {
           rs.nav.tools_subpage = 0;
         }
@@ -2016,17 +2092,16 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rt_.schedule_disp();
           return;
         }
+        if (tools_direct_home()) {
+          if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
+          navigate_home(now_touch);
+          rt_.apply_power_policy();
+          return;
+        }
         if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
           rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
         }
-        if (tools_direct_home()) {
-          tools_direct_home() = false;
-          rs.nav.tools_subpage = 0;
-          rs.nav.gui_page = PageId::HOME;
-          rs.nav.home_subpage = 0;
-        } else {
-          rs.nav.tools_subpage = 0;
-        }
+        rs.nav.tools_subpage = 0;
         rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
         rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
         rt_.apply_power_policy();
@@ -2180,7 +2255,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
       gest.start_y >= ly.home_dock_zone_top(home_weather_text_h(), home_activity_card_shown())) {
     if (std::abs(dx) >= ly.swipe_short() && std::abs(dx) > std::abs(dy)) {
-      int dock_apps[8];
+      int dock_apps[kMaxDockApps];
       const int dock_cnt = collect_home_dock_apps(dock_apps);
       const int dock_pages = (dock_cnt + 3) / 4;
       if (dock_pages > 1) {
@@ -2339,11 +2414,22 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   // 10. Whole-Home Hub Horizontal Tab Swipe
   if (rs.nav.gui_page == PageId::WHOLE_HOME && gest.start_y < ly.home_zone_y()) {
     if (std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      whole_home_tab() = step_wrap(whole_home_tab(), (dx < 0) ? 1 : -1, 4);
-      mark_dirty_full();
-      rt_.schedule_disp();
+      int wh_tabs[4] = {0, 0, 0, 0};
+      const int wh_cnt = collect_home_hub_tabs(wh_tabs);
+      if (wh_cnt > 1) {
+        int cur_slot = 0;
+        for (int i = 0; i < wh_cnt; i++) {
+          if (wh_tabs[i] == whole_home_tab()) {
+            cur_slot = i;
+            break;
+          }
+        }
+        gest.swipe_committed = true;
+        gest.last_swipe_ms = now_u;
+        whole_home_tab() = wh_tabs[step_wrap(cur_slot, (dx < 0) ? 1 : -1, wh_cnt)];
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
     }
     return;
   }
@@ -2456,7 +2542,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
       if (gest.start_y >= ly.home_dock_zone_top(home_weather_text_h(), home_activity_card_shown()) &&
           std::abs(dx) >= ly.dock_release_swipe() && std::abs(dx) > std::abs(dy)) {
-        int dock_apps[8];
+        int dock_apps[kMaxDockApps];
         const int dock_cnt = collect_home_dock_apps(dock_apps);
         const int dock_pages = (dock_cnt + 3) / 4;
         if (dock_pages > 1) {
@@ -2667,7 +2753,12 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         else if (item_idx == 2) { rs.nav.system_menu_mode = 7; }
         else if (item_idx == 3) { rs.nav.system_menu_mode = 11; }
         else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
-        else if (item_idx == 5) { rs.nav.gui_page = PageId::HOME; rs.nav.home_subpage = 1; }
+        else if (item_idx == 5) {
+          if (prefs.home_screen_enabled) {
+            rs.nav.gui_page = PageId::HOME;
+            rs.nav.home_subpage = 1;
+          }
+        }
         else if (item_idx == 6) { rs.nav.system_menu_mode = 3; }
         else if (item_idx == 7) { rs.nav.system_menu_mode = 8; }
         mark_dirty_full();
@@ -2742,9 +2833,17 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           const int item_idx = (rs.nav.display_menu_page == 1) ? slot_idx : (slot_idx + 4);
           const std::string ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (item_idx == 0) {
-            rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
-                               cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
-                                            {"Home", "Clock"}));
+            if (prefs.home_screen_enabled) {
+              rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
+                                 cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
+                                              {"Home", "Clock", "Media", "Home Hub", "Area Controls",
+                                               "Remote", "Weather", "Cameras", "Games", "Tools"}));
+            } else {
+              rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
+                                 cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
+                                              {"Clock", "Media", "Home Hub", "Area Controls",
+                                               "Remote", "Weather", "Cameras", "Games", "Tools"}));
+            }
           } else if (item_idx == 1) {
 #if LATTER_ROUND_DISPLAY
             const std::string next_cf = cycle_option(
@@ -3159,8 +3258,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     // 12. Page 9 Whole-Home Hub Controls (Security, Climate, Perimeter, Vacuum)
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::WHOLE_HOME &&
                gest.max_travel <= ly.tap_max()) {
-      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
-        const int target_tab = std::clamp(static_cast<int>(hit->param), 0, 3);
+      int wh_tabs[4] = {0, 0, 0, 0};
+      const int wh_tab_cnt = collect_home_hub_tabs(wh_tabs);
+      if (wh_tab_cnt <= 0) {
+        // No Home Controls configured: ignore taps on empty state.
+      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + wh_tab_cnt) {
+        const int slot = std::clamp(static_cast<int>(hit->param), 0, wh_tab_cnt - 1);
+        const int target_tab = wh_tabs[slot];
         if (target_tab != whole_home_tab()) {
           whole_home_tab() = target_tab;
           mark_dirty_full();
@@ -3193,8 +3297,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
           rt_.schedule_disp();
         } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 4) {
-          static constexpr const char *kClimModes[4] = {"off", "heat", "cool", "heat_cool"};
-          static constexpr const char *kClimLabels[4] = {"Off", "Heat", "Cool", "Auto"};
+          static constexpr const char *kClimModes[4] = {"heat", "cool", "heat_cool", "off"};
+          static constexpr const char *kClimLabels[4] = {"Heat", "Cool", "Auto", "Off"};
           const int m_i = static_cast<int>(wid - WidgetId::CLIMATE_MODE_BASE);
           sim_thermostat_mode() = kClimModes[m_i];
           rs.area.target_entity_id = "whole_home.thermostat";
@@ -3299,8 +3403,10 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   }
 
   if (act == "home") {
-    ui_focus_index() = 0;
-    navigate_home(now_in);
+    if (can_go_home(rs)) {
+      ui_focus_index() = 0;
+      navigate_home(now_in);
+    }
     return;
   }
 

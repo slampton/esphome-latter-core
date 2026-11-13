@@ -38,7 +38,7 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "latter_state.h"
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111204L
+#define LATTER_SDK_REV 2026111301L
 #endif
 
 namespace esphome {

@@ -392,12 +392,18 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
                                    WidgetId::CAM_REPLY_MENU_BTN, kHitTap | kHitFocusSlot, 0);
   }
 
-  if (has_frame && !tools_direct_home()) {
-    render_glass_card(it, cx - scale_x(64), layout().back_y - scale_y(16), scale_x(128), scale_y(32),
-                      scale_s(16), kChromeGlassTint, 176);
+  const bool hide_single_app_back = tools_direct_home() &&
+                                    !persisted_prefs().home_screen_enabled &&
+                                    is_on_anchor_root(rs, persisted_prefs());
+  if (!hide_single_app_back) {
+    if (has_frame && (!tools_direct_home() || !persisted_prefs().home_screen_enabled)) {
+      render_glass_card(it, cx - scale_x(64), layout().back_y - scale_y(16), scale_x(128), scale_y(32),
+                        scale_s(16), kChromeGlassTint, 176);
+    }
+    const char *back_lbl =
+        (tools_direct_home() && persisted_prefs().home_screen_enabled) ? "Home" : "< Back";
+    render_back_button(it, cx, font_small, layout().back_y, back_lbl, ctx.col_white);
   }
-  render_back_button(it, cx, font_small, layout().back_y,
-                     tools_direct_home() ? "Home" : "< Back", ctx.col_white);
 }
 
 }  // namespace

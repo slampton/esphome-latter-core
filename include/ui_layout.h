@@ -516,17 +516,6 @@ inline std::string &latter_dock_order_csv() {
   return csv;
 }
 
-inline int dock_app_id_for_token(const std::string &tok) {
-  if (tok == "music") return 2;
-  if (tok == "alarm") return 9;
-  if (tok == "area") return 6;
-  if (tok == "remote") return 7;
-  if (tok == "camera") return 12;
-  if (tok == "games") return 3;
-  if (tok == "tools") return 8;
-  return -1;
-}
-
 inline const std::string &effective_dock_csv() {
   static const std::string kDefault(kDefaultDockApps);
   const std::string &csv = latter_dock_order_csv();
@@ -577,11 +566,11 @@ inline std::string toggled_dock_csv(const char *token) {
 
 static constexpr const char *kHomeSettingsDockTokens[5] = {"music", "area", "remote", "games", "tools"};
 
-inline int collect_home_dock_apps(int out_apps[8]) {
+inline int collect_home_dock_apps(int *out_apps) {
   int n = 0;
   bool added[16] = {false};
   auto try_add = [&](int app_id) {
-    if (n >= 8 || app_id < 0 || app_id > 14 || added[app_id]) return;
+    if (n >= kMaxDockApps || app_id < 0 || app_id > 14 || added[app_id]) return;
     if (app_id == 7 && !has_any_configured_remote()) return;
     added[app_id] = true;
     out_apps[n++] = app_id;
@@ -593,6 +582,44 @@ inline int collect_home_dock_apps(int out_apps[8]) {
   return n;
 }
 
+inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_game,
+                              int music_overlay_mode, int area_subpage, bool area_picker,
+                              int remote_subpage, int tools_subpage,
+                              const PersistedDevicePrefs &p = persisted_prefs()) {
+  const int anchor = resolve_anchor_dock_app(p);
+  if (anchor == PageId::HOME) return gui_page == PageId::HOME;
+  if (anchor == PageId::CLOCK) return gui_page == PageId::CLOCK;
+  if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
+  if (anchor == PageId::WHOLE_HOME) return gui_page == PageId::WHOLE_HOME;
+  if (anchor == PageId::AREA) {
+    if (runtime_state().area.active_area_id.empty()) {
+      return gui_page == PageId::AREA &&
+             (area_subpage == AreaSubpage::OVERVIEW || area_subpage == AreaSubpage::PICKER);
+    }
+    return gui_page == PageId::AREA && area_subpage == AreaSubpage::OVERVIEW && !area_picker;
+  }
+  if (anchor == PageId::REMOTE) return gui_page == PageId::REMOTE && remote_subpage == 0;
+  if (anchor == PageId::WEATHER) return gui_page == PageId::WEATHER;
+  if (anchor == 12) {
+    return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::CAMERAS &&
+           !cam_quick_reply_open();
+  }
+  if (anchor == PageId::GAMES) return gui_page == PageId::GAMES && active_game == 0;
+  if (anchor == PageId::TOOLS) {
+    return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::LAUNCHER;
+  }
+  if (anchor == PageId::SYSTEM) return gui_page == PageId::SYSTEM && system_menu_mode == 0;
+  return false;
+}
+
+inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
+                              const PersistedDevicePrefs &p = persisted_prefs()) {
+  return is_on_anchor_root(rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game,
+                           rt.music.overlay_mode, rt.nav.area_subpage,
+                           rt.area.browse_mode == "areas", rt.nav.remote_subpage,
+                           rt.nav.tools_subpage, p);
+}
+
 // Single go-home predicate shared by gui.yaml and TouchGestureEngine ([HOME PREDICATE]).
 inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int music_overlay_mode,
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
@@ -601,7 +628,13 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
   if (gui_page == PageId::MUSIC && music_overlay_mode > 0) return false;
-  if (gui_page == PageId::AREA && (area_subpage > 0 || area_picker)) return false;
+  if (gui_page == PageId::AREA && (area_subpage > 0 || area_picker)) {
+    const bool root_picker = !persisted_prefs().home_screen_enabled &&
+                             resolve_anchor_dock_app() == PageId::AREA &&
+                             runtime_state().area.active_area_id.empty() &&
+                             area_subpage == AreaSubpage::PICKER;
+    if (!root_picker) return false;
+  }
   if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
   if (gui_page == PageId::TOOLS && tools_subpage > 0) {
     const bool direct_root = tools_direct_home() &&
@@ -611,6 +644,12 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
          (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()) ||
          (tools_subpage == ToolsSubpage::CAMERAS && !cam_quick_reply_open()));
     if (!direct_root) return false;
+  }
+  if (!persisted_prefs().home_screen_enabled &&
+      is_on_anchor_root(gui_page, system_menu_mode, active_game, music_overlay_mode,
+                        area_subpage, area_picker, remote_subpage, tools_subpage,
+                        persisted_prefs())) {
+    return false;
   }
   return true;
 }

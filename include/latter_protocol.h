@@ -15,6 +15,7 @@ static constexpr const char *kDefaultDockApps = "music,alarm,area,remote,games,t
 static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_card
 static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
+static constexpr const char *kDefaultHomeCategories = "alarm,thermostat,entry,vacuum";  // defaults.home_categories
 
 enum class ProtocolHeaderField : size_t {
   HEADER_VERSION = 0,  // version (string)
@@ -66,7 +67,8 @@ enum class AreaCtxField : size_t {
   ACTIVITY_CARD = 38,  // activity_card (bool)
   ACTIVITY_SOURCES = 39,  // activity_sources (csv)
   SECURITY_PIN_POLICY = 40,  // security_pin_policy (string)
-  COUNT = 41
+  HOME_CATEGORIES = 41,  // home_categories (csv)
+  COUNT = 42
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -162,34 +164,36 @@ enum class DevicePrefsField : size_t {
   NIGHT_START_HOUR = 19,  // night_start_hour (u16)
   COLOR_PROFILE = 20,  // color_profile (string)
   VA_VISUAL_PROFILE = 21,  // va_visual_profile (string)
-  START_SCREEN = 22,  // start_screen (string)
-  CLOCK_FACE = 23,  // clock_face (string)
-  TIME_FORMAT = 24,  // time_format (string)
-  WEATHER_BACKGROUND = 25,  // weather_background (bool)
-  HOME_SUN = 26,  // home_sun (bool)
-  HOME_MOON = 27,  // home_moon (bool)
-  WAKE_GREETING = 28,  // wake_greeting (bool)
-  ALBUM_ART_STYLE = 29,  // album_art_style (string)
-  MUSIC_OVERLAY_STYLE = 30,  // music_overlay_style (string)
-  SHOW_SPEAKER_SHORTCUT = 31,  // show_speaker_shortcut (bool)
-  SHOW_LIBRARY_SHORTCUT = 32,  // show_library_shortcut (bool)
-  ALBUM_SORT_ORDER = 33,  // album_sort_order (string)
-  ARTIST_ALBUM_SORT_ORDER = 34,  // artist_album_sort_order (string)
-  PODCAST_SORT_ORDER = 35,  // podcast_sort_order (string)
-  WW_SENS_OKAY_NABU = 36,  // ww_sens_okay_nabu (string)
-  WW_SENS_HEY_LUNA = 37,  // ww_sens_hey_luna (string)
-  WW_SENS_HEY_JARVIS = 38,  // ww_sens_hey_jarvis (string)
-  WW_SENS_HEY_MYCROFT = 39,  // ww_sens_hey_mycroft (string)
-  WW_SENS_ALEXA = 40,  // ww_sens_alexa (string)
-  WAKE_SCREEN_ON_ASSIST = 41,  // wake_screen_on_assist (bool)
-  ALERT_VOLUME = 42,  // alert_volume (u16)
-  VOLUME_STEP_SIZE = 43,  // volume_step_size (u16)
-  GAME_SOUND_EFFECTS = 44,  // game_sound_effects (bool)
-  BLE_BEACON_ENABLED = 45,  // ble_beacon_enabled (bool)
-  BLE_BEACON_MODE = 46,  // ble_beacon_mode (string)
-  WEATHER_SIM_CONDITION = 47,  // weather_sim_condition (string)
-  THEME_COLOR_HEX = 48,  // theme_color_hex (string)
-  COUNT = 49
+  HOME_SCREEN_ENABLED = 22,  // home_screen_enabled (bool)
+  START_SCREEN = 23,  // start_screen (string)
+  RETURN_TO_HOME_TIMEOUT = 24,  // return_to_home_timeout (string)
+  CLOCK_FACE = 25,  // clock_face (string)
+  TIME_FORMAT = 26,  // time_format (string)
+  WEATHER_BACKGROUND = 27,  // weather_background (bool)
+  HOME_SUN = 28,  // home_sun (bool)
+  HOME_MOON = 29,  // home_moon (bool)
+  WAKE_GREETING = 30,  // wake_greeting (bool)
+  ALBUM_ART_STYLE = 31,  // album_art_style (string)
+  MUSIC_OVERLAY_STYLE = 32,  // music_overlay_style (string)
+  SHOW_SPEAKER_SHORTCUT = 33,  // show_speaker_shortcut (bool)
+  SHOW_LIBRARY_SHORTCUT = 34,  // show_library_shortcut (bool)
+  ALBUM_SORT_ORDER = 35,  // album_sort_order (string)
+  ARTIST_ALBUM_SORT_ORDER = 36,  // artist_album_sort_order (string)
+  PODCAST_SORT_ORDER = 37,  // podcast_sort_order (string)
+  WW_SENS_OKAY_NABU = 38,  // ww_sens_okay_nabu (string)
+  WW_SENS_HEY_LUNA = 39,  // ww_sens_hey_luna (string)
+  WW_SENS_HEY_JARVIS = 40,  // ww_sens_hey_jarvis (string)
+  WW_SENS_HEY_MYCROFT = 41,  // ww_sens_hey_mycroft (string)
+  WW_SENS_ALEXA = 42,  // ww_sens_alexa (string)
+  WAKE_SCREEN_ON_ASSIST = 43,  // wake_screen_on_assist (bool)
+  ALERT_VOLUME = 44,  // alert_volume (u16)
+  VOLUME_STEP_SIZE = 45,  // volume_step_size (u16)
+  GAME_SOUND_EFFECTS = 46,  // game_sound_effects (bool)
+  BLE_BEACON_ENABLED = 47,  // ble_beacon_enabled (bool)
+  BLE_BEACON_MODE = 48,  // ble_beacon_mode (string)
+  WEATHER_SIM_CONDITION = 49,  // weather_sim_condition (string)
+  THEME_COLOR_HEX = 50,  // theme_color_hex (string)
+  COUNT = 51
 };
 
 }  // namespace latter_ui

@@ -212,9 +212,12 @@ interval:
             id(turn_screen_off).execute();
           }
 
-          // 10. Invariant 2: Auto-exit forgotten Games (>3m untouched) or Battery Flashlight/Level/Camera (>5m untouched)
-          uint32_t last_user_act_ms = std::max(latter_ui::last_screen_wake_ms(),
-                                               latter_ui::touch_gesture().last_touch_ms);
+          // 10. Invariant 2: Auto-exit forgotten Games (>3m untouched), Battery Flashlight/Level/Camera (>5m untouched),
+          // and Return-to-Home idle navigation reset.
+          const auto &prefs = latter_ui::persisted_prefs();
+          uint32_t last_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
+                                                latter_ui::touch_gesture().last_touch_ms,
+                                                latter_ui::ui_focus_last_ms()});
           if (rs.nav.display_power_state == 0 && (now_1s_ms > last_user_act_ms)) {
             uint32_t touch_idle_ms = now_1s_ms - last_user_act_ms;
             if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
@@ -238,9 +241,25 @@ interval:
               id(screen_sleep_timer).execute();
             }
           }
+          const uint32_t rth_ms = latter_ui::return_to_home_timeout_ms(prefs);
+          const bool media_playing_1s =
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (latter_ui::media_state().state == "playing");
+          const bool cam_busy_1s = latter_ui::cam_call_active() ||
+                                   latter_ui::cam_listen_active() ||
+                                   latter_ui::cam_intercom_ptt_active();
+          if (rs.nav.display_power_state != 2 && rth_ms > 0U &&
+              (now_1s_ms > last_user_act_ms) &&
+              (now_1s_ms - last_user_act_ms >= rth_ms) &&
+              latter_ui::should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
+            ESP_LOGI("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
+                     latter_ui::pref_return_to_home_timeout_cstr(prefs));
+            id(sync_ui_touch_runtime).execute();
+            latter_ui::touch_engine().navigate_home(now_1s_ms);
+            id(apply_power_policy).execute();
+          }
 
           // 11. Invariant 3: Guarantee screen_sleep_timer is armed whenever screen is active
-          const auto &prefs = latter_ui::persisted_prefs();
           #if LATTER_IS_STATIONARY
           const bool should_arm_timer = prefs.docked_screensaver &&
                                         (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) != "Never");
@@ -334,8 +353,9 @@ script:
           auto &rs = latter_ui::runtime_state();
 
           // Radio: BLE presence beacon and Wi-Fi modem sleep.
-          const uint32_t last_interact_ms = std::max(latter_ui::last_screen_wake_ms(),
-                                                     latter_ui::touch_gesture().last_touch_ms);
+          const uint32_t last_interact_ms = std::max({latter_ui::last_screen_wake_ms(),
+                                                      latter_ui::touch_gesture().last_touch_ms,
+                                                      latter_ui::ui_focus_last_ms()});
           const bool high_tput_needed =
               rs.hw_usb_connected ||
               latter_ui::radio_boost_active(now_p) ||
@@ -565,11 +585,29 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          const uint32_t wake_now_ms = millis();
+          const uint32_t prev_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
+                                                      latter_ui::touch_gesture().last_touch_ms,
+                                                      latter_ui::ui_focus_last_ms()});
+          const uint32_t rth_ms = latter_ui::return_to_home_timeout_ms(latter_ui::persisted_prefs());
+          const bool media_playing_wake =
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (latter_ui::media_state().state == "playing");
+          const bool cam_busy_wake = latter_ui::cam_call_active() ||
+                                     latter_ui::cam_listen_active() ||
+                                     latter_ui::cam_intercom_ptt_active();
+          if (rth_ms > 0U && wake_now_ms > prev_user_act_ms &&
+              (wake_now_ms - prev_user_act_ms >= rth_ms) &&
+              latter_ui::should_return_to_home_on_idle(
+                  rs, latter_ui::persisted_prefs(), media_playing_wake, cam_busy_wake)) {
+            id(sync_ui_touch_runtime).execute();
+            latter_ui::touch_engine().navigate_home(wake_now_ms);
+          }
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
             latter_ui::record_screen_wake();
           }
           latter_ui::screen_is_off_standby() = false;
-          latter_ui::last_screen_wake_ms() = millis();
+          latter_ui::last_screen_wake_ms() = wake_now_ms;
           latter_ui::raise_to_wake().reset();
           rs.nav.sleep_start_time = 0;
           rs.nav.display_power_state = 0; // ACTIVE

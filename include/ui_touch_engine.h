@@ -219,6 +219,8 @@ class TouchGestureEngine {
   void on_update(int tx, int ty, uint32_t now_ms) { on_touch_move(tx, ty, now_ms); }
   void on_release(uint32_t now_ms) { on_touch_up(now_ms); }
   void on_input_event(const std::string &action, int delta, uint32_t now_ms);
+  void navigate_home(uint32_t now_ms);
+  void navigate_to_start_screen(uint32_t now_ms);
 
  private:
   UiTouchRuntime rt_{};
@@ -228,7 +230,6 @@ class TouchGestureEngine {
   uint32_t hud_just_woken_ms_{0};
   uint32_t last_area_slider_ms_{0};
 
-  void navigate_home(uint32_t now_ms);
   bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);
   bool gate_or_dispatch_area_action(const std::string &domain_or_entity,
                                     const std::string &action, int level,

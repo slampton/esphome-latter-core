@@ -747,9 +747,27 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 3U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 43U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 49U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 4U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 45U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 51U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
+
+  // Weather dock token + 10-slot dock array capacity (8 user tokens + Settings)
+  LATTER_CHECK(latter_ui::kMaxDockApps == 10);
+  LATTER_CHECK(latter_ui::dock_app_id_for_token("weather") == 5);
+  LATTER_CHECK(latter_ui::dock_app_id_for_token("camera") == 12);
+
+  // Ordered Home Hub category CSV parser & collect_home_hub_tabs
+  int wh_tabs[4] = {-1, -1, -1, -1};
+  latter_ui::AreaContextState uninit_ac{};
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 4);
+  LATTER_CHECK(wh_tabs[0] == 0 && wh_tabs[1] == 1 && wh_tabs[2] == 2 && wh_tabs[3] == 3);
+  uninit_ac.epoch = 10U;
+  uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum";
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 2);
+  LATTER_CHECK(wh_tabs[0] == 3 && wh_tabs[1] == 1);
+  uninit_ac.home_categories.clear();
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 0);
 
   // Manifest slot capacities (LATTER_SLOT_COUNT=5, LATTER_CARD_SLOT_COUNT=3) + compact <=230B state guard
   const std::string full_manifest = latter_ui::build_hardware_manifest_json();
@@ -859,6 +877,54 @@ void test_device_prefs_v2_and_event_timer_sync() {
   rs.timers.remaining_sec = 179;
   LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(7250U, false, &outbox));
   LATTER_CHECK(outbox.published.size() == 2U);
+
+  // Single-App Mode (home_screen_enabled=false), 10-item Start Screen, and Return-to-Home idle exemptions
+  p = latter_ui::PersistedDevicePrefs{};
+  LATTER_CHECK(p.home_screen_enabled);
+  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Home");
+  LATTER_CHECK(std::string_view(latter_ui::pref_return_to_home_timeout_cstr(p)) == "2 min");
+  LATTER_CHECK(latter_ui::return_to_home_timeout_ms(p) == 120000U);
+
+  uint64_t nav_chg = 0ULL;
+  uint32_t nav_eff = 0;
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "0", false, nav_chg, nav_eff));
+  LATTER_CHECK(!p.home_screen_enabled);
+  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Clock");
+  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 0);
+  LATTER_CHECK((nav_eff & latter_ui::kPrefEffectNavPolicy) != 0U);
+
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      p, latter_ui::PrefKey::START_SCREEN, "Area Controls", false, nav_chg, nav_eff));
+  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 6);
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "1", false, nav_chg, nav_eff));
+  rs = latter_ui::DeviceRuntimeState{};
+  rs.nav.gui_page = 6;
+  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  rs.nav.gui_page = 1;
+  rs.nav.home_subpage = 0;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  rs.nav.gui_page = 2;
+  rs.music.overlay_mode = 0;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, true));   // Playing on Now Playing stays put
+  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));   // Paused on Now Playing returns Home
+  rs.music.overlay_mode = 2;
+  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, true));    // Idle Library menu returns Home
+  rs.nav.gui_page = 8;
+  rs.nav.tools_subpage = 1;
+  rs.timers.running = true;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Active countdown stays put
+  rs.timers.running = false;
+  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  rs.nav.tools_subpage = 5;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Flashlight stays put
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      p, latter_ui::PrefKey::RETURN_TO_HOME_TIMEOUT, "Never", false, nav_chg, nav_eff));
+  rs.nav.gui_page = 6;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
 }
 
 }  // namespace

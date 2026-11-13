@@ -175,7 +175,11 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                            ? (y >= min_vis_y && y <= max_vis_y)
                            : (y >= row0_y - 10 && y <= layout().slot5_y(4) + 10);
       if (vis) {
-        render_modern_card(it, cx, y, 276, 44, 12, card_bg_on, card_brd_on, kSysLabels[i], col_white, font_small);
+        const bool row_en = (i != 5) || prefs.home_screen_enabled;
+        render_modern_card(it, cx, y, 276, 44, 12,
+                           row_en ? card_bg_on : card_bg_off,
+                           row_en ? card_brd_on : card_brd_off,
+                           kSysLabels[i], row_en ? col_white : col_slate, font_small);
         if (!menu_scroll_active && vis_row < 5) {
           add_row_hit(y, static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + vis_row),
                       kHitTap | kHitFocusSlot, static_cast<int16_t>(vis_row));
@@ -265,8 +269,10 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   } else if (system_menu_mode == 2) {
     const int current_offset = compute_scroll_offset(display_menu_page, 252);
     char disp_labels[9][36];
-    std::snprintf(disp_labels[0], sizeof(disp_labels[0]), "Start Screen: %s",
-                  (ctx.default_start_app_opt == "Clock") ? "Clock" : "Home");
+    const char *start_lbl =
+        (ctx.default_start_app_opt == "Area Controls") ? "Area"
+        : (ctx.default_start_app_opt.empty() ? "Home" : ctx.default_start_app_opt.c_str());
+    std::snprintf(disp_labels[0], sizeof(disp_labels[0]), "Start Screen: %s", start_lbl);
     std::snprintf(disp_labels[1], sizeof(disp_labels[1]), "Clock Face: %s",
                   prefs.clock_face_digital ? "Digital" : "Analog");
     std::snprintf(disp_labels[2], sizeof(disp_labels[2]), "Format: %s",

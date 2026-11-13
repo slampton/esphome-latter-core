@@ -301,7 +301,12 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       render_vertical_page_pips(it, list_page > 1, list_page < list_total_pages, col_bg, col_white, col_slate);
     }
 
-    render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    const bool hide_picker_back = rs.area.active_area_id.empty() &&
+                                  !persisted_prefs().home_screen_enabled &&
+                                  is_on_anchor_root(rs, persisted_prefs());
+    if (!hide_picker_back) {
+      render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    }
     return;
   }
 
@@ -620,7 +625,26 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
   const Color card_bg_on = ui::chrome_card_bg_on();
   const Color card_bg_off = ui::chrome_card_bg_off();
   const Color card_brd_off = ui::chrome_card_brd_off();
-  const int tab = whole_home_tab();
+  int tabs[4] = {0, 0, 0, 0};
+  const int tab_count = collect_home_hub_tabs(tabs, ac);
+  if (tab_count <= 0) {
+    render_page_header(it, cx, "HOME HUB", font_small, theme_primary);
+    render_empty_state(it, cx, layout().area_card3_y(1), "No Home Controls configured", font_small, col_slate);
+    return;
+  }
+
+  int active_slot = -1;
+  for (int i = 0; i < tab_count; i++) {
+    if (tabs[i] == whole_home_tab()) {
+      active_slot = i;
+      break;
+    }
+  }
+  if (active_slot < 0) {
+    whole_home_tab() = tabs[0];
+    active_slot = 0;
+  }
+  const int tab = tabs[active_slot];
 
   if (tab == 0) {
     // TAB 0: SECURITY ALARM (Tri-state: unknown/unconfigured never claims "Disarmed")
@@ -691,7 +715,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const int mode_y = scale_y(266);
     const Color mode_brd = (m == "heat") ? col_gold
                          : ((m == "cool") ? Color(75, 175, 255)
-                         : ((m == "auto") ? col_green : card_brd_off));
+                         : ((m == "auto" || m == "heat_cool") ? col_green : card_brd_off));
     render_modern_card(it, cx, hero_y, 312, 84, 18, card_bg_on, mode_brd, nullptr, col_white, font_date);
     const int minus_x = cx - scale_x(115);
     const int plus_x  = cx + scale_x(115);
@@ -725,7 +749,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const char *M_NAMES[4] = {"Heat", "Cool", "Auto", "Off"};
     const char *M_IDS[4]   = {"heat", "cool", "auto", "off"};
     for (int i = 0; i < 4; i++) {
-      const bool act = (m == M_IDS[i]);
+      const bool act = (m == M_IDS[i]) || (i == 2 && m == "heat_cool");
       render_modern_card(it, M_XS[i], mode_y, 76, 48, 12,
                          act ? card_bg_on : card_bg_off,
                          act ? mode_brd : card_brd_off,
@@ -740,36 +764,46 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : "Tap Card to Toggle",
                       font_small, is_fb ? theme_secondary : col_slate);
 
-    const GarageState gs = wh_garage_state();
-    const Color g_bg  = (gs == GarageState::OPEN) ? Color(40, 24, 18)
-                      : ((gs == GarageState::CLOSED) ? card_bg_on : card_bg_off);
-    const Color g_brd = (gs == GarageState::OPEN) ? col_gold
-                      : ((gs == GarageState::CLOSED) ? col_green : card_brd_off);
-    const char *g_lbl = (gs == GarageState::OPEN)   ? "Garage: Open (Close)"
-                      : (gs == GarageState::CLOSED) ? "Garage: Closed (Open)"
-                      : "Garage: Unknown";
-    render_modern_card(it, cx, scale_y(156), 308, 72, 16,
-                       g_bg, g_brd, g_lbl,
-                       (gs == GarageState::UNKNOWN) ? col_slate : col_white, font_small);
-    frame_hits().add_centered_rect(cx, scale_y(156), scale_x(308), scale_y(72),
-                                   WidgetId::COVER_OPEN_BTN, kHitTap | kHitFocusSlot);
+    const bool has_cfg_pair = (ac.epoch > 0U) && (!ac.garage_entity.empty() || !ac.lock_entity.empty());
+    const bool show_garage = !has_cfg_pair || !ac.garage_entity.empty();
+    const bool show_lock   = !has_cfg_pair || !ac.lock_entity.empty();
+    const int garage_y = (show_garage && show_lock) ? scale_y(156) : scale_y(206);
+    const int lock_y   = (show_garage && show_lock) ? scale_y(256) : scale_y(206);
 
-    const LockState ls = wh_lock_state();
-    const Color l_bg  = (ls == LockState::LOCKED) ? Color(18, 36, 26)
-                      : ((ls == LockState::UNLOCKED) ? Color(40, 18, 22) : card_bg_off);
-    const Color l_brd = (ls == LockState::LOCKED) ? col_green
-                      : ((ls == LockState::UNLOCKED) ? col_red : card_brd_off);
-    const char *l_lbl = (ls == LockState::LOCKED)   ? "Front Door: Locked"
-                      : (ls == LockState::UNLOCKED) ? "Front Door: Unlocked"
-                      : "Front Door: Unknown";
-    render_modern_card(it, cx, scale_y(256), 308, 72, 16,
-                       l_bg, l_brd, l_lbl,
-                       (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
-    ui::draw_icon_lock(it, cx - scale_x(122), scale_y(256),
-                       (ls == LockState::LOCKED) ? col_green : ((ls == LockState::UNLOCKED) ? col_red : col_slate),
-                       kChromeShadow, ls != LockState::UNLOCKED);
-    frame_hits().add_centered_rect(cx, scale_y(256), scale_x(308), scale_y(72),
-                                   WidgetId::LOCK_ACTION_BTN, kHitTap | kHitFocusSlot);
+    if (show_garage) {
+      const GarageState gs = wh_garage_state();
+      const Color g_bg  = (gs == GarageState::OPEN) ? Color(40, 24, 18)
+                        : ((gs == GarageState::CLOSED) ? card_bg_on : card_bg_off);
+      const Color g_brd = (gs == GarageState::OPEN) ? col_gold
+                        : ((gs == GarageState::CLOSED) ? col_green : card_brd_off);
+      const char *g_lbl = (gs == GarageState::OPEN)   ? "Garage: Open (Close)"
+                        : (gs == GarageState::CLOSED) ? "Garage: Closed (Open)"
+                        : "Garage: Unknown";
+      render_modern_card(it, cx, garage_y, 308, 72, 16,
+                         g_bg, g_brd, g_lbl,
+                         (gs == GarageState::UNKNOWN) ? col_slate : col_white, font_small);
+      frame_hits().add_centered_rect(cx, garage_y, scale_x(308), scale_y(72),
+                                     WidgetId::COVER_OPEN_BTN, kHitTap | kHitFocusSlot);
+    }
+
+    if (show_lock) {
+      const LockState ls = wh_lock_state();
+      const Color l_bg  = (ls == LockState::LOCKED) ? Color(18, 36, 26)
+                        : ((ls == LockState::UNLOCKED) ? Color(40, 18, 22) : card_bg_off);
+      const Color l_brd = (ls == LockState::LOCKED) ? col_green
+                        : ((ls == LockState::UNLOCKED) ? col_red : card_brd_off);
+      const char *l_lbl = (ls == LockState::LOCKED)   ? "Front Door: Locked"
+                        : (ls == LockState::UNLOCKED) ? "Front Door: Unlocked"
+                        : "Front Door: Unknown";
+      render_modern_card(it, cx, lock_y, 308, 72, 16,
+                         l_bg, l_brd, l_lbl,
+                         (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
+      ui::draw_icon_lock(it, cx - scale_x(122), lock_y,
+                         (ls == LockState::LOCKED) ? col_green : ((ls == LockState::UNLOCKED) ? col_red : col_slate),
+                         kChromeShadow, ls != LockState::UNLOCKED);
+      frame_hits().add_centered_rect(cx, lock_y, scale_x(308), scale_y(72),
+                                     WidgetId::LOCK_ACTION_BTN, kHitTap | kHitFocusSlot);
+    }
 
   } else {
     render_page_header(it, cx, "ROBOT VACUUM", font_small, theme_primary);
@@ -806,19 +840,21 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 2);
   }
 
-  // Bottom 4-Icon Whole-Home In-App Segmented Mode Bar at layout().app_dock_y
+  // Bottom Whole-Home In-App Segmented Mode Bar at layout().app_dock_y
   int WH_XS[4] = {0, 0, 0, 0};
   bool wh_dl = false, wh_dr = false;
-  get_mode_bar_window_xs(4, 0, cx, WH_XS, wh_dl, wh_dr);
+  get_mode_bar_window_xs(tab_count, 0, cx, WH_XS, wh_dl, wh_dr);
   const int WH_Y = layout().app_dock_y;
-  render_in_app_mode_bar_track(it, cx, WH_XS, 4, tab, false, false, 4, tab, theme_primary, col_white);
-  for (int i = 0; i < 4; i++) {
+  render_in_app_mode_bar_track(it, cx, WH_XS, tab_count, active_slot, false, false,
+                               tab_count, active_slot, theme_primary, col_white);
+  for (int i = 0; i < tab_count; i++) {
     const int bx = WH_XS[i];
-    const bool is_act = (i == tab);
+    const int cat_id = tabs[i];
+    const bool is_act = (i == active_slot);
     const Color fg_c = is_act ? theme_primary : col_white;
     const Color cut_c = sample_glass_surface_color(bx - 14, WH_Y - 14, 29, 29);
 
-    if (i == 0) {
+    if (cat_id == 0) {
       static constexpr int8_t SH_HW[31] = {
          1,  4,  7, 10, 13, 13, 13, 13, 13, 13, 13, 13, 12, 12, 12,
         12, 11, 11, 11, 10, 10,  9,  9,  8,  7,  6,  5,  4,  3,  2,  1
@@ -844,7 +880,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
           }
         }
       }
-    } else if (i == 1) {
+    } else if (cat_id == 1) {
       const int tx = bx - 2;
       fast_line(it, tx - 3, WH_Y - 13, tx + 3, WH_Y - 13, fg_c);
       fast_line(it, tx - 2, WH_Y - 14, tx + 2, WH_Y - 14, fg_c);
@@ -859,7 +895,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
       fill_rect_row_major(it, tx + 6, WH_Y - 11, 5, 2, fg_c);
       fill_rect_row_major(it, tx + 6, WH_Y - 6,  4, 2, fg_c);
       fill_rect_row_major(it, tx + 6, WH_Y - 1,  5, 2, fg_c);
-    } else if (i == 2) {
+    } else if (cat_id == 2) {
       fast_filled_triangle(it, bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
       fill_rect_row_major(it, bx - 15, WH_Y - 4, 31, 2, fg_c);
       fill_rect_row_major(it, bx - 12, WH_Y - 2, 25, 14, fg_c);

@@ -1136,7 +1136,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   home_lap.mark(ProfSect::HOME_TEXT);
 
   // ZONE 5: Fluid 4-Icon Sliding App Dock
-  int dock_apps[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int dock_apps[kMaxDockApps] = {0};
   const int dock_count = collect_home_dock_apps(dock_apps);
   if (dock_count > 0) {
     const int total_dock_pages = (dock_count + 3) / 4;
@@ -1351,6 +1351,22 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
           fast_vline(it, bx + 5, by + 3, 6, c);
           fast_hline(it, bx + 2, by + 5, 7, c);
         }
+      } else if (app_id == 5) {
+        // Sun behind foreground cloud
+        fast_filled_circle(it, bx + 6, by - 6, 5, c);
+        fast_vline(it, bx + 6, by - 14, 2, c);
+        fast_hline(it, bx + 13, by - 6, 2, c);
+        fast_line(it, bx + 11, by - 11, bx + 12, by - 12, c);
+        fast_line(it, bx + 1, by - 11, bx, by - 12, c);
+        if (!is_shadow) {
+          fast_filled_circle(it, bx - 2, by + 1, 9, cut_c);
+          fast_filled_circle(it, bx + 6, by + 4, 8, cut_c);
+          fill_rect_row_major(it, bx - 11, by + 2, 19, 9, cut_c);
+        }
+        fast_filled_circle(it, bx - 9, by + 5, 5, c);
+        fast_filled_circle(it, bx - 2, by + 1, 7, c);
+        fast_filled_circle(it, bx + 6, by + 4, 6, c);
+        fill_rect_row_major(it, bx - 9, by + 4, 16, 7, c);
       }
     };
 

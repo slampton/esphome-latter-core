@@ -75,9 +75,14 @@ esphome:
                 const auto &st = latter_ui::area_ctx_state();
                 r.area.active_area_name = st.area_name;  // "" without an Area
                 latter_ui::latter_area_label() = st.area_name;
+                const bool was_unassigned = r.area.active_area_id.empty();
                 const bool area_changed = !st.area_id.empty() && st.area_id != r.area.active_area_id;
                 if (area_changed) {
                   r.area.active_area_id = st.area_id;
+                  if (was_unassigned && r.nav.gui_page == 6 && r.nav.area_subpage == 1) {
+                    r.nav.area_subpage = 0;
+                    r.area.browse_mode = "entities";
+                  }
                   r.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
                   latter_ui::area_cat_dock_page() = 0;
                   latter_ui::mark_dirty_full();
@@ -123,6 +128,29 @@ esphome:
                 if (!st.dock_apps.empty() && st.dock_apps != prev_dock) {
                   latter_ui::latter_dock_order_csv() = st.dock_apps;
                   latter_ui::home_dock_page() = 0;
+                }
+                {
+                  int wh_tabs[4] = {0, 0, 0, 0};
+                  const int wh_cnt = latter_ui::collect_home_hub_tabs(wh_tabs, st);
+                  if (wh_cnt > 0) {
+                    bool wh_ok = false;
+                    for (int i = 0; i < wh_cnt; i++) {
+                      if (wh_tabs[i] == latter_ui::whole_home_tab()) {
+                        wh_ok = true;
+                        break;
+                      }
+                    }
+                    if (!wh_ok) {
+                      latter_ui::whole_home_tab() = wh_tabs[0];
+                      if (r.nav.gui_page == 9) latter_ui::mark_dirty_full();
+                    }
+                  } else if (r.nav.gui_page == 9) {
+                    latter_ui::mark_dirty_full();
+                  }
+                }
+                if (r.nav.gui_page == 8 && r.nav.tools_subpage == 12 &&
+                    r.alert.loaded_camera_url.empty() && !st.doorbell_camera_entity.empty()) {
+                  id(fetch_on_demand_camera).execute();
                 }
                 r.area.alarm_entity = st.alarm_entity;
                 r.area.alarm_state = st.alarm_state;
@@ -283,8 +311,14 @@ esphome:
                 r.remote.active_slot = latter_ui::resolve_active_remote_slot(rem.active_slot);
                 latter_ui::home_dock_page() = 0;
                 if (!latter_ui::has_any_configured_remote() && r.nav.gui_page == 7) {
-                  r.nav.gui_page = 1;
-                  r.nav.remote_subpage = 0;
+                  id(sync_ui_touch_runtime).execute();
+                  latter_ui::touch_engine().navigate_home(millis());
+                } else if (latter_ui::has_any_configured_remote() &&
+                           std::string_view(latter_ui::pref_start_screen_cstr(prefs)) == "Remote" &&
+                           latter_ui::touch_gesture().last_touch_ms == 0U &&
+                           r.nav.gui_page != 7) {
+                  id(sync_ui_touch_runtime).execute();
+                  latter_ui::touch_engine().navigate_to_start_screen(millis());
                 }
                 if (r.nav.display_power_state == 0 && (r.nav.gui_page == 1 || r.nav.gui_page == 7) && millis() > 3000) {
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -330,7 +364,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111204L;
+            constexpr long LATTER_YAML_REV = 2026111301L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -366,6 +400,7 @@ esphome:
             rs.alert.loaded_camera_url = "";
             id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_state_json());
         - script.execute: mute_speaker_path
+        - script.execute: sync_ui_touch_runtime
         - script.execute: apply_default_start_page
         - script.execute: apply_theme_preset
         - lambda: |-
@@ -376,7 +411,6 @@ esphome:
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer
-        - script.execute: sync_ui_touch_runtime
 
 api:
   actions:
@@ -1075,6 +1109,17 @@ script:
           if (eff & latter_ui::kPrefEffectPowerPolicy) {
             id(apply_power_policy).execute();
           }
+          if (eff & latter_ui::kPrefEffectNavPolicy) {
+            const bool cam_busy = latter_ui::cam_call_active() ||
+                                  latter_ui::cam_listen_active() ||
+                                  latter_ui::cam_intercom_ptt_active();
+            if (!p.home_screen_enabled && !cam_busy && !latter_ui::is_on_anchor_root(rs, p)) {
+              id(sync_ui_touch_runtime).execute();
+              latter_ui::touch_engine().navigate_to_start_screen(millis());
+            } else {
+              latter_ui::mark_dirty_full();
+            }
+          }
           if ((eff & latter_ui::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
             latter_ui::weather_sim_dirty() = true;
             latter_ui::record_ambient_frame_ms(0);
@@ -1229,8 +1274,8 @@ script:
   - id: apply_default_start_page
     then:
       - lambda: |-
-          const std::string_view def_app = latter_ui::pref_start_screen_cstr();
-          latter_ui::runtime_state().nav.gui_page = (def_app == "Clock") ? 0 : 1;
+          id(sync_ui_touch_runtime).execute();
+          latter_ui::touch_engine().navigate_to_start_screen(millis());
 
   - id: trigger_firmware_update
     mode: restart

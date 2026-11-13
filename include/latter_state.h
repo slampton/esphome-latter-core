@@ -65,8 +65,7 @@ struct WholeHomeState {
   std::string vacuum_state = "";
 };
 
-// Protocol v3 area_context state (unread wire fields covers_open, thermostat_entity,
-// lock_entity, garage_entity, vacuum_entity are parsed on the wire without heap storage).
+// Protocol v3 area_context state (unread wire field covers_open is parsed on the wire without heap storage).
 struct AreaContextState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -83,6 +82,10 @@ struct AreaContextState {
   int lights_on = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "";
+  std::string thermostat_entity = "";
+  std::string lock_entity = "";
+  std::string garage_entity = "";
+  std::string vacuum_entity = "";
   std::string camera_snapshot_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
@@ -97,6 +100,7 @@ struct AreaContextState {
   std::string activity_card = "";        // "1" / "0"; empty = not set -> kDefaultActivityCard
   std::string activity_sources = "";     // csv of source keys; empty = not set -> kDefaultActivitySources
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
+  std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,thermostat,entry,vacuum")
 };
 
 // Protocol v3 active_media state (unread wire fields position_updated_at, supported_features,
@@ -168,7 +172,7 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 3U;
+static constexpr uint16_t kPersistedPrefsVersion = 4U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -215,7 +219,9 @@ enum class PrefKey : uint8_t {
   GAME_SOUND_EFFECTS = 40,
   BLE_BEACON_ENABLED = 41,
   BLE_BEACON_MODE = 42,
-  COUNT = 43,
+  HOME_SCREEN_ENABLED = 43,
+  RETURN_TO_HOME_TIMEOUT = 44,
+  COUNT = 45,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -231,6 +237,7 @@ static constexpr uint32_t kPrefEffectDockedSaverOff = 1U << 4;
 static constexpr uint32_t kPrefEffectThemePreset    = 1U << 5;
 static constexpr uint32_t kPrefEffectPowerPolicy    = 1U << 6;
 static constexpr uint32_t kPrefEffectRedraw         = 1U << 7;
+static constexpr uint32_t kPrefEffectNavPolicy      = 1U << 8;
 
 struct PersistedAlarmPref {
   uint8_t hour = 7;
@@ -265,7 +272,7 @@ struct PersistedDevicePrefs {
   uint8_t night_start_hour = 20;           // 0..23
   uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
   uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
-  uint8_t start_screen = 0;                // 0..1 ("Home", "Clock")
+  uint8_t start_screen = 0;                // 0..9 ("Home", "Clock", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
   uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
   bool weather_background = true;
@@ -291,7 +298,8 @@ struct PersistedDevicePrefs {
   bool game_sound_effects = true;
   bool ble_beacon_enabled = false;         // Off until Latter enables native_ble_tracking
   uint8_t ble_beacon_mode = 0;             // 0..2 ("Handheld Only", "Handheld + Screen Off", "Always")
-  uint8_t reserved_pad[2] = {0, 0};
+  bool home_screen_enabled = true;
+  uint8_t return_to_home_timeout = 3;      // 0..6 ("15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never")
 
   // Two-way Latter Protocol v3 sync tracking
   uint32_t prefs_seq = 0;
@@ -357,7 +365,11 @@ inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
     "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
-inline constexpr const char *const kStartScreenOpts[2] = {"Home", "Clock"};
+inline constexpr const char *const kStartScreenOpts[10] = {
+    "Home", "Clock", "Media", "Home Hub", "Area Controls",
+    "Remote", "Weather", "Cameras", "Games", "Tools"};
+inline constexpr const char *const kReturnToHomeTimeoutOpts[7] = {
+    "15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never"};
 inline constexpr const char *const kClockFaceOpts[3] = {
     "Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"};
 inline constexpr const char *const kTimeFormatOpts[2] = {"12-Hour (AM/PM)", "24-Hour"};
@@ -412,6 +424,11 @@ inline const char *pref_night_brightness_cstr(const PersistedDevicePrefs &p = pe
 inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kColorProfileOpts, p.color_profile); }
 inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
 inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
+inline const char *pref_return_to_home_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kReturnToHomeTimeoutOpts, p.return_to_home_timeout, 3); }
+inline uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &p = persisted_prefs()) {
+  static constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
+  return kMs[(p.return_to_home_timeout < 7) ? p.return_to_home_timeout : 3];
+}
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
@@ -440,7 +457,9 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.night_start_hour > 23) p.night_start_hour = 20;
   if (p.color_profile >= 5) p.color_profile = 0;
   if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
-  if (p.start_screen >= 2) p.start_screen = 0;
+  if (p.start_screen >= 10) p.start_screen = 0;
+  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = 1;  // Single-app mode cannot start on Home
+  if (p.return_to_home_timeout >= 7) p.return_to_home_timeout = 3;
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
   if (p.album_art_style >= 4) p.album_art_style = 0;
@@ -1153,6 +1172,41 @@ inline int parse_area_categories_csv(std::string_view csv, std::string *out_cats
   return n;
 }
 
+inline int home_category_tab_for_token(std::string_view sv) {
+  if (sv == "alarm") return 0;
+  if (sv == "thermostat") return 1;
+  if (sv == "entry") return 2;
+  if (sv == "vacuum") return 3;
+  return -1;
+}
+
+inline int parse_home_categories_csv(std::string_view csv, int out_tabs[4]) {
+  if (csv.empty() || out_tabs == nullptr) return 0;
+  int n = 0;
+  size_t start = 0;
+  while (start <= csv.size() && n < 4) {
+    size_t pos = csv.find(',', start);
+    std::string_view part =
+        (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start);
+    while (!part.empty() && (part.front() == ' ' || part.front() == '\t')) part.remove_prefix(1);
+    while (!part.empty() && (part.back() == ' ' || part.back() == '\t')) part.remove_suffix(1);
+    const int tab_id = home_category_tab_for_token(part);
+    if (tab_id >= 0) {
+      bool dup = false;
+      for (int i = 0; i < n; ++i) {
+        if (out_tabs[i] == tab_id) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) out_tabs[n++] = tab_id;
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  return n;
+}
+
 inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_epoch, uint32_t in_rev) {
   if (in_epoch == 0 || in_rev == 0) return false;
   if (in_epoch != cur_epoch) {
@@ -1251,6 +1305,10 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.lights_on         = v3_parse_int(f[static_cast<size_t>(AreaCtxField::LIGHTS_ON)], 0);
   st.alarm_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_ENTITY)]);
   st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
+  st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
+  st.lock_entity       = std::string(f[static_cast<size_t>(AreaCtxField::LOCK_ENTITY)]);
+  st.garage_entity     = std::string(f[static_cast<size_t>(AreaCtxField::GARAGE_ENTITY)]);
+  st.vacuum_entity     = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
 
   wh.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
   float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
@@ -1276,6 +1334,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.activity_card            = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_CARD)]);
   st.activity_sources         = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_SOURCES)]);
   st.security_pin_policy      = std::string(f[static_cast<size_t>(AreaCtxField::SECURITY_PIN_POLICY)]);
+  st.home_categories          = std::string(f[static_cast<size_t>(AreaCtxField::HOME_CATEGORIES)]);
   return true;
 }
 
@@ -1461,6 +1520,8 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::GAME_SOUND_EFFECTS: return "game_sound_effects";
     case PrefKey::BLE_BEACON_ENABLED: return "ble_beacon_enabled";
     case PrefKey::BLE_BEACON_MODE: return "ble_beacon_mode";
+    case PrefKey::HOME_SCREEN_ENABLED: return "home_screen_enabled";
+    case PrefKey::RETURN_TO_HOME_TIMEOUT: return "return_to_home_timeout";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -1511,6 +1572,8 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::GAME_SOUND_EFFECTS: return p.game_sound_effects ? "1" : "0";
     case PrefKey::BLE_BEACON_ENABLED: return p.ble_beacon_enabled ? "1" : "0";
     case PrefKey::BLE_BEACON_MODE: return pref_ble_beacon_mode_cstr(p);
+    case PrefKey::HOME_SCREEN_ENABLED: return p.home_screen_enabled ? "1" : "0";
+    case PrefKey::RETURN_TO_HOME_TIMEOUT: return pref_return_to_home_timeout_cstr(p);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -1526,6 +1589,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     if (key == PrefKey::PICKUP_TO_WAKE && (!LATTER_HAS_IMU || LATTER_IS_STATIONARY)) u = 2;
     if (key == PrefKey::BATTERY_HIBERNATE_TIMEOUT && (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY)) u = 4;
     if (key == PrefKey::CLOCK_FACE && !LATTER_ROUND_DISPLAY && u == 1) u = 0;
+    if (key == PrefKey::START_SCREEN && !p.home_screen_enabled && u == 0) u = 1;
     if (slot == u) return false;
     slot = u;
     changed_mask |= pref_key_bit(key);
@@ -1608,7 +1672,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::VA_VISUAL_PROFILE:
       return apply_enum(p.va_visual_profile, kVaVisualProfileOpts, 0);
     case PrefKey::START_SCREEN:
-      return apply_enum(p.start_screen, kStartScreenOpts, 0);
+      return apply_enum(p.start_screen, kStartScreenOpts, kPrefEffectNavPolicy);
     case PrefKey::CLOCK_FACE:
       return apply_enum(p.clock_face, kClockFaceOpts, 0);
     case PrefKey::TIME_FORMAT:
@@ -1657,6 +1721,17 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_bool(p.ble_beacon_enabled, kPrefEffectPowerPolicy);
     case PrefKey::BLE_BEACON_MODE:
       return apply_enum(p.ble_beacon_mode, kBleBeaconModeOpts, kPrefEffectPowerPolicy);
+    case PrefKey::HOME_SCREEN_ENABLED: {
+      const bool chg = apply_bool(p.home_screen_enabled, kPrefEffectNavPolicy);
+      if (!p.home_screen_enabled && p.start_screen == 0) {
+        p.start_screen = 1;  // Coerce Home -> Clock when Home Screen is disabled
+        changed_mask |= pref_key_bit(PrefKey::START_SCREEN);
+        effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
+      }
+      return chg;
+    }
+    case PrefKey::RETURN_TO_HOME_TIMEOUT:
+      return apply_enum(p.return_to_home_timeout, kReturnToHomeTimeoutOpts, 0);
     case PrefKey::COUNT:
       break;
   }
@@ -1730,7 +1805,9 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::NIGHT_START_HOUR, PrefKey::NIGHT_START_HOUR);
   apply_f(DevicePrefsField::COLOR_PROFILE, PrefKey::COLOR_PROFILE);
   apply_f(DevicePrefsField::VA_VISUAL_PROFILE, PrefKey::VA_VISUAL_PROFILE);
+  apply_f(DevicePrefsField::HOME_SCREEN_ENABLED, PrefKey::HOME_SCREEN_ENABLED);
   apply_f(DevicePrefsField::START_SCREEN, PrefKey::START_SCREEN);
+  apply_f(DevicePrefsField::RETURN_TO_HOME_TIMEOUT, PrefKey::RETURN_TO_HOME_TIMEOUT);
   apply_f(DevicePrefsField::CLOCK_FACE, PrefKey::CLOCK_FACE);
   apply_f(DevicePrefsField::TIME_FORMAT, PrefKey::TIME_FORMAT);
   apply_f(DevicePrefsField::WEATHER_BACKGROUND, PrefKey::WEATHER_BACKGROUND);
@@ -1977,6 +2054,75 @@ inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local
   }
   m.feedback_timer = now_ms;
   return next_pct;
+}
+
+static constexpr int kMaxDockApps = 10;
+
+inline int dock_app_id_for_token(std::string_view tok) {
+  if (tok == "music") return 2;
+  if (tok == "alarm") return 9;
+  if (tok == "area") return 6;
+  if (tok == "remote") return 7;
+  if (tok == "weather") return 5;
+  if (tok == "camera") return 12;
+  if (tok == "games") return 3;
+  if (tok == "tools") return 8;
+  return -1;
+}
+
+inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = area_ctx_state()) {
+  if (ac.epoch == 0U) {
+    out_tabs[0] = 0;
+    out_tabs[1] = 1;
+    out_tabs[2] = 2;
+    out_tabs[3] = 3;
+    return 4;
+  }
+  return parse_home_categories_csv(ac.home_categories, out_tabs);
+}
+
+inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_prefs()) {
+  const std::string_view opt(pref_start_screen_cstr(p));
+  if (opt == "Home") return p.home_screen_enabled ? 1 : 0;
+  if (opt == "Clock") return 0;
+  if (opt == "Media") return 2;
+  if (opt == "Home Hub") return 9;
+  if (opt == "Area Controls") return 6;
+  if (opt == "Remote") return 7;
+  if (opt == "Weather") return 5;
+  if (opt == "Cameras") return 12;
+  if (opt == "Games") return 3;
+  if (opt == "Tools") return 8;
+  return p.home_screen_enabled ? 1 : 0;
+}
+
+inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
+                                          const PersistedDevicePrefs &p,
+                                          bool media_playing,
+                                          bool cam_session_active = false) {
+  if (!p.home_screen_enabled) return false;
+  if (return_to_home_timeout_ms(p) == 0U) return false;
+  if (rt.nav.gui_page == 1 && rt.nav.home_subpage == 0) return false;
+  if (rt.nav.is_hibernating || rt.nav.ota_in_progress) return false;
+  if (rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active || rt.alert.active) {
+    return false;
+  }
+  if (rt.voice.active || rt.voice.tts_received || !rt.voice.status_text.empty() ||
+      cam_session_active) {
+    return false;
+  }
+  if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
+  if (rt.nav.gui_page == 2 && rt.music.overlay_mode == 0 && media_playing) {
+    return false;
+  }
+  if (rt.nav.gui_page == 8) {
+    if (rt.nav.tools_subpage == 1 && rt.timers.running) return false;
+    if (rt.nav.tools_subpage == 3 && rt.stopwatch.running) return false;
+    if (rt.nav.tools_subpage == 5 || rt.nav.tools_subpage == 7) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace latter_ui
