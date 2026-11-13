@@ -366,7 +366,8 @@ script:
               rs.hw_set_imu_power_mode(!pw_allowed ? 0x00
                   : (latter_ui::imu_wom_qualifying(now_p) ? 0x01 : 0x80));
             } else {
-              const bool need_gyro = (rs.nav.gui_page == 3 && rs.nav.active_game >= 1 && rs.nav.active_game <= 4);
+              const bool need_gyro = (rs.nav.gui_page == 3 && rs.nav.active_game >= 1 && rs.nav.active_game <= 4) ||
+                                     (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 7);
               const bool need_accel = pw_allowed ||
                                       (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) ||
                                       (rs.nav.gui_page == 5) ||

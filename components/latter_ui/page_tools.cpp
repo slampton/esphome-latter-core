@@ -805,11 +805,6 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
     fast_print(it, nx, ny, ctx.font_small, ctx.col_white, TextAlign::CENTER, kChronoStrs[i]);
   }
 
-  if (backdrop_active()) {
-    fast_print(it, cx + 1, scale_min(132) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "CHRONOGRAPH");
-  }
-  fast_print(it, cx, scale_min(132), ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "CHRONOGRAPH");
-
   char main_buf[32];
   std::snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
   if (backdrop_active()) {
@@ -909,7 +904,9 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
                           WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
 
   if (!tools_direct_home()) {
-    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
+    render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
+                      scale_min(15), kChromeGlassTint, 212);
+    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
   }
 #endif
 }
@@ -1227,47 +1224,63 @@ void render_level_subpage(esphome::display::Display &it, const UiFrameContext &c
 
   render_page_header(it, ctx.cx, "LEVEL", ctx.font_small, ctx.theme_primary);
 
-  const float ax = rs.hw_accel_x;
-  const float ay = rs.hw_accel_y;
-  const float az = rs.hw_accel_z;
-  if (std::isnan(ax) || std::isnan(ay) || std::isnan(az)) {
+  const float roll_deg = rs.hw_imu_roll;
+  const float pitch_deg = rs.hw_imu_pitch;
+  if (std::isnan(roll_deg) || std::isnan(pitch_deg) || std::isnan(rs.hw_accel_z)) {
     render_empty_state(it, ctx.cx, ctx.cy, "Waiting for the motion sensor...", ctx.font_small, ctx.col_slate);
     render_back_button(it, ctx.cx, ctx.font_small, layout().back_y, "< Back");
     return;
   }
 
-  const float p_rad = std::atan2(ay, std::sqrt(ax * ax + az * az));
-  const float r_rad = std::atan2(ax, std::sqrt(ay * ay + az * az));
-  const float raw_p_deg = p_rad * (180.0f / PI_F);
-  const float raw_r_deg = r_rad * (180.0f / PI_F);
+  // Symmetric 2-axis planar tilt angles aligned to hardware-verified IMU axes (see page_games.cpp):
+  //   +raw_x_deg => right edge raised (air bubble floats RIGHT, +x)
+  //   +raw_y_deg => top/far edge raised (air bubble floats UP, -y)
+  const float r_rad = roll_deg * (PI_F / 180.0f);
+  const float p_rad = pitch_deg * (PI_F / 180.0f);
+  const float sin_x = std::clamp(std::sin(r_rad) * std::cos(p_rad), -1.0f, 1.0f);
+  const float raw_x_deg = -std::asin(sin_x) * (180.0f / PI_F);
+  const float raw_y_deg = -pitch_deg;
 
-  // 20 FPS EMA Liquid Damping Filter (eliminates accelerometer step-jumping)
-  static float smooth_p_deg = 0.0f;
-  static float smooth_r_deg = 0.0f;
+  // Frame-rate-independent liquid EMA damping (snaps immediately when re-opening Level)
+  static float smooth_x_deg = 0.0f;
+  static float smooth_y_deg = 0.0f;
+  static uint32_t last_level_ms = 0;
   static bool init_level = false;
-  if (!init_level) {
-    smooth_p_deg = raw_p_deg;
-    smooth_r_deg = raw_r_deg;
+  const uint32_t dt_ms = (ctx.now_ms >= last_level_ms) ? (ctx.now_ms - last_level_ms) : 401U;
+  last_level_ms = ctx.now_ms;
+  if (!init_level || dt_ms > 400U) {
+    smooth_x_deg = raw_x_deg;
+    smooth_y_deg = raw_y_deg;
     init_level = true;
   } else {
-    smooth_p_deg += (raw_p_deg - smooth_p_deg) * 0.28f;
-    smooth_r_deg += (raw_r_deg - smooth_r_deg) * 0.28f;
+    const float alpha = std::clamp(static_cast<float>(dt_ms) / 115.0f, 0.20f, 0.65f);
+    smooth_x_deg += (raw_x_deg - smooth_x_deg) * alpha;
+    smooth_y_deg += (raw_y_deg - smooth_y_deg) * alpha;
   }
 
-  const float total_tilt = std::sqrt(smooth_p_deg * smooth_p_deg + smooth_r_deg * smooth_r_deg);
-  const bool is_level = (total_tilt <= 0.5f);
+  const float total_tilt = std::sqrt(smooth_x_deg * smooth_x_deg + smooth_y_deg * smooth_y_deg);
+  const bool is_level = (total_tilt <= 0.6f);
   const Color ring_c = is_level ? ctx.col_green : ctx.col_slate;
 
-  // 1. Total-Tilt Degree Readout directly on background below "LEVEL" header
-  char deg_buf[16];
-  std::snprintf(deg_buf, sizeof(deg_buf), "%.1f°", total_tilt);
+  // 1. Signed Two-Axis Tilt Readout directly on background below "LEVEL" header
+  auto fmt_axis = [](char *dst, size_t cap, char axis, float deg) {
+    if (std::fabs(deg) < 0.05f) {
+      std::snprintf(dst, cap, "%c 0.0°", axis);
+    } else {
+      std::snprintf(dst, cap, "%c %+.1f°", axis, deg);
+    }
+  };
+  char x_buf[20], y_buf[20], deg_buf[48];
+  fmt_axis(x_buf, sizeof(x_buf), 'X', smooth_x_deg);
+  fmt_axis(y_buf, sizeof(y_buf), 'Y', smooth_y_deg);
+  std::snprintf(deg_buf, sizeof(deg_buf), "%s   %s", x_buf, y_buf);
   if (backdrop_active()) {
-    fast_print(it, ctx.cx + 1, scale_y(84) + 1, ctx.font_date, kChromeShadow, TextAlign::CENTER, deg_buf);
+    fast_print(it, ctx.cx + 1, scale_y(82) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, deg_buf);
   }
-  fast_print(it, ctx.cx, scale_y(84), ctx.font_date,
+  fast_print(it, ctx.cx, scale_y(82), ctx.font_small,
              is_level ? ctx.col_green : ctx.col_white, TextAlign::CENTER, deg_buf);
 
-  // 2. Resolution-Adaptive Bulls-Eye Spirit Vial
+  // 2. Resolution-Adaptive Bulls-Eye Spirit Vial (~15° full-scale span; <= 0.6° centers inside inner ring)
   const int level_cy  = ctx.cy + scale_y(16);
   const int outer_r   = scale_min(136);
   const int mid_r     = scale_min(70);
@@ -1297,9 +1310,9 @@ void render_level_subpage(esphome::display::Display &it, const UiFrameContext &c
   fast_line(it, ctx.cx, level_cy + cross_in, ctx.cx, level_cy + cross_out, ring_c);
   fast_filled_circle(it, ctx.cx, level_cy, 2, ring_c);
 
-  const float deg_px = scale_min_f(12.8f);
-  float fbx = static_cast<float>(ctx.cx) - smooth_r_deg * deg_px;
-  float fby = static_cast<float>(level_cy) - smooth_p_deg * deg_px;
+  const float deg_px = scale_min_f(7.6f);
+  float fbx = static_cast<float>(ctx.cx) + smooth_x_deg * deg_px;
+  float fby = static_cast<float>(level_cy) - smooth_y_deg * deg_px;
   const float bdx = fbx - static_cast<float>(ctx.cx);
   const float bdy = fby - static_cast<float>(level_cy);
   const float b_dist_sq = bdx * bdx + bdy * bdy;
@@ -1308,8 +1321,8 @@ void render_level_subpage(esphome::display::Display &it, const UiFrameContext &c
     fbx = static_cast<float>(ctx.cx) + (bdx / b_dist) * max_bub;
     fby = static_cast<float>(level_cy) + (bdy / b_dist) * max_bub;
   }
-  const int bx = static_cast<int>(fbx);
-  const int by = static_cast<int>(fby);
+  const int bx = static_cast<int>(std::lround(fbx));
+  const int by = static_cast<int>(std::lround(fby));
 
   // 3D Glass Spirit Bubble
   fast_filled_circle(it, bx + 2, by + 3, bub_r, Color(12, 16, 22));
@@ -1331,40 +1344,39 @@ void render_coin_flip_subpage(esphome::display::Display &it, const UiFrameContex
   float coin_sy = 1.0f;
   float y_hop = 0.0f;
   float z_zoom = 1.0f;
-  float theta = (cs.side == 0) ? 0.0f : PI_F;
+  float raw_sin = 0.25f;
   bool show_heads = (cs.side == 0);
   bool is_edge_flash = false;
 
   if (cs.anim_active) {
-    static constexpr uint32_t kTossDurationMs = 550U;
-    static constexpr int kTotalFrames = 11;
+    static constexpr uint32_t kTossDurationMs = 820U;
     const uint32_t el_ms = (ctx.now_ms >= cs.anim_start_ms)
                                ? (ctx.now_ms - cs.anim_start_ms)
                                : kTossDurationMs;
-    const int flip_frame = static_cast<int>(
-        (el_ms * static_cast<uint32_t>(kTotalFrames)) / kTossDurationMs);
-    if (flip_frame >= kTotalFrames) {
+    if (el_ms >= kTossDurationMs) {
       cs.anim_active = false;
       coin_sy = 1.0f;
       y_hop = 0.0f;
       z_zoom = 1.0f;
+      raw_sin = 0.25f;
       show_heads = (cs.side == 0);
     } else {
-      static constexpr float kStepScales[11] = {
-          0.84f, 0.06f, 0.56f, 0.90f, 0.06f, 0.58f, 0.90f, 0.06f, 0.86f, 0.06f, 0.58f};
-      static constexpr uint8_t kStepOpp[11] = {
-          0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0};
-
       const float p = static_cast<float>(el_ms) / static_cast<float>(kTossDurationMs);
-      const float arc = fast_sin(p * PI_F);
-      y_hop = -scale_min_f(62.0f) * arc;
-      z_zoom = 0.96f + 0.20f * arc;
+      // Newtonian ballistic gravity arc: fast launch impulse, apex hang, accelerating gravity drop
+      const float arc = 4.0f * p * (1.0f - p);
+      y_hop = -scale_min_f(74.0f) * arc;
+      z_zoom = 1.0f + 0.18f * arc;
 
-      coin_sy = kStepScales[flip_frame];
-      is_edge_flash = (coin_sy < 0.10f);
-      const int cur_side = kStepOpp[flip_frame] ? (1 - cs.side) : cs.side;
+      // Continuous 3D end-over-end somersault (5 half-turns = 2.5 full revolutions -> lands on cs.side at cos(5π) = -1)
+      const float p_spin = p * (1.18f - 0.18f * p);
+      const float flip_angle = p_spin * 5.0f * PI_F;
+      float raw_cos = 1.0f;
+      fast_sincos(flip_angle, raw_sin, raw_cos);
+
+      coin_sy = std::max(0.05f, std::fabs(raw_cos));
+      is_edge_flash = (coin_sy < 0.16f);
+      const int cur_side = (raw_cos < 0.0f) ? cs.side : (1 - cs.side);
       show_heads = (cur_side == 0);
-      theta = static_cast<float>(flip_frame) * (PI_F * 0.36f);
     }
   }
 
@@ -1396,20 +1408,26 @@ void render_coin_flip_subpage(esphome::display::Display &it, const UiFrameContex
   const Color col_relief_hi(252, 254, 255);
   const Color col_engrave_recess(74, 84, 98);
 
-  const float spec_center = -0.35f + 0.65f * fast_sin(theta * 2.0f);
+  const float spec_center = cs.anim_active ? (0.68f * raw_sin) : -0.28f;
   const int b_outer = std::max(4, static_cast<int>(static_cast<float>(r_outer) * coin_sy));
-  const int raw_edge_h = is_edge_flash ? 18 : std::max(3, static_cast<int>(15.0f * (1.0f - coin_sy * 0.78f)));
-  const int edge_h = std::max(3, scale_min(raw_edge_h));
+  const float edge_signed = cs.anim_active ? (16.0f * raw_sin) : 4.0f;
+  const bool edge_on_top = (edge_signed < 0.0f);
+  const int edge_h = cs.anim_active
+                         ? scale_min(static_cast<int>(std::lround(std::fabs(edge_signed))))
+                         : std::max(3, scale_min(4));
 
-  // 2. O(1) Crescent 3D Milled Silver Edge Band
-  for (int dy = 1; dy <= b_outer + edge_h; dy++) {
-    const int src_dy = (dy > edge_h) ? (dy - edge_h) : 0;
-    const int lut_idx = std::clamp(233 + (src_dy * 232) / b_outer, 0, 465);
-    const int dx_outer = (r_outer * CIRCLE_HW[lut_idx]) / 233;
-    const Color ec = (dy >= b_outer + edge_h - 1)
-                         ? col_rim_dark
-                         : (is_edge_flash ? Color(195, 206, 222) : col_rim_mid);
-    fast_hline(it, cx - dx_outer, coin_cy + dy, 2 * dx_outer + 1, ec);
+  // 2. Orthographic 3D Cylindrical Milled Silver Edge Band (shifts bottom <-> top across full 360° somersault)
+  if (edge_h > 0) {
+    for (int dy = 1; dy <= b_outer + edge_h; dy++) {
+      const int src_dy = (dy > edge_h) ? (dy - edge_h) : 0;
+      const int lut_idx = std::clamp(233 + (src_dy * 232) / b_outer, 0, 465);
+      const int dx_outer = (r_outer * CIRCLE_HW[lut_idx]) / 233;
+      const Color ec = (dy >= b_outer + edge_h - 1)
+                           ? col_rim_dark
+                           : (is_edge_flash ? Color(202, 212, 228) : col_rim_mid);
+      const int py = edge_on_top ? (coin_cy - dy) : (coin_cy + dy);
+      fast_hline(it, cx - dx_outer, py, 2 * dx_outer + 1, ec);
+    }
   }
 
   // 3. 3D Brushed-Silver Coin Field
@@ -1445,13 +1463,21 @@ void render_coin_flip_subpage(esphome::display::Display &it, const UiFrameContex
     }
   }
 
-  // Vertical milled reeding ticks along the front 3D coin thickness band
-  const int reed_step = std::max(4, scale_min(is_edge_flash ? 5 : 6));
-  for (int rx_off = -r_outer + 6; rx_off <= r_outer - 6; rx_off += reed_step) {
-    const int lut_x = std::clamp(233 + (rx_off * 232) / r_outer, 0, 465);
-    const int y_rim = coin_cy + (b_outer * CIRCLE_HW[lut_x]) / 233;
-    const Color reed_c = ((rx_off / reed_step) & 1) ? col_bevel_hi : col_rim_dark;
-    fast_line(it, cx + rx_off, y_rim + 1, cx + rx_off, y_rim + edge_h - 1, reed_c);
+  // Vertical milled reeding ticks along the visible 3D coin thickness band
+  if (edge_h >= 2) {
+    const int reed_step = std::max(4, scale_min(is_edge_flash ? 5 : 6));
+    for (int rx_off = -r_outer + 6; rx_off <= r_outer - 6; rx_off += reed_step) {
+      const int lut_x = std::clamp(233 + (rx_off * 232) / r_outer, 0, 465);
+      const int y_off = (b_outer * CIRCLE_HW[lut_x]) / 233;
+      const Color reed_c = ((rx_off / reed_step) & 1) ? col_bevel_hi : col_rim_dark;
+      if (edge_on_top) {
+        const int y_rim = coin_cy - y_off;
+        fast_line(it, cx + rx_off, y_rim - edge_h + 1, cx + rx_off, y_rim - 1, reed_c);
+      } else {
+        const int y_rim = coin_cy + y_off;
+        fast_line(it, cx + rx_off, y_rim + 1, cx + rx_off, y_rim + edge_h - 1, reed_c);
+      }
+    }
   }
 
   if (coin_sy >= 0.96f && !cs.anim_active) {
