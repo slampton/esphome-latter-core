@@ -31,6 +31,7 @@ esphome:
             latter_ui::hal_release_pwr_key_wake_pad();
             latter_ui::boot_speaker_off_done() = true;
             rs.nav.sleep_start_time = millis();
+            latter_ui::last_screen_wake_ms() = rs.nav.sleep_start_time;
             rs.nav.is_hibernating = false;
             rs.nav.display_power_state = 0; // ACTIVE
             rs.music.active_speaker_name = "${friendly_name}";

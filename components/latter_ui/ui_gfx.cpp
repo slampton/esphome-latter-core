@@ -11,17 +11,18 @@
 #ifdef USE_ESP32
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
-#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
+// Hardware between-frames clear is restricted to ESP32-P4, whose 2D PPA Fill engine writes AXI PSRAM
+// in ~2.5 ms without source reads or Flash XIP stalls. On Octal-PSRAM XIP chips without PPA (ESP32-S3),
+// PSRAM-to-PSRAM GDMA + cache msync contends directly with instruction fetches and PSRAM wake-word inference.
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
 #define LATTER_FB_DMA_CLEAR 1
+#define LATTER_FB_PPA 1
 #include <atomic>
+#include <driver/ppa.h>
 #include <esp_async_memcpy.h>
 #include <esp_attr.h>
 #include <esp_cache.h>
 #include <esp_rom_sys.h>
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-#define LATTER_FB_PPA 1
-#include <driver/ppa.h>
-#endif
 #else
 #define LATTER_FB_DMA_CLEAR 0
 #endif
@@ -71,6 +72,7 @@ struct FbClearState {
   uint16_t *fb = nullptr;
   bool init_tried = false;
   bool ok = false;
+  bool post_stamp_pending = false;
   bool pending_start = false;
   bool active = false;
   bool ready = false;
@@ -305,7 +307,12 @@ void fb_clear_bind(esphome::Component *owner, uint16_t *fb) {
 }
 
 void fb_clear_after_update() {
-  if (fb_clear_state().pending_start) fb_clear_start();
+  auto &st = fb_clear_state();
+  if (st.post_stamp_pending) {
+    st.post_stamp_pending = false;
+    last_disp_update_end_ms() = esphome::millis();
+  }
+  if (st.pending_start) fb_clear_start();
 }
 
 void fb_clear_wait() {
@@ -377,7 +384,6 @@ void fb_clear_frame_end() {
   if (!frame_base_state().has_color || st.owner == nullptr || st.fb == nullptr || st.pending_start) return;
   if (st.init_tried && !st.ok) return;
   st.pending_start = true;
-  DisplayUpdateScheduler::request_post_frame(st.owner, &fb_clear_start);
 #endif
 }
 
@@ -1354,7 +1360,13 @@ FrameProfileScope::~FrameProfileScope() {
   const uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
   const uint32_t now_m = esphome::millis();
   last_frame_duration_ms() = render_us / 1000U;
-  last_disp_update_end_ms() = now_m;
+  auto &fbc_post = fb_clear_state();
+  if (fbc_post.owner != nullptr) {
+    fbc_post.post_stamp_pending = true;
+    DisplayUpdateScheduler::request_post_frame(fbc_post.owner, &fb_clear_after_update);
+  } else {
+    last_disp_update_end_ms() = now_m;
+  }
   if (!profiler_enabled()) return;
 
   auto &fr = flight_recorder();

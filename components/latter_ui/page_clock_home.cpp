@@ -2,6 +2,7 @@
 #include "ui_pages.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -242,8 +243,31 @@ void draw_home_activity_row_contents(
     }
   }
 
-  const std::string fit_act = fit_text_to_width_font(cur_act.label, max_txt, font_small);
-  fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_act.c_str());
+  struct FitActMemo {
+    std::string raw{};
+    std::string fitted{};
+    int max_w{-1};
+    const void *font{nullptr};
+  };
+  static FitActMemo fit_memos[4];
+  static uint8_t fit_memo_rr = 0;
+  const std::string *fit_ptr = nullptr;
+  for (auto &m : fit_memos) {
+    if (m.max_w == max_txt && m.font == font_small && m.raw == cur_act.label) {
+      fit_ptr = &m.fitted;
+      break;
+    }
+  }
+  if (fit_ptr == nullptr) {
+    auto &slot = fit_memos[fit_memo_rr & 3U];
+    fit_memo_rr++;
+    slot.raw = cur_act.label;
+    slot.max_w = max_txt;
+    slot.font = font_small;
+    slot.fitted = fit_text_to_width_font(cur_act.label, max_txt, font_small);
+    fit_ptr = &slot.fitted;
+  }
+  fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_ptr->c_str());
 
   render_glass_circle(it, act_bx, gy, btn_r, fg_btn, fg_sec);
 
@@ -341,6 +365,41 @@ const char *resolve_wake_greeting(int hour, int minute, int day_of_year,
   if (pick == 1) return "Up late tonight?";
   if (pick == 2) return "Rest easy tonight";
   return "Sleep well";
+}
+
+template <int XMin, int XMax, int YMin, int YMax, typename DisplayT, typename PredFn>
+inline void draw_cached_dock_mask(DisplayT &it, int bx, int by,
+                                  esphome::Color c, esphome::Color sh_c, PredFn &&pred) {
+  static constexpr int kW = XMax - XMin + 1;
+  static constexpr int kH = YMax - YMin + 1;
+  static_assert(kW + 1 <= 64, "Dock glyph bitmask width must fit in uint64_t");
+  static uint64_t rows[kH + 1] = {};
+  static bool ready = false;
+  if (!ready) {
+    for (int ry = 0; ry <= kH; ry++) {
+      uint64_t m = 0;
+      for (int rx = 0; rx <= kW; rx++) {
+        if (pred(XMin + rx, YMin + ry)) m |= (uint64_t{1} << rx);
+      }
+      rows[ry] = m;
+    }
+    ready = true;
+  }
+  const uint64_t col_mask = (uint64_t{1} << kW) - 1U;
+  for (int ry = 0; ry < kH; ry++) {
+    uint64_t m = rows[ry] & col_mask;
+    const uint64_t next_row = rows[ry + 1];
+    const int py = by + YMin + ry;
+    while (m != 0) {
+      const int rx = std::countr_zero(m);
+      m &= (m - 1U);
+      const int px = bx + XMin + rx;
+      if (((next_row >> (rx + 1)) & 1ULL) == 0ULL) {
+        fast_pixel(it, px + 1, py + 1, sh_c);
+      }
+      fast_pixel(it, px, py, c);
+    }
+  }
 }
 
 }  // namespace
@@ -1032,7 +1091,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int glass_a = backdrop.valid
         ? glass_alpha_smooth(glass_alpha_state, glass_alpha_for_text(tint, backdrop.bright, ctx.col_white))
         : 256;
-    render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a);
+    render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a, backdrop);
     Color eff_card_tint;
     int card_a_top = 0, card_a_bot = 0, card_rim_top = 0, card_rim_bot = 0;
     resolve_glass_fill(backdrop, tint, ctx.col_white, eff_card_tint,
@@ -1189,146 +1248,102 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         fast_line(it, bx - 5, by - 10, bx + 13, by - 13, c);
         fast_line(it, bx - 5, by - 9,  bx + 13, by - 12, c);
       } else if (app_id == 7) {
-        auto is_remote_icon = [](int dx, int dy) -> bool {
-          const int ax = std::abs(dx);
-          const int ay = std::abs(dy);
-          if (ax > 9 || ay > 16) return false;
-          if (ax > 6 && ay > 13 && ((ax - 6) * (ax - 6) + (ay - 13) * (ay - 13) > 10)) {
-            return false;
-          }
-          if (dy >= -13 && dy <= -12 && ax >= 4 && ax <= 6) {
-            return false;
-          }
-          const int dpy = dy + 4;
-          const int r2 = dx * dx + dpy * dpy;
-          if (r2 >= 6 && r2 <= 34) {
-            if (r2 >= 16 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
-              return true;
-            }
-            return false;
-          }
-          if (((dy >= 4 && dy <= 5) || (dy >= 8 && dy <= 9) || (dy >= 12 && dy <= 13)) &&
-              (ax <= 1 || (ax >= 4 && ax <= 6))) {
-            return false;
-          }
-          return true;
-        };
-
         if (!is_shadow) {
-          for (int dy = -16; dy <= 16; dy++) {
-            for (int dx = -9; dx <= 9; dx++) {
-              if (is_remote_icon(dx, dy)) {
-                if (!is_remote_icon(dx + 1, dy + 1)) {
-                  fast_pixel(it, bx + dx + 1, by + dy + 1, ctx.col_black);
-                }
-                fast_pixel(it, bx + dx, by + dy, c);
-              }
+          draw_cached_dock_mask<-9, 9, -16, 16>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+            const int ax = std::abs(dx);
+            const int ay = std::abs(dy);
+            if (ax > 9 || ay > 16) return false;
+            if (ax > 6 && ay > 13 && ((ax - 6) * (ax - 6) + (ay - 13) * (ay - 13) > 10)) {
+              return false;
             }
-          }
+            if (dy >= -13 && dy <= -12 && ax >= 4 && ax <= 6) {
+              return false;
+            }
+            const int dpy = dy + 4;
+            const int r2 = dx * dx + dpy * dpy;
+            if (r2 >= 6 && r2 <= 34) {
+              if (r2 >= 16 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
+                return true;
+              }
+              return false;
+            }
+            if (((dy >= 4 && dy <= 5) || (dy >= 8 && dy <= 9) || (dy >= 12 && dy <= 13)) &&
+                (ax <= 1 || (ax >= 4 && ax <= 6))) {
+              return false;
+            }
+            return true;
+          });
         }
       } else if (app_id == 8) {
-        auto is_app_grid_4 = [](int dx, int dy) -> bool {
-          const int ax = std::abs(dx);
-          const int ay = std::abs(dy);
-          if (ax < 2 || ax > 11 || ay < 2 || ay > 11) return false;
-          const int lx = ax - 2;
-          const int ly = ay - 2;
-          if ((lx == 0 || lx == 9) && (ly == 0 || ly == 9)) return false;
-          if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly >= 3 && ly <= 6) {
-            return false;
-          }
-          return true;
-        };
-
         if (!is_shadow) {
-          for (int dy = -12; dy <= 12; dy++) {
-            for (int dx = -12; dx <= 12; dx++) {
-              if (is_app_grid_4(dx, dy)) {
-                if (!is_app_grid_4(dx + 1, dy + 1)) {
-                  fast_pixel(it, bx + dx + 1, by + dy + 1, ctx.col_black);
-                }
-                fast_pixel(it, bx + dx, by + dy, c);
-              }
+          draw_cached_dock_mask<-12, 12, -12, 12>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+            const int ax = std::abs(dx);
+            const int ay = std::abs(dy);
+            if (ax < 2 || ax > 11 || ay < 2 || ay > 11) return false;
+            const int lx = ax - 2;
+            const int ly = ay - 2;
+            if ((lx == 0 || lx == 9) && (ly == 0 || ly == 9)) return false;
+            if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly >= 3 && ly <= 6) {
+              return false;
             }
-          }
+            return true;
+          });
         }
       } else if (app_id == 3) {
-        static constexpr int8_t GP_OUT_MAX[25] = {
-           9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15, 13
-        };
-        static constexpr int8_t GP_OUT_MIN[25] = {
-           0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  6,  8,  9,  9, 10, 10, 11, 11, 12, 12
-        };
-
-        auto is_gamepad_filled = [](int dx, int dy) -> bool {
-          if (dy < -12 || dy > 12) return false;
-          const int row = dy + 12;
-          const int ax = std::abs(dx);
-          if (ax < GP_OUT_MIN[row] || ax > GP_OUT_MAX[row]) return false;
-
-          const int dpx = dx + 7;
-          const int dpy = dy + 4;
-          if ((std::abs(dpx) <= 1 && std::abs(dpy) <= 5) ||
-              (std::abs(dpy) <= 1 && std::abs(dpx) <= 5)) {
-            return false;
-          }
-
-          const int abx = dx - 7;
-          const int aby = dy + 4;
-          auto is_dot = [](int x, int y, int cx_d, int cy_d) -> bool {
-            const int rx = x - cx_d, ry = y - cy_d;
-            return (rx * rx + ry * ry) <= 2;
-          };
-          if (is_dot(abx, aby, 0, -4) || is_dot(abx, aby, 0, 4) ||
-              is_dot(abx, aby, -4, 0) || is_dot(abx, aby, 4, 0)) {
-            return false;
-          }
-          return true;
-        };
-
         if (!is_shadow) {
-          for (int dy = -12; dy <= 12; dy++) {
-            for (int dx = -19; dx <= 19; dx++) {
-              if (is_gamepad_filled(dx, dy)) {
-                if (!is_gamepad_filled(dx + 1, dy + 1)) {
-                  fast_pixel(it, bx + dx + 1, by + dy + 1, ctx.col_black);
-                }
-                fast_pixel(it, bx + dx, by + dy, c);
-              }
+          draw_cached_dock_mask<-19, 19, -12, 12>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+            static constexpr int8_t GP_OUT_MAX[25] = {
+               9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15, 13
+            };
+            static constexpr int8_t GP_OUT_MIN[25] = {
+               0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  6,  8,  9,  9, 10, 10, 11, 11, 12, 12
+            };
+            if (dy < -12 || dy > 12) return false;
+            const int row = dy + 12;
+            const int ax = std::abs(dx);
+            if (ax < GP_OUT_MIN[row] || ax > GP_OUT_MAX[row]) return false;
+
+            const int dpx = dx + 7;
+            const int dpy = dy + 4;
+            if ((std::abs(dpx) <= 1 && std::abs(dpy) <= 5) ||
+                (std::abs(dpy) <= 1 && std::abs(dpx) <= 5)) {
+              return false;
             }
-          }
+
+            const int abx = dx - 7;
+            const int aby = dy + 4;
+            auto is_dot = [](int x, int y, int cx_d, int cy_d) -> bool {
+              const int rx = x - cx_d, ry = y - cy_d;
+              return (rx * rx + ry * ry) <= 2;
+            };
+            if (is_dot(abx, aby, 0, -4) || is_dot(abx, aby, 0, 4) ||
+                is_dot(abx, aby, -4, 0) || is_dot(abx, aby, 4, 0)) {
+              return false;
+            }
+            return true;
+          });
         }
       } else if (app_id == 4) {
-        auto is_dock_gear = [](int dx, int dy) -> bool {
-          const int r2 = dx * dx + dy * dy;
-          if (r2 <= 24 || r2 > 232) return false;
-          if (r2 <= 128) return true;
-          const float fx = static_cast<float>(dx);
-          const float fy = static_cast<float>(dy);
-          static constexpr float INV_SQRT2 = 0.70710678f;
-          const float p_v  = std::fabs(fx),                    a_v  = std::fabs(fy);
-          const float p_h  = std::fabs(fy),                    a_h  = std::fabs(fx);
-          const float p_d1 = std::fabs((fx - fy) * INV_SQRT2), a_d1 = std::fabs((fx + fy) * INV_SQRT2);
-          const float p_d2 = std::fabs((fx + fy) * INV_SQRT2), a_d2 = std::fabs((fx - fy) * INV_SQRT2);
-          auto in_tooth = [](float perp, float along) -> bool {
-            if (along > 15.0f) return false;
-            const float max_w = 2.65f - (along - 11.0f) * 0.20f;
-            return (perp <= max_w);
-          };
-          return in_tooth(p_v, a_v) || in_tooth(p_h, a_h) ||
-                 in_tooth(p_d1, a_d1) || in_tooth(p_d2, a_d2);
-        };
         if (!is_shadow) {
-          for (int dy = -16; dy <= 16; dy++) {
-            for (int dx = -16; dx <= 16; dx++) {
-              if (is_dock_gear(dx, dy)) {
-                if (!is_dock_gear(dx + 1, dy + 1)) {
-                  fast_pixel(it, bx + dx + 1, by + dy + 1, ctx.col_black);
-                }
-                fast_pixel(it, bx + dx, by + dy, c);
-              }
-            }
-          }
+          draw_cached_dock_mask<-16, 16, -16, 16>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+            const int r2 = dx * dx + dy * dy;
+            if (r2 <= 24 || r2 > 232) return false;
+            if (r2 <= 128) return true;
+            const float fx = static_cast<float>(dx);
+            const float fy = static_cast<float>(dy);
+            static constexpr float INV_SQRT2 = 0.70710678f;
+            const float p_v  = std::fabs(fx),                    a_v  = std::fabs(fy);
+            const float p_h  = std::fabs(fy),                    a_h  = std::fabs(fx);
+            const float p_d1 = std::fabs((fx - fy) * INV_SQRT2), a_d1 = std::fabs((fx + fy) * INV_SQRT2);
+            const float p_d2 = std::fabs((fx + fy) * INV_SQRT2), a_d2 = std::fabs((fx - fy) * INV_SQRT2);
+            auto in_tooth = [](float perp, float along) -> bool {
+              if (along > 15.0f) return false;
+              const float max_w = 2.65f - (along - 11.0f) * 0.20f;
+              return (perp <= max_w);
+            };
+            return in_tooth(p_v, a_v) || in_tooth(p_h, a_h) ||
+                   in_tooth(p_d1, a_d1) || in_tooth(p_d2, a_d2);
+          });
         }
       } else if (app_id == 12) {
         fill_rect_row_major(it, bx - 13, by - 7, 26, 17, c);

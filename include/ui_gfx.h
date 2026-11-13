@@ -710,10 +710,48 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
     if (a <= 0) continue;
     const uint8_t *th = kBayer4[py & 3];
     uint16_t *row = fb + py * SCREEN_W;
+    const uint32_t ua = static_cast<uint32_t>(a);
+    const uint32_t ia = static_cast<uint32_t>(256 - a);
+    const uint32_t tr_a = (tr * ua) >> 8;
+    const uint32_t tg_a = (tg * ua) >> 8;
+    const uint32_t tb_a = (tb * ua) >> 8;
+    uint32_t base_r[4], base_g[4], base_b[4];
+    for (int k = 0; k < 4; k++) {
+      const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
+      base_r[k] = tr_a + tk;
+      base_g[k] = tg_a + tk;
+      base_b[k] = tb_a + tk;
+    }
     auto span = [&](int xa, int xb) {
       xa = std::max(xa, 0);
       xb = std::min(xb, SCREEN_W - 1);
-      for (int x = xa; x <= xb; x++) mix(row[x], a, th[x & 3] * 16 + 8);
+      if (xb < xa) return;
+      if (xa == xb) {
+        mix(row[xa], a, th[xa & 3] * 16 + 8);
+        return;
+      }
+      uint16_t cached_raw = static_cast<uint16_t>(row[xa] ^ 1U);
+      uint16_t cached_out[4];
+      for (int x = xa; x <= xb; x++) {
+        const uint16_t raw = row[x];
+        if (raw != cached_raw) {
+          cached_raw = raw;
+          const uint16_t bg = decode_hw_rgb565_raw(raw);
+          const uint32_t br = ((bg >> 11) & 0x1FU) * ia;
+          const uint32_t bgc = ((bg >> 5) & 0x3FU) * ia;
+          const uint32_t bb = (bg & 0x1FU) * ia;
+          for (int k = 0; k < 4; k++) {
+            uint32_t r = (base_r[k] + br) >> 8;
+            uint32_t g = (base_g[k] + bgc) >> 8;
+            uint32_t b = (base_b[k] + bb) >> 8;
+            if (r > 31U) r = 31U;
+            if (g > 63U) g = 63U;
+            if (b > 31U) b = 31U;
+            cached_out[k] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+          }
+        }
+        row[x] = cached_out[x & 3];
+      }
     };
     auto edge = [&](int px) {
       if (px < 0 || px >= SCREEN_W) return;
@@ -746,15 +784,21 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
 }
 
 template <typename DisplayT>
-inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8) {
+inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
+                              esphome::Color tint, int alpha_q8, const GlassBackdrop &bd) {
   if (w <= 4 || h <= 4) return;
   r = std::max(2, std::min(r, std::min(w, h) / 2));
-  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, alpha_q8);
   fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, rim_top, rim_bot, 1);
   fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
+}
+
+template <typename DisplayT>
+inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8) {
+  if (w <= 4 || h <= 4) return;
+  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, sample_glass_backdrop(x0, y0, w, h));
 }
 
 inline bool &backdrop_active() {

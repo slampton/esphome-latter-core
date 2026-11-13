@@ -1468,9 +1468,31 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   static constexpr double kPhaseWrap = 2000.0 * 3.141592653589793;
 
   // LAYER 0: ATMOSPHERIC SKY CANVAS
-  // All panels clear to bg_c via frame_base() (hardware PPA/GDMA pre-fill between frames).
-  // Round panels then mask only the 5 px outer bezel margin in black so interior pixels write once.
+  // P4 panels consume the between-frames 2D PPA hardware fill via frame_base().
+  // Non-P4 round panels paint each scanline in one linear row-major pass (bezel margin + sky chord + bezel margin)
+  // so every PSRAM pixel writes once with zero double-fill or GDMA contention.
   auto fill_sky_disc = [&](esphome::Color bg_c) {
+#if !LATTER_CHIP_P4 && LATTER_ROUND_DISPLAY
+    frame_base_claim();
+    const uint64_t t_base = profiler_enabled() ? prof_now_us() : 0;
+    fill_rect_row_major(it, 0, 0, SCREEN_W, 5, kChromeShadow);
+    for (int y = 5; y < SCREEN_H - 5; y++) {
+      const int hw = circle_half_span(y, 5);
+      if (hw <= 0) {
+        fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
+      } else {
+        const int lx = std::max(0, cx - hw);
+        const int rx = std::min(SCREEN_W, cx + hw + 1);
+        if (lx > 0) fast_hline(it, 0, y, lx, kChromeShadow);
+        if (rx > lx) fast_hline(it, lx, y, rx - lx, bg_c);
+        if (rx < SCREEN_W) fast_hline(it, rx, y, SCREEN_W - rx, kChromeShadow);
+      }
+    }
+    fill_rect_row_major(it, 0, SCREEN_H - 5, SCREEN_W, 5, kChromeShadow);
+    if (t_base != 0) {
+      prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t_base);
+    }
+#else
     if (!frame_base(it, bg_c)) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
 #if LATTER_ROUND_DISPLAY
     fill_rect_row_major(it, 0, 0, SCREEN_W, 5, kChromeShadow);
@@ -1486,6 +1508,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       }
     }
     fill_rect_row_major(it, 0, SCREEN_H - 5, SCREEN_W, 5, kChromeShadow);
+#endif
 #endif
   };
   if (storm_sky_flash) {

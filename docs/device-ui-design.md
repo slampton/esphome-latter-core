@@ -114,7 +114,7 @@ Frame pacing:
 | :--- | :--- | :--- |
 | Animation frame (`schedule_anim_disp_update`) | 18 ms on the ESP32-P4, 26 ms on the ESP32-S3 | `DisplayUpdateScheduler::request_anim_ptr` (`ui_compositor.h`) |
 | Tools and games physics loop | 25 ms tick, at most one frame per 44 ms | `ui_anim_tick` (`timers_and_fetchers.yaml`), `min_interactive_frame_gap_ms` |
-| Ambient visuals (screensavers, weather, voice) | 25 ms tick; one step per 46 ms idle (or passive wake-word), 75 ms while speaker audio plays, 120 ms during alerts | `should_step_ambient_anim` (`ui_types.h`) |
+| Ambient visuals (screensavers, weather, voice) | 25 ms tick; 50 ms (~20 FPS, `min_period = 45 ms`) idle or passive wake-word, 75 ms (~13.3 FPS, `min_period = 70 ms`) while speaker audio plays, 120 ms during alerts, with post-transfer quiet windows enforced after QSPI/DSI flush | `should_step_ambient_anim` (`ui_types.h`) |
 
 ### 1.6 Touch constants
 

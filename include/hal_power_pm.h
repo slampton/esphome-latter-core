@@ -435,6 +435,8 @@ inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
   return true;
 }
 
+inline constexpr uint32_t kBatteryMotionWindowMs = 35000U;
+
 inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms, uint32_t last_touch_ms = 0) {
 #if LATTER_IS_STATIONARY
   (void)usb_on;
@@ -444,7 +446,7 @@ inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms, uint32_t last_t
 #else
   if (usb_on) return true;
   const uint32_t last = std::max({last_screen_wake_ms(), last_user_touch_ms(), last_touch_ms});
-  return (now_ms - last) < 10000U;
+  return (now_ms - last) < kBatteryMotionWindowMs;
 #endif
 }
 

@@ -584,15 +584,16 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(saw_hold_before_clear);
   LATTER_CHECK(!gate.weak);
 
-  // 6. Verify battery_motion_allowed() renews on last_user_touch_ms() across handheld interaction
+  // 6. Verify battery_motion_allowed() covers active 15s/30s handheld wake windows (35s) & renews on touch
   latter_ui::last_screen_wake_ms() = 1000U;
   latter_ui::last_user_touch_ms() = 1000U;
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 9500U, 0U));
-  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 12000U, 0U));
-  latter_ui::last_user_touch_ms() = 8000U;
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 15000U, 0U));
-  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 19000U, 0U));
-  LATTER_CHECK(latter_ui::battery_motion_allowed(true, 50000U, 0U));
+  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 13000U, 0U));   // post-wake-greeting Activity Card stays smooth!
+  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 35500U, 0U));
+  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 36500U, 0U));
+  latter_ui::last_user_touch_ms() = 20000U;
+  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 54000U, 0U));
+  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 55500U, 0U));
+  LATTER_CHECK(latter_ui::battery_motion_allowed(true, 90000U, 0U));
 
   // 7. Verify production C++ & YAML sources reference the shared policies and ambient pacing invariants
   const std::string batt_h = read_repo_file("../../include/hal_battery.h");

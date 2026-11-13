@@ -149,7 +149,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       constexpr uint32_t kMinPostIdleMs = 10U;
 #endif
       const uint32_t now_m = esphome::millis();
-      const bool inside_render = disp_render_in_flight();
+      const bool inside_render = disp_render_in_flight(now_m);
       const uint32_t elapsed_start = now_m - last_disp_update_ms();
       const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
       uint32_t delay_ms = (elapsed_start < kFrameMs) ? (kFrameMs - elapsed_start) : 0U;

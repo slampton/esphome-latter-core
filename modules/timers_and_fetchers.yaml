@@ -138,7 +138,8 @@ interval:
                 latter_ui::touch_gesture().active ||
                 latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
                 rs.nav.menu_scroll_active;
-            // Battery render budget: weather motion runs on USB, while held/tilted, and for 10 s after wake/touch.
+            // Battery render budget: weather motion runs on USB, while held/tilted, and for 35 s after wake/touch
+            // (covering normal 15 s / 30 s handheld screen timeouts without freezing after the 10.5 s wake greeting).
             const uint32_t latest_input_ms = std::max(
                 latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
             const bool motion_budget_ok =
