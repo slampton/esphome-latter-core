@@ -938,6 +938,331 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
     return fn_idx
 
 
+HOST_UI_STUBS: dict[str, str] = {
+    "esphome/core/defines.h": "#pragma once\n",
+    "sdkconfig.h": "#pragma once\n",
+    "esphome/core/version.h": (
+        "#pragma once\n"
+        "#define VERSION_CODE(major, minor, patch) (((major) << 16) | ((minor) << 8) | (patch))\n"
+        "#define ESPHOME_VERSION_CODE VERSION_CODE(2026, 11, 0)\n"
+    ),
+    "esphome/core/color.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "namespace esphome {\n"
+        "struct Color {\n"
+        "  union { struct { uint8_t r, g, b, w; }; uint32_t raw_32; };\n"
+        "  constexpr Color() : r(0), g(0), b(0), w(0) {}\n"
+        "  constexpr Color(uint8_t red, uint8_t green, uint8_t blue) : r(red), g(green), b(blue), w(0) {}\n"
+        "  constexpr Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t white)\n"
+        "      : r(red), g(green), b(blue), w(white) {}\n"
+        "  constexpr explicit Color(uint32_t c)\n"
+        "      : r((c >> 16) & 0xFF), g((c >> 8) & 0xFF), b(c & 0xFF), w((c >> 24) & 0xFF) {}\n"
+        "  bool is_on() const { return raw_32 != 0; }\n"
+        "  Color fade_to_black(uint8_t) const { return *this; }\n"
+        "  Color fade_to_white(uint8_t) const { return *this; }\n"
+        "  Color operator*(uint8_t) const { return *this; }\n"
+        "  Color operator*(float) const { return *this; }\n"
+        "  Color operator+(const Color &) const { return *this; }\n"
+        "  bool operator==(const Color &rhs) const { return raw_32 == rhs.raw_32; }\n"
+        "  bool operator!=(const Color &rhs) const { return raw_32 != rhs.raw_32; }\n"
+        "  static const Color BLACK;\n"
+        "  static const Color WHITE;\n"
+        "};\n"
+        "inline constexpr Color Color::BLACK{0, 0, 0};\n"
+        "inline constexpr Color Color::WHITE{255, 255, 255};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/core/hal.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "namespace esphome {\n"
+        "inline uint32_t millis() { return 0; }\n"
+        "inline uint32_t micros() { return 0; }\n"
+        "inline void delay(uint32_t) {}\n"
+        "inline void delayMicroseconds(uint32_t) {}\n"
+        "inline void yield() {}\n"
+        "}  // namespace esphome\n"
+        "using esphome::millis;\n"
+        "using esphome::micros;\n"
+    ),
+    "esphome/core/helpers.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdint>\n"
+        "namespace esphome {\n"
+        "template <typename T> class RAMAllocator {\n"
+        " public:\n"
+        "  enum Flags : uint8_t { NONE = 0, ALLOW_FAILURE = 1, ALLOC_EXTERNAL = 2, ALLOC_INTERNAL = 4 };\n"
+        "  explicit RAMAllocator(uint8_t = NONE) {}\n"
+        "  T *allocate(size_t n) { return new T[n]; }\n"
+        "  void deallocate(T *p, size_t) { delete[] p; }\n"
+        "};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/core/log.h": (
+        "#pragma once\n"
+        "#define ESP_LOGD(tag, fmt, ...) ((void)0)\n"
+        "#define ESP_LOGI(tag, fmt, ...) ((void)0)\n"
+        "#define ESP_LOGW(tag, fmt, ...) ((void)0)\n"
+        "#define ESP_LOGE(tag, fmt, ...) ((void)0)\n"
+        "#define ESP_LOGV(tag, fmt, ...) ((void)0)\n"
+    ),
+    "esphome/core/component.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include <functional>\n"
+        "namespace esphome {\n"
+        "class Component {\n"
+        " public:\n"
+        "  virtual ~Component() = default;\n"
+        "  virtual void setup() {}\n"
+        "  virtual void loop() {}\n"
+        "  virtual float get_setup_priority() const { return 0.0f; }\n"
+        "  bool status_has_error() const { return false; }\n"
+        "  void status_clear_error() {}\n"
+        "  void set_timeout(const char *, uint32_t, std::function<void()> &&) {}\n"
+        "  void set_timeout(uint32_t, uint32_t, std::function<void()> &&) {}\n"
+        "  void cancel_timeout(const char *) {}\n"
+        "  void cancel_timeout(uint32_t) {}\n"
+        "};\n"
+        "class PollingComponent : public Component {\n"
+        " public:\n"
+        "  explicit PollingComponent(uint32_t = 1000) {}\n"
+        "  virtual void update() {}\n"
+        "  void stop_poller() {}\n"
+        "  void start_poller() {}\n"
+        "  void set_update_interval(uint32_t) {}\n"
+        "};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/core/preferences.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdint>\n"
+        "namespace esphome {\n"
+        "class ESPPreferenceObject {\n"
+        " public:\n"
+        "  template <typename T> bool load(T *) { return false; }\n"
+        "  template <typename T> bool save(const T *) { return true; }\n"
+        "};\n"
+        "class ESPPreferences {\n"
+        " public:\n"
+        "  template <typename T> ESPPreferenceObject make_preference(uint32_t, bool = true) { return {}; }\n"
+        "  ESPPreferenceObject make_preference(size_t, uint32_t, bool = true) { return {}; }\n"
+        "  bool sync() { return true; }\n"
+        "};\n"
+        "extern ESPPreferences *global_preferences;\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/core/time.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include <ctime>\n"
+        "#include <string>\n"
+        "namespace esphome {\n"
+        "struct ESPTime {\n"
+        "  uint8_t second{0}, minute{0}, hour{0}, day_of_week{1}, day_of_month{1}, month{1};\n"
+        "  uint16_t day_of_year{1}, year{2026};\n"
+        "  bool is_dst{false};\n"
+        "  time_t timestamp{0};\n"
+        "  bool is_valid() const { return year >= 2019; }\n"
+        "  std::string strftime(const char *) const { return \"\"; }\n"
+        "  size_t strftime(char *b, size_t n, const char *) const { if (b && n) b[0] = 0; return 0; }\n"
+        "};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/components/display/display.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esphome/core/color.h\"\n"
+        "#include \"esphome/core/component.h\"\n"
+        "namespace esphome::font { class GlyphData; class Font; }\n"
+        "namespace esphome::display {\n"
+        "inline constexpr Color COLOR_OFF{0, 0, 0, 0};\n"
+        "inline constexpr Color COLOR_ON{255, 255, 255, 255};\n"
+        "enum DisplayRotation {\n"
+        "  DISPLAY_ROTATION_0_DEGREES = 0,\n"
+        "  DISPLAY_ROTATION_90_DEGREES = 90,\n"
+        "  DISPLAY_ROTATION_180_DEGREES = 180,\n"
+        "  DISPLAY_ROTATION_270_DEGREES = 270,\n"
+        "};\n"
+        "enum class TextAlign {\n"
+        "  TOP = 0x00, CENTER_VERTICAL = 0x01, BASELINE = 0x02, BOTTOM = 0x04,\n"
+        "  LEFT = 0x00, CENTER_HORIZONTAL = 0x08, RIGHT = 0x10,\n"
+        "  TOP_LEFT = TOP | LEFT, TOP_CENTER = TOP | CENTER_HORIZONTAL, TOP_RIGHT = TOP | RIGHT,\n"
+        "  CENTER_LEFT = CENTER_VERTICAL | LEFT, CENTER = CENTER_VERTICAL | CENTER_HORIZONTAL,\n"
+        "  CENTER_RIGHT = CENTER_VERTICAL | RIGHT,\n"
+        "  BASELINE_LEFT = BASELINE | LEFT, BASELINE_CENTER = BASELINE | CENTER_HORIZONTAL,\n"
+        "  BASELINE_RIGHT = BASELINE | RIGHT,\n"
+        "  BOTTOM_LEFT = BOTTOM | LEFT, BOTTOM_CENTER = BOTTOM | CENTER_HORIZONTAL,\n"
+        "  BOTTOM_RIGHT = BOTTOM | RIGHT,\n"
+        "};\n"
+        "class BaseFont {\n"
+        " public:\n"
+        "  virtual ~BaseFont() = default;\n"
+        "  virtual void print(int, int, class Display *, Color, const char *, Color = Color::BLACK) {}\n"
+        "  virtual void measure(const char *, int *w, int *xo, int *bl, int *h) {\n"
+        "    if (w) *w = 0;\n"
+        "    if (xo) *xo = 0;\n"
+        "    if (bl) *bl = 0;\n"
+        "    if (h) *h = 0;\n"
+        "  }\n"
+        "};\n"
+        "class BaseImage {\n"
+        " public:\n"
+        "  virtual ~BaseImage() = default;\n"
+        "  virtual int get_width() const { return 0; }\n"
+        "  virtual int get_height() const { return 0; }\n"
+        "  virtual const uint8_t *get_data_start() const { return nullptr; }\n"
+        "};\n"
+        "class Display : public PollingComponent {\n"
+        " public:\n"
+        "  int get_width() { return 466; }\n"
+        "  int get_height() { return 466; }\n"
+        "  DisplayRotation get_rotation() const { return DISPLAY_ROTATION_0_DEGREES; }\n"
+        "  void draw_pixel_at(int, int, Color) {}\n"
+        "  void line(int, int, int, int, Color) {}\n"
+        "  void horizontal_line(int, int, int, Color) {}\n"
+        "  void vertical_line(int, int, int, Color) {}\n"
+        "  void rectangle(int, int, int, int, Color) {}\n"
+        "  void filled_rectangle(int, int, int, int, Color) {}\n"
+        "  void circle(int, int, int, Color) {}\n"
+        "  void filled_circle(int, int, int, Color) {}\n"
+        "  void triangle(int, int, int, int, int, int, Color) {}\n"
+        "  void filled_triangle(int, int, int, int, int, int, Color) {}\n"
+        "  void print(int, int, BaseFont *, Color, TextAlign, const char *, Color = Color::BLACK) {}\n"
+        "  void print(int, int, BaseFont *, Color, const char *, Color = Color::BLACK) {}\n"
+        "  void printf(int, int, BaseFont *, Color, TextAlign, const char *, ...) {}\n"
+        "  void fill(Color) {}\n"
+        "  void start_clipping(int, int, int, int) {}\n"
+        "  void end_clipping() {}\n"
+        " protected:\n"
+        "  uint8_t *buffer_{nullptr};\n"
+        "};\n"
+        "}  // namespace esphome::display\n"
+    ),
+    "esphome/components/font/font.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include <vector>\n"
+        "#include \"esphome/components/display/display.h\"\n"
+        "namespace esphome::font {\n"
+        "struct GlyphData {\n"
+        "  const char *a_char;\n"
+        "  const uint8_t *data;\n"
+        "  int offset_x, offset_y, width, height, advance_width;\n"
+        "};\n"
+        "class Glyph {\n"
+        " public:\n"
+        "  const GlyphData *get_glyph_data() const { return nullptr; }\n"
+        "};\n"
+        "class Font : public display::BaseFont {\n"
+        " public:\n"
+        "  const std::vector<Glyph> &get_glyphs() const { static std::vector<Glyph> g; return g; }\n"
+        "  int get_baseline() const { return 12; }\n"
+        "  int get_height() const { return 16; }\n"
+        "  int get_bpp() const { return 1; }\n"
+        "};\n"
+        "}  // namespace esphome::font\n"
+    ),
+    "esphome/components/api/api_server.h": (
+        "#pragma once\n"
+        "namespace esphome::api {\n"
+        "class APIServer { public: bool is_connected() const { return true; } };\n"
+        "extern APIServer *global_api_server;\n"
+        "}  // namespace esphome::api\n"
+    ),
+    "esphome/components/i2c/i2c_bus.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdint>\n"
+        "namespace esphome::i2c {\n"
+        "enum ErrorCode { ERROR_OK = 0, ERROR_UNKNOWN = 1 };\n"
+        "class I2CBus {\n"
+        " public:\n"
+        "  ErrorCode write_readv(uint8_t, const uint8_t *, size_t, uint8_t *, size_t) { return ERROR_OK; }\n"
+        "  ErrorCode write(uint8_t, const uint8_t *, size_t, bool = true) { return ERROR_OK; }\n"
+        "  ErrorCode read(uint8_t, uint8_t *, size_t) { return ERROR_OK; }\n"
+        "};\n"
+        "}  // namespace esphome::i2c\n"
+    ),
+    "esphome/components/wifi/wifi_component.h": (
+        "#pragma once\n"
+        "namespace esphome::wifi {\n"
+        "class WiFiComponent { public: bool is_connected() { return true; } };\n"
+        "extern WiFiComponent *global_wifi_component;\n"
+        "}  // namespace esphome::wifi\n"
+    ),
+    "esp_heap_caps.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdint>\n"
+        "#include <cstdlib>\n"
+        "#define MALLOC_CAP_SPIRAM (1 << 10)\n"
+        "#define MALLOC_CAP_INTERNAL (1 << 11)\n"
+        "#define MALLOC_CAP_8BIT (1 << 2)\n"
+        "#define MALLOC_CAP_DMA (1 << 3)\n"
+        "inline void *heap_caps_malloc(size_t sz, uint32_t) { return std::malloc(sz); }\n"
+        "inline void *heap_caps_calloc(size_t n, size_t sz, uint32_t) { return std::calloc(n, sz); }\n"
+        "inline void heap_caps_free(void *p) { std::free(p); }\n"
+        "inline size_t heap_caps_get_free_size(uint32_t) { return 0; }\n"
+        "inline size_t heap_caps_get_minimum_free_size(uint32_t) { return 0; }\n"
+        "inline size_t heap_caps_get_largest_free_block(uint32_t) { return 0; }\n"
+    ),
+    "esp_memory_utils.h": (
+        "#pragma once\n"
+        "inline bool esp_ptr_external_ram(const void *) { return false; }\n"
+        "inline bool esp_ptr_internal(const void *) { return true; }\n"
+    ),
+    "esp_timer.h": "#pragma once\n#include <cstdint>\ninline int64_t esp_timer_get_time() { return 0; }\n",
+    "esp_random.h": "#pragma once\n#include <cstdint>\ninline uint32_t esp_random() { return 42; }\n",
+    "esp_sleep.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "typedef int esp_sleep_wakeup_cause_t;\n"
+        "#define ESP_SLEEP_WAKEUP_UNDEFINED 0\n"
+        "inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return 0; }\n"
+    ),
+    "esp_wifi.h": (
+        "#pragma once\n"
+        "typedef int wifi_ps_type_t;\n"
+        "#define WIFI_PS_NONE 0\n"
+        "#define WIFI_PS_MIN_MODEM 1\n"
+        "inline int esp_wifi_set_ps(wifi_ps_type_t) { return 0; }\n"
+    ),
+    "esp_event.h": "#pragma once\n",
+    "esp_attr.h": "#pragma once\n#ifndef IRAM_ATTR\n#define IRAM_ATTR\n#endif\n",
+    "freertos/FreeRTOS.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "typedef uint32_t TickType_t;\n"
+        "#define pdMS_TO_TICKS(x) (x)\n"
+    ),
+    "freertos/task.h": (
+        "#pragma once\n"
+        "#include \"freertos/FreeRTOS.h\"\n"
+        "inline void vTaskDelay(TickType_t) {}\n"
+        "inline int xPortGetCoreID() { return 0; }\n"
+    ),
+    "driver/gpio.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "typedef int gpio_num_t;\n"
+        "#define GPIO_NUM_NC (-1)\n"
+        "inline int gpio_set_level(gpio_num_t, uint32_t) { return 0; }\n"
+    ),
+    "driver/ledc.h": "#pragma once\n",
+}
+
+
+def _write_host_ui_stubs(stub_dir: Path) -> None:
+    for rel, content in HOST_UI_STUBS.items():
+        fp = stub_dir / rel
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(content, encoding="utf-8")
+
+
 def run_subprocess_gates(failures: list[str]) -> None:
     """Run protocol, board-facts, bringup, sound checks and compile/run C++20 host unit tests."""
     py_tools = (
@@ -959,6 +1284,32 @@ def run_subprocess_gates(failures: list[str]) -> None:
     if not test_cpp.is_file():
         failures.append("[HOST TESTS] tests/host/test_all.cpp missing")
         return
+
+    ui_cpps = sorted((ROOT / "components" / "latter_ui").glob("*.cpp"))
+    ui_trait_matrices = (
+        (
+            "ROUND_BATT",
+            (
+                "LATTER_SCREEN_W=466",
+                "LATTER_SCREEN_H=466",
+                "LATTER_ROUND_DISPLAY=1",
+                "LATTER_HAS_BATTERY=1",
+                "LATTER_HAS_IMU=1",
+                "LATTER_IS_STATIONARY=0",
+            ),
+        ),
+        (
+            "RECT_WALL",
+            (
+                "LATTER_SCREEN_W=480",
+                "LATTER_SCREEN_H=480",
+                "LATTER_ROUND_DISPLAY=0",
+                "LATTER_HAS_BATTERY=0",
+                "LATTER_HAS_IMU=0",
+                "LATTER_IS_STATIONARY=1",
+            ),
+        ),
+    )
 
     gpp = shutil.which("g++") or shutil.which("clang++")
     if gpp:
@@ -987,6 +1338,28 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 )
                 if lam_comp.returncode != 0:
                     failures.append(f"[YAML LAMBDA COMPILE] {(lam_comp.stderr or lam_comp.stdout).strip()}")
+            if ui_cpps:
+                stub_dir = td_path / "ui_stubs"
+                _write_host_ui_stubs(stub_dir)
+                for cfg_lbl, defs in ui_trait_matrices:
+                    ui_comp = subprocess.run(
+                        [
+                            gpp,
+                            "-std=c++20",
+                            "-fsyntax-only",
+                            f"-I{ROOT / 'include'}",
+                            f"-I{stub_dir}",
+                            *[f"-D{d}" for d in defs],
+                            *[str(p) for p in ui_cpps],
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if ui_comp.returncode != 0:
+                        failures.append(
+                            f"[UI CPP SYNTAX ({cfg_lbl})] {(ui_comp.stderr or ui_comp.stdout).strip()}"
+                        )
     elif os.name == "nt":
         vcvars_candidates = [
             Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"),
@@ -1017,6 +1390,19 @@ def run_subprocess_gates(failures: list[str]) -> None:
                             "if errorlevel 1 exit /b 1",
                         ]
                     )
+                if ui_cpps:
+                    stub_dir = td_path / "ui_stubs"
+                    _write_host_ui_stubs(stub_dir)
+                    ui_cpp_args = " ".join(f'"{p}"' for p in ui_cpps)
+                    for _, defs in ui_trait_matrices:
+                        def_args = " ".join(f"/D{d}" for d in defs)
+                        bat_lines.extend(
+                            [
+                                f'cl /nologo /utf-8 /std:c++20 /Zs /MP /EHsc /I"{ROOT / "include"}" '
+                                f'/I"{stub_dir}" {def_args} {ui_cpp_args}',
+                                "if errorlevel 1 exit /b 1",
+                            ]
+                        )
                 bat_path = td_path / "run_host_tests.cmd"
                 bat_path.write_text("\r\n".join(bat_lines) + "\r\n", encoding="utf-8")
                 res = subprocess.run(["cmd.exe", "/c", str(bat_path)], capture_output=True, text=True, check=False)

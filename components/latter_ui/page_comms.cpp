@@ -233,7 +233,7 @@ void render_intercom_subpage(esphome::display::Display &it, const UiFrameContext
 }
 
 void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext &ctx,
-                            const AreaContextState &ac) {
+                            const DeviceRuntimeState &rs, const AreaContextState &ac) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -414,7 +414,7 @@ void render_comms_page(esphome::display::Display &it, const UiFrameContext &ctx)
   if (rs.nav.tools_subpage == ToolsSubpage::INTERCOM) {
     render_intercom_subpage(it, ctx, rs, ac);
   } else {
-    render_cameras_subpage(it, ctx, ac);
+    render_cameras_subpage(it, ctx, rs, ac);
   }
 }
 
