@@ -196,7 +196,7 @@ script:
                         id(speaker_enable).state || id(announcement_mixing_input).is_running() ||
                         (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                         (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
-                    if (id(va_wake_word_mode).current_option() != "Always On" && !local_audio_playing) {
+                    if (std::string_view(latter_ui::pref_wake_word_mode_cstr()) != "Always On" && !local_audio_playing) {
                       id(hal_set_audio_codecs_standby).execute(true);
                     }
                   }
@@ -362,7 +362,7 @@ script:
 
           if (is_long) {
             latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::KEY;
-            if (id(instant_crown_hibernate_switch).state) {
+            if (latter_ui::persisted_prefs().hold_crown_power_off) {
               id(start_instant_hibernation).execute();
             } else {
               id(start_hibernation_countdown).execute();

@@ -2729,17 +2729,19 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
                                             {"Home", "Clock"}));
           } else if (item_idx == 1) {
+#if LATTER_ROUND_DISPLAY
             const std::string next_cf = cycle_option(
                 rt_.select_opt(UiSelectId::CLOCK_FACE_STYLE),
                 {"Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"});
-            prefs.clock_face_digital = (next_cf != "Modern Roman (Analog)");
-            save_persisted_prefs();
+#else
+            const std::string next_cf = cycle_option(
+                rt_.select_opt(UiSelectId::CLOCK_FACE_STYLE),
+                {"Minimal Digital", "Modern Digital (Bold)"});
+#endif
             rt_.set_select_opt(UiSelectId::CLOCK_FACE_STYLE, next_cf);
           } else if (item_idx == 2) {
-            prefs.is_24h_format = !prefs.is_24h_format;
-            save_persisted_prefs();
             rt_.set_select_opt(UiSelectId::TIME_FORMAT,
-                               prefs.is_24h_format ? "24-Hour" : "12-Hour (AM/PM)");
+                               prefs.is_24h_format ? "12-Hour (AM/PM)" : "24-Hour");
           } else if (item_idx == 3) {
             const std::string next_pal = cycle_option(
                 rt_.select_opt(UiSelectId::THEME_PALETTE),

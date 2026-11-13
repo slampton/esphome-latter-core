@@ -32,11 +32,12 @@ interval:
           }
 
           // 20 FPS high-refresh physics & audio loop exclusively for active games (coalesced against 1s timer)
+          const auto &prefs = latter_ui::persisted_prefs();
           static int s_prev_audio_game = 0;
           const int cur_audio_game = (rs.nav.gui_page == 3) ? rs.nav.active_game : 0;
           if (cur_audio_game != s_prev_audio_game) {
             s_prev_audio_game = cur_audio_game;
-            if (cur_audio_game > 0 && id(game_sound_switch).state) {
+            if (cur_audio_game > 0 && prefs.game_sound_effects) {
               id(enable_speaker_path).execute();  // powers the amplifier once the I2S clocks run
               id(hal_set_dac_mute).execute(false);
             }
@@ -44,7 +45,7 @@ interval:
           if (cur_audio_game > 0 && latter_ui::pending_game_sfx() > 0) {
             int sfx = latter_ui::pending_game_sfx();
             latter_ui::pending_game_sfx() = 0;
-            if (id(game_sound_switch).state) {
+            if (prefs.game_sound_effects) {
               id(play_game_sfx).execute(sfx);
             }
           }
@@ -84,11 +85,12 @@ interval:
           }
 
           // Dynamic Atmospheric Motion Wallpaper with Universal Audio-Aware Cadence
-          const bool weather_sim_active = (id(weather_sim_condition).current_option() != "Live (Home Assistant)");
-          const bool weather_canvas_visible = id(home_weather_bg_switch).state || weather_sim_active;
+          const std::string_view sim_cond_opt(latter_ui::pref_weather_sim_cstr());
+          const bool weather_sim_active = (sim_cond_opt != "Live (Home Assistant)");
+          const bool weather_canvas_visible = prefs.weather_background || weather_sim_active;
           const uint32_t now_w_ms = millis();
           const bool ui_overlay_animating =
-              latter_ui::is_wake_greeting_fading(now_w_ms, id(home_wake_greeting_switch).state) ||
+              latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting) ||
               latter_ui::is_home_activity_carousel_animating(now_w_ms);
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
               (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && (weather_canvas_visible || ui_overlay_animating)) &&
@@ -107,7 +109,7 @@ interval:
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" ||
                                     (c_cond.find("night") != std::string::npos));
               latter_ui::apply_weather_sim_override(
-                  std::string(id(weather_sim_condition).current_option()), c_cond, is_night_time);
+                  std::string(sim_cond_opt), c_cond, is_night_time);
               cached_has_motion = weather_canvas_visible && (sun_ok || weather_sim_active) &&
                                   latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
             }
@@ -295,6 +297,9 @@ interval:
             }
           }
 
+          // Event-driven timer/alarm RPC emission (<= 250 ms latency on touchscreen edits & expirations)
+          latter_actions::check_and_emit_timer_alarm_state(millis());
+
 script:
   # Alarm engine: runs from the power supervisor's 1 s interval (power_manager.yaml), so the chip wakes
   # once a second for both.
@@ -389,7 +394,7 @@ script:
               const auto &rs = latter_ui::runtime_state();
               const auto &ms = latter_ui::media_state();
               return (rs.nav.gui_page == 2) &&
-                     (id(music_fullscreen_art_mode).current_option() != "None") &&
+                     (std::string_view(latter_ui::pref_album_art_style_cstr()) != "None") &&
                      (rs.nav.display_power_state == 0) &&
                      !rs.voice.active && rs.voice.status_text.empty() &&
                      (!ms.is_local || id(album_art).get_width() == 0) &&

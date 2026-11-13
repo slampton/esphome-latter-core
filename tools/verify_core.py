@@ -69,6 +69,7 @@ RETIRED_PATHS = (
     "modules/imu_none.yaml",
     "modules/pmu_axp2101.yaml",
     "modules/imu_qmi8658.yaml",
+    "modules/settings_entities.yaml",
     "guis/universal/touch_handlers.yaml",
     "tests/host/test_latter_state.cpp",
     "docs/UPSTREAM_ESPHOME_VA_PR.md",
@@ -822,32 +823,32 @@ def main(argv: list[str] | None = None) -> int:
                             f"[DANGLING HA SENSOR] {rel} subscribes {sec} via platform: homeassistant (use Protocol v3)"
                         )
 
-    # Descriptive option labels (D-020) & Power Profile options
-    settings_yaml = ROOT / "modules" / "settings_entities.yaml"
-    if settings_yaml.is_file():
-        stxt = settings_yaml.read_text(encoding="utf-8")
-        for req_opt in (
-            "Minimal Digital",
-            "Modern Roman (Analog)",
-            "Modern Digital (Bold)",
-            "Nebula",
-            "Solaris",
-            "Rings",
-            "Light Bar",
-            "Dot Wave",
-            "Ambient Clock",
-            "Aurora",
-            "Starfield",
-            "Digital Rain",
-            "Fireworks",
-            "Portable Carry",
-            "Handheld Roaming",
-            "Wearable Watch",
-            "Tabletop Dock",
-            "Always-On Wall / Desk",
-        ):
-            if f'"{req_opt}"' not in stxt:
-                failures.append(f"[PRODUCT OPTIONS] modules/settings_entities.yaml missing option {req_opt!r}")
+    # Descriptive option labels (D-020) & Power Profile options in C++ preference tables
+    state_h_txt = (ROOT / "include" / "latter_state.h").read_text(encoding="utf-8")
+    power_h_txt = (ROOT / "include" / "hal_power_pm.h").read_text(encoding="utf-8")
+    combined_opts = state_h_txt + "\n" + power_h_txt
+    for req_opt in (
+        "Minimal Digital",
+        "Modern Roman (Analog)",
+        "Modern Digital (Bold)",
+        "Nebula",
+        "Solaris",
+        "Rings",
+        "Light Bar",
+        "Dot Wave",
+        "Ambient Clock",
+        "Aurora",
+        "Starfield",
+        "Digital Rain",
+        "Fireworks",
+        "Portable Carry",
+        "Handheld Roaming",
+        "Wearable Watch",
+        "Tabletop Dock",
+        "Always-On Wall / Desk",
+    ):
+        if f'"{req_opt}"' not in combined_opts:
+            failures.append(f"[PRODUCT OPTIONS] include/latter_state.h + hal_power_pm.h missing option {req_opt!r}")
 
     # 4. SDK & YAML revision lockstep + ESPHome version static_assert
     sdk_revs: list[int] = []

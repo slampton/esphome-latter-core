@@ -84,7 +84,7 @@ sensor:
     lambda: |-
       auto &rs = latter_ui::runtime_state();
       if (rs.nav.display_power_state != 0) {
-        auto pw_mode = id(pickup_wake_mode).current_option();
+        const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr();
         if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !rs.hw_usb_connected)) {
           rs.hw_motion_mag = 0.0f;
           return 0.0f;

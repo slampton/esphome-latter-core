@@ -565,6 +565,12 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Why:** Users who prefer a minimal or uniform aesthetic can hide album art in Music while honoring their selected black or wallpaper background, and extending wallpaper plus frosted-glass D-pad chrome across Remote keeps Remote visually consistent with Home, System, Sky & Weather, Area Control, Tools, and Whole-Home Hub.
 - **Status:** Accepted; implemented 2026-11-12.
 
+### D-034: Protocol v3 `device_prefs` + `PersistedDevicePrefs` v2 NVS and zero ESPHome template preference entities
+- **Date:** 2026-11-12
+- **Decision:** (1) Retire `modules/settings_entities.yaml` (`42` ESPHome `template` `select`/`switch`/`number` preference entities and `3` action buttons) and store all on-device user preferences in one trivially-copyable NVS POD struct `PersistedDevicePrefs` (`kPersistedPrefsVersion = 2U`, `include/latter_state.h`). (2) Render frames (`guis/universal/gui.yaml`) and audio/power scripts read `latter_ui::persisted_prefs()` and `pref_*_cstr()` directly with zero per-frame `std::string` heap allocations. (3) Synchronize preferences two-way with Home Assistant over Protocol v3: inbound via `latter_push_v3(domain="device_prefs")` (`parse_v3_device_prefs_payload`) and `latter_device_command(command=...)`; outbound on touchscreen edits (`UiRuntimeHost::set_select` / `toggle_switch` / `set_number` -> `latter_actions::record_local_pref_edit`) via `latter.set_device_prefs` when connected, or queued in `PersistedDevicePrefs::dirty_mask` (`uint64_t`) with debounced 1.5 s NVS flushes (`flush_persisted_prefs_if_dirty` before restart/deep-sleep) and reconciled via `device_hello` (`prefs_seq` + `dirty_prefs`) on reconnect. (4) Replace the 30 s polled ESPHome `timer_remaining_sensor` / `timer_active_binary_sensor` / `alarm_ringing_binary_sensor` with event-driven `latter.timer_alarm_state` RPC emissions (`check_and_emit_timer_alarm_state`), keeping quiet light-sleep radio traffic at zero.
+- **Why:** Exposing 42 ESPHome `template` entities duplicated configuration state across two Home Assistant devices, went `unavailable` whenever battery Devices hibernated, broke sleep-safe Device Groups, allocated ~8–10 KB of ESP32 entity objects, and woke Wi-Fi every 30 s for countdown timer polling.
+- **Status:** Accepted; implemented 2026-11-12.
+
 ## Known gaps
 
 Nothing here contradicts a standing decision; these are the places the code doesn't fully reach it yet.

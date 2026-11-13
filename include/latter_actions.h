@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Core SDK: Typed Outbound Protocol v3 RPC Action Helpers (latter_actions.h)
 // ==============================================================================
-// Provides typed C++ wrappers around latter_rpc::emit(...) for all 15 outbound
+// Provides typed C++ wrappers around latter_rpc::emit(...) for all 17 outbound
 // RPC services declared in protocol/latter_v3.json so C++ touch/UI handlers and
 // YAML scripts emit RPC calls directly without scratch YAML globals.
 // ==============================================================================
@@ -23,12 +23,18 @@ namespace latter_actions {
 // 1. device_hello
 template <typename OutboxT = std::nullptr_t>
 inline void emit_device_hello(OutboxT outbox = nullptr) {
+  latter_ui::ensure_persisted_prefs_loaded();
+  const auto &prefs = latter_ui::persisted_prefs();
   const std::string boot_str = std::to_string(latter_ui::device_boot_id());
   const std::string manifest_str = latter_ui::build_hardware_manifest_json();
+  const std::string seq_str = std::to_string(prefs.prefs_seq);
+  const std::string dirty_str = latter_ui::build_hello_dirty_prefs(prefs);
   latter_rpc::emit(outbox, "device_hello", {
     {"contract", "3"},
     {"boot_id", boot_str},
     {"manifest", manifest_str},
+    {"prefs_seq", seq_str},
+    {"dirty_prefs", dirty_str},
   });
 }
 
@@ -324,6 +330,106 @@ inline void emit_set_dock_apps(std::string_view dock_apps_csv, OutboxT outbox = 
   latter_rpc::emit(outbox, "set_dock_apps", {
     {"dock_apps", dock_apps_csv},
   });
+}
+
+// 16. set_device_prefs (outbound local touchscreen/rotary preference edits)
+template <typename OutboxT = std::nullptr_t>
+inline void emit_set_device_prefs(uint32_t base_seq, std::string_view changes, OutboxT outbox = nullptr) {
+  if (changes.empty()) return;
+  const std::string seq_str = std::to_string(base_seq);
+  latter_rpc::emit(outbox, "set_device_prefs", {
+    {"base_seq", seq_str},
+    {"changes", changes},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline bool record_local_pref_edit(latter_ui::PrefKey key, std::string_view val,
+                                   uint32_t now_ms, uint32_t &out_effects,
+                                   OutboxT outbox = nullptr) {
+  out_effects = 0;
+  auto &p = latter_ui::persisted_prefs();
+  uint64_t changed_mask = 0;
+  if (!latter_ui::set_pref_by_key_str(p, key, val, true, changed_mask, out_effects)) {
+    return false;
+  }
+  p.dirty_mask |= changed_mask;
+  latter_ui::schedule_persisted_prefs_save(now_ms);
+  if (latter_ui::link_state().ha_connected) {
+    const std::string changes = latter_ui::encode_prefs_mask(changed_mask, p);
+    emit_set_device_prefs(p.prefs_seq, changes, outbox);
+  }
+  return true;
+}
+
+// 17. timer_alarm_state (event-driven timer & alarm transition sync to Tier 2 HA entities)
+template <typename OutboxT = std::nullptr_t>
+inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
+                                   int remaining_sec, bool ringing,
+                                   OutboxT outbox = nullptr) {
+  const std::string rem_str = std::to_string(std::max(0, remaining_sec));
+  latter_rpc::emit(outbox, "timer_alarm_state", {
+    {"timer_running", timer_running ? "1" : "0"},
+    {"timer_paused", timer_paused ? "1" : "0"},
+    {"remaining_sec", rem_str},
+    {"ringing", ringing ? "1" : "0"},
+  });
+}
+
+struct TimerAlarmSyncTracker {
+  bool inited = false;
+  bool running = false;
+  bool paused = false;
+  bool ringing = false;
+  int last_emitted_rem = 0;
+  uint32_t last_emitted_ms = 0;
+};
+
+inline TimerAlarmSyncTracker &timer_alarm_sync_tracker() {
+  static TimerAlarmSyncTracker tr{};
+  return tr;
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_active = false,
+                                             OutboxT outbox = nullptr) {
+  const auto &rs = latter_ui::runtime_state();
+  const bool cur_run = rs.timers.running;
+  const bool cur_pau = !cur_run && rs.timers.paused;
+  const int cur_rem = (cur_run || cur_pau) ? std::max(0, rs.timers.remaining_sec) : 0;
+  const bool cur_ring = (rs.alarms.ringing || rs.timers.ringing);
+
+  auto &tr = timer_alarm_sync_tracker();
+  bool should_emit = false;
+  if (force_if_active && (cur_run || cur_pau || cur_ring)) {
+    should_emit = true;
+  } else if (!tr.inited) {
+    tr.inited = true;
+    should_emit = (cur_run || cur_pau || cur_ring);
+  } else if (cur_run != tr.running || cur_pau != tr.paused || cur_ring != tr.ringing) {
+    should_emit = true;
+  } else if (cur_run) {
+    const int elapsed_s = static_cast<int>((now_ms - tr.last_emitted_ms) / 1000U);
+    const int expected_rem = std::max(0, tr.last_emitted_rem - elapsed_s);
+    if (std::abs(cur_rem - expected_rem) > 3) {
+      should_emit = true;
+    }
+  } else if (cur_pau && cur_rem != tr.last_emitted_rem) {
+    should_emit = true;
+  }
+
+  if (!should_emit) return false;
+  tr.inited = true;
+  tr.running = cur_run;
+  tr.paused = cur_pau;
+  tr.ringing = cur_ring;
+  tr.last_emitted_rem = cur_rem;
+  tr.last_emitted_ms = now_ms;
+  if (latter_ui::link_state().ha_connected) {
+    emit_timer_alarm_state(cur_run, cur_pau, cur_rem, cur_ring, outbox);
+    return true;
+  }
+  return false;
 }
 
 }  // namespace latter_actions

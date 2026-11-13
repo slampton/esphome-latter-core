@@ -137,4 +137,60 @@ enum class CalendarField : size_t {
   COUNT = 6
 };
 
+// Domain: device_prefs (sensor.<device>_device_prefs)
+enum class DevicePrefsField : size_t {
+  HEADER_VERSION = 0,
+  HEADER_EPOCH = 1,
+  HEADER_REV = 2,
+  PREFS_SEQ = 3,  // prefs_seq (u32)
+  POWER_PROFILE = 4,  // power_profile (string)
+  WAKE_WORD_MODE = 5,  // wake_word_mode (string)
+  TAP_TO_WAKE = 6,  // tap_to_wake (string)
+  PICKUP_TO_WAKE = 7,  // pickup_to_wake (string)
+  BATTERY_SCREEN_TIMEOUT = 8,  // battery_screen_timeout (string)
+  DOCKED_IDLE_TIMEOUT = 9,  // docked_idle_timeout (string)
+  BATTERY_HIBERNATE_TIMEOUT = 10,  // battery_hibernate_timeout (string)
+  DOCKED_SCREENSAVER = 11,  // docked_screensaver (bool)
+  SCREENSAVER_STYLE = 12,  // screensaver_style (string)
+  HOLD_CROWN_POWER_OFF = 13,  // hold_crown_power_off (bool)
+  AUTO_BRIGHTNESS_MODE = 14,  // auto_brightness_mode (string)
+  MANUAL_BRIGHTNESS = 15,  // manual_brightness (string)
+  DAY_BRIGHTNESS = 16,  // day_brightness (string)
+  NIGHT_BRIGHTNESS = 17,  // night_brightness (string)
+  DAY_START_HOUR = 18,  // day_start_hour (u16)
+  NIGHT_START_HOUR = 19,  // night_start_hour (u16)
+  COLOR_PROFILE = 20,  // color_profile (string)
+  VA_VISUAL_PROFILE = 21,  // va_visual_profile (string)
+  START_SCREEN = 22,  // start_screen (string)
+  CLOCK_FACE = 23,  // clock_face (string)
+  TIME_FORMAT = 24,  // time_format (string)
+  WEATHER_BACKGROUND = 25,  // weather_background (bool)
+  HOME_SUN = 26,  // home_sun (bool)
+  HOME_MOON = 27,  // home_moon (bool)
+  WAKE_GREETING = 28,  // wake_greeting (bool)
+  AREA_DEFAULT_CATEGORY = 29,  // area_default_category (string)
+  AREA_SHOW_ALL_CATEGORY = 30,  // area_show_all_category (bool)
+  ALBUM_ART_STYLE = 31,  // album_art_style (string)
+  MUSIC_OVERLAY_STYLE = 32,  // music_overlay_style (string)
+  SHOW_SPEAKER_SHORTCUT = 33,  // show_speaker_shortcut (bool)
+  SHOW_LIBRARY_SHORTCUT = 34,  // show_library_shortcut (bool)
+  ALBUM_SORT_ORDER = 35,  // album_sort_order (string)
+  ARTIST_ALBUM_SORT_ORDER = 36,  // artist_album_sort_order (string)
+  PODCAST_SORT_ORDER = 37,  // podcast_sort_order (string)
+  WW_SENS_OKAY_NABU = 38,  // ww_sens_okay_nabu (string)
+  WW_SENS_HEY_LUNA = 39,  // ww_sens_hey_luna (string)
+  WW_SENS_HEY_JARVIS = 40,  // ww_sens_hey_jarvis (string)
+  WW_SENS_HEY_MYCROFT = 41,  // ww_sens_hey_mycroft (string)
+  WW_SENS_ALEXA = 42,  // ww_sens_alexa (string)
+  WAKE_SCREEN_ON_ASSIST = 43,  // wake_screen_on_assist (bool)
+  ALERT_VOLUME = 44,  // alert_volume (u16)
+  VOLUME_STEP_SIZE = 45,  // volume_step_size (u16)
+  GAME_SOUND_EFFECTS = 46,  // game_sound_effects (bool)
+  BLE_BEACON_ENABLED = 47,  // ble_beacon_enabled (bool)
+  BLE_BEACON_MODE = 48,  // ble_beacon_mode (string)
+  WEATHER_SIM_CONDITION = 49,  // weather_sim_condition (string)
+  THEME_COLOR_HEX = 50,  // theme_color_hex (string)
+  COUNT = 51
+};
+
 }  // namespace latter_ui

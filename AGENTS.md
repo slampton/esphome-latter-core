@@ -9,8 +9,8 @@ Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter com
   - `latter_ui`: Compiled per-page C++20 renderers (`page_*.cpp`), `FrameHitTable` (`hit_table.cpp`), `UiTouchEngine` (`touch_engine.cpp`), frosted-glass widgets (`ui_widgets.cpp`), and `DirtyBandTracker` `2px` horizontal dirty-band compositor (`ui_compositor.cpp`).
   - `latter_beacon`: Raw-HCI iBeacon advertiser (`id: ble_ctrl`) over VHCI (ESP32-S3) or `esp_hosted` (ESP32-P4) with zero Bluetooth host-stack RAM overhead.
 - **Modular YAML (`modules/`, `boards/`, `devices/`, `guis/`)**:
-  - `modules/base.yaml`: Shared Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `time:`, `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox`.
-  - `modules/latter_display_firmware.yaml`: Umbrella package included by `devices/*.yaml` pulling in `system_core.yaml`, `power_manager.yaml`, `audio_voice.yaml`, `display_pipeline.yaml`, `settings_entities.yaml`, `timers_and_fetchers.yaml`, and `guis/universal/gui.yaml`.
+  - `modules/base.yaml`: Shared Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `time:`, `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox`.
+  - `modules/latter_display_firmware.yaml`: Umbrella package included by `devices/*.yaml` pulling in `system_core.yaml`, `power_manager.yaml`, `audio_voice.yaml`, `display_pipeline.yaml`, `timers_and_fetchers.yaml`, and `guis/universal/gui.yaml`.
   - `modules/hal/`: Shared chip (`chip_esp32s3.yaml`, `chip_esp32p4.yaml`), full-duplex audio (`audio_es8311_duplex.yaml`, `audio_es8311_es7210_duplex.yaml`), `pmu_axp2101.yaml`, and `imu_qmi8658.yaml` packages.
   - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_ui::runtime_state()`) and all persisted preferences live in one versioned NVS POD struct `PersistedDevicePrefs` (`latter_ui::persisted_prefs()`).
 

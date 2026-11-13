@@ -172,8 +172,10 @@ media_player:
             }
             if (vol_changed && latter_ui::speaker_volume_boot_synced()) {
               float pct = std::clamp(std::round(v * 100.0f), 10.0f, 100.0f);
-              if (std::isnan(id(speaker_volume).state) || std::fabs(id(speaker_volume).state - pct) >= 0.5f) {
-                id(speaker_volume).publish_state(pct);
+              const uint8_t pct_u8 = static_cast<uint8_t>(std::lround(pct));
+              if (latter_ui::persisted_prefs().speaker_volume_pct != pct_u8) {
+                latter_ui::persisted_prefs().speaker_volume_pct = pct_u8;
+                latter_ui::schedule_persisted_prefs_save(millis());
               }
               const uint32_t now_v_ms = millis();
               if (last_mp_vol >= 0.0f && latter_ui::media_state().is_local &&
@@ -445,9 +447,10 @@ voice_assistant:
             return;
           }
           id(va_restore_display).stop();
+          const bool wake_scr = latter_ui::persisted_prefs().wake_screen_on_assist;
           latter_ui::va_display_restore().capture(rs.nav.display_power_state,
               id(display_brightness).current_values.is_on(), millis(), false);
-          if (rs.nav.display_power_state != 0 && id(va_wake_screen_switch).state) {
+          if (rs.nav.display_power_state != 0 && wake_scr) {
             latter_ui::screen_is_off_standby() = false;
             rs.nav.display_power_state = 0;
             id(disp1).start_poller();
@@ -456,7 +459,7 @@ voice_assistant:
           }
           rs.voice.status_text = "Listening...";
           ESP_LOGD("va", "Status: Listening...");
-          if (rs.nav.display_power_state == 0 || id(va_wake_screen_switch).state) {
+          if (rs.nav.display_power_state == 0 || wake_scr) {
             id(display_brightness).turn_on().perform();
             latter_ui::schedule_disp_update(&id(disp1));
           }
@@ -588,7 +591,7 @@ voice_assistant:
                         id(va_restore_display).stop();
                         latter_ui::va_display_restore().capture(rs.nav.display_power_state,
                             id(display_brightness).current_values.is_on(), millis(), false);
-                        if (rs.nav.display_power_state != 0 && id(va_wake_screen_switch).state) {
+                        if (rs.nav.display_power_state != 0 && latter_ui::persisted_prefs().wake_screen_on_assist) {
                           latter_ui::screen_is_off_standby() = false;
                           rs.nav.display_power_state = 0;
                           id(disp1).start_poller();
@@ -628,7 +631,7 @@ voice_assistant:
                   id(va_restore_display).stop();
                   latter_ui::va_display_restore().capture(rs.nav.display_power_state,
                       id(display_brightness).current_values.is_on(), millis(), false);
-                  if (rs.nav.display_power_state != 0 && id(va_wake_screen_switch).state) {
+                  if (rs.nav.display_power_state != 0 && latter_ui::persisted_prefs().wake_screen_on_assist) {
                     latter_ui::screen_is_off_standby() = false;
                     rs.nav.display_power_state = 0;
                     id(disp1).start_poller();
@@ -721,6 +724,7 @@ voice_assistant:
           rs.timers.va_timer_name = timer.name;
           latter_ui::sync_multi_timer_state();
           rs.timers.ringing = false;
+          latter_actions::check_and_emit_timer_alarm_state(now_t);
           id(apply_power_policy).execute();
           if (!rs.voice.active && rs.voice.status_text.empty()) {
             if (((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
@@ -737,6 +741,7 @@ voice_assistant:
           uint32_t now_t = millis();
           latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
           latter_ui::sync_multi_timer_state();
+          latter_actions::check_and_emit_timer_alarm_state(now_t);
           id(apply_power_policy).execute();
           if (!rs.voice.active && rs.voice.status_text.empty()) {
             if (((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
@@ -764,6 +769,7 @@ voice_assistant:
           }
           const bool was_ringing = rs.timers.ringing;
           rs.timers.ringing = false;
+          latter_actions::check_and_emit_timer_alarm_state(millis());
           if (was_ringing) {
             id(stop_alarm_sound).execute();
           }
@@ -804,6 +810,7 @@ voice_assistant:
             id(wake_to_active_state).execute();
             id(play_alarm_sound).execute();
           }
+          latter_actions::check_and_emit_timer_alarm_state(millis());
   on_end:
     then:
       - wait_until:
@@ -1034,21 +1041,22 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto apply_cutoffs = [](const std::string &opt, uint8_t low_c, uint8_t med_c, uint8_t high_c) -> uint8_t {
+          auto apply_cutoffs = [](std::string_view opt, uint8_t low_c, uint8_t med_c, uint8_t high_c) -> uint8_t {
             if (opt == "Slightly sensitive") return low_c;
             if (opt == "Very sensitive") return high_c;
             return med_c;
           };
+          const auto &prefs = latter_ui::persisted_prefs();
           id(okay_nabu).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_okay_nabu).current_option(), 247, 237, 224));
+              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu), 247, 237, 224));
           id(hey_luna).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_luna).current_option(), 248, 239, 226));
+              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_luna), 248, 239, 226));
           id(hey_jarvis).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_jarvis).current_option(), 247, 237, 224));
+              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis), 247, 237, 224));
           id(hey_mycroft).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_hey_mycroft).current_option(), 248, 239, 226));
+              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft), 248, 239, 226));
           id(alexa).set_probability_cutoff(
-              apply_cutoffs(id(ww_sens_alexa).current_option(), 247, 237, 224));
+              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_alexa), 247, 237, 224));
 
   - id: sync_wake_word_state
     mode: restart
@@ -1072,7 +1080,7 @@ script:
               const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                                     !id(wifi_ctrl).is_connected() || (millis() < 12000U);
               return latter_ui::wake_word_should_run(
-                  id(va_wake_word_mode).current_option(),
+                  latter_ui::pref_wake_word_mode_cstr(),
                   rs.hw_usb_connected,
                   va_busy, media_busy, alert_or_tool_busy, sys_busy);
           then:
@@ -1106,7 +1114,7 @@ script:
                             id(hal_set_audio_codecs_standby).execute(false);
                             ESP_LOGD("mww", "Wake word detection ARMED (primary='%s', mode='%s')",
                                      esphome::voice_assistant::primary_wake_word_name(id(mww)).c_str(),
-                                     id(va_wake_word_mode).current_option().c_str());
+                                     latter_ui::pref_wake_word_mode_cstr());
           else:
             - if:
                 condition:
@@ -1115,7 +1123,7 @@ script:
                   - micro_wake_word.stop:
                   - lambda: |-
                       ESP_LOGD("mww", "Wake word detection PAUSED (mode='%s', usb=%d)",
-                               id(va_wake_word_mode).current_option().c_str(),
+                               latter_ui::pref_wake_word_mode_cstr(),
                                (int)latter_ui::runtime_state().hw_usb_connected);
 
   - id: trigger_va_from_wake_word
@@ -1132,7 +1140,7 @@ script:
           latter_ui::va_display_restore().capture(rs.nav.display_power_state,
               id(display_brightness).current_values.is_on(), millis(), true);
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-            if (id(va_wake_screen_switch).state) {
+            if (latter_ui::persisted_prefs().wake_screen_on_assist) {
               latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
               id(wake_to_active_state).execute();
             }
@@ -1176,9 +1184,10 @@ script:
             - script.wait: enable_speaker_path
       - lambda: |-
           const auto &rs = latter_ui::runtime_state();
+          const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
           const float alert_v = rs.alarms.find_my_active
               ? 0.90f
-              : latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+              : latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
           id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
       - while:
@@ -1222,7 +1231,8 @@ script:
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
             - lambda: |-
-                const float sfx_v = latter_ui::alarm_output_volume(id(alert_volume).state, id(latter_media_player).volume);
+                const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
+                const float sfx_v = latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
                 id(physical_speaker).set_volume(sfx_v);
                 id(hal_set_dac_mute).execute(false);
       - media_player.play_media:
@@ -1331,7 +1341,7 @@ script:
             - script.execute: sync_wake_word_state
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
-                auto ww_mode = id(va_wake_word_mode).current_option();
+                const std::string_view ww_mode(latter_ui::pref_wake_word_mode_cstr());
                 const bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && rs.hw_usb_connected);
                 if (!ww_act) {
                   id(hal_set_audio_codecs_standby).execute(true);
@@ -1376,7 +1386,7 @@ script:
                 latter_ui::va_display_restore().capture(rs.nav.display_power_state,
                     id(display_brightness).current_values.is_on(), millis(), true);
                 if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-                  if (id(va_wake_screen_switch).state) {
+                  if (latter_ui::persisted_prefs().wake_screen_on_assist) {
                     latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
                     id(wake_to_active_state).execute();
                   }
@@ -1606,9 +1616,10 @@ script:
       - lambda: |-
           auto &m = latter_ui::runtime_state().music;
           const uint32_t now_ms = millis();
+          const float step_pct = static_cast<float>(latter_ui::persisted_prefs().volume_step_size);
           if (now_ms - m.feedback_timer > 80U) {
             latter_ui::step_music_volume_feedback(
-                1, id(volume_step_size).state, latter_ui::media_state().is_local,
+                1, step_pct, latter_ui::media_state().is_local,
                 id(latter_media_player).volume, now_ms, m);
           }
       - if:
@@ -1616,7 +1627,7 @@ script:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
-                float step = id(volume_step_size).state / 100.0f;
+                float step = static_cast<float>(latter_ui::persisted_prefs().volume_step_size) / 100.0f;
                 if (std::isnan(step) || step <= 0.0f) step = 0.05f;
                 latter_ui::last_local_vol_tap_ms() = millis();
                 float cur = id(latter_media_player).volume;
@@ -1642,9 +1653,10 @@ script:
       - lambda: |-
           auto &m = latter_ui::runtime_state().music;
           const uint32_t now_ms = millis();
+          const float step_pct = static_cast<float>(latter_ui::persisted_prefs().volume_step_size);
           if (now_ms - m.feedback_timer > 80U) {
             latter_ui::step_music_volume_feedback(
-                -1, id(volume_step_size).state, latter_ui::media_state().is_local,
+                -1, step_pct, latter_ui::media_state().is_local,
                 id(latter_media_player).volume, now_ms, m);
           }
       - if:
@@ -1652,7 +1664,7 @@ script:
             lambda: 'return latter_ui::media_state().is_local;'
           then:
             - lambda: |-
-                float step = id(volume_step_size).state / 100.0f;
+                float step = static_cast<float>(latter_ui::persisted_prefs().volume_step_size) / 100.0f;
                 if (std::isnan(step) || step <= 0.0f) step = 0.05f;
                 latter_ui::last_local_vol_tap_ms() = millis();
                 float cur = id(latter_media_player).volume;
@@ -1852,11 +1864,11 @@ script:
                      mode_s == "podcast_episodes" || mode_s == "lyrics" || mode_s == "bio") {
             search_str = rs.music.drilldown_album_id;
           }
-          auto alb_opt = id(music_album_sort_order).current_option();
+          const std::string_view alb_opt(latter_ui::pref_album_sort_cstr());
           const char *alb_sort = (alb_opt == "Newest on Top") ? "year_desc" : ((alb_opt == "Oldest on Top") ? "year" : "name");
-          auto art_opt = id(music_artist_album_sort_order).current_option();
+          const std::string_view art_opt(latter_ui::pref_artist_album_sort_cstr());
           const char *art_sort = (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
-          auto pod_opt = id(music_podcast_sort_order).current_option();
+          const std::string_view pod_opt(latter_ui::pref_podcast_sort_cstr());
           const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
           latter_actions::emit_music_browse(
               mode_s, page, search_str, rs.music.active_speaker_entity,

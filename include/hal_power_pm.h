@@ -283,69 +283,6 @@ inline const PowerProfileSpec *get_power_profile_spec(const std::string &opt) {
   return get_power_profile_spec(parse_power_profile(opt));
 }
 
-inline bool &applying_power_profile() {
-  static bool v = false;
-  return v;
-}
-
-template <typename SelT>
-inline void mark_power_profile_custom_if_manual(SelT *prof_sel) {
-  if (prof_sel == nullptr || applying_power_profile() || hal_millis_now() < 3500U) return;
-  if (prof_sel->current_option() != "Custom") {
-    prof_sel->publish_state("Custom");
-  }
-}
-
-template <typename WwSelT, typename TapSelT, typename PickupSelT, typename BattToSelT,
-          typename DockToSelT, typename HibToSelT, typename DockSwT>
-inline bool apply_power_profile_spec(const std::string &opt,
-                                     WwSelT *ww_sel, TapSelT *tap_sel, PickupSelT *pickup_sel,
-                                     BattToSelT *batt_to_sel, DockToSelT *dock_to_sel,
-                                     HibToSelT *hib_to_sel, DockSwT *dock_sw) {
-  const PowerProfileSpec *spec = get_power_profile_spec(opt);
-  if (spec == nullptr) return false;
-  applying_power_profile() = true;
-  auto set_sel = [](auto *sel, const char *val) {
-    if (sel != nullptr && sel->current_option() != val) {
-      auto call = sel->make_call();
-      call.set_option(val);
-      call.perform();
-    }
-  };
-  set_sel(ww_sel, spec->va_wake_word_mode);
-  set_sel(tap_sel, spec->tap_wake_mode);
-  const char *eff_pickup = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? spec->pickup_wake_mode : "Disabled";
-  set_sel(pickup_sel, eff_pickup);
-  set_sel(batt_to_sel, spec->display_off_timeout);
-  set_sel(dock_to_sel, spec->screensaver_docked_timeout);
-  const char *eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? spec->hibernate_timeout_mode : "Disabled";
-  set_sel(hib_to_sel, eff_hib);
-  if (dock_sw != nullptr && !dock_sw->state && spec->docked_screensaver_enabled) {
-    dock_sw->turn_on();
-  }
-  applying_power_profile() = false;
-  return true;
-}
-
-template <typename PickupSelT, typename HibToSelT>
-inline void clamp_power_capabilities(PickupSelT *pickup_sel, HibToSelT *hib_to_sel) {
-  applying_power_profile() = true;
-  auto set_sel = [](auto *sel, const char *val) {
-    if (sel != nullptr && sel->current_option() != val) {
-      auto call = sel->make_call();
-      call.set_option(val);
-      call.perform();
-    }
-  };
-  if (!LATTER_HAS_IMU || LATTER_IS_STATIONARY) {
-    set_sel(pickup_sel, "Disabled");
-  }
-  if (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY) {
-    set_sel(hib_to_sel, "Disabled");
-  }
-  applying_power_profile() = false;
-}
-
 template <typename TimeT>
 inline int32_t seconds_until_next_armed_alarm(const TimeT &now, uint32_t snooze_until,
                                               int a1_h, int a1_m, bool a1_en, int a1_rec,

@@ -26,6 +26,7 @@
 #define LATTER_HAS_ESP_PREFS 0
 #endif
 
+#include "hal_manifest.h"
 #include "latter_protocol.h"
 #include "latter_rpc.h"
 
@@ -167,8 +168,71 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 1U;
+static constexpr uint16_t kPersistedPrefsVersion = 2U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
+
+enum class PrefKey : uint8_t {
+  POWER_PROFILE = 0,
+  WAKE_WORD_MODE = 1,
+  TAP_TO_WAKE = 2,
+  PICKUP_TO_WAKE = 3,
+  BATTERY_SCREEN_TIMEOUT = 4,
+  DOCKED_IDLE_TIMEOUT = 5,
+  BATTERY_HIBERNATE_TIMEOUT = 6,
+  DOCKED_SCREENSAVER = 7,
+  SCREENSAVER_STYLE = 8,
+  HOLD_CROWN_POWER_OFF = 9,
+  AUTO_BRIGHTNESS_MODE = 10,
+  MANUAL_BRIGHTNESS = 11,
+  DAY_BRIGHTNESS = 12,
+  NIGHT_BRIGHTNESS = 13,
+  DAY_START_HOUR = 14,
+  NIGHT_START_HOUR = 15,
+  COLOR_PROFILE = 16,
+  VA_VISUAL_PROFILE = 17,
+  START_SCREEN = 18,
+  CLOCK_FACE = 19,
+  TIME_FORMAT = 20,
+  WEATHER_BACKGROUND = 21,
+  HOME_SUN = 22,
+  HOME_MOON = 23,
+  WAKE_GREETING = 24,
+  AREA_DEFAULT_CATEGORY = 25,
+  AREA_SHOW_ALL_CATEGORY = 26,
+  ALBUM_ART_STYLE = 27,
+  MUSIC_OVERLAY_STYLE = 28,
+  SHOW_SPEAKER_SHORTCUT = 29,
+  SHOW_LIBRARY_SHORTCUT = 30,
+  ALBUM_SORT_ORDER = 31,
+  ARTIST_ALBUM_SORT_ORDER = 32,
+  PODCAST_SORT_ORDER = 33,
+  WW_SENS_OKAY_NABU = 34,
+  WW_SENS_HEY_LUNA = 35,
+  WW_SENS_HEY_JARVIS = 36,
+  WW_SENS_HEY_MYCROFT = 37,
+  WW_SENS_ALEXA = 38,
+  WAKE_SCREEN_ON_ASSIST = 39,
+  ALERT_VOLUME = 40,
+  VOLUME_STEP_SIZE = 41,
+  GAME_SOUND_EFFECTS = 42,
+  BLE_BEACON_ENABLED = 43,
+  BLE_BEACON_MODE = 44,
+  COUNT = 45,
+};
+
+inline constexpr uint64_t pref_key_bit(PrefKey k) {
+  return 1ULL << static_cast<uint8_t>(k);
+}
+
+// Side-effect bitmask returned when device_prefs or local preferences mutate.
+static constexpr uint32_t kPrefEffectWakeWordSync   = 1U << 0;
+static constexpr uint32_t kPrefEffectWakeWordSens   = 1U << 1;
+static constexpr uint32_t kPrefEffectBrightness     = 1U << 2;
+static constexpr uint32_t kPrefEffectSleepTimer     = 1U << 3;
+static constexpr uint32_t kPrefEffectDockedSaverOff = 1U << 4;
+static constexpr uint32_t kPrefEffectThemePreset    = 1U << 5;
+static constexpr uint32_t kPrefEffectPowerPolicy    = 1U << 6;
+static constexpr uint32_t kPrefEffectRedraw         = 1U << 7;
 
 struct PersistedAlarmPref {
   uint8_t hour = 7;
@@ -180,10 +244,63 @@ struct PersistedAlarmPref {
 struct PersistedDevicePrefs {
   uint32_t magic = kPersistedPrefsMagic;
   uint16_t version = kPersistedPrefsVersion;
-  bool clock_face_digital = false;
+  bool clock_face_digital = true;
   bool is_24h_format = false;
-  bool power_profile_seeded = false;
-  uint8_t reserved_pad[3] = {0, 0, 0};
+  bool defaults_seeded = false;
+
+  // Tier 2 + Tier 3 Device Preferences (compact enum indices / integers / bools)
+  uint8_t power_profile = 0;               // 0..5 ("Portable Carry" .. "Custom")
+  uint8_t wake_word_mode = 0;              // 0..2 ("Docked Only", "Always On", "Disabled")
+  uint8_t tap_to_wake = 1;                 // 0..2 ("Always On", "Docked Only", "Disabled")
+  uint8_t pickup_to_wake = 1;              // 0..2 ("Always On", "Docked Only", "Disabled")
+  uint8_t battery_screen_timeout = 2;      // 0..5 ("10s", "15s", "30s", "1 min", "2 min", "Never")
+  uint8_t docked_idle_timeout = 3;         // 0..6 ("10s", "15s", "30s", "1 min", "2 min", "5 min", "Never")
+  uint8_t battery_hibernate_timeout = 2;   // 0..4 ("5 min", "10 min", "15 min", "30 min", "Disabled")
+  bool docked_screensaver = true;
+  uint8_t screensaver_style = 0;           // 0..4 ("Ambient Clock" .. "Fireworks")
+  bool hold_crown_power_off = false;
+  uint8_t auto_brightness_mode = 1;        // 0..2 ("Disabled", "Sun Synchronized", "Time Schedule")
+  uint8_t manual_brightness = 3;           // 0..4 ("60%" .. "100%")
+  uint8_t day_brightness = 3;              // 0..4 ("60%" .. "100%")
+  uint8_t night_brightness = 1;            // 0..4 ("60%" .. "100%")
+  uint8_t day_start_hour = 7;              // 0..23
+  uint8_t night_start_hour = 20;           // 0..23
+  uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
+  uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
+  uint8_t start_screen = 0;                // 0..1 ("Home", "Clock")
+  uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)")
+  uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
+  bool weather_background = true;
+  bool home_sun = true;
+  bool home_moon = true;
+  bool wake_greeting = true;
+  uint8_t area_default_category = 0;       // 0..7 ("Scenes" .. "All Devices")
+  bool area_show_all_category = false;
+  uint8_t album_art_style = 0;             // 0..3 ("Full Screen", "Letterbox", "Standard", "None")
+  uint8_t music_overlay_style = 1;         // 0..2 ("Art Only", "Art + Metadata", "Always Visible")
+  bool show_speaker_shortcut = true;
+  bool show_library_shortcut = true;
+  uint8_t album_sort_order = 0;            // 0..2 ("Alphabetical", "Newest on Top", "Oldest on Top")
+  uint8_t artist_album_sort_order = 0;     // 0..2 ("Oldest on Top", "Newest on Top", "Alphabetical")
+  uint8_t podcast_sort_order = 0;          // 0..1 ("Newest on Top", "Oldest on Top")
+  uint8_t ww_sens_okay_nabu = 1;           // 0..2 ("Slightly sensitive", "Moderately sensitive", "Very sensitive")
+  uint8_t ww_sens_hey_luna = 1;
+  uint8_t ww_sens_hey_jarvis = 1;
+  uint8_t ww_sens_hey_mycroft = 1;
+  uint8_t ww_sens_alexa = 1;
+  bool wake_screen_on_assist = true;
+  uint8_t alert_volume = 80;               // 20..100 (%)
+  uint8_t volume_step_size = 5;            // 1..10 (%)
+  uint8_t speaker_volume_pct = 60;         // 10..100 (%) local speaker boot restore level
+  bool game_sound_effects = true;
+  bool ble_beacon_enabled = false;         // Off until Latter enables native_ble_tracking
+  uint8_t ble_beacon_mode = 0;             // 0..2 ("Handheld Only", "Handheld + Screen Off", "Always")
+  uint8_t reserved_pad[2] = {0, 0};
+
+  // Two-way Latter Protocol v3 sync tracking
+  uint32_t prefs_seq = 0;
+  uint64_t dirty_mask = 0;
+
   uint32_t custom_theme_rgb = 0x3898FFU;
   int32_t high_score_marbles = 0;
   int32_t high_score_archery = 0;
@@ -201,9 +318,203 @@ struct PersistedDevicePrefs {
 static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
               "PersistedDevicePrefs must remain a POD blob for ESPPreferenceObject.");
 
+struct DevicePrefsState {
+  uint32_t epoch = 0;
+  uint32_t rev = 0;
+  uint32_t last_effects = 0;
+  uint8_t weather_sim_condition = 0;  // Volatile; resets to "Live (Home Assistant)" on boot
+  bool loaded = false;
+  bool nvs_save_pending = false;
+  uint32_t nvs_dirty_since_ms = 0;
+};
+
+inline DevicePrefsState &device_prefs_state() {
+  static DevicePrefsState st{};
+  return st;
+}
+
 inline PersistedDevicePrefs &persisted_prefs() {
   static PersistedDevicePrefs prefs{};
   return prefs;
+}
+
+inline constexpr const char *const kPowerProfileOpts[6] = {
+    "Portable Carry", "Handheld Roaming", "Wearable Watch",
+    "Tabletop Dock", "Always-On Wall / Desk", "Custom"};
+inline constexpr const char *const kWakeWordModeOpts[3] = {
+    "Docked Only", "Always On", "Disabled"};
+inline constexpr const char *const kWakePolicyOpts[3] = {
+    "Always On", "Docked Only", "Disabled"};
+inline constexpr const char *const kBattScreenTimeoutOpts[6] = {
+    "10s", "15s", "30s", "1 min", "2 min", "Never"};
+inline constexpr const char *const kDockedIdleTimeoutOpts[7] = {
+    "10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"};
+inline constexpr const char *const kBattHibernateTimeoutOpts[5] = {
+    "5 min", "10 min", "15 min", "30 min", "Disabled"};
+inline constexpr const char *const kScreensaverStyleOpts[5] = {
+    "Ambient Clock", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
+inline constexpr const char *const kAutoBrightnessModeOpts[3] = {
+    "Disabled", "Sun Synchronized", "Time Schedule"};
+inline constexpr const char *const kBrightnessPresetOpts[5] = {
+    "60%", "70%", "80%", "90%", "100%"};
+inline constexpr const char *const kColorProfileOpts[5] = {
+    "Steel Blue", "Pink", "Blue", "Green", "Custom"};
+inline constexpr const char *const kVaVisualProfileOpts[5] = {
+    "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
+inline constexpr const char *const kStartScreenOpts[2] = {"Home", "Clock"};
+inline constexpr const char *const kClockFaceOpts[3] = {
+    "Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"};
+inline constexpr const char *const kTimeFormatOpts[2] = {"12-Hour (AM/PM)", "24-Hour"};
+inline constexpr const char *const kAreaCategoryOpts[8] = {
+    "Scenes", "Lights", "Blinds & Curtains", "Fans", "Switches", "Climate", "Media", "All Devices"};
+inline constexpr const char *const kAlbumArtStyleOpts[4] = {
+    "Full Screen", "Letterbox", "Standard", "None"};
+inline constexpr const char *const kMusicOverlayStyleOpts[3] = {
+    "Art Only", "Art + Metadata", "Always Visible"};
+inline constexpr const char *const kAlbumSortOpts[3] = {
+    "Alphabetical", "Newest on Top", "Oldest on Top"};
+inline constexpr const char *const kArtistAlbumSortOpts[3] = {
+    "Oldest on Top", "Newest on Top", "Alphabetical"};
+inline constexpr const char *const kPodcastSortOpts[2] = {
+    "Newest on Top", "Oldest on Top"};
+inline constexpr const char *const kWwSensitivityOpts[3] = {
+    "Slightly sensitive", "Moderately sensitive", "Very sensitive"};
+inline constexpr const char *const kBleBeaconModeOpts[3] = {
+    "Handheld Only", "Handheld + Screen Off", "Always"};
+inline constexpr const char *const kWeatherSimOpts[17] = {
+    "Live (Home Assistant)", "Clear Night", "Sunny / Clear Day",
+    "Partly Cloudy (Day)", "Partly Cloudy (Night)",
+    "Cloudy / Overcast (Day)", "Cloudy / Overcast (Night)",
+    "Fog / Mist (Day)", "Fog / Mist (Night)",
+    "Rainy (Day)", "Rainy (Night)", "Pouring / Heavy Rain",
+    "Snow (Day)", "Snow (Night)",
+    "Thunderstorm (Day)", "Thunderstorm (Night)", "Windy"};
+
+template <size_t N>
+inline int find_opt_index(const char *const (&opts)[N], std::string_view sv) {
+  for (size_t i = 0; i < N; ++i) {
+    if (sv == opts[i]) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+template <size_t N>
+inline const char *opt_at_clamped(const char *const (&opts)[N], uint8_t idx, uint8_t fallback = 0) {
+  return opts[(idx < N) ? idx : fallback];
+}
+
+inline const char *pref_power_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPowerProfileOpts, p.power_profile); }
+inline const char *pref_wake_word_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakeWordModeOpts, p.wake_word_mode); }
+inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.tap_to_wake, 1); }
+inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.pickup_to_wake, 1); }
+inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattScreenTimeoutOpts, p.battery_screen_timeout, 2); }
+inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kDockedIdleTimeoutOpts, p.docked_idle_timeout, 3); }
+inline const char *pref_battery_hibernate_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattHibernateTimeoutOpts, p.battery_hibernate_timeout, 2); }
+inline const char *pref_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverStyleOpts, p.screensaver_style); }
+inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAutoBrightnessModeOpts, p.auto_brightness_mode, 1); }
+inline const char *pref_manual_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.manual_brightness, 3); }
+inline const char *pref_day_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.day_brightness, 3); }
+inline const char *pref_night_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.night_brightness, 1); }
+inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kColorProfileOpts, p.color_profile); }
+inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
+inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
+inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
+inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
+inline const char *pref_area_default_category_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAreaCategoryOpts, p.area_default_category); }
+inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
+inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
+inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
+inline const char *pref_artist_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kArtistAlbumSortOpts, p.artist_album_sort_order); }
+inline const char *pref_podcast_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPodcastSortOpts, p.podcast_sort_order); }
+inline const char *pref_ww_sens_cstr(uint8_t idx) { return opt_at_clamped(kWwSensitivityOpts, idx, 1); }
+inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBleBeaconModeOpts, p.ble_beacon_mode); }
+inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
+
+inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
+  if (p.power_profile >= 6) p.power_profile = 0;
+  if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
+  if (p.tap_to_wake >= 3) p.tap_to_wake = 1;
+  if (p.pickup_to_wake >= 3) p.pickup_to_wake = 1;
+  if (p.battery_screen_timeout >= 6) p.battery_screen_timeout = 2;
+  if (p.docked_idle_timeout >= 7) p.docked_idle_timeout = 3;
+  if (p.battery_hibernate_timeout >= 5) p.battery_hibernate_timeout = 2;
+  if (p.screensaver_style >= 5) p.screensaver_style = 0;
+  if (p.auto_brightness_mode >= 3) p.auto_brightness_mode = 1;
+  if (p.manual_brightness >= 5) p.manual_brightness = 3;
+  if (p.day_brightness >= 5) p.day_brightness = 3;
+  if (p.night_brightness >= 5) p.night_brightness = 1;
+  if (p.day_start_hour > 23) p.day_start_hour = 7;
+  if (p.night_start_hour > 23) p.night_start_hour = 20;
+  if (p.color_profile >= 5) p.color_profile = 0;
+  if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
+  if (p.start_screen >= 2) p.start_screen = 0;
+  if (p.clock_face >= 3) p.clock_face = 0;
+  if (p.time_format >= 2) p.time_format = 0;
+  if (p.area_default_category >= 8) p.area_default_category = 0;
+  if (p.album_art_style >= 4) p.album_art_style = 0;
+  if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
+  if (p.album_sort_order >= 3) p.album_sort_order = 0;
+  if (p.artist_album_sort_order >= 3) p.artist_album_sort_order = 0;
+  if (p.podcast_sort_order >= 2) p.podcast_sort_order = 0;
+  if (p.ww_sens_okay_nabu >= 3) p.ww_sens_okay_nabu = 1;
+  if (p.ww_sens_hey_luna >= 3) p.ww_sens_hey_luna = 1;
+  if (p.ww_sens_hey_jarvis >= 3) p.ww_sens_hey_jarvis = 1;
+  if (p.ww_sens_hey_mycroft >= 3) p.ww_sens_hey_mycroft = 1;
+  if (p.ww_sens_alexa >= 3) p.ww_sens_alexa = 1;
+  p.alert_volume = static_cast<uint8_t>(std::clamp<int>(p.alert_volume, 20, 100));
+  p.volume_step_size = static_cast<uint8_t>(std::clamp<int>(p.volume_step_size, 1, 10));
+  p.speaker_volume_pct = static_cast<uint8_t>(std::clamp<int>(p.speaker_volume_pct, 10, 100));
+  if (p.ble_beacon_mode >= 3) p.ble_beacon_mode = 0;
+#if !LATTER_HAS_IMU || LATTER_IS_STATIONARY
+  p.pickup_to_wake = 2;  // Disabled
+#endif
+#if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
+  p.battery_hibernate_timeout = 4;  // Disabled
+#endif
+#if !LATTER_ROUND_DISPLAY
+  if (p.clock_face == 1) p.clock_face = 0;  // Rectangular panels clamp Modern Roman (Analog) -> Minimal Digital
+#endif
+  p.clock_face_digital = (p.clock_face != 1);
+  p.is_24h_format = (p.time_format == 1);
+}
+
+inline bool apply_power_profile_to_prefs(PersistedDevicePrefs &p, std::string_view prof_name,
+                                         uint64_t *out_changed = nullptr, uint32_t *out_effects = nullptr) {
+  int idx = find_opt_index(kPowerProfileOpts, prof_name);
+  if (idx < 0) return false;
+  auto set_u8 = [&](uint8_t &slot, uint8_t val, PrefKey key, uint32_t eff) {
+    if (slot != val) {
+      slot = val;
+      if (out_changed != nullptr) *out_changed |= pref_key_bit(key);
+      if (out_effects != nullptr) *out_effects |= (eff | kPrefEffectRedraw);
+    }
+  };
+  set_u8(p.power_profile, static_cast<uint8_t>(idx), PrefKey::POWER_PROFILE, kPrefEffectSleepTimer);
+  if (idx == 5) return true;  // Custom leaves individual sub-keys untouched
+
+  struct SpecRow { uint8_t ww; uint8_t tap; uint8_t pick; uint8_t batt_scr; uint8_t dock_idle; uint8_t hib; bool saver; };
+  static constexpr SpecRow kRows[5] = {
+      {0, 1, 1, 2, 3, 2, true},  // Portable Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
+      {0, 0, 0, 2, 3, 3, true},  // Handheld Roaming: Docked Only, Always On, Always On, 30s, 1 min, 30 min, true
+      {0, 0, 0, 1, 3, 2, true},  // Wearable Watch: Docked Only, Always On, Always On, 15s, 1 min, 15 min, true
+      {0, 1, 2, 2, 5, 2, true},  // Tabletop Dock: Docked Only, Docked Only, Disabled, 30s, 5 min, 15 min, true
+      {1, 0, 2, 5, 5, 4, true},  // Always-On Wall / Desk: Always On, Always On, Disabled, Never, 5 min, Disabled, true
+  };
+  const SpecRow &r = kRows[idx];
+  const uint8_t eff_pick = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? r.pick : 2;
+  const uint8_t eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? r.hib : 4;
+  set_u8(p.wake_word_mode, r.ww, PrefKey::WAKE_WORD_MODE, kPrefEffectWakeWordSync);
+  set_u8(p.tap_to_wake, r.tap, PrefKey::TAP_TO_WAKE, kPrefEffectPowerPolicy);
+  set_u8(p.pickup_to_wake, eff_pick, PrefKey::PICKUP_TO_WAKE, kPrefEffectPowerPolicy);
+  set_u8(p.battery_screen_timeout, r.batt_scr, PrefKey::BATTERY_SCREEN_TIMEOUT, kPrefEffectSleepTimer);
+  set_u8(p.docked_idle_timeout, r.dock_idle, PrefKey::DOCKED_IDLE_TIMEOUT, kPrefEffectSleepTimer);
+  set_u8(p.battery_hibernate_timeout, eff_hib, PrefKey::BATTERY_HIBERNATE_TIMEOUT, kPrefEffectPowerPolicy);
+  if (p.docked_screensaver != r.saver) {
+    p.docked_screensaver = r.saver;
+    if (out_changed != nullptr) *out_changed |= pref_key_bit(PrefKey::DOCKED_SCREENSAVER);
+    if (out_effects != nullptr) *out_effects |= (kPrefEffectSleepTimer | kPrefEffectRedraw);
+  }
+  return true;
 }
 
 #if LATTER_HAS_ESP_PREFS
@@ -219,6 +530,9 @@ inline esphome::ESPPreferenceObject &persisted_prefs_handle() {
 #endif
 
 inline bool load_persisted_prefs() {
+  auto &st = device_prefs_state();
+  st.loaded = true;
+  st.nvs_save_pending = false;
 #if LATTER_HAS_ESP_PREFS
   if (esphome::global_preferences == nullptr) return false;
   PersistedDevicePrefs loaded{};
@@ -230,24 +544,82 @@ inline bool load_persisted_prefs() {
       if (a.minute > 59) a.minute = 0;
       if (a.recurrence > 3) a.recurrence = 0;
     }
+    clamp_prefs_to_capabilities(loaded);
     persisted_prefs() = loaded;
     return true;
   }
 #endif
   persisted_prefs() = PersistedDevicePrefs{};
+  clamp_prefs_to_capabilities(persisted_prefs());
   return false;
+}
+
+inline void ensure_persisted_prefs_loaded() {
+  if (!device_prefs_state().loaded) {
+    load_persisted_prefs();
+  }
 }
 
 inline bool save_persisted_prefs() {
   auto &p = persisted_prefs();
   p.magic = kPersistedPrefsMagic;
   p.version = kPersistedPrefsVersion;
+  clamp_prefs_to_capabilities(p);
+  device_prefs_state().nvs_save_pending = false;
 #if LATTER_HAS_ESP_PREFS
   if (esphome::global_preferences == nullptr) return false;
   return persisted_prefs_handle().save(&p);
 #else
   return true;
 #endif
+}
+
+inline void schedule_persisted_prefs_save(uint32_t now_ms) {
+  auto &st = device_prefs_state();
+  if (!st.nvs_save_pending) {
+    st.nvs_save_pending = true;
+    st.nvs_dirty_since_ms = now_ms;
+  }
+}
+
+inline bool flush_persisted_prefs_if_dirty() {
+  if (!device_prefs_state().nvs_save_pending) return false;
+  return save_persisted_prefs();
+}
+
+inline bool tick_persisted_prefs_flush(uint32_t now_ms, uint32_t debounce_ms = 1500U) {
+  auto &st = device_prefs_state();
+  if (!st.nvs_save_pending) return false;
+  if (static_cast<uint32_t>(now_ms - st.nvs_dirty_since_ms) < debounce_ms) return false;
+  return save_persisted_prefs();
+}
+
+inline void seed_default_prefs_if_needed(
+    std::string_view def_power_profile,
+    std::string_view def_clock_face,
+    std::string_view def_start_app,
+    std::string_view def_screensaver_style,
+    std::string_view def_art_mode,
+    std::string_view def_album_sort,
+    std::string_view def_artist_album_sort,
+    std::string_view def_podcast_sort,
+    PersistedDevicePrefs &p = persisted_prefs()) {
+  if (!p.defaults_seeded) {
+    p.defaults_seeded = true;
+    int v = -1;
+    if ((v = find_opt_index(kClockFaceOpts, def_clock_face)) >= 0) p.clock_face = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kStartScreenOpts, def_start_app)) >= 0) p.start_screen = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kScreensaverStyleOpts, def_screensaver_style)) >= 0) p.screensaver_style = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kAlbumArtStyleOpts, def_art_mode)) >= 0) p.album_art_style = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kAlbumSortOpts, def_album_sort)) >= 0) p.album_sort_order = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kArtistAlbumSortOpts, def_artist_album_sort)) >= 0) p.artist_album_sort_order = static_cast<uint8_t>(v);
+    if ((v = find_opt_index(kPodcastSortOpts, def_podcast_sort)) >= 0) p.podcast_sort_order = static_cast<uint8_t>(v);
+    apply_power_profile_to_prefs(p, def_power_profile, nullptr, nullptr);
+    clamp_prefs_to_capabilities(p);
+    save_persisted_prefs();
+  } else {
+    clamp_prefs_to_capabilities(p);
+  }
 }
 
 // Unified 6-game high-score accessors (1=Marbles, 2=Archery, 3=Bricks, 4=Chomp, 5=2048, 6=Memory Match)
@@ -503,6 +875,7 @@ struct DeviceRuntimeState {
   void (*on_ha_client_connected)(const std::string &client_info, const std::string &client_address) = nullptr;
   void (*on_ha_client_disconnected)(const std::string &client_info) = nullptr;
   void (*on_v3_domain_pushed)(std::string_view domain, const std::string &prev_dock) = nullptr;
+  void (*on_device_command)(std::string_view command) = nullptr;
 
   DeviceRuntimeState() {
     for (size_t i = 0; i < kSlotsPerPage; ++i) {
@@ -795,6 +1168,8 @@ inline void reset_all_v3_rev_guards() {
   weather_state().rev = 0;
   calendar_state().epoch = 0;
   calendar_state().rev = 0;
+  device_prefs_state().epoch = 0;
+  device_prefs_state().rev = 0;
   v3_mismatch_warn_count() = 0;
 }
 
@@ -990,6 +1365,405 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
 
   st.summary = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
   st.count   = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
+  return true;
+}
+
+inline uint32_t parse_hex_rgb_u24(std::string_view sv, uint32_t fallback) {
+  if (sv.size() != 7 || sv[0] != '#') return fallback;
+  auto hex_nib = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+  };
+  uint32_t rgb = 0;
+  for (size_t i = 1; i < 7; ++i) {
+    int n = hex_nib(sv[i]);
+    if (n < 0) return fallback;
+    rgb = (rgb << 4) | static_cast<uint32_t>(n);
+  }
+  return rgb;
+}
+
+inline const char *pref_key_name(PrefKey key) {
+  switch (key) {
+    case PrefKey::POWER_PROFILE: return "power_profile";
+    case PrefKey::WAKE_WORD_MODE: return "wake_word_mode";
+    case PrefKey::TAP_TO_WAKE: return "tap_to_wake";
+    case PrefKey::PICKUP_TO_WAKE: return "pickup_to_wake";
+    case PrefKey::BATTERY_SCREEN_TIMEOUT: return "battery_screen_timeout";
+    case PrefKey::DOCKED_IDLE_TIMEOUT: return "docked_idle_timeout";
+    case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return "battery_hibernate_timeout";
+    case PrefKey::DOCKED_SCREENSAVER: return "docked_screensaver";
+    case PrefKey::SCREENSAVER_STYLE: return "screensaver_style";
+    case PrefKey::HOLD_CROWN_POWER_OFF: return "hold_crown_power_off";
+    case PrefKey::AUTO_BRIGHTNESS_MODE: return "auto_brightness_mode";
+    case PrefKey::MANUAL_BRIGHTNESS: return "manual_brightness";
+    case PrefKey::DAY_BRIGHTNESS: return "day_brightness";
+    case PrefKey::NIGHT_BRIGHTNESS: return "night_brightness";
+    case PrefKey::DAY_START_HOUR: return "day_start_hour";
+    case PrefKey::NIGHT_START_HOUR: return "night_start_hour";
+    case PrefKey::COLOR_PROFILE: return "color_profile";
+    case PrefKey::VA_VISUAL_PROFILE: return "va_visual_profile";
+    case PrefKey::START_SCREEN: return "start_screen";
+    case PrefKey::CLOCK_FACE: return "clock_face";
+    case PrefKey::TIME_FORMAT: return "time_format";
+    case PrefKey::WEATHER_BACKGROUND: return "weather_background";
+    case PrefKey::HOME_SUN: return "home_sun";
+    case PrefKey::HOME_MOON: return "home_moon";
+    case PrefKey::WAKE_GREETING: return "wake_greeting";
+    case PrefKey::AREA_DEFAULT_CATEGORY: return "area_default_category";
+    case PrefKey::AREA_SHOW_ALL_CATEGORY: return "area_show_all_category";
+    case PrefKey::ALBUM_ART_STYLE: return "album_art_style";
+    case PrefKey::MUSIC_OVERLAY_STYLE: return "music_overlay_style";
+    case PrefKey::SHOW_SPEAKER_SHORTCUT: return "show_speaker_shortcut";
+    case PrefKey::SHOW_LIBRARY_SHORTCUT: return "show_library_shortcut";
+    case PrefKey::ALBUM_SORT_ORDER: return "album_sort_order";
+    case PrefKey::ARTIST_ALBUM_SORT_ORDER: return "artist_album_sort_order";
+    case PrefKey::PODCAST_SORT_ORDER: return "podcast_sort_order";
+    case PrefKey::WW_SENS_OKAY_NABU: return "ww_sens_okay_nabu";
+    case PrefKey::WW_SENS_HEY_LUNA: return "ww_sens_hey_luna";
+    case PrefKey::WW_SENS_HEY_JARVIS: return "ww_sens_hey_jarvis";
+    case PrefKey::WW_SENS_HEY_MYCROFT: return "ww_sens_hey_mycroft";
+    case PrefKey::WW_SENS_ALEXA: return "ww_sens_alexa";
+    case PrefKey::WAKE_SCREEN_ON_ASSIST: return "wake_screen_on_assist";
+    case PrefKey::ALERT_VOLUME: return "alert_volume";
+    case PrefKey::VOLUME_STEP_SIZE: return "volume_step_size";
+    case PrefKey::GAME_SOUND_EFFECTS: return "game_sound_effects";
+    case PrefKey::BLE_BEACON_ENABLED: return "ble_beacon_enabled";
+    case PrefKey::BLE_BEACON_MODE: return "ble_beacon_mode";
+    case PrefKey::COUNT: break;
+  }
+  return "";
+}
+
+inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs()) {
+  switch (key) {
+    case PrefKey::POWER_PROFILE: return pref_power_profile_cstr(p);
+    case PrefKey::WAKE_WORD_MODE: return pref_wake_word_mode_cstr(p);
+    case PrefKey::TAP_TO_WAKE: return pref_tap_to_wake_cstr(p);
+    case PrefKey::PICKUP_TO_WAKE: return pref_pickup_to_wake_cstr(p);
+    case PrefKey::BATTERY_SCREEN_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
+    case PrefKey::DOCKED_IDLE_TIMEOUT: return pref_docked_idle_timeout_cstr(p);
+    case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return pref_battery_hibernate_timeout_cstr(p);
+    case PrefKey::DOCKED_SCREENSAVER: return p.docked_screensaver ? "1" : "0";
+    case PrefKey::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
+    case PrefKey::HOLD_CROWN_POWER_OFF: return p.hold_crown_power_off ? "1" : "0";
+    case PrefKey::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
+    case PrefKey::MANUAL_BRIGHTNESS: return pref_manual_brightness_cstr(p);
+    case PrefKey::DAY_BRIGHTNESS: return pref_day_brightness_cstr(p);
+    case PrefKey::NIGHT_BRIGHTNESS: return pref_night_brightness_cstr(p);
+    case PrefKey::DAY_START_HOUR: return std::to_string(p.day_start_hour);
+    case PrefKey::NIGHT_START_HOUR: return std::to_string(p.night_start_hour);
+    case PrefKey::COLOR_PROFILE: return pref_color_profile_cstr(p);
+    case PrefKey::VA_VISUAL_PROFILE: return pref_va_visual_profile_cstr(p);
+    case PrefKey::START_SCREEN: return pref_start_screen_cstr(p);
+    case PrefKey::CLOCK_FACE: return pref_clock_face_cstr(p);
+    case PrefKey::TIME_FORMAT: return pref_time_format_cstr(p);
+    case PrefKey::WEATHER_BACKGROUND: return p.weather_background ? "1" : "0";
+    case PrefKey::HOME_SUN: return p.home_sun ? "1" : "0";
+    case PrefKey::HOME_MOON: return p.home_moon ? "1" : "0";
+    case PrefKey::WAKE_GREETING: return p.wake_greeting ? "1" : "0";
+    case PrefKey::AREA_DEFAULT_CATEGORY: return pref_area_default_category_cstr(p);
+    case PrefKey::AREA_SHOW_ALL_CATEGORY: return p.area_show_all_category ? "1" : "0";
+    case PrefKey::ALBUM_ART_STYLE: return pref_album_art_style_cstr(p);
+    case PrefKey::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
+    case PrefKey::SHOW_SPEAKER_SHORTCUT: return p.show_speaker_shortcut ? "1" : "0";
+    case PrefKey::SHOW_LIBRARY_SHORTCUT: return p.show_library_shortcut ? "1" : "0";
+    case PrefKey::ALBUM_SORT_ORDER: return pref_album_sort_order_cstr(p);
+    case PrefKey::ARTIST_ALBUM_SORT_ORDER: return pref_artist_album_sort_order_cstr(p);
+    case PrefKey::PODCAST_SORT_ORDER: return pref_podcast_sort_order_cstr(p);
+    case PrefKey::WW_SENS_OKAY_NABU: return pref_ww_sens_cstr(p.ww_sens_okay_nabu);
+    case PrefKey::WW_SENS_HEY_LUNA: return pref_ww_sens_cstr(p.ww_sens_hey_luna);
+    case PrefKey::WW_SENS_HEY_JARVIS: return pref_ww_sens_cstr(p.ww_sens_hey_jarvis);
+    case PrefKey::WW_SENS_HEY_MYCROFT: return pref_ww_sens_cstr(p.ww_sens_hey_mycroft);
+    case PrefKey::WW_SENS_ALEXA: return pref_ww_sens_cstr(p.ww_sens_alexa);
+    case PrefKey::WAKE_SCREEN_ON_ASSIST: return p.wake_screen_on_assist ? "1" : "0";
+    case PrefKey::ALERT_VOLUME: return std::to_string(p.alert_volume);
+    case PrefKey::VOLUME_STEP_SIZE: return std::to_string(p.volume_step_size);
+    case PrefKey::GAME_SOUND_EFFECTS: return p.game_sound_effects ? "1" : "0";
+    case PrefKey::BLE_BEACON_ENABLED: return p.ble_beacon_enabled ? "1" : "0";
+    case PrefKey::BLE_BEACON_MODE: return pref_ble_beacon_mode_cstr(p);
+    case PrefKey::COUNT: break;
+  }
+  return "";
+}
+
+inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
+                                bool cascade_profile, uint64_t &changed_mask, uint32_t &effects_mask) {
+  if (sv.empty()) return false;
+  auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff, bool is_prof_subkey = false) -> bool {
+    int idx = find_opt_index(opts, sv);
+    if (idx < 0) return false;
+    uint8_t u = static_cast<uint8_t>(idx);
+    if (key == PrefKey::PICKUP_TO_WAKE && (!LATTER_HAS_IMU || LATTER_IS_STATIONARY)) u = 2;
+    if (key == PrefKey::BATTERY_HIBERNATE_TIMEOUT && (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY)) u = 4;
+    if (key == PrefKey::CLOCK_FACE && !LATTER_ROUND_DISPLAY && u == 1) u = 0;
+    if (slot == u) return false;
+    slot = u;
+    changed_mask |= pref_key_bit(key);
+    effects_mask |= (eff | kPrefEffectRedraw);
+    if (key == PrefKey::CLOCK_FACE) p.clock_face_digital = (p.clock_face != 1);
+    if (key == PrefKey::TIME_FORMAT) p.is_24h_format = (p.time_format == 1);
+    if (cascade_profile && is_prof_subkey && p.power_profile != 5) {
+      p.power_profile = 5;  // Custom
+      changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
+    }
+    return true;
+  };
+  auto apply_bool = [&](bool &slot, uint32_t eff, bool is_prof_subkey = false) -> bool {
+    bool b = v3_parse_bool(sv);
+    if (slot == b) return false;
+    bool was_true = slot;
+    slot = b;
+    changed_mask |= pref_key_bit(key);
+    effects_mask |= (eff | kPrefEffectRedraw);
+    if (key == PrefKey::DOCKED_SCREENSAVER && was_true && !b) {
+      effects_mask |= kPrefEffectDockedSaverOff;
+    }
+    if (cascade_profile && is_prof_subkey && p.power_profile != 5) {
+      p.power_profile = 5;  // Custom
+      changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
+    }
+    return true;
+  };
+  auto apply_num = [&](uint8_t &slot, int lo, int hi, uint32_t eff) -> bool {
+    int parsed = v3_parse_int(sv, -9999);
+    if (parsed == -9999) return false;
+    uint8_t cl = static_cast<uint8_t>(std::clamp(parsed, lo, hi));
+    if (slot == cl) return false;
+    slot = cl;
+    changed_mask |= pref_key_bit(key);
+    effects_mask |= (eff | kPrefEffectRedraw);
+    return true;
+  };
+
+  switch (key) {
+    case PrefKey::POWER_PROFILE:
+      if (cascade_profile) {
+        uint64_t before = changed_mask;
+        apply_power_profile_to_prefs(p, sv, &changed_mask, &effects_mask);
+        return changed_mask != before;
+      }
+      return apply_enum(p.power_profile, kPowerProfileOpts, kPrefEffectSleepTimer);
+    case PrefKey::WAKE_WORD_MODE:
+      return apply_enum(p.wake_word_mode, kWakeWordModeOpts, kPrefEffectWakeWordSync, true);
+    case PrefKey::TAP_TO_WAKE:
+      return apply_enum(p.tap_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy, true);
+    case PrefKey::PICKUP_TO_WAKE:
+      return apply_enum(p.pickup_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy, true);
+    case PrefKey::BATTERY_SCREEN_TIMEOUT:
+      return apply_enum(p.battery_screen_timeout, kBattScreenTimeoutOpts, kPrefEffectSleepTimer, true);
+    case PrefKey::DOCKED_IDLE_TIMEOUT:
+      return apply_enum(p.docked_idle_timeout, kDockedIdleTimeoutOpts, kPrefEffectSleepTimer, true);
+    case PrefKey::BATTERY_HIBERNATE_TIMEOUT:
+      return apply_enum(p.battery_hibernate_timeout, kBattHibernateTimeoutOpts, kPrefEffectPowerPolicy, true);
+    case PrefKey::DOCKED_SCREENSAVER:
+      return apply_bool(p.docked_screensaver, kPrefEffectSleepTimer, true);
+    case PrefKey::SCREENSAVER_STYLE:
+      return apply_enum(p.screensaver_style, kScreensaverStyleOpts, 0);
+    case PrefKey::HOLD_CROWN_POWER_OFF:
+      return apply_bool(p.hold_crown_power_off, 0);
+    case PrefKey::AUTO_BRIGHTNESS_MODE:
+      return apply_enum(p.auto_brightness_mode, kAutoBrightnessModeOpts, kPrefEffectBrightness);
+    case PrefKey::MANUAL_BRIGHTNESS:
+      return apply_enum(p.manual_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+    case PrefKey::DAY_BRIGHTNESS:
+      return apply_enum(p.day_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+    case PrefKey::NIGHT_BRIGHTNESS:
+      return apply_enum(p.night_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+    case PrefKey::DAY_START_HOUR:
+      return apply_num(p.day_start_hour, 0, 23, kPrefEffectBrightness);
+    case PrefKey::NIGHT_START_HOUR:
+      return apply_num(p.night_start_hour, 0, 23, kPrefEffectBrightness);
+    case PrefKey::COLOR_PROFILE:
+      return apply_enum(p.color_profile, kColorProfileOpts, kPrefEffectThemePreset);
+    case PrefKey::VA_VISUAL_PROFILE:
+      return apply_enum(p.va_visual_profile, kVaVisualProfileOpts, 0);
+    case PrefKey::START_SCREEN:
+      return apply_enum(p.start_screen, kStartScreenOpts, 0);
+    case PrefKey::CLOCK_FACE:
+      return apply_enum(p.clock_face, kClockFaceOpts, 0);
+    case PrefKey::TIME_FORMAT:
+      return apply_enum(p.time_format, kTimeFormatOpts, 0);
+    case PrefKey::WEATHER_BACKGROUND:
+      return apply_bool(p.weather_background, 0);
+    case PrefKey::HOME_SUN:
+      return apply_bool(p.home_sun, 0);
+    case PrefKey::HOME_MOON:
+      return apply_bool(p.home_moon, 0);
+    case PrefKey::WAKE_GREETING:
+      return apply_bool(p.wake_greeting, 0);
+    case PrefKey::AREA_DEFAULT_CATEGORY:
+      return apply_enum(p.area_default_category, kAreaCategoryOpts, 0);
+    case PrefKey::AREA_SHOW_ALL_CATEGORY:
+      return apply_bool(p.area_show_all_category, 0);
+    case PrefKey::ALBUM_ART_STYLE:
+      return apply_enum(p.album_art_style, kAlbumArtStyleOpts, 0);
+    case PrefKey::MUSIC_OVERLAY_STYLE:
+      return apply_enum(p.music_overlay_style, kMusicOverlayStyleOpts, 0);
+    case PrefKey::SHOW_SPEAKER_SHORTCUT:
+      return apply_bool(p.show_speaker_shortcut, 0);
+    case PrefKey::SHOW_LIBRARY_SHORTCUT:
+      return apply_bool(p.show_library_shortcut, 0);
+    case PrefKey::ALBUM_SORT_ORDER:
+      return apply_enum(p.album_sort_order, kAlbumSortOpts, 0);
+    case PrefKey::ARTIST_ALBUM_SORT_ORDER:
+      return apply_enum(p.artist_album_sort_order, kArtistAlbumSortOpts, 0);
+    case PrefKey::PODCAST_SORT_ORDER:
+      return apply_enum(p.podcast_sort_order, kPodcastSortOpts, 0);
+    case PrefKey::WW_SENS_OKAY_NABU:
+      return apply_enum(p.ww_sens_okay_nabu, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+    case PrefKey::WW_SENS_HEY_LUNA:
+      return apply_enum(p.ww_sens_hey_luna, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+    case PrefKey::WW_SENS_HEY_JARVIS:
+      return apply_enum(p.ww_sens_hey_jarvis, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+    case PrefKey::WW_SENS_HEY_MYCROFT:
+      return apply_enum(p.ww_sens_hey_mycroft, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+    case PrefKey::WW_SENS_ALEXA:
+      return apply_enum(p.ww_sens_alexa, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+    case PrefKey::WAKE_SCREEN_ON_ASSIST:
+      return apply_bool(p.wake_screen_on_assist, 0);
+    case PrefKey::ALERT_VOLUME:
+      return apply_num(p.alert_volume, 20, 100, 0);
+    case PrefKey::VOLUME_STEP_SIZE:
+      return apply_num(p.volume_step_size, 1, 10, 0);
+    case PrefKey::GAME_SOUND_EFFECTS:
+      return apply_bool(p.game_sound_effects, 0);
+    case PrefKey::BLE_BEACON_ENABLED:
+      return apply_bool(p.ble_beacon_enabled, kPrefEffectPowerPolicy);
+    case PrefKey::BLE_BEACON_MODE:
+      return apply_enum(p.ble_beacon_mode, kBleBeaconModeOpts, kPrefEffectPowerPolicy);
+    case PrefKey::COUNT:
+      break;
+  }
+  return false;
+}
+
+inline std::string encode_prefs_mask(uint64_t mask, const PersistedDevicePrefs &p = persisted_prefs()) {
+  if (mask == 0ULL) return "";
+  std::string out;
+  out.reserve(128);
+  for (uint8_t i = 0; i < static_cast<uint8_t>(PrefKey::COUNT); ++i) {
+    const auto key = static_cast<PrefKey>(i);
+    if ((mask & pref_key_bit(key)) == 0ULL) continue;
+    const char *name = pref_key_name(key);
+    if (name[0] == '\0') continue;
+    if (!out.empty()) out.push_back(kProtocolRecordSep);
+    out.append(name);
+    out.push_back('=');
+    out.append(get_pref_value_str(key, p));
+  }
+  return out;
+}
+
+// On first-time adoption (prefs_seq == 0), advertise compiled board defaults (excluding
+// ble_beacon_enabled unless explicitly toggled locally) so Latter seeds board-appropriate defaults.
+inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
+  if (p.prefs_seq == 0) {
+    constexpr uint64_t kAllMask = (1ULL << static_cast<uint8_t>(PrefKey::COUNT)) - 1ULL;
+    const uint64_t seed_mask = (kAllMask & ~pref_key_bit(PrefKey::BLE_BEACON_ENABLED)) | p.dirty_mask;
+    return encode_prefs_mask(seed_mask, p);
+  }
+  return encode_prefs_mask(p.dirty_mask, p);
+}
+
+// Parse Protocol v3 device_prefs payload ("v3\x1f<epoch>\x1f<rev>\x1f<prefs_seq>\x1f...")
+inline bool parse_v3_device_prefs_payload(std::string_view payload,
+                                          uint32_t &out_effects,
+                                          uint32_t now_ms = 0,
+                                          PersistedDevicePrefs &p = persisted_prefs(),
+                                          DevicePrefsState &st = device_prefs_state()) {
+  out_effects = 0;
+  constexpr size_t kCount = static_cast<size_t>(DevicePrefsField::COUNT);
+  std::string_view f[kCount]{};
+  size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(DevicePrefsField::HEADER_VERSION)] != "v3") return false;
+  uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::HEADER_EPOCH)], 0);
+  uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::HEADER_REV)], 0);
+  if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
+  v3_check_field_count("device_prefs", payload, kCount);
+
+  uint64_t changed_mask = 0;
+  auto apply_f = [&](DevicePrefsField df, PrefKey pk) {
+    set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], false, changed_mask, out_effects);
+  };
+
+  apply_f(DevicePrefsField::POWER_PROFILE, PrefKey::POWER_PROFILE);
+  apply_f(DevicePrefsField::WAKE_WORD_MODE, PrefKey::WAKE_WORD_MODE);
+  apply_f(DevicePrefsField::TAP_TO_WAKE, PrefKey::TAP_TO_WAKE);
+  apply_f(DevicePrefsField::PICKUP_TO_WAKE, PrefKey::PICKUP_TO_WAKE);
+  apply_f(DevicePrefsField::BATTERY_SCREEN_TIMEOUT, PrefKey::BATTERY_SCREEN_TIMEOUT);
+  apply_f(DevicePrefsField::DOCKED_IDLE_TIMEOUT, PrefKey::DOCKED_IDLE_TIMEOUT);
+  apply_f(DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT, PrefKey::BATTERY_HIBERNATE_TIMEOUT);
+  apply_f(DevicePrefsField::DOCKED_SCREENSAVER, PrefKey::DOCKED_SCREENSAVER);
+  apply_f(DevicePrefsField::SCREENSAVER_STYLE, PrefKey::SCREENSAVER_STYLE);
+  apply_f(DevicePrefsField::HOLD_CROWN_POWER_OFF, PrefKey::HOLD_CROWN_POWER_OFF);
+  apply_f(DevicePrefsField::AUTO_BRIGHTNESS_MODE, PrefKey::AUTO_BRIGHTNESS_MODE);
+  apply_f(DevicePrefsField::MANUAL_BRIGHTNESS, PrefKey::MANUAL_BRIGHTNESS);
+  apply_f(DevicePrefsField::DAY_BRIGHTNESS, PrefKey::DAY_BRIGHTNESS);
+  apply_f(DevicePrefsField::NIGHT_BRIGHTNESS, PrefKey::NIGHT_BRIGHTNESS);
+  apply_f(DevicePrefsField::DAY_START_HOUR, PrefKey::DAY_START_HOUR);
+  apply_f(DevicePrefsField::NIGHT_START_HOUR, PrefKey::NIGHT_START_HOUR);
+  apply_f(DevicePrefsField::COLOR_PROFILE, PrefKey::COLOR_PROFILE);
+  apply_f(DevicePrefsField::VA_VISUAL_PROFILE, PrefKey::VA_VISUAL_PROFILE);
+  apply_f(DevicePrefsField::START_SCREEN, PrefKey::START_SCREEN);
+  apply_f(DevicePrefsField::CLOCK_FACE, PrefKey::CLOCK_FACE);
+  apply_f(DevicePrefsField::TIME_FORMAT, PrefKey::TIME_FORMAT);
+  apply_f(DevicePrefsField::WEATHER_BACKGROUND, PrefKey::WEATHER_BACKGROUND);
+  apply_f(DevicePrefsField::HOME_SUN, PrefKey::HOME_SUN);
+  apply_f(DevicePrefsField::HOME_MOON, PrefKey::HOME_MOON);
+  apply_f(DevicePrefsField::WAKE_GREETING, PrefKey::WAKE_GREETING);
+  apply_f(DevicePrefsField::AREA_DEFAULT_CATEGORY, PrefKey::AREA_DEFAULT_CATEGORY);
+  apply_f(DevicePrefsField::AREA_SHOW_ALL_CATEGORY, PrefKey::AREA_SHOW_ALL_CATEGORY);
+  apply_f(DevicePrefsField::ALBUM_ART_STYLE, PrefKey::ALBUM_ART_STYLE);
+  apply_f(DevicePrefsField::MUSIC_OVERLAY_STYLE, PrefKey::MUSIC_OVERLAY_STYLE);
+  apply_f(DevicePrefsField::SHOW_SPEAKER_SHORTCUT, PrefKey::SHOW_SPEAKER_SHORTCUT);
+  apply_f(DevicePrefsField::SHOW_LIBRARY_SHORTCUT, PrefKey::SHOW_LIBRARY_SHORTCUT);
+  apply_f(DevicePrefsField::ALBUM_SORT_ORDER, PrefKey::ALBUM_SORT_ORDER);
+  apply_f(DevicePrefsField::ARTIST_ALBUM_SORT_ORDER, PrefKey::ARTIST_ALBUM_SORT_ORDER);
+  apply_f(DevicePrefsField::PODCAST_SORT_ORDER, PrefKey::PODCAST_SORT_ORDER);
+  apply_f(DevicePrefsField::WW_SENS_OKAY_NABU, PrefKey::WW_SENS_OKAY_NABU);
+  apply_f(DevicePrefsField::WW_SENS_HEY_LUNA, PrefKey::WW_SENS_HEY_LUNA);
+  apply_f(DevicePrefsField::WW_SENS_HEY_JARVIS, PrefKey::WW_SENS_HEY_JARVIS);
+  apply_f(DevicePrefsField::WW_SENS_HEY_MYCROFT, PrefKey::WW_SENS_HEY_MYCROFT);
+  apply_f(DevicePrefsField::WW_SENS_ALEXA, PrefKey::WW_SENS_ALEXA);
+  apply_f(DevicePrefsField::WAKE_SCREEN_ON_ASSIST, PrefKey::WAKE_SCREEN_ON_ASSIST);
+  apply_f(DevicePrefsField::ALERT_VOLUME, PrefKey::ALERT_VOLUME);
+  apply_f(DevicePrefsField::VOLUME_STEP_SIZE, PrefKey::VOLUME_STEP_SIZE);
+  apply_f(DevicePrefsField::GAME_SOUND_EFFECTS, PrefKey::GAME_SOUND_EFFECTS);
+  apply_f(DevicePrefsField::BLE_BEACON_ENABLED, PrefKey::BLE_BEACON_ENABLED);
+  apply_f(DevicePrefsField::BLE_BEACON_MODE, PrefKey::BLE_BEACON_MODE);
+
+  const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
+  if (!sim_sv.empty()) {
+    int sim_idx = find_opt_index(kWeatherSimOpts, sim_sv);
+    if (sim_idx >= 0 && st.weather_sim_condition != static_cast<uint8_t>(sim_idx)) {
+      st.weather_sim_condition = static_cast<uint8_t>(sim_idx);
+      out_effects |= kPrefEffectRedraw;
+    }
+  }
+
+  const std::string_view hex_sv = f[static_cast<size_t>(DevicePrefsField::THEME_COLOR_HEX)];
+  if (hex_sv.size() == 7 && hex_sv[0] == '#') {
+    uint32_t new_rgb = parse_hex_rgb_u24(hex_sv, p.custom_theme_rgb);
+    if (new_rgb != p.custom_theme_rgb) {
+      p.custom_theme_rgb = new_rgb;
+      changed_mask |= 1ULL;  // Trigger NVS persist
+      if (p.color_profile == 4) {
+        out_effects |= (kPrefEffectThemePreset | kPrefEffectRedraw);
+      }
+    }
+  }
+
+  const uint32_t in_seq = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)], 0);
+  const bool meta_changed = (in_seq > 0 && p.prefs_seq != in_seq) || (p.dirty_mask != 0ULL);
+  if (in_seq > 0) p.prefs_seq = in_seq;
+  p.dirty_mask = 0ULL;
+
+  if (changed_mask != 0ULL || meta_changed) {
+    schedule_persisted_prefs_save(now_ms);
+  }
   return true;
 }
 

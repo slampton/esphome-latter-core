@@ -33,6 +33,7 @@
 #include "../../include/latter_protocol.h"
 #include "../../include/latter_state.h"
 #include "../../include/latter_rpc.h"
+#include "../../include/latter_actions.h"
 #include "../../include/hal_battery.h"
 #include "../../include/hal_link_report.h"
 #include "../../include/hal_panel_power.h"
@@ -624,12 +625,12 @@ void test_music_remote_override_and_volume_feedback() {
   const std::string music_cpp = read_repo_file("../../components/latter_ui/page_music.cpp");
   const std::string remote_cpp = read_repo_file("../../components/latter_ui/page_remote.cpp");
   const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
-  const std::string settings_yaml = read_repo_file("../../modules/settings_entities.yaml");
+  const std::string state_h = read_repo_file("../../include/latter_state.h");
   LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
   LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") != std::string::npos);
   LATTER_CHECK(gui_yaml.find("rs.nav.gui_page == 7") != std::string::npos);
-  LATTER_CHECK(settings_yaml.find("- \"None\"") != std::string::npos);
+  LATTER_CHECK(state_h.find("\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"") != std::string::npos);
 
   // TouchRouter::note_tap() stamps debounce timestamp on HUD wake without gating the wake itself
   latter_ui::touch_router().note_tap(10000U);
@@ -722,7 +723,6 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   const std::string panel_h = read_repo_file("../../include/hal_panel_power.h");
   const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");
   const std::string pwr_yaml = read_repo_file("../../modules/power_manager.yaml");
-  const std::string set_yaml = read_repo_file("../../modules/settings_entities.yaml");
 
   // Confirm modal (modes 4 & 6) must NOT dispatch RESTART_DEVICE on finger-down; must resolve on_touch_up
   const auto on_up_pos = touch_cpp.find("void TouchGestureEngine::on_touch_up(");
@@ -732,10 +732,115 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
 
   LATTER_CHECK(panel_h.find("hal_prepare_touch_for_restart()") != std::string::npos);
   LATTER_CHECK(panel_h.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
-  LATTER_CHECK(set_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("flush_persisted_prefs_if_dirty()") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("publish_state(\"hibernating\")") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
+}
+
+struct MockRpcOutbox {
+  std::vector<std::string> published{};
+  void publish_state(const std::string &payload) { published.push_back(payload); }
+};
+
+void test_device_prefs_v2_and_event_timer_sync() {
+  static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 2U);
+
+  auto &p = latter_ui::persisted_prefs();
+  p = latter_ui::PersistedDevicePrefs{};
+  latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
+  latter_ui::seed_default_prefs_if_needed(
+      "Tabletop Dock", "Modern Roman (Analog)", "Home", "Aurora",
+      "Full Screen", "Alphabetical", "Newest on Top", "Oldest on Top");
+  LATTER_CHECK(std::string_view(latter_ui::pref_power_profile_cstr()) == "Tabletop Dock");
+  LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Docked Only");
+  LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == "Modern Roman (Analog)");
+  LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Aurora");
+  LATTER_CHECK(p.prefs_seq == 0U && p.dirty_mask == 0ULL);
+
+  // Fresh boot (prefs_seq == 0): device_hello dirty_prefs advertises board-seeded defaults (excluding ble_beacon_enabled)
+  const std::string seed_dirty = latter_ui::build_hello_dirty_prefs(p);
+  LATTER_CHECK(seed_dirty.find("power_profile=Tabletop Dock") != std::string::npos);
+  LATTER_CHECK(seed_dirty.find("screensaver_style=Aurora") != std::string::npos);
+  LATTER_CHECK(seed_dirty.find("ble_beacon_enabled=") == std::string::npos);
+
+  // Inbound Protocol v3 device_prefs push updates prefs_seq, clears dirty_mask, and flags side effects
+  latter_ui::reset_all_v3_rev_guards();
+  std::vector<std::string> dp_tok(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT), "");
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::PREFS_SEQ)] = "7";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::POWER_PROFILE)] = "Portable Carry";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::WAKE_WORD_MODE)] = "Disabled";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::ALERT_VOLUME)] = "65";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::COLOR_PROFILE)] = "Custom";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::THEME_COLOR_HEX)] = "#2288FF";
+  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::WEATHER_SIM_CONDITION)] = "Thunderstorm (Day)";
+
+  p.dirty_mask = (1ULL << static_cast<uint8_t>(latter_ui::PrefKey::ALERT_VOLUME));
+  uint32_t eff = 0;
+  LATTER_CHECK(latter_ui::parse_v3_device_prefs_payload(build_v3_packet(300, 1, dp_tok), eff));
+  LATTER_CHECK(p.prefs_seq == 7U);
+  LATTER_CHECK(p.dirty_mask == 0ULL);
+  LATTER_CHECK(p.alert_volume == 65U);
+  LATTER_CHECK(std::string_view(latter_ui::pref_color_profile_cstr()) == "Custom");
+  LATTER_CHECK(p.custom_theme_rgb == 0x2288FFU);
+  LATTER_CHECK(std::string_view(latter_ui::pref_weather_sim_cstr()) == "Thunderstorm (Day)");
+  LATTER_CHECK((eff & latter_ui::kPrefEffectThemePreset) != 0U);
+  LATTER_CHECK((eff & latter_ui::kPrefEffectWakeWordSync) != 0U);
+  LATTER_CHECK((eff & latter_ui::kPrefEffectRedraw) != 0U);
+
+  // Online local touchscreen edit: flips Power Profile to "Custom" when editing a sub-key and emits set_device_prefs
+  MockRpcOutbox outbox{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_ui::link_state().ha_connected = true;
+  uint32_t local_eff = 0;
+  LATTER_CHECK(latter_actions::record_local_pref_edit(
+      latter_ui::PrefKey::WAKE_WORD_MODE, "Always On", 1000U, local_eff, &outbox));
+  LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Always On");
+  LATTER_CHECK(std::string_view(latter_ui::pref_power_profile_cstr()) == "Custom");
+  LATTER_CHECK(!outbox.published.empty());
+  LATTER_CHECK(outbox.published.back().find("set_device_prefs") != std::string::npos);
+  LATTER_CHECK(outbox.published.back().find("wake_word_mode=Always On") != std::string::npos);
+  LATTER_CHECK(outbox.published.back().find("power_profile=Custom") != std::string::npos);
+
+  // Offline local touchscreen edit: queues in dirty_mask without RPC, then surfaces in build_hello_dirty_prefs
+  p.dirty_mask = 0ULL;
+  outbox.published.clear();
+  latter_ui::link_state().ha_connected = false;
+  LATTER_CHECK(latter_actions::record_local_pref_edit(
+      latter_ui::PrefKey::TIME_FORMAT, "24-Hour", 2000U, local_eff, &outbox));
+  LATTER_CHECK(outbox.published.empty());
+  LATTER_CHECK(p.is_24h_format);
+  const std::string offline_dirty = latter_ui::build_hello_dirty_prefs(p);
+  LATTER_CHECK(offline_dirty == "time_format=24-Hour");
+
+  // Event-driven timer_alarm_state: zero emissions during normal 1 Hz countdown, immediate emission on start/jump/ring/stop
+  latter_actions::timer_alarm_sync_tracker() = latter_actions::TimerAlarmSyncTracker{};
+  auto &rs = latter_ui::runtime_state();
+  rs.timers.running = false;
+  rs.timers.paused = false;
+  rs.timers.ringing = false;
+  rs.alarms.ringing = false;
+  latter_ui::link_state().ha_connected = true;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  outbox.published.clear();
+
+  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(5000U, false, &outbox));
+  rs.timers.running = true;
+  rs.timers.remaining_sec = 120;
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(5250U, false, &outbox));
+  LATTER_CHECK(outbox.published.size() == 1U && outbox.published.back().find("timer_alarm_state") != std::string::npos);
+
+  // Steady 1 Hz countdown tick (119s at +1000ms) must NOT emit Wi-Fi RPC traffic
+  rs.timers.remaining_sec = 119;
+  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(6250U, false, &outbox));
+
+  // Manual +1m jump (179s vs expected ~118s) emits immediately
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  rs.timers.remaining_sec = 179;
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(7250U, false, &outbox));
+  LATTER_CHECK(outbox.published.size() == 2U);
 }
 
 }  // namespace
@@ -746,8 +851,9 @@ int main() {
   test_battery_model_and_power_policy();
   test_music_remote_override_and_volume_feedback();
   test_beacon_boot_gate_and_touch_reboot_safety();
+  test_device_prefs_v2_and_event_timer_sync();
   std::printf(
-      "[HOST TEST PASS] Protocol v3 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
+      "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
       "music override/volume feedback, beacon boot gate + touch reboot safety, and hal_battery/hal_link_report verified.\n");
   return 0;
 }

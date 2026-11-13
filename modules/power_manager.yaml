@@ -20,7 +20,7 @@ binary_sensor:
     name: "Pickup Detected"
     id: pickup_detected
     device_class: motion
-    entity_category: diagnostic
+    internal: true
     lambda: |-
       #if !LATTER_HAS_IMU
       return false;
@@ -29,7 +29,7 @@ binary_sensor:
       static bool is_active = false;
       const auto &rs = latter_ui::runtime_state();
 
-      auto pw_mode = id(pickup_wake_mode).current_option();
+      const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr();
       if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !rs.hw_usb_connected)) {
         is_active = false;
         return false;
@@ -79,7 +79,7 @@ binary_sensor:
                 return false;
                 #else
                 const auto &rs = latter_ui::runtime_state();
-                auto mode = id(pickup_wake_mode).current_option();
+                const std::string_view mode = latter_ui::pref_pickup_to_wake_cstr();
                 if (mode == "Disabled") return false;
                 if (mode == "Docked Only" && !rs.hw_usb_connected) return false;
                 return true;
@@ -114,6 +114,8 @@ interval:
           auto &rs = latter_ui::runtime_state();
           // 0. Alarm engine (timers_and_fetchers.yaml) shares this tick: one wake a second for both.
           id(alarm_engine_tick).execute();
+          latter_ui::tick_persisted_prefs_flush(millis());
+          latter_actions::check_and_emit_timer_alarm_state(millis());
 
           // 1. Poll Board PMU Telemetry (AXP2101 VBUS & Battery Charging when present)
           if (rs.hw_poll_pmu_1s != nullptr) {
@@ -144,7 +146,7 @@ interval:
             const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                                   !id(wifi_ctrl).is_connected();
             const bool should_ww_run = latter_ui::wake_word_should_run(
-                id(va_wake_word_mode).current_option(),
+                latter_ui::pref_wake_word_mode_cstr(),
                 rs.hw_usb_connected,
                 va_busy, media_busy, alert_or_tool_busy, sys_busy);
             if (should_ww_run != id(mww).is_running()) {
@@ -238,13 +240,14 @@ interval:
           }
 
           // 11. Invariant 3: Guarantee screen_sleep_timer is armed whenever screen is active
+          const auto &prefs = latter_ui::persisted_prefs();
           #if LATTER_IS_STATIONARY
-          const bool should_arm_timer = id(docked_screensaver_switch).state &&
-                                        (id(screensaver_docked_timeout).current_option() != "Never");
+          const bool should_arm_timer = prefs.docked_screensaver &&
+                                        (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) != "Never");
           #else
           const bool should_arm_timer = rs.hw_usb_connected
-              ? (id(screensaver_docked_timeout).current_option() != "Never")
-              : (id(display_off_timeout).current_option() != "Never");
+              ? (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) != "Never")
+              : (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) != "Never");
           #endif
           if (rs.nav.display_power_state == 0 && should_arm_timer &&
               !id(screen_sleep_timer).is_running() && !rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
@@ -254,7 +257,8 @@ interval:
           // 12. Priority 4: Self-Healing Inactivity Auto-Descent to Hardware Hibernate (Battery Devices Only)
           #if LATTER_HAS_BATTERY
           uint32_t hibernate_timeout_ms = 900000;
-          auto st_opt = id(hibernate_timeout_mode).current_option();
+          const char *st_opt_cstr = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
+          const std::string_view st_opt(st_opt_cstr);
           bool auto_sleep_enabled = true;
           if (st_opt == "5 min") hibernate_timeout_ms = 300000;
           else if (st_opt == "10 min") hibernate_timeout_ms = 600000;
@@ -285,7 +289,7 @@ interval:
             if (rs.nav.sleep_start_time == 0) {
               rs.nav.sleep_start_time = now_1s_ms;
             } else if (auto_sleep_enabled && (now_1s_ms - rs.nav.sleep_start_time >= hibernate_timeout_ms)) {
-              ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown", st_opt.c_str());
+              ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown", st_opt_cstr);
               rs.nav.sleep_start_time = 0;
               latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::IDLE;
               id(start_hibernation_countdown).execute();
@@ -303,7 +307,7 @@ interval:
           // The PWR key is a GPIO binary_sensor (board HAL), so no PMU polling happens here.
           const auto &rs = latter_ui::runtime_state();
           if (rs.nav.display_power_state == 1 && !rs.voice.active && rs.voice.status_text.empty() && !rs.nav.is_hibernating) {
-            auto s_style = id(screensaver_style_select).current_option();
+            const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
             if (s_style != "Ambient Clock" && s_style != "Screen Off") {
               const bool local_music_playing =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
@@ -342,9 +346,10 @@ script:
               (rs.nav.display_power_state == 0 && rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12) ||
               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
               (rs.nav.display_power_state == 0 && (now_p - last_interact_ms < 8000U));
+          const auto &prefs = latter_ui::persisted_prefs();
           latter_ui::evaluate_radio_policy(
-              id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), id(ble_area_beacon_switch).state,
-              latter_ui::beacon_mode_index(id(ble_beacon_mode_select).current_option()), rs.hw_usb_connected,
+              id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), prefs.ble_beacon_enabled,
+              latter_ui::beacon_mode_index(latter_ui::pref_ble_beacon_mode_cstr(prefs)), rs.hw_usb_connected,
               rs.nav.is_hibernating, rs.nav.ota_in_progress, rs.nav.display_power_state,
               high_tput_needed, now_p,
               latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms);
@@ -352,7 +357,7 @@ script:
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
           if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && (now_p > 6000U) && rs.hw_set_imu_power_mode != nullptr) {
-            auto pw_mode = id(pickup_wake_mode).current_option();
+            const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr(prefs);
             const bool pw_allowed = (pw_mode == "Always On") ||
                                     (pw_mode == "Docked Only" && rs.hw_usb_connected);
             if (rs.nav.display_power_state) {
@@ -436,7 +441,7 @@ script:
           // IMU INT1 while hardware Wake-on-Motion is armed.
           uint32_t wake_mask = latter_ui::pm_wake_bit(latter_ui::PM_WAKE_PWR_KEY) |
                                latter_ui::pm_wake_bit(latter_ui::PM_WAKE_ACTION_BTN);
-          auto tw_mode = id(tap_wake_mode).current_option();
+          const std::string_view tw_mode = latter_ui::pref_tap_to_wake_cstr(prefs);
           if (tw_mode == "Always On") wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_TOUCH);
           #if LATTER_HAS_IMU
           if (latter_ui::imu_wom().armed) wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_IMU);
@@ -480,7 +485,7 @@ script:
       - script.stop: screen_sleep_timer
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
-          auto s_style = id(screensaver_style_select).current_option();
+          const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
           if (s_style == "Screen Off") {
             id(turn_screen_off).execute();
             return;
@@ -512,7 +517,7 @@ script:
           id(display_brightness).turn_off().perform();
 
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          auto ww_mode = id(va_wake_word_mode).current_option();
+          const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
           const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && rs.hw_usb_connected);
 
           id(sync_wake_word_state).execute();
@@ -530,9 +535,10 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
-          auto s_style = id(screensaver_style_select).current_option();
+          const auto &prefs = latter_ui::persisted_prefs();
+          const std::string_view s_style = latter_ui::pref_screensaver_style_cstr(prefs);
           bool screensaver_allowed = rs.hw_usb_connected &&
-                                     id(docked_screensaver_switch).state &&
+                                     prefs.docked_screensaver &&
                                      (s_style != "Screen Off");
           if (screensaver_allowed) {
             latter_ui::screen_is_off_standby() = false;
@@ -703,6 +709,7 @@ script:
             - light.turn_off: display_brightness
             - component.update: disp1
             - lambda: |-
+                latter_ui::flush_persisted_prefs_if_dirty();
                 id(sys_link_report).publish_state("hibernating");
                 esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));
             - delay: 250ms
@@ -713,8 +720,9 @@ script:
     mode: restart
     then:
       - delay: !lambda |-
+          const auto &prefs = latter_ui::persisted_prefs();
           if (latter_ui::runtime_state().hw_usb_connected) {
-            auto ss_to = id(screensaver_docked_timeout).current_option();
+            const std::string_view ss_to = latter_ui::pref_docked_idle_timeout_cstr(prefs);
             if (ss_to == "10s") return 10000;
             if (ss_to == "15s") return 15000;
             if (ss_to == "30s") return 30000;
@@ -724,7 +732,7 @@ script:
             if (ss_to == "Never") return 86400000;
             return 60000;
           }
-          auto opt = id(display_off_timeout).current_option();
+          const std::string_view opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
           if (opt == "10s") return 10000;
           if (opt == "15s") return 15000;
           if (opt == "30s") return 30000;
@@ -736,14 +744,15 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
+              const auto &prefs = latter_ui::persisted_prefs();
               #if LATTER_IS_STATIONARY
-              if (!id(docked_screensaver_switch).state) return false;
-              if (id(screensaver_docked_timeout).current_option() == "Never") return false;
+              if (!prefs.docked_screensaver) return false;
+              if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
               #else
               if (rs.hw_usb_connected) {
-                if (id(screensaver_docked_timeout).current_option() == "Never") return false;
+                if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
               } else {
-                if (id(display_off_timeout).current_option() == "Never") return false;
+                if (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) == "Never") return false;
               }
               #endif
               const bool active_tool_awake =
@@ -772,14 +781,15 @@ script:
                 condition:
                   lambda: |-
                     const auto &rs = latter_ui::runtime_state();
+                    const auto &prefs = latter_ui::persisted_prefs();
                     #if LATTER_IS_STATIONARY
-                    if (!id(docked_screensaver_switch).state) return false;
-                    if (id(screensaver_docked_timeout).current_option() == "Never") return false;
+                    if (!prefs.docked_screensaver) return false;
+                    if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
                     #else
                     if (rs.hw_usb_connected) {
-                      if (id(screensaver_docked_timeout).current_option() == "Never") return false;
+                      if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
                     } else {
-                      if (id(display_off_timeout).current_option() == "Never") return false;
+                      if (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) == "Never") return false;
                     }
                     #endif
                     return (rs.nav.display_power_state == 0);

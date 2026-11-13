@@ -3,7 +3,7 @@
 # (modules/latter_display_firmware.yaml)
 # Single entry point included by devices/*.yaml and custom display builds.
 # Pulls in Latter Core OS (system_core, power_manager, audio_voice,
-# display_pipeline, settings_entities, timers_and_fetchers) + Universal GUI.
+# display_pipeline, timers_and_fetchers) + Universal GUI.
 # ==============================================================================
 
 substitutions:
@@ -47,6 +47,5 @@ packages:
   latter_power:    !include power_manager.yaml
   latter_audio:    !include audio_voice.yaml
   latter_pipeline: !include display_pipeline.yaml
-  latter_settings: !include settings_entities.yaml
   latter_timers:   !include timers_and_fetchers.yaml
   latter_gui:      !include ../guis/universal/gui.yaml

@@ -6,7 +6,7 @@
 flowchart TD
     D["devices/*.yaml<br/>one per product"] --> B["boards/*.yaml + modules/hal/<br/>hardware abstraction"]
     D --> U["modules/latter_display_firmware.yaml<br/>shared display firmware umbrella"]
-    U --> M["modules/<br/>base · system_core · power_manager · audio_voice<br/>display_pipeline · settings_entities · timers_and_fetchers"]
+    U --> M["modules/<br/>base · system_core · power_manager · audio_voice<br/>display_pipeline · timers_and_fetchers"]
     U --> G["guis/universal/gui.yaml<br/>display lambda + UiTouchEngine"]
     G --> CUI["components/latter_ui<br/>compiled page TUs · FrameHitTable · widgets · 2px band compositor"]
     M --> CC["components/latter_core<br/>Protocol v3 · RPC outbox · state · NVS · HAL drivers · esphome_bridge"]
@@ -44,18 +44,17 @@ A board file defines:
 
 → [Porting hardware](porting-hardware.md)
 
-### `modules/`: the core OS (14 YAML modules)
+### `modules/`: the core OS (13 YAML modules)
 
 | File | Role |
 | :--- | :--- |
 | `latter_display_firmware.yaml` | Umbrella entry point included by `devices/*.yaml` and custom display builds. Configures `latter_core:`, boot-log replay (`logger:`), `safe_mode:`, all core modules, and `guis/universal/gui.yaml`. |
-| `base.yaml` | Shared foundation for both display and headless nodes: Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_set_beacon_uuid`, `time:` (`ha_time` + `sntp_time`), `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox` (`latter_rpc_outbox`). |
-| `system_core.yaml` | Includes `base.yaml`, enforces `LATTER_SDK_REV == LATTER_YAML_REV`, declares display-node API actions (`set_browse_slots`, `set_area_slots`, `show_notification`, `latter_factory_reset`, `ui_input`), deduplicates both OTA platforms (`http_request` pull-OTA and Noise-encrypted `esphome` `id: ota_esphome` via `handle_ota_*`), and wires the boot sequence, `boot_button`, and `ui_input_event`. |
+| `base.yaml` | Shared foundation for both display and headless nodes: Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `latter_set_beacon_uuid`, `time:` (`ha_time` + `sntp_time`), `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox` (`latter_rpc_outbox`). |
+| `system_core.yaml` | Includes `base.yaml`, enforces `LATTER_SDK_REV == LATTER_YAML_REV`, declares display-node API actions (`set_browse_slots`, `set_area_slots`, `show_notification`, `latter_factory_reset`, `ui_input`), deduplicates both OTA platforms (`http_request` pull-OTA and Noise-encrypted `esphome` `id: ota_esphome` via `handle_ota_*`), exposes diagnostic lifecycle controls (`Actions: Restart Device`, `System: Log Memory Report`, `System: Telemetry Profiler`), and wires `PersistedDevicePrefs` v2 NVS sync, the boot sequence, `boot_button`, and `ui_input_event`. |
 | `power_manager.yaml` | Power state machine (active, screensaver, screen off, hibernate), 1 s and 50 ms supervisors, hibernate sequencing, and script `apply_power_policy`, the sole owner of the `latter_awake` lock and power actuators. |
 | `audio_voice.yaml` | Audio mixer (no output-side resampling: every source arrives at `audio_out_rate`), Sendspin media source, media player, `micro_wake_word` (vendored models in `models/`), `voice_assistant`, internal WAV `latter_sound_player` (`sounds/<rate>/`), and voice/TTS lifecycle scripts. |
-| `display_pipeline.yaml` | `http_request`, Sendspin album art, 3 `online_image` slots (artwork, wallpaper, camera; JPEG decoded to RGB565 in PSRAM), and the `Display` light backed by `hal_set_display_brightness`. |
-| `settings_entities.yaml` | User-facing `select`, `switch`, `number`, `button`, and diagnostic `sensor` / `text_sensor` entities bound to `DeviceRuntimeState` and `PersistedDevicePrefs`. |
-| `timers_and_fetchers.yaml` | Local countdown timer tick, alarm schedule evaluation, and outbound RPC fetch scripts (`include/latter_actions.h`). |
+| `display_pipeline.yaml` | `http_request`, Sendspin album art, 3 `online_image` slots (artwork, wallpaper, camera; JPEG decoded to RGB565 in PSRAM), and the diagnostic `Display: Screen Backlight` light backed by `hal_set_display_brightness`. |
+| `timers_and_fetchers.yaml` | Local countdown timer tick, alarm schedule evaluation, event-driven `timer_alarm_state` RPC emission, and outbound RPC fetch scripts (`include/latter_actions.h`). |
 | `hal/chip_esp32s3.yaml`, `hal/chip_esp32p4.yaml` | Shared chip `sdkconfig_options`, ESP32-S3 automatic light sleep, and ESP32-P4 dynamic frequency scaling + `esp32_hosted` PSRAM SDIO setup. |
 | `hal/audio_es8311_duplex.yaml`, `hal/audio_es8311_es7210_duplex.yaml` | Full-duplex 48 kHz I2S bus, ES8311 / ES7210 codecs, `physical_speaker` (`timeout: 4s`), `latter_mic` resampler microphone (16 kHz), and codec mute/standby scripts. |
 | `hal/pmu_axp2101.yaml`, `hal/imu_qmi8658.yaml` | Optional AXP2101 battery/USB/PWR-key handling and QMI8658 accelerometer/tilt/wake-on-motion modules included only by boards that fit those peripherals. |

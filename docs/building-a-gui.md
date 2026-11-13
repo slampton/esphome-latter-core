@@ -13,7 +13,6 @@ packages:
   latter_power:     !include modules/power_manager.yaml           # stays
   latter_audio:     !include modules/audio_voice.yaml             # stays
   latter_display:   !include modules/display_pipeline.yaml        # stays
-  latter_settings:  !include modules/settings_entities.yaml       # stays
   latter_timers:    !include modules/timers_and_fetchers.yaml     # stays
   my_gui:           !include guis/my_gui/gui.yaml                 # yours
 ```
@@ -58,8 +57,8 @@ display:
       ctx.cy = latter_ui::SCREEN_CY;
       ctx.panel_is_on = id(display_brightness).current_values.is_on();
       ctx.camera_snapshot_art = latter_ui::make_art_view(id(camera_snapshot_art));
-      ctx.va_visual_profile_opt = std::string(id(va_visual_profile).current_option());
-      ctx.screensaver_style_opt = std::string(id(screensaver_style_select).current_option());
+      ctx.va_visual_profile_opt = latter_ui::pref_va_visual_profile_cstr();
+      ctx.screensaver_style_opt = latter_ui::pref_screensaver_style_cstr();
       ctx.font_time = id(font_body);
       ctx.font_chrono_time = id(font_body);
       ctx.font_date = id(font_body);
@@ -114,7 +113,7 @@ touchscreen:
 | Kind | Accessors |
 | :--- | :--- |
 | Navigation & power | `latter_ui::runtime_state().nav` (`gui_page`, `home_subpage`, `area_subpage`, `remote_subpage`, `tools_subpage`, `sky_weather_subpage`, `system_menu_mode`, `active_game`, `display_power_state` 0 active / 1 screensaver / 2 off, `is_hibernating`, `ota_in_progress`) |
-| Persisted preferences | `latter_ui::persisted_prefs()` (`alarms[3]`, `clock_face_digital`, `is_24h_format`, `custom_theme_rgb`, game high scores; save with `latter_ui::save_persisted_prefs()`) |
+| Persisted preferences | `latter_ui::persisted_prefs()` (`PersistedDevicePrefs` v2 POD synced via Protocol v3 `device_prefs` & `set_device_prefs`: all 45 device preferences, `alarms[3]`, `custom_theme_rgb`, game high scores; save with `latter_ui::schedule_persisted_prefs_save(millis())` or `latter_ui::save_persisted_prefs()`) |
 | Voice | `latter_ui::runtime_state().voice` (`active`, `status_text`, `tts_received`, `vad_active`) |
 | Alerts & timers | `latter_ui::runtime_state().alert`, `.alarms`, `.timers`, `.stopwatch` |
 | List data | `latter_ui::runtime_state().slots` (`SlotBank`: `BROWSE`, `AREA`, `CALENDAR`, `REMOTE`), filled by `set_browse_slots` and `set_area_slots` |

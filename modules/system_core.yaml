@@ -21,6 +21,10 @@ esphome:
               rs.hw_boot_battery_check();
             }
             latter_ui::load_persisted_prefs();
+            latter_ui::seed_default_prefs_if_needed(
+                "${default_power_profile}", "${default_clock_face}", "${default_start_app}",
+                "${default_screensaver_style}", "${default_art_mode}", "${default_album_sort}",
+                "${default_artist_album_sort}", "${default_podcast_sort}");
             // Light-sleep awake lock (created held), wake pins and sleep pad config; no-op without light sleep.
             latter_ui::pm_init();
             id(hal_release_deep_sleep_holds).execute();
@@ -81,10 +85,10 @@ esphome:
                 {
                   latter_ui::area_available_domains_csv() = st.available_domains;
                   std::string valid_cat = latter_ui::resolve_preferred_area_category(
-                      std::string(id(area_default_category_select).current_option()),
-                      id(area_show_all_category_switch).state);
+                      std::string(latter_ui::pref_area_default_category_cstr(prefs)),
+                      prefs.area_show_all_category);
                   std::string cats[8];
-                  int cnt = latter_ui::collect_area_categories(id(area_show_all_category_switch).state, cats);
+                  int cnt = latter_ui::collect_area_categories(prefs.area_show_all_category, cats);
                   bool cur_ok = false;
                   int act_idx = 0;
                   for (int i = 0; i < cnt; i++) {
@@ -118,8 +122,8 @@ esphome:
                   uint32_t new_rgb = latter_ui::parse_hex_rgb(st.theme_color_hex, prefs.custom_theme_rgb);
                   if (new_rgb != prefs.custom_theme_rgb) {
                     prefs.custom_theme_rgb = new_rgb;
-                    latter_ui::save_persisted_prefs();
-                    if (id(theme_palette_select).current_option() == "Custom") {
+                    latter_ui::schedule_persisted_prefs_save(millis());
+                    if (std::string_view(latter_ui::pref_color_profile_cstr(prefs)) == "Custom") {
                       id(apply_theme_preset).execute();
                     }
                   }
@@ -227,7 +231,7 @@ esphome:
                     latter_ui::release_art(id(remote_album_art));
                   }
                 } else if (r.nav.display_power_state == 0 && r.nav.gui_page == 2 &&
-                           id(music_fullscreen_art_mode).current_option() != "None" &&
+                           std::string_view(latter_ui::pref_album_art_style_cstr(prefs)) != "None" &&
                            (!ms.is_local || id(album_art).get_width() == 0) &&
                            ms.art_url != r.music.loaded_art_url) {
                   if (ms.art_url != s_prev_art || !id(fetch_remote_art_debounced).is_running()) {
@@ -288,6 +292,22 @@ esphome:
                     (r.nav.gui_page == 1 || (r.nav.gui_page == 8 && r.nav.tools_subpage == 9))) {
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
+              } else if (sv_dom == "device_prefs") {
+                id(apply_device_prefs_effects).execute();
+              }
+            };
+
+            rs.on_device_command = +[](std::string_view sv_cmd) {
+              if (sv_cmd == "restart") {
+                id(restart_button).press();
+              } else if (sv_cmd == "find_my") {
+                id(toggle_find_my_device).execute();
+              } else if (sv_cmd == "activate_screensaver") {
+                id(trigger_screensaver_now).execute();
+              } else if (sv_cmd == "trigger_va") {
+                id(toggle_voice_assistant).execute();
+              } else if (sv_cmd == "log_memory_report") {
+                latter_ui::log_memory_report();
               }
             };
 
@@ -297,7 +317,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111202L;
+            constexpr long LATTER_YAML_REV = 2026111203L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -316,8 +336,8 @@ esphome:
             rs.remote.active_slot = latter_ui::resolve_active_remote_slot(rs.remote.active_slot);
         - media_player.pause: latter_media_player
         - lambda: |-
-            float sv = id(speaker_volume).state;
-            if (!std::isnan(sv) && sv >= 10.0f && sv <= 100.0f) {
+            float sv = static_cast<float>(latter_ui::persisted_prefs().speaker_volume_pct);
+            if (sv >= 10.0f && sv <= 100.0f) {
               float target_v = std::clamp(sv / 100.0f, 0.10f, 1.00f);
               id(latter_media_player).volume = target_v;
               id(latter_media_player).make_call().set_volume(target_v).perform();
@@ -336,35 +356,10 @@ esphome:
         - script.execute: apply_default_start_page
         - script.execute: apply_theme_preset
         - lambda: |-
-            auto &prefs = latter_ui::persisted_prefs();
-            #if !LATTER_ROUND_DISPLAY
-            static bool non_round_clock_seeded = false;
-            if (!non_round_clock_seeded) {
-              non_round_clock_seeded = true;
-              if (id(clock_face_style).current_option() == "Modern Roman (Analog)") {
-                auto call = id(clock_face_style).make_call();
-                call.set_option("Minimal Digital");
-                call.perform();
-              }
-            }
-            #endif
-            prefs.clock_face_digital = (id(clock_face_style).current_option() != "Modern Roman (Analog)");
-            prefs.is_24h_format = (id(time_format_select).current_option() == "24-Hour");
             auto &rs = latter_ui::runtime_state();
             if (rs.hw_update_batt_level != nullptr) {
               rs.hw_update_batt_level();
             }
-            if (!prefs.power_profile_seeded) {
-              prefs.power_profile_seeded = true;
-              latter_ui::apply_power_profile_spec(
-                  "${default_power_profile}", id(va_wake_word_mode), id(tap_wake_mode),
-                  id(pickup_wake_mode), id(display_off_timeout),
-                  id(screensaver_docked_timeout), id(hibernate_timeout_mode),
-                  id(docked_screensaver_switch));
-            } else {
-              latter_ui::clamp_power_capabilities(id(pickup_wake_mode), id(hibernate_timeout_mode));
-            }
-            latter_ui::save_persisted_prefs();
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer
@@ -543,20 +538,6 @@ time:
             }
 
 sensor:
-  - platform: template
-    name: "Timer Remaining"
-    id: timer_remaining_sensor
-    update_interval: 30s
-    filters:
-      - delta: 1.0
-    lambda: |-
-      const auto &ts = latter_ui::runtime_state().timers;
-      if (!ts.running && !ts.paused) return {};
-      return static_cast<float>(ts.remaining_sec);
-    unit_of_measurement: "s"
-    entity_category: diagnostic
-    icon: "mdi:timer-outline"
-
   - platform: wifi_signal
     name: "Wi-Fi Signal"
     id: latter_wifi_signal
@@ -605,23 +586,77 @@ sensor:
     filters:
       - delta: 256.0
 
+button:
+  - platform: restart
+    name: "Internal Restart"
+    id: internal_restart
+    internal: true
+
+  - platform: factory_reset
+    name: "Internal Factory Reset"
+    id: internal_factory_reset
+    internal: true
+
+  - platform: template
+    name: "System: Log Memory Report"
+    id: log_memory_report_button
+    icon: "mdi:memory"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'latter_ui::log_memory_report();'
+
+  - platform: template
+    name: "Actions: Restart Device"
+    id: restart_button
+    device_class: restart
+    icon: "mdi:restart"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'latter_ui::flush_persisted_prefs_if_dirty();'
+      - light.turn_off: display_brightness
+      - component.update: disp1
+      - delay: 150ms
+      - lambda: 'latter_ui::hal_prepare_touch_for_restart();'
+      - delay: 20ms
+      - button.press: internal_restart
+
+switch:
+  - platform: template
+    name: "System: Telemetry Profiler"
+    id: telemetry_profiler_switch
+    icon: "mdi:chart-timeline-variant-shimmer"
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(true);
+          latter_ui::profiler_enabled() = true;
+          id(ble_ctrl).set_profile_logging(true);
+          auto &fr = latter_ui::flight_recorder();
+          fr.window_frames = 0;
+          fr.window_render_us = 0;
+          fr.max_render_us = 0;
+          fr.slow_frames = 0;
+          fr.last_summary_ms = millis();
+          LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d)",
+                           latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+      - delay: 500ms
+      - lambda: |-
+          const auto &rs = latter_ui::runtime_state();
+          latter_ui::log_power_and_mem_profile(
+              "PROFILER_ON", rs.nav.display_power_state, rs.hw_usb_connected, rs.hw_batt_charging,
+              rs.hw_batt_level, rs.hw_batt_voltage, id(speaker_enable).state,
+              id(mww).is_running(), rs.voice.active,
+              id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+              id(ble_ctrl).is_active(), rs.nav.active_game, rs.nav.sleep_start_time);
+    turn_off_action:
+      - lambda: |-
+          id(telemetry_profiler_switch).publish_state(false);
+          LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler off");
+          latter_ui::profiler_enabled() = false;
+          id(ble_ctrl).set_profile_logging(false);
+
 binary_sensor:
-  - platform: template
-    name: "Timer Active"
-    id: timer_active_binary_sensor
-    lambda: 'return latter_ui::runtime_state().timers.running;'
-    entity_category: diagnostic
-    icon: "mdi:timer-sand"
-
-  - platform: template
-    name: "Alarm Ringing"
-    id: alarm_ringing_binary_sensor
-    lambda: |-
-      const auto &rs = latter_ui::runtime_state();
-      return rs.alarms.ringing || rs.timers.ringing;
-    entity_category: diagnostic
-    icon: "mdi:alarm-bell"
-
   - id: !extend boot_button
     on_press:
       then:
@@ -791,150 +826,282 @@ script:
 
             rt.get_select = +[](latter_ui::UiSelectId sid) -> std::string {
               using S = latter_ui::UiSelectId;
-              auto rd = [](auto *sel) -> std::string {
-                return sel != nullptr ? std::string(sel->current_option()) : std::string{};
-              };
+              const auto &p = latter_ui::persisted_prefs();
               switch (sid) {
-                case S::TAP_WAKE_MODE: return rd(id(tap_wake_mode));
-                case S::WEATHER_SIM_CONDITION: return rd(id(weather_sim_condition));
-                case S::MUSIC_OVERLAY_STYLE: return rd(id(music_overlay_style));
-                case S::MUSIC_FULLSCREEN_ART_MODE: return rd(id(music_fullscreen_art_mode));
-                case S::MUSIC_ALBUM_SORT_ORDER: return rd(id(music_album_sort_order));
-                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: return rd(id(music_artist_album_sort_order));
-                case S::MUSIC_PODCAST_SORT_ORDER: return rd(id(music_podcast_sort_order));
-                case S::VA_WAKE_WORD_MODE: return rd(id(va_wake_word_mode));
-                case S::VA_VISUAL_PROFILE: return rd(id(va_visual_profile));
-                case S::WW_SENS_OKAY_NABU: return rd(id(ww_sens_okay_nabu));
-                case S::WW_SENS_HEY_LUNA: return rd(id(ww_sens_hey_luna));
-                case S::WW_SENS_HEY_JARVIS: return rd(id(ww_sens_hey_jarvis));
-                case S::WW_SENS_HEY_MYCROFT: return rd(id(ww_sens_hey_mycroft));
-                case S::WW_SENS_ALEXA: return rd(id(ww_sens_alexa));
-                case S::THEME_PALETTE: return rd(id(theme_palette_select));
-                case S::POWER_PROFILE: return rd(id(power_profile_select));
-                case S::PICKUP_WAKE_MODE: return rd(id(pickup_wake_mode));
-                case S::DISPLAY_OFF_TIMEOUT: return rd(id(display_off_timeout));
-                case S::SCREENSAVER_STYLE: return rd(id(screensaver_style_select));
-                case S::SCREENSAVER_DOCKED_TIMEOUT: return rd(id(screensaver_docked_timeout));
-                case S::HIBERNATE_TIMEOUT_MODE: return rd(id(hibernate_timeout_mode));
-                case S::DEFAULT_START_APP: return rd(id(default_start_app));
-                case S::CLOCK_FACE_STYLE: return rd(id(clock_face_style));
-                case S::TIME_FORMAT: return rd(id(time_format_select));
-                case S::AUTO_BRIGHTNESS_MODE: return rd(id(auto_brightness_mode));
-                case S::DISPLAY_BRIGHTNESS_PRESET: return rd(id(display_brightness_preset));
-                case S::DAY_BRIGHTNESS_PRESET: return rd(id(day_brightness_preset));
-                case S::NIGHT_BRIGHTNESS_PRESET: return rd(id(night_brightness_preset));
-                case S::AREA_DEFAULT_CATEGORY: return rd(id(area_default_category_select));
+                case S::TAP_WAKE_MODE: return latter_ui::pref_tap_to_wake_cstr(p);
+                case S::WEATHER_SIM_CONDITION: return latter_ui::pref_weather_sim_cstr();
+                case S::MUSIC_OVERLAY_STYLE: return latter_ui::pref_music_overlay_style_cstr(p);
+                case S::MUSIC_FULLSCREEN_ART_MODE: return latter_ui::pref_album_art_style_cstr(p);
+                case S::MUSIC_ALBUM_SORT_ORDER: return latter_ui::pref_album_sort_order_cstr(p);
+                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: return latter_ui::pref_artist_album_sort_order_cstr(p);
+                case S::MUSIC_PODCAST_SORT_ORDER: return latter_ui::pref_podcast_sort_order_cstr(p);
+                case S::VA_WAKE_WORD_MODE: return latter_ui::pref_wake_word_mode_cstr(p);
+                case S::VA_VISUAL_PROFILE: return latter_ui::pref_va_visual_profile_cstr(p);
+                case S::WW_SENS_OKAY_NABU: return latter_ui::pref_ww_sens_cstr(p.ww_sens_okay_nabu);
+                case S::WW_SENS_HEY_LUNA: return latter_ui::pref_ww_sens_cstr(p.ww_sens_hey_luna);
+                case S::WW_SENS_HEY_JARVIS: return latter_ui::pref_ww_sens_cstr(p.ww_sens_hey_jarvis);
+                case S::WW_SENS_HEY_MYCROFT: return latter_ui::pref_ww_sens_cstr(p.ww_sens_hey_mycroft);
+                case S::WW_SENS_ALEXA: return latter_ui::pref_ww_sens_cstr(p.ww_sens_alexa);
+                case S::THEME_PALETTE: return latter_ui::pref_color_profile_cstr(p);
+                case S::POWER_PROFILE: return latter_ui::pref_power_profile_cstr(p);
+                case S::PICKUP_WAKE_MODE: return latter_ui::pref_pickup_to_wake_cstr(p);
+                case S::DISPLAY_OFF_TIMEOUT: return latter_ui::pref_battery_screen_timeout_cstr(p);
+                case S::SCREENSAVER_STYLE: return latter_ui::pref_screensaver_style_cstr(p);
+                case S::SCREENSAVER_DOCKED_TIMEOUT: return latter_ui::pref_docked_idle_timeout_cstr(p);
+                case S::HIBERNATE_TIMEOUT_MODE: return latter_ui::pref_battery_hibernate_timeout_cstr(p);
+                case S::DEFAULT_START_APP: return latter_ui::pref_start_screen_cstr(p);
+                case S::CLOCK_FACE_STYLE: return latter_ui::pref_clock_face_cstr(p);
+                case S::TIME_FORMAT: return latter_ui::pref_time_format_cstr(p);
+                case S::AUTO_BRIGHTNESS_MODE: return latter_ui::pref_auto_brightness_mode_cstr(p);
+                case S::DISPLAY_BRIGHTNESS_PRESET: return latter_ui::pref_manual_brightness_cstr(p);
+                case S::DAY_BRIGHTNESS_PRESET: return latter_ui::pref_day_brightness_cstr(p);
+                case S::NIGHT_BRIGHTNESS_PRESET: return latter_ui::pref_night_brightness_cstr(p);
+                case S::AREA_DEFAULT_CATEGORY: return latter_ui::pref_area_default_category_cstr(p);
               }
               return std::string{};
             };
 
-            rt.set_select = +[](latter_ui::UiSelectId sid, const std::string &opt, bool publish_also) {
+            rt.set_select = +[](latter_ui::UiSelectId sid, const std::string &opt, bool /*publish_also*/) {
               using S = latter_ui::UiSelectId;
-              auto wr = [&](auto *sel) {
-                if (sel == nullptr) return;
-                auto call = sel->make_call();
-                call.set_option(opt);
-                call.perform();
-                if (publish_also) sel->publish_state(opt);
-              };
+              using K = latter_ui::PrefKey;
+              const uint32_t now_ms = millis();
+              if (sid == S::WEATHER_SIM_CONDITION) {
+                int idx = latter_ui::find_opt_index(latter_ui::kWeatherSimOpts, opt);
+                if (idx >= 0) {
+                  latter_ui::device_prefs_state().weather_sim_condition = static_cast<uint8_t>(idx);
+                  if (opt != "Live (Home Assistant)" && !latter_ui::persisted_prefs().weather_background) {
+                    uint32_t bg_eff = 0;
+                    latter_actions::record_local_pref_edit(K::WEATHER_BACKGROUND, "1", now_ms, bg_eff);
+                  }
+                  if (latter_ui::link_state().ha_connected) {
+                    std::string chg = "weather_sim_condition=";
+                    chg.append(opt);
+                    latter_actions::emit_set_device_prefs(latter_ui::persisted_prefs().prefs_seq, chg);
+                  }
+                  latter_ui::night_meteor_epoch_initialized() = false;
+                  latter_ui::weather_sim_dirty() = true;
+                  latter_ui::record_ambient_frame_ms(0);
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+                return;
+              }
+              K pk = K::COUNT;
               switch (sid) {
-                case S::TAP_WAKE_MODE: wr(id(tap_wake_mode)); break;
-                case S::WEATHER_SIM_CONDITION: wr(id(weather_sim_condition)); break;
-                case S::MUSIC_OVERLAY_STYLE: wr(id(music_overlay_style)); break;
-                case S::MUSIC_FULLSCREEN_ART_MODE: wr(id(music_fullscreen_art_mode)); break;
-                case S::MUSIC_ALBUM_SORT_ORDER: wr(id(music_album_sort_order)); break;
-                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: wr(id(music_artist_album_sort_order)); break;
-                case S::MUSIC_PODCAST_SORT_ORDER: wr(id(music_podcast_sort_order)); break;
-                case S::VA_WAKE_WORD_MODE: wr(id(va_wake_word_mode)); break;
-                case S::VA_VISUAL_PROFILE: wr(id(va_visual_profile)); break;
-                case S::WW_SENS_OKAY_NABU: wr(id(ww_sens_okay_nabu)); break;
-                case S::WW_SENS_HEY_LUNA: wr(id(ww_sens_hey_luna)); break;
-                case S::WW_SENS_HEY_JARVIS: wr(id(ww_sens_hey_jarvis)); break;
-                case S::WW_SENS_HEY_MYCROFT: wr(id(ww_sens_hey_mycroft)); break;
-                case S::WW_SENS_ALEXA: wr(id(ww_sens_alexa)); break;
-                case S::THEME_PALETTE: wr(id(theme_palette_select)); break;
-                case S::POWER_PROFILE: wr(id(power_profile_select)); break;
-                case S::PICKUP_WAKE_MODE: wr(id(pickup_wake_mode)); break;
-                case S::DISPLAY_OFF_TIMEOUT: wr(id(display_off_timeout)); break;
-                case S::SCREENSAVER_STYLE: wr(id(screensaver_style_select)); break;
-                case S::SCREENSAVER_DOCKED_TIMEOUT: wr(id(screensaver_docked_timeout)); break;
-                case S::HIBERNATE_TIMEOUT_MODE: wr(id(hibernate_timeout_mode)); break;
-                case S::DEFAULT_START_APP: wr(id(default_start_app)); break;
-                case S::CLOCK_FACE_STYLE: wr(id(clock_face_style)); break;
-                case S::TIME_FORMAT: wr(id(time_format_select)); break;
-                case S::AUTO_BRIGHTNESS_MODE: wr(id(auto_brightness_mode)); break;
-                case S::DISPLAY_BRIGHTNESS_PRESET: wr(id(display_brightness_preset)); break;
-                case S::DAY_BRIGHTNESS_PRESET: wr(id(day_brightness_preset)); break;
-                case S::NIGHT_BRIGHTNESS_PRESET: wr(id(night_brightness_preset)); break;
-                case S::AREA_DEFAULT_CATEGORY: wr(id(area_default_category_select)); break;
+                case S::TAP_WAKE_MODE: pk = K::TAP_TO_WAKE; break;
+                case S::WEATHER_SIM_CONDITION: break;
+                case S::MUSIC_OVERLAY_STYLE: pk = K::MUSIC_OVERLAY_STYLE; break;
+                case S::MUSIC_FULLSCREEN_ART_MODE: pk = K::ALBUM_ART_STYLE; break;
+                case S::MUSIC_ALBUM_SORT_ORDER: pk = K::ALBUM_SORT_ORDER; break;
+                case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: pk = K::ARTIST_ALBUM_SORT_ORDER; break;
+                case S::MUSIC_PODCAST_SORT_ORDER: pk = K::PODCAST_SORT_ORDER; break;
+                case S::VA_WAKE_WORD_MODE: pk = K::WAKE_WORD_MODE; break;
+                case S::VA_VISUAL_PROFILE: pk = K::VA_VISUAL_PROFILE; break;
+                case S::WW_SENS_OKAY_NABU: pk = K::WW_SENS_OKAY_NABU; break;
+                case S::WW_SENS_HEY_LUNA: pk = K::WW_SENS_HEY_LUNA; break;
+                case S::WW_SENS_HEY_JARVIS: pk = K::WW_SENS_HEY_JARVIS; break;
+                case S::WW_SENS_HEY_MYCROFT: pk = K::WW_SENS_HEY_MYCROFT; break;
+                case S::WW_SENS_ALEXA: pk = K::WW_SENS_ALEXA; break;
+                case S::THEME_PALETTE: pk = K::COLOR_PROFILE; break;
+                case S::POWER_PROFILE: pk = K::POWER_PROFILE; break;
+                case S::PICKUP_WAKE_MODE: pk = K::PICKUP_TO_WAKE; break;
+                case S::DISPLAY_OFF_TIMEOUT: pk = K::BATTERY_SCREEN_TIMEOUT; break;
+                case S::SCREENSAVER_STYLE: pk = K::SCREENSAVER_STYLE; break;
+                case S::SCREENSAVER_DOCKED_TIMEOUT: pk = K::DOCKED_IDLE_TIMEOUT; break;
+                case S::HIBERNATE_TIMEOUT_MODE: pk = K::BATTERY_HIBERNATE_TIMEOUT; break;
+                case S::DEFAULT_START_APP: pk = K::START_SCREEN; break;
+                case S::CLOCK_FACE_STYLE: pk = K::CLOCK_FACE; break;
+                case S::TIME_FORMAT: pk = K::TIME_FORMAT; break;
+                case S::AUTO_BRIGHTNESS_MODE: pk = K::AUTO_BRIGHTNESS_MODE; break;
+                case S::DISPLAY_BRIGHTNESS_PRESET: pk = K::MANUAL_BRIGHTNESS; break;
+                case S::DAY_BRIGHTNESS_PRESET: pk = K::DAY_BRIGHTNESS; break;
+                case S::NIGHT_BRIGHTNESS_PRESET: pk = K::NIGHT_BRIGHTNESS; break;
+                case S::AREA_DEFAULT_CATEGORY: pk = K::AREA_DEFAULT_CATEGORY; break;
+              }
+              if (pk == K::COUNT) return;
+              uint32_t eff = 0;
+              if (latter_actions::record_local_pref_edit(pk, opt, now_ms, eff)) {
+                if (pk == K::AREA_DEFAULT_CATEGORY) {
+                  auto &rs = latter_ui::runtime_state();
+                  if (rs.nav.gui_page == 6 && rs.nav.area_subpage == 0) {
+                    rs.area.domain_filter = latter_ui::resolve_preferred_area_category(
+                        opt, latter_ui::persisted_prefs().area_show_all_category);
+                    rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+                    id(fetch_area_browse).execute();
+                  }
+                }
+                latter_ui::device_prefs_state().last_effects = eff;
+                id(apply_device_prefs_effects).execute();
               }
             };
 
             rt.get_switch = +[](latter_ui::UiSwitchId swid) -> bool {
               using W = latter_ui::UiSwitchId;
-              auto rd = [](auto *sw) -> bool { return sw != nullptr && sw->state; };
+              const auto &p = latter_ui::persisted_prefs();
               switch (swid) {
-                case W::HOME_WEATHER_BG: return rd(id(home_weather_bg_switch));
-                case W::HOME_WAKE_GREETING: return rd(id(home_wake_greeting_switch));
-                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: return rd(id(music_show_speaker_shortcut));
-                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: return rd(id(music_show_library_shortcut));
-                case W::BLE_AREA_BEACON: return rd(id(ble_area_beacon_switch));
-                case W::GAME_SOUND: return rd(id(game_sound_switch));
-                case W::VA_WAKE_SCREEN: return rd(id(va_wake_screen_switch));
-                case W::DOCKED_SCREENSAVER: return rd(id(docked_screensaver_switch));
-                case W::INSTANT_CROWN_HIBERNATE: return rd(id(instant_crown_hibernate_switch));
-                case W::AREA_SHOW_ALL_CATEGORY: return rd(id(area_show_all_category_switch));
+                case W::HOME_WEATHER_BG: return p.weather_background;
+                case W::HOME_WAKE_GREETING: return p.wake_greeting;
+                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: return p.show_speaker_shortcut;
+                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: return p.show_library_shortcut;
+                case W::BLE_AREA_BEACON: return p.ble_beacon_enabled;
+                case W::GAME_SOUND: return p.game_sound_effects;
+                case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
+                case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
+                case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
+                case W::AREA_SHOW_ALL_CATEGORY: return p.area_show_all_category;
               }
               return false;
             };
 
             rt.toggle_switch = +[](latter_ui::UiSwitchId swid) {
               using W = latter_ui::UiSwitchId;
-              auto tg = [](auto *sw) { if (sw != nullptr) sw->toggle(); };
+              using K = latter_ui::PrefKey;
+              const auto &p = latter_ui::persisted_prefs();
+              K pk = K::COUNT;
+              bool next_val = false;
               switch (swid) {
-                case W::HOME_WEATHER_BG: tg(id(home_weather_bg_switch)); break;
-                case W::HOME_WAKE_GREETING: tg(id(home_wake_greeting_switch)); break;
-                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: tg(id(music_show_speaker_shortcut)); break;
-                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: tg(id(music_show_library_shortcut)); break;
-                case W::BLE_AREA_BEACON: tg(id(ble_area_beacon_switch)); break;
-                case W::GAME_SOUND: tg(id(game_sound_switch)); break;
-                case W::VA_WAKE_SCREEN: tg(id(va_wake_screen_switch)); break;
-                case W::DOCKED_SCREENSAVER: tg(id(docked_screensaver_switch)); break;
-                case W::INSTANT_CROWN_HIBERNATE: tg(id(instant_crown_hibernate_switch)); break;
-                case W::AREA_SHOW_ALL_CATEGORY: tg(id(area_show_all_category_switch)); break;
+                case W::HOME_WEATHER_BG: pk = K::WEATHER_BACKGROUND; next_val = !p.weather_background; break;
+                case W::HOME_WAKE_GREETING: pk = K::WAKE_GREETING; next_val = !p.wake_greeting; break;
+                case W::MUSIC_SHOW_SPEAKER_SHORTCUT: pk = K::SHOW_SPEAKER_SHORTCUT; next_val = !p.show_speaker_shortcut; break;
+                case W::MUSIC_SHOW_LIBRARY_SHORTCUT: pk = K::SHOW_LIBRARY_SHORTCUT; next_val = !p.show_library_shortcut; break;
+                case W::BLE_AREA_BEACON: pk = K::BLE_BEACON_ENABLED; next_val = !p.ble_beacon_enabled; break;
+                case W::GAME_SOUND: pk = K::GAME_SOUND_EFFECTS; next_val = !p.game_sound_effects; break;
+                case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
+                case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
+                case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
+                case W::AREA_SHOW_ALL_CATEGORY: pk = K::AREA_SHOW_ALL_CATEGORY; next_val = !p.area_show_all_category; break;
+              }
+              if (pk == K::COUNT) return;
+              uint32_t eff = 0;
+              if (latter_actions::record_local_pref_edit(pk, next_val ? "1" : "0", millis(), eff)) {
+                latter_ui::device_prefs_state().last_effects = eff;
+                id(apply_device_prefs_effects).execute();
               }
             };
 
             rt.get_number = +[](latter_ui::UiNumberId nid) -> float {
               using N = latter_ui::UiNumberId;
-              auto rd = [](auto *num) -> float { return num != nullptr ? num->state : 0.0f; };
+              const auto &p = latter_ui::persisted_prefs();
               switch (nid) {
-                case N::VOLUME_STEP_SIZE: return rd(id(volume_step_size));
-                case N::SPEAKER_VOLUME: return rd(id(speaker_volume));
-                case N::ALERT_VOLUME: return rd(id(alert_volume));
-                case N::DAY_START_HOUR: return rd(id(day_start_hour));
-                case N::NIGHT_START_HOUR: return rd(id(night_start_hour));
+                case N::VOLUME_STEP_SIZE: return static_cast<float>(p.volume_step_size);
+                case N::SPEAKER_VOLUME: {
+                  const float v = id(latter_media_player).volume;
+                  if (!std::isnan(v) && v >= 0.0f && v <= 1.0f) return std::round(v * 100.0f);
+                  return static_cast<float>(p.speaker_volume_pct);
+                }
+                case N::ALERT_VOLUME: return static_cast<float>(p.alert_volume);
+                case N::DAY_START_HOUR: return static_cast<float>(p.day_start_hour);
+                case N::NIGHT_START_HOUR: return static_cast<float>(p.night_start_hour);
               }
               return 0.0f;
             };
 
             rt.set_number = +[](latter_ui::UiNumberId nid, float val) {
               using N = latter_ui::UiNumberId;
-              auto wr = [](auto *num, float v, float lo, float hi) {
-                if (num == nullptr) return;
-                const float cl = std::clamp(v, lo, hi);
-                auto call = num->make_call();
-                call.set_value(cl);
-                call.perform();
-              };
+              using K = latter_ui::PrefKey;
+              if (nid == N::SPEAKER_VOLUME) {
+                const int cl_pct = std::clamp(static_cast<int>(std::lround(val)), 10, 100);
+                auto &p = latter_ui::persisted_prefs();
+                if (p.speaker_volume_pct != static_cast<uint8_t>(cl_pct)) {
+                  p.speaker_volume_pct = static_cast<uint8_t>(cl_pct);
+                  latter_ui::schedule_persisted_prefs_save(millis());
+                }
+                const float target_v = static_cast<float>(cl_pct) / 100.0f;
+                id(latter_media_player).volume = target_v;
+                id(latter_media_player).make_call().set_volume(target_v).perform();
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(target_v));
+                if (latter_ui::runtime_state().nav.display_power_state == 0) {
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+                return;
+              }
+              K pk = K::COUNT;
+              int cl_val = static_cast<int>(std::lround(val));
               switch (nid) {
-                case N::VOLUME_STEP_SIZE: wr(id(volume_step_size), val, 1.0f, 10.0f); break;
-                case N::SPEAKER_VOLUME: wr(id(speaker_volume), val, 10.0f, 100.0f); break;
-                case N::ALERT_VOLUME: wr(id(alert_volume), val, 20.0f, 100.0f); break;
-                case N::DAY_START_HOUR: wr(id(day_start_hour), val, 0.0f, 23.0f); break;
-                case N::NIGHT_START_HOUR: wr(id(night_start_hour), val, 0.0f, 23.0f); break;
+                case N::VOLUME_STEP_SIZE: pk = K::VOLUME_STEP_SIZE; cl_val = std::clamp(cl_val, 1, 10); break;
+                case N::SPEAKER_VOLUME: break;
+                case N::ALERT_VOLUME: pk = K::ALERT_VOLUME; cl_val = std::clamp(cl_val, 20, 100); break;
+                case N::DAY_START_HOUR: pk = K::DAY_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
+                case N::NIGHT_START_HOUR: pk = K::NIGHT_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
+              }
+              if (pk == K::COUNT) return;
+              uint32_t eff = 0;
+              const std::string val_str = std::to_string(cl_val);
+              if (latter_actions::record_local_pref_edit(pk, val_str, millis(), eff)) {
+                latter_ui::device_prefs_state().last_effects = eff;
+                id(apply_device_prefs_effects).execute();
               }
             };
+          }
+
+  - id: apply_device_prefs_effects
+    mode: restart
+    then:
+      - lambda: |-
+          const uint32_t eff = latter_ui::device_prefs_state().last_effects;
+          latter_ui::device_prefs_state().last_effects = 0;
+          const auto &rs = latter_ui::runtime_state();
+          const auto &p = latter_ui::persisted_prefs();
+          if (eff & latter_ui::kPrefEffectWakeWordSync) {
+            id(sync_wake_word_state).execute();
+            if (std::string_view(latter_ui::pref_wake_word_mode_cstr(p)) == "Disabled" &&
+                id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING &&
+                !rs.voice.active) {
+              id(media_idle_finish).execute();
+            }
+          }
+          if (eff & latter_ui::kPrefEffectWakeWordSens) {
+            id(apply_wake_word_sensitivities).execute();
+          }
+          if (eff & latter_ui::kPrefEffectThemePreset) {
+            id(apply_theme_preset).execute();
+          }
+          if (eff & latter_ui::kPrefEffectBrightness) {
+            id(sync_display_brightness).execute();
+          }
+          if (eff & latter_ui::kPrefEffectDockedSaverOff) {
+            if (rs.nav.display_power_state == 1) {
+              #if LATTER_IS_STATIONARY
+              id(wake_to_active_state).execute();
+              #else
+              id(turn_screen_off).execute();
+              #endif
+            }
+          }
+          if (eff & latter_ui::kPrefEffectSleepTimer) {
+            if (rs.nav.display_power_state == 0) {
+              id(screen_sleep_timer).execute();
+            }
+          }
+          if (eff & latter_ui::kPrefEffectPowerPolicy) {
+            id(apply_power_policy).execute();
+          }
+          if ((eff & latter_ui::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
+            latter_ui::weather_sim_dirty() = true;
+            latter_ui::record_ambient_frame_ms(0);
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+
+  - id: toggle_find_my_device
+    mode: restart
+    then:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          if (!rs.alarms.find_my_active) {
+            if (rs.voice.active || !rs.voice.status_text.empty()) {
+              id(cancel_voice_assistant).execute();
+            }
+            rs.alarms.find_my_active = true;
+            rs.alarms.find_my_start_ms = millis();
+            latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
+            id(wake_to_active_state).execute();
+            id(play_alarm_sound).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+          } else {
+            rs.alarms.find_my_active = false;
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            id(screen_sleep_timer).execute();
           }
 
   - id: ui_input_event
@@ -980,11 +1147,12 @@ script:
     mode: restart
     then:
       - lambda: |-
-          std::string p = std::string(id(theme_palette_select).current_option());
+          const auto &prefs = latter_ui::persisted_prefs();
+          const std::string_view p = latter_ui::pref_color_profile_cstr(prefs);
           id(theme_secondary) = Color(192, 192, 192);
           if (p == "Custom") {
             latter_ui::apply_custom_rgb_harmony(
-                latter_ui::persisted_prefs().custom_theme_rgb, id(theme_primary), id(theme_secondary));
+                prefs.custom_theme_rgb, id(theme_primary), id(theme_secondary));
           } else if (p == "Pink") {
             id(theme_primary) = Color(168, 120, 132);
           } else if (p == "Green") {
@@ -1010,7 +1178,8 @@ script:
     then:
       - lambda: |-
           const auto &rs = latter_ui::runtime_state();
-          auto parse_bri = [](const std::string& opt) -> float {
+          const auto &prefs = latter_ui::persisted_prefs();
+          auto parse_bri = [](std::string_view opt) -> float {
             if (opt == "60%") return 0.60f;
             if (opt == "70%") return 0.70f;
             if (opt == "80%") return 0.80f;
@@ -1020,18 +1189,18 @@ script:
           };
 
           float b_target = 0.90f;
-          std::string mode = id(auto_brightness_mode).current_option();
+          const std::string_view mode = latter_ui::pref_auto_brightness_mode_cstr(prefs);
 
           if (mode == "Sun Synchronized") {
-            std::string sun = latter_ui::weather_state().sun_state;
-            bool is_night = (sun == "below_horizon");
-            std::string opt = is_night ? id(night_brightness_preset).current_option()
-                                       : id(day_brightness_preset).current_option();
+            const std::string &sun = latter_ui::weather_state().sun_state;
+            const bool is_night = (sun == "below_horizon");
+            const std::string_view opt = is_night ? latter_ui::pref_night_brightness_cstr(prefs)
+                                                  : latter_ui::pref_day_brightness_cstr(prefs);
             b_target = parse_bri(opt);
           } else if (mode == "Time Schedule") {
             auto now = id(ha_time).now();
-            int day_h = static_cast<int>(id(day_start_hour).state);
-            int night_h = static_cast<int>(id(night_start_hour).state);
+            const int day_h = static_cast<int>(prefs.day_start_hour);
+            const int night_h = static_cast<int>(prefs.night_start_hour);
             bool is_day = true;
             if (now.is_valid()) {
               if (day_h < night_h) {
@@ -1040,12 +1209,11 @@ script:
                 is_day = (now.hour >= day_h || now.hour < night_h);
               }
             }
-            std::string opt = is_day ? id(day_brightness_preset).current_option()
-                                     : id(night_brightness_preset).current_option();
+            const std::string_view opt = is_day ? latter_ui::pref_day_brightness_cstr(prefs)
+                                                : latter_ui::pref_night_brightness_cstr(prefs);
             b_target = parse_bri(opt);
           } else {
-            std::string opt = id(display_brightness_preset).current_option();
-            b_target = parse_bri(opt);
+            b_target = parse_bri(latter_ui::pref_manual_brightness_cstr(prefs));
           }
 
           if ((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 5) || rs.alarms.find_my_active) {
@@ -1061,7 +1229,7 @@ script:
   - id: apply_default_start_page
     then:
       - lambda: |-
-          auto def_app = id(default_start_app).current_option();
+          const std::string_view def_app = latter_ui::pref_start_screen_cstr();
           latter_ui::runtime_state().nav.gui_page = (def_app == "Clock") ? 0 : 1;
 
   - id: trigger_firmware_update

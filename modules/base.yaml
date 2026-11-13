@@ -31,7 +31,9 @@ esphome:
   on_boot:
     - priority: -100
       then:
-        - lambda: 'latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));'
+        - lambda: |-
+            latter_ui::ensure_persisted_prefs_loaded();
+            latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
 
 # Client-initiated dial-back (outgoing_connection -> HA TCP :6054, Noise PSK verified on both sides):
 # ESPHome 2026.11 only skips the 60 s default delay under USE_DEEP_SLEEP, whereas Latter battery
@@ -96,10 +98,29 @@ api:
               parsed = latter_ui::parse_v3_weather_payload(sv_pay, latter_ui::weather_state());
             } else if (sv_dom == "calendar_agenda") {
               parsed = latter_ui::parse_v3_calendar_payload(sv_pay, latter_ui::calendar_state());
+            } else if (sv_dom == "device_prefs") {
+              uint32_t eff_mask = 0;
+              parsed = latter_ui::parse_v3_device_prefs_payload(sv_pay, eff_mask, millis());
+              latter_ui::device_prefs_state().last_effects = eff_mask;
             }
             auto &rs = latter_ui::runtime_state();
             if (parsed && rs.on_v3_domain_pushed != nullptr) {
               rs.on_v3_domain_pushed(sv_dom, prev_dock);
+            }
+
+    - action: latter_device_command
+      id: latter_device_command_action
+      variables:
+        command: string
+      then:
+        - lambda: |-
+            const std::string_view sv_cmd(command.c_str(), command.size());
+            auto &rs = latter_ui::runtime_state();
+            if (rs.on_device_command != nullptr) {
+              rs.on_device_command(sv_cmd);
+            } else if (sv_cmd == "restart") {
+              latter_ui::flush_persisted_prefs_if_dirty();
+              App.safe_reboot();
             }
 
 # Publish device_hello over the bound System: RPC Outbox text_sensor once Home Assistant has subscribed
@@ -117,6 +138,7 @@ script:
       - lambda: |-
           latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
           latter_actions::emit_device_hello();
+          latter_actions::check_and_emit_timer_alarm_state(millis(), true);
 
 time:
   - platform: homeassistant
