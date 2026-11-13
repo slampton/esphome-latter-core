@@ -152,131 +152,238 @@ void render_3d_die(esphome::display::Display &it, int cx_d, int cy_d, int sz, in
   render_die_face_pips(it, cx_d, cy_d, val, spread, pip_r, pip_c, col_white);
 }
 
-void draw_tools_card_icon(esphome::display::Display &it, int app_id, int ix, int iy,
-                          const UiFrameContext &ctx) {
+void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int cy_card,
+                               int app_id, const char *label, const UiFrameContext &ctx) {
   using esphome::Color;
-  const Color surf_bg = ui::chrome_card_bg_off();
+  using esphome::display::TextAlign;
+
+  const int card_w = (SCREEN_W < 380) ? 110 : 122;
+  const Color surf_bg = render_modern_card(
+      it, cx_card, cy_card, card_w, 86, 14,
+      kChromeGlassTint, kChromeCardBorder, nullptr, ctx.col_white, ctx.font_small);
+
+  const Color col_white = ctx.col_white;
+  const Color theme_secondary = ctx.theme_secondary;
+  const int ix = cx_card;
+  const int iy = cy_card - scale_y(13);
+  const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
+  auto S = [](int v466) constexpr -> int { return scale_s(v466); };
+
   if (app_id == ToolsSubpage::TIMERS) {
-    ui::draw_icon_hourglass(it, ix, iy, ctx.col_gold, ctx.col_white, 13);
+    // 1. Timers: 2px-stroke hourglass with solid filled upper/lower sand bulbs
+    fill_rect_row_major(it, ix - S(11), iy - S(14), 2 * S(11) + 1, thick, col_white);
+    fill_rect_row_major(it, ix - S(11), iy + S(13), 2 * S(11) + 1, thick, col_white);
+    for (int t = 0; t < thick; t++) {
+      fast_line(it, ix - S(9) + t, iy - S(12), ix - S(2) + t, iy, col_white);
+      fast_line(it, ix + S(9) - t, iy - S(12), ix + S(2) - t, iy, col_white);
+      fast_line(it, ix - S(2) + t, iy, ix - S(9) + t, iy + S(12), col_white);
+      fast_line(it, ix + S(2) - t, iy, ix + S(9) - t, iy + S(12), col_white);
+    }
+    fast_filled_triangle(it, ix - S(5), iy - S(7), ix + S(5), iy - S(7), ix, iy - S(2), col_white);
+    fast_line(it, ix, iy - S(2), ix, iy + S(4), theme_secondary);
+    fast_filled_triangle(it, ix - S(6), iy + S(11), ix + S(6), iy + S(11), ix, iy + S(4), col_white);
+
   } else if (app_id == ToolsSubpage::ALARMS) {
-    ui::draw_icon_alarm_clock(it, ix, iy + 2, ctx.theme_secondary, surf_bg, 11);
+    // 2. Alarms: Twin solid filled bells, 2px clock bezel, angled legs & 2px hands
+    fast_filled_circle(it, ix - S(10), iy - S(9), S(4), col_white);
+    fast_filled_circle(it, ix + S(10), iy - S(9), S(4), col_white);
+    fast_filled_circle(it, ix, iy + S(2), S(14), surf_bg);
+    for (int t = 0; t < thick; t++) {
+      fast_circle(it, ix, iy + S(2), S(12) - t, col_white);
+      fast_line(it, ix - S(8) + t, iy + S(12), ix - S(11) + t, iy + S(16), col_white);
+      fast_line(it, ix + S(8) - t, iy + S(12), ix + S(11) - t, iy + S(16), col_white);
+      fast_line(it, ix + t, iy + S(2), ix + t, iy - S(5), col_white);
+      fast_line(it, ix, iy + S(2) + t, ix + S(5), iy + S(5) + t, col_white);
+    }
+    fast_filled_circle(it, ix, iy + S(2), S(2), col_white);
+
   } else if (app_id == ToolsSubpage::STOPWATCH) {
-    ui::draw_icon_stopwatch(it, ix, iy + 2, ctx.col_cyan, ctx.col_gold, 11);
-  } else if (app_id == ToolsSubpage::LEVEL) {
-    fast_circle(it, ix, iy, 12, ctx.col_green);
-    fast_circle(it, ix, iy, 11, ctx.col_green);
-    fast_hline(it, ix - 14, iy, 29, scale_color(ctx.col_slate, 0.7f));
-    fast_vline(it, ix, iy - 14, 29, scale_color(ctx.col_slate, 0.7f));
-    fast_filled_circle(it, ix + 2, iy - 2, 4, ctx.col_gold);
-    fast_pixel(it, ix + 1, iy - 3, ctx.col_white);
+    // 3. Stopwatch: 2px chronometer bezel, bold top crown, angled pusher & 2px sweep hand
+    fill_rect_row_major(it, ix - S(4), iy - S(16), 2 * S(4) + 1, thick, col_white);
+    fill_rect_row_major(it, ix - S(1), iy - S(16) + thick, 2 * S(1) + 1, S(4), col_white);
+    for (int t = 0; t < thick; t++) {
+      fast_line(it, ix + S(9) + t, iy - S(8) + t, ix + S(13) + t, iy - S(12) + t, col_white);
+      fast_circle(it, ix, iy + S(2), S(12) - t, col_white);
+    }
+    fast_line(it, ix, iy - S(8), ix, iy - S(6), theme_secondary);
+    fast_line(it, ix, iy + S(10), ix, iy + S(12), theme_secondary);
+    fast_line(it, ix - S(10), iy + S(2), ix - S(8), iy + S(2), theme_secondary);
+    fast_line(it, ix + S(8), iy + S(2), ix + S(10), iy + S(2), theme_secondary);
+    fast_filled_circle(it, ix, iy + S(2), S(2), col_white);
+    for (int t = 0; t < thick; t++) {
+      fast_line(it, ix + t, iy + S(2), ix + S(6), iy - S(4) + t, col_white);
+    }
+
+  } else if (app_id == ToolsSubpage::DICE) {
+    // 4. Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips
+    const int d_r = S(5);
+    const int x0 = ix - S(13);
+    const int y0 = iy - S(13);
+    const int s = 2 * S(13) + 1;
+    fill_rect_row_major(it, x0 + d_r, y0, s - 2 * d_r, s, col_white);
+    fill_rect_row_major(it, x0, y0 + d_r, s, s - 2 * d_r, col_white);
+    fast_filled_circle(it, x0 + d_r, y0 + d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + d_r, y0 + s - 1 - d_r, d_r, col_white);
+    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + s - 1 - d_r, d_r, col_white);
+    fast_filled_circle(it, ix, iy, S(2), surf_bg);
+    fast_filled_circle(it, ix - S(7), iy - S(7), S(2), surf_bg);
+    fast_filled_circle(it, ix + S(7), iy - S(7), S(2), surf_bg);
+    fast_filled_circle(it, ix - S(7), iy + S(7), S(2), surf_bg);
+    fast_filled_circle(it, ix + S(7), iy + S(7), S(2), surf_bg);
+
   } else if (app_id == ToolsSubpage::FLASHLIGHT) {
-    fill_rect_row_major(it, ix - 4, iy - 2, 9, 13, ctx.col_slate);
-    fast_filled_triangle(it, ix - 8, iy - 7, ix + 8, iy - 7, ix + 4, iy - 2, ctx.col_gold);
-    fast_filled_triangle(it, ix - 8, iy - 7, ix - 4, iy - 2, ix + 4, iy - 2, ctx.col_gold);
-    fast_hline(it, ix - 8, iy - 8, 17, ctx.col_white);
-    fast_line(it, ix - 5, iy - 11, ix - 9, iy - 15, ctx.col_gold);
-    fast_vline(it, ix, iy - 16, 5, ctx.col_gold);
-    fast_line(it, ix + 5, iy - 11, ix + 9, iy - 15, ctx.col_gold);
+    // 5. Flashlight: Solid filled sculpted torch body & reflector head + 3 bold light beams
+    fast_filled_triangle(it, ix - S(9), iy - S(7), ix + S(9), iy - S(7), ix - S(5), iy - S(1), col_white);
+    fast_filled_triangle(it, ix + S(9), iy - S(7), ix - S(5), iy - S(1), ix + S(5), iy - S(1), col_white);
+    fill_rect_row_major(it, ix - S(5), iy + S(1), 2 * S(5) + 1, S(14), col_white);
+    fast_filled_circle(it, ix, iy + S(14), S(5), col_white);
+    fill_rect_row_major(it, ix - S(1), iy + S(5), 2 * S(1) + 1, S(5), surf_bg);
+    for (int t = 0; t < thick; t++) {
+      fast_line(it, ix + t, iy - S(10), ix + t, iy - S(16), col_white);
+      fast_line(it, ix - S(6) + t, iy - S(10), ix - S(9) + t, iy - S(15), col_white);
+      fast_line(it, ix + S(6) - t, iy - S(10), ix + S(9) - t, iy - S(15), col_white);
+    }
+
   } else if (app_id == ToolsSubpage::CALCULATOR) {
-    render_rounded_rect(it, ix - 11, iy - 13, 22, 26, 4, ctx.col_slate);
-    fill_rect_row_major(it, ix - 8, iy - 10, 16, 6, surf_bg);
-    for (int gr = 0; gr < 2; gr++) {
-      for (int gc = 0; gc < 3; gc++) {
-        const Color kc = (gc == 2) ? ctx.col_orange : ctx.col_white;
-        fill_rect_row_major(it, ix - 8 + gc * 6, iy - 1 + gr * 6, 4, 4, kc);
+    // 6. Calculator: 2px frame, solid LCD display bar & 3x2 grid of solid keypad pills
+    const int cw = 2 * S(12) + 1;
+    const int ch = 2 * S(15) + 1;
+    for (int t = 0; t < thick; t++) {
+      fast_rect_outline(it, ix - S(12) + t, iy - S(15) + t, cw - 2 * t, ch - 2 * t, col_white);
+    }
+    fill_rect_row_major(it, ix - S(8), iy - S(11), 2 * S(8) + 1, S(6), col_white);
+    for (int r = 0; r < 2; r++) {
+      const int ky = iy - S(1) + r * S(6);
+      fill_rect_row_major(it, ix - S(8), ky, S(4), S(3), col_white);
+      fill_rect_row_major(it, ix - S(2), ky, S(4), S(3), col_white);
+      fill_rect_row_major(it, ix + S(4), ky, S(4), S(3), col_white);
+    }
+    fill_rect_row_major(it, ix - S(8), iy + S(10), S(4), thick, col_white);
+    fill_rect_row_major(it, ix - S(2), iy + S(10), S(10), thick, col_white);
+
+  } else if (app_id == ToolsSubpage::LEVEL) {
+    // 7. Bubble Level: 2px outer ring, cardinal crosshairs, inner ring & solid center bubble
+    for (int t = 0; t < thick; t++) {
+      fast_circle(it, ix, iy, S(14) - t, col_white);
+      fast_line(it, ix + t, iy - S(17), ix + t, iy - S(13), col_white);
+      fast_line(it, ix + t, iy + S(13), ix + t, iy + S(17), col_white);
+      fast_line(it, ix - S(17), iy + t, ix - S(13), iy + t, col_white);
+      fast_line(it, ix + S(13), iy + t, ix + S(17), iy + t, col_white);
+    }
+    fast_circle(it, ix, iy, S(7), theme_secondary);
+    fast_filled_circle(it, ix, iy, S(4), col_white);
+
+  } else if (app_id == ToolsSubpage::COIN_FLIP) {
+    // 8. Coin Flip: 2px outer medallion rim, inner struck ring & solid house emblem
+    for (int t = 0; t < thick; t++) {
+      fast_circle(it, ix, iy, S(15) - t, col_white);
+    }
+    fast_circle(it, ix, iy, S(11), theme_secondary);
+    fast_filled_triangle(it, ix - S(7), iy, ix + S(7), iy, ix, iy - S(7), col_white);
+    fill_rect_row_major(it, ix - S(5), iy, 2 * S(5) + 1, S(7), col_white);
+    fast_filled_circle(it, ix, iy + S(1), S(2), surf_bg);
+    fast_line(it, ix, iy + S(3), ix, iy + S(6), surf_bg);
+
+  } else if (app_id == ToolsSubpage::CALENDAR) {
+    // 9. Calendar: 2px page frame, solid header band, twin binder rings & 3x2 date pips
+    const int cal_w = 2 * S(13) + 1;
+    const int cal_h = S(26);
+    for (int t = 0; t < thick; t++) {
+      fast_rect_outline(it, ix - S(13) + t, iy - S(12) + t, cal_w - 2 * t, cal_h - 2 * t, col_white);
+    }
+    fill_rect_row_major(it, ix - S(13) + 1, iy - S(12) + 1, cal_w - 2, S(6), col_white);
+    fill_rect_row_major(it, ix - S(7), iy - S(15), S(3), S(5), col_white);
+    fill_rect_row_major(it, ix + S(5), iy - S(15), S(3), S(5), col_white);
+    for (int r = 0; r < 2; r++) {
+      for (int c = 0; c < 3; c++) {
+        fill_rect_row_major(it, ix - S(8) + c * S(7), iy - S(1) + r * S(6), S(3), S(3),
+                            (r == 0 && c == 1) ? theme_secondary : col_white);
       }
     }
-  } else if (app_id == ToolsSubpage::DICE) {
-    render_rounded_rect(it, ix - 12, iy - 12, 24, 24, 5, ctx.col_white);
-    fast_filled_circle(it, ix - 6, iy - 6, 2, surf_bg);
-    fast_filled_circle(it, ix + 6, iy - 6, 2, surf_bg);
-    fast_filled_circle(it, ix, iy, 2, ctx.col_red);
-    fast_filled_circle(it, ix - 6, iy + 6, 2, surf_bg);
-    fast_filled_circle(it, ix + 6, iy + 6, 2, surf_bg);
-  } else if (app_id == ToolsSubpage::COIN_FLIP) {
-    fast_filled_circle(it, ix, iy, 12, ctx.col_gold);
-    fast_circle(it, ix, iy, 12, ctx.col_white);
-    fast_circle(it, ix, iy, 9, Color(185, 135, 18));
-    fast_vline(it, ix, iy - 6, 13, ctx.col_white);
-    fast_hline(it, ix - 3, iy - 4, 7, ctx.col_white);
-    fast_hline(it, ix - 3, iy, 7, ctx.col_white);
-    fast_hline(it, ix - 3, iy + 4, 7, ctx.col_white);
-  } else if (app_id == ToolsSubpage::CALENDAR) {
-    ui::draw_icon_calendar(it, ix, iy, ctx.col_white, ctx.col_red, 11);
+
   } else if (app_id == ToolsSubpage::INTERCOM) {
-    ui::draw_icon_speaker(it, ix - 2, iy, ctx.col_cyan, true);
+    // 10. Intercom: Solid filled megaphone horn + handle & 2 radiating acoustic wave arcs
+    fill_rect_row_major(it, ix - S(12), iy - S(3), S(5), S(7), col_white);
+    fast_filled_triangle(it, ix - S(7), iy - S(3), ix - S(7), iy + S(3), ix + S(4), iy + S(10), col_white);
+    fast_filled_triangle(it, ix - S(7), iy - S(3), ix + S(4), iy + S(10), ix + S(4), iy - S(10), col_white);
+    fill_rect_row_major(it, ix - S(8), iy + S(4), S(3), S(6), theme_secondary);
+    fast_line(it, ix + S(8), iy - S(5), ix + S(10), iy, col_white);
+    fast_line(it, ix + S(10), iy, ix + S(8), iy + S(5), col_white);
+    fast_line(it, ix + S(11), iy - S(8), ix + S(14), iy, theme_secondary);
+    fast_line(it, ix + S(14), iy, ix + S(11), iy + S(8), theme_secondary);
+
   } else if (app_id == ToolsSubpage::CAMERAS) {
-    ui::draw_icon_camera(it, ix, iy, ctx.col_green, surf_bg, 11);
+    // 12. Camera: Sculpted camera body, top prism & dual-ring lens
+    fill_rect_row_major(it, ix - S(13), iy - S(8), S(26), S(19), col_white);
+    fill_rect_row_major(it, ix - S(5), iy - S(12), S(10), S(4), col_white);
+    fast_filled_circle(it, ix, iy + S(1), S(7), surf_bg);
+    fast_circle(it, ix, iy + S(1), S(5), theme_secondary);
+    fast_filled_circle(it, ix, iy + S(1), S(2), col_white);
+    fast_filled_circle(it, ix + S(9), iy - S(5), S(1), surf_bg);
   }
+
+  fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, ctx.font_small, kChromeShadow,
+             TextAlign::CENTER, label);
+  fast_print(it, cx_card, cy_card + scale_y(22), ctx.font_small, col_white,
+             TextAlign::CENTER, label);
 }
 
 void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs) {
-  using esphome::display::TextAlign;
-
   struct ToolItemDef {
     int id;
     const char *label;
   };
 #if LATTER_HAS_IMU
   static constexpr ToolItemDef kPage0[3][2] = {
-      {{ToolsSubpage::TIMERS, "Timers"},     {ToolsSubpage::ALARMS, "Alarms"}},
-      {{ToolsSubpage::STOPWATCH, "Chrono"},  {ToolsSubpage::LEVEL, "Level"}},
-      {{ToolsSubpage::FLASHLIGHT, "Light"},  {ToolsSubpage::CALCULATOR, "Calc"}},
+      {{ToolsSubpage::TIMERS, "Timers"},         {ToolsSubpage::ALARMS, "Alarms"}},
+      {{ToolsSubpage::STOPWATCH, "Stopwatch"},   {ToolsSubpage::LEVEL, "Level"}},
+      {{ToolsSubpage::FLASHLIGHT, "Flashlight"}, {ToolsSubpage::CALCULATOR, "Calculator"}},
   };
   static constexpr ToolItemDef kPage1[3][2] = {
-      {{ToolsSubpage::DICE, "Dice"},         {ToolsSubpage::COIN_FLIP, "Flip"}},
-      {{ToolsSubpage::CALENDAR, "Agenda"},   {ToolsSubpage::INTERCOM, "Intercom"}},
-      {{ToolsSubpage::CAMERAS, "Cameras"},   {0, ""}},
+      {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
+      {{ToolsSubpage::CALENDAR, "Calendar"},     {ToolsSubpage::INTERCOM, "Intercom"}},
+      {{ToolsSubpage::CAMERAS, "Camera"},        {0, ""}},
   };
 #else
   static constexpr ToolItemDef kPage0[3][2] = {
-      {{ToolsSubpage::TIMERS, "Timers"},     {ToolsSubpage::ALARMS, "Alarms"}},
-      {{ToolsSubpage::STOPWATCH, "Chrono"},  {ToolsSubpage::FLASHLIGHT, "Light"}},
-      {{ToolsSubpage::CALCULATOR, "Calc"},   {ToolsSubpage::CALENDAR, "Agenda"}},
+      {{ToolsSubpage::TIMERS, "Timers"},         {ToolsSubpage::ALARMS, "Alarms"}},
+      {{ToolsSubpage::STOPWATCH, "Stopwatch"},   {ToolsSubpage::FLASHLIGHT, "Flashlight"}},
+      {{ToolsSubpage::CALCULATOR, "Calculator"}, {ToolsSubpage::CALENDAR, "Calendar"}},
   };
   static constexpr ToolItemDef kPage1[3][2] = {
-      {{ToolsSubpage::INTERCOM, "Intercom"}, {ToolsSubpage::CAMERAS, "Cameras"}},
-      {{ToolsSubpage::DICE, "Dice"},         {ToolsSubpage::COIN_FLIP, "Flip"}},
-      {{0, ""},                              {0, ""}},
+      {{ToolsSubpage::INTERCOM, "Intercom"},     {ToolsSubpage::CAMERAS, "Camera"}},
+      {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
+      {{0, ""},                                  {0, ""}},
   };
 #endif
 
   const auto &ly = layout();
-  const bool compact_w = (SCREEN_W < 380);
-  const int card_w = compact_w ? ((SCREEN_W - 30) / 2) : scale_x(138);
-  const int card_h = std::min(78, ly.tools_row_stride - 10);
+  const int raw_w = (SCREEN_W < 380) ? 110 : 122;
+  const int eff_w = (SCREEN_W > 520) ? scale_x(raw_w) : raw_w;
+  const int eff_h = (SCREEN_W > 520) ? scale_y(86) : 86;
   const int col_cx[2] = {ctx.cx - ly.tools_col_off, ctx.cx + ly.tools_col_off};
   const int row_cy[3] = {ly.tools_row_y(0), ly.tools_row_y(1), ly.tools_row_y(2)};
+  const int min_vis_y = scale_y(75);
+  const int max_vis_y = scale_y(395);
 
   auto draw_grid_for_page = [&](int pg_idx, int y_shift, bool register_hits) {
     const auto &grid = (pg_idx == 0) ? kPage0 : kPage1;
     for (int r = 0; r < 3; r++) {
       const int cy_card = row_cy[r] + y_shift;
-      if (cy_card < scale_y(78) || cy_card > scale_y(412)) continue;
+      if (cy_card < min_vis_y || cy_card > max_vis_y) continue;
       for (int c = 0; c < 2; c++) {
         const int app_id = grid[r][c].id;
         if (app_id == 0) continue;
         const int cx_card = col_cx[c];
-        const int rx = cx_card - card_w / 2;
-        const int ry = cy_card - card_h / 2;
-
-        render_rounded_rect(it, rx + 2, ry + 3, card_w, card_h, 16, kChromeShadow);
-        render_card_box(it, rx, ry, card_w, card_h,
-                           ui::chrome_card_bg_off(), ui::chrome_card_brd_on(), 16);
-
-        const int ix = compact_w ? (rx + 22) : (cx_card - 40);
-        const int tx = compact_w ? (rx + 42) : (cx_card - 16);
-        draw_tools_card_icon(it, app_id, ix, cy_card, ctx);
-        fast_print(it, tx, cy_card, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT,
-                   grid[r][c].label);
-
+        render_tool_launcher_card(it, cx_card, cy_card, app_id, grid[r][c].label, ctx);
         if (register_hits) {
           const uint16_t slot = static_cast<uint16_t>(r * 2 + c);
-          frame_hits().add_rect(rx, ry, card_w, card_h,
-                                WidgetId::TOOLS_CARD_BASE + slot,
-                                kHitTap | kHitFocusSlot,
-                                static_cast<int16_t>(app_id));
+          frame_hits().add_centered_rect(cx_card, cy_card, eff_w, eff_h,
+                                         WidgetId::TOOLS_CARD_BASE + slot,
+                                         kHitTap | kHitFocusSlot,
+                                         static_cast<int16_t>(app_id));
         }
       }
     }
@@ -284,7 +391,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
 
   const int cur_pg = (rs.nav.tools_menu_page == 0) ? 0 : 1;
   if (rs.nav.menu_scroll_active) {
-    const int full_span = scale_y(264);
+    const int full_span = scale_y(252);
     const int offset = menu_scroll_shift(full_span);
     const int out_dy = -rs.nav.menu_scroll_dir * offset;
     const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
@@ -295,13 +402,17 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     draw_grid_for_page(cur_pg, 0, true);
   }
 
-  render_page_header(it, ctx.cx, "TOOLS", ctx.font_btn_bold, ctx.theme_primary, true);
+  if (rs.nav.menu_scroll_active && !backdrop_active()) {
+    fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), ctx.col_bg);
+    fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
+  }
+
+  render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
   const int active_pip_pg = rs.nav.menu_scroll_active
                                 ? ((rs.nav.menu_scroll_target_page == 0) ? 0 : 1)
                                 : cur_pg;
   render_vertical_page_pips(it, active_pip_pg == 1, active_pip_pg == 0,
                             ctx.col_bg, ctx.col_white, kChromePipInactive);
-  render_home_indicator_bar(it, ctx.cx);
 }
 
 void render_timers_subpage(esphome::display::Display &it, const UiFrameContext &ctx) {
