@@ -577,6 +577,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   gest.sample_count = 1;
   gest.start_ms = now_touch;
   gest.last_touch_ms = now_touch;
+  last_user_touch_ms() = now_touch;
 
   // Priority 1: Alarm / Timer / Find-My Ringing Takeover (above Voice Assistant!)
   if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active) {
@@ -2120,6 +2121,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   auto &rs = runtime_state();
   auto &prefs = persisted_prefs();
   gest.last_touch_ms = now_u;
+  last_user_touch_ms() = now_u;
 
   if (rs.nav.display_power_state == 0 && !rs.voice.active &&
       (now_u - last_drag_sleep_rst_ms_ >= 2000U)) {
@@ -3384,6 +3386,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   }
 
   rt_.cmd(UiHostCmd::SCREEN_SLEEP_TIMER);
+  last_user_touch_ms() = now_in;
   activate_ui_focus(now_in);
 
   // Voice Assistant cancels immediately on any hardware input

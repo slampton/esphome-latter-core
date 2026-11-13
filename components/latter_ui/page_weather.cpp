@@ -619,7 +619,8 @@ const CloudShape *cloud_shape_get(int half_w, float scale, int seed) {
 int floor_div_int(int a, int b) { return (a >= 0) ? (a / b) : -((-a + b - 1) / b); }
 int ceil_div_int(int a, int b) { return -floor_div_int(-a, b); }
 
-void render_cumulus_cloud(esphome::display::Display &it, int bx, int by, float scale, bool overcast_mode, bool is_night) {
+void render_cumulus_cloud(esphome::display::Display &it, int bx, int by, float scale,
+                          bool overcast_mode, bool is_night, int cloud_seed = -1) {
   if (SCREEN_W > 520) {
     scale *= (static_cast<float>(SCREEN_W) / 466.0f);
     by = scale_y(by);
@@ -633,33 +634,50 @@ void render_cumulus_cloud(esphome::display::Display &it, int bx, int by, float s
   esphome::Color col_body   = is_night ? esphome::Color( 24,  34,  46) : (overcast_mode ? esphome::Color( 42,  60,  82) : esphome::Color( 58,  82, 112));
   esphome::Color col_shadow = is_night ? esphome::Color( 14,  20,  28) : (overcast_mode ? esphome::Color( 24,  38,  56) : esphome::Color( 36,  54,  76));
 
+  const int eff_seed = (cloud_seed >= 0)
+                           ? (cloud_seed & 7)
+                           : ((static_cast<int>(std::lround(scale * 100.0f)) * 5 + (overcast_mode ? 3 : 0)) & 7);
   float inv_hw = 1.0f / static_cast<float>(half_w);
-  float phase_seed = static_cast<float>((bx / 13) & 7) * 0.85f;
+  float phase_seed = static_cast<float>(eff_seed) * 0.85f;
 
   static constexpr int kColStep = (SCREEN_W > 520) ? 3 : 2;
 
-#if !LATTER_ROUND_DISPLAY
-  if (const CloudShape *shape = cloud_shape_get<kColStep>(half_w, scale, (bx / 13) & 7)) {
-    if (by + shape->y_min >= 5 && by + shape->y_max <= SCREEN_H - 6) {
-      const esphome::Color pal[6] = {esphome::Color(0, 0, 0), col_rim, col_crest, col_high, col_body, col_shadow};
+  if (const CloudShape *shape = cloud_shape_get<kColStep>(half_w, scale, eff_seed)) {
+    if (by + shape->y_max >= 5 && by + shape->y_min <= SCREEN_H - 6) {
+      const esphome::Color pal[6] = {kChromeShadow, col_rim, col_crest, col_high, col_body, col_shadow};
       uint16_t pal_hw[6];
       for (int k = 0; k < 6; k++) pal_hw[k] = encode_hw_rgb565(pal[k]);
       uint16_t *fb_c = active_frame_buf16();
-      // Columns the direct raster keeps: x >= 5 and x + kColStep < SCREEN_W - 5.
       const int x_first = bx - half_w;
+#if LATTER_ROUND_DISPLAY
+      for (int i = 0; i < shape->count; i++) {
+        const CloudRun &r = shape->runs[i];
+        const int py = by + r.y;
+        if (py < 5 || py > SCREEN_H - 6) continue;
+        const int max_dx = circle_half_span(py, 5);
+        if (max_dx <= 8) continue;
+        const int rx0 = std::max(x_first + static_cast<int>(r.k0) * kColStep, SCREEN_CX - max_dx);
+        const int rx1 = std::min(x_first + static_cast<int>(r.k0 + r.ncols) * kColStep, SCREEN_CX + max_dx + 1);
+        if (rx1 > rx0) {
+          cloud_span(it, fb_c, rx0, py, rx1 - rx0, pal_hw[r.band], pal[r.band]);
+        }
+      }
+#else
       const int k_lo = std::max(0, ceil_div_int(5 - x_first, kColStep));
       const int k_hi = floor_div_int(SCREEN_W - 6 - kColStep - x_first, kColStep);
       for (int i = 0; i < shape->count; i++) {
         const CloudRun &r = shape->runs[i];
+        const int py = by + r.y;
+        if (py < 5 || py > SCREEN_H - 6) continue;
         const int a = std::max<int>(r.k0, k_lo);
         const int b2 = std::min<int>(r.k0 + r.ncols - 1, k_hi);
         if (a > b2) continue;
-        cloud_span(it, fb_c, x_first + a * kColStep, by + r.y, (b2 - a + 1) * kColStep, pal_hw[r.band], pal[r.band]);
+        cloud_span(it, fb_c, x_first + a * kColStep, py, (b2 - a + 1) * kColStep, pal_hw[r.band], pal[r.band]);
       }
+#endif
       return;
     }
   }
-#endif
   static constexpr int kMaxCols = 168;
   struct CumulusCol {
     int16_t x;
@@ -721,7 +739,7 @@ void render_cumulus_cloud(esphome::display::Display &it, int bx, int by, float s
 
   if (n_cols <= 0 || min_y > max_y) return;
   const esphome::Color palette[6] = {
-      esphome::Color(0, 0, 0), col_rim, col_crest, col_high, col_body, col_shadow};
+      kChromeShadow, col_rim, col_crest, col_high, col_body, col_shadow};
   uint16_t *fb = active_frame_buf16();
   uint16_t palette_hw[6];
   for (int k = 0; k < 6; k++) palette_hw[k] = encode_hw_rgb565(palette[k]);
@@ -793,7 +811,56 @@ void render_wispy_cloud_veil(esphome::display::Display &it, int center_x, int ba
   int min_y = SCREEN_H;
   int max_y = 0;
 
-  for (int x = center_x - half_w; x <= center_x + half_w && n_cols < kMaxVeilCols; x += kVeilStep) {
+  const int x_start = center_x - half_w;
+  const float xf0 = static_cast<float>(x_start);
+  float s1 = 0.0f, c1 = 1.0f;
+  float s2 = 0.0f, c2 = 1.0f;
+  float s3 = 0.0f, c3 = 1.0f;
+  float s4 = 0.0f, c4 = 1.0f;
+  float s5 = 0.0f, c5 = 1.0f;
+  fast_sincos(xf0 * 0.028f + phase * 1.6f, s1, c1);
+  fast_sincos(xf0 * 0.062f - phase * 1.1f, s2, c2);
+  fast_sincos(xf0 * 0.036f - phase * 1.3f + 1.2f, s3, c3);
+  fast_sincos(xf0 * 0.085f + phase * 2.0f, s4, c4);
+  fast_sincos(xf0 * 0.052f + phase * 1.8f + static_cast<float>(seed_id), s5, c5);
+
+  static const float kSinD1 = std::sin(0.028f * static_cast<float>(kVeilStep));
+  static const float kCosD1 = std::cos(0.028f * static_cast<float>(kVeilStep));
+  static const float kSinD2 = std::sin(0.062f * static_cast<float>(kVeilStep));
+  static const float kCosD2 = std::cos(0.062f * static_cast<float>(kVeilStep));
+  static const float kSinD3 = std::sin(0.036f * static_cast<float>(kVeilStep));
+  static const float kCosD3 = std::cos(0.036f * static_cast<float>(kVeilStep));
+  static const float kSinD4 = std::sin(0.085f * static_cast<float>(kVeilStep));
+  static const float kCosD4 = std::cos(0.085f * static_cast<float>(kVeilStep));
+  static const float kSinD5 = std::sin(0.052f * static_cast<float>(kVeilStep));
+  static const float kCosD5 = std::cos(0.052f * static_cast<float>(kVeilStep));
+
+  auto advance_waves = [&]() {
+    const float ns1 = s1 * kCosD1 + c1 * kSinD1;
+    c1 = c1 * kCosD1 - s1 * kSinD1;
+    s1 = ns1;
+    const float ns2 = s2 * kCosD2 + c2 * kSinD2;
+    c2 = c2 * kCosD2 - s2 * kSinD2;
+    s2 = ns2;
+    const float ns3 = s3 * kCosD3 + c3 * kSinD3;
+    c3 = c3 * kCosD3 - s3 * kSinD3;
+    s3 = ns3;
+    const float ns4 = s4 * kCosD4 + c4 * kSinD4;
+    c4 = c4 * kCosD4 - s4 * kSinD4;
+    s4 = ns4;
+    const float ns5 = s5 * kCosD5 + c5 * kSinD5;
+    c5 = c5 * kCosD5 - s5 * kSinD5;
+    s5 = ns5;
+  };
+
+  for (int x = x_start; x <= center_x + half_w && n_cols < kMaxVeilCols; x += kVeilStep) {
+    const float cur_s1 = s1;
+    const float cur_c2 = c2;
+    const float cur_s3 = s3;
+    const float cur_c4 = c4;
+    const float cur_s5 = s5;
+    advance_waves();
+
 #if LATTER_ROUND_DISPLAY
     int max_dy = circle_half_span(x, 6);
     if (max_dy <= 10) continue;
@@ -810,13 +877,10 @@ void render_wispy_cloud_veil(esphome::display::Display &it, int center_x, int ba
     float taper = 1.0f - u * u;
     if (taper <= 0.04f) continue;
 
-    float xf = static_cast<float>(x);
-    float wave_top = fast_sin(xf * 0.028f + phase * 1.6f) * 12.0f +
-                     fast_cos(xf * 0.062f - phase * 1.1f) * 6.0f;
-    float wave_bot = fast_sin(xf * 0.036f - phase * 1.3f + 1.2f) * 7.5f +
-                     fast_cos(xf * 0.085f + phase * 2.0f) * 4.0f;
+    float wave_top = cur_s1 * 12.0f + cur_c2 * 6.0f;
+    float wave_bot = cur_s3 * 7.5f + cur_c4 * 4.0f;
 
-    float wisp_mod = 0.55f + 0.45f * fast_sin(xf * 0.052f + phase * 1.8f + static_cast<float>(seed_id));
+    float wisp_mod = 0.55f + 0.45f * cur_s5;
     float eff_taper = taper * (0.65f + 0.35f * wisp_mod);
     if (eff_taper < 0.14f) continue;
 
@@ -841,7 +905,7 @@ void render_wispy_cloud_veil(esphome::display::Display &it, int center_x, int ba
   }
 
   if (n_cols <= 0 || min_y > max_y) return;
-  const esphome::Color veil_pal[4] = {esphome::Color(0, 0, 0), c_crest, c_body, c_base};
+  const esphome::Color veil_pal[4] = {kChromeShadow, c_crest, c_body, c_base};
   uint16_t *fb = active_frame_buf16();
   uint16_t veil_hw[4];
   for (int k = 0; k < 4; k++) veil_hw[k] = encode_hw_rgb565(veil_pal[k]);
@@ -1400,18 +1464,28 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   const bool storm_sky_flash = is_storm && (storm_phase_ms < 95U || (storm_phase_ms >= 155U && storm_phase_ms < 255U));
   const bool storm_bolt_vis  = is_storm && (storm_phase_ms < 285U);
 
-  // LAYER 0: ATMOSPHERIC SKY CANVAS (Circular chord fill on Round 466x466; Row-major buffer fill on non-round)
-  // Rectangular panels: the sky is the frame base (one full-screen write instead of clear + fill).
-  // Round panels keep a black base so the 5 px ring inside the bezel stays black.
+  const double now_s = static_cast<double>(now_ms) * 0.001;
+  static constexpr double kPhaseWrap = 2000.0 * 3.141592653589793;
+
+  // LAYER 0: ATMOSPHERIC SKY CANVAS
+  // All panels clear to bg_c via frame_base() (hardware PPA/GDMA pre-fill between frames).
+  // Round panels then mask only the 5 px outer bezel margin in black so interior pixels write once.
   auto fill_sky_disc = [&](esphome::Color bg_c) {
-#if LATTER_ROUND_DISPLAY
-    frame_base(it, esphome::Color(0, 0, 0));
-    for (int y = 5; y <= 460; y++) {
-      int hw = static_cast<int>(CIRCLE_HW[y]) - 5;
-      if (hw > 0) fast_hline(it, cx - hw, y, 2 * hw + 1, bg_c);
-    }
-#else
     if (!frame_base(it, bg_c)) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
+#if LATTER_ROUND_DISPLAY
+    fill_rect_row_major(it, 0, 0, SCREEN_W, 5, kChromeShadow);
+    for (int y = 5; y < SCREEN_H - 5; y++) {
+      const int hw = circle_half_span(y, 5);
+      if (hw <= 0) {
+        fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
+      } else {
+        const int lx = cx - hw;
+        const int rx = cx + hw + 1;
+        if (lx > 0) fast_hline(it, 0, y, lx, kChromeShadow);
+        if (rx < SCREEN_W) fast_hline(it, rx, y, SCREEN_W - rx, kChromeShadow);
+      }
+    }
+    fill_rect_row_major(it, 0, SCREEN_H - 5, SCREEN_W, 5, kChromeShadow);
 #endif
   };
   if (storm_sky_flash) {
@@ -1429,7 +1503,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   } else if (is_fog_mist) {
     fill_sky_disc(esphome::Color(10, 15, 22));
   }
-  frame_base(it, esphome::Color(0, 0, 0));  // night without a sky fill: black base before the stars
+  frame_base(it, kChromeShadow);  // night without a sky fill: black base before the stars
 
   lap.mark(ProfSect::BG_SKY);
 
@@ -1546,7 +1620,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
 
   // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Top & middle layers only)
   if (is_clear_day) {
-    float t_cir = now_ms * 0.00025f;
+    const float t_cir = static_cast<float>(std::fmod(now_s * 0.25, kPhaseWrap));
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
     esphome::Color c_cir_crest(56, 90, 128);
     esphome::Color c_cir_body(42,  70, 104);
@@ -1564,7 +1638,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   // LAYER 1E: SCULPTED 3D CUMULUS (Partly Cloudy) & HYBRID CUMULUS + WISPY VEIL OVERCAST (Cloudy / Overcast)
   if (cond.find("cloud") != std::string::npos || cond.find("overcast") != std::string::npos) {
     if (is_partly) {
-      float t_cld = now_ms * 0.0008f;
+      const float t_cld = static_cast<float>(std::fmod(now_s * 0.80, kPhaseWrap));
       int dx0 = static_cast<int>(fast_sin(t_cld) * 8.0f + par_x * 0.45f);
       int dy0 = static_cast<int>(fast_cos(t_cld * 1.3f) * 2.5f + par_y * 0.45f);
       int dx1 = static_cast<int>(fast_cos(t_cld * 0.9f + 1.8f) * 8.0f + par_x * 0.30f);
@@ -1577,13 +1651,13 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       int c0_base_x = static_cast<int>((sun_on_left ? 356.0f : 108.0f) * w_scale);
       int c1_base_x = static_cast<int>((sun_on_left ? 132.0f : 344.0f) * w_scale);
       int c2_base_x = static_cast<int>((sun_on_left ? 348.0f : 114.0f) * w_scale);
-      render_cumulus_cloud(it, c0_base_x + dx0, 106 + dy0, 0.94f, false, is_night);
-      render_cumulus_cloud(it, c1_base_x + dx1, 196 + dy1, 0.84f, false, is_night);
-      render_cumulus_cloud(it, c2_base_x + dx2, 262 + dy2, 0.82f, false, is_night);
+      render_cumulus_cloud(it, c0_base_x + dx0, 106 + dy0, 0.94f, false, is_night, 0);
+      render_cumulus_cloud(it, c1_base_x + dx1, 196 + dy1, 0.84f, false, is_night, 1);
+      render_cumulus_cloud(it, c2_base_x + dx2, 262 + dy2, 0.82f, false, is_night, 2);
     } else {
       // Hybrid Overcast Canopy: Combines staggered, sculpted 3D cumulus cloud masses with
       // interleaved wispy stratus tendrils (scaled to SCREEN_W and offset below upper-left Sun/Moon!)
-      float t_ov = now_ms * 0.00042f;
+      const float t_ov = static_cast<float>(std::fmod(now_s * 0.42, kPhaseWrap));
       const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
 
       esphome::Color c_wisp_crest = is_night ? esphome::Color(74,  94, 120) : esphome::Color(134, 162, 192);
@@ -1594,9 +1668,9 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       int b0_x = static_cast<int>(182.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.8f) * 16.0f + par_x * 0.28f);
       int b1_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 0.7f + 1.2f) * 18.0f + par_x * 0.34f);
       int b2_x = static_cast<int>(242.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.75f + 2.5f) * 15.0f + par_x * 0.40f);
-      render_cumulus_cloud(it, b0_x,  88 + static_cast<int>(par_y * 0.28f), 1.12f, true, is_night);
-      render_cumulus_cloud(it, b1_x, 126 + static_cast<int>(par_y * 0.34f), 1.06f, true, is_night);
-      render_cumulus_cloud(it, b2_x, 214 + static_cast<int>(par_y * 0.40f), 1.15f, true, is_night);
+      render_cumulus_cloud(it, b0_x,  88 + static_cast<int>(par_y * 0.28f), 1.12f, true, is_night, 0);
+      render_cumulus_cloud(it, b1_x, 126 + static_cast<int>(par_y * 0.34f), 1.06f, true, is_night, 1);
+      render_cumulus_cloud(it, b2_x, 214 + static_cast<int>(par_y * 0.40f), 1.15f, true, is_night, 2);
 
       // 2. Interleaved Wispy Cloud Veils weaving across the mid-sky between the cumulus masses
       int w0_x = static_cast<int>(238.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.1f + 0.5f) * 28.0f + par_x * 0.48f);
@@ -1609,8 +1683,8 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       // 3. Foreground Sculpted Cumulus Formations & Lower Wispy Tendril
       int f0_x = static_cast<int>(116.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.05f + 3.1f) * 20.0f + par_x * 0.68f);
       int f1_x = static_cast<int>(346.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.95f + 0.8f) * 22.0f + par_x * 0.76f);
-      render_cumulus_cloud(it, f0_x, 172 + static_cast<int>(par_y * 0.68f), 0.96f, false, is_night);
-      render_cumulus_cloud(it, f1_x, 258 + static_cast<int>(par_y * 0.76f), 0.92f, true,  is_night);
+      render_cumulus_cloud(it, f0_x, 172 + static_cast<int>(par_y * 0.68f), 0.96f, false, is_night, 3);
+      render_cumulus_cloud(it, f1_x, 258 + static_cast<int>(par_y * 0.76f), 0.92f, true,  is_night, 4);
 
       int w2_x = static_cast<int>(228.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.35f + 3.8f) * 26.0f + par_x * 0.82f);
       render_wispy_cloud_veil(it, w2_x, 276 + static_cast<int>(par_y * 0.78f), static_cast<int>(158.0f * w_scale),  t_ov * 1.40f + 3.4f, 3,
@@ -1620,15 +1694,15 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
 
   // LAYER 1F: FOG & MIST — VOLUMETRIC STRATUS PUFFS & UNDULATING WISPY CLOUD VEILS
   if (is_fog_mist) {
-    float t_fog = now_ms * 0.00028f;
+    const float t_fog = static_cast<float>(std::fmod(now_s * 0.28, kPhaseWrap));
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
 
     int c0_x = static_cast<int>(125.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.8f) * 18.0f + par_x * 0.30f);
     int c1_x = static_cast<int>(340.0f * w_scale) + static_cast<int>(fast_cos(t_fog * 0.7f + 1.4f) * 20.0f + par_x * 0.45f);
     int c2_x = static_cast<int>(155.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.9f + 2.8f) * 16.0f + par_x * 0.60f);
-    render_cumulus_cloud(it, c0_x, 102 + static_cast<int>(par_y * 0.30f), 0.90f, true, is_night);
-    render_cumulus_cloud(it, c1_x, 188 + static_cast<int>(par_y * 0.45f), 0.85f, true, is_night);
-    render_cumulus_cloud(it, c2_x, 266 + static_cast<int>(par_y * 0.60f), 0.80f, true, is_night);
+    render_cumulus_cloud(it, c0_x, 102 + static_cast<int>(par_y * 0.30f), 0.90f, true, is_night, 5);
+    render_cumulus_cloud(it, c1_x, 188 + static_cast<int>(par_y * 0.45f), 0.85f, true, is_night, 6);
+    render_cumulus_cloud(it, c2_x, 266 + static_cast<int>(par_y * 0.60f), 0.80f, true, is_night, 7);
 
     static constexpr int16_t PLUME_Y[5]  = { 76, 128, 178, 232, 284};
     static constexpr int16_t PLUME_X0[5] = {198, 264, 212, 252, 224};
@@ -1650,14 +1724,15 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   }
   // LAYER 1G: WINDY — 3D AIR-CURRENT RIBBONS & 10 TRUE 3D EULER-ROTATED TUMBLING LEAVES
   if (is_windy) {
-    float t_sec = now_ms * 0.001f;
+    const float t_sec = static_cast<float>(std::fmod(now_s, kPhaseWrap));
 
     static constexpr int16_t GUST_Y[3] = { 82, 168, 236};
     esphome::Color gust_hi  = is_night ? esphome::Color(70, 98, 130)  : esphome::Color(115, 155, 195);
     esphome::Color gust_dim = is_night ? esphome::Color(38, 56,  78)  : esphome::Color( 62,  92, 128);
     const int gust_wrap = SCREEN_W + 94;
     for (int g = 0; g < 3; g++) {
-      int gx_head = ((static_cast<int>(now_ms / 5U) + g * (gust_wrap / 3)) % gust_wrap) - 50;
+      int gx_head = static_cast<int>((now_ms / 5U + static_cast<uint32_t>(g * (gust_wrap / 3))) %
+                                     static_cast<uint32_t>(gust_wrap)) - 50;
       int gy_base = scale_y(GUST_Y[g]);
       int prev_x = 0, prev_y = 0;
       for (int s = 0; s <= 6; s++) {
@@ -1678,7 +1753,9 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       float h_y0  = -155.0f + hash2d_01(i * 37 + 9, 27) * 235.0f;
       float h_z0  = -95.0f + hash2d_01(i * 53 + 3, 41) * 205.0f;
 
-      float lx_3d = fmodf(hash2d_01(i, 7) * 480.0f + t_sec * h_spd, 480.0f) - 240.0f;
+      float lx_3d = static_cast<float>(
+          std::fmod(static_cast<double>(hash2d_01(i, 7)) * 480.0 + now_s * static_cast<double>(h_spd), 480.0) -
+          240.0);
       float ly_3d = h_y0 + fast_sin(t_sec * 2.5f + i * 0.9f) * 18.0f + fast_cos(lx_3d * 0.018f + i) * 9.0f;
       float lz_3d = h_z0 + fast_sin(t_sec * 1.8f + i * 1.4f) * 32.0f;
 
@@ -1711,13 +1788,13 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
 
   // LAYER 1G_B: THUNDERSTORM — STAGGERED MULTI-DEPTH STORM CLOUDS, SCUD VEILS & FORKED LIGHTNING
   if (is_storm) {
-    float t_st = now_ms * 0.00048f;
+    const float t_st = static_cast<float>(std::fmod(now_s * 0.48, kPhaseWrap));
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
     bool dark_storm_clouds = is_night && !storm_sky_flash;
 
     // 1. Deep Background Upper-Left Storm Anvil (drawn behind the lightning bolt!)
     int bg_anvil_x = static_cast<int>(152.0f * w_scale) + static_cast<int>(fast_sin(t_st * 0.75f) * 18.0f + par_x * 0.28f);
-    render_cumulus_cloud(it, bg_anvil_x, 76 + static_cast<int>(par_y * 0.28f), 1.16f, true, dark_storm_clouds);
+    render_cumulus_cloud(it, bg_anvil_x, 76 + static_cast<int>(par_y * 0.28f), 1.16f, true, dark_storm_clouds, 2);
 
     // 2. Forked Lightning Bolt (originating between the deep anvil and foreground storm masses)
     if (storm_bolt_vis) {
@@ -1774,8 +1851,8 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     // 4. Staggered Mid-Altitude Right Storm Cloud (y = 118) & Lower-Left Foreground Squall Cloud (y = 188)
     int mid_rt_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_st * 0.92f + 1.5f) * 22.0f + par_x * 0.52f);
     int fg_lt_x  = static_cast<int>(112.0f * w_scale) + static_cast<int>(fast_sin(t_st * 1.10f + 3.1f) * 20.0f + par_x * 0.72f);
-    render_cumulus_cloud(it, mid_rt_x, 118 + static_cast<int>(par_y * 0.52f), 0.98f, true, dark_storm_clouds);
-    render_cumulus_cloud(it, fg_lt_x,  188 + static_cast<int>(par_y * 0.72f), 0.88f, false, dark_storm_clouds);
+    render_cumulus_cloud(it, mid_rt_x, 118 + static_cast<int>(par_y * 0.52f), 0.98f, true, dark_storm_clouds, 5);
+    render_cumulus_cloud(it, fg_lt_x,  188 + static_cast<int>(par_y * 0.72f), 0.88f, false, dark_storm_clouds, 6);
   }
   lap.mark(ProfSect::BG_CLOUDS);
 
@@ -1836,17 +1913,15 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       }
     };
 
+    float dt = 0.05f;
     if (!rain_init) {
       for (int i = 0; i < MAX_RAIN; i++) respawn_drop(i, true);
       rain_init = true;
       last_rain_ms = now_ms;
-    }
-
-    float dt = 0.05f;
-    if (now_ms > last_rain_ms) {
-      uint32_t d_ms = now_ms - last_rain_ms;
+    } else {
+      const uint32_t d_ms = now_ms - last_rain_ms;
       last_rain_ms = now_ms;
-      if (d_ms >= 15U && d_ms <= 250U) dt = static_cast<float>(d_ms) * 0.001f;
+      dt = (d_ms == 0U) ? 0.0f : ((d_ms <= 120U) ? (static_cast<float>(d_ms) * 0.001f) : 0.05f);
     }
 
     int active_count = is_heavy ? 54 : 38;
@@ -1934,7 +2009,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   }
   // LAYER 1I: 3D HELICAL SNOWFALL (Full-Width Edge-to-Edge Coverage + Per-Pass Re-Seeded Paths)
   if (cond.find("snow") != std::string::npos || cond.find("sleet") != std::string::npos) {
-    float t_sec = now_ms * 0.001f;
+    const float t_sec = static_cast<float>(std::fmod(now_s, kPhaseWrap));
     esphome::Color c_core(255, 255, 255);
     esphome::Color c_arm2 = is_night ? esphome::Color(215, 235, 255) : esphome::Color(230, 245, 255);
     esphome::Color c_tip2 = is_night ? esphome::Color(160, 195, 235) : esphome::Color(180, 215, 245);
@@ -1948,9 +2023,10 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
       float cycle_h = static_cast<float>(SCREEN_H - 20);
 
       float init_phase = fmodf(static_cast<float>(i) * 0.381966011f + static_cast<float>(perm_i) * 0.17f, 1.0f);
-      float total_y = t_sec * spd_y + init_phase * cycle_h;
-      uint32_t pass_idx = static_cast<uint32_t>(total_y / cycle_h);
-      float local_y = total_y - static_cast<float>(pass_idx) * cycle_h;
+      const double cycle_h_d = static_cast<double>(cycle_h);
+      const double total_y_d = now_s * static_cast<double>(spd_y) + static_cast<double>(init_phase) * cycle_h_d;
+      uint32_t pass_idx = static_cast<uint32_t>(std::fmod(total_y_d / cycle_h_d, 65536.0));
+      float local_y = static_cast<float>(std::fmod(total_y_d, cycle_h_d));
 
       int pass_seed = static_cast<int>(pass_idx * 43U + static_cast<uint32_t>(i) * 97U);
       float rx_u  = hash2d_01(pass_seed, 13);
@@ -2058,6 +2134,8 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
       render_weather_motion_wallpaper(it, cx, cy, ctx.now_ms, sky_cond, sky_night,
                                       sky_moon_cycle, 0, 0, true,
                                       rs.hw_accel_x, rs.hw_accel_y, false);
+    } else if (!backdrop_active()) {
+      frame_base(it, ctx.col_bg);
     }
   }
 

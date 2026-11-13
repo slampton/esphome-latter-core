@@ -10,13 +10,13 @@ interval:
     then:
       - script.execute: sync_display_brightness
 
-  - interval: 50ms
+  - interval: 25ms
     id: ui_anim_tick
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          const uint32_t now_tick_ms = millis();
           // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
-          // Coalesced against disp1's 1s background refresh via last_ambient_anim_ms()
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
               rs.nav.gui_page == 8 && !rs.voice.active && rs.voice.status_text.empty()) {
             if ((rs.nav.tools_subpage == 3 && rs.stopwatch.running) ||
@@ -24,14 +24,15 @@ interval:
                 (rs.nav.tools_subpage == 7) ||
                 (rs.nav.tools_subpage == 8 && latter_ui::coin_state().anim_active)) {
               const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
-              if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
-                latter_ui::record_ambient_frame_ms(millis());
+              if (!latter_ui::disp_render_in_flight() &&
+                  (now_tick_ms - latter_ui::last_ambient_anim_ms() >= min_gap)) {
+                latter_ui::record_ambient_frame_ms(now_tick_ms);
                 latter_ui::schedule_anim_disp_update(&id(disp1));
               }
             }
           }
 
-          // 20 FPS high-refresh physics & audio loop exclusively for active games (coalesced against 1s timer)
+          // 20 FPS high-refresh physics & audio loop exclusively for active games
           const auto &prefs = latter_ui::persisted_prefs();
           static int s_prev_audio_game = 0;
           const int cur_audio_game = (rs.nav.gui_page == 3) ? rs.nav.active_game : 0;
@@ -53,8 +54,9 @@ interval:
               rs.nav.gui_page == 3 && rs.nav.active_game > 0 &&
               !rs.voice.active && rs.voice.status_text.empty()) {
             const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
-            if (millis() - latter_ui::last_ambient_anim_ms() >= min_gap) {
-              latter_ui::record_ambient_frame_ms(millis());
+            if (!latter_ui::disp_render_in_flight() &&
+                (now_tick_ms - latter_ui::last_ambient_anim_ms() >= min_gap)) {
+              latter_ui::record_ambient_frame_ms(now_tick_ms);
               latter_ui::schedule_anim_disp_update(&id(disp1));
             }
           }
@@ -63,7 +65,7 @@ interval:
           if (rs.voice.active || !rs.voice.status_text.empty()) {
             static uint32_t last_va_anim_time = 0;
             static bool prev_tts_active = false;
-            uint32_t now_va_ms = millis();
+            uint32_t now_va_ms = now_tick_ms;
 
             const bool tts_audio_active =
                 (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
@@ -76,32 +78,50 @@ interval:
               return;
             }
 
-            const uint32_t va_min_gap = (rs.voice.tts_received || tts_audio_active) ? 110U : 42U;
-            if (now_va_ms - last_va_anim_time >= va_min_gap) {
+            const uint32_t va_min_gap = (rs.voice.tts_received || tts_audio_active) ? 110U : 46U;
+            if (!latter_ui::disp_render_in_flight() &&
+                (now_va_ms - last_va_anim_time >= va_min_gap)) {
               last_va_anim_time = now_va_ms;
-              latter_ui::record_ambient_frame_ms(millis());
+              latter_ui::record_ambient_frame_ms(now_va_ms);
               latter_ui::schedule_anim_disp_update(&id(disp1));
             }
           }
 
-          // Dynamic Atmospheric Motion Wallpaper with Universal Audio-Aware Cadence
+          // Dynamic Atmospheric Motion Wallpaper (Home & Sky/Weather) with Music-Priority Cadence
           const std::string_view sim_cond_opt(latter_ui::pref_weather_sim_cstr());
           const bool weather_sim_active = (sim_cond_opt != "Live (Home Assistant)");
           const bool weather_canvas_visible = prefs.weather_background || weather_sim_active;
-          const uint32_t now_w_ms = millis();
+          const uint32_t now_w_ms = now_tick_ms;
+          const auto &ac_wall = latter_ui::area_ctx_state();
+          const bool custom_wallpaper_active =
+              !ac_wall.wallpaper_url.empty() &&
+              ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
+              id(home_wallpaper_art).get_width() > 0;
           const bool ui_overlay_animating =
               latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting) ||
               latter_ui::is_home_activity_carousel_animating(now_w_ms);
+          const bool home_weather_active =
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
+               ((weather_canvas_visible && !custom_wallpaper_active) || ui_overlay_animating));
+          const bool app_weather_active =
+              (rs.nav.gui_page == 5 && !custom_wallpaper_active);
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
-              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && (weather_canvas_visible || ui_overlay_animating)) &&
+              (home_weather_active || app_weather_active) &&
               !rs.voice.active && rs.voice.status_text.empty()) {
+            if (rs.hw_motion_mag > 0.055f) {
+              latter_ui::last_user_touch_ms() = now_w_ms;
+            }
             static uint32_t last_cond_eval_time = 0;
+            static bool last_sky_enabled = false;
             static bool cached_has_motion = false;
+            const bool sky_enabled_here = app_weather_active || (weather_canvas_visible && !custom_wallpaper_active);
             const bool sim_just_changed = latter_ui::weather_sim_dirty() ||
+                                          (sky_enabled_here != last_sky_enabled) ||
                                           (latter_ui::last_ambient_anim_ms() == 0U);
 
             if (sim_just_changed || (now_w_ms - last_cond_eval_time >= 250U)) {
               latter_ui::weather_sim_dirty() = false;
+              last_sky_enabled = sky_enabled_here;
               last_cond_eval_time = now_w_ms;
               std::string c_cond = latter_ui::weather_state().condition;
               std::string s_sun = latter_ui::weather_state().sun_state;
@@ -110,22 +130,33 @@ interval:
                                     (c_cond.find("night") != std::string::npos));
               latter_ui::apply_weather_sim_override(
                   std::string(sim_cond_opt), c_cond, is_night_time);
-              cached_has_motion = weather_canvas_visible && (sun_ok || weather_sim_active) &&
+              cached_has_motion = sky_enabled_here && (sun_ok || weather_sim_active) &&
                                   latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
             }
 
-            const bool touch_busy = latter_ui::touch_gesture().active ||
-                                    (now_w_ms - latter_ui::touch_gesture().last_touch_ms < 220U);
-            // Battery render budget: weather motion runs on USB, and for 10 s after a wake/touch on battery.
-            const bool motion_budget_ok = latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_w_ms);
+            const bool touch_busy =
+                latter_ui::touch_gesture().active ||
+                latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+                rs.nav.menu_scroll_active;
+            // Battery render budget: weather motion runs on USB, while held/tilted, and for 10 s after wake/touch.
+            const uint32_t latest_input_ms = std::max(
+                latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
+            const bool motion_budget_ok =
+                latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_w_ms, latest_input_ms);
             if (!touch_busy && (sim_just_changed || ui_overlay_animating || (cached_has_motion && motion_budget_ok))) {
-              const bool local_audio_busy =
+              const bool speaker_audio_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                  (!LATTER_CHIP_P4 && id(mww).is_running());
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                  (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  id(media_mixing_input).is_running() ||
+                  id(announcement_mixing_input).is_running() ||
+                  id(sound_mixing_input).is_running();
+              const bool mww_passive_busy = !speaker_audio_busy && !LATTER_CHIP_P4 && id(mww).is_running();
               if (sim_just_changed || latter_ui::should_step_ambient_anim(
-                                          now_w_ms, local_audio_busy,
+                                          now_w_ms, speaker_audio_busy,
                                           rs.voice.active || !rs.voice.status_text.empty(),
-                                          rs.alarms.ringing || rs.timers.ringing)) {
+                                          rs.alarms.ringing || rs.timers.ringing,
+                                          mww_passive_busy)) {
                 latter_ui::record_ambient_frame_ms(now_w_ms);
                 latter_ui::schedule_anim_disp_update(&id(disp1));
               }
@@ -207,7 +238,9 @@ interval:
                 if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) {
                   latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::scale_y(84), latter_ui::layout().back_y - 8);
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
-                  latter_ui::schedule_band_disp_update(&id(disp1), 0, latter_ui::SCREEN_H / 2);
+                  if (now_ms - latter_ui::last_disp_update_ms() >= 200U) {
+                    latter_ui::schedule_disp_update(&id(disp1));
+                  }
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 2) {
                   latter_ui::schedule_disp_update(&id(disp1));
                 }

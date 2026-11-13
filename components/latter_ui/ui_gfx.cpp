@@ -1340,9 +1340,7 @@ bool frame_base_impl(esphome::display::Display &it, esphome::Color c) {
 FrameProfileScope::FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
   fb_clear_wait();
   t0_us = prof_now_us();
-  const uint32_t start_m = esphome::millis();
-  last_disp_update_ms() = start_m;
-  last_ambient_anim_ms() = start_m;
+  last_disp_update_ms() = esphome::millis();
 }
 
 FrameProfileScope::~FrameProfileScope() {

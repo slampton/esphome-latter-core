@@ -1185,9 +1185,10 @@ script:
               const auto &rs = latter_ui::runtime_state();
               return rs.nav.display_power_state == 0 &&
                      (rs.nav.gui_page == 1 || rs.nav.gui_page == 2) &&
-                     !rs.voice.active;
+                     !rs.voice.active &&
+                     (millis() - latter_ui::last_disp_update_ms() >= 90U);
           then:
-            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+            - lambda: 'latter_ui::schedule_anim_disp_update(&id(disp1));'
 
   - id: apply_theme_preset
     mode: restart

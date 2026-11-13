@@ -115,11 +115,6 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
 // ------------------------------------------------------------------------------
 // Display Update Scheduler (ESPHome 2026.11+ numeric timeout IDs)
 // ------------------------------------------------------------------------------
-inline uint32_t &last_disp_update_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
-
 struct DisplayUpdateScheduler : public esphome::Component {
   static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
   static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
@@ -148,13 +143,21 @@ struct DisplayUpdateScheduler : public esphome::Component {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
       constexpr uint32_t kFrameMs = 18U;
+      constexpr uint32_t kMinPostIdleMs = 6U;
 #else
       constexpr uint32_t kFrameMs = 26U;
+      constexpr uint32_t kMinPostIdleMs = 10U;
 #endif
       const uint32_t now_m = esphome::millis();
-      const bool inside_render = (last_disp_update_ms() > last_disp_update_end_ms());
-      const uint32_t elapsed = now_m - last_disp_update_ms();
-      const uint32_t delay_ms = (elapsed < kFrameMs) ? (kFrameMs - elapsed) : (inside_render ? 4U : 0U);
+      const bool inside_render = disp_render_in_flight();
+      const uint32_t elapsed_start = now_m - last_disp_update_ms();
+      const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
+      uint32_t delay_ms = (elapsed_start < kFrameMs) ? (kFrameMs - elapsed_start) : 0U;
+      if (inside_render) {
+        delay_ms = std::max<uint32_t>(delay_ms, 8U);
+      } else if (elapsed_end < kMinPostIdleMs) {
+        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
+      }
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
           kTimeoutAsyncDraw, delay_ms, [disp]() {

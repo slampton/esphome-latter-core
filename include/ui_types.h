@@ -315,6 +315,9 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
 }
 
 inline float fast_sin(float rad) {
+  if (rad < -64.0f || rad > 64.0f) {
+    rad = std::fmod(rad, 2.0f * PI_F);
+  }
   const float idx_f = rad * (60.0f / (2.0f * PI_F));
   int idx_i = static_cast<int>(idx_f);
   if (idx_f < 0.0f && static_cast<float>(idx_i) != idx_f) idx_i--;
@@ -489,26 +492,43 @@ inline uint32_t &last_frame_duration_ms() {
 
 inline void record_ambient_frame_ms(uint32_t now_ms) { last_ambient_anim_ms() = now_ms; }
 
+inline uint32_t &last_disp_update_ms() {
+  static uint32_t ts = 0;
+  return ts;
+}
+
 inline uint32_t &last_disp_update_end_ms() {
   static uint32_t ts = 0;
   return ts;
 }
 
-inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
-  (void)mww_running;
-  return 42U;
+inline bool disp_render_in_flight() {
+  const uint32_t start_ms = last_disp_update_ms();
+  const uint32_t end_ms = last_disp_update_end_ms();
+  return (start_ms != end_ms) && (static_cast<int32_t>(start_ms - end_ms) > 0);
 }
 
-inline bool should_step_ambient_anim(uint32_t now_ms, bool local_audio_busy,
-                                     bool va_busy = false, bool alert_busy = false) {
-  if (va_busy) return false;
+inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
+  (void)mww_running;
+  return 44U;
+}
+
+// Ambient visual stepper (weather sky, docked screensavers).
+// Active speaker audio (Sendspin FLAC, TTS, chimes) takes bus priority via a 22-28 ms
+// post-frame PSRAM/DMA quiet window and a 75 ms (~13.3 FPS) cadence; passive wake-word
+// listening on non-P4 chips keeps a 15 ms post-frame quiet window at ~20 FPS (46 ms).
+inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
+                                     bool va_busy = false, bool alert_busy = false,
+                                     bool mww_passive_busy = false) {
+  if (va_busy || disp_render_in_flight()) return false;
 #if LATTER_CHIP_P4
-  const uint32_t min_post_idle = local_audio_busy ? 22U : 8U;
+  (void)mww_passive_busy;
+  const uint32_t min_post_idle = speaker_audio_busy ? 22U : 8U;
 #else
-  const uint32_t min_post_idle = local_audio_busy ? 28U : 12U;
+  const uint32_t min_post_idle = speaker_audio_busy ? 28U : (mww_passive_busy ? 15U : 12U);
 #endif
   if (now_ms - last_disp_update_end_ms() < min_post_idle) return false;
-  const uint32_t min_period = alert_busy ? 120U : (local_audio_busy ? 75U : 42U);
+  const uint32_t min_period = alert_busy ? 120U : (speaker_audio_busy ? 75U : 46U);
   return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 

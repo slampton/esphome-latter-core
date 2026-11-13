@@ -584,10 +584,31 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(saw_hold_before_clear);
   LATTER_CHECK(!gate.weak);
 
-  // 6. Verify production C++ sources reference the shared policies
+  // 6. Verify battery_motion_allowed() renews on last_user_touch_ms() across handheld interaction
+  latter_ui::last_screen_wake_ms() = 1000U;
+  latter_ui::last_user_touch_ms() = 1000U;
+  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 9500U, 0U));
+  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 12000U, 0U));
+  latter_ui::last_user_touch_ms() = 8000U;
+  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 15000U, 0U));
+  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 19000U, 0U));
+  LATTER_CHECK(latter_ui::battery_motion_allowed(true, 50000U, 0U));
+
+  // 7. Verify production C++ & YAML sources reference the shared policies and ambient pacing invariants
   const std::string batt_h = read_repo_file("../../include/hal_battery.h");
   const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
   const std::string link_h = read_repo_file("../../include/hal_link_report.h");
+  const std::string gfx_cpp = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
+  const std::string gui_yaml_chk = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
+  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+
+  LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() =") == std::string::npos);
+  LATTER_CHECK(gui_yaml_chk.find("record_ambient_frame_ms(") == std::string::npos);
+  LATTER_CHECK(timers_yaml.find("speaker_audio_busy") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("mww_passive_busy") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("app_weather_active") != std::string::npos);
+  LATTER_CHECK(weather_cpp.find("cloud_shape_get<kColStep>") != std::string::npos);
 
   LATTER_CHECK(batt_h.find("kChargeCapMa = 500") != std::string::npos);
   LATTER_CHECK(batt_h.find("kChargeThermalFoldbackMa = 100") != std::string::npos);

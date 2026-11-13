@@ -197,10 +197,21 @@ display:
       ctx.docked_screensaver_enabled = prefs.docked_screensaver;
       ctx.instant_crown_hibernate = prefs.hold_crown_power_off;
 
+      const auto &ac_wall = latter_ui::area_ctx_state();
+      const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
+                                  ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                                  ctx.home_wallpaper_art.width > 0);
+      const bool weather_sky_active =
+          !has_wallpaper &&
+          ((rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
+            (ctx.home_weather_bg || std::string_view(ctx.weather_sim_opt) != "Live (Home Assistant)")) ||
+           rs.nav.gui_page == 5);
+
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
+          weather_sky_active ||
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
           rs.nav.menu_scroll_active ||
           (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
@@ -224,10 +235,6 @@ display:
       }
 
       if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
-        const auto &ac_wall = latter_ui::area_ctx_state();
-        const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
-                                    ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                                    ctx.home_wallpaper_art.width > 0);
         const bool tools_full_bleed =
             (rs.nav.gui_page == 8) &&
             ((rs.nav.tools_subpage == 5) ||
@@ -237,7 +244,9 @@ display:
             has_wallpaper && !tools_full_bleed &&
             (rs.nav.gui_page == 4 || rs.nav.gui_page == 5 || rs.nav.gui_page == 6 ||
              rs.nav.gui_page == 7 || rs.nav.gui_page == 8 || rs.nav.gui_page == 9);
-        latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
+        if (rs.nav.gui_page != 5 || use_page_wallpaper) {
+          latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
+        }
       }
 
       latter_ui::render_active_page(it, ctx);
@@ -267,9 +276,6 @@ display:
         latter_ui::render_offline_pill(it, ctx.cx, ctx.now_ms, ctx.font_micro, ctx.col_gold);
       }
 
-      const uint32_t end_draw_ms = millis();
-      latter_ui::last_disp_update_ms() = end_draw_ms;
-      latter_ui::record_ambient_frame_ms(end_draw_ms);
       const bool coin_toss_active =
           (rs.nav.gui_page == 8) && (rs.nav.tools_subpage == 8) && latter_ui::coin_state().anim_active;
       if (latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
