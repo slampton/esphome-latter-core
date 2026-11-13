@@ -1762,6 +1762,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       if (wid == WidgetId::SW_STYLE_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         stopwatch_modern_digital() = !stopwatch_modern_digital();
+        mark_dirty_full();
         rt_.schedule_disp();
         return;
       }
@@ -1777,14 +1778,19 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         rt_.schedule_disp();
         return;
       }
-      if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::SW_LAP_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (rs.stopwatch.running) {
           rs.stopwatch.lap_ms = now_touch - rs.stopwatch.start_time_ms;
-        } else {
-          rs.stopwatch.running = false;
-          rs.stopwatch.elapsed_ms = 0;
-          rs.stopwatch.lap_ms = 0;
+        } else if (rs.stopwatch.elapsed_ms > 0) {
+          rs.stopwatch.lap_ms = rs.stopwatch.elapsed_ms;
         }
+        rt_.schedule_disp();
+        return;
+      }
+      if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        rs.stopwatch.running = false;
+        rs.stopwatch.elapsed_ms = 0;
+        rs.stopwatch.lap_ms = 0;
         rt_.schedule_disp();
       }
       return;

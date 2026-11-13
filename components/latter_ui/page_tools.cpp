@@ -15,7 +15,7 @@ namespace latter_ui {
 // ==============================================================================
 
 bool &stopwatch_modern_digital() {
-  static bool modern = true;
+  static bool modern = (LATTER_ROUND_DISPLAY == 0);
   return modern;
 }
 
@@ -756,141 +756,234 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   using esphome::Color;
   using esphome::display::TextAlign;
 
-  const uint32_t cur_ms = sw.running
-                              ? (sw.elapsed_ms + (ctx.now_ms - sw.start_time_ms))
-                              : sw.elapsed_ms;
-  const uint32_t total_sec = cur_ms / 1000U;
-  const uint32_t mins      = total_sec / 60U;
-  const uint32_t secs      = total_sec % 60U;
-  const uint32_t tenths    = (cur_ms % 1000U) / 100U;
-  const uint32_t centis    = (cur_ms % 1000U) / 10U;
+  const uint32_t total_ms = sw.running ? (ctx.now_ms - sw.start_time_ms) : sw.elapsed_ms;
+  const int mins   = static_cast<int>((total_ms / 60000U) % 60U);
+  const int secs   = static_cast<int>((total_ms / 1000U) % 60U);
+  const int tenths = static_cast<int>((total_ms / 100U) % 10U);
 
-  const bool modern_mode = stopwatch_modern_digital();
-  render_page_header(it, ctx.cx, "STOPWATCH", ctx.font_btn_bold, ctx.theme_primary);
-  frame_hits().add_rect(ctx.cx - scale_x(95), scale_y(44), scale_x(190), scale_y(42),
-                        WidgetId::SW_STYLE_BTN, kHitTap | kHitFocusSlot);
+  // Modern Digital Stopwatch (always used on rectangular/square displays; toggleable via header tap on round)
+  if (!LATTER_ROUND_DISPLAY || stopwatch_modern_digital()) {
+    const float min_prog = static_cast<float>(total_ms % 60000U) / 60000.0f;
+    render_progress_arc_r224(it, ctx.cx, ctx.cy, min_prog,
+                             sw.running ? ctx.theme_secondary : ctx.col_slate);
 
-  if (modern_mode) {
-    const float sec_prog = static_cast<float>(cur_ms % 60000U) / 60000.0f;
-    if (cur_ms > 0 || sw.running) {
-      render_progress_arc_r224(it, ctx.cx, ctx.cy, sec_prog,
-                               sw.running ? ctx.col_cyan : ctx.theme_primary);
-    }
+    render_page_header(it, ctx.cx, LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH",
+                       ctx.font_small, ctx.theme_primary);
+#if LATTER_ROUND_DISPLAY
+    frame_hits().add_rect(ctx.cx - scale_min(110), 0, 2 * scale_min(110) + 1, scale_min(68),
+                          WidgetId::SW_STYLE_BTN, kHitTap | kHitFocusSlot);
+#endif
 
-    fast_print(it, ctx.cx, scale_y(116), ctx.font_small,
-               sw.running ? ctx.col_cyan : ctx.col_slate, TextAlign::CENTER,
-               sw.running ? "RUNNING • TAP HEADER FOR ANALOG" : "DIGITAL • TAP HEADER FOR ANALOG");
-
-    const Color card_brd = sw.running ? ctx.col_cyan
-                                      : (cur_ms > 0 ? ctx.theme_primary : ui::chrome_card_brd_on());
-    render_card_box(it, ctx.cx - scale_x(122), scale_y(158), scale_x(244), scale_y(94),
-                       sw.running ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                       card_brd, 20);
-
-    char mmss_buf[16];
-    std::snprintf(mmss_buf, sizeof(mmss_buf), "%02lu:%02lu",
-                  static_cast<unsigned long>(mins), static_cast<unsigned long>(secs));
-    char cs_buf[8];
-    std::snprintf(cs_buf, sizeof(cs_buf), ".%02lu", static_cast<unsigned long>(centis));
-
-    fast_print(it, ctx.cx - scale_x(22), scale_y(205), ctx.font_chrono_time,
-               sw.running ? ctx.col_white : (cur_ms > 0 ? ctx.col_gold : ctx.col_slate),
-               TextAlign::CENTER, mmss_buf);
-    fast_print(it, ctx.cx + scale_x(82), scale_y(214), ctx.font_date,
-               sw.running ? ctx.col_cyan : ctx.col_slate, TextAlign::CENTER, cs_buf);
+    char main_buf[32];
+    std::snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
+    render_time_readout(it, ctx.cx, main_buf, ctx.font_time, ctx.col_white);
 
     if (sw.lap_ms > 0) {
-      const uint32_t l_sec = sw.lap_ms / 1000U;
-      const uint32_t l_cs  = (sw.lap_ms % 1000U) / 10U;
+      const int l_mins   = static_cast<int>((sw.lap_ms / 60000U) % 60U);
+      const int l_secs   = static_cast<int>((sw.lap_ms / 1000U) % 60U);
+      const int l_tenths = static_cast<int>((sw.lap_ms / 100U) % 10U);
       char lap_buf[32];
-      std::snprintf(lap_buf, sizeof(lap_buf), "LAP  %02lu:%02lu.%02lu",
-                    static_cast<unsigned long>(l_sec / 60U),
-                    static_cast<unsigned long>(l_sec % 60U),
-                    static_cast<unsigned long>(l_cs));
-      fast_print(it, ctx.cx, scale_y(278), ctx.font_small, ctx.col_gold,
-                 TextAlign::CENTER, lap_buf);
-    }
-  } else {
-    const int d_cy = scale_y(208);
-    const int d_r  = scale_min(104);
-    fast_filled_circle(it, ctx.cx, d_cy, d_r, ui::chrome_card_bg_off());
-    fast_circle(it, ctx.cx, d_cy, d_r, ui::chrome_card_brd_on());
-    fast_circle(it, ctx.cx, d_cy, d_r - 1, ui::chrome_card_brd_off());
-
-    for (int i = 0; i < 60; i++) {
-      const float s_a = DIAL_SIN[i];
-      const float c_a = DIAL_COS[i];
-      const bool major = (i % 5 == 0);
-      const int r_in  = d_r - (major ? scale_min(12) : scale_min(6));
-      const int r_out = d_r - 3;
-      fast_line(it,
-                ctx.cx + static_cast<int>(s_a * r_in), d_cy - static_cast<int>(c_a * r_in),
-                ctx.cx + static_cast<int>(s_a * r_out), d_cy - static_cast<int>(c_a * r_out),
-                major ? ctx.col_white : ctx.col_slate);
+      std::snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
+      if (backdrop_active()) {
+        fast_print(it, ctx.cx + 1, scale_y(192) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, lap_buf);
+      }
+      fast_print(it, ctx.cx, scale_y(192), ctx.font_small, ctx.theme_primary, TextAlign::CENTER, lap_buf);
+    } else {
+      const char *st_lbl = sw.running ? "Running" : "Ready";
+      if (backdrop_active()) {
+        fast_print(it, ctx.cx + 1, scale_y(192) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, st_lbl);
+      }
+      fast_print(it, ctx.cx, scale_y(192), ctx.font_small,
+                 sw.running ? ctx.theme_secondary : ctx.col_slate, TextAlign::CENTER, st_lbl);
     }
 
-    const int sub_cy = d_cy - scale_min(40);
-    const int sub_r  = scale_min(26);
-    fast_filled_circle(it, ctx.cx, sub_cy, sub_r, ui::chrome_card_bg_on());
-    fast_circle(it, ctx.cx, sub_cy, sub_r, ui::chrome_card_brd_on());
-    const float m_ang = (static_cast<float>(mins % 30U) + static_cast<float>(secs) / 60.0f) *
-                        (2.0f * PI_F / 30.0f);
-    fast_line(it, ctx.cx, sub_cy,
-              ctx.cx + static_cast<int>(fast_sin(m_ang) * (sub_r - 5)),
-              sub_cy - static_cast<int>(fast_cos(m_ang) * (sub_r - 5)), ctx.col_gold);
+    const char *hero_lbl = sw.running ? "PAUSE" : (total_ms > 0 ? "RESUME" : "START");
+    const int hero_y = scale_y(248);
+    const int hero_w = (SCREEN_W > 520) ? scale_x(188) : 188;
+    const int hero_h = (SCREEN_W > 520) ? scale_y(44) : 44;
+    render_modern_card(it, ctx.cx, hero_y, 188, 44, 12,
+                       sw.running ? kChromeCardBgOn : kChromeGlassTint,
+                       sw.running ? ctx.theme_secondary : ctx.col_white,
+                       hero_lbl, ctx.col_white, ctx.font_small);
+    frame_hits().add_rect(scale_x(40), scale_y(72), SCREEN_W - 2 * scale_x(40), scale_y(148),
+                          WidgetId::SW_PRIMARY_BTN, kHitTap);
+    frame_hits().add_centered_rect(ctx.cx, hero_y, hero_w, hero_h,
+                                   WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
 
-    char dig_b[20];
-    std::snprintf(dig_b, sizeof(dig_b), "%02lu:%02lu.%lu",
-                  static_cast<unsigned long>(mins),
-                  static_cast<unsigned long>(secs),
-                  static_cast<unsigned long>(tenths));
-    fast_print(it, ctx.cx, d_cy + scale_min(44), ctx.font_small, ctx.col_white,
-               TextAlign::CENTER, dig_b);
+    const int sub_y  = scale_y(324);
+    const int sub_dx = scale_x(70);
+    const int sub_w  = (SCREEN_W > 520) ? scale_x(124) : 124;
+    const int sub_h  = (SCREEN_W > 520) ? scale_y(46) : 46;
+    render_modern_card(it, ctx.cx - sub_dx, sub_y, 124, 46, 12, kChromeGlassTint,
+                       (sw.lap_ms > 0) ? ctx.col_red : kChromeCardBrdOn,
+                       "LAP / SPLIT", ctx.col_white, ctx.font_small);
+    frame_hits().add_centered_rect(ctx.cx - sub_dx, sub_y, sub_w, sub_h,
+                                   WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
 
-    if (sw.lap_ms > 0) {
-      const float l_ang = (static_cast<float>(sw.lap_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
-      fast_line(it, ctx.cx, d_cy,
-                ctx.cx + static_cast<int>(fast_sin(l_ang) * (d_r - 12)),
-                d_cy - static_cast<int>(fast_cos(l_ang) * (d_r - 12)), ctx.col_gold);
+    render_modern_card(it, ctx.cx + sub_dx, sub_y, 124, 46, 12, kChromeDangerBg, ctx.col_red,
+                       "RESET", ctx.col_white, ctx.font_small);
+    frame_hits().add_centered_rect(ctx.cx + sub_dx, sub_y, sub_w, sub_h,
+                                   WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
+
+    if (!tools_direct_home()) {
+      render_back_button(it, ctx.cx, ctx.font_small, layout().back_y, "< Back");
     }
-
-    const float s_ang = (static_cast<float>(cur_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
-    const float ss = fast_sin(s_ang);
-    const float cs = fast_cos(s_ang);
-    draw_glow_line(it,
-                   static_cast<int>(std::round(static_cast<float>(ctx.cx) - ss * scale_min_f(18.0f))),
-                   static_cast<int>(std::round(static_cast<float>(d_cy) + cs * scale_min_f(18.0f))),
-                   static_cast<int>(std::round(static_cast<float>(ctx.cx) + ss * static_cast<float>(d_r - 10))),
-                   static_cast<int>(std::round(static_cast<float>(d_cy) - cs * static_cast<float>(d_r - 10))),
-                   ctx.col_cyan, scale_color(ctx.col_cyan, 0.35f));
-    fast_filled_circle(it, ctx.cx, d_cy, 4, ctx.col_white);
-    fast_filled_circle(it, ctx.cx, d_cy, 2, ctx.col_cyan);
+    return;
   }
 
-  const int btn_y = scale_y(348);
-  const Color start_brd = sw.running ? ctx.col_orange : ctx.col_green;
-  const Color start_bg  = sw.running ? scale_color(ctx.col_orange, 0.22f)
-                                     : scale_color(ctx.col_green, 0.22f);
-  const char *start_lbl = sw.running ? "STOP" : (cur_ms > 0 ? "RESUME" : "START");
+#if LATTER_ROUND_DISPLAY
+  // Classic Round Chronograph Dial (default on round displays; tap 12 o'clock bezel for digital)
+  const int cx = ctx.cx;
+  const int cy = ctx.cy;
+  fast_circle(it, cx, cy, scale_min(230), ctx.col_white);
+  fast_circle(it, cx, cy, scale_min(228), ctx.theme_secondary);
+  fast_circle(it, cx, cy, scale_min(197), ctx.col_dark_gray);
+  fast_circle(it, cx, cy, scale_min(196), ctx.theme_secondary);
 
-  if (sw.running || cur_ms > 0) {
-    ui::pill_button(it, ctx.cx - scale_x(132), ctx.cx - scale_x(10), btn_y, 23,
-                    start_brd, start_bg, start_lbl, ctx.col_white, ctx.font_btn_bold,
-                    WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, ctx.cx + scale_x(10), ctx.cx + scale_x(132), btn_y, 23,
-                    sw.running ? ctx.col_gold : ui::chrome_card_brd_on(),
-                    ui::chrome_card_bg_on(),
-                    sw.running ? "LAP" : "RESET",
-                    sw.running ? ctx.col_gold : ctx.col_slate, ctx.font_btn_bold,
-                    WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot);
-  } else {
-    ui::pill_button(it, ctx.cx - scale_x(82), ctx.cx + scale_x(82), btn_y, 23,
-                    start_brd, start_bg, start_lbl, ctx.col_white, ctx.font_btn_bold,
-                    WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
+  for (int s = 0; s < 60; s++) {
+    const float t_sin = DIAL_SIN[s];
+    const float t_cos = DIAL_COS[s];
+    if (s % 5 == 0) {
+      const float perp_x = -t_cos;
+      const float perp_y = t_sin;
+      const int x1 = cx + static_cast<int>(scale_min_f(196.0f) * t_sin);
+      const int y1 = cy - static_cast<int>(scale_min_f(196.0f) * t_cos);
+      const int x2 = cx + static_cast<int>(scale_min_f(227.0f) * t_sin);
+      const int y2 = cy - static_cast<int>(scale_min_f(227.0f) * t_cos);
+      fast_line(it, x1 + static_cast<int>(perp_x), y1 + static_cast<int>(perp_y),
+                x2 + static_cast<int>(perp_x), y2 + static_cast<int>(perp_y), ctx.theme_secondary);
+      fast_line(it, x1 - static_cast<int>(perp_x), y1 - static_cast<int>(perp_y),
+                x2 - static_cast<int>(perp_x), y2 - static_cast<int>(perp_y), ctx.col_slate);
+      fast_line(it, x1, y1, x2, y2, ctx.col_white);
+    } else {
+      const int x1 = cx + static_cast<int>(scale_min_f(210.0f) * t_sin);
+      const int y1 = cy - static_cast<int>(scale_min_f(210.0f) * t_cos);
+      const int x2 = cx + static_cast<int>(scale_min_f(227.0f) * t_sin);
+      const int y2 = cy - static_cast<int>(scale_min_f(227.0f) * t_cos);
+      fast_line(it, x1, y1, x2, y2, ctx.col_slate);
+      fast_line(it, x1 + 1, y1, x2 + 1, y2, ctx.col_slate);
+    }
   }
 
-  render_back_button(it, ctx.cx, ctx.font_small, layout().back_y,
-                     tools_direct_home() ? "< Home" : "< Tools");
+  static constexpr int kChronoTicks[11] = {0, 5, 10, 15, 20, 25, 35, 40, 45, 50, 55};
+  static constexpr const char *kChronoStrs[11] = {"0", "5", "10", "15", "20", "25", "35", "40", "45", "50", "55"};
+  for (int i = 0; i < 11; i++) {
+    const int t_idx = kChronoTicks[i];
+    const int nx = cx + static_cast<int>(scale_min_f(172.0f) * DIAL_SIN[t_idx]);
+    const int ny = cy - static_cast<int>(scale_min_f(172.0f) * DIAL_COS[t_idx]);
+    if (backdrop_active()) {
+      fast_print(it, nx + 1, ny + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, kChronoStrs[i]);
+    }
+    fast_print(it, nx, ny, ctx.font_small, ctx.col_white, TextAlign::CENTER, kChronoStrs[i]);
+  }
+
+  if (backdrop_active()) {
+    fast_print(it, cx + 1, scale_min(132) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "CHRONOGRAPH");
+  }
+  fast_print(it, cx, scale_min(132), ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "CHRONOGRAPH");
+
+  char main_buf[32];
+  std::snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
+  if (backdrop_active()) {
+    fast_print(it, cx + 1, scale_min(238) + 1, ctx.font_date, kChromeShadow, TextAlign::CENTER, main_buf);
+  }
+  fast_print(it, cx, scale_min(238), ctx.font_date, ctx.col_white, TextAlign::CENTER, main_buf);
+
+  if (sw.lap_ms > 0) {
+    const int l_mins   = static_cast<int>((sw.lap_ms / 60000U) % 60U);
+    const int l_secs   = static_cast<int>((sw.lap_ms / 1000U) % 60U);
+    const int l_tenths = static_cast<int>((sw.lap_ms / 100U) % 10U);
+    char lap_buf[32];
+    std::snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
+    if (backdrop_active()) {
+      fast_print(it, cx + 1, scale_min(274) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, lap_buf);
+    }
+    fast_print(it, cx, scale_min(274), ctx.font_small, ctx.theme_primary, TextAlign::CENTER, lap_buf);
+  }
+
+  const int btn_y     = cy + scale_min(99);
+  const int btn_lap_x = cx - scale_min(57);
+  const int btn_rst_x = cx + scale_min(57);
+  const int btn_r     = scale_min(36);
+
+  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeGlassTint,
+                      (sw.lap_ms > 0) ? ctx.col_red : ctx.theme_secondary);
+  fast_print(it, btn_lap_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "LAP");
+  fast_print(it, btn_lap_x, btn_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, "LAP");
+
+  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeGlassTint, kChromeCardBorder);
+  fast_print(it, btn_rst_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "RESET");
+  fast_print(it, btn_rst_x, btn_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "RESET");
+
+  // Split-Second (Rattrapante) Ghost Hand via fast_sincos
+  if (sw.lap_ms > 0) {
+    const float lap_angle = (static_cast<float>(sw.lap_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
+    float l_sin = 0.0f, l_cos = 1.0f;
+    fast_sincos(lap_angle, l_sin, l_cos);
+    const int lx = cx + static_cast<int>(scale_min_f(154.0f) * l_sin);
+    const int ly_end = cy - static_cast<int>(scale_min_f(154.0f) * l_cos);
+    fast_line(it, cx, cy, lx, ly_end, ctx.col_red);
+    fast_line(it, cx + 1, cy, lx + 1, ly_end, ctx.col_red);
+    fast_circle(it,
+                cx + static_cast<int>(scale_min_f(158.0f) * l_sin),
+                cy - static_cast<int>(scale_min_f(158.0f) * l_cos),
+                scale_min(4), ctx.col_red);
+  }
+
+  // Main Central Arrow Hand (20 FPS High-Beat Sweep via fast_sincos)
+  const float chrono_angle = (static_cast<float>(total_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
+  float s_sin = 0.0f, s_cos = 1.0f;
+  fast_sincos(chrono_angle, s_sin, s_cos);
+
+  const int tip_x      = cx + static_cast<int>(scale_min_f(178.0f) * s_sin);
+  const int tip_y      = cy - static_cast<int>(scale_min_f(178.0f) * s_cos);
+  const int arr_base_x = cx + static_cast<int>(scale_min_f(152.0f) * s_sin);
+  const int arr_base_y = cy - static_cast<int>(scale_min_f(152.0f) * s_cos);
+  const int tail_x     = cx - static_cast<int>(scale_min_f(36.0f) * s_sin);
+  const int tail_y     = cy + static_cast<int>(scale_min_f(36.0f) * s_cos);
+
+  const float perp_x = s_cos;
+  const float perp_y = s_sin;
+  const int left_x   = arr_base_x + static_cast<int>(scale_min_f(8.0f) * perp_x);
+  const int left_y   = arr_base_y + static_cast<int>(scale_min_f(8.0f) * perp_y);
+  const int right_x  = arr_base_x - static_cast<int>(scale_min_f(8.0f) * perp_x);
+  const int right_y  = arr_base_y - static_cast<int>(scale_min_f(8.0f) * perp_y);
+
+  fast_line(it, tail_x + static_cast<int>(perp_x), tail_y + static_cast<int>(perp_y),
+            arr_base_x + static_cast<int>(perp_x), arr_base_y + static_cast<int>(perp_y), ctx.theme_secondary);
+  fast_line(it, tail_x - static_cast<int>(perp_x), tail_y - static_cast<int>(perp_y),
+            arr_base_x - static_cast<int>(perp_x), arr_base_y - static_cast<int>(perp_y), ctx.col_slate);
+  fast_line(it, tail_x, tail_y, arr_base_x, arr_base_y, ctx.col_white);
+
+  fast_filled_triangle(it, tip_x, tip_y, left_x, left_y, right_x, right_y, ctx.col_white);
+  fast_line(it, tip_x, tip_y, left_x, left_y, ctx.theme_secondary);
+  fast_line(it, tip_x, tip_y, right_x, right_y, ctx.col_slate);
+  fast_line(it, left_x, left_y, right_x, right_y, ctx.theme_secondary);
+
+  fast_filled_circle(it, tail_x, tail_y, scale_min(8), ctx.col_dark_gray);
+  fast_circle(it, tail_x, tail_y, scale_min(8), ctx.theme_secondary);
+  fast_filled_circle(it, tail_x, tail_y, scale_min(3), ctx.theme_secondary);
+
+  fast_filled_circle(it, cx, cy, scale_min(9), ctx.theme_secondary);
+  fast_circle(it, cx, cy, scale_min(9), ctx.col_slate);
+  fast_filled_circle(it, cx, cy, scale_min(6), ctx.col_dark_gray);
+  fast_filled_circle(it, cx, cy, scale_min(2), ctx.col_white);
+
+  // Hit-table order (top-most wins): dial face start/pause -> 12 o'clock style toggle -> LAP/RESET circles -> Back
+  frame_hits().add_rect(scale_min(40), scale_min(69),
+                        SCREEN_W - 2 * scale_min(40), scale_min(210),
+                        WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
+  frame_hits().add_rect(cx - scale_min(110), 0, 2 * scale_min(110) + 1, scale_min(68),
+                        WidgetId::SW_STYLE_BTN, kHitTap | kHitFocusSlot);
+  frame_hits().add_circle(btn_lap_x, btn_y, btn_r,
+                          WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
+  frame_hits().add_circle(btn_rst_x, btn_y, btn_r,
+                          WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
+
+  if (!tools_direct_home()) {
+    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
+  }
+#endif
 }
 
 void render_dice_subpage(esphome::display::Display &it, const UiFrameContext &ctx) {

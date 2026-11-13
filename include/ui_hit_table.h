@@ -151,6 +151,7 @@ namespace WidgetId {
   static constexpr uint16_t SW_PRIMARY_BTN     = 725;
   static constexpr uint16_t SW_RESET_BTN       = 726;
   static constexpr uint16_t SW_STYLE_BTN       = 727;
+  static constexpr uint16_t SW_LAP_BTN         = 728;
   static constexpr uint16_t ALARM_CARD_BASE    = 730;  // 730..732 (param = alarm 0..2)
   static constexpr uint16_t ALARM_TOGGLE_BASE  = 735;  // 735..737 (param = alarm 0..2)
   static constexpr uint16_t ALARM_RECUR_BTN    = 740;
