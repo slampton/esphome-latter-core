@@ -1864,11 +1864,11 @@ script:
                      mode_s == "podcast_episodes" || mode_s == "lyrics" || mode_s == "bio") {
             search_str = rs.music.drilldown_album_id;
           }
-          const std::string_view alb_opt(latter_ui::pref_album_sort_cstr());
+          const std::string_view alb_opt(latter_ui::pref_album_sort_order_cstr());
           const char *alb_sort = (alb_opt == "Newest on Top") ? "year_desc" : ((alb_opt == "Oldest on Top") ? "year" : "name");
-          const std::string_view art_opt(latter_ui::pref_artist_album_sort_cstr());
+          const std::string_view art_opt(latter_ui::pref_artist_album_sort_order_cstr());
           const char *art_sort = (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
-          const std::string_view pod_opt(latter_ui::pref_podcast_sort_cstr());
+          const std::string_view pod_opt(latter_ui::pref_podcast_sort_order_cstr());
           const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
           latter_actions::emit_music_browse(
               mode_s, page, search_str, rs.music.active_speaker_entity,

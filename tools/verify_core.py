@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import ast
 import base64
+import difflib
 import json
 import os
 from pathlib import Path
@@ -627,6 +628,316 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
                     )
 
 
+_CPP_TOKEN_RE = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*[\s\S]*?\*/|//[^\n]*')
+
+HOST_LAMBDA_HEADERS: tuple[str, ...] = (
+    "latter_protocol.h",
+    "latter_state.h",
+    "latter_rpc.h",
+    "latter_actions.h",
+    "hal_battery.h",
+    "hal_link_report.h",
+    "hal_manifest.h",
+    "hal_panel_power.h",
+    "ui_hit_table.h",
+    "ui_compositor.h",
+)
+
+
+def _strip_cpp_strings_and_comments(text: str) -> str:
+    """Mask C++ comments and single-line string/char literals in one pass while preserving exact line count."""
+
+    def _repl(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        if tok.startswith('"'):
+            return '"' + (" " * max(0, len(tok) - 2)) + '"'
+        if tok.startswith("'"):
+            return "' '"
+        if tok.startswith("/*"):
+            return "\n" * tok.count("\n")
+        return ""
+
+    return _CPP_TOKEN_RE.sub(_repl, text)
+
+
+def _strip_yaml_comments_keep_lines(text: str) -> str:
+    """Strip YAML comments while preserving exact 1-based line numbers."""
+    out: list[str] = []
+    for line in text.splitlines():
+        lstripped = line.lstrip()
+        if lstripped.startswith("#") and not re.match(r"^#\s*(?:if|ifdef|ifndef|elif|else|endif|define|include)\b", lstripped):
+            out.append("")
+            continue
+        if " #" in line and line.count('"') % 2 == 0 and line.count("'") % 2 == 0:
+            line = line.split(" #", 1)[0]
+        out.append(line)
+    return "\n".join(out)
+
+
+def _collect_namespace_symbols(paths: list[Path] | None = None) -> tuple[dict[str, set[str]], set[str]]:
+    """Extract per-namespace C++ identifiers and global identifiers across given files or repo C++ roots."""
+    ns_syms: dict[str, set[str]] = {}
+    all_syms: set[str] = set()
+    ns_open_re = re.compile(r"\bnamespace\s+([A-Za-z_][A-Za-z0-9_:]*)\s*\{")
+    ident_re = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
+
+    if paths is None:
+        file_list: list[Path] = []
+        for base in (ROOT / "include", ROOT / "components", ROOT / "examples" / "bringup"):
+            if base.is_dir():
+                file_list.extend(p for p in iter_repo_files(base) if p.suffix.lower() in {".h", ".hpp", ".cpp"})
+    else:
+        file_list = [p for p in paths if p.is_file()]
+
+    for path in file_list:
+        clean = _strip_cpp_strings_and_comments(path.read_text(encoding="utf-8"))
+        all_syms.update(ident_re.findall(clean))
+        pos = 0
+        n = len(clean)
+        stack: list[tuple[str | None, int]] = []
+        depth = 0
+        while pos < n:
+            m_ns = ns_open_re.search(clean, pos)
+            next_l = clean.find("{", pos)
+            next_r = clean.find("}", pos)
+            candidates = [x for x in (next_l, next_r) if x != -1]
+            if not candidates:
+                if stack:
+                    toks = ident_re.findall(clean[pos:])
+                    for active_ns, _d in stack:
+                        if active_ns:
+                            ns_syms.setdefault(active_ns, set()).update(toks)
+                break
+            nxt = min(candidates)
+            seg = clean[pos:nxt]
+            if seg and stack:
+                toks = ident_re.findall(seg)
+                for active_ns, _d in stack:
+                    if active_ns:
+                        ns_syms.setdefault(active_ns, set()).update(toks)
+            if m_ns and m_ns.end() - 1 == nxt:
+                parts = [p for p in m_ns.group(1).split("::") if p]
+                depth += 1
+                for p_ns in parts:
+                    stack.append((p_ns, depth))
+                pos = nxt + 1
+            elif nxt == next_l:
+                depth += 1
+                pos = nxt + 1
+            else:
+                while stack and stack[-1][1] == depth:
+                    stack.pop()
+                depth = max(0, depth - 1)
+                pos = nxt + 1
+    return ns_syms, all_syms
+
+
+def verify_yaml_cpp_and_ids(failures: list[str]) -> None:
+    """Statically verify C++ namespace symbols, hal_* calls, delimiter balance, and id()/script references in YAML."""
+    ns_syms, all_syms = _collect_namespace_symbols()
+    qual_re = re.compile(r"\b(latter(?:_[a-z0-9_]+)?)::([A-Za-z_][A-Za-z0-9_]*)")
+    hal_re = re.compile(r"\b(hal_[A-Za-z0-9_]+)\s*\(")
+
+    for folder in ("modules", "guis", "boards", "devices", "examples"):
+        base = ROOT / folder
+        if not base.is_dir():
+            continue
+        for yf in iter_repo_files(base):
+            if yf.suffix.lower() not in {".yaml", ".yml"}:
+                continue
+            rel = yf.relative_to(ROOT).as_posix()
+            raw_txt = yf.read_text(encoding="utf-8")
+            yclean = _strip_yaml_comments_keep_lines(raw_txt)
+            masked = _strip_cpp_strings_and_comments(yclean)
+            for line_no, line in enumerate(masked.splitlines(), 1):
+                for m_q in qual_re.finditer(line):
+                    ns, sym = m_q.group(1), m_q.group(2)
+                    known = ns_syms.get(ns, set())
+                    if sym not in known:
+                        hint_list = difflib.get_close_matches(sym, sorted(known), n=1, cutoff=0.6)
+                        hint = f" (did you mean '{ns}::{hint_list[0]}'?)" if hint_list else ""
+                        failures.append(f"[YAML CPP SYMBOL] {rel}:{line_no} undeclared '{ns}::{sym}'{hint}")
+                for m_h in hal_re.finditer(line):
+                    hsym = m_h.group(1)
+                    if hsym not in all_syms:
+                        failures.append(f"[YAML CPP SYMBOL] {rel}:{line_no} undeclared HAL helper '{hsym}'")
+
+            # Check balanced (), {}, [] inside multi-line lambda blocks
+            lines = raw_txt.splitlines()
+            idx = 0
+            while idx < len(lines):
+                m_lam = re.match(r"^(\s*)(?:-\s*)?(?:\w+\s*:\s*!lambda\s*|lambda\s*:\s*)\|-?\s*$", lines[idx])
+                if not m_lam:
+                    idx += 1
+                    continue
+                base_ind = len(lines[idx]) - len(lines[idx].lstrip(" "))
+                start_ln = idx + 1
+                body_lines: list[str] = []
+                idx += 1
+                while idx < len(lines):
+                    ln = lines[idx]
+                    if ln.strip() and not ln.lstrip().startswith("#") and (len(ln) - len(ln.lstrip(" "))) <= base_ind:
+                        break
+                    body_lines.append(ln)
+                    idx += 1
+                clean_body = _strip_cpp_strings_and_comments("\n".join(body_lines))
+                pairs = {"(": ")", "{": "}", "[": "]"}
+                closing = {")": "(", "}": "{", "]": "["}
+                bstack: list[str] = []
+                unbalanced = False
+                for ch in clean_body:
+                    if ch in pairs:
+                        bstack.append(ch)
+                    elif ch in closing:
+                        if not bstack or bstack[-1] != closing[ch]:
+                            unbalanced = True
+                            break
+                        bstack.pop()
+                if unbalanced or bstack:
+                    failures.append(f"[YAML LAMBDA SYNTAX] {rel}:{start_ln} has unbalanced C++ delimiters (), {{}}, or []")
+
+    # Verify every id(...) and script.execute/stop/wait in merged device/example include chains
+    targets = (
+        sorted((ROOT / "devices").glob("*.yaml"))
+        + sorted((ROOT / "examples").glob("*.yaml"))
+        + sorted((ROOT / "examples" / "bringup").glob("*.yaml"))
+    )
+    reported_ids: set[tuple[str, str, str]] = set()
+    for target in targets:
+        chain = collect_yaml_include_chain(target)
+        merged = "\n".join(_strip_yaml_comments(p.read_text(encoding="utf-8")) for p in chain)
+        defined_ids = set(re.findall(r"(?m)^\s*-?\s*id\s*:\s*(?:!extend\s+|!remove\s+)?([A-Za-z_][A-Za-z0-9_]*)\b", merged))
+        for p in chain:
+            prel = p.relative_to(ROOT).as_posix()
+            pclean = _strip_cpp_strings_and_comments(_strip_yaml_comments_keep_lines(p.read_text(encoding="utf-8")))
+            for m_id in re.finditer(r"\bid\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)", pclean):
+                ident = m_id.group(1)
+                if ident not in defined_ids:
+                    key = (target.name, prel, ident)
+                    if key not in reported_ids:
+                        reported_ids.add(key)
+                        failures.append(f"[DANGLING YAML ID] {prel} (in {target.name}) references undefined id({ident})")
+            for m_sc in re.finditer(r"(?m)^\s*-?\s*script\.(?:execute|stop|wait)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$", pclean):
+                s_id = m_sc.group(1)
+                if s_id not in defined_ids:
+                    key = (target.name, prel, s_id)
+                    if key not in reported_ids:
+                        reported_ids.add(key)
+                        failures.append(f"[DANGLING SCRIPT ID] {prel} (in {target.name}) calls undefined script '{s_id}'")
+
+
+def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
+    """Generate a host C++20 translation unit compiling all standalone-header YAML action lambdas."""
+    ns_syms, _ = _collect_namespace_symbols()
+    host_ns_syms, _ = _collect_namespace_symbols([ROOT / "include" / h for h in HOST_LAMBDA_HEADERS])
+    esp_only_ns_syms: dict[str, set[str]] = {
+        ns: syms - host_ns_syms.get(ns, set()) for ns, syms in ns_syms.items()
+    }
+    qual_re = re.compile(r"\b(latter(?:_[a-z0-9_]+)?)::([A-Za-z_][A-Za-z0-9_]*)")
+    type_map = {
+        "string": "std::string",
+        "int": "int",
+        "bool": "bool",
+        "float": "float",
+        "string[]": "std::vector<std::string>",
+    }
+    skip_re = re.compile(
+        r"\b(?:id\s*\(|esp_|i2c_|gpio_|rtc_|nvs_|App\.|LATTER_PROF_LOG|ESP_LOG|delay\s*\(|micros\s*\(|x\b)"
+    )
+    chunks: list[str] = [
+        "#include <algorithm>",
+        "#include <cmath>",
+        "#include <cstdint>",
+        "#include <cstdio>",
+        "#include <cstring>",
+        "#include <string>",
+        "#include <string_view>",
+        "#include <vector>",
+        *[f'#include "{(ROOT / "include" / h).as_posix()}"' for h in HOST_LAMBDA_HEADERS],
+        "namespace { inline uint32_t millis() { return 0U; } }",
+    ]
+    fn_idx = 0
+    for folder in ("modules", "guis"):
+        base = ROOT / folder
+        if not base.is_dir():
+            continue
+        for yf in iter_repo_files(base):
+            if yf.suffix.lower() not in {".yaml", ".yml"}:
+                continue
+            rel = yf.relative_to(ROOT).as_posix()
+            lines = yf.read_text(encoding="utf-8").splitlines()
+            active_vars: list[tuple[str, str]] = []
+            in_vars = False
+            vars_indent = -1
+            client_hook = ""
+            idx = 0
+            while idx < len(lines):
+                raw_ln = lines[idx]
+                stripped = raw_ln.split("#", 1)[0].rstrip()
+                if stripped.strip():
+                    ind = len(stripped) - len(stripped.lstrip(" "))
+                    if re.match(r"^\s*-\s*(?:id|action)\s*:", stripped) and ind <= 6:
+                        active_vars = []
+                        in_vars = False
+                        client_hook = ""
+                    m_ch = re.match(r"^\s*(on_client_connected|on_client_disconnected)\s*:\s*$", stripped)
+                    if m_ch:
+                        client_hook = m_ch.group(1)
+                        active_vars = []
+                        in_vars = False
+                    m_vh = re.match(r"^(\s*)(?:parameters|variables)\s*:\s*$", stripped)
+                    if m_vh:
+                        in_vars = True
+                        vars_indent = len(m_vh.group(1))
+                        active_vars = []
+                        idx += 1
+                        continue
+                    if in_vars:
+                        if ind <= vars_indent:
+                            in_vars = False
+                        else:
+                            m_kv = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_\[\]]+)\s*$", stripped)
+                            if m_kv and m_kv.group(2) in type_map:
+                                active_vars.append((m_kv.group(1), type_map[m_kv.group(2)]))
+                m_lam = re.match(r"^(\s*)-\s*lambda\s*:\s*\|-?\s*$", raw_ln)
+                if not m_lam:
+                    idx += 1
+                    continue
+                base_ind = len(raw_ln) - len(raw_ln.lstrip(" "))
+                body_start_line = idx + 2
+                body: list[str] = []
+                idx += 1
+                while idx < len(lines):
+                    ln = lines[idx]
+                    if ln.strip() and not ln.lstrip().startswith("#") and (len(ln) - len(ln.lstrip(" "))) <= base_ind:
+                        break
+                    body.append(ln)
+                    idx += 1
+                btxt = "\n".join(body)
+                bclean = _strip_cpp_strings_and_comments(btxt)
+                if skip_re.search(bclean) or "${" in btxt:
+                    continue
+                if any(m_q.group(2) in esp_only_ns_syms.get(m_q.group(1), set()) for m_q in qual_re.finditer(bclean)):
+                    continue
+                params = list(active_vars)
+                if client_hook == "on_client_connected":
+                    params = [("client_info", "std::string"), ("client_address", "std::string")]
+                elif client_hook == "on_client_disconnected":
+                    params = [("client_info", "std::string")]
+                sig = ", ".join(f"{ctype} {cname}" for cname, ctype in params)
+                unused = " ".join(f"(void){cname};" for cname, _ in params)
+                fn_idx += 1
+                chunks.append(f"[[maybe_unused]] static void yaml_action_lambda_{fn_idx}({sig}) {{")
+                if unused:
+                    chunks.append(f"  {unused}")
+                chunks.append(f'#line {body_start_line} "{rel}"')
+                chunks.extend(body)
+                chunks.append("}")
+    chunks.append("int main() { return 0; }")
+    out_cpp.write_text("\n".join(chunks) + "\n", encoding="utf-8")
+    return fn_idx
+
+
 def run_subprocess_gates(failures: list[str]) -> None:
     """Run protocol, board-facts, bringup, sound checks and compile/run C++20 host unit tests."""
     py_tools = (
@@ -652,7 +963,8 @@ def run_subprocess_gates(failures: list[str]) -> None:
     gpp = shutil.which("g++") or shutil.which("clang++")
     if gpp:
         with tempfile.TemporaryDirectory() as td:
-            bin_path = Path(td) / ("latter_host_test.exe" if os.name == "nt" else "latter_host_test")
+            td_path = Path(td)
+            bin_path = td_path / ("latter_host_test.exe" if os.name == "nt" else "latter_host_test")
             comp = subprocess.run(
                 [gpp, "-std=c++20", "-O2", "-Wall", "-Wextra", str(test_cpp), "-o", str(bin_path)],
                 capture_output=True,
@@ -665,6 +977,16 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 run = subprocess.run([str(bin_path)], capture_output=True, text=True, check=False)
                 if run.returncode != 0:
                     failures.append(f"[HOST TESTS RUN] {(run.stderr or run.stdout).strip()}")
+            lam_cpp = td_path / "yaml_lambdas_check.cpp"
+            if _write_yaml_lambdas_syntax_harness(lam_cpp) > 0:
+                lam_comp = subprocess.run(
+                    [gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", str(lam_cpp)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if lam_comp.returncode != 0:
+                    failures.append(f"[YAML LAMBDA COMPILE] {(lam_comp.stderr or lam_comp.stdout).strip()}")
     elif os.name == "nt":
         vcvars_candidates = [
             Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"),
@@ -677,6 +999,8 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 td_path = Path(td)
                 exe_path = td_path / "latter_host_test.exe"
                 obj_path = td_path / "latter_host_test.obj"
+                lam_cpp = td_path / "yaml_lambdas_check.cpp"
+                has_lam = _write_yaml_lambdas_syntax_harness(lam_cpp) > 0
                 bat_lines = [
                     "@echo off",
                     f'call "{vcvars}" >nul',
@@ -686,6 +1010,13 @@ def run_subprocess_gates(failures: list[str]) -> None:
                     f'"{exe_path}"',
                     "if errorlevel 1 exit /b 1",
                 ]
+                if has_lam:
+                    bat_lines.extend(
+                        [
+                            f'cl /nologo /utf-8 /std:c++20 /Zs /W4 /EHsc "{lam_cpp}"',
+                            "if errorlevel 1 exit /b 1",
+                        ]
+                    )
                 bat_path = td_path / "run_host_tests.cmd"
                 bat_path.write_text("\r\n".join(bat_lines) + "\r\n", encoding="utf-8")
                 res = subprocess.run(["cmd.exe", "/c", str(bat_path)], capture_output=True, text=True, check=False)
@@ -1131,8 +1462,9 @@ def main(argv: list[str] | None = None) -> int:
     if "id: latter_ping_action" not in base_uncommented:
         failures.append("[API STANDARDS] modules/base.yaml must set id: latter_ping_action on latter_ping")
 
-    # 10. Device UI & accessibility invariants
+    # 10. Device UI & accessibility invariants + YAML C++ symbol/ID resolution
     verify_device_ui_and_accessibility(failures)
+    verify_yaml_cpp_and_ids(failures)
 
     # 11. Subprocess tool gates & C++20 host unit tests (skipped only in --fast mode)
     if not fast_mode:
