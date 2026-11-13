@@ -1169,7 +1169,11 @@ HOST_UI_STUBS: dict[str, str] = {
     "esphome/components/api/api_server.h": (
         "#pragma once\n"
         "namespace esphome::api {\n"
-        "class APIServer { public: bool is_connected() const { return true; } };\n"
+        "class APIServer {\n"
+        " public:\n"
+        "  bool is_connected() const { return true; }\n"
+        "  bool is_connected_with_state_subscription() const { return true; }\n"
+        "};\n"
         "extern APIServer *global_api_server;\n"
         "}  // namespace esphome::api\n"
     ),
@@ -1263,6 +1267,351 @@ def _write_host_ui_stubs(stub_dir: Path) -> None:
         fp.write_text(content, encoding="utf-8")
 
 
+YAML_FULL_LAMBDA_PREAMBLE = """\
+#ifndef LATTER_CHIP_P4
+#define LATTER_CHIP_P4 0
+#endif
+#ifndef LATTER_HAS_TOUCH
+#define LATTER_HAS_TOUCH 1
+#endif
+#include "esphome/core/defines.h"
+#include "esphome/core/log.h"
+#include "esphome/core/hal.h"
+#include "esphome/core/time.h"
+#include "esphome/components/font/font.h"
+#include "esphome/components/api/api_server.h"
+#include "esp_heap_caps.h"
+#include "esphome_bridge.h"
+#include "hal_manifest.h"
+#include "hal_battery.h"
+#include "hal_imu_qmi8658.h"
+#include "hal_link_report.h"
+#include "hal_panel_power.h"
+#include "hal_power_pm.h"
+#include "audio_router.h"
+#include "latter_prof.h"
+#include "latter_protocol.h"
+#include "latter_rpc.h"
+#include "latter_state.h"
+#include "ui_pages.h"
+#include "ui_touch_engine.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <string_view>
+#include <vector>
+
+using std::isnan;
+using std::to_string;
+using esphome::Color;
+
+inline size_t esp_get_free_heap_size() { return 0; }
+struct AppStub { void feed_wdt() {} void safe_reboot() {} };
+inline AppStub App;
+
+namespace latter_ui {
+template <typename... Args> inline void hal_set_touch_sleep_mode(Args &&...) {}
+}  // namespace latter_ui
+
+namespace media_player {
+enum MediaPlayerState {
+  MEDIA_PLAYER_STATE_NONE = 0,
+  MEDIA_PLAYER_STATE_IDLE = 1,
+  MEDIA_PLAYER_STATE_PLAYING = 2,
+  MEDIA_PLAYER_STATE_PAUSED = 3,
+  MEDIA_PLAYER_STATE_ANNOUNCING = 4,
+};
+enum MediaPlayerCommand {
+  MEDIA_PLAYER_COMMAND_PLAY = 0,
+  MEDIA_PLAYER_COMMAND_PAUSE = 1,
+  MEDIA_PLAYER_COMMAND_STOP = 2,
+};
+}  // namespace media_player
+
+namespace microphone {
+struct StreamInfo { int get_bits_per_sample() const { return 16; } };
+struct AudioCapture { StreamInfo stream_info; std::vector<uint8_t> data; };
+}  // namespace microphone
+
+namespace esphome::voice_assistant {
+template <typename... Args> inline void on_api_client_authenticated(Args &&...) {}
+template <typename... Args> inline void abort_voice_assistant(Args &&...) {}
+template <typename... Args> inline void cycle_primary_wake_word(Args &&...) {}
+template <typename... Args> inline void start_continuous(Args &&...) {}
+template <typename... Args> inline void request_start(Args &&...) {}
+}  // namespace esphome::voice_assistant
+
+struct AnyCall {
+  template <typename... Args> AnyCall &set_volume(Args &&...) { return *this; }
+  template <typename... Args> AnyCall &set_brightness(Args &&...) { return *this; }
+  template <typename... Args> AnyCall &set_command(Args &&...) { return *this; }
+  template <typename... Args> AnyCall &set_transition_length(Args &&...) { return *this; }
+  template <typename... Args> AnyCall &set_media_url(Args &&...) { return *this; }
+  void perform() {}
+};
+
+struct AnyValues {
+  bool is_on() const { return true; }
+  float get_brightness() const { return 1.0f; }
+};
+
+struct AnyStateVal {
+  operator bool() const { return false; }
+  bool operator==(media_player::MediaPlayerState) const { return false; }
+  bool operator!=(media_player::MediaPlayerState) const { return true; }
+};
+
+struct AnyId : esphome::display::Display, esphome::display::BaseImage, esphome::font::Font {
+  AnyStateVal state{};
+  float volume{0.5f};
+  AnyValues current_values{};
+  AnyValues remote_values{};
+  operator esphome::display::BaseFont *() { return static_cast<esphome::font::Font *>(this); }
+  operator esphome::display::BaseImage *() { return static_cast<esphome::display::BaseImage *>(this); }
+  operator esphome::voice_assistant::VoiceAssistant *() { return nullptr; }
+  operator esphome::micro_wake_word::MicroWakeWord *() { return nullptr; }
+  template <typename... Args> void execute(Args &&...) {}
+  void stop() {}
+  void press() {}
+  void update() {}
+  template <typename... Args> void publish_state(Args &&...) {}
+  bool is_running() const { return false; }
+  bool is_active() const { return false; }
+  bool is_connected() const { return true; }
+  void set_profile_logging(bool) {}
+  void set_uuid_hex(std::string_view) {}
+  void set_volume(float) {}
+  void set_mute_state(bool) {}
+  bool get_mute_state() const { return false; }
+  bool has_buffered_data() const { return false; }
+  template <typename... Args> void apply_ducking(Args &&...) {}
+  void set_brightness(uint8_t) {}
+  bool is_failed() const { return false; }
+  void reset_to_construction_state() {}
+  void call() {}
+  void disable_loop() {}
+  void enable_loop() {}
+  void release() {}
+  void enable() {}
+  void disable() {}
+  void release_image() {}
+  esphome::ESPTime now() const { return {}; }
+  AnyCall make_call() { return {}; }
+  AnyCall turn_on() { return {}; }
+  AnyCall turn_off() { return {}; }
+  template <typename F> void add_data_callback(F &&cb) {
+    microphone::AudioCapture cap;
+    cb(cap);
+  }
+  int get_width() const override { return 0; }
+  int get_height() const override { return 0; }
+};
+
+inline AnyId &any_id_singleton() { static AnyId inst; return inst; }
+inline Color &any_color_singleton() { static Color c; return c; }
+struct AnyStrId {
+  std::string state;
+  bool has_state() const { return true; }
+  template <typename... A> void publish_state(A &&...) {}
+};
+struct AnyFltId {
+  float state{0.0f};
+  bool has_state() const { return true; }
+  template <typename... A> void publish_state(A &&...) {}
+};
+inline AnyStrId &any_str_id_singleton() { static AnyStrId s; return s; }
+inline AnyFltId &any_flt_id_singleton() { static AnyFltId s; return s; }
+struct TouchPointStub { int x{0}, y{0}, state{1}; };
+"""
+
+
+def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
+    """Generate a host C++20 TU compiling all block & inline YAML lambdas (including id(...) calls)."""
+    yaml_files = (
+        ROOT / "modules" / "base.yaml",
+        ROOT / "modules" / "display_pipeline.yaml",
+        ROOT / "modules" / "power_manager.yaml",
+        ROOT / "modules" / "system_core.yaml",
+        ROOT / "modules" / "timers_and_fetchers.yaml",
+        ROOT / "guis" / "universal" / "gui.yaml",
+    )
+    type_map = {
+        "string": "std::string",
+        "int": "int",
+        "bool": "bool",
+        "float": "float",
+        "string[]": "std::vector<std::string>",
+    }
+    str_ids = {"track_title", "track_artist", "track_album", "latter_ip_address", "fw_release_summary"}
+    flt_ids = {"latter_wifi_signal"}
+    ptr_ids = {
+        "remote_album_art",
+        "home_wallpaper_art",
+        "camera_snapshot_art",
+        "album_art",
+        "touch_screen",
+        "screensaver_anim_tick",
+        "ui_anim_tick",
+        "ble_ctrl",
+        "wifi_ctrl",
+        "disp1",
+    }
+
+    def sanitize_cpp(code: str) -> str:
+        code = re.sub(r"\$\{[A-Za-z0-9_]+\}", "0", code)
+        code = re.sub(
+            r"(?<!&)&(?!&)\s*id\(\s*(theme_primary|theme_secondary|col_[A-Za-z0-9_]*)\s*\)",
+            "(&any_color_singleton())",
+            code,
+        )
+        code = re.sub(
+            r"(?<!&)&(?!&)\s*id\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+            "(&any_id_singleton())",
+            code,
+        )
+
+        def repl_dot(m: re.Match[str]) -> str:
+            nm = m.group(1)
+            if nm in str_ids:
+                return "any_str_id_singleton()."
+            if nm in flt_ids:
+                return "any_flt_id_singleton()."
+            return "any_id_singleton()."
+
+        code = re.sub(r"\bid\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\.", repl_dot, code)
+
+        def repl_bare(m: re.Match[str]) -> str:
+            nm = m.group(1)
+            if nm in ("theme_primary", "theme_secondary") or nm.startswith("col_"):
+                return "any_color_singleton()"
+            if nm in ptr_ids:
+                return "(&any_id_singleton())"
+            return "any_id_singleton()"
+
+        return re.sub(r"\bid\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)", repl_bare, code)
+
+    chunks = [YAML_FULL_LAMBDA_PREAMBLE]
+    fn_idx = 0
+    for yf in yaml_files:
+        if not yf.is_file():
+            continue
+        rel = yf.relative_to(ROOT).as_posix()
+        lines = yf.read_text(encoding="utf-8").splitlines()
+        active_vars: list[tuple[str, str]] = []
+        in_vars = False
+        vars_indent = -1
+        client_hook = ""
+        on_progress = False
+        on_touch = ""
+        in_write_action = False
+        idx = 0
+        while idx < len(lines):
+            raw_ln = lines[idx]
+            stripped = raw_ln.split("#", 1)[0].rstrip()
+            if stripped.strip():
+                ind = len(stripped) - len(stripped.lstrip(" "))
+                if re.match(r"^\s*-\s*(?:id|action|platform|interval)\s*:", stripped) and ind <= 6:
+                    active_vars = []
+                    in_vars = False
+                    client_hook = ""
+                    on_progress = False
+                    on_touch = ""
+                    in_write_action = False
+                if re.match(r"^\s*write_action\s*:\s*$", stripped):
+                    in_write_action = True
+                if re.match(r"^\s*on_progress\s*:\s*$", stripped):
+                    on_progress = True
+                elif re.match(r"^\s*on_(?:begin|end|error|abort)\s*:\s*$", stripped):
+                    on_progress = False
+                m_ot = re.match(r"^\s*(on_touch|on_update|on_release)\s*:\s*$", stripped)
+                if m_ot and rel.endswith("gui.yaml"):
+                    on_touch = m_ot.group(1)
+                m_ch = re.match(r"^\s*(on_client_connected|on_client_disconnected)\s*:\s*$", stripped)
+                if m_ch:
+                    client_hook = m_ch.group(1)
+                    active_vars = []
+                    in_vars = False
+                m_vh = re.match(r"^(\s*)(?:parameters|variables)\s*:\s*$", stripped)
+                if m_vh:
+                    in_vars = True
+                    vars_indent = len(m_vh.group(1))
+                    active_vars = []
+                    idx += 1
+                    continue
+                if in_vars:
+                    if ind <= vars_indent:
+                        in_vars = False
+                    else:
+                        m_kv = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_\[\]]+)\s*$", stripped)
+                        if m_kv and m_kv.group(2) in type_map:
+                            active_vars.append((m_kv.group(1), type_map[m_kv.group(2)]))
+
+            m_block = re.match(r"^(\s*)(?:-\s*)?lambda\s*:\s*\|-?\s*$", raw_ln)
+            if m_block:
+                is_cond = not raw_ln.lstrip().startswith("-")
+                base_ind = len(raw_ln) - len(raw_ln.lstrip(" "))
+                body_start = idx + 2
+                body: list[str] = []
+                idx += 1
+                while idx < len(lines):
+                    ln = lines[idx]
+                    if ln.strip() and (len(ln) - len(ln.lstrip(" "))) <= base_ind:
+                        break
+                    body.append(ln)
+                    idx += 1
+                btxt = sanitize_cpp("\n".join(body))
+                params = list(active_vars)
+                if rel.endswith("gui.yaml") and on_touch == "on_touch":
+                    params = [("touch", "TouchPointStub"), ("touches", "std::vector<TouchPointStub>")]
+                elif rel.endswith("gui.yaml") and on_touch == "on_update":
+                    params = [("touches", "std::vector<TouchPointStub>")]
+                elif rel.endswith("gui.yaml") and not on_touch:
+                    params = [("it", "esphome::display::Display &")]
+                elif in_write_action:
+                    params = [("state", "float")]
+                elif client_hook in ("on_client_connected", "on_client_disconnected"):
+                    params = [("client_info", "std::string"), ("client_address", "std::string")]
+                elif on_progress:
+                    params = [("x", "float")]
+                sig = ", ".join(f"{ctype} {cname}" for cname, ctype in params)
+                ret = "auto" if is_cond else "void"
+                fn_idx += 1
+                chunks.append(f"[[maybe_unused]] static {ret} yaml_full_fn_{fn_idx}({sig}) {{")
+                chunks.append(f'#line {body_start} "{rel}"')
+                chunks.append(btxt)
+                chunks.append("}")
+                continue
+
+            m_inline = re.match(
+                r"""^(\s*)(?:-\s*)?(?:lambda\s*:\s*|[A-Za-z0-9_]+\s*:\s*!lambda\s+)(['"])(.*)\2\s*$""",
+                stripped,
+            )
+            if m_inline:
+                is_ret = "return " in m_inline.group(3)
+                btxt = sanitize_cpp(m_inline.group(3))
+                params = list(active_vars)
+                if client_hook in ("on_client_connected", "on_client_disconnected"):
+                    params = [("client_info", "std::string"), ("client_address", "std::string")]
+                elif on_progress:
+                    params = [("x", "float")]
+                sig = ", ".join(f"{ctype} {cname}" for cname, ctype in params)
+                ret = "auto" if is_ret else "void"
+                fn_idx += 1
+                chunks.append(f"[[maybe_unused]] static {ret} yaml_full_fn_{fn_idx}({sig}) {{")
+                chunks.append(f'#line {idx + 1} "{rel}"')
+                chunks.append(btxt)
+                chunks.append("}")
+
+            idx += 1
+    chunks.append("int main() { return 0; }")
+    out_cpp.write_text("\n".join(chunks) + "\n", encoding="utf-8")
+    return fn_idx
+
+
 def run_subprocess_gates(failures: list[str]) -> None:
     """Run protocol, board-facts, bringup, sound checks and compile/run C++20 host unit tests."""
     py_tools = (
@@ -1341,6 +1690,8 @@ def run_subprocess_gates(failures: list[str]) -> None:
             if ui_cpps:
                 stub_dir = td_path / "ui_stubs"
                 _write_host_ui_stubs(stub_dir)
+                full_lam_cpp = td_path / "yaml_full_lambdas_check.cpp"
+                extra_tus = [full_lam_cpp] if _write_yaml_full_lambdas_syntax_harness(full_lam_cpp) > 0 else []
                 for cfg_lbl, defs in ui_trait_matrices:
                     ui_comp = subprocess.run(
                         [
@@ -1350,7 +1701,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
                             f"-I{ROOT / 'include'}",
                             f"-I{stub_dir}",
                             *[f"-D{d}" for d in defs],
-                            *[str(p) for p in ui_cpps],
+                            *[str(p) for p in (*ui_cpps, *extra_tus)],
                         ],
                         capture_output=True,
                         text=True,
@@ -1393,7 +1744,9 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 if ui_cpps:
                     stub_dir = td_path / "ui_stubs"
                     _write_host_ui_stubs(stub_dir)
-                    ui_cpp_args = " ".join(f'"{p}"' for p in ui_cpps)
+                    full_lam_cpp = td_path / "yaml_full_lambdas_check.cpp"
+                    extra_tus = [full_lam_cpp] if _write_yaml_full_lambdas_syntax_harness(full_lam_cpp) > 0 else []
+                    ui_cpp_args = " ".join(f'"{p}"' for p in (*ui_cpps, *extra_tus))
                     for _, defs in ui_trait_matrices:
                         def_args = " ".join(f"/D{d}" for d in defs)
                         bat_lines.extend(

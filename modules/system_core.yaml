@@ -149,7 +149,8 @@ esphome:
                   }
                 }
                 if (r.nav.gui_page == 8 && r.nav.tools_subpage == 12 &&
-                    r.alert.loaded_camera_url.empty() && !st.doorbell_camera_entity.empty()) {
+                    r.alert.loaded_camera_url.empty() &&
+                    (!st.camera_snapshot_url.empty() || !st.cameras_summary.empty())) {
                   id(fetch_on_demand_camera).execute();
                 }
                 r.area.alarm_entity = st.alarm_entity;
