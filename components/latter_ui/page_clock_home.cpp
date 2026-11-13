@@ -856,26 +856,111 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     return;
   }
 
-  HomeActivityItem act_items[8];
-  const int act_count = collect_home_activities(
-      now_ms, is_24h_format,
-      rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
-      music_playing, music_title, music_artist,
-      rs.alarms.snooze_until,
-      prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
-      prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
-      prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
-      act_items,
-      ctx.now.is_valid() ? ctx.now.hour : -1,
-      ctx.now.is_valid() ? ctx.now.minute : -1,
-      cs.summary);
+  struct HomeActivitiesMemo {
+    HomeActivityItem items[8]{};
+    int count{-1};
+    uint32_t sw_tick{0xFFFFFFFFU};
+    int t_rem[3]{-1, -1, -1};
+    uint8_t t_flags{0xFFU};
+    std::string t_names[3]{};
+    bool is_24h{false};
+    bool music_on{false};
+    bool music_cleared{false};
+    std::string m_title{};
+    std::string m_artist{};
+    uint32_t snooze{0xFFFFFFFFU};
+    uint8_t a_h[3]{0, 0, 0};
+    uint8_t a_m[3]{0, 0, 0};
+    uint8_t a_en{0xFFU};
+    int cur_h{-2};
+    int cur_m{-2};
+    uint8_t src_mask{0xFFU};
+    std::string cal_raw{};
+  };
+  static HomeActivitiesMemo act_memo;
+  const auto *ts_chk = timer_slots();
+  const uint32_t cur_sw_tick = rs.stopwatch.running
+      ? ((now_ms - rs.stopwatch.start_time_ms) / 100U)
+      : (rs.stopwatch.elapsed_ms / 100U);
+  const uint8_t cur_t_flags =
+      (ts_chk[0].running ? 1U : 0U) | (ts_chk[0].paused ? 2U : 0U) |
+      (ts_chk[1].running ? 4U : 0U) | (ts_chk[1].paused ? 8U : 0U) |
+      (ts_chk[2].running ? 16U : 0U) | (ts_chk[2].paused ? 32U : 0U) |
+      (rs.stopwatch.running ? 64U : 0U);
+  const uint8_t cur_a_en =
+      (prefs.alarms[0].enabled ? 1U : 0U) |
+      (prefs.alarms[1].enabled ? 2U : 0U) |
+      (prefs.alarms[2].enabled ? 4U : 0U);
+  const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
+  const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
+  const uint8_t cur_mask = activity_source_mask();
+  const bool eff_cleared = music_playing ? false : music_queue_cleared();
+  if (act_memo.count < 0 ||
+      act_memo.sw_tick != cur_sw_tick ||
+      act_memo.t_flags != cur_t_flags ||
+      act_memo.t_rem[0] != ts_chk[0].remaining_sec ||
+      act_memo.t_rem[1] != ts_chk[1].remaining_sec ||
+      act_memo.t_rem[2] != ts_chk[2].remaining_sec ||
+      act_memo.t_names[0] != ts_chk[0].name ||
+      act_memo.t_names[1] != ts_chk[1].name ||
+      act_memo.t_names[2] != ts_chk[2].name ||
+      act_memo.is_24h != is_24h_format ||
+      act_memo.music_on != music_playing ||
+      act_memo.music_cleared != eff_cleared ||
+      act_memo.m_title != music_title ||
+      act_memo.m_artist != music_artist ||
+      act_memo.snooze != rs.alarms.snooze_until ||
+      act_memo.a_en != cur_a_en ||
+      act_memo.a_h[0] != prefs.alarms[0].hour || act_memo.a_m[0] != prefs.alarms[0].minute ||
+      act_memo.a_h[1] != prefs.alarms[1].hour || act_memo.a_m[1] != prefs.alarms[1].minute ||
+      act_memo.a_h[2] != prefs.alarms[2].hour || act_memo.a_m[2] != prefs.alarms[2].minute ||
+      act_memo.cur_h != cur_h || act_memo.cur_m != cur_m ||
+      act_memo.src_mask != cur_mask ||
+      act_memo.cal_raw != cs.summary) {
+    act_memo.count = collect_home_activities(
+        now_ms, is_24h_format,
+        rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
+        music_playing, music_title, music_artist,
+        rs.alarms.snooze_until,
+        prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
+        prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
+        prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
+        act_memo.items, cur_h, cur_m, cs.summary);
+    act_memo.sw_tick = cur_sw_tick;
+    act_memo.t_flags = cur_t_flags;
+    for (int ti = 0; ti < 3; ti++) {
+      act_memo.t_rem[ti] = ts_chk[ti].remaining_sec;
+      act_memo.t_names[ti] = ts_chk[ti].name;
+      act_memo.a_h[ti] = prefs.alarms[ti].hour;
+      act_memo.a_m[ti] = prefs.alarms[ti].minute;
+    }
+    act_memo.is_24h = is_24h_format;
+    act_memo.music_on = music_playing;
+    act_memo.music_cleared = music_queue_cleared();
+    act_memo.m_title = music_title;
+    act_memo.m_artist = music_artist;
+    act_memo.snooze = rs.alarms.snooze_until;
+    act_memo.a_en = cur_a_en;
+    act_memo.cur_h = cur_h;
+    act_memo.cur_m = cur_m;
+    act_memo.src_mask = cur_mask;
+    act_memo.cal_raw = cs.summary;
+  }
+  const HomeActivityItem *act_items = act_memo.items;
+  const int act_count = act_memo.count;
 
   std::string cond = ws.condition;
   bool is_night = (ws.sun_state == "below_horizon" || cond == "clear-night" ||
                    cond == "clearnight" || (cond.find("night") != std::string::npos));
   apply_weather_sim_override(ctx.weather_sim_opt, cond, is_night);
 
-  const std::string cond_title = format_weather_title(cond);
+  static std::string s_memo_cond_in;
+  static std::string s_memo_cond_title = "Unavailable";
+  if (cond != s_memo_cond_in) {
+    s_memo_cond_in = cond;
+    s_memo_cond_title = format_weather_title(cond);
+  }
+  const std::string &cond_title = s_memo_cond_title;
   const bool sim_override_on = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
   const bool sun_ready = (!ws.sun_state.empty() && ws.sun_state != "unknown" && ws.sun_state != "unavailable");
   const bool weather_ready = ((!std::isnan(ws.temperature) && sun_ready) || sim_override_on) &&

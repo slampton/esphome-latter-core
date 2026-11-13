@@ -128,9 +128,10 @@ struct DisplayUpdateScheduler : public esphome::Component {
   template <typename DispT>
   static void request_ptr(DispT *disp) {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+      const uint32_t delay_ms = disp_render_in_flight(esphome::millis()) ? 4U : 0U;
       auto *comp = static_cast<esphome::Component *>(disp);
       static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
-          kTimeoutAsyncDraw, 0, [disp]() {
+          kTimeoutAsyncDraw, delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();
@@ -206,6 +207,32 @@ template <typename DispT>
 inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
   mark_dirty_full();
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
+// Pauses disp1's 1 Hz PollingComponent while a high-refresh animation loop actively owns frame
+// cadence so the 1 s poller never fires a back-to-back double-render on top of an animation frame.
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void sync_disp_poller_for_anim(DispT *disp, bool anim_active) {
+  if (disp == nullptr) return;
+  if (screen_is_off_standby() || disp_poller_held()) {
+    anim_poller_suppressed() = false;
+    return;
+  }
+  if (anim_active) {
+    if (!anim_poller_suppressed()) {
+      anim_poller_suppressed() = true;
+      disp->stop_poller();
+    }
+  } else if (anim_poller_suppressed()) {
+    anim_poller_suppressed() = false;
+    disp->start_poller();
+  }
+}
+
+template <typename DispT>
+inline void sync_disp_poller_for_anim(DispT *const *disp_ptr, bool anim_active) {
+  if (disp_ptr != nullptr) sync_disp_poller_for_anim(*disp_ptr, anim_active);
 }
 
 // ------------------------------------------------------------------------------

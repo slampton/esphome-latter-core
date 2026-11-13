@@ -428,13 +428,17 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   const int ys = std::max(0, y0), ye = std::min(SCREEN_H, y0 + h);
   if (fb == nullptr || xe <= xs || ye <= ys) return out;
   const float *lut = srgb_linear_lut();
+  const int mode = active_frame_endian_mode();
   const int step = std::max(3, h / 12);
   uint32_t cnt[32] = {0}, sr[32] = {0}, sg[32] = {0}, sb[32] = {0};
   uint32_t tr = 0, tg = 0, tb = 0, n = 0;
   for (int y = ys + step / 2; y < ye; y += step) {
     const uint16_t *row = fb + y * SCREEN_W;
     for (int x = xs + step / 2; x < xe; x += step) {
-      const uint16_t p = decode_hw_rgb565_raw(row[x]);
+      const uint16_t hw = row[x];
+      const uint16_t p = (mode == 1) ? decode_hw_rgb565_mode<1>(hw)
+                       : ((mode == 2) ? decode_hw_rgb565_mode<2>(hw)
+                       : ((mode == 4) ? decode_hw_rgb565_mode<4>(hw) : decode_hw_rgb565_mode<3>(hw)));
       const int r5 = (p >> 11) & 0x1F, g6 = (p >> 5) & 0x3F, b5 = p & 0x1F;
       const int r = (r5 << 3) | (r5 >> 2), g = (g6 << 2) | (g6 >> 4), b = (b5 << 3) | (b5 >> 2);
       const float lum = 0.2126f * lut[r] + 0.7152f * lut[g] + 0.0722f * lut[b];
@@ -591,7 +595,7 @@ bool is_supported_font_cp(uint32_t cp) {
 }
 
 #if defined(USE_FONT) && defined(USE_ESP32)
-constexpr int kTextCacheEntries = 16;
+constexpr int kTextCacheEntries = 32;
 constexpr int kTextScratchSpans = 4096;
 
 TextCacheEntry *text_cache_entries() {
@@ -1346,7 +1350,9 @@ bool frame_base_impl(esphome::display::Display &it, esphome::Color c) {
 FrameProfileScope::FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
   fb_clear_wait();
   t0_us = prof_now_us();
-  last_disp_update_ms() = esphome::millis();
+  const uint32_t start_m = esphome::millis();
+  last_disp_update_ms() = start_m;
+  last_ambient_anim_ms() = start_m;
 }
 
 FrameProfileScope::~FrameProfileScope() {

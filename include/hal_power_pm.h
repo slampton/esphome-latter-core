@@ -198,6 +198,11 @@ inline bool &disp_poller_held() {
   return held;
 }
 
+inline bool &anim_poller_suppressed() {
+  static bool suppressed = false;
+  return suppressed;
+}
+
 struct VaDisplayRestore {
   bool armed = false;
   int prior_state = 0;  // 0 active, 1 screensaver, 2 off

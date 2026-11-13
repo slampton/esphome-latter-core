@@ -102,12 +102,28 @@ inline constexpr uint16_t bswap16_u16(uint16_t v) noexcept {
   return static_cast<uint16_t>((v >> 8) | (v << 8));
 }
 
+template <int Mode>
+inline constexpr uint16_t encode_hw_rgb565_mode(uint16_t p) noexcept {
+  if constexpr (Mode == 1) return p;
+  if constexpr (Mode == 2) return bswap16_u16(p);
+  const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
+  if constexpr (Mode == 4) return bswap16_u16(bgr);
+  return bgr;
+}
+
+template <int Mode>
+inline constexpr uint16_t decode_hw_rgb565_mode(uint16_t hw) noexcept {
+  if constexpr (Mode == 1) return hw;
+  if constexpr (Mode == 2) return bswap16_u16(hw);
+  const uint16_t bgr = (Mode == 4) ? bswap16_u16(hw) : hw;
+  return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
+}
+
 inline uint16_t encode_hw_rgb565_raw(uint16_t p) {
   const int mode = active_frame_endian_mode();
-  if (mode == 1) return p;
-  if (mode == 2) return bswap16_u16(p);
-  const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
-  return (mode == 4) ? bswap16_u16(bgr) : bgr;
+  if (mode == 1) return encode_hw_rgb565_mode<1>(p);
+  if (mode == 2) return encode_hw_rgb565_mode<2>(p);
+  return (mode == 4) ? encode_hw_rgb565_mode<4>(p) : encode_hw_rgb565_mode<3>(p);
 }
 
 inline uint16_t encode_hw_rgb565(esphome::Color c) {
@@ -119,10 +135,9 @@ inline uint16_t encode_hw_rgb565(esphome::Color c) {
 
 inline uint16_t decode_hw_rgb565_raw(uint16_t hw) {
   const int mode = active_frame_endian_mode();
-  if (mode == 1) return hw;
-  if (mode == 2) return bswap16_u16(hw);
-  const uint16_t bgr = (mode == 4) ? bswap16_u16(hw) : hw;
-  return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
+  if (mode == 1) return decode_hw_rgb565_mode<1>(hw);
+  if (mode == 2) return decode_hw_rgb565_mode<2>(hw);
+  return (mode == 4) ? decode_hw_rgb565_mode<4>(hw) : decode_hw_rgb565_mode<3>(hw);
 }
 
 // ------------------------------------------------------------------------------
@@ -671,15 +686,9 @@ void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::C
 esphome::Color sample_glass_surface_color(int x0, int y0, int w, int h,
                                           esphome::Color tint = kChromeGlassTint);
 
-template <typename DisplayT>
-inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
-                                  esphome::Color tint, int a_top, int a_bot, int hole = 0) {
-  if (w <= 0 || h <= 0) return;
-  uint16_t *fb = active_frame_buf16();
-  if (fb == nullptr) {
-    fill_round_rect_aa(it, x0, y0, w, h, rad, tint, tint, hole);
-    return;
-  }
+template <int Mode>
+inline void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, float rad,
+                                       esphome::Color tint, int a_top, int a_bot, int hole) {
   AaRoundRect o;
   o.init(x0, y0, w, h, rad);
   AaRoundRect in;
@@ -689,7 +698,7 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
   const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
   const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
   auto mix = [&](uint16_t &dst, int a, int t) {
-    const uint16_t bg = decode_hw_rgb565_raw(dst);
+    const uint16_t bg = decode_hw_rgb565_mode<Mode>(dst);
     const uint32_t ia = static_cast<uint32_t>(256 - a);
     const uint32_t ua = static_cast<uint32_t>(a);
     uint32_t r = ((tr * ua) / 256U + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
@@ -698,7 +707,7 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
     if (r > 31U) r = 31U;
     if (g > 63U) g = 63U;
     if (b > 31U) b = 31U;
-    dst = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+    dst = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
   };
   const int ys = std::max(0, y0);
   const int ye = std::min(SCREEN_H, y0 + h);
@@ -725,32 +734,16 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
     auto span = [&](int xa, int xb) {
       xa = std::max(xa, 0);
       xb = std::min(xb, SCREEN_W - 1);
-      if (xb < xa) return;
-      if (xa == xb) {
-        mix(row[xa], a, th[xa & 3] * 16 + 8);
-        return;
-      }
-      uint16_t cached_raw = static_cast<uint16_t>(row[xa] ^ 1U);
-      uint16_t cached_out[4];
       for (int x = xa; x <= xb; x++) {
-        const uint16_t raw = row[x];
-        if (raw != cached_raw) {
-          cached_raw = raw;
-          const uint16_t bg = decode_hw_rgb565_raw(raw);
-          const uint32_t br = ((bg >> 11) & 0x1FU) * ia;
-          const uint32_t bgc = ((bg >> 5) & 0x3FU) * ia;
-          const uint32_t bb = (bg & 0x1FU) * ia;
-          for (int k = 0; k < 4; k++) {
-            uint32_t r = (base_r[k] + br) >> 8;
-            uint32_t g = (base_g[k] + bgc) >> 8;
-            uint32_t b = (base_b[k] + bb) >> 8;
-            if (r > 31U) r = 31U;
-            if (g > 63U) g = 63U;
-            if (b > 31U) b = 31U;
-            cached_out[k] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
-          }
-        }
-        row[x] = cached_out[x & 3];
+        const uint16_t bg = decode_hw_rgb565_mode<Mode>(row[x]);
+        const int k = x & 3;
+        uint32_t r = (base_r[k] + ((bg >> 11) & 0x1FU) * ia) >> 8;
+        uint32_t g = (base_g[k] + ((bg >> 5) & 0x3FU) * ia) >> 8;
+        uint32_t b = (base_b[k] + (bg & 0x1FU) * ia) >> 8;
+        if (r > 31U) r = 31U;
+        if (g > 63U) g = 63U;
+        if (b > 31U) b = 31U;
+        row[x] = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
       }
     };
     auto edge = [&](int px) {
@@ -780,6 +773,27 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
     } else {
       for (int px = e0; px <= e1; px++) edge(px);
     }
+  }
+}
+
+template <typename DisplayT>
+inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
+                                  esphome::Color tint, int a_top, int a_bot, int hole = 0) {
+  if (w <= 0 || h <= 0) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    fill_round_rect_aa(it, x0, y0, w, h, rad, tint, tint, hole);
+    return;
+  }
+  const int mode = active_frame_endian_mode();
+  if (mode == 1) {
+    fill_round_rect_glass_mode<1>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
+  } else if (mode == 2) {
+    fill_round_rect_glass_mode<2>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
+  } else if (mode == 4) {
+    fill_round_rect_glass_mode<4>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
+  } else {
+    fill_round_rect_glass_mode<3>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
   }
 }
 
@@ -821,7 +835,7 @@ struct TextCacheEntry {
   TextSpan *spans;
   uint16_t count;
   uint16_t cap;
-  char text[48];
+  char text[96];
 };
 
 std::string sanitize_utf8_for_font(const std::string &str);

@@ -112,9 +112,9 @@ Frame pacing:
 
 | Cadence | Value | Source |
 | :--- | :--- | :--- |
-| Animation frame (`schedule_anim_disp_update`) | 18 ms on the ESP32-P4, 26 ms on the ESP32-S3 | `DisplayUpdateScheduler::request_anim_ptr` (`ui_compositor.h`) |
-| Tools and games physics loop | 25 ms tick, at most one frame per 44 ms | `ui_anim_tick` (`timers_and_fetchers.yaml`), `min_interactive_frame_gap_ms` |
-| Ambient visuals (screensavers, weather, voice) | 25 ms tick; 50 ms (~20 FPS, `min_period = 45 ms`) idle or passive wake-word, 75 ms (~13.3 FPS, `min_period = 70 ms`) while speaker audio plays, 120 ms during alerts, with post-transfer quiet windows enforced after QSPI/DSI flush | `should_step_ambient_anim` (`ui_types.h`) |
+| Animation frame (`schedule_anim_disp_update`) | 18 ms on the ESP32-P4, 26 ms on the ESP32-S3; 1 Hz `disp1` poller paused while continuous animation owns frame cadence (`sync_disp_poller_for_anim`) | `DisplayUpdateScheduler` (`ui_compositor.h`) |
+| Tools and games physics loop | 20 ms tick, at most one frame per 40 ms (`min_gap = 36 ms`, or `54 ms` on S3 while `mww` runs) | `ui_anim_tick` (`timers_and_fetchers.yaml`), `min_interactive_frame_gap_ms` |
+| Ambient visuals (screensavers, weather, voice) | 20 ms tick; 60 ms (~16.7 FPS, `min_period = 54 ms`) idle on P4/S3 and P4 SRAM wake-word, 80 ms (~12.5 FPS, `min_period = 74 ms`) during speaker audio or S3 Octal-PSRAM wake-word, 120 ms during alerts, with post-transfer quiet windows enforced after QSPI/DSI flush | `should_step_ambient_anim` (`ui_types.h`) |
 
 ### 1.6 Touch constants
 

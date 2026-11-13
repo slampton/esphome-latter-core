@@ -513,27 +513,37 @@ inline bool disp_render_in_flight(uint32_t now_ms) {
 inline bool disp_render_in_flight() { return disp_render_in_flight(esphome::millis()); }
 
 inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
+#if LATTER_CHIP_P4
   (void)mww_running;
-  return 44U;
+  return 36U;
+#else
+  return mww_running ? 54U : 36U;
+#endif
 }
 
-// Ambient visual stepper (weather sky, docked screensavers).
-// last_disp_update_end_ms() is stamped after the QSPI/DSI panel transfer finishes, so min_post_idle
-// guarantees genuine display-free PSRAM/main-loop time for Sendspin FLAC, wake-word inference, and HA TCP.
-// Periods (45 ms -> 2x25 ms = 20.0 FPS; 70 ms -> 3x25 ms = 13.3 FPS) absorb +/-4 ms scheduler jitter
-// without dropping into alternating beat-frequency frame intervals.
+// Ambient visual stepper (weather sky, docked screensavers) driven from a 20 ms tick.
+// last_disp_update_end_ms() is stamped after the QSPI/DSI panel transfer finishes, and
+// FrameProfileScope stamps last_ambient_anim_ms() with frame start time so out-of-band redraws
+// coalesce without shifting scheduled frame phase.
+// Cadences:
+//   - ESP32-P4: 60 ms (16.7 FPS, min_period = 54 ms, 16 ms post-idle) idle or SRAM wake-word;
+//               80 ms (12.5 FPS, min_period = 74 ms, 26 ms post-idle) during speaker audio.
+//   - ESP32-S3: 60 ms (16.7 FPS, min_period = 54 ms, 18 ms post-idle) idle without PSRAM wake-word;
+//               80 ms (12.5 FPS, min_period = 74 ms, 32 ms post-idle) while Octal-PSRAM mww or speaker audio runs.
 inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
                                      bool va_busy = false, bool alert_busy = false,
                                      bool mww_passive_busy = false) {
   if (va_busy || disp_render_in_flight(now_ms)) return false;
 #if LATTER_CHIP_P4
   (void)mww_passive_busy;
-  const uint32_t min_post_idle = speaker_audio_busy ? 22U : 8U;
+  const uint32_t min_post_idle = speaker_audio_busy ? 26U : 16U;
+  const uint32_t min_period = alert_busy ? 120U : (speaker_audio_busy ? 74U : 54U);
 #else
-  const uint32_t min_post_idle = speaker_audio_busy ? 25U : (mww_passive_busy ? 15U : 12U);
+  const bool audio_or_mww = speaker_audio_busy || mww_passive_busy;
+  const uint32_t min_post_idle = audio_or_mww ? 32U : 18U;
+  const uint32_t min_period = alert_busy ? 120U : (audio_or_mww ? 74U : 54U);
 #endif
   if (now_ms - last_disp_update_end_ms() < min_post_idle) return false;
-  const uint32_t min_period = alert_busy ? 120U : (speaker_audio_busy ? 70U : 45U);
   return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 

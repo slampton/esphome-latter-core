@@ -318,16 +318,18 @@ interval:
           }
           #endif
 
-  - interval: 25ms
+  - interval: 20ms
     id: screensaver_anim_tick
     then:
       - lambda: |-
-          // High-refresh animation loop for active screensavers (20 FPS idle, ~13.3 FPS during Sendspin audio).
+          // High-refresh animation loop for active screensavers (16.7 FPS idle, 12.5 FPS during audio / S3 wake-word).
           // The PWR key is a GPIO binary_sensor (board HAL), so no PMU polling happens here.
           const auto &rs = latter_ui::runtime_state();
+          bool ss_anim_driving = false;
           if (rs.nav.display_power_state == 1 && !rs.voice.active && rs.voice.status_text.empty() && !rs.nav.is_hibernating) {
             const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
             if (s_style != "Ambient Clock" && s_style != "Screen Off") {
+              ss_anim_driving = true;
               const uint32_t now_ss_ms = millis();
               const bool speaker_audio_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -345,6 +347,9 @@ interval:
                 latter_ui::schedule_anim_disp_update(&id(disp1));
               }
             }
+          }
+          if (rs.nav.display_power_state == 1 && !rs.voice.active && rs.voice.status_text.empty()) {
+            latter_ui::sync_disp_poller_for_anim(&id(disp1), ss_anim_driving);
           }
 
 script:
@@ -544,6 +549,7 @@ script:
           }
           id(disp1).update(); // Flush single all-black frame before cutting panel brightness
           latter_ui::screen_is_off_standby() = true;
+          latter_ui::anim_poller_suppressed() = false;
           id(disp1).stop_poller();
           id(display_brightness).turn_off().perform();
 
@@ -573,6 +579,7 @@ script:
                                      (s_style != "Screen Off");
           if (screensaver_allowed) {
             latter_ui::screen_is_off_standby() = false;
+            latter_ui::anim_poller_suppressed() = false;
             id(disp1).start_poller();
             rs.nav.display_power_state = 1; // SCREENSAVER
             rs.nav.sleep_start_time = 0;
@@ -619,6 +626,7 @@ script:
           latter_ui::raise_to_wake().reset();
           rs.nav.sleep_start_time = 0;
           rs.nav.display_power_state = 0; // ACTIVE
+          latter_ui::anim_poller_suppressed() = false;
           id(disp1).start_poller();
           id(apply_power_policy).execute();  // full-throughput Wi-Fi (fresh interaction), beacon, IMU, ticks
           // Codec power follows audio demand, not screen state: enable_speaker_path / sync_wake_word_state /
@@ -652,6 +660,7 @@ script:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
                 latter_ui::screen_is_off_standby() = false;
+                latter_ui::anim_poller_suppressed() = false;
                 id(disp1).start_poller();
                 rs.nav.sleep_start_time = 0;
                 rs.nav.hibernate_countdown_val = 0;
@@ -680,6 +689,7 @@ script:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
                 latter_ui::screen_is_off_standby() = false;
+                latter_ui::anim_poller_suppressed() = false;
                 id(disp1).start_poller();
                 rs.nav.sleep_start_time = 0;
                 rs.nav.hibernate_countdown_val = 5;

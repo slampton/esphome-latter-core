@@ -600,16 +600,21 @@ void test_battery_model_and_power_policy() {
   const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
   const std::string link_h = read_repo_file("../../include/hal_link_report.h");
   const std::string gfx_cpp = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
-  const std::string gui_yaml_chk = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string comp_h = read_repo_file("../../include/ui_compositor.h");
   const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
+  const std::string pwr_yaml = read_repo_file("../../modules/power_manager.yaml");
   const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
 
-  LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() =") == std::string::npos);
-  LATTER_CHECK(gui_yaml_chk.find("record_ambient_frame_ms(") == std::string::npos);
+  LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() = start_m") != std::string::npos);
+  LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("sync_disp_poller_for_anim(&id(disp1), anim_driving_disp)") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("sync_disp_poller_for_anim(&id(disp1), ss_anim_driving)") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("speaker_audio_busy") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("mww_passive_busy") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("app_weather_active") != std::string::npos);
   LATTER_CHECK(weather_cpp.find("cloud_shape_get<kColStep>") != std::string::npos);
+  LATTER_CHECK(weather_cpp.find("last_rain_ms") == std::string::npos);
+  LATTER_CHECK(weather_cpp.find("AnimeRainDrop") == std::string::npos);
 
   LATTER_CHECK(batt_h.find("kChargeCapMa = 500") != std::string::npos);
   LATTER_CHECK(batt_h.find("kChargeThermalFoldbackMa = 100") != std::string::npos);

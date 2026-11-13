@@ -10,21 +10,23 @@ interval:
     then:
       - script.execute: sync_display_brightness
 
-  - interval: 25ms
+  - interval: 20ms
     id: ui_anim_tick
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_tick_ms = millis();
-          // 20 FPS high-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
+          bool anim_driving_disp = false;
+          // High-refresh animation & physics loop for Tools Suite (Stopwatch, Dice Roll, Bubble Level, Coin Flip)
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
               rs.nav.gui_page == 8 && !rs.voice.active && rs.voice.status_text.empty()) {
             if ((rs.nav.tools_subpage == 3 && rs.stopwatch.running) ||
                 (rs.nav.tools_subpage == 4 && latter_ui::dice_state().anim_active) ||
                 (rs.nav.tools_subpage == 7) ||
                 (rs.nav.tools_subpage == 8 && latter_ui::coin_state().anim_active)) {
+              anim_driving_disp = true;
               const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
-              if (!latter_ui::disp_render_in_flight() &&
+              if (!latter_ui::disp_render_in_flight(now_tick_ms) &&
                   (now_tick_ms - latter_ui::last_ambient_anim_ms() >= min_gap)) {
                 latter_ui::record_ambient_frame_ms(now_tick_ms);
                 latter_ui::schedule_anim_disp_update(&id(disp1));
@@ -32,7 +34,7 @@ interval:
             }
           }
 
-          // 20 FPS high-refresh physics & audio loop exclusively for active games
+          // High-refresh physics & audio loop exclusively for active games
           const auto &prefs = latter_ui::persisted_prefs();
           static int s_prev_audio_game = 0;
           const int cur_audio_game = (rs.nav.gui_page == 3) ? rs.nav.active_game : 0;
@@ -53,16 +55,19 @@ interval:
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
               rs.nav.gui_page == 3 && rs.nav.active_game > 0 &&
               !rs.voice.active && rs.voice.status_text.empty()) {
+            anim_driving_disp = true;
             const uint32_t min_gap = latter_ui::min_interactive_frame_gap_ms(id(mww).is_running());
-            if (!latter_ui::disp_render_in_flight() &&
+            if (!latter_ui::disp_render_in_flight(now_tick_ms) &&
                 (now_tick_ms - latter_ui::last_ambient_anim_ms() >= min_gap)) {
               latter_ui::record_ambient_frame_ms(now_tick_ms);
               latter_ui::schedule_anim_disp_update(&id(disp1));
             }
           }
 
-          // 20 FPS Audio-Aware Fluid Voice Assistant Loop (All 5 Profiles)
+          // Audio-Aware Fluid Voice Assistant Loop (All 5 Profiles)
           if (rs.voice.active || !rs.voice.status_text.empty()) {
+            anim_driving_disp = true;
+            latter_ui::sync_disp_poller_for_anim(&id(disp1), true);
             static uint32_t last_va_anim_time = 0;
             static bool prev_tts_active = false;
             uint32_t now_va_ms = now_tick_ms;
@@ -78,8 +83,8 @@ interval:
               return;
             }
 
-            const uint32_t va_min_gap = (rs.voice.tts_received || tts_audio_active) ? 110U : 46U;
-            if (!latter_ui::disp_render_in_flight() &&
+            const uint32_t va_min_gap = (rs.voice.tts_received || tts_audio_active) ? 94U : 54U;
+            if (!latter_ui::disp_render_in_flight(now_va_ms) &&
                 (now_va_ms - last_va_anim_time >= va_min_gap)) {
               last_va_anim_time = now_va_ms;
               latter_ui::record_ambient_frame_ms(now_va_ms);
@@ -145,6 +150,7 @@ interval:
             const bool motion_budget_ok =
                 latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_w_ms, latest_input_ms);
             if (!touch_busy && (sim_just_changed || ui_overlay_animating || (cached_has_motion && motion_budget_ok))) {
+              anim_driving_disp = true;
               const bool speaker_audio_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
@@ -162,6 +168,9 @@ interval:
                 latter_ui::schedule_anim_disp_update(&id(disp1));
               }
             }
+          }
+          if (rs.nav.display_power_state == 0 || rs.voice.active || !rs.voice.status_text.empty()) {
+            latter_ui::sync_disp_poller_for_anim(&id(disp1), anim_driving_disp);
           }
 
   - interval: 250ms
