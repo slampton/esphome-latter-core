@@ -39,6 +39,8 @@
 #include "../../include/hal_link_report.h"
 #include "../../include/hal_manifest.h"
 #include "../../include/hal_panel_power.h"
+#include "../../include/hal_power_pm.h"
+#include "../../components/latter_core/power_pm.cpp"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
 #include "../../include/ui_compositor.h"
@@ -978,7 +980,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111305L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111306L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -2033,6 +2035,120 @@ void test_panel_dcs_timeout_isolation_and_wake_grace() {
   LATTER_CHECK(pm_cpp.find("s_pm_grace_end_timer") != std::string::npos);
 }
 
+void test_display_lifecycle_controller() {
+  using namespace latter_ui;
+
+  // 1. Compile-time timeout resolution tables
+  static_assert(resolve_idle_screen_timeout_ms(false, true, true, "15s", "30s") == 15000U);
+  static_assert(resolve_idle_screen_timeout_ms(false, false, true, "5 min", "2 min") == 120000U);
+  static_assert(resolve_idle_screen_timeout_ms(false, true, true, "Never", "30s") == 0U);
+  static_assert(resolve_idle_screen_timeout_ms(true, true, false, "1 min", "30s") == 0U);
+  static_assert(resolve_battery_hibernate_timeout_ms("5 min") == 300000U);
+  static_assert(resolve_battery_hibernate_timeout_ms("30 min") == 1800000U);
+  static_assert(resolve_battery_hibernate_timeout_ms("Disabled") == 0U);
+
+  // 2. Zero-UB CoreTimeoutBridge bind/schedule/cancel round-trip
+  struct MockBridgeSink {
+    uint32_t last_id{0U};
+    uint32_t last_delay{0U};
+    uint32_t cancelled_id{0U};
+    int fired{0};
+  } sink{};
+
+  core_timeout_bridge().bind(
+      &sink,
+      +[](void *ctx, uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
+        auto *s = static_cast<MockBridgeSink *>(ctx);
+        s->last_id = id;
+        s->last_delay = delay_ms;
+        if (fn) fn();
+      },
+      +[](void *ctx, uint32_t id) {
+        static_cast<MockBridgeSink *>(ctx)->cancelled_id = id;
+      });
+
+  schedule_core_timeout(kTimeoutAsyncDrawId, 18U, [&]() { ++sink.fired; });
+  LATTER_CHECK(sink.last_id == kTimeoutAsyncDrawId && sink.last_delay == 18U && sink.fired == 1);
+  cancel_core_timeout(kTimeoutWeatherStepId);
+  LATTER_CHECK(sink.cancelled_id == kTimeoutWeatherStepId);
+  core_timeout_bridge().reset();
+
+  // 3. DisplayLifecycleController: Active -> Inhibitors (2s retry) -> Standby -> Battery Hibernate -> Wake Greeting
+  auto &dl = display_lifecycle();
+  dl.reset();
+  int nav_pwr = 0;
+  uint32_t sleep_start = 0U;
+  uint32_t standby_entered = 0U;
+  bool wake_greeting = false;
+
+  DisplaySupervisorInputs in{};
+  in.has_battery = true;
+  in.usb_connected = false;
+  in.battery_timeout_opt = "30s";
+  in.hibernate_timeout_opt = "5 min";
+  in.panel_brightness_on = true;
+
+  dl.note_activity(1000U);
+  LATTER_CHECK(dl.state == DisplayPowerState::Active && dl.idle_armed());
+
+  // Before 30s timeout: stays active
+  auto a0 = dl.evaluate_1s(25000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(!a0.enter_standby_now && !a0.turn_screen_off_now && !a0.start_hibernate_countdown_now);
+
+  // Voice turn active at 31s resets idle anchor and inhibits sleep
+  in.voice_or_announce_busy = true;
+  auto a_va = dl.evaluate_1s(31000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(!a_va.enter_standby_now && dl.idle_anchor_ms == 31000U);
+  in.voice_or_announce_busy = false;
+
+  // Game running at 62s (+31s post-VA) blocks sleep and sets 2s retry window
+  in.active_game_running = true;
+  auto a_game = dl.evaluate_1s(62000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(!a_game.enter_standby_now && dl.idle_retry_after_ms == 64000U);
+
+  // At 63s (within 2s retry holdoff), even if game exits, waits until 64s
+  in.active_game_running = false;
+  auto a_hold = dl.evaluate_1s(63000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(!a_hold.enter_standby_now);
+
+  // At 64s: enters standby deterministically
+  auto a_sb = dl.evaluate_1s(64000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(a_sb.enter_standby_now && !dl.idle_armed());
+
+  dl.on_enter_standby_off(64000U, nav_pwr, sleep_start, standby_entered);
+  LATTER_CHECK(dl.state == DisplayPowerState::OffStandby && nav_pwr == 2 && screen_is_off_standby());
+  LATTER_CHECK(sleep_start == 64000U && standby_entered == 64000U);
+  in.panel_brightness_on = false;
+
+  // Battery hibernate auto-descent after 5 min (300,000 ms) in screen-off standby
+  auto a_pre_hib = dl.evaluate_1s(363000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(!a_pre_hib.start_hibernate_countdown_now);
+  auto a_hib = dl.evaluate_1s(364000U, in, nav_pwr, sleep_start, standby_entered, wake_greeting);
+  LATTER_CHECK(a_hib.start_hibernate_countdown_now && sleep_start == 0U);
+
+  // Wake after >= 30 min (1,800,000 ms) in standby arms wake_greeting_pending
+  in.panel_brightness_on = true;
+  dl.on_wake_active(1900000U, nav_pwr, sleep_start, standby_entered, true, wake_greeting);
+  LATTER_CHECK(dl.state == DisplayPowerState::Active && nav_pwr == 0 && !screen_is_off_standby());
+  LATTER_CHECK(wake_greeting && standby_entered == 0U && last_screen_wake_ms() == 1900000U);
+
+  // OTA preemption holds poller and disarms idle
+  dl.on_ota_begin(nav_pwr, sleep_start);
+  LATTER_CHECK(dl.state == DisplayPowerState::Ota && disp_poller_held() && !dl.idle_armed());
+  dl.on_ota_end(1910000U);
+  LATTER_CHECK(dl.state == DisplayPowerState::Active && !disp_poller_held() && dl.idle_armed());
+
+  // 4. Source-level checks: screen_sleep_timer & UB downcasts completely retired
+  const std::string pm_yaml = read_repo_file("../../modules/power_manager.yaml");
+  const std::string comp_h = read_repo_file("../../include/ui_compositor.h");
+  const std::string panel_h = read_repo_file("../../include/hal_panel_power.h");
+  LATTER_CHECK(pm_yaml.find("screen_sleep_timer") == std::string::npos);
+  LATTER_CHECK(comp_h.find("static_cast<DisplayUpdateScheduler") == std::string::npos);
+  LATTER_CHECK(panel_h.find("PanelTimeoutScheduler") == std::string::npos);
+
+  dl.reset();
+}
+
 }  // namespace
 
 int main() {
@@ -2047,6 +2163,7 @@ int main() {
   test_phase3_weather_sky_backdrop_and_home_scene();
   test_phase4_audio_session_and_music_pause_timeout();
   test_panel_dcs_timeout_isolation_and_wake_grace();
+  test_display_lifecycle_controller();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
       "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "

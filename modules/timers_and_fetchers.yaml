@@ -447,7 +447,7 @@ interval:
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
           }
 
           // Camera snapshot refresh while the Camera app is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)

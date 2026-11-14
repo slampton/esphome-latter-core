@@ -23,6 +23,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/time.h"
+#include "hal_panel_power.h"
 #include "hal_power_pm.h"
 #include "latter_state.h"
 #include "ui_types.h"
@@ -243,9 +244,9 @@ inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
 #if __has_include("esphome/core/defines.h")
 
 // ------------------------------------------------------------------------------
-// Display Update Scheduler (ESPHome 2026.11+ numeric timeout IDs)
+// Display Update Scheduler (Zero-UB CoreTimeoutBridge via LatterLoopProbe)
 // ------------------------------------------------------------------------------
-struct DisplayUpdateScheduler : public esphome::Component {
+struct DisplayUpdateScheduler {
   static constexpr uint32_t kTimeoutAsyncDraw = kTimeoutAsyncDrawId;
   static constexpr uint32_t kTimeoutFbClear = kTimeoutFbClearId;
   static constexpr uint32_t kTimeoutWeatherStep = kTimeoutWeatherStepId;
@@ -262,17 +263,16 @@ struct DisplayUpdateScheduler : public esphome::Component {
   }
 
   // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
-  static void request_post_frame(esphome::Component *comp, void (*fn)()) {
+  static void request_post_frame(const esphome::Component *comp, void (*fn)()) {
     if (comp == nullptr || fn == nullptr) return;
-    static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(kTimeoutFbClear, 0, [fn]() { fn(); });
+    schedule_core_timeout(kTimeoutFbClear, 0U, [fn]() { fn(); });
   }
 
   template <typename DispT>
   static void request_ptr(DispT *disp) {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
       const uint32_t delay_ms = disp_render_in_flight(esphome::millis()) ? 4U : 0U;
-      auto *comp = static_cast<esphome::Component *>(disp);
-      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+      schedule_core_timeout(
           kTimeoutAsyncDraw, delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
@@ -301,8 +301,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
       } else if (elapsed_end < kMinPostIdleMs) {
         delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
       }
-      auto *comp = static_cast<esphome::Component *>(disp);
-      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+      schedule_core_timeout(
           kTimeoutAsyncDraw, delay_ms, [disp]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             disp->update();
@@ -332,8 +331,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
         }
       }
       weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
-      auto *comp = static_cast<esphome::Component *>(disp);
-      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+      schedule_core_timeout(
           kTimeoutWeatherStep, delay_ms, [disp]() {
             weather_due_ms_ref() = 0U;
             if (screen_is_off_standby() || disp_poller_held()) return;
@@ -348,8 +346,7 @@ struct DisplayUpdateScheduler : public esphome::Component {
   template <typename DispT>
   static void request_activity_rotate_ptr(DispT *disp, uint32_t delay_ms, int y0, int y1) {
     if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
-      auto *comp = static_cast<esphome::Component *>(disp);
-      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+      schedule_core_timeout(
           kTimeoutActivityRotate, delay_ms, [disp, y0, y1]() {
             if (screen_is_off_standby() || disp_poller_held()) return;
             if (disp_render_in_flight(esphome::millis())) return;

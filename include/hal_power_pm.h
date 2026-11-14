@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 #ifdef USE_ESP32
 #include <esp_wifi.h>
@@ -204,32 +205,127 @@ inline void pm_log_wake_profile() {}
 #endif
 
 // ------------------------------------------------------------------------------
-// 3. Shared Display Standby / Poller Flags & Voice Display Restore
+// 3. DisplayLifecycleController, Standby/Poller State & Voice Display Restore
 // ------------------------------------------------------------------------------
-inline uint32_t &last_screen_wake_ms() {
-  static uint32_t ts = 0;
-  return ts;
+enum class DisplayPowerState : uint8_t {
+  Active = 0,
+  Screensaver = 1,
+  OffStandby = 2,
+  Hibernating = 3,
+  Ota = 4,
+};
+
+constexpr uint32_t resolve_idle_screen_timeout_ms(bool is_stationary, bool usb_connected,
+                                                  bool docked_screensaver,
+                                                  std::string_view docked_opt,
+                                                  std::string_view battery_opt) noexcept {
+  if (is_stationary && !docked_screensaver) return 0U;
+  const std::string_view opt = (is_stationary || usb_connected) ? docked_opt : battery_opt;
+  if (opt == "10s") return 10000U;
+  if (opt == "15s") return 15000U;
+  if (opt == "30s") return 30000U;
+  if (opt == "1 min") return 60000U;
+  if (opt == "2 min") return 120000U;
+  if (opt == "5 min") return 300000U;
+  if (opt == "Never") return 0U;
+  return (is_stationary || usb_connected) ? 60000U : 30000U;
 }
 
-inline uint32_t &last_user_touch_ms() {
-  static uint32_t ts = 0;
-  return ts;
+constexpr uint32_t resolve_battery_hibernate_timeout_ms(std::string_view opt) noexcept {
+  if (opt == "5 min") return 300000U;
+  if (opt == "10 min") return 600000U;
+  if (opt == "15 min") return 900000U;
+  if (opt == "30 min") return 1800000U;
+  if (opt == "Disabled" || opt == "Never") return 0U;
+  return 900000U;
 }
 
-inline bool &screen_is_off_standby() {
-  static bool off = false;
-  return off;
-}
+struct DisplaySupervisorInputs {
+  bool is_stationary{false};
+  bool has_battery{false};
+  bool usb_connected{true};
+  bool docked_screensaver{true};
+  std::string_view docked_timeout_opt{"1 min"};
+  std::string_view battery_timeout_opt{"30s"};
+  std::string_view hibernate_timeout_opt{"15 min"};
+  bool wake_greeting_enabled{true};
+  bool panel_brightness_on{true};
+  bool is_hibernating{false};
+  bool ota_in_progress{false};
+  bool voice_or_announce_busy{false};
+  bool alert_or_stopwatch_busy{false};
+  bool in_hand_hold{false};
+  bool active_tool_awake{false};
+  bool active_game_running{false};
+  bool hibernate_blocked{false};
+};
 
-inline bool &disp_poller_held() {
-  static bool held = false;
-  return held;
-}
+struct DisplaySupervisorActions {
+  bool turn_screen_off_now{false};
+  bool enter_standby_now{false};
+  bool start_hibernate_countdown_now{false};
+};
 
-inline bool &anim_poller_suppressed() {
-  static bool suppressed = false;
-  return suppressed;
-}
+struct DisplayLifecycleController {
+  DisplayPowerState state{DisplayPowerState::Active};
+  bool screen_off_standby{false};
+  bool poller_held{false};
+  bool anim_suppressed{false};
+  bool hibernate_prepared{false};
+  uint32_t last_wake_ms{0U};
+  uint32_t last_touch_ms{0U};
+  uint32_t idle_anchor_ms{1U};
+  uint32_t idle_retry_after_ms{0U};
+
+  void reset() noexcept { *this = DisplayLifecycleController{}; }
+
+  void note_activity(uint32_t now_ms) noexcept {
+    idle_anchor_ms = (now_ms != 0U) ? now_ms : 1U;
+    idle_retry_after_ms = 0U;
+  }
+
+  void disarm_idle() noexcept {
+    idle_anchor_ms = 0U;
+    idle_retry_after_ms = 0U;
+  }
+
+  constexpr bool idle_armed() const noexcept { return idle_anchor_ms != 0U; }
+
+  void on_wake_active(uint32_t now_ms, int &nav_power_state, uint32_t &sleep_start_time,
+                      uint32_t &standby_entered_ms, bool wake_greeting_enabled,
+                      bool &wake_greeting_pending) noexcept;
+
+  void on_enter_screensaver(uint32_t now_ms, int &nav_power_state, uint32_t &sleep_start_time,
+                            uint32_t &standby_entered_ms) noexcept;
+
+  void on_enter_standby_off(uint32_t now_ms, int &nav_power_state, uint32_t &sleep_start_time,
+                            uint32_t &standby_entered_ms) noexcept;
+
+  void on_prepare_hibernate(int &nav_power_state, uint32_t &sleep_start_time) noexcept;
+
+  void on_ota_begin(int &nav_power_state, uint32_t &sleep_start_time) noexcept;
+
+  void on_ota_end(uint32_t now_ms) noexcept;
+
+  DisplaySupervisorActions evaluate_1s(uint32_t now_ms, const DisplaySupervisorInputs &in,
+                                       int &nav_power_state, uint32_t &sleep_start_time,
+                                       uint32_t &standby_entered_ms,
+                                       bool &wake_greeting_pending) noexcept;
+};
+
+DisplayLifecycleController &display_lifecycle() noexcept;
+
+inline uint32_t &last_screen_wake_ms() { return display_lifecycle().last_wake_ms; }
+
+inline uint32_t &last_user_touch_ms() { return display_lifecycle().last_touch_ms; }
+
+inline bool &screen_is_off_standby() { return display_lifecycle().screen_off_standby; }
+
+inline bool &disp_poller_held() { return display_lifecycle().poller_held; }
+
+inline bool &anim_poller_suppressed() { return display_lifecycle().anim_suppressed; }
+
+inline bool &hibernate_ui_prepared() { return display_lifecycle().hibernate_prepared; }
 
 struct VaDisplayRestore {
   bool armed = false;

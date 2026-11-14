@@ -397,7 +397,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111305L;
+            constexpr long LATTER_YAML_REV = 2026111306L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -453,7 +453,7 @@ esphome:
             }
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
-        - script.execute: screen_sleep_timer
+        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
         - script.execute: apply_power_policy
 
 api:
@@ -563,7 +563,6 @@ ota:
     id: ota_http
     on_begin:
       then:
-        - script.stop: screen_sleep_timer
         - light.turn_on: display_brightness
         - lambda: 'latter_ui::handle_ota_begin(&id(disp1));'
         - script.execute: apply_power_policy
@@ -578,18 +577,17 @@ ota:
       then:
         - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
         - script.execute: apply_power_policy
-        - script.execute: screen_sleep_timer
+        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
     on_abort:
       then:
         - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
         - script.execute: apply_power_policy
-        - script.execute: screen_sleep_timer
+        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
 
   - platform: esphome
     id: ota_esphome
     on_begin:
       then:
-        - script.stop: screen_sleep_timer
         - light.turn_on: display_brightness
         - lambda: 'latter_ui::handle_ota_begin(&id(disp1));'
         - script.execute: apply_power_policy
@@ -604,12 +602,12 @@ ota:
       then:
         - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
         - script.execute: apply_power_policy
-        - script.execute: screen_sleep_timer
+        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
     on_abort:
       then:
         - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
         - script.execute: apply_power_policy
-        - script.execute: screen_sleep_timer
+        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
 
 time:
   - id: !extend ha_time
@@ -777,7 +775,7 @@ binary_sensor:
                   id(stop_alarm_sound).execute();
                   id(sync_display_brightness).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
-                  id(screen_sleep_timer).execute();
+                  latter_ui::display_lifecycle().note_activity(millis());
             else:
               - if:
                   condition:
@@ -810,20 +808,6 @@ text_sensor:
     lambda: 'return latter_ui::link_report_log_line(millis(), latter_ui::last_reset_reason());'
 
 interval:
-  - interval: 1s
-    then:
-      - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          if (rs.nav.display_power_state != 0) {
-            if (rs.nav.standby_entered_ms == 0) {
-              const uint32_t now_st_ms = millis();
-              rs.nav.standby_entered_ms = (rs.nav.sleep_start_time != 0)
-                                              ? rs.nav.sleep_start_time
-                                              : ((now_st_ms != 0) ? now_st_ms : 1U);
-            }
-          } else if (rs.nav.standby_entered_ms != 0) {
-            latter_ui::note_wake_from_standby(millis());
-          }
   - interval: 60s
     then:
       - lambda: |-
@@ -875,7 +859,6 @@ script:
                 case C::SCHEDULE_DISP_UPDATE: latter_ui::schedule_disp_update(&id(disp1)); break;
                 case C::SCHEDULE_BAND_DISP_UPDATE: latter_ui::schedule_band_disp_update(&id(disp1), arg0, arg1); break;
                 case C::WAKE_TO_ACTIVE: id(wake_to_active_state).execute(); break;
-                case C::SCREEN_SLEEP_TIMER: id(screen_sleep_timer).execute(); break;
                 case C::APPLY_POWER_POLICY: id(apply_power_policy).execute(); break;
                 case C::CANCEL_VOICE_ASSISTANT: id(cancel_voice_assistant).execute(); break;
                 case C::ABORT_VOICE_ASSISTANT: esphome::voice_assistant::abort_voice_assistant(id(va)); break;
@@ -1168,7 +1151,7 @@ script:
           }
           if (eff & latter_ui::kPrefEffectSleepTimer) {
             if (rs.nav.display_power_state == 0) {
-              id(screen_sleep_timer).execute();
+              latter_ui::display_lifecycle().note_activity(millis());
             }
           }
           if (eff & latter_ui::kPrefEffectPowerPolicy) {
@@ -1212,7 +1195,7 @@ script:
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
           }
 
   - id: ui_input_event
@@ -1242,8 +1225,9 @@ script:
       - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
       - script.execute: mp_idle_debounce
       - script.execute: sync_wake_word_state
-      - script.execute: screen_sleep_timer
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - lambda: |-
+          latter_ui::display_lifecycle().note_activity(millis());
+          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: throttled_disp_update
     mode: restart

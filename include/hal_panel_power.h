@@ -40,21 +40,49 @@
 
 namespace latter_ui {
 
-// Reserved disp1 Component numeric timeout IDs:
+// Reserved numeric timeout IDs dispatched via LatterLoopProbe::schedule_timeout (CoreTimeoutBridge):
 //   0x4C410001U..0x4C41000FU : UI compositor frame/weather/activity schedulers (include/ui_compositor.h)
 //   0x4C410010U..0x4C41001FU : HAL panel power & MIPI-DCS SLPOUT/DISPON state machine (this file)
 inline constexpr uint32_t kTimeoutPanelDcsId = 0x4C410010U;
 
-#if LATTER_HAS_ESPHOME_COMPONENT
-struct PanelTimeoutScheduler : public esphome::Component {
-  static constexpr uint32_t kTimeoutPanelDcs = kTimeoutPanelDcsId;
+struct CoreTimeoutBridge {
+  void *ctx{nullptr};
+  void (*schedule_fn)(void *ctx, uint32_t id, uint32_t delay_ms, std::function<void()> &&fn){nullptr};
+  void (*cancel_fn)(void *ctx, uint32_t id){nullptr};
 
-  static void request(esphome::Component *comp, uint32_t delay_ms, std::function<void()> &&fn) {
-    if (comp == nullptr) return;
-    static_cast<PanelTimeoutScheduler *>(comp)->set_timeout(kTimeoutPanelDcs, delay_ms, std::move(fn));
+  void bind(void *c,
+            void (*sched)(void *, uint32_t, uint32_t, std::function<void()> &&),
+            void (*cancel)(void *, uint32_t)) noexcept {
+    ctx = c;
+    schedule_fn = sched;
+    cancel_fn = cancel;
+  }
+
+  void reset() noexcept {
+    ctx = nullptr;
+    schedule_fn = nullptr;
+    cancel_fn = nullptr;
   }
 };
-#endif
+
+inline CoreTimeoutBridge &core_timeout_bridge() {
+  static CoreTimeoutBridge b{};
+  return b;
+}
+
+inline void schedule_core_timeout(uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
+  auto &b = core_timeout_bridge();
+  if (b.schedule_fn != nullptr && fn) {
+    b.schedule_fn(b.ctx, id, delay_ms, std::move(fn));
+  }
+}
+
+inline void cancel_core_timeout(uint32_t id) {
+  auto &b = core_timeout_bridge();
+  if (b.cancel_fn != nullptr) {
+    b.cancel_fn(b.ctx, id);
+  }
+}
 
 struct PanelDcsState {
   enum Phase : uint8_t { AWAKE, WAKING, ASLEEP };
@@ -177,8 +205,7 @@ inline void hal_panel_dcs_service(DispT *disp) {
 #endif
     };
     auto service_in = [disp](uint32_t delay_ms) {
-      PanelTimeoutScheduler::request(static_cast<esphome::Component *>(disp), delay_ms,
-                                     [disp]() { hal_panel_dcs_service(disp); });
+      schedule_core_timeout(kTimeoutPanelDcsId, delay_ms, [disp]() { hal_panel_dcs_service(disp); });
     };
     const PanelDcsStepResult res = step_panel_dcs_state(st, hal_millis_now());
     if (res.send_slpout) {

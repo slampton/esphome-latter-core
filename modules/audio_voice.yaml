@@ -212,7 +212,7 @@ media_player:
               - script.stop: sync_wake_word_state
               - script.stop: va_echo_gate
               - script.stop: mute_speaker_path
-              - script.stop: screen_sleep_timer
+              - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
               - mixer_speaker.apply_ducking:
                   id: media_mixing_input
                   decibel_reduction: 50
@@ -328,7 +328,7 @@ media_player:
                       art_u != rs.music.loaded_art_url) {
                     id(fetch_remote_art_debounced).execute();
                   }
-              - script.execute: screen_sleep_timer
+                  latter_ui::display_lifecycle().note_activity(millis());
               - script.execute: throttled_disp_update
               - script.execute: sync_wake_word_state
     on_pause:
@@ -347,7 +347,7 @@ media_player:
               rs.music.pos_sync_time = 0;
             }
             if (rs.nav.display_power_state == 0) {
-              id(screen_sleep_timer).execute();
+              latter_ui::display_lifecycle().note_activity(now_pause_ms);
             }
         - script.execute: mp_pause_settle
     on_idle:
@@ -369,7 +369,7 @@ media_player:
             }
             latter_ui::sync_audio_session_media_observation(false, false, now_idle_ms);
             if (latter_ui::runtime_state().nav.display_power_state == 0) {
-              id(screen_sleep_timer).execute();
+              latter_ui::display_lifecycle().note_activity(now_idle_ms);
             }
         - script.execute: mp_idle_debounce
 
@@ -452,7 +452,7 @@ voice_assistant:
             - script.execute: pause_all_music
             - delay: 150ms
       - script.stop: mp_idle_debounce
-      - script.stop: screen_sleep_timer
+      - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
       - if:
           condition:
             lambda: |-
@@ -502,9 +502,9 @@ voice_assistant:
       - script.execute: sync_wake_word_state
   on_stt_vad_start:
     then:
-      - script.stop: screen_sleep_timer
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          latter_ui::display_lifecycle().disarm_idle();
           latter_ui::log_audio_profile("VA_VAD_START");
           rs.voice.vad_active = true;
           if (latter_ui::cam_intercom_ptt_active()) {
@@ -516,9 +516,9 @@ voice_assistant:
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_vad_end:
     then:
-      - script.stop: screen_sleep_timer
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          latter_ui::display_lifecycle().disarm_idle();
           latter_ui::log_audio_profile("VA_VAD_END");
           rs.voice.vad_active = false;
           if (latter_ui::cam_intercom_ptt_active()) {
@@ -531,7 +531,7 @@ voice_assistant:
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
   on_stt_end:
     then:
-      - script.stop: screen_sleep_timer
+      - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
       - if:
           condition:
             lambda: 'return !latter_ui::cam_intercom_ptt_active() && !latter_ui::cam_call_active();'
@@ -617,7 +617,7 @@ voice_assistant:
                       id: announcement_mixing_input
                       decibel_reduction: 0
                       duration: 0.05s
-                  - script.stop: screen_sleep_timer
+                  - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
                   - script.execute: enable_speaker_path
                   - script.wait: enable_speaker_path
                   - lambda: |-
@@ -658,7 +658,7 @@ voice_assistant:
                 id: announcement_mixing_input
                 decibel_reduction: 0
                 duration: 0.05s
-            - script.stop: screen_sleep_timer
+            - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
             - lambda: |-
@@ -694,7 +694,7 @@ voice_assistant:
                 id: latter_media_player
                 announcement: true
           else:
-            - script.stop: screen_sleep_timer
+            - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
             - lambda: 'id(hal_set_dac_mute).execute(false);'
@@ -1193,7 +1193,7 @@ script:
               id(wake_to_active_state).execute();
             }
           } else {
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
           }
           rs.voice.tts_received = false;
       - script.execute: mute_speaker_path
@@ -1467,7 +1467,7 @@ script:
               id(wake_to_active_state).execute();
             }
           } else {
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
           }
           if (!rs.voice.active) {
             rs.voice.return_page = rs.nav.gui_page;

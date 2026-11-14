@@ -6,16 +6,31 @@
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
+#include "hal_panel_power.h"
 #include "hal_power_pm.h"
 #include "latter_prof.h"
 #include "latter_rpc.h"
 
 #include <cstdint>
+#include <functional>
+#include <utility>
 
 namespace esphome::latter_core {
 
 class LatterLoopProbe : public Component {
  public:
+  LatterLoopProbe() { this->bind_timeout_bridge_(); }
+
+  void setup() override { this->bind_timeout_bridge_(); }
+
+  void schedule_timeout(uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
+    this->set_timeout(id, delay_ms, std::move(fn));
+  }
+
+  void cancel_scheduled_timeout(uint32_t id) {
+    this->cancel_timeout(id);
+  }
+
   void loop() override {
     ::esphome::latter_core::LoopProbeStats &s = ::esphome::latter_core::loop_probe_stats();
     const uint32_t now = millis();
@@ -42,6 +57,17 @@ class LatterLoopProbe : public Component {
   float get_setup_priority() const override { return setup_priority::LATE; }
 
  protected:
+  void bind_timeout_bridge_() noexcept {
+    ::latter_ui::core_timeout_bridge().bind(
+        this,
+        +[](void *ctx, uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
+          static_cast<LatterLoopProbe *>(ctx)->schedule_timeout(id, delay_ms, std::move(fn));
+        },
+        +[](void *ctx, uint32_t id) {
+          static_cast<LatterLoopProbe *>(ctx)->cancel_scheduled_timeout(id);
+        });
+  }
+
   HighFrequencyLoopRequester rpc_hf_{};
   bool rpc_hf_held_{false};
 };

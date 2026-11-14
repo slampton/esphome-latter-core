@@ -2415,11 +2415,6 @@ inline bool &pwr_key_wake_consumed() {
   return latched;
 }
 
-inline bool &hibernate_ui_prepared() {
-  static bool prep = false;
-  return prep;
-}
-
 inline bool &ui_anim_poller_running() {
   static bool running = true;  // ESPHome interval: 20ms starts active at boot
   return running;

@@ -38,7 +38,7 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "latter_state.h"
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111305L
+#define LATTER_SDK_REV 2026111306L
 #endif
 
 namespace esphome {
@@ -175,11 +175,7 @@ inline void handle_ota_begin(DispT *disp, bool &ota_in_progress, int &ota_progre
   stall_guard_pause(true);
   wifi_power_ota_begin();
   ota_progress_pct = 0;
-  sleep_start_time = 0;
-  screen_is_off_standby() = false;
-  disp_poller_held() = true;
-  anim_poller_suppressed() = false;
-  display_power_state = 0;
+  display_lifecycle().on_ota_begin(display_power_state, sleep_start_time);
   if (disp != nullptr) {
     disp->stop_poller();
     hal_set_display_brightness(disp, 230);
@@ -239,8 +235,7 @@ inline void handle_ota_end(DispT *disp, bool &ota_in_progress, int &ota_progress
   if (ota_in_progress) {
     ota_progress_pct = 100;
   }
-  disp_poller_held() = false;
-  anim_poller_suppressed() = false;
+  display_lifecycle().on_ota_end(hal_millis_now());
   if (disp != nullptr) {
     disp->update();
     disp->start_poller();

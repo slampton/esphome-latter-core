@@ -96,7 +96,7 @@ binary_sensor:
                         condition:
                           lambda: 'return !latter_ui::runtime_state().hw_usb_connected && !id(speaker_enable).state;'
                         then:
-                          - script.execute: screen_sleep_timer
+                          - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
     on_release:
       then:
         - if:
@@ -105,7 +105,7 @@ binary_sensor:
                 const auto &rs = latter_ui::runtime_state();
                 return rs.nav.display_power_state == 0 && !rs.hw_usb_connected && !id(speaker_enable).state;
             then:
-              - script.execute: screen_sleep_timer
+              - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
 
 interval:
   - interval: 1s
@@ -206,15 +206,10 @@ interval:
             id(check_firmware_update).execute();
           }
 
-          // 9. Invariant 1: Self-heal any settled pending DCS transition and sync display_power_state
-          // if Display light was turned off externally via HA.
+          // 9. Self-heal any settled pending DCS transition.
           latter_ui::hal_panel_dcs_poll(&id(disp1));
-          if (rs.nav.display_power_state == 0 && !id(display_brightness).current_values.is_on() &&
-              !rs.nav.is_hibernating && !rs.nav.ota_in_progress && (now_1s_ms > 10000U)) {
-            id(turn_screen_off).execute();
-          }
 
-          // 10. Invariant 2: Auto-exit forgotten Games (>3m untouched), Battery Flashlight/Level/Camera (>5m untouched),
+          // 10. Auto-exit forgotten Games (>3m untouched), Battery Flashlight/Level/Camera (>5m untouched),
           // and Return-to-Home idle navigation reset.
           const auto &prefs = latter_ui::persisted_prefs();
           uint32_t last_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
@@ -226,7 +221,7 @@ interval:
               ESP_LOGI("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
               rs.nav.active_game = 0;
               id(stop_alarm_sound).execute();
-              id(screen_sleep_timer).execute();
+              latter_ui::display_lifecycle().note_activity(now_1s_ms);
             }
             if (!rs.hw_usb_connected && rs.nav.gui_page == 8 &&
                 (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12) &&
@@ -240,7 +235,7 @@ interval:
               }
               rs.nav.tools_subpage = 0;
               id(sync_display_brightness).execute();
-              id(screen_sleep_timer).execute();
+              latter_ui::display_lifecycle().note_activity(now_1s_ms);
             }
           }
           const uint32_t rth_ms = latter_ui::return_to_home_timeout_ms(prefs);
@@ -261,62 +256,62 @@ interval:
             id(apply_power_policy).execute();
           }
 
-          // 11. Invariant 3: Guarantee screen_sleep_timer is armed whenever screen is active
-          #if LATTER_IS_STATIONARY
-          const bool should_arm_timer = prefs.docked_screensaver &&
-                                        (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) != "Never");
-          #else
-          const bool should_arm_timer = rs.hw_usb_connected
-              ? (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) != "Never")
-              : (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) != "Never");
-          #endif
-          if (rs.nav.display_power_state == 0 && should_arm_timer &&
-              !id(screen_sleep_timer).is_running() && !rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
-            id(screen_sleep_timer).execute();
-          }
-
-          // 12. Priority 4: Self-Healing Inactivity Auto-Descent to Hardware Hibernate (Battery Devices Only)
-          #if LATTER_HAS_BATTERY
-          uint32_t hibernate_timeout_ms = 900000;
-          const char *st_opt_cstr = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
-          const std::string_view st_opt(st_opt_cstr);
-          bool auto_sleep_enabled = true;
-          if (st_opt == "5 min") hibernate_timeout_ms = 300000;
-          else if (st_opt == "10 min") hibernate_timeout_ms = 600000;
-          else if (st_opt == "15 min") hibernate_timeout_ms = 900000;
-          else if (st_opt == "30 min") hibernate_timeout_ms = 1800000;
-          else if (st_opt == "Disabled") auto_sleep_enabled = false;
-
-          const bool hibernate_blockers_active =
-              rs.nav.is_hibernating ||
-              rs.hw_usb_connected ||
-              rs.nav.ota_in_progress ||
+          // 11. DisplayLifecycleController 1s supervisor: standby greeting tracking, external light-off sync,
+          // deterministic active-screen idle timeout, and battery hibernate descent.
+          const bool active_tool_awake =
+              (rs.nav.gui_page == 8 &&
+               (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12));
+          const uint32_t since_touch_ms = now_1s_ms - std::max(latter_ui::last_screen_wake_ms(),
+                                                               latter_ui::touch_gesture().last_touch_ms);
+          const bool in_hand_hold = (since_touch_ms < 90000U) &&
+              latter_ui::should_in_hand_block_sleep(
+                  !rs.hw_usb_connected && !id(speaker_enable).state && id(pickup_detected).state);
+          const bool voice_or_announce_busy =
+              rs.voice.active || id(va).is_running() || rs.voice.tts_received ||
+              id(announcement_mixing_input).is_running();
+          const bool alert_or_stopwatch_busy =
+              rs.stopwatch.running || rs.timers.ringing || rs.alarms.ringing ||
+              rs.alarms.find_my_active || rs.alert.active;
+          const bool hibernate_blocked =
+              rs.nav.is_hibernating || rs.hw_usb_connected || rs.nav.ota_in_progress ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              rs.stopwatch.running ||
-              rs.timers.running ||
-              rs.timers.ringing ||
-              rs.alarms.ringing ||
-              rs.alarms.find_my_active ||
-              rs.voice.active ||
-              id(va).is_running() ||
-              rs.voice.tts_received ||
-              id(announcement_mixing_input).is_running() ||
-              latter_ui::cam_call_active() ||
-              latter_ui::cam_listen_active() ||
-              (rs.nav.active_game > 0);
+              rs.stopwatch.running || rs.timers.running || rs.timers.ringing ||
+              rs.alarms.ringing || rs.alarms.find_my_active || voice_or_announce_busy ||
+              cam_busy_1s || (rs.nav.active_game > 0);
 
-          const bool screen_is_off = (rs.nav.display_power_state == 2) || !id(display_brightness).current_values.is_on();
-          if (screen_is_off && !hibernate_blockers_active) {
-            if (rs.nav.sleep_start_time == 0) {
-              rs.nav.sleep_start_time = now_1s_ms;
-            } else if (auto_sleep_enabled && (now_1s_ms - rs.nav.sleep_start_time >= hibernate_timeout_ms)) {
-              ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown", st_opt_cstr);
-              rs.nav.sleep_start_time = 0;
-              latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::IDLE;
-              id(start_hibernation_countdown).execute();
-            }
-          } else {
-            rs.nav.sleep_start_time = 0;
+          latter_ui::DisplaySupervisorInputs dl_in{};
+          dl_in.is_stationary = (LATTER_IS_STATIONARY != 0);
+          dl_in.has_battery = (LATTER_HAS_BATTERY != 0);
+          dl_in.usb_connected = rs.hw_usb_connected;
+          dl_in.docked_screensaver = prefs.docked_screensaver;
+          dl_in.docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
+          dl_in.battery_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
+          dl_in.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
+          dl_in.wake_greeting_enabled = prefs.wake_greeting;
+          dl_in.panel_brightness_on = id(display_brightness).current_values.is_on();
+          dl_in.is_hibernating = rs.nav.is_hibernating;
+          dl_in.ota_in_progress = rs.nav.ota_in_progress;
+          dl_in.voice_or_announce_busy = voice_or_announce_busy;
+          dl_in.alert_or_stopwatch_busy = alert_or_stopwatch_busy;
+          dl_in.in_hand_hold = in_hand_hold;
+          dl_in.active_tool_awake = active_tool_awake;
+          dl_in.active_game_running = (rs.nav.active_game != 0);
+          dl_in.hibernate_blocked = hibernate_blocked;
+
+          const auto dl_act = latter_ui::display_lifecycle().evaluate_1s(
+              now_1s_ms, dl_in, rs.nav.display_power_state, rs.nav.sleep_start_time,
+              rs.nav.standby_entered_ms, rs.nav.wake_greeting_pending);
+          if (dl_act.turn_screen_off_now) {
+            id(turn_screen_off).execute();
+          } else if (dl_act.enter_standby_now) {
+            id(enter_standby_state).execute();
+          }
+          #if LATTER_HAS_BATTERY
+          if (dl_act.start_hibernate_countdown_now) {
+            ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
+                     latter_ui::pref_battery_hibernate_timeout_cstr(prefs));
+            latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::IDLE;
+            id(start_hibernation_countdown).execute();
           }
           #endif
 
@@ -524,7 +519,7 @@ script:
           r.armed = false;
           const bool alert_up = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active;
           if (alert_up || touched || prior == 0 || rs.nav.display_power_state != 0 || rs.nav.is_hibernating) {
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
             return;
           }
           if (prior == 1) {
@@ -536,19 +531,18 @@ script:
   - id: trigger_screensaver_now
     mode: restart
     then:
-      - script.stop: screen_sleep_timer
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          const uint32_t now_ss_ms = millis();
           const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
           if (s_style == "Screen Off") {
             id(turn_screen_off).execute();
             return;
           }
-          latter_ui::screen_is_off_standby() = false;
+          latter_ui::display_lifecycle().on_enter_screensaver(
+              now_ss_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
           id(disp1).start_poller();
-          rs.nav.display_power_state = 1; // SCREENSAVER
-          rs.nav.sleep_start_time = 0;
-          latter_ui::record_ambient_frame_ms(millis());
+          latter_ui::record_ambient_frame_ms(now_ss_ms);
           id(apply_power_policy).execute();
           id(display_brightness).turn_on().set_brightness(latter_ui::kScreensaverBrightness).perform();
           latter_ui::schedule_disp_update(&id(disp1));
@@ -556,18 +550,17 @@ script:
   - id: turn_screen_off
     mode: restart
     then:
-      - script.stop: screen_sleep_timer
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
-          rs.nav.display_power_state = 2; // SCREEN_OFF
-          rs.nav.sleep_start_time = millis();
+          const uint32_t now_off_ms = millis();
           rs.nav.active_game = 0;
           if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
             id(stop_doorbell_call).execute();
           }
-          id(disp1).update(); // Flush single all-black frame before cutting panel brightness
-          latter_ui::screen_is_off_standby() = true;
-          latter_ui::anim_poller_suppressed() = false;
+          rs.nav.display_power_state = 2; // Flush single all-black frame before cutting panel brightness
+          id(disp1).update();
+          latter_ui::display_lifecycle().on_enter_standby_off(
+              now_off_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
           id(disp1).stop_poller();
           id(display_brightness).turn_off().perform();
 
@@ -590,18 +583,17 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          const uint32_t now_sb_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
           const std::string_view s_style = latter_ui::pref_screensaver_style_cstr(prefs);
           bool screensaver_allowed = rs.hw_usb_connected &&
                                      prefs.docked_screensaver &&
                                      (s_style != "Screen Off");
           if (screensaver_allowed) {
-            latter_ui::screen_is_off_standby() = false;
-            latter_ui::anim_poller_suppressed() = false;
+            latter_ui::display_lifecycle().on_enter_screensaver(
+                now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
             id(disp1).start_poller();
-            rs.nav.display_power_state = 1; // SCREENSAVER
-            rs.nav.sleep_start_time = 0;
-            latter_ui::record_ambient_frame_ms(millis());
+            latter_ui::record_ambient_frame_ms(now_sb_ms);
             id(apply_power_policy).execute();
             id(display_brightness).turn_on().set_brightness(latter_ui::kScreensaverBrightness).perform();
             if (s_style == "Ambient Clock") {
@@ -619,7 +611,6 @@ script:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           const uint32_t wake_now_ms = millis();
-          latter_ui::hibernate_ui_prepared() = false;
           const uint32_t prev_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
@@ -640,12 +631,11 @@ script:
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
             latter_ui::record_screen_wake();
           }
-          latter_ui::screen_is_off_standby() = false;
-          latter_ui::last_screen_wake_ms() = wake_now_ms;
+          latter_ui::display_lifecycle().on_wake_active(
+              wake_now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time,
+              rs.nav.standby_entered_ms, latter_ui::persisted_prefs().wake_greeting,
+              rs.nav.wake_greeting_pending);
           latter_ui::raise_to_wake().reset();
-          rs.nav.sleep_start_time = 0;
-          rs.nav.display_power_state = 0; // ACTIVE
-          latter_ui::anim_poller_suppressed() = false;
           id(disp1).start_poller();
           latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
       # Pixel wake runs BEFORE radio/IMU I2C work in apply_power_policy so Frame #1 lights up immediately.
@@ -671,7 +661,6 @@ script:
               wp_u != rs.music.loaded_wallpaper_url) {
             id(fetch_wallpaper_debounced).execute();
           }
-      - script.execute: screen_sleep_timer
 
   - id: prepare_hibernation_teardown
     mode: restart
@@ -680,22 +669,18 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
-          latter_ui::screen_is_off_standby() = false;
-          latter_ui::anim_poller_suppressed() = false;
-          latter_ui::hibernate_ui_prepared() = true;
+          latter_ui::display_lifecycle().on_prepare_hibernate(
+              rs.nav.display_power_state, rs.nav.sleep_start_time);
           latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
           id(disp1).start_poller();
-          rs.nav.sleep_start_time = 0;
           rs.nav.hibernate_countdown_val = countdown_sec;
           rs.nav.is_hibernating = true;
           rs.nav.active_game = 0;
-          rs.nav.display_power_state = 0;
       - micro_wake_word.stop:
       - voice_assistant.stop:
       - media_player.pause: latter_media_player
       - lambda: 'id(hal_set_dac_mute).execute(true);'
       - switch.turn_off: speaker_enable
-      - script.stop: screen_sleep_timer
       - script.execute: sync_display_brightness
       - if:
           condition:
@@ -795,84 +780,3 @@ script:
             - delay: 250ms
             - safe_mode.mark_successful:
             - script.execute: hal_enter_hardware_hibernate
-
-  - id: screen_sleep_timer
-    mode: restart
-    then:
-      - delay: !lambda |-
-          const auto &prefs = latter_ui::persisted_prefs();
-          if (latter_ui::runtime_state().hw_usb_connected) {
-            const std::string_view ss_to = latter_ui::pref_docked_idle_timeout_cstr(prefs);
-            if (ss_to == "10s") return 10000;
-            if (ss_to == "15s") return 15000;
-            if (ss_to == "30s") return 30000;
-            if (ss_to == "1 min") return 60000;
-            if (ss_to == "2 min") return 120000;
-            if (ss_to == "5 min") return 300000;
-            if (ss_to == "Never") return 86400000;
-            return 60000;
-          }
-          const std::string_view opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
-          if (opt == "10s") return 10000;
-          if (opt == "15s") return 15000;
-          if (opt == "30s") return 30000;
-          if (opt == "1 min") return 60000;
-          if (opt == "2 min") return 120000;
-          if (opt == "Never") return 86400000;
-          return 30000;
-      - if:
-          condition:
-            lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              const auto &prefs = latter_ui::persisted_prefs();
-              #if LATTER_IS_STATIONARY
-              if (!prefs.docked_screensaver) return false;
-              if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
-              #else
-              if (rs.hw_usb_connected) {
-                if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
-              } else {
-                if (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) == "Never") return false;
-              }
-              #endif
-              const bool active_tool_awake =
-                  (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12));
-              const uint32_t since_touch_ms = millis() - std::max(latter_ui::last_screen_wake_ms(),
-                                                                  latter_ui::touch_gesture().last_touch_ms);
-              const bool in_hand_hold = (since_touch_ms < 90000U) &&
-                  latter_ui::should_in_hand_block_sleep(!rs.hw_usb_connected && !id(speaker_enable).state && id(pickup_detected).state);
-              return !rs.nav.ota_in_progress &&
-                     !rs.voice.active &&
-                     !id(va).is_running() &&
-                     !rs.voice.tts_received &&
-                     !id(announcement_mixing_input).is_running() &&
-                     !rs.stopwatch.running &&
-                     !rs.timers.ringing &&
-                     !rs.alarms.ringing &&
-                     !rs.alarms.find_my_active &&
-                     !rs.alert.active &&
-                     !in_hand_hold &&
-                     !active_tool_awake &&
-                     (rs.nav.active_game == 0);
-          then:
-            - script.execute: enter_standby_state
-          else:
-            - if:
-                condition:
-                  lambda: |-
-                    const auto &rs = latter_ui::runtime_state();
-                    const auto &prefs = latter_ui::persisted_prefs();
-                    #if LATTER_IS_STATIONARY
-                    if (!prefs.docked_screensaver) return false;
-                    if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
-                    #else
-                    if (rs.hw_usb_connected) {
-                      if (std::string_view(latter_ui::pref_docked_idle_timeout_cstr(prefs)) == "Never") return false;
-                    } else {
-                      if (std::string_view(latter_ui::pref_battery_screen_timeout_cstr(prefs)) == "Never") return false;
-                    }
-                    #endif
-                    return (rs.nav.display_power_state == 0);
-                then:
-                  - delay: 2s
-                  - script.execute: screen_sleep_timer

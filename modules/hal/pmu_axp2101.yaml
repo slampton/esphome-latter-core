@@ -221,7 +221,7 @@ script:
                 rs.hw_usb_connected = vbus;
                 id(usb_connected).publish_state(vbus);
                 if (rs.nav.display_power_state == 0) {
-                  id(screen_sleep_timer).execute();
+                  latter_ui::display_lifecycle().note_activity(millis());
                 }
                 // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
                 // so the screensaver never stays awake draining the battery.
@@ -352,7 +352,7 @@ script:
             rs.alert.loaded_camera_url = "";
             latter_ui::release_art(id(camera_snapshot_art));
             rs.alert.active = true;
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(millis());
             latter_ui::schedule_disp_update(&id(disp1));
           }
 
@@ -419,7 +419,7 @@ script:
             rs.alarms.ringing = false;
             id(stop_alarm_sound).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(now_c);
             return;
           }
           if (rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active) {
@@ -432,7 +432,7 @@ script:
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(now_c);
             return;
           }
 
@@ -448,7 +448,7 @@ script:
           }
 
           if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3) {
-            id(screen_sleep_timer).execute();
+            latter_ui::display_lifecycle().note_activity(now_c);
             if (!rs.stopwatch.running) {
               rs.stopwatch.running = true;
               rs.stopwatch.start_time_ms = millis() - rs.stopwatch.elapsed_ms;

@@ -608,7 +608,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   if (now_touch - last_touch_activity_ms_ > 1000U) {
     last_touch_activity_ms_ = now_touch;
-    rt_.cmd(UiHostCmd::SCREEN_SLEEP_TIMER);
+    display_lifecycle().note_activity(now_touch);
   }
 
   auto &gest = touch_gesture();
@@ -2188,7 +2188,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   if (rs.nav.display_power_state == 0 && !rs.voice.active &&
       (now_u - last_drag_sleep_rst_ms_ >= 2000U)) {
     last_drag_sleep_rst_ms_ = now_u;
-    rt_.cmd(UiHostCmd::SCREEN_SLEEP_TIMER);
+    display_lifecycle().note_activity(now_u);
   }
 
   if (tx != gest.last_x || ty != gest.last_y) {
@@ -3447,7 +3447,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     return;
   }
 
-  rt_.cmd(UiHostCmd::SCREEN_SLEEP_TIMER);
+  display_lifecycle().note_activity(now_in);
   last_user_touch_ms() = now_in;
   activate_ui_focus(now_in);
 
