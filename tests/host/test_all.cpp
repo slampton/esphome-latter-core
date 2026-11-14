@@ -35,6 +35,7 @@
 #include "../../include/latter_state.h"
 #include "../../include/latter_rpc.h"
 #include "../../include/latter_actions.h"
+#include "../../components/latter_core/audio_session.cpp"
 #include "../../include/hal_battery.h"
 #include "../../include/hal_link_report.h"
 #include "../../include/hal_manifest.h"
@@ -2149,6 +2150,172 @@ void test_display_lifecycle_controller() {
   dl.reset();
 }
 
+// ==============================================================================
+// 13. PHASE 2: AUDIO PATH ARBITRATOR, INTERCOM SESSION, ECHO METER & VOICE CMD
+// ==============================================================================
+
+void test_audio_path_and_intercom_arbitrator() {
+  using namespace latter_ui;
+
+  // 1. Compile-time + runtime zero-allocation STT local media command matcher
+  static_assert(match_local_media_voice_cmd("stop") == LocalVoiceMediaCmd::PauseOrStop);
+  static_assert(match_local_media_voice_cmd("  Pause!  ") == LocalVoiceMediaCmd::PauseOrStop);
+  static_assert(match_local_media_voice_cmd("Turn off the music.") == LocalVoiceMediaCmd::PauseOrStop);
+  static_assert(match_local_media_voice_cmd("Please stop playing song!") == LocalVoiceMediaCmd::PauseOrStop);
+  static_assert(match_local_media_voice_cmd("What is the next bus stop?") == LocalVoiceMediaCmd::None);
+  static_assert(match_local_media_voice_cmd("") == LocalVoiceMediaCmd::None);
+
+  LATTER_CHECK(match_local_media_voice_cmd("PAUSE") == LocalVoiceMediaCmd::PauseOrStop);
+  LATTER_CHECK(match_local_media_voice_cmd("pause playback") == LocalVoiceMediaCmd::PauseOrStop);
+  LATTER_CHECK(match_local_media_voice_cmd("stop the kitchen lights") == LocalVoiceMediaCmd::None);
+
+  // 2. Alignment-safe std::span echo_meter_feed (unaligned +1 byte slice inside aligned buffer)
+  alignas(8) uint8_t raw_buf[32]{};
+  std::span<uint8_t> unaligned_quiet(raw_buf + 1, 16);  // 8 int16_t samples = 0
+  echo_meter_active().store(true, std::memory_order_relaxed);
+  echo_last_loud_ms().store(777U, std::memory_order_relaxed);
+  echo_meter_feed(std::span<const uint8_t>(unaligned_quiet));
+  LATTER_CHECK(echo_last_loud_ms().load(std::memory_order_relaxed) == 777U);
+
+  // Write loud int16_t samples (1000 > 33) at odd byte alignment via memcpy
+  for (size_t i = 0; i < 8; ++i) {
+    const int16_t loud = 1000;
+    std::memcpy(unaligned_quiet.data() + i * sizeof(int16_t), &loud, sizeof(int16_t));
+  }
+  // Inactive meter must no-op
+  echo_meter_active().store(false, std::memory_order_relaxed);
+  echo_meter_feed(std::span<const uint8_t>(unaligned_quiet));
+  LATTER_CHECK(echo_last_loud_ms().load(std::memory_order_relaxed) == 777U);
+  // Active meter updates echo_last_loud_ms() to hal_millis_now() (0U on host)
+  echo_meter_active().store(true, std::memory_order_relaxed);
+  echo_meter_feed(std::span<const uint8_t>(unaligned_quiet));
+  LATTER_CHECK(echo_last_loud_ms().load(std::memory_order_relaxed) == 0U);
+  echo_meter_active().store(false, std::memory_order_relaxed);
+
+  // 3. AudioPathArbitrator: DrainSources -> QuietSpeaker -> SettleUnmute -> Inactive
+  auto &arb = audio_arbitrator();
+  arb.reset();
+  LATTER_CHECK(!arb.has_pending_work() && !arb.needs_fast_loop());
+
+  arb.arm_echo_gate(1000U, 1500U);
+  LATTER_CHECK(arb.echo_stage() == EchoGateStage::DrainSources && arb.needs_fast_loop());
+  LATTER_CHECK(echo_meter_active().load(std::memory_order_relaxed));
+
+  AudioArbitratorInputs in{};
+  in.ann_has_buffered = true;
+  auto act = arb.step(1200U, in);
+  LATTER_CHECK(arb.echo_stage() == EchoGateStage::DrainSources && !act.mute_speaker_path && !act.unmute_mic);
+
+  // Sources drained -> advances to QuietSpeaker; simulate loud acoustic tail at 1350ms
+  in.ann_has_buffered = false;
+  in.phys_spk_has_buffered = true;
+  echo_last_loud_ms().store(1350U, std::memory_order_relaxed);
+  act = arb.step(1300U, in);
+  LATTER_CHECK(arb.echo_stage() == EchoGateStage::QuietSpeaker);
+
+  // Physical speaker drained + >=100ms silence since 1350ms -> mutes speaker path & enters SettleUnmute
+  in.phys_spk_has_buffered = false;
+  act = arb.step(1460U, in);
+  LATTER_CHECK(act.mute_speaker_path && !act.unmute_mic);
+  LATTER_CHECK(arb.echo_stage() == EchoGateStage::SettleUnmute);
+
+  // 30ms settle completes -> unmutes mic & turns off echo_meter_active
+  act = arb.step(1495U, in);
+  LATTER_CHECK(act.unmute_mic && arb.echo_stage() == EchoGateStage::Inactive);
+  LATTER_CHECK(!echo_meter_active().load(std::memory_order_relaxed));
+
+  // Media pause settle (500ms or mixer idle) + 3000ms idle debounce + 6000ms announce stall check
+  in.media_mixer_running = true;
+  arb.arm_media_pause_settle(2000U);
+  LATTER_CHECK(arb.media_idle_debounce_active() && arb.needs_fast_loop());
+  act = arb.step(2200U, in);
+  LATTER_CHECK(!act.run_media_idle_finish);
+  act = arb.step(2505U, in);
+  LATTER_CHECK(act.run_media_idle_finish && !arb.media_idle_debounce_active());
+
+  arb.arm_media_idle_debounce(3000U, 3000U);
+  LATTER_CHECK(!arb.step(5999U, in).run_media_idle_finish);
+  LATTER_CHECK(arb.step(6000U, in).run_media_idle_finish);
+
+  in.mp_announcing = true;
+  in.ann_has_buffered = false;
+  arb.arm_announce_stall_check(10000U);
+  LATTER_CHECK(!arb.step(15999U, in).log_announce_stall);
+  LATTER_CHECK(arb.step(16000U, in).log_announce_stall);
+
+  // 4. IntercomSessionController & media_seek_relative burst escalation
+  struct FakeOutbox {
+    std::vector<std::string> frames;
+    void publish_state(const std::string &s) { frames.push_back(s); }
+  } outbox;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_rpc::bind_sensor_sink(&outbox);
+
+  auto &ic = intercom_session();
+  ic.reset();
+  area_ctx_state().cameras_summary = "camera.front_door|Front Door|porch|/api/latter/cam?entity_id=camera.front_door";
+  cam_carousel_idx() = 0;
+
+  ic.start_call(20000U);
+  LATTER_CHECK(ic.phase() == IntercomPhase::TwoWayListening && cam_call_active() && cam_listen_active());
+  LATTER_CHECK(!outbox.frames.empty() && outbox.frames.back().find("listen_start") != std::string::npos);
+
+  LATTER_CHECK(!ic.begin_ptt(20100U, false));
+  LATTER_CHECK(cam_intercom_status() == "NOT CONNECTED");
+  LATTER_CHECK(ic.begin_ptt(20200U, true));
+  LATTER_CHECK(ic.phase() == IntercomPhase::TwoWayPttTx && cam_intercom_ptt_active());
+
+  // Empty STT resumes live listen without talk_message
+  LATTER_CHECK(!ic.finish_ptt_stt("", 20500U));
+  LATTER_CHECK(ic.phase() == IntercomPhase::TwoWayListening && !cam_intercom_ptt_active());
+
+  // Non-empty STT emits talk_message
+  LATTER_CHECK(ic.begin_ptt(21000U, true));
+  uint32_t drain_ms = 25000U;
+  while (latter_rpc::has_pending_frames()) {
+    drain_ms += 25U;
+    latter_rpc::step_outbox_loop(drain_ms);
+  }
+  outbox.frames.clear();
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_rpc::bind_sensor_sink(&outbox);
+  LATTER_CHECK(ic.finish_ptt_stt("Leave it on the porch", 21500U));
+  LATTER_CHECK(ic.phase() == IntercomPhase::TwoWayListening && cam_intercom_status() == "SENT TO DOORBELL");
+  LATTER_CHECK(!outbox.frames.empty() && outbox.frames.back().find("talk_message") != std::string::npos);
+
+  bool hw_stopped = false;
+  static bool s_hw_stopped_flag = false;
+  s_hw_stopped_flag = false;
+  ic.bind_host_stop_hw([](uint32_t) { s_hw_stopped_flag = true; });
+  ic.stop_call_with_hw(22000U);
+  hw_stopped = s_hw_stopped_flag;
+  LATTER_CHECK(hw_stopped && ic.phase() == IntercomPhase::Idle && !cam_call_active());
+  LATTER_CHECK(arb.media_idle_debounce_active());
+  arb.reset();
+  ic.bind_host_stop_hw(nullptr);
+  ic.reset();
+
+  // Burst seek escalation: +30s on 1st tap, then +60s within 1000ms burst window
+  runtime_state().music = MusicRuntimeState{};
+  media_state().duration = 300.0f;
+  runtime_state().music.pos_base = 50.0f;
+  runtime_state().music.pos_sync_time = 30000U;
+  media_seek_relative(+1, 30000U);
+  LATTER_CHECK(std::fabs(runtime_state().music.pos_base - 80.0f) < 0.05f);
+  media_seek_relative(+1, 30500U);
+  LATTER_CHECK(std::fabs(runtime_state().music.pos_base - 140.5f) < 0.05f);
+
+  // 5. Source-level check: all retired mode: restart YAML scripts removed from audio_voice.yaml
+  const std::string av_yaml = read_repo_file("../../modules/audio_voice.yaml");
+  LATTER_CHECK(av_yaml.find("id: va_echo_gate") == std::string::npos);
+  LATTER_CHECK(av_yaml.find("id: mp_idle_debounce") == std::string::npos);
+  LATTER_CHECK(av_yaml.find("id: mp_pause_settle") == std::string::npos);
+  LATTER_CHECK(av_yaml.find("id: announce_stall_check") == std::string::npos);
+  LATTER_CHECK(av_yaml.find("id: send_doorbell_intercom_cmd") == std::string::npos);
+
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+}
+
 }  // namespace
 
 int main() {
@@ -2164,6 +2331,7 @@ int main() {
   test_phase4_audio_session_and_music_pause_timeout();
   test_panel_dcs_timeout_isolation_and_wake_grace();
   test_display_lifecycle_controller();
+  test_audio_path_and_intercom_arbitrator();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
       "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "

@@ -187,19 +187,19 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     } else if (kind == 6) {
       auto &ac = area_ctx_state();
       if (cam_call_active() || cam_intercom_ptt_active()) {
-        rt.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+        intercom_session().stop_call_with_hw(now_ms);
       }
       if (cam_listen_active()) {
         cam_listen_active() = false;
         rs.intercom.cam_action = "listen_stop";
-        rt.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+        intercom_session().emit_current_cmd();
         rt.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
       }
       if (!ac.doorbell_talk_state.empty() && ac.doorbell_talk_state != "idle" &&
           ac.doorbell_talk_state != "off" && ac.doorbell_talk_state != "none") {
         rs.intercom.cam_action = "hangup";
-        rt.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
-        rt.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+        intercom_session().emit_current_cmd();
+        intercom_session().stop_call_with_hw(now_ms);
         ac.doorbell_talk_state = "idle";
       }
       if (rs.voice.intercom_turn) {
@@ -312,7 +312,7 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
     rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
   }
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
-    rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+    intercom_session().stop_call_with_hw(now_ms);
   }
   const bool was_cam_page = (rs.nav.gui_page == PageId::TOOLS &&
                              rs.nav.tools_subpage == ToolsSubpage::CAMERAS);
@@ -375,7 +375,7 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
     rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
   }
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
-    rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+    intercom_session().stop_call_with_hw(now_ms);
   }
   const bool was_cam_page = (rs.nav.gui_page == PageId::TOOLS &&
                              rs.nav.tools_subpage == ToolsSubpage::CAMERAS);
@@ -470,7 +470,7 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
         rs.intercom.broadcast_feedback_ms = now_ms;
         cam_intercom_status() = "DOOR / GATE UNLOCKED";
         rs.intercom.cam_status_ms = now_ms;
-        rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+        intercom_session().emit_current_cmd();
       }
       std::fill(pin_str.begin(), pin_str.end(), '\0');
       mark_dirty_full();
@@ -560,7 +560,7 @@ bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool 
     cam_intercom_status() = "DOOR / GATE UNLOCKED";
     rs.intercom.cam_status_ms = now_ms;
   }
-  rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+  intercom_session().emit_current_cmd();
   rt_.schedule_disp();
   return true;
 }
@@ -710,7 +710,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       rs.nav.gui_page = PageId::TOOLS;
       rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
       rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-      rt_.cmd(UiHostCmd::START_DOORBELL_CALL);
+      intercom_session().start_call(now_touch);
       mark_dirty_full();
       rt_.schedule_disp();
       return;
@@ -963,7 +963,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
           rs.music.direct_nav = true;
           rs.music.overlay_mode = 1;
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
           mark_dirty_full();
           rt_.schedule_disp();
         }
@@ -999,10 +999,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           const bool is_speech = (rs.music.active_playback_media_type == "podcast" ||
                                   rs.music.active_playback_media_type == "audiobook");
           if (is_speech) {
-            rt_.cmd(UiHostCmd::MUSIC_SEEK_RELATIVE, is_next ? 1 : -1);
+            media_seek_relative(is_next ? 1 : -1, now_touch);
+          } else if (is_next) {
+            media_next_track(now_touch);
           } else {
-            rs.music.action_feedback = is_next ? "Next Track >>" : "<< Prev Track";
-            rt_.cmd(is_next ? UiHostCmd::MUSIC_NEXT_TRACK : UiHostCmd::MUSIC_PREV_TRACK);
+            media_prev_track(now_touch);
           }
           rs.music.feedback_timer = now_touch;
           rs.music.hud_timer = now_touch;
@@ -1016,7 +1017,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
               hit->param, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
               media_state().is_local, rt_.local_mp_volume, now_touch, rs.music);
           rs.music.hud_timer = now_touch;
-          rt_.cmd((hit->param > 0) ? UiHostCmd::MUSIC_VOL_UP : UiHostCmd::MUSIC_VOL_DOWN);
+          rt_.cmd(UiHostCmd::MUSIC_STEP_VOLUME, (hit->param > 0) ? 1 : -1);
           rt_.schedule_disp();
         }
         return;
@@ -1066,7 +1067,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
             rs.music.direct_nav = false;
             rs.music.overlay_mode = 1;
-            rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+            media_fetch_browse(now_touch);
           } else if (row == 1) {
             rs.music.category_page = 1;
             rs.nav.menu_scroll_active = false;
@@ -1080,7 +1081,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
             rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
             rs.music.overlay_mode = 3;
-            rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+            media_fetch_browse(now_touch);
           } else if (row == 3) {
             rs.nav.gui_page = PageId::SYSTEM;
             rs.nav.system_menu_mode = 9;
@@ -1147,12 +1148,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
                          ? rs.music.drilldown_artist_name
                          : "ALBUMS");
           b_page = std::max(1, rs.music.drilldown_album_page);
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
         } else if (rs.music.selected_category_mode == "artist_albums") {
           rs.music.selected_category_mode = "artist";
           rs.music.selected_category_title = "ARTISTS";
           b_page = std::max(1, rs.music.drilldown_artist_page);
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
         } else {
           rs.music.drilldown_artist_page = 1;
           rs.music.drilldown_album_page = 1;
@@ -1234,7 +1235,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
           reset_music_loading_slots(rs, "Loading album tracks...");
           rs.music.overlay_mode = 3;
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
           mark_dirty_full();
           rt_.schedule_disp();
         }
@@ -1253,7 +1254,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           }
           rs.music.pos_base = new_p;
           rs.music.pos_sync_time = now_touch;
-          rt_.cmd(UiHostCmd::MUSIC_SEEK_ABSOLUTE);
+          media_seek_absolute(now_touch);
           rt_.schedule_disp();
         }
         return;
@@ -1263,7 +1264,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
           rs.music.pos_base = hit->norm_x(touch.x) * ms.duration;
           rs.music.pos_sync_time = now_touch;
-          rt_.cmd(UiHostCmd::MUSIC_SEEK_ABSOLUTE);
+          media_seek_absolute(now_touch);
           rt_.schedule_disp();
         }
         return;
@@ -1282,7 +1283,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
           reset_music_loading_slots(rs, is_bio ? "Loading artist & album bio..." : "Loading lyrics...");
           rs.music.overlay_mode = is_bio ? 8 : 7;
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
           mark_dirty_full();
           rt_.schedule_disp();
         }
@@ -1306,7 +1307,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         const int next_pg = std::clamp(pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, std::max(1, tot));
         if (next_pg != pg) {
           pg = next_pg;
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_touch);
           rt_.schedule_disp();
         }
       }
@@ -2120,11 +2121,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
               rs.intercom.cam_message = t_ids[slot_idx];
               rs.intercom.broadcast_feedback = "Call: " + t_lbls[slot_idx];
               rs.intercom.broadcast_feedback_ms = now_touch;
-              rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+              intercom_session().emit_current_cmd();
               cam_quick_reply_open() = false;
               rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
               rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-              rt_.cmd(UiHostCmd::START_DOORBELL_CALL);
+              intercom_session().start_call(now_touch);
               mark_dirty_full();
               rt_.schedule_disp();
             }
@@ -2162,7 +2163,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           return;
         }
         if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
-          rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+          intercom_session().stop_call_with_hw(now_touch);
         }
         rs.nav.tools_subpage = 0;
         rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
@@ -2565,7 +2566,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         if (!std::isnan(dur) && dur > 0.0f) {
           rs.music.pos_base = start_slider->norm_x(tp.x) * dur;
           rs.music.pos_sync_time = now_rel;
-          rt_.cmd(UiHostCmd::MUSIC_SEEK_ABSOLUTE);
+          media_seek_absolute(now_rel);
           rt_.schedule_disp();
         }
       } else if (start_slider->widget_id == WidgetId::LIGHT_TEMP_SLIDER &&
@@ -2643,7 +2644,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           b_page = next_pg;
           last_music_page_req_ms() = now_rel;
           rs.nav.menu_scroll_active = false;
-          rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+          media_fetch_browse(now_rel);
           rt_.schedule_disp();
         }
       } else if (!rs.nav.menu_scroll_active && gest.max_travel <= ly.tap_max_loose()) {
@@ -2663,7 +2664,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                           : std::clamp(b_page + step_d, 1, b_tot);
             if (next_pg != b_page) {
               b_page = next_pg;
-              rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+              media_fetch_browse(now_rel);
               rt_.schedule_disp();
             }
           }
@@ -2699,7 +2700,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             b_page = 1;
             rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
             rs.music.overlay_mode = 3;
-            rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+            media_fetch_browse(now_rel);
             mark_dirty_full();
             rt_.schedule_disp();
           } else if (rs.music.overlay_mode == 3) {
@@ -2725,7 +2726,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                   rs.music.selected_category_title = s_name;
                   reset_music_loading_slots(rs, "Loading episodes...");
                   b_page = 1;
-                  rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+                  media_fetch_browse(now_rel);
                   rt_.schedule_disp();
                 } else if (is_drill) {
                   if (rs.music.selected_category_mode == "artist") {
@@ -2734,7 +2735,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                     rs.music.selected_category_mode = "artist_albums";
                     rs.music.selected_category_title = s_name;
                     b_page = 1;
-                    rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+                    media_fetch_browse(now_rel);
                     rt_.schedule_disp();
                   } else {
                     rs.music.drilldown_album_id = s_id;
@@ -2743,7 +2744,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                     rs.music.selected_category_mode = "album_tracks";
                     rs.music.selected_category_title = s_name;
                     b_page = 1;
-                    rt_.cmd(UiHostCmd::FETCH_MUSIC_BROWSE);
+                    media_fetch_browse(now_rel);
                     rt_.schedule_disp();
                   }
                 } else {
@@ -2777,10 +2778,10 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.schedule_disp();
       } else if (wid == WidgetId::GAMES_PLAY_BTN || wid == WidgetId::GAMES_HERO_CARD) {
         rs.nav.active_game = rs.nav.game_carousel_idx + 1;
-        rt_.cmd(UiHostCmd::STOP_MP_IDLE_DEBOUNCE);
+        audio_arbitrator().cancel_media_idle_debounce();
         if (rt_.local_mp_playing) {
           rt_.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);
-          rt_.cmd(UiHostCmd::STOP_MP_IDLE_DEBOUNCE);
+          audio_arbitrator().cancel_media_idle_debounce();
         }
         mark_dirty_full();
         rt_.schedule_disp();
@@ -3260,7 +3261,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               rs.intercom.cam_message = kDoorbellReplies[r_idx];
               cam_intercom_status() = "REPLY SENT";
               rs.intercom.cam_status_ms = now_rel;
-              rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+              intercom_session().emit_current_cmd();
               mark_dirty_full();
               rt_.schedule_disp();
             } else if (wid == WidgetId::CAM_NOISE_BTN) {
@@ -3268,7 +3269,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               static constexpr const char *kNoiseCodes[3] = {"strong", "light", "off"};
               rs.intercom.cam_noise_reduction = kNoiseCodes[cam_noise_idx()];
               rs.intercom.cam_action = "set_noise_reduction";
-              rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+              intercom_session().emit_current_cmd();
               rt_.schedule_disp();
             }
           } else if (wid == WidgetId::CAM_ORIENT_BTN) {
@@ -3287,13 +3288,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           } else if (wid == WidgetId::CAM_LISTEN_BTN) {
             if (cam_call_active()) {
-              rt_.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+              intercom_session().stop_call_with_hw(now_rel);
             } else {
               cam_listen_active() = !cam_listen_active();
               rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
               cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
               rs.intercom.cam_status_ms = now_rel;
-              rt_.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+              intercom_session().emit_current_cmd();
               if (!cam_listen_active()) {
                 rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
               }
@@ -3301,10 +3302,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           } else if (wid == WidgetId::CAM_PTT_BTN) {
             if (!cam_call_active()) {
-              rt_.cmd(UiHostCmd::START_DOORBELL_CALL);
+              intercom_session().start_call(now_rel);
+              rt_.schedule_disp();
             } else if (cam_intercom_ptt_active()) {
               rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
-              rt_.cmd(UiHostCmd::RESUME_DOORBELL_LISTEN);
+              intercom_session().resume_listen(now_rel);
+              rt_.apply_power_policy();
+              rt_.schedule_disp();
             } else {
               rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
             }

@@ -844,6 +844,16 @@ struct IntercomRuntimeState {
   std::string cam_noise_reduction = "strong";
   std::string cam_code = "";
   uint32_t cam_status_ms = 0;
+  bool live_call_mode = true;
+  int cam_carousel_idx = 0;
+  bool cam_call_active = false;
+  bool cam_listen_active = false;
+  bool cam_intercom_ptt_active = false;
+  std::string cam_intercom_status = "";
+  int cam_noise_idx = 0;
+  bool cam_landscape_mode = false;
+  uint32_t last_cam_live_fetch_ms = 0;
+  bool cam_download_in_progress = false;
 };
 
 struct DeviceRuntimeState {
@@ -2435,6 +2445,102 @@ inline void set_ui_anim_poller(PollerT *tick, bool want) {
 template <typename PollerT>
 inline void ensure_ui_anim_poller(PollerT *tick) {
   set_ui_anim_poller(tick, true);
+}
+
+// ==============================================================================
+// Intercom & Camera Carousel State / Protocol v3 Summary Parsers
+// ==============================================================================
+inline constexpr int MAX_CAMERA_SLOTS = 10;
+
+inline bool &intercom_live_call_mode() { return runtime_state().intercom.live_call_mode; }
+inline int &cam_carousel_idx() { return runtime_state().intercom.cam_carousel_idx; }
+inline bool &cam_call_active() { return runtime_state().intercom.cam_call_active; }
+inline bool &cam_listen_active() { return runtime_state().intercom.cam_listen_active; }
+inline bool &cam_intercom_ptt_active() { return runtime_state().intercom.cam_intercom_ptt_active; }
+inline std::string &cam_intercom_status() { return runtime_state().intercom.cam_intercom_status; }
+inline int &cam_noise_idx() { return runtime_state().intercom.cam_noise_idx; }
+inline bool &cam_landscape_mode() { return runtime_state().intercom.cam_landscape_mode; }
+inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last_cam_live_fetch_ms; }
+inline bool &cam_download_in_progress() { return runtime_state().intercom.cam_download_in_progress; }
+
+inline int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
+                                       std::string out_labels[5], bool out_all[5] = nullptr) {
+  std::string_view recs[5];
+  const size_t n = v3_split_fields(raw, recs, 5, kProtocolRecordSep);
+  int idx = 0;
+  for (size_t r = 0; r < n; r++) {
+    std::string_view f[3];
+    if (v3_split_fields(recs[r], f, 3, '|') != 3 || f[0].empty()) continue;
+    out_ids[idx] = std::string(f[0]);
+    out_labels[idx] = std::string(f[1]);
+    if (out_all != nullptr) out_all[idx] = (f[2] == "all");
+    idx++;
+  }
+  return idx;
+}
+
+inline int parse_cameras_summary_list(const std::string &raw,
+                                      std::string out_ids[MAX_CAMERA_SLOTS],
+                                      std::string out_names[MAX_CAMERA_SLOTS],
+                                      std::string out_urls[MAX_CAMERA_SLOTS] = nullptr) {
+  std::string_view recs[MAX_CAMERA_SLOTS];
+  const size_t n = v3_split_fields(raw, recs, MAX_CAMERA_SLOTS, kProtocolRecordSep);
+  int idx = 0;
+  for (size_t r = 0; r < n; r++) {
+    std::string_view f[4];
+    if (v3_split_fields(recs[r], f, 4, '|') != 4 || f[0].empty()) continue;
+    out_ids[idx] = std::string(f[0]);
+    out_names[idx] = std::string(f[1]);
+    if (out_urls != nullptr) out_urls[idx] = std::string(f[3]);
+    idx++;
+  }
+  return idx;
+}
+
+inline std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
+                                                     const std::string &fallback_cam_url) {
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS];
+  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names);
+  if (cnt > 0) {
+    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
+      cam_carousel_idx() = 0;
+    }
+    return ids[cam_carousel_idx()];
+  }
+  const size_t epos = fallback_cam_url.find("entity_id=");
+  if (epos != std::string::npos) {
+    const size_t start = epos + 10;
+    const size_t amp = fallback_cam_url.find('&', start);
+    return (amp == std::string::npos)
+               ? fallback_cam_url.substr(start)
+               : fallback_cam_url.substr(start, amp - start);
+  }
+  return "";
+}
+
+inline std::string build_carousel_camera_url(const std::string &base_cam_url,
+                                             const std::string &cameras_summary,
+                                             uint32_t now_ms) {
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], urls[MAX_CAMERA_SLOTS];
+  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names, urls);
+  std::string chosen_url;
+  if (cnt > 0) {
+    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
+      cam_carousel_idx() = 0;
+    }
+    chosen_url = urls[cam_carousel_idx()];
+  }
+  if (chosen_url.empty() && !base_cam_url.empty()) {
+    chosen_url = base_cam_url;
+  }
+  if (chosen_url.empty()) {
+    return "";
+  }
+  if (cam_landscape_mode() && chosen_url.find("&rot=") == std::string::npos) {
+    chosen_url += "&rot=90";
+  }
+  chosen_url += "&ts=" + std::to_string(now_ms);
+  return chosen_url;
 }
 
 }  // namespace latter_ui

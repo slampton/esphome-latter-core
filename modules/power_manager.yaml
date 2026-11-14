@@ -134,7 +134,7 @@ interval:
           } else if (millis() > 12500U && !rs.voice.active && !rs.voice.tts_received) {
             const bool va_busy = id(va).is_running() || !rs.voice.status_text.empty() ||
                                  id(announcement_mixing_input).is_running();
-            const bool media_busy = id(mp_idle_debounce).is_running() || rs.voice.resume_music_after ||
+            const bool media_busy = latter_ui::audio_arbitrator().media_idle_debounce_active() || rs.voice.resume_music_after ||
                                     id(media_mixing_input).is_running() ||
                                     (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -229,7 +229,7 @@ interval:
               ESP_LOGI("power", "Tool untouched on battery for 5 min: exiting to launcher");
               if (rs.nav.tools_subpage == 12) {
                 if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
-                  id(stop_doorbell_call).execute();
+                  latter_ui::intercom_session().stop_call_with_hw(now_1s_ms);
                 }
                 latter_ui::release_art(id(camera_snapshot_art));
               }
@@ -459,7 +459,8 @@ script:
           // quiet on battery; while it is released the light-sleep wake pins below arm and the main loop
           // interval stretches. latter_ui::pm_apply is called only here (latter-verify enforces).
           const bool audio_busy = id(speaker_enable).state || id(mww).is_running() ||
-                                  id(announcement_mixing_input).is_running() || id(mp_idle_debounce).is_running() ||
+                                  id(announcement_mixing_input).is_running() ||
+                                  latter_ui::audio_arbitrator().has_pending_work() ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
           // Home Assistant link: awake only while Wi-Fi is up and HA API is connecting (<=30 s) or settling (<=20 s),
@@ -555,7 +556,7 @@ script:
           const uint32_t now_off_ms = millis();
           rs.nav.active_game = 0;
           if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
-            id(stop_doorbell_call).execute();
+            latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
           }
           rs.nav.display_power_state = 2; // Flush single all-black frame before cutting panel brightness
           id(disp1).update();

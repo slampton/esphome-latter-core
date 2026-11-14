@@ -6,6 +6,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
+#include "audio_router.h"
 #include "hal_panel_power.h"
 #include "hal_power_pm.h"
 #include "latter_prof.h"
@@ -44,12 +45,14 @@ class LatterLoopProbe : public Component {
     s.passes++;
     if (HighFrequencyLoopRequester::is_high_frequency()) s.hf_passes++;
 
-    // Drain paced multi-chunk RPC outbox frames with zero timers while idle.
+    // Drain paced multi-chunk RPC outbox frames & deterministic audio path deadlines with zero idle timers.
     const bool more_rpc = ::latter_rpc::step_outbox_loop(now);
-    if (more_rpc && !this->rpc_hf_held_) {
+    ::latter_ui::audio_arbitrator().poll_loop(now);
+    const bool need_hf = more_rpc || ::latter_ui::audio_arbitrator().needs_fast_loop();
+    if (need_hf && !this->rpc_hf_held_) {
       this->rpc_hf_.start();
       this->rpc_hf_held_ = true;
-    } else if (!more_rpc && this->rpc_hf_held_) {
+    } else if (!need_hf && this->rpc_hf_held_) {
       this->rpc_hf_.stop();
       this->rpc_hf_held_ = false;
     }

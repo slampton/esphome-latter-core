@@ -869,23 +869,76 @@ script:
                 case C::SYNC_DISPLAY_BRIGHTNESS: id(sync_display_brightness).execute(); break;
                 case C::FLASHLIGHT_FULL_BRIGHTNESS: id(display_brightness).turn_on().set_brightness(1.0f).perform(); break;
                 case C::PAUSE_LOCAL_MEDIA_PLAYER: id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform(); break;
-                case C::STOP_MP_IDLE_DEBOUNCE: id(mp_idle_debounce).stop(); break;
-                case C::TOGGLE_HA_MUSIC: id(toggle_ha_music).execute(); break;
-                case C::STOP_HA_MUSIC: id(stop_ha_music).execute(); break;
-                case C::CLEAR_HA_MUSIC_QUEUE: id(clear_ha_music_queue).execute(); break;
-                case C::MUSIC_VOL_UP: id(music_vol_up).execute(); break;
-                case C::MUSIC_VOL_DOWN: id(music_vol_down).execute(); break;
-                case C::MUSIC_NEXT_TRACK: id(music_next_track).execute(); break;
-                case C::MUSIC_PREV_TRACK: id(music_prev_track).execute(); break;
-                case C::MUSIC_SEEK_RELATIVE: id(music_seek_relative).execute(arg0); break;
-                case C::MUSIC_SEEK_ABSOLUTE: id(music_seek_absolute).execute(); break;
-                case C::FETCH_MUSIC_BROWSE: id(fetch_music_browse).execute(); break;
-                case C::PLAY_MUSIC_SLOT: id(play_music_slot).execute(arg0); break;
+                case C::TOGGLE_HA_MUSIC: {
+                  const bool loc_play = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+                  const auto hw_act = latter_ui::media_toggle_playback(loc_play, millis());
+                  if (hw_act == latter_ui::LocalMediaHwAction::PauseLocalPlayer) {
+                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+                  } else if (hw_act == latter_ui::LocalMediaHwAction::StopLocalMww && id(mww).is_running()) {
+                    id(mww).stop();
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                }
+                case C::STOP_HA_MUSIC:
+                  if (latter_ui::media_stop_playback(millis())) {
+                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                case C::CLEAR_HA_MUSIC_QUEUE: {
+                  const bool stop_loc = latter_ui::media_clear_queue(millis());
+                  id(track_title).publish_state("");
+                  id(track_artist).publish_state("");
+                  id(track_album).publish_state("");
+                  if (stop_loc) {
+                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).perform();
+                  }
+                  latter_ui::release_art(id(remote_album_art));
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                }
+                case C::MUSIC_STEP_VOLUME: {
+                  const float new_vol = latter_ui::media_step_volume(arg0, id(latter_media_player).volume, millis(), true);
+                  if (new_vol > 0.0f) {
+                    id(latter_media_player).make_call().set_volume(new_vol).perform();
+                    id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
+                    id(media_mixing_input).apply_ducking(0.0f, 0);
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                }
+                case C::PLAY_MUSIC_SLOT:
+                  if (latter_ui::media_play_slot(arg0, millis()) && id(mww).is_running()) {
+                    id(mww).stop();
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
                 case C::FETCH_REMOTE_ART_DEBOUNCED: id(fetch_remote_art_debounced).execute(); break;
-                case C::SPEAKER_TRANSFER_TO_TARGET: id(speaker_transfer_to_target).execute(); break;
-                case C::SPEAKER_CONTROL_TARGET: id(speaker_control_target).execute(); break;
-                case C::SPEAKER_JOIN_TARGET: id(speaker_join_target).execute(); break;
-                case C::SPEAKER_UNJOIN_TARGET: id(speaker_unjoin_target).execute(); break;
+                case C::SPEAKER_TRANSFER_TO_TARGET:
+                case C::SPEAKER_CONTROL_TARGET: {
+                  const bool xfer = (cmd == C::SPEAKER_TRANSFER_TO_TARGET);
+                  const bool loc_play = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+                  const bool loc_pause = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED);
+                  if (latter_ui::speaker_activate_selected(xfer, loc_play, loc_pause, millis())) {
+                    id(hal_set_dac_mute).execute(true);
+                    id(speaker_enable).turn_off();
+                  }
+                  id(fetch_remote_art_debounced).execute();
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                }
+                case C::SPEAKER_JOIN_TARGET:
+                  if (latter_ui::speaker_join_target(millis()) && id(mww).is_running()) {
+                    id(mww).stop();
+                  }
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
+                case C::SPEAKER_UNJOIN_TARGET:
+                  latter_ui::speaker_unjoin_target("${friendly_name}", millis());
+                  latter_ui::release_art(id(remote_album_art));
+                  latter_ui::schedule_disp_update(&id(disp1));
+                  break;
                 case C::REQUEST_DOCK_APPS: id(request_dock_apps).execute(); break;
                 case C::TRIGGER_SCREENSAVER_NOW: id(trigger_screensaver_now).execute(); break;
                 case C::START_HIBERNATION_COUNTDOWN: id(start_hibernation_countdown).execute(); break;
@@ -909,12 +962,8 @@ script:
                 case C::SEND_INTERCOM_BROADCAST: id(send_intercom_broadcast).execute(); break;
                 case C::FETCH_ON_DEMAND_CAMERA: id(fetch_on_demand_camera).execute(); break;
                 case C::RELEASE_CAMERA_ART: latter_ui::release_art(id(camera_snapshot_art)); break;
-                case C::START_DOORBELL_CALL: id(start_doorbell_call).execute(); break;
-                case C::STOP_DOORBELL_CALL: id(stop_doorbell_call).execute(); break;
                 case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
                 case C::START_DOORBELL_PTT: id(start_doorbell_ptt).execute(); break;
-                case C::RESUME_DOORBELL_LISTEN: id(resume_doorbell_listen).execute(); break;
-                case C::SEND_DOORBELL_INTERCOM_CMD: id(send_doorbell_intercom_cmd).execute(); break;
               }
             };
 
@@ -1222,8 +1271,10 @@ script:
               !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
             id(resume_music_after_va).execute();
           }
-      - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
-      - script.execute: mp_idle_debounce
+      - lambda: |-
+          latter_ui::release_art(id(camera_snapshot_art));
+          const uint32_t now_ms = millis();
+          latter_ui::audio_arbitrator().arm_media_idle_debounce(now_ms);
       - script.execute: sync_wake_word_state
       - lambda: |-
           latter_ui::display_lifecycle().note_activity(millis());

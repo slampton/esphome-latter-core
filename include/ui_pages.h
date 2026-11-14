@@ -175,30 +175,7 @@ void parse_calendar_slot_meta(const std::string &slot_name, const std::string &s
                               std::string &out_time, std::string &out_title,
                               std::string &out_loc, std::string &out_map_url);
 
-static constexpr int MAX_CAMERA_SLOTS = 10;
-
-bool &intercom_live_call_mode();
-int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
-                                std::string out_labels[5], bool out_all[5] = nullptr);
-
-int &cam_carousel_idx();
-bool &cam_call_active();
-bool &cam_listen_active();
-bool &cam_intercom_ptt_active();
-std::string &cam_intercom_status();
-int &cam_noise_idx();
-bool &cam_landscape_mode();
-uint32_t &last_cam_live_fetch_ms();
-bool &cam_download_in_progress();
-int parse_cameras_summary_list(const std::string &raw,
-                               std::string out_ids[MAX_CAMERA_SLOTS],
-                               std::string out_names[MAX_CAMERA_SLOTS],
-                               std::string out_urls[MAX_CAMERA_SLOTS] = nullptr);
-std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
-                                              const std::string &fallback_cam_url);
-std::string build_carousel_camera_url(const std::string &base_cam_url,
-                                      const std::string &cameras_summary,
-                                      uint32_t now_ms);
+// (Intercom & camera carousel state + summary parsers live in include/latter_state.h)
 
 void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
                           float euler_roll_deg, float euler_pitch_deg,
