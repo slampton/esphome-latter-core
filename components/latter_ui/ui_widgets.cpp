@@ -1164,10 +1164,10 @@ void confirm_modal(esphome::display::Display &it, int cx, const char *title,
 
   render_modern_card(it, cx - gap_x, btn_y, btn_w, btn_h, 12,
                      chrome_card_bg_on(), chrome_card_brd_on(), cancel_lbl, col_white, font_body,
-                     GlassVariant::ReadableDark);
+                     GlassVariant::Clear);
   render_modern_card(it, cx + gap_x, btn_y, btn_w, btn_h, 12,
                      confirm_bg, confirm_border, confirm_lbl, col_white, font_body,
-                     GlassVariant::ReadableDark);
+                     GlassVariant::Clear);
 
   if (cancel_wid != WidgetId::NONE) {
     frame_hits().add_centered_rect(cx - gap_x, btn_y, btn_w, btn_h, cancel_wid, kHitTap | kHitFocusSlot, 0);
@@ -1187,7 +1187,7 @@ void game_over_sheet(esphome::display::Display &it, int cx, int cy,
   const int box_w = std::min(SCREEN_W - 28, scale_x(296));
   const int box_h = scale_y(196);
   render_card_box(it, cx - box_w / 2, cy - scale_y(96), box_w, box_h,
-                  chrome_modal_bg(), title_col, 14, GlassVariant::ReadableDark,
+                  kChromeGlassTint, title_col, 14, GlassVariant::Clear,
                   is_new_best ? col_gold : col_slate);
   fast_print(it, cx, cy - scale_y(60), font_hdr, title_col, esphome::display::TextAlign::CENTER, title);
   if (score_line != nullptr && score_line[0] != '\0') {
@@ -1201,7 +1201,7 @@ void game_over_sheet(esphome::display::Display &it, int cx, int cy,
   const int pill_hw = std::min(box_w / 2 - pill_r - 12, scale_x(72));
   pill_button(it, cx - pill_hw, cx + pill_hw, cy + scale_y(58), pill_r,
               theme_primary, chrome_card_bg_on(), cta_lbl, col_white, font_body,
-              cta_wid, kHitTap | kHitFocusSlot, 0, GlassVariant::ReadableDark);
+              cta_wid, kHitTap | kHitFocusSlot, 0, GlassVariant::Clear);
 }
 
 PinPadModalState &pin_pad_state() {
@@ -1281,9 +1281,9 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
   const int disp_h = scale_y(36);
   const bool show_err = (st.error_msg[0] != '\0' && (now_ms - st.error_ms) < 2200U);
   render_modern_card(it, cx, disp_y, disp_w, disp_h, 10,
-                     chrome_modal_bg(), show_err ? col_red : chrome_card_brd_on(),
+                     kChromeGlassTint, show_err ? col_red : chrome_card_brd_on(),
                      "", st.len == 0 && !show_err ? col_slate : col_white, font_small,
-                     GlassVariant::ReadableDark);
+                     GlassVariant::Clear);
   if (show_err) {
     fast_print(it, cx, disp_y, font_small, col_white, esphome::display::TextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
@@ -1328,7 +1328,7 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
     const esphome::Color fg  = (is_ok && !ok_ready) ? col_slate : col_white;
     render_modern_card(it, kx, ky, key_w, key_h, 10, bg, brd,
                        kLabels[idx], fg, (is_ok || is_del) ? font_small : font_key,
-                       GlassVariant::ReadableDark);
+                       GlassVariant::Clear);
     frame_hits().add_centered_rect(kx, ky, key_w, key_h, kWids[idx], kHitTap | kHitFocusSlot,
                                    static_cast<int16_t>(idx));
   }

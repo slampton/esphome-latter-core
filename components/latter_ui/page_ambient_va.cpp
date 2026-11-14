@@ -1574,9 +1574,9 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       fast_print(it, cx, y2, ctx.font_small, st.theme_secondary, TextAlign::CENTER, line2.c_str());
     }
 
-    render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, kChromeModalBg, ctx.col_green,
+    render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, kChromeGlassTint, ctx.col_green,
                        "Answer", st.col_white, ctx.font_small);
-    render_modern_card(it, cx + scale_x(72), scale_y(412), 132, 36, 10, kChromeModalBg, accent_c,
+    render_modern_card(it, cx + scale_x(72), scale_y(412), 132, 36, 10, kChromeGlassTint, accent_c,
                        "Dismiss", st.col_white, ctx.font_small);
 
     frame_hits().add_rect(0, 0, SCREEN_W, scale_y(380), WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap);

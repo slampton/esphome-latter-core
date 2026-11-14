@@ -827,12 +827,12 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   const int btn_rst_x = cx + scale_min(57);
   const int btn_r     = scale_min(36);
 
-  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeModalBg,
+  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeGlassTint,
                       (sw.lap_ms > 0) ? ctx.col_red : ctx.theme_secondary);
   fast_print(it, btn_lap_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "LAP");
   fast_print(it, btn_lap_x, btn_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, "LAP");
 
-  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeModalBg, kChromeCardBorder);
+  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeGlassTint, kChromeCardBorder);
   fast_print(it, btn_rst_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "RESET");
   fast_print(it, btn_rst_x, btn_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "RESET");
 
@@ -903,7 +903,7 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
 
   if (!tools_direct_home()) {
     render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
-                      scale_min(15), kChromeModalBg, -1, GlassVariant::ReadableDark, ctx.col_white);
+                      scale_min(15), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
   }
 #endif
@@ -1644,7 +1644,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
       const std::string loc_hdr = fit_text_to_width_font(
           std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, ctx.font_small);
       render_card_box(it, ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                      kChromeModalBg, ctx.theme_primary, scale_s(10));
+                      kChromeGlassTint, ctx.theme_primary, scale_s(10));
       fast_print(it, ctx.cx + 1, scale_y(41) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, loc_hdr.c_str());
       fast_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
 
@@ -1652,7 +1652,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
       const int z_lx = ly.map_zoom_left_x();
       const int z_rx = ly.map_zoom_right_x();
       const int z_r  = scale_s(21);
-      render_glass_circle(it, z_lx, z_by, z_r, kChromeModalBg,
+      render_glass_circle(it, z_lx, z_by, z_r, kChromeGlassTint,
                           (cal_map_zoom() > 10) ? ctx.theme_primary : kChromeCardBorder);
       fill_rect_row_major(it, z_lx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)),
                           (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
@@ -1660,7 +1660,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
                               kHitTap | kHitFocusCircle, 0, scale_s(16));
 
       const Color fg_in = (cal_map_zoom() < 18) ? ctx.col_white : ctx.col_slate;
-      render_glass_circle(it, z_rx, z_by, z_r, kChromeModalBg,
+      render_glass_circle(it, z_rx, z_by, z_r, kChromeGlassTint,
                           (cal_map_zoom() < 18) ? ctx.theme_primary : kChromeCardBorder);
       fill_rect_row_major(it, z_rx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)), fg_in);
       fill_rect_row_major(it, z_rx - 1, z_by - scale_s(8), std::max(2, scale_s(3)), scale_s(17), fg_in);
@@ -1668,7 +1668,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
                               kHitTap | kHitFocusCircle, 0, scale_s(16));
 
       render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
-                        scale_s(16), kChromeModalBg, -1, GlassVariant::ReadableDark, ctx.col_white);
+                        scale_s(16), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
     } else {
       render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.theme_primary);
       render_empty_state(it, ctx.cx, scale_y(222), "Loading OpenStreetMap...", ctx.font_small, ctx.theme_secondary);

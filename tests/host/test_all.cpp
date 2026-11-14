@@ -47,6 +47,8 @@
 #include "../../components/latter_ui/hit_table.cpp"
 #include "../../include/ui_compositor.h"
 #include "../../components/latter_ui/ui_compositor.cpp"
+#include "../../include/ui_mdi.h"
+#include "../../components/latter_ui/ui_mdi.cpp"
 
 #define LATTER_CHECK(expr)                                                                         \
   do {                                                                                             \
@@ -1215,19 +1217,34 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
   LATTER_CHECK(ble.pauses == 2 && ble.disables == 0);
 
+  // Plugging into USB with screen off in mode 0 ("Handheld Only") -> enable() (USB keeps Area beacon live!)
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, true, false, false, 2, false, 9250U, true, 4000U, false);
+  LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 3 && ble.pauses == 2 && ble.disables == 0);
+
+  // Unplugging back to battery with screen off in mode 0 -> pause()
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, false, false, false, 2, false, 9400U, true, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.pauses == 3 && ble.disables == 0);
+
   // Mode 1 ("Handheld + Screen Off", selected by Handheld Roaming) keeps BLE active when screen is off on battery!
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, false, false, false, 2, false, 9500U, true, 4000U, false);
   LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
-  LATTER_CHECK(ble.enables == 3 && ble.pauses == 2 && ble.disables == 0);
+  LATTER_CHECK(ble.enables == 4 && ble.pauses == 3 && ble.disables == 0);
 
-  // Docking on USB in mode 1 -> pause()
+  // Docking on USB in mode 1 -> stays active so charging roaming Devices lock onto the local Area BLE proxy!
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, true, false, false, 0, true, 10000U, true, 4000U, false);
-  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
-  LATTER_CHECK(ble.pauses == 3 && ble.disables == 0);
+  LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 4 && ble.pauses == 3 && ble.disables == 0);
 
-  // Turning BLE beacon switch OFF while paused -> full disable() tears controller down!
+  // Yield for voice session -> pause(), then turning BLE beacon switch OFF while paused -> full disable()!
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 1, true, false, false, 0, true, 10250U, true, 4000U, true);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.pauses == 4);
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, true, false, 1, true, false, false, 0, true, 10500U, true, 4000U, false);
   LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up());
@@ -1236,10 +1253,10 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   // Re-enable, pause via Wi-Fi drop, then enter hibernate -> full disable()
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, false, false, false, 2, false, 11000U, true, 4000U, false);
-  LATTER_CHECK(ble.is_active() && ble.enables == 4);
+  LATTER_CHECK(ble.is_active() && ble.enables == 5);
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, false, true, 1, false, false, false, 2, false, 11500U, false, 4000U, false);
-  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.pauses == 4 && ble.disables == 1);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.pauses == 5 && ble.disables == 1);
   latter_ui::evaluate_radio_policy(
       &ble, &wifi, false, true, 1, false, true, false, 2, false, 12000U, false, 4000U, false);
   LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up() && ble.disables == 2);
@@ -1356,9 +1373,9 @@ void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
                              HostRgb tint, HostRgb ref_text, HostGlassVariant variant,
                              HostRgb &out_tint, int &out_a_top, int &out_a_bot) {
   constexpr HostRgb kHomePill{175, 190, 210};
-  constexpr HostRgb kModalBg{16, 20, 28};
   constexpr HostRgb kWhite{255, 255, 255};
   constexpr int kAlphaClearMin = 148;
+  constexpr int kAlphaClearMax = 174;
   constexpr int kAlphaReadableMin = 208;
 
   const int bg_lvl = bd_valid ? ((static_cast<int>(bd_mean.r) + bd_mean.g + bd_mean.b) / 3) : 0;
@@ -1379,19 +1396,15 @@ void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
   const float fg_lum = host_rel_lum(contrast_fg);
   const int floor_q8 = is_readable ? kAlphaReadableMin : kAlphaClearMin;
 
-  int base_a = bd_valid ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)
-                        : (is_readable ? kAlphaReadableMin : 160);
-  if (!is_readable && dark_tint &&
-      (base_a >= 200 || host_contrast(fg_lum, host_rel_lum(out_tint)) < 4.5f)) {
-    out_tint = host_mix_q8(tint, kModalBg, 192);
-    base_a = bd_valid ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, 200)
-                      : std::max(base_a, 200);
-  }
+  int base_a = bd_valid
+      ? (is_readable ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)
+                     : std::min(kAlphaClearMax, host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)))
+      : (is_readable ? kAlphaReadableMin : 156);
   const int da = is_readable ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
-  out_a_top = std::min(256, base_a + da);
+  out_a_top = std::min(is_readable ? 256 : (kAlphaClearMax + 10), base_a + da);
   const int min_bot = is_readable ? 200 : kAlphaClearMin;
   out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
-  if (bd_valid && host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd_bright, out_tint, out_a_bot))) < 4.5f) {
+  if (is_readable && bd_valid && host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd_bright, out_tint, out_a_bot))) < 4.5f) {
     out_a_bot = base_a;
   }
 }
@@ -1522,12 +1535,15 @@ void test_phase2_glass_and_scissor_compositor() {
         int a_top = 0, a_bot = 0;
         host_resolve_glass_fill(true, bd, bd, base_tint, fg, var, eff_tint, a_top, a_bot);
         const int min_floor = (var == HostGlassVariant::ReadableDark) ? 200 : 148;
-        LATTER_CHECK(a_bot >= min_floor && a_top >= a_bot && a_top <= 256);
+        const int max_ceil = (var == HostGlassVariant::ReadableDark) ? 256 : 184;
+        LATTER_CHECK(a_bot >= min_floor && a_top >= a_bot && a_top <= max_ceil);
 
-        const float fg_lum = host_rel_lum(fg);
-        const float top_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_top)));
-        const float bot_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_bot)));
-        LATTER_CHECK(top_cr >= 4.5f && bot_cr >= 4.5f);
+        if (var == HostGlassVariant::ReadableDark) {
+          const float fg_lum = host_rel_lum(fg);
+          const float top_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_top)));
+          const float bot_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_bot)));
+          LATTER_CHECK(top_cr >= 4.5f && bot_cr >= 4.5f);
+        }
       }
     }
   }
@@ -1556,10 +1572,13 @@ void test_phase2_glass_and_scissor_compositor() {
   LATTER_CHECK(ui_types_h.find("enum class GlassVariant : uint8_t") != std::string::npos);
   LATTER_CHECK(ui_types_h.find("kChromeModalBg(16, 20, 28)") != std::string::npos);
   LATTER_CHECK(ui_gfx_h.find("kGlassAlphaMinQ8 = 148") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassClearAlphaMaxQ8 = 174") != std::string::npos);
   LATTER_CHECK(ui_gfx_h.find("kGlassReadableAlphaMinQ8 = 208") != std::string::npos);
   LATTER_CHECK(home_cpp.find("resolve_home_card_palette") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("Color(230, 115, 0)") == std::string::npos);
+  LATTER_CHECK(tools_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
   LATTER_CHECK(comms_cpp.find("kChromeGlassTint, 176") == std::string::npos);
+  LATTER_CHECK(comms_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
 }
 
 void test_phase3_weather_sky_backdrop_and_home_scene() {
@@ -1681,7 +1700,25 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(weather_cpp.find("fmodf(t_sec") == std::string::npos);
   LATTER_CHECK(weather_cpp.find("/ 220U") == std::string::npos);
   LATTER_CHECK(home_cpp.find("fast_print_alpha(") != std::string::npos);
-  LATTER_CHECK(home_cpp.find("render_area_archetype_icon(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("render_area_archetype_icon(") == std::string::npos);
+  LATTER_CHECK(home_cpp.find("render_mdi_icon(") != std::string::npos);
+  LATTER_CHECK(latter_ui::mdi_catalog_count() == 7447U);
+  for (std::string_view slug : {
+           "mdi:garage-open-variant", "mdi:cog-outline", "mdi:faucet-variant",
+           "mdi:sofa-outline", "mdi:desk", "mdi:door", "mdi:bathtub-outline",
+           "mdi:bed-outline", "mdi:cradle-outline", "mdi:stairs", "mdi:map-marker-outline"}) {
+    LATTER_CHECK(latter_ui::has_mdi_icon(slug));
+    int span_count = 0;
+    int covered_px = 0;
+    const bool ok = latter_ui::rasterize_mdi_icon_fn(
+        slug, 100, 100, 28, [&](int x0, int x1_excl, int y, uint8_t a) {
+          LATTER_CHECK(x1_excl > x0 && y >= 84 && y <= 116 && a > 0);
+          ++span_count;
+          covered_px += (x1_excl - x0);
+        });
+    LATTER_CHECK(ok && span_count >= 12 && covered_px >= 40 && covered_px <= 700);
+  }
+  LATTER_CHECK(!latter_ui::has_mdi_icon("mdi:definitely-not-a-real-icon-xyz"));
   LATTER_CHECK(home_cpp.find("register_home_activity_hit_regions(") != std::string::npos);
   LATTER_CHECK(home_cpp.find("std::max(prev_clip_y0, card_y0 + 1)") != std::string::npos);
   LATTER_CHECK(home_cpp.find("std::min(prev_clip_y1, card_y0 + card_h - 2)") != std::string::npos);

@@ -356,7 +356,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 4) {
     ui::confirm_modal(it, cx, "RESTART DEVICE?", "Reboot firmware now", "",
-                      "Cancel", "Restart", col_red, kChromeModalBg,
+                      "Cancel", "Restart", col_red, kChromeGlassTint,
                       font_small, font_small, theme_primary, col_white, col_slate);
 
   } else if (system_menu_mode == 5) {

@@ -2029,7 +2029,7 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
   }
 
   render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  kChromeModalBg, kChromeCardBorder, scale_s(14));
+                  kChromeGlassTint, kChromeCardBorder, scale_s(14));
 
   auto tile_bg_color = [&](int val) -> Color {
     if (val == 0) return kChromeGlassTint;
@@ -2242,7 +2242,7 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
   };
 
   render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  kChromeModalBg, kChromeCardBorder, scale_s(14));
+                  kChromeGlassTint, kChromeCardBorder, scale_s(14));
 
   for (int idx = 0; idx < 16; idx++) {
     int r = idx / 4;
@@ -2381,7 +2381,7 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
                              true, false, 0U, ctx.col_white, ctx.col_black, ctx.col_dark_gray);
 
     } else if (g_idx == 4) {
-      render_card_box(it, icon_x - 48, icon_y - 48, 96, 96, kChromeModalBg, kChromeCardBorder, 12);
+      render_card_box(it, icon_x - 48, icon_y - 48, 96, 96, kChromeGlassTint, kChromeCardBorder, 12);
       render_card_box(it, icon_x - 42, icon_y - 42, 40, 40, kChromeTrack, kChromeTrackBorder, 7);
       fast_print(it, icon_x - 22, icon_y - 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2");
       render_card_box(it, icon_x + 2, icon_y - 42, 40, 40, scale_color(ctx.col_orange, 0.85f), ctx.col_orange, 7);

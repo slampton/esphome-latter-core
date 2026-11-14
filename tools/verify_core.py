@@ -2364,6 +2364,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
         ("BOARD FACTS", ["tools/check_boards.py", "--check-docs"]),
         ("BRINGUP PROBES", ["tools/new_board.py", "--bringup", "--check"]),
         ("SOUND FILES", ["tools/gen_sounds.py", "--check"]),
+        ("MDI ICON PACK", ["tools/gen_mdi_pack.py", "--check"]),
     )
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"

@@ -7,6 +7,7 @@
 
 #include "esphome/core/defines.h"
 #include "ui_types.h"
+#include "ui_mdi.h"
 #include "esphome_bridge.h"
 #include "latter_prof.h"
 #include "esphome/core/component.h"
@@ -696,7 +697,39 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color
   }
 }
 
+template <typename DisplayT>
+inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy, int size_px,
+                            esphome::Color color, bool drop_shadow = true,
+                            std::string_view fallback_name = "mdi:map-marker-outline") {
+  if (size_px <= 0) return;
+  const int half = (size_px + 3) / 2;
+  if ((cy + half) < clip_y0() || (cy - half) > clip_y1()) return;
+  const std::string_view eff_name = has_mdi_icon(name) ? name : fallback_name;
+  if (eff_name.empty()) return;
+  if (drop_shadow) {
+    rasterize_mdi_icon_fn(eff_name, cx + 1, cy + 1, size_px,
+                          [&](int x0, int x1_excl, int y, uint8_t a) {
+                            const int sa = (static_cast<int>(a) * 184) >> 8;
+                            if (sa <= 0) return;
+                            for (int px = x0; px < x1_excl; ++px) {
+                              fast_pixel_blend(it, px, y, kChromeShadow, sa);
+                            }
+                          });
+  }
+  rasterize_mdi_icon_fn(eff_name, cx, cy, size_px,
+                        [&](int x0, int x1_excl, int y, uint8_t a) {
+                          if (a == 255) {
+                            fast_hline(it, x0, y, x1_excl - x0, color);
+                          } else if (a > 0) {
+                            for (int px = x0; px < x1_excl; ++px) {
+                              fast_pixel_blend(it, px, y, color, static_cast<int>(a));
+                            }
+                          }
+                        });
+}
+
 static constexpr int kGlassAlphaMinQ8 = 148;          // ~58% Clear base floor
+static constexpr int kGlassClearAlphaMaxQ8 = 174;     // ~68% Clear base ceiling (preserves see-through glass)
 static constexpr int kGlassReadableAlphaMinQ8 = 208;  // ~81% ReadableDark base floor (200..216/256)
 static constexpr int kGlassSemanticWashMaxQ8 = 38;    // <= 15% semantic interior wash
 static constexpr int kGlassSemanticRimMaxQ8 = 64;     // <= 25% semantic specular rim tint

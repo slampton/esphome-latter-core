@@ -94,10 +94,6 @@ uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms);
 bool home_activity_band(int &out_y0, int &out_y1);
 const HomeActivityItem *home_activity_rendered_items(int &out_count);
 
-void render_area_archetype_icon(esphome::display::Display &it, int cx, int cy, int r,
-                                std::string_view icon_str, std::string_view area_name_fallback,
-                                esphome::Color color);
-
 int collect_home_activities(
     uint32_t now_ms, bool is_24h_format,
     bool stopwatch_running, uint32_t stopwatch_start_time, uint32_t stopwatch_elapsed_ms,

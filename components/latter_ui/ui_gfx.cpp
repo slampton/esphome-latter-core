@@ -486,10 +486,6 @@ bool is_semantic_glass_color(esphome::Color c) {
 void normalize_glass_chrome(esphome::Color caller_bg, esphome::Color caller_brd,
                             GlassVariant &inout_variant, esphome::Color &out_base_tint,
                             esphome::Color &out_rim_tint) {
-  if (inout_variant == GlassVariant::Clear &&
-      caller_bg.r == kChromeModalBg.r && caller_bg.g == kChromeModalBg.g && caller_bg.b == kChromeModalBg.b) {
-    inout_variant = GlassVariant::ReadableDark;
-  }
   const esphome::Color neutral_base =
       (inout_variant == GlassVariant::ReadableDark) ? kChromeModalBg : kChromeGlassTint;
   const bool sem_bg = is_semantic_glass_color(caller_bg);
@@ -572,29 +568,22 @@ void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::C
   const float fg_lum = relative_luminance(contrast_fg);
   const int floor_q8 = is_readable_dark ? kGlassReadableAlphaMinQ8 : kGlassAlphaMinQ8;
 
-  int base_a = (explicit_alpha_q8 >= 0)
-      ? explicit_alpha_q8
-      : (bd.valid ? glass_alpha_for_text(out_tint, bd.bright, contrast_fg, floor_q8)
-                  : (is_readable_dark ? kGlassReadableAlphaMinQ8 : 160));
-
-  // Automatic 2-tier step-up: when Clear glass must step into ReadableDark alpha territory (>= 200/256)
-  // over bright backdrops or muted text, deepen out_tint onto kChromeModalBg to guarantee >= 4.5:1 contrast.
-  if (explicit_alpha_q8 < 0 && !is_readable_dark && dark_tint &&
-      (base_a >= 200 || contrast_ratio(fg_lum, relative_luminance(out_tint)) < kGlassTextContrastMin)) {
-    const esphome::Color stepped_tint = mix_color_q8(tint, kChromeModalBg, 192);
-    out_tint = stepped_tint;
+  int base_a = explicit_alpha_q8;
+  if (base_a < 0) {
     if (bd.valid) {
-      base_a = glass_alpha_for_text(out_tint, bd.bright, contrast_fg, 200);
+      const int solved_a = glass_alpha_for_text(out_tint, bd.bright, contrast_fg, floor_q8);
+      base_a = is_readable_dark ? solved_a : std::min(kGlassClearAlphaMaxQ8, solved_a);
     } else {
-      base_a = std::max(base_a, 200);
+      base_a = is_readable_dark ? kGlassReadableAlphaMinQ8 : 156;
     }
   }
 
   const int da = is_readable_dark ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
-  out_a_top = std::min(256, base_a + da);
+  const int max_top = (is_readable_dark || explicit_alpha_q8 >= 0) ? 256 : (kGlassClearAlphaMaxQ8 + 10);
+  out_a_top = std::min(max_top, base_a + da);
   const int min_bot = is_readable_dark ? 200 : kGlassAlphaMinQ8;
   out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
-  if (bd.valid && explicit_alpha_q8 < 0 &&
+  if (is_readable_dark && bd.valid && explicit_alpha_q8 < 0 &&
       contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, out_tint, out_a_bot))) < kGlassTextContrastMin) {
     out_a_bot = base_a;
   }

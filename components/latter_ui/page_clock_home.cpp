@@ -95,6 +95,7 @@ void draw_home_activity_row_contents(
   using esphome::display::TextAlign;
 
   const Color fg_w   = (alpha >= 0.99f) ? col_white       : lerp_color(card_bg, col_white, alpha);
+  const Color fg_sh  = (alpha >= 0.99f) ? kChromeShadow   : lerp_color(card_bg, kChromeShadow, alpha);
   const Color fg_sec = (alpha >= 0.99f) ? theme_secondary : lerp_color(card_bg, theme_secondary, alpha);
   const Color fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, theme_secondary, alpha);
   (void) fg_btn;
@@ -256,6 +257,7 @@ void draw_home_activity_row_contents(
     slot.fitted = fit_text_to_width_font(cur_act.label, max_txt, font_small);
     fit_ptr = &slot.fitted;
   }
+  fast_print(it, txt_x + 1, gy + 1, font_small, fg_sh, TextAlign::CENTER_LEFT, fit_ptr->c_str());
   fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_ptr->c_str());
 
   if (alpha >= 0.99f) {
@@ -429,374 +431,6 @@ inline void draw_cached_dock_mask(DisplayT &it, int bx, int by, int dock_r,
   }
 }
 
-enum class AreaGlyphKind : uint8_t {
-  MAP_PIN = 0,
-  SOFA,
-  CULINARY,
-  DINING,
-  BED,
-  NURSERY,
-  SHOWER,
-  DESK,
-  TELEVISION,
-  GAMEPAD,
-  DUMBBELL,
-  WASHER,
-  GARAGE,
-  TOOLS,
-  WARDROBE,
-  DOOR,
-  STAIRS,
-  ROOF,
-  POOL,
-  BALCONY,
-  GARDEN,
-  SPEAKER,
-};
-
-bool sv_contains_ci(std::string_view hay, std::string_view needle) {
-  if (needle.empty() || hay.size() < needle.size()) return false;
-  for (size_t i = 0; i + needle.size() <= hay.size(); ++i) {
-    bool ok = true;
-    for (size_t j = 0; j < needle.size(); ++j) {
-      const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(hay[i + j])));
-      const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(needle[j])));
-      if (a != b) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) return true;
-  }
-  return false;
-}
-
-AreaGlyphKind classify_area_glyph(std::string_view icon_str, std::string_view area_name_fallback) {
-  std::string_view slug = icon_str;
-  if (slug.size() > 4 && (slug.substr(0, 4) == "mdi:" || slug.substr(0, 4) == "MDI:")) {
-    slug = slug.substr(4);
-  }
-  if (!slug.empty()) {
-    if (sv_contains_ci(slug, "sofa") || sv_contains_ci(slug, "couch") || sv_contains_ci(slug, "armchair")) {
-      return AreaGlyphKind::SOFA;
-    }
-    if (sv_contains_ci(slug, "countertop") || sv_contains_ci(slug, "silverware") ||
-        sv_contains_ci(slug, "stove") || sv_contains_ci(slug, "fridge") || sv_contains_ci(slug, "pot-steam")) {
-      return AreaGlyphKind::CULINARY;
-    }
-    if (sv_contains_ci(slug, "table-chair") || sv_contains_ci(slug, "table-furniture")) {
-      return AreaGlyphKind::DINING;
-    }
-    if (sv_contains_ci(slug, "baby") || sv_contains_ci(slug, "teddy-bear") || sv_contains_ci(slug, "cradle")) {
-      return AreaGlyphKind::NURSERY;
-    }
-    if (sv_contains_ci(slug, "bed") || sv_contains_ci(slug, "bunk")) {
-      return AreaGlyphKind::BED;
-    }
-    if (sv_contains_ci(slug, "shower") || sv_contains_ci(slug, "bathtub") ||
-        sv_contains_ci(slug, "toilet") || sv_contains_ci(slug, "hand-wash")) {
-      return AreaGlyphKind::SHOWER;
-    }
-    if (sv_contains_ci(slug, "desk") || sv_contains_ci(slug, "bookshelf") ||
-        sv_contains_ci(slug, "briefcase") || sv_contains_ci(slug, "laptop")) {
-      return AreaGlyphKind::DESK;
-    }
-    if (sv_contains_ci(slug, "television") || sv_contains_ci(slug, "movie") ||
-        sv_contains_ci(slug, "theater") || sv_contains_ci(slug, "projector")) {
-      return AreaGlyphKind::TELEVISION;
-    }
-    if (sv_contains_ci(slug, "gamepad") || sv_contains_ci(slug, "controller")) {
-      return AreaGlyphKind::GAMEPAD;
-    }
-    if (sv_contains_ci(slug, "dumbbell") || sv_contains_ci(slug, "weight")) {
-      return AreaGlyphKind::DUMBBELL;
-    }
-    if (sv_contains_ci(slug, "washing-machine") || sv_contains_ci(slug, "tumble-dryer") ||
-        sv_contains_ci(slug, "iron")) {
-      return AreaGlyphKind::WASHER;
-    }
-    if (sv_contains_ci(slug, "garage") || sv_contains_ci(slug, "car")) {
-      return AreaGlyphKind::GARAGE;
-    }
-    if (sv_contains_ci(slug, "tools") || sv_contains_ci(slug, "hammer") ||
-        sv_contains_ci(slug, "wrench") || sv_contains_ci(slug, "saw")) {
-      return AreaGlyphKind::TOOLS;
-    }
-    if (sv_contains_ci(slug, "wardrobe") || sv_contains_ci(slug, "hanger")) {
-      return AreaGlyphKind::WARDROBE;
-    }
-    if (sv_contains_ci(slug, "door") || sv_contains_ci(slug, "coat-rack")) {
-      return AreaGlyphKind::DOOR;
-    }
-    if (sv_contains_ci(slug, "stairs") || sv_contains_ci(slug, "escalator")) {
-      return AreaGlyphKind::STAIRS;
-    }
-    if (sv_contains_ci(slug, "home-roof") || sv_contains_ci(slug, "home-floor") ||
-        sv_contains_ci(slug, "ladder")) {
-      return AreaGlyphKind::ROOF;
-    }
-    if (sv_contains_ci(slug, "pool") || sv_contains_ci(slug, "waves") || sv_contains_ci(slug, "hot-tub")) {
-      return AreaGlyphKind::POOL;
-    }
-    if (sv_contains_ci(slug, "balcony") || sv_contains_ci(slug, "deck") ||
-        sv_contains_ci(slug, "grill") || sv_contains_ci(slug, "umbrella-beach") ||
-        sv_contains_ci(slug, "sun-wireless")) {
-      return AreaGlyphKind::BALCONY;
-    }
-    if (sv_contains_ci(slug, "tree") || sv_contains_ci(slug, "flower") ||
-        sv_contains_ci(slug, "sprout") || sv_contains_ci(slug, "grass")) {
-      return AreaGlyphKind::GARDEN;
-    }
-    if (sv_contains_ci(slug, "speaker") || sv_contains_ci(slug, "music") ||
-        sv_contains_ci(slug, "cast-audio")) {
-      return AreaGlyphKind::SPEAKER;
-    }
-  }
-
-  if (!area_name_fallback.empty()) {
-    if (sv_contains_ci(area_name_fallback, "living") || sv_contains_ci(area_name_fallback, "lounge") ||
-        sv_contains_ci(area_name_fallback, "family") || sv_contains_ci(area_name_fallback, "den")) {
-      return AreaGlyphKind::SOFA;
-    }
-    if (sv_contains_ci(area_name_fallback, "kitchen") || sv_contains_ci(area_name_fallback, "pantry")) {
-      return AreaGlyphKind::CULINARY;
-    }
-    if (sv_contains_ci(area_name_fallback, "dining") || sv_contains_ci(area_name_fallback, "breakfast")) {
-      return AreaGlyphKind::DINING;
-    }
-    if (sv_contains_ci(area_name_fallback, "nursery") || sv_contains_ci(area_name_fallback, "baby") ||
-        sv_contains_ci(area_name_fallback, "kids")) {
-      return AreaGlyphKind::NURSERY;
-    }
-    if (sv_contains_ci(area_name_fallback, "bed") || sv_contains_ci(area_name_fallback, "primary") ||
-        sv_contains_ci(area_name_fallback, "guest") || sv_contains_ci(area_name_fallback, "suite")) {
-      return AreaGlyphKind::BED;
-    }
-    if (sv_contains_ci(area_name_fallback, "bath") || sv_contains_ci(area_name_fallback, "shower") ||
-        sv_contains_ci(area_name_fallback, "powder")) {
-      return AreaGlyphKind::SHOWER;
-    }
-    if (sv_contains_ci(area_name_fallback, "office") || sv_contains_ci(area_name_fallback, "study") ||
-        sv_contains_ci(area_name_fallback, "library")) {
-      return AreaGlyphKind::DESK;
-    }
-    if (sv_contains_ci(area_name_fallback, "media") || sv_contains_ci(area_name_fallback, "theater") ||
-        sv_contains_ci(area_name_fallback, "cinema")) {
-      return AreaGlyphKind::TELEVISION;
-    }
-    if (sv_contains_ci(area_name_fallback, "game") || sv_contains_ci(area_name_fallback, "arcade")) {
-      return AreaGlyphKind::GAMEPAD;
-    }
-    if (sv_contains_ci(area_name_fallback, "gym") || sv_contains_ci(area_name_fallback, "fitness")) {
-      return AreaGlyphKind::DUMBBELL;
-    }
-    if (sv_contains_ci(area_name_fallback, "laundry") || sv_contains_ci(area_name_fallback, "utility")) {
-      return AreaGlyphKind::WASHER;
-    }
-    if (sv_contains_ci(area_name_fallback, "garage") || sv_contains_ci(area_name_fallback, "carport")) {
-      return AreaGlyphKind::GARAGE;
-    }
-    if (sv_contains_ci(area_name_fallback, "workshop") || sv_contains_ci(area_name_fallback, "shed")) {
-      return AreaGlyphKind::TOOLS;
-    }
-    if (sv_contains_ci(area_name_fallback, "closet") || sv_contains_ci(area_name_fallback, "wardrobe")) {
-      return AreaGlyphKind::WARDROBE;
-    }
-    if (sv_contains_ci(area_name_fallback, "entry") || sv_contains_ci(area_name_fallback, "foyer") ||
-        sv_contains_ci(area_name_fallback, "hall") || sv_contains_ci(area_name_fallback, "porch")) {
-      return AreaGlyphKind::DOOR;
-    }
-    if (sv_contains_ci(area_name_fallback, "stair") || sv_contains_ci(area_name_fallback, "landing")) {
-      return AreaGlyphKind::STAIRS;
-    }
-    if (sv_contains_ci(area_name_fallback, "attic") || sv_contains_ci(area_name_fallback, "loft") ||
-        sv_contains_ci(area_name_fallback, "basement")) {
-      return AreaGlyphKind::ROOF;
-    }
-    if (sv_contains_ci(area_name_fallback, "pool") || sv_contains_ci(area_name_fallback, "spa")) {
-      return AreaGlyphKind::POOL;
-    }
-    if (sv_contains_ci(area_name_fallback, "balcony") || sv_contains_ci(area_name_fallback, "patio") ||
-        sv_contains_ci(area_name_fallback, "deck") || sv_contains_ci(area_name_fallback, "terrace")) {
-      return AreaGlyphKind::BALCONY;
-    }
-    if (sv_contains_ci(area_name_fallback, "garden") || sv_contains_ci(area_name_fallback, "yard") ||
-        sv_contains_ci(area_name_fallback, "courtyard")) {
-      return AreaGlyphKind::GARDEN;
-    }
-    if (sv_contains_ci(area_name_fallback, "studio") || sv_contains_ci(area_name_fallback, "music")) {
-      return AreaGlyphKind::SPEAKER;
-    }
-  }
-  return AreaGlyphKind::MAP_PIN;
-}
-
-void draw_area_glyph_pass(esphome::display::Display &it, int cx, int cy, int r,
-                          AreaGlyphKind kind, esphome::Color c) {
-  const float k = static_cast<float>(std::max(5, r)) / 9.0f;
-  auto sc = [k](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * k)); };
-  auto scr = [k](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * k))); };
-
-  switch (kind) {
-    case AreaGlyphKind::SOFA:
-      fill_rect_row_major(it, cx - sc(6), cy - sc(4), scr(13), scr(5), c);
-      fill_rect_row_major(it, cx - sc(8), cy, scr(17), scr(5), c);
-      fast_filled_circle(it, cx - sc(7), cy, scr(2), c);
-      fast_filled_circle(it, cx + sc(7), cy, scr(2), c);
-      fast_vline(it, cx - sc(6), cy + sc(5), scr(2), c);
-      fast_vline(it, cx + sc(6), cy + sc(5), scr(2), c);
-      break;
-    case AreaGlyphKind::CULINARY:
-      fast_vline(it, cx - sc(4), cy - sc(7), scr(5), c);
-      fast_vline(it, cx - sc(2), cy - sc(7), scr(5), c);
-      fast_hline(it, cx - sc(5), cy - sc(2), scr(5), c);
-      fill_rect_row_major(it, cx - sc(3), cy - sc(2), scr(2), scr(9), c);
-      fill_rect_row_major(it, cx + sc(3), cy - sc(7), scr(3), scr(7), c);
-      fill_rect_row_major(it, cx + sc(4), cy, scr(2), scr(7), c);
-      break;
-    case AreaGlyphKind::DINING:
-      fill_rect_row_major(it, cx - sc(7), cy - sc(2), scr(15), scr(2), c);
-      fast_vline(it, cx, cy, scr(7), c);
-      fast_vline(it, cx - sc(7), cy - sc(5), scr(11), c);
-      fast_hline(it, cx - sc(7), cy + sc(2), scr(4), c);
-      fast_vline(it, cx + sc(7), cy - sc(5), scr(11), c);
-      fast_hline(it, cx + sc(4), cy + sc(2), scr(4), c);
-      break;
-    case AreaGlyphKind::BED:
-      fill_rect_row_major(it, cx - sc(8), cy - sc(5), scr(2), scr(11), c);
-      fill_rect_row_major(it, cx - sc(8), cy + sc(1), scr(17), scr(3), c);
-      fill_rect_row_major(it, cx + sc(7), cy + sc(1), scr(2), scr(5), c);
-      fill_rect_row_major(it, cx - sc(5), cy - sc(2), scr(4), scr(3), c);
-      fill_rect_row_major(it, cx, cy - sc(3), scr(8), scr(4), c);
-      break;
-    case AreaGlyphKind::NURSERY:
-      fast_filled_circle(it, cx - sc(5), cy - sc(5), scr(2), c);
-      fast_filled_circle(it, cx + sc(5), cy - sc(5), scr(2), c);
-      fast_circle(it, cx, cy + sc(1), scr(6), c);
-      fast_filled_circle(it, cx - sc(2), cy, scr(1), c);
-      fast_filled_circle(it, cx + sc(2), cy, scr(1), c);
-      break;
-    case AreaGlyphKind::SHOWER:
-      fast_vline(it, cx - sc(6), cy - sc(7), scr(14), c);
-      fast_hline(it, cx - sc(6), cy - sc(7), scr(9), c);
-      fast_filled_triangle(it, cx + sc(2), cy - sc(7), cx - sc(1), cy - sc(3), cx + sc(5), cy - sc(3), c);
-      fast_vline(it, cx, cy - sc(1), scr(3), c);
-      fast_vline(it, cx + sc(3), cy, scr(3), c);
-      fast_vline(it, cx + sc(1), cy + sc(4), scr(3), c);
-      fast_vline(it, cx + sc(4), cy + sc(4), scr(3), c);
-      break;
-    case AreaGlyphKind::DESK:
-      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(7), c);
-      fast_vline(it, cx, cy, scr(2), c);
-      fill_rect_row_major(it, cx - sc(8), cy + sc(2), scr(17), scr(2), c);
-      fast_vline(it, cx - sc(6), cy + sc(4), scr(4), c);
-      fast_vline(it, cx + sc(6), cy + sc(4), scr(4), c);
-      break;
-    case AreaGlyphKind::TELEVISION:
-      fast_rect_outline(it, cx - sc(8), cy - sc(6), scr(17), scr(10), c);
-      fast_line(it, cx - sc(2), cy + sc(4), cx - sc(5), cy + sc(7), c);
-      fast_line(it, cx + sc(2), cy + sc(4), cx + sc(5), cy + sc(7), c);
-      fast_hline(it, cx - sc(5), cy + sc(7), scr(11), c);
-      break;
-    case AreaGlyphKind::GAMEPAD:
-      fill_rect_row_major(it, cx - sc(6), cy - sc(3), scr(13), scr(6), c);
-      fast_filled_circle(it, cx - sc(6), cy + sc(1), scr(3), c);
-      fast_filled_circle(it, cx + sc(6), cy + sc(1), scr(3), c);
-      break;
-    case AreaGlyphKind::DUMBBELL:
-      fill_rect_row_major(it, cx - sc(8), cy - sc(4), scr(2), scr(9), c);
-      fill_rect_row_major(it, cx - sc(5), cy - sc(3), scr(2), scr(7), c);
-      fill_rect_row_major(it, cx - sc(3), cy - sc(1), scr(7), scr(2), c);
-      fill_rect_row_major(it, cx + sc(4), cy - sc(3), scr(2), scr(7), c);
-      fill_rect_row_major(it, cx + sc(7), cy - sc(4), scr(2), scr(9), c);
-      break;
-    case AreaGlyphKind::WASHER:
-      fast_rect_outline(it, cx - sc(6), cy - sc(7), scr(13), scr(15), c);
-      fast_hline(it, cx - sc(5), cy - sc(4), scr(11), c);
-      fast_circle(it, cx, cy + sc(2), scr(3), c);
-      break;
-    case AreaGlyphKind::GARAGE:
-      fast_line(it, cx - sc(8), cy - sc(2), cx, cy - sc(7), c);
-      fast_line(it, cx, cy - sc(7), cx + sc(8), cy - sc(2), c);
-      fast_vline(it, cx - sc(6), cy - sc(2), scr(9), c);
-      fast_vline(it, cx + sc(6), cy - sc(2), scr(9), c);
-      fast_hline(it, cx - sc(4), cy + sc(1), scr(9), c);
-      fast_hline(it, cx - sc(4), cy + sc(4), scr(9), c);
-      fast_hline(it, cx - sc(4), cy + sc(7), scr(9), c);
-      break;
-    case AreaGlyphKind::TOOLS:
-      fast_line(it, cx - sc(6), cy + sc(6), cx + sc(4), cy - sc(4), c);
-      fast_line(it, cx - sc(5), cy + sc(6), cx + sc(5), cy - sc(4), c);
-      fill_rect_row_major(it, cx + sc(1), cy - sc(7), scr(6), scr(3), c);
-      break;
-    case AreaGlyphKind::WARDROBE:
-      fast_circle(it, cx, cy - sc(5), scr(2), c);
-      fast_line(it, cx, cy - sc(3), cx - sc(8), cy + sc(4), c);
-      fast_line(it, cx, cy - sc(3), cx + sc(8), cy + sc(4), c);
-      fast_hline(it, cx - sc(8), cy + sc(4), scr(17), c);
-      break;
-    case AreaGlyphKind::DOOR:
-      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(15), c);
-      fast_pixel(it, cx + sc(2), cy, c);
-      fast_pixel(it, cx + sc(2), cy + 1, c);
-      break;
-    case AreaGlyphKind::STAIRS:
-      fast_hline(it, cx - sc(7), cy + sc(6), scr(5), c);
-      fast_vline(it, cx - sc(3), cy + sc(2), scr(5), c);
-      fast_hline(it, cx - sc(3), cy + sc(2), scr(5), c);
-      fast_vline(it, cx + sc(1), cy - sc(2), scr(5), c);
-      fast_hline(it, cx + sc(1), cy - sc(2), scr(5), c);
-      fast_vline(it, cx + sc(5), cy - sc(6), scr(5), c);
-      fast_hline(it, cx + sc(5), cy - sc(6), scr(3), c);
-      break;
-    case AreaGlyphKind::ROOF:
-      fast_line(it, cx - sc(8), cy + sc(1), cx, cy - sc(6), c);
-      fast_line(it, cx, cy - sc(6), cx + sc(8), cy + sc(1), c);
-      fast_hline(it, cx - sc(6), cy + sc(2), scr(13), c);
-      fast_rect_outline(it, cx - sc(2), cy - sc(2), scr(5), scr(4), c);
-      break;
-    case AreaGlyphKind::POOL:
-      fast_vline(it, cx + sc(4), cy - sc(7), scr(8), c);
-      fast_vline(it, cx + sc(7), cy - sc(7), scr(8), c);
-      fast_hline(it, cx + sc(4), cy - sc(4), scr(4), c);
-      for (int row = 0; row < 2; ++row) {
-        const int wy = cy + sc(2 + row * 4);
-        fast_line(it, cx - sc(8), wy, cx - sc(4), wy - sc(2), c);
-        fast_line(it, cx - sc(4), wy - sc(2), cx, wy, c);
-        fast_line(it, cx, wy, cx + sc(4), wy - sc(2), c);
-        fast_line(it, cx + sc(4), wy - sc(2), cx + sc(8), wy, c);
-      }
-      break;
-    case AreaGlyphKind::BALCONY:
-      fast_filled_circle(it, cx + sc(4), cy - sc(5), scr(2), c);
-      fast_hline(it, cx - sc(8), cy, scr(17), c);
-      fast_hline(it, cx - sc(8), cy + sc(6), scr(17), c);
-      for (int b = -6; b <= 6; b += 4) {
-        fast_vline(it, cx + sc(b), cy, scr(7), c);
-      }
-      break;
-    case AreaGlyphKind::GARDEN:
-      fast_filled_circle(it, cx, cy - sc(4), scr(4), c);
-      fast_filled_circle(it, cx - sc(3), cy - sc(1), scr(3), c);
-      fast_filled_circle(it, cx + sc(3), cy - sc(1), scr(3), c);
-      fill_rect_row_major(it, cx - sc(1), cy + sc(2), scr(2), scr(6), c);
-      break;
-    case AreaGlyphKind::SPEAKER:
-      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(15), c);
-      fast_pixel(it, cx, cy - sc(4), c);
-      fast_circle(it, cx, cy + sc(2), scr(3), c);
-      break;
-    case AreaGlyphKind::MAP_PIN:
-    default:
-      fast_circle(it, cx, cy - sc(2), scr(5), c);
-      fast_circle(it, cx, cy - sc(2), std::max(1, scr(5) - 1), c);
-      fast_line(it, cx - sc(4), cy + sc(1), cx, cy + sc(7), c);
-      fast_line(it, cx + sc(4), cy + sc(1), cx, cy + sc(7), c);
-      fast_filled_circle(it, cx, cy - sc(2), scr(1), c);
-      break;
-  }
-}
-
 }  // namespace
 
 // ==============================================================================
@@ -896,14 +530,6 @@ bool home_activity_band(int &out_y0, int &out_y1) {
 const HomeActivityItem *home_activity_rendered_items(int &out_count) {
   out_count = s_rendered_act_count;
   return s_rendered_act_items;
-}
-
-void render_area_archetype_icon(esphome::display::Display &it, int cx, int cy, int r,
-                                std::string_view icon_str, std::string_view area_name_fallback,
-                                esphome::Color color) {
-  const AreaGlyphKind kind = classify_area_glyph(icon_str, area_name_fallback);
-  draw_area_glyph_pass(it, cx + 1, cy + 1, r, kind, kChromeShadow);
-  draw_area_glyph_pass(it, cx, cy, r, kind, color);
 }
 
 int collect_home_activities(
@@ -1739,11 +1365,13 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                        ? 16U
                                        : (now_ms - last_glass_alpha_ms);
       last_glass_alpha_ms = now_ms;
+      const int target_glass_a = backdrop.valid
+          ? std::min(kGlassClearAlphaMaxQ8,
+                     glass_alpha_for_text(tint, backdrop.bright, ctx.col_white))
+          : 156;
       const int glass_a = backdrop.valid
-          ? glass_alpha_smooth(glass_alpha_state,
-                               glass_alpha_for_text(tint, backdrop.bright, ctx.col_white),
-                               alpha_dt_ms)
-          : 256;
+          ? glass_alpha_smooth(glass_alpha_state, target_glass_a, alpha_dt_ms)
+          : 156;
       render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a, backdrop,
                         GlassVariant::Clear, ctx.col_white);
       const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
@@ -2202,10 +1830,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                               ctx.theme_primary, false);
   }
 
-  // ZONE 6: Battery Readout & Geometry-Adaptive Roaming Area Vector Glyph
+  // ZONE 6: Battery Readout & 1:1 MDI Roaming Area Vector Icon
   const bool show_roaming_area = is_roaming_area_indicator_active();
 #if LATTER_ROUND_DISPLAY
-  const int batt_cx = show_roaming_area ? (ly.battery_cx + scale_x(16)) : ly.battery_cx;
+  const int batt_cx = show_roaming_area ? (ly.battery_cx - scale_x(16)) : ly.battery_cx;
 #if LATTER_HAS_BATTERY
   {
     esphome::display::BaseFont *font_batt =
@@ -2216,11 +1844,12 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 #endif
   if (show_roaming_area) {
-    const int area_cx = batt_cx - scale_x(46);
-    const int area_cy = ly.battery_y;
-    render_area_archetype_icon(it, area_cx, area_cy, scale_s(9),
-                               ac.area_icon, ac.area_name, ctx.theme_secondary);
-    frame_hits().add_circle(area_cx, area_cy, scale_s(12),
+    const int area_cx = batt_cx + scale_x(46);
+    const int area_cy = ly.battery_y - scale_y(1);
+    const int area_px = scale_s(26);
+    render_mdi_icon(it, ac.area_icon, area_cx, area_cy, area_px,
+                    ctx.theme_secondary, true, "mdi:map-marker-outline");
+    frame_hits().add_circle(area_cx, area_cy, area_px / 2 + scale_s(4),
                             WidgetId::HOME_AREA_ICON,
                             kHitTap | kHitFocusSlot | kHitFocusCircle,
                             0, scale_s(10));
@@ -2237,10 +1866,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
 #endif
   if (show_roaming_area) {
     const int area_cx = ly.battery_cx;
-    const int area_cy = ly.battery_y + scale_y(24);
-    render_area_archetype_icon(it, area_cx, area_cy, scale_s(9),
-                               ac.area_icon, ac.area_name, ctx.theme_secondary);
-    frame_hits().add_circle(area_cx, area_cy, scale_s(12),
+    const int area_cy = ly.battery_y + std::max(26, scale_y(28));
+    const int area_px = std::max(24, scale_s(28));
+    render_mdi_icon(it, ac.area_icon, area_cx, area_cy, area_px,
+                    ctx.theme_secondary, true, "mdi:map-marker-outline");
+    frame_hits().add_circle(area_cx, area_cy, area_px / 2 + scale_s(4),
                             WidgetId::HOME_AREA_ICON,
                             kHitTap | kHitFocusSlot | kHitFocusCircle,
                             0, scale_s(10));

@@ -17,6 +17,7 @@ CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
 
 UI_HEADERS: tuple[str, ...] = (
     "ui_types.h",
+    "ui_mdi.h",
     "ui_gfx.h",
     "ui_hit_table.h",
     "ui_layout.h",

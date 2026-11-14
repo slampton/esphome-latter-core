@@ -716,8 +716,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
     }
   } else {
 #if LATTER_HAS_BATTERY
-    const bool beacon_context_ok = (beacon_mode == 2) ||
-                                   (!usb_powered && (beacon_mode == 1 || display_power_state != 2));
+    const bool beacon_context_ok = usb_powered || (beacon_mode >= 1) || (display_power_state != 2);
 #else
     (void)beacon_mode;
     (void)usb_powered;
@@ -741,8 +740,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
                  va_radio_priority ? "yielded for voice session"
                                    : (!wifi_connected ? "paused off-site"
                                                       : (!beacon_paused ? "boot gate"
-                                                                        : (usb_powered ? "paused while docked"
-                                                                                       : "paused for screen-off on battery"))));
+                                                                        : "paused for screen-off on battery")));
         if constexpr (requires { ble_ctrl->pause(); }) {
           ble_ctrl->pause();
         } else {
