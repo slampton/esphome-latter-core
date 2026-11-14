@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -15,6 +16,7 @@
 #include <ctime>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 
 #if __has_include("esphome/core/defines.h")
@@ -899,11 +901,13 @@ struct NavRuntimeState {
   int gui_page = 1;
   int home_subpage = 0;
   int home_activity_idx = 0;
+  int home_dock_page = 0;
   int sky_weather_subpage = 0;
   int area_subpage = 0;
   int remote_subpage = 0;
   int tools_subpage = 0;
   int tools_menu_page = 0;
+  bool tools_direct_home = false;
   int display_menu_page = 1;
   int system_dashboard_page = 1;
   int system_menu_mode = 0;
@@ -912,6 +916,7 @@ struct NavRuntimeState {
   bool menu_scroll_active = false;
   int menu_scroll_dir = 1;
   int menu_scroll_target_page = 1;
+  uint32_t menu_scroll_start_ms = 0;
   int display_power_state = 0;  // 0 = ACTIVE, 1 = SCREENSAVER, 2 = SCREEN_OFF / STANDBY
   uint32_t sleep_start_time = 0;
   uint32_t standby_entered_ms = 0;
@@ -919,6 +924,8 @@ struct NavRuntimeState {
   bool is_hibernating = false;
   int hibernate_countdown_val = 0;
   bool hud_wake_finger_released = true;
+  bool pwr_key_wake_consumed = false;
+  bool ui_anim_poller_running = true;
   bool ota_in_progress = false;
   int ota_progress_pct = 0;
   int update_check_state = 0;   // 0 = Idle, 1 = Checking..., 2 = Checked
@@ -928,6 +935,7 @@ struct NavRuntimeState {
   float marble_touch_x = -1.0f;
   float marble_touch_y = -1.0f;
   bool game_btn_pressed = false;
+  std::string dock_order_csv = "";
 };
 
 struct MusicRuntimeState {
@@ -957,6 +965,15 @@ struct MusicRuntimeState {
   uint32_t pos_sync_time = 0;
   int skip_burst_count = 0;
   uint32_t skip_last_tap_ms = 0;
+  int remote_vol_pct = 70;
+  uint32_t last_local_vol_tap_ms = 0;
+  uint32_t remote_play_override_ms = 0;
+  bool remote_play_override_state = false;
+  bool queue_cleared = false;
+  uint32_t scroll_tap_lockout_until_ms = 0;
+  std::string last_sendspin_artist = "";
+  std::string last_sendspin_title = "";
+  std::string last_sendspin_album = "";
   std::string loaded_art_url = "";
   std::string loaded_wallpaper_url = "";
 };
@@ -966,6 +983,11 @@ struct AreaRuntimeState {
   std::string domain_filter = "scene";
   std::string active_area_id = "";
   std::string active_area_name = "Area Control";
+  std::string area_label = "Home";
+  std::string site_id = "primary";
+  std::string ble_proxy = "";
+  std::string available_domains_csv = "";
+  int cat_dock_page = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "disarmed";
   std::string alarm_service = "alarm_control_panel.alarm_disarm";
@@ -975,10 +997,25 @@ struct AreaRuntimeState {
   std::string target_code = "";
   std::string action_feedback = "";
   uint32_t feedback_timer = 0;
+  std::string light_insp_entity_id = "";
+  std::string light_insp_name = "Light";
+  int light_insp_mode = 0;
+  float light_insp_hue_deg = 35.0f;
+  float light_insp_sat = 0.85f;
+  int light_insp_kelvin = 3500;
+  int light_insp_bri_pct = 80;
+  std::string color_hex_param = "#FFAA55";
 };
 
 struct RemoteRuntimeState {
+  static constexpr int kMaxSlots = 10;
   int active_slot = 0;
+  int control_page = 0;
+  std::string slot_ents[kMaxSlots] = {
+      "remote.none", "remote.none", "remote.none", "remote.none", "remote.none",
+      "remote.none", "remote.none", "remote.none", "remote.none", "remote.none"};
+  std::string slot_names[kMaxSlots]{};
+  bool slot_states_on[kMaxSlots] = {false};
   std::string action_feedback = "";
   uint32_t feedback_timer = 0;
 };
@@ -987,6 +1024,8 @@ struct CalendarUiState {
   std::string quick_summary = "Reminder";
   int quick_in_minutes = 30;
   int quick_duration_minutes = 30;
+  int detail_mode = 0;
+  bool quick_add_open = false;
 };
 
 struct IntercomRuntimeState {
@@ -1003,11 +1042,19 @@ struct IntercomRuntimeState {
   bool cam_call_active = false;
   bool cam_listen_active = false;
   bool cam_intercom_ptt_active = false;
+  bool cam_quick_reply_open = false;
   std::string cam_intercom_status = "";
   int cam_noise_idx = 0;
   bool cam_landscape_mode = false;
   uint32_t last_cam_live_fetch_ms = 0;
   bool cam_download_in_progress = false;
+};
+
+struct HelloSyncState {
+  bool in_flight = false;
+  uint32_t started_ms = 0;
+  uint32_t last_sent_ms = 0;
+  uint64_t last_sent_dirty_mask = 0;
 };
 
 struct DeviceRuntimeState {
@@ -1033,6 +1080,7 @@ struct DeviceRuntimeState {
   RemoteRuntimeState remote{};
   CalendarUiState cal{};
   IntercomRuntimeState intercom{};
+  HelloSyncState hello_sync{};
 
   // Live hardware telemetry & optional peripheral hooks (populated by modules/hal/pmu_axp2101.yaml and
   // modules/hal/imu_qmi8658.yaml when included; safe mains-powered / no-IMU defaults otherwise so
@@ -1288,40 +1336,49 @@ inline size_t v3_split_fields(std::string_view payload, std::string_view *out, s
   return count;
 }
 
-inline int v3_parse_int(std::string_view sv, int fallback = 0) {
-  if (sv.empty()) return fallback;
-  char buf[24];
-  size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
-  std::memcpy(buf, sv.data(), len);
-  buf[len] = '\0';
-  char *endp = nullptr;
-  long v = std::strtol(buf, &endp, 10);
-  if (endp == buf) return fallback;
-  return static_cast<int>(v);
+inline std::string_view trim_v3_num_sv(std::string_view sv) noexcept {
+  while (!sv.empty() &&
+         (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' ||
+          sv.front() == '\n' || sv.front() == '\v' || sv.front() == '\f')) {
+    sv.remove_prefix(1);
+  }
+  return sv;
 }
 
-inline uint32_t v3_parse_u32(std::string_view sv, uint32_t fallback = 0) {
+inline int v3_parse_int(std::string_view sv, int fallback = 0) noexcept {
+  sv = trim_v3_num_sv(sv);
+  if (sv.size() >= 2 && sv.front() == '+' && sv[1] != '-' && sv[1] != '+') {
+    sv.remove_prefix(1);
+  }
   if (sv.empty()) return fallback;
-  char buf[24];
-  size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
-  std::memcpy(buf, sv.data(), len);
-  buf[len] = '\0';
-  char *endp = nullptr;
-  unsigned long v = std::strtoul(buf, &endp, 10);
-  if (endp == buf) return fallback;
-  return static_cast<uint32_t>(v);
+  int val = 0;
+  const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val, 10);
+  if (ec != std::errc{} || ptr == sv.data()) return fallback;
+  return val;
 }
 
-inline float v3_parse_float(std::string_view sv, float fallback = NAN) {
+inline uint32_t v3_parse_u32(std::string_view sv, uint32_t fallback = 0) noexcept {
+  sv = trim_v3_num_sv(sv);
+  if (sv.empty() || sv.front() == '-') return fallback;
+  if (sv.size() >= 2 && sv.front() == '+' && sv[1] != '-' && sv[1] != '+') {
+    sv.remove_prefix(1);
+  }
+  uint32_t val = 0;
+  const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val, 10);
+  if (ec != std::errc{} || ptr == sv.data()) return fallback;
+  return val;
+}
+
+inline float v3_parse_float(std::string_view sv, float fallback = NAN) noexcept {
+  sv = trim_v3_num_sv(sv);
+  if (sv.size() >= 2 && sv.front() == '+' && sv[1] != '-' && sv[1] != '+') {
+    sv.remove_prefix(1);
+  }
   if (sv.empty()) return fallback;
-  char buf[32];
-  size_t len = (sv.size() < sizeof(buf) - 1) ? sv.size() : (sizeof(buf) - 1);
-  std::memcpy(buf, sv.data(), len);
-  buf[len] = '\0';
-  char *endp = nullptr;
-  float v = std::strtof(buf, &endp);
-  if (endp == buf) return fallback;
-  return v;
+  float val = 0.0f;
+  const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), val);
+  if (ec != std::errc{} || ptr == sv.data()) return fallback;
+  return val;
 }
 
 inline bool v3_parse_bool(std::string_view sv) {
@@ -2170,6 +2227,7 @@ inline bool trigger_alert_banner(std::string_view title, std::string_view messag
   ab.title = title.empty() ? std::string("Notification") : std::string(title);
   ab.message = std::string(message);
   ab.priority = priority.empty() ? std::string("normal") : std::string(priority);
+  ab.priority_level = parse_alert_priority(ab.priority);
   int dur = (duration_s > 0) ? duration_s : 10;
   if (dur < 3) dur = 3;
   if (dur > 60) dur = 60;
@@ -2184,25 +2242,10 @@ inline bool trigger_alert_banner(std::string_view title, std::string_view messag
 // Canonical Music Playback Override & Volume Feedback Helpers
 // ==============================================================================
 
-inline int &remote_vol_pct() {
-  static int pct = 70;
-  return pct;
-}
-
-inline uint32_t &last_local_vol_tap_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
-
-inline uint32_t &remote_play_override_ms() {
-  static uint32_t ms = 0;
-  return ms;
-}
-
-inline bool &remote_play_override_state() {
-  static bool st = false;
-  return st;
-}
+inline int &remote_vol_pct() { return runtime_state().music.remote_vol_pct; }
+inline uint32_t &last_local_vol_tap_ms() { return runtime_state().music.last_local_vol_tap_ms; }
+inline uint32_t &remote_play_override_ms() { return runtime_state().music.remote_play_override_ms; }
+inline bool &remote_play_override_state() { return runtime_state().music.remote_play_override_state; }
 
 inline void set_remote_play_override(bool playing, uint32_t now_ms) {
   remote_play_override_state() = playing;
@@ -2225,10 +2268,7 @@ inline bool is_music_playing_effective(bool is_remote, bool local_playing,
   return (remote_state_str == "playing" || remote_state_str == "buffering");
 }
 
-inline bool &music_queue_cleared() noexcept {
-  static bool cleared = false;
-  return cleared;
-}
+inline bool &music_queue_cleared() noexcept { return runtime_state().music.queue_cleared; }
 
 inline bool is_music_paused_effective(bool is_effectively_playing,
                                       bool is_local_speaker,
@@ -2529,17 +2569,7 @@ inline bool load_hibernate_snapshot_if_cold() {
 // ==============================================================================
 // Handshake Deduplication, Crown Wake Latch & Animation Poller Coordination
 // ==============================================================================
-struct HelloSyncState {
-  bool in_flight = false;
-  uint32_t started_ms = 0;
-  uint32_t last_sent_ms = 0;
-  uint64_t last_sent_dirty_mask = 0;
-};
-
-inline HelloSyncState &hello_sync_state() {
-  static HelloSyncState st{};
-  return st;
-}
+inline HelloSyncState &hello_sync_state() { return runtime_state().hello_sync; }
 
 inline void reset_hello_sync_on_connect() {
   auto &st = hello_sync_state();
@@ -2576,15 +2606,9 @@ inline bool should_trigger_hello_on_ping(uint32_t now_ms, uint64_t dirty_mask) {
   return true;
 }
 
-inline bool &pwr_key_wake_consumed() {
-  static bool latched = false;
-  return latched;
-}
+inline bool &pwr_key_wake_consumed() { return runtime_state().nav.pwr_key_wake_consumed; }
 
-inline bool &ui_anim_poller_running() {
-  static bool running = true;  // ESPHome interval: 20ms starts active at boot
-  return running;
-}
+inline bool &ui_anim_poller_running() { return runtime_state().nav.ui_anim_poller_running; }
 
 template <typename PollerT>
 inline void set_ui_anim_poller(PollerT *tick, bool want) {
@@ -2602,6 +2626,290 @@ template <typename PollerT>
 inline void ensure_ui_anim_poller(PollerT *tick) {
   set_ui_anim_poller(tick, true);
 }
+
+// ==============================================================================
+// Consolidated UI / Domain State Accessors & Pure Helpers
+// ==============================================================================
+inline uint32_t &menu_scroll_start_ms() { return runtime_state().nav.menu_scroll_start_ms; }
+inline bool &tools_direct_home() { return runtime_state().nav.tools_direct_home; }
+inline int &timer_view_slot() { return runtime_state().timers.view_slot; }
+inline int &cal_detail_mode() { return runtime_state().cal.detail_mode; }
+inline bool &cal_quick_add_open() { return runtime_state().cal.quick_add_open; }
+inline bool &cam_quick_reply_open() { return runtime_state().intercom.cam_quick_reply_open; }
+inline int &home_dock_page() { return runtime_state().nav.home_dock_page; }
+inline uint32_t &last_music_page_req_ms() { return runtime_state().last_music_page_req_ms; }
+inline uint32_t &music_scroll_tap_lockout_until_ms() { return runtime_state().music.scroll_tap_lockout_until_ms; }
+
+inline constexpr int MAX_REMOTE_SLOTS = RemoteRuntimeState::kMaxSlots;
+
+inline std::string *remote_slots_ent() { return runtime_state().remote.slot_ents; }
+inline std::string *remote_slots_name() { return runtime_state().remote.slot_names; }
+inline bool *remote_slot_states_on() { return runtime_state().remote.slot_states_on; }
+inline int &remote_control_page() { return runtime_state().remote.control_page; }
+
+inline bool is_configured_remote_slot(const std::string &ent) {
+  if (ent.empty()) return false;
+  return ent != "none" && ent != "NONE" && ent != "remote.none" && ent != "media_player.none";
+}
+
+inline bool has_any_configured_remote() {
+  const std::string *t_ents = remote_slots_ent();
+  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+    if (is_configured_remote_slot(t_ents[i])) return true;
+  }
+  return false;
+}
+
+inline std::string format_remote_entity_fallback(const std::string &ent) {
+  if (!is_configured_remote_slot(ent)) return "";
+  std::string s = ent;
+  const size_t dot = s.find('.');
+  if (dot != std::string::npos) s = s.substr(dot + 1);
+  bool cap = true;
+  for (size_t i = 0; i < s.length(); i++) {
+    if (s[i] == '_') {
+      s[i] = ' ';
+      cap = true;
+    } else if (cap) {
+      s[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[i])));
+      cap = false;
+    }
+  }
+  return s;
+}
+
+inline void parse_latter_remote_slots_summary(const std::string &summary) {
+  std::string *t_ents = remote_slots_ent();
+  std::string *t_names = remote_slots_name();
+  bool *st_on = remote_slot_states_on();
+  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+    t_ents[i] = "remote.none";
+    t_names[i].clear();
+    st_on[i] = false;
+  }
+  if (!summary.empty()) {
+    std::string_view recs[MAX_REMOTE_SLOTS];
+    const size_t n = v3_split_fields(summary, recs, MAX_REMOTE_SLOTS, kProtocolRecordSep);
+    for (size_t r = 0; r < n; r++) {
+      std::string_view f[6];
+      if (v3_split_fields(recs[r], f, 6, '|') != 6 || f[2].empty()) continue;
+      const int slot_num = v3_parse_int(f[0], 0);
+      if (slot_num < 1 || slot_num > MAX_REMOTE_SLOTS) continue;
+      const int idx = slot_num - 1;
+      const std::string_view st = f[5];
+      st_on[idx] = (st == "on" || st == "playing" || st == "paused" || st == "buffering" || st == "idle");
+      t_ents[idx] = std::string(f[2]);
+      t_names[idx] = f[1].empty() ? format_remote_entity_fallback(t_ents[idx]) : std::string(f[1]);
+    }
+  }
+  remote_control_page() = 0;
+}
+
+inline int collect_configured_remote_slots(int out_slots[MAX_REMOTE_SLOTS]) {
+  const std::string *t_ents = remote_slots_ent();
+  int count = 0;
+  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+    if (is_configured_remote_slot(t_ents[i])) {
+      out_slots[count++] = i;
+    }
+  }
+  return count;
+}
+
+inline int resolve_active_remote_slot(int active_slot) {
+  const std::string *t_ents = remote_slots_ent();
+  if (active_slot >= 0 && active_slot < MAX_REMOTE_SLOTS && is_configured_remote_slot(t_ents[active_slot])) {
+    return active_slot;
+  }
+  for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
+    if (is_configured_remote_slot(t_ents[i])) return i;
+  }
+  return 0;
+}
+
+inline std::string &area_available_domains_csv() { return runtime_state().area.available_domains_csv; }
+inline int &area_cat_dock_page() { return runtime_state().area.cat_dock_page; }
+inline std::string &light_insp_entity_id() { return runtime_state().area.light_insp_entity_id; }
+inline std::string &light_insp_name() { return runtime_state().area.light_insp_name; }
+inline int &light_insp_mode() { return runtime_state().area.light_insp_mode; }
+inline float &light_insp_hue_deg() { return runtime_state().area.light_insp_hue_deg; }
+inline float &light_insp_sat() { return runtime_state().area.light_insp_sat; }
+inline int &light_insp_kelvin() { return runtime_state().area.light_insp_kelvin; }
+inline int &light_insp_bri_pct() { return runtime_state().area.light_insp_bri_pct; }
+inline std::string &area_color_hex_param() { return runtime_state().area.color_hex_param; }
+
+inline int &whole_home_tab() { return whole_home_state().tab; }
+inline int &sim_thermostat_target_f() { return whole_home_state().thermostat_target_f; }
+inline std::string &sim_thermostat_mode() { return whole_home_state().thermostat_mode; }
+inline GarageState &wh_garage_state() { return whole_home_state().garage_state; }
+inline LockState &wh_lock_state() { return whole_home_state().lock_state; }
+inline std::string &sim_vacuum_state() { return whole_home_state().vacuum_state; }
+
+inline int collect_area_categories(std::string *out_cats) {
+  const std::string_view src =
+      (area_ctx_state().epoch == 0U) ? std::string_view(kDefaultAreaCategories)
+                                     : std::string_view(area_available_domains_csv());
+  return parse_area_categories_csv(src, out_cats, 8);
+}
+
+inline std::string resolve_preferred_area_category() {
+  std::string cats[8];
+  const int cnt = collect_area_categories(cats);
+  return (cnt > 0) ? cats[0] : std::string{};
+}
+
+inline std::string &latter_site_id() { return runtime_state().area.site_id; }
+inline std::string &latter_ble_proxy() { return runtime_state().area.ble_proxy; }
+inline std::string &latter_area_label() { return runtime_state().area.area_label; }
+inline std::string &latter_dock_order_csv() { return runtime_state().nav.dock_order_csv; }
+
+inline int get_mode_bar_start_index(int total_count, int win_start) {
+  if (total_count <= 4 || win_start <= 0) return 0;
+  return std::max(0, std::min(total_count - 4, win_start));
+}
+
+inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count) {
+  if (total_count <= 4) {
+    win_start = 0;
+    return;
+  }
+  win_start = get_mode_bar_start_index(total_count, win_start);
+  if (active_idx < win_start) {
+    win_start = active_idx;
+  } else if (active_idx >= win_start + 4) {
+    win_start = active_idx - 3;
+  }
+  win_start = std::max(0, std::min(total_count - 4, win_start));
+}
+
+// ==============================================================================
+// Compiled Protocol v3 Domain Reducer & Timer/Alarm Controller Declarations
+// (Implemented in components/latter_core/runtime_controllers.cpp)
+// ==============================================================================
+struct V3ReduceContext {
+  uint32_t now_ms{0U};
+  const char *friendly_name{""};
+  bool local_mp_playing{false};
+  bool local_mp_paused{false};
+  int local_album_art_w{0};
+  bool remote_art_fetch_running{false};
+  uint32_t last_touch_ms{0U};
+};
+
+struct V3DomainEffects {
+  bool area_changed{false};
+  bool mark_dirty_full{false};
+  bool fetch_area_browse{false};
+  bool fetch_on_demand_camera{false};
+  bool apply_theme_preset{false};
+  bool alert_triggered{false};
+  int alert_sfx_id{0};
+  bool fetch_alert_camera{false};
+  bool release_alert_camera_art{false};
+  bool stop_wallpaper_fetch{false};
+  bool release_wallpaper_art{false};
+  bool fetch_wallpaper{false};
+  bool weather_sim_dirty{false};
+  bool reset_ambient_frame_ms{false};
+  bool ensure_anim_poller{false};
+  bool schedule_disp_update{false};
+  bool throttled_disp_update{false};
+  bool sync_local_volume{false};
+  float local_volume_0_to_1{0.0f};
+  bool stop_remote_art_fetch{false};
+  bool release_remote_art{false};
+  bool fetch_remote_art{false};
+  bool navigate_home_from_remote{false};
+  bool navigate_start_screen_remote{false};
+  bool sync_display_brightness{false};
+  bool apply_device_prefs_effects{false};
+};
+
+class V3DomainReducer {
+ public:
+  void reset();
+  V3DomainEffects reduce(std::string_view domain, const std::string &prev_dock,
+                         const V3ReduceContext &ctx);
+
+ private:
+  std::string prev_area_icon_{};
+  std::string prev_title_{};
+  std::string prev_artist_{};
+  std::string prev_album_{};
+  std::string prev_state_{};
+  std::string prev_spk_{};
+  std::string prev_spk_name_{};
+  std::string prev_art_{};
+  bool prev_is_local_{false};
+  int prev_vol_pct_{-1};
+  std::string prev_sun_{};
+};
+
+V3DomainReducer &v3_domain_reducer() noexcept;
+
+struct TimerTickEffects {
+  bool any_expired{false};
+  bool sec_changed{false};
+  bool auto_silenced{false};
+};
+
+struct AlarmTickEffects {
+  bool snooze_fired{false};
+  int triggered_idx{0};
+  bool prefs_saved{false};
+  bool auto_silenced{false};
+};
+
+struct VaTimerEffects {
+  bool fire_alert{false};
+  bool stop_sound{false};
+  bool schedule_disp{false};
+};
+
+class TimerAlarmController {
+ public:
+  static constexpr uint32_t kAutoSilenceMs = 300000U;
+  static constexpr uint32_t kSnoozeSeconds = 300U;
+
+  void reset() noexcept { *this = TimerAlarmController{}; }
+
+  TimerTickEffects tick_timers_250ms(uint32_t now_ms);
+  AlarmTickEffects tick_alarms_1s(bool time_valid, uint32_t now_epoch,
+                                  int hour, int minute, int second, int day_of_week,
+                                  uint32_t now_ms);
+
+  VaTimerEffects on_va_timer_started(const std::string &id, const std::string &name,
+                                     int total_sec, int left_sec, bool is_active,
+                                     uint32_t now_ms);
+  VaTimerEffects on_va_timer_updated(const std::string &id, const std::string &name,
+                                     int total_sec, int left_sec, bool is_active,
+                                     uint32_t now_ms);
+  VaTimerEffects on_va_timer_cancelled(const std::string &id, const std::string &name,
+                                       uint32_t now_ms);
+  VaTimerEffects on_va_timer_finished(const std::string &id, const std::string &name,
+                                      uint32_t now_ms);
+
+  bool snooze_active_alarm(bool time_valid, uint32_t now_epoch, uint32_t now_ms) noexcept;
+  bool dismiss_ringing() noexcept;
+
+  uint32_t ringing_started_ms() const noexcept { return ringing_started_ms_; }
+
+ private:
+  void stamp_ringing_start_(uint32_t now_ms) noexcept {
+    ringing_started_ms_ = (now_ms == 0U) ? 1U : now_ms;
+  }
+  bool check_auto_silence_(uint32_t now_ms) noexcept;
+  static bool should_redraw_va_timer_(const DeviceRuntimeState &rs) noexcept;
+
+  uint32_t ringing_started_ms_{0U};
+};
+
+TimerAlarmController &timer_alarm_controller() noexcept;
+
+// Resets volatile runtime state, domain state, RPC state, and all core C++20 controllers
+// deterministically in a single call (preserving bound hardware/lifecycle function pointers
+// unless preserve_hooks is false).
+void reset_runtime_state(bool preserve_hooks = false);
 
 // ==============================================================================
 // Intercom & Camera Carousel State / Protocol v3 Summary Parsers

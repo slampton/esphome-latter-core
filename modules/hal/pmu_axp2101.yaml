@@ -411,12 +411,8 @@ script:
 
           if (rs.alarms.ringing) {
             auto now = id(ha_time).now();
-            if (now.is_valid()) {
-              rs.alarms.snooze_until = now.timestamp + 300;
-            } else {
-              rs.alarms.snooze_until = (millis() / 1000) + 300;
-            }
-            rs.alarms.ringing = false;
+            latter_ui::timer_alarm_controller().snooze_active_alarm(
+                now.is_valid(), now.is_valid() ? static_cast<uint32_t>(now.timestamp) : 0U, now_c);
             id(stop_alarm_sound).execute();
             latter_ui::schedule_disp_update(&id(disp1));
             latter_ui::display_lifecycle().note_activity(now_c);
@@ -427,8 +423,7 @@ script:
               id(dismiss_notification).execute();
               return;
             }
-            rs.timers.ringing = false;
-            rs.alarms.find_my_active = false;
+            latter_ui::timer_alarm_controller().dismiss_ringing();
             id(stop_alarm_sound).execute();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));

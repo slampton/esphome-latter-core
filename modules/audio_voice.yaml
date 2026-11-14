@@ -775,98 +775,48 @@ voice_assistant:
   on_timer_started:
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
           ESP_LOGI("va_timer", "Timer started via Assist: %s (%lu sec)", timer.name.c_str(), (unsigned long)timer.total_seconds);
-          uint32_t now_t = millis();
-          latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
-          rs.timers.va_timer_name = timer.name;
-          latter_ui::sync_multi_timer_state();
-          rs.timers.ringing = false;
-          latter_actions::check_and_emit_timer_alarm_state(now_t);
+          const auto eff = latter_ui::timer_alarm_controller().on_va_timer_started(
+              timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, millis());
           id(apply_power_policy).execute();
-          if (!rs.voice.active && rs.voice.status_text.empty()) {
-            if (((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
-                 (rs.nav.gui_page == 1 && (rs.nav.home_subpage == 0 || rs.nav.home_subpage == 2))) &&
-                rs.nav.display_power_state == 0) {
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
+          if (eff.schedule_disp) {
+            latter_ui::schedule_disp_update(&id(disp1));
           }
   on_timer_updated:
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
           ESP_LOGD("va_timer", "Timer updated via Assist: %s (left: %lu sec, active: %d)", timer.name.c_str(), (unsigned long)timer.seconds_left, timer.is_active);
-          uint32_t now_t = millis();
-          latter_ui::upsert_voice_timer_slot(timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, now_t);
-          latter_ui::sync_multi_timer_state();
-          latter_actions::check_and_emit_timer_alarm_state(now_t);
+          const auto eff = latter_ui::timer_alarm_controller().on_va_timer_updated(
+              timer.id, timer.name, timer.total_seconds, timer.seconds_left, timer.is_active, millis());
           id(apply_power_policy).execute();
-          if (!rs.voice.active && rs.voice.status_text.empty()) {
-            if (((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
-                 (rs.nav.gui_page == 1 && (rs.nav.home_subpage == 0 || rs.nav.home_subpage == 2))) &&
-                rs.nav.display_power_state == 0) {
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
+          if (eff.schedule_disp) {
+            latter_ui::schedule_disp_update(&id(disp1));
           }
   on_timer_cancelled:
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
           ESP_LOGI("va_timer", "Timer cancelled via Assist: %s", timer.name.c_str());
-          auto *slots = latter_ui::timer_slots();
-          for (int i = 0; i < 3; i++) {
-            if ((!timer.id.empty() && slots[i].id == timer.id) || (!timer.name.empty() && slots[i].name == timer.name)) {
-              slots[i].running = false;
-              slots[i].paused = false;
-              slots[i].remaining_sec = slots[i].duration_sec;
-            }
-          }
-          latter_ui::sync_multi_timer_state();
-          if (rs.nav.home_subpage == 2 && !rs.timers.running) {
-            rs.nav.home_subpage = 0;
-          }
-          const bool was_ringing = rs.timers.ringing;
-          rs.timers.ringing = false;
-          latter_actions::check_and_emit_timer_alarm_state(millis());
-          if (was_ringing) {
+          const auto eff = latter_ui::timer_alarm_controller().on_va_timer_cancelled(
+              timer.id, timer.name, millis());
+          if (eff.stop_sound) {
             id(stop_alarm_sound).execute();
           }
           id(apply_power_policy).execute();
-          if (!rs.voice.active && rs.voice.status_text.empty()) {
-            if (((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
-                 (rs.nav.gui_page == 1 && (rs.nav.home_subpage == 0 || rs.nav.home_subpage == 2))) &&
-                rs.nav.display_power_state == 0) {
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
+          if (eff.schedule_disp) {
+            latter_ui::schedule_disp_update(&id(disp1));
           }
   on_timer_finished:
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
           ESP_LOGI("va_timer", "Timer finished via Assist: %s", timer.name.c_str());
-          auto *slots = latter_ui::timer_slots();
-          std::string fired_name = timer.name;
-          for (int i = 0; i < 3; i++) {
-            if ((!timer.id.empty() && slots[i].id == timer.id) || (!timer.name.empty() && slots[i].name == timer.name)) {
-              if (fired_name.empty()) fired_name = slots[i].name;
-              slots[i].running = false;
-              slots[i].paused = false;
-              slots[i].remaining_sec = slots[i].duration_sec; // Keep duration & name saved as a reusable preset!
-            }
-          }
-          latter_ui::sync_multi_timer_state();
-          if (rs.nav.home_subpage == 2) {
-            rs.nav.home_subpage = 0;
-          }
           id(preempt_va_for_alert).execute();
-          if (!rs.timers.ringing) {
-            rs.timers.va_timer_name = fired_name;
-            rs.timers.ringing = true;
+          const auto eff = latter_ui::timer_alarm_controller().on_va_timer_finished(
+              timer.id, timer.name, millis());
+          if (eff.fire_alert) {
             latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
             id(wake_to_active_state).execute();
             id(play_alarm_sound).execute();
           }
-          latter_actions::check_and_emit_timer_alarm_state(millis());
   on_end:
     then:
       - wait_until:
@@ -903,10 +853,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            static std::string prev_s_artist = "";
-            if (x != prev_s_artist) {
-              prev_s_artist = x;
-              const auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_artist) {
+              rs.music.last_sendspin_artist = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
                 if (!x.empty() &&
@@ -929,13 +878,12 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            static std::string prev_s_title = "";
-            if (x != prev_s_title) {
-              prev_s_title = x;
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_title) {
+              rs.music.last_sendspin_title = x;
               if (!x.empty()) {
                 latter_ui::music_queue_cleared() = false;
               }
-              const auto &rs = latter_ui::runtime_state();
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
                 if (!x.empty() &&
@@ -958,10 +906,9 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            static std::string prev_s_album = "";
-            if (x != prev_s_album) {
-              prev_s_album = x;
-              const auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_album) {
+              rs.music.last_sendspin_album = x;
               const auto &ms = latter_ui::media_state();
               if (ms.is_local) {
                 if (!x.empty() &&

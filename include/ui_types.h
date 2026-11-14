@@ -591,11 +591,6 @@ inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
   return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 
-inline uint32_t &menu_scroll_start_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
-
 inline int menu_scroll_shift(int span_px) {
   const uint32_t elapsed = esphome::millis() - menu_scroll_start_ms();
   const float e = ease_out_cubic(static_cast<float>(elapsed) / static_cast<float>(kMotionMs));
@@ -655,44 +650,7 @@ inline void format_time_hhmm(int hour, int minute, bool is_24h, char *out_buf,
   }
 }
 
-// Shared UI navigation sub-view singletons read by can_go_home() and dirty-band sub_id.
-inline bool &tools_direct_home() {
-  static bool v = false;
-  return v;
-}
-
-inline int &timer_view_slot() {
-  return runtime_state().timers.view_slot;
-}
-
-inline int &cal_detail_mode() {
-  static int m = 0;
-  return m;
-}
-
-inline bool &cal_quick_add_open() {
-  static bool o = false;
-  return o;
-}
-
-inline bool &cam_quick_reply_open() {
-  static bool o = false;
-  return o;
-}
-
-inline int &home_dock_page() {
-  static int p = 0;
-  return p;
-}
-
-inline uint32_t &last_music_page_req_ms() {
-  return runtime_state().last_music_page_req_ms;
-}
-
-inline uint32_t &music_scroll_tap_lockout_until_ms() {
-  static uint32_t ts = 0;
-  return ts;
-}
+// (Shared UI navigation sub-view accessors live in include/latter_state.h)
 
 inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
                                  int sys_mode, int weather_sub, int area_sub, int rem_sub, int tools_sub,

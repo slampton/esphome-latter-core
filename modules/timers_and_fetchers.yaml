@@ -56,52 +56,30 @@ interval:
               []() { id(fetch_wallpaper_debounced).execute(); });
 
           // ------------------------------------------------------------------
-          // 3-SLOT COUNTDOWN TIMER TICK & ALERT TRIGGER
+          // 3-SLOT COUNTDOWN TIMER TICK & UNATTENDED RING AUTO-SILENCE
           // ------------------------------------------------------------------
-          if (rs.timers.running) {
-            uint32_t now_ms = millis();
-            auto *slots = latter_ui::timer_slots();
-            bool any_expired = false;
-            std::string exp_name = "";
-            bool sec_changed = false;
-
-            for (int i = 0; i < 3; i++) {
-              if (!slots[i].running) continue;
-              if (now_ms >= slots[i].target_ms) {
-                slots[i].running = false;
-                slots[i].paused = false;
-                slots[i].remaining_sec = slots[i].duration_sec; // Preserve duration for 1-tap reuse!
-                exp_name = slots[i].name;
-                any_expired = true;
-              } else {
-                int rem = static_cast<int>((slots[i].target_ms - now_ms + 999U) / 1000U);
-                if (rem != slots[i].remaining_sec) {
-                  slots[i].remaining_sec = rem;
-                  sec_changed = true;
-                }
-              }
-            }
-
-            latter_ui::sync_multi_timer_state();
-
-            if (any_expired) {
+          {
+            const uint32_t now_t_ms = millis();
+            const auto t_eff = latter_ui::timer_alarm_controller().tick_timers_250ms(now_t_ms);
+            if (t_eff.any_expired) {
               id(preempt_va_for_alert).execute();
-              if (rs.nav.home_subpage == 2) {
-                rs.nav.home_subpage = 0;
-              }
-              rs.timers.va_timer_name = exp_name;
-              rs.timers.ringing = true;
               latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
               id(wake_to_active_state).execute();
               id(play_alarm_sound).execute();
               latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
-            } else if (sec_changed) {
+            } else if (t_eff.auto_silenced) {
+              id(stop_alarm_sound).execute();
+              id(sync_display_brightness).execute();
+              latter_ui::schedule_disp_update(&id(disp1));
+              latter_ui::display_lifecycle().note_activity(now_t_ms);
+              ESP_LOGI("timer", "Unattended alert auto-silenced after 5 min.");
+            } else if (t_eff.sec_changed) {
               if (!rs.voice.active && rs.voice.status_text.empty() && rs.nav.display_power_state == 0) {
                 if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) {
                   latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::scale_y(84), latter_ui::layout().back_y - 8);
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
-                  if (now_ms - latter_ui::last_disp_update_ms() >= 200U) {
+                  if (now_t_ms - latter_ui::last_disp_update_ms() >= 200U) {
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 2) {
@@ -202,76 +180,37 @@ script:
   - id: alarm_engine_tick
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          auto &prefs = latter_ui::persisted_prefs();
           auto now = id(ha_time).now();
           if (!now.is_valid()) {
             now = id(sntp_time).now();
           }
-          if (!now.is_valid()) return;
-
-          uint32_t now_epoch = now.timestamp;
-
-          // 1. Snooze expiration check
-          if (rs.alarms.snooze_until > 0 && now_epoch >= rs.alarms.snooze_until) {
+          const bool t_valid = now.is_valid();
+          const uint32_t now_ms = millis();
+          const auto a_eff = latter_ui::timer_alarm_controller().tick_alarms_1s(
+              t_valid,
+              t_valid ? static_cast<uint32_t>(now.timestamp) : 0U,
+              t_valid ? static_cast<int>(now.hour) : -1,
+              t_valid ? static_cast<int>(now.minute) : -1,
+              t_valid ? static_cast<int>(now.second) : -1,
+              t_valid ? static_cast<int>(now.day_of_week) : 0,
+              now_ms);
+          if (a_eff.snooze_fired || a_eff.triggered_idx > 0) {
             id(preempt_va_for_alert).execute();
-            if (rs.nav.home_subpage == 2) {
-              rs.nav.home_subpage = 0;
-            }
-            rs.alarms.snooze_until = 0;
-            rs.alarms.ringing = true;
             latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
             id(wake_to_active_state).execute();
             id(play_alarm_sound).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            ESP_LOGI("alarm", "Snoozed alarm firing now!");
-            return;
-          }
-
-          // 2. Edge-triggered scheduled alarms check (45s window within target minute)
-          const uint32_t em = static_cast<uint32_t>(now.timestamp / 60);
-          if (now.second < 45 && em != rs.alarms.last_fired_epoch_min) {
-            auto check_alarm = [&](const latter_ui::PersistedAlarmPref &ap) -> bool {
-              if (!ap.enabled) return false;
-              if (now.hour != static_cast<int>(ap.hour) || now.minute != static_cast<int>(ap.minute)) return false;
-              // Recurrence: 0=Daily, 1=Weekdays, 2=Weekends, 3=Once
-              // ESPHome ESPTime::day_of_week: 1=SUN, 2=MON, ..., 6=FRI, 7=SAT
-              if (ap.recurrence == 1) {
-                if (now.day_of_week < 2 || now.day_of_week > 6) return false;
-              } else if (ap.recurrence == 2) {
-                if (now.day_of_week != 1 && now.day_of_week != 7) return false;
-              }
-              return true;
-            };
-
-            int trig_idx = 0;
-            bool need_save = false;
-            for (int i = 0; i < 3; i++) {
-              if (check_alarm(prefs.alarms[i])) {
-                trig_idx = i + 1;
-                if (prefs.alarms[i].recurrence == 3) {
-                  prefs.alarms[i].enabled = false;  // Once: auto-disable
-                  need_save = true;
-                }
-                break;
-              }
+            if (a_eff.snooze_fired) {
+              ESP_LOGI("alarm", "Snoozed alarm firing now!");
+            } else {
+              ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", a_eff.triggered_idx);
             }
-
-            if (trig_idx > 0) {
-              if (need_save) latter_ui::save_persisted_prefs();
-              id(preempt_va_for_alert).execute();
-              if (rs.nav.home_subpage == 2) {
-                rs.nav.home_subpage = 0;
-              }
-              rs.alarms.last_fired_epoch_min = em;
-              rs.alarms.ringing = true;
-              rs.alarms.ringing_idx = trig_idx;
-              latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
-              id(wake_to_active_state).execute();
-              id(play_alarm_sound).execute();
-              latter_ui::schedule_disp_update(&id(disp1));
-              ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", trig_idx);
-            }
+          } else if (a_eff.auto_silenced) {
+            id(stop_alarm_sound).execute();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            latter_ui::display_lifecycle().note_activity(now_ms);
+            ESP_LOGI("alarm", "Unattended alarm auto-silenced after 5 min.");
           }
 
   - id: fetch_remote_art_debounced

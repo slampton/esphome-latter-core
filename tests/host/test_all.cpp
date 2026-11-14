@@ -42,6 +42,7 @@
 #include "../../include/hal_panel_power.h"
 #include "../../include/hal_power_pm.h"
 #include "../../components/latter_core/power_pm.cpp"
+#include "../../components/latter_core/runtime_controllers.cpp"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
 #include "../../include/ui_compositor.h"
@@ -2442,6 +2443,181 @@ void test_frame_cadence_and_typed_prefs() {
   LATTER_CHECK(sys_yaml.find("rt.set_number") == std::string::npos);
 }
 
+void test_v3_domain_reducer_and_timer_alarm() {
+  using namespace latter_ui;
+
+  reset_runtime_state();
+
+  // 1. Zero-copy <charconv> number parsers: whitespace, '+', non-null-terminated slices & overflow
+  const char raw_packed[] = "123456789";  // Slice "123" is NOT null-terminated at index 3!
+  const std::string_view slice_123(raw_packed, 3);
+  LATTER_CHECK(v3_parse_int(slice_123, -1) == 123);
+  LATTER_CHECK(v3_parse_u32(slice_123, 0U) == 123U);
+  LATTER_CHECK(std::fabs(v3_parse_float(slice_123, -1.0f) - 123.0f) < 0.001f);
+
+  LATTER_CHECK(v3_parse_int("  -42 ", 0) == -42);
+  LATTER_CHECK(v3_parse_int("\t+85%", 0) == 85);
+  LATTER_CHECK(v3_parse_int("+-5", 99) == 99);
+  LATTER_CHECK(v3_parse_int("99999999999999999999", -7) == -7);  // Overflow returns fallback
+  LATTER_CHECK(v3_parse_u32(" -1", 55U) == 55U);                  // Negative rejected for u32
+  LATTER_CHECK(v3_parse_u32(" +2026111306", 0U) == 2026111306U);
+  LATTER_CHECK(v3_parse_u32("99999999999999999999", 77U) == 77U);
+  LATTER_CHECK(std::fabs(v3_parse_float("  +72.5", 0.0f) - 72.5f) < 0.001f);
+  LATTER_CHECK(std::fabs(v3_parse_float("-14.25", 0.0f) - (-14.25f)) < 0.001f);
+  LATTER_CHECK(std::isnan(v3_parse_float("invalid")));
+
+  // 2. V3DomainReducer: area_context, active_media, remote_config, weather_forecast
+  auto &rt = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs.color_profile = 4;  // Custom
+
+  auto &ac = area_ctx_state();
+  ac.epoch = 1U;
+  ac.rev = 1U;
+  ac.area_id = "kitchen";
+  ac.area_name = "Kitchen";
+  ac.area_icon = "kitchen";
+  ac.site_id = "oakland";
+  ac.ble_closest_proxy = "proxy_kitchen";
+  ac.available_domains = "light,climate";
+  ac.dock_apps = "music,area,weather,tools";
+  ac.theme_color_hex = "#33AAFF";
+  ac.wallpaper_url = "/api/latter/wp.jpg";
+  ac.alert_id = 0;  // Seed initial alert_id
+  rt.nav.gui_page = 6;
+  rt.nav.area_subpage = 1;  // Unassigned picker should snap to entities overview on assignment!
+
+  V3ReduceContext rctx{};
+  rctx.now_ms = 5000U;
+  rctx.friendly_name = "Kitchen Display";
+  auto eff = v3_domain_reducer().reduce("area_context", "", rctx);
+  LATTER_CHECK(eff.area_changed);
+  LATTER_CHECK(eff.mark_dirty_full);
+  LATTER_CHECK(eff.fetch_area_browse);
+  LATTER_CHECK(eff.apply_theme_preset);
+  LATTER_CHECK(eff.fetch_wallpaper);
+  LATTER_CHECK(!eff.alert_triggered);
+  LATTER_CHECK(rt.area.active_area_id == "kitchen");
+  LATTER_CHECK(rt.nav.area_subpage == 0);
+  LATTER_CHECK(rt.area.domain_filter == "light");
+  LATTER_CHECK(latter_site_id() == "oakland");
+  LATTER_CHECK(latter_dock_order_csv() == "music,area,weather,tools");
+  LATTER_CHECK(prefs.custom_theme_rgb == 0x33AAFFU);
+
+  // Critical alert push on subsequent rev triggers banner + critical chime SFX 9
+  ac.alert_id = 1;
+  ac.alert_title = "Smoke Detected";
+  ac.alert_message = "Check kitchen";
+  ac.alert_priority = "critical";
+  ac.alert_chime = true;
+  ac.wallpaper_url.clear();
+  rt.music.loaded_wallpaper_url = "/api/latter/wp.jpg";
+  eff = v3_domain_reducer().reduce("area_context", ac.dock_apps, rctx);
+  LATTER_CHECK(eff.alert_triggered);
+  LATTER_CHECK(eff.alert_sfx_id == 9);
+  LATTER_CHECK(rt.alert.is_critical());
+  LATTER_CHECK(eff.stop_wallpaper_fetch && eff.release_wallpaper_art);
+
+  // active_media: Title-Case entity fallback, 3s local volume lockout, and diffing
+  rt.nav.gui_page = 2;
+  auto &ms = media_state();
+  ms.state = "playing";
+  ms.title = "So What";
+  ms.artist = "Miles Davis";
+  ms.active_speaker = "media_player.living_room_sonos";
+  ms.speaker_name.clear();
+  ms.is_local = false;
+  ms.has_volume = true;
+  ms.volume = 0.65f;
+  ms.art_url = "/api/latter/art1.jpg";
+  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  LATTER_CHECK(rt.music.active_speaker_name == "Living Room Sonos");
+  LATTER_CHECK(remote_vol_pct() == 65);
+  LATTER_CHECK(eff.fetch_remote_art);
+  LATTER_CHECK(eff.throttled_disp_update);
+
+  // Local tap locks out remote vol overwrite; once synced, an identical push produces no redundant redraw
+  rt.music.loaded_art_url = ms.art_url;
+  last_local_vol_tap_ms() = 5200U;
+  remote_vol_pct() = 80;
+  ms.volume = 0.40f;
+  ms.position = 0.5f;
+  rctx.now_ms = 5500U;
+  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  LATTER_CHECK(remote_vol_pct() == 80);  // Local 3s tap lockout preserved 80%
+
+  ms.position = 1.0f;  // Matches 0.5s elapsed interpolation (no jump)
+  rctx.now_ms = 6000U;
+  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  LATTER_CHECK(!eff.throttled_disp_update);
+
+  // Position jump > 2.5s triggers throttled_disp_update
+  ms.position = 45.0f;
+  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  LATTER_CHECK(eff.throttled_disp_update);
+
+  // weather_forecast sun transition triggers brightness sync once
+  weather_state().sun_state = "below_horizon";
+  eff = v3_domain_reducer().reduce("weather_forecast", "", rctx);
+  LATTER_CHECK(eff.sync_display_brightness && eff.weather_sim_dirty);
+  eff = v3_domain_reducer().reduce("weather_forecast", "", rctx);
+  LATTER_CHECK(!eff.sync_display_brightness);
+
+  // 3. TimerAlarmController: multi-timer expiry (preserving duration_sec), VA timers, alarms & 5-min auto-silence
+  reset_runtime_state();
+  auto &tc = timer_alarm_controller();
+
+  // Start VA timer -> updates slot & clears ringing
+  auto va_eff = tc.on_va_timer_started("t1", "Pasta", 180, 2, true, 1000U);
+  LATTER_CHECK(rt.timers.running);
+  LATTER_CHECK(timer_slots()[0].duration_sec == 180);
+  LATTER_CHECK(va_eff.schedule_disp);
+
+  // Tick past expiration -> fires alert AND preserves duration_sec=180 for 1-tap reuse!
+  auto t_eff = tc.tick_timers_250ms(3100U);
+  LATTER_CHECK(t_eff.any_expired);
+  LATTER_CHECK(rt.timers.ringing);
+  LATTER_CHECK(!timer_slots()[0].running);
+  LATTER_CHECK(timer_slots()[0].remaining_sec == 180);
+
+  // Unattended timer ringing auto-silences at 5 minutes (300,000 ms)
+  t_eff = tc.tick_timers_250ms(303099U);
+  LATTER_CHECK(!t_eff.auto_silenced && rt.timers.ringing);
+  t_eff = tc.tick_timers_250ms(303100U);
+  LATTER_CHECK(t_eff.auto_silenced && !rt.timers.ringing);
+
+  // Scheduled "Once" alarm (recurrence=3) fires, auto-disables, snoozes 5 min, and re-fires
+  prefs.alarms[0].enabled = true;
+  prefs.alarms[0].hour = 7;
+  prefs.alarms[0].minute = 30;
+  prefs.alarms[0].recurrence = 3;  // Once
+  auto a_eff = tc.tick_alarms_1s(true, 1700004600U, 7, 30, 5, 2 /*Mon*/, 10000U);
+  LATTER_CHECK(a_eff.triggered_idx == 1);
+  LATTER_CHECK(a_eff.prefs_saved);
+  LATTER_CHECK(!prefs.alarms[0].enabled);
+  LATTER_CHECK(rt.alarms.ringing);
+
+  // Crown snooze arms +300s epoch and stops ringing
+  LATTER_CHECK(tc.snooze_active_alarm(true, 1700004600U, 12000U));
+  LATTER_CHECK(!rt.alarms.ringing);
+  LATTER_CHECK(rt.alarms.snooze_until == 1700004900U);
+
+  // Snooze expires at +300s -> re-fires alarm, then auto-silences after 5 min unattended
+  a_eff = tc.tick_alarms_1s(true, 1700004900U, 7, 35, 0, 2, 310000U);
+  LATTER_CHECK(a_eff.snooze_fired && rt.alarms.ringing);
+  a_eff = tc.tick_alarms_1s(true, 1700005200U, 7, 40, 0, 2, 610000U);
+  LATTER_CHECK(a_eff.auto_silenced && !rt.alarms.ringing);
+
+  // 4. reset_runtime_state() resets all consolidated singletons cleanly
+  remote_vol_pct() = 12;
+  latter_site_id() = "mutated_site";
+  home_dock_page() = 3;
+  reset_runtime_state();
+  LATTER_CHECK(remote_vol_pct() == 70);
+  LATTER_CHECK(latter_site_id() == "primary");
+  LATTER_CHECK(home_dock_page() == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -2459,10 +2635,10 @@ int main() {
   test_display_lifecycle_controller();
   test_audio_path_and_intercom_arbitrator();
   test_frame_cadence_and_typed_prefs();
+  test_v3_domain_reducer_and_timer_alarm();
   std::printf(
-      "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "
-      "Phase 4 AudioSessionController + 5-min pause fade-out, PanelDcs timeout isolation + 600ms wake grace, "
-      "HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
+      "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
+      "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "
+      "7-panel UiLayout/HitTable/DirtyBand + hal_battery verified.\n");
   return 0;
 }
