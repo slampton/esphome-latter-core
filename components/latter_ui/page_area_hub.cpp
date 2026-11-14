@@ -609,7 +609,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   render_area_bottom_dock(area_domain_filter);
 }
 
-void render_whole_home_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
@@ -648,13 +648,13 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
 
   int active_slot = -1;
   for (int i = 0; i < tab_count; i++) {
-    if (tabs[i] == whole_home_tab()) {
+    if (tabs[i] == home_hub_tab()) {
       active_slot = i;
       break;
     }
   }
   if (active_slot < 0) {
-    whole_home_tab() = tabs[0];
+    home_hub_tab() = tabs[0];
     active_slot = 0;
   }
   const int tab = tabs[active_slot];
@@ -709,13 +709,13 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
   } else if (tab == 1) {
     render_page_header(it, cx, "THERMOSTAT", font_small, theme_primary);
     char sub_t[48];
-    const std::string &m = sim_thermostat_mode();
+    const std::string &m = home_hub_thermostat_mode();
     const char *m_lbl = m.empty() ? "Mode: Unknown"
                       : (m == "heat") ? "Heating"
                       : (m == "cool") ? "Cooling"
                       : (m == "off")  ? "System Off"
                       : "Auto Climate";
-    const float cur_f = whole_home_state().thermostat_current_f;
+    const float cur_f = home_hub_state().thermostat_current_f;
     if (!std::isnan(cur_f) && cur_f > 20.0f) {
       std::snprintf(sub_t, sizeof(sub_t), "%s  •  Indoor %.0f°", m_lbl, cur_f);
     } else {
@@ -751,8 +751,8 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                             kHitTap | kHitFocusCircle, 0, scale_s(14));
 
     char t_val[16];
-    if (sim_thermostat_target_f() > 0) {
-      std::snprintf(t_val, sizeof(t_val), "%d°", sim_thermostat_target_f());
+    if (home_hub_thermostat_target_f() > 0) {
+      std::snprintf(t_val, sizeof(t_val), "%d°", home_hub_thermostat_target_f());
     } else {
       std::snprintf(t_val, sizeof(t_val), "%s°", kUnknownGlyph);
     }
@@ -785,7 +785,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const int lock_y   = (show_garage && show_lock) ? scale_y(256) : scale_y(206);
 
     if (show_garage) {
-      const GarageState gs = wh_garage_state();
+      const GarageState gs = home_hub_garage_state();
       const Color g_brd = (gs == GarageState::OPEN) ? col_gold
                         : ((gs == GarageState::CLOSED) ? col_green : card_brd_off);
       const char *g_lbl = (gs == GarageState::OPEN)   ? "Garage: Open (Close)"
@@ -799,7 +799,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     }
 
     if (show_lock) {
-      const LockState ls = wh_lock_state();
+      const LockState ls = home_hub_lock_state();
       const Color l_brd = (ls == LockState::LOCKED) ? col_green
                         : ((ls == LockState::UNLOCKED) ? col_red : card_brd_off);
       const char *l_lbl = (ls == LockState::LOCKED)   ? "Front Door: Locked"
@@ -817,13 +817,13 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
 
   } else {
     render_page_header(it, cx, "ROBOT VACUUM", font_small, theme_primary);
-    const std::string v_st = sim_vacuum_state().empty() ? "Status: Unknown" : ("Status: " + sim_vacuum_state());
+    const std::string v_st = home_hub_vacuum_state().empty() ? "Status: Unknown" : ("Status: " + home_hub_vacuum_state());
     render_sub_header(it, cx, is_fb ? area_action_feedback.c_str() : v_st.c_str(),
                       font_small, is_fb ? theme_secondary : col_slate);
 
-    const bool is_cln = (sim_vacuum_state() == "Cleaning");
-    const bool is_psd = (sim_vacuum_state() == "Paused");
-    const bool is_dck = (sim_vacuum_state() == "Docked");
+    const bool is_cln = (home_hub_vacuum_state() == "Cleaning");
+    const bool is_psd = (home_hub_vacuum_state() == "Paused");
+    const bool is_dck = (home_hub_vacuum_state() == "Docked");
 
     render_modern_card(it, cx, layout().area_card3_y(0), 296, 58, 14,
                        glass_bg,
@@ -850,30 +850,30 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 2);
   }
 
-  // Bottom Whole-Home In-App Segmented Mode Bar at layout().app_dock_y
-  int WH_XS[4] = {0, 0, 0, 0};
-  bool wh_dl = false, wh_dr = false;
-  get_mode_bar_window_xs(tab_count, 0, cx, WH_XS, wh_dl, wh_dr);
-  const int WH_Y = layout().app_dock_y;
-  render_in_app_mode_bar_track(it, cx, WH_XS, tab_count, active_slot, false, false,
+  // Bottom Home Hub In-App Segmented Mode Bar at layout().app_dock_y
+  int HH_XS[4] = {0, 0, 0, 0};
+  bool hh_dl = false, hh_dr = false;
+  get_mode_bar_window_xs(tab_count, 0, cx, HH_XS, hh_dl, hh_dr);
+  const int HH_Y = layout().app_dock_y;
+  render_in_app_mode_bar_track(it, cx, HH_XS, tab_count, active_slot, false, false,
                                tab_count, active_slot, theme_primary, col_white);
-  const bool wh_has_bd = backdrop_active();
-  Color wh_inactive_cut{};
-  bool has_wh_inactive_cut = false;
+  const bool hh_has_bd = backdrop_active();
+  Color hh_inactive_cut{};
+  bool has_hh_inactive_cut = false;
   for (int i = 0; i < tab_count; i++) {
-    const int bx = WH_XS[i];
+    const int bx = HH_XS[i];
     const int cat_id = tabs[i];
     const bool is_act = (i == active_slot);
     const Color fg_c = is_act ? theme_primary : col_white;
     Color cut_c{};
-    if (wh_has_bd || is_act) {
-      cut_c = sample_glass_surface_color(bx - 4, WH_Y - 4, 9, 9);
+    if (hh_has_bd || is_act) {
+      cut_c = sample_glass_surface_color(bx - 4, HH_Y - 4, 9, 9);
     } else {
-      if (!has_wh_inactive_cut) {
-        wh_inactive_cut = sample_glass_surface_color(bx - 4, WH_Y - 4, 9, 9);
-        has_wh_inactive_cut = true;
+      if (!has_hh_inactive_cut) {
+        hh_inactive_cut = sample_glass_surface_color(bx - 4, HH_Y - 4, 9, 9);
+        has_hh_inactive_cut = true;
       }
-      cut_c = wh_inactive_cut;
+      cut_c = hh_inactive_cut;
     }
 
     if (cat_id == 0) {
@@ -883,7 +883,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
       };
       for (int dy = -15; dy <= 15; dy++) {
         const int hw = SH_HW[dy + 15];
-        fast_hline(it, bx - hw, WH_Y + dy, 2 * hw + 1, fg_c);
+        fast_hline(it, bx - hw, HH_Y + dy, 2 * hw + 1, fg_c);
       }
       for (int dy = -8; dy <= 7; dy++) {
         for (int dx = -8; dx <= 8; dx++) {
@@ -898,47 +898,47 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
             if (ax <= 5 && !(ax <= 1 && dy >= 3)) carve = true;
           }
           if (carve) {
-            fast_pixel(it, bx + dx, WH_Y + dy, cut_c);
+            fast_pixel(it, bx + dx, HH_Y + dy, cut_c);
           }
         }
       }
     } else if (cat_id == 1) {
       const int tx = bx - 2;
-      fast_line(it, tx - 3, WH_Y - 13, tx + 3, WH_Y - 13, fg_c);
-      fast_line(it, tx - 2, WH_Y - 14, tx + 2, WH_Y - 14, fg_c);
-      fast_line(it, tx - 3, WH_Y - 13, tx - 3, WH_Y + 3,  fg_c);
-      fast_line(it, tx - 2, WH_Y - 13, tx - 2, WH_Y + 3,  fg_c);
-      fast_line(it, tx + 3, WH_Y - 13, tx + 3, WH_Y + 3,  fg_c);
-      fast_line(it, tx + 2, WH_Y - 13, tx + 2, WH_Y + 3,  fg_c);
-      fast_filled_circle(it, tx, WH_Y + 8, 6, fg_c);
-      fast_filled_circle(it, tx, WH_Y + 8, 4, cut_c);
-      fast_filled_circle(it, tx, WH_Y + 8, 2, fg_c);
-      fill_rect_row_major(it, tx - 1, WH_Y - 5, 3, 12, fg_c);
-      fill_rect_row_major(it, tx + 6, WH_Y - 11, 5, 2, fg_c);
-      fill_rect_row_major(it, tx + 6, WH_Y - 6,  4, 2, fg_c);
-      fill_rect_row_major(it, tx + 6, WH_Y - 1,  5, 2, fg_c);
+      fast_line(it, tx - 3, HH_Y - 13, tx + 3, HH_Y - 13, fg_c);
+      fast_line(it, tx - 2, HH_Y - 14, tx + 2, HH_Y - 14, fg_c);
+      fast_line(it, tx - 3, HH_Y - 13, tx - 3, HH_Y + 3,  fg_c);
+      fast_line(it, tx - 2, HH_Y - 13, tx - 2, HH_Y + 3,  fg_c);
+      fast_line(it, tx + 3, HH_Y - 13, tx + 3, HH_Y + 3,  fg_c);
+      fast_line(it, tx + 2, HH_Y - 13, tx + 2, HH_Y + 3,  fg_c);
+      fast_filled_circle(it, tx, HH_Y + 8, 6, fg_c);
+      fast_filled_circle(it, tx, HH_Y + 8, 4, cut_c);
+      fast_filled_circle(it, tx, HH_Y + 8, 2, fg_c);
+      fill_rect_row_major(it, tx - 1, HH_Y - 5, 3, 12, fg_c);
+      fill_rect_row_major(it, tx + 6, HH_Y - 11, 5, 2, fg_c);
+      fill_rect_row_major(it, tx + 6, HH_Y - 6,  4, 2, fg_c);
+      fill_rect_row_major(it, tx + 6, HH_Y - 1,  5, 2, fg_c);
     } else if (cat_id == 2) {
-      fast_filled_triangle(it, bx, WH_Y - 14, bx - 15, WH_Y - 4, bx + 15, WH_Y - 4, fg_c);
-      fill_rect_row_major(it, bx - 15, WH_Y - 4, 31, 2, fg_c);
-      fill_rect_row_major(it, bx - 12, WH_Y - 2, 25, 14, fg_c);
-      fast_hline(it, bx - 12, WH_Y - 2, 25, cut_c);
-      fill_rect_row_major(it, bx - 9, WH_Y, 19, 12, cut_c);
-      fill_rect_row_major(it, bx - 7, WH_Y + 1, 15, 3, fg_c);
-      fill_rect_row_major(it, bx - 7, WH_Y + 5, 15, 3, fg_c);
-      fill_rect_row_major(it, bx - 7, WH_Y + 9, 15, 3, fg_c);
+      fast_filled_triangle(it, bx, HH_Y - 14, bx - 15, HH_Y - 4, bx + 15, HH_Y - 4, fg_c);
+      fill_rect_row_major(it, bx - 15, HH_Y - 4, 31, 2, fg_c);
+      fill_rect_row_major(it, bx - 12, HH_Y - 2, 25, 14, fg_c);
+      fast_hline(it, bx - 12, HH_Y - 2, 25, cut_c);
+      fill_rect_row_major(it, bx - 9, HH_Y, 19, 12, cut_c);
+      fill_rect_row_major(it, bx - 7, HH_Y + 1, 15, 3, fg_c);
+      fill_rect_row_major(it, bx - 7, HH_Y + 5, 15, 3, fg_c);
+      fill_rect_row_major(it, bx - 7, HH_Y + 9, 15, 3, fg_c);
     } else {
-      fast_line(it, bx - 9, WH_Y - 9, bx - 14, WH_Y - 13, fg_c);
-      fast_line(it, bx - 8, WH_Y - 10, bx - 12, WH_Y - 14, fg_c);
-      fast_line(it, bx + 9, WH_Y - 9, bx + 14, WH_Y - 13, fg_c);
-      fast_line(it, bx + 8, WH_Y - 10, bx + 12, WH_Y - 14, fg_c);
-      fast_filled_circle(it, bx, WH_Y + 1, 12, fg_c);
-      fast_hline(it, bx - 8, WH_Y - 6, 17, cut_c);
-      fast_hline(it, bx - 9, WH_Y - 5, 19, cut_c);
-      fast_line(it, bx - 9, WH_Y - 5, bx - 11, WH_Y - 2, cut_c);
-      fast_line(it, bx + 9, WH_Y - 5, bx + 11, WH_Y - 2, cut_c);
-      fast_filled_circle(it, bx, WH_Y + 2, 5, cut_c);
-      fast_filled_circle(it, bx, WH_Y + 2, 3, fg_c);
-      fast_hline(it, bx - 3, WH_Y + 9, 7, cut_c);
+      fast_line(it, bx - 9, HH_Y - 9, bx - 14, HH_Y - 13, fg_c);
+      fast_line(it, bx - 8, HH_Y - 10, bx - 12, HH_Y - 14, fg_c);
+      fast_line(it, bx + 9, HH_Y - 9, bx + 14, HH_Y - 13, fg_c);
+      fast_line(it, bx + 8, HH_Y - 10, bx + 12, HH_Y - 14, fg_c);
+      fast_filled_circle(it, bx, HH_Y + 1, 12, fg_c);
+      fast_hline(it, bx - 8, HH_Y - 6, 17, cut_c);
+      fast_hline(it, bx - 9, HH_Y - 5, 19, cut_c);
+      fast_line(it, bx - 9, HH_Y - 5, bx - 11, HH_Y - 2, cut_c);
+      fast_line(it, bx + 9, HH_Y - 5, bx + 11, HH_Y - 2, cut_c);
+      fast_filled_circle(it, bx, HH_Y + 2, 5, cut_c);
+      fast_filled_circle(it, bx, HH_Y + 2, 3, fg_c);
+      fast_hline(it, bx - 3, HH_Y + 9, 7, cut_c);
     }
   }
 }

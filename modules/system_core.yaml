@@ -88,7 +88,9 @@ esphome:
                 latter_ui::mark_dirty_full();
               }
               if (eff.fetch_area_browse) {
-                id(fetch_area_browse).execute();
+                const auto &rs = latter_ui::runtime_state();
+                const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
+                latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
               }
               if (eff.fetch_on_demand_camera) {
                 id(fetch_on_demand_camera).execute();
@@ -180,7 +182,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111306L;
+            constexpr long LATTER_YAML_REV = 2026111401L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -253,7 +255,7 @@ api:
         - delay: 100ms
         - button.press: internal_factory_reset
 
-    - action: ui_input
+    - action: latter_ui_input
       variables:
         action: string
         delta: int
@@ -270,9 +272,9 @@ api:
       then:
         - lambda: 'id(ble_ctrl).set_uuid_hex(std::string_view(uuid.c_str(), uuid.size()));'
 
-    - action: set_browse_slots
+    - action: latter_set_slots
       variables:
-        contract: int
+        is_area_slots: bool
         req_id: int
         mode: string
         page: int
@@ -281,30 +283,13 @@ api:
       then:
         - lambda: |-
             if (latter_ui::apply_slots_action(
-                    contract, req_id, std::string_view(mode.c_str(), mode.size()),
+                    req_id, std::string_view(mode.c_str(), mode.size()),
                     page, total_pages, std::string_view(slots.c_str(), slots.size()),
-                    millis(), false)) {
+                    millis(), is_area_slots)) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
 
-    - action: set_area_slots
-      variables:
-        contract: int
-        req_id: int
-        mode: string
-        page: int
-        total_pages: int
-        slots: string
-      then:
-        - lambda: |-
-            if (latter_ui::apply_slots_action(
-                    contract, req_id, std::string_view(mode.c_str(), mode.size()),
-                    page, total_pages, std::string_view(slots.c_str(), slots.size()),
-                    millis(), true)) {
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
-
-    - action: show_notification
+    - action: latter_show_notification
       variables:
         title: string
         message: string
@@ -722,7 +707,6 @@ script:
                   latter_ui::release_art(id(remote_album_art));
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
-                case C::REQUEST_DOCK_APPS: id(request_dock_apps).execute(); break;
                 case C::TRIGGER_SCREENSAVER_NOW: id(trigger_screensaver_now).execute(); break;
                 case C::START_HIBERNATION_COUNTDOWN: id(start_hibernation_countdown).execute(); break;
                 case C::TURN_SCREEN_OFF: id(turn_screen_off).execute(); break;
@@ -730,19 +714,8 @@ script:
                 case C::CHECK_FIRMWARE_UPDATE: id(check_firmware_update).execute(); break;
                 case C::TRIGGER_FIRMWARE_UPDATE: id(trigger_firmware_update).execute(); break;
                 case C::APPLY_THEME_PRESET: id(apply_theme_preset).execute(); break;
-                case C::SAVE_CUSTOM_COLOR_TO_LATTER: id(save_custom_color_to_latter).execute(); break;
                 case C::MENU_SCROLL_TRANSITION: id(menu_scroll_transition).execute(); break;
-                case C::FETCH_AREA_BROWSE: id(fetch_area_browse).execute(); break;
-                case C::FETCH_AREA_LIST_BROWSE: id(fetch_area_list_browse).execute(); break;
-                case C::SELECT_ACTIVE_AREA_LATTER: id(select_active_area_latter).execute(); break;
-                case C::EXECUTE_AREA_ACTION: id(execute_area_action).execute(); break;
-                case C::EXECUTE_ALARM_ACTION: id(execute_alarm_action).execute(); break;
-                case C::REMOTE_SEND_KEY: id(remote_send_key).execute(arg0, arg1); break;
-                case C::REMOTE_SELECT_SLOT_LATTER: id(remote_select_slot_latter).execute(arg0); break;
-                case C::FETCH_CALENDAR_BROWSE: id(fetch_calendar_browse).execute(); break;
-                case C::CREATE_CALENDAR_QUICK_EVENT: id(create_calendar_quick_event).execute(); break;
                 case C::FETCH_CALENDAR_MAP_SNAPSHOT: id(fetch_calendar_map_snapshot).execute(); break;
-                case C::SEND_INTERCOM_BROADCAST: id(send_intercom_broadcast).execute(); break;
                 case C::FETCH_ON_DEMAND_CAMERA: id(fetch_on_demand_camera).execute(); break;
                 case C::RELEASE_CAMERA_ART: latter_ui::release_art(id(camera_snapshot_art)); break;
                 case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
@@ -924,13 +897,6 @@ script:
           if (latter_ui::runtime_state().nav.display_power_state == 0) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
-
-  - id: save_custom_color_to_latter
-    mode: restart
-    then:
-      - lambda: |-
-          latter_ui::save_persisted_prefs();
-          latter_actions::emit_save_custom_color_rgb(latter_ui::persisted_prefs().custom_theme_rgb);
 
   - id: sync_display_brightness
     mode: restart

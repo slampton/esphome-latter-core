@@ -196,9 +196,11 @@ void test_protocol_v3_and_rpc() {
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
 
   media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "100";
+  media_t[static_cast<size_t>(latter_ui::MediaField::POSITION_UPDATED_AT)] = "1700000000";
   LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
   LATTER_CHECK(latter_ui::media_state().has_volume);
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
+  LATTER_CHECK(latter_ui::media_state().position_updated_at == 1700000000U);
 
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";
@@ -222,7 +224,6 @@ void test_protocol_v3_and_rpc() {
   std::vector<std::string> future_cal(static_cast<size_t>(latter_ui::CalendarField::COUNT) + 3, "future_ext");
   future_cal[static_cast<size_t>(latter_ui::CalendarField::SUMMARY)] = "Today|09:00|Standup";
   future_cal[static_cast<size_t>(latter_ui::CalendarField::EVENT_COUNT)] = "1";
-  future_cal[static_cast<size_t>(latter_ui::CalendarField::NEXT_EVENT)] = "Standup";
   LATTER_CHECK(latter_ui::parse_v3_calendar_payload(build_v3_packet(10, 1, future_cal)));
   LATTER_CHECK(latter_ui::calendar_state().count == 1);
   LATTER_CHECK(latter_ui::v3_mismatch_warn_count() == 2);
@@ -798,24 +799,55 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 4U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 45U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 51U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
 
   // Weather dock token + 10-slot dock array capacity (8 user tokens + Settings)
   LATTER_CHECK(latter_ui::kMaxDockApps == 10);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("weather") == 5);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("camera") == 12);
+  LATTER_CHECK(latter_ui::dock_app_id_for_token("cameras") == 12);
+  LATTER_CHECK(latter_ui::dock_app_id_for_token("home_hub") == 9);
+  LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
+  LATTER_CHECK(latter_ui::PageId::CAMERAS == 12);
+
+  // Start screen cameras direct resolution
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(12) == 12);
+  latter_ui::PersistedDevicePrefs cam_prefs{};
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Cameras"));
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 12);
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Tools"));
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 8);
+
+  // Perimeter security policy - sensitive action gate
+  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on", 100) == true);
+  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on") == true);
+  const std::string retired_target = std::string("whole") + "_home.garage";
+  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl(retired_target, "turn_on", 100) == false);
+  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("lock", "open") == true);
+  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("cover.garage_door", "open") == true);
+  LATTER_CHECK(!latter_ui::is_sensitive_perimeter_action_impl("light.porch", "turn_on"));
+
+  // Home Hub state & tab
+  latter_ui::home_hub_tab() = 2;
+  LATTER_CHECK(latter_ui::home_hub_tab() == 2);
+  latter_ui::home_hub_state().thermostat_mode = "heat";
+  LATTER_CHECK(latter_ui::home_hub_state().thermostat_mode == "heat");
+
+  // Sentinel purge verification
+  LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
+  LATTER_CHECK(!latter_ui::is_configured_remote_slot(""));
 
   // Ordered Home Hub category CSV parser & collect_home_hub_tabs
-  int wh_tabs[4] = {-1, -1, -1, -1};
+  int hh_tabs[4] = {-1, -1, -1, -1};
   latter_ui::AreaContextState uninit_ac{};
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 4);
-  LATTER_CHECK(wh_tabs[0] == 0 && wh_tabs[1] == 1 && wh_tabs[2] == 2 && wh_tabs[3] == 3);
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 4);
+  LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 && hh_tabs[3] == 3);
   uninit_ac.epoch = 10U;
   uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum";
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 2);
-  LATTER_CHECK(wh_tabs[0] == 3 && wh_tabs[1] == 1);
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 2);
+  LATTER_CHECK(hh_tabs[0] == 3 && hh_tabs[1] == 1);
   uninit_ac.home_categories.clear();
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(wh_tabs, uninit_ac) == 0);
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
 
   // Manifest slot capacities (LATTER_SLOT_COUNT=5, LATTER_CARD_SLOT_COUNT=3) + compact <=230B state guard
   const std::string full_manifest = latter_ui::build_hardware_manifest_json();
@@ -984,7 +1016,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111306L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111401L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -1003,7 +1035,6 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   latter_ui::area_ctx_state().epoch = 42U;
   latter_ui::area_ctx_state().rev = 9U;
   latter_ui::area_ctx_state().dock_apps = "clock,music,weather,area";
-  latter_ui::area_ctx_state().theme_color_hex = "#33AA77";
   latter_ui::area_ctx_state().area_name = "Primary Suite";
   latter_ui::weather_state().epoch = 42U;
   latter_ui::weather_state().rev = 5U;
@@ -1023,8 +1054,6 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
   LATTER_CHECK(latter_ui::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
   LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,music,weather,area");
-  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#33AA77");
-  LATTER_CHECK(latter_ui::persisted_prefs().custom_theme_rgb == 0x33AA77U);
   LATTER_CHECK(!latter_ui::device_prefs_state().nvs_save_pending);
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Primary Suite");
   LATTER_CHECK(latter_ui::runtime_state().area.active_area_name == "Primary Suite");
@@ -1039,14 +1068,12 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   // Calling load_hibernate_snapshot_if_cold() when live state is already populated must NOT clobber live state
   latter_ui::area_ctx_state().dock_apps = "clock,tools";
   latter_ui::area_ctx_state().area_name = "Office";
-  latter_ui::area_ctx_state().theme_color_hex = "#FF5500";
   latter_ui::weather_state().condition = "sunny";
   latter_ui::weather_state().temperature = 74.0f;
   latter_ui::weather_state().sun_state = "above_horizon";
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
   LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,tools");
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Office");
-  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#FF5500");
   LATTER_CHECK(latter_ui::weather_state().condition == "sunny");
   LATTER_CHECK(std::fabs(latter_ui::weather_state().temperature - 74.0f) < 0.01f);
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
@@ -1060,12 +1087,12 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::DOCK_APPS)] = "clock,calendar";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::THEME_COLOR_HEX)] = "#1188CC";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::COVERS_OPEN)] = "3";
   LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
   LATTER_CHECK(latter_ui::area_ctx_state().epoch == 1U && latter_ui::area_ctx_state().rev == 1U);
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Kitchen");
   LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,calendar");
-  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#1188CC");
+  LATTER_CHECK(latter_ui::area_ctx_state().covers_open == 3);
 
   std::vector<std::string> wx_tok(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   wx_tok[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "rainy";
@@ -1535,7 +1562,7 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(resolve_backdrop_mode(1, 1, true, false, true) == BackdropMode::CustomWallpaper);
   LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, true) == BackdropMode::CustomWallpaper);
   LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, false) == BackdropMode::SolidBlack);
-  // System (4), Area (6), Remote (7), Tools (8), Whole-Home (9), Music (2), Clock (0), Games (3)
+  // System (4), Area (6), Remote (7), Tools (8), Home Hub (9), Music (2), Clock (0), Games (3)
   LATTER_CHECK(resolve_backdrop_mode(4, 0, true, false, true) == BackdropMode::CustomWallpaper);
   LATTER_CHECK(resolve_backdrop_mode(6, 0, true, false, true) == BackdropMode::CustomWallpaper);
   LATTER_CHECK(resolve_backdrop_mode(7, 0, true, false, true) == BackdropMode::CustomWallpaper);
@@ -2481,7 +2508,6 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ac.ble_closest_proxy = "proxy_kitchen";
   ac.available_domains = "light,climate";
   ac.dock_apps = "music,area,weather,tools";
-  ac.theme_color_hex = "#33AAFF";
   ac.wallpaper_url = "/api/latter/wp.jpg";
   ac.alert_id = 0;  // Seed initial alert_id
   rt.nav.gui_page = 6;
@@ -2494,7 +2520,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   LATTER_CHECK(eff.area_changed);
   LATTER_CHECK(eff.mark_dirty_full);
   LATTER_CHECK(eff.fetch_area_browse);
-  LATTER_CHECK(eff.apply_theme_preset);
+  LATTER_CHECK(!eff.apply_theme_preset);
   LATTER_CHECK(eff.fetch_wallpaper);
   LATTER_CHECK(!eff.alert_triggered);
   LATTER_CHECK(rt.area.active_area_id == "kitchen");
@@ -2502,7 +2528,6 @@ void test_v3_domain_reducer_and_timer_alarm() {
   LATTER_CHECK(rt.area.domain_filter == "light");
   LATTER_CHECK(latter_site_id() == "oakland");
   LATTER_CHECK(latter_dock_order_csv() == "music,area,weather,tools");
-  LATTER_CHECK(prefs.custom_theme_rgb == 0x33AAFFU);
 
   // Critical alert push on subsequent rev triggers banner + critical chime SFX 9
   ac.alert_id = 1;

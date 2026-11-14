@@ -749,12 +749,14 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
       rs.nav.update_check_state != static_cast<int>(UpdateCheckState::Idle)) {
     return true;
   }
+  if (rs.nav.gui_page == PageId::CAMERAS) {
+    return true;
+  }
   if (rs.nav.gui_page == PageId::TOOLS) {
     const int ts = rs.nav.tools_subpage;
     return (ts == ToolsSubpage::TIMERS || ts == ToolsSubpage::STOPWATCH ||
             ts == ToolsSubpage::DICE || ts == ToolsSubpage::LEVEL ||
-            ts == ToolsSubpage::COIN_FLIP || ts == ToolsSubpage::INTERCOM ||
-            ts == ToolsSubpage::CAMERAS);
+            ts == ToolsSubpage::COIN_FLIP || ts == ToolsSubpage::INTERCOM);
   }
   return false;
 }

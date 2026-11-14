@@ -99,7 +99,7 @@ interval:
           }
 
           // Camera snapshot refresh while the Camera app is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)
-          if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12 &&
+          if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 12 &&
               !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
               !rs.voice.active && rs.voice.status_text.empty()) {
             uint32_t now_cam_ms = millis();
@@ -292,7 +292,7 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              return !rs.alert.camera_url.empty() && rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12;
+              return !rs.alert.camera_url.empty() && rs.nav.gui_page == 12;
           then:
             - lambda: 'latter_ui::cam_download_in_progress() = true;'
             - online_image.set_url:
@@ -310,29 +310,13 @@ script:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
               return !rs.alert.active &&
-                     !(rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 9 || rs.nav.tools_subpage == 12));
+                     !(rs.nav.gui_page == 12 || (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 9));
           then:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
                 latter_ui::cam_download_in_progress() = false;
                 rs.alert.loaded_camera_url = "";
                 latter_ui::release_art(id(camera_snapshot_art));
-
-  - id: fetch_calendar_browse
-    mode: restart
-    then:
-      - lambda: |-
-          const int page = latter_ui::runtime_state().slot_page_for(latter_rpc::SlotChannel::CALENDAR);
-          latter_actions::emit_calendar_fetch(page);
-
-  - id: create_calendar_quick_event
-    mode: restart
-    then:
-      - lambda: |-
-          const auto &c = latter_ui::runtime_state().cal;
-          latter_actions::emit_calendar_create_event(c.quick_summary, c.quick_in_minutes, c.quick_duration_minutes);
-      - delay: 650ms
-      - script.execute: fetch_calendar_browse
 
   - id: fetch_calendar_map_snapshot
     mode: restart
@@ -353,102 +337,3 @@ script:
             - online_image.set_url:
                 id: camera_snapshot_art
                 url: !lambda 'return latter_ui::runtime_state().alert.camera_url;'
-
-  - id: send_intercom_broadcast
-    mode: restart
-    then:
-      - lambda: |-
-          latter_actions::emit_intercom_broadcast(latter_ui::runtime_state().intercom.broadcast_message);
-
-  - id: fetch_area_browse
-    mode: restart
-    then:
-      - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
-          const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-          latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
-
-  - id: fetch_area_list_browse
-    mode: restart
-    then:
-      - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
-          const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
-          latter_actions::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
-
-  - id: select_active_area_latter
-    mode: restart
-    then:
-      - lambda: |-
-          latter_actions::emit_set_active_area(latter_ui::runtime_state().area.active_area_id);
-      - script.execute: fetch_area_browse
-
-  - id: request_dock_apps
-    mode: restart
-    then:
-      - lambda: |-
-          latter_actions::emit_set_dock_apps(latter_ui::latter_dock_order_csv());
-
-  - id: execute_alarm_action
-    mode: restart
-    then:
-      - lambda: |-
-          auto &ar = latter_ui::runtime_state().area;
-          latter_actions::emit_alarm_action(ar.alarm_service, ar.target_code);
-          ar.target_code = "";
-
-  - id: execute_area_action
-    mode: restart
-    then:
-      - lambda: |-
-          auto &ar = latter_ui::runtime_state().area;
-          latter_actions::emit_area_action(
-              ar.target_entity_id, ar.target_action, ar.target_level, ar.active_area_id, ar.target_code);
-          ar.target_code = "";
-
-  - id: remote_select_slot_latter
-    mode: restart
-    parameters:
-      slot_num: int
-    then:
-      - if:
-          condition:
-            lambda: 'return !latter_ui::remote_state().slots_summary.empty();'
-          then:
-            - lambda: |-
-                latter_actions::emit_remote_action(slot_num, "select_slot");
-
-  - id: remote_send_key
-    mode: restart
-    parameters:
-      key_idx: int
-      target_slot: int
-    then:
-      - delay: 0ms
-      - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          int res_slot = (target_slot == -1) ? latter_ui::resolve_active_remote_slot(0)
-                                             : latter_ui::resolve_active_remote_slot(target_slot);
-          const int slot_1based = res_slot + 1;
-
-          static constexpr const char *kCanonicalCmds[10] = {
-            "up", "down", "left", "right", "select",
-            "back", "home", "volume_up", "volume_down", "toggle"
-          };
-          static constexpr const char *kFeedback[10] = {
-            "Up", "Down", "Left", "Right", "Select",
-            "Back", "Home", "Vol +", "Vol -", "Toggle Power"
-          };
-          int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
-          const char *act = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
-          const char *cmd = kCanonicalCmds[k];
-          const std::string *t_names = latter_ui::remote_slots_name();
-          if (k == 9 && !t_names[res_slot].empty()) {
-            rs.remote.action_feedback = "Power: " + t_names[res_slot];
-          } else {
-            rs.remote.action_feedback = kFeedback[k];
-          }
-          rs.remote.feedback_timer = millis();
-          if (!latter_ui::remote_state().slots_summary.empty()) {
-            latter_actions::emit_remote_action(slot_1based, act, cmd);
-          }

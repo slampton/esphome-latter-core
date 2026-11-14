@@ -155,19 +155,6 @@ enum class GlassVariant : uint8_t {
   ReadableDark = 1,
 };
 
-namespace PageId {
-  static constexpr int CLOCK      = 0;
-  static constexpr int HOME       = 1;
-  static constexpr int MUSIC      = 2;
-  static constexpr int GAMES      = 3;
-  static constexpr int SYSTEM     = 4;
-  static constexpr int WEATHER    = 5;
-  static constexpr int AREA       = 6;
-  static constexpr int REMOTE     = 7;
-  static constexpr int TOOLS      = 8;
-  static constexpr int WHOLE_HOME = 9;
-}  // namespace PageId
-
 namespace HomeSubpage {
   static constexpr int MAIN             = 0;
   static constexpr int SETTINGS         = 1;
@@ -203,7 +190,6 @@ namespace ToolsSubpage {
   static constexpr int COIN_FLIP  = 8;
   static constexpr int CALENDAR   = 9;
   static constexpr int INTERCOM   = 10;
-  static constexpr int CAMERAS    = 12;
 }  // namespace ToolsSubpage
 
 namespace AreaSubpage {
@@ -654,7 +640,7 @@ inline void format_time_hhmm(int hour, int minute, bool is_24h, char *out_buf,
 
 inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
                                  int sys_mode, int weather_sub, int area_sub, int rem_sub, int tools_sub,
-                                 int wh_tab = 0) {
+                                 int hh_tab = 0) {
   int sub = 0;
   if (gui_page == 1) sub = home_sub;
   else if (gui_page == 2) sub = music_mode;
@@ -664,7 +650,7 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   else if (gui_page == 6) sub = area_sub;
   else if (gui_page == 7) sub = rem_sub;
   else if (gui_page == 8) sub = tools_sub;
-  else if (gui_page == 9) sub = wh_tab;
+  else if (gui_page == 9) sub = hh_tab;
   return (gui_page * 100) + sub;
 }
 

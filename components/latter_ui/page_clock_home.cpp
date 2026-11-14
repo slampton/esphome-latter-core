@@ -842,7 +842,6 @@ bool is_doorbell_or_intercom_active() {
   const bool db_live = !ac.doorbell_talk_state.empty() &&
                        ac.doorbell_talk_state != "idle" &&
                        ac.doorbell_talk_state != "off" &&
-                       ac.doorbell_talk_state != "none" &&
                        ac.doorbell_talk_state != "unavailable" &&
                        ac.doorbell_talk_state != "unknown";
   return db_live || rs.voice.intercom_turn || cam_call_active() || cam_listen_active();
@@ -928,7 +927,7 @@ int collect_home_activities(
       lbl = "Doorbell • Ringing";
     } else if (cam_call_active() || cam_listen_active() ||
                (!ac.doorbell_talk_state.empty() && ac.doorbell_talk_state != "idle" &&
-                ac.doorbell_talk_state != "off" && ac.doorbell_talk_state != "none" &&
+                ac.doorbell_talk_state != "off" &&
                 ac.doorbell_talk_state != "unavailable" && ac.doorbell_talk_state != "unknown")) {
       lbl = "Doorbell • Live";
     }
@@ -2289,8 +2288,11 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
     case PageId::TOOLS:
       render_tools_page(it, ctx);
       break;
-    case PageId::WHOLE_HOME:
-      render_whole_home_page(it, ctx);
+    case PageId::HOME_HUB:
+      render_home_hub_page(it, ctx);
+      break;
+    case PageId::CAMERAS:
+      render_cameras_page(it, ctx);
       break;
     default:
       render_home_page(it, ctx);

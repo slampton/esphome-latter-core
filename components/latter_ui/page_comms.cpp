@@ -272,11 +272,13 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
 void render_comms_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
-  if (rs.nav.tools_subpage == ToolsSubpage::INTERCOM) {
-    render_intercom_subpage(it, ctx, rs, ac);
-  } else {
-    render_cameras_subpage(it, ctx, rs, ac);
-  }
+  render_intercom_subpage(it, ctx, rs, ac);
+}
+
+void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+  const auto &rs = runtime_state();
+  const auto &ac = area_ctx_state();
+  render_cameras_subpage(it, ctx, rs, ac);
 }
 
 }  // namespace latter_ui

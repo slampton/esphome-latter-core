@@ -13,6 +13,7 @@
 #include "hal_imu_qmi8658.h"
 #include "hal_manifest.h"
 #include "latter_prof.h"
+#include "latter_protocol.h"
 
 #include <algorithm>
 #include <atomic>
@@ -350,16 +351,8 @@ inline VaDisplayRestore &va_display_restore() {
 
 // ------------------------------------------------------------------------------
 // 4. Power Profiles & Capability Clamping
+// (PowerProfile, PowerProfileSpec and kPowerProfiles are generated in latter_protocol.h)
 // ------------------------------------------------------------------------------
-enum class PowerProfile : uint8_t {
-  PORTABLE_CARRY = 0,
-  HANDHELD_ROAMING = 1,
-  WEARABLE_WATCH = 2,
-  TABLETOP_DOCK = 3,
-  ALWAYS_ON_STATIONARY = 4,
-  CUSTOM = 5,
-};
-
 inline PowerProfile parse_power_profile(const std::string &opt) {
   if (opt == "Portable Carry") return PowerProfile::PORTABLE_CARRY;
   if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
@@ -380,26 +373,6 @@ inline const char *power_profile_short_label(const std::string &opt) {
   }
   return opt.c_str();
 }
-
-struct PowerProfileSpec {
-  PowerProfile profile;
-  const char *name;
-  const char *va_wake_word_mode;
-  const char *tap_wake_mode;
-  const char *pickup_wake_mode;
-  const char *display_off_timeout;
-  const char *screensaver_docked_timeout;
-  const char *hibernate_timeout_mode;
-  bool docked_screensaver_enabled;
-};
-
-inline constexpr PowerProfileSpec kPowerProfiles[] = {
-    {PowerProfile::PORTABLE_CARRY,       "Portable Carry",        "Docked Only", "Docked Only", "Docked Only", "30s",   "1 min", "15 min",   true},
-    {PowerProfile::HANDHELD_ROAMING,     "Handheld Roaming",      "Docked Only", "Always On",   "Always On",   "30s",   "1 min", "30 min",   true},
-    {PowerProfile::WEARABLE_WATCH,       "Wearable Watch",        "Docked Only", "Always On",   "Always On",   "15s",   "1 min", "15 min",   true},
-    {PowerProfile::TABLETOP_DOCK,        "Tabletop Dock",         "Docked Only", "Docked Only", "Disabled",    "30s",   "5 min", "15 min",   true},
-    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On",   "Always On",   "Disabled",    "Never", "5 min", "Disabled", true},
-};
 
 inline const PowerProfileSpec *get_power_profile_spec(PowerProfile p) {
   for (const auto &spec : kPowerProfiles) {

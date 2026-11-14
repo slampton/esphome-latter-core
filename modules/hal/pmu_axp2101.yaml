@@ -339,7 +339,7 @@ script:
           // Low-battery notice: once per discharge, the next time the screen is on (never wakes the screen).
           if (bm.low_notice_pending && rs.nav.display_power_state == 0 && !rs.alert.active && !rs.nav.is_hibernating &&
               !rs.voice.active && !rs.alarms.ringing && !rs.timers.ringing &&
-              !(rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12)) {
+              rs.nav.gui_page != 12) {
             bm.low_notice_pending = false;
             char msg[48];
             snprintf(msg, sizeof(msg), "%.0f%% left. Charge soon.", bm.soc_display);

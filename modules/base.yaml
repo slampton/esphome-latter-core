@@ -105,7 +105,7 @@ api:
             const std::string prev_dock = latter_ui::area_ctx_state().dock_apps;
             bool parsed = false;
             if (sv_dom == "area_context") {
-              parsed = latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::whole_home_state());
+              parsed = latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::home_hub_state());
             } else if (sv_dom == "active_media") {
               parsed = latter_ui::parse_v3_media_payload(sv_pay, latter_ui::media_state());
             } else if (sv_dom == "remote_config") {

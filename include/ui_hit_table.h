@@ -127,7 +127,7 @@ namespace WidgetId {
   // Weather & Forecast (Page 5)
   static constexpr uint16_t WEATHER_MODE_BTN   = 550;
 
-  // Area Control & Whole-Home Hub (Page 6 / Page 9)
+  // Area Control & Home Hub (Page 6 / Page 9)
   static constexpr uint16_t AREA_PICKER_PILL   = 600;
   static constexpr uint16_t AREA_CARD_TAP      = 610;  // 610..612 (param = slot_idx)
   static constexpr uint16_t AREA_CARD_TOGGLE   = 615;  // 615..617 (param = slot_idx)

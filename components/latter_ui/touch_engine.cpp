@@ -33,6 +33,93 @@ namespace latter_ui {
 
 namespace {
 
+inline void do_fetch_area_browse() {
+  const auto &rs = runtime_state();
+  const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
+  latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
+}
+
+inline void do_fetch_area_list_browse() {
+  const auto &rs = runtime_state();
+  const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
+  latter_actions::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
+}
+
+inline void do_select_active_area_latter() {
+  latter_actions::emit_set_active_area(runtime_state().area.active_area_id);
+}
+
+inline void do_execute_area_action() {
+  auto &ar = runtime_state().area;
+  latter_actions::emit_area_action(
+      ar.target_entity_id, ar.target_action, ar.target_level, ar.active_area_id, ar.target_code);
+  ar.target_code.clear();
+}
+
+inline void do_execute_alarm_action() {
+  auto &ar = runtime_state().area;
+  latter_actions::emit_alarm_action(ar.alarm_service, ar.target_code);
+  ar.target_code.clear();
+}
+
+inline void do_request_dock_apps() {
+  latter_actions::emit_set_dock_apps(latter_dock_order_csv());
+}
+
+inline void do_save_custom_color_to_latter() {
+  save_persisted_prefs();
+  latter_actions::emit_save_custom_color_rgb(persisted_prefs().custom_theme_rgb);
+}
+
+inline void do_fetch_calendar_browse() {
+  const int page = runtime_state().slot_page_for(latter_rpc::SlotChannel::CALENDAR);
+  latter_actions::emit_calendar_fetch(page);
+}
+
+inline void do_create_calendar_quick_event() {
+  const auto &c = runtime_state().cal;
+  latter_actions::emit_calendar_create_event(c.quick_summary, c.quick_in_minutes, c.quick_duration_minutes);
+}
+
+inline void do_send_intercom_broadcast() {
+  latter_actions::emit_intercom_broadcast(runtime_state().intercom.broadcast_message);
+}
+
+inline void do_remote_select_slot(int slot_num) {
+  if (!remote_state().slots_summary.empty()) {
+    latter_actions::emit_remote_action(slot_num, "select_slot");
+  }
+}
+
+inline void do_remote_send_key(int key_idx, int target_slot) {
+  auto &rs = runtime_state();
+  int res_slot = (target_slot == -1) ? resolve_active_remote_slot(0)
+                                     : resolve_active_remote_slot(target_slot);
+  const int slot_1based = res_slot + 1;
+
+  static constexpr const char *kCanonicalCmds[10] = {
+    "up", "down", "left", "right", "select",
+    "back", "home", "volume_up", "volume_down", "toggle"
+  };
+  static constexpr const char *kFeedback[10] = {
+    "Up", "Down", "Left", "Right", "Select",
+    "Back", "Home", "Vol +", "Vol -", "Toggle Power"
+  };
+  int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
+  const char *act = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
+  const char *cmd = kCanonicalCmds[k];
+  const std::string *t_names = remote_slots_name();
+  if (k == 9 && !t_names[res_slot].empty()) {
+    rs.remote.action_feedback = "Power: " + t_names[res_slot];
+  } else {
+    rs.remote.action_feedback = kFeedback[k];
+  }
+  rs.remote.feedback_timer = millis();
+  if (!remote_state().slots_summary.empty()) {
+    latter_actions::emit_remote_action(slot_1based, act, cmd);
+  }
+}
+
 inline uint32_t next_rng_u32() {
 #ifdef USE_ESP32
   return esp_random();
@@ -58,25 +145,25 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
   home_dock_page() = 0;
 
   if (chosen_app == 9) {
-    rs.nav.gui_page = PageId::WHOLE_HOME;
+    rs.nav.gui_page = PageId::HOME_HUB;
     rs.nav.home_subpage = 0;
-    int wh_tabs[4] = {0, 0, 0, 0};
-    const int wh_cnt = collect_home_hub_tabs(wh_tabs);
-    if (wh_cnt > 0) {
+    int hh_tabs[4] = {0, 0, 0, 0};
+    const int hh_cnt = collect_home_hub_tabs(hh_tabs);
+    if (hh_cnt > 0) {
       bool cur_ok = false;
-      for (int i = 0; i < wh_cnt; i++) {
-        if (wh_tabs[i] == whole_home_tab()) {
+      for (int i = 0; i < hh_cnt; i++) {
+        if (hh_tabs[i] == home_hub_tab()) {
           cur_ok = true;
           break;
         }
       }
-      if (!cur_ok) whole_home_tab() = wh_tabs[0];
+      if (!cur_ok) home_hub_tab() = hh_tabs[0];
     }
-  } else if (chosen_app == 12) {
+  } else if (chosen_app == PageId::CAMERAS) {
     tools_direct_home() = true;
     cam_quick_reply_open() = false;
-    rs.nav.gui_page = PageId::TOOLS;
-    rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
+    rs.nav.gui_page = PageId::CAMERAS;
+    rs.nav.tools_subpage = 0;
     rs.nav.home_subpage = 0;
     rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
   } else {
@@ -113,7 +200,7 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
     if (rs.area.active_area_id.empty()) {
       rs.nav.area_subpage = AreaSubpage::PICKER;
       rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
-      rt.cmd(UiHostCmd::FETCH_AREA_LIST_BROWSE);
+      do_fetch_area_list_browse();
     } else {
       rs.nav.area_subpage = AreaSubpage::OVERVIEW;
       rs.area.browse_mode = "entities";
@@ -125,12 +212,12 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
         }
         rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
       } else {
-        rt.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+        do_fetch_area_browse();
       }
     }
   }
 
-  if (chosen_app != 12) {
+  if (chosen_app != PageId::CAMERAS) {
     rs.nav.tools_subpage = 0;
   }
   rs.nav.remote_subpage = 0;
@@ -196,7 +283,7 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
         rt.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
       }
       if (!ac.doorbell_talk_state.empty() && ac.doorbell_talk_state != "idle" &&
-          ac.doorbell_talk_state != "off" && ac.doorbell_talk_state != "none") {
+          ac.doorbell_talk_state != "off") {
         rs.intercom.cam_action = "hangup";
         intercom_session().emit_current_cmd();
         intercom_session().stop_call_with_hw(now_ms);
@@ -245,22 +332,22 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     cal_detail_mode() = 0;
     cal_quick_add_open() = false;
     rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR) = 1;
-    rt.cmd(UiHostCmd::FETCH_CALENDAR_BROWSE);
+    do_fetch_calendar_browse();
   } else if (kind == 6) {
     const auto &ac = area_ctx_state();
     const bool db_live = !ac.doorbell_talk_state.empty() &&
                          ac.doorbell_talk_state != "idle" &&
                          ac.doorbell_talk_state != "off" &&
-                         ac.doorbell_talk_state != "none" &&
                          ac.doorbell_talk_state != "unavailable" &&
                          ac.doorbell_talk_state != "unknown";
     tools_direct_home() = true;
     cam_quick_reply_open() = false;
-    rs.nav.gui_page = PageId::TOOLS;
     if (db_live || cam_call_active() || cam_listen_active()) {
-      rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
+      rs.nav.gui_page = PageId::CAMERAS;
+      rs.nav.tools_subpage = 0;
       rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
     } else {
+      rs.nav.gui_page = PageId::TOOLS;
       rs.nav.tools_subpage = ToolsSubpage::INTERCOM;
     }
   }
@@ -314,8 +401,7 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
     intercom_session().stop_call_with_hw(now_ms);
   }
-  const bool was_cam_page = (rs.nav.gui_page == PageId::TOOLS &&
-                             rs.nav.tools_subpage == ToolsSubpage::CAMERAS);
+  const bool was_cam_page = (rs.nav.gui_page == PageId::CAMERAS);
   ui::pin_pad_scrub();
   tools_direct_home() = false;
   timer_view_slot() = 0;
@@ -377,8 +463,7 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
     intercom_session().stop_call_with_hw(now_ms);
   }
-  const bool was_cam_page = (rs.nav.gui_page == PageId::TOOLS &&
-                             rs.nav.tools_subpage == ToolsSubpage::CAMERAS);
+  const bool was_cam_page = (rs.nav.gui_page == PageId::CAMERAS);
   ui::pin_pad_scrub();
   tools_direct_home() = false;
   timer_view_slot() = 0;
@@ -457,11 +542,11 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
       if (target == ui::PinPadTargetKind::AREA_ACTION) {
         rs.area.target_code = pin_str;
         rs.area.feedback_timer = now_ms;
-        rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+        do_execute_area_action();
       } else if (target == ui::PinPadTargetKind::ALARM_ACTION) {
         rs.area.target_code = pin_str;
         rs.area.feedback_timer = now_ms;
-        rt_.cmd(UiHostCmd::EXECUTE_ALARM_ACTION);
+        do_execute_alarm_action();
       } else if (target == ui::PinPadTargetKind::DOORBELL_UNLOCK) {
         rs.intercom.cam_code = pin_str;
         rs.intercom.cam_action = "unlock_door";
@@ -502,7 +587,7 @@ bool TouchGestureEngine::gate_or_dispatch_area_action(const std::string &domain_
     return false;
   }
   rs.area.feedback_timer = now_ms;
-  rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+  do_execute_area_action();
   rt_.schedule_disp();
   return true;
 }
@@ -525,7 +610,7 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
     return false;
   }
   rs.area.feedback_timer = now_ms;
-  rt_.cmd(UiHostCmd::EXECUTE_ALARM_ACTION);
+  do_execute_alarm_action();
   rt_.schedule_disp();
   return true;
 }
@@ -707,8 +792,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       rs.alert.active = false;
       tools_direct_home() = true;
       cam_quick_reply_open() = false;
-      rs.nav.gui_page = PageId::TOOLS;
-      rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
+      rs.nav.gui_page = PageId::CAMERAS;
+      rs.nav.tools_subpage = 0;
       rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
       intercom_session().start_call(now_touch);
       mark_dirty_full();
@@ -726,7 +811,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   gest.start_context = compute_touch_context(
       rs.nav.gui_page, rs.nav.home_subpage, rs.music.overlay_mode, rs.nav.active_game,
       rs.nav.system_menu_mode, rs.nav.sky_weather_subpage, rs.nav.area_subpage,
-      rs.nav.remote_subpage, rs.nav.tools_subpage, whole_home_tab());
+      rs.nav.remote_subpage, rs.nav.tools_subpage, home_hub_tab());
   gest.active = true;
   gest.swipe_committed = false;
 
@@ -795,7 +880,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         const int slot = hit->param;
         if (slot >= 0 && slot < 5 && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
           latter_dock_order_csv() = toggled_dock_csv(kHomeSettingsDockTokens[slot]);
-          rt_.cmd(UiHostCmd::REQUEST_DOCK_APPS);
+          do_request_dock_apps();
           rt_.schedule_disp();
         }
       }
@@ -1578,7 +1663,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::COLOR_WHEEL_SAVE && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         save_persisted_prefs();
         rt_.set_select_opt(UiSelectId::THEME_PALETTE, "Custom");
-        rt_.cmd(UiHostCmd::SAVE_CUSTOM_COLOR_TO_LATTER);
+        do_save_custom_color_to_latter();
         rs.nav.system_menu_mode = 2;
         mark_dirty_full();
         rt_.schedule_disp();
@@ -1643,7 +1728,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             aslots[0].name = "Loading areas...";
             aslots[0].id.clear();
           }
-          rt_.cmd(UiHostCmd::FETCH_AREA_LIST_BROWSE);
+          do_fetch_area_list_browse();
         }
         mark_dirty_full();
         rt_.schedule_disp();
@@ -1737,7 +1822,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       default: break;
     }
     if (remote_key >= 0 && touch_router().allow_tap(now_touch, debounce_ms)) {
-      rt_.cmd(UiHostCmd::REMOTE_SEND_KEY, remote_key, act_slot);
+      do_remote_send_key(remote_key, act_slot);
       rt_.schedule_disp();
     }
     return;
@@ -2066,7 +2151,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             cal_quick_add_open() = false;
             cal_feedback_text() = std::string("Added: ") + kQuickSummaries[q_idx];
             cal_feedback_ms() = now_touch;
-            rt_.cmd(UiHostCmd::CREATE_CALENDAR_QUICK_EVENT);
+            do_create_calendar_quick_event();
             mark_dirty_full();
             rt_.schedule_disp();
           }
@@ -2086,7 +2171,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         const int next_pg = std::clamp(pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, std::max(1, tot));
         if (next_pg != pg) {
           pg = next_pg;
-          rt_.cmd(UiHostCmd::FETCH_CALENDAR_BROWSE);
+          do_fetch_calendar_browse();
           rt_.schedule_disp();
         }
       }
@@ -2123,7 +2208,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
               rs.intercom.broadcast_feedback_ms = now_touch;
               intercom_session().emit_current_cmd();
               cam_quick_reply_open() = false;
-              rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
+              rs.nav.gui_page = PageId::CAMERAS;
+              rs.nav.tools_subpage = 0;
               rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
               intercom_session().start_call(now_touch);
               mark_dirty_full();
@@ -2140,7 +2226,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             rs.intercom.broadcast_message = kIntercomPresets[slot_idx];
             rs.intercom.broadcast_feedback = std::string("Sent: ") + kIntercomPresets[slot_idx];
             rs.intercom.broadcast_feedback_ms = now_touch;
-            rt_.cmd(UiHostCmd::SEND_INTERCOM_BROADCAST);
+            do_send_intercom_broadcast();
             rt_.schedule_disp();
           }
         }
@@ -2148,32 +2234,35 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
 
-    if (sub == ToolsSubpage::CAMERAS) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        if (cam_quick_reply_open()) {
-          cam_quick_reply_open() = false;
-          mark_dirty_full();
-          rt_.schedule_disp();
-          return;
-        }
-        if (tools_direct_home()) {
-          if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
-          navigate_home(now_touch);
-          rt_.apply_power_policy();
-          return;
-        }
-        if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
-          intercom_session().stop_call_with_hw(now_touch);
-        }
-        rs.nav.tools_subpage = 0;
-        rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-        rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
-        rt_.apply_power_policy();
+  }
+
+  // Page 12: Cameras
+  if (rs.nav.gui_page == PageId::CAMERAS) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      if (cam_quick_reply_open()) {
+        cam_quick_reply_open() = false;
         mark_dirty_full();
         rt_.schedule_disp();
+        return;
       }
-      return;  // Camera deck & carousel swipes resolve in on_touch_up
+      if (tools_direct_home()) {
+        if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
+        navigate_home(now_touch);
+        rt_.apply_power_policy();
+        return;
+      }
+      if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
+        intercom_session().stop_call_with_hw(now_touch);
+      }
+      rs.nav.gui_page = PageId::TOOLS;
+      rs.nav.tools_subpage = 0;
+      rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+      rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
+      rt_.apply_power_policy();
+      mark_dirty_full();
+      rt_.schedule_disp();
     }
+    return;
   }
 }
 
@@ -2212,7 +2301,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   const int cur_ctx = compute_touch_context(
       rs.nav.gui_page, rs.nav.home_subpage, rs.music.overlay_mode, rs.nav.active_game,
       rs.nav.system_menu_mode, rs.nav.sky_weather_subpage, rs.nav.area_subpage,
-      rs.nav.remote_subpage, rs.nav.tools_subpage, whole_home_tab());
+      rs.nav.remote_subpage, rs.nav.tools_subpage, home_hub_tab());
   if (cur_ctx != gest.start_context) return;
 
   // Custom Theme Color Wheel continuous drag (System Mode 13)
@@ -2453,7 +2542,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
         rs.area.domain_filter = cats[next_c];
         sync_mode_bar_window(area_cat_dock_page(), next_c, cat_cnt);
         rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-        rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+        do_fetch_area_browse();
         rt_.schedule_disp();
       }
       return;
@@ -2468,7 +2557,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
         gest.last_swipe_ms = now_u;
         if (next_pg != pg) {
           pg = next_pg;
-          rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+          do_fetch_area_browse();
           rt_.schedule_disp();
         }
       }
@@ -2476,22 +2565,22 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     }
   }
 
-  // 10. Whole-Home Hub Horizontal Tab Swipe
-  if (rs.nav.gui_page == PageId::WHOLE_HOME && gest.start_y < ly.home_zone_y()) {
+  // 10. Home Hub Horizontal Tab Swipe
+  if (rs.nav.gui_page == PageId::HOME_HUB && gest.start_y < ly.home_zone_y()) {
     if (std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-      int wh_tabs[4] = {0, 0, 0, 0};
-      const int wh_cnt = collect_home_hub_tabs(wh_tabs);
-      if (wh_cnt > 1) {
+      int hh_tabs[4] = {0, 0, 0, 0};
+      const int hh_cnt = collect_home_hub_tabs(hh_tabs);
+      if (hh_cnt > 1) {
         int cur_slot = 0;
-        for (int i = 0; i < wh_cnt; i++) {
-          if (wh_tabs[i] == whole_home_tab()) {
+        for (int i = 0; i < hh_cnt; i++) {
+          if (hh_tabs[i] == home_hub_tab()) {
             cur_slot = i;
             break;
           }
         }
         gest.swipe_committed = true;
         gest.last_swipe_ms = now_u;
-        whole_home_tab() = wh_tabs[step_wrap(cur_slot, (dx < 0) ? 1 : -1, wh_cnt)];
+        home_hub_tab() = hh_tabs[step_wrap(cur_slot, (dx < 0) ? 1 : -1, hh_cnt)];
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -2526,7 +2615,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
   const int cur_ctx = compute_touch_context(
       rs.nav.gui_page, rs.nav.home_subpage, rs.music.overlay_mode, rs.nav.active_game,
       rs.nav.system_menu_mode, rs.nav.sky_weather_subpage, rs.nav.area_subpage,
-      rs.nav.remote_subpage, rs.nav.tools_subpage, whole_home_tab());
+      rs.nav.remote_subpage, rs.nav.tools_subpage, home_hub_tab());
 
   if (cur_ctx == gest.start_context) {
     // 1. Universal Home Pill Tap / Release Swipe ([HOME PREDICATE])
@@ -2575,7 +2664,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rs.area.target_action = "set_kelvin";
         rs.area.target_level = light_insp_kelvin();
         rs.area.feedback_timer = now_rel;
-        rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+        do_execute_area_action();
         rt_.schedule_disp();
       } else if (start_slider->widget_id == WidgetId::LIGHT_BRI_SLIDER &&
                  rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
@@ -2583,7 +2672,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rs.area.target_action = "set_level";
         rs.area.target_level = light_insp_bri_pct();
         rs.area.feedback_timer = now_rel;
-        rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+        do_execute_area_action();
         rt_.schedule_disp();
       }
 
@@ -2599,7 +2688,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rs.area.target_action = "set_color";
         rs.area.target_level = light_insp_bri_pct();
         rs.area.feedback_timer = now_rel;
-        rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+        do_execute_area_action();
         rt_.schedule_disp();
       }
 
@@ -3003,7 +3092,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           const int next_pg = std::clamp(a_pg + ((dy < 0) ? 1 : -1), 1, a_tot);
           if (next_pg != a_pg) {
             a_pg = next_pg;
-            rt_.cmd(UiHostCmd::FETCH_AREA_LIST_BROWSE);
+            do_fetch_area_list_browse();
             rt_.schedule_disp();
           }
         } else if (gest.max_travel <= ly.tap_max()) {
@@ -3012,7 +3101,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                 std::clamp(a_pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, a_tot);
             if (next_pg != a_pg) {
               a_pg = next_pg;
-              rt_.cmd(UiHostCmd::FETCH_AREA_LIST_BROWSE);
+              do_fetch_area_list_browse();
               rt_.schedule_disp();
             }
           } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
@@ -3024,8 +3113,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               rs.nav.area_subpage = AreaSubpage::OVERVIEW;
               rs.area.browse_mode = "entities";
               rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-              rt_.cmd(UiHostCmd::SELECT_ACTIVE_AREA_LATTER);
-              rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+              do_select_active_area_latter();
+              do_fetch_area_browse();
               mark_dirty_full();
               rt_.schedule_disp();
             }
@@ -3046,7 +3135,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             if (cats[c_idx] != rs.area.domain_filter) {
               rs.area.domain_filter = cats[c_idx];
               rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-              rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+              do_fetch_area_browse();
               rt_.schedule_disp();
             }
           }
@@ -3056,7 +3145,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           const int next_pg = std::clamp(pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, std::max(1, tot));
           if (next_pg != pg) {
             pg = next_pg;
-            rt_.cmd(UiHostCmd::FETCH_AREA_BROWSE);
+            do_fetch_area_browse();
             rt_.schedule_disp();
           }
         } else if (wid == WidgetId::LIGHT_ORB_BTN) {
@@ -3120,16 +3209,16 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.schedule_disp();
       } else if (gest.max_travel <= ly.tap_max()) {
         if (wid == WidgetId::REMOTE_PRIMARY_PWR) {
-          rt_.cmd(UiHostCmd::REMOTE_SEND_KEY, 9, -1);
+          do_remote_send_key(9, -1);
           rt_.schedule_disp();
         } else if (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4) {
-          rt_.cmd(UiHostCmd::REMOTE_SEND_KEY, 9, hit->param);
+          do_remote_send_key(9, hit->param);
           rt_.schedule_disp();
         } else if (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4) {
           rs.remote.active_slot = hit->param;
           rs.remote.action_feedback.clear();
           rs.nav.remote_subpage = 0;
-          rt_.cmd(UiHostCmd::REMOTE_SELECT_SLOT_LATTER, hit->param + 1);
+          do_remote_select_slot(hit->param + 1);
           mark_dirty_full();
           rt_.schedule_disp();
         }
@@ -3148,19 +3237,23 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         } else if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) {
           const int target_sub = hit->param;
           if (target_sub > 0) {
-            rs.nav.tools_subpage = target_sub;
-            if (target_sub == ToolsSubpage::FLASHLIGHT) {
-              rt_.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
-            } else if (target_sub == ToolsSubpage::CALCULATOR) {
-              reset_calculator_state();
-            } else if (target_sub == ToolsSubpage::CALENDAR) {
-              cal_detail_mode() = 0;
-              cal_quick_add_open() = false;
-              rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR) = 1;
-              rt_.cmd(UiHostCmd::FETCH_CALENDAR_BROWSE);
-            } else if (target_sub == ToolsSubpage::CAMERAS) {
+            if (target_sub == PageId::CAMERAS) {
               cam_quick_reply_open() = false;
+              rs.nav.gui_page = PageId::CAMERAS;
+              rs.nav.tools_subpage = 0;
               rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+            } else {
+              rs.nav.tools_subpage = target_sub;
+              if (target_sub == ToolsSubpage::FLASHLIGHT) {
+                rt_.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
+              } else if (target_sub == ToolsSubpage::CALCULATOR) {
+                reset_calculator_state();
+              } else if (target_sub == ToolsSubpage::CALENDAR) {
+                cal_detail_mode() = 0;
+                cal_quick_add_open() = false;
+                rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR) = 1;
+                do_fetch_calendar_browse();
+              }
             }
             rt_.apply_power_policy();
             mark_dirty_full();
@@ -3206,7 +3299,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             const int next_pg = std::clamp(c_pg + ((dy < 0) ? 1 : -1), 1, c_tot);
             if (next_pg != c_pg) {
               c_pg = next_pg;
-              rt_.cmd(UiHostCmd::FETCH_CALENDAR_BROWSE);
+              do_fetch_calendar_browse();
               rt_.schedule_disp();
             }
           } else if (gest.max_travel <= ly.tap_max() &&
@@ -3235,110 +3328,112 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         }
-      } else if (rs.nav.tools_subpage == ToolsSubpage::CAMERAS) {
-        std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
-        const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
-        if (!cam_quick_reply_open() && c_total > 1 &&
-            std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-          cam_carousel_idx() = step_wrap(cam_carousel_idx(), (dx < 0) ? 1 : -1, c_total);
+      }
+
+    // 12. Page 12 Cameras Deck & Controls
+    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::CAMERAS) {
+      std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
+      const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
+      if (!cam_quick_reply_open() && c_total > 1 &&
+          std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
+        cam_carousel_idx() = step_wrap(cam_carousel_idx(), (dx < 0) ? 1 : -1, c_total);
+        rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+        rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+        rt_.schedule_disp();
+      } else if (gest.max_travel <= ly.tap_max()) {
+        if (cam_quick_reply_open()) {
+          if (wid == WidgetId::CAM_REPLY_BASE + 0) {
+            cam_quick_reply_open() = false;
+            gate_or_dispatch_doorbell_unlock(now_rel, false);
+          } else if (wid >= WidgetId::CAM_REPLY_BASE + 1 && wid <= WidgetId::CAM_REPLY_BASE + 3) {
+            static constexpr const char *kDoorbellReplies[3] = {
+                "Please leave the package at the door, thank you!",
+                "We'll be right there!",
+                "No soliciting, thank you!",
+            };
+            const int r_idx = static_cast<int>(wid - (WidgetId::CAM_REPLY_BASE + 1));
+            cam_quick_reply_open() = false;
+            rs.intercom.cam_action = "quick_reply";
+            rs.intercom.cam_message = kDoorbellReplies[r_idx];
+            cam_intercom_status() = "REPLY SENT";
+            rs.intercom.cam_status_ms = now_rel;
+            intercom_session().emit_current_cmd();
+            mark_dirty_full();
+            rt_.schedule_disp();
+          } else if (wid == WidgetId::CAM_NOISE_BTN) {
+            cam_noise_idx() = (cam_noise_idx() + 1) % 3;
+            static constexpr const char *kNoiseCodes[3] = {"strong", "light", "off"};
+            rs.intercom.cam_noise_reduction = kNoiseCodes[cam_noise_idx()];
+            rs.intercom.cam_action = "set_noise_reduction";
+            intercom_session().emit_current_cmd();
+            rt_.schedule_disp();
+          }
+        } else if (wid == WidgetId::CAM_ORIENT_BTN) {
+          cam_landscape_mode() = !cam_landscape_mode();
+          cam_intercom_status() = cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
+          rs.intercom.cam_status_ms = now_rel;
+          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1) {
+          cam_carousel_idx() = step_wrap(
+              cam_carousel_idx(), (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
           rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
           rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
           rt_.schedule_disp();
-        } else if (gest.max_travel <= ly.tap_max()) {
-          if (cam_quick_reply_open()) {
-            if (wid == WidgetId::CAM_REPLY_BASE + 0) {
-              cam_quick_reply_open() = false;
-              gate_or_dispatch_doorbell_unlock(now_rel, false);
-            } else if (wid >= WidgetId::CAM_REPLY_BASE + 1 && wid <= WidgetId::CAM_REPLY_BASE + 3) {
-              static constexpr const char *kDoorbellReplies[3] = {
-                  "Please leave the package at the door, thank you!",
-                  "We'll be right there!",
-                  "No soliciting, thank you!",
-              };
-              const int r_idx = static_cast<int>(wid - (WidgetId::CAM_REPLY_BASE + 1));
-              cam_quick_reply_open() = false;
-              rs.intercom.cam_action = "quick_reply";
-              rs.intercom.cam_message = kDoorbellReplies[r_idx];
-              cam_intercom_status() = "REPLY SENT";
-              rs.intercom.cam_status_ms = now_rel;
-              intercom_session().emit_current_cmd();
-              mark_dirty_full();
-              rt_.schedule_disp();
-            } else if (wid == WidgetId::CAM_NOISE_BTN) {
-              cam_noise_idx() = (cam_noise_idx() + 1) % 3;
-              static constexpr const char *kNoiseCodes[3] = {"strong", "light", "off"};
-              rs.intercom.cam_noise_reduction = kNoiseCodes[cam_noise_idx()];
-              rs.intercom.cam_action = "set_noise_reduction";
-              intercom_session().emit_current_cmd();
-              rt_.schedule_disp();
-            }
-          } else if (wid == WidgetId::CAM_ORIENT_BTN) {
-            cam_landscape_mode() = !cam_landscape_mode();
-            cam_intercom_status() = cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
+        } else if (wid == WidgetId::CAM_LISTEN_BTN) {
+          if (cam_call_active()) {
+            intercom_session().stop_call_with_hw(now_rel);
+          } else {
+            cam_listen_active() = !cam_listen_active();
+            rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
+            cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
             rs.intercom.cam_status_ms = now_rel;
-            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1) {
-            cam_carousel_idx() = step_wrap(
-                cam_carousel_idx(), (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
-            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-            rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_LISTEN_BTN) {
-            if (cam_call_active()) {
-              intercom_session().stop_call_with_hw(now_rel);
-            } else {
-              cam_listen_active() = !cam_listen_active();
-              rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
-              cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
-              rs.intercom.cam_status_ms = now_rel;
-              intercom_session().emit_current_cmd();
-              if (!cam_listen_active()) {
-                rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
-              }
-              rt_.schedule_disp();
+            intercom_session().emit_current_cmd();
+            if (!cam_listen_active()) {
+              rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
             }
-          } else if (wid == WidgetId::CAM_PTT_BTN) {
-            if (!cam_call_active()) {
-              intercom_session().start_call(now_rel);
-              rt_.schedule_disp();
-            } else if (cam_intercom_ptt_active()) {
-              rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
-              intercom_session().resume_listen(now_rel);
-              rt_.apply_power_policy();
-              rt_.schedule_disp();
-            } else {
-              rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
-            }
-          } else if (wid == WidgetId::CAM_REPLY_MENU_BTN) {
-            cam_quick_reply_open() = true;
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (tp.y < scale_y(340)) {
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             rt_.schedule_disp();
           }
+        } else if (wid == WidgetId::CAM_PTT_BTN) {
+          if (!cam_call_active()) {
+            intercom_session().start_call(now_rel);
+            rt_.schedule_disp();
+          } else if (cam_intercom_ptt_active()) {
+            rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
+            intercom_session().resume_listen(now_rel);
+            rt_.apply_power_policy();
+            rt_.schedule_disp();
+          } else {
+            rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
+          }
+        } else if (wid == WidgetId::CAM_REPLY_MENU_BTN) {
+          cam_quick_reply_open() = true;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (tp.y < scale_y(340)) {
+          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+          rt_.schedule_disp();
         }
       }
 
-    // 12. Page 9 Whole-Home Hub Controls (Security, Climate, Perimeter, Vacuum)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::WHOLE_HOME &&
+    // 13. Page 9 Home Hub Controls (Security, Climate, Perimeter, Vacuum)
+    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::HOME_HUB &&
                gest.max_travel <= ly.tap_max()) {
-      int wh_tabs[4] = {0, 0, 0, 0};
-      const int wh_tab_cnt = collect_home_hub_tabs(wh_tabs);
-      if (wh_tab_cnt <= 0) {
+      int hh_tabs[4] = {0, 0, 0, 0};
+      const int hh_tab_cnt = collect_home_hub_tabs(hh_tabs);
+      if (hh_tab_cnt <= 0) {
         // No Home Controls configured: ignore taps on empty state.
-      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + wh_tab_cnt) {
-        const int slot = std::clamp(static_cast<int>(hit->param), 0, wh_tab_cnt - 1);
-        const int target_tab = wh_tabs[slot];
-        if (target_tab != whole_home_tab()) {
-          whole_home_tab() = target_tab;
+      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + hh_tab_cnt) {
+        const int slot = std::clamp(static_cast<int>(hit->param), 0, hh_tab_cnt - 1);
+        const int target_tab = hh_tabs[slot];
+        if (target_tab != home_hub_tab()) {
+          home_hub_tab() = target_tab;
           mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (whole_home_tab() == 0 &&
+      } else if (home_hub_tab() == 0 &&
                  wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 3) {
         const int mode_i = static_cast<int>(wid - WidgetId::ALARM_MODE_BASE);
         static constexpr const char *kAlarmSvcs[3] = {
@@ -3350,74 +3445,74 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             "Disarming System...", "Arming Home...", "Arming Away..."};
         rs.area.action_feedback = kAlarmFb[mode_i];
         gate_or_dispatch_alarm_action(kAlarmSvcs[mode_i], now_rel);
-      } else if (whole_home_tab() == 1) {
+      } else if (home_hub_tab() == 1) {
         if (wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) {
-          int &tf = sim_thermostat_target_f();
+          int &tf = home_hub_thermostat_target_f();
           if (tf < 40 || tf > 100) tf = 70;
           tf = std::clamp(tf + ((wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1), 50, 90);
-          rs.area.target_entity_id = "whole_home.thermostat";
+          rs.area.target_entity_id = "home_hub.thermostat";
           rs.area.target_action = "set_temperature";
           rs.area.target_level = tf;
           char fb[36];
           std::snprintf(fb, sizeof(fb), "Setpoint -> %dF", tf);
           rs.area.action_feedback = fb;
           rs.area.feedback_timer = now_rel;
-          rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+          do_execute_area_action();
           rt_.schedule_disp();
         } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 4) {
           static constexpr const char *kClimModes[4] = {"heat", "cool", "heat_cool", "off"};
           static constexpr const char *kClimLabels[4] = {"Heat", "Cool", "Auto", "Off"};
           const int m_i = static_cast<int>(wid - WidgetId::CLIMATE_MODE_BASE);
-          sim_thermostat_mode() = kClimModes[m_i];
-          rs.area.target_entity_id = "whole_home.thermostat";
+          home_hub_thermostat_mode() = kClimModes[m_i];
+          rs.area.target_entity_id = "home_hub.thermostat";
           rs.area.target_action = std::string("hvac_") + kClimModes[m_i];
-          rs.area.target_level = sim_thermostat_target_f();
+          rs.area.target_level = home_hub_thermostat_target_f();
           rs.area.action_feedback = std::string("HVAC: ") + kClimLabels[m_i];
           rs.area.feedback_timer = now_rel;
-          rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+          do_execute_area_action();
           rt_.schedule_disp();
         }
-      } else if (whole_home_tab() == 2) {
+      } else if (home_hub_tab() == 2) {
         if (wid == WidgetId::COVER_OPEN_BTN) {
-          const GarageState prev_g = wh_garage_state();
+          const GarageState prev_g = home_hub_garage_state();
           const bool want_open = (prev_g != GarageState::OPEN);
-          wh_garage_state() = want_open ? GarageState::OPEN : GarageState::CLOSED;
-          rs.area.target_entity_id = "whole_home.garage";
+          home_hub_garage_state() = want_open ? GarageState::OPEN : GarageState::CLOSED;
+          rs.area.target_entity_id = "home_hub.garage";
           rs.area.action_feedback = want_open ? "Opening Garage..." : "Closing Garage...";
           if (!gate_or_dispatch_area_action("cover", want_open ? "open_cover" : "close_cover",
                                             want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
-            wh_garage_state() = prev_g;
+            home_hub_garage_state() = prev_g;
           }
         } else if (wid == WidgetId::LOCK_ACTION_BTN) {
-          const LockState prev_l = wh_lock_state();
+          const LockState prev_l = home_hub_lock_state();
           const bool want_lock = (prev_l == LockState::UNLOCKED);
-          wh_lock_state() = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
-          rs.area.target_entity_id = "whole_home.lock";
+          home_hub_lock_state() = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
+          rs.area.target_entity_id = "home_hub.lock";
           rs.area.action_feedback = want_lock ? "Front Door Locked" : "Front Door Unlocked";
           if (!gate_or_dispatch_area_action("lock", want_lock ? "lock" : "unlock",
                                             want_lock ? 100 : 0, "UNLOCK DOOR PIN", now_rel)) {
-            wh_lock_state() = prev_l;
+            home_hub_lock_state() = prev_l;
           }
         }
-      } else if (whole_home_tab() == 3 &&
+      } else if (home_hub_tab() == 3 &&
                  wid >= WidgetId::HUB_ROW_ACTION && wid < WidgetId::HUB_ROW_ACTION + 3) {
         const int v_card = static_cast<int>(wid - WidgetId::HUB_ROW_ACTION);
-        rs.area.target_entity_id = "whole_home.vacuum";
+        rs.area.target_entity_id = "home_hub.vacuum";
         if (v_card == 0) {
-          sim_vacuum_state() = "Cleaning";
+          home_hub_vacuum_state() = "Cleaning";
           rs.area.target_action = "start";
           rs.area.action_feedback = "Vacuum Started";
         } else if (v_card == 1) {
-          sim_vacuum_state() = "Paused";
+          home_hub_vacuum_state() = "Paused";
           rs.area.target_action = "pause";
           rs.area.action_feedback = "Vacuum Paused";
         } else {
-          sim_vacuum_state() = "Docked";
+          home_hub_vacuum_state() = "Docked";
           rs.area.target_action = "dock";
           rs.area.action_feedback = "Returning to Dock";
         }
         rs.area.feedback_timer = now_rel;
-        rt_.cmd(UiHostCmd::EXECUTE_AREA_ACTION);
+        do_execute_area_action();
         rt_.schedule_disp();
       }
     }
@@ -3428,7 +3523,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     const int end_ctx = compute_touch_context(
         rs.nav.gui_page, rs.nav.home_subpage, rs.music.overlay_mode, rs.nav.active_game,
         rs.nav.system_menu_mode, rs.nav.sky_weather_subpage, rs.nav.area_subpage,
-        rs.nav.remote_subpage, rs.nav.tools_subpage, whole_home_tab());
+        rs.nav.remote_subpage, rs.nav.tools_subpage, home_hub_tab());
     const uint32_t dur_p = (now_rel >= gest.start_ms) ? (now_rel - gest.start_ms) : 0U;
     LATTER_PROF_LOGI(
         "[PROF:TOUCH_UP] start=(%d,%d) end=(%d,%d) dx=%d dy=%d travel=%d samples=%d dur=%lums swipe=%d ctx=%d->%d exec=%luus",
@@ -3528,7 +3623,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     return;
   }
 
-  if (act == "select" || act == "ok" || act == "click" || act == "enter") {
+  if (act == "select" || act == "enter") {
     if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active) {
       const HitRegion *foc = frame_hits().focus_at(ui_focus_index());
       if (foc != nullptr) {

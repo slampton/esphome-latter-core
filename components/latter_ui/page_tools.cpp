@@ -248,7 +248,7 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
     fast_line(it, ix + S(11), iy - S(8), ix + S(14), iy, theme_secondary);
     fast_line(it, ix + S(14), iy, ix + S(11), iy + S(8), theme_secondary);
 
-  } else if (app_id == ToolsSubpage::CAMERAS) {
+  } else if (app_id == PageId::CAMERAS) {
     // 12. Camera: Sculpted camera body, top prism & dual-ring lens
     fill_rect_row_major(it, ix - S(13), iy - S(8), S(26), S(19), col_white);
     fill_rect_row_major(it, ix - S(5), iy - S(12), S(10), S(4), col_white);
@@ -279,7 +279,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
   static constexpr ToolItemDef kPage1[3][2] = {
       {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
       {{ToolsSubpage::CALENDAR, "Calendar"},     {ToolsSubpage::INTERCOM, "Intercom"}},
-      {{ToolsSubpage::CAMERAS, "Camera"},        {0, ""}},
+      {{PageId::CAMERAS, "Camera"},              {0, ""}},
   };
 #else
   static constexpr ToolItemDef kPage0[3][2] = {
@@ -288,7 +288,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
       {{ToolsSubpage::CALCULATOR, "Calculator"}, {ToolsSubpage::CALENDAR, "Calendar"}},
   };
   static constexpr ToolItemDef kPage1[3][2] = {
-      {{ToolsSubpage::INTERCOM, "Intercom"},     {ToolsSubpage::CAMERAS, "Camera"}},
+      {{ToolsSubpage::INTERCOM, "Intercom"},     {PageId::CAMERAS, "Camera"}},
       {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
       {{0, ""},                                  {0, ""}},
   };
@@ -2207,7 +2207,7 @@ void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx)
   const auto &rs = runtime_state();
   const int sub = rs.nav.tools_subpage;
 
-  if (sub == ToolsSubpage::INTERCOM || sub == ToolsSubpage::CAMERAS) {
+  if (sub == ToolsSubpage::INTERCOM) {
     render_comms_page(it, ctx);
     return;
   }

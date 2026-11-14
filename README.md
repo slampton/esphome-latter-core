@@ -40,7 +40,7 @@ All five run the same firmware and GUI. The only per-board code is a hardware ab
 | **Clock & Home** | 3 clock faces, weather, calendar agenda, and a home dock you can reorder |
 | **Music** | Now playing; browse Music Assistant; lyrics and bios; move playback between speakers; group speakers |
 | **Area Control** | Slider cards for lights, covers, fans, climate, and media in your current area; color wheel and color temperature |
-| **Whole-Home Hub** | Alarm panel, thermostat, garage and locks, vacuum |
+| **Home Hub** | Alarm panel, thermostat, garage and locks, vacuum |
 | **Remote** | Up to 10 TVs, streaming boxes, or AV receivers; D-pad, volume, power |
 | **Sky & Weather** | Animated rain, snow, fog, and storm effects; 5-day forecast; sun position; moon phase |
 | **Tools** | Timers, alarms, stopwatch, calculator, calendar with event maps, intercom, camera, and a few small extras (11 on IMU boards) |

@@ -702,7 +702,7 @@ bool is_sensitive_perimeter_action_impl(const std::string &domain_or_entity,
   if (domain_or_entity == "lock" && action == "open") {
     return true;
   }
-  if (domain_or_entity == "whole_home.garage" && action == "turn_on") {
+  if (domain_or_entity == "home_hub.garage" && action == "turn_on") {
     return true;
   }
   if (domain_or_entity.rfind("cover.", 0) == 0 &&

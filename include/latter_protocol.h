@@ -11,11 +11,40 @@ static constexpr size_t kProtocolMinRequiredFields = 3;
 static constexpr char kProtocolFieldSep = '\x1f';
 static constexpr char kProtocolRecordSep = '\x1e';
 
-static constexpr const char *kDefaultDockApps = "music,alarm,area,remote,games,tools";  // defaults.dock_apps
+static constexpr const char *kDefaultDockApps = "music,home_hub,area,remote,games,tools";  // defaults.dock_apps
 static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_card
 static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
 static constexpr const char *kDefaultHomeCategories = "alarm,thermostat,entry,vacuum";  // defaults.home_categories
+
+enum class PowerProfile : uint8_t {
+  PORTABLE_CARRY = 0,
+  HANDHELD_ROAMING = 1,
+  WEARABLE_WATCH = 2,
+  TABLETOP_DOCK = 3,
+  ALWAYS_ON_STATIONARY = 4,
+  CUSTOM = 5,
+};
+
+struct PowerProfileSpec {
+  PowerProfile profile;
+  const char *name;
+  const char *va_wake_word_mode;
+  const char *tap_wake_mode;
+  const char *pickup_wake_mode;
+  const char *display_off_timeout;
+  const char *screensaver_docked_timeout;
+  const char *hibernate_timeout_mode;
+  bool docked_screensaver_enabled;
+};
+
+inline constexpr PowerProfileSpec kPowerProfiles[] = {
+    {PowerProfile::PORTABLE_CARRY, "Portable Carry", "Docked Only", "Docked Only", "Docked Only", "30s", "1 min", "15 min", true},
+    {PowerProfile::HANDHELD_ROAMING, "Handheld Roaming", "Docked Only", "Always On", "Always On", "30s", "1 min", "30 min", true},
+    {PowerProfile::WEARABLE_WATCH, "Wearable Watch", "Docked Only", "Always On", "Always On", "15s", "1 min", "15 min", true},
+    {PowerProfile::TABLETOP_DOCK, "Tabletop Dock", "Docked Only", "Docked Only", "Disabled", "30s", "5 min", "15 min", true},
+    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On", "Always On", "Disabled", "Never", "5 min", "Disabled", true},
+};
 
 enum class ProtocolHeaderField : size_t {
   HEADER_VERSION = 0,  // version (string)
@@ -35,41 +64,40 @@ enum class AreaCtxField : size_t {
   BLE_CLOSEST_PROXY = 6,  // ble_closest_proxy (string)
   DOCK_APPS = 7,  // dock_apps (csv)
   WALLPAPER_URL = 8,  // wallpaper_url (url)
-  THEME_COLOR_HEX = 9,  // theme_color_hex (string)
-  AVAILABLE_DOMAINS = 10,  // available_domains (csv)
-  AREA_TEMP = 11,  // area_temp (string)
-  AREA_HUMIDITY = 12,  // area_humidity (string)
-  LIGHTS_ON = 13,  // lights_on (u16)
-  COVERS_OPEN = 14,  // covers_open (u16)
-  ALARM_ENTITY = 15,  // alarm_entity (entity_id)
-  ALARM_STATE = 16,  // alarm_state (string)
-  THERMOSTAT_ENTITY = 17,  // thermostat_entity (entity_id)
-  THERMOSTAT_STATE = 18,  // thermostat_state (string)
-  THERMOSTAT_TEMP = 19,  // thermostat_temp (f32)
-  THERMOSTAT_CURRENT_TEMP = 20,  // thermostat_current_temp (f32)
-  LOCK_ENTITY = 21,  // lock_entity (entity_id)
-  LOCK_STATE = 22,  // lock_state (string)
-  GARAGE_ENTITY = 23,  // garage_entity (entity_id)
-  GARAGE_STATE = 24,  // garage_state (string)
-  VACUUM_ENTITY = 25,  // vacuum_entity (entity_id)
-  VACUUM_STATE = 26,  // vacuum_state (string)
-  CAMERA_SNAPSHOT_URL = 27,  // camera_snapshot_url (url)
-  CAMERAS_SUMMARY = 28,  // cameras_summary (records)
-  DOORBELL_TALK_STATE = 29,  // doorbell_talk_state (string)
-  INTERCOM_TARGETS_SUMMARY = 30,  // intercom_targets_summary (records)
-  ALERT_ID = 31,  // alert_id (u32)
-  ALERT_TITLE = 32,  // alert_title (string)
-  ALERT_MESSAGE = 33,  // alert_message (string)
-  ALERT_PRIORITY = 34,  // alert_priority (string)
-  ALERT_DURATION = 35,  // alert_duration (u16)
-  ALERT_CHIME = 36,  // alert_chime (bool)
-  ALERT_CAMERA_URL = 37,  // alert_camera_url (url)
-  ACTIVITY_CARD = 38,  // activity_card (bool)
-  ACTIVITY_SOURCES = 39,  // activity_sources (csv)
-  SECURITY_PIN_POLICY = 40,  // security_pin_policy (string)
-  HOME_CATEGORIES = 41,  // home_categories (csv)
-  AREA_ICON = 42,  // area_icon (string)
-  COUNT = 43
+  AVAILABLE_DOMAINS = 9,  // available_domains (csv)
+  AREA_TEMP = 10,  // area_temp (string)
+  AREA_HUMIDITY = 11,  // area_humidity (string)
+  LIGHTS_ON = 12,  // lights_on (u16)
+  COVERS_OPEN = 13,  // covers_open (u16)
+  ALARM_ENTITY = 14,  // alarm_entity (entity_id)
+  ALARM_STATE = 15,  // alarm_state (string)
+  THERMOSTAT_ENTITY = 16,  // thermostat_entity (entity_id)
+  THERMOSTAT_STATE = 17,  // thermostat_state (string)
+  THERMOSTAT_TEMP = 18,  // thermostat_temp (f32)
+  THERMOSTAT_CURRENT_TEMP = 19,  // thermostat_current_temp (f32)
+  LOCK_ENTITY = 20,  // lock_entity (entity_id)
+  LOCK_STATE = 21,  // lock_state (string)
+  GARAGE_ENTITY = 22,  // garage_entity (entity_id)
+  GARAGE_STATE = 23,  // garage_state (string)
+  VACUUM_ENTITY = 24,  // vacuum_entity (entity_id)
+  VACUUM_STATE = 25,  // vacuum_state (string)
+  CAMERA_SNAPSHOT_URL = 26,  // camera_snapshot_url (url)
+  CAMERAS_SUMMARY = 27,  // cameras_summary (records)
+  DOORBELL_TALK_STATE = 28,  // doorbell_talk_state (string)
+  INTERCOM_TARGETS_SUMMARY = 29,  // intercom_targets_summary (records)
+  ALERT_ID = 30,  // alert_id (u32)
+  ALERT_TITLE = 31,  // alert_title (string)
+  ALERT_MESSAGE = 32,  // alert_message (string)
+  ALERT_PRIORITY = 33,  // alert_priority (string)
+  ALERT_DURATION = 34,  // alert_duration (u16)
+  ALERT_CHIME = 35,  // alert_chime (bool)
+  ALERT_CAMERA_URL = 36,  // alert_camera_url (url)
+  ACTIVITY_CARD = 37,  // activity_card (bool)
+  ACTIVITY_SOURCES = 38,  // activity_sources (csv)
+  SECURITY_PIN_POLICY = 39,  // security_pin_policy (string)
+  HOME_CATEGORIES = 40,  // home_categories (csv)
+  AREA_ICON = 41,  // area_icon (string)
+  COUNT = 42
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -86,15 +114,13 @@ enum class MediaField : size_t {
   POSITION_UPDATED_AT = 9,  // position_updated_at (u32)
   VOLUME = 10,  // volume (u16)
   MEDIA_TYPE = 11,  // media_type (string)
-  SUPPORTED_FEATURES = 12,  // supported_features (u32)
-  ART_URL = 13,  // art_url (url)
-  ACTIVE_SPEAKER = 14,  // active_speaker (entity_id)
-  SPEAKER_NAME = 15,  // speaker_name (string)
-  LAST_SPEAKER = 16,  // last_speaker (entity_id)
-  LOCAL_SPEAKER = 17,  // local_speaker (entity_id)
-  VOLUME_ENTITY = 18,  // volume_entity (entity_id)
-  IS_LOCAL = 19,  // is_local (bool)
-  COUNT = 20
+  ART_URL = 12,  // art_url (url)
+  ACTIVE_SPEAKER = 13,  // active_speaker (entity_id)
+  SPEAKER_NAME = 14,  // speaker_name (string)
+  LAST_SPEAKER = 15,  // last_speaker (entity_id)
+  LOCAL_SPEAKER = 16,  // local_speaker (entity_id)
+  IS_LOCAL = 17,  // is_local (bool)
+  COUNT = 18
 };
 
 // Domain: remote_config (sensor.<device>_remote_config)
@@ -137,8 +163,7 @@ enum class CalendarField : size_t {
   HEADER_REV = 2,
   SUMMARY = 3,  // summary (records)
   EVENT_COUNT = 4,  // count (u16)
-  NEXT_EVENT = 5,  // next_event (string)
-  COUNT = 6
+  COUNT = 5
 };
 
 // Domain: device_prefs (sensor.<device>_device_prefs)

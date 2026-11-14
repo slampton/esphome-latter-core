@@ -78,7 +78,7 @@ image:
           latter_ui::last_cam_live_fetch_ms() = millis();
           rs.alert.loaded_camera_url = rs.alert.camera_url;
           if (rs.nav.display_power_state == 0 &&
-              (rs.alert.active || (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 9 || rs.nav.tools_subpage == 12)))) {
+              (rs.alert.active || rs.nav.gui_page == 12 || (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 9))) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: release_hidden_camera

@@ -125,7 +125,7 @@ enum class BackdropMode : uint8_t {
 //     weather_background is OFF).
 //     If weather_background is OFF: CustomWallpaper when loaded, else SolidBlack.
 // - Home overlays (subpage 1 or 2), System Settings (4), Area (6), Remote (7),
-//   Tools non-full-bleed (8), Whole-Home (9), and Music with Art Mode "None" (2):
+//   Tools non-full-bleed (8), Home Hub (9), and Music with Art Mode "None" (2):
 //     CustomWallpaper when loaded, else SolidBlack.
 // - Clock (0), Games (3), Music with Album Art enabled (2), and Tools full-bleed (8): SolidBlack.
 constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
@@ -196,13 +196,13 @@ void mark_dirty_full();
 // Folds all secondary subpage dimensions (home_subpage + home_dock_page,
 // tools_subpage + tools_menu_page + cal_detail_mode + timer_view_slot,
 // system_menu_mode + system_dashboard_page + sleep_menu_page + display_menu_page,
-// whole_home_tab) into one unambiguous sub_id for DirtyBandTracker::begin_frame.
+// home_hub_tab) into one unambiguous sub_id for DirtyBandTracker::begin_frame.
 constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_pg,
                                  int music_mode, int active_game,
                                  int sys_mode, int sys_dash_pg, int sleep_pg, int disp_pg,
                                  int weather_sub, int area_sub, int rem_sub,
                                  int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
-                                 int wh_tab) {
+                                 int hub_tab) {
   switch (gui_page) {
     case 1:
       return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8);
@@ -223,7 +223,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
       return (tools_sub & 0xFF) | ((tools_menu_pg & 0xFF) << 8) |
              ((cal_detail & 0x0F) << 16) | ((timer_slot & 0x0F) << 20);
     case 9:
-      return wh_tab;
+      return hub_tab;
     default:
       return 0;
   }
@@ -867,7 +867,7 @@ inline int compute_active_subpage_id() {
       rs.nav.sleep_menu_page, rs.nav.display_menu_page,
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
-      cal_detail_mode(), timer_view_slot(), whole_home_tab());
+      cal_detail_mode(), timer_view_slot(), home_hub_tab());
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {

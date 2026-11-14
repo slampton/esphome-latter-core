@@ -36,6 +36,21 @@
 
 namespace latter_ui {
 
+// Canonical top-level page IDs.
+namespace PageId {
+  static constexpr int CLOCK      = 0;
+  static constexpr int HOME       = 1;
+  static constexpr int MUSIC      = 2;
+  static constexpr int GAMES      = 3;
+  static constexpr int SYSTEM     = 4;
+  static constexpr int WEATHER    = 5;
+  static constexpr int AREA       = 6;
+  static constexpr int REMOTE     = 7;
+  static constexpr int TOOLS      = 8;
+  static constexpr int HOME_HUB   = 9;
+  static constexpr int CAMERAS    = 12;
+}  // namespace PageId
+
 // Em-dash placeholder rendered when Home Assistant / Protocol v3 state is not yet populated.
 inline constexpr const char *kUnknownGlyph = "—";
 
@@ -147,7 +162,7 @@ struct LinkState {
   uint32_t last_wifi_connect_ms = 0;
 };
 
-struct WholeHomeState {
+struct HomeHubState {
   int tab = 0;
   int thermostat_target_f = -1;
   float thermostat_current_f = NAN;
@@ -157,7 +172,7 @@ struct WholeHomeState {
   std::string vacuum_state = "";
 };
 
-// Protocol v3 area_context state (unread wire field covers_open is parsed on the wire without heap storage).
+// Protocol v3 area_context state.
 struct AreaContextState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -167,11 +182,11 @@ struct AreaContextState {
   std::string ble_closest_proxy = "";
   std::string dock_apps = "";
   std::string wallpaper_url = "";
-  std::string theme_color_hex = "";
   std::string available_domains = "";
   float area_temp = NAN;
   float area_humidity = NAN;
   int lights_on = 0;
+  int covers_open = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "";
   std::string thermostat_entity = "";
@@ -197,8 +212,7 @@ struct AreaContextState {
   std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
 };
 
-// Protocol v3 active_media state (unread wire fields position_updated_at, supported_features,
-// volume_entity are dropped; last_speaker is retained and wired to music_browse).
+// Protocol v3 active_media state.
 struct MediaState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -209,6 +223,7 @@ struct MediaState {
   std::string album = "";
   float duration = 0.0f;
   float position = 0.0f;
+  uint32_t position_updated_at = 0;
   float volume = 0.5f;
   bool has_volume = false;
   std::string media_type = "";
@@ -1011,9 +1026,7 @@ struct RemoteRuntimeState {
   static constexpr int kMaxSlots = 10;
   int active_slot = 0;
   int control_page = 0;
-  std::string slot_ents[kMaxSlots] = {
-      "remote.none", "remote.none", "remote.none", "remote.none", "remote.none",
-      "remote.none", "remote.none", "remote.none", "remote.none", "remote.none"};
+  std::string slot_ents[kMaxSlots]{};
   std::string slot_names[kMaxSlots]{};
   bool slot_states_on[kMaxSlots] = {false};
   std::string action_feedback = "";
@@ -1268,8 +1281,8 @@ inline LinkState &link_state() {
   return st;
 }
 
-inline WholeHomeState &whole_home_state() {
-  static WholeHomeState st;
+inline HomeHubState &home_hub_state() {
+  static HomeHubState st;
   return st;
 }
 
@@ -1531,7 +1544,7 @@ inline std::string normalize_vacuum_state_str(std::string_view sv) {
 // Parse Protocol v3 area_context payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_area_ctx_payload(std::string_view payload,
                                       AreaContextState &st = area_ctx_state(),
-                                      WholeHomeState &wh = whole_home_state()) {
+                                      HomeHubState &hub = home_hub_state()) {
   constexpr size_t kCount = static_cast<size_t>(AreaCtxField::COUNT);
   std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -1547,11 +1560,11 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.ble_closest_proxy = std::string(f[static_cast<size_t>(AreaCtxField::BLE_CLOSEST_PROXY)]);
   st.dock_apps         = std::string(f[static_cast<size_t>(AreaCtxField::DOCK_APPS)]);
   st.wallpaper_url     = std::string(f[static_cast<size_t>(AreaCtxField::WALLPAPER_URL)]);
-  st.theme_color_hex   = std::string(f[static_cast<size_t>(AreaCtxField::THEME_COLOR_HEX)]);
   st.available_domains = std::string(f[static_cast<size_t>(AreaCtxField::AVAILABLE_DOMAINS)]);
   st.area_temp         = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_TEMP)], NAN);
   st.area_humidity     = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_HUMIDITY)], NAN);
   st.lights_on         = v3_parse_int(f[static_cast<size_t>(AreaCtxField::LIGHTS_ON)], 0);
+  st.covers_open       = v3_parse_int(f[static_cast<size_t>(AreaCtxField::COVERS_OPEN)], 0);
   st.alarm_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_ENTITY)]);
   st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
   st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
@@ -1559,15 +1572,15 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.garage_entity     = std::string(f[static_cast<size_t>(AreaCtxField::GARAGE_ENTITY)]);
   st.vacuum_entity     = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
 
-  wh.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
+  hub.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
   float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
-  wh.thermostat_target_f = (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f)
+  hub.thermostat_target_f = (!std::isnan(th_temp) && th_temp >= 40.0f && th_temp <= 100.0f)
                                ? static_cast<int>(std::round(th_temp))
                                : -1;  // no setpoint: unknown
-  wh.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
-  wh.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);
-  wh.garage_state         = parse_garage_state_str(f[static_cast<size_t>(AreaCtxField::GARAGE_STATE)]);
-  wh.vacuum_state         = normalize_vacuum_state_str(f[static_cast<size_t>(AreaCtxField::VACUUM_STATE)]);
+  hub.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
+  hub.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);
+  hub.garage_state         = parse_garage_state_str(f[static_cast<size_t>(AreaCtxField::GARAGE_STATE)]);
+  hub.vacuum_state         = normalize_vacuum_state_str(f[static_cast<size_t>(AreaCtxField::VACUUM_STATE)]);
 
   st.camera_snapshot_url      = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_SNAPSHOT_URL)]);
   st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
@@ -1629,8 +1642,9 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
   st.title          = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
   st.artist         = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
   st.album          = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
-  st.duration       = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
-  st.position       = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
+  st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
+  st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
+  st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
   float raw_vol     = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
   if (!std::isnan(raw_vol)) {
     st.volume     = std::max(0.0f, std::min(1.0f, raw_vol * 0.01f));
@@ -2175,11 +2189,10 @@ inline size_t parse_v3_slots_payload(const StrT &slots_blob, BrowseSlotItem *out
 }
 
 // Shared slot-response applier for both set_browse_slots and set_area_slots.
-inline bool apply_slots_action(int contract, int req_id, std::string_view mode,
+inline bool apply_slots_action(int req_id, std::string_view mode,
                                int page, int total_pages, std::string_view slots_blob,
                                uint32_t now_ms = 0, bool force_area_entities = false,
                                DeviceRuntimeState &rt = runtime_state()) {
-  (void)contract;
   const latter_rpc::SlotChannel ch =
       force_area_entities ? latter_rpc::SlotChannel::AREA_ENTITIES
                           : latter_rpc::classify_browse_mode(mode);
@@ -2331,11 +2344,11 @@ static constexpr int kMaxDockApps = 10;
 
 inline int dock_app_id_for_token(std::string_view tok) {
   if (tok == "music") return 2;
-  if (tok == "alarm") return 9;
+  if (tok == "home_hub") return 9;
   if (tok == "area") return 6;
   if (tok == "remote") return 7;
   if (tok == "weather") return 5;
-  if (tok == "camera") return 12;
+  if (tok == "camera" || tok == "cameras") return 12;
   if (tok == "games") return 3;
   if (tok == "tools") return 8;
   return -1;
@@ -2368,8 +2381,32 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
 }
 
 inline int resolve_start_screen_page(const PersistedDevicePrefs &p = persisted_prefs()) {
-  const int app = resolve_anchor_dock_app(p);
-  return (app == 12) ? 8 : app;
+  return resolve_anchor_dock_app(p);
+}
+
+inline int resolve_start_screen_page(int app) {
+  return app;
+}
+
+inline bool is_sensitive_perimeter_action_impl(const std::string &domain_or_entity,
+                                              const std::string &action, int level = 100) {
+  if (action == "unlock" || action == "disarm" || action == "unlock_door" || action == "open_cover") {
+    return true;
+  }
+  if (domain_or_entity == "lock" && action == "open") {
+    return true;
+  }
+  if (domain_or_entity == "home_hub.garage" && action == "turn_on") {
+    return true;
+  }
+  if (domain_or_entity.rfind("cover.", 0) == 0 &&
+      (domain_or_entity.find("garage") != std::string::npos ||
+       domain_or_entity.find("gate") != std::string::npos) &&
+      (action == "turn_on" || action == "open" || action == "toggle" ||
+       (action == "set_level" && level > 0))) {
+    return true;
+  }
+  return false;
 }
 
 inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
@@ -2413,7 +2450,7 @@ struct HibernateSnapshot {
   uint16_t version = kHibernateSnapshotVersion;
   bool sun_below_horizon = false;
   char dock_apps[96]{};
-  char theme_color_hex[8]{};
+  char reserved_theme_color[8]{};
   char area_name[48]{};
   char area_icon[32]{};
   char weather_condition[24]{};
@@ -2473,7 +2510,6 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   const auto &ac = area_ctx_state();
   const auto &ws = weather_state();
   copy_bounded_cstr(snap.dock_apps, ac.dock_apps);
-  copy_bounded_cstr(snap.theme_color_hex, ac.theme_color_hex);
   copy_bounded_cstr(snap.area_name, ac.area_name);
   copy_bounded_cstr(snap.area_icon, ac.area_icon);
   copy_bounded_cstr(snap.weather_condition, ws.condition);
@@ -2517,7 +2553,7 @@ inline bool load_hibernate_snapshot_if_cold() {
     return false;
   }
   snap.dock_apps[sizeof(snap.dock_apps) - 1] = '\0';
-  snap.theme_color_hex[sizeof(snap.theme_color_hex) - 1] = '\0';
+  snap.reserved_theme_color[sizeof(snap.reserved_theme_color) - 1] = '\0';
   snap.area_name[sizeof(snap.area_name) - 1] = '\0';
   snap.area_icon[sizeof(snap.area_icon) - 1] = '\0';
   snap.weather_condition[sizeof(snap.weather_condition) - 1] = '\0';
@@ -2544,13 +2580,6 @@ inline bool load_hibernate_snapshot_if_cold() {
   }
   if (ac.area_icon.empty() && snap.area_icon[0] != '\0') {
     ac.area_icon = snap.area_icon;
-  }
-  if (ac.theme_color_hex.empty() && snap.theme_color_hex[0] != '\0') {
-    ac.theme_color_hex = snap.theme_color_hex;
-    if (ac.theme_color_hex.size() == 7 && ac.theme_color_hex[0] == '#') {
-      auto &p = persisted_prefs();
-      p.custom_theme_rgb = parse_hex_rgb_u24(ac.theme_color_hex, p.custom_theme_rgb);
-    }
   }
 
   auto &ws = weather_state();
@@ -2648,8 +2677,7 @@ inline bool *remote_slot_states_on() { return runtime_state().remote.slot_states
 inline int &remote_control_page() { return runtime_state().remote.control_page; }
 
 inline bool is_configured_remote_slot(const std::string &ent) {
-  if (ent.empty()) return false;
-  return ent != "none" && ent != "NONE" && ent != "remote.none" && ent != "media_player.none";
+  return !ent.empty();
 }
 
 inline bool has_any_configured_remote() {
@@ -2683,7 +2711,7 @@ inline void parse_latter_remote_slots_summary(const std::string &summary) {
   std::string *t_names = remote_slots_name();
   bool *st_on = remote_slot_states_on();
   for (int i = 0; i < MAX_REMOTE_SLOTS; i++) {
-    t_ents[i] = "remote.none";
+    t_ents[i].clear();
     t_names[i].clear();
     st_on[i] = false;
   }
@@ -2738,12 +2766,12 @@ inline int &light_insp_kelvin() { return runtime_state().area.light_insp_kelvin;
 inline int &light_insp_bri_pct() { return runtime_state().area.light_insp_bri_pct; }
 inline std::string &area_color_hex_param() { return runtime_state().area.color_hex_param; }
 
-inline int &whole_home_tab() { return whole_home_state().tab; }
-inline int &sim_thermostat_target_f() { return whole_home_state().thermostat_target_f; }
-inline std::string &sim_thermostat_mode() { return whole_home_state().thermostat_mode; }
-inline GarageState &wh_garage_state() { return whole_home_state().garage_state; }
-inline LockState &wh_lock_state() { return whole_home_state().lock_state; }
-inline std::string &sim_vacuum_state() { return whole_home_state().vacuum_state; }
+inline int &home_hub_tab() { return home_hub_state().tab; }
+inline int &home_hub_thermostat_target_f() { return home_hub_state().thermostat_target_f; }
+inline std::string &home_hub_thermostat_mode() { return home_hub_state().thermostat_mode; }
+inline GarageState &home_hub_garage_state() { return home_hub_state().garage_state; }
+inline LockState &home_hub_lock_state() { return home_hub_state().lock_state; }
+inline std::string &home_hub_vacuum_state() { return home_hub_state().vacuum_state; }
 
 inline int collect_area_categories(std::string *out_cats) {
   const std::string_view src =

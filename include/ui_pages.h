@@ -35,11 +35,12 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_music_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_weather_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_area_control_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_whole_home_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_comms_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
 
 // ------------------------------------------------------------------------------

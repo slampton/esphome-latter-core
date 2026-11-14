@@ -89,7 +89,7 @@ struct UiLayout {
     return -1;
   }
 
-  // 2. Adaptive 3-Card Area Control & Whole-Home Geometry
+  // 2. Adaptive 3-Card Area Control & Home Hub Geometry
   int area_card3_stride = base.area_card3_stride;
   int area_card3_h = base.area_card3_h;
   int area_card3_w = base.area_card3_w;
@@ -428,7 +428,7 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   if (anchor == PageId::HOME) return gui_page == PageId::HOME;
   if (anchor == PageId::CLOCK) return gui_page == PageId::CLOCK;
   if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
-  if (anchor == PageId::WHOLE_HOME) return gui_page == PageId::WHOLE_HOME;
+  if (anchor == PageId::HOME_HUB) return gui_page == PageId::HOME_HUB;
   if (anchor == PageId::AREA) {
     if (runtime_state().area.active_area_id.empty()) {
       return gui_page == PageId::AREA &&
@@ -438,9 +438,8 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   }
   if (anchor == PageId::REMOTE) return gui_page == PageId::REMOTE && remote_subpage == 0;
   if (anchor == PageId::WEATHER) return gui_page == PageId::WEATHER;
-  if (anchor == 12) {
-    return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::CAMERAS &&
-           !cam_quick_reply_open();
+  if (anchor == PageId::CAMERAS) {
+    return gui_page == PageId::CAMERAS && !cam_quick_reply_open();
   }
   if (anchor == PageId::GAMES) return gui_page == PageId::GAMES && active_game == 0;
   if (anchor == PageId::TOOLS) {
@@ -463,6 +462,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == PageId::HOME || alert_ringing) return false;
+  if (gui_page == PageId::CAMERAS && cam_quick_reply_open()) return false;
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
   if (gui_page == PageId::MUSIC && music_overlay_mode > 0) return false;
@@ -479,8 +479,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
         ((tools_subpage == ToolsSubpage::TIMERS && timer_view_slot() == 0) ||
          (tools_subpage == ToolsSubpage::ALARMS && alarm_edit_idx == 0) ||
          (tools_subpage == ToolsSubpage::STOPWATCH) ||
-         (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()) ||
-         (tools_subpage == ToolsSubpage::CAMERAS && !cam_quick_reply_open()));
+         (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()));
     if (!direct_root) return false;
   }
   if (!persisted_prefs().home_screen_enabled &&

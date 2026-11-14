@@ -223,17 +223,21 @@ interval:
               id(stop_alarm_sound).execute();
               latter_ui::display_lifecycle().note_activity(now_1s_ms);
             }
-            if (!rs.hw_usb_connected && rs.nav.gui_page == 8 &&
-                (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12) &&
+            if (!rs.hw_usb_connected &&
+                ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
+                 (rs.nav.gui_page == 12)) &&
                 touch_idle_ms >= 300000U) {
               ESP_LOGI("power", "Tool untouched on battery for 5 min: exiting to launcher");
-              if (rs.nav.tools_subpage == 12) {
+              if (rs.nav.gui_page == 12) {
                 if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
                   latter_ui::intercom_session().stop_call_with_hw(now_1s_ms);
                 }
                 latter_ui::release_art(id(camera_snapshot_art));
+                rs.nav.gui_page = 8;
+                rs.nav.tools_subpage = 0;
+              } else {
+                rs.nav.tools_subpage = 0;
               }
-              rs.nav.tools_subpage = 0;
               id(sync_display_brightness).execute();
               latter_ui::display_lifecycle().note_activity(now_1s_ms);
             }
@@ -259,8 +263,9 @@ interval:
           // 11. DisplayLifecycleController 1s supervisor: standby greeting tracking, external light-off sync,
           // deterministic active-screen idle timeout, and battery hibernate descent.
           const bool active_tool_awake =
-              (rs.nav.gui_page == 8 &&
-               (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7 || rs.nav.tools_subpage == 12));
+              ((rs.nav.gui_page == 8 &&
+                (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
+               (rs.nav.gui_page == 12));
           const uint32_t since_touch_ms = now_1s_ms - std::max(latter_ui::last_screen_wake_ms(),
                                                                latter_ui::touch_gesture().last_touch_ms);
           const bool in_hand_hold = (since_touch_ms < 90000U) &&
@@ -356,7 +361,7 @@ script:
               id(announcement_mixing_input).is_running() ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              (rs.nav.display_power_state == 0 && rs.nav.gui_page == 8 && rs.nav.tools_subpage == 12) ||
+              (rs.nav.display_power_state == 0 && rs.nav.gui_page == 12) ||
               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
               (rs.nav.display_power_state == 0 && (now_p - last_interact_ms < 8000U));
           const auto &prefs = latter_ui::persisted_prefs();
@@ -385,9 +390,10 @@ script:
               const bool need_accel = pw_allowed ||
                                       (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) ||
                                       (rs.nav.gui_page == 5) ||
+                                      (rs.nav.gui_page == 12) ||
                                       (rs.nav.gui_page == 8 &&
                                        (rs.nav.tools_subpage == 4 || rs.nav.tools_subpage == 7 ||
-                                        rs.nav.tools_subpage == 8 || rs.nav.tools_subpage == 12));
+                                        rs.nav.tools_subpage == 8));
               rs.hw_set_imu_power_mode(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
             }
           }
