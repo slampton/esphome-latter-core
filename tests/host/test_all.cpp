@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "../../include/latter_protocol.h"
+#include "../../include/audio_router.h"
 #include "../../include/latter_state.h"
 #include "../../include/latter_rpc.h"
 #include "../../include/latter_actions.h"
@@ -977,7 +978,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111304L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111305L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -1641,6 +1642,231 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(timers_yaml.find("weather_sky_motion_stepping(") != std::string::npos);
 }
 
+// ==============================================================================
+// 9. PHASE 4: AUDIO SESSION ARBITRATION, INTENT AUTO-NAV & 5-MIN PAUSE TIMEOUT
+// ==============================================================================
+
+void test_phase4_audio_session_and_music_pause_timeout() {
+  using latter_ui::AudioSessionController;
+  using latter_ui::AudioSessionPhase;
+  using latter_ui::MusicPlayIntent;
+
+  LATTER_CHECK(AudioSessionController::kRecentPausedMusicTimeoutMs == 300000U);
+
+  // 1. should_auto_open_music_page across intents, continuous sessions, Single-App Mode & alerts
+  AudioSessionController ctrl;
+  ctrl.reset();
+
+  // Fresh ExternalOrUserExplicit session opens PageId::MUSIC when home_screen_enabled == true
+  LATTER_CHECK(ctrl.should_auto_open_music_page(
+      /*current_gui_page=*/1, /*home_screen_enabled=*/true, /*start_screen_page=*/1,
+      /*alert_or_ringing=*/false, 1000U));
+  LATTER_CHECK(ctrl.phase() == AudioSessionPhase::MusicPlaying);
+
+  // Continuous session after user navigated back to Home (current_gui_page == 1) does NOT yank back to Music
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 2000U));
+  // Already on Music (current_gui_page == 2) stays true
+  LATTER_CHECK(ctrl.should_auto_open_music_page(2, true, 1, false, 2500U));
+
+  // Stopping local playback ends the continuous session so next explicit play opens Music again
+  ctrl.note_local_playback_stopped();
+  LATTER_CHECK(ctrl.should_auto_open_music_page(1, true, 1, false, 3000U));
+
+  // AutoResumeAfterVa suppresses auto-open even on a fresh playback start
+  ctrl.reset();
+  ctrl.set_play_intent(MusicPlayIntent::AutoResumeAfterVa, 5000U);
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 5200U));
+
+  // HomeQuickToggle suppresses auto-open so toggling from Home Activity Card stays on Home
+  ctrl.reset();
+  ctrl.set_play_intent(MusicPlayIntent::HomeQuickToggle, 6000U);
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 6100U));
+
+  // TrackAdvanceOrSeek suppresses auto-open
+  ctrl.reset();
+  ctrl.set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, 7000U);
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 7050U));
+
+  // Expired intent (> kPlayIntentWindowMs) falls back to ExternalOrUserExplicit -> true
+  ctrl.reset();
+  ctrl.set_play_intent(MusicPlayIntent::HomeQuickToggle, 8000U);
+  LATTER_CHECK(ctrl.should_auto_open_music_page(
+      1, true, 1, false, 8000U + AudioSessionController::kPlayIntentWindowMs + 1U));
+
+  // Single-App Mode: suppressed when start_screen != 2, allowed when start_screen == 2
+  ctrl.reset();
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(6, /*home_screen_enabled=*/false, /*start_screen_page=*/6, false, 9000U));
+  ctrl.reset();
+  LATTER_CHECK(ctrl.should_auto_open_music_page(2, /*home_screen_enabled=*/false, /*start_screen_page=*/2, false, 9500U));
+
+  // Active alarm/timer alert or OTA/hibernating suppresses Music auto-open
+  ctrl.reset();
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, /*alert_or_ringing=*/true, 10000U));
+  ctrl.reset();
+  LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 10100U, /*ota_or_hibernating=*/true));
+
+  // Natural track gap (IDLE -> PLAYING while ms.is_local && ms.state == "playing") keeps continuous session
+  // so user who navigated back to Home is NOT yanked back to PageId::MUSIC when Track 2 starts
+  {
+    auto &sess = latter_ui::audio_session();
+    sess.reset();
+    latter_ui::music_queue_cleared() = false;
+    latter_ui::clear_remote_play_override();
+    auto &ms = latter_ui::media_state();
+    auto &ac = latter_ui::area_ctx_state();
+    ms = latter_ui::MediaState{};
+    ms.is_local = true;
+    ms.state = "playing";
+    ms.title = "Track 1";
+    ms.active_speaker = "media_player.local_puck";
+    ac.area_id = "living_room";
+
+    // Track 1 starts -> auto-opens Music
+    latter_ui::sync_audio_session_media_observation(true, false, 11000U, ms, ac);
+    LATTER_CHECK(sess.should_auto_open_music_page(1, true, 1, false, 11000U));
+    // User navigates back to Home (gui_page = 1); Track 1 hits transient IDLE before Track 2 opens
+    // (on_idle skips note_local_playback_stopped() while ms.is_local && ms.state == "playing")
+    latter_ui::sync_audio_session_media_observation(false, false, 11400U, ms, ac);
+    LATTER_CHECK(sess.is_music_visible_on_home_activity(
+        false, latter_ui::is_music_paused_effective(false, ms.is_local, ms.state), true, 11400U));
+    // Track 2 opens and fires on_play -> continuous session stays on Home (returns false!)
+    ms.title = "Track 2";
+    latter_ui::sync_audio_session_media_observation(true, false, 11800U, ms, ac);
+    LATTER_CHECK(!sess.should_auto_open_music_page(1, true, 1, false, 11800U));
+  }
+
+  // 2. note_media_state_observation + is_music_visible_on_home_activity + paused_music_expiry_due_ms
+  ctrl.reset();
+  // Cold boot / reconnect into an already-paused speaker -> NEVER visible on Home Activity Card
+  ctrl.note_media_state_observation(
+      /*is_effectively_playing=*/false, /*is_paused_state=*/true,
+      "media_player.kitchen", "kitchen", 1000U);
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, true, 1000U));
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(1000U) == 0U);
+
+  // Live playing -> visible; then live playing -> paused on same speaker/Area -> visible for 5 min (300,000 ms)
+  ctrl.note_media_state_observation(true, false, "media_player.kitchen", "kitchen", 5000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(true, false, true, 5000U));
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(true, false, false, 5000U));
+  LATTER_CHECK(ctrl.phase() == AudioSessionPhase::MusicPlaying);
+
+  ctrl.note_media_state_observation(false, true, "media_player.kitchen", "kitchen", 10000U);
+  LATTER_CHECK(ctrl.phase() == AudioSessionPhase::MusicPausedRecent);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 10000U));      // +0 ms
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, false, 10000U));    // empty title gated
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(10000U) == 300000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 309999U));     // +299,999 ms -> still visible
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(309999U) == 1U);
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, true, 310000U));    // +300,000 ms -> expired!
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(310000U) == 0U);
+
+  // Area roam (speaker_id or area_id change) into an Area with an already-paused speaker -> false immediately
+  ctrl.note_media_state_observation(true, false, "media_player.kitchen", "kitchen", 400000U);
+  ctrl.note_media_state_observation(false, true, "media_player.kitchen", "kitchen", 405000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 406000U));
+  ctrl.note_media_state_observation(false, true, "media_player.office", "office", 407000U);
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, true, 407000U));
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(407000U) == 0U);
+
+  // Area roam with area_id change even before speaker_id updates -> false immediately
+  ctrl.note_media_state_observation(true, false, "media_player.office", "office", 410000U);
+  ctrl.note_media_state_observation(false, true, "media_player.office", "office", 412000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 412500U));
+  ctrl.note_media_state_observation(false, true, "media_player.office", "patio", 413000U);
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, true, 413000U));
+
+  // set_paused_for_va(true) preserves visibility while VA turn runs and survives transient IDLE states
+  // (e.g. TTS ANNOUNCING -> IDLE before ms.state updates) without wiping paused_for_va_ or last_live_pause_ms_
+  ctrl.note_media_state_observation(true, false, "media_player.patio", "patio", 500000U);
+  ctrl.set_paused_for_va(true, 502000U);
+  ctrl.note_media_state_observation(false, false, "media_player.patio", "patio", 503000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, false, true, 900000U));
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(505000U) == 0U);
+  ctrl.set_paused_for_va(false, 505000U);
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(505000U) == 297000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 505000U));
+
+  // Sendspin local PLAYING -> IDLE race before HA pushes ms.state = "paused":
+  // is_music_paused_effective stamps last_live_pause_ms_ at 605000U so subsequent ms.state = "paused" keeps 5-min window
+  {
+    auto &sess = latter_ui::audio_session();
+    sess.reset();
+    latter_ui::music_queue_cleared() = false;
+    latter_ui::clear_remote_play_override();
+    auto &ms = latter_ui::media_state();
+    auto &ac = latter_ui::area_ctx_state();
+    ms = latter_ui::MediaState{};
+    ms.is_local = true;
+    ms.state = "playing";
+    ms.title = "Sendspin Song";
+    ms.active_speaker = "media_player.study_puck";
+    ac.area_id = "study";
+
+    latter_ui::sync_audio_session_media_observation(true, false, 600000U, ms, ac);
+    LATTER_CHECK(sess.is_music_visible_on_home_activity(true, false, true, 600000U));
+
+    // Local media_player transitions PLAYING -> IDLE 200 ms before HA pushes ms.state = "paused"
+    LATTER_CHECK(latter_ui::is_music_paused_effective(false, true, ms.state, false));
+    latter_ui::sync_audio_session_media_observation(false, false, 605000U, ms, ac);
+    LATTER_CHECK(sess.paused_music_expiry_due_ms(605000U) == 300000U);
+    LATTER_CHECK(sess.is_music_visible_on_home_activity(
+        false, latter_ui::is_music_paused_effective(false, ms.is_local, ms.state), true, 605000U));
+
+    // HA pushes ms.state = "paused" 200 ms later -> 5-min window stays anchored at 605000U
+    ms.state = "paused";
+    latter_ui::sync_audio_session_media_observation(false, false, 605200U, ms, ac);
+    LATTER_CHECK(sess.paused_music_expiry_due_ms(605200U) == 299800U);
+    LATTER_CHECK(sess.is_music_visible_on_home_activity(
+        false, latter_ui::is_music_paused_effective(false, ms.is_local, ms.state), true, 904999U));
+    LATTER_CHECK(!sess.is_music_visible_on_home_activity(
+        false, latter_ui::is_music_paused_effective(false, ms.is_local, ms.state), true, 905000U));
+  }
+
+  // clear_paused_music() and "idle" state clear visibility immediately
+  ctrl.clear_paused_music();
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, true, true, 505100U));
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(505100U) == 0U);
+
+  ctrl.note_media_state_observation(true, false, "media_player.patio", "patio", 510000U);
+  ctrl.note_media_state_observation(false, true, "media_player.patio", "patio", 512000U);
+  LATTER_CHECK(ctrl.is_music_visible_on_home_activity(false, true, true, 512500U));
+  ctrl.note_media_state_observation(false, false, "media_player.patio", "patio", 513000U);  // "idle" / "off"
+  LATTER_CHECK(!ctrl.is_music_visible_on_home_activity(false, false, true, 513000U));
+  LATTER_CHECK(ctrl.paused_music_expiry_due_ms(513000U) == 0U);
+
+  // Alert preemption transitions phase to AlertRinging
+  ctrl.preempt_for_alert(520000U);
+  LATTER_CHECK(ctrl.phase() == AudioSessionPhase::AlertRinging);
+
+  // 3. Phase 4 source-level architectural invariants
+  const std::string audio_yaml = read_repo_file("../../modules/audio_voice.yaml");
+  const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+
+  LATTER_CHECK(audio_yaml.find("- id: preempt_va_for_alert") != std::string::npos);
+  LATTER_CHECK(audio_yaml.find("- script.execute: preempt_va_for_alert") != std::string::npos);
+  LATTER_CHECK(audio_yaml.find("- id: start_voice_assistant") != std::string::npos);
+  LATTER_CHECK(audio_yaml.find("- script.stop: start_voice_assistant") != std::string::npos);
+
+  LATTER_CHECK(timers_yaml.find("id(preempt_va_for_alert).execute();") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("cancel_voice_assistant") == std::string::npos);
+  LATTER_CHECK(timers_yaml.find("paused_music_expiry_due_ms(") != std::string::npos);
+
+  LATTER_CHECK(touch_cpp.find("set_play_intent(MusicPlayIntent::HomeQuickToggle") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("is_music_paused_effective(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("is_music_visible_on_home_activity(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("is_music_paused_effective(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("is_music_visible_on_home_activity(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("has_pending_home_activity_fade_settle(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("has_pending_home_activity_fade_settle(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("struct HomeActivityAnimState") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("fade_out_start_ms") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-039:") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -1653,8 +1879,10 @@ int main() {
   test_phase1_boot_wake_hibernate_and_ble_roaming();
   test_phase2_glass_and_scissor_compositor();
   test_phase3_weather_sky_backdrop_and_home_scene();
+  test_phase4_audio_session_and_music_pause_timeout();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
+      "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "
+      "Phase 4 AudioSessionController + 5-min pause fade-out, HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
   return 0;
 }

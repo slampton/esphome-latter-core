@@ -98,6 +98,10 @@ esphome:
                 } else if (area_icon_changed && r.nav.gui_page == 1) {
                   latter_ui::mark_dirty_full();
                 }
+                latter_ui::sync_audio_session_media_observation(
+                    id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+                    id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED,
+                    millis());
                 {
                   const bool domains_changed = (st.available_domains != latter_ui::area_available_domains_csv());
                   latter_ui::area_available_domains_csv() = st.available_domains;
@@ -184,6 +188,7 @@ esphome:
                 if (latter_ui::trigger_alert_banner(
                         st.alert_title, st.alert_message, st.alert_priority, st.alert_duration,
                         st.alert_camera_url, st.alert_id, millis(), true, r.alert)) {
+                  id(preempt_va_for_alert).execute();
                   latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
                   id(wake_to_active_state).execute();
                   if (st.alert_chime && !r.voice.active && !r.voice.tts_received) {
@@ -252,6 +257,10 @@ esphome:
                   }
                   r.music.active_speaker_entity = ms.active_speaker;
                 }
+                latter_ui::sync_audio_session_media_observation(
+                    id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+                    id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED,
+                    millis());
                 if (!ms.speaker_name.empty()) {
                   r.music.active_speaker_name = ms.speaker_name;
                 } else if (ms.is_local) {
@@ -376,7 +385,7 @@ esphome:
               } else if (sv_cmd == "activate_screensaver") {
                 id(trigger_screensaver_now).execute();
               } else if (sv_cmd == "trigger_va") {
-                id(toggle_voice_assistant).execute();
+                id(start_voice_assistant).execute();
               } else if (sv_cmd == "log_memory_report") {
                 latter_ui::log_memory_report();
               }
@@ -388,7 +397,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111304L;
+            constexpr long LATTER_YAML_REV = 2026111305L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -533,6 +542,7 @@ api:
                     alert_id, millis(), false, rs.alert)) {
               return;
             }
+            id(preempt_va_for_alert).execute();
             latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
             id(wake_to_active_state).execute();
             if (chime && !rs.voice.active && !rs.voice.tts_received) {
@@ -1190,9 +1200,7 @@ script:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           if (!rs.alarms.find_my_active) {
-            if (rs.voice.active || !rs.voice.status_text.empty()) {
-              id(cancel_voice_assistant).execute();
-            }
+            id(preempt_va_for_alert).execute();
             rs.alarms.find_my_active = true;
             rs.alarms.find_my_start_ms = millis();
             latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
@@ -1222,10 +1230,15 @@ script:
     then:
       - script.stop: fetch_camera_snapshot
       - lambda: |-
-          auto &ab = latter_ui::runtime_state().alert;
+          auto &rs = latter_ui::runtime_state();
+          auto &ab = rs.alert;
           ab.active = false;
           ab.camera_url = "";
           ab.loaded_camera_url = "";
+          if (rs.voice.resume_music_after && !rs.voice.active && !rs.voice.tts_received &&
+              !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
+            id(resume_music_after_va).execute();
+          }
       - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
       - script.execute: mp_idle_debounce
       - script.execute: sync_wake_word_state

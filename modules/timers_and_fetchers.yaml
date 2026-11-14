@@ -133,9 +133,37 @@ interval:
                latter_ui::home_activity_next_rotate_due_ms(now_w_ms) > 0U &&
                (latter_ui::home_activity_next_rotate_due_ms(now_w_ms) <= 120U ||
                 (now_w_ms % latter_ui::kHomeActivityRotateMs) <= 220U));
+          const uint32_t pause_exp_due_w =
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0)
+                  ? latter_ui::audio_session().paused_music_expiry_due_ms(now_tick_ms)
+                  : 0U;
+          static bool s_prev_pause_exp_pending_w = false;
+          const bool pause_exp_imminent_w = (pause_exp_due_w > 0U && pause_exp_due_w <= 120U);
+          const bool pause_exp_crossed_w =
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
+               s_prev_pause_exp_pending_w && pause_exp_due_w == 0U);
+          s_prev_pause_exp_pending_w =
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && pause_exp_due_w > 0U);
+          if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
+              !rs.voice.active && rs.voice.status_text.empty() &&
+              ((pause_exp_due_w > 0U && pause_exp_due_w <= 25U) || pause_exp_crossed_w)) {
+            int ay0 = 0, ay1 = 0;
+            if (latter_ui::home_activity_band(ay0, ay1)) {
+              if (pause_exp_due_w > 0U) {
+                latter_ui::schedule_activity_rotate_disp_update(&id(disp1), pause_exp_due_w, ay0, ay1);
+              } else {
+                latter_ui::schedule_band_disp_update(&id(disp1), ay0, ay1);
+              }
+            } else if (pause_exp_crossed_w) {
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+          }
           const bool greet_fading_w = latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting);
           const bool act_sliding_w = latter_ui::home_activity_slide_active(now_w_ms);
-          const bool ui_overlay_animating = greet_fading_w || act_sliding_w || home_card_rotate_window;
+          const bool act_fade_settle_w = latter_ui::has_pending_home_activity_fade_settle(now_w_ms);
+          const bool ui_overlay_animating =
+              greet_fading_w || act_sliding_w || act_fade_settle_w || home_card_rotate_window ||
+              pause_exp_imminent_w || pause_exp_crossed_w;
           const bool home_weather_active =
               (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && (sky_enabled_here || ui_overlay_animating));
           const bool app_weather_active = (rs.nav.gui_page == 5 && sky_enabled_here);
@@ -184,7 +212,7 @@ interval:
                   id(announcement_mixing_input).is_running() ||
                   id(sound_mixing_input).is_running();
               const bool mww_passive_busy = !speaker_audio_busy && !LATTER_CHIP_P4 && id(mww).is_running();
-              if (greet_fading_w || act_sliding_w) {
+              if (greet_fading_w || act_sliding_w || act_fade_settle_w) {
                 int ay0 = 0, ay1 = 0;
                 if (!greet_fading_w && !sky_stepping && latter_ui::home_activity_band(ay0, ay1)) {
                   latter_ui::schedule_anim_band_disp_update(&id(disp1), ay0, ay1);
@@ -244,6 +272,31 @@ interval:
               latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
               latter_ui::schedule_disp_update(&id(disp1));
             }
+            const uint32_t pause_exp_due_f =
+                on_home_main ? latter_ui::audio_session().paused_music_expiry_due_ms(now_fast_ms) : 0U;
+            static bool s_prev_pause_exp_pending_f = false;
+            const bool pause_exp_imminent_f = (pause_exp_due_f > 0U && pause_exp_due_f <= 350U);
+            const bool pause_exp_crossed_f =
+                (on_home_main && s_prev_pause_exp_pending_f && pause_exp_due_f == 0U);
+            s_prev_pause_exp_pending_f = on_home_main && (pause_exp_due_f > 0U);
+            if (pause_exp_imminent_f) {
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              const uint32_t rot_due_f = latter_ui::home_activity_next_rotate_due_ms(now_fast_ms);
+              if (rot_due_f == 0U || pause_exp_due_f < rot_due_f) {
+                int ay0 = 0, ay1 = 0;
+                if (latter_ui::home_activity_band(ay0, ay1)) {
+                  latter_ui::schedule_activity_rotate_disp_update(&id(disp1), pause_exp_due_f, ay0, ay1);
+                }
+              }
+            } else if (pause_exp_crossed_f) {
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              int ay0 = 0, ay1 = 0;
+              if (latter_ui::home_activity_band(ay0, ay1)) {
+                latter_ui::schedule_band_disp_update(&id(disp1), ay0, ay1);
+              } else {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            }
             const std::string_view sim_cond_opt_f(latter_ui::pref_weather_sim_cstr());
             const bool weather_sim_active_f = (sim_cond_opt_f != "Live (Home Assistant)");
             const auto &ac_wall_f = latter_ui::area_ctx_state();
@@ -295,6 +348,9 @@ interval:
                   (rs.alert.active && rs.alert.priority == "critical") ||
                   (rs.nav.gui_page == 3 && rs.nav.active_game > 0) ||
                   tool_anim_due || greet_fade_due || home_rotate_imminent || sky_motion_due ||
+                  pause_exp_imminent_f || pause_exp_crossed_f ||
+                  latter_ui::home_activity_slide_active(now_fast_ms) ||
+                  latter_ui::has_pending_home_activity_fade_settle(now_fast_ms) ||
                   latter_ui::is_home_activity_carousel_animating(now_fast_ms) ||
                   latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
                   rs.nav.menu_scroll_active || latter_ui::weather_sim_dirty();
@@ -359,9 +415,7 @@ interval:
             latter_ui::sync_multi_timer_state();
 
             if (any_expired) {
-              if (rs.voice.active || !rs.voice.status_text.empty()) {
-                id(cancel_voice_assistant).execute();
-              }
+              id(preempt_va_for_alert).execute();
               if (rs.nav.home_subpage == 2) {
                 rs.nav.home_subpage = 0;
               }
@@ -370,6 +424,7 @@ interval:
               latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
               id(wake_to_active_state).execute();
               id(play_alarm_sound).execute();
+              latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
             } else if (sec_changed) {
               if (!rs.voice.active && rs.voice.status_text.empty() && rs.nav.display_power_state == 0) {
@@ -489,6 +544,10 @@ script:
 
           // 1. Snooze expiration check
           if (rs.alarms.snooze_until > 0 && now_epoch >= rs.alarms.snooze_until) {
+            id(preempt_va_for_alert).execute();
+            if (rs.nav.home_subpage == 2) {
+              rs.nav.home_subpage = 0;
+            }
             rs.alarms.snooze_until = 0;
             rs.alarms.ringing = true;
             latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
@@ -530,8 +589,9 @@ script:
 
             if (trig_idx > 0) {
               if (need_save) latter_ui::save_persisted_prefs();
-              if (rs.voice.active || !rs.voice.status_text.empty()) {
-                id(cancel_voice_assistant).execute();
+              id(preempt_va_for_alert).execute();
+              if (rs.nav.home_subpage == 2) {
+                rs.nav.home_subpage = 0;
               }
               rs.alarms.last_fired_epoch_min = em;
               rs.alarms.ringing = true;

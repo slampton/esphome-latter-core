@@ -49,18 +49,25 @@ void render_battery_indicator(
   }
 }
 
-// Home activity card transitions (D-028): what the card showed last, what it showed before that, and
-// when the slide between them started (kMotionMs, ease-out cubic; 0 = settled).
-struct HomeActivityCardState {
+// Home activity card transitions (D-028 / D-039): row carousel slide + 210 ms disappearance fade-out
+// (kMotionMs, ease-out cubic; 0 = settled).
+struct HomeActivityAnimState {
   int top = -1;
   int bottom = -1;
   int from_top = -1;
   int from_bottom = -1;
   uint32_t anim_start_ms = 0;
+  bool was_visible = false;
+  uint32_t fade_out_start_ms = 0;
+  bool fade_out_two = false;
+  bool fade_out_has_drop = false;
+  HomeActivityItem fade_out_top_item{};
+  HomeActivityItem fade_out_bot_item{};
+  int fade_out_card_h = 0;
 };
 
-HomeActivityCardState &home_act_state() {
-  static HomeActivityCardState st;
+HomeActivityAnimState &home_act_state() {
+  static HomeActivityAnimState st;
   return st;
 }
 
@@ -251,7 +258,28 @@ void draw_home_activity_row_contents(
   }
   fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_ptr->c_str());
 
-  render_glass_circle(it, act_bx, gy, btn_r, fg_btn_fill, fg_sec);
+  if (alpha >= 0.99f) {
+    render_glass_circle(it, act_bx, gy, btn_r, fg_btn_fill, fg_sec);
+  } else if (alpha > 0.01f && btn_r > 1) {
+    const int d = 2 * btn_r + 1;
+    const GlassBackdrop btn_bd = sample_glass_backdrop(act_bx - btn_r, gy - btn_r, d, d);
+    Color btn_eff;
+    int raw_at = 0, raw_ab = 0, raw_rt = 0, raw_rb = 0;
+    resolve_glass_fill(btn_bd, fg_btn_fill, fg_sec, btn_eff, raw_at, raw_ab, raw_rt, raw_rb,
+                       -1, GlassVariant::Clear);
+    const int at = static_cast<int>(std::lround(static_cast<float>(raw_at) * alpha));
+    const int ab = static_cast<int>(std::lround(static_cast<float>(raw_ab) * alpha));
+    const int rt_a = static_cast<int>(std::lround(static_cast<float>(raw_rt) * alpha));
+    const int rb_a = static_cast<int>(std::lround(static_cast<float>(raw_rb) * alpha));
+    if (rt_a > 0 || rb_a > 0) {
+      fill_round_rect_glass(it, act_bx - btn_r, gy - btn_r, d, d,
+                            static_cast<float>(btn_r) + 0.5f, kChromeGlassSheen, rt_a, rb_a, 1);
+    }
+    if ((at > 0 || ab > 0) && d > 2) {
+      fill_round_rect_glass(it, act_bx - btn_r + 1, gy - btn_r + 1, d - 2, d - 2,
+                            std::max(0.5f, static_cast<float>(btn_r) - 0.5f), btn_eff, at, ab);
+    }
+  }
 
   const int sym_s = is_list_row ? 5 : 6;
   if (cur_act.kind == 5) {
@@ -775,11 +803,6 @@ void draw_area_glyph_pass(esphome::display::Display &it, int cx, int cy, int r,
 // Shared Home / Activity Deck State & Helpers
 // ==============================================================================
 
-bool &music_queue_cleared() {
-  static bool cleared = false;
-  return cleared;
-}
-
 int &home_activity_overlay_page() {
   static int pg = 0;
   return pg;
@@ -827,13 +850,28 @@ bool is_doorbell_or_intercom_active() {
 
 bool is_home_activity_carousel_animating(uint32_t now_ms) {
   const uint32_t t0 = home_act_state().anim_start_ms;
-  return t0 != 0 && (now_ms - t0) < kMotionMs;
+  return t0 != 0U && (now_ms < t0 || (now_ms - t0) < kMotionMs);
+}
+
+bool is_home_activity_fading_out(uint32_t now_ms) {
+  const uint32_t t0 = home_act_state().fade_out_start_ms;
+  return t0 != 0U && (now_ms < t0 || (now_ms - t0) < kMotionMs);
+}
+
+bool has_pending_home_activity_fade_settle(uint32_t now_ms) {
+  const auto &rs = runtime_state();
+  if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != 0) return false;
+  const uint32_t t0 = home_act_state().fade_out_start_ms;
+  if (t0 == 0U || now_ms < t0) return false;
+  const uint32_t el = now_ms - t0;
+  return el >= kMotionMs && el < (kMotionMs + 250U);
 }
 
 bool home_activity_slide_active(uint32_t now_ms) {
   const auto &rs = runtime_state();
-  return rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
-         home_activity_card_shown() && is_home_activity_carousel_animating(now_ms);
+  if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != 0) return false;
+  return (home_activity_card_shown() && is_home_activity_carousel_animating(now_ms)) ||
+         is_home_activity_fading_out(now_ms);
 }
 
 uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms) {
@@ -847,7 +885,10 @@ uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms) {
 }
 
 bool home_activity_band(int &out_y0, int &out_y1) {
-  if (!home_activity_card_shown() || s_act_band_y1 <= s_act_band_y0) return false;
+  if ((!home_activity_card_shown() && home_act_state().fade_out_start_ms == 0U) ||
+      s_act_band_y1 <= s_act_band_y0) {
+    return false;
+  }
   out_y0 = s_act_band_y0;
   out_y1 = s_act_band_y1;
   return true;
@@ -922,19 +963,26 @@ int collect_home_activities(
     out_items[count++] = {2, 0, stopwatch_running, stopwatch_running, true, std::string(buf)};
   }
 
-  // 3. Active or Paused Music Queue
-  const bool has_valid_track = !music_title.empty();
-  if (music_playing) {
+  // 3. Active or Recently-Paused Music Queue (D-039: 5-min live-pause window)
+  const auto &ms = media_state();
+  const bool is_playing_eff = music_playing;
+  if (is_playing_eff) {
     music_queue_cleared() = false;
   }
-  if ((music_playing || (has_valid_track && !music_queue_cleared())) && count < kMaxHomeActivity) {
-    std::string m_txt = music_title;
-    if (!has_valid_track) {
+  const bool is_paused_st = is_music_paused_effective(is_playing_eff, ms.is_local, ms.state);
+  const bool has_valid_track = !music_title.empty() || !ms.title.empty();
+  const bool music_vis =
+      (is_playing_eff || !music_queue_cleared()) &&
+      audio_session().is_music_visible_on_home_activity(
+          is_playing_eff, is_paused_st, has_valid_track, now_ms);
+  if (music_vis && count < kMaxHomeActivity) {
+    std::string m_txt = !music_title.empty() ? music_title : ms.title;
+    if (m_txt.empty()) {
       m_txt = "Now Playing";
     } else if (!music_artist.empty()) {
       m_txt = music_artist + " • " + m_txt;
     }
-    out_items[count++] = {3, 0, music_playing, false, true, m_txt};
+    out_items[count++] = {3, 0, is_playing_eff, false, true, m_txt};
   }
 
   // 4. Armed or Snoozed Alarms
@@ -1293,6 +1341,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
 
   if (home_subpage == 1) {
     s_act_deck_rotates = false;
+    home_activity_card_shown() = false;
+    home_act_state().was_visible = false;
+    home_act_state().fade_out_start_ms = 0U;
     render_page_wallpaper_base(it, ctx.home_wallpaper_art,
                                bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.theme_primary);
@@ -1327,6 +1378,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     bool is_24h{false};
     bool music_on{false};
     bool music_cleared{false};
+    bool music_vis{false};
     std::string m_title{};
     std::string m_artist{};
     uint32_t snooze{0xFFFFFFFFU};
@@ -1358,6 +1410,12 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
   const uint8_t cur_mask = activity_source_mask();
   const bool eff_cleared = music_playing ? false : music_queue_cleared();
+  const bool eff_paused_memo =
+      !eff_cleared && is_music_paused_effective(music_playing, ms.is_local, ms.state);
+  const bool cur_music_vis =
+      (music_playing || !eff_cleared) &&
+      audio_session().is_music_visible_on_home_activity(
+          music_playing, eff_paused_memo, !music_title.empty() || !ms.title.empty(), now_ms);
   const bool cur_intercom = is_doorbell_or_intercom_active();
   if (act_memo.count < 0 ||
       act_memo.sw_tick != cur_sw_tick ||
@@ -1371,6 +1429,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       act_memo.is_24h != is_24h_format ||
       act_memo.music_on != music_playing ||
       act_memo.music_cleared != eff_cleared ||
+      act_memo.music_vis != cur_music_vis ||
       act_memo.m_title != music_title ||
       act_memo.m_artist != music_artist ||
       act_memo.snooze != rs.alarms.snooze_until ||
@@ -1403,6 +1462,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     act_memo.is_24h = is_24h_format;
     act_memo.music_on = music_playing;
     act_memo.music_cleared = music_queue_cleared();
+    act_memo.music_vis = cur_music_vis;
     act_memo.m_title = music_title;
     act_memo.m_artist = music_artist;
     act_memo.snooze = rs.alarms.snooze_until;
@@ -1441,6 +1501,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
 
   if (home_subpage == 2) {
     s_act_deck_rotates = false;
+    home_activity_card_shown() = false;
+    home_act_state().was_visible = false;
+    home_act_state().fade_out_start_ms = 0U;
     if (bd_mode == BackdropMode::CustomWallpaper) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
     } else if ((show_weather_bg || sim_override_on) && weather_ready) {
@@ -1635,6 +1698,16 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     s_act_deck_rotates = view.pinned ? (two && deck_cnt > 1) : (deck_cnt > (two ? 2 : 1));
 
     auto &st = home_act_state();
+    st.fade_out_start_ms = 0U;
+    st.was_visible = true;
+    st.fade_out_two = two && (view.bottom >= 0);
+    st.fade_out_has_drop = has_drop;
+    st.fade_out_card_h = card_h;
+    st.fade_out_top_item =
+        (view.top >= 0 && view.top < act_count) ? act_items[view.top] : HomeActivityItem{};
+    st.fade_out_bot_item =
+        (st.fade_out_two && view.bottom >= 0 && view.bottom < act_count) ? act_items[view.bottom]
+                                                                         : HomeActivityItem{};
     if (view.top != st.top || view.bottom != st.bottom) {
       st.from_top = st.top;
       st.from_bottom = st.bottom;
@@ -1743,6 +1816,118 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         scale_x(56), scale_x(52));
   } else {
     s_act_deck_rotates = false;
+    auto &st = home_act_state();
+    if (home_subpage != 0 || greeting_active) {
+      st.was_visible = false;
+      st.fade_out_start_ms = 0U;
+      st.top = -1;
+      st.bottom = -1;
+      st.anim_start_ms = 0U;
+    } else {
+      if (st.was_visible) {
+        st.was_visible = false;
+        st.top = -1;
+        st.bottom = -1;
+        st.from_top = -1;
+        st.from_bottom = -1;
+        st.anim_start_ms = 0U;
+        st.fade_out_start_ms = (now_ms == 0U) ? 1U : now_ms;
+      }
+      if (st.fade_out_start_ms != 0U) {
+        const uint32_t el = (now_ms >= st.fade_out_start_ms) ? (now_ms - st.fade_out_start_ms) : 0U;
+        if (el >= kMotionMs) {
+          st.fade_out_start_ms = 0U;
+        } else {
+          const float e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
+          const float fade_alpha = std::clamp(1.0f - e, 0.0f, 1.0f);
+          const int card_h = (st.fade_out_card_h > 0) ? st.fade_out_card_h : ly.home_activity_h();
+          const int card_w = ly.home_activity_w();
+          const int pitch = ly.home_activity_pitch();
+          const int row_top = st.fade_out_two ? (act_card_cy - pitch / 2) : act_card_cy;
+          const int row_bot = act_card_cy + pitch / 2;
+          const int card_r = std::min(card_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
+          const int card_x0 = cx - card_w / 2;
+          const int card_y0 = act_card_cy - card_h / 2;
+          s_act_band_y0 = std::max(0, card_y0 - 2);
+          s_act_band_y1 = std::min(SCREEN_H - 1, card_y0 + card_h + 2);
+
+          const int prev_clip_y0 = clip_y0();
+          const int prev_clip_y1 = clip_y1();
+          const int sc_y0 = std::max(prev_clip_y0, card_y0);
+          const int sc_y1 = std::min(prev_clip_y1, card_y0 + card_h - 1);
+          if (fade_alpha > 0.01f && sc_y0 <= sc_y1) {
+            set_clip_y_band(sc_y0, sc_y1);
+            const Color tint = kChromeGlassTint;
+            const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
+            Color eff_tint;
+            int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+            resolve_glass_fill(backdrop, tint, ctx.col_white, eff_tint,
+                               raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot,
+                               -1, GlassVariant::Clear);
+            const int a_top = static_cast<int>(std::lround(static_cast<float>(raw_a_top) * fade_alpha));
+            const int a_bot = static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * fade_alpha));
+            const int rim_top = static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * fade_alpha));
+            const int rim_bot = static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * fade_alpha));
+            if (rim_top > 0 || rim_bot > 0) {
+              fill_round_rect_glass(it, card_x0, card_y0, card_w, card_h, static_cast<float>(card_r),
+                                    kChromeGlassSheen, rim_top, rim_bot, 1);
+            }
+            if ((a_top > 0 || a_bot > 0) && card_w > 2 && card_h > 2) {
+              fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, card_h - 2,
+                                    std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
+            }
+            const int mean_a = (a_top + a_bot) / 2;
+            const Color base_mean = backdrop.valid ? backdrop.mean : ctx.col_bg;
+            const Color card_bg = mix_color_q8(base_mean, eff_tint, mean_a);
+
+            const int inner_y0 = std::max(sc_y0, card_y0 + 1);
+            const int inner_y1 = std::min(sc_y1, card_y0 + card_h - 2);
+            if (inner_y0 <= inner_y1) {
+              set_clip_y_band(inner_y0, inner_y1);
+              if (st.fade_out_two) {
+                if (st.fade_out_top_item.kind != 0) {
+                  draw_home_activity_row_contents(
+                      it, row_top, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
+                      card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+                }
+                if (st.fade_out_bot_item.kind != 0) {
+                  draw_home_activity_row_contents(
+                      it, row_bot, st.fade_out_bot_item, st.fade_out_has_drop, false, ctx.font_small,
+                      card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+                }
+              } else if (st.fade_out_top_item.kind != 0) {
+                draw_home_activity_row_contents(
+                    it, act_card_cy, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
+                    card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+              }
+
+              const Color div_col = lerp_color(card_bg, kChromeCardBrdOn, fade_alpha);
+              const int card_right = cx + card_w / 2;
+              const int div1_x = st.fade_out_has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
+              const int div_h = scale_y(st.fade_out_two ? 17 : 23);
+              if (st.fade_out_two) {
+                fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, div_col);
+                fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, div_col);
+              } else {
+                fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, div_col);
+              }
+              if (st.fade_out_has_drop) {
+                const int div2_x = card_right - scale_x(52);
+                const int col_h = card_h / 2 - scale_y(10);
+                fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, div_col);
+                const Color chev_col = lerp_color(card_bg, ctx.col_white, fade_alpha);
+                const int d_bx = card_right - scale_x(26);
+                for (int w = -1; w <= 1; w++) {
+                  fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, chev_col);
+                  fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, chev_col);
+                }
+              }
+            }
+            set_clip_y_band(prev_clip_y0, prev_clip_y1);
+          }
+        }
+      }
+    }
   }
 
   if (greeting_active) {
@@ -2070,7 +2255,13 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
 // ==============================================================================
 
 void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx) {
-  switch (runtime_state().nav.gui_page) {
+  const int pg = runtime_state().nav.gui_page;
+  if (pg != PageId::HOME) {
+    home_activity_card_shown() = false;
+    home_act_state().was_visible = false;
+    home_act_state().fade_out_start_ms = 0U;
+  }
+  switch (pg) {
     case PageId::CLOCK:
       render_clock_page(it, ctx);
       break;

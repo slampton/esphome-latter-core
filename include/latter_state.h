@@ -28,6 +28,7 @@
 #endif
 
 #include "hal_manifest.h"
+#include "audio_router.h"
 #include "latter_protocol.h"
 #include "latter_rpc.h"
 
@@ -2058,6 +2059,42 @@ inline bool is_music_playing_effective(bool is_remote, bool local_playing,
   return (remote_state_str == "playing" || remote_state_str == "buffering");
 }
 
+inline bool &music_queue_cleared() noexcept {
+  static bool cleared = false;
+  return cleared;
+}
+
+inline bool is_music_paused_effective(bool is_effectively_playing,
+                                      bool is_local_speaker,
+                                      std::string_view ms_state,
+                                      bool local_mp_paused = false) noexcept {
+  return !is_effectively_playing && !music_queue_cleared() &&
+         (local_mp_paused || ms_state == "paused" ||
+          (is_local_speaker && (ms_state == "playing" || ms_state == "buffering")));
+}
+
+inline void sync_audio_session_media_observation(bool local_mp_playing,
+                                                 bool local_mp_paused,
+                                                 uint32_t now_ms,
+                                                 const MediaState &ms = media_state(),
+                                                 const AreaContextState &ac = area_ctx_state()) {
+  const bool is_remote = !ms.is_local;
+  const bool eff_playing = is_music_playing_effective(is_remote, local_mp_playing, ms.state, now_ms);
+  const bool remote_paused_override =
+      is_remote && remote_play_override_ms() > 0U &&
+      (now_ms - remote_play_override_ms() < 2500U) && !remote_play_override_state();
+  const bool eff_paused = is_music_paused_effective(
+      eff_playing, ms.is_local, ms.state,
+      local_mp_paused || (remote_paused_override && (ms.state == "playing" || ms.state == "buffering")));
+  if (!eff_playing && ms.state == "paused") {
+    audio_session().note_local_playback_stopped();
+  }
+  const std::string_view spk = !ms.active_speaker.empty()
+                                   ? std::string_view(ms.active_speaker)
+                                   : std::string_view(runtime_state().music.active_speaker_entity);
+  audio_session().note_media_state_observation(eff_playing, eff_paused, spk, ac.area_id, now_ms);
+}
+
 inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local,
                                       float local_mp_vol, uint32_t now_ms,
                                       MusicRuntimeState &m = runtime_state().music) {
@@ -2122,6 +2159,11 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
   if (opt == "Games") return 3;
   if (opt == "Tools") return 8;
   return p.home_screen_enabled ? 1 : 0;
+}
+
+inline int resolve_start_screen_page(const PersistedDevicePrefs &p = persisted_prefs()) {
+  const int app = resolve_anchor_dock_app(p);
+  return (app == 12) ? 8 : app;
 }
 
 inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,

@@ -11,6 +11,9 @@
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #endif
+#if __has_include("esphome/core/hal.h")
+#include "esphome/core/hal.h"
+#endif
 #if __has_include("esphome/core/log.h")
 #include "esphome/core/log.h"
 #endif
@@ -170,6 +173,8 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
         rs.stopwatch.start_time_ms = now_ms - rs.stopwatch.elapsed_ms;
       }
     } else if (kind == 3) {
+      const uint32_t intent_ts = (esphome::millis() != 0U) ? esphome::millis() : now_ms;
+      audio_session().set_play_intent(MusicPlayIntent::HomeQuickToggle, intent_ts);
       rt.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
     } else if (kind == 4) {
       if (s_idx == 0) {

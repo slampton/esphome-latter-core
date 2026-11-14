@@ -228,12 +228,25 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     }
     uint32_t act_mask = 0U;
     if (is_doorbell_or_intercom_active()) act_mask |= (1U << 0);
-    if (ctx.local_media_playing || media_state().state == "playing") act_mask |= (1U << 1);
+    const auto &ms = media_state();
+    const bool is_playing_eff =
+        is_music_playing_effective(!ms.is_local, ctx.local_media_playing, ms.state, ctx.now_ms);
+    const bool is_paused_st = is_music_paused_effective(is_playing_eff, ms.is_local, ms.state);
+    const bool has_track_title = !ms.title.empty() || !ctx.track_title.empty();
+    if ((is_playing_eff || !music_queue_cleared()) &&
+        audio_session().is_music_visible_on_home_activity(
+            is_playing_eff, is_paused_st, has_track_title, ctx.now_ms)) {
+      act_mask |= (1U << 1);
+    }
     if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
       act_mask |= (1U << 2);
     }
-    if (prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) act_mask |= (1U << 3);
+    if (rs.alarms.snooze_until > 0 ||
+        prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) {
+      act_mask |= (1U << 3);
+    }
     if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
+    if (is_home_activity_fading_out(ctx.now_ms)) act_mask |= (1U << 5);
     sig ^= (act_mask * 0x27D4EB2FU);
   }
   return sig;

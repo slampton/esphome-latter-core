@@ -15,6 +15,7 @@
 
 #include "latter_protocol.h"
 #include "latter_state.h"
+#include "audio_router.h"
 #include "ui_compositor.h"
 #include "ui_gfx.h"
 #include "ui_hit_table.h"
@@ -77,7 +78,6 @@ struct HomeActivityView {
   bool pinned = false;
 };
 
-bool &music_queue_cleared();
 int &home_activity_overlay_page();
 uint32_t &wake_greeting_start_ms();
 bool &wake_greeting_latched();
@@ -86,6 +86,8 @@ bool is_wake_greeting_fading(uint32_t now_ms, bool enabled);
 void dismiss_wake_greeting();
 bool is_doorbell_or_intercom_active();
 bool is_home_activity_carousel_animating(uint32_t now_ms);
+bool is_home_activity_fading_out(uint32_t now_ms);
+bool has_pending_home_activity_fade_settle(uint32_t now_ms);
 bool home_activity_slide_active(uint32_t now_ms);
 uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms);
 bool home_activity_band(int &out_y0, int &out_y1);
