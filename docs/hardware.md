@@ -23,6 +23,7 @@ Latter firmware supports five Waveshare boards. Purchase links are in the [devic
 | **Touch** | CST9217 | CST9217 (sold as CST9220) | FT3168 | FT6336 | GT911 |
 | **Audio** | ES8311 + ES7210 (speaker and mic array) | ES8311 + ES7210 | ES8311 + ES7210 | ES8311 (speaker and mic) | ES8311 + ES7210 |
 | **IMU** | QMI8658 | QMI8658 | QMI8658 | — | — |
+| **RTC** | — | PCF85063 | PCF85063 | — | — |
 | **Power** | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | USB / mains |
 | **Default power profile** | Portable Carry | Handheld Roaming | Wearable Watch | Tabletop Dock | Always-On Wall / Desk |
 | **Board file** | [`waveshare_s3_175c.yaml`](../boards/waveshare_s3_175c.yaml) | [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml) | [`waveshare_s3_206.yaml`](../boards/waveshare_s3_206.yaml) | [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml) | [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml) |
@@ -45,7 +46,7 @@ PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the li
 - **Desk Assistant (P4 86-Panel):** the ESP32-P4-86-Panel-ETH-2RO shares its mainboard with the ESP32-P4-WIFI6-Touch-LCD-4B, which hasn't been validated yet. The bottom board's Ethernet, RS485, and relay pins are reserved and not used by the firmware. The C6 module has a U.FL connector, so attach an external antenna.
 - **Remote Assistant (P4 3.5):** the board has a camera connector, but the firmware doesn't use the camera. Because `K1` (`GPIO49`) wakes the AXP2101 PMU (`PWRON`) rather than ESP32-P4 LP deep sleep, battery hibernate powers the PMU cleanly off (press `K1` once to boot), and scheduled alarms run whenever the device is docked on USB power.
 - **Both P4 boards:** Wi-Fi and Bluetooth run on the onboard ESP32-C6 co-processor. The firmware exposes the C6's own firmware as a separate **System: C6 Co-Processor Firmware** update entity.
-- **Wrist and Mobile Assistant:** a PCF85063 RTC is present on the board but isn't used. Time comes from Home Assistant.
+- **Wrist and Mobile Assistant:** the onboard PCF85063 RTC (`0x51`) restores UTC time immediately on cold boot or hibernate wake before Wi-Fi connects, and syncs automatically whenever Home Assistant or SNTP updates the clock.
 
 <!-- BEGIN GENERATED: tools/check_boards.py --render-docs (do not edit by hand) -->
 

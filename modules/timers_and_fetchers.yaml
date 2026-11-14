@@ -64,6 +64,29 @@ interval:
             }
           }
 
+          // Smooth dock slide, menu scroll, Find My radar, and ringing/critical alert pulse
+          if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
+              !rs.voice.active && rs.voice.status_text.empty()) {
+            const bool interactive_slide =
+                latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+                rs.nav.menu_scroll_active;
+            const bool ringing_anim =
+                rs.alarms.find_my_active || rs.alarms.ringing || rs.timers.ringing ||
+                (rs.alert.active && rs.alert.priority == "critical");
+            if (interactive_slide || ringing_anim) {
+              anim_driving_disp = true;
+              const uint32_t min_gap =
+                  (interactive_slide || rs.alarms.find_my_active)
+                      ? latter_ui::min_interactive_frame_gap_ms(id(mww).is_running())
+                      : 120U;
+              if (!latter_ui::disp_render_in_flight(now_tick_ms) &&
+                  (now_tick_ms - latter_ui::last_ambient_anim_ms() >= min_gap)) {
+                latter_ui::record_ambient_frame_ms(now_tick_ms);
+                latter_ui::schedule_anim_disp_update(&id(disp1));
+              }
+            }
+          }
+
           // Audio-Aware Fluid Voice Assistant Loop (All 5 Profiles)
           if (rs.voice.active || !rs.voice.status_text.empty()) {
             anim_driving_disp = true;
@@ -102,9 +125,15 @@ interval:
               !ac_wall.wallpaper_url.empty() &&
               ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
               id(home_wallpaper_art).get_width() > 0;
+          const bool home_card_rotate_window =
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
+               latter_ui::activity_source_mask() != 0U &&
+               ((latter_ui::kHomeActivityRotateMs - (now_w_ms % latter_ui::kHomeActivityRotateMs)) <= 300U ||
+                (now_w_ms % latter_ui::kHomeActivityRotateMs) <= 250U));
           const bool ui_overlay_animating =
               latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting) ||
-              latter_ui::is_home_activity_carousel_animating(now_w_ms);
+              latter_ui::is_home_activity_carousel_animating(now_w_ms) ||
+              home_card_rotate_window;
           const bool home_weather_active =
               (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
                ((weather_canvas_visible && !custom_wallpaper_active) || ui_overlay_animating));
@@ -172,12 +201,101 @@ interval:
           if (rs.nav.display_power_state == 0 || rs.voice.active || !rs.voice.status_text.empty()) {
             latter_ui::sync_disp_poller_for_anim(&id(disp1), anim_driving_disp);
           }
+          // Self-stop 20 ms tick after 2 quiet ticks when no animation, VA turn, or touch gesture is active.
+          const bool keep_anim_warm =
+              anim_driving_disp ||
+              id(va).is_running() || rs.voice.tts_received ||
+              (rs.nav.display_power_state == 0 && latter_ui::touch_gesture().active);
+          static uint8_t s_idle_anim_ticks = 0;
+          if (keep_anim_warm) {
+            s_idle_anim_ticks = 0;
+          } else if (++s_idle_anim_ticks >= 2U) {
+            s_idle_anim_ticks = 0;
+            latter_ui::sync_disp_poller_for_anim(&id(disp1), false);
+            latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
+          }
 
   - interval: 250ms
     id: ui_fast_tick
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          const auto &prefs = latter_ui::persisted_prefs();
+          const uint32_t now_fast_ms = millis();
+          // Re-arm ui_anim_tick if an asynchronous or timed animation window begins while the screen is on.
+          if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
+            static uint32_t s_prev_home_slot = 0;
+            const uint32_t cur_home_slot = now_fast_ms / latter_ui::kHomeActivityRotateMs;
+            const bool on_home_main = (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0);
+            const bool home_slot_rotated = (on_home_main && cur_home_slot != s_prev_home_slot);
+            const bool home_rotate_imminent =
+                on_home_main && latter_ui::activity_source_mask() != 0U &&
+                ((latter_ui::kHomeActivityRotateMs - (now_fast_ms % latter_ui::kHomeActivityRotateMs)) <= 300U);
+            s_prev_home_slot = cur_home_slot;
+            if (home_rotate_imminent) {
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+            }
+            if (home_slot_rotated && latter_ui::activity_source_mask() != 0U) {
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              latter_ui::schedule_disp_update(&id(disp1));
+            }
+            const std::string_view sim_cond_opt_f(latter_ui::pref_weather_sim_cstr());
+            const bool weather_sim_active_f = (sim_cond_opt_f != "Live (Home Assistant)");
+            const auto &ac_wall_f = latter_ui::area_ctx_state();
+            const bool custom_wallpaper_active_f =
+                !ac_wall_f.wallpaper_url.empty() &&
+                ac_wall_f.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                id(home_wallpaper_art).get_width() > 0;
+            const bool sky_canvas_active_f =
+                !rs.voice.active && rs.voice.status_text.empty() && !custom_wallpaper_active_f &&
+                ((on_home_main && (prefs.weather_background || weather_sim_active_f)) || rs.nav.gui_page == 5);
+            if (sky_canvas_active_f && rs.hw_motion_mag > 0.055f) {
+              latter_ui::last_user_touch_ms() = now_fast_ms;
+            }
+            if (!latter_ui::ui_anim_poller_running()) {
+              bool sky_motion_due = false;
+              if (sky_canvas_active_f) {
+                std::string c_cond_f = latter_ui::weather_state().condition;
+                const std::string &s_sun_f = latter_ui::weather_state().sun_state;
+                const bool sun_ok_f = (!s_sun_f.empty() && s_sun_f != "unknown" && s_sun_f != "unavailable");
+                bool is_night_f = (s_sun_f == "below_horizon" || c_cond_f == "clear-night" || c_cond_f == "clearnight" ||
+                                   (c_cond_f.find("night") != std::string::npos));
+                latter_ui::apply_weather_sim_override(std::string(sim_cond_opt_f), c_cond_f, is_night_f);
+                const uint32_t latest_in_f = std::max(
+                    latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
+                sky_motion_due =
+                    (sun_ok_f || weather_sim_active_f) &&
+                    latter_ui::has_weather_motion(c_cond_f, is_night_f, now_fast_ms) &&
+                    latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_fast_ms, latest_in_f);
+              }
+              const uint32_t greet_age_ms = now_fast_ms - latter_ui::wake_greeting_start_ms();
+              const bool greet_fade_due =
+                  prefs.wake_greeting && latter_ui::wake_greeting_latched() &&
+                  on_home_main &&
+                  (greet_age_ms >= 7650U && greet_age_ms <= 10750U);
+              const bool tool_anim_due =
+                  (rs.nav.gui_page == 8) &&
+                  ((rs.nav.tools_subpage == 3 && rs.stopwatch.running) ||
+                   (rs.nav.tools_subpage == 4 && latter_ui::dice_state().anim_active) ||
+                   (rs.nav.tools_subpage == 7) ||
+                   (rs.nav.tools_subpage == 8 && latter_ui::coin_state().anim_active));
+              const bool need_anim_wake =
+                  rs.voice.active || !rs.voice.status_text.empty() || id(va).is_running() || rs.voice.tts_received ||
+                  rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                  (rs.alert.active && rs.alert.priority == "critical") ||
+                  (rs.nav.gui_page == 3 && rs.nav.active_game > 0) ||
+                  tool_anim_due || greet_fade_due || home_rotate_imminent || sky_motion_due ||
+                  latter_ui::is_home_activity_carousel_animating(now_fast_ms) ||
+                  latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+                  rs.nav.menu_scroll_active || latter_ui::weather_sim_dirty();
+              if (need_anim_wake) {
+                latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              }
+            }
+          } else if ((rs.voice.active || !rs.voice.status_text.empty() || id(va).is_running() || rs.voice.tts_received) &&
+                     !latter_ui::ui_anim_poller_running()) {
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          }
           // Fetch any pending wallpaper update that arrived while the display was asleep or dimmed
           static int s_prev_disp_pwr = -1;
           if (rs.nav.display_power_state != s_prev_disp_pwr) {

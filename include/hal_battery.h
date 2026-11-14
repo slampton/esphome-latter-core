@@ -35,6 +35,9 @@
 #ifndef LATTER_BATTERY_MAH
 #define LATTER_BATTERY_MAH 0
 #endif
+#ifndef LATTER_HAS_RTC
+#define LATTER_HAS_RTC 0
+#endif
 
 #if defined(USE_ESP32) && defined(LATTER_HAS_BATTERY) && LATTER_HAS_BATTERY
 static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 5000,
@@ -455,6 +458,86 @@ inline void battery_log_profile(uint32_t /*now_ms*/) {}
 inline void hal_release_pwr_key_wake_pad() {}
 #endif
 
+// ---------------------------------------------------------------------------------------------------
+// Pure BCD & Howard Hinnant UTC civil-time helpers for onboard PCF85063 RTC (0x51, regs 0x04..0x0A)
+// ---------------------------------------------------------------------------------------------------
+constexpr int rtc_bcd_decode(uint8_t bcd, uint8_t mask) {
+  const uint8_t v = static_cast<uint8_t>(bcd & mask);
+  const uint8_t hi = static_cast<uint8_t>((v >> 4) & 0x0FU);
+  const uint8_t lo = static_cast<uint8_t>(v & 0x0FU);
+  if (hi > 9U || lo > 9U) return -1;
+  return static_cast<int>(hi * 10U + lo);
+}
+
+constexpr uint8_t rtc_bcd_encode(int val) {
+  if (val < 0) val = 0;
+  if (val > 99) val = 99;
+  return static_cast<uint8_t>(((val / 10) << 4) | (val % 10));
+}
+
+constexpr bool rtc_is_leap_year(int year) {
+  return (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+}
+
+constexpr int rtc_days_in_month(int year, int month) {
+  constexpr uint8_t kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) return 0;
+  if (month == 2 && rtc_is_leap_year(year)) return 29;
+  return kDays[month - 1];
+}
+
+// Howard Hinnant's days_from_civil: days since 1970-01-01 UTC (exact for all proleptic Gregorian dates).
+constexpr int64_t rtc_days_from_civil(int y, int m, int d) {
+  y -= (m <= 2) ? 1 : 0;
+  const int64_t era = (y >= 0 ? y : y - 399) / 400;
+  const uint32_t yoe = static_cast<uint32_t>(y - era * 400);
+  const uint32_t mp = static_cast<uint32_t>(m > 2 ? (m - 3) : (m + 9));
+  const uint32_t doy = (153U * mp + 2U) / 5U + static_cast<uint32_t>(d) - 1U;
+  const uint32_t doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+  return era * 146097LL + static_cast<int64_t>(doe) - 719468LL;
+}
+
+// Howard Hinnant's civil_from_days: inverse of rtc_days_from_civil (days since 1970-01-01 UTC -> Y-M-D).
+constexpr void rtc_civil_from_days(int64_t z, int &out_y, int &out_m, int &out_d) {
+  z += 719468LL;
+  const int64_t era = (z >= 0 ? z : z - 146096LL) / 146097LL;
+  const uint32_t doe = static_cast<uint32_t>(z - era * 146097LL);
+  const uint32_t yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
+  const int64_t y = static_cast<int64_t>(yoe) + era * 400LL;
+  const uint32_t doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
+  const uint32_t mp = (5U * doy + 2U) / 153U;
+  const uint32_t d = doy - (153U * mp + 2U) / 5U + 1U;
+  const uint32_t m = mp < 10U ? (mp + 3U) : (mp - 9U);
+  out_y = static_cast<int>(y + (m <= 2U ? 1 : 0));
+  out_m = static_cast<int>(m);
+  out_d = static_cast<int>(d);
+}
+
+// Decode PCF85063 registers 0x04..0x0A (VL/sec, min, hour, day, weekday, century/month, year) into UTC epoch.
+constexpr bool pcf85063_regs_to_epoch(const uint8_t reg[7], int64_t &out_epoch) {
+  if ((reg[0] & 0x80U) != 0U) return false;  // VL/OS bit 7 set -> oscillator stop / clock integrity invalid
+  const int sec = rtc_bcd_decode(reg[0], 0x7FU);
+  const int min = rtc_bcd_decode(reg[1], 0x7FU);
+  const int hour = rtc_bcd_decode(reg[2], 0x3FU);
+  const int day = rtc_bcd_decode(reg[3], 0x3FU);
+  const int month = rtc_bcd_decode(reg[5], 0x1FU);
+  const int year2 = rtc_bcd_decode(reg[6], 0xFFU);
+  if (sec < 0 || sec > 59 || min < 0 || min > 59 || hour < 0 || hour > 23) return false;
+  if (year2 < 25 || year2 > 99) return false;
+  const int year = 2000 + year2;
+  const int max_day = rtc_days_in_month(year, month);
+  if (max_day == 0 || day < 1 || day > max_day) return false;
+  const int64_t days = rtc_days_from_civil(year, month, day);
+  out_epoch = days * 86400LL + static_cast<int64_t>(hour) * 3600LL +
+              static_cast<int64_t>(min) * 60LL + static_cast<int64_t>(sec);
+  return out_epoch >= 1735689600LL;  // >= 2025-01-01T00:00:00Z
+}
+
+static_assert(rtc_days_from_civil(1970, 1, 1) == 0);
+static_assert(rtc_days_from_civil(2024, 2, 29) + 1 == rtc_days_from_civil(2024, 3, 1));
+static_assert(rtc_days_from_civil(2025, 2, 28) + 1 == rtc_days_from_civil(2025, 3, 1));
+static_assert(rtc_days_in_month(2024, 2) == 29 && rtc_days_in_month(2025, 2) == 28 && rtc_days_in_month(2025, 13) == 0);
+
 #ifdef USE_I2C
 void hal_axp2101_boot_battery_check(esphome::i2c::I2CBus *bus);
 void hal_init_axp2101(esphome::i2c::I2CBus *bus);
@@ -462,6 +545,11 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
 float hal_axp2101_read_die_temp_c(esphome::i2c::I2CBus *bus, bool &ok);
 void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_charging);
 int hal_axp2101_read_gauge_pct(esphome::i2c::I2CBus *bus);
+bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus);
+bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus);
+
+inline bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus &bus) { return hal_rtc_restore_system_clock(&bus); }
+inline bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus &bus) { return hal_rtc_sync_from_system_clock(&bus); }
 
 template <typename I2cBusT>
 inline void hal_axp2101_boot_battery_check(I2cBusT *const *bus_pp) {
@@ -482,6 +570,23 @@ inline void hal_axp2101_thermal_charge_foldback(I2cBusT *const *bus_pp, bool is_
 template <typename I2cBusT>
 inline int hal_axp2101_read_gauge_pct(I2cBusT *const *bus_pp) {
   return (bus_pp != nullptr) ? hal_axp2101_read_gauge_pct(*bus_pp) : -1;
+}
+template <typename I2cBusT>
+inline bool hal_rtc_restore_system_clock(I2cBusT *const *bus_pp) {
+  return bus_pp != nullptr && hal_rtc_restore_system_clock(*bus_pp);
+}
+template <typename I2cBusT>
+inline bool hal_rtc_sync_from_system_clock(I2cBusT *const *bus_pp) {
+  return bus_pp != nullptr && hal_rtc_sync_from_system_clock(*bus_pp);
+}
+#else
+template <typename BusT>
+inline bool hal_rtc_restore_system_clock(BusT &&) {
+  return false;
+}
+template <typename BusT>
+inline bool hal_rtc_sync_from_system_clock(BusT &&) {
+  return false;
 }
 #endif  // USE_I2C
 

@@ -21,7 +21,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111301L
+#define LATTER_SDK_REV 2026111302L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -51,6 +51,9 @@
 #endif
 #ifndef LATTER_HAS_BATTERY
 #define LATTER_HAS_BATTERY 1
+#endif
+#ifndef LATTER_HAS_RTC
+#define LATTER_HAS_RTC 0
 #endif
 #ifndef LATTER_IS_STATIONARY
 #define LATTER_IS_STATIONARY 0
@@ -179,7 +182,7 @@ inline std::string build_hardware_manifest_json() {
                 "{\"v\":2,\"contract\":%d,\"fw\":\"3.0.0\",\"board\":\"%s\",\"boot_id\":%lu,"
                 "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
                 "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
-                "\"imu\":%d,\"battery\":%d,\"stationary\":%d,\"wearable\":%d,"
+                "\"imu\":%d,\"battery\":%d,\"has_rtc\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
                 "\"slot_count\":%d,\"card_slot_count\":%d,\"max_payload_bytes\":2048,"
                 "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
@@ -188,7 +191,7 @@ inline std::string build_hardware_manifest_json() {
                 disp_w, disp_h, shape,
                 (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
                 audio_buf, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
-                (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY,
+                (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY, (int)LATTER_HAS_RTC,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
                 (int)LATTER_SLOT_COUNT, (int)LATTER_CARD_SLOT_COUNT, (int)LATTER_BLE_MINOR,

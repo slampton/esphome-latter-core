@@ -52,6 +52,8 @@ api:
           const bool is_ha = client_info.find("Home Assistant") != std::string::npos;
           if (is_ha) {
             latter_ui::reset_all_v3_rev_guards();
+            latter_ui::reset_hello_sync_on_connect();
+            latter_ui::mark_hello_in_flight(true, millis());
           }
           auto &rs = latter_ui::runtime_state();
           if (rs.on_ha_client_connected != nullptr) {
@@ -65,6 +67,9 @@ api:
   on_client_disconnected:
     then:
       - lambda: |-
+          if (client_info.find("Home Assistant") != std::string::npos) {
+            latter_ui::mark_hello_in_flight(false);
+          }
           auto &rs = latter_ui::runtime_state();
           if (rs.on_ha_client_disconnected != nullptr) {
             rs.on_ha_client_disconnected(client_info);
@@ -74,8 +79,19 @@ api:
       id: latter_ping_action
       then:
         - logger.log: "Latter companion connected"
-        # Latter pings every bound Device once its RPC outbox listener is attached: answer with a fresh hello.
-        - script.execute: send_device_hello
+        # Latter pings every bound Device once its RPC outbox listener is attached: answer with a fresh hello
+        # unless on_client_connected already has send_device_hello in flight or just completed with clean prefs.
+        - if:
+            condition:
+              lambda: |-
+                const uint32_t now_ms = millis();
+                if (!latter_ui::should_trigger_hello_on_ping(now_ms, latter_ui::persisted_prefs().dirty_mask)) {
+                  return false;
+                }
+                latter_ui::mark_hello_in_flight(true, now_ms);
+                return true;
+            then:
+              - script.execute: send_device_hello
 
     - action: latter_push_v3
       id: latter_push_v3_action
@@ -129,16 +145,26 @@ script:
   - id: send_device_hello
     mode: restart
     then:
+      - lambda: 'latter_ui::mark_hello_in_flight(true, millis());'
       - wait_until:
           condition:
             api.connected:
               state_subscription_only: true
           timeout: 30s
-      - delay: 250ms
-      - lambda: |-
-          latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
-          latter_actions::emit_device_hello();
-          latter_actions::check_and_emit_timer_alarm_state(millis(), true);
+      - if:
+          condition:
+            api.connected:
+              state_subscription_only: true
+          then:
+            - delay: 250ms
+            - lambda: |-
+                const uint32_t now_ms = millis();
+                latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
+                latter_actions::emit_device_hello();
+                latter_actions::check_and_emit_timer_alarm_state(now_ms, true);
+                latter_ui::mark_hello_sent(now_ms, latter_ui::persisted_prefs().dirty_mask);
+          else:
+            - lambda: 'latter_ui::mark_hello_in_flight(false);'
 
 time:
   - platform: homeassistant

@@ -71,6 +71,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_HAS_RTC=1"
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
@@ -205,8 +206,6 @@ script:
           gpio_hold_dis(GPIO_NUM_40);
           gpio_hold_dis(GPIO_NUM_46);
           gpio_hold_dis(GPIO_NUM_12);
-          id(es8311_dac).set_volume(0.90f);
-          id(es8311_dac).set_mute_on();
 
   - id: hal_enter_hardware_hibernate
     mode: restart

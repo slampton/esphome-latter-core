@@ -1397,7 +1397,10 @@ struct AnyId : esphome::display::Display, esphome::display::BaseImage, esphome::
   void enable_loop() {}
   void release() {}
   void enable() {}
+  void pause() {}
   void disable() {}
+  bool is_paused() const { return false; }
+  bool is_transport_up() const { return false; }
   void release_image() {}
   esphome::ESPTime now() const { return {}; }
   AnyCall make_call() { return {}; }
@@ -1927,9 +1930,11 @@ def main(argv: list[str] | None = None) -> int:
         if path.suffix.lower() not in {".h", ".hpp", ".cpp", ".yaml"}:
             continue
         txt = path.read_text(encoding="utf-8")
-        for m in re.finditer(r"(?m)^\s*#\s*define\s+LATTER_SDK_REV\s+(\d+)L?\b", txt):
+        for m in re.finditer(r"(?m)^\s*#\s*define\s+LATTER_SDK_REV\s+(\d+)[ULul]*\b", txt):
             sdk_revs.append(int(m.group(1)))
-        for m in re.finditer(r"constexpr\s+long\s+LATTER_YAML_REV\s*=\s*(\d+)L?\s*;", txt):
+        for m in re.finditer(
+            r"constexpr\s+(?:long|uint32_t|unsigned(?:\s+long)?)\s+LATTER_YAML_REV\s*=\s*(\d+)[ULul]*\s*;", txt
+        ):
             yaml_revs.append(int(m.group(1)))
     if not sdk_revs or not yaml_revs or set(sdk_revs) != set(yaml_revs):
         failures.append(
@@ -1994,6 +1999,19 @@ def main(argv: list[str] | None = None) -> int:
         failures.append("[VOICE LIFECYCLE] modules/audio_voice.yaml missing play_alarm_sound or resume_music_after_va")
 
     board_files = sorted((ROOT / "boards").glob("*.yaml"))
+    for bf in board_files:
+        bf_uncommented = _strip_yaml_comments(bf.read_text(encoding="utf-8"))
+        if "-DLATTER_HAS_RTC=" not in bf_uncommented:
+            failures.append(f"[BOARD TRAITS] {bf.name} missing -DLATTER_HAS_RTC=0/1")
+        m_holds = re.search(
+            r"(?m)^\s*-\s*id:\s*hal_release_deep_sleep_holds\b([\s\S]*?)(?=^\s*-\s*id:|\Z)", bf_uncommented
+        )
+        if m_holds and (
+            "es8311_dac" in m_holds.group(1) or "hal_set_display_brightness" in m_holds.group(1)
+        ):
+            failures.append(
+                f"[BOOT SAFETY] {bf.name} hal_release_deep_sleep_holds touches codec/backlight before setup()"
+            )
     trait_targets = board_files + [ROOT / "examples" / "custom_display_template.yaml"]
     for bf in trait_targets:
         expanded = expand_local_yaml_includes(bf)

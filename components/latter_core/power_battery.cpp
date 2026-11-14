@@ -1,6 +1,8 @@
 #include "hal_battery.h"
+#include "latter_state.h"
 
 #include <cmath>
+#include <ctime>
 
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
@@ -17,6 +19,8 @@
 #include <driver/rtc_io.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
+#include <sys/time.h>
+#include <time.h>
 #endif
 
 #if defined(USE_ESP32) && defined(LATTER_C6_RESET_PIN)
@@ -81,6 +85,7 @@ void hal_release_pwr_key_wake_pad() {
 #ifdef USE_I2C
 namespace {
 constexpr uint8_t kAxpAddr = 0x34;
+constexpr uint8_t kPcf85063Addr = 0x51;
 static_assert(kAxpThermalFoldbackEnterC == 65.0f && kAxpThermalFoldbackClearC == 58.0f,
               "AXP2101 thermal foldback thresholds must remain 65 C enter / 58 C clear.");
 
@@ -322,8 +327,139 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
            "DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X ILIM=0x%02X CHG=0x%02X VOFF=0x%02X",
            icc_ma, r62, (r61 & 0x0F) * 25, (r63 & 0x0F) * 25, (r63 & 0x10) ? "" : "(off)", kCvMv[r64 & 0x07], r64,
            kBattCapacityMah, r80, r90, r91, r30, r50, r27, r16, r18, r24);
+
+  // Immediately seed USB/VBUS and initial battery voltage/SoC at t = 0 so on_boot: -100 power policy
+  // and Frame #1 render accurate docked/battery state without waiting for the 1,000 ms PMU poll tick.
+  auto &rs = runtime_state();
+  uint8_t stat0 = 0;
+  if (axp_rd(bus, 0x00, &stat0, 1)) {
+    const bool vbus_good = (stat0 & 0x20) != 0;
+    const bool bat_present = (stat0 & 0x08) != 0;
+    const bool vbus = vbus_good || !bat_present;
+    rs.hw_usb_connected = vbus;
+    uint8_t chg_state = static_cast<uint8_t>(ChargePhase::IDLE);
+    bool is_charging = false;
+    if (vbus) {
+      uint8_t stat1 = 0;
+      if (axp_rd(bus, 0x01, &stat1, 1)) {
+        chg_state = stat1 & 0x07;
+        is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
+      }
+    }
+    rs.hw_batt_charging = is_charging;
+#if LATTER_HAS_BATTERY
+    if (bat_present) {
+      uint8_t vbuf[2] = {0, 0};
+      if (axp_rd(bus, 0x34, vbuf, 2)) {
+        const int vbat_mv = ((vbuf[0] & 0x3F) << 8) | vbuf[1];
+        const int hw_gauge = hal_axp2101_read_gauge_pct(bus);
+        if (hw_gauge >= 0) {
+          tel.gauge_raw = hw_gauge;
+        }
+        const uint32_t boot_ms = esphome::millis();
+        BatteryModel &bm = battery_model();
+        bm.update(vbat_mv, !vbus, static_cast<ChargePhase>(chg_state), BattLoad::SCREEN,
+                  boot_ms == 0U ? 1U : boot_ms, hw_gauge);
+        if (!std::isnan(bm.soc_display)) {
+          rs.hw_batt_level = std::round(bm.soc_display);
+        }
+        if (bm.vraw_mv > 0) {
+          rs.hw_batt_voltage = static_cast<float>(bm.vraw_mv) / 1000.0f;
+        }
+        if (rs.hw_update_batt_level != nullptr) {
+          rs.hw_update_batt_level();
+        }
+      }
+    }
+#endif
+  }
 #else
   (void)bus;
+#endif
+}
+
+bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus) {
+#if defined(USE_ESP32) && LATTER_HAS_RTC
+  if (bus == nullptr) return false;
+  uint8_t reg[7] = {};
+  const uint8_t start_reg = 0x04;
+  if (bus->write_readv(kPcf85063Addr, &start_reg, 1, reg, sizeof(reg)) != esphome::i2c::ERROR_OK) {
+    return false;
+  }
+  int64_t epoch64 = 0;
+  if (!pcf85063_regs_to_epoch(reg, epoch64)) {
+    ESP_LOGD("rtc", "PCF85063 clock not yet valid (reg04=0x%02X year_bcd=0x%02X)", reg[0], reg[6]);
+    return false;
+  }
+  const time_t cur = std::time(nullptr);
+  if (cur < static_cast<time_t>(1700000000)) {
+    struct timeval tv {};
+    tv.tv_sec = static_cast<time_t>(epoch64);
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+    ESP_LOGI("rtc", "Restored system UTC clock from PCF85063 RTC (epoch=%lld)",
+             static_cast<long long>(epoch64));
+  }
+  return true;
+#else
+  (void)bus;
+  return false;
+#endif
+}
+
+bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus) {
+#if defined(USE_ESP32) && LATTER_HAS_RTC
+  if (bus == nullptr) return false;
+  const time_t now = std::time(nullptr);
+  if (now < static_cast<time_t>(1700000000)) return false;
+
+  static uint32_t s_last_sync_ms = 0;
+  static int64_t s_last_sync_epoch = 0;
+  const uint32_t now_ms = esphome::millis();
+  if (s_last_sync_ms != 0U && (now_ms - s_last_sync_ms) < 60000U) {
+    const int64_t expected_epoch = s_last_sync_epoch + static_cast<int64_t>((now_ms - s_last_sync_ms) / 1000U);
+    const int64_t drift = static_cast<int64_t>(now) - expected_epoch;
+    if (drift >= -2 && drift <= 2) {
+      return false;
+    }
+  }
+
+  struct tm tm_utc {};
+  if (gmtime_r(&now, &tm_utc) == nullptr) return false;
+  const int full_year = tm_utc.tm_year + 1900;
+  if (full_year < 2025 || full_year > 2099) return false;
+
+  // Ensure PCF85063 Control_1 (0x00) runs continuously (STOP=0) in 24-hour mode (12_24=0).
+  uint8_t ctrl1 = 0;
+  const uint8_t ctrl1_reg = 0x00;
+  if (bus->write_readv(kPcf85063Addr, &ctrl1_reg, 1, &ctrl1, 1) == esphome::i2c::ERROR_OK &&
+      (ctrl1 & 0x22U) != 0U) {
+    const uint8_t fix_ctrl1[2] = {0x00, static_cast<uint8_t>(ctrl1 & ~0x22U)};
+    bus->write(kPcf85063Addr, fix_ctrl1, sizeof(fix_ctrl1));
+  }
+
+  const int sec = tm_utc.tm_sec > 59 ? 59 : (tm_utc.tm_sec < 0 ? 0 : tm_utc.tm_sec);
+  const uint8_t pkt[8] = {
+      0x04,
+      static_cast<uint8_t>(rtc_bcd_encode(sec) & 0x7FU),  // bit 7 VL/OS = 0 (oscillator integrity valid)
+      static_cast<uint8_t>(rtc_bcd_encode(tm_utc.tm_min) & 0x7FU),
+      static_cast<uint8_t>(rtc_bcd_encode(tm_utc.tm_hour) & 0x3FU),
+      static_cast<uint8_t>(rtc_bcd_encode(tm_utc.tm_mday) & 0x3FU),
+      static_cast<uint8_t>(tm_utc.tm_wday & 0x07U),
+      static_cast<uint8_t>(rtc_bcd_encode(tm_utc.tm_mon + 1) & 0x1FU),
+      rtc_bcd_encode(full_year - 2000),
+  };
+  if (bus->write(kPcf85063Addr, pkt, sizeof(pkt)) != esphome::i2c::ERROR_OK) {
+    return false;
+  }
+  s_last_sync_ms = (now_ms == 0U) ? 1U : now_ms;
+  s_last_sync_epoch = static_cast<int64_t>(now);
+  ESP_LOGD("rtc", "Synced PCF85063 RTC from system UTC clock (%04d-%02d-%02d %02d:%02d:%02dZ)",
+           full_year, tm_utc.tm_mon + 1, tm_utc.tm_mday, tm_utc.tm_hour, tm_utc.tm_min, sec);
+  return true;
+#else
+  (void)bus;
+  return false;
 #endif
 }
 #endif  // USE_I2C

@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -514,12 +515,14 @@ inline bool apply_power_profile_to_prefs(PersistedDevicePrefs &p, std::string_vi
   const SpecRow &r = kRows[idx];
   const uint8_t eff_pick = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? r.pick : 2;
   const uint8_t eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? r.hib : 4;
+  const uint8_t eff_ble_mode = (idx == 1) ? 1U : 0U;  // Handheld Roaming -> "Handheld + Screen Off", others -> "Handheld Only"
   set_u8(p.wake_word_mode, r.ww, PrefKey::WAKE_WORD_MODE, kPrefEffectWakeWordSync);
   set_u8(p.tap_to_wake, r.tap, PrefKey::TAP_TO_WAKE, kPrefEffectPowerPolicy);
   set_u8(p.pickup_to_wake, eff_pick, PrefKey::PICKUP_TO_WAKE, kPrefEffectPowerPolicy);
   set_u8(p.battery_screen_timeout, r.batt_scr, PrefKey::BATTERY_SCREEN_TIMEOUT, kPrefEffectSleepTimer);
   set_u8(p.docked_idle_timeout, r.dock_idle, PrefKey::DOCKED_IDLE_TIMEOUT, kPrefEffectSleepTimer);
   set_u8(p.battery_hibernate_timeout, eff_hib, PrefKey::BATTERY_HIBERNATE_TIMEOUT, kPrefEffectPowerPolicy);
+  set_u8(p.ble_beacon_mode, eff_ble_mode, PrefKey::BLE_BEACON_MODE, kPrefEffectPowerPolicy);
   if (p.docked_screensaver != r.saver) {
     p.docked_screensaver = r.saver;
     if (out_changed != nullptr) *out_changed |= pref_key_bit(PrefKey::DOCKED_SCREENSAVER);
@@ -2123,6 +2126,247 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
     }
   }
   return true;
+}
+
+// ==============================================================================
+// Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
+// ==============================================================================
+static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
+static constexpr uint16_t kHibernateSnapshotVersion = 1U;
+static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
+
+struct HibernateSnapshot {
+  uint32_t magic = kHibernateSnapshotMagic;
+  uint16_t version = kHibernateSnapshotVersion;
+  bool sun_below_horizon = false;
+  char dock_apps[96]{};
+  char theme_color_hex[8]{};
+  char area_name[48]{};
+  char weather_condition[24]{};
+  float weather_temp = NAN;
+  char posix_tz[48]{};
+};
+
+static_assert(std::is_trivially_copyable_v<HibernateSnapshot>,
+              "HibernateSnapshot must remain a POD blob for ESPPreferenceObject.");
+
+template <size_t N>
+inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
+  static_assert(N > 0, "Destination buffer must be non-empty");
+  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
+  if (n > 0) std::memcpy(dst, src.data(), n);
+  dst[n] = '\0';
+}
+
+#if LATTER_HAS_ESP_PREFS
+inline esphome::ESPPreferenceObject &hibernate_snapshot_handle() {
+  static esphome::ESPPreferenceObject pref;
+  static bool inited = false;
+  if (!inited && esphome::global_preferences != nullptr) {
+    pref = esphome::global_preferences->make_preference<HibernateSnapshot>(kHibernateSnapshotHash);
+    inited = true;
+  }
+  return pref;
+}
+#else
+struct HostHibernateSnapshotStore {
+  bool has_saved = false;
+  HibernateSnapshot blob{};
+};
+
+inline HostHibernateSnapshotStore &host_hibernate_snapshot_store() {
+  static HostHibernateSnapshotStore st{};
+  return st;
+}
+#endif
+
+inline std::string &hydrated_posix_tz() {
+  static std::string tz;
+  return tz;
+}
+
+#if !LATTER_HAS_ESP_PREFS
+inline void reset_hibernate_snapshot_for_test() {
+  host_hibernate_snapshot_store() = HostHibernateSnapshotStore{};
+  hydrated_posix_tz().clear();
+}
+#endif
+
+inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
+  HibernateSnapshot snap{};
+  snap.magic = kHibernateSnapshotMagic;
+  snap.version = kHibernateSnapshotVersion;
+  const auto &ac = area_ctx_state();
+  const auto &ws = weather_state();
+  copy_bounded_cstr(snap.dock_apps, ac.dock_apps);
+  copy_bounded_cstr(snap.theme_color_hex, ac.theme_color_hex);
+  copy_bounded_cstr(snap.area_name, ac.area_name);
+  copy_bounded_cstr(snap.weather_condition, ws.condition);
+  snap.weather_temp = ws.temperature;
+  snap.sun_below_horizon = (ws.sun_state == "below_horizon");
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+  const char *tz_env = (tz_override != nullptr) ? tz_override : std::getenv("TZ");
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+  if (tz_env != nullptr && tz_env[0] != '\0') {
+    copy_bounded_cstr(snap.posix_tz, tz_env);
+  }
+#if LATTER_HAS_ESP_PREFS
+  if (esphome::global_preferences == nullptr) return false;
+  const bool ok = hibernate_snapshot_handle().save(&snap);
+  esphome::global_preferences->sync();
+  return ok;
+#else
+  auto &store = host_hibernate_snapshot_store();
+  store.blob = snap;
+  store.has_saved = true;
+  return true;
+#endif
+}
+
+inline bool load_hibernate_snapshot_if_cold() {
+  HibernateSnapshot snap{};
+#if LATTER_HAS_ESP_PREFS
+  if (esphome::global_preferences == nullptr) return false;
+  if (!hibernate_snapshot_handle().load(&snap)) return false;
+#else
+  const auto &store = host_hibernate_snapshot_store();
+  if (!store.has_saved) return false;
+  snap = store.blob;
+#endif
+  if (snap.magic != kHibernateSnapshotMagic || snap.version != kHibernateSnapshotVersion) {
+    return false;
+  }
+  snap.dock_apps[sizeof(snap.dock_apps) - 1] = '\0';
+  snap.theme_color_hex[sizeof(snap.theme_color_hex) - 1] = '\0';
+  snap.area_name[sizeof(snap.area_name) - 1] = '\0';
+  snap.weather_condition[sizeof(snap.weather_condition) - 1] = '\0';
+  snap.posix_tz[sizeof(snap.posix_tz) - 1] = '\0';
+
+  if (snap.posix_tz[0] != '\0') {
+    hydrated_posix_tz() = snap.posix_tz;
+#if defined(ESP_PLATFORM) && !defined(LATTER_HOST_TEST)
+    setenv("TZ", snap.posix_tz, 1);
+    tzset();
+#endif
+  }
+
+  auto &ac = area_ctx_state();
+  if (ac.dock_apps.empty() && snap.dock_apps[0] != '\0') {
+    ac.dock_apps = snap.dock_apps;
+  }
+  if (ac.area_name.empty() && snap.area_name[0] != '\0') {
+    ac.area_name = snap.area_name;
+    if (runtime_state().area.active_area_name.empty() ||
+        runtime_state().area.active_area_name == "Area Control") {
+      runtime_state().area.active_area_name = snap.area_name;
+    }
+  }
+  if (ac.theme_color_hex.empty() && snap.theme_color_hex[0] != '\0') {
+    ac.theme_color_hex = snap.theme_color_hex;
+    if (ac.theme_color_hex.size() == 7 && ac.theme_color_hex[0] == '#') {
+      auto &p = persisted_prefs();
+      p.custom_theme_rgb = parse_hex_rgb_u24(ac.theme_color_hex, p.custom_theme_rgb);
+    }
+  }
+
+  auto &ws = weather_state();
+  if (ws.condition.empty()) {
+    if (snap.weather_condition[0] != '\0') {
+      ws.condition = snap.weather_condition;
+      ws.temperature = snap.weather_temp;
+      ws.sun_state = snap.sun_below_horizon ? "below_horizon" : "above_horizon";
+    } else if (ws.sun_state.empty()) {
+      ws.sun_state = snap.sun_below_horizon ? "below_horizon" : "above_horizon";
+    }
+  }
+  return true;
+}
+
+// ==============================================================================
+// Handshake Deduplication, Crown Wake Latch & Animation Poller Coordination
+// ==============================================================================
+struct HelloSyncState {
+  bool in_flight = false;
+  uint32_t started_ms = 0;
+  uint32_t last_sent_ms = 0;
+  uint64_t last_sent_dirty_mask = 0;
+};
+
+inline HelloSyncState &hello_sync_state() {
+  static HelloSyncState st{};
+  return st;
+}
+
+inline void reset_hello_sync_on_connect() {
+  auto &st = hello_sync_state();
+  st.in_flight = false;
+  st.started_ms = 0;
+  st.last_sent_ms = 0;
+  st.last_sent_dirty_mask = 0;
+}
+
+inline void mark_hello_in_flight(bool active, uint32_t now_ms = 0) {
+  auto &st = hello_sync_state();
+  st.in_flight = active;
+  st.started_ms = active ? ((now_ms == 0U) ? 1U : now_ms) : 0U;
+}
+
+inline void mark_hello_sent(uint32_t now_ms, uint64_t dirty_mask) {
+  auto &st = hello_sync_state();
+  st.in_flight = false;
+  st.started_ms = 0;
+  st.last_sent_ms = (now_ms == 0U) ? 1U : now_ms;
+  st.last_sent_dirty_mask = dirty_mask;
+}
+
+inline bool should_trigger_hello_on_ping(uint32_t now_ms, uint64_t dirty_mask) {
+  const auto &st = hello_sync_state();
+  if (st.in_flight && (st.started_ms == 0U || static_cast<uint32_t>(now_ms - st.started_ms) < 31000U)) {
+    return false;
+  }
+  if (st.last_sent_ms != 0U &&
+      static_cast<uint32_t>(now_ms - st.last_sent_ms) < 1500U &&
+      dirty_mask == st.last_sent_dirty_mask) {
+    return false;
+  }
+  return true;
+}
+
+inline bool &pwr_key_wake_consumed() {
+  static bool latched = false;
+  return latched;
+}
+
+inline bool &hibernate_ui_prepared() {
+  static bool prep = false;
+  return prep;
+}
+
+inline bool &ui_anim_poller_running() {
+  static bool running = true;  // ESPHome interval: 20ms starts active at boot
+  return running;
+}
+
+template <typename PollerT>
+inline void set_ui_anim_poller(PollerT *tick, bool want) {
+  if (tick == nullptr) return;
+  if (ui_anim_poller_running() == want) return;
+  ui_anim_poller_running() = want;
+  if (want) {
+    tick->start_poller();
+  } else {
+    tick->stop_poller();
+  }
+}
+
+template <typename PollerT>
+inline void ensure_ui_anim_poller(PollerT *tick) {
+  set_ui_anim_poller(tick, true);
 }
 
 }  // namespace latter_ui

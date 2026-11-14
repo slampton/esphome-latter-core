@@ -290,11 +290,18 @@ def check_board(
     elif marked:
         err("facts mark light_sleep_wake pins but the HAL does not enable light sleep")
 
-    # 6. I2C devices: every address in the HAL is a known device.
+    # 6. I2C devices: every address in the HAL is a known device, and LATTER_HAS_RTC tracks PCF85063 @ 0x51.
     known_addrs = {d.get("address", "").lower() for d in facts.get("i2c_devices", [])}
     for addr in sorted(scan["addresses"]):
         if addr not in known_addrs:
             err(f"I2C address {addr} appears in the HAL but not in facts.i2c_devices")
+    want_rtc = 1 if "0x51" in known_addrs else 0
+    rtc_flag = facts.get("latter_flags", {}).get("LATTER_HAS_RTC")
+    if rtc_flag is None or str(rtc_flag) != str(want_rtc):
+        err(
+            f"latter_flags.LATTER_HAS_RTC must be {want_rtc} "
+            f"({'0x51 PCF85063 present' if want_rtc else 'no 0x51 RTC'} in facts.i2c_devices)"
+        )
 
     # 7. Backlight PWM floor.
     bl = facts.get("backlight") or {}

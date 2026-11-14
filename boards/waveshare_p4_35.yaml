@@ -67,6 +67,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=0"
     - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_HAS_RTC=0"
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=1"
@@ -206,15 +207,12 @@ script:
           gpio_hold_dis(GPIO_NUM_28);
           gpio_hold_dis(GPIO_NUM_29);
           gpio_hold_dis(GPIO_NUM_53);
-          // Pulse FT6336 Touch Reset (GPIO29) and enable LCD Backlight (GPIO28) immediately on boot
+          // Pulse FT6336 Touch Reset (GPIO29) immediately on boot
           gpio_set_direction(GPIO_NUM_29, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_29, 0);
           esp_rom_delay_us(10000);
           gpio_set_level(GPIO_NUM_29, 1);
           esp_rom_delay_us(30000);
-          latter_ui::hal_set_display_brightness(&id(disp1), 230);
-          id(es8311_dac).set_volume(0.90f);
-          id(es8311_dac).set_mute_on();
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:

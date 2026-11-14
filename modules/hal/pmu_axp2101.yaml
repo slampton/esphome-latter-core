@@ -68,20 +68,50 @@ binary_sensor:
     device_class: battery
     entity_category: diagnostic
 
-  # PWR key press timing: short press fires on release (< 1.5 s), long press fires while held (>= 1.5 s).
+  # PWR key press timing: wakes standby/screensaver immediately on press IRQ, short press on active screen
+  # fires on release (< 1.5 s), and long press fires while held (>= 1.5 s).
   # The AXP2101 keeps its own hardware power-on and hard power-off (PWRON long hold) behavior.
   - id: !extend pwr_key
     on_press:
-      - script.execute: pwr_key_long_press_watch
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          if (rs.nav.ota_in_progress) {
+            latter_ui::pwr_key_wake_consumed() = true;
+            return;
+          }
+          if (rs.nav.is_hibernating) {
+            latter_ui::pwr_key_wake_consumed() = true;
+            if (rs.nav.hibernate_countdown_val > 0) {
+              rs.nav.is_hibernating = false;
+              rs.nav.hibernate_countdown_val = 0;
+              latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::OTHER;
+              latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
+              id(wake_to_active_state).execute();
+            }
+            return;
+          }
+          if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
+            latter_ui::pwr_key_wake_consumed() = true;
+            latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
+            id(wake_to_active_state).execute();
+          } else {
+            latter_ui::pwr_key_wake_consumed() = false;
+          }
+          id(pwr_key_long_press_watch).execute();
     on_release:
       - if:
           condition:
             script.is_running: pwr_key_long_press_watch
           then:
             - script.stop: pwr_key_long_press_watch
-            - script.execute:
-                id: handle_crown_button_press
-                is_long: false
+            - lambda: |-
+                if (latter_ui::pwr_key_wake_consumed()) {
+                  latter_ui::pwr_key_wake_consumed() = false;
+                  return;
+                }
+                id(handle_crown_button_press).execute(false);
+          else:
+            - lambda: 'latter_ui::pwr_key_wake_consumed() = false;'
 
 sensor:
   - platform: template
@@ -361,6 +391,7 @@ script:
           }
 
           if (is_long) {
+            latter_ui::pwr_key_wake_consumed() = false;
             latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::KEY;
             if (latter_ui::persisted_prefs().hold_crown_power_off) {
               id(start_instant_hibernation).execute();
@@ -415,6 +446,7 @@ script:
               rs.stopwatch.start_time_ms = millis() - rs.stopwatch.elapsed_ms;
               rs.nav.sleep_start_time = 0;
               id(display_brightness).turn_on().perform();
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
             } else {
               rs.stopwatch.running = false;
               rs.stopwatch.elapsed_ms = millis() - rs.stopwatch.start_time_ms;

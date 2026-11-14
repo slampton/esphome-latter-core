@@ -28,11 +28,11 @@
     {"address": "0x40", "part": "ES7210"},
     {"address": "0x5a", "part": "CST9217", "note": "marketed as CST9220"},
     {"address": "0x6b", "part": "QMI8658"},
-    {"address": "0x51", "part": "PCF85063", "note": "RTC, unused by Latter"}
+    {"address": "0x51", "part": "PCF85063", "note": "RTC, UTC backup clock"}
   ],
   "latter_flags": {
     "LATTER_SCREEN_W": 480, "LATTER_SCREEN_H": 480, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 313,
-    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1,
+    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1, "LATTER_HAS_RTC": 1,
     "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 0, "LATTER_PANEL_IPS": 0, "LATTER_PANEL_DCS_SLEEP": 1,
     "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,
     "LATTER_PWR_KEY_PIN": 16, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_PWR_KEY_DEEP_SLEEP_WAKE": 1,

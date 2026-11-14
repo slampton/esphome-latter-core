@@ -37,22 +37,26 @@ class LatterBeacon : public Component {
   void set_tx_power(esp_power_level_t level) { this->tx_power_ = level; }
 #endif
 
-  /// Start the controller and advertising (asynchronous: the HCI commands finish in loop()).
+  /// Start the controller (if down) and enable advertising; resumes in <1 ms via LE_Set_Adv_Enable(1) when paused.
   void enable();
+  /// Pause advertising in <1 ms via raw HCI LE_Set_Adv_Enable(0) while keeping the controller/HCI pipe warm.
+  void pause();
   /// Stop advertising and shut the controller down, returning its memory.
   void disable();
-  /// True from enable() until disable(), including while the HCI commands are still running.
-  bool is_active() const { return this->state_ != State::OFF; }
+  /// True while logically active (from enable() until pause(), disable(), or start failure).
+  bool is_active() const { return this->active_; }
+  /// True while advertising is paused with the BT controller / esp_hosted HCI pipe kept initialized.
+  bool is_paused() const { return this->paused_; }
+  /// True whenever the BT controller / esp_hosted HCI pipe is initialized (active or paused).
+  bool is_transport_up() const { return this->transport_up_; }
   /// True for a minute after a failed start, so the power policy does not retry every second.
   bool is_failed() const;
   /// [PROF:BLE] heap lines on/off (follows the Telemetry Profiler switch).
   void set_profile_logging(bool on) { this->profile_logging_ = on; }
-  /// Update the 128-bit iBeacon UUID from a canonical hex/UUID string, persist in NVS if changed, and restart if active.
+  /// Update the 128-bit iBeacon UUID from a canonical hex/UUID string, persist in NVS if changed, and refresh if up.
   bool set_uuid_hex(std::string_view uuid_str);
 
  protected:
-  enum class State : uint8_t { OFF, CONFIGURING, ADVERTISING };
-
   // Transport (one implementation per build).
   int transport_up_();
   void transport_down_();
@@ -60,6 +64,8 @@ class LatterBeacon : public Component {
   bool transport_send_(const uint8_t *frame, uint16_t len);
 
   bool send_step_(uint8_t step);
+  bool send_adv_enable_(bool enable, uint32_t now_ms);
+  bool harvest_cmd_complete_();
   void fail_(const char *what, int err);
   void stop_(const char *log_what);
   void log_internal_heap_(const char *phase);
@@ -74,10 +80,15 @@ class LatterBeacon : public Component {
   esp_power_level_t tx_power_{ESP_PWR_LVL_P3};
 #endif
 
-  State state_{State::OFF};
+  bool transport_up_{false};
+  bool active_{false};
+  bool paused_{false};
+  bool configured_{false};
+  bool adv_enabled_{false};
   uint8_t step_{0};
-  bool step_sent_{false};
-  uint32_t step_sent_ms_{0};
+  bool cmd_in_flight_{false};
+  uint16_t cmd_opcode_{0};
+  uint32_t cmd_sent_ms_{0};
   uint32_t retry_after_ms_{0};
   bool failed_{false};
   bool profile_logging_{false};

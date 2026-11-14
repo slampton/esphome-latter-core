@@ -128,10 +128,12 @@ sensor:
           last_shake_time = now_m;
           if (rs.nav.tools_subpage == 8 && !latter_ui::coin_state().anim_active) {
             latter_ui::trigger_coin_flip(now_m, esp_random());
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
             id(screen_sleep_timer).execute();
             latter_ui::schedule_anim_disp_update(&id(disp1));
           } else if (rs.nav.tools_subpage == 4 && !latter_ui::dice_state().anim_active) {
             latter_ui::trigger_dice_roll(now_m, esp_random(), esp_random());
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
             id(screen_sleep_timer).execute();
             latter_ui::schedule_anim_disp_update(&id(disp1));
           }
@@ -157,13 +159,18 @@ binary_sensor:
         - lambda: |-
             if (!latter_ui::imu_wom().armed) return;
             if (!latter_ui::hal_imu_wom_event(id(bus_internal))) return;
+            const uint32_t now_wom = millis();
             auto &wom = latter_ui::imu_wom();
             wom.events++;
             latter_ui::pm_note_imu(wom.armed, wom.events);
-            // Poll for a short window so the orientation-qualified RaiseToWakeDetector can confirm a raise.
-            wom.qualify_until_ms = (millis() + 2500U) | 1U;
+            // Poll orientation at 50 ms for a short window so RaiseToWakeDetector confirms fast pickups (< 200 ms).
+            wom.qualify_until_ms = (now_wom + 2500U) | 1U;
             LATTER_PROF_LOGI("[PROF:IMU] wom=event n=%u", static_cast<unsigned>(wom.events));
             id(hal_set_imu_power_mode).execute(0x01);
+            if (latter_ui::runtime_state().nav.display_power_state == 2) {
+              latter_ui::raise_wake_detector().arm_from_wom(now_wom);
+            }
+            id(apply_power_policy).execute();
 
 script:
   - id: hal_set_imu_power_mode
@@ -175,11 +182,22 @@ script:
           // 0x00 power-down, 0x01 accel, 0x03 accel + gyro (all polled), 0x80 hardware Wake-on-Motion
           // on INT1 with polling stopped (falls back to 0x01 if the CTRL9 handshake ever fails).
           static int last_ctrl7 = -1;
+          static uint32_t last_imu_ms = 100U;
           int mode = ctrl7_val;
           if (mode == 0x80 && latter_ui::imu_wom().failed) mode = 0x01;
+          const uint32_t want_imu_ms =
+              (mode > 0 && mode != 0x80 && latter_ui::imu_wom_qualifying(millis())) ? 50U : 100U;
+          if (mode > 0 && mode != 0x80 && want_imu_ms != last_imu_ms) {
+            last_imu_ms = want_imu_ms;
+            id(imu).set_update_interval(want_imu_ms);
+            if (mode == last_ctrl7) {
+              id(imu).start_poller();
+            }
+          }
           if (mode == last_ctrl7) return;
           last_ctrl7 = mode;
           if (mode == 0x80) {
+            latter_ui::runtime_state().hw_motion_mag = 0.0f;
             id(imu).stop_poller();
             id(motion_mag).stop_poller();
             float thresh = latter_ui::get_pickup_motion_threshold(false);
@@ -190,9 +208,14 @@ script:
           }
           latter_ui::hal_imu_wom_exit(id(bus_internal));
           if (mode > 0) {
+            if (want_imu_ms != last_imu_ms) {
+              last_imu_ms = want_imu_ms;
+              id(imu).set_update_interval(want_imu_ms);
+            }
             id(imu).start_poller();
             id(motion_mag).start_poller();
           } else {
+            latter_ui::runtime_state().hw_motion_mag = 0.0f;
             id(imu).stop_poller();
             id(motion_mag).stop_poller();
           }

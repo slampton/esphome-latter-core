@@ -74,6 +74,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=0"
     - "-DLATTER_HAS_BATTERY=0"
+    - "-DLATTER_HAS_RTC=0"
     - "-DLATTER_C6_RESET_PIN=54"  # C6 CHIP_PU (esp32_hosted reset_pin)
     - "-DLATTER_IS_STATIONARY=1"
     - "-DLATTER_IS_WEARABLE=0"
@@ -154,9 +155,7 @@ script:
   - id: hal_release_deep_sleep_holds
     mode: restart
     then:
-      - lambda: |-
-          id(es8311_dac).set_volume(0.90f);
-          id(es8311_dac).set_mute_on();
+      - lambda: 'return;'
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:

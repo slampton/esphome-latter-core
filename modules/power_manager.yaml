@@ -369,10 +369,12 @@ script:
           const uint32_t last_interact_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
+          const bool va_radio_priority =
+              latter_ui::radio_boost_active(now_p) ||
+              rs.voice.active || id(va).is_running() || rs.voice.tts_received;
           const bool high_tput_needed =
               rs.hw_usb_connected ||
-              latter_ui::radio_boost_active(now_p) ||
-              rs.voice.active || id(va).is_running() || rs.voice.tts_received ||
+              va_radio_priority ||
               id(announcement_mixing_input).is_running() ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
@@ -385,7 +387,8 @@ script:
               latter_ui::beacon_mode_index(latter_ui::pref_ble_beacon_mode_cstr(prefs)), rs.hw_usb_connected,
               rs.nav.is_hibernating, rs.nav.ota_in_progress, rs.nav.display_power_state,
               high_tput_needed, now_p,
-              latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms);
+              latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms,
+              va_radio_priority);
 
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
@@ -415,7 +418,8 @@ script:
           // Tick gating: with the screen off and nothing time-critical pending, nothing ticks faster than 1 s.
           const bool alerts_pending = rs.timers.running || rs.stopwatch.running || rs.alarms.find_my_active ||
                                       rs.alert.active || rs.alarms.ringing || rs.timers.ringing;
-          const bool va_busy = rs.voice.active || !rs.voice.status_text.empty();
+          const bool va_busy = rs.voice.active || !rs.voice.status_text.empty() ||
+                               id(va).is_running() || rs.voice.tts_received;
           auto gate = [](auto *tick, bool want, int8_t &state) {
             if (state == (want ? 1 : 0)) return;
             state = want ? 1 : 0;
@@ -425,9 +429,20 @@ script:
               tick->stop_poller();
             }
           };
-          static int8_t ss_anim_on = -1, ui_anim_on = -1;
+          static int8_t ss_anim_on = -1;
           gate(id(screensaver_anim_tick), rs.nav.display_power_state == 1, ss_anim_on);
-          gate(id(ui_anim_tick), rs.nav.display_power_state == 0 || va_busy, ui_anim_on);
+          // ui_anim_tick (20 ms) self-stops when no active animation is running; stop immediately when
+          // leaving active display (unless VA is busy) and start whenever VA or active-screen animation needs it.
+          if (va_busy) {
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          } else if (rs.nav.display_power_state != 0) {
+            latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
+          } else if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
+                     rs.nav.active_game > 0 ||
+                     latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+                     rs.nav.menu_scroll_active) {
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          }
           // ui_fast_tick: 250 ms with the screen on or a voice turn; 1 s with the screen off while a timer,
           // stopwatch or alert is pending (a countdown still expires within a second); stopped otherwise.
           static uint32_t ui_fast_ms = UINT32_MAX;
@@ -468,6 +483,7 @@ script:
           const bool weak_link = wifi_up && latter_ui::weak_link_update(now_p);
           const bool stay_awake =
               ha_link_settling || weak_link ||
+              latter_ui::imu_wom_qualifying(now_p) ||
               rs.nav.display_power_state != 2 || rs.hw_usb_connected || rs.nav.is_hibernating ||
               rs.nav.ota_in_progress || audio_busy || va_busy || id(va).is_running() || rs.voice.tts_received ||
               latter_ui::radio_boost_active(now_p) || (rs.nav.active_game > 0) ||
@@ -601,6 +617,7 @@ script:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           const uint32_t wake_now_ms = millis();
+          latter_ui::hibernate_ui_prepared() = false;
           const uint32_t prev_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
@@ -628,7 +645,13 @@ script:
           rs.nav.display_power_state = 0; // ACTIVE
           latter_ui::anim_poller_suppressed() = false;
           id(disp1).start_poller();
-          id(apply_power_policy).execute();  // full-throughput Wi-Fi (fresh interaction), beacon, IMU, ticks
+          latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+      # Pixel wake runs BEFORE radio/IMU I2C work in apply_power_policy so Frame #1 lights up immediately.
+      - script.execute: sync_display_brightness
+      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+      - script.execute: apply_power_policy
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
           // Codec power follows audio demand, not screen state: enable_speaker_path / sync_wake_word_state /
           // voice entry points wake the codecs when audio actually starts.
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
@@ -646,9 +669,39 @@ script:
               wp_u != rs.music.loaded_wallpaper_url) {
             id(fetch_wallpaper_debounced).execute();
           }
-      - script.execute: sync_display_brightness
       - script.execute: screen_sleep_timer
-      - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+
+  - id: prepare_hibernation_teardown
+    mode: restart
+    parameters:
+      countdown_sec: int
+    then:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          latter_ui::screen_is_off_standby() = false;
+          latter_ui::anim_poller_suppressed() = false;
+          latter_ui::hibernate_ui_prepared() = true;
+          latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
+          id(disp1).start_poller();
+          rs.nav.sleep_start_time = 0;
+          rs.nav.hibernate_countdown_val = countdown_sec;
+          rs.nav.is_hibernating = true;
+          rs.nav.active_game = 0;
+          rs.nav.display_power_state = 0;
+      - micro_wake_word.stop:
+      - voice_assistant.stop:
+      - media_player.pause: latter_media_player
+      - lambda: 'id(hal_set_dac_mute).execute(true);'
+      - switch.turn_off: speaker_enable
+      - script.stop: screen_sleep_timer
+      - script.execute: sync_display_brightness
+      - if:
+          condition:
+            lambda: 'return countdown_sec > 0;'
+          then:
+            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+          else:
+            - component.update: disp1
 
   - id: start_instant_hibernation
     mode: restart
@@ -657,25 +710,10 @@ script:
           condition:
             lambda: 'return LATTER_HAS_BATTERY != 0;'
           then:
-            - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                latter_ui::screen_is_off_standby() = false;
-                latter_ui::anim_poller_suppressed() = false;
-                id(disp1).start_poller();
-                rs.nav.sleep_start_time = 0;
-                rs.nav.hibernate_countdown_val = 0;
-                rs.nav.is_hibernating = true;
-                rs.nav.active_game = 0;
-                rs.nav.display_power_state = 0;
-            - micro_wake_word.stop:
-            - voice_assistant.stop:
-            - media_player.pause: latter_media_player
-            - lambda: 'id(hal_set_dac_mute).execute(true);'
-            - switch.turn_off: speaker_enable
-            - script.stop: screen_sleep_timer
-            - light.turn_on: display_brightness
-            - script.execute: sync_display_brightness
-            - component.update: disp1
+            - script.execute:
+                id: prepare_hibernation_teardown
+                countdown_sec: 0
+            - script.wait: prepare_hibernation_teardown
             - delay: 1000ms
             - script.execute: enter_deep_sleep
 
@@ -686,25 +724,10 @@ script:
           condition:
             lambda: 'return LATTER_HAS_BATTERY != 0;'
           then:
-            - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                latter_ui::screen_is_off_standby() = false;
-                latter_ui::anim_poller_suppressed() = false;
-                id(disp1).start_poller();
-                rs.nav.sleep_start_time = 0;
-                rs.nav.hibernate_countdown_val = 5;
-                rs.nav.is_hibernating = true;
-                rs.nav.active_game = 0;
-                rs.nav.display_power_state = 0;
-            - micro_wake_word.stop:
-            - voice_assistant.stop:
-            - media_player.pause: latter_media_player
-            - lambda: 'id(hal_set_dac_mute).execute(true);'
-            - switch.turn_off: speaker_enable
-            - script.stop: screen_sleep_timer
-            - light.turn_on: display_brightness
-            - script.execute: sync_display_brightness
-            - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
+            - script.execute:
+                id: prepare_hibernation_teardown
+                countdown_sec: 5
+            - script.wait: prepare_hibernation_teardown
             - repeat:
                 count: 5
                 then:
@@ -723,6 +746,7 @@ script:
                       condition:
                         lambda: 'return !latter_ui::runtime_state().nav.is_hibernating;'
                       then:
+                        - lambda: 'latter_ui::hibernate_ui_prepared() = false;'
                         - script.stop: start_hibernation_countdown
             - if:
                 condition:
@@ -738,29 +762,22 @@ script:
           condition:
             lambda: 'return LATTER_HAS_BATTERY != 0;'
           then:
-            - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                rs.nav.sleep_start_time = 0;
-                rs.nav.hibernate_countdown_val = 0;
-                rs.nav.active_game = 0;
-                rs.nav.is_hibernating = true;
-                rs.nav.display_power_state = 0;
-            - micro_wake_word.stop:
-            - voice_assistant.stop:
-            - media_player.pause: latter_media_player
-            - lambda: 'id(hal_set_dac_mute).execute(true);'
-            - switch.turn_off: speaker_enable
-            - script.stop: screen_sleep_timer
-            - light.turn_on: display_brightness
-            - script.execute: sync_display_brightness
-            - component.update: disp1
+            - if:
+                condition:
+                  lambda: 'return !latter_ui::hibernate_ui_prepared();'
+                then:
+                  - script.execute:
+                      id: prepare_hibernation_teardown
+                      countdown_sec: 0
+                  - script.wait: prepare_hibernation_teardown
+                  - delay: 600ms
+            - lambda: 'latter_ui::hibernate_ui_prepared() = false;'
             - wait_until:
                 condition:
                   lambda: |-
                     const auto &rs = latter_ui::runtime_state();
                     return rs.hw_pwr_key_pressed == nullptr || !rs.hw_pwr_key_pressed();
                 timeout: 3s
-            - delay: 600ms
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
                 rs.nav.is_hibernating = false;
@@ -769,6 +786,8 @@ script:
             - component.update: disp1
             - lambda: |-
                 latter_ui::flush_persisted_prefs_if_dirty();
+                latter_ui::save_hibernate_snapshot();
+                latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
                 id(sys_link_report).publish_state("hibernating");
                 esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));
             - delay: 250ms

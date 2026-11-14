@@ -28,11 +28,11 @@
     {"address": "0x40", "part": "ES7210", "note": "MIC3 = AEC loopback (TDM)"},
     {"address": "0x38", "part": "FT3168", "note": "ft5x06 platform; RST pulsed at boot"},
     {"address": "0x6b", "part": "QMI8658"},
-    {"address": "0x51", "part": "PCF85063", "note": "RTC, unused by Latter"}
+    {"address": "0x51", "part": "PCF85063", "note": "RTC, UTC backup clock"}
   ],
   "latter_flags": {
     "LATTER_SCREEN_W": 410, "LATTER_SCREEN_H": 502, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 315,
-    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1,
+    "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1, "LATTER_HAS_RTC": 1,
     "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 1, "LATTER_PANEL_IPS": 0, "LATTER_PANEL_DCS_SLEEP": 1,
     "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,
     "LATTER_PWR_KEY_PIN": 10, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_PWR_KEY_DEEP_SLEEP_WAKE": 1,

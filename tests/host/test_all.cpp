@@ -681,17 +681,31 @@ void test_music_remote_override_and_volume_feedback() {
 
 struct MockBleCtrl {
   bool active{false};
+  bool paused{false};
+  bool transport_up{false};
   bool failed{false};
   int enables{0};
+  int pauses{0};
   int disables{0};
   bool is_active() const { return active; }
+  bool is_paused() const { return paused; }
+  bool is_transport_up() const { return transport_up; }
   bool is_failed() const { return failed; }
   void enable() {
     active = true;
+    paused = false;
+    transport_up = true;
     ++enables;
+  }
+  void pause() {
+    active = false;
+    paused = true;
+    ++pauses;
   }
   void disable() {
     active = false;
+    paused = false;
+    transport_up = false;
     ++disables;
   }
 };
@@ -954,6 +968,276 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
 }
 
+struct MockAnimPoller {
+  int starts{0};
+  int stops{0};
+  void start_poller() { ++starts; }
+  void stop_poller() { ++stops; }
+};
+
+void test_phase1_boot_wake_hibernate_and_ble_roaming() {
+  static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111302L);
+
+  // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
+  latter_ui::reset_hibernate_snapshot_for_test();
+  latter_ui::reset_all_v3_rev_guards();
+  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
+  latter_ui::weather_state() = latter_ui::WeatherState{};
+  latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
+  latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
+
+  // Cold boot with no saved snapshot returns false and leaves defaults untouched
+  LATTER_CHECK(!latter_ui::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps.empty());
+  LATTER_CHECK(latter_ui::weather_state().condition.empty());
+
+  // Populate live state prior to hibernate and persist snapshot (including POSIX TZ)
+  latter_ui::area_ctx_state().epoch = 42U;
+  latter_ui::area_ctx_state().rev = 9U;
+  latter_ui::area_ctx_state().dock_apps = "clock,music,weather,area";
+  latter_ui::area_ctx_state().theme_color_hex = "#33AA77";
+  latter_ui::area_ctx_state().area_name = "Primary Suite";
+  latter_ui::weather_state().epoch = 42U;
+  latter_ui::weather_state().rev = 5U;
+  latter_ui::weather_state().condition = "partlycloudy";
+  latter_ui::weather_state().temperature = 68.5f;
+  latter_ui::weather_state().sun_state = "below_horizon";
+  LATTER_CHECK(latter_ui::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
+
+  // Simulate cold boot after hibernate wake before Home Assistant connects
+  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
+  latter_ui::weather_state() = latter_ui::WeatherState{};
+  latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
+  latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
+  latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
+  latter_ui::hydrated_posix_tz().clear();
+
+  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_ui::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
+  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,music,weather,area");
+  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#33AA77");
+  LATTER_CHECK(latter_ui::persisted_prefs().custom_theme_rgb == 0x33AA77U);
+  LATTER_CHECK(!latter_ui::device_prefs_state().nvs_save_pending);
+  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Primary Suite");
+  LATTER_CHECK(latter_ui::runtime_state().area.active_area_name == "Primary Suite");
+  LATTER_CHECK(latter_ui::weather_state().condition == "partlycloudy");
+  LATTER_CHECK(std::fabs(latter_ui::weather_state().temperature - 68.5f) < 0.01f);
+  LATTER_CHECK(latter_ui::weather_state().sun_state == "below_horizon");
+
+  // Critical: v3 epoch/rev guards MUST remain 0 so the very first live HA push overwrites everything!
+  LATTER_CHECK(latter_ui::area_ctx_state().epoch == 0U && latter_ui::area_ctx_state().rev == 0U);
+  LATTER_CHECK(latter_ui::weather_state().epoch == 0U && latter_ui::weather_state().rev == 0U);
+
+  // Calling load_hibernate_snapshot_if_cold() when live state is already populated must NOT clobber live state
+  latter_ui::area_ctx_state().dock_apps = "clock,tools";
+  latter_ui::area_ctx_state().area_name = "Office";
+  latter_ui::area_ctx_state().theme_color_hex = "#FF5500";
+  latter_ui::weather_state().condition = "sunny";
+  latter_ui::weather_state().temperature = 74.0f;
+  latter_ui::weather_state().sun_state = "above_horizon";
+  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,tools");
+  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Office");
+  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#FF5500");
+  LATTER_CHECK(latter_ui::weather_state().condition == "sunny");
+  LATTER_CHECK(std::fabs(latter_ui::weather_state().temperature - 74.0f) < 0.01f);
+  LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
+
+  // Re-hydrate cold state, then verify first live v3 push (epoch=1, rev=1) cleanly overwrites hydrated snapshot
+  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
+  latter_ui::weather_state() = latter_ui::WeatherState{};
+  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
+
+  std::vector<std::string> ac_tok(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::DOCK_APPS)] = "clock,calendar";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::THEME_COLOR_HEX)] = "#1188CC";
+  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
+  LATTER_CHECK(latter_ui::area_ctx_state().epoch == 1U && latter_ui::area_ctx_state().rev == 1U);
+  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Kitchen");
+  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,calendar");
+  LATTER_CHECK(latter_ui::area_ctx_state().theme_color_hex == "#1188CC");
+
+  std::vector<std::string> wx_tok(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
+  wx_tok[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "rainy";
+  wx_tok[static_cast<size_t>(latter_ui::WeatherField::TEMPERATURE)] = "59.0";
+  wx_tok[static_cast<size_t>(latter_ui::WeatherField::SUN_STATE)] = "above_horizon";
+  LATTER_CHECK(latter_ui::parse_v3_weather_payload(build_v3_packet(1, 1, wx_tok)));
+  LATTER_CHECK(latter_ui::weather_state().epoch == 1U && latter_ui::weather_state().rev == 1U);
+  LATTER_CHECK(latter_ui::weather_state().condition == "rainy");
+  LATTER_CHECK(std::fabs(latter_ui::weather_state().temperature - 59.0f) < 0.01f);
+  LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
+
+  // Bounded char-array truncation & sun above_horizon round-trip
+  latter_ui::area_ctx_state().dock_apps = std::string(140, 'x');
+  latter_ui::area_ctx_state().area_name = std::string(80, 'y');
+  latter_ui::weather_state().sun_state = "above_horizon";
+  LATTER_CHECK(latter_ui::save_hibernate_snapshot("EST5EDT,M3.2.0,M11.1.0/2"));
+  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
+  latter_ui::weather_state() = latter_ui::WeatherState{};
+  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps.size() == 95U);
+  LATTER_CHECK(latter_ui::area_ctx_state().area_name.size() == 47U);
+  LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
+
+  // 2. Handheld Roaming power profile automatically syncs ble_beacon_mode = 1 ("Handheld + Screen Off")
+  auto &prefs = latter_ui::persisted_prefs();
+  prefs = latter_ui::PersistedDevicePrefs{};
+  LATTER_CHECK(prefs.ble_beacon_mode == 0U);
+
+  uint64_t chg = 0ULL;
+  uint32_t eff = 0U;
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      prefs, latter_ui::PrefKey::POWER_PROFILE, "Handheld Roaming", true, chg, eff));
+  LATTER_CHECK(prefs.ble_beacon_mode == 1U);
+  LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
+  LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)) != 0ULL);
+  LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
+
+  // Switching to Custom preserves current ble_beacon_mode
+  chg = 0ULL;
+  eff = 0U;
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      prefs, latter_ui::PrefKey::POWER_PROFILE, "Custom", true, chg, eff));
+  LATTER_CHECK(prefs.ble_beacon_mode == 1U);
+
+  // Switching to Portable Carry / Wearable Watch / Tabletop Dock / Always-On Wall resets ble_beacon_mode = 0
+  for (const char *prof : {"Portable Carry", "Wearable Watch", "Tabletop Dock", "Always-On Wall / Desk"}) {
+    prefs.ble_beacon_mode = 1U;
+    chg = 0ULL;
+    eff = 0U;
+    LATTER_CHECK(latter_ui::set_pref_by_key_str(
+        prefs, latter_ui::PrefKey::POWER_PROFILE, prof, true, chg, eff));
+    LATTER_CHECK(prefs.ble_beacon_mode == 0U);
+    LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld Only");
+    LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)) != 0ULL);
+    LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
+  }
+
+  // Local touchscreen edit to Handheld Roaming also publishes ble_beacon_mode=Handheld + Screen Off in set_device_prefs
+  MockRpcOutbox roam_outbox{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_ui::link_state().ha_connected = true;
+  prefs.dirty_mask = 0ULL;
+  eff = 0U;
+  LATTER_CHECK(latter_actions::record_local_pref_edit(
+      latter_ui::PrefKey::POWER_PROFILE, "Handheld Roaming", 3000U, eff, &roam_outbox));
+  uint32_t pump_t = 3100U;
+  while (latter_rpc::has_pending_frames()) {
+    latter_rpc::step_outbox_loop(pump_t);
+    pump_t += 50U;
+  }
+  std::string combined_rpc;
+  for (const auto &chunk : roam_outbox.published) combined_rpc += chunk;
+  LATTER_CHECK(combined_rpc.find("ble_beacon_mode=Handheld + Screen Off") != std::string::npos);
+
+  // 3. evaluate_radio_policy: fast HCI pause() vs full controller disable() + va_radio_priority
+  MockBleCtrl ble{};
+  MockWifiCtrl wifi{};
+
+  // Battery + screen active (mode 0) after 2s HA settle -> enable() brings transport up
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, false, false, false, 0, true, 7000U, true, 4000U, false);
+  LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 1 && ble.pauses == 0 && ble.disables == 0);
+
+  // Voice session / radio boost (va_radio_priority = true) -> pause() (<1ms HCI adv stop, zero controller teardown)
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, false, false, false, 0, true, 7500U, true, 4000U, true);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 1 && ble.pauses == 1 && ble.disables == 0);
+
+  // Voice session finishes (va_radio_priority = false) -> enable() resumes advertising immediately
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, false, false, false, 0, true, 8000U, true, 4000U, false);
+  LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 2 && ble.pauses == 1 && ble.disables == 0);
+
+  // Screen turns off on battery in mode 0 ("Handheld Only") -> pause()
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 0, false, false, false, 2, false, 9000U, true, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.pauses == 2 && ble.disables == 0);
+
+  // Mode 1 ("Handheld + Screen Off", selected by Handheld Roaming) keeps BLE active when screen is off on battery!
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 1, false, false, false, 2, false, 9500U, true, 4000U, false);
+  LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.enables == 3 && ble.pauses == 2 && ble.disables == 0);
+
+  // Docking on USB in mode 1 -> pause()
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 1, true, false, false, 0, true, 10000U, true, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
+  LATTER_CHECK(ble.pauses == 3 && ble.disables == 0);
+
+  // Turning BLE beacon switch OFF while paused -> full disable() tears controller down!
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, false, 1, true, false, false, 0, true, 10500U, true, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up());
+  LATTER_CHECK(ble.disables == 1);
+
+  // Re-enable, pause via Wi-Fi drop, then enter hibernate -> full disable()
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, true, true, 1, false, false, false, 2, false, 11000U, true, 4000U, false);
+  LATTER_CHECK(ble.is_active() && ble.enables == 4);
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, false, true, 1, false, false, false, 2, false, 11500U, false, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.pauses == 4 && ble.disables == 1);
+  latter_ui::evaluate_radio_policy(
+      &ble, &wifi, false, true, 1, false, true, false, 2, false, 12000U, false, 4000U, false);
+  LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up() && ble.disables == 2);
+
+  // 4. RaiseToWakeDetector::arm_from_wom pickup qualification (even when dyn_g == 0 after WoM baseline reset)
+  auto &r2w = latter_ui::raise_wake_detector();
+  r2w.reset();
+  const float thresh = latter_ui::get_pickup_motion_threshold(false);
+  // Resting face-up without motion or WoM must NOT wake
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10000U));
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10300U));
+
+  // Hardware WoM IRQ arms detector directly at t=10000ms
+  r2w.arm_from_wom(10000U);
+  LATTER_CHECK(r2w.armed);
+  // Edge-on / vertical orientation rejects face-up hold
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.95f, 0.0f, 0.15f, 10050U));
+  LATTER_CHECK(r2w.face_up_since_ms == 0U);
+  // Tilted face-up with dyn_g == 0.0f starts 200ms hold at t=10100ms and qualifies at t=10300ms!
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10100U));
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10250U));
+  LATTER_CHECK(r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10300U));
+  LATTER_CHECK(!r2w.armed);
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10350U));
+
+  // Expired WoM arm window (>1500ms without reaching face-up) resets cleanly without waking
+  r2w.arm_from_wom(20000U);
+  LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 21600U));
+  LATTER_CHECK(!r2w.armed);
+
+  // 5. send_device_hello ping deduplication & ui_anim_poller coordination
+  latter_ui::reset_hello_sync_on_connect();
+  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(1000U, 0ULL));
+  latter_ui::mark_hello_in_flight(true, 1000U);
+  LATTER_CHECK(!latter_ui::should_trigger_hello_on_ping(1150U, 0ULL));  // Suppressed while in flight!
+  latter_ui::mark_hello_sent(1300U, 0ULL);
+  LATTER_CHECK(!latter_ui::should_trigger_hello_on_ping(1800U, 0ULL));  // Suppressed <1500ms with same dirty_mask
+  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(1800U, 4ULL));   // New dirty_mask bypasses suppression
+  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(2900U, 0ULL));   // Allowed again >=1500ms later
+
+  MockAnimPoller anim{};
+  latter_ui::ui_anim_poller_running() = true;
+  latter_ui::ensure_ui_anim_poller(&anim);
+  LATTER_CHECK(anim.starts == 0 && anim.stops == 0);
+  latter_ui::set_ui_anim_poller(&anim, false);
+  LATTER_CHECK(!latter_ui::ui_anim_poller_running() && anim.stops == 1);
+  latter_ui::set_ui_anim_poller(&anim, false);
+  LATTER_CHECK(anim.stops == 1);
+  latter_ui::ensure_ui_anim_poller(&anim);
+  LATTER_CHECK(latter_ui::ui_anim_poller_running() && anim.starts == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -963,8 +1247,9 @@ int main() {
   test_music_remote_override_and_volume_feedback();
   test_beacon_boot_gate_and_touch_reboot_safety();
   test_device_prefs_v2_and_event_timer_sync();
+  test_phase1_boot_wake_hibernate_and_ble_roaming();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "music override/volume feedback, beacon boot gate + touch reboot safety, and hal_battery/hal_link_report verified.\n");
+      "HibernateSnapshot + BLE roaming/pause + WoM raise-to-wake, and hal_battery/hal_link_report verified.\n");
   return 0;
 }

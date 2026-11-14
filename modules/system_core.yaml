@@ -193,6 +193,8 @@ esphome:
                     id(fetch_wallpaper_debounced).stop();
                     r.music.loaded_wallpaper_url = "";
                     latter_ui::release_art(id(home_wallpaper_art));
+                    latter_ui::weather_sim_dirty() = true;
+                    latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
                     wallpaper_cleared = true;
                   }
                 } else if (r.nav.display_power_state == 0 && st.wallpaper_url != r.music.loaded_wallpaper_url) {
@@ -205,6 +207,9 @@ esphome:
                   }
                   if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 ||
                       (gp == 8 && (r.nav.tools_subpage == 10 || r.nav.tools_subpage == 12))) {
+                    if (gp == 1 && r.nav.home_subpage == 0) {
+                      latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                    }
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                 }
@@ -305,6 +310,9 @@ esphome:
                 s_prev_vol_pct = latter_ui::remote_vol_pct();
 
                 if (media_ui_changed && r.nav.display_power_state == 0 && (r.nav.gui_page == 1 || r.nav.gui_page == 2)) {
+                  if (r.nav.gui_page == 1 && r.nav.home_subpage == 0) {
+                    latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                  }
                   id(throttled_disp_update).execute();
                 }
               } else if (sv_dom == "remote_config") {
@@ -331,14 +339,18 @@ esphome:
                   s_prev_sun = latter_ui::weather_state().sun_state;
                   id(sync_display_brightness).execute();
                 }
+                latter_ui::weather_sim_dirty() = true;
+                latter_ui::record_ambient_frame_ms(0);
                 if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
-                  latter_ui::weather_sim_dirty() = true;
-                  latter_ui::record_ambient_frame_ms(0);
+                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (sv_dom == "calendar_agenda") {
                 if (r.nav.display_power_state == 0 &&
                     (r.nav.gui_page == 1 || (r.nav.gui_page == 8 && r.nav.tools_subpage == 9))) {
+                  if (r.nav.gui_page == 1 && r.nav.home_subpage == 0) {
+                    latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                  }
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (sv_dom == "device_prefs") {
@@ -366,7 +378,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111301L;
+            constexpr long LATTER_YAML_REV = 2026111302L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -381,6 +393,16 @@ esphome:
             if (rs.hw_init_pmu != nullptr) {
               rs.hw_init_pmu();
             }
+            if (latter_ui::load_hibernate_snapshot_if_cold()) {
+              const auto &ac = latter_ui::area_ctx_state();
+              if (!ac.dock_apps.empty() && latter_ui::latter_dock_order_csv().empty()) {
+                latter_ui::latter_dock_order_csv() = ac.dock_apps;
+              }
+              if (!ac.area_name.empty()) {
+                latter_ui::latter_area_label() = ac.area_name;
+              }
+            }
+            latter_ui::hal_rtc_restore_system_clock(id(bus_internal));
             latter_ui::parse_latter_remote_slots_summary(latter_ui::remote_state().slots_summary);
             rs.remote.active_slot = latter_ui::resolve_active_remote_slot(rs.remote.active_slot);
         - media_player.pause: latter_media_player
@@ -413,6 +435,7 @@ esphome:
         - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
         - script.execute: screen_sleep_timer
+        - script.execute: apply_power_policy
 
 api:
   actions:
@@ -573,6 +596,7 @@ time:
     on_time_sync:
       then:
         - lambda: |-
+            latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
             const auto &n = latter_ui::runtime_state().nav;
             if (n.display_power_state == 0 && !n.is_hibernating) {
               latter_ui::record_ambient_frame_ms(0);
@@ -581,6 +605,7 @@ time:
     on_time_sync:
       then:
         - lambda: |-
+            latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
             const auto &n = latter_ui::runtime_state().nav;
             if (n.display_power_state == 0 && !n.is_hibernating) {
               latter_ui::record_ambient_frame_ms(0);
@@ -784,6 +809,9 @@ script:
     then:
       - lambda: |-
           const auto &rs = latter_ui::runtime_state();
+          if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
+            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          }
           auto &rt = latter_ui::touch_engine().runtime();
           rt.friendly_name = "${friendly_name}";
           rt.fw_version = "${version}";
@@ -929,6 +957,7 @@ script:
                   latter_ui::night_meteor_epoch_initialized() = false;
                   latter_ui::weather_sim_dirty() = true;
                   latter_ui::record_ambient_frame_ms(0);
+                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
                 return;
@@ -1125,6 +1154,9 @@ script:
           if ((eff & latter_ui::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
             latter_ui::weather_sim_dirty() = true;
             latter_ui::record_ambient_frame_ms(0);
+            if (rs.nav.display_power_state == 0) {
+              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+            }
             latter_ui::schedule_disp_update(&id(disp1));
           }
 
@@ -1189,7 +1221,12 @@ script:
                      !rs.voice.active &&
                      (millis() - latter_ui::last_disp_update_ms() >= 90U);
           then:
-            - lambda: 'latter_ui::schedule_anim_disp_update(&id(disp1));'
+            - lambda: |-
+                const auto &rs = latter_ui::runtime_state();
+                if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                }
+                latter_ui::schedule_anim_disp_update(&id(disp1));
 
   - id: apply_theme_preset
     mode: restart
@@ -1300,6 +1337,7 @@ script:
     then:
       - lambda: |-
           latter_ui::menu_scroll_start_ms() = millis();
+          latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
           latter_ui::schedule_anim_disp_update(&id(disp1));
       - delay: !lambda 'return latter_ui::kMotionMs;'
       - lambda: |-

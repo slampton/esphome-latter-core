@@ -55,6 +55,12 @@ script:
           static const uint8_t expected[] = {0x34, 0x18, 0x40, 0x5a, 0x6b, 0x51};
           latter_bringup::probe_i2c(id(bus_internal), expected, sizeof(expected));
           latter_bringup::log_axp2101(id(bus_internal));
+          uint8_t rtc_reg = 0x04, rtc_buf[7] = {};
+          if (id(bus_internal).write_readv(0x51, &rtc_reg, 1, rtc_buf, sizeof(rtc_buf)) == esphome::i2c::ERROR_OK) {
+            ESP_LOGI("bringup", "[BRINGUP:RTC] pcf85063 os=%d bcd=20%02X-%02X-%02X %02X:%02X:%02X",
+                     (int)((rtc_buf[0] >> 7) & 1), rtc_buf[6], rtc_buf[5] & 0x1F, rtc_buf[3] & 0x3F,
+                     rtc_buf[2] & 0x3F, rtc_buf[1] & 0x7F, rtc_buf[0] & 0x7F);
+          }
       - delay: 2s
       - logger.log: "[BRINGUP:OUT] speaker_pa GPIO46 HIGH for 1 s"
       - switch.turn_on: out_gpio46

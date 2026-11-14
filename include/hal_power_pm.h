@@ -383,19 +383,38 @@ inline bool should_in_hand_block_sleep(bool on_battery_and_picked_up) {
 }
 
 struct RaiseToWakeDetector {
+  bool armed = false;
+  uint32_t arm_ms = 0;
   uint32_t motion_ms = 0;
   uint32_t face_up_since_ms = 0;
 
+  inline void arm_from_wom(uint32_t now_ms) {
+    armed = true;
+    arm_ms = now_ms;
+    motion_ms = (now_ms == 0) ? 1U : now_ms;
+    face_up_since_ms = 0;
+  }
+
   void reset() {
+    armed = false;
+    arm_ms = 0;
     motion_ms = 0;
     face_up_since_ms = 0;
   }
 
   bool update(float dyn, float thresh, float ax, float ay, float az, uint32_t now_ms) {
     if (std::isnan(dyn) || std::isnan(ax) || std::isnan(ay) || std::isnan(az)) return false;
-    if (dyn > thresh) motion_ms = (now_ms == 0) ? 1U : now_ms;
-    if (motion_ms == 0 || (now_ms - motion_ms) > 1500U) {
-      face_up_since_ms = 0;
+    if (dyn > thresh) {
+      armed = true;
+      arm_ms = now_ms;
+      motion_ms = (now_ms == 0) ? 1U : now_ms;
+    }
+    if (!armed && motion_ms != 0) {
+      armed = true;
+      arm_ms = motion_ms;
+    }
+    if (!armed || (now_ms - arm_ms) > 1500U) {
+      reset();
       return false;
     }
     const float horiz = std::sqrt(ax * ax + ay * ay);
@@ -417,6 +436,10 @@ struct RaiseToWakeDetector {
 inline RaiseToWakeDetector &raise_to_wake() {
   static RaiseToWakeDetector det;
   return det;
+}
+
+inline RaiseToWakeDetector &raise_wake_detector() {
+  return raise_to_wake();
 }
 
 inline bool tap_wake_needs_double_tap(bool usb_on) {
@@ -568,37 +591,67 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
                                   int beacon_mode, bool usb_powered,
                                   bool is_hibernating, bool ota_in_progress, int display_power_state,
                                   bool high_tput_needed, uint32_t now_ms,
-                                  bool ha_connected = false, uint32_t last_ha_connect_ms = 0U) {
-  if (is_hibernating || ota_in_progress) return;
-
-#if LATTER_HAS_BATTERY
-  const bool beacon_context_ok = (beacon_mode == 2) ||
-                                 (!usb_powered && (beacon_mode == 1 || display_power_state != 2));
-#else
-  (void)beacon_mode;
-  (void)usb_powered;
-  const bool beacon_context_ok = true;
-#endif
-  const bool beacon_paused = ble_beacon_switch_on && (!beacon_context_ok || !wifi_connected);
-  const bool beacon_wanted =
-      ble_beacon_switch_on && !beacon_paused && beacon_boot_gate_open(wifi_connected, ha_connected, last_ha_connect_ms, now_ms);
-  if (ble_ctrl != nullptr) {
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-    const bool radio_ready = wifi_connected && (now_ms > 8000U);
-#else
-    const bool radio_ready = wifi_connected;
-#endif
-    const bool want_ble = beacon_wanted && radio_ready;
-    if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
-      ESP_LOGD("ble", "Enabling BLE radio (Area Presence Beacon)");
-      ble_ctrl->enable();
-    } else if (!want_ble && ble_ctrl->is_active()) {
-      ESP_LOGD("ble", "Disabling BLE radio (beacon %s)",
-               !wifi_connected ? "paused off-site"
-                               : (!beacon_paused ? "off"
-                                                 : (usb_powered ? "paused while docked"
-                                                                : "paused for screen-off on battery")));
+                                  bool ha_connected = false, uint32_t last_ha_connect_ms = 0U,
+                                  bool va_radio_priority = false) {
+  auto ble_is_up = [&]() -> bool {
+    if (ble_ctrl == nullptr) return false;
+    if (ble_ctrl->is_active()) return true;
+    if constexpr (requires { ble_ctrl->is_transport_up(); }) {
+      if (ble_ctrl->is_transport_up()) return true;
+    }
+    if constexpr (requires { ble_ctrl->is_paused(); }) {
+      if (ble_ctrl->is_paused()) return true;
+    }
+    return false;
+  };
+  if (is_hibernating || ota_in_progress) {
+    if (ble_is_up()) {
+      ESP_LOGD("ble", "Disabling BLE radio (%s)", is_hibernating ? "hibernating" : "OTA in progress");
       ble_ctrl->disable();
+    }
+    return;
+  }
+
+  if (!ble_beacon_switch_on) {
+    if (ble_is_up()) {
+      ESP_LOGD("ble", "Disabling BLE radio (beacon switch off)");
+      ble_ctrl->disable();
+    }
+  } else {
+#if LATTER_HAS_BATTERY
+    const bool beacon_context_ok = (beacon_mode == 2) ||
+                                   (!usb_powered && (beacon_mode == 1 || display_power_state != 2));
+#else
+    (void)beacon_mode;
+    (void)usb_powered;
+    const bool beacon_context_ok = true;
+#endif
+    const bool beacon_paused = !beacon_context_ok || !wifi_connected;
+    const bool beacon_wanted =
+        !beacon_paused && beacon_boot_gate_open(wifi_connected, ha_connected, last_ha_connect_ms, now_ms);
+    if (ble_ctrl != nullptr) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      const bool radio_ready = wifi_connected && (now_ms > 8000U);
+#else
+      const bool radio_ready = wifi_connected;
+#endif
+      const bool want_ble = beacon_wanted && radio_ready && !va_radio_priority;
+      if (want_ble && !ble_ctrl->is_active() && !ble_ctrl->is_failed()) {
+        ESP_LOGD("ble", "Enabling BLE radio (Area Presence Beacon)");
+        ble_ctrl->enable();
+      } else if (!want_ble && ble_ctrl->is_active()) {
+        ESP_LOGD("ble", "Pausing BLE radio (beacon %s)",
+                 va_radio_priority ? "yielded for voice session"
+                                   : (!wifi_connected ? "paused off-site"
+                                                      : (!beacon_paused ? "boot gate"
+                                                                        : (usb_powered ? "paused while docked"
+                                                                                       : "paused for screen-off on battery"))));
+        if constexpr (requires { ble_ctrl->pause(); }) {
+          ble_ctrl->pause();
+        } else {
+          ble_ctrl->disable();
+        }
+      }
     }
   }
 

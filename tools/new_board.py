@@ -214,6 +214,15 @@ def render_bringup(facts: dict[str, Any]) -> str:
         )
     if pmu:
         lines.append("          latter_bringup::log_axp2101(id(bus_internal));")
+    if sda is not None and str(facts.get("latter_flags", {}).get("LATTER_HAS_RTC")) == "1":
+        lines += [
+            "          uint8_t rtc_reg = 0x04, rtc_buf[7] = {};",
+            "          if (id(bus_internal).write_readv(0x51, &rtc_reg, 1, rtc_buf, sizeof(rtc_buf)) == esphome::i2c::ERROR_OK) {",
+            '            ESP_LOGI("bringup", "[BRINGUP:RTC] pcf85063 os=%d bcd=20%02X-%02X-%02X %02X:%02X:%02X",',
+            "                     (int)((rtc_buf[0] >> 7) & 1), rtc_buf[6], rtc_buf[5] & 0x1F, rtc_buf[3] & 0x3F,",
+            "                     rtc_buf[2] & 0x3F, rtc_buf[1] & 0x7F, rtc_buf[0] & 0x7F);",
+            "          }",
+        ]
     if not (sda is not None and addrs) and not pmu:
         lines.append(
             '          ESP_LOGI("bringup", "[BRINGUP:I2C] no I2C bus in the facts");'
