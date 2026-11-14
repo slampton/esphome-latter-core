@@ -1107,10 +1107,10 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
   const int cx = ctx.cx;
   const int cy = ctx.cy;
   const bool is_24h_format = prefs.is_24h_format;
-  const float batt = rs.hw_batt_level;
-  const bool is_charging = rs.hw_batt_charging;
+  [[maybe_unused]] const float batt = rs.hw_batt_level;
+  [[maybe_unused]] const bool is_charging = rs.hw_batt_charging;
   const UiStrView clock_face_opt = ctx.clock_face_style_opt;
-  esphome::display::BaseFont *font_batt =
+  [[maybe_unused]] esphome::display::BaseFont *font_batt =
       (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
 
   const bool is_minimal_digital = (clock_face_opt == "Minimal Digital");

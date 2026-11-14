@@ -692,7 +692,7 @@ bool pm_sleep_stats(PmSleepStats &out, uint32_t now_ms) {
 #endif
 }
 
-static void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *)) {
+[[maybe_unused]] static void pm_log_dump_lines(const char *label, size_t len, void (*dump)(FILE *)) {
   char *buf = static_cast<char *>(heap_caps_calloc(1, len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (buf == nullptr) return;
   FILE *f = fmemopen(buf, len - 1, "w");
@@ -742,7 +742,7 @@ void pm_log_wake_profile() {
   static uint32_t last_ms = 0;
   const uint32_t now_ms = esphome::millis();
   if (last_ms != 0 && now_ms - last_ms < 60000U) return;
-  const uint32_t window_ms = (last_ms == 0) ? now_ms : now_ms - last_ms;
+  [[maybe_unused]] const uint32_t window_ms = (last_ms == 0) ? now_ms : now_ms - last_ms;
   last_ms = now_ms;
 
 #if LATTER_PM_AUTO_SLEEP

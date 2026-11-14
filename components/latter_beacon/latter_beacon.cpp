@@ -203,7 +203,7 @@ bool LatterBeacon::set_uuid_hex(std::string_view uuid_str) {
     }
     nvs_close(h);
   }
-  if (this->transport_up_) {
+  if (this->transport_ready_) {
     if (this->active_) {
       this->pause();
       if (this->configured_) {
@@ -265,13 +265,13 @@ void LatterBeacon::enable() {
   this->failed_ = false;
 
   // Warm resume path (<1 ms): controller / esp_hosted pipe is already up from a prior pause().
-  if (this->transport_up_) {
+  if (this->transport_ready_) {
     const bool was_paused = this->paused_;
     this->paused_ = false;
     this->active_ = true;
     if (this->cmd_in_flight_ && s_cmd_complete.load(std::memory_order_acquire)) {
       this->harvest_cmd_complete_();
-      if (!this->transport_up_)
+      if (!this->transport_ready_)
         return;
     }
     if (was_paused && !this->cmd_in_flight_ && this->configured_ && !this->adv_enabled_ &&
@@ -289,7 +289,7 @@ void LatterBeacon::enable() {
     this->fail_("controller start", err);
     return;
   }
-  this->transport_up_ = true;
+  this->transport_ready_ = true;
   this->active_ = true;
   this->paused_ = false;
   this->configured_ = false;
@@ -301,14 +301,14 @@ void LatterBeacon::enable() {
 }
 
 void LatterBeacon::pause() {
-  if (!this->transport_up_ || this->paused_)
+  if (!this->transport_ready_ || this->paused_)
     return;
   this->paused_ = true;
   this->active_ = false;
 
   if (this->cmd_in_flight_ && s_cmd_complete.load(std::memory_order_acquire)) {
     this->harvest_cmd_complete_();
-    if (!this->transport_up_)
+    if (!this->transport_ready_)
       return;
   }
 
@@ -329,9 +329,9 @@ void LatterBeacon::pause() {
 }
 
 void LatterBeacon::disable() {
-  if (!this->transport_up_ && !this->active_ && !this->paused_)
+  if (!this->transport_ready_ && !this->active_ && !this->paused_)
     return;
-  if (this->transport_up_ && this->adv_enabled_ && this->transport_can_send_()) {
+  if (this->transport_ready_ && this->adv_enabled_ && this->transport_can_send_()) {
     const uint8_t pkt[] = {0x01, 0x0A, 0x20, 0x01, 0x00};
     this->transport_send_(pkt, sizeof(pkt));
   }
@@ -339,11 +339,11 @@ void LatterBeacon::disable() {
 }
 
 void LatterBeacon::stop_(const char *log_what) {
-  if (this->transport_up_) {
+  if (this->transport_ready_) {
     this->transport_down_();
     this->log_internal_heap_("disabled");
   }
-  this->transport_up_ = false;
+  this->transport_ready_ = false;
   this->active_ = false;
   this->paused_ = false;
   this->configured_ = false;
@@ -359,7 +359,7 @@ void LatterBeacon::stop_(const char *log_what) {
 }
 
 void LatterBeacon::loop() {
-  if (!this->transport_up_) {
+  if (!this->transport_ready_) {
     this->disable_loop();
     return;
   }

@@ -105,7 +105,7 @@ FbClearState &fb_clear_state() {
   return st;
 }
 
-void fb_clear_fail(const char *why, int err = 0) {
+[[maybe_unused]] void fb_clear_fail(const char *why, int err = 0) {
   auto &st = fb_clear_state();
   if (st.why != why || st.why_err != err) {
     ESP_LOGW("disp_fb", "DMA clear skipped: %s (err=%d)", why, err);

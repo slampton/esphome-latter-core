@@ -48,7 +48,7 @@ class LatterBeacon : public Component {
   /// True while advertising is paused with the BT controller / esp_hosted HCI pipe kept initialized.
   bool is_paused() const { return this->paused_; }
   /// True whenever the BT controller / esp_hosted HCI pipe is initialized (active or paused).
-  bool is_transport_up() const { return this->transport_up_; }
+  bool is_transport_up() const { return this->transport_ready_; }
   /// True for a minute after a failed start, so the power policy does not retry every second.
   bool is_failed() const;
   /// [PROF:BLE] heap lines on/off (follows the Telemetry Profiler switch).
@@ -80,7 +80,7 @@ class LatterBeacon : public Component {
   esp_power_level_t tx_power_{ESP_PWR_LVL_P3};
 #endif
 
-  bool transport_up_{false};
+  bool transport_ready_{false};
   bool active_{false};
   bool paused_{false};
   bool configured_{false};

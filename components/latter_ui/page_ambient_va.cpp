@@ -260,6 +260,7 @@ void draw_rain_katakana_glyph(esphome::display::Display &it, int sx, int gy, uin
 
 void render_screensaver_digital_rain(esphome::display::Display &it, int cx, int cy, uint32_t now_ms) {
   (void)cx;
+  (void)cy;
   static constexpr int CELL_H = 14;
   static constexpr int NUM_COLS = (SCREEN_W - 24) / 19;
   static constexpr int GRID_ROWS = (SCREEN_H / CELL_H) + 1;

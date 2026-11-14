@@ -657,9 +657,9 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
 
 #ifdef USE_WIFI
   if (wifi != nullptr && now_ms > 6000U) {
-    auto &ws = wifi_power_state();
 #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
     if constexpr (requires { wifi->enable(); wifi->disable(); wifi->is_disabled(); }) {
+      auto &ws = wifi_power_state();
       if (wifi_connected || usb_powered || display_power_state != 2) {
         ws.offsite_since_ms = 0;
         ws.scan_window_start_ms = 0;

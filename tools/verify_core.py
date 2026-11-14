@@ -939,7 +939,14 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
 
 
 HOST_UI_STUBS: dict[str, str] = {
-    "esphome/core/defines.h": "#pragma once\n",
+    "esphome/core/defines.h": (
+        "#pragma once\n"
+        "#ifdef _MSC_VER\n"
+        "#ifndef __attribute__\n"
+        "#define __attribute__(x)\n"
+        "#endif\n"
+        "#endif\n"
+    ),
     "sdkconfig.h": "#pragma once\n",
     "esphome/core/version.h": (
         "#pragma once\n"
@@ -982,6 +989,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "inline void delay(uint32_t) {}\n"
         "inline void delayMicroseconds(uint32_t) {}\n"
         "inline void yield() {}\n"
+        "inline uint8_t progmem_read_byte(const uint8_t *p) { return p ? *p : 0; }\n"
         "}  // namespace esphome\n"
         "using esphome::millis;\n"
         "using esphome::micros;\n"
@@ -998,27 +1006,49 @@ HOST_UI_STUBS: dict[str, str] = {
         "  T *allocate(size_t n) { return new T[n]; }\n"
         "  void deallocate(T *p, size_t) { delete[] p; }\n"
         "};\n"
+        "class HighFrequencyLoopRequester {\n"
+        " public:\n"
+        "  void start() {}\n"
+        "  void stop() {}\n"
+        "  static bool is_high_frequency() { return false; }\n"
+        "};\n"
         "}  // namespace esphome\n"
     ),
     "esphome/core/log.h": (
         "#pragma once\n"
-        "#define ESP_LOGD(tag, fmt, ...) ((void)0)\n"
-        "#define ESP_LOGI(tag, fmt, ...) ((void)0)\n"
-        "#define ESP_LOGW(tag, fmt, ...) ((void)0)\n"
-        "#define ESP_LOGE(tag, fmt, ...) ((void)0)\n"
-        "#define ESP_LOGV(tag, fmt, ...) ((void)0)\n"
+        "namespace esphome {\n"
+        "struct LogString {};\n"
+        "template <typename... Args>\n"
+        "inline void host_log_sink_(const char *, const char *, const Args &...) {}\n"
+        "}  // namespace esphome\n"
+        "#define LOG_STR_ARG(s) \"\"\n"
+        "#define ESP_LOGD(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
+        "#define ESP_LOGI(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
+        "#define ESP_LOGW(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
+        "#define ESP_LOGE(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
+        "#define ESP_LOGV(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
+        "#define ESP_LOGCONFIG(tag, ...) ::esphome::host_log_sink_(tag, __VA_ARGS__)\n"
     ),
     "esphome/core/component.h": (
         "#pragma once\n"
         "#include <cstdint>\n"
         "#include <functional>\n"
+        "#include \"esphome/core/log.h\"\n"
         "namespace esphome {\n"
+        "namespace setup_priority {\n"
+        "inline constexpr float AFTER_WIFI = 250.0f;\n"
+        "inline constexpr float LATE = -100.0f;\n"
+        "}  // namespace setup_priority\n"
         "class Component {\n"
         " public:\n"
         "  virtual ~Component() = default;\n"
         "  virtual void setup() {}\n"
         "  virtual void loop() {}\n"
+        "  virtual void dump_config() {}\n"
         "  virtual float get_setup_priority() const { return 0.0f; }\n"
+        "  void disable_loop() {}\n"
+        "  void enable_loop() {}\n"
+        "  const LogString *get_component_log_str() const { return nullptr; }\n"
         "  bool status_has_error() const { return false; }\n"
         "  void status_clear_error() {}\n"
         "  void set_timeout(const char *, uint32_t, std::function<void()> &&) {}\n"
@@ -1034,6 +1064,26 @@ HOST_UI_STUBS: dict[str, str] = {
         "  void start_poller() {}\n"
         "  void set_update_interval(uint32_t) {}\n"
         "};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/core/application.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esphome/core/component.h\"\n"
+        "#include \"esphome/core/log.h\"\n"
+        "namespace esphome {\n"
+        "class Application {\n"
+        " public:\n"
+        "  uint32_t get_loop_component_start_time() const { return 0; }\n"
+        "  uint32_t get_loop_interval() const { return 16; }\n"
+        "  void set_loop_interval(uint32_t) {}\n"
+        "  void wake_loop_threadsafe() {}\n"
+        "  const LogString *get_current_source() const { return nullptr; }\n"
+        "  Component *get_current_component() const { return nullptr; }\n"
+        "  void feed_wdt() {}\n"
+        "  void safe_reboot() {}\n"
+        "};\n"
+        "extern Application App;\n"
         "}  // namespace esphome\n"
     ),
     "esphome/core/preferences.h": (
@@ -1077,7 +1127,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "#include <cstdint>\n"
         "#include \"esphome/core/color.h\"\n"
         "#include \"esphome/core/component.h\"\n"
-        "namespace esphome::font { class GlyphData; class Font; }\n"
+        "namespace esphome::font { struct GlyphData; class Font; }\n"
         "namespace esphome::display {\n"
         "inline constexpr Color COLOR_OFF{0, 0, 0, 0};\n"
         "inline constexpr Color COLOR_ON{255, 255, 255, 255};\n"
@@ -1134,6 +1184,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "  void print(int, int, BaseFont *, Color, TextAlign, const char *, Color = Color::BLACK) {}\n"
         "  void print(int, int, BaseFont *, Color, const char *, Color = Color::BLACK) {}\n"
         "  void printf(int, int, BaseFont *, Color, TextAlign, const char *, ...) {}\n"
+        "  void get_text_bounds(int, int, const char *, BaseFont *, TextAlign, int *, int *, int *, int *) {}\n"
         "  void fill(Color) {}\n"
         "  void start_clipping(int, int, int, int) {}\n"
         "  void end_clipping() {}\n"
@@ -1151,7 +1202,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "struct GlyphData {\n"
         "  const char *a_char;\n"
         "  const uint8_t *data;\n"
-        "  int offset_x, offset_y, width, height, advance_width;\n"
+        "  int offset_x, offset_y, width, height, advance;\n"
         "};\n"
         "class Glyph {\n"
         " public:\n"
@@ -1160,6 +1211,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "class Font : public display::BaseFont {\n"
         " public:\n"
         "  const std::vector<Glyph> &get_glyphs() const { static std::vector<Glyph> g; return g; }\n"
+        "  const GlyphData *find_glyph(uint32_t) const { return nullptr; }\n"
         "  int get_baseline() const { return 12; }\n"
         "  int get_height() const { return 16; }\n"
         "  int get_bpp() const { return 1; }\n"
@@ -1169,13 +1221,81 @@ HOST_UI_STUBS: dict[str, str] = {
     "esphome/components/api/api_server.h": (
         "#pragma once\n"
         "namespace esphome::api {\n"
+        "struct VoiceAssistantRequest { bool start{false}; };\n"
+        "class APIConnection {\n"
+        " public:\n"
+        "  template <typename MsgT> bool send_message(const MsgT &) { return true; }\n"
+        "};\n"
         "class APIServer {\n"
         " public:\n"
         "  bool is_connected() const { return true; }\n"
         "  bool is_connected_with_state_subscription() const { return true; }\n"
+        "  void on_shutdown() {}\n"
         "};\n"
         "extern APIServer *global_api_server;\n"
         "}  // namespace esphome::api\n"
+    ),
+    "esphome/components/microphone/microphone_source.h": (
+        "#pragma once\n"
+        "namespace esphome::microphone {\n"
+        "class MicrophoneSource {\n"
+        " public:\n"
+        "  bool is_running() const { return false; }\n"
+        "  void stop() {}\n"
+        "};\n"
+        "}  // namespace esphome::microphone\n"
+    ),
+    "esphome/components/voice_assistant/voice_assistant.h": (
+        "#pragma once\n"
+        "#include <string>\n"
+        "#include <vector>\n"
+        "#include \"esphome/components/api/api_server.h\"\n"
+        "#include \"esphome/components/microphone/microphone_source.h\"\n"
+        "namespace esphome::voice_assistant {\n"
+        "enum class State { IDLE = 0, START_MICROPHONE = 1 };\n"
+        "class VoiceAssistant {\n"
+        " public:\n"
+        "  api::APIConnection *get_api_connection() const { return api_client_; }\n"
+        "  void request_stop() {}\n"
+        "  void reset_conversation_id() {}\n"
+        "  void on_set_configuration(const std::vector<std::string> &) {}\n"
+        "  bool is_running() const { return false; }\n"
+        " private:\n"
+        "  void set_state_(State, State) {}\n"
+        "  microphone::MicrophoneSource *mic_source_{nullptr};\n"
+        "  api::APIConnection *api_client_{nullptr};\n"
+        "};\n"
+        "}  // namespace esphome::voice_assistant\n"
+    ),
+    "esphome/components/micro_wake_word/micro_wake_word.h": (
+        "#pragma once\n"
+        "#include <string>\n"
+        "#include <vector>\n"
+        "namespace esphome::micro_wake_word {\n"
+        "class WakeWordModel {\n"
+        " public:\n"
+        "  bool is_enabled() const { return true; }\n"
+        "  std::string get_wake_word() const { return \"Okay Nabu\"; }\n"
+        "  std::string get_id() const { return \"okay_nabu\"; }\n"
+        "};\n"
+        "class MicroWakeWord {\n"
+        " public:\n"
+        "  std::vector<WakeWordModel *> get_wake_words() const { return {}; }\n"
+        "  bool is_running() const { return false; }\n"
+        "  void start() {}\n"
+        "  void stop() {}\n"
+        "};\n"
+        "}  // namespace esphome::micro_wake_word\n"
+    ),
+    "esphome/components/mipi_dsi/mipi_dsi.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "namespace esphome::mipi_dsi {\n"
+        "class MipiDsi {\n"
+        " private:\n"
+        "  uint8_t *buffer_{nullptr};\n"
+        "};\n"
+        "}  // namespace esphome::mipi_dsi\n"
     ),
     "esphome/components/i2c/i2c_bus.h": (
         "#pragma once\n"
@@ -1193,11 +1313,137 @@ HOST_UI_STUBS: dict[str, str] = {
     ),
     "esphome/components/wifi/wifi_component.h": (
         "#pragma once\n"
+        "#include <cstdint>\n"
         "namespace esphome::wifi {\n"
-        "class WiFiComponent { public: bool is_connected() { return true; } };\n"
+        "enum WiFiPowerSaveMode { WIFI_POWER_SAVE_NONE = 0, WIFI_POWER_SAVE_LIGHT = 1, WIFI_POWER_SAVE_HIGH = 2 };\n"
+        "class WiFiComponent {\n"
+        " public:\n"
+        "  bool is_connected() { return true; }\n"
+        "  int32_t wifi_rssi() const { return -55; }\n"
+        "  void set_power_save_mode(WiFiPowerSaveMode) {}\n"
+        "  bool request_high_performance() { return true; }\n"
+        "  void release_high_performance() {}\n"
+        "  void enable() {}\n"
+        "  void disable() {}\n"
+        "  bool is_disabled() const { return false; }\n"
+        "};\n"
         "extern WiFiComponent *global_wifi_component;\n"
         "}  // namespace esphome::wifi\n"
     ),
+    "esp_err.h": (
+        "#pragma once\n"
+        "typedef int esp_err_t;\n"
+        "#ifndef ESP_OK\n"
+        "#define ESP_OK 0\n"
+        "#endif\n"
+        "#ifndef ESP_FAIL\n"
+        "#define ESP_FAIL (-1)\n"
+        "#endif\n"
+        "inline const char *esp_err_to_name(esp_err_t) { return \"ESP_OK\"; }\n"
+    ),
+    "esp_bt.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef enum { ESP_PWR_LVL_N12 = 0, ESP_PWR_LVL_P3 = 5, ESP_PWR_LVL_P9 = 7 } esp_power_level_t;\n"
+        "typedef enum { ESP_BLE_PWR_TYPE_ADV = 4 } esp_ble_power_type_t;\n"
+        "typedef enum { ESP_BT_MODE_IDLE = 0, ESP_BT_MODE_BLE = 1 } esp_bt_mode_t;\n"
+        "typedef enum {\n"
+        "  ESP_BT_CONTROLLER_STATUS_IDLE = 0,\n"
+        "  ESP_BT_CONTROLLER_STATUS_INITED = 1,\n"
+        "  ESP_BT_CONTROLLER_STATUS_ENABLED = 2,\n"
+        "} esp_bt_controller_status_t;\n"
+        "typedef struct { int magic; } esp_bt_controller_config_t;\n"
+        "#define BT_CONTROLLER_INIT_CONFIG_DEFAULT() {0}\n"
+        "typedef struct {\n"
+        "  void (*notify_host_send_available)(void);\n"
+        "  int (*notify_host_recv)(uint8_t *data, uint16_t len);\n"
+        "} esp_vhci_host_callback_t;\n"
+        "namespace latter_bt_stub {\n"
+        "inline esp_bt_controller_status_t &status() {\n"
+        "  static esp_bt_controller_status_t s = ESP_BT_CONTROLLER_STATUS_IDLE;\n"
+        "  return s;\n"
+        "}\n"
+        "inline const esp_vhci_host_callback_t *&cb() {\n"
+        "  static const esp_vhci_host_callback_t *c = nullptr;\n"
+        "  return c;\n"
+        "}\n"
+        "inline uint32_t &init_calls() { static uint32_t n = 0; return n; }\n"
+        "}  // namespace latter_bt_stub\n"
+        "inline esp_err_t esp_bt_controller_init(esp_bt_controller_config_t *) {\n"
+        "  latter_bt_stub::init_calls()++;\n"
+        "  latter_bt_stub::status() = ESP_BT_CONTROLLER_STATUS_INITED;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_bt_controller_enable(esp_bt_mode_t) {\n"
+        "  latter_bt_stub::status() = ESP_BT_CONTROLLER_STATUS_ENABLED;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_bt_controller_disable() {\n"
+        "  latter_bt_stub::status() = ESP_BT_CONTROLLER_STATUS_INITED;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_bt_controller_deinit() {\n"
+        "  latter_bt_stub::status() = ESP_BT_CONTROLLER_STATUS_IDLE;\n"
+        "  latter_bt_stub::cb() = nullptr;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_bt_controller_status_t esp_bt_controller_get_status() { return latter_bt_stub::status(); }\n"
+        "inline esp_err_t esp_vhci_host_register_callback(const esp_vhci_host_callback_t *callback) {\n"
+        "  latter_bt_stub::cb() = callback;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline bool esp_vhci_host_check_send_available() { return true; }\n"
+        "inline void esp_vhci_host_send_packet(uint8_t *data, uint16_t len) {\n"
+        "  if (len >= 3 && data[0] == 0x01 && latter_bt_stub::cb() && latter_bt_stub::cb()->notify_host_recv) {\n"
+        "    uint8_t evt[7] = {0x04, 0x0E, 0x04, 0x01, data[1], data[2], 0x00};\n"
+        "    latter_bt_stub::cb()->notify_host_recv(evt, sizeof(evt));\n"
+        "  }\n"
+        "}\n"
+        "inline esp_err_t esp_ble_tx_power_set(esp_ble_power_type_t, esp_power_level_t) { return ESP_OK; }\n"
+    ),
+    "esp_hosted_bt_host_stack.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef int (*esp_hosted_bt_hci_tx_fn_t)(const uint8_t *frame, uint16_t len);\n"
+        "typedef void (*esp_hosted_bt_hci_rx_fn_t)(const uint8_t *frame, uint16_t len, void *ctx);\n"
+        "typedef enum { ESP_HOSTED_BT_HOST_STACK_CUSTOM = 1 } esp_hosted_bt_host_stack_type_t;\n"
+        "typedef struct {\n"
+        "  esp_hosted_bt_host_stack_type_t stack;\n"
+        "  const uint8_t *bt_mac;\n"
+        "  bool bring_up_controller;\n"
+        "  uint32_t controller_ready_timeout_ms;\n"
+        "  struct {\n"
+        "    esp_hosted_bt_hci_rx_fn_t rx;\n"
+        "    esp_hosted_bt_hci_tx_fn_t tx;\n"
+        "    void *ctx;\n"
+        "  } custom;\n"
+        "} esp_hosted_bt_host_stack_cfg_t;\n"
+        "inline int esp_hosted_stub_tx(const uint8_t *, uint16_t) { return 0; }\n"
+        "inline esp_err_t esp_hosted_bt_host_stack_setup(esp_hosted_bt_host_stack_cfg_t *cfg) {\n"
+        "  if (cfg) cfg->custom.tx = esp_hosted_stub_tx;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline void esp_hosted_bt_host_stack_teardown() {}\n"
+    ),
+    "nvs.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef uint32_t nvs_handle_t;\n"
+        "typedef enum { NVS_READONLY = 0, NVS_READWRITE = 1 } nvs_open_mode_t;\n"
+        "inline esp_err_t nvs_open(const char *, nvs_open_mode_t, nvs_handle_t *out) {\n"
+        "  if (out) *out = 1;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t nvs_get_blob(nvs_handle_t, const char *, void *, size_t *) { return ESP_FAIL; }\n"
+        "inline esp_err_t nvs_set_blob(nvs_handle_t, const char *, const void *, size_t) { return ESP_OK; }\n"
+        "inline esp_err_t nvs_commit(nvs_handle_t) { return ESP_OK; }\n"
+        "inline void nvs_close(nvs_handle_t) {}\n"
+    ),
+    "nvs_flash.h": "#pragma once\n#include \"nvs.h\"\n",
     "esp_heap_caps.h": (
         "#pragma once\n"
         "#include <cstddef>\n"
@@ -1207,9 +1453,20 @@ HOST_UI_STUBS: dict[str, str] = {
         "#define MALLOC_CAP_INTERNAL (1 << 11)\n"
         "#define MALLOC_CAP_8BIT (1 << 2)\n"
         "#define MALLOC_CAP_DMA (1 << 3)\n"
+        "typedef struct {\n"
+        "  size_t total_free_bytes;\n"
+        "  size_t total_allocated_bytes;\n"
+        "  size_t largest_free_block;\n"
+        "  size_t minimum_free_bytes;\n"
+        "  size_t allocated_blocks;\n"
+        "  size_t free_blocks;\n"
+        "  size_t total_blocks;\n"
+        "} multi_heap_info_t;\n"
         "inline void *heap_caps_malloc(size_t sz, uint32_t) { return std::malloc(sz); }\n"
         "inline void *heap_caps_calloc(size_t n, size_t sz, uint32_t) { return std::calloc(n, sz); }\n"
+        "inline void *heap_caps_aligned_alloc(size_t, size_t sz, uint32_t) { return std::malloc(sz); }\n"
         "inline void heap_caps_free(void *p) { std::free(p); }\n"
+        "inline void heap_caps_get_info(multi_heap_info_t *info, uint32_t) { if (info) *info = {}; }\n"
         "inline size_t heap_caps_get_free_size(uint32_t) { return 0; }\n"
         "inline size_t heap_caps_get_minimum_free_size(uint32_t) { return 0; }\n"
         "inline size_t heap_caps_get_largest_free_block(uint32_t) { return 0; }\n"
@@ -1219,44 +1476,335 @@ HOST_UI_STUBS: dict[str, str] = {
         "inline bool esp_ptr_external_ram(const void *) { return false; }\n"
         "inline bool esp_ptr_internal(const void *) { return true; }\n"
     ),
-    "esp_timer.h": "#pragma once\n#include <cstdint>\ninline int64_t esp_timer_get_time() { return 0; }\n",
+    "esp_timer.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include <cstdio>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef struct esp_timer *esp_timer_handle_t;\n"
+        "typedef struct {\n"
+        "  void (*callback)(void *);\n"
+        "  void *arg;\n"
+        "  int dispatch_method;\n"
+        "  const char *name;\n"
+        "  bool skip_unhandled_events;\n"
+        "} esp_timer_create_args_t;\n"
+        "inline int64_t esp_timer_get_time() { return 0; }\n"
+        "inline esp_err_t esp_timer_create(const esp_timer_create_args_t *, esp_timer_handle_t *out) {\n"
+        "  if (out) *out = reinterpret_cast<esp_timer_handle_t>(1);\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_timer_start_once(esp_timer_handle_t, uint64_t) { return ESP_OK; }\n"
+        "inline esp_err_t esp_timer_stop(esp_timer_handle_t) { return ESP_OK; }\n"
+        "inline int64_t esp_timer_get_next_alarm_for_wake_up() { return 1000000; }\n"
+        "inline esp_err_t esp_timer_dump(FILE *) { return ESP_OK; }\n"
+    ),
     "esp_random.h": "#pragma once\n#include <cstdint>\ninline uint32_t esp_random() { return 42; }\n",
     "esp_sleep.h": (
         "#pragma once\n"
         "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "#include \"driver/gpio.h\"\n"
         "typedef int esp_sleep_wakeup_cause_t;\n"
         "#define ESP_SLEEP_WAKEUP_UNDEFINED 0\n"
         "inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return 0; }\n"
+        "inline esp_err_t esp_sleep_enable_ext0_wakeup(gpio_num_t, int) { return ESP_OK; }\n"
+        "inline esp_err_t esp_sleep_enable_timer_wakeup(uint64_t) { return ESP_OK; }\n"
+        "inline esp_err_t esp_sleep_enable_gpio_wakeup() { return ESP_OK; }\n"
+        "inline void esp_deep_sleep_start() {}\n"
     ),
     "esp_wifi.h": (
         "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "#include \"esp_event.h\"\n"
         "typedef int wifi_ps_type_t;\n"
         "#define WIFI_PS_NONE 0\n"
         "#define WIFI_PS_MIN_MODEM 1\n"
-        "inline int esp_wifi_set_ps(wifi_ps_type_t) { return 0; }\n"
+        "inline esp_err_t esp_wifi_set_ps(wifi_ps_type_t) { return ESP_OK; }\n"
+        "inline esp_err_t esp_wifi_get_ps(wifi_ps_type_t *ps) {\n"
+        "  if (ps) *ps = WIFI_PS_MIN_MODEM;\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "typedef struct { uint8_t reason; } wifi_event_sta_disconnected_t;\n"
+        "inline constexpr esp_event_base_t WIFI_EVENT = \"WIFI_EVENT\";\n"
+        "#define WIFI_EVENT_STA_DISCONNECTED 5\n"
+        "#define WIFI_EVENT_STA_BEACON_TIMEOUT 21\n"
     ),
-    "esp_event.h": "#pragma once\n",
-    "esp_attr.h": "#pragma once\n#ifndef IRAM_ATTR\n#define IRAM_ATTR\n#endif\n",
+    "esp_event.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef const char *esp_event_base_t;\n"
+        "typedef void (*esp_event_handler_t)(void *, esp_event_base_t, int32_t, void *);\n"
+        "typedef void *esp_event_handler_instance_t;\n"
+        "#define ESP_EVENT_ANY_ID (-1)\n"
+        "inline esp_err_t esp_event_handler_instance_register(\n"
+        "    esp_event_base_t, int32_t, esp_event_handler_t, void *, esp_event_handler_instance_t *) {\n"
+        "  return ESP_OK;\n"
+        "}\n"
+    ),
+    "esp_attr.h": (
+        "#pragma once\n"
+        "#ifndef IRAM_ATTR\n"
+        "#define IRAM_ATTR\n"
+        "#endif\n"
+        "#ifndef DRAM_ATTR\n"
+        "#define DRAM_ATTR\n"
+        "#endif\n"
+        "#ifndef RTC_NOINIT_ATTR\n"
+        "#define RTC_NOINIT_ATTR\n"
+        "#endif\n"
+    ),
     "freertos/FreeRTOS.h": (
         "#pragma once\n"
         "#include <cstdint>\n"
         "typedef uint32_t TickType_t;\n"
+        "typedef int BaseType_t;\n"
+        "typedef unsigned int UBaseType_t;\n"
+        "typedef void *TaskHandle_t;\n"
+        "typedef int portMUX_TYPE;\n"
+        "#define portMUX_INITIALIZER_UNLOCKED 0\n"
+        "#define portENTER_CRITICAL(mux) ((void)(mux))\n"
+        "#define portEXIT_CRITICAL(mux) ((void)(mux))\n"
+        "#define pdTRUE 1\n"
+        "#define pdFALSE 0\n"
+        "#define pdPASS 1\n"
+        "#define portMAX_DELAY 0xFFFFFFFFUL\n"
         "#define pdMS_TO_TICKS(x) (x)\n"
     ),
     "freertos/task.h": (
         "#pragma once\n"
         "#include \"freertos/FreeRTOS.h\"\n"
+        "typedef enum { eRunning = 0, eReady = 1, eBlocked = 2, eSuspended = 3, eDeleted = 4 } eTaskState;\n"
+        "typedef uint64_t configRUN_TIME_COUNTER_TYPE;\n"
+        "typedef struct {\n"
+        "  TaskHandle_t xHandle;\n"
+        "  const char *pcTaskName;\n"
+        "  UBaseType_t uxCurrentPriority;\n"
+        "  configRUN_TIME_COUNTER_TYPE ulRunTimeCounter;\n"
+        "} TaskStatus_t;\n"
         "inline void vTaskDelay(TickType_t) {}\n"
         "inline int xPortGetCoreID() { return 0; }\n"
+        "inline TaskHandle_t xTaskGetCurrentTaskHandle() { return nullptr; }\n"
+        "inline TaskHandle_t xTaskGetCurrentTaskHandleForCore(BaseType_t) { return nullptr; }\n"
+        "inline const char *pcTaskGetName(TaskHandle_t) { return \"loopTask\"; }\n"
+        "inline eTaskState eTaskGetState(TaskHandle_t) { return eRunning; }\n"
+        "inline uint32_t ulTaskNotifyTake(BaseType_t, TickType_t) { return 1; }\n"
+        "inline BaseType_t xTaskNotifyGive(TaskHandle_t) { return pdPASS; }\n"
+        "inline BaseType_t xTaskCreate(\n"
+        "    void (*)(void *), const char *, uint32_t, void *, UBaseType_t, TaskHandle_t *) {\n"
+        "  return pdPASS;\n"
+        "}\n"
+        "inline UBaseType_t uxTaskGetSystemState(TaskStatus_t *, UBaseType_t, configRUN_TIME_COUNTER_TYPE *) {\n"
+        "  return 0;\n"
+        "}\n"
     ),
     "driver/gpio.h": (
         "#pragma once\n"
         "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
         "typedef int gpio_num_t;\n"
+        "typedef int gpio_mode_t;\n"
         "#define GPIO_NUM_NC (-1)\n"
-        "inline int gpio_set_level(gpio_num_t, uint32_t) { return 0; }\n"
+        "#define GPIO_MODE_INPUT 1\n"
+        "#define GPIO_MODE_OUTPUT 2\n"
+        + "".join(f"#define GPIO_NUM_{i} {i}\n" for i in range(55))
+        + "inline esp_err_t gpio_set_level(gpio_num_t, uint32_t) { return ESP_OK; }\n"
+        "inline int gpio_get_level(gpio_num_t) { return 0; }\n"
+        "inline esp_err_t gpio_set_direction(gpio_num_t, gpio_mode_t) { return ESP_OK; }\n"
+        "inline esp_err_t gpio_hold_en(gpio_num_t) { return ESP_OK; }\n"
+        "inline esp_err_t gpio_hold_dis(gpio_num_t) { return ESP_OK; }\n"
+        "inline void gpio_deep_sleep_hold_en() {}\n"
+        "inline void gpio_deep_sleep_hold_dis() {}\n"
+        "inline esp_err_t gpio_sleep_sel_dis(gpio_num_t) { return ESP_OK; }\n"
     ),
-    "driver/ledc.h": "#pragma once\n",
+    "driver/rtc_io.h": (
+        "#pragma once\n"
+        "#include \"driver/gpio.h\"\n"
+        "inline bool rtc_gpio_is_valid_gpio(gpio_num_t) { return true; }\n"
+        "inline esp_err_t rtc_gpio_deinit(gpio_num_t) { return ESP_OK; }\n"
+    ),
+    "soc/soc_caps.h": (
+        "#pragma once\n"
+        "#define SOC_RTCIO_INPUT_OUTPUT_SUPPORTED 1\n"
+        "#define SOC_PM_SUPPORT_EXT0_WAKEUP 1\n"
+    ),
+    "driver/ledc.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef enum { LEDC_LOW_SPEED_MODE = 0 } ledc_mode_t;\n"
+        "typedef int ledc_timer_bit_t;\n"
+        "typedef enum { LEDC_TIMER_0 = 0 } ledc_timer_t;\n"
+        "typedef enum { LEDC_CHANNEL_0 = 0 } ledc_channel_t;\n"
+        "typedef enum { LEDC_INTR_DISABLE = 0 } ledc_intr_type_t;\n"
+        "typedef enum { LEDC_AUTO_CLK = 0 } ledc_clk_cfg_t;\n"
+        "typedef struct {\n"
+        "  ledc_mode_t speed_mode;\n"
+        "  ledc_timer_bit_t duty_resolution;\n"
+        "  ledc_timer_t timer_num;\n"
+        "  uint32_t freq_hz;\n"
+        "  ledc_clk_cfg_t clk_cfg;\n"
+        "} ledc_timer_config_t;\n"
+        "typedef struct {\n"
+        "  int gpio_num;\n"
+        "  ledc_mode_t speed_mode;\n"
+        "  ledc_channel_t channel;\n"
+        "  ledc_intr_type_t intr_type;\n"
+        "  ledc_timer_t timer_sel;\n"
+        "  uint32_t duty;\n"
+        "  int hpoint;\n"
+        "} ledc_channel_config_t;\n"
+        "inline esp_err_t ledc_timer_config(const ledc_timer_config_t *) { return ESP_OK; }\n"
+        "inline esp_err_t ledc_channel_config(const ledc_channel_config_t *) { return ESP_OK; }\n"
+        "inline esp_err_t ledc_set_duty(ledc_mode_t, ledc_channel_t, uint32_t) { return ESP_OK; }\n"
+        "inline esp_err_t ledc_update_duty(ledc_mode_t, ledc_channel_t) { return ESP_OK; }\n"
+    ),
+    "esp_flash.h": "#pragma once\ntypedef struct esp_flash_t esp_flash_t;\n",
+    "esp_freertos_hooks.h": (
+        "#pragma once\n"
+        "#include \"esp_err.h\"\n"
+        "typedef void (*esp_freertos_tick_cb_t)(void);\n"
+        "inline esp_err_t esp_register_freertos_tick_hook_for_cpu(esp_freertos_tick_cb_t, unsigned) {\n"
+        "  return ESP_OK;\n"
+        "}\n"
+    ),
+    "esp_ota_ops.h": (
+        "#pragma once\n"
+        "typedef struct esp_partition_t esp_partition_t;\n"
+        "inline const esp_partition_t *esp_ota_get_last_invalid_partition() { return nullptr; }\n"
+    ),
+    "esp_pm.h": (
+        "#pragma once\n"
+        "#include <cstdio>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef enum { ESP_PM_CPU_FREQ_MAX = 0 } esp_pm_lock_type_t;\n"
+        "typedef void *esp_pm_lock_handle_t;\n"
+        "typedef struct {\n"
+        "  esp_err_t (*enter_cb)(int64_t, void *);\n"
+        "  esp_err_t (*exit_cb)(int64_t, void *);\n"
+        "} esp_pm_sleep_cbs_register_config_t;\n"
+        "inline esp_err_t esp_pm_lock_create(esp_pm_lock_type_t, int, const char *, esp_pm_lock_handle_t *out) {\n"
+        "  if (out) *out = reinterpret_cast<void *>(1);\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_pm_lock_acquire(esp_pm_lock_handle_t) { return ESP_OK; }\n"
+        "inline esp_err_t esp_pm_lock_release(esp_pm_lock_handle_t) { return ESP_OK; }\n"
+        "inline esp_err_t esp_pm_dump_locks(FILE *) { return ESP_OK; }\n"
+        "inline esp_err_t esp_pm_light_sleep_register_cbs(esp_pm_sleep_cbs_register_config_t *) { return ESP_OK; }\n"
+    ),
+    "esp_system.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include <cstdio>\n"
+        "#include <cstring>\n"
+        "typedef enum {\n"
+        "  ESP_RST_UNKNOWN = 0,\n"
+        "  ESP_RST_POWERON = 1,\n"
+        "  ESP_RST_EXT = 2,\n"
+        "  ESP_RST_SW = 3,\n"
+        "  ESP_RST_PANIC = 4,\n"
+        "  ESP_RST_INT_WDT = 5,\n"
+        "  ESP_RST_TASK_WDT = 6,\n"
+        "  ESP_RST_WDT = 7,\n"
+        "  ESP_RST_DEEPSLEEP = 8,\n"
+        "  ESP_RST_BROWNOUT = 9,\n"
+        "  ESP_RST_USB = 11,\n"
+        "} esp_reset_reason_t;\n"
+        "inline esp_reset_reason_t esp_reset_reason() { return ESP_RST_POWERON; }\n"
+        "inline void esp_system_abort(const char *) {}\n"
+        "inline size_t esp_get_free_heap_size() { return 0; }\n"
+        "#ifdef _WIN32\n"
+        "inline FILE *fmemopen(void *, size_t, const char *) { return nullptr; }\n"
+        "#ifndef strtok_r\n"
+        "#define strtok_r strtok_s\n"
+        "#endif\n"
+        "#endif\n"
+    ),
+    "esp_rom_sys.h": "#pragma once\n#include <cstdint>\ninline void esp_rom_delay_us(uint32_t) {}\n",
+    "sys/time.h": (
+        "#pragma once\n"
+        "#include <ctime>\n"
+        "#ifdef _WIN32\n"
+        "struct timeval { time_t tv_sec; long tv_usec; };\n"
+        "inline int settimeofday(const struct timeval *, const void *) { return 0; }\n"
+        "inline struct tm *gmtime_r(const time_t *t, struct tm *out) {\n"
+        "  return gmtime_s(out, t) == 0 ? out : nullptr;\n"
+        "}\n"
+        "#else\n"
+        "#include_next <sys/time.h>\n"
+        "#endif\n"
+    ),
+    "driver/ppa.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef void *ppa_client_handle_t;\n"
+        "typedef struct {} ppa_event_data_t;\n"
+        "typedef enum { PPA_OPERATION_FILL = 2 } ppa_operation_t;\n"
+        "typedef enum { PPA_FILL_COLOR_MODE_RGB565 = 1 } ppa_fill_color_mode_t;\n"
+        "typedef enum { PPA_TRANS_MODE_NON_BLOCKING = 1 } ppa_trans_mode_t;\n"
+        "typedef struct {\n"
+        "  ppa_operation_t oper_type;\n"
+        "  uint32_t max_pending_trans_num;\n"
+        "} ppa_client_config_t;\n"
+        "typedef struct {\n"
+        "  bool (*on_trans_done)(ppa_client_handle_t, ppa_event_data_t *, void *);\n"
+        "} ppa_event_callbacks_t;\n"
+        "typedef struct {\n"
+        "  struct {\n"
+        "    void *buffer;\n"
+        "    uint32_t buffer_size;\n"
+        "    uint32_t pic_w;\n"
+        "    uint32_t pic_h;\n"
+        "    ppa_fill_color_mode_t fill_cm;\n"
+        "  } out;\n"
+        "  uint32_t fill_block_w;\n"
+        "  uint32_t fill_block_h;\n"
+        "  struct { uint32_t val; } fill_argb_color;\n"
+        "  ppa_trans_mode_t mode;\n"
+        "} ppa_fill_oper_config_t;\n"
+        "inline esp_err_t ppa_register_client(const ppa_client_config_t *, ppa_client_handle_t *out) {\n"
+        "  if (out) *out = reinterpret_cast<void *>(1);\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t ppa_client_register_event_callbacks(ppa_client_handle_t, const ppa_event_callbacks_t *) {\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t ppa_do_fill(ppa_client_handle_t, const ppa_fill_oper_config_t *) { return ESP_OK; }\n"
+    ),
+    "esp_async_memcpy.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include \"esp_err.h\"\n"
+        "typedef void *async_memcpy_handle_t;\n"
+        "typedef struct {} async_memcpy_event_t;\n"
+        "typedef bool (*async_memcpy_isr_cb_t)(async_memcpy_handle_t, async_memcpy_event_t *, void *);\n"
+        "typedef struct { size_t backlog; } async_memcpy_config_t;\n"
+        "#define ASYNC_MEMCPY_DEFAULT_CONFIG() {8}\n"
+        "inline esp_err_t esp_async_memcpy_install_gdma_axi(const async_memcpy_config_t *, async_memcpy_handle_t *h) {\n"
+        "  if (h) *h = reinterpret_cast<void *>(1);\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_async_memcpy_install_gdma_ahb(const async_memcpy_config_t *, async_memcpy_handle_t *h) {\n"
+        "  if (h) *h = reinterpret_cast<void *>(1);\n"
+        "  return ESP_OK;\n"
+        "}\n"
+        "inline esp_err_t esp_async_memcpy(\n"
+        "    async_memcpy_handle_t, void *, void *, size_t, async_memcpy_isr_cb_t, void *) {\n"
+        "  return ESP_OK;\n"
+        "}\n"
+    ),
+    "esp_cache.h": (
+        "#pragma once\n"
+        "#include <cstddef>\n"
+        "#include \"esp_err.h\"\n"
+        "#define ESP_CACHE_MSYNC_FLAG_DIR_C2M (1 << 0)\n"
+        "#define ESP_CACHE_MSYNC_FLAG_DIR_M2C (1 << 1)\n"
+        "#define ESP_CACHE_MSYNC_FLAG_INVALIDATE (1 << 2)\n"
+        "inline esp_err_t esp_cache_msync(void *, size_t, int) { return ESP_OK; }\n"
+    ),
 }
 
 
@@ -1265,6 +1813,62 @@ def _write_host_ui_stubs(stub_dir: Path) -> None:
         fp = stub_dir / rel
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content, encoding="utf-8")
+
+
+def _write_beacon_host_test(out_cpp: Path) -> None:
+    """Write a host C++20 unit test exercising LatterBeacon VHCI lifecycle (cold start, pause, warm resume, UUID, disable)."""
+    out_cpp.write_text(
+        "#include \"latter_beacon.h\"\n"
+        "#include <array>\n"
+        "#include <cassert>\n"
+        "\n"
+        "int main() {\n"
+        "  std::array<uint8_t, 16> uuid{};\n"
+        "  uuid[0] = 0xAA;\n"
+        "  esphome::latter_beacon::LatterBeacon b(uuid);\n"
+        "  b.set_major(1);\n"
+        "  b.set_minor(2);\n"
+        "  b.set_measured_power(-59);\n"
+        "  b.set_min_interval(500);\n"
+        "  b.set_max_interval(1000);\n"
+        "  b.set_tx_power(ESP_PWR_LVL_P3);\n"
+        "  b.set_profile_logging(true);\n"
+        "  b.setup();\n"
+        "  b.dump_config();\n"
+        "  assert(!b.is_active() && !b.is_paused() && !b.is_transport_up());\n"
+        "\n"
+        "  latter_bt_stub::init_calls() = 0;\n"
+        "  b.enable();\n"
+        "  assert(b.is_active() && !b.is_paused() && b.is_transport_up());\n"
+        "  assert(latter_bt_stub::init_calls() == 1);\n"
+        "  for (int i = 0; i < 6; ++i) b.loop();\n"
+        "  assert(b.is_active() && b.is_transport_up());\n"
+        "\n"
+        "  // Fast pause keeps transport warm without controller deinit\n"
+        "  b.pause();\n"
+        "  assert(!b.is_active() && b.is_paused() && b.is_transport_up());\n"
+        "  for (int i = 0; i < 2; ++i) b.loop();\n"
+        "\n"
+        "  // Warm resume skips transport_up_() / esp_bt_controller_init()\n"
+        "  b.enable();\n"
+        "  assert(b.is_active() && !b.is_paused() && b.is_transport_up());\n"
+        "  assert(latter_bt_stub::init_calls() == 1);\n"
+        "  for (int i = 0; i < 2; ++i) b.loop();\n"
+        "\n"
+        "  // Dynamic UUID rotation and validation\n"
+        "  assert(!b.set_uuid_hex(\"invalid\"));\n"
+        "  assert(b.set_uuid_hex(\"f7826da6-4fa2-4e98-8024-bc5b71e0893e\"));\n"
+        "  for (int i = 0; i < 4; ++i) b.loop();\n"
+        "  assert(b.is_active() && b.is_transport_up());\n"
+        "\n"
+        "  // Full teardown releases controller\n"
+        "  b.disable();\n"
+        "  assert(!b.is_active() && !b.is_paused() && !b.is_transport_up());\n"
+        "  assert(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE);\n"
+        "  return 0;\n"
+        "}\n",
+        encoding="utf-8",
+    )
 
 
 YAML_FULL_LAMBDA_PREAMBLE = """\
@@ -1277,10 +1881,19 @@ YAML_FULL_LAMBDA_PREAMBLE = """\
 #include "esphome/core/defines.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/preferences.h"
 #include "esphome/core/time.h"
 #include "esphome/components/font/font.h"
 #include "esphome/components/api/api_server.h"
+#include "esphome/components/i2c/i2c_bus.h"
+#include "esphome/components/wifi/wifi_component.h"
+#include "esphome/components/voice_assistant/voice_assistant.h"
+#include "esphome/components/micro_wake_word/micro_wake_word.h"
 #include "esp_heap_caps.h"
+#include "esp_random.h"
+#include "esp_rom_sys.h"
+#include "esp_system.h"
+#include "driver/gpio.h"
 #include "esphome_bridge.h"
 #include "hal_manifest.h"
 #include "hal_battery.h"
@@ -1293,10 +1906,14 @@ YAML_FULL_LAMBDA_PREAMBLE = """\
 #include "latter_protocol.h"
 #include "latter_rpc.h"
 #include "latter_state.h"
+#include "latter_actions.h"
+#include "latter_core.h"
+#include "latter_beacon.h"
 #include "ui_pages.h"
 #include "ui_touch_engine.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -1308,14 +1925,37 @@ YAML_FULL_LAMBDA_PREAMBLE = """\
 using std::isnan;
 using std::to_string;
 using esphome::Color;
+using esphome::global_preferences;
 
-inline size_t esp_get_free_heap_size() { return 0; }
 struct AppStub { void feed_wdt() {} void safe_reboot() {} };
 inline AppStub App;
 
+#ifndef USE_I2C
 namespace latter_ui {
 template <typename... Args> inline void hal_set_touch_sleep_mode(Args &&...) {}
 }  // namespace latter_ui
+#endif
+
+namespace audio {
+struct AudioStreamInfo {
+  constexpr AudioStreamInfo(int = 16, int = 1, uint32_t = 48000) {}
+};
+}  // namespace audio
+
+namespace speaker {
+class Speaker {
+ public:
+  bool is_running() const { return false; }
+  bool is_stopped() const { return true; }
+  bool has_buffered_data() const { return false; }
+  float get_volume() const { return 0.5f; }
+  void set_volume(float) {}
+  void set_audio_stream_info(const audio::AudioStreamInfo &) {}
+  void start() {}
+  void stop() {}
+  template <typename... Args> void apply_ducking(Args &&...) {}
+};
+}  // namespace speaker
 
 namespace media_player {
 enum MediaPlayerState {
@@ -1337,14 +1977,6 @@ struct StreamInfo { int get_bits_per_sample() const { return 16; } };
 struct AudioCapture { StreamInfo stream_info; std::vector<uint8_t> data; };
 }  // namespace microphone
 
-namespace esphome::voice_assistant {
-template <typename... Args> inline void on_api_client_authenticated(Args &&...) {}
-template <typename... Args> inline void abort_voice_assistant(Args &&...) {}
-template <typename... Args> inline void cycle_primary_wake_word(Args &&...) {}
-template <typename... Args> inline void start_continuous(Args &&...) {}
-template <typename... Args> inline void request_start(Args &&...) {}
-}  // namespace esphome::voice_assistant
-
 struct AnyCall {
   template <typename... Args> AnyCall &set_volume(Args &&...) { return *this; }
   template <typename... Args> AnyCall &set_brightness(Args &&...) { return *this; }
@@ -1363,32 +1995,34 @@ struct AnyStateVal {
   operator bool() const { return false; }
   bool operator==(media_player::MediaPlayerState) const { return false; }
   bool operator!=(media_player::MediaPlayerState) const { return true; }
+  bool operator==(bool) const { return false; }
+  bool operator!=(bool) const { return true; }
 };
 
-struct AnyId : esphome::display::Display, esphome::display::BaseImage, esphome::font::Font {
+struct AnyId : esphome::display::Display, esphome::display::BaseImage, esphome::font::Font, speaker::Speaker {
   AnyStateVal state{};
   float volume{0.5f};
   AnyValues current_values{};
   AnyValues remote_values{};
   operator esphome::display::BaseFont *() { return static_cast<esphome::font::Font *>(this); }
   operator esphome::display::BaseImage *() { return static_cast<esphome::display::BaseImage *>(this); }
-  operator esphome::voice_assistant::VoiceAssistant *() { return nullptr; }
-  operator esphome::micro_wake_word::MicroWakeWord *() { return nullptr; }
   template <typename... Args> void execute(Args &&...) {}
   void stop() {}
+  void start() {}
   void press() {}
   void update() {}
   template <typename... Args> void publish_state(Args &&...) {}
+  bool has_state() const { return true; }
   bool is_running() const { return false; }
   bool is_active() const { return false; }
   bool is_connected() const { return true; }
   void set_profile_logging(bool) {}
   void set_uuid_hex(std::string_view) {}
-  void set_volume(float) {}
   void set_mute_state(bool) {}
   bool get_mute_state() const { return false; }
-  bool has_buffered_data() const { return false; }
-  template <typename... Args> void apply_ducking(Args &&...) {}
+  void set_mute_on() {}
+  void set_mute_off() {}
+  void set_probability_cutoff(uint8_t) {}
   void set_brightness(uint8_t) {}
   bool is_failed() const { return false; }
   void reset_to_construction_state() {}
@@ -1416,32 +2050,74 @@ struct AnyId : esphome::display::Display, esphome::display::BaseImage, esphome::
 
 inline AnyId &any_id_singleton() { static AnyId inst; return inst; }
 inline Color &any_color_singleton() { static Color c; return c; }
+inline esphome::latter_beacon::LatterBeacon &beacon_id_singleton() {
+  static std::array<uint8_t, 16> u{};
+  static esphome::latter_beacon::LatterBeacon b(u);
+  return b;
+}
+inline esphome::latter_core::LatterLoopProbe &loop_probe_singleton() {
+  static esphome::latter_core::LatterLoopProbe p;
+  return p;
+}
+inline esphome::i2c::I2CBus &i2c_bus_singleton() {
+  static esphome::i2c::I2CBus b;
+  return b;
+}
+inline esphome::wifi::WiFiComponent &wifi_comp_singleton() {
+  static esphome::wifi::WiFiComponent w;
+  return w;
+}
+inline esphome::voice_assistant::VoiceAssistant &va_comp_singleton() {
+  static esphome::voice_assistant::VoiceAssistant v;
+  return v;
+}
+inline esphome::micro_wake_word::MicroWakeWord &mww_comp_singleton() {
+  static esphome::micro_wake_word::MicroWakeWord m;
+  return m;
+}
 struct AnyStrId {
   std::string state;
   bool has_state() const { return true; }
+  void update() {}
   template <typename... A> void publish_state(A &&...) {}
 };
 struct AnyFltId {
   float state{0.0f};
   bool has_state() const { return true; }
+  void update() {}
+  void stop_poller() {}
+  void start_poller() {}
+  void set_update_interval(uint32_t) {}
   template <typename... A> void publish_state(A &&...) {}
 };
 inline AnyStrId &any_str_id_singleton() { static AnyStrId s; return s; }
 inline AnyFltId &any_flt_id_singleton() { static AnyFltId s; return s; }
 struct TouchPointStub { int x{0}, y{0}, state{1}; };
+struct VaTimerStub {
+  std::string id;
+  std::string name;
+  uint32_t total_seconds{60};
+  uint32_t seconds_left{30};
+  bool is_active{true};
+};
 """
 
 
-def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
+def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path, *, include_hal_boards: bool = False) -> int:
     """Generate a host C++20 TU compiling all block & inline YAML lambdas (including id(...) calls)."""
-    yaml_files = (
+    yaml_files: list[Path] = [
         ROOT / "modules" / "base.yaml",
+        ROOT / "modules" / "audio_voice.yaml",
         ROOT / "modules" / "display_pipeline.yaml",
         ROOT / "modules" / "power_manager.yaml",
         ROOT / "modules" / "system_core.yaml",
         ROOT / "modules" / "timers_and_fetchers.yaml",
         ROOT / "guis" / "universal" / "gui.yaml",
-    )
+    ]
+    if include_hal_boards:
+        yaml_files.extend(sorted((ROOT / "modules" / "hal").glob("*.yaml")))
+        yaml_files.extend(sorted((ROOT / "boards").glob("*.yaml")))
+
     type_map = {
         "string": "std::string",
         "int": "int",
@@ -1449,8 +2125,35 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
         "float": "float",
         "string[]": "std::vector<std::string>",
     }
-    str_ids = {"track_title", "track_artist", "track_album", "latter_ip_address", "fw_release_summary"}
-    flt_ids = {"latter_wifi_signal"}
+    str_ids = {
+        "track_title",
+        "track_artist",
+        "track_album",
+        "latter_ip_address",
+        "fw_release_summary",
+        "batt_charge_state",
+        "sys_link_report",
+        "latter_hardware_manifest",
+    }
+    flt_ids = {
+        "latter_wifi_signal",
+        "accel_x",
+        "accel_y",
+        "accel_z",
+        "imu_roll",
+        "imu_pitch",
+        "imu_temp",
+        "motion_mag",
+        "batt_level",
+        "batt_voltage",
+    }
+    typed_singletons = {
+        "ble_ctrl": "beacon_id_singleton()",
+        "bus_internal": "i2c_bus_singleton()",
+        "wifi_ctrl": "wifi_comp_singleton()",
+        "va": "va_comp_singleton()",
+        "mww": "mww_comp_singleton()",
+    }
     ptr_ids = {
         "remote_album_art",
         "home_wallpaper_art",
@@ -1461,6 +2164,13 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
         "ui_anim_tick",
         "ble_ctrl",
         "wifi_ctrl",
+        "bus_internal",
+        "va",
+        "mww",
+        "announcement_mixing_input",
+        "sound_mixing_input",
+        "media_mixing_input",
+        "physical_speaker",
         "disp1",
     }
 
@@ -1473,12 +2183,14 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
         )
         code = re.sub(
             r"(?<!&)&(?!&)\s*id\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
-            "(&any_id_singleton())",
+            lambda m: f"(&{typed_singletons.get(m.group(1), 'any_id_singleton()')})",
             code,
         )
 
         def repl_dot(m: re.Match[str]) -> str:
             nm = m.group(1)
+            if nm in typed_singletons:
+                return f"{typed_singletons[nm]}."
             if nm in str_ids:
                 return "any_str_id_singleton()."
             if nm in flt_ids:
@@ -1491,6 +2203,8 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
             nm = m.group(1)
             if nm in ("theme_primary", "theme_secondary") or nm.startswith("col_"):
                 return "any_color_singleton()"
+            if nm in typed_singletons:
+                return f"(&{typed_singletons[nm]})"
             if nm in ptr_ids:
                 return "(&any_id_singleton())"
             return "any_id_singleton()"
@@ -1507,8 +2221,8 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
         active_vars: list[tuple[str, str]] = []
         in_vars = False
         vars_indent = -1
-        client_hook = ""
-        on_progress = False
+        section = ""
+        hook = ""
         on_touch = ""
         in_write_action = False
         idx = 0
@@ -1517,27 +2231,39 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
             stripped = raw_ln.split("#", 1)[0].rstrip()
             if stripped.strip():
                 ind = len(stripped) - len(stripped.lstrip(" "))
+                m_sec = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$", stripped)
+                if m_sec and ind == 0:
+                    section = m_sec.group(1)
+                    active_vars = []
+                    in_vars = False
+                    hook = ""
+                    on_touch = ""
+                    in_write_action = False
                 if re.match(r"^\s*-\s*(?:id|action|platform|interval)\s*:", stripped) and ind <= 6:
                     active_vars = []
                     in_vars = False
-                    client_hook = ""
-                    on_progress = False
+                    hook = ""
                     on_touch = ""
                     in_write_action = False
                 if re.match(r"^\s*write_action\s*:\s*$", stripped):
                     in_write_action = True
-                if re.match(r"^\s*on_progress\s*:\s*$", stripped):
-                    on_progress = True
-                elif re.match(r"^\s*on_(?:begin|end|error|abort)\s*:\s*$", stripped):
-                    on_progress = False
+                m_hk = re.match(
+                    r"^\s*(on_progress|on_begin|on_end|on_error|on_abort|"
+                    r"on_client_connected|on_client_disconnected|"
+                    r"on_wake_word_detected|on_listening|on_stt_vad_start|on_stt_vad_end|"
+                    r"on_stt_end|on_intent_progress|on_tts_start|on_tts_end|"
+                    r"on_timer_started|on_timer_updated|on_timer_cancelled|on_timer_finished|"
+                    r"on_value|on_state|on_play|on_pause|on_idle|on_announcement|on_press|on_release)\s*:\s*$",
+                    stripped,
+                )
+                if m_hk:
+                    hook = m_hk.group(1)
+                    if hook in ("on_client_connected", "on_client_disconnected"):
+                        active_vars = []
+                        in_vars = False
                 m_ot = re.match(r"^\s*(on_touch|on_update|on_release)\s*:\s*$", stripped)
                 if m_ot and rel.endswith("gui.yaml"):
                     on_touch = m_ot.group(1)
-                m_ch = re.match(r"^\s*(on_client_connected|on_client_disconnected)\s*:\s*$", stripped)
-                if m_ch:
-                    client_hook = m_ch.group(1)
-                    active_vars = []
-                    in_vars = False
                 m_vh = re.match(r"^(\s*)(?:parameters|variables)\s*:\s*$", stripped)
                 if m_vh:
                     in_vars = True
@@ -1553,9 +2279,40 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
                         if m_kv and m_kv.group(2) in type_map:
                             active_vars.append((m_kv.group(1), type_map[m_kv.group(2)]))
 
-            m_block = re.match(r"^(\s*)(?:-\s*)?lambda\s*:\s*\|-?\s*$", raw_ln)
+            def resolve_hook_params() -> list[tuple[str, str]]:
+                if rel.endswith("gui.yaml") and on_touch == "on_touch":
+                    return [("touch", "TouchPointStub"), ("touches", "std::vector<TouchPointStub>")]
+                if rel.endswith("gui.yaml") and on_touch == "on_update":
+                    return [("touches", "std::vector<TouchPointStub>")]
+                if rel.endswith("gui.yaml") and not on_touch:
+                    return [("it", "esphome::display::Display &")]
+                if in_write_action:
+                    return [("state", "float")]
+                if hook in ("on_client_connected", "on_client_disconnected") and section == "api":
+                    return [("client_info", "std::string"), ("client_address", "std::string")]
+                if hook == "on_progress":
+                    return [("x", "float")]
+                if hook == "on_wake_word_detected":
+                    return [("wake_word", "std::string")]
+                if hook in ("on_stt_end", "on_intent_progress", "on_tts_start", "on_tts_end"):
+                    return [("x", "std::string")]
+                if hook == "on_error" and section == "voice_assistant":
+                    return [("code", "std::string"), ("message", "std::string")]
+                if hook in ("on_timer_started", "on_timer_updated", "on_timer_cancelled", "on_timer_finished"):
+                    return [("timer", "VaTimerStub")]
+                if hook == "on_value" and section == "text_sensor":
+                    return [("x", "std::string")]
+                if hook == "on_value" and section == "sensor":
+                    return [("x", "float")]
+                return list(active_vars)
+
+            m_block = re.match(
+                r"^(\s*)(?:(-\s*)?lambda\s*:\s*\|-?|[A-Za-z0-9_]+\s*:\s*!lambda\s*\|-?)\s*$",
+                raw_ln,
+            )
             if m_block:
-                is_cond = not raw_ln.lstrip().startswith("-")
+                is_bang = "!lambda" in raw_ln
+                is_cond = is_bang or (not raw_ln.lstrip().startswith("-"))
                 base_ind = len(raw_ln) - len(raw_ln.lstrip(" "))
                 body_start = idx + 2
                 body: list[str] = []
@@ -1567,20 +2324,8 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
                     body.append(ln)
                     idx += 1
                 btxt = sanitize_cpp("\n".join(body))
-                params = list(active_vars)
-                if rel.endswith("gui.yaml") and on_touch == "on_touch":
-                    params = [("touch", "TouchPointStub"), ("touches", "std::vector<TouchPointStub>")]
-                elif rel.endswith("gui.yaml") and on_touch == "on_update":
-                    params = [("touches", "std::vector<TouchPointStub>")]
-                elif rel.endswith("gui.yaml") and not on_touch:
-                    params = [("it", "esphome::display::Display &")]
-                elif in_write_action:
-                    params = [("state", "float")]
-                elif client_hook in ("on_client_connected", "on_client_disconnected"):
-                    params = [("client_info", "std::string"), ("client_address", "std::string")]
-                elif on_progress:
-                    params = [("x", "float")]
-                sig = ", ".join(f"{ctype} {cname}" for cname, ctype in params)
+                params = resolve_hook_params()
+                sig = ", ".join(f"[[maybe_unused]] {ctype} {cname}" for cname, ctype in params)
                 ret = "auto" if is_cond else "void"
                 fn_idx += 1
                 chunks.append(f"[[maybe_unused]] static {ret} yaml_full_fn_{fn_idx}({sig}) {{")
@@ -1596,12 +2341,8 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
             if m_inline:
                 is_ret = "return " in m_inline.group(3)
                 btxt = sanitize_cpp(m_inline.group(3))
-                params = list(active_vars)
-                if client_hook in ("on_client_connected", "on_client_disconnected"):
-                    params = [("client_info", "std::string"), ("client_address", "std::string")]
-                elif on_progress:
-                    params = [("x", "float")]
-                sig = ", ".join(f"{ctype} {cname}" for cname, ctype in params)
+                params = resolve_hook_params()
+                sig = ", ".join(f"[[maybe_unused]] {ctype} {cname}" for cname, ctype in params)
                 ret = "auto" if is_ret else "void"
                 fn_idx += 1
                 chunks.append(f"[[maybe_unused]] static {ret} yaml_full_fn_{fn_idx}({sig}) {{")
@@ -1610,13 +2351,13 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path) -> int:
                 chunks.append("}")
 
             idx += 1
-    chunks.append("int main() { return 0; }")
+    chunks.append("int main() { (void)loop_probe_singleton(); return 0; }")
     out_cpp.write_text("\n".join(chunks) + "\n", encoding="utf-8")
     return fn_idx
 
 
 def run_subprocess_gates(failures: list[str]) -> None:
-    """Run protocol, board-facts, bringup, sound checks and compile/run C++20 host unit tests."""
+    """Run protocol, board-facts, bringup, sound checks and compile/run C++20 host unit & component gates."""
     py_tools = (
         ("PROTOCOL CODEGEN", ["tools/gen_protocol.py", "--check"]),
         ("PROTOCOL USAGE", ["tools/check_protocol_usage.py"]),
@@ -1637,27 +2378,170 @@ def run_subprocess_gates(failures: list[str]) -> None:
         failures.append("[HOST TESTS] tests/host/test_all.cpp missing")
         return
 
+    beacon_cpp = ROOT / "components" / "latter_beacon" / "latter_beacon.cpp"
+    beacon_inc = ROOT / "components" / "latter_beacon"
+    core_inc = ROOT / "components" / "latter_core"
+    core_cpps = sorted(core_inc.glob("*.cpp"))
     ui_cpps = sorted((ROOT / "components" / "latter_ui").glob("*.cpp"))
+
     ui_trait_matrices = (
         (
-            "ROUND_BATT",
+            "ROUND_BATT_HOST",
             (
                 "LATTER_SCREEN_W=466",
                 "LATTER_SCREEN_H=466",
                 "LATTER_ROUND_DISPLAY=1",
                 "LATTER_HAS_BATTERY=1",
+                "LATTER_BATTERY_MAH=400",
                 "LATTER_HAS_IMU=1",
                 "LATTER_IS_STATIONARY=0",
             ),
         ),
         (
-            "RECT_WALL",
+            "RECT_WALL_HOST",
             (
                 "LATTER_SCREEN_W=480",
                 "LATTER_SCREEN_H=480",
                 "LATTER_ROUND_DISPLAY=0",
                 "LATTER_HAS_BATTERY=0",
                 "LATTER_HAS_IMU=0",
+                "LATTER_IS_STATIONARY=1",
+            ),
+        ),
+        (
+            "S3_ESP32",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_FONT",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "CONFIG_IDF_TARGET_ESP32S3=1",
+                "LATTER_SCREEN_W=410",
+                "LATTER_SCREEN_H=502",
+                "LATTER_ROUND_DISPLAY=0",
+                "LATTER_HAS_BATTERY=1",
+                "LATTER_BATTERY_MAH=400",
+                "LATTER_HAS_IMU=1",
+                "LATTER_HAS_RTC=1",
+                "LATTER_IS_STATIONARY=0",
+            ),
+        ),
+        (
+            "P4_ESP32",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_FONT",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "USE_LATTER_BEACON_HOSTED",
+                "CONFIG_IDF_TARGET_ESP32P4=1",
+                "USE_ESP32_VARIANT_ESP32P4=1",
+                "LATTER_CHIP_P4=1",
+                "LATTER_SCREEN_W=720",
+                "LATTER_SCREEN_H=720",
+                "LATTER_ROUND_DISPLAY=0",
+                "LATTER_HAS_BATTERY=0",
+                "LATTER_HAS_IMU=0",
+                "LATTER_HAS_RTC=0",
+                "LATTER_IS_STATIONARY=1",
+            ),
+        ),
+    )
+
+    core_trait_matrices = (
+        (
+            "CORE_S3_NO_RTC",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "USE_LATTER_LOOP_PROBE",
+                "CONFIG_IDF_TARGET_ESP32S3=1",
+                "LATTER_HAS_BATTERY=1",
+                "LATTER_BATTERY_MAH=500",
+                "LATTER_HAS_IMU=1",
+                "LATTER_HAS_RTC=0",
+                "LATTER_IS_STATIONARY=0",
+                "LATTER_PWR_KEY_PIN=16",
+                "LATTER_PWR_KEY_ACTIVE_HIGH=1",
+                "LATTER_PWR_KEY_DEEP_SLEEP_WAKE=1",
+            ),
+        ),
+        (
+            "CORE_S3_RTC",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "USE_LATTER_LOOP_PROBE",
+                "CONFIG_IDF_TARGET_ESP32S3=1",
+                "LATTER_HAS_BATTERY=1",
+                "LATTER_BATTERY_MAH=400",
+                "LATTER_HAS_IMU=1",
+                "LATTER_HAS_RTC=1",
+                "LATTER_IS_STATIONARY=0",
+                "LATTER_PWR_KEY_PIN=10",
+                "LATTER_PWR_KEY_ACTIVE_HIGH=1",
+                "LATTER_PWR_KEY_DEEP_SLEEP_WAKE=1",
+            ),
+        ),
+        (
+            "CORE_P4_BATT_DFS",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "USE_LATTER_LOOP_PROBE",
+                "CONFIG_IDF_TARGET_ESP32P4=1",
+                "USE_ESP32_VARIANT_ESP32P4=1",
+                "CONFIG_PM_ENABLE=1",
+                "LATTER_CHIP_P4=1",
+                "LATTER_C6_RESET_PIN=54",
+                "LATTER_HAS_BATTERY=1",
+                "LATTER_BATTERY_MAH=1000",
+                "LATTER_HAS_IMU=0",
+                "LATTER_HAS_RTC=0",
+                "LATTER_IS_STATIONARY=0",
+            ),
+        ),
+        (
+            "CORE_P4_WALL",
+            (
+                "USE_ESP32",
+                "USE_I2C",
+                "USE_API",
+                "USE_WIFI",
+                "USE_VOICE_ASSISTANT",
+                "USE_MICRO_WAKE_WORD",
+                "USE_MICROPHONE",
+                "USE_LATTER_LOOP_PROBE",
+                "CONFIG_IDF_TARGET_ESP32P4=1",
+                "USE_ESP32_VARIANT_ESP32P4=1",
+                "LATTER_CHIP_P4=1",
+                "LATTER_C6_RESET_PIN=54",
+                "LATTER_HAS_BATTERY=0",
+                "LATTER_HAS_IMU=0",
+                "LATTER_HAS_RTC=0",
                 "LATTER_IS_STATIONARY=1",
             ),
         ),
@@ -1690,18 +2574,106 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 )
                 if lam_comp.returncode != 0:
                     failures.append(f"[YAML LAMBDA COMPILE] {(lam_comp.stderr or lam_comp.stdout).strip()}")
+            stub_dir = td_path / "ui_stubs"
+            _write_host_ui_stubs(stub_dir)
+            if beacon_cpp.is_file():
+                beacon_test_cpp = td_path / "beacon_host_test.cpp"
+                _write_beacon_host_test(beacon_test_cpp)
+                beacon_bin = td_path / ("beacon_host_test.exe" if os.name == "nt" else "beacon_host_test")
+                bcomp = subprocess.run(
+                    [
+                        gpp,
+                        "-std=c++20",
+                        "-O2",
+                        "-Wall",
+                        "-Wextra",
+                        "-Werror",
+                        "-DUSE_ESP32",
+                        f"-I{beacon_inc}",
+                        f"-I{stub_dir}",
+                        str(beacon_cpp),
+                        str(beacon_test_cpp),
+                        "-o",
+                        str(beacon_bin),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if bcomp.returncode != 0:
+                    failures.append(f"[BEACON VHCI COMPILE] {(bcomp.stderr or bcomp.stdout).strip()}")
+                else:
+                    brun = subprocess.run([str(beacon_bin)], capture_output=True, text=True, check=False)
+                    if brun.returncode != 0:
+                        failures.append(f"[BEACON VHCI RUN] {(brun.stderr or brun.stdout).strip()}")
+                bhcomp = subprocess.run(
+                    [
+                        gpp,
+                        "-std=c++20",
+                        "-fsyntax-only",
+                        "-Wall",
+                        "-Wextra",
+                        "-Werror",
+                        "-DUSE_ESP32",
+                        "-DUSE_LATTER_BEACON_HOSTED",
+                        f"-I{beacon_inc}",
+                        f"-I{stub_dir}",
+                        str(beacon_cpp),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if bhcomp.returncode != 0:
+                    failures.append(f"[BEACON HOSTED COMPILE] {(bhcomp.stderr or bhcomp.stdout).strip()}")
+            if core_cpps:
+                for cfg_lbl, defs in core_trait_matrices:
+                    ccomp = subprocess.run(
+                        [
+                            gpp,
+                            "-std=c++20",
+                            "-fsyntax-only",
+                            "-Wall",
+                            "-Wextra",
+                            "-Werror",
+                            f"-I{ROOT / 'include'}",
+                            f"-I{core_inc}",
+                            f"-I{stub_dir}",
+                            *[f"-D{d}" for d in defs],
+                            *[str(p) for p in core_cpps],
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if ccomp.returncode != 0:
+                        failures.append(f"[CORE CPP SYNTAX ({cfg_lbl})] {(ccomp.stderr or ccomp.stdout).strip()}")
             if ui_cpps:
-                stub_dir = td_path / "ui_stubs"
-                _write_host_ui_stubs(stub_dir)
-                full_lam_cpp = td_path / "yaml_full_lambdas_check.cpp"
-                extra_tus = [full_lam_cpp] if _write_yaml_full_lambdas_syntax_harness(full_lam_cpp) > 0 else []
+                full_lam_host = td_path / "yaml_full_lambdas_host.cpp"
+                full_lam_esp = td_path / "yaml_full_lambdas_esp32.cpp"
+                has_host_lam = _write_yaml_full_lambdas_syntax_harness(full_lam_host, include_hal_boards=False) > 0
+                has_esp_lam = _write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
                 for cfg_lbl, defs in ui_trait_matrices:
+                    is_esp = "USE_ESP32" in defs
+                    extra_tus = (
+                        ([full_lam_esp] if has_esp_lam else [])
+                        if is_esp
+                        else ([full_lam_host] if has_host_lam else [])
+                    )
                     ui_comp = subprocess.run(
                         [
                             gpp,
                             "-std=c++20",
                             "-fsyntax-only",
+                            "-Wall",
+                            "-Wextra",
+                            "-Wno-unused-parameter",
+                            "-Werror=unused-variable",
+                            "-Werror=unused-function",
+                            "-Werror=return-type",
                             f"-I{ROOT / 'include'}",
+                            f"-I{core_inc}",
+                            f"-I{beacon_inc}",
                             f"-I{stub_dir}",
                             *[f"-D{d}" for d in defs],
                             *[str(p) for p in (*ui_cpps, *extra_tus)],
@@ -1712,7 +2684,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
                     )
                     if ui_comp.returncode != 0:
                         failures.append(
-                            f"[UI CPP SYNTAX ({cfg_lbl})] {(ui_comp.stderr or ui_comp.stdout).strip()}"
+                            f"[UI/YAML CPP SYNTAX ({cfg_lbl})] {(ui_comp.stderr or ui_comp.stdout).strip()}"
                         )
     elif os.name == "nt":
         vcvars_candidates = [
@@ -1725,14 +2697,17 @@ def run_subprocess_gates(failures: list[str]) -> None:
             with tempfile.TemporaryDirectory() as td:
                 td_path = Path(td)
                 exe_path = td_path / "latter_host_test.exe"
-                obj_path = td_path / "latter_host_test.obj"
+                obj_dir = td_path / "objs"
+                obj_dir.mkdir(parents=True, exist_ok=True)
                 lam_cpp = td_path / "yaml_lambdas_check.cpp"
                 has_lam = _write_yaml_lambdas_syntax_harness(lam_cpp) > 0
+                stub_dir = td_path / "ui_stubs"
+                _write_host_ui_stubs(stub_dir)
                 bat_lines = [
                     "@echo off",
                     f'call "{vcvars}" >nul',
                     "if errorlevel 1 exit /b 1",
-                    f'cl /nologo /utf-8 /std:c++20 /O2 /W4 /EHsc "{test_cpp}" "/Fe:{exe_path}" "/Fo:{obj_path}"',
+                    f'cl /nologo /utf-8 /std:c++20 /O2 /W4 /EHsc "{test_cpp}" "/Fe:{exe_path}" "/Fo:{obj_dir}\\\\"',
                     "if errorlevel 1 exit /b 1",
                     f'"{exe_path}"',
                     "if errorlevel 1 exit /b 1",
@@ -1744,18 +2719,52 @@ def run_subprocess_gates(failures: list[str]) -> None:
                             "if errorlevel 1 exit /b 1",
                         ]
                     )
-                if ui_cpps:
-                    stub_dir = td_path / "ui_stubs"
-                    _write_host_ui_stubs(stub_dir)
-                    full_lam_cpp = td_path / "yaml_full_lambdas_check.cpp"
-                    extra_tus = [full_lam_cpp] if _write_yaml_full_lambdas_syntax_harness(full_lam_cpp) > 0 else []
-                    ui_cpp_args = " ".join(f'"{p}"' for p in (*ui_cpps, *extra_tus))
-                    for _, defs in ui_trait_matrices:
+                if beacon_cpp.is_file():
+                    beacon_test_cpp = td_path / "beacon_host_test.cpp"
+                    _write_beacon_host_test(beacon_test_cpp)
+                    beacon_exe = td_path / "beacon_host_test.exe"
+                    bat_lines.extend(
+                        [
+                            f'cl /nologo /utf-8 /std:c++20 /O2 /W4 /WX /EHsc /DUSE_ESP32 '
+                            f'/I"{beacon_inc}" /I"{stub_dir}" "{beacon_cpp}" "{beacon_test_cpp}" '
+                            f'"/Fe:{beacon_exe}" "/Fo:{obj_dir}\\\\"',
+                            "if errorlevel 1 exit /b 1",
+                            f'"{beacon_exe}"',
+                            "if errorlevel 1 exit /b 1",
+                            f'cl /nologo /utf-8 /std:c++20 /Zs /W4 /WX /EHsc /DUSE_ESP32 /DUSE_LATTER_BEACON_HOSTED '
+                            f'/I"{beacon_inc}" /I"{stub_dir}" "{beacon_cpp}"',
+                            "if errorlevel 1 exit /b 1",
+                        ]
+                    )
+                if core_cpps:
+                    core_cpp_args = " ".join(f'"{p}"' for p in core_cpps)
+                    for _, defs in core_trait_matrices:
                         def_args = " ".join(f"/D{d}" for d in defs)
                         bat_lines.extend(
                             [
-                                f'cl /nologo /utf-8 /std:c++20 /Zs /MP /EHsc /I"{ROOT / "include"}" '
-                                f'/I"{stub_dir}" {def_args} {ui_cpp_args}',
+                                f'cl /nologo /utf-8 /std:c++20 /Zs /W4 /WX /MP /EHsc /I"{ROOT / "include"}" '
+                                f'/I"{core_inc}" /I"{stub_dir}" {def_args} {core_cpp_args}',
+                                "if errorlevel 1 exit /b 1",
+                            ]
+                        )
+                if ui_cpps:
+                    full_lam_host = td_path / "yaml_full_lambdas_host.cpp"
+                    full_lam_esp = td_path / "yaml_full_lambdas_esp32.cpp"
+                    has_host_lam = _write_yaml_full_lambdas_syntax_harness(full_lam_host, include_hal_boards=False) > 0
+                    has_esp_lam = _write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
+                    for _, defs in ui_trait_matrices:
+                        is_esp = "USE_ESP32" in defs
+                        extra_tus = (
+                            ([full_lam_esp] if has_esp_lam else [])
+                            if is_esp
+                            else ([full_lam_host] if has_host_lam else [])
+                        )
+                        ui_cpp_args = " ".join(f'"{p}"' for p in (*ui_cpps, *extra_tus))
+                        def_args = " ".join(f"/D{d}" for d in defs)
+                        bat_lines.extend(
+                            [
+                                f'cl /nologo /utf-8 /std:c++20 /Zs /W4 /wd4201 /wd4244 /wd4267 /wd4996 /WX /MP /EHsc /I"{ROOT / "include"}" '
+                                f'/I"{core_inc}" /I"{beacon_inc}" /I"{stub_dir}" {def_args} {ui_cpp_args}',
                                 "if errorlevel 1 exit /b 1",
                             ]
                         )
@@ -1881,6 +2890,14 @@ def main(argv: list[str] | None = None) -> int:
                 if m_slug:
                     failures.append(
                         f"[TRAITS NOT NAMES] {rel} hardcodes product slug {m_slug.group(0)!r} (use LATTER_* traits)"
+                    )
+                if re.search(
+                    r"(?:__attribute__\s*\(\([^)]*\)\)|IRAM_ATTR|DRAM_ATTR|RTC_NOINIT_ATTR)\s*\[\[",
+                    clean_cpp,
+                ):
+                    failures.append(
+                        f"[GCC ATTR ORDER] {rel} places C++ [[...]] attribute after GNU __attribute__/IRAM_ATTR "
+                        "(put [[...]] before __attribute__)"
                     )
             if path.suffix.lower() in {".yaml", ".yml"}:
                 yclean = _strip_yaml_comments(txt)

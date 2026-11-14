@@ -26,7 +26,7 @@
 #if defined(USE_ESP32) && defined(LATTER_C6_RESET_PIN)
 // Runs as a single global constructor in latter_core, before FreeRTOS starts, preceding esp_hosted's
 // C6 reset pulse so a deep-sleep pad hold on CHIP_PU never blocks C6 boot.
-__attribute__((constructor)) static void latter_release_c6_reset_hold() {
+[[maybe_unused]] __attribute__((constructor)) static void latter_release_c6_reset_hold() {
   gpio_hold_dis(static_cast<gpio_num_t>(LATTER_C6_RESET_PIN));
 }
 #endif
@@ -85,7 +85,7 @@ void hal_release_pwr_key_wake_pad() {
 #ifdef USE_I2C
 namespace {
 constexpr uint8_t kAxpAddr = 0x34;
-constexpr uint8_t kPcf85063Addr = 0x51;
+[[maybe_unused]] constexpr uint8_t kPcf85063Addr = 0x51;
 static_assert(kAxpThermalFoldbackEnterC == 65.0f && kAxpThermalFoldbackClearC == 58.0f,
               "AXP2101 thermal foldback thresholds must remain 65 C enter / 58 C clear.");
 
@@ -93,7 +93,7 @@ bool axp_rd(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t *buf, size_t len = 1
   return bus != nullptr && bus->write_readv(kAxpAddr, &reg, 1, buf, len) == esphome::i2c::ERROR_OK;
 }
 
-bool axp_wr(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t val) {
+[[maybe_unused]] bool axp_wr(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t val) {
   if (bus == nullptr) return false;
   const uint8_t buf[2] = {reg, val};
   return bus->write(kAxpAddr, buf, 2) == esphome::i2c::ERROR_OK;
