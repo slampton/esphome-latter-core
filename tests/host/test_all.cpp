@@ -562,7 +562,19 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
   LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
 
-  // 5. Production WeakLinkGate RSSI hysteresis (-65 dBm enter, -61 dBm clear after 120s hold) (hal_link_report.h)
+  // 5. Production WeakLinkGate RSSI hysteresis (-65 dBm enter across 2 samples after 5s settle, -61 dBm clear after 120s hold)
+  LATTER_CHECK(!latter_ui::weak_link_can_sample(4064U, 3899U));  // post-association AGC settle guard (< 5s)
+  LATTER_CHECK(latter_ui::weak_link_can_sample(8900U, 3899U));
+  LATTER_CHECK(latter_ui::weak_link_can_sample(1000U, 0U));
+
+  // Single transient weak sample (-69 dBm followed by -55 dBm) must NOT latch weak_link
+  latter_ui::WeakLinkGate transient_gate{};
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-69, 10000U, transient_gate));
+  LATTER_CHECK(transient_gate.below_count == 1U);
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-50, 20000U, transient_gate));
+  LATTER_CHECK(transient_gate.below_count == 0U);
+  LATTER_CHECK(!transient_gate.weak);
+
   latter_ui::WeakLinkGate gate{};
   uint32_t t = 10000;
   LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-55, t, gate));
@@ -589,6 +601,14 @@ void test_battery_model_and_power_policy() {
   }
   LATTER_CHECK(saw_hold_before_clear);
   LATTER_CHECK(!gate.weak);
+
+  // Disconnect resets transient/latched state while folding elapsed weak duration into weak_total_ms
+  latter_ui::WeakLinkGate disc_gate{};
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, 10000U, disc_gate));
+  LATTER_CHECK(latter_ui::weak_link_feed_rssi(-72, 20000U, disc_gate));
+  latter_ui::weak_link_note_disconnect(25000U, disc_gate);
+  LATTER_CHECK(!disc_gate.weak && !disc_gate.have && disc_gate.below_count == 0U);
+  LATTER_CHECK(disc_gate.weak_total_ms == 5000U);
 
   // 6. Verify battery_motion_allowed() covers active 15s/30s handheld wake windows (35s) & renews on touch
   latter_ui::last_screen_wake_ms() = 1000U;

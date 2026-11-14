@@ -3047,8 +3047,8 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(f"[BOARD TRAITS] {bf.name} missing -D{flag}=...")
         if 'CONFIG_COMPILER_OPTIMIZATION_PERF: "y"' not in uncommented_yaml:
             failures.append(f"[BOARD TRAITS] {bf.name} missing CONFIG_COMPILER_OPTIMIZATION_PERF: \"y\" (-O2)")
-        if 'CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"' not in uncommented_yaml:
-            failures.append(f"[BOARD TRAITS] {bf.name} missing CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: \"256\"")
+        if 'CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"' not in uncommented_yaml:
+            failures.append(f"[BOARD TRAITS] {bf.name} missing CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: \"128\"")
         for sub in ("sendspin_buffer_size", "mww_internal_ram", "audio_out_rate", "audio_out_channels"):
             if not re.search(rf"(?m)^\s+{sub}:\s*\S", uncommented_yaml):
                 failures.append(f"[BOARD AUDIO TRAITS] {bf.name} missing substitution '{sub}'")

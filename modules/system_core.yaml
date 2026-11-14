@@ -52,7 +52,9 @@ esphome:
               if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
                 latter_ui::schedule_disp_update(&id(disp1));
               }
-              id(sys_link_report).update();
+              if (is_ha_conn) {
+                id(sys_link_report).update();
+              }
               id(apply_power_policy).execute();  // holds the light-sleep awake lock while the link settles
               id(ha_post_connect_boot_replay).execute();
             };
@@ -951,10 +953,13 @@ script:
             b_target = 1.00f;
           }
 
-          if (rs.nav.display_power_state == 0) {
-            id(display_brightness).turn_on().set_brightness(b_target).perform();
-          } else if (rs.nav.display_power_state == 1) {
-            id(display_brightness).turn_on().set_brightness(latter_ui::kScreensaverBrightness).perform();
+          if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
+            const float target_bri =
+                (rs.nav.display_power_state == 0) ? b_target : latter_ui::kScreensaverBrightness;
+            const auto &cv = id(display_brightness).current_values;
+            if (!cv.is_on() || std::fabs(cv.get_brightness() - target_bri) >= 0.005f) {
+              id(display_brightness).turn_on().set_brightness(target_bri).perform();
+            }
           }
 
   - id: apply_default_start_page

@@ -97,16 +97,20 @@ inline void link_report_sample() {
 #endif
 }
 
-// Light-sleep RSSI gate (v1): keeps chip awake when smoothed RSSI drops below -65 dBm (cleared above -61 dBm for 2 min).
+// Light-sleep RSSI gate: keeps chip awake when smoothed RSSI stays below -65 dBm across 2 samples after
+// post-association AGC settle (5 s), and clears after holding above -61 dBm for 2 minutes.
 constexpr int32_t kWeakLinkEnterDbm = -65;
 constexpr int32_t kWeakLinkClearDbm = -61;
 constexpr uint32_t kWeakLinkClearHoldMs = 120000U;
 constexpr uint32_t kWeakLinkSampleMs = 10000U;
+constexpr uint32_t kWeakLinkPostConnectSettleMs = 5000U;
+constexpr uint8_t kWeakLinkEnterSamples = 2U;
 constexpr float kWeakLinkEmaAlpha = 0.3f;
 
 struct WeakLinkGate {
   bool weak{false};
   bool have{false};
+  uint8_t below_count{0};
   float ema{0.0f};
   uint32_t last_sample_ms{0};
   uint32_t above_since_ms{0};
@@ -119,25 +123,45 @@ inline WeakLinkGate &weak_link_gate() {
   return g;
 }
 
+inline constexpr bool weak_link_can_sample(uint32_t now_ms, uint32_t last_wifi_connect_ms) {
+  return last_wifi_connect_ms == 0U || (now_ms - last_wifi_connect_ms) >= kWeakLinkPostConnectSettleMs;
+}
+
+inline void weak_link_note_disconnect(uint32_t now_ms, WeakLinkGate &g = weak_link_gate()) {
+  if (g.weak) {
+    g.weak = false;
+    g.weak_total_ms += now_ms - g.weak_since_ms;
+  }
+  g.have = false;
+  g.below_count = 0;
+  g.last_sample_ms = 0;
+  g.above_since_ms = 0;
+}
+
 inline bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g = weak_link_gate()) {
   if (g.last_sample_ms != 0 && now_ms - g.last_sample_ms < kWeakLinkSampleMs) return g.weak;
-  g.last_sample_ms = now_ms | 1U;
+  g.last_sample_ms = (now_ms == 0U) ? 1U : now_ms;
   if (rssi <= -127 || rssi >= 0) return g.weak;
   const float r = static_cast<float>(rssi);
   g.ema = g.have ? g.ema + kWeakLinkEmaAlpha * (r - g.ema) : r;
   g.have = true;
   if (!g.weak) {
     if (g.ema < static_cast<float>(kWeakLinkEnterDbm)) {
-      g.weak = true;
-      g.weak_since_ms = now_ms;
-      g.above_since_ms = 0;
-      ESP_LOGI("power", "Light sleep: weak Wi-Fi link (%.0f dBm smoothed), staying awake", g.ema);
+      if (++g.below_count >= kWeakLinkEnterSamples) {
+        g.weak = true;
+        g.weak_since_ms = now_ms;
+        g.above_since_ms = 0;
+        ESP_LOGI("power", "Light sleep: weak Wi-Fi link (%.0f dBm smoothed), staying awake", g.ema);
+      }
+    } else {
+      g.below_count = 0;
     }
   } else if (g.ema > static_cast<float>(kWeakLinkClearDbm)) {
     if (g.above_since_ms == 0) {
-      g.above_since_ms = now_ms | 1U;
+      g.above_since_ms = (now_ms == 0U) ? 1U : now_ms;
     } else if (now_ms - g.above_since_ms >= kWeakLinkClearHoldMs) {
       g.weak = false;
+      g.below_count = 0;
       g.weak_total_ms += now_ms - g.weak_since_ms;
       g.above_since_ms = 0;
       ESP_LOGI("power", "Light sleep: Wi-Fi link recovered (%.0f dBm smoothed)", g.ema);
@@ -148,14 +172,19 @@ inline bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g =
   return g.weak;
 }
 
-inline bool weak_link_update(uint32_t now_ms) {
+inline bool weak_link_update(uint32_t now_ms, uint32_t last_wifi_connect_ms = 0U) {
   WeakLinkGate &g = weak_link_gate();
 #ifdef USE_WIFI
   auto *wifi = esphome::wifi::global_wifi_component;
-  if (wifi == nullptr || !wifi->is_connected()) return g.weak;
+  if (wifi == nullptr || !wifi->is_connected()) {
+    weak_link_note_disconnect(now_ms, g);
+    return false;
+  }
+  if (!weak_link_can_sample(now_ms, last_wifi_connect_ms)) return g.weak;
   return weak_link_feed_rssi(wifi->wifi_rssi(), now_ms, g);
 #else
   (void)now_ms;
+  (void)last_wifi_connect_ms;
   return g.weak;
 #endif
 }
@@ -240,7 +269,9 @@ inline std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
 
 inline std::string link_report_log_line(uint32_t now_ms, const char *reset_reason) {
   std::string line = link_report_line(now_ms, reset_reason);
-  ESP_LOGI("PROF", "[PROF:LINK] %s", line.c_str());
+  if (now_ms >= 5000U || link_report().api_connects > 0U) {
+    ESP_LOGI("PROF", "[PROF:LINK] %s", line.c_str());
+  }
   return line;
 }
 

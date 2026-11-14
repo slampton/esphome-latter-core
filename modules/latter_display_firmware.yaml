@@ -30,7 +30,7 @@ latter_core:
 # DEBUG, [PROF:*] diagnostics only while the Telemetry Profiler is on ([PROF GATE]).
 logger:
   level: INFO
-  boot_log_buffer_size: 2kB
+  boot_log_buffer_size: 3kB
   boot_logs:
     disp_fb: INFO
     audio: INFO

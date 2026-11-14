@@ -31,10 +31,10 @@ substitutions:
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
   default_power_profile: "Portable Carry"
-  # Music read-ahead (PSRAM). A handheld rides out Wi-Fi stalls of several seconds (body, metal case,
-  # a busy channel): 768 KB, 50% more than before. 1 MB left 303 KB of PSRAM with music, album art and an
-  # announcement, too little for a second full-screen image (camera popup, 434 KB).
-  sendspin_buffer_size: "786432"
+  # Music read-ahead (PSRAM). 512 KB (~5.5 s of 48 kHz mono PCM / longer FLAC) rides out multi-second
+  # handheld Wi-Fi stalls while keeping ~700 KB of PSRAM free alongside wallpaper, album art, and TTS
+  # announcements so a full-screen camera/doorbell snapshot (434 KB) decodes with comfortable headroom.
+  sendspin_buffer_size: "524288"
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "false"
   # Reply and announcement read-ahead (PSRAM): most of a spoken reply, so a stall mid-reply is not heard.

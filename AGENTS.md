@@ -32,7 +32,7 @@ python tools/gen_sounds.py --check           # Verify rendered WAV chimes/alarms
 
 - **Terminology & Clean-Slate Code**: Use standard IT and Home Assistant terms (`System`, `Sites`, `Areas`, `Devices`, `Roles`, `Policies`, `Bridges`)—never `"household"`, `"fleet"`, or `"room"`. Never hardcode marketing device names into C++ or core modules; branch strictly on `LATTER_*` capability flags. Maintain one canonical implementation path with zero legacy shims.
 - **Display Buffers, P4 DMA & MIPI-DSI IRAM Safety**:
-  - Every board uses 100% full-frame PSRAM display buffers, `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`), and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"`.
+  - Every board uses 100% full-frame PSRAM display buffers, `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`), and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"`.
   - On ESP32-P4 boards, set `use_psram: true` under `esp32_hosted:` and **never** set `CONFIG_CACHE_L2_CACHE_LINE_128B: "y"`.
   - On MIPI-DSI (`waveshare_p4_86_panel.yaml`), pair `CONFIG_GDMA_ISR_IRAM_SAFE: "y"` and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"` with `-DLATTER_DSI_IRAM_SAFE=1` (ESPHome `2026.11.0b4+` `mipi_dsi` sets `CONFIG_LCD_DSI_ISR_CACHE_SAFE` and `IRAM_ATTR` DPI callback natively).
   - During OTA (`handle_ota_begin` / `handle_ota_progress` in `esphome_bridge.cpp`), stop the display poller on begin and throttle progress redraws (`>= 5%` / `>= 400 ms` on SPI/QSPI; `>= 10%` / `>= 800 ms` on MIPI-DSI). Configure `ledc_channel_config()` only once.

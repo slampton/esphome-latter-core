@@ -455,7 +455,11 @@ script:
           const bool wifi_up = id(wifi_ctrl).is_connected();
           if (wifi_up != latter_ui::link_state().wifi_connected) {
             latter_ui::link_state().wifi_connected = wifi_up;
-            if (wifi_up) latter_ui::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
+            if (wifi_up) {
+              latter_ui::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
+            } else {
+              latter_ui::weak_link_note_disconnect(now_p);
+            }
           }
           const bool api_connected = esphome::api::global_api_server != nullptr &&
                                      esphome::api::global_api_server->is_connected_with_state_subscription();
@@ -464,8 +468,9 @@ script:
               ((!api_connected && (now_p - latter_ui::link_state().last_wifi_connect_ms < 30000U)) ||
                (api_connected && (now_p - latter_ui::link_state().last_ha_connect_ms < 20000U)));
           // Weak Wi-Fi: Home Assistant's link drops in light sleep at weak RSSI (hal_link_report.h,
-          // kWeakLinkEnterDbm), so a weak link keeps the chip awake until the v3 fix.
-          const bool weak_link = wifi_up && latter_ui::weak_link_update(now_p);
+          // kWeakLinkEnterDbm), so a sustained weak link keeps the chip awake after post-connect AGC settle.
+          const bool weak_link =
+              wifi_up && latter_ui::weak_link_update(now_p, latter_ui::link_state().last_wifi_connect_ms);
           const bool stay_awake =
               ha_link_settling || weak_link ||
               latter_ui::imu_wom_qualifying(now_p) ||

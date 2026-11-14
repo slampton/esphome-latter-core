@@ -90,7 +90,7 @@ def esp32_block(facts: dict[str, Any], with_sdkconfig: bool = False) -> list[str
         [
             "    sdkconfig_options:",
             '      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"',
-            '      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"',
+            '      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"',
             '      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"',
         ]
         if with_sdkconfig

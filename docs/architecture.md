@@ -105,4 +105,4 @@ The ESP32-S3 battery boards declare ESPHome's `power_management:` (`modules/hal/
 - **ESPHome:** 2026.11.0b4 or newer. `min_version` is set in every device config, and [`include/esphome_bridge.h`](../include/esphome_bridge.h) enforces `ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)` alongside `LATTER_SDK_REV == LATTER_YAML_REV`.
 - **Framework:** ESP-IDF with C++20.
 - **PSRAM:** required on every board (full-frame RGB565 display buffers live in PSRAM).
-- **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "256"` on every board.
+- **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"` on every board.
