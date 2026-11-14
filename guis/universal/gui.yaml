@@ -152,9 +152,17 @@ display:
       ctx.track_title = id(track_title).state;
       ctx.track_artist = id(track_artist).state;
       ctx.track_album = id(track_album).state;
-      ctx.fw_latest_ver = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
-      ctx.fw_release_summary = latter_ui::fw_update_release_summary(&id(latter_firmware_update));
-      ctx.primary_wake_word = esphome::voice_assistant::primary_wake_word_name(id(mww));
+      std::string sys_fw_ver;
+      std::string sys_fw_sum;
+      std::string sys_wake_word;
+      if (rs.nav.gui_page == 4) {
+        sys_fw_ver = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+        sys_fw_sum = latter_ui::fw_update_release_summary(&id(latter_firmware_update));
+        sys_wake_word = esphome::voice_assistant::primary_wake_word_name(id(mww));
+      }
+      ctx.fw_latest_ver = sys_fw_ver;
+      ctx.fw_release_summary = sys_fw_sum;
+      ctx.primary_wake_word = sys_wake_word;
 
       ctx.clock_face_style_opt = latter_ui::pref_clock_face_cstr(prefs);
       ctx.weather_sim_opt = latter_ui::pref_weather_sim_cstr();
@@ -201,17 +209,28 @@ display:
       const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
                                   ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                   ctx.home_wallpaper_art.width > 0);
-      const bool weather_sky_active =
-          !has_wallpaper &&
-          ((rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
-            (ctx.home_weather_bg || std::string_view(ctx.weather_sim_opt) != "Live (Home Assistant)")) ||
-           rs.nav.gui_page == 5);
+      const bool tools_full_bleed =
+          (rs.nav.gui_page == 8) &&
+          ((rs.nav.tools_subpage == 5) ||
+           (rs.nav.tools_subpage == 9 && latter_ui::cal_detail_mode() == 2 && ctx.camera_snapshot_art.width > 16) ||
+           (rs.nav.tools_subpage == 12 && !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16));
+      const bool weather_sim_active = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
+      const latter_ui::BackdropMode bd_mode = latter_ui::resolve_backdrop_mode(
+          rs.nav.gui_page, rs.nav.home_subpage, ctx.home_weather_bg, weather_sim_active,
+          has_wallpaper, tools_full_bleed, ctx.music_fullscreen_art_opt == "None");
+      const bool weather_sky_active = (bd_mode == latter_ui::BackdropMode::LiveWeatherSky);
+      const uint32_t latest_input_ms = std::max(
+          latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
+      const bool weather_sky_stepping_hint =
+          weather_sky_active &&
+          latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, true);
 
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
-          weather_sky_active ||
+          weather_sky_stepping_hint ||
+          latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
           rs.nav.menu_scroll_active ||
           (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
@@ -246,15 +265,8 @@ display:
       }
 
       if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
-        const bool tools_full_bleed =
-            (rs.nav.gui_page == 8) &&
-            ((rs.nav.tools_subpage == 5) ||
-             (rs.nav.tools_subpage == 9 && latter_ui::cal_detail_mode() == 2 && ctx.camera_snapshot_art.width > 16) ||
-             (rs.nav.tools_subpage == 12 && !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16));
-        const bool use_page_wallpaper =
-            has_wallpaper && !tools_full_bleed &&
-            (rs.nav.gui_page == 4 || rs.nav.gui_page == 5 || rs.nav.gui_page == 6 ||
-             rs.nav.gui_page == 7 || rs.nav.gui_page == 8 || rs.nav.gui_page == 9);
+        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (rs.nav.gui_page == 7), Tools (8), Hub (9)
+        const bool use_page_wallpaper = (bd_mode == latter_ui::BackdropMode::CustomWallpaper);
         if (rs.nav.gui_page != 5 || use_page_wallpaper) {
           latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
         }
@@ -289,9 +301,55 @@ display:
 
       const bool coin_toss_active =
           (rs.nav.gui_page == 8) && (rs.nav.tools_subpage == 8) && latter_ui::coin_state().anim_active;
+      const bool greet_fading_now = latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting);
+      int act_y0 = 0, act_y1 = 0;
+      const bool has_act_band = latter_ui::home_activity_band(act_y0, act_y1);
+      const bool act_sliding_now = latter_ui::home_activity_slide_active(ctx.now_ms);
       if (latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
-          rs.nav.menu_scroll_active || coin_toss_active) {
+          rs.nav.menu_scroll_active || coin_toss_active || greet_fading_now) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
+      } else if (weather_sky_active && !va_visible && !alert_ringing) {
+        std::string w_cond = latter_ui::weather_state().condition;
+        const std::string &w_sun = latter_ui::weather_state().sun_state;
+        const bool w_sun_ok = (!w_sun.empty() && w_sun != "unknown" && w_sun != "unavailable");
+        bool w_night = (w_sun == "below_horizon" || w_cond == "clear-night" || w_cond == "clearnight" ||
+                        (w_cond.find("night") != std::string::npos));
+        latter_ui::apply_weather_sim_override(ctx.weather_sim_opt, w_cond, w_night);
+        const bool w_has_motion = (w_sun_ok || weather_sim_active) &&
+                                  latter_ui::has_weather_motion(w_cond, w_night, ctx.now_ms);
+        if (act_sliding_now) {
+          latter_ui::schedule_anim_disp_update(&id(disp1));
+        } else if (latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, w_has_motion)) {
+          const bool spk_busy =
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              id(media_mixing_input).is_running() ||
+              id(announcement_mixing_input).is_running() ||
+              id(sound_mixing_input).is_running();
+          const bool mww_busy = !spk_busy && !LATTER_CHIP_P4 && id(mww).is_running();
+          const uint32_t target_gap_ms = latter_ui::min_ambient_frame_gap_ms(spk_busy, false, false, mww_busy);
+          latter_ui::record_ambient_frame_ms(ctx.now_ms);
+          latter_ui::schedule_weather_disp_update(&id(disp1), target_gap_ms);
+        }
+      } else if (act_sliding_now && has_act_band) {
+        latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
+      }
+
+      if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && !va_visible && !alert_ringing) {
+        if (latter_ui::is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting) && !greet_fading_now &&
+            !latter_ui::DisplayUpdateScheduler::weather_step_pending(millis())) {
+          const uint32_t g_el = (ctx.now_ms >= latter_ui::wake_greeting_start_ms())
+                                    ? (ctx.now_ms - latter_ui::wake_greeting_start_ms())
+                                    : 0U;
+          if (g_el < latter_ui::kWakeGreetingHoldMs) {
+            latter_ui::schedule_weather_disp_update(&id(disp1), latter_ui::kWakeGreetingHoldMs - g_el);
+          }
+        }
+        const uint32_t rot_due_ms = latter_ui::home_activity_next_rotate_due_ms(ctx.now_ms);
+        if (rot_due_ms > 0U && has_act_band) {
+          latter_ui::schedule_activity_rotate_disp_update(&id(disp1), rot_due_ms, act_y0, act_y1);
+        }
       }
 
 touchscreen:

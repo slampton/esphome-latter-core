@@ -26,16 +26,16 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
                               ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                               ctx.home_wallpaper_art.valid());
 
-  const std::string art_mode = ctx.music_fullscreen_art_opt.empty()
-                                   ? std::string("Full Screen")
-                                   : ctx.music_fullscreen_art_opt;
+  const UiStrView art_mode = ctx.music_fullscreen_art_opt.empty()
+                                 ? UiStrView("Full Screen")
+                                 : ctx.music_fullscreen_art_opt;
   const bool is_none      = (art_mode == "None");
   const bool is_standard  = (art_mode == "Standard");
   const bool is_letterbox = (art_mode == "Letterbox");
 
-  const std::string overlay_mode = ctx.music_overlay_style_opt.empty()
-                                       ? std::string("Art Only")
-                                       : ctx.music_overlay_style_opt;
+  const UiStrView overlay_mode = ctx.music_overlay_style_opt.empty()
+                                     ? UiStrView("Art Only")
+                                     : ctx.music_overlay_style_opt;
   const bool always_visible   = (overlay_mode == "Always Visible");
   const bool show_meta_always = always_visible || (overlay_mode == "Art + Metadata");
   const bool music_hud_active = rs.music.hud_active;
@@ -259,9 +259,9 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
 
     render_progress_arc_r224(it, cx, cy, prog, ctx.theme_secondary);
 
-    std::string title  = is_remote ? ms.title  : (ctx.track_title.empty()  ? ms.title  : ctx.track_title);
-    std::string artist = is_remote ? ms.artist : (ctx.track_artist.empty() ? ms.artist : ctx.track_artist);
-    std::string album  = is_remote ? ms.album  : (ctx.track_album.empty()  ? ms.album  : ctx.track_album);
+    std::string title  = is_remote ? ms.title  : (ctx.track_title.empty()  ? ms.title  : ctx.track_title.str());
+    std::string artist = is_remote ? ms.artist : (ctx.track_artist.empty() ? ms.artist : ctx.track_artist.str());
+    std::string album  = is_remote ? ms.album  : (ctx.track_album.empty()  ? ms.album  : ctx.track_album.str());
 
     if (title.empty()) title = is_playing ? "Playing Audio" : "Idle";
     title = fit_text_to_width_font(title, scale_x(280), ctx.font_small);
@@ -321,9 +321,9 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
   const bool has_wallpaper = (!ac.wallpaper_url.empty() &&
                               ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                               ctx.home_wallpaper_art.valid());
-  const std::string art_mode = ctx.music_fullscreen_art_opt.empty()
-                                   ? std::string("Full Screen")
-                                   : ctx.music_fullscreen_art_opt;
+  const UiStrView art_mode = ctx.music_fullscreen_art_opt.empty()
+                                 ? UiStrView("Full Screen")
+                                 : ctx.music_fullscreen_art_opt;
   const bool is_none = (art_mode == "None");
 
   if (is_none) {
@@ -352,9 +352,9 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
   const int min_vis_y  = scale_y(65);
   const int max_vis_y  = scale_y(395);
 
-  const std::string &cur_title  = (is_rem || ctx.track_title.empty())  ? ms.title  : ctx.track_title;
-  const std::string &cur_artist = (is_rem || ctx.track_artist.empty()) ? ms.artist : ctx.track_artist;
-  const std::string &cur_album  = (is_rem || ctx.track_album.empty())  ? ms.album  : ctx.track_album;
+  const std::string cur_title  = (is_rem || ctx.track_title.empty())  ? ms.title  : ctx.track_title.str();
+  const std::string cur_artist = (is_rem || ctx.track_artist.empty()) ? ms.artist : ctx.track_artist.str();
+  const std::string cur_album  = (is_rem || ctx.track_album.empty())  ? ms.album  : ctx.track_album.str();
   const std::string &active_spk_name =
       rs.music.active_speaker_name.empty() ? ms.speaker_name : rs.music.active_speaker_name;
 

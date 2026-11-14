@@ -38,7 +38,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `42` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `43` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -83,6 +83,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `39` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
 | `40` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
 | `41` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, thermostat, entry, vacuum); empty when no categories have entities |
+| `42` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
 
 ### `sensor.<device>_active_media` (`MediaField`, `20` total fields)
 

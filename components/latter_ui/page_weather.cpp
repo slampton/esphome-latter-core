@@ -1327,7 +1327,7 @@ bool &weather_sim_dirty() {
   return dirty;
 }
 
-void apply_weather_sim_override(const std::string &sim_opt, std::string &cond, bool &is_night) {
+void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night) {
   if (sim_opt.empty() || sim_opt == "Live (Home Assistant)") return;
   if (sim_opt == "Clear Night") { cond = "clear-night"; is_night = true; }
   else if (sim_opt == "Sunny / Clear Day") { cond = "sunny"; is_night = false; }
@@ -1418,19 +1418,128 @@ bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms)
   return false;
 }
 
-// Modular 3D Volumetric Atmospheric & Weather Motion Wallpaper Engine:
-// Uses Vec3, rotate_3d_xyz, and project_3d across depth layers with live IMU tilt parallax.
-void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
-                                     const std::string &cond, bool is_night,
-                                     double moon_cycle,
-                                     int cel_cx, int cel_cy,
-                                     bool mask_hero_temp,
-                                     float accel_x, float accel_y,
-                                     bool show_celestial) {
-  if (cond.empty()) {
+namespace {
+
+struct WeatherSkyFadeState {
+  float precip_alpha_scale = 1.0f;
+  uint32_t last_eval_ms = 0U;
+  bool calm_frame_rendered = false;
+};
+
+WeatherSkyFadeState &sky_fade_state() {
+  static WeatherSkyFadeState st{};
+  return st;
+}
+
+void step_weather_battery_fade(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms) {
+  auto &st = sky_fade_state();
+  const bool want_motion = battery_motion_allowed(usb_connected, now_ms, latest_input_ms);
+  if (st.last_eval_ms == 0U) {
+    st.last_eval_ms = (now_ms == 0U) ? 1U : now_ms;
+    st.precip_alpha_scale = want_motion ? 1.0f : 0.0f;
+    st.calm_frame_rendered = !want_motion;
     return;
   }
+  const uint32_t raw_dt = now_ms - st.last_eval_ms;
+  if (raw_dt == 0U) return;
+  st.last_eval_ms = now_ms;
+  const float dt_ms = static_cast<float>(std::min<uint32_t>(raw_dt, 180U));
+  if (want_motion) {
+    st.calm_frame_rendered = false;
+    if (st.precip_alpha_scale < 1.0f) {
+      st.precip_alpha_scale = std::min(1.0f, st.precip_alpha_scale + dt_ms * (1.0f / 400.0f));
+    }
+  } else {
+    if (st.precip_alpha_scale > 0.0f) {
+      st.precip_alpha_scale = std::max(0.0f, st.precip_alpha_scale - dt_ms * (1.0f / 800.0f));
+    }
+  }
+}
 
+uint32_t fnv1a_sky_str(std::string_view sv) noexcept {
+  uint32_t h = 2166136261U;
+  for (unsigned char ch : sv) {
+    h ^= ch;
+    h *= 16777619U;
+  }
+  return h;
+}
+
+struct SkyBaseCache {
+  uint16_t *px = nullptr;
+  bool alloc_attempted = false;
+  bool valid = false;
+  uint32_t cond_hash = 0U;
+  bool is_night = false;
+  bool show_celestial = false;
+  int16_t cel_cx = -1;
+  int16_t cel_cy = -1;
+  uint8_t quantized_moon_phase = 255U;
+  uint8_t dim_mode = 255U;
+};
+
+SkyBaseCache &sky_base_cache() {
+  static SkyBaseCache cache{};
+  return cache;
+}
+
+inline void blend_sky_pixel_q8(esphome::display::Display &it, uint16_t *fb, int x, int y,
+                               esphome::Color fg, int alpha_q8) {
+  if (alpha_q8 <= 0 || x < 0 || x >= SCREEN_W || y < clip_y0() || y > clip_y1()) return;
+  if (fb == nullptr) {
+    if (alpha_q8 >= 64) {
+      fast_pixel(it, x, y, scale_color(fg, static_cast<float>(alpha_q8) * (1.0f / 256.0f)));
+    }
+    return;
+  }
+  uint16_t &dst_hw = fb[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)];
+  if (alpha_q8 >= 256) {
+    dst_hw = encode_hw_rgb565(fg);
+    return;
+  }
+  const uint16_t dst = decode_hw_rgb565_raw(dst_hw);
+  const int dr = (dst >> 11) & 0x1F;
+  const int dg = (dst >> 5) & 0x3F;
+  const int db = dst & 0x1F;
+  const int sr = fg.r >> 3;
+  const int sg = fg.g >> 2;
+  const int sb = fg.b >> 3;
+  const int inv = 256 - alpha_q8;
+  const uint16_t out = static_cast<uint16_t>((((sr * alpha_q8 + dr * inv) >> 8) << 11) |
+                                             (((sg * alpha_q8 + dg * inv) >> 8) << 5) |
+                                             ((sb * alpha_q8 + db * inv) >> 8));
+  dst_hw = encode_hw_rgb565_raw(out);
+}
+
+inline void draw_tapered_streak_q8(esphome::display::Display &it, uint16_t *fb,
+                                   int tx, int ty, int hx, int hy,
+                                   esphome::Color col_tail, esphome::Color col_head,
+                                   int a_tail_q8, int a_head_q8, int cy) {
+  const int steps = std::max(std::abs(hx - tx), std::abs(hy - ty));
+  if (steps <= 0 || (a_tail_q8 <= 0 && a_head_q8 <= 0)) return;
+  const int y_lo = clip_y0();
+  const int y_hi = clip_y1();
+  if (std::max(ty, hy) < y_lo || std::min(ty, hy) > y_hi) return;
+  for (int s = 0; s <= steps; s++) {
+    const int py = ty + ((hy - ty) * s) / steps;
+    if (py < y_lo || py > y_hi) continue;
+    const int px = tx + ((hx - tx) * s) / steps;
+    if (!is_inside_bezel(px, py, cy, 6)) continue;
+    const int u256 = (s * 256) / steps;
+    const int a_q8 = a_tail_q8 + (((a_head_q8 - a_tail_q8) * u256) >> 8);
+    if (a_q8 <= 0) continue;
+    const esphome::Color c(
+        static_cast<uint8_t>(col_tail.r + (((static_cast<int>(col_head.r) - col_tail.r) * u256) >> 8)),
+        static_cast<uint8_t>(col_tail.g + (((static_cast<int>(col_head.g) - col_tail.g) * u256) >> 8)),
+        static_cast<uint8_t>(col_tail.b + (((static_cast<int>(col_head.b) - col_tail.b) * u256) >> 8)));
+    blend_sky_pixel_q8(it, fb, px, py, c, a_q8);
+  }
+}
+
+void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
+                          const std::string &cond, bool is_night,
+                          double moon_cycle, int cel_cx, int cel_cy,
+                          bool show_celestial) {
   const bool is_fog_mist = (cond.find("fog") != std::string::npos ||
                             cond.find("mist") != std::string::npos ||
                             cond.find("haze") != std::string::npos);
@@ -1441,165 +1550,153 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
   const bool is_partly = (cond.find("partly") != std::string::npos ||
                           cond.find("mostlysunny") != std::string::npos ||
                           cond.find("partlysunny") != std::string::npos);
+  const bool is_storm = (cond.find("lightning") != std::string::npos ||
+                         cond.find("thunder") != std::string::npos);
+  const bool is_rain_precip = (cond.find("rain") != std::string::npos ||
+                               cond.find("pouring") != std::string::npos ||
+                               cond.find("drizzle") != std::string::npos);
+  const bool is_snow_precip = (cond.find("snow") != std::string::npos ||
+                               cond.find("sleet") != std::string::npos ||
+                               cond.find("hail") != std::string::npos);
+  const bool is_overcast_canopy =
+      ((cond.find("cloud") != std::string::npos || cond.find("overcast") != std::string::npos) && !is_partly) ||
+      is_rain_precip || is_snow_precip;
   const bool is_clear_or_partly_night =
       (is_night && (cond == "clear-night" || cond == "clearnight" ||
                     cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
 
-  ProfLap lap;
-
-  // Smooth EMA-damped 3D IMU tilt parallax offset (foreground shifts more than deep sky)
-  static float par_x = 0.0f;
-  static float par_y = 0.0f;
-  if (!std::isnan(accel_x) && !std::isnan(accel_y)) {
-    float target_px = fmaxf(-22.0f, fminf(22.0f, accel_x * 24.0f));
-    float target_py = fmaxf(-22.0f, fminf(22.0f, accel_y * 24.0f));
-    par_x += (target_px - par_x) * 0.22f;
-    par_y += (target_py - par_y) * 0.22f;
-  }
-
-  const bool is_storm = (cond.find("lightning") != std::string::npos ||
-                         cond.find("thunder") != std::string::npos);
-  uint32_t storm_cycle_idx = now_ms / 4200U;
-  uint32_t storm_phase_ms  = now_ms % 4200U;
-  // Realistic double-pulse lightning flicker: primary flash (0..95ms) + restrike (155..255ms)
-  const bool storm_sky_flash = is_storm && (storm_phase_ms < 95U || (storm_phase_ms >= 155U && storm_phase_ms < 255U));
-  const bool storm_bolt_vis  = is_storm && (storm_phase_ms < 285U);
-
-  const double now_s = static_cast<double>(now_ms) * 0.001;
-  static constexpr double kPhaseWrap = 2000.0 * 3.141592653589793;
-
-  // LAYER 0: ATMOSPHERIC SKY CANVAS
-  // P4 panels consume the between-frames 2D PPA hardware fill via frame_base().
-  // Non-P4 round panels paint each scanline in one linear row-major pass (bezel margin + sky chord + bezel margin)
-  // so every PSRAM pixel writes once with zero double-fill or GDMA contention.
-  auto fill_sky_disc = [&](esphome::Color bg_c) {
-#if !LATTER_CHIP_P4 && LATTER_ROUND_DISPLAY
-    frame_base_claim();
-    const uint64_t t_base = profiler_enabled() ? prof_now_us() : 0;
-    fill_rect_row_major(it, 0, 0, SCREEN_W, 5, kChromeShadow);
-    for (int y = 5; y < SCREEN_H - 5; y++) {
-      const int hw = circle_half_span(y, 5);
-      if (hw <= 0) {
-        fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
-      } else {
-        const int lx = std::max(0, cx - hw);
-        const int rx = std::min(SCREEN_W, cx + hw + 1);
-        if (lx > 0) fast_hline(it, 0, y, lx, kChromeShadow);
-        if (rx > lx) fast_hline(it, lx, y, rx - lx, bg_c);
-        if (rx < SCREEN_W) fast_hline(it, rx, y, SCREEN_W - rx, kChromeShadow);
-      }
-    }
-    fill_rect_row_major(it, 0, SCREEN_H - 5, SCREEN_W, 5, kChromeShadow);
-    if (t_base != 0) {
-      prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t_base);
-    }
-#else
-    if (!frame_base(it, bg_c)) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, bg_c);
-#if LATTER_ROUND_DISPLAY
-    fill_rect_row_major(it, 0, 0, SCREEN_W, 5, kChromeShadow);
-    for (int y = 5; y < SCREEN_H - 5; y++) {
-      const int hw = circle_half_span(y, 5);
-      if (hw <= 0) {
-        fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
-      } else {
-        const int lx = cx - hw;
-        const int rx = cx + hw + 1;
-        if (lx > 0) fast_hline(it, 0, y, lx, kChromeShadow);
-        if (rx < SCREEN_W) fast_hline(it, rx, y, SCREEN_W - rx, kChromeShadow);
-      }
-    }
-    fill_rect_row_major(it, 0, SCREEN_H - 5, SCREEN_W, 5, kChromeShadow);
-#endif
-#endif
-  };
-  if (storm_sky_flash) {
-    fill_sky_disc(is_night ? esphome::Color(38, 54, 82) : esphome::Color(64, 90, 126));
-  } else if (!is_night) {
-    esphome::Color day_bg(28, 54, 84);
+  // 1. Bayer-dithered vertical atmospheric sky gradient (zenith -> mid -> horizon)
+  esphome::Color c_zen(20, 44, 76);
+  esphome::Color c_mid(28, 56, 90);
+  esphome::Color c_hor(40, 74, 112);
+  if (is_night) {
     if (is_fog_mist) {
-      day_bg = esphome::Color(32, 46, 60);
-    } else if (cond.find("cloud") != std::string::npos && !is_partly) {
-      day_bg = esphome::Color(22, 38, 56);
-    } else if (cond.find("rain") != std::string::npos || is_storm) {
-      day_bg = esphome::Color(18, 30, 46);
+      c_zen = esphome::Color(8, 13, 20);
+      c_mid = esphome::Color(14, 21, 31);
+      c_hor = esphome::Color(20, 29, 42);
+    } else if (is_overcast_canopy || is_storm) {
+      c_zen = esphome::Color(5, 9, 16);
+      c_mid = esphome::Color(11, 18, 30);
+      c_hor = esphome::Color(17, 27, 43);
+    } else {
+      c_zen = esphome::Color(3, 6, 13);
+      c_mid = esphome::Color(8, 14, 26);
+      c_hor = esphome::Color(14, 23, 40);
     }
-    fill_sky_disc(day_bg);
-  } else if (is_fog_mist) {
-    fill_sky_disc(esphome::Color(10, 15, 22));
+  } else {
+    if (is_fog_mist) {
+      c_zen = esphome::Color(26, 38, 52);
+      c_mid = esphome::Color(34, 48, 63);
+      c_hor = esphome::Color(42, 58, 74);
+    } else if (is_storm || is_rain_precip) {
+      c_zen = esphome::Color(14, 24, 38);
+      c_mid = esphome::Color(20, 33, 50);
+      c_hor = esphome::Color(28, 44, 65);
+    } else if (is_overcast_canopy) {
+      c_zen = esphome::Color(18, 32, 50);
+      c_mid = esphome::Color(25, 42, 63);
+      c_hor = esphome::Color(34, 54, 78);
+    } else if (is_partly) {
+      c_zen = esphome::Color(22, 45, 74);
+      c_mid = esphome::Color(30, 56, 88);
+      c_hor = esphome::Color(40, 70, 104);
+    }
   }
-  frame_base(it, kChromeShadow);  // night without a sky fill: black base before the stars
 
-  lap.mark(ProfSect::BG_SKY);
+  const int mid_y = SCREEN_H / 2;
+  for (int y = 0; y < SCREEN_H; y++) {
+    esphome::Color row_a = c_zen;
+    esphome::Color row_b = c_mid;
+    int t256 = 0;
+    if (y <= mid_y) {
+      row_a = c_zen;
+      row_b = c_mid;
+      t256 = (mid_y > 0) ? ((y * 256) / mid_y) : 0;
+    } else {
+      row_a = c_mid;
+      row_b = c_hor;
+      const int denom = std::max(1, SCREEN_H - 1 - mid_y);
+      t256 = ((y - mid_y) * 256) / denom;
+    }
+    const uint32_t t_clamped = static_cast<uint32_t>(std::clamp(t256, 0, 256));
+    const uint32_t inv_t = 256U - t_clamped;
+    const uint32_t r88 = static_cast<uint32_t>(row_a.r) * inv_t + static_cast<uint32_t>(row_b.r) * t_clamped;
+    const uint32_t g88 = static_cast<uint32_t>(row_a.g) * inv_t + static_cast<uint32_t>(row_b.g) * t_clamped;
+    const uint32_t b88 = static_cast<uint32_t>(row_a.b) * inv_t + static_cast<uint32_t>(row_b.b) * t_clamped;
+#if LATTER_ROUND_DISPLAY
+    if (y < 5 || y >= SCREEN_H - 5) {
+      fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
+      continue;
+    }
+    const int hw = circle_half_span(y, 5);
+    if (hw <= 0) {
+      fast_hline(it, 0, y, SCREEN_W, kChromeShadow);
+      continue;
+    }
+    const int lx = std::max(0, cx - hw);
+    const int rx = std::min(SCREEN_W, cx + hw + 1);
+    if (lx > 0) fast_hline(it, 0, y, lx, kChromeShadow);
+    if (rx > lx) fast_hline_dither(it, lx, y, rx - lx, r88, g88, b88);
+    if (rx < SCREEN_W) fast_hline(it, rx, y, SCREEN_W - rx, kChromeShadow);
+#else
+    fast_hline_dither(it, 0, y, SCREEN_W, r88, g88, b88);
+#endif
+  }
 
-  // LAYER 1A: 3D CELESTIAL NIGHT STARFIELD (72-Star Fibonacci Golden-Spiral Dome + 3D Depth Parallax)
-  // Guarantees uniform, gap-free star coverage across the entire 466x466 circular bezel (left, top, right, bottom)
+  // 2. Static night starfield dome (clear & partly cloudy nights)
   if (is_clear_or_partly_night) {
-    float t_star = static_cast<float>(now_ms % 62832U) * 0.003f;
     for (int k = 0; k < 72; k++) {
-      // Golden-angle spiral (137.50776 deg = 2.39996323 rad) + small deterministic jitter
-      float r_norm = sqrtf((static_cast<float>(k) + 0.5f) * (1.0f / 72.0f));
+      const float r_norm = sqrtf((static_cast<float>(k) + 0.5f) * (1.0f / 72.0f));
       const float max_star_r = static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f;
-      float r_px   = 18.0f + r_norm * max_star_r;
-      float ang    = static_cast<float>(k) * 2.39996323f + (hash2d_01(k, 19) - 0.5f) * 0.18f;
+      const float r_px = 18.0f + r_norm * max_star_r;
+      const float ang = static_cast<float>(k) * 2.39996323f + (hash2d_01(k, 19) - 0.5f) * 0.18f;
       float sa = 0.0f, ca = 1.0f;
       fast_sincos(ang, sa, ca);
-
-      // 3D depth tier (0.30 deep background .. 1.00 foreground) for IMU-tilt parallax & magnitude
-      float depth_u = hash2d_01(k * 23 + 5, 41);
-      float par_scale = 0.20f + 0.65f * depth_u;
-
-      int sx = cx + static_cast<int>(ca * r_px + par_x * par_scale);
-      int sy = cy + static_cast<int>(sa * r_px + par_y * par_scale);
+      const int sx = cx + static_cast<int>(ca * r_px);
+      const int sy = cy + static_cast<int>(sa * r_px);
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
-
-      (void)mask_hero_temp;
       const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
       if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
-          (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) continue;
-
-      float twinkle = fast_sin(t_star + static_cast<float>(k) * 0.85f);
-      uint8_t br = static_cast<uint8_t>(182 + static_cast<int>(63.0f * twinkle));
-      esphome::Color star_c = (k % 3 == 0)
-          ? esphome::Color(br, static_cast<uint8_t>(br * 0.95f), br)
-          : esphome::Color(static_cast<uint8_t>(br * 0.82f), static_cast<uint8_t>(br * 0.90f), br);
+          (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
+        continue;
+      }
+      const float depth_u = hash2d_01(k * 23 + 5, 41);
+      const uint8_t br = static_cast<uint8_t>(168 + static_cast<int>(depth_u * 74.0f));
+      const esphome::Color star_c =
+          (k % 3 == 0)
+              ? esphome::Color(br, static_cast<uint8_t>(br * 0.95f), br)
+              : esphome::Color(static_cast<uint8_t>(br * 0.82f), static_cast<uint8_t>(br * 0.90f), br);
       fast_pixel(it, sx, sy, star_c);
-
-      if (depth_u >= 0.84f && br > 210) {
-        // Tier 1 Foreground Stars: Bright 5px cross glint
-        esphome::Color gl_c(160, 190, 230);
+      if (depth_u >= 0.84f) {
+        const esphome::Color gl_c(140, 170, 210);
         fast_pixel(it, sx + 1, sy, gl_c);
         fast_pixel(it, sx - 1, sy, gl_c);
         fast_pixel(it, sx, sy + 1, gl_c);
         fast_pixel(it, sx, sy - 1, gl_c);
       } else if (depth_u >= 0.48f) {
-        // Tier 2 Mid-Depth Stars: Soft companion glow pixel
-        uint8_t mid_b = static_cast<uint8_t>(br * 0.68f);
-        esphome::Color mid_c(static_cast<uint8_t>(mid_b * 0.80f), static_cast<uint8_t>(mid_b * 0.88f), mid_b);
-        fast_pixel(it, sx + 1, sy, mid_c);
-        if (br > 195) {
-          uint8_t sub_b = static_cast<uint8_t>(br * 0.48f);
-          fast_pixel(it, sx, sy + 1, esphome::Color(static_cast<uint8_t>(sub_b * 0.78f), static_cast<uint8_t>(sub_b * 0.86f), sub_b));
-        }
+        const uint8_t mid_b = static_cast<uint8_t>(br * 0.65f);
+        fast_pixel(it, sx + 1, sy,
+                   esphome::Color(static_cast<uint8_t>(mid_b * 0.80f), static_cast<uint8_t>(mid_b * 0.88f), mid_b));
       }
     }
   }
-  // LAYER 1B: CELESTIAL CORNER BADGE (3D GRADIENT SUN ORB / LUNAR DISC)
+
+  // 3. Celestial solar orb / synodic lunar disc
   if (show_celestial && cel_cx > 0 && cel_cy > 0) {
     if (is_night) {
       const int m_r = LATTER_ROUND_DISPLAY ? 24 : scale_min(30);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle);
-      if (is_fog_mist) {
-        fast_circle(it, cel_cx, cel_cy, m_r + 3, esphome::Color(55, 70, 88));
-        fast_circle(it, cel_cx, cel_cy, m_r + 7, esphome::Color(38, 50, 65));
+      if (is_fog_mist || is_overcast_canopy) {
+        fast_circle(it, cel_cx, cel_cy, m_r + 3, esphome::Color(48, 62, 80));
       }
     } else {
-      bool show_sun = (is_clear_day || is_partly || is_windy);
+      const bool show_sun = (is_clear_day || is_partly || is_windy);
       if (show_sun || is_fog_mist) {
-        const esphome::Color sky_c  = is_fog_mist ? esphome::Color(32, 46, 60)    : esphome::Color(28, 54, 84);
-        const esphome::Color c_haze = is_fog_mist ? esphome::Color(108, 108, 78)  : esphome::Color(158, 134, 34);
-        const esphome::Color c_limb = is_fog_mist ? esphome::Color(144, 132, 82)  : esphome::Color(232, 168, 14);
-        const esphome::Color c_body = is_fog_mist ? esphome::Color(174, 160, 102) : esphome::Color(250, 204, 24);
-        const esphome::Color c_core = is_fog_mist ? esphome::Color(198, 186, 128) : esphome::Color(255, 228, 72);
+        const esphome::Color sky_c  = is_fog_mist ? esphome::Color(32, 46, 60)   : esphome::Color(26, 52, 84);
+        const esphome::Color c_haze = is_fog_mist ? esphome::Color(108, 108, 78) : esphome::Color(158, 134, 34);
+        const esphome::Color c_limb = is_fog_mist ? esphome::Color(144, 132, 82) : esphome::Color(232, 168, 14);
+        const esphome::Color c_body = is_fog_mist ? esphome::Color(174, 160, 102): esphome::Color(250, 204, 24);
+        const esphome::Color c_core = is_fog_mist ? esphome::Color(198, 186, 128): esphome::Color(255, 228, 72);
 
         const int s_r_out = LATTER_ROUND_DISPLAY ? 27 : scale_min(32);
         const int s_r_in  = LATTER_ROUND_DISPLAY ? 23 : scale_min(29);
@@ -1609,22 +1706,22 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
         const float inv_r2_in = 1.0f / static_cast<float>(std::max(1, r2_in));
         const float hl_off = static_cast<float>(s_r_in) * (2.2f / 21.0f);
         for (int dy = -s_r_out; dy <= s_r_out; dy++) {
-          int py = cel_cy + dy;
+          const int py = cel_cy + dy;
           if (py < 0 || py >= SCREEN_H) continue;
-          int hw = chord_half_span_int(s_r_out, dy);
-          int dy2 = dy * dy;
-          float ldy = static_cast<float>(dy) + hl_off;
-          float ldy2 = ldy * ldy;
+          const int hw = chord_half_span_int(s_r_out, dy);
+          const int dy2 = dy * dy;
+          const float ldy = static_cast<float>(dy) + hl_off;
+          const float ldy2 = ldy * ldy;
           for (int dx = -hw; dx <= hw; dx++) {
-            int r2 = dx * dx + dy2;
+            const int r2 = dx * dx + dy2;
             if (r2 > r2_in) {
-              float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
+              const float k = static_cast<float>(r2_out - r2) * (0.84f / r2_span);
               fast_pixel(it, cel_cx + dx, py, lerp_color(sky_c, c_haze, k));
             } else {
-              float ldx = static_cast<float>(dx) + hl_off;
-              float d2_norm = (ldx * ldx + ldy2) * inv_r2_in;
-              float u = 1.0f - (d2_norm > 1.0f ? 1.0f : d2_norm);
-              esphome::Color pix_c = (u < 0.35f)
+              const float ldx = static_cast<float>(dx) + hl_off;
+              const float d2_norm = (ldx * ldx + ldy2) * inv_r2_in;
+              const float u = 1.0f - (d2_norm > 1.0f ? 1.0f : d2_norm);
+              const esphome::Color pix_c = (u < 0.35f)
                   ? lerp_color(c_limb, c_body, u * (1.0f / 0.35f))
                   : lerp_color(c_body, c_core, (u - 0.35f) * (1.0f / 0.65f));
               fast_pixel(it, cel_cx + dx, py, pix_c);
@@ -1635,447 +1732,678 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     }
   }
 
-  // LAYER 1C: OCCASIONAL NIGHT SHOOTING STAR
-  if (is_clear_or_partly_night) {
-    render_night_shooting_star(it, now_ms, cy);
-  }
-
-  lap.mark(ProfSect::BG_CELESTIAL);
-
-  // LAYER 1D_0: CLEAR DAY SUBTLE HIGH-ALTITUDE CIRRUS WISPS (Top & middle layers only)
+  // 4. Procedural Cloud Deck (explicitly enabled for rainy, pouring, drizzle, snowy, sleet,
+  //    cloudy, overcast, partlycloudy, fog/mist, and storm conditions)
+  const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
   if (is_clear_day) {
-    const float t_cir = static_cast<float>(std::fmod(now_s * 0.25, kPhaseWrap));
-    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
-    esphome::Color c_cir_crest(56, 90, 128);
-    esphome::Color c_cir_body(42,  70, 104);
-    esphome::Color c_cir_base(33,  58,  88);
-
-    int w0_x = static_cast<int>(318.0f * w_scale) + static_cast<int>(fast_sin(t_cir * 0.9f) * 24.0f + par_x * 0.32f);
-    int w1_x = static_cast<int>(158.0f * w_scale) + static_cast<int>(fast_cos(t_cir * 0.8f + 1.6f) * 26.0f + par_x * 0.45f);
-
-    render_wispy_cloud_veil(it, w0_x, 102 + static_cast<int>(par_y * 0.32f), static_cast<int>(118.0f * w_scale),  t_cir * 1.1f,        11,
+    const esphome::Color c_cir_crest(52, 86, 124);
+    const esphome::Color c_cir_body(38, 66, 100);
+    const esphome::Color c_cir_base(30, 54, 84);
+    render_wispy_cloud_veil(it, static_cast<int>(318.0f * w_scale), 102,
+                            static_cast<int>(118.0f * w_scale), 0.4f, 11,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
-    render_wispy_cloud_veil(it, w1_x, 174 + static_cast<int>(par_y * 0.45f), static_cast<int>(126.0f * w_scale), -t_cir * 1.2f + 1.4f, 12,
+    render_wispy_cloud_veil(it, static_cast<int>(158.0f * w_scale), 174,
+                            static_cast<int>(126.0f * w_scale), 1.4f, 12,
                             c_cir_crest, c_cir_body, c_cir_base, cy);
+  } else if (is_partly && !is_rain_precip && !is_snow_precip && !is_storm) {
+    const bool sun_on_left = (cel_cx > 0 && cel_cx < cx);
+    render_cumulus_cloud(it, static_cast<int>((sun_on_left ? 356.0f : 108.0f) * w_scale), 106, 0.94f, false, is_night, 0);
+    render_cumulus_cloud(it, static_cast<int>((sun_on_left ? 132.0f : 344.0f) * w_scale), 196, 0.84f, false, is_night, 1);
+    render_cumulus_cloud(it, static_cast<int>((sun_on_left ? 348.0f : 114.0f) * w_scale), 262, 0.82f, false, is_night, 2);
+  } else if (is_storm) {
+    const esphome::Color c_scud_crest = is_night ? esphome::Color(58, 76, 98) : esphome::Color(102, 128, 158);
+    const esphome::Color c_scud_body  = is_night ? esphome::Color(36, 50, 68) : esphome::Color(68, 90, 116);
+    const esphome::Color c_scud_base  = is_night ? esphome::Color(20, 30, 44) : esphome::Color(42, 58, 78);
+    render_cumulus_cloud(it, static_cast<int>(152.0f * w_scale), 76, 1.16f, true, is_night, 2);
+    render_wispy_cloud_veil(it, static_cast<int>(248.0f * w_scale), 96,
+                            static_cast<int>(165.0f * w_scale), 0.6f, 21,
+                            c_scud_crest, c_scud_body, c_scud_base, cy);
+    render_wispy_cloud_veil(it, static_cast<int>(188.0f * w_scale), 162,
+                            static_cast<int>(172.0f * w_scale), 1.9f, 22,
+                            c_scud_crest, c_scud_body, c_scud_base, cy);
+    render_cumulus_cloud(it, static_cast<int>(342.0f * w_scale), 118, 0.98f, true, is_night, 5);
+    render_cumulus_cloud(it, static_cast<int>(112.0f * w_scale), 188, 0.88f, true, is_night, 6);
+  } else if (is_overcast_canopy) {
+    const esphome::Color c_wisp_crest =
+        is_night ? esphome::Color(70, 90, 116)
+                 : (is_rain_precip ? esphome::Color(106, 132, 162) : esphome::Color(134, 162, 192));
+    const esphome::Color c_wisp_body =
+        is_night ? esphome::Color(44, 60, 80)
+                 : (is_rain_precip ? esphome::Color(72, 94, 120) : esphome::Color(92, 118, 146));
+    const esphome::Color c_wisp_base =
+        is_night ? esphome::Color(26, 36, 50)
+                 : (is_rain_precip ? esphome::Color(44, 60, 82) : esphome::Color(56, 76, 100));
+
+    render_cumulus_cloud(it, static_cast<int>(178.0f * w_scale),  86, 1.12f, true, is_night, 0);
+    render_cumulus_cloud(it, static_cast<int>(340.0f * w_scale), 122, 1.06f, true, is_night, 1);
+    render_cumulus_cloud(it, static_cast<int>(240.0f * w_scale), 208, 1.14f, true, is_night, 2);
+
+    render_wispy_cloud_veil(it, static_cast<int>(238.0f * w_scale), 112,
+                            static_cast<int>(165.0f * w_scale), 0.5f, 1,
+                            c_wisp_crest, c_wisp_body, c_wisp_base, cy);
+    render_wispy_cloud_veil(it, static_cast<int>(186.0f * w_scale), 174,
+                            static_cast<int>(175.0f * w_scale), 1.7f, 2,
+                            c_wisp_crest, c_wisp_body, c_wisp_base, cy);
+
+    render_cumulus_cloud(it, static_cast<int>(116.0f * w_scale), 168, 0.96f, true, is_night, 3);
+    render_cumulus_cloud(it, static_cast<int>(346.0f * w_scale), 252, 0.92f, true, is_night, 4);
+    render_wispy_cloud_veil(it, static_cast<int>(228.0f * w_scale), 270,
+                            static_cast<int>(158.0f * w_scale), 3.4f, 3,
+                            c_wisp_crest, c_wisp_body, c_wisp_base, cy);
   }
 
-  // LAYER 1E: SCULPTED 3D CUMULUS (Partly Cloudy) & HYBRID CUMULUS + WISPY VEIL OVERCAST (Cloudy / Overcast)
-  if (cond.find("cloud") != std::string::npos || cond.find("overcast") != std::string::npos) {
-    if (is_partly) {
-      const float t_cld = static_cast<float>(std::fmod(now_s * 0.80, kPhaseWrap));
-      int dx0 = static_cast<int>(fast_sin(t_cld) * 8.0f + par_x * 0.45f);
-      int dy0 = static_cast<int>(fast_cos(t_cld * 1.3f) * 2.5f + par_y * 0.45f);
-      int dx1 = static_cast<int>(fast_cos(t_cld * 0.9f + 1.8f) * 8.0f + par_x * 0.30f);
-      int dy1 = static_cast<int>(fast_sin(t_cld * 1.2f + 1.1f) * 2.5f + par_y * 0.30f);
-      int dx2 = static_cast<int>(fast_sin(t_cld * 1.1f + 3.6f) * 8.0f + par_x * 0.65f);
-      int dy2 = static_cast<int>(fast_cos(t_cld * 1.4f + 2.4f) * 2.5f + par_y * 0.65f);
-
-      const bool sun_on_left = (cel_cx > 0 && cel_cx < cx);
-      const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
-      int c0_base_x = static_cast<int>((sun_on_left ? 356.0f : 108.0f) * w_scale);
-      int c1_base_x = static_cast<int>((sun_on_left ? 132.0f : 344.0f) * w_scale);
-      int c2_base_x = static_cast<int>((sun_on_left ? 348.0f : 114.0f) * w_scale);
-      render_cumulus_cloud(it, c0_base_x + dx0, 106 + dy0, 0.94f, false, is_night, 0);
-      render_cumulus_cloud(it, c1_base_x + dx1, 196 + dy1, 0.84f, false, is_night, 1);
-      render_cumulus_cloud(it, c2_base_x + dx2, 262 + dy2, 0.82f, false, is_night, 2);
-    } else {
-      // Hybrid Overcast Canopy: Combines staggered, sculpted 3D cumulus cloud masses with
-      // interleaved wispy stratus tendrils (scaled to SCREEN_W and offset below upper-left Sun/Moon!)
-      const float t_ov = static_cast<float>(std::fmod(now_s * 0.42, kPhaseWrap));
-      const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
-
-      esphome::Color c_wisp_crest = is_night ? esphome::Color(74,  94, 120) : esphome::Color(134, 162, 192);
-      esphome::Color c_wisp_body  = is_night ? esphome::Color(48,  64,  84) : esphome::Color( 92, 118, 146);
-      esphome::Color c_wisp_base  = is_night ? esphome::Color(28,  38,  52) : esphome::Color( 56,  76, 100);
-
-      // 1. Deep Background Cloud Masses
-      int b0_x = static_cast<int>(182.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.8f) * 16.0f + par_x * 0.28f);
-      int b1_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 0.7f + 1.2f) * 18.0f + par_x * 0.34f);
-      int b2_x = static_cast<int>(242.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.75f + 2.5f) * 15.0f + par_x * 0.40f);
-      render_cumulus_cloud(it, b0_x,  88 + static_cast<int>(par_y * 0.28f), 1.12f, true, is_night, 0);
-      render_cumulus_cloud(it, b1_x, 126 + static_cast<int>(par_y * 0.34f), 1.06f, true, is_night, 1);
-      render_cumulus_cloud(it, b2_x, 214 + static_cast<int>(par_y * 0.40f), 1.15f, true, is_night, 2);
-
-      // 2. Interleaved Wispy Cloud Veils weaving across the mid-sky between the cumulus masses
-      int w0_x = static_cast<int>(238.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.1f + 0.5f) * 28.0f + par_x * 0.48f);
-      int w1_x = static_cast<int>(186.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 1.25f + 2.1f) * 30.0f + par_x * 0.56f);
-      render_wispy_cloud_veil(it, w0_x, 114 + static_cast<int>(par_y * 0.45f), static_cast<int>(165.0f * w_scale),  t_ov * 1.15f, 1,
-                              c_wisp_crest, c_wisp_body, c_wisp_base, cy);
-      render_wispy_cloud_veil(it, w1_x, 178 + static_cast<int>(par_y * 0.52f), static_cast<int>(175.0f * w_scale), -t_ov * 1.30f + 1.7f, 2,
-                              c_wisp_crest, c_wisp_body, c_wisp_base, cy);
-
-      // 3. Foreground Sculpted Cumulus Formations & Lower Wispy Tendril
-      int f0_x = static_cast<int>(116.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.05f + 3.1f) * 20.0f + par_x * 0.68f);
-      int f1_x = static_cast<int>(346.0f * w_scale) + static_cast<int>(fast_sin(t_ov * 0.95f + 0.8f) * 22.0f + par_x * 0.76f);
-      render_cumulus_cloud(it, f0_x, 172 + static_cast<int>(par_y * 0.68f), 0.96f, false, is_night, 3);
-      render_cumulus_cloud(it, f1_x, 258 + static_cast<int>(par_y * 0.76f), 0.92f, true,  is_night, 4);
-
-      int w2_x = static_cast<int>(228.0f * w_scale) + static_cast<int>(fast_cos(t_ov * 1.35f + 3.8f) * 26.0f + par_x * 0.82f);
-      render_wispy_cloud_veil(it, w2_x, 276 + static_cast<int>(par_y * 0.78f), static_cast<int>(158.0f * w_scale),  t_ov * 1.40f + 3.4f, 3,
-                              c_wisp_crest, c_wisp_body, c_wisp_base, cy);
-    }
-  }
-
-  // LAYER 1F: FOG & MIST — VOLUMETRIC STRATUS PUFFS & UNDULATING WISPY CLOUD VEILS
   if (is_fog_mist) {
-    const float t_fog = static_cast<float>(std::fmod(now_s * 0.28, kPhaseWrap));
-    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
+    render_cumulus_cloud(it, static_cast<int>(125.0f * w_scale), 102, 0.90f, true, is_night, 5);
+    render_cumulus_cloud(it, static_cast<int>(340.0f * w_scale), 188, 0.85f, true, is_night, 6);
+    render_cumulus_cloud(it, static_cast<int>(155.0f * w_scale), 266, 0.80f, true, is_night, 7);
 
-    int c0_x = static_cast<int>(125.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.8f) * 18.0f + par_x * 0.30f);
-    int c1_x = static_cast<int>(340.0f * w_scale) + static_cast<int>(fast_cos(t_fog * 0.7f + 1.4f) * 20.0f + par_x * 0.45f);
-    int c2_x = static_cast<int>(155.0f * w_scale) + static_cast<int>(fast_sin(t_fog * 0.9f + 2.8f) * 16.0f + par_x * 0.60f);
-    render_cumulus_cloud(it, c0_x, 102 + static_cast<int>(par_y * 0.30f), 0.90f, true, is_night, 5);
-    render_cumulus_cloud(it, c1_x, 188 + static_cast<int>(par_y * 0.45f), 0.85f, true, is_night, 6);
-    render_cumulus_cloud(it, c2_x, 266 + static_cast<int>(par_y * 0.60f), 0.80f, true, is_night, 7);
-
-    static constexpr int16_t PLUME_Y[5]  = { 76, 128, 178, 232, 284};
-    static constexpr int16_t PLUME_X0[5] = {198, 264, 212, 252, 224};
-    static constexpr int16_t PLUME_HW[5] = {155, 175, 168, 180, 148};
-
-    esphome::Color c_wisp_crest = is_night ? esphome::Color(68,  86, 108) : esphome::Color(124, 148, 174);
-    esphome::Color c_wisp_body  = is_night ? esphome::Color(44,  58,  76) : esphome::Color( 84, 106, 130);
-    esphome::Color c_wisp_base  = is_night ? esphome::Color(26,  36,  48) : esphome::Color( 54,  72,  92);
-
+    static constexpr int16_t kPlumeY[5]  = { 76, 128, 178, 232, 284};
+    static constexpr int16_t kPlumeX0[5] = {198, 264, 212, 252, 224};
+    static constexpr int16_t kPlumeHw[5] = {155, 175, 168, 180, 148};
+    const esphome::Color c_wisp_crest = is_night ? esphome::Color(68, 86, 108) : esphome::Color(124, 148, 174);
+    const esphome::Color c_wisp_body  = is_night ? esphome::Color(44, 58,  76) : esphome::Color(84, 106, 130);
+    const esphome::Color c_wisp_base  = is_night ? esphome::Color(26, 36,  48) : esphome::Color(54, 72,  92);
     for (int p = 0; p < 5; p++) {
-      float dir = (p & 1) ? -1.0f : 1.0f;
-      float depth_par = 0.35f + 0.15f * static_cast<float>(p);
-      float phase = t_fog * (1.1f + p * 0.14f) * dir + p * 1.7f;
-      int center_x = static_cast<int>(PLUME_X0[p] * w_scale) + static_cast<int>(fast_sin(phase) * 32.0f + par_x * depth_par);
-      int base_y   = PLUME_Y[p]  + static_cast<int>(fast_cos(phase * 0.8f) * 3.0f + par_y * depth_par * 0.5f);
-      render_wispy_cloud_veil(it, center_x, base_y, static_cast<int>(PLUME_HW[p] * w_scale), phase, p,
+      render_wispy_cloud_veil(it, static_cast<int>(kPlumeX0[p] * w_scale), kPlumeY[p],
+                              static_cast<int>(kPlumeHw[p] * w_scale), static_cast<float>(p) * 1.7f, p,
                               c_wisp_crest, c_wisp_body, c_wisp_base, cy);
     }
   }
-  // LAYER 1G: WINDY — 3D AIR-CURRENT RIBBONS & 10 TRUE 3D EULER-ROTATED TUMBLING LEAVES
-  if (is_windy) {
-    const float t_sec = static_cast<float>(std::fmod(now_s, kPhaseWrap));
+}
 
-    static constexpr int16_t GUST_Y[3] = { 82, 168, 236};
-    esphome::Color gust_hi  = is_night ? esphome::Color(70, 98, 130)  : esphome::Color(115, 155, 195);
-    esphome::Color gust_dim = is_night ? esphome::Color(38, 56,  78)  : esphome::Color( 62,  92, 128);
-    const int gust_wrap = SCREEN_W + 94;
+struct RainStreak {
+  float x = 0.0f;
+  float y = 0.0f;
+  float vy = 100.0f;
+  float len = 30.0f;
+  uint8_t alpha_peak = 32U;
+  uint16_t pass_seq = 0U;
+};
+
+struct LightningFlashState {
+  uint32_t next_flash_ms = 0U;
+  uint32_t flash_start_ms = 0U;
+  uint32_t flash_seq = 0U;
+  bool active = false;
+};
+
+struct WeatherParticleEngine {
+  static constexpr int kFarVeilCount = 26;
+  static constexpr int kNearHeroCount = 30;
+  static constexpr int kSnowCount = 40;
+  static constexpr int kLeafCount = 10;
+
+  bool inited = false;
+  uint32_t last_step_ms = 0U;
+  uint32_t cond_hash = 0U;
+  float phase_s = 0.0f;
+
+  RainStreak far_veil[kFarVeilCount]{};
+  RainStreak near_hero[kNearHeroCount]{};
+  float snow_y[kSnowCount]{};
+  uint16_t snow_pass[kSnowCount]{};
+  float leaf_x[kLeafCount]{};
+  float gust_x[3]{};
+  LightningFlashState lightning{};
+};
+
+WeatherParticleEngine &particle_engine() {
+  static WeatherParticleEngine eng{};
+  return eng;
+}
+
+void spawn_rain_streak(RainStreak &st, int idx, int total_lanes, bool is_hero,
+                       bool is_heavy, float slant, bool initial_spread) {
+  const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
+  const int seed = static_cast<int>(st.pass_seq * 61U + static_cast<uint32_t>(idx) * 97U + (is_hero ? 503U : 17U));
+  const float u_spd = hash2d_01(seed, 13);
+  const float u_len = hash2d_01(seed, 29);
+  const float u_x   = hash2d_01(seed, 43);
+  const float u_alf = hash2d_01(seed, 59);
+
+  if (is_hero) {
+    // Near hero streaks: 160-220 px/s (scale_y-normalized) with 45-65 px (scale_y) head-to-tail taper
+    // -> guarantees >= 45% spatial overlap at 12.5 FPS (80 ms).
+    st.vy = (160.0f + u_spd * 60.0f) * h_scale;
+    st.len = (45.0f + u_len * 20.0f) * h_scale;
+    st.alpha_peak = static_cast<uint8_t>((is_heavy ? 132.0f : 112.0f) + u_alf * 36.0f);
+  } else {
+    // Far misty veil: slower 90-140 px/s (scale_y-normalized), soft low-alpha 25-38 Q8 streaks.
+    st.vy = (90.0f + u_spd * 50.0f) * h_scale;
+    st.len = (28.0f + u_len * 14.0f) * h_scale;
+    st.alpha_peak = static_cast<uint8_t>(25.0f + u_alf * 13.0f);
+  }
+
+  const float max_y = static_cast<float>(SCREEN_H) + st.len;
+  const float drift_w = max_y * slant;
+  const int lane = (idx * 5 + static_cast<int>(st.pass_seq * 3U)) % std::max(1, total_lanes);
+  const float lane_w = (static_cast<float>(SCREEN_W - 16) + drift_w) / static_cast<float>(std::max(1, total_lanes));
+  const float x_top = 8.0f + (static_cast<float>(lane) + 0.10f + u_x * 0.80f) * lane_w;
+
+  if (initial_spread) {
+    const float init_u = std::fmod(static_cast<float>(idx) * 0.61803399f + u_alf * 0.21f, 1.0f);
+    st.y = -st.len + init_u * (static_cast<float>(SCREEN_H) + st.len);
+    st.x = x_top - (st.y + st.len) * slant;
+  } else {
+    st.y = -4.0f - u_alf * st.len * 0.5f;
+    st.x = x_top;
+  }
+}
+
+void init_particle_engine(WeatherParticleEngine &eng, uint32_t cond_hash, bool is_heavy, float slant) {
+  eng.inited = true;
+  eng.cond_hash = cond_hash;
+  for (int i = 0; i < WeatherParticleEngine::kFarVeilCount; i++) {
+    eng.far_veil[i].pass_seq = 0U;
+    spawn_rain_streak(eng.far_veil[i], i, 13, false, is_heavy, slant, true);
+  }
+  for (int i = 0; i < WeatherParticleEngine::kNearHeroCount; i++) {
+    eng.near_hero[i].pass_seq = 0U;
+    spawn_rain_streak(eng.near_hero[i], i, 15, true, is_heavy, slant, true);
+  }
+  const float cycle_h = static_cast<float>(std::max(40, SCREEN_H - 20));
+  for (int i = 0; i < WeatherParticleEngine::kSnowCount; i++) {
+    eng.snow_pass[i] = 0U;
+    eng.snow_y[i] = std::fmod(static_cast<float>(i) * 0.381966f, 1.0f) * cycle_h;
+  }
+  for (int i = 0; i < WeatherParticleEngine::kLeafCount; i++) {
+    eng.leaf_x[i] = hash2d_01(i, 7) * 480.0f - 240.0f;
+  }
+  const float gust_wrap = static_cast<float>(SCREEN_W + 94);
+  for (int g = 0; g < 3; g++) {
+    eng.gust_x[g] = static_cast<float>(g) * (gust_wrap * (1.0f / 3.0f)) - 50.0f;
+  }
+}
+
+}  // namespace
+
+float weather_precip_alpha_scale() {
+  return sky_fade_state().precip_alpha_scale;
+}
+
+bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
+                                 bool has_motion_cond) {
+  if (!has_motion_cond) return false;
+  if (battery_motion_allowed(usb_connected, now_ms, latest_input_ms)) return true;
+  const auto &st = sky_fade_state();
+  return (st.precip_alpha_scale > 0.001f) || !st.calm_frame_rendered;
+}
+
+// Clean-Sheet WeatherSkyEngine (D-034 / D-038):
+// 1. PSRAM-cached static atmospheric base (Bayer-dithered sky gradient + stars + solar/lunar disc +
+//    procedural cumulus/stratus cloud deck explicitly covering rainy/pouring/drizzle/snowy/cloudy/storm),
+//    blitted respecting Y-scissor [clip_y0(), clip_y1()] with direct-draw fallback when PSRAM unavailable.
+// 2. Stateful monotonic dt_s particle engine, deterministic 180 ms exponential sheet-lightning decay,
+//    2-layer depth-of-field rain (>= 45% spatial overlap at 12.5 FPS), and 35 s battery 800 ms fade-out
+//    to 0 FPS calm sky / 400 ms fade-in on wake/touch/tilt/USB.
+void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
+                                     const std::string &cond, bool is_night,
+                                     double moon_cycle,
+                                     int cel_cx, int cel_cy,
+                                     bool mask_hero_temp,
+                                     float accel_x, float accel_y,
+                                     bool show_celestial) {
+  (void)mask_hero_temp;
+  if (cond.empty()) {
+    return;
+  }
+
+  ProfLap lap;
+
+  const auto &rs = runtime_state();
+  const uint32_t latest_input_ms = std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
+  step_weather_battery_fade(rs.hw_usb_connected, now_ms, latest_input_ms);
+  float precip_alpha = sky_fade_state().precip_alpha_scale;
+  if (precip_alpha <= 0.001f) {
+    precip_alpha = 0.0f;
+    sky_fade_state().precip_alpha_scale = 0.0f;
+    sky_fade_state().calm_frame_rendered = true;
+  }
+
+  // Smooth EMA-damped 3D IMU tilt parallax offset for foreground particles
+  static float par_x = 0.0f;
+  static float par_y = 0.0f;
+  if (!std::isnan(accel_x) && !std::isnan(accel_y)) {
+    const float target_px = fmaxf(-18.0f, fminf(18.0f, accel_x * 20.0f));
+    const float target_py = fmaxf(-18.0f, fminf(18.0f, accel_y * 20.0f));
+    par_x += (target_px - par_x) * 0.22f;
+    par_y += (target_py - par_y) * 0.22f;
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 1: PSRAM SKY BASE CACHE (or direct fallback if PSRAM unavailable)
+  // --------------------------------------------------------------------------
+  uint16_t *fb = active_frame_buf16();
+  auto &cache = sky_base_cache();
+  if (fb != nullptr && !cache.alloc_attempted) {
+    cache.alloc_attempted = true;
+    const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
+#ifdef USE_ESP32
+    cache.px = static_cast<uint16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#else
+    cache.px = static_cast<uint16_t *>(std::malloc(bytes));
+#endif
+  }
+
+  const uint32_t cond_hash = fnv1a_sky_str(cond);
+  const uint8_t quant_moon =
+      (show_celestial && is_night)
+          ? static_cast<uint8_t>(std::clamp<int>(static_cast<int>(std::lround(moon_cycle * 64.0)), 0, 64))
+          : 0U;
+  const uint8_t cur_dim_mode = static_cast<uint8_t>(active_frame_endian_mode() & 0x0F);
+  const int16_t key_cel_x = show_celestial ? static_cast<int16_t>(cel_cx) : static_cast<int16_t>(0);
+  const int16_t key_cel_y = show_celestial ? static_cast<int16_t>(cel_cy) : static_cast<int16_t>(0);
+
+  if (fb != nullptr && cache.px != nullptr) {
+    if (!cache.valid ||
+        cache.cond_hash != cond_hash ||
+        cache.is_night != is_night ||
+        cache.show_celestial != show_celestial ||
+        cache.cel_cx != key_cel_x ||
+        cache.cel_cy != key_cel_y ||
+        cache.quantized_moon_phase != quant_moon ||
+        cache.dim_mode != cur_dim_mode) {
+      const int saved_y0 = clip_y0();
+      const int saved_y1 = clip_y1();
+      reset_clip_y_band();
+      active_frame_buf16() = cache.px;
+      bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+      active_frame_buf16() = fb;
+      set_clip_y_band(saved_y0, saved_y1);
+
+      cache.valid = true;
+      cache.cond_hash = cond_hash;
+      cache.is_night = is_night;
+      cache.show_celestial = show_celestial;
+      cache.cel_cx = key_cel_x;
+      cache.cel_cy = key_cel_y;
+      cache.quantized_moon_phase = quant_moon;
+      cache.dim_mode = cur_dim_mode;
+    }
+
+    frame_base_claim();
+    const int y0 = std::max(0, clip_y0());
+    const int y1 = std::min(SCREEN_H - 1, clip_y1());
+    if (y0 <= y1) {
+      const size_t off = static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W);
+      const size_t row_cnt = static_cast<size_t>(y1 - y0 + 1);
+      std::memcpy(fb + off, cache.px + off, row_cnt * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+    }
+  } else {
+    frame_base_claim();
+    bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+  }
+
+  lap.mark(ProfSect::BG_SKY);
+
+  // Rest cleanly at 0 FPS on calm cached atmospheric base once battery fade-out reaches 0.0f
+  if (precip_alpha <= 0.0f) {
+    lap.mark(ProfSect::BG_PRECIP);
+    return;
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 2: STATEFUL MONOTONIC dt_s FOREGROUND ATMOSPHERE & PRECIPITATION
+  // --------------------------------------------------------------------------
+  const bool is_fog_mist = (cond.find("fog") != std::string::npos ||
+                            cond.find("mist") != std::string::npos ||
+                            cond.find("haze") != std::string::npos);
+  const bool is_windy = (cond.find("wind") != std::string::npos ||
+                         cond.find("breez") != std::string::npos);
+  const bool is_partly = (cond.find("partly") != std::string::npos ||
+                          cond.find("mostlysunny") != std::string::npos ||
+                          cond.find("partlysunny") != std::string::npos);
+  const bool is_storm = (cond.find("lightning") != std::string::npos ||
+                         cond.find("thunder") != std::string::npos);
+  const bool is_rain = (cond.find("rain") != std::string::npos ||
+                        cond.find("pouring") != std::string::npos ||
+                        cond.find("drizzle") != std::string::npos ||
+                        is_storm);
+  const bool is_heavy_rain = (cond == "pouring" || cond.find("heavy") != std::string::npos || is_storm);
+  const bool is_snow = (cond.find("snow") != std::string::npos ||
+                        cond.find("sleet") != std::string::npos ||
+                        cond.find("hail") != std::string::npos);
+  const bool is_clear_or_partly_night =
+      (is_night && (cond == "clear-night" || cond == "clearnight" ||
+                    cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
+  const float rain_slant = is_heavy_rain ? 0.16f : 0.11f;
+
+  auto &eng = particle_engine();
+  float dt_s = 0.0f;
+  if (!eng.inited || eng.cond_hash != cond_hash) {
+    init_particle_engine(eng, cond_hash, is_heavy_rain, rain_slant);
+    eng.last_step_ms = now_ms;
+    dt_s = 0.0f;
+  } else if (now_ms != eng.last_step_ms) {
+    const uint32_t raw_dt = now_ms - eng.last_step_ms;
+    eng.last_step_ms = now_ms;
+    dt_s = std::clamp(static_cast<float>(raw_dt) * 0.001f, 0.0f, 0.12f);
+  }
+  eng.phase_s += dt_s;
+  if (eng.phase_s > 62831.853f) eng.phase_s -= 62831.853f;
+
+  // 2A. Night starlight shimmer & occasional meteor (alpha-modulated by precip_alpha)
+  if (is_clear_or_partly_night) {
+    for (int k = 0; k < 24; k++) {
+      const int idx = k * 3;
+      const float tw = 0.5f + 0.5f * fast_sin(eng.phase_s * 2.4f + static_cast<float>(idx) * 0.9f);
+      if (tw < 0.55f) continue;
+      const float r_norm = sqrtf((static_cast<float>(idx) + 0.5f) * (1.0f / 72.0f));
+      const float max_star_r = static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f;
+      const float r_px = 18.0f + r_norm * max_star_r;
+      const float ang = static_cast<float>(idx) * 2.39996323f + (hash2d_01(idx, 19) - 0.5f) * 0.18f;
+      float sa = 0.0f, ca = 1.0f;
+      fast_sincos(ang, sa, ca);
+      const int sx = cx + static_cast<int>(ca * r_px);
+      const int sy = cy + static_cast<int>(sa * r_px);
+      if (!is_inside_bezel(sx, sy, cy, 6)) continue;
+      const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
+      if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
+          (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
+        continue;
+      }
+      const int a_q8 = static_cast<int>((tw - 0.5f) * 220.0f * precip_alpha);
+      blend_sky_pixel_q8(it, fb, sx, sy, esphome::Color(255, 255, 255), a_q8);
+    }
+    if (precip_alpha > 0.35f) {
+      render_night_shooting_star(it, now_ms, cy);
+    }
+  }
+
+  // 2B. Subtle Q8 atmospheric haze drift for calm sky / cloud / fog scenes
+  if (!is_rain && !is_snow && !is_windy) {
+    const int drift_bands = is_fog_mist ? 3 : 1;
+    const esphome::Color haze_c = is_night ? esphome::Color(110, 140, 178) : esphome::Color(188, 216, 246);
+    const int base_q8 = static_cast<int>((is_fog_mist ? 26.0f : 14.0f) * precip_alpha);
+    if (base_q8 > 1 && fb != nullptr) {
+      for (int b = 0; b < drift_bands; b++) {
+        const float dir = (b & 1) ? -1.0f : 1.0f;
+        const int center_x = cx + static_cast<int>(fast_sin(eng.phase_s * 0.45f * dir + static_cast<float>(b) * 1.9f) *
+                                                   static_cast<float>(scale_x(64)) + par_x * 0.35f);
+        const int center_y = scale_y(118 + b * 68) + static_cast<int>(par_y * 0.25f);
+        const int hw = scale_x(110);
+        const int hh = scale_y(8);
+        const int y_lo = std::max(clip_y0(), center_y - hh);
+        const int y_hi = std::min(clip_y1(), center_y + hh);
+        for (int py = y_lo; py <= y_hi; py += 2) {
+          const float vy_u = static_cast<float>(py - center_y) / static_cast<float>(std::max(1, hh));
+          const float row_fade = 1.0f - vy_u * vy_u;
+          if (row_fade <= 0.05f) continue;
+          const int row_a = static_cast<int>(static_cast<float>(base_q8) * row_fade);
+          if (row_a <= 1) continue;
+          const int x_lo = std::max(8, center_x - hw);
+          const int x_hi = std::min(SCREEN_W - 9, center_x + hw);
+          for (int px = x_lo; px <= x_hi; px += 2) {
+            if (!is_inside_bezel(px, py, cy, 8)) continue;
+            blend_sky_pixel_q8(it, fb, px, py, haze_c, row_a);
+          }
+        }
+      }
+    }
+  }
+
+  // 2C. Deterministic LightningFlashState (180 ms smooth exponential sheet-lightning decay)
+  if (is_storm) {
+    auto &lt = eng.lightning;
+    if (lt.next_flash_ms == 0U || static_cast<int32_t>(now_ms - lt.next_flash_ms) > 10000) {
+      lt.next_flash_ms = now_ms + 850U;
+      lt.active = false;
+    }
+    if (static_cast<int32_t>(now_ms - lt.next_flash_ms) >= 0) {
+      lt.flash_start_ms = now_ms;
+      lt.active = true;
+      lt.flash_seq++;
+      const uint32_t gap_ms =
+          2600U + static_cast<uint32_t>(hash2d_01(static_cast<int>(lt.flash_seq * 37U + 11U), 29) * 3200.0f);
+      lt.next_flash_ms = now_ms + gap_ms;
+    }
+    if (lt.active) {
+      const uint32_t el_ms = now_ms - lt.flash_start_ms;
+      if (el_ms >= 180U) {
+        lt.active = false;
+      } else {
+        const float env = std::exp(-static_cast<float>(el_ms) * (1.0f / 56.0f)) * precip_alpha;
+        const int sheet_q8 = static_cast<int>(env * 66.0f);
+        if (sheet_q8 > 1 && fb != nullptr) {
+          const uint16_t wash_rgb = ((190 >> 3) << 11) | ((220 >> 2) << 5) | (255 >> 3);
+          const int sr = (wash_rgb >> 11) & 0x1F;
+          const int sg = (wash_rgb >> 5) & 0x3F;
+          const int sb = wash_rgb & 0x1F;
+          const int y_lo = std::max(5, clip_y0());
+          const int y_hi = std::min(scale_y(320), std::min(SCREEN_H - 6, clip_y1()));
+          const int span_h = std::max(1, scale_y(320) - 5);
+          for (int py = y_lo; py <= y_hi; py++) {
+            const int falloff_q8 = 256 - (((py - 5) * 180) / span_h);
+            const int a = (sheet_q8 * std::max(0, falloff_q8)) >> 8;
+            if (a <= 1) continue;
+            const int inv = 256 - a;
+#if LATTER_ROUND_DISPLAY
+            const int hw = circle_half_span(py, 6);
+            if (hw <= 0) continue;
+            const int x0 = std::max(0, cx - hw);
+            const int x1 = std::min(SCREEN_W - 1, cx + hw);
+#else
+            const int x0 = 0;
+            const int x1 = SCREEN_W - 1;
+#endif
+            uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
+            for (int px = x0; px <= x1; px++) {
+              const uint16_t dst = decode_hw_rgb565_raw(row[px]);
+              const int dr = (dst >> 11) & 0x1F;
+              const int dg = (dst >> 5) & 0x3F;
+              const int db = dst & 0x1F;
+              const uint16_t out = static_cast<uint16_t>((((sr * a + dr * inv) >> 8) << 11) |
+                                                         (((sg * a + dg * inv) >> 8) << 5) |
+                                                         ((sb * a + db * inv) >> 8));
+              row[px] = encode_hw_rgb565_raw(out);
+            }
+          }
+        }
+
+        if (el_ms < 140U) {
+          const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
+          const int b_seed = static_cast<int>(lt.flash_seq * 43U + 19U);
+          const int x0 = static_cast<int>((140.0f + hash2d_01(b_seed, 11) * 186.0f) * w_scale);
+          const int y0 = scale_y(68);
+          const int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 44.0f * w_scale);
+          const int y1 = scale_y(112);
+          const int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 48.0f * w_scale);
+          const int y2 = scale_y(158);
+          const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 52.0f * w_scale);
+          const int y3 = scale_y(208);
+          const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 46.0f * w_scale);
+          const int y4 = scale_y(266);
+
+          const int core_q8 = std::clamp(static_cast<int>(env * 250.0f), 0, 256);
+          const int fork_q8 = std::clamp(static_cast<int>(env * 165.0f), 0, 256);
+          const esphome::Color c_core(255, 255, 255);
+          const esphome::Color c_fork(155, 215, 255);
+          draw_tapered_streak_q8(it, fb, x0, y0, x1, y1, c_core, c_core, core_q8, core_q8, cy);
+          draw_tapered_streak_q8(it, fb, x1, y1, x2, y2, c_core, c_core, core_q8, core_q8, cy);
+          draw_tapered_streak_q8(it, fb, x2, y2, x3, y3, c_core, c_core, core_q8, core_q8, cy);
+          draw_tapered_streak_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, fork_q8, cy);
+
+          const int f1_dir = (x2 >= x1) ? 1 : -1;
+          const int fx1 = x1 + f1_dir * scale_x(26), fy1 = y1 + scale_y(26);
+          const int fx2 = fx1 + f1_dir * scale_x(16), fy2 = fy1 + scale_y(26);
+          draw_tapered_streak_q8(it, fb, x1, y1, fx1, fy1, c_fork, c_fork, fork_q8, fork_q8 / 2, cy);
+          draw_tapered_streak_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, fork_q8 / 2, fork_q8 / 4, cy);
+        }
+      }
+    }
+  }
+
+  lap.mark(ProfSect::BG_CLOUDS);
+
+  // 2D. Wind gusts & 3D tumbling leaves (monotonic dt_s integration)
+  if (is_windy) {
+    static constexpr int16_t kGustY[3] = {82, 168, 236};
+    const esphome::Color gust_c = is_night ? esphome::Color(92, 128, 168) : esphome::Color(150, 194, 236);
+    const float gust_wrap = static_cast<float>(SCREEN_W + 94);
+    const float gust_spd = 190.0f * (static_cast<float>(SCREEN_W) / 466.0f);
+    const int gust_a = static_cast<int>(88.0f * precip_alpha);
     for (int g = 0; g < 3; g++) {
-      int gx_head = static_cast<int>((now_ms / 5U + static_cast<uint32_t>(g * (gust_wrap / 3))) %
-                                     static_cast<uint32_t>(gust_wrap)) - 50;
-      int gy_base = scale_y(GUST_Y[g]);
+      eng.gust_x[g] += gust_spd * dt_s;
+      if (eng.gust_x[g] > gust_wrap - 50.0f) eng.gust_x[g] -= gust_wrap;
+      const int gx_head = static_cast<int>(eng.gust_x[g]);
+      const int gy_base = scale_y(kGustY[g]);
       int prev_x = 0, prev_y = 0;
       for (int s = 0; s <= 6; s++) {
-        int sx = gx_head - s * scale_min(18);
-        int sy = gy_base + static_cast<int>(fast_sin(sx * 0.025f + g * 1.7f) * 7.0f);
-        if (s > 0 && is_inside_bezel(sx, sy, cy, 8) && is_inside_bezel(prev_x, prev_y, cy, 8)) {
-          esphome::Color seg_c = (s >= 2 && s <= 4) ? gust_hi : gust_dim;
-          fast_line(it, sx, sy, prev_x, prev_y, seg_c);
+        const int sx = gx_head - s * scale_min(18);
+        const int sy = gy_base + static_cast<int>(fast_sin(static_cast<float>(sx) * 0.025f + g * 1.7f) * 7.0f);
+        if (s > 0) {
+          const int seg_a = (s >= 2 && s <= 4) ? gust_a : (gust_a / 2);
+          draw_tapered_streak_q8(it, fb, sx, sy, prev_x, prev_y, gust_c, gust_c, seg_a, seg_a, cy);
         }
         prev_x = sx;
         prev_y = sy;
       }
     }
 
-    // 10 True 3D Euler-Rotated Leaves flying through 3D wind space (z in [-95..+110])
-    for (int i = 0; i < 10; i++) {
-      float h_spd = 135.0f + hash2d_01(i * 19 + 5, 13) * 85.0f;
-      float h_y0  = -155.0f + hash2d_01(i * 37 + 9, 27) * 235.0f;
-      float h_z0  = -95.0f + hash2d_01(i * 53 + 3, 41) * 205.0f;
+    if (precip_alpha > 0.20f) {
+      for (int i = 0; i < WeatherParticleEngine::kLeafCount; i++) {
+        const float h_spd = 135.0f + hash2d_01(i * 19 + 5, 13) * 85.0f;
+        const float h_y0  = -155.0f + hash2d_01(i * 37 + 9, 27) * 235.0f;
+        const float h_z0  = -95.0f + hash2d_01(i * 53 + 3, 41) * 205.0f;
+        eng.leaf_x[i] += h_spd * dt_s;
+        if (eng.leaf_x[i] > 240.0f) eng.leaf_x[i] -= 480.0f;
+        const float lx_3d = eng.leaf_x[i];
+        const float ly_3d = h_y0 + fast_sin(eng.phase_s * 2.5f + i * 0.9f) * 18.0f + fast_cos(lx_3d * 0.018f + i) * 9.0f;
+        const float lz_3d = h_z0 + fast_sin(eng.phase_s * 1.8f + i * 1.4f) * 32.0f;
+        const float rx = eng.phase_s * (2.6f + (i % 3) * 0.7f) + i * 1.1f;
+        const float ry = eng.phase_s * (3.1f + (i % 4) * 0.5f) + i * 0.7f;
+        const float rz = 0.25f * fast_sin(eng.phase_s * 2.2f + i) + 0.15f;
 
-      float lx_3d = static_cast<float>(
-          std::fmod(static_cast<double>(hash2d_01(i, 7)) * 480.0 + now_s * static_cast<double>(h_spd), 480.0) -
-          240.0);
-      float ly_3d = h_y0 + fast_sin(t_sec * 2.5f + i * 0.9f) * 18.0f + fast_cos(lx_3d * 0.018f + i) * 9.0f;
-      float lz_3d = h_z0 + fast_sin(t_sec * 1.8f + i * 1.4f) * 32.0f;
-
-      // Full 3-axis 3D Euler tumbling (roll, pitch, yaw)
-      float rx = t_sec * (2.6f + (i % 3) * 0.7f) + i * 1.1f;
-      float ry = t_sec * (3.1f + (i % 4) * 0.5f) + i * 0.7f;
-      float rz = 0.25f * fast_sin(t_sec * 2.2f + i) + 0.15f;
-
-      esphome::Color c_leaf, c_vein;
-      float night_scale = is_night ? 0.72f : 1.0f;
-      int pal_id = i & 3;
-      if (pal_id == 0) {
-        c_leaf = scale_color(esphome::Color(110, 182, 82), night_scale);
-        c_vein = scale_color(esphome::Color(165, 225, 130), night_scale);
-      } else if (pal_id == 1) {
-        c_leaf = scale_color(esphome::Color(235, 188, 48), night_scale);
-        c_vein = scale_color(esphome::Color(255, 230, 120), night_scale);
-      } else if (pal_id == 2) {
-        c_leaf = scale_color(esphome::Color(228, 118, 42), night_scale);
-        c_vein = scale_color(esphome::Color(255, 175, 95), night_scale);
-      } else {
-        c_leaf = scale_color(esphome::Color(82, 152, 92), night_scale);
-        c_vein = scale_color(esphome::Color(135, 205, 145), night_scale);
-      }
-
-      draw_tumbling_leaf_3d(it, {lx_3d + par_x * 0.7f, ly_3d + par_y * 0.7f, lz_3d},
-                            rx, ry, rz, 1.05f, c_leaf, c_vein, cy);
-    }
-  }
-
-  // LAYER 1G_B: THUNDERSTORM — STAGGERED MULTI-DEPTH STORM CLOUDS, SCUD VEILS & FORKED LIGHTNING
-  if (is_storm) {
-    const float t_st = static_cast<float>(std::fmod(now_s * 0.48, kPhaseWrap));
-    const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
-    bool dark_storm_clouds = is_night && !storm_sky_flash;
-
-    // 1. Deep Background Upper-Left Storm Anvil (drawn behind the lightning bolt!)
-    int bg_anvil_x = static_cast<int>(152.0f * w_scale) + static_cast<int>(fast_sin(t_st * 0.75f) * 18.0f + par_x * 0.28f);
-    render_cumulus_cloud(it, bg_anvil_x, 76 + static_cast<int>(par_y * 0.28f), 1.16f, true, dark_storm_clouds, 2);
-
-    // 2. Forked Lightning Bolt (originating between the deep anvil and foreground storm masses)
-    if (storm_bolt_vis) {
-      int b_seed = static_cast<int>(storm_cycle_idx * 43U + 19U);
-      int x0 = static_cast<int>((140.0f + hash2d_01(b_seed, 11) * 186.0f) * w_scale);
-      int y0 = 68;
-
-      int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 44.0f);
-      int y1 = 112;
-      int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 48.0f);
-      int y2 = 158;
-      int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 52.0f);
-      int y3 = 208;
-      int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 46.0f);
-      int y4 = 266;
-
-      esphome::Color c_core(255, 255, 255);
-      esphome::Color c_halo(110, 195, 255);
-      esphome::Color c_fork(155, 215, 255);
-
-      draw_glow_line(it, x0, y0, x1, y1, c_core, c_halo);
-      draw_glow_line(it, x1, y1, x2, y2, c_core, c_halo);
-      draw_glow_line(it, x2, y2, x3, y3, c_core, c_halo);
-      draw_glow_line(it, x3, y3, x4, y4, c_core, c_halo);
-
-      int f1_dir = (x2 >= x1) ? 1 : -1;
-      int fx1 = x1 + f1_dir * 28, fy1 = y1 + 26;
-      int fx2 = fx1 + f1_dir * 18, fy2 = fy1 + 28;
-      fast_line(it, x1, y1, fx1, fy1, c_fork);
-      fast_line(it, fx1, fy1, fx2, fy2, c_halo);
-
-      int f2_dir = -f1_dir;
-      int gx1 = x2 + f2_dir * 32, gy1 = y2 + 34;
-      int gx2 = gx1 + f2_dir * 16, gy2 = gy1 + 26;
-      fast_line(it, x2, y2, gx1, gy1, c_fork);
-      fast_line(it, gx1, gy1, gx2, gy2, c_halo);
-    }
-
-    // 3. Interleaved Wind-Sheared Wispy Storm-Scud Veils (illuminate during lightning strikes!)
-    esphome::Color c_scud_crest = storm_sky_flash ? esphome::Color(150, 184, 224)
-                                : (is_night ? esphome::Color(58, 76, 98) : esphome::Color(102, 128, 158));
-    esphome::Color c_scud_body  = storm_sky_flash ? esphome::Color(100, 132, 172)
-                                : (is_night ? esphome::Color(36, 50, 68) : esphome::Color(68, 90, 116));
-    esphome::Color c_scud_base  = storm_sky_flash ? esphome::Color(62, 86, 120)
-                                : (is_night ? esphome::Color(20, 30, 44) : esphome::Color(42, 58, 78));
-
-    int w0_x = static_cast<int>(248.0f * w_scale) + static_cast<int>(fast_cos(t_st * 1.15f + 0.6f) * 28.0f + par_x * 0.44f);
-    int w1_x = static_cast<int>(188.0f * w_scale) + static_cast<int>(fast_sin(t_st * 1.35f + 2.2f) * 32.0f + par_x * 0.62f);
-    render_wispy_cloud_veil(it, w0_x,  96 + static_cast<int>(par_y * 0.42f), static_cast<int>(165.0f * w_scale),  t_st * 1.3f,        21,
-                            c_scud_crest, c_scud_body, c_scud_base, cy);
-    render_wispy_cloud_veil(it, w1_x, 162 + static_cast<int>(par_y * 0.58f), static_cast<int>(172.0f * w_scale), -t_st * 1.45f + 1.9f, 22,
-                            c_scud_crest, c_scud_body, c_scud_base, cy);
-
-    // 4. Staggered Mid-Altitude Right Storm Cloud (y = 118) & Lower-Left Foreground Squall Cloud (y = 188)
-    int mid_rt_x = static_cast<int>(342.0f * w_scale) + static_cast<int>(fast_cos(t_st * 0.92f + 1.5f) * 22.0f + par_x * 0.52f);
-    int fg_lt_x  = static_cast<int>(112.0f * w_scale) + static_cast<int>(fast_sin(t_st * 1.10f + 3.1f) * 20.0f + par_x * 0.72f);
-    render_cumulus_cloud(it, mid_rt_x, 118 + static_cast<int>(par_y * 0.52f), 0.98f, true, dark_storm_clouds, 5);
-    render_cumulus_cloud(it, fg_lt_x,  188 + static_cast<int>(par_y * 0.72f), 0.88f, false, dark_storm_clouds, 6);
-  }
-  lap.mark(ProfSect::BG_CLOUDS);
-
-  // LAYER 1H: STUDIO GHIBLI / ANIME ATMOSPHERIC RAIN (Stateless Closed-Form 3-Stage Tapered Filaments)
-  if (cond.find("rain") != std::string::npos ||
-      cond.find("pouring") != std::string::npos ||
-      cond.find("drizzle") != std::string::npos ||
-      cond.find("thunder") != std::string::npos ||
-      cond.find("lightning") != std::string::npos) {
-    const bool is_heavy = (cond == "pouring" || cond.find("heavy") != std::string::npos ||
-                           cond.find("thunder") != std::string::npos || cond.find("lightning") != std::string::npos);
-
-    const int active_count = is_heavy ? 54 : 38;
-    const float spd_mult   = is_heavy ? 1.28f : 1.0f;
-    const float len_mult   = is_heavy ? 1.18f : 1.0f;
-    const float slant      = is_heavy ? 0.19f : 0.14f;
-    const float h_scale    = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
-    const float s_scale    = scale_min_f(1.0f);
-    const float start_y    = -24.0f * s_scale;
-    const float fade_zone  = 42.0f * h_scale;
-
-    const esphome::Color b0_tail  = is_night ? esphome::Color( 32,  50,  76) : esphome::Color( 54,  82, 118);
-    const esphome::Color b0_tip   = is_night ? esphome::Color( 58,  88, 128) : esphome::Color( 82, 118, 162);
-    const esphome::Color b1_tail  = is_night ? esphome::Color( 42,  66,  98) : esphome::Color( 62,  94, 134);
-    const esphome::Color b1_shaft = is_night ? esphome::Color( 76, 114, 162) : esphome::Color( 98, 140, 188);
-    const esphome::Color b1_tip   = is_night ? esphome::Color(118, 164, 218) : esphome::Color(144, 190, 238);
-    const esphome::Color b2_tail  = is_night ? esphome::Color( 52,  82, 120) : esphome::Color( 74, 110, 154);
-    const esphome::Color b2_shaft = is_night ? esphome::Color( 98, 144, 198) : esphome::Color(122, 168, 218);
-    const esphome::Color b2_tip   = is_night ? esphome::Color(168, 214, 255) : esphome::Color(196, 232, 255);
-
-    // Closed-form wall-clock trajectories (zero mutable dt state, immune to frame-interval jitter):
-    //   - 44% Tier 0 (upper/mid-sky rain curtain dissolving mid-sky),
-    //   - 33% Tier 1 (full-height mid-ground rain),
-    //   - 22% Tier 2 (long foreground anime filaments).
-    for (int i = 0; i < active_count; i++) {
-      const int mod_t = i % 9;
-      const uint8_t tier = (mod_t < 4) ? 0 : ((mod_t < 7) ? 1 : 2);
-      const float u_spd  = hash2d_01(i * 37 + 11, 19);
-      const float u_maxy = hash2d_01(i * 53 + 7, 31);
-
-      float base_spd = 0.0f;
-      float max_y = 0.0f;
-      if (tier == 0) {
-        base_spd = (250.0f + u_spd * 70.0f) * h_scale;
-        max_y    = static_cast<float>(scale_y(165)) + u_maxy * static_cast<float>(scale_y(105));
-      } else if (tier == 1) {
-        base_spd = (320.0f + u_spd * 85.0f) * h_scale;
-        max_y    = static_cast<float>(SCREEN_H - scale_y(25));
-      } else {
-        base_spd = (390.0f + u_spd * 95.0f) * h_scale;
-        max_y    = static_cast<float>(SCREEN_H - scale_y(15));
-      }
-
-      const float cycle_h = max_y - start_y;
-      const float spd_y   = base_spd * spd_mult;
-      const double init_phase = std::fmod(static_cast<double>(i) * 0.618033988749895 +
-                                          static_cast<double>(u_maxy) * 0.23, 1.0);
-      const double cycle_h_d  = static_cast<double>(cycle_h);
-      const double total_y_d  = now_s * static_cast<double>(spd_y) + init_phase * cycle_h_d;
-      const uint32_t pass_idx = static_cast<uint32_t>(std::fmod(std::floor(total_y_d / cycle_h_d), 65536.0));
-      const float local_y     = static_cast<float>(std::fmod(total_y_d, cycle_h_d));
-      const float drop_y      = start_y + local_y;
-
-      // Stratified 14-sector horizontal spawning with windward span compensation so diagonal streaks
-      // cover left-to-right bezel uniformly without mid-air wraparound.
-      const int pass_seed   = static_cast<int>(pass_idx * 59U + static_cast<uint32_t>(i) * 97U);
-      const int sector      = (i * 5 + static_cast<int>(pass_idx * 3U)) % 14;
-      const float drift_w   = cycle_h * slant;
-      const float sector_w  = (static_cast<float>(SCREEN_W - 24) + drift_w) * (1.0f / 14.0f);
-      const float x_spawn   = 12.0f + (static_cast<float>(sector) + 0.12f + hash2d_01(pass_seed, 13) * 0.76f) * sector_w;
-      const float drop_x    = x_spawn - local_y * slant;
-
-      const float u_len    = hash2d_01(pass_seed, 29);
-      const float base_len = (tier == 0) ? (18.0f + u_len * 8.0f)
-                           : ((tier == 1) ? (24.0f + u_len * 10.0f) : (32.0f + u_len * 12.0f));
-      const float cur_len  = base_len * len_mult * s_scale;
-      const float depth_par = (tier == 2) ? 0.80f : ((tier == 1) ? 0.50f : 0.25f);
-
-      const int hx = static_cast<int>(drop_x + par_x * depth_par);
-      const int hy = static_cast<int>(drop_y + par_y * depth_par);
-      const int tx = hx + static_cast<int>(cur_len * slant);
-      const int ty = hy - static_cast<int>(cur_len);
-
-      if (!is_inside_bezel(hx, hy, cy, 6) || !is_inside_bezel(tx, ty, cy, 6)) continue;
-
-      float fade = 1.0f;
-      const bool fading = (max_y - drop_y) < fade_zone;
-      if (fading) {
-        fade = fmaxf(0.15f, (max_y - drop_y) / fade_zone);
-      }
-
-      // 3-Stage Anime Filament Taper:
-      //   Segment 1 (tx,ty -> m1x,m1y): Faint misty upper tail dissolving into sky
-      //   Segment 2 (m1x,m1y -> m2x,m2y): Translucent silver-blue shaft
-      //   Segment 3 (m2x,m2y -> hx,hy): Crisp, luminous silver-white water tip (strictly 1px thin!)
-      const int m1x = tx + ((hx - tx) * 45) / 100;
-      const int m1y = ty + ((hy - ty) * 45) / 100;
-      const int m2x = tx + ((hx - tx) * 78) / 100;
-      const int m2y = ty + ((hy - ty) * 78) / 100;
-
-      if (tier == 0) {
-        const esphome::Color c_tail = fading ? scale_color(b0_tail, fade) : b0_tail;
-        const esphome::Color c_tip  = fading ? scale_color(b0_tip,  fade) : b0_tip;
-        fast_line(it, tx, ty, m1x, m1y, c_tail);
-        fast_line(it, m1x, m1y, hx, hy, c_tip);
-      } else if (tier == 1) {
-        const esphome::Color c_tail  = fading ? scale_color(b1_tail,  fade) : b1_tail;
-        const esphome::Color c_shaft = fading ? scale_color(b1_shaft, fade) : b1_shaft;
-        const esphome::Color c_tip   = fading ? scale_color(b1_tip,   fade) : b1_tip;
-        fast_line(it, tx, ty, m1x, m1y, c_tail);
-        fast_line(it, m1x, m1y, m2x, m2y, c_shaft);
-        fast_line(it, m2x, m2y, hx, hy, c_tip);
-      } else {
-        const esphome::Color c_tail  = fading ? scale_color(b2_tail,  fade) : b2_tail;
-        const esphome::Color c_shaft = fading ? scale_color(b2_shaft, fade) : b2_shaft;
-        const esphome::Color c_tip   = fading ? scale_color(b2_tip,   fade) : b2_tip;
-        fast_line(it, tx, ty, m1x, m1y, c_tail);
-        fast_line(it, m1x, m1y, m2x, m2y, c_shaft);
-        fast_line(it, m2x, m2y, hx, hy, c_tip);
-      }
-    }
-
-    // Subtle Ghibli Water-Surface Splash Ripples along the Horizon Divider Line
-    int num_splashes = is_heavy ? 5 : 3;
-    const int splash_y = scale_y(309);
-    esphome::Color splash_c = is_night ? esphome::Color(86, 128, 178) : esphome::Color(115, 160, 210);
-    for (int s = 0; s < num_splashes; s++) {
-      uint32_t sp_t = (now_ms + static_cast<uint32_t>(s) * 210U);
-      uint32_t sp_cycle = sp_t / 650U;
-      float sp_p = static_cast<float>(sp_t % 650U) * (1.0f / 650.0f);
-      if (sp_p < 0.65f) {
-        int sp_x = scale_x(96) + static_cast<int>(hash2d_01(static_cast<int>(sp_cycle * 31U + s * 17U), 23) * static_cast<float>(SCREEN_W - 2 * scale_x(96)));
-        int rx_sp = 2 + static_cast<int>(sp_p * scale_min_f(8.0f));
-        esphome::Color rc = scale_color(splash_c, 1.0f - (sp_p * 1.45f));
-        fast_hline(it, sp_x - rx_sp, splash_y, rx_sp * 2 + 1, rc);
-        if (sp_p < 0.30f) {
-          fast_pixel(it, sp_x - 2, splash_y - 2, rc);
-          fast_pixel(it, sp_x + 2, splash_y - 2, rc);
+        const float lum_scale = (is_night ? 0.72f : 1.0f) * precip_alpha;
+        esphome::Color c_leaf, c_vein;
+        const int pal_id = i & 3;
+        if (pal_id == 0) {
+          c_leaf = scale_color(esphome::Color(110, 182, 82), lum_scale);
+          c_vein = scale_color(esphome::Color(165, 225, 130), lum_scale);
+        } else if (pal_id == 1) {
+          c_leaf = scale_color(esphome::Color(235, 188, 48), lum_scale);
+          c_vein = scale_color(esphome::Color(255, 230, 120), lum_scale);
+        } else if (pal_id == 2) {
+          c_leaf = scale_color(esphome::Color(228, 118, 42), lum_scale);
+          c_vein = scale_color(esphome::Color(255, 175, 95), lum_scale);
+        } else {
+          c_leaf = scale_color(esphome::Color(82, 152, 92), lum_scale);
+          c_vein = scale_color(esphome::Color(135, 205, 145), lum_scale);
         }
+        draw_tumbling_leaf_3d(it, {lx_3d + par_x * 0.7f, ly_3d + par_y * 0.7f, lz_3d},
+                              rx, ry, rz, 1.05f, c_leaf, c_vein, cy);
       }
     }
   }
-  // LAYER 1I: 3D HELICAL SNOWFALL (Full-Width Edge-to-Edge Coverage + Per-Pass Re-Seeded Paths)
-  if (cond.find("snow") != std::string::npos || cond.find("sleet") != std::string::npos) {
-    const float t_sec = static_cast<float>(std::fmod(now_s, kPhaseWrap));
-    esphome::Color c_core(255, 255, 255);
-    esphome::Color c_arm2 = is_night ? esphome::Color(215, 235, 255) : esphome::Color(230, 245, 255);
-    esphome::Color c_tip2 = is_night ? esphome::Color(160, 195, 235) : esphome::Color(180, 215, 245);
-    esphome::Color c_tip1 = is_night ? esphome::Color(180, 215, 245) : esphome::Color(195, 225, 250);
 
-    for (int i = 0; i < 40; i++) {
-      int perm_i = (i * 13 + 5) % 40;
-      float depth_u = static_cast<float>(i % 5) * 0.25f; // 0.0 (far) .. 1.0 (near-glass)
-      float depth_par = 0.28f + 0.65f * depth_u;
-      float spd_y = 28.0f + depth_u * 18.0f + hash2d_01(perm_i * 19 + 3, 23) * 16.0f;
-      float cycle_h = static_cast<float>(SCREEN_H - 20);
+  // 2E. 2-Layer Depth-of-Field Rain (Far Misty Veil + Near Hero Streaks)
+  if (is_rain) {
+    const bool is_drizzle = (cond.find("drizzle") != std::string::npos);
+    const int far_cnt = is_drizzle ? 18 : WeatherParticleEngine::kFarVeilCount;
+    const int near_cnt = is_drizzle ? 14 : (is_heavy_rain ? WeatherParticleEngine::kNearHeroCount : 22);
 
-      float init_phase = fmodf(static_cast<float>(i) * 0.381966011f + static_cast<float>(perm_i) * 0.17f, 1.0f);
-      const double cycle_h_d = static_cast<double>(cycle_h);
-      const double total_y_d = now_s * static_cast<double>(spd_y) + static_cast<double>(init_phase) * cycle_h_d;
-      uint32_t pass_idx = static_cast<uint32_t>(std::fmod(total_y_d / cycle_h_d, 65536.0));
-      float local_y = static_cast<float>(std::fmod(total_y_d, cycle_h_d));
+    const esphome::Color far_col  = is_night ? esphome::Color(126, 166, 214) : esphome::Color(156, 196, 238);
+    const esphome::Color near_tail= is_night ? esphome::Color(112, 158, 212) : esphome::Color(142, 188, 236);
+    const esphome::Color near_head= is_night ? esphome::Color(204, 234, 255) : esphome::Color(228, 246, 255);
 
-      int pass_seed = static_cast<int>(pass_idx * 43U + static_cast<uint32_t>(i) * 97U);
-      float rx_u  = hash2d_01(pass_seed, 13);
-      float phase = hash2d_01(pass_seed, 41) * (2.0f * PI_F);
+    // Layer 1: Far misty veil (90-140 px/s, soft low-alpha ~25-38 Q8 streaks)
+    for (int i = 0; i < far_cnt; i++) {
+      RainStreak &st = eng.far_veil[i];
+      st.y += st.vy * dt_s;
+      st.x -= st.vy * rain_slant * dt_s;
+      if (st.y - st.len > static_cast<float>(SCREEN_H - 6)) {
+        st.pass_seq++;
+        spawn_rain_streak(st, i, 13, false, is_heavy_rain, rain_slant, false);
+      }
+      const int hx = static_cast<int>(st.x + par_x * 0.25f);
+      const int hy = static_cast<int>(st.y + par_y * 0.25f);
+      const int tx = hx + static_cast<int>(st.len * rain_slant);
+      const int ty = hy - static_cast<int>(st.len);
+      const int a_head = static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha);
+      const int a_tail = static_cast<int>(static_cast<float>(st.alpha_peak) * 0.32f * precip_alpha);
+      draw_tapered_streak_q8(it, fb, tx, ty, hx, hy, far_col, far_col, a_tail, a_head, cy);
+    }
 
-      float base_lane = (static_cast<float>(perm_i) + (rx_u - 0.5f) * 2.5f) * (1.0f / 40.0f);
-      float swirl_ang = t_sec * (1.15f + 0.35f * depth_u) + phase;
-      const int snow_span_w = SCREEN_W - 24;
-      int sx = 12 + static_cast<int>(base_lane * static_cast<float>(snow_span_w) + fast_sin(swirl_ang) * (7.0f + 5.0f * depth_u) + par_x * depth_par);
-      int sy = 12 + static_cast<int>(local_y + par_y * depth_par);
-      while (sx < 10)  sx += snow_span_w;
+    // Layer 2: Near hero streaks (160-220 px/s, 45-65 px head-to-tail alpha taper -> >= 45% overlap at 12.5 FPS)
+    for (int i = 0; i < near_cnt; i++) {
+      RainStreak &st = eng.near_hero[i];
+      st.y += st.vy * dt_s;
+      st.x -= st.vy * rain_slant * dt_s;
+      if (st.y - st.len > static_cast<float>(SCREEN_H - 4)) {
+        st.pass_seq++;
+        spawn_rain_streak(st, i, 15, true, is_heavy_rain, rain_slant, false);
+      }
+      const int hx = static_cast<int>(st.x + par_x * 0.72f);
+      const int hy = static_cast<int>(st.y + par_y * 0.72f);
+      const int tx = hx + static_cast<int>(st.len * rain_slant);
+      const int ty = hy - static_cast<int>(st.len);
+      const int a_head = static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha);
+      const int a_tail = static_cast<int>(10.0f * precip_alpha);
+      draw_tapered_streak_q8(it, fb, tx, ty, hx, hy, near_tail, near_head, a_tail, a_head, cy);
+    }
+  }
+
+  // 2F. Helical Snowfall (monotonic dt_s integration + Q8 alpha modulation)
+  if (is_snow) {
+    const esphome::Color c_core(255, 255, 255);
+    const esphome::Color c_arm  = is_night ? esphome::Color(215, 235, 255) : esphome::Color(230, 245, 255);
+    const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
+    const float cycle_h = static_cast<float>(std::max(40, SCREEN_H - 20));
+    const int snow_span_w = std::max(24, SCREEN_W - 24);
+
+    for (int i = 0; i < WeatherParticleEngine::kSnowCount; i++) {
+      const int perm_i = (i * 13 + 5) % WeatherParticleEngine::kSnowCount;
+      const float depth_u = static_cast<float>(i % 5) * 0.25f;
+      const float depth_par = 0.28f + 0.65f * depth_u;
+      const float spd_y = (28.0f + depth_u * 18.0f + hash2d_01(perm_i * 19 + 3, 23) * 16.0f) * h_scale;
+
+      eng.snow_y[i] += spd_y * dt_s;
+      if (eng.snow_y[i] >= cycle_h) {
+        eng.snow_y[i] -= cycle_h;
+        eng.snow_pass[i]++;
+      }
+
+      const int pass_seed = static_cast<int>(eng.snow_pass[i] * 43U + static_cast<uint32_t>(i) * 97U);
+      const float rx_u  = hash2d_01(pass_seed, 13);
+      const float phase = hash2d_01(pass_seed, 41) * (2.0f * PI_F);
+      const float base_lane = (static_cast<float>(perm_i) + (rx_u - 0.5f) * 2.5f) * (1.0f / 40.0f);
+      const float swirl_ang = eng.phase_s * (1.15f + 0.35f * depth_u) + phase;
+      int sx = 12 + static_cast<int>(base_lane * static_cast<float>(snow_span_w) +
+                                     fast_sin(swirl_ang) * (7.0f + 5.0f * depth_u) + par_x * depth_par);
+      const int sy = 12 + static_cast<int>(eng.snow_y[i] + par_y * depth_par);
+      while (sx < 10) sx += snow_span_w;
       while (sx > SCREEN_W - 10) sx -= snow_span_w;
       if (!is_inside_bezel(sx, sy, cy, 6)) continue;
 
       if (depth_u >= 0.85f) {
-        fast_pixel(it, sx, sy, c_core);
-        fast_pixel(it, sx + 1, sy, c_arm2); fast_pixel(it, sx + 2, sy, c_tip2);
-        fast_pixel(it, sx - 1, sy, c_arm2); fast_pixel(it, sx - 2, sy, c_tip2);
-        fast_pixel(it, sx, sy + 1, c_arm2); fast_pixel(it, sx, sy + 2, c_tip2);
-        fast_pixel(it, sx, sy - 1, c_arm2); fast_pixel(it, sx, sy - 2, c_tip2);
-        fast_pixel(it, sx + 1, sy + 1, c_tip2); fast_pixel(it, sx - 1, sy - 1, c_tip2);
-        fast_pixel(it, sx + 1, sy - 1, c_tip2); fast_pixel(it, sx - 1, sy + 1, c_tip2);
+        const int a_hi  = static_cast<int>(236.0f * precip_alpha);
+        const int a_mid = static_cast<int>(168.0f * precip_alpha);
+        const int a_tip = static_cast<int>(108.0f * precip_alpha);
+        blend_sky_pixel_q8(it, fb, sx, sy, c_core, a_hi);
+        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_mid);
+        blend_sky_pixel_q8(it, fb, sx - 1, sy, c_arm, a_mid);
+        blend_sky_pixel_q8(it, fb, sx, sy + 1, c_arm, a_mid);
+        blend_sky_pixel_q8(it, fb, sx, sy - 1, c_arm, a_mid);
+        blend_sky_pixel_q8(it, fb, sx + 2, sy, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx - 2, sy, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx, sy + 2, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx, sy - 2, c_arm, a_tip);
       } else if (depth_u >= 0.45f) {
-        fast_pixel(it, sx, sy, c_core);
-        fast_pixel(it, sx + 1, sy, c_tip1);
-        fast_pixel(it, sx - 1, sy, c_tip1);
-        fast_pixel(it, sx, sy + 1, c_tip1);
-        fast_pixel(it, sx, sy - 1, c_tip1);
+        const int a_hi  = static_cast<int>(210.0f * precip_alpha);
+        const int a_tip = static_cast<int>(126.0f * precip_alpha);
+        blend_sky_pixel_q8(it, fb, sx, sy, c_core, a_hi);
+        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx - 1, sy, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx, sy + 1, c_arm, a_tip);
+        blend_sky_pixel_q8(it, fb, sx, sy - 1, c_arm, a_tip);
       } else {
-        uint8_t db = static_cast<uint8_t>(165.0f + 45.0f * depth_u);
-        esphome::Color c_far(static_cast<uint8_t>(db * 0.85f), static_cast<uint8_t>(db * 0.93f), db);
-        fast_pixel(it, sx, sy, c_far);
-        fast_pixel(it, sx + 1, sy, c_far);
-        fast_pixel(it, sx, sy + 1, c_far);
+        const int a_far = static_cast<int>((125.0f + 45.0f * depth_u) * precip_alpha);
+        blend_sky_pixel_q8(it, fb, sx, sy, c_arm, a_far);
+        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_far / 2);
       }
     }
   }
+
   lap.mark(ProfSect::BG_PRECIP);
 }
 
@@ -2092,7 +2420,7 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
   const int sky_weather_subpage = rs.nav.sky_weather_subpage;
   const auto &now = ctx.now;
   const bool is_24h_format = prefs.is_24h_format;
-  const std::string &weather_sim_opt = ctx.weather_sim_opt;
+  const UiStrView weather_sim_opt = ctx.weather_sim_opt;
 
   const float weather_temp = ws.temperature;
   const float weather_high = ws.high;
@@ -2127,7 +2455,9 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
   const Color col_warm_gold = ctx.col_warm_gold;
 #endif
 
-  // Paint live 3D atmospheric weather sky wallpaper when custom image wallpaper is not active.
+  // Authoritative backdrop precedence (resolve_backdrop_mode):
+  // - Weather Background ON (or simulation active) -> LiveWeatherSky (even if System Wallpaper is loaded)
+  // - Weather Background OFF -> System Wallpaper when loaded, else SolidBlack
   {
     std::string sky_cond = weather_cond_raw;
     bool sky_night = (sun_state == "below_horizon" || sky_cond == "clear-night" ||
@@ -2135,17 +2465,35 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     apply_weather_sim_override(weather_sim_opt, sky_cond, sky_night);
     const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
     const bool sun_ready = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
-    if (!backdrop_active() &&
-        (((!std::isnan(weather_temp) && sun_ready) || sim_override_on) &&
-         format_weather_title(sky_cond) != "Unavailable")) {
-      double sky_moon_cycle = 0.5;
-      compute_synodic_moon_phase(now.is_valid(),
-                                 now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
-                                 moon_phase_raw, sky_moon_cycle);
-      backdrop_active() = true;
-      render_weather_motion_wallpaper(it, cx, cy, ctx.now_ms, sky_cond, sky_night,
-                                      sky_moon_cycle, 0, 0, true,
-                                      rs.hw_accel_x, rs.hw_accel_y, false);
+    const auto &ac = area_ctx_state();
+    const bool has_custom_wallpaper =
+        (!ac.wallpaper_url.empty() && ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+         ctx.home_wallpaper_art.valid());
+    const BackdropMode bd_mode = resolve_backdrop_mode(
+        5, 0, prefs.weather_background, sim_override_on, has_custom_wallpaper);
+
+    if (bd_mode == BackdropMode::LiveWeatherSky) {
+      if (((!std::isnan(weather_temp) && sun_ready) || sim_override_on) &&
+          format_weather_title(sky_cond) != "Unavailable") {
+        double sky_moon_cycle = 0.5;
+        compute_synodic_moon_phase(now.is_valid(),
+                                   now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
+                                   moon_phase_raw, sky_moon_cycle);
+        backdrop_active() = true;
+        render_weather_motion_wallpaper(it, cx, cy, ctx.now_ms, sky_cond, sky_night,
+                                        sky_moon_cycle, 0, 0, true,
+                                        rs.hw_accel_x, rs.hw_accel_y, false);
+      } else if (!backdrop_active()) {
+        if (has_custom_wallpaper) {
+          render_page_wallpaper_base(it, ctx.home_wallpaper_art, true, cx, ctx.col_bg);
+        } else {
+          frame_base(it, ctx.col_bg);
+        }
+      }
+    } else if (bd_mode == BackdropMode::CustomWallpaper) {
+      if (!backdrop_active()) {
+        render_page_wallpaper_base(it, ctx.home_wallpaper_art, true, cx, ctx.col_bg);
+      }
     } else if (!backdrop_active()) {
       frame_base(it, ctx.col_bg);
     }

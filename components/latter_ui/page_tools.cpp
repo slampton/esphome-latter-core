@@ -2189,8 +2189,8 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
              pulse ? ctx.theme_secondary : st.col_white, TextAlign::CENTER, "TIMER EXPIRED");
   fast_print(it, st.cx, scale_y(170), ctx.font_time, st.col_white, TextAlign::CENTER, "00:00");
   const std::string t_lbl = st.va_timer_name.empty()
-                                ? "Time is up!"
-                                : fit_text_to_width_font(st.va_timer_name, scale_x(260), ctx.font_small);
+                                ? std::string("Time is up!")
+                                : fit_text_to_width_font(st.va_timer_name.str(), scale_x(260), ctx.font_small);
   fast_print(it, st.cx, scale_y(230), ctx.font_small, ctx.theme_secondary,
              TextAlign::CENTER, t_lbl.c_str());
 

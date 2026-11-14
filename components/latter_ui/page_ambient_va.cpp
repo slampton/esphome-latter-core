@@ -636,7 +636,7 @@ void render_docked_screensaver(esphome::display::Display &it, const UiFrameConte
   const int cx = st.cx;
   const int cy = st.cy;
   const uint32_t now_ms = st.now_ms;
-  const std::string &ss_style = st.screensaver_style_opt;
+  const UiStrView ss_style = st.screensaver_style_opt;
 
   if (ss_style == "Ambient Clock") {
     static constexpr int8_t kMicroOrbit[12] = {-3, -2, -1, 0, 1, 2, 3, 2, 1, 0, -1, -2};
@@ -685,7 +685,7 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
   const bool is_thinking = !is_speaking &&
                            (st.va_status_text == "Thinking..." || st.va_status_text == "Processing...");
   const bool va_vad_active = st.va_vad_active;
-  const std::string &profile_opt = st.va_visual_profile_opt;
+  const UiStrView profile_opt = st.va_visual_profile_opt;
   const esphome::Color col_white = st.col_white;
   const esphome::Color col_solaris_gold = st.col_solaris_gold;
 
@@ -1527,7 +1527,7 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   const int wrap_max_w = scale_x(280);
   std::string line1;
   std::string line2;
-  std::string clean_msg = sanitize_utf8_for_font(st.notif_message);
+  std::string clean_msg = sanitize_utf8_for_font(st.notif_message.str());
   if (!clean_msg.empty() && ctx.font_small != nullptr) {
     int w = 0, xo = 0, b = 0, th = 0;
     ctx.font_small->measure(clean_msg.c_str(), &w, &xo, &b, &th);
@@ -1556,7 +1556,7 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   }
 
   std::string fit_title = fit_text_to_width_font(
-      st.notif_title.empty() ? "Notification" : st.notif_title, wrap_max_w, ctx.font_date);
+      st.notif_title.empty() ? std::string("Notification") : st.notif_title.str(), wrap_max_w, ctx.font_date);
 
   if (cam_ready) {
     fast_print(it, cx + 1, scale_y(52) + 1, ctx.font_date, st.col_black, TextAlign::CENTER, fit_title.c_str());

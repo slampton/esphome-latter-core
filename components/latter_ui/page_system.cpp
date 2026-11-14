@@ -23,7 +23,7 @@ enum class PowerProfile : uint8_t {
   CUSTOM = 5,
 };
 
-PowerProfile parse_power_profile_local(const std::string &opt) {
+PowerProfile parse_power_profile_local(UiStrView opt) {
   if (opt == "Portable Carry") return PowerProfile::PORTABLE_CARRY;
   if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
   if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
@@ -32,7 +32,7 @@ PowerProfile parse_power_profile_local(const std::string &opt) {
   return PowerProfile::CUSTOM;
 }
 
-const char *power_profile_short_label_local(const std::string &opt) {
+const char *power_profile_short_label_local(UiStrView opt) {
   switch (parse_power_profile_local(opt)) {
     case PowerProfile::PORTABLE_CARRY:       return "Portable";
     case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
@@ -364,7 +364,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     std::snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
     fast_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
-    const bool has_update = is_newer_semver(ctx.fw_latest_ver, version_str);
+    const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
     if (rs.nav.update_check_state == 1) {
       if (now_ms - rs.nav.update_check_timer > 1500U) {
         rs.nav.update_check_state = has_update ? 0 : 2;
@@ -383,7 +383,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
         std::snprintf(buf, sizeof(buf), "Available: v%s", ctx.fw_latest_ver.c_str());
       }
       fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
-      std::string summ = ctx.fw_release_summary;
+      std::string summ = ctx.fw_release_summary.str();
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
@@ -444,7 +444,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       fast_print(it, info_x + w_lbl + 8, ey, font_small, val_col, esphome::display::TextAlign::TOP_LEFT, val);
     };
 
-    const bool has_update = is_newer_semver(ctx.fw_latest_ver, version_str);
+    const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
     if (has_update) {
       std::snprintf(buf, sizeof(buf), "v%s (Update: v%s)", version_str, ctx.fw_latest_ver.c_str());
       print_info_row(84, "Version:", buf, col_gold);
@@ -546,7 +546,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 12) {
     render_page_header(it, cx, "SENSITIVITY", font_small, theme_primary);
-    auto short_sens = [](const std::string &s) -> const char * {
+    auto short_sens = [](UiStrView s) -> const char * {
       if (s == "Slightly sensitive") return "Low";
       if (s == "Very sensitive") return "High";
       return "Medium";

@@ -538,6 +538,18 @@ inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
 //               80 ms (12.5 FPS, min_period = 74 ms, 26 ms post-idle) during speaker audio.
 //   - ESP32-S3: 60 ms (16.7 FPS, min_period = 54 ms, 18 ms post-idle) idle without PSRAM wake-word;
 //               80 ms (12.5 FPS, min_period = 74 ms, 32 ms post-idle) while Octal-PSRAM mww or speaker audio runs.
+inline constexpr uint32_t min_ambient_frame_gap_ms(bool speaker_audio_busy,
+                                                   bool va_busy = false, bool alert_busy = false,
+                                                   bool mww_passive_busy = false) noexcept {
+  if (va_busy || alert_busy) return 120U;
+#if LATTER_CHIP_P4
+  (void)mww_passive_busy;
+  return speaker_audio_busy ? 80U : 60U;
+#else
+  return (speaker_audio_busy || mww_passive_busy) ? 80U : 60U;
+#endif
+}
+
 inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
                                      bool va_busy = false, bool alert_busy = false,
                                      bool mww_passive_busy = false) {

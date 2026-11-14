@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "latter_protocol.h"
 #include "latter_state.h"
@@ -56,10 +57,14 @@ void render_docked_screensaver(esphome::display::Display &it, const UiFrameConte
 // 3. Shared Home / Activity Deck State & Helpers (page_clock_home.cpp + touch_engine.cpp)
 // ------------------------------------------------------------------------------
 static constexpr uint32_t kHomeActivityRotateMs = 8000U;
+static constexpr uint32_t kWakeGreetingHoldMs = 2800U;
+static constexpr uint32_t kWakeGreetingFadeMs = 1200U;
+static constexpr uint32_t kWakeGreetingTotalMs = kWakeGreetingHoldMs + kWakeGreetingFadeMs;
+static constexpr int kMaxHomeActivity = 12;
 
 struct HomeActivityItem {
-  int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar
-  int slot_idx = 0;    // Timer slot (0..2) or Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3)
+  int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar, 6 = Intercom/Doorbell
+  int slot_idx = 0;    // Timer slot (0..2), Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3), or Calendar slot
   bool is_active = false;
   bool urgent_pin = false;
   bool in_deck = true;
@@ -76,8 +81,19 @@ bool &music_queue_cleared();
 int &home_activity_overlay_page();
 uint32_t &wake_greeting_start_ms();
 bool &wake_greeting_latched();
+bool is_wake_greeting_visible(uint32_t now_ms, bool enabled);
 bool is_wake_greeting_fading(uint32_t now_ms, bool enabled);
+void dismiss_wake_greeting();
+bool is_doorbell_or_intercom_active();
 bool is_home_activity_carousel_animating(uint32_t now_ms);
+bool home_activity_slide_active(uint32_t now_ms);
+uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms);
+bool home_activity_band(int &out_y0, int &out_y1);
+const HomeActivityItem *home_activity_rendered_items(int &out_count);
+
+void render_area_archetype_icon(esphome::display::Display &it, int cx, int cy, int r,
+                                std::string_view icon_str, std::string_view area_name_fallback,
+                                esphome::Color color);
 
 int collect_home_activities(
     uint32_t now_ms, bool is_24h_format,
@@ -87,11 +103,11 @@ int collect_home_activities(
     int alarm1_h, int alarm1_m, bool alarm1_en,
     int alarm2_h, int alarm2_m, bool alarm2_en,
     int alarm3_h, int alarm3_m, bool alarm3_en,
-    HomeActivityItem out_items[8],
+    HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour = -1, int cur_min = -1,
     const std::string &calendar_agenda_raw = "");
 
-HomeActivityView resolve_home_activity_view(const HomeActivityItem items[8], int count,
+HomeActivityView resolve_home_activity_view(const HomeActivityItem items[], int count,
                                             uint32_t now_ms, bool two_line);
 int get_activity_overlay_card_y(int vis_count, int row_idx);
 
@@ -101,10 +117,13 @@ int get_activity_overlay_card_y(int vis_count, int row_idx);
 // ------------------------------------------------------------------------------
 
 bool &weather_sim_dirty();
-void apply_weather_sim_override(const std::string &sim_opt, std::string &cond, bool &is_night);
+void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night);
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
 bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0);
+float weather_precip_alpha_scale();
+bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
+                                 bool has_motion_cond);
 void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond, bool is_night,
                                      double moon_cycle = 0.5,

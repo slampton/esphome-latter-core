@@ -114,9 +114,15 @@ namespace WidgetId {
   static constexpr uint16_t HOME_ACTIVITY_PREV = 503;
   static constexpr uint16_t HOME_ACTIVITY_NEXT = 504;
   static constexpr uint16_t HOME_QUICK_BTN     = 505;
+  static constexpr uint16_t HOME_AREA_ICON     = 506;
   static constexpr uint16_t HOME_BRI_SLIDER    = 510;
   static constexpr uint16_t HOME_VOL_SLIDER    = 511;
   static constexpr uint16_t HOME_QUICK_TILE    = 520;  // 520..525
+  static constexpr uint16_t HOME_ACT_ROW_0     = 530;  // param = rendered act_items slot index
+  static constexpr uint16_t HOME_ACT_ACTION_0  = 531;  // param = rendered act_items slot index
+  static constexpr uint16_t HOME_ACT_ROW_1     = 532;  // param = rendered act_items slot index
+  static constexpr uint16_t HOME_ACT_ACTION_1  = 533;  // param = rendered act_items slot index
+  static constexpr uint16_t HOME_ACT_EXPAND    = 534;  // opens Active Items overlay (home_subpage = 2)
 
   // Weather & Forecast (Page 5)
   static constexpr uint16_t WEATHER_MODE_BTN   = 550;
@@ -242,6 +248,53 @@ struct FrameHitTable {
 };
 
 FrameHitTable &frame_hits();
+
+// Registers pixel-exact non-overlapping sub-regions for the Home Activity Card
+// (body rows, per-row quick-action circles, and optional rightmost expand column),
+// stamping each sub-region's param with the exact rendered act_items slot index.
+inline void register_home_activity_hit_regions(FrameHitTable &hits, int cx, int card_cy,
+                                               int card_w, int card_h,
+                                               bool two_rows_rendered, bool has_drop,
+                                               int top_slot, int bot_slot,
+                                               int act_col_w, int drop_col_w) {
+  if (card_w <= 0 || card_h <= 0 || top_slot < 0) return;
+  const int card_x0 = cx - (card_w / 2);
+  const int card_y0 = card_cy - (card_h / 2);
+  const int eff_drop_w = (has_drop && drop_col_w > 0) ? drop_col_w : 0;
+  const int eff_act_w = (act_col_w > 0) ? act_col_w : 0;
+  const int body_w = (card_w - eff_drop_w - eff_act_w > 1) ? (card_w - eff_drop_w - eff_act_w) : 1;
+  const int act_x0 = card_x0 + body_w;
+  const int drop_x0 = card_x0 + card_w - eff_drop_w;
+  constexpr uint8_t kFlags = kHitTap | kHitFocusSlot;
+
+  if (two_rows_rendered && bot_slot >= 0) {
+    const int row0_h = card_h / 2;
+    const int row1_y0 = card_y0 + row0_h;
+    const int row1_h = card_h - row0_h;
+    hits.add_rect(card_x0, card_y0, body_w, row0_h, WidgetId::HOME_ACT_ROW_0, kFlags,
+                  static_cast<int16_t>(top_slot));
+    if (eff_act_w > 0) {
+      hits.add_rect(act_x0, card_y0, eff_act_w, row0_h, WidgetId::HOME_ACT_ACTION_0, kFlags,
+                    static_cast<int16_t>(top_slot));
+    }
+    hits.add_rect(card_x0, row1_y0, body_w, row1_h, WidgetId::HOME_ACT_ROW_1, kFlags,
+                  static_cast<int16_t>(bot_slot));
+    if (eff_act_w > 0) {
+      hits.add_rect(act_x0, row1_y0, eff_act_w, row1_h, WidgetId::HOME_ACT_ACTION_1, kFlags,
+                    static_cast<int16_t>(bot_slot));
+    }
+  } else {
+    hits.add_rect(card_x0, card_y0, body_w, card_h, WidgetId::HOME_ACT_ROW_0, kFlags,
+                  static_cast<int16_t>(top_slot));
+    if (eff_act_w > 0) {
+      hits.add_rect(act_x0, card_y0, eff_act_w, card_h, WidgetId::HOME_ACT_ACTION_0, kFlags,
+                    static_cast<int16_t>(top_slot));
+    }
+  }
+  if (eff_drop_w > 0) {
+    hits.add_rect(drop_x0, card_y0, eff_drop_w, card_h, WidgetId::HOME_ACT_EXPAND, kFlags, 0);
+  }
+}
 
 // ==============================================================================
 // Pure C++20 Multi-Geometry Scaling & Safe-Canvas Engine (320x480 .. 720x720)

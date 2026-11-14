@@ -102,6 +102,7 @@ struct AreaContextState {
   std::string activity_sources = "";     // csv of source keys; empty = not set -> kDefaultActivitySources
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
   std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,thermostat,entry,vacuum")
+  std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
 };
 
 // Protocol v3 active_media state (unread wire fields position_updated_at, supported_features,
@@ -758,6 +759,8 @@ struct NavRuntimeState {
   int menu_scroll_target_page = 1;
   int display_power_state = 0;  // 0 = ACTIVE, 1 = SCREENSAVER, 2 = SCREEN_OFF / STANDBY
   uint32_t sleep_start_time = 0;
+  uint32_t standby_entered_ms = 0;
+  bool wake_greeting_pending = true;
   bool is_hibernating = false;
   int hibernate_countdown_val = 0;
   bool hud_wake_finger_released = true;
@@ -1082,6 +1085,27 @@ inline CalendarState &calendar_state() {
   return st;
 }
 
+inline bool is_roaming_area_indicator_active() {
+  return !LATTER_IS_STATIONARY && persisted_prefs().ble_beacon_enabled &&
+         (!area_ctx_state().area_id.empty() ||
+          (!area_ctx_state().area_name.empty() &&
+           area_ctx_state().area_name != "Unassigned" &&
+           area_ctx_state().area_name != kUnknownGlyph));
+}
+
+inline constexpr uint32_t kStandbyGreetingIdleMs = 1800000U;
+
+inline void note_wake_from_standby(uint32_t now_ms) {
+  auto &nav = runtime_state().nav;
+  const uint32_t start_ms = (nav.sleep_start_time != 0) ? nav.sleep_start_time : nav.standby_entered_ms;
+  nav.standby_entered_ms = 0;
+  if (persisted_prefs().wake_greeting &&
+      start_ms != 0 &&
+      static_cast<uint32_t>(now_ms - start_ms) >= kStandbyGreetingIdleMs) {
+    nav.wake_greeting_pending = true;
+  }
+}
+
 // Zero-allocation tokenizer for \x1f-delimited Protocol v3 payloads
 inline size_t v3_split_fields(std::string_view payload, std::string_view *out, size_t max_fields, char sep = '\x1f') {
   if (payload.empty() || max_fields == 0) return 0;
@@ -1338,6 +1362,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.activity_sources         = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_SOURCES)]);
   st.security_pin_policy      = std::string(f[static_cast<size_t>(AreaCtxField::SECURITY_PIN_POLICY)]);
   st.home_categories          = std::string(f[static_cast<size_t>(AreaCtxField::HOME_CATEGORIES)]);
+  st.area_icon                = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ICON)]);
   return true;
 }
 
@@ -2132,7 +2157,7 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
 // Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
 // ==============================================================================
 static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
-static constexpr uint16_t kHibernateSnapshotVersion = 1U;
+static constexpr uint16_t kHibernateSnapshotVersion = 2U;
 static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
 
 struct HibernateSnapshot {
@@ -2142,6 +2167,7 @@ struct HibernateSnapshot {
   char dock_apps[96]{};
   char theme_color_hex[8]{};
   char area_name[48]{};
+  char area_icon[32]{};
   char weather_condition[24]{};
   float weather_temp = NAN;
   char posix_tz[48]{};
@@ -2201,6 +2227,7 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   copy_bounded_cstr(snap.dock_apps, ac.dock_apps);
   copy_bounded_cstr(snap.theme_color_hex, ac.theme_color_hex);
   copy_bounded_cstr(snap.area_name, ac.area_name);
+  copy_bounded_cstr(snap.area_icon, ac.area_icon);
   copy_bounded_cstr(snap.weather_condition, ws.condition);
   snap.weather_temp = ws.temperature;
   snap.sun_below_horizon = (ws.sun_state == "below_horizon");
@@ -2244,6 +2271,7 @@ inline bool load_hibernate_snapshot_if_cold() {
   snap.dock_apps[sizeof(snap.dock_apps) - 1] = '\0';
   snap.theme_color_hex[sizeof(snap.theme_color_hex) - 1] = '\0';
   snap.area_name[sizeof(snap.area_name) - 1] = '\0';
+  snap.area_icon[sizeof(snap.area_icon) - 1] = '\0';
   snap.weather_condition[sizeof(snap.weather_condition) - 1] = '\0';
   snap.posix_tz[sizeof(snap.posix_tz) - 1] = '\0';
 
@@ -2265,6 +2293,9 @@ inline bool load_hibernate_snapshot_if_cold() {
         runtime_state().area.active_area_name == "Area Control") {
       runtime_state().area.active_area_name = snap.area_name;
     }
+  }
+  if (ac.area_icon.empty() && snap.area_icon[0] != '\0') {
+    ac.area_icon = snap.area_icon;
   }
   if (ac.theme_color_hex.empty() && snap.theme_color_hex[0] != '\0') {
     ac.theme_color_hex = snap.theme_color_hex;

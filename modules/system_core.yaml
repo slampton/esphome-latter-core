@@ -31,6 +31,8 @@ esphome:
             latter_ui::hal_release_pwr_key_wake_pad();
             latter_ui::boot_speaker_off_done() = true;
             rs.nav.sleep_start_time = millis();
+            rs.nav.standby_entered_ms = 0;
+            rs.nav.wake_greeting_pending = true;
             latter_ui::last_screen_wake_ms() = rs.nav.sleep_start_time;
             rs.nav.is_hibernating = false;
             rs.nav.display_power_state = 0; // ACTIVE
@@ -74,6 +76,9 @@ esphome:
               auto &prefs = latter_ui::persisted_prefs();
               if (sv_dom == "area_context") {
                 const auto &st = latter_ui::area_ctx_state();
+                static std::string s_prev_area_icon;
+                const bool area_icon_changed = (st.area_icon != s_prev_area_icon);
+                s_prev_area_icon = st.area_icon;
                 r.area.active_area_name = st.area_name;  // "" without an Area
                 latter_ui::latter_area_label() = st.area_name;
                 const bool was_unassigned = r.area.active_area_id.empty();
@@ -86,6 +91,11 @@ esphome:
                   }
                   r.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
                   latter_ui::area_cat_dock_page() = 0;
+                  latter_ui::mark_dirty_full();
+                } else if (st.area_id.empty() && !r.area.active_area_id.empty()) {
+                  r.area.active_area_id.clear();
+                  latter_ui::mark_dirty_full();
+                } else if (area_icon_changed && r.nav.gui_page == 1) {
                   latter_ui::mark_dirty_full();
                 }
                 {
@@ -378,7 +388,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111303L;
+            constexpr long LATTER_YAML_REV = 2026111304L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -790,6 +800,20 @@ text_sensor:
     lambda: 'return latter_ui::link_report_log_line(millis(), latter_ui::last_reset_reason());'
 
 interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          if (rs.nav.display_power_state != 0) {
+            if (rs.nav.standby_entered_ms == 0) {
+              const uint32_t now_st_ms = millis();
+              rs.nav.standby_entered_ms = (rs.nav.sleep_start_time != 0)
+                                              ? rs.nav.sleep_start_time
+                                              : ((now_st_ms != 0) ? now_st_ms : 1U);
+            }
+          } else if (rs.nav.standby_entered_ms != 0) {
+            latter_ui::note_wake_from_standby(millis());
+          }
   - interval: 60s
     then:
       - lambda: |-
@@ -1262,7 +1286,13 @@ script:
     mode: restart
     then:
       - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_ui::runtime_state();
+          if (rs.nav.display_power_state == 0 && rs.nav.standby_entered_ms != 0) {
+            latter_ui::note_wake_from_standby(millis());
+          } else if (rs.nav.display_power_state == 1 && rs.nav.standby_entered_ms == 0) {
+            const uint32_t now_st_ms = millis();
+            rs.nav.standby_entered_ms = (now_st_ms != 0) ? now_st_ms : 1U;
+          }
           const auto &prefs = latter_ui::persisted_prefs();
           auto parse_bri = [](std::string_view opt) -> float {
             if (opt == "60%") return 0.60f;

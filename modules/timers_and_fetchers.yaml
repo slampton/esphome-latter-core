@@ -118,27 +118,27 @@ interval:
           // Dynamic Atmospheric Motion Wallpaper (Home & Sky/Weather) with Music-Priority Cadence
           const std::string_view sim_cond_opt(latter_ui::pref_weather_sim_cstr());
           const bool weather_sim_active = (sim_cond_opt != "Live (Home Assistant)");
-          const bool weather_canvas_visible = prefs.weather_background || weather_sim_active;
           const uint32_t now_w_ms = now_tick_ms;
           const auto &ac_wall = latter_ui::area_ctx_state();
           const bool custom_wallpaper_active =
               !ac_wall.wallpaper_url.empty() &&
               ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
               id(home_wallpaper_art).get_width() > 0;
+          const latter_ui::BackdropMode bd_mode_w = latter_ui::resolve_backdrop_mode(
+              rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
+              weather_sim_active, custom_wallpaper_active);
+          const bool sky_enabled_here = (bd_mode_w == latter_ui::BackdropMode::LiveWeatherSky);
           const bool home_card_rotate_window =
               (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
-               latter_ui::activity_source_mask() != 0U &&
-               ((latter_ui::kHomeActivityRotateMs - (now_w_ms % latter_ui::kHomeActivityRotateMs)) <= 300U ||
-                (now_w_ms % latter_ui::kHomeActivityRotateMs) <= 250U));
-          const bool ui_overlay_animating =
-              latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting) ||
-              latter_ui::is_home_activity_carousel_animating(now_w_ms) ||
-              home_card_rotate_window;
+               latter_ui::home_activity_next_rotate_due_ms(now_w_ms) > 0U &&
+               (latter_ui::home_activity_next_rotate_due_ms(now_w_ms) <= 120U ||
+                (now_w_ms % latter_ui::kHomeActivityRotateMs) <= 220U));
+          const bool greet_fading_w = latter_ui::is_wake_greeting_fading(now_w_ms, prefs.wake_greeting);
+          const bool act_sliding_w = latter_ui::home_activity_slide_active(now_w_ms);
+          const bool ui_overlay_animating = greet_fading_w || act_sliding_w || home_card_rotate_window;
           const bool home_weather_active =
-              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 &&
-               ((weather_canvas_visible && !custom_wallpaper_active) || ui_overlay_animating));
-          const bool app_weather_active =
-              (rs.nav.gui_page == 5 && !custom_wallpaper_active);
+              (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0 && (sky_enabled_here || ui_overlay_animating));
+          const bool app_weather_active = (rs.nav.gui_page == 5 && sky_enabled_here);
           if (id(display_brightness).current_values.is_on() && rs.nav.display_power_state == 0 &&
               (home_weather_active || app_weather_active) &&
               !rs.voice.active && rs.voice.status_text.empty()) {
@@ -148,7 +148,6 @@ interval:
             static uint32_t last_cond_eval_time = 0;
             static bool last_sky_enabled = false;
             static bool cached_has_motion = false;
-            const bool sky_enabled_here = app_weather_active || (weather_canvas_visible && !custom_wallpaper_active);
             const bool sim_just_changed = latter_ui::weather_sim_dirty() ||
                                           (sky_enabled_here != last_sky_enabled) ||
                                           (latter_ui::last_ambient_anim_ms() == 0U);
@@ -162,23 +161,20 @@ interval:
               const bool sun_ok = (!s_sun.empty() && s_sun != "unknown" && s_sun != "unavailable");
               bool is_night_time = (s_sun == "below_horizon" || c_cond == "clear-night" || c_cond == "clearnight" ||
                                     (c_cond.find("night") != std::string::npos));
-              latter_ui::apply_weather_sim_override(
-                  std::string(sim_cond_opt), c_cond, is_night_time);
+              latter_ui::apply_weather_sim_override(sim_cond_opt, c_cond, is_night_time);
               cached_has_motion = sky_enabled_here && (sun_ok || weather_sim_active) &&
                                   latter_ui::has_weather_motion(c_cond, is_night_time, now_w_ms);
             }
 
+            // Dock window swipes keep weather stepping smoothly (never freeze sky during dock animation)
             const bool touch_busy =
-                latter_ui::touch_gesture().active ||
-                latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
-                rs.nav.menu_scroll_active;
-            // Battery render budget: weather motion runs on USB, while held/tilted, and for 35 s after wake/touch
-            // (covering normal 15 s / 30 s handheld screen timeouts without freezing after the 10.5 s wake greeting).
+                latter_ui::touch_gesture().active || rs.nav.menu_scroll_active;
             const uint32_t latest_input_ms = std::max(
                 latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
-            const bool motion_budget_ok =
-                latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_w_ms, latest_input_ms);
-            if (!touch_busy && (sim_just_changed || ui_overlay_animating || (cached_has_motion && motion_budget_ok))) {
+            const bool sky_stepping =
+                sky_enabled_here &&
+                latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, now_w_ms, latest_input_ms, cached_has_motion);
+            if (!touch_busy && (sim_just_changed || ui_overlay_animating || sky_stepping)) {
               anim_driving_disp = true;
               const bool speaker_audio_busy =
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -188,11 +184,20 @@ interval:
                   id(announcement_mixing_input).is_running() ||
                   id(sound_mixing_input).is_running();
               const bool mww_passive_busy = !speaker_audio_busy && !LATTER_CHIP_P4 && id(mww).is_running();
-              if (sim_just_changed || latter_ui::should_step_ambient_anim(
-                                          now_w_ms, speaker_audio_busy,
-                                          rs.voice.active || !rs.voice.status_text.empty(),
-                                          rs.alarms.ringing || rs.timers.ringing,
-                                          mww_passive_busy)) {
+              if (greet_fading_w || act_sliding_w) {
+                int ay0 = 0, ay1 = 0;
+                if (!greet_fading_w && !sky_stepping && latter_ui::home_activity_band(ay0, ay1)) {
+                  latter_ui::schedule_anim_band_disp_update(&id(disp1), ay0, ay1);
+                } else {
+                  latter_ui::schedule_anim_disp_update(&id(disp1));
+                }
+              } else if (sim_just_changed ||
+                         (!latter_ui::DisplayUpdateScheduler::weather_step_pending(now_w_ms) &&
+                          latter_ui::should_step_ambient_anim(
+                              now_w_ms, speaker_audio_busy,
+                              rs.voice.active || !rs.voice.status_text.empty(),
+                              rs.alarms.ringing || rs.timers.ringing,
+                              mww_passive_busy))) {
                 latter_ui::record_ambient_frame_ms(now_w_ms);
                 latter_ui::schedule_anim_disp_update(&id(disp1));
               }
@@ -246,9 +251,12 @@ interval:
                 !ac_wall_f.wallpaper_url.empty() &&
                 ac_wall_f.wallpaper_url == rs.music.loaded_wallpaper_url &&
                 id(home_wallpaper_art).get_width() > 0;
+            const latter_ui::BackdropMode bd_mode_f = latter_ui::resolve_backdrop_mode(
+                rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
+                weather_sim_active_f, custom_wallpaper_active_f);
             const bool sky_canvas_active_f =
-                !rs.voice.active && rs.voice.status_text.empty() && !custom_wallpaper_active_f &&
-                ((on_home_main && (prefs.weather_background || weather_sim_active_f)) || rs.nav.gui_page == 5);
+                !rs.voice.active && rs.voice.status_text.empty() &&
+                (bd_mode_f == latter_ui::BackdropMode::LiveWeatherSky);
             if (sky_canvas_active_f && rs.hw_motion_mag > 0.055f) {
               latter_ui::last_user_touch_ms() = now_fast_ms;
             }
@@ -260,19 +268,21 @@ interval:
                 const bool sun_ok_f = (!s_sun_f.empty() && s_sun_f != "unknown" && s_sun_f != "unavailable");
                 bool is_night_f = (s_sun_f == "below_horizon" || c_cond_f == "clear-night" || c_cond_f == "clearnight" ||
                                    (c_cond_f.find("night") != std::string::npos));
-                latter_ui::apply_weather_sim_override(std::string(sim_cond_opt_f), c_cond_f, is_night_f);
+                latter_ui::apply_weather_sim_override(sim_cond_opt_f, c_cond_f, is_night_f);
                 const uint32_t latest_in_f = std::max(
                     latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
                 sky_motion_due =
                     (sun_ok_f || weather_sim_active_f) &&
-                    latter_ui::has_weather_motion(c_cond_f, is_night_f, now_fast_ms) &&
-                    latter_ui::battery_motion_allowed(rs.hw_usb_connected, now_fast_ms, latest_in_f);
+                    latter_ui::weather_sky_motion_stepping(
+                        rs.hw_usb_connected, now_fast_ms, latest_in_f,
+                        latter_ui::has_weather_motion(c_cond_f, is_night_f, now_fast_ms));
               }
               const uint32_t greet_age_ms = now_fast_ms - latter_ui::wake_greeting_start_ms();
               const bool greet_fade_due =
                   prefs.wake_greeting && latter_ui::wake_greeting_latched() &&
                   on_home_main &&
-                  (greet_age_ms >= 7650U && greet_age_ms <= 10750U);
+                  (greet_age_ms >= (latter_ui::kWakeGreetingHoldMs - 260U) &&
+                   greet_age_ms <= (latter_ui::kWakeGreetingTotalMs + 250U));
               const bool tool_anim_due =
                   (rs.nav.gui_page == 8) &&
                   ((rs.nav.tools_subpage == 3 && rs.stopwatch.running) ||

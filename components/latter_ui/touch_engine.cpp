@@ -179,6 +179,28 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
         if (rs.alarms.ringing_idx == s_idx) rs.alarms.snooze_until = 0;
         save_persisted_prefs();
       }
+    } else if (kind == 6) {
+      auto &ac = area_ctx_state();
+      if (cam_call_active() || cam_intercom_ptt_active()) {
+        rt.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+      }
+      if (cam_listen_active()) {
+        cam_listen_active() = false;
+        rs.intercom.cam_action = "listen_stop";
+        rt.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+        rt.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
+      }
+      if (!ac.doorbell_talk_state.empty() && ac.doorbell_talk_state != "idle" &&
+          ac.doorbell_talk_state != "off" && ac.doorbell_talk_state != "none") {
+        rs.intercom.cam_action = "hangup";
+        rt.cmd(UiHostCmd::SEND_DOORBELL_INTERCOM_CMD);
+        rt.cmd(UiHostCmd::STOP_DOORBELL_CALL);
+        ac.doorbell_talk_state = "idle";
+      }
+      if (rs.voice.intercom_turn) {
+        rs.voice.intercom_turn = false;
+        rt.cmd(UiHostCmd::CANCEL_VOICE_ASSISTANT);
+      }
     }
     rt.schedule_disp();
     return;
@@ -219,6 +241,23 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     cal_quick_add_open() = false;
     rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR) = 1;
     rt.cmd(UiHostCmd::FETCH_CALENDAR_BROWSE);
+  } else if (kind == 6) {
+    const auto &ac = area_ctx_state();
+    const bool db_live = !ac.doorbell_talk_state.empty() &&
+                         ac.doorbell_talk_state != "idle" &&
+                         ac.doorbell_talk_state != "off" &&
+                         ac.doorbell_talk_state != "none" &&
+                         ac.doorbell_talk_state != "unavailable" &&
+                         ac.doorbell_talk_state != "unknown";
+    tools_direct_home() = true;
+    cam_quick_reply_open() = false;
+    rs.nav.gui_page = PageId::TOOLS;
+    if (db_live || cam_call_active() || cam_listen_active()) {
+      rs.nav.tools_subpage = ToolsSubpage::CAMERAS;
+      rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+    } else {
+      rs.nav.tools_subpage = ToolsSubpage::INTERCOM;
+    }
   }
   mark_dirty_full();
   rt.schedule_disp();
@@ -731,6 +770,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   // Page 1: Home Dashboard & Dock Settings / Activity Overlay
   if (rs.nav.gui_page == PageId::HOME) {
+    if (wake_greeting_latched() || rs.nav.wake_greeting_pending) {
+      dismiss_wake_greeting();
+      rt_.schedule_disp();
+    }
+
     if (rs.nav.home_subpage == 1) {
       if (wid == WidgetId::BACK_BUTTON) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
@@ -753,20 +797,25 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
 
-    HomeActivityItem act_items[8];
-    const auto &ms_hm = media_state();
-    const bool m_play = is_music_playing_effective(
-        !ms_hm.is_local, rt_.local_mp_playing, ms_hm.state, now_touch);
-    const std::string &m_t = (!ms_hm.is_local || rt_.track_title.empty()) ? ms_hm.title : rt_.track_title;
-    const std::string &m_a = (!ms_hm.is_local || rt_.track_artist.empty()) ? ms_hm.artist : rt_.track_artist;
-    const int act_count = collect_home_activities(
-        now_touch, prefs.is_24h_format,
-        rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
-        m_play, m_t, m_a, rs.alarms.snooze_until,
-        prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
-        prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
-        prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
-        act_items, rt_.time_hour, rt_.time_minute, calendar_state().summary);
+    int act_count = 0;
+    const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
+    HomeActivityItem fallback_items[kMaxHomeActivity];
+    if (act_count <= 0) {
+      const auto &ms_hm = media_state();
+      const bool m_play = is_music_playing_effective(
+          !ms_hm.is_local, rt_.local_mp_playing, ms_hm.state, now_touch);
+      const std::string &m_t = (!ms_hm.is_local || rt_.track_title.empty()) ? ms_hm.title : rt_.track_title;
+      const std::string &m_a = (!ms_hm.is_local || rt_.track_artist.empty()) ? ms_hm.artist : rt_.track_artist;
+      act_count = collect_home_activities(
+          now_touch, prefs.is_24h_format,
+          rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
+          m_play, m_t, m_a, rs.alarms.snooze_until,
+          prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
+          prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
+          prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
+          fallback_items, rt_.time_hour, rt_.time_minute, calendar_state().summary);
+      act_items = fallback_items;
+    }
 
     if (rs.nav.home_subpage == 2) {
       if (wid == WidgetId::BACK_BUTTON) {
@@ -810,7 +859,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
 
-    // Home subpage 0: Hero zones & Activity Card (Dock slots resolve on_touch_up so dock swipe works!)
+    // Home subpage 0: Hero zones, Roaming Area icon & FrameHitTable Activity sub-regions
+    // (Dock slots resolve on_touch_up so dock swipe works!)
     if (wid == WidgetId::HOME_QUICK_BTN) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         const bool is_night = (weather_state().sun_state == "below_horizon");
@@ -818,6 +868,17 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         rs.nav.sky_weather_subpage = is_night ? 3 : 2;
         mark_dirty_full();
         rt_.schedule_disp();
+      }
+      return;
+    }
+    if (wid == WidgetId::HOME_AREA_ICON) {
+      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        const auto &ac = area_ctx_state();
+        if (!ac.area_id.empty()) {
+          rs.area.active_area_id = ac.area_id;
+          rs.area.active_area_name = ac.area_name.empty() ? latter_area_label() : ac.area_name;
+        }
+        launch_dock_app(PageId::AREA, rs, rt_, now_touch);
       }
       return;
     }
@@ -838,26 +899,22 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       return;
     }
-    if (wid == WidgetId::HOME_ACTIVITY_CARD && act_count > 0) {
-      const bool greet_blocking = rt_.sw_state(UiSwitchId::HOME_WAKE_GREETING) &&
-                                  wake_greeting_latched() &&
-                                  (now_touch >= wake_greeting_start_ms()) &&
-                                  (now_touch - wake_greeting_start_ms() < 10500U);
-      if (!greet_blocking && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        const bool has_drop = ly.home_activity_has_drop(act_count);
-        if (has_drop && touch.x >= hit->x1 - scale_x(52)) {
-          home_activity_overlay_page() = 0;
-          rs.nav.home_subpage = 2;
-          mark_dirty_full();
-          rt_.schedule_disp();
-          return;
-        }
-        const HomeActivityView view =
-            resolve_home_activity_view(act_items, act_count, now_touch, ly.home_activity_two_line());
-        int act_item = (view.top >= 0) ? view.top : 0;
-        if (view.bottom >= 0 && touch.y >= hit->cy()) act_item = view.bottom;
-        const bool quick_tap = (touch.x >= hit->x1 - scale_x(has_drop ? 108 : 56));
-        handle_home_activity_action(act_items, act_count, act_item, quick_tap,
+    if (wid == WidgetId::HOME_ACT_EXPAND && act_count > 0) {
+      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        home_activity_overlay_page() = 0;
+        rs.nav.home_subpage = 2;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+      return;
+    }
+    if ((wid == WidgetId::HOME_ACT_ROW_0 || wid == WidgetId::HOME_ACT_ROW_1 ||
+         wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1) &&
+        act_count > 0) {
+      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        const bool quick_tap =
+            (wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1);
+        handle_home_activity_action(act_items, act_count, hit->param, quick_tap,
                                     now_touch, rs, prefs, rt_);
       }
       return;

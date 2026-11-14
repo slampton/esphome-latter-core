@@ -68,7 +68,8 @@ enum class AreaCtxField : size_t {
   ACTIVITY_SOURCES = 39,  // activity_sources (csv)
   SECURITY_PIN_POLICY = 40,  // security_pin_policy (string)
   HOME_CATEGORIES = 41,  // home_categories (csv)
-  COUNT = 42
+  AREA_ICON = 42,  // area_icon (string)
+  COUNT = 43
 };
 
 // Domain: active_media (sensor.<device>_active_media)

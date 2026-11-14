@@ -10,11 +10,15 @@
 //    FrameHitTable-driven render_active_focus_overlay().
 // ==============================================================================
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <string_view>
+
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #include <cmath>
-#include <cstdint>
-#include <string>
 #include <type_traits>
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
@@ -27,7 +31,6 @@
 #include "ui_layout.h"
 #include "ui_widgets.h"
 #else
-#include <cstdint>
 #include "ui_hit_table.h"
 #ifndef LATTER_SCREEN_H
 #define LATTER_SCREEN_H 466
@@ -38,6 +41,116 @@ static constexpr int SCREEN_H = LATTER_SCREEN_H;
 #endif
 
 namespace latter_ui {
+
+// Zero-allocation null-terminated string view for UiFrameContext & SystemTakeoverState (D-034(2)).
+// Binds only to string literals, const char * singletons, or lvalue std::string members;
+// rvalue std::string temporaries are deleted to prevent dangling views at compile time.
+struct UiStrView {
+  const char *ptr_{""};
+  size_t len_{0};
+
+  constexpr UiStrView() noexcept = default;
+  constexpr UiStrView(const char *s) noexcept
+      : ptr_(s != nullptr ? s : ""),
+        len_(s != nullptr ? std::char_traits<char>::length(s) : 0U) {}
+  constexpr UiStrView(const char *s, size_t n) noexcept
+      : ptr_(s != nullptr ? s : ""),
+        len_(s != nullptr ? n : 0U) {}
+  UiStrView(const std::string &s) noexcept : ptr_(s.c_str()), len_(s.size()) {}
+  UiStrView(std::string &&) = delete;
+
+  constexpr const char *c_str() const noexcept { return ptr_; }
+  constexpr const char *data() const noexcept { return ptr_; }
+  constexpr size_t size() const noexcept { return len_; }
+  constexpr size_t length() const noexcept { return len_; }
+  constexpr bool empty() const noexcept { return len_ == 0U; }
+  constexpr char operator[](size_t idx) const noexcept { return ptr_[idx]; }
+
+  constexpr std::string_view sv() const noexcept { return std::string_view(ptr_, len_); }
+  constexpr operator std::string_view() const noexcept { return std::string_view(ptr_, len_); }
+  inline std::string str() const { return std::string(ptr_, len_); }
+
+  constexpr size_t find(std::string_view needle, size_t pos = 0U) const noexcept {
+    return sv().find(needle, pos);
+  }
+  constexpr size_t find(char ch, size_t pos = 0U) const noexcept {
+    return sv().find(ch, pos);
+  }
+  constexpr size_t rfind(std::string_view needle, size_t pos = std::string_view::npos) const noexcept {
+    return sv().rfind(needle, pos);
+  }
+  constexpr std::string_view substr(size_t pos = 0U, size_t count = std::string_view::npos) const noexcept {
+    return sv().substr(pos, count);
+  }
+
+  friend constexpr bool operator==(UiStrView a, UiStrView b) noexcept { return a.sv() == b.sv(); }
+  friend constexpr bool operator!=(UiStrView a, UiStrView b) noexcept { return a.sv() != b.sv(); }
+  friend constexpr bool operator==(UiStrView a, std::string_view b) noexcept { return a.sv() == b; }
+  friend constexpr bool operator!=(UiStrView a, std::string_view b) noexcept { return a.sv() != b; }
+  friend constexpr bool operator==(std::string_view a, UiStrView b) noexcept { return a == b.sv(); }
+  friend constexpr bool operator!=(std::string_view a, UiStrView b) noexcept { return a != b.sv(); }
+  friend constexpr bool operator==(UiStrView a, const char *b) noexcept {
+    return a.sv() == (b != nullptr ? std::string_view(b) : std::string_view{});
+  }
+  friend constexpr bool operator!=(UiStrView a, const char *b) noexcept { return !(a == b); }
+  friend constexpr bool operator==(const char *a, UiStrView b) noexcept { return b == a; }
+  friend constexpr bool operator!=(const char *a, UiStrView b) noexcept { return !(b == a); }
+  friend inline bool operator==(UiStrView a, const std::string &b) noexcept {
+    return a.sv() == std::string_view(b);
+  }
+  friend inline bool operator!=(UiStrView a, const std::string &b) noexcept {
+    return a.sv() != std::string_view(b);
+  }
+  friend inline bool operator==(const std::string &a, UiStrView b) noexcept {
+    return std::string_view(a) == b.sv();
+  }
+  friend inline bool operator!=(const std::string &a, UiStrView b) noexcept {
+    return std::string_view(a) != b.sv();
+  }
+};
+
+enum class BackdropMode : uint8_t {
+  SolidBlack = 0,
+  CustomWallpaper = 1,
+  LiveWeatherSky = 2,
+};
+
+// Single authoritative backdrop precedence shared across gui.yaml, timers_and_fetchers.yaml,
+// page_clock_home.cpp, and page_weather.cpp (D-038):
+// - Home root (gui_page == 1 && home_subpage == 0) and Sky & Weather (gui_page == 5):
+//     If weather_background is ON (persisted pref OR active weather simulation): LiveWeatherSky
+//     (even when a System Wallpaper is loaded — System Wallpaper still renders dimmed on Home
+//     subpage 2 and on other wallpaper-backed views, and renders on Home/Weather when
+//     weather_background is OFF).
+//     If weather_background is OFF: CustomWallpaper when loaded, else SolidBlack.
+// - Home overlays (subpage 1 or 2), System Settings (4), Area (6), Remote (7),
+//   Tools non-full-bleed (8), Whole-Home (9), and Music with Art Mode "None" (2):
+//     CustomWallpaper when loaded, else SolidBlack.
+// - Clock (0), Games (3), Music with Album Art enabled (2), and Tools full-bleed (8): SolidBlack.
+constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
+                                             bool weather_background_pref,
+                                             bool weather_sim_active,
+                                             bool has_custom_wallpaper,
+                                             bool tools_full_bleed = false,
+                                             bool music_art_none = false) noexcept {
+  if ((gui_page == 1 && home_subpage == 0) || gui_page == 5) {
+    if (weather_background_pref || weather_sim_active) {
+      return BackdropMode::LiveWeatherSky;
+    }
+    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+  }
+  if (gui_page == 1) {
+    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+  }
+  if (gui_page == 2) {
+    return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+  }
+  if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
+      (gui_page == 8 && !tools_full_bleed) || gui_page == 9) {
+    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+  }
+  return BackdropMode::SolidBlack;
+}
 
 struct DirtyBandTracker {
   int pending_y0{0};
@@ -127,6 +240,18 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
 struct DisplayUpdateScheduler : public esphome::Component {
   static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
   static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
+  static constexpr uint32_t kTimeoutWeatherStep = 0x4C410003U;
+  static constexpr uint32_t kTimeoutActivityRotate = 0x4C410004U;
+
+  static inline uint32_t &weather_due_ms_ref() {
+    static uint32_t due_ms = 0U;
+    return due_ms;
+  }
+
+  static inline bool weather_step_pending(uint32_t now_ms) {
+    const uint32_t due = weather_due_ms_ref();
+    return due != 0U && static_cast<int32_t>(due + 24U - now_ms) > 0;
+  }
 
   // Post-frame hook: a 0 ms timeout runs after the current update() (and its panel transfer) returns.
   static void request_post_frame(esphome::Component *comp, void (*fn)()) {
@@ -177,6 +302,55 @@ struct DisplayUpdateScheduler : public esphome::Component {
           });
     }
   }
+
+  template <typename DispT>
+  static void request_weather_ptr(DispT *disp, uint32_t target_period_ms) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      constexpr uint32_t kMinPostIdleMs = 8U;
+#else
+      constexpr uint32_t kMinPostIdleMs = 12U;
+#endif
+      const uint32_t now_m = esphome::millis();
+      const bool inside_render = disp_render_in_flight(now_m);
+      const uint32_t elapsed_start = now_m - last_disp_update_ms();
+      uint32_t delay_ms = (elapsed_start < target_period_ms) ? (target_period_ms - elapsed_start) : 0U;
+      if (inside_render) {
+        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs);
+      } else {
+        const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
+        if (elapsed_end < kMinPostIdleMs) {
+          delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
+        }
+      }
+      weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
+      auto *comp = static_cast<esphome::Component *>(disp);
+      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+          kTimeoutWeatherStep, delay_ms, [disp]() {
+            weather_due_ms_ref() = 0U;
+            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (disp_render_in_flight(esphome::millis())) return;
+            mark_dirty_full();
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
+
+  template <typename DispT>
+  static void request_activity_rotate_ptr(DispT *disp, uint32_t delay_ms, int y0, int y1) {
+    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+      auto *comp = static_cast<esphome::Component *>(disp);
+      static_cast<DisplayUpdateScheduler *>(comp)->set_timeout(
+          kTimeoutActivityRotate, delay_ms, [disp, y0, y1]() {
+            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (disp_render_in_flight(esphome::millis())) return;
+            mark_dirty_band(y0, y1);
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
 };
 
 template <typename DispT>
@@ -216,6 +390,41 @@ template <typename DispT>
 inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
   mark_dirty_full();
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_anim_band_disp_update(DispT *disp, int y0, int y1) {
+  mark_dirty_band(y0, y1);
+  DisplayUpdateScheduler::request_anim_ptr(disp);
+}
+
+template <typename DispT>
+inline void schedule_anim_band_disp_update(DispT *const *disp_ptr, int y0, int y1) {
+  mark_dirty_band(y0, y1);
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_weather_disp_update(DispT *disp, uint32_t target_period_ms) {
+  DisplayUpdateScheduler::request_weather_ptr(disp, target_period_ms);
+}
+
+template <typename DispT>
+inline void schedule_weather_disp_update(DispT *const *disp_ptr, uint32_t target_period_ms) {
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_weather_ptr(*disp_ptr, target_period_ms);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_activity_rotate_disp_update(DispT *disp, uint32_t delay_ms, int y0, int y1) {
+  DisplayUpdateScheduler::request_activity_rotate_ptr(disp, delay_ms, y0, y1);
+}
+
+template <typename DispT>
+inline void schedule_activity_rotate_disp_update(DispT *const *disp_ptr, uint32_t delay_ms, int y0, int y1) {
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_activity_rotate_ptr(*disp_ptr, delay_ms, y0, y1);
 }
 
 // Pauses disp1's 1 Hz PollingComponent while a high-refresh animation loop actively owns frame
@@ -290,7 +499,7 @@ struct UiFrameContext {
   esphome::Color col_purple{};
   esphome::Color col_magenta{};
 
-  // Live ESPHome component/entity snapshots
+  // Live ESPHome component/entity snapshots (zero-copy UiStrView — zero heap allocs per frame)
   bool panel_is_on{true};
   bool local_media_playing{false};
   int spk_vol_pct{60};
@@ -298,43 +507,43 @@ struct UiFrameContext {
   int vol_step_pct{5};
   int free_heap_kb{0};
   float wifi_rssi{NAN};
-  std::string ip_addr{};
+  UiStrView ip_addr{};
   bool ble_active{false};
-  std::string track_title{};
-  std::string track_artist{};
-  std::string track_album{};
-  std::string fw_latest_ver{};
-  std::string fw_release_summary{};
-  std::string primary_wake_word{"Okay Nabu"};
+  UiStrView track_title{};
+  UiStrView track_artist{};
+  UiStrView track_album{};
+  UiStrView fw_latest_ver{};
+  UiStrView fw_release_summary{};
+  UiStrView primary_wake_word{"Okay Nabu"};
 
   // Select options
-  std::string clock_face_style_opt{"Analog"};
-  std::string weather_sim_opt{"Live (Home Assistant)"};
-  std::string music_overlay_style_opt{"Art + Metadata"};
-  std::string music_fullscreen_art_opt{"Full Screen"};
-  std::string music_album_sort_opt{"A-Z"};
-  std::string music_artist_album_sort_opt{"Release Year"};
-  std::string music_podcast_sort_opt{"Latest Episode"};
-  std::string theme_palette_opt{"Steel & Silver"};
-  std::string power_profile_opt{"Balanced"};
-  std::string tap_wake_opt{"Always On"};
-  std::string pickup_wake_opt{"Medium"};
-  std::string display_off_timeout_opt{"30 Seconds"};
-  std::string screensaver_style_opt{"Ambient Clock"};
-  std::string screensaver_docked_timeout_opt{"5 Minutes"};
-  std::string hibernate_timeout_opt{"30 Minutes"};
-  std::string default_start_app_opt{"Home"};
-  std::string auto_brightness_opt{"Time Schedule"};
-  std::string display_brightness_opt{"High (80%)"};
-  std::string day_brightness_opt{"High (80%)"};
-  std::string night_brightness_opt{"Low (25%)"};
-  std::string va_wake_word_mode_opt{"Always On"};
-  std::string va_visual_profile_opt{"Nebula"};
-  std::string ww_sens_okay_nabu_opt{"Medium"};
-  std::string ww_sens_hey_luna_opt{"Off"};
-  std::string ww_sens_hey_jarvis_opt{"Off"};
-  std::string ww_sens_hey_mycroft_opt{"Off"};
-  std::string ww_sens_alexa_opt{"Off"};
+  UiStrView clock_face_style_opt{"Analog"};
+  UiStrView weather_sim_opt{"Live (Home Assistant)"};
+  UiStrView music_overlay_style_opt{"Art + Metadata"};
+  UiStrView music_fullscreen_art_opt{"Full Screen"};
+  UiStrView music_album_sort_opt{"A-Z"};
+  UiStrView music_artist_album_sort_opt{"Release Year"};
+  UiStrView music_podcast_sort_opt{"Latest Episode"};
+  UiStrView theme_palette_opt{"Steel & Silver"};
+  UiStrView power_profile_opt{"Balanced"};
+  UiStrView tap_wake_opt{"Always On"};
+  UiStrView pickup_wake_opt{"Medium"};
+  UiStrView display_off_timeout_opt{"30 Seconds"};
+  UiStrView screensaver_style_opt{"Ambient Clock"};
+  UiStrView screensaver_docked_timeout_opt{"5 Minutes"};
+  UiStrView hibernate_timeout_opt{"30 Minutes"};
+  UiStrView default_start_app_opt{"Home"};
+  UiStrView auto_brightness_opt{"Time Schedule"};
+  UiStrView display_brightness_opt{"High (80%)"};
+  UiStrView day_brightness_opt{"High (80%)"};
+  UiStrView night_brightness_opt{"Low (25%)"};
+  UiStrView va_wake_word_mode_opt{"Always On"};
+  UiStrView va_visual_profile_opt{"Nebula"};
+  UiStrView ww_sens_okay_nabu_opt{"Medium"};
+  UiStrView ww_sens_hey_luna_opt{"Off"};
+  UiStrView ww_sens_hey_jarvis_opt{"Off"};
+  UiStrView ww_sens_hey_mycroft_opt{"Off"};
+  UiStrView ww_sens_alexa_opt{"Off"};
 
   // Numbers
   int day_start_hr{7};
@@ -371,19 +580,19 @@ struct SystemTakeoverState {
   int alarm3_recurrence{2};
   bool timer_ringing{false};
   bool find_my_active{false};
-  std::string va_timer_name{};
+  UiStrView va_timer_name{};
   bool va_active{false};
-  std::string va_status_text{};
+  UiStrView va_status_text{};
   bool va_tts_received{false};
   bool va_vad_active{false};
-  std::string va_visual_profile_opt{};
+  UiStrView va_visual_profile_opt{};
   bool notif_active{false};
-  std::string notif_title{};
-  std::string notif_message{};
-  std::string notif_priority{};
-  std::string notif_camera_url{};
-  std::string current_loaded_camera_url{};
-  std::string screensaver_style_opt{};
+  UiStrView notif_title{};
+  UiStrView notif_message{};
+  UiStrView notif_priority{};
+  UiStrView notif_camera_url{};
+  UiStrView current_loaded_camera_url{};
+  UiStrView screensaver_style_opt{};
   esphome::Color theme_primary{};
   esphome::Color theme_secondary{};
   esphome::Color col_bg{};

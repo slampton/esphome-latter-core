@@ -216,14 +216,25 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     sig ^= static_cast<uint32_t>((mv_c & 0xFFFF) ^ ((imu_t & 0xFFF) << 16) ^
                                  (static_cast<int>(ctx.ip_addr.size() & 0x0FU) << 28));
   } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
-    int src_cnt = 0;
-    if (ctx.local_media_playing || media_state().state == "playing") src_cnt++;
-    if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) src_cnt++;
-    if (prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) src_cnt++;
-    if (calendar_state().count > 0 && !calendar_state().summary.empty()) src_cnt++;
-    if (src_cnt >= 2) {
-      sig ^= static_cast<uint32_t>(ctx.now_ms / kHomeActivityRotateMs) * 0x9E3779B9U;
+    if (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
+      sig ^= 0x5A17C3E9U ^ (ctx.now_ms << 3);
     }
+    if (is_roaming_area_indicator_active()) {
+      const auto &ac = area_ctx_state();
+      uint32_t ah = 2166136261U;
+      for (unsigned char c : ac.area_id) ah = (ah ^ c) * 16777619U;
+      for (unsigned char c : ac.area_icon) ah = (ah ^ c) * 16777619U;
+      sig ^= (ah | 1U);
+    }
+    uint32_t act_mask = 0U;
+    if (is_doorbell_or_intercom_active()) act_mask |= (1U << 0);
+    if (ctx.local_media_playing || media_state().state == "playing") act_mask |= (1U << 1);
+    if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
+      act_mask |= (1U << 2);
+    }
+    if (prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) act_mask |= (1U << 3);
+    if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
+    sig ^= (act_mask * 0x27D4EB2FU);
   }
   return sig;
 }
@@ -232,7 +243,11 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   if (rs.nav.gui_page == 0) return true;
   if (rs.nav.gui_page == 1) {
-    if (ctx.home_wake_greeting && ctx.now_ms < 26000U) return true;
+    if (ctx.home_wake_greeting &&
+        (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, true))) {
+      return true;
+    }
+    if (is_doorbell_or_intercom_active()) return true;
     if (rs.stopwatch.running || rs.timers.running ||
         rs.timers.slots[0].running || rs.timers.slots[1].running || rs.timers.slots[2].running) {
       return true;

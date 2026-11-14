@@ -3,10 +3,12 @@
 
 #include <algorithm>
 #include <bit>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 namespace latter_ui {
 
@@ -62,6 +64,20 @@ HomeActivityCardState &home_act_state() {
   return st;
 }
 
+HomeActivityItem s_rendered_act_items[kMaxHomeActivity]{};
+int s_rendered_act_count = 0;
+int s_act_band_y0 = 0;
+int s_act_band_y1 = 0;
+bool s_act_deck_rotates = false;
+
+void store_rendered_activity_snapshot(const HomeActivityItem *items, int count) {
+  const int n = std::clamp(count, 0, kMaxHomeActivity);
+  for (int i = 0; i < n; ++i) {
+    s_rendered_act_items[i] = items[i];
+  }
+  s_rendered_act_count = n;
+}
+
 void draw_home_activity_row_contents(
     esphome::display::Display &it, int row_y, const HomeActivityItem &cur_act,
     bool has_dropdown_ext, bool is_list_row, esphome::display::BaseFont *font_small,
@@ -73,11 +89,13 @@ void draw_home_activity_row_contents(
 
   const Color fg_w   = (alpha >= 0.99f) ? col_white       : lerp_color(card_bg, col_white, alpha);
   const Color fg_sec = (alpha >= 0.99f) ? theme_secondary : lerp_color(card_bg, theme_secondary, alpha);
-  const Color fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, btn_bg, alpha);
+  const Color fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, theme_secondary, alpha);
+  (void) fg_btn;
+  const Color fg_btn_fill = (alpha >= 0.99f) ? btn_bg : lerp_color(card_bg, btn_bg, alpha);
 
   const int cx_ref     = SCREEN_CX;
   const int list_w     = layout().list_card_w;
-  const int main_w     = (SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32);
+  const int main_w     = layout().home_activity_w();
   const int card_w     = is_list_row ? list_w : main_w;
   const int card_left  = cx_ref - (card_w / 2);
   const int card_right = cx_ref + (card_w / 2);
@@ -121,6 +139,15 @@ void draw_home_activity_row_contents(
       fill_rect_row_major(it, gx - 4, gy + 1, 2, 2, fg_sec);
       fill_rect_row_major(it, gx,     gy + 1, 2, 2, fg_w);
       fill_rect_row_major(it, gx + 4, gy + 1, 2, 2, fg_w);
+    } else if (cur_act.kind == 6) {
+      fill_rect_row_major(it, gx - 7, gy - 6, 4, 5, fg_w);
+      fill_rect_row_major(it, gx + 2, gy + 2, 5, 4, fg_w);
+      fast_line(it, gx - 5, gy - 2, gx + 2, gy + 4, fg_w);
+      fast_line(it, gx - 4, gy - 2, gx + 3, gy + 4, fg_w);
+      fast_line(it, gx + 2, gy - 5, gx + 5, gy - 5, fg_sec);
+      fast_line(it, gx + 5, gy - 5, gx + 5, gy - 2, fg_sec);
+      fast_line(it, gx + 4, gy - 8, gx + 8, gy - 8, fg_sec);
+      fast_line(it, gx + 8, gy - 8, gx + 8, gy - 4, fg_sec);
     } else {
       fast_filled_circle(it, gx - 6, gy - 6, 2, fg_w);
       fast_filled_circle(it, gx + 6, gy - 6, 2, fg_w);
@@ -173,6 +200,16 @@ void draw_home_activity_row_contents(
           fill_rect_row_major(it, gx - 6 + c * 5, gy - 1 + r * 5, 3, 3, (r == 0 && c == 1) ? fg_sec : fg_w);
         }
       }
+    } else if (cur_act.kind == 6) {
+      fill_rect_row_major(it, gx - 9, gy - 9, 5, 6, fg_w);
+      fill_rect_row_major(it, gx + 3, gy + 3, 6, 5, fg_w);
+      for (int w = -1; w <= 1; w++) {
+        fast_line(it, gx - 6 + w, gy - 4, gx + 4 + w, gy + 5, fg_w);
+      }
+      fast_line(it, gx + 2, gy - 6, gx + 6, gy - 6, fg_sec);
+      fast_line(it, gx + 6, gy - 6, gx + 6, gy - 2, fg_sec);
+      fast_line(it, gx + 4, gy - 10, gx + 10, gy - 10, fg_sec);
+      fast_line(it, gx + 10, gy - 10, gx + 10, gy - 4, fg_sec);
     } else {
       fast_filled_circle(it, gx - 8, gy - 7, 3, fg_w);
       fast_filled_circle(it, gx + 8, gy - 7, 3, fg_w);
@@ -214,7 +251,7 @@ void draw_home_activity_row_contents(
   }
   fast_print(it, txt_x, gy, font_small, fg_w, TextAlign::CENTER_LEFT, fit_ptr->c_str());
 
-  render_glass_circle(it, act_bx, gy, btn_r, fg_btn, fg_sec);
+  render_glass_circle(it, act_bx, gy, btn_r, fg_btn_fill, fg_sec);
 
   const int sym_s = is_list_row ? 5 : 6;
   if (cur_act.kind == 5) {
@@ -227,6 +264,9 @@ void draw_home_activity_row_contents(
       fast_line(it, act_bx - sym_s + w, gy - sym_s, act_bx + sym_s + w, gy + sym_s, fg_w);
       fast_line(it, act_bx - sym_s + w, gy + sym_s, act_bx + sym_s + w, gy - sym_s, fg_w);
     }
+  } else if (cur_act.kind == 6) {
+    const int sq = sym_s - 1;
+    fill_rect_row_major(it, act_bx - sq, gy - sq, sq * 2 + 1, sq * 2 + 1, fg_w);
   } else if (cur_act.is_active) {
     fill_rect_row_major(it, act_bx - 5, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
     fill_rect_row_major(it, act_bx + 3, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
@@ -243,7 +283,7 @@ void render_home_activity_card_row(
     esphome::Color card_bg,
     esphome::Color card_brd,
     esphome::Color btn_bg) {
-  const int card_w     = is_list_row ? layout().list_card_w : ((SCREEN_W > 520) ? scale_x(380) : std::min(380, SCREEN_W - 32));
+  const int card_w     = is_list_row ? layout().list_card_w : layout().home_activity_w();
   const int card_h     = is_list_row ?  44 : 68;
   const int card_r     = is_list_row ?  12 : 16;
   const int card_right = cx + (card_w / 2);
@@ -313,37 +353,419 @@ const char *resolve_wake_greeting(int hour, int minute, int day_of_year,
 }
 
 template <int XMin, int XMax, int YMin, int YMax, typename DisplayT, typename PredFn>
-inline void draw_cached_dock_mask(DisplayT &it, int bx, int by,
+inline void draw_cached_dock_mask(DisplayT &it, int bx, int by, int dock_r,
                                   esphome::Color c, esphome::Color sh_c, PredFn &&pred) {
-  static constexpr int kW = XMax - XMin + 1;
-  static constexpr int kH = YMax - YMin + 1;
-  static_assert(kW + 1 <= 64, "Dock glyph bitmask width must fit in uint64_t");
-  static uint64_t rows[kH + 1] = {};
-  static bool ready = false;
-  if (!ready) {
-    for (int ry = 0; ry <= kH; ry++) {
-      uint64_t m = 0;
-      for (int rx = 0; rx <= kW; rx++) {
-        if (pred(XMin + rx, YMin + ry)) m |= (uint64_t{1} << rx);
+  static uint64_t rows[64] = {};
+  static int cached_r = -1;
+  static int s_xmin = 0;
+  static int s_ymin = 0;
+  static int s_w = 0;
+  static int s_h = 0;
+
+  if (cached_r != dock_r) {
+    const float dk = static_cast<float>(std::max(1, dock_r)) / 27.0f;
+    const float inv_dk = 27.0f / static_cast<float>(std::max(1, dock_r));
+    s_xmin = std::max(-30, static_cast<int>(std::floor(static_cast<float>(XMin) * dk)));
+    const int sx_max = std::min(30, static_cast<int>(std::ceil(static_cast<float>(XMax) * dk)));
+    s_ymin = std::max(-30, static_cast<int>(std::floor(static_cast<float>(YMin) * dk)));
+    const int sy_max = std::min(30, static_cast<int>(std::ceil(static_cast<float>(YMax) * dk)));
+    s_w = std::clamp(sx_max - s_xmin + 1, 1, 62);
+    s_h = std::clamp(sy_max - s_ymin + 1, 1, 62);
+    for (int ry = 0; ry < 64; ++ry) rows[ry] = 0ULL;
+    for (int ry = 0; ry <= s_h; ++ry) {
+      uint64_t m = 0ULL;
+      const int src_y = static_cast<int>(std::lround(static_cast<float>(s_ymin + ry) * inv_dk));
+      for (int rx = 0; rx <= s_w; ++rx) {
+        const int src_x = static_cast<int>(std::lround(static_cast<float>(s_xmin + rx) * inv_dk));
+        if (pred(src_x, src_y)) m |= (uint64_t{1} << rx);
       }
       rows[ry] = m;
     }
-    ready = true;
+    cached_r = dock_r;
   }
-  const uint64_t col_mask = (uint64_t{1} << kW) - 1U;
-  for (int ry = 0; ry < kH; ry++) {
+
+  const uint64_t col_mask = (uint64_t{1} << s_w) - 1U;
+  for (int ry = 0; ry < s_h; ry++) {
     uint64_t m = rows[ry] & col_mask;
     const uint64_t next_row = rows[ry + 1];
-    const int py = by + YMin + ry;
+    const int py = by + s_ymin + ry;
     while (m != 0) {
       const int rx = std::countr_zero(m);
       m &= (m - 1U);
-      const int px = bx + XMin + rx;
+      const int px = bx + s_xmin + rx;
       if (((next_row >> (rx + 1)) & 1ULL) == 0ULL) {
         fast_pixel(it, px + 1, py + 1, sh_c);
       }
       fast_pixel(it, px, py, c);
     }
+  }
+}
+
+enum class AreaGlyphKind : uint8_t {
+  MAP_PIN = 0,
+  SOFA,
+  CULINARY,
+  DINING,
+  BED,
+  NURSERY,
+  SHOWER,
+  DESK,
+  TELEVISION,
+  GAMEPAD,
+  DUMBBELL,
+  WASHER,
+  GARAGE,
+  TOOLS,
+  WARDROBE,
+  DOOR,
+  STAIRS,
+  ROOF,
+  POOL,
+  BALCONY,
+  GARDEN,
+  SPEAKER,
+};
+
+bool sv_contains_ci(std::string_view hay, std::string_view needle) {
+  if (needle.empty() || hay.size() < needle.size()) return false;
+  for (size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+    bool ok = true;
+    for (size_t j = 0; j < needle.size(); ++j) {
+      const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(hay[i + j])));
+      const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(needle[j])));
+      if (a != b) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+AreaGlyphKind classify_area_glyph(std::string_view icon_str, std::string_view area_name_fallback) {
+  std::string_view slug = icon_str;
+  if (slug.size() > 4 && (slug.substr(0, 4) == "mdi:" || slug.substr(0, 4) == "MDI:")) {
+    slug = slug.substr(4);
+  }
+  if (!slug.empty()) {
+    if (sv_contains_ci(slug, "sofa") || sv_contains_ci(slug, "couch") || sv_contains_ci(slug, "armchair")) {
+      return AreaGlyphKind::SOFA;
+    }
+    if (sv_contains_ci(slug, "countertop") || sv_contains_ci(slug, "silverware") ||
+        sv_contains_ci(slug, "stove") || sv_contains_ci(slug, "fridge") || sv_contains_ci(slug, "pot-steam")) {
+      return AreaGlyphKind::CULINARY;
+    }
+    if (sv_contains_ci(slug, "table-chair") || sv_contains_ci(slug, "table-furniture")) {
+      return AreaGlyphKind::DINING;
+    }
+    if (sv_contains_ci(slug, "baby") || sv_contains_ci(slug, "teddy-bear") || sv_contains_ci(slug, "cradle")) {
+      return AreaGlyphKind::NURSERY;
+    }
+    if (sv_contains_ci(slug, "bed") || sv_contains_ci(slug, "bunk")) {
+      return AreaGlyphKind::BED;
+    }
+    if (sv_contains_ci(slug, "shower") || sv_contains_ci(slug, "bathtub") ||
+        sv_contains_ci(slug, "toilet") || sv_contains_ci(slug, "hand-wash")) {
+      return AreaGlyphKind::SHOWER;
+    }
+    if (sv_contains_ci(slug, "desk") || sv_contains_ci(slug, "bookshelf") ||
+        sv_contains_ci(slug, "briefcase") || sv_contains_ci(slug, "laptop")) {
+      return AreaGlyphKind::DESK;
+    }
+    if (sv_contains_ci(slug, "television") || sv_contains_ci(slug, "movie") ||
+        sv_contains_ci(slug, "theater") || sv_contains_ci(slug, "projector")) {
+      return AreaGlyphKind::TELEVISION;
+    }
+    if (sv_contains_ci(slug, "gamepad") || sv_contains_ci(slug, "controller")) {
+      return AreaGlyphKind::GAMEPAD;
+    }
+    if (sv_contains_ci(slug, "dumbbell") || sv_contains_ci(slug, "weight")) {
+      return AreaGlyphKind::DUMBBELL;
+    }
+    if (sv_contains_ci(slug, "washing-machine") || sv_contains_ci(slug, "tumble-dryer") ||
+        sv_contains_ci(slug, "iron")) {
+      return AreaGlyphKind::WASHER;
+    }
+    if (sv_contains_ci(slug, "garage") || sv_contains_ci(slug, "car")) {
+      return AreaGlyphKind::GARAGE;
+    }
+    if (sv_contains_ci(slug, "tools") || sv_contains_ci(slug, "hammer") ||
+        sv_contains_ci(slug, "wrench") || sv_contains_ci(slug, "saw")) {
+      return AreaGlyphKind::TOOLS;
+    }
+    if (sv_contains_ci(slug, "wardrobe") || sv_contains_ci(slug, "hanger")) {
+      return AreaGlyphKind::WARDROBE;
+    }
+    if (sv_contains_ci(slug, "door") || sv_contains_ci(slug, "coat-rack")) {
+      return AreaGlyphKind::DOOR;
+    }
+    if (sv_contains_ci(slug, "stairs") || sv_contains_ci(slug, "escalator")) {
+      return AreaGlyphKind::STAIRS;
+    }
+    if (sv_contains_ci(slug, "home-roof") || sv_contains_ci(slug, "home-floor") ||
+        sv_contains_ci(slug, "ladder")) {
+      return AreaGlyphKind::ROOF;
+    }
+    if (sv_contains_ci(slug, "pool") || sv_contains_ci(slug, "waves") || sv_contains_ci(slug, "hot-tub")) {
+      return AreaGlyphKind::POOL;
+    }
+    if (sv_contains_ci(slug, "balcony") || sv_contains_ci(slug, "deck") ||
+        sv_contains_ci(slug, "grill") || sv_contains_ci(slug, "umbrella-beach") ||
+        sv_contains_ci(slug, "sun-wireless")) {
+      return AreaGlyphKind::BALCONY;
+    }
+    if (sv_contains_ci(slug, "tree") || sv_contains_ci(slug, "flower") ||
+        sv_contains_ci(slug, "sprout") || sv_contains_ci(slug, "grass")) {
+      return AreaGlyphKind::GARDEN;
+    }
+    if (sv_contains_ci(slug, "speaker") || sv_contains_ci(slug, "music") ||
+        sv_contains_ci(slug, "cast-audio")) {
+      return AreaGlyphKind::SPEAKER;
+    }
+  }
+
+  if (!area_name_fallback.empty()) {
+    if (sv_contains_ci(area_name_fallback, "living") || sv_contains_ci(area_name_fallback, "lounge") ||
+        sv_contains_ci(area_name_fallback, "family") || sv_contains_ci(area_name_fallback, "den")) {
+      return AreaGlyphKind::SOFA;
+    }
+    if (sv_contains_ci(area_name_fallback, "kitchen") || sv_contains_ci(area_name_fallback, "pantry")) {
+      return AreaGlyphKind::CULINARY;
+    }
+    if (sv_contains_ci(area_name_fallback, "dining") || sv_contains_ci(area_name_fallback, "breakfast")) {
+      return AreaGlyphKind::DINING;
+    }
+    if (sv_contains_ci(area_name_fallback, "nursery") || sv_contains_ci(area_name_fallback, "baby") ||
+        sv_contains_ci(area_name_fallback, "kids")) {
+      return AreaGlyphKind::NURSERY;
+    }
+    if (sv_contains_ci(area_name_fallback, "bed") || sv_contains_ci(area_name_fallback, "primary") ||
+        sv_contains_ci(area_name_fallback, "guest") || sv_contains_ci(area_name_fallback, "suite")) {
+      return AreaGlyphKind::BED;
+    }
+    if (sv_contains_ci(area_name_fallback, "bath") || sv_contains_ci(area_name_fallback, "shower") ||
+        sv_contains_ci(area_name_fallback, "powder")) {
+      return AreaGlyphKind::SHOWER;
+    }
+    if (sv_contains_ci(area_name_fallback, "office") || sv_contains_ci(area_name_fallback, "study") ||
+        sv_contains_ci(area_name_fallback, "library")) {
+      return AreaGlyphKind::DESK;
+    }
+    if (sv_contains_ci(area_name_fallback, "media") || sv_contains_ci(area_name_fallback, "theater") ||
+        sv_contains_ci(area_name_fallback, "cinema")) {
+      return AreaGlyphKind::TELEVISION;
+    }
+    if (sv_contains_ci(area_name_fallback, "game") || sv_contains_ci(area_name_fallback, "arcade")) {
+      return AreaGlyphKind::GAMEPAD;
+    }
+    if (sv_contains_ci(area_name_fallback, "gym") || sv_contains_ci(area_name_fallback, "fitness")) {
+      return AreaGlyphKind::DUMBBELL;
+    }
+    if (sv_contains_ci(area_name_fallback, "laundry") || sv_contains_ci(area_name_fallback, "utility")) {
+      return AreaGlyphKind::WASHER;
+    }
+    if (sv_contains_ci(area_name_fallback, "garage") || sv_contains_ci(area_name_fallback, "carport")) {
+      return AreaGlyphKind::GARAGE;
+    }
+    if (sv_contains_ci(area_name_fallback, "workshop") || sv_contains_ci(area_name_fallback, "shed")) {
+      return AreaGlyphKind::TOOLS;
+    }
+    if (sv_contains_ci(area_name_fallback, "closet") || sv_contains_ci(area_name_fallback, "wardrobe")) {
+      return AreaGlyphKind::WARDROBE;
+    }
+    if (sv_contains_ci(area_name_fallback, "entry") || sv_contains_ci(area_name_fallback, "foyer") ||
+        sv_contains_ci(area_name_fallback, "hall") || sv_contains_ci(area_name_fallback, "porch")) {
+      return AreaGlyphKind::DOOR;
+    }
+    if (sv_contains_ci(area_name_fallback, "stair") || sv_contains_ci(area_name_fallback, "landing")) {
+      return AreaGlyphKind::STAIRS;
+    }
+    if (sv_contains_ci(area_name_fallback, "attic") || sv_contains_ci(area_name_fallback, "loft") ||
+        sv_contains_ci(area_name_fallback, "basement")) {
+      return AreaGlyphKind::ROOF;
+    }
+    if (sv_contains_ci(area_name_fallback, "pool") || sv_contains_ci(area_name_fallback, "spa")) {
+      return AreaGlyphKind::POOL;
+    }
+    if (sv_contains_ci(area_name_fallback, "balcony") || sv_contains_ci(area_name_fallback, "patio") ||
+        sv_contains_ci(area_name_fallback, "deck") || sv_contains_ci(area_name_fallback, "terrace")) {
+      return AreaGlyphKind::BALCONY;
+    }
+    if (sv_contains_ci(area_name_fallback, "garden") || sv_contains_ci(area_name_fallback, "yard") ||
+        sv_contains_ci(area_name_fallback, "courtyard")) {
+      return AreaGlyphKind::GARDEN;
+    }
+    if (sv_contains_ci(area_name_fallback, "studio") || sv_contains_ci(area_name_fallback, "music")) {
+      return AreaGlyphKind::SPEAKER;
+    }
+  }
+  return AreaGlyphKind::MAP_PIN;
+}
+
+void draw_area_glyph_pass(esphome::display::Display &it, int cx, int cy, int r,
+                          AreaGlyphKind kind, esphome::Color c) {
+  const float k = static_cast<float>(std::max(5, r)) / 9.0f;
+  auto sc = [k](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * k)); };
+  auto scr = [k](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * k))); };
+
+  switch (kind) {
+    case AreaGlyphKind::SOFA:
+      fill_rect_row_major(it, cx - sc(6), cy - sc(4), scr(13), scr(5), c);
+      fill_rect_row_major(it, cx - sc(8), cy, scr(17), scr(5), c);
+      fast_filled_circle(it, cx - sc(7), cy, scr(2), c);
+      fast_filled_circle(it, cx + sc(7), cy, scr(2), c);
+      fast_vline(it, cx - sc(6), cy + sc(5), scr(2), c);
+      fast_vline(it, cx + sc(6), cy + sc(5), scr(2), c);
+      break;
+    case AreaGlyphKind::CULINARY:
+      fast_vline(it, cx - sc(4), cy - sc(7), scr(5), c);
+      fast_vline(it, cx - sc(2), cy - sc(7), scr(5), c);
+      fast_hline(it, cx - sc(5), cy - sc(2), scr(5), c);
+      fill_rect_row_major(it, cx - sc(3), cy - sc(2), scr(2), scr(9), c);
+      fill_rect_row_major(it, cx + sc(3), cy - sc(7), scr(3), scr(7), c);
+      fill_rect_row_major(it, cx + sc(4), cy, scr(2), scr(7), c);
+      break;
+    case AreaGlyphKind::DINING:
+      fill_rect_row_major(it, cx - sc(7), cy - sc(2), scr(15), scr(2), c);
+      fast_vline(it, cx, cy, scr(7), c);
+      fast_vline(it, cx - sc(7), cy - sc(5), scr(11), c);
+      fast_hline(it, cx - sc(7), cy + sc(2), scr(4), c);
+      fast_vline(it, cx + sc(7), cy - sc(5), scr(11), c);
+      fast_hline(it, cx + sc(4), cy + sc(2), scr(4), c);
+      break;
+    case AreaGlyphKind::BED:
+      fill_rect_row_major(it, cx - sc(8), cy - sc(5), scr(2), scr(11), c);
+      fill_rect_row_major(it, cx - sc(8), cy + sc(1), scr(17), scr(3), c);
+      fill_rect_row_major(it, cx + sc(7), cy + sc(1), scr(2), scr(5), c);
+      fill_rect_row_major(it, cx - sc(5), cy - sc(2), scr(4), scr(3), c);
+      fill_rect_row_major(it, cx, cy - sc(3), scr(8), scr(4), c);
+      break;
+    case AreaGlyphKind::NURSERY:
+      fast_filled_circle(it, cx - sc(5), cy - sc(5), scr(2), c);
+      fast_filled_circle(it, cx + sc(5), cy - sc(5), scr(2), c);
+      fast_circle(it, cx, cy + sc(1), scr(6), c);
+      fast_filled_circle(it, cx - sc(2), cy, scr(1), c);
+      fast_filled_circle(it, cx + sc(2), cy, scr(1), c);
+      break;
+    case AreaGlyphKind::SHOWER:
+      fast_vline(it, cx - sc(6), cy - sc(7), scr(14), c);
+      fast_hline(it, cx - sc(6), cy - sc(7), scr(9), c);
+      fast_filled_triangle(it, cx + sc(2), cy - sc(7), cx - sc(1), cy - sc(3), cx + sc(5), cy - sc(3), c);
+      fast_vline(it, cx, cy - sc(1), scr(3), c);
+      fast_vline(it, cx + sc(3), cy, scr(3), c);
+      fast_vline(it, cx + sc(1), cy + sc(4), scr(3), c);
+      fast_vline(it, cx + sc(4), cy + sc(4), scr(3), c);
+      break;
+    case AreaGlyphKind::DESK:
+      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(7), c);
+      fast_vline(it, cx, cy, scr(2), c);
+      fill_rect_row_major(it, cx - sc(8), cy + sc(2), scr(17), scr(2), c);
+      fast_vline(it, cx - sc(6), cy + sc(4), scr(4), c);
+      fast_vline(it, cx + sc(6), cy + sc(4), scr(4), c);
+      break;
+    case AreaGlyphKind::TELEVISION:
+      fast_rect_outline(it, cx - sc(8), cy - sc(6), scr(17), scr(10), c);
+      fast_line(it, cx - sc(2), cy + sc(4), cx - sc(5), cy + sc(7), c);
+      fast_line(it, cx + sc(2), cy + sc(4), cx + sc(5), cy + sc(7), c);
+      fast_hline(it, cx - sc(5), cy + sc(7), scr(11), c);
+      break;
+    case AreaGlyphKind::GAMEPAD:
+      fill_rect_row_major(it, cx - sc(6), cy - sc(3), scr(13), scr(6), c);
+      fast_filled_circle(it, cx - sc(6), cy + sc(1), scr(3), c);
+      fast_filled_circle(it, cx + sc(6), cy + sc(1), scr(3), c);
+      break;
+    case AreaGlyphKind::DUMBBELL:
+      fill_rect_row_major(it, cx - sc(8), cy - sc(4), scr(2), scr(9), c);
+      fill_rect_row_major(it, cx - sc(5), cy - sc(3), scr(2), scr(7), c);
+      fill_rect_row_major(it, cx - sc(3), cy - sc(1), scr(7), scr(2), c);
+      fill_rect_row_major(it, cx + sc(4), cy - sc(3), scr(2), scr(7), c);
+      fill_rect_row_major(it, cx + sc(7), cy - sc(4), scr(2), scr(9), c);
+      break;
+    case AreaGlyphKind::WASHER:
+      fast_rect_outline(it, cx - sc(6), cy - sc(7), scr(13), scr(15), c);
+      fast_hline(it, cx - sc(5), cy - sc(4), scr(11), c);
+      fast_circle(it, cx, cy + sc(2), scr(3), c);
+      break;
+    case AreaGlyphKind::GARAGE:
+      fast_line(it, cx - sc(8), cy - sc(2), cx, cy - sc(7), c);
+      fast_line(it, cx, cy - sc(7), cx + sc(8), cy - sc(2), c);
+      fast_vline(it, cx - sc(6), cy - sc(2), scr(9), c);
+      fast_vline(it, cx + sc(6), cy - sc(2), scr(9), c);
+      fast_hline(it, cx - sc(4), cy + sc(1), scr(9), c);
+      fast_hline(it, cx - sc(4), cy + sc(4), scr(9), c);
+      fast_hline(it, cx - sc(4), cy + sc(7), scr(9), c);
+      break;
+    case AreaGlyphKind::TOOLS:
+      fast_line(it, cx - sc(6), cy + sc(6), cx + sc(4), cy - sc(4), c);
+      fast_line(it, cx - sc(5), cy + sc(6), cx + sc(5), cy - sc(4), c);
+      fill_rect_row_major(it, cx + sc(1), cy - sc(7), scr(6), scr(3), c);
+      break;
+    case AreaGlyphKind::WARDROBE:
+      fast_circle(it, cx, cy - sc(5), scr(2), c);
+      fast_line(it, cx, cy - sc(3), cx - sc(8), cy + sc(4), c);
+      fast_line(it, cx, cy - sc(3), cx + sc(8), cy + sc(4), c);
+      fast_hline(it, cx - sc(8), cy + sc(4), scr(17), c);
+      break;
+    case AreaGlyphKind::DOOR:
+      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(15), c);
+      fast_pixel(it, cx + sc(2), cy, c);
+      fast_pixel(it, cx + sc(2), cy + 1, c);
+      break;
+    case AreaGlyphKind::STAIRS:
+      fast_hline(it, cx - sc(7), cy + sc(6), scr(5), c);
+      fast_vline(it, cx - sc(3), cy + sc(2), scr(5), c);
+      fast_hline(it, cx - sc(3), cy + sc(2), scr(5), c);
+      fast_vline(it, cx + sc(1), cy - sc(2), scr(5), c);
+      fast_hline(it, cx + sc(1), cy - sc(2), scr(5), c);
+      fast_vline(it, cx + sc(5), cy - sc(6), scr(5), c);
+      fast_hline(it, cx + sc(5), cy - sc(6), scr(3), c);
+      break;
+    case AreaGlyphKind::ROOF:
+      fast_line(it, cx - sc(8), cy + sc(1), cx, cy - sc(6), c);
+      fast_line(it, cx, cy - sc(6), cx + sc(8), cy + sc(1), c);
+      fast_hline(it, cx - sc(6), cy + sc(2), scr(13), c);
+      fast_rect_outline(it, cx - sc(2), cy - sc(2), scr(5), scr(4), c);
+      break;
+    case AreaGlyphKind::POOL:
+      fast_vline(it, cx + sc(4), cy - sc(7), scr(8), c);
+      fast_vline(it, cx + sc(7), cy - sc(7), scr(8), c);
+      fast_hline(it, cx + sc(4), cy - sc(4), scr(4), c);
+      for (int row = 0; row < 2; ++row) {
+        const int wy = cy + sc(2 + row * 4);
+        fast_line(it, cx - sc(8), wy, cx - sc(4), wy - sc(2), c);
+        fast_line(it, cx - sc(4), wy - sc(2), cx, wy, c);
+        fast_line(it, cx, wy, cx + sc(4), wy - sc(2), c);
+        fast_line(it, cx + sc(4), wy - sc(2), cx + sc(8), wy, c);
+      }
+      break;
+    case AreaGlyphKind::BALCONY:
+      fast_filled_circle(it, cx + sc(4), cy - sc(5), scr(2), c);
+      fast_hline(it, cx - sc(8), cy, scr(17), c);
+      fast_hline(it, cx - sc(8), cy + sc(6), scr(17), c);
+      for (int b = -6; b <= 6; b += 4) {
+        fast_vline(it, cx + sc(b), cy, scr(7), c);
+      }
+      break;
+    case AreaGlyphKind::GARDEN:
+      fast_filled_circle(it, cx, cy - sc(4), scr(4), c);
+      fast_filled_circle(it, cx - sc(3), cy - sc(1), scr(3), c);
+      fast_filled_circle(it, cx + sc(3), cy - sc(1), scr(3), c);
+      fill_rect_row_major(it, cx - sc(1), cy + sc(2), scr(2), scr(6), c);
+      break;
+    case AreaGlyphKind::SPEAKER:
+      fast_rect_outline(it, cx - sc(5), cy - sc(7), scr(11), scr(15), c);
+      fast_pixel(it, cx, cy - sc(4), c);
+      fast_circle(it, cx, cy + sc(2), scr(3), c);
+      break;
+    case AreaGlyphKind::MAP_PIN:
+    default:
+      fast_circle(it, cx, cy - sc(2), scr(5), c);
+      fast_circle(it, cx, cy - sc(2), std::max(1, scr(5) - 1), c);
+      fast_line(it, cx - sc(4), cy + sc(1), cx, cy + sc(7), c);
+      fast_line(it, cx + sc(4), cy + sc(1), cx, cy + sc(7), c);
+      fast_filled_circle(it, cx, cy - sc(2), scr(1), c);
+      break;
   }
 }
 
@@ -373,15 +795,75 @@ bool &wake_greeting_latched() {
   return latched;
 }
 
+void dismiss_wake_greeting() {
+  wake_greeting_latched() = false;
+  runtime_state().nav.wake_greeting_pending = false;
+}
+
+bool is_wake_greeting_visible(uint32_t now_ms, bool enabled) {
+  if (!enabled || !wake_greeting_latched()) return false;
+  if (now_ms < wake_greeting_start_ms()) return false;
+  return (now_ms - wake_greeting_start_ms()) < kWakeGreetingTotalMs;
+}
+
 bool is_wake_greeting_fading(uint32_t now_ms, bool enabled) {
   if (!enabled || !wake_greeting_latched()) return false;
+  if (now_ms < wake_greeting_start_ms()) return false;
   const uint32_t el = now_ms - wake_greeting_start_ms();
-  return (el >= 7900U && el <= 10700U);
+  return (el >= (kWakeGreetingHoldMs - 60U) && el <= (kWakeGreetingTotalMs + 60U));
+}
+
+bool is_doorbell_or_intercom_active() {
+  const auto &ac = area_ctx_state();
+  const auto &rs = runtime_state();
+  const bool db_live = !ac.doorbell_talk_state.empty() &&
+                       ac.doorbell_talk_state != "idle" &&
+                       ac.doorbell_talk_state != "off" &&
+                       ac.doorbell_talk_state != "none" &&
+                       ac.doorbell_talk_state != "unavailable" &&
+                       ac.doorbell_talk_state != "unknown";
+  return db_live || rs.voice.intercom_turn || cam_call_active() || cam_listen_active();
 }
 
 bool is_home_activity_carousel_animating(uint32_t now_ms) {
   const uint32_t t0 = home_act_state().anim_start_ms;
   return t0 != 0 && (now_ms - t0) < kMotionMs;
+}
+
+bool home_activity_slide_active(uint32_t now_ms) {
+  const auto &rs = runtime_state();
+  return rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
+         home_activity_card_shown() && is_home_activity_carousel_animating(now_ms);
+}
+
+uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms) {
+  const auto &rs = runtime_state();
+  if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != 0 ||
+      !home_activity_card_shown() || !s_act_deck_rotates) {
+    return 0U;
+  }
+  const uint32_t rem = kHomeActivityRotateMs - (now_ms % kHomeActivityRotateMs);
+  return std::max<uint32_t>(1U, rem);
+}
+
+bool home_activity_band(int &out_y0, int &out_y1) {
+  if (!home_activity_card_shown() || s_act_band_y1 <= s_act_band_y0) return false;
+  out_y0 = s_act_band_y0;
+  out_y1 = s_act_band_y1;
+  return true;
+}
+
+const HomeActivityItem *home_activity_rendered_items(int &out_count) {
+  out_count = s_rendered_act_count;
+  return s_rendered_act_items;
+}
+
+void render_area_archetype_icon(esphome::display::Display &it, int cx, int cy, int r,
+                                std::string_view icon_str, std::string_view area_name_fallback,
+                                esphome::Color color) {
+  const AreaGlyphKind kind = classify_area_glyph(icon_str, area_name_fallback);
+  draw_area_glyph_pass(it, cx + 1, cy + 1, r, kind, kChromeShadow);
+  draw_area_glyph_pass(it, cx, cy, r, kind, color);
 }
 
 int collect_home_activities(
@@ -392,15 +874,30 @@ int collect_home_activities(
     int alarm1_h, int alarm1_m, bool alarm1_en,
     int alarm2_h, int alarm2_m, bool alarm2_en,
     int alarm3_h, int alarm3_m, bool alarm3_en,
-    HomeActivityItem out_items[8],
+    HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour, int cur_min,
     const std::string &calendar_agenda_raw) {
   int count = 0;
 
+  // 0. Active Live Intercom / Doorbell Call (highest urgent pin priority)
+  if (is_doorbell_or_intercom_active() && count < kMaxHomeActivity) {
+    const auto &ac = area_ctx_state();
+    std::string lbl = "Intercom • Live";
+    if (ac.doorbell_talk_state == "ringing") {
+      lbl = "Doorbell • Ringing";
+    } else if (cam_call_active() || cam_listen_active() ||
+               (!ac.doorbell_talk_state.empty() && ac.doorbell_talk_state != "idle" &&
+                ac.doorbell_talk_state != "off" && ac.doorbell_talk_state != "none" &&
+                ac.doorbell_talk_state != "unavailable" && ac.doorbell_talk_state != "unknown")) {
+      lbl = "Doorbell • Live";
+    }
+    out_items[count++] = {6, 0, true, true, true, lbl};
+  }
+
   // 1. Active or Paused Countdown Timers (locks top slot ONLY if running with <= 60 seconds left)
   auto *t_slots = timer_slots();
   for (int pass = 0; pass < 2; pass++) {
-    for (int i = 0; i < 3 && count < 8; i++) {
+    for (int i = 0; i < 3 && count < kMaxHomeActivity; i++) {
       const bool match = (pass == 0) ? t_slots[i].running : (!t_slots[i].running && t_slots[i].paused);
       if (match) {
         const auto &s = t_slots[i];
@@ -416,7 +913,7 @@ int collect_home_activities(
 
   // 2. Active or Paused Stopwatch (locks top slot whenever actively running)
   const uint32_t sw_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
-  if ((stopwatch_running || sw_ms > 0) && count < 8) {
+  if ((stopwatch_running || sw_ms > 0) && count < kMaxHomeActivity) {
     const int mins = static_cast<int>((sw_ms / 60000U) % 60U);
     const int secs = static_cast<int>((sw_ms / 1000U) % 60U);
     const int tenths = static_cast<int>((sw_ms / 100U) % 10U);
@@ -430,7 +927,7 @@ int collect_home_activities(
   if (music_playing) {
     music_queue_cleared() = false;
   }
-  if ((music_playing || (has_valid_track && !music_queue_cleared())) && count < 8) {
+  if ((music_playing || (has_valid_track && !music_queue_cleared())) && count < kMaxHomeActivity) {
     std::string m_txt = music_title;
     if (!has_valid_track) {
       m_txt = "Now Playing";
@@ -441,14 +938,14 @@ int collect_home_activities(
   }
 
   // 4. Armed or Snoozed Alarms
-  if (alarm_snooze_until > 0 && count < 8) {
+  if (alarm_snooze_until > 0 && count < kMaxHomeActivity) {
     out_items[count++] = {4, 0, true, false, true, "Alarm • Snoozed"};
   } else {
     const int a_hrs[3] = {alarm1_h, alarm2_h, alarm3_h};
     const int a_mns[3] = {alarm1_m, alarm2_m, alarm3_m};
     const bool a_ens[3] = {alarm1_en, alarm2_en, alarm3_en};
     const int now_total_m = (cur_hour >= 0 && cur_min >= 0) ? (cur_hour * 60 + cur_min) : -1;
-    for (int i = 0; i < 3 && count < 8; i++) {
+    for (int i = 0; i < 3 && count < kMaxHomeActivity; i++) {
       if (!a_ens[i]) continue;
       char t_buf[16], ap_buf[8] = "";
       format_time_hhmm(a_hrs[i], a_mns[i], is_24h_format, t_buf, sizeof(t_buf), ap_buf);
@@ -470,19 +967,30 @@ int collect_home_activities(
     }
   }
 
-  // 5. Upcoming Calendar Event
-  CalendarRecord first_rec[1];
-  if (count < 8 && parse_calendar_records(calendar_agenda_raw, first_rec, 1) == 1) {
-    const bool is_today = first_rec[0].time.rfind("TODAY", 0) == 0;
-    out_items[count++] = {5, 0, false, false, is_today,
-                          std::string(first_rec[0].time) + " • " + std::string(first_rec[0].title)};
+  // 5. Today's Upcoming Calendar Events (up to 3 TODAY items in rotating deck; first future item in overlay)
+  CalendarRecord cal_recs[8];
+  const size_t n_cal = parse_calendar_records(calendar_agenda_raw, cal_recs, 8);
+  int added_today = 0;
+  for (size_t c = 0; c < n_cal && added_today < 3 && count < kMaxHomeActivity; ++c) {
+    if (cal_recs[c].time.rfind("TODAY", 0) == 0) {
+      out_items[count++] = {
+          5, static_cast<int>(c), false, false, true,
+          std::string(cal_recs[c].time) + " • " + std::string(cal_recs[c].title)};
+      ++added_today;
+    }
+  }
+  if (added_today == 0 && n_cal > 0 && count < kMaxHomeActivity) {
+    out_items[count++] = {
+        5, 0, false, false, false,
+        std::string(cal_recs[0].time) + " • " + std::string(cal_recs[0].title)};
   }
 
-  // Device's Latter Activity Card setting (D-029)
+  // Device's Latter Activity Card setting (D-029); live Intercom/Doorbell (kind == 6) always surfaces.
   const uint8_t mask = activity_source_mask();
   int kept = 0;
   for (int i = 0; i < count; i++) {
-    if (mask & (1U << out_items[i].kind)) {
+    const bool keep = (out_items[i].kind == 6) || ((mask & (1U << out_items[i].kind)) != 0U);
+    if (keep) {
       if (kept != i) out_items[kept] = out_items[i];
       kept++;
     }
@@ -490,20 +998,23 @@ int collect_home_activities(
   return kept;
 }
 
-HomeActivityView resolve_home_activity_view(const HomeActivityItem items[8], int count,
+HomeActivityView resolve_home_activity_view(const HomeActivityItem items[], int count,
                                             uint32_t now_ms, bool two_line) {
   HomeActivityView v;
   if (count <= 0) return v;
   int pin = -1;
+  for (int i = 0; i < count && pin < 0; i++) {
+    if (items[i].kind == 6 && items[i].urgent_pin) pin = i;
+  }
   for (int i = 0; i < count && pin < 0; i++) {
     if (items[i].kind == 2 && items[i].urgent_pin) pin = i;
   }
   for (int i = 0; i < count && pin < 0; i++) {
     if (items[i].kind == 1 && items[i].urgent_pin) pin = i;
   }
-  int deck[8];
+  int deck[kMaxHomeActivity];
   int n = 0;
-  for (int i = 0; i < count; i++) {
+  for (int i = 0; i < count && n < kMaxHomeActivity; i++) {
     if (items[i].in_deck && i != pin) deck[n++] = i;
   }
   const uint32_t slot = now_ms / kHomeActivityRotateMs;
@@ -550,7 +1061,7 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
   const bool is_24h_format = prefs.is_24h_format;
   const float batt = rs.hw_batt_level;
   const bool is_charging = rs.hw_batt_charging;
-  const std::string &clock_face_opt = ctx.clock_face_style_opt;
+  const UiStrView clock_face_opt = ctx.clock_face_style_opt;
   esphome::display::BaseFont *font_batt =
       (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
 
@@ -768,17 +1279,22 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   const bool is_rem_media = !ms.is_local;
   const bool music_playing =
       is_music_playing_effective(is_rem_media, ctx.local_media_playing, ms.state, now_ms);
-  const std::string &music_title =
-      (is_rem_media || ctx.track_title.empty()) ? ms.title : ctx.track_title;
-  const std::string &music_artist =
-      (is_rem_media || ctx.track_artist.empty()) ? ms.artist : ctx.track_artist;
+  const std::string music_title =
+      (is_rem_media || ctx.track_title.empty()) ? ms.title : ctx.track_title.str();
+  const std::string music_artist =
+      (is_rem_media || ctx.track_artist.empty()) ? ms.artist : ctx.track_artist.str();
 
+  const bool sim_override_on = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
   const bool has_custom_wallpaper = (!ac.wallpaper_url.empty() &&
                                      ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                      ctx.home_wallpaper_art.get_width() > 0);
+  const BackdropMode bd_mode = resolve_backdrop_mode(
+      PageId::HOME, home_subpage, show_weather_bg, sim_override_on, has_custom_wallpaper);
 
   if (home_subpage == 1) {
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_custom_wallpaper, cx, ctx.col_bg);
+    s_act_deck_rotates = false;
+    render_page_wallpaper_base(it, ctx.home_wallpaper_art,
+                               bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.theme_primary);
 
     static const char *const kLabels[5] = {"Music", "Area", "Remote", "Games", "Tools"};
@@ -802,7 +1318,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 
   struct HomeActivitiesMemo {
-    HomeActivityItem items[8]{};
+    HomeActivityItem items[kMaxHomeActivity]{};
     int count{-1};
     uint32_t sw_tick{0xFFFFFFFFU};
     int t_rem[3]{-1, -1, -1};
@@ -821,6 +1337,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     int cur_m{-2};
     uint8_t src_mask{0xFFU};
     std::string cal_raw{};
+    bool intercom_on{false};
+    std::string doorbell_st{};
   };
   static HomeActivitiesMemo act_memo;
   const auto *ts_chk = timer_slots();
@@ -840,6 +1358,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
   const uint8_t cur_mask = activity_source_mask();
   const bool eff_cleared = music_playing ? false : music_queue_cleared();
+  const bool cur_intercom = is_doorbell_or_intercom_active();
   if (act_memo.count < 0 ||
       act_memo.sw_tick != cur_sw_tick ||
       act_memo.t_flags != cur_t_flags ||
@@ -861,7 +1380,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       act_memo.a_h[2] != prefs.alarms[2].hour || act_memo.a_m[2] != prefs.alarms[2].minute ||
       act_memo.cur_h != cur_h || act_memo.cur_m != cur_m ||
       act_memo.src_mask != cur_mask ||
-      act_memo.cal_raw != cs.summary) {
+      act_memo.cal_raw != cs.summary ||
+      act_memo.intercom_on != cur_intercom ||
+      act_memo.doorbell_st != ac.doorbell_talk_state) {
     act_memo.count = collect_home_activities(
         now_ms, is_24h_format,
         rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
@@ -890,9 +1411,12 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     act_memo.cur_m = cur_m;
     act_memo.src_mask = cur_mask;
     act_memo.cal_raw = cs.summary;
+    act_memo.intercom_on = cur_intercom;
+    act_memo.doorbell_st = ac.doorbell_talk_state;
   }
   const HomeActivityItem *act_items = act_memo.items;
   const int act_count = act_memo.count;
+  store_rendered_activity_snapshot(act_items, act_count);
 
   std::string cond = ws.condition;
   bool is_night = (ws.sun_state == "below_horizon" || cond == "clear-night" ||
@@ -906,24 +1430,21 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     s_memo_cond_title = format_weather_title(cond);
   }
   const std::string &cond_title = s_memo_cond_title;
-  const bool sim_override_on = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
   const bool sun_ready = (!ws.sun_state.empty() && ws.sun_state != "unknown" && ws.sun_state != "unavailable");
   const bool weather_ready = ((!std::isnan(ws.temperature) && sun_ready) || sim_override_on) &&
                              (cond_title != "Unavailable");
-  const bool eff_weather_bg = show_weather_bg && weather_ready;
+  const bool live_sky_drawn = (bd_mode == BackdropMode::LiveWeatherSky && weather_ready);
 
-  const bool is_dim_backdrop = (home_subpage == 2);
-  const bool use_custom_wallpaper = has_custom_wallpaper && !show_weather_bg;
   const int cel_x = layout().celestial_x;
   const int cel_y = layout().celestial_y;
   const bool show_celestial = is_night ? show_moon : show_sun;
 
-  if (use_custom_wallpaper) {
-    render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false,
-                            is_dim_backdrop ? 2 : 0);
-  } else if (eff_weather_bg) {
-    backdrop_active() = true;
-    if (is_dim_backdrop) {
+  if (home_subpage == 2) {
+    s_act_deck_rotates = false;
+    if (bd_mode == BackdropMode::CustomWallpaper) {
+      render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
+    } else if ((show_weather_bg || sim_override_on) && weather_ready) {
+      backdrop_active() = true;
       frame_base(it, ctx.col_bg);
       if (!is_night) {
 #if LATTER_ROUND_DISPLAY
@@ -937,6 +1458,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                            is_night ? Color(22, 26, 34) : Color(42, 36, 12));
       }
     } else {
+      frame_base(it, ctx.col_bg);
+    }
+  } else {
+    if (live_sky_drawn) {
+      backdrop_active() = true;
       double moon_cycle = 0.5;
       if (is_night) {
         compute_synodic_moon_phase(ctx.now.is_valid(),
@@ -946,6 +1472,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night,
                                       moon_cycle, cel_x, cel_y, true,
                                       rs.hw_accel_x, rs.hw_accel_y, show_celestial);
+    } else if (has_custom_wallpaper) {
+      render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 0);
+    } else {
+      frame_base(it, ctx.col_bg);
     }
   }
   frame_base(it, ctx.col_bg);
@@ -967,7 +1497,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     if (act_count <= 0) {
       render_empty_state(it, cx, cy, "No active activities", ctx.font_small, ctx.col_slate);
     } else {
-      const int total_pages = (act_count > 5) ? 2 : 1;
+      const int total_pages = std::max(1, (act_count + 4) / 5);
       if (home_activity_overlay_page() >= total_pages) home_activity_overlay_page() = 0;
       if (home_activity_overlay_page() < 0) home_activity_overlay_page() = 0;
 
@@ -1001,14 +1531,14 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     return;
   }
 
-  if (eff_weather_bg && show_celestial) {
+  if (live_sky_drawn && show_celestial) {
     frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? scale_min(30) : scale_min(34),
                             WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
                             0, scale_s(10));
   }
 
   const Color fg_home_white = ctx.col_white;
-  const Color fg_home_cond  = (!eff_weather_bg || is_night) ? ctx.theme_secondary : Color(255, 225, 110);
+  const Color fg_home_cond  = (!live_sky_drawn || is_night) ? ctx.theme_secondary : Color(255, 225, 110);
 
   const int z_date_y  = layout().home_date_y;
   const int z_clock_y = layout().home_clock_y;
@@ -1051,18 +1581,31 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                    WidgetId::HOME_WEATHER_HERO, kHitTap | kHitFocusSlot);
   }
 
-  // Transient Wake Greeting Latch (8.0s Full Brightness + 2.5s Smooth Fade-Out = 10.5s Total)
-  if (!wake_greeting_latched() && ctx.now.is_valid() && now_ms < 25000U) {
-    wake_greeting_start_ms() = now_ms;
-    wake_greeting_latched() = true;
+  // Evaluate Activity View ahead of Wake Greeting so urgent pinned items immediately supersede greeting
+  const auto &ly = layout();
+  const bool two = ly.home_activity_two_line();
+  const HomeActivityView view = resolve_home_activity_view(act_items, act_count, now_ms, two);
+
+  // Transient Wake Greeting (2.8s Full Brightness + 1.2s True-Alpha Cubic Fade-Out = 4.0s Total)
+  if (rs.nav.wake_greeting_pending) {
+    rs.nav.wake_greeting_pending = false;
+    if (show_wake_greeting && ctx.now.is_valid() && !view.pinned) {
+      wake_greeting_latched() = true;
+      wake_greeting_start_ms() = (now_ms == 0U) ? 1U : now_ms;
+    }
+  }
+  if (wake_greeting_latched()) {
+    const uint32_t el_chk = (now_ms >= wake_greeting_start_ms()) ? (now_ms - wake_greeting_start_ms()) : 0U;
+    if (!show_wake_greeting || view.pinned || !ctx.now.is_valid() || el_chk >= kWakeGreetingTotalMs) {
+      wake_greeting_latched() = false;
+    }
   }
   const uint32_t greet_el = (wake_greeting_latched() && now_ms >= wake_greeting_start_ms())
                                 ? (now_ms - wake_greeting_start_ms())
                                 : 999999U;
-  const bool greeting_active = show_wake_greeting && wake_greeting_latched() &&
-                               ctx.now.is_valid() && (greet_el < 10500U);
+  const bool greeting_active = wake_greeting_latched() && (greet_el < kWakeGreetingTotalMs);
 
-  // ZONE 4: Home activity card (D-028)
+  // ZONE 4: Home activity card (D-028 / D-038)
   if (ctx.font_date != nullptr) {
     static bool weather_h_measured = false;
     if (!weather_h_measured) {
@@ -1072,19 +1615,24 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       weather_h_measured = true;
     }
   }
-  const int act_card_cy = layout().home_activity_cy(home_weather_text_h());
+  const int act_card_cy = ly.home_activity_cy(home_weather_text_h());
   home_activity_card_shown() = (home_subpage == 0 && !greeting_active && act_count > 0);
   if (home_activity_card_shown()) {
-    const auto &ly = layout();
-    const bool two = ly.home_activity_two_line();
     const int card_h = ly.home_activity_h();
     const int card_w = ly.home_activity_w();
     const int pitch = ly.home_activity_pitch();
     const int row_top = two ? (act_card_cy - pitch / 2) : act_card_cy;
     const int row_bot = act_card_cy + pitch / 2;
     const bool has_drop = ly.home_activity_has_drop(act_count);
-    const HomeActivityView view = resolve_home_activity_view(act_items, act_count, now_ms, two);
     rs.nav.home_activity_idx = view.top;
+    s_act_band_y0 = std::max(0, act_card_cy - card_h / 2 - 2);
+    s_act_band_y1 = std::min(SCREEN_H - 1, act_card_cy + card_h / 2 + 2);
+
+    int deck_cnt = 0;
+    for (int di = 0; di < act_count; ++di) {
+      if (act_items[di].in_deck && (!view.pinned || di != view.top)) ++deck_cnt;
+    }
+    s_act_deck_rotates = view.pinned ? (two && deck_cnt > 1) : (deck_cnt > (two ? 2 : 1));
 
     auto &st = home_act_state();
     if (view.top != st.top || view.bottom != st.bottom) {
@@ -1128,36 +1676,44 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                         GlassVariant::Clear, ctx.col_white);
       const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
 
-      const int rise = scale_y(16);
-      auto draw_row = [&](int item, int y, float alpha) {
-        if (item < 0 || item >= act_count || alpha <= 0.05f) return;
-        draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, ctx.font_small,
-                                        card_bg, btn_bg, ctx.theme_secondary, ctx.col_white,
-                                        std::min(1.0f, alpha));
-      };
-      auto change_in_place = [&](int from, int to, int y) {
-        if (!animating || from == to) {
-          draw_row(to, y, 1.0f);
-          return;
+      const int prev_clip_y0 = clip_y0();
+      const int prev_clip_y1 = clip_y1();
+      const int inner_y0 = std::max(prev_clip_y0, card_y0 + 1);
+      const int inner_y1 = std::min(prev_clip_y1, card_y0 + card_h - 2);
+      if (inner_y0 <= inner_y1) {
+        set_clip_y_band(inner_y0, inner_y1);
+        const int rise = scale_y(16);
+        auto draw_row = [&](int item, int y, float alpha) {
+          if (item < 0 || item >= act_count || alpha <= 0.05f) return;
+          draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, ctx.font_small,
+                                          card_bg, btn_bg, ctx.theme_secondary, ctx.col_white,
+                                          std::min(1.0f, alpha));
+        };
+        auto change_in_place = [&](int from, int to, int y) {
+          if (!animating || from == to) {
+            draw_row(to, y, 1.0f);
+            return;
+          }
+          draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+          draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+        };
+        if (!two) {
+          change_in_place(st.from_top, view.top, act_card_cy);
+        } else if (view.bottom < 0) {
+          if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
+          else draw_row(view.top, act_card_cy, 1.0f);
+        } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
+          draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+          draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
+          draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+        } else if (animating && st.from_bottom >= 0) {
+          change_in_place(st.from_top, view.top, row_top);
+          change_in_place(st.from_bottom, view.bottom, row_bot);
+        } else {
+          draw_row(view.top, row_top, 1.0f);
+          draw_row(view.bottom, row_bot, 1.0f);
         }
-        draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-        draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
-      };
-      if (!two) {
-        change_in_place(st.from_top, view.top, act_card_cy);
-      } else if (view.bottom < 0) {
-        if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
-        else draw_row(view.top, act_card_cy, 1.0f);
-      } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
-        draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-        draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
-        draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
-      } else if (animating && st.from_bottom >= 0) {
-        change_in_place(st.from_top, view.top, row_top);
-        change_in_place(st.from_bottom, view.bottom, row_bot);
-      } else {
-        draw_row(view.top, row_top, 1.0f);
-        draw_row(view.bottom, row_bot, 1.0f);
+        set_clip_y_band(prev_clip_y0, prev_clip_y1);
       }
 
       const int card_right = cx + card_w / 2;
@@ -1181,9 +1737,12 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       }
     }
 
-    frame_hits().add_centered_rect(cx, act_card_cy, card_w, card_h,
-                                   WidgetId::HOME_ACTIVITY_CARD, kHitTap | kHitFocusSlot,
-                                   static_cast<int16_t>(view.top >= 0 ? view.top : 0));
+    register_home_activity_hit_regions(
+        frame_hits(), cx, act_card_cy, card_w, card_h,
+        two && (view.bottom >= 0), has_drop, view.top, view.bottom,
+        scale_x(56), scale_x(52));
+  } else {
+    s_act_deck_rotates = false;
   }
 
   if (greeting_active) {
@@ -1194,31 +1753,22 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int greet_y = act_card_cy - 2;
 
     float alpha = 1.0f;
-    if (greet_el > 8000U) {
-      float u = 1.0f - static_cast<float>(greet_el - 8000U) * (1.0f / 2500.0f);
-      if (u < 0.0f) u = 0.0f;
+    if (greet_el > kWakeGreetingHoldMs) {
+      const float u = std::clamp(
+          1.0f - static_cast<float>(greet_el - kWakeGreetingHoldMs) / static_cast<float>(kWakeGreetingFadeMs),
+          0.0f, 1.0f);
       alpha = u * u * (3.0f - 2.0f * u);
     }
-
-    Color bg_target(0, 0, 0);
-    if (eff_weather_bg && !is_night) {
-      bg_target = Color(28, 54, 84);
-      if (cond.find("fog") != std::string::npos || cond.find("mist") != std::string::npos) {
-        bg_target = Color(32, 46, 60);
-      } else if (cond.find("cloud") != std::string::npos && cond.find("partly") == std::string::npos) {
-        bg_target = Color(22, 38, 56);
-      } else if (cond.find("rain") != std::string::npos || cond.find("thunder") != std::string::npos ||
-                 cond.find("lightning") != std::string::npos) {
-        bg_target = Color(18, 30, 46);
+    const int alpha_q8 = std::clamp(static_cast<int>(std::lround(alpha * 256.0f)), 0, 256);
+    if (alpha_q8 > 0) {
+      const int shadow_q8 = (alpha_q8 * 192) >> 8;
+      if (shadow_q8 > 8) {
+        fast_print_alpha(it, cx + 1, greet_y + 1, ctx.font_date, kChromeShadow,
+                         TextAlign::CENTER, fit_greet.c_str(), shadow_q8);
       }
+      fast_print_alpha(it, cx, greet_y, ctx.font_date, ctx.col_white,
+                       TextAlign::CENTER, fit_greet.c_str(), alpha_q8);
     }
-
-    const Color fg_c = lerp_color(bg_target, ctx.col_white, alpha);
-    if (alpha > 0.35f) {
-      const Color sh_c = lerp_color(bg_target, ctx.col_black, alpha);
-      fast_print(it, cx + 1, greet_y + 1, ctx.font_date, sh_c, TextAlign::CENTER, fit_greet.c_str());
-    }
-    fast_print(it, cx, greet_y, ctx.font_date, fg_c, TextAlign::CENTER, fit_greet.c_str());
   }
 
   home_lap.mark(ProfSect::HOME_TEXT);
@@ -1236,10 +1786,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     get_home_dock_window_xs(dock_count, home_dock_page(), cx, win_xs, has_left_arr, has_right_arr);
     const int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     const int vis_count = std::min(4, dock_count - start_idx);
-    const int dock_y = layout().dock_y;
-    const int dock_r = layout().dock_r;
+    const int dock_y = ly.dock_y;
+    const int dock_r = ly.dock_r;
 
-    const int dock_pad = std::max(0, layout().dock_hit_r() - dock_r);
+    const int dock_pad = std::max(0, ly.dock_hit_r() - dock_r);
     for (int v = 0; v < vis_count; v++) {
       frame_hits().add_circle(win_xs[v], dock_y, dock_r,
                               WidgetId::DOCK_SLOT_BASE + v,
@@ -1248,37 +1798,41 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                               dock_pad);
     }
 
+    const float dk = static_cast<float>(std::max(1, dock_r)) / 27.0f;
+    auto sd = [dk](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * dk)); };
+    auto sdr = [dk](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * dk))); };
+
     auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow, Color cut_c) {
       if (app_id == 6) {
-        fast_filled_triangle(it, bx + 11, by - 15, bx + 6, by - 7, bx + 16, by - 7, c);
-        fill_rect_row_major(it, bx + 8, by - 14, 7, 3, c);
-        fast_vline(it, bx + 11, by - 7, 19, c);
-        fast_vline(it, bx + 12, by - 7, 19, c);
-        fast_hline(it, bx + 8, by + 12, 8, c);
-        fill_rect_row_major(it, bx - 12, by - 4, 15, 8, c);
-        fast_filled_circle(it, bx - 11, by - 2, 2, c);
-        fast_filled_circle(it, bx + 1,  by - 2, 2, c);
-        fast_filled_circle(it, bx - 14, by + 3, 3, c);
-        fast_filled_circle(it, bx + 4,  by + 3, 3, c);
-        fill_rect_row_major(it, bx - 15, by + 3, 21, 7, c);
-        fill_rect_row_major(it, bx - 14, by + 10, 3, 3, c);
-        fill_rect_row_major(it, bx + 2,  by + 10, 3, 3, c);
+        fast_filled_triangle(it, bx + sd(11), by - sd(15), bx + sd(6), by - sd(7), bx + sd(16), by - sd(7), c);
+        fill_rect_row_major(it, bx + sd(8), by - sd(14), sdr(7), sdr(3), c);
+        fast_vline(it, bx + sd(11), by - sd(7), sdr(19), c);
+        fast_vline(it, bx + sd(12), by - sd(7), sdr(19), c);
+        fast_hline(it, bx + sd(8), by + sd(12), sdr(8), c);
+        fill_rect_row_major(it, bx - sd(12), by - sd(4), sdr(15), sdr(8), c);
+        fast_filled_circle(it, bx - sd(11), by - sd(2), sdr(2), c);
+        fast_filled_circle(it, bx + sd(1),  by - sd(2), sdr(2), c);
+        fast_filled_circle(it, bx - sd(14), by + sd(3), sdr(3), c);
+        fast_filled_circle(it, bx + sd(4),  by + sd(3), sdr(3), c);
+        fill_rect_row_major(it, bx - sd(15), by + sd(3), sdr(21), sdr(7), c);
+        fill_rect_row_major(it, bx - sd(14), by + sd(10), sdr(3), sdr(3), c);
+        fill_rect_row_major(it, bx + sd(2),  by + sd(10), sdr(3), sdr(3), c);
         if (!is_shadow) {
-          fast_vline(it, bx - 5, by - 4, 8, cut_c);
-          fast_hline(it, bx - 12, by + 4, 15, cut_c);
+          fast_vline(it, bx - sd(5), by - sd(4), sdr(8), cut_c);
+          fast_hline(it, bx - sd(12), by + sd(4), sdr(15), cut_c);
         }
       } else if (app_id == 2) {
-        fast_filled_circle(it, bx - 9, by + 9, 5, c);
-        fast_filled_circle(it, bx + 8, by + 6, 5, c);
-        fill_rect_row_major(it, bx - 5, by - 12, 3, 21, c);
-        fill_rect_row_major(it, bx + 11, by - 15, 3, 21, c);
-        fast_line(it, bx - 5, by - 12, bx + 13, by - 15, c);
-        fast_line(it, bx - 5, by - 11, bx + 13, by - 14, c);
-        fast_line(it, bx - 5, by - 10, bx + 13, by - 13, c);
-        fast_line(it, bx - 5, by - 9,  bx + 13, by - 12, c);
+        fast_filled_circle(it, bx - sd(9), by + sd(9), sdr(5), c);
+        fast_filled_circle(it, bx + sd(8), by + sd(6), sdr(5), c);
+        fill_rect_row_major(it, bx - sd(5), by - sd(12), sdr(3), sdr(21), c);
+        fill_rect_row_major(it, bx + sd(11), by - sd(15), sdr(3), sdr(21), c);
+        fast_line(it, bx - sd(5), by - sd(12), bx + sd(13), by - sd(15), c);
+        fast_line(it, bx - sd(5), by - sd(11), bx + sd(13), by - sd(14), c);
+        fast_line(it, bx - sd(5), by - sd(10), bx + sd(13), by - sd(13), c);
+        fast_line(it, bx - sd(5), by - sd(9),  bx + sd(13), by - sd(12), c);
       } else if (app_id == 7) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-9, 9, -16, 16>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+          draw_cached_dock_mask<-9, 9, -16, 16>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
             const int ax = std::abs(dx);
             const int ay = std::abs(dy);
             if (ax > 9 || ay > 16) return false;
@@ -1305,14 +1859,14 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         }
       } else if (app_id == 8) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-12, 12, -12, 12>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+          draw_cached_dock_mask<-12, 12, -12, 12>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
             const int ax = std::abs(dx);
             const int ay = std::abs(dy);
             if (ax < 2 || ax > 11 || ay < 2 || ay > 11) return false;
             const int lx = ax - 2;
-            const int ly = ay - 2;
-            if ((lx == 0 || lx == 9) && (ly == 0 || ly == 9)) return false;
-            if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly >= 3 && ly <= 6) {
+            const int ly_c = ay - 2;
+            if ((lx == 0 || lx == 9) && (ly_c == 0 || ly_c == 9)) return false;
+            if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly_c >= 3 && ly_c <= 6) {
               return false;
             }
             return true;
@@ -1320,7 +1874,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         }
       } else if (app_id == 3) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-19, 19, -12, 12>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+          draw_cached_dock_mask<-19, 19, -12, 12>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
             static constexpr int8_t GP_OUT_MAX[25] = {
                9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15, 13
             };
@@ -1354,7 +1908,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         }
       } else if (app_id == 4) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-16, 16, -16, 16>(it, bx, by, c, ctx.col_black, [](int dx, int dy) -> bool {
+          draw_cached_dock_mask<-16, 16, -16, 16>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
             const int r2 = dx * dx + dy * dy;
             if (r2 <= 24 || r2 > 232) return false;
             if (r2 <= 128) return true;
@@ -1375,42 +1929,41 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
           });
         }
       } else if (app_id == 12) {
-        fill_rect_row_major(it, bx - 13, by - 7, 26, 17, c);
-        fill_rect_row_major(it, bx - 5, by - 11, 10, 4, c);
+        fill_rect_row_major(it, bx - sd(13), by - sd(7), sdr(26), sdr(17), c);
+        fill_rect_row_major(it, bx - sd(5), by - sd(11), sdr(10), sdr(4), c);
         if (!is_shadow) {
-          fast_filled_circle(it, bx, by + 1, 6, cut_c);
-          fast_circle(it, bx, by + 1, 4, c);
-          fast_filled_circle(it, bx, by + 1, 2, c);
+          fast_filled_circle(it, bx, by + sd(1), sdr(6), cut_c);
+          fast_circle(it, bx, by + sd(1), sdr(4), c);
+          fast_filled_circle(it, bx, by + sd(1), sdr(2), c);
         }
       } else if (app_id == 9) {
-        fill_rect_row_major(it, bx + 7, by - 14, 4, 8, c);
-        fast_filled_triangle(it, bx, by - 16, bx - 16, by - 2, bx + 16, by - 2, c);
-        fill_rect_row_major(it, bx - 16, by - 2, 33, 2, c);
-        fill_rect_row_major(it, bx - 12, by, 25, 13, c);
+        fill_rect_row_major(it, bx + sd(7), by - sd(14), sdr(4), sdr(8), c);
+        fast_filled_triangle(it, bx, by - sd(16), bx - sd(16), by - sd(2), bx + sd(16), by - sd(2), c);
+        fill_rect_row_major(it, bx - sd(16), by - sd(2), sdr(33), sdr(2), c);
+        fill_rect_row_major(it, bx - sd(12), by, sdr(25), sdr(13), c);
         if (!is_shadow) {
-          fast_hline(it, bx - 12, by, 25, cut_c);
-          fill_rect_row_major(it, bx - 8, by + 3, 6, 10, cut_c);
-          fast_pixel(it, bx - 4, by + 8, c);
-          fill_rect_row_major(it, bx + 2, by + 3, 7, 6, cut_c);
-          fast_vline(it, bx + 5, by + 3, 6, c);
-          fast_hline(it, bx + 2, by + 5, 7, c);
+          fast_hline(it, bx - sd(12), by, sdr(25), cut_c);
+          fill_rect_row_major(it, bx - sd(8), by + sd(3), sdr(6), sdr(10), cut_c);
+          fast_pixel(it, bx - sd(4), by + sd(8), c);
+          fill_rect_row_major(it, bx + sd(2), by + sd(3), sdr(7), sdr(6), cut_c);
+          fast_vline(it, bx + sd(5), by + sd(3), sdr(6), c);
+          fast_hline(it, bx + sd(2), by + sd(5), sdr(7), c);
         }
       } else if (app_id == 5) {
-        // Sun behind foreground cloud
-        fast_filled_circle(it, bx + 6, by - 6, 5, c);
-        fast_vline(it, bx + 6, by - 14, 2, c);
-        fast_hline(it, bx + 13, by - 6, 2, c);
-        fast_line(it, bx + 11, by - 11, bx + 12, by - 12, c);
-        fast_line(it, bx + 1, by - 11, bx, by - 12, c);
+        fast_filled_circle(it, bx + sd(6), by - sd(6), sdr(5), c);
+        fast_vline(it, bx + sd(6), by - sd(14), sdr(2), c);
+        fast_hline(it, bx + sd(13), by - sd(6), sdr(2), c);
+        fast_line(it, bx + sd(11), by - sd(11), bx + sd(12), by - sd(12), c);
+        fast_line(it, bx + sd(1), by - sd(11), bx, by - sd(12), c);
         if (!is_shadow) {
-          fast_filled_circle(it, bx - 2, by + 1, 9, cut_c);
-          fast_filled_circle(it, bx + 6, by + 4, 8, cut_c);
-          fill_rect_row_major(it, bx - 11, by + 2, 19, 9, cut_c);
+          fast_filled_circle(it, bx - sd(2), by + sd(1), sdr(9), cut_c);
+          fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(8), cut_c);
+          fill_rect_row_major(it, bx - sd(11), by + sd(2), sdr(19), sdr(9), cut_c);
         }
-        fast_filled_circle(it, bx - 9, by + 5, 5, c);
-        fast_filled_circle(it, bx - 2, by + 1, 7, c);
-        fast_filled_circle(it, bx + 6, by + 4, 6, c);
-        fill_rect_row_major(it, bx - 9, by + 4, 16, 7, c);
+        fast_filled_circle(it, bx - sd(9), by + sd(5), sdr(5), c);
+        fast_filled_circle(it, bx - sd(2), by + sd(1), sdr(7), c);
+        fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(6), c);
+        fill_rect_row_major(it, bx - sd(9), by + sd(4), sdr(16), sdr(7), c);
       }
     };
 
@@ -1460,17 +2013,54 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false, slot_cut_c);
     }
 
-    const int pips_y = layout().dock_pips_y;
+    const int pips_y = ly.dock_pips_y;
     render_viewport_scrollbar(it, cx, pips_y, dock_count, anim_start,
                               ctx.theme_primary, false);
   }
 
+  // ZONE 6: Battery Readout & Geometry-Adaptive Roaming Area Vector Glyph
+  const bool show_roaming_area = is_roaming_area_indicator_active();
+#if LATTER_ROUND_DISPLAY
+  const int batt_cx = show_roaming_area ? (ly.battery_cx + scale_x(16)) : ly.battery_cx;
 #if LATTER_HAS_BATTERY
-  esphome::display::BaseFont *font_batt =
-      (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
-  render_battery_indicator(it, layout().battery_cx, layout().battery_y,
-                           rs.hw_batt_level, rs.hw_batt_charging, font_batt,
-                           ctx.theme_secondary, ctx.col_gold, ctx.col_green);
+  {
+    esphome::display::BaseFont *font_batt =
+        (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
+    render_battery_indicator(it, batt_cx, ly.battery_y,
+                             rs.hw_batt_level, rs.hw_batt_charging, font_batt,
+                             ctx.theme_secondary, ctx.col_gold, ctx.col_green);
+  }
+#endif
+  if (show_roaming_area) {
+    const int area_cx = batt_cx - scale_x(46);
+    const int area_cy = ly.battery_y;
+    render_area_archetype_icon(it, area_cx, area_cy, scale_s(9),
+                               ac.area_icon, ac.area_name, ctx.theme_secondary);
+    frame_hits().add_circle(area_cx, area_cy, scale_s(12),
+                            WidgetId::HOME_AREA_ICON,
+                            kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(10));
+  }
+#else
+#if LATTER_HAS_BATTERY
+  {
+    esphome::display::BaseFont *font_batt =
+        (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
+    render_battery_indicator(it, ly.battery_cx, ly.battery_y,
+                             rs.hw_batt_level, rs.hw_batt_charging, font_batt,
+                             ctx.theme_secondary, ctx.col_gold, ctx.col_green);
+  }
+#endif
+  if (show_roaming_area) {
+    const int area_cx = ly.battery_cx;
+    const int area_cy = ly.battery_y + scale_y(24);
+    render_area_archetype_icon(it, area_cx, area_cy, scale_s(9),
+                               ac.area_icon, ac.area_name, ctx.theme_secondary);
+    frame_hits().add_circle(area_cx, area_cy, scale_s(12),
+                            WidgetId::HOME_AREA_ICON,
+                            kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            0, scale_s(10));
+  }
 #endif
   home_lap.mark(ProfSect::HOME_DOCK);
 }

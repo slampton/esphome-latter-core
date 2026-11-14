@@ -791,7 +791,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 4U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 45U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 51U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
 
   // Weather dock token + 10-slot dock array capacity (8 user tokens + Settings)
   LATTER_CHECK(latter_ui::kMaxDockApps == 10);
@@ -977,7 +977,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111303L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111304L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -1508,6 +1508,139 @@ void test_phase2_glass_and_scissor_compositor() {
   LATTER_CHECK(comms_cpp.find("kChromeGlassTint, 176") == std::string::npos);
 }
 
+void test_phase3_weather_sky_backdrop_and_home_scene() {
+  using latter_ui::BackdropMode;
+  using latter_ui::resolve_backdrop_mode;
+
+  // 1. Single Authoritative Backdrop Precedence (D-038)
+  // On Home (gui_page=1, home_subpage=0) AND Sky & Weather (gui_page=5):
+  // weather_background ON (or weather_sim_active) wins over CustomWallpaper!
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, true, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, true, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, true, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 2, false, true, true) == BackdropMode::LiveWeatherSky);
+  // When weather_background is OFF (and sim inactive), CustomWallpaper renders when loaded, else SolidBlack
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, false) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, false) == BackdropMode::SolidBlack);
+  // Home subpage 1 & 2 keep CustomWallpaper (dimmed on subpage 2) even while weather_background is ON!
+  LATTER_CHECK(resolve_backdrop_mode(1, 1, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, false) == BackdropMode::SolidBlack);
+  // System (4), Area (6), Remote (7), Tools (8), Whole-Home (9), Music (2), Clock (0), Games (3)
+  LATTER_CHECK(resolve_backdrop_mode(4, 0, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(6, 0, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(7, 0, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, false, true, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(9, 0, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, false, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, false, true, false, false) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, false, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(3, 0, true, false, true) == BackdropMode::SolidBlack);
+
+  // 2. Zero-Copy UiStrView invariants & temporary-rvalue compile-time guard
+  static_assert(!std::is_constructible_v<latter_ui::UiStrView, std::string &&>);
+  static_assert(std::is_trivially_copyable_v<latter_ui::UiStrView>);
+  const std::string live_s = "Thunderstorm (Night)";
+  const latter_ui::UiStrView v_empty{};
+  const latter_ui::UiStrView v_lit{"Minimal Digital"};
+  const latter_ui::UiStrView v_str{live_s};
+  LATTER_CHECK(v_empty.empty() && std::string_view(v_empty.c_str()) == "");
+  LATTER_CHECK(!v_lit.empty() && v_lit == "Minimal Digital" && v_lit != "Aurora");
+  LATTER_CHECK(v_str == live_s && v_str.find("Night") != std::string_view::npos);
+  LATTER_CHECK(v_str.rfind("Thunder", 0) == 0 && v_str.substr(0, 7) == "Thunder");
+
+  // 3. FrameHitTable Activity Card sub-regions (single-row round + two-row square/rect + rotary focus order)
+  latter_ui::FrameHitTable ht{};
+  ht.clear();
+  latter_ui::register_home_activity_hit_regions(ht, 233, 270, 380, 68, false, true, 3, -1, 56, 52);
+  LATTER_CHECK(ht.count == 3 && ht.focus_count() == 3);
+  LATTER_CHECK(ht.focus_at(0)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_0 && ht.focus_at(0)->param == 3);
+  LATTER_CHECK(ht.focus_at(1)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_0 && ht.focus_at(1)->param == 3);
+  LATTER_CHECK(ht.focus_at(2)->widget_id == latter_ui::WidgetId::HOME_ACT_EXPAND);
+  // Left label body, quick-action button column, and dropdown chevron column never overlap
+  LATTER_CHECK(ht.hit_test(140, 270, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_0);
+  LATTER_CHECK(ht.hit_test(423 - 80, 270, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_0);
+  LATTER_CHECK(ht.hit_test(423 - 20, 270, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_EXPAND);
+
+  ht.clear();
+  latter_ui::register_home_activity_hit_regions(ht, 240, 290, 380, 104, true, true, 2, 7, 56, 52);
+  LATTER_CHECK(ht.count == 5 && ht.focus_count() == 5);
+  LATTER_CHECK(ht.focus_at(0)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_0 && ht.focus_at(0)->param == 2);
+  LATTER_CHECK(ht.focus_at(1)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_0 && ht.focus_at(1)->param == 2);
+  LATTER_CHECK(ht.focus_at(2)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_1 && ht.focus_at(2)->param == 7);
+  LATTER_CHECK(ht.focus_at(3)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_1 && ht.focus_at(3)->param == 7);
+  LATTER_CHECK(ht.focus_at(4)->widget_id == latter_ui::WidgetId::HOME_ACT_EXPAND);
+  LATTER_CHECK(ht.hit_test(150, 265, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_0);
+  LATTER_CHECK(ht.hit_test(150, 315, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ROW_1);
+  LATTER_CHECK(ht.hit_test(430 - 80, 265, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_0);
+  LATTER_CHECK(ht.hit_test(430 - 80, 315, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_1);
+  LATTER_CHECK(ht.hit_test(430 - 20, 290, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_EXPAND);
+
+  // 4. Protocol v3 area_icon (field 42), Roaming Area predicate, and Wake Greeting >= 30 min standby trigger
+  latter_ui::reset_all_v3_rev_guards();
+  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
+  std::vector<std::string> ac_tok(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
+  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ICON)] = "mdi:countertop";
+  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(500, 1, ac_tok)));
+  LATTER_CHECK(latter_ui::area_ctx_state().area_icon == "mdi:countertop");
+
+  auto &prefs = latter_ui::persisted_prefs();
+  prefs.ble_beacon_enabled = true;
+  LATTER_CHECK(latter_ui::is_roaming_area_indicator_active());  // Host test defaults to portable (!LATTER_IS_STATIONARY)
+  prefs.ble_beacon_enabled = false;
+  LATTER_CHECK(!latter_ui::is_roaming_area_indicator_active());
+
+  auto &rs = latter_ui::runtime_state();
+  prefs.wake_greeting = true;
+  rs.nav.wake_greeting_pending = false;
+  rs.nav.display_power_state = 2;
+  rs.nav.sleep_start_time = 0;
+  rs.nav.standby_entered_ms = 1000U;
+  latter_ui::note_wake_from_standby(60000U);  // 59s standby (< 30 min) -> stays false
+  LATTER_CHECK(!rs.nav.wake_greeting_pending);
+  rs.nav.standby_entered_ms = 1000U;
+  latter_ui::note_wake_from_standby(1000U + latter_ui::kStandbyGreetingIdleMs);  // >= 30 min standby -> true!
+  LATTER_CHECK(rs.nav.wake_greeting_pending);
+
+  // 5. Phase 3 source-level architectural guards
+  const std::string comp_h = read_repo_file("../../include/ui_compositor.h");
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
+
+  LATTER_CHECK(comp_h.find("struct UiStrView") != std::string::npos);
+  LATTER_CHECK(comp_h.find("resolve_backdrop_mode(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("kHomeActivityRotateMs") == std::string::npos);
+  LATTER_CHECK(weather_cpp.find("SkyBaseCache") != std::string::npos);
+  LATTER_CHECK(weather_cpp.find("MALLOC_CAP_SPIRAM") != std::string::npos);
+  LATTER_CHECK(weather_cpp.find("LightningFlashState") != std::string::npos);
+  LATTER_CHECK(latter_ui::kBatteryMotionWindowMs == 35000U);
+  LATTER_CHECK(weather_cpp.find("WeatherSkyFadeState") != std::string::npos);
+  LATTER_CHECK(weather_cpp.find("fmodf(t_sec") == std::string::npos);
+  LATTER_CHECK(weather_cpp.find("/ 220U") == std::string::npos);
+  LATTER_CHECK(home_cpp.find("fast_print_alpha(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("render_area_archetype_icon(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("register_home_activity_hit_regions(") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("std::max(prev_clip_y0, card_y0 + 1)") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("std::min(prev_clip_y1, card_y0 + card_h - 2)") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("Color(28, 54, 84)") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("WidgetId::HOME_AREA_ICON") != std::string::npos);
+  LATTER_CHECK(touch_cpp.find("WidgetId::HOME_ACT_EXPAND") != std::string::npos);
+  LATTER_CHECK(touch_cpp.find("WidgetId::HOME_ACTIVITY_CARD") == std::string::npos);
+  LATTER_CHECK(gui_yaml.find("resolve_backdrop_mode(") != std::string::npos);
+  LATTER_CHECK(gui_yaml.find("schedule_weather_disp_update(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("resolve_backdrop_mode(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("weather_sky_motion_stepping(") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -1519,8 +1652,9 @@ int main() {
   test_device_prefs_v2_and_event_timer_sync();
   test_phase1_boot_wake_hibernate_and_ble_roaming();
   test_phase2_glass_and_scissor_compositor();
+  test_phase3_weather_sky_backdrop_and_home_scene();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "2-tier GlassVariant + Y-scissor invariants, HibernateSnapshot + BLE roaming/pause, and hal_battery verified.\n");
+      "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
   return 0;
 }

@@ -1041,6 +1041,122 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
 #endif
 }
 
+void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome::display::BaseFont *base_font,
+                           esphome::Color color, esphome::display::TextAlign align, const char *text,
+                           int alpha_q8) {
+  if (base_font == nullptr || text == nullptr || alpha_q8 <= 0) return;
+  if (alpha_q8 >= 255) {
+    fast_print_impl(it, x, y, base_font, color, align, text, esphome::display::COLOR_OFF);
+    return;
+  }
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if (cy1 < cy0) return;
+#ifdef USE_FONT
+  auto *font = static_cast<esphome::font::Font *>(base_font);
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr || font->get_bpp() > 4) {
+    if (alpha_q8 >= 128) {
+      fast_print_impl(it, x, y, base_font, color, align, text, esphome::display::COLOR_OFF);
+    }
+    return;
+  }
+
+  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
+  it.get_text_bounds(x, y, text, base_font, align, &x_start, &y_start, &text_w, &text_h);
+  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
+
+  const int bpp = font->get_bpp();
+  const int bpp_max = (1 << bpp) - 1;
+  const int a_clamped = std::min(256, alpha_q8);
+  const int cr5 = (static_cast<int>(color.r) * 31 + 127) / 255;
+  const int cg6 = (static_cast<int>(color.g) * 63 + 127) / 255;
+  const int cb5 = (static_cast<int>(color.b) * 31 + 127) / 255;
+
+  auto blend_px = [&](uint16_t &dst, int a) {
+    if (a <= 0) return;
+    if (a >= 256) {
+      dst = encode_hw_rgb565(color);
+      return;
+    }
+    const uint16_t bg = decode_hw_rgb565_raw(dst);
+    const int ia = 256 - a;
+    const int r = (cr5 * a + ((bg >> 11) & 0x1F) * ia + 128) >> 8;
+    const int g = (cg6 * a + ((bg >> 5) & 0x3F) * ia + 128) >> 8;
+    const int b = (cb5 * a + (bg & 0x1F) * ia + 128) >> 8;
+    dst = encode_hw_rgb565_raw(static_cast<uint16_t>(
+        (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
+  };
+
+#ifdef USE_ESP32
+  if (bpp == 1) {
+    int span_count = 0;
+    const TextSpan *spans = text_cache_get(font, text, span_count);
+    if (spans != nullptr) {
+      for (int i = 0; i < span_count; i++) {
+        const int py = y_start + spans[i].y;
+        if (py < cy0 || py > cy1) continue;
+        int px = x_start + spans[i].x;
+        int len = spans[i].len;
+        if (px < 0) {
+          len += px;
+          px = 0;
+        }
+        if (px + len > SCREEN_W) len = SCREEN_W - px;
+        uint16_t *dst = fb + py * SCREEN_W + px;
+        for (int k = 0; k < len; k++) blend_px(dst[k], a_clamped);
+      }
+      return;
+    }
+  }
+#endif
+
+  int x_at = x_start;
+  for (const char *p = text; *p != 0;) {
+    const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    if (glyph == nullptr) {
+      x_at += std::max(4, font->get_height() / 3);
+      continue;
+    }
+    const uint8_t *data = glyph->data;
+    const int gx0 = x_at + glyph->offset_x;
+    const int gy0 = y_start + glyph->offset_y;
+    uint8_t bitmask = 0;
+    uint8_t pixel_data = 0;
+    for (int gy = 0; gy < glyph->height; gy++) {
+      const int py = gy0 + gy;
+      uint16_t *row = (py >= cy0 && py <= cy1) ? fb + py * SCREEN_W : nullptr;
+      for (int gx = 0; gx < glyph->width; gx++) {
+        uint8_t pixel = 0;
+        for (int bit = 0; bit < bpp; bit++) {
+          if (bitmask == 0) {
+            pixel_data = esphome::progmem_read_byte(data++);
+            bitmask = 0x80;
+          }
+          pixel <<= 1;
+          if ((pixel_data & bitmask) != 0) pixel |= 1;
+          bitmask >>= 1;
+        }
+        if (pixel != 0 && row != nullptr) {
+          const int px = gx0 + gx;
+          if (static_cast<unsigned>(px) < static_cast<unsigned>(SCREEN_W)) {
+            const int eff_a = (bpp_max == 1) ? a_clamped : ((a_clamped * static_cast<int>(pixel) + (bpp_max >> 1)) / bpp_max);
+            blend_px(row[px], eff_a);
+          }
+        }
+      }
+    }
+    x_at += glyph->advance;
+  }
+#else
+  if (alpha_q8 >= 128) {
+    it.start_clipping(0, SCREEN_W - 1, cy0, cy1);
+    it.print(x, y, base_font, color, align, text, esphome::display::COLOR_OFF);
+    it.end_clipping();
+  }
+#endif
+}
+
 // ------------------------------------------------------------------------------
 // 4. Album-Art / Wallpaper Composition & PSRAM ArtCanvasCache
 // ------------------------------------------------------------------------------
