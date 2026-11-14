@@ -119,10 +119,14 @@ int get_activity_overlay_card_y(int vis_count, int row_idx);
 // ------------------------------------------------------------------------------
 
 bool &weather_sim_dirty();
+void resolve_weather_sim_view(std::string_view sim_opt, std::string_view &cond, bool &is_night) noexcept;
 void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night);
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
+bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0);
 bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0);
+bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
+                             std::string_view sun_state, uint32_t now_ms);
 float weather_precip_alpha_scale();
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond);

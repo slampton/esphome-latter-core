@@ -20,6 +20,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #ifndef LATTER_PSRAM_BSS
@@ -166,6 +167,29 @@ namespace PageId {
   static constexpr int TOOLS      = 8;
   static constexpr int WHOLE_HOME = 9;
 }  // namespace PageId
+
+namespace HomeSubpage {
+  static constexpr int MAIN             = 0;
+  static constexpr int SETTINGS         = 1;
+  static constexpr int ACTIVITY_OVERLAY = 2;
+}  // namespace HomeSubpage
+
+namespace SystemMenuMode {
+  static constexpr int DASHBOARD      = 0;
+  static constexpr int SLEEP_WAKE     = 1;
+  static constexpr int DISPLAY        = 2;
+  static constexpr int ACTIONS        = 3;
+  static constexpr int CONFIRM_RESTART = 4;
+  static constexpr int UPDATE         = 5;
+  static constexpr int CONFIRM_UPDATE = 6;
+  static constexpr int SOUND          = 7;
+  static constexpr int SYSTEM_INFO    = 8;
+  static constexpr int MUSIC          = 9;
+  static constexpr int HOME_SETTINGS  = 10;
+  static constexpr int VOICE          = 11;
+  static constexpr int WW_SENSITIVITY = 12;
+  static constexpr int COLOR_WHEEL    = 13;
+}  // namespace SystemMenuMode
 
 namespace ToolsSubpage {
   static constexpr int LAUNCHER   = 0;
@@ -602,8 +626,9 @@ inline auto step_wrap_range(ValT val, DeltaT delta, MinT min_val, MaxT max_val) 
 
 template <typename CurT>
 inline const char *cycle_option(const CurT &cur, std::initializer_list<const char *> opts) {
+  const std::string_view cur_sv(cur);
   for (auto it = opts.begin(); it != opts.end(); ++it) {
-    if (cur == *it) {
+    if (cur_sv == std::string_view(*it)) {
       ++it;
       return (it != opts.end()) ? *it : *opts.begin();
     }

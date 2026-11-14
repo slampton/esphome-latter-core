@@ -589,7 +589,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   }
 
   if (rs.nav.display_power_state != 0 || !rt_.panel_is_on) {
-    const std::string tw_mode = rt_.select_opt(UiSelectId::TAP_WAKE_MODE);
+    const std::string_view tw_mode = rt_.select_opt(UiSelectId::TAP_WAKE_MODE);
     if (tw_mode == "Disabled") return;
     if (tw_mode == "Docked Only" && !rt_.usb_connected) return;
     if (!accept_screen_off_tap(rt_.usb_connected, now_touch)) return;
@@ -930,7 +930,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   // Page 2: Music Now Playing & Overlays
   if (rs.nav.gui_page == PageId::MUSIC) {
     if (rs.music.overlay_mode == 0) {
-      const std::string ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
+      const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
       const bool always_vis = (ov_style == "Always Visible");
       const bool controls_shown = always_vis || rs.music.hud_active;
 
@@ -2884,9 +2884,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         } else if (wid == WidgetId::SYS_BRI_SLIDER) {
-          const std::string ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
+          const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (ab == "Disabled") {
-            const std::string next_b = cycle_option(
+            const char *next_b = cycle_option(
                 rt_.select_opt(UiSelectId::DISPLAY_BRIGHTNESS_PRESET),
                 {"60%", "70%", "80%", "90%", "100%"});
             rt_.set_select_opt(UiSelectId::DISPLAY_BRIGHTNESS_PRESET, next_b, true);
@@ -2896,7 +2896,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         } else if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
           const int slot_idx = hit->param;
           const int item_idx = (rs.nav.display_menu_page == 1) ? slot_idx : (slot_idx + 4);
-          const std::string ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
+          const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (item_idx == 0) {
             if (prefs.home_screen_enabled) {
               rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
@@ -3557,6 +3557,203 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
       if (touch_gesture().active) on_touch_up(now_in);
       activate_ui_focus(now_in);
     }
+  }
+}
+
+// ==============================================================================
+// Compiled UiTouchRuntime Preference Accessors & Mutators
+// (Replaces ~195 lines of YAML function-pointer tables in modules/system_core.yaml)
+// ==============================================================================
+std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
+  using S = UiSelectId;
+  const auto &p = persisted_prefs();
+  switch (sid) {
+    case S::TAP_WAKE_MODE: return pref_tap_to_wake_cstr(p);
+    case S::WEATHER_SIM_CONDITION: return pref_weather_sim_cstr();
+    case S::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
+    case S::MUSIC_FULLSCREEN_ART_MODE: return pref_album_art_style_cstr(p);
+    case S::MUSIC_ALBUM_SORT_ORDER: return pref_album_sort_order_cstr(p);
+    case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: return pref_artist_album_sort_order_cstr(p);
+    case S::MUSIC_PODCAST_SORT_ORDER: return pref_podcast_sort_order_cstr(p);
+    case S::VA_WAKE_WORD_MODE: return pref_wake_word_mode_cstr(p);
+    case S::VA_VISUAL_PROFILE: return pref_va_visual_profile_cstr(p);
+    case S::WW_SENS_OKAY_NABU: return pref_ww_sens_cstr(p.ww_sens_okay_nabu);
+    case S::WW_SENS_HEY_LUNA: return pref_ww_sens_cstr(p.ww_sens_hey_luna);
+    case S::WW_SENS_HEY_JARVIS: return pref_ww_sens_cstr(p.ww_sens_hey_jarvis);
+    case S::WW_SENS_HEY_MYCROFT: return pref_ww_sens_cstr(p.ww_sens_hey_mycroft);
+    case S::WW_SENS_ALEXA: return pref_ww_sens_cstr(p.ww_sens_alexa);
+    case S::THEME_PALETTE: return pref_color_profile_cstr(p);
+    case S::POWER_PROFILE: return pref_power_profile_cstr(p);
+    case S::PICKUP_WAKE_MODE: return pref_pickup_to_wake_cstr(p);
+    case S::DISPLAY_OFF_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
+    case S::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
+    case S::SCREENSAVER_DOCKED_TIMEOUT: return pref_docked_idle_timeout_cstr(p);
+    case S::HIBERNATE_TIMEOUT_MODE: return pref_battery_hibernate_timeout_cstr(p);
+    case S::DEFAULT_START_APP: return pref_start_screen_cstr(p);
+    case S::CLOCK_FACE_STYLE: return pref_clock_face_cstr(p);
+    case S::TIME_FORMAT: return pref_time_format_cstr(p);
+    case S::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
+    case S::DISPLAY_BRIGHTNESS_PRESET: return pref_manual_brightness_cstr(p);
+    case S::DAY_BRIGHTNESS_PRESET: return pref_day_brightness_cstr(p);
+    case S::NIGHT_BRIGHTNESS_PRESET: return pref_night_brightness_cstr(p);
+  }
+  return {};
+}
+
+void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /*pub*/) const {
+  using S = UiSelectId;
+  using K = PrefKey;
+  const uint32_t now_ms = esphome::millis();
+  if (sid == S::WEATHER_SIM_CONDITION) {
+    const int idx = find_opt_index(kWeatherSimOpts, opt);
+    if (idx >= 0) {
+      device_prefs_state().weather_sim_condition = static_cast<uint8_t>(idx);
+      if (opt != "Live (Home Assistant)" && !persisted_prefs().weather_background) {
+        uint32_t bg_eff = 0U;
+        latter_actions::record_local_pref_edit(K::WEATHER_BACKGROUND, "1", now_ms, bg_eff);
+      }
+      if (link_state().ha_connected) {
+        std::string chg = "weather_sim_condition=";
+        chg.append(opt.data(), opt.size());
+        latter_actions::emit_set_device_prefs(persisted_prefs().prefs_seq, chg);
+      }
+      night_meteor_epoch_initialized() = false;
+      weather_sim_dirty() = true;
+      record_ambient_frame_ms(0U);
+      cmd(UiHostCmd::NOTIFY_WEATHER_SIM_CHANGED);
+    }
+    return;
+  }
+  K pk = K::COUNT;
+  switch (sid) {
+    case S::TAP_WAKE_MODE: pk = K::TAP_TO_WAKE; break;
+    case S::WEATHER_SIM_CONDITION: break;
+    case S::MUSIC_OVERLAY_STYLE: pk = K::MUSIC_OVERLAY_STYLE; break;
+    case S::MUSIC_FULLSCREEN_ART_MODE: pk = K::ALBUM_ART_STYLE; break;
+    case S::MUSIC_ALBUM_SORT_ORDER: pk = K::ALBUM_SORT_ORDER; break;
+    case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: pk = K::ARTIST_ALBUM_SORT_ORDER; break;
+    case S::MUSIC_PODCAST_SORT_ORDER: pk = K::PODCAST_SORT_ORDER; break;
+    case S::VA_WAKE_WORD_MODE: pk = K::WAKE_WORD_MODE; break;
+    case S::VA_VISUAL_PROFILE: pk = K::VA_VISUAL_PROFILE; break;
+    case S::WW_SENS_OKAY_NABU: pk = K::WW_SENS_OKAY_NABU; break;
+    case S::WW_SENS_HEY_LUNA: pk = K::WW_SENS_HEY_LUNA; break;
+    case S::WW_SENS_HEY_JARVIS: pk = K::WW_SENS_HEY_JARVIS; break;
+    case S::WW_SENS_HEY_MYCROFT: pk = K::WW_SENS_HEY_MYCROFT; break;
+    case S::WW_SENS_ALEXA: pk = K::WW_SENS_ALEXA; break;
+    case S::THEME_PALETTE: pk = K::COLOR_PROFILE; break;
+    case S::POWER_PROFILE: pk = K::POWER_PROFILE; break;
+    case S::PICKUP_WAKE_MODE: pk = K::PICKUP_TO_WAKE; break;
+    case S::DISPLAY_OFF_TIMEOUT: pk = K::BATTERY_SCREEN_TIMEOUT; break;
+    case S::SCREENSAVER_STYLE: pk = K::SCREENSAVER_STYLE; break;
+    case S::SCREENSAVER_DOCKED_TIMEOUT: pk = K::DOCKED_IDLE_TIMEOUT; break;
+    case S::HIBERNATE_TIMEOUT_MODE: pk = K::BATTERY_HIBERNATE_TIMEOUT; break;
+    case S::DEFAULT_START_APP: pk = K::START_SCREEN; break;
+    case S::CLOCK_FACE_STYLE: pk = K::CLOCK_FACE; break;
+    case S::TIME_FORMAT: pk = K::TIME_FORMAT; break;
+    case S::AUTO_BRIGHTNESS_MODE: pk = K::AUTO_BRIGHTNESS_MODE; break;
+    case S::DISPLAY_BRIGHTNESS_PRESET: pk = K::MANUAL_BRIGHTNESS; break;
+    case S::DAY_BRIGHTNESS_PRESET: pk = K::DAY_BRIGHTNESS; break;
+    case S::NIGHT_BRIGHTNESS_PRESET: pk = K::NIGHT_BRIGHTNESS; break;
+  }
+  if (pk == K::COUNT) return;
+  uint32_t eff = 0U;
+  if (latter_actions::record_local_pref_edit(pk, opt, now_ms, eff)) {
+    device_prefs_state().last_effects = eff;
+    cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
+  }
+}
+
+bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
+  using W = UiSwitchId;
+  const auto &p = persisted_prefs();
+  switch (swid) {
+    case W::HOME_WEATHER_BG: return p.weather_background;
+    case W::HOME_WAKE_GREETING: return p.wake_greeting;
+    case W::MUSIC_SHOW_SPEAKER_SHORTCUT: return p.show_speaker_shortcut;
+    case W::MUSIC_SHOW_LIBRARY_SHORTCUT: return p.show_library_shortcut;
+    case W::BLE_AREA_BEACON: return p.ble_beacon_enabled;
+    case W::GAME_SOUND: return p.game_sound_effects;
+    case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
+    case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
+    case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
+  }
+  return false;
+}
+
+void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
+  using W = UiSwitchId;
+  using K = PrefKey;
+  const auto &p = persisted_prefs();
+  K pk = K::COUNT;
+  bool next_val = false;
+  switch (swid) {
+    case W::HOME_WEATHER_BG: pk = K::WEATHER_BACKGROUND; next_val = !p.weather_background; break;
+    case W::HOME_WAKE_GREETING: pk = K::WAKE_GREETING; next_val = !p.wake_greeting; break;
+    case W::MUSIC_SHOW_SPEAKER_SHORTCUT: pk = K::SHOW_SPEAKER_SHORTCUT; next_val = !p.show_speaker_shortcut; break;
+    case W::MUSIC_SHOW_LIBRARY_SHORTCUT: pk = K::SHOW_LIBRARY_SHORTCUT; next_val = !p.show_library_shortcut; break;
+    case W::BLE_AREA_BEACON: pk = K::BLE_BEACON_ENABLED; next_val = !p.ble_beacon_enabled; break;
+    case W::GAME_SOUND: pk = K::GAME_SOUND_EFFECTS; next_val = !p.game_sound_effects; break;
+    case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
+    case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
+    case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
+  }
+  if (pk == K::COUNT) return;
+  uint32_t eff = 0U;
+  if (latter_actions::record_local_pref_edit(pk, next_val ? "1" : "0", esphome::millis(), eff)) {
+    device_prefs_state().last_effects = eff;
+    cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
+  }
+}
+
+float UiTouchRuntime::num_val(UiNumberId nid) const noexcept {
+  using N = UiNumberId;
+  const auto &p = persisted_prefs();
+  switch (nid) {
+    case N::VOLUME_STEP_SIZE: return static_cast<float>(p.volume_step_size);
+    case N::SPEAKER_VOLUME:
+      if (!std::isnan(local_mp_volume) && local_mp_volume >= 0.0f && local_mp_volume <= 1.0f) {
+        return std::round(local_mp_volume * 100.0f);
+      }
+      return static_cast<float>(p.speaker_volume_pct);
+    case N::ALERT_VOLUME: return static_cast<float>(p.alert_volume);
+    case N::DAY_START_HOUR: return static_cast<float>(p.day_start_hour);
+    case N::NIGHT_START_HOUR: return static_cast<float>(p.night_start_hour);
+  }
+  return 0.0f;
+}
+
+void UiTouchRuntime::set_num_val(UiNumberId nid, float val) const {
+  using N = UiNumberId;
+  using K = PrefKey;
+  const uint32_t now_ms = esphome::millis();
+  if (nid == N::SPEAKER_VOLUME) {
+    const int cl_pct = std::clamp(static_cast<int>(std::lround(val)), 10, 100);
+    auto &p = persisted_prefs();
+    if (p.speaker_volume_pct != static_cast<uint8_t>(cl_pct)) {
+      p.speaker_volume_pct = static_cast<uint8_t>(cl_pct);
+      schedule_persisted_prefs_save(now_ms);
+    }
+    local_mp_volume = static_cast<float>(cl_pct) * 0.01f;
+    cmd(UiHostCmd::SET_LOCAL_SPEAKER_VOL_PCT, cl_pct);
+    return;
+  }
+  K pk = K::COUNT;
+  int cl_val = static_cast<int>(std::lround(val));
+  switch (nid) {
+    case N::VOLUME_STEP_SIZE: pk = K::VOLUME_STEP_SIZE; cl_val = std::clamp(cl_val, 1, 10); break;
+    case N::SPEAKER_VOLUME: break;
+    case N::ALERT_VOLUME: pk = K::ALERT_VOLUME; cl_val = std::clamp(cl_val, 20, 100); break;
+    case N::DAY_START_HOUR: pk = K::DAY_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
+    case N::NIGHT_START_HOUR: pk = K::NIGHT_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
+  }
+  if (pk == K::COUNT) return;
+  char buf[16];
+  const int n = std::snprintf(buf, sizeof(buf), "%d", cl_val);
+  if (n <= 0) return;
+  uint32_t eff = 0U;
+  if (latter_actions::record_local_pref_edit(pk, std::string_view(buf, static_cast<size_t>(n)), now_ms, eff)) {
+    device_prefs_state().last_effects = eff;
+    cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
 }
 

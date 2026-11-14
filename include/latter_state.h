@@ -49,6 +49,94 @@ enum class GarageState : uint8_t {
   OPEN    = 2,
 };
 
+enum class PowerProfilePref : uint8_t {
+  PortableCarry    = 0,
+  HandheldRoaming  = 1,
+  WearableWatch    = 2,
+  TabletopDock     = 3,
+  AlwaysOnWallDesk = 4,
+  Custom           = 5,
+};
+
+enum class WakeWordMode : uint8_t {
+  DockedOnly = 0,
+  AlwaysOn   = 1,
+  Disabled   = 2,
+};
+
+enum class WakePolicyMode : uint8_t {
+  AlwaysOn   = 0,
+  DockedOnly = 1,
+  Disabled   = 2,
+};
+
+enum class ScreensaverStyle : uint8_t {
+  AmbientClock = 0,
+  Aurora       = 1,
+  Starfield    = 2,
+  DigitalRain  = 3,
+  Fireworks    = 4,
+};
+
+enum class AutoBrightnessMode : uint8_t {
+  Disabled        = 0,
+  SunSynchronized = 1,
+  TimeSchedule    = 2,
+};
+
+enum class ColorProfilePref : uint8_t {
+  SteelBlue = 0,
+  Pink      = 1,
+  Blue      = 2,
+  Green     = 3,
+  Custom    = 4,
+};
+
+enum class VaVisualStyle : uint8_t {
+  Nebula   = 0,
+  Solaris  = 1,
+  Rings    = 2,
+  LightBar = 3,
+  DotWave  = 4,
+};
+
+enum class ClockFaceStyle : uint8_t {
+  MinimalDigital = 0,
+  ModernRoman    = 1,
+  ModernBold     = 2,
+};
+
+enum class MediaPlaybackState : uint8_t {
+  Idle       = 0,
+  Playing    = 1,
+  Paused     = 2,
+  Buffering  = 3,
+  Announcing = 4,
+};
+
+enum class AlertPriority : uint8_t {
+  Normal   = 0,
+  Critical = 1,
+};
+
+enum class UpdateCheckState : uint8_t {
+  Idle     = 0,
+  Checking = 1,
+  Checked  = 2,
+};
+
+inline constexpr MediaPlaybackState parse_media_playback_state(std::string_view sv) noexcept {
+  if (sv == "playing") return MediaPlaybackState::Playing;
+  if (sv == "paused") return MediaPlaybackState::Paused;
+  if (sv == "buffering") return MediaPlaybackState::Buffering;
+  if (sv == "announcing") return MediaPlaybackState::Announcing;
+  return MediaPlaybackState::Idle;
+}
+
+inline constexpr AlertPriority parse_alert_priority(std::string_view sv) noexcept {
+  return (sv == "critical") ? AlertPriority::Critical : AlertPriority::Normal;
+}
+
 struct LinkState {
   bool ha_connected = false;
   bool wifi_connected = false;
@@ -96,6 +184,7 @@ struct AreaContextState {
   std::string alert_title = "";
   std::string alert_message = "";
   std::string alert_priority = "normal";
+  AlertPriority alert_priority_level = AlertPriority::Normal;
   int alert_duration = 10;
   bool alert_chime = true;
   std::string alert_camera_url = "";
@@ -112,6 +201,7 @@ struct MediaState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string state = "";
+  MediaPlaybackState playback_state = MediaPlaybackState::Idle;
   std::string title = "";
   std::string artist = "";
   std::string album = "";
@@ -320,6 +410,66 @@ struct PersistedDevicePrefs {
       {8, 30, false, 2},
       {9, 0, false, 2},
   };
+
+  // Zero-size constexpr typed preference accessors (preserves exact NVS v4 POD layout)
+  constexpr PowerProfilePref power_profile_enum() const noexcept {
+    return static_cast<PowerProfilePref>((power_profile < 6U) ? power_profile : 0U);
+  }
+  constexpr WakeWordMode wake_word_mode_enum() const noexcept {
+    return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
+  }
+  constexpr WakePolicyMode tap_to_wake_enum() const noexcept {
+    return static_cast<WakePolicyMode>((tap_to_wake < 3U) ? tap_to_wake : 1U);
+  }
+  constexpr WakePolicyMode pickup_to_wake_enum() const noexcept {
+    return static_cast<WakePolicyMode>((pickup_to_wake < 3U) ? pickup_to_wake : 1U);
+  }
+  constexpr ScreensaverStyle screensaver_style_enum() const noexcept {
+    return static_cast<ScreensaverStyle>((screensaver_style < 5U) ? screensaver_style : 0U);
+  }
+  constexpr AutoBrightnessMode auto_brightness_enum() const noexcept {
+    return static_cast<AutoBrightnessMode>((auto_brightness_mode < 3U) ? auto_brightness_mode : 1U);
+  }
+  constexpr ColorProfilePref color_profile_enum() const noexcept {
+    return static_cast<ColorProfilePref>((color_profile < 5U) ? color_profile : 0U);
+  }
+  constexpr VaVisualStyle va_style() const noexcept {
+    return static_cast<VaVisualStyle>((va_visual_profile < 5U) ? va_visual_profile : 0U);
+  }
+  constexpr ClockFaceStyle clock_face_style() const noexcept {
+    return static_cast<ClockFaceStyle>((clock_face < 3U) ? clock_face : 0U);
+  }
+  constexpr uint32_t battery_screen_timeout_ms() const noexcept {
+    constexpr uint32_t kMs[6] = {10000U, 15000U, 30000U, 60000U, 120000U, 0U};
+    return kMs[(battery_screen_timeout < 6U) ? battery_screen_timeout : 2U];
+  }
+  constexpr uint32_t docked_idle_timeout_ms() const noexcept {
+    constexpr uint32_t kMs[7] = {10000U, 15000U, 30000U, 60000U, 120000U, 300000U, 0U};
+    return kMs[(docked_idle_timeout < 7U) ? docked_idle_timeout : 3U];
+  }
+  constexpr uint32_t screen_timeout_ms(bool docked_or_stationary) const noexcept {
+    return docked_or_stationary ? docked_idle_timeout_ms() : battery_screen_timeout_ms();
+  }
+  constexpr uint32_t hibernate_delay_s() const noexcept {
+    constexpr uint32_t kSec[5] = {300U, 600U, 900U, 1800U, 0U};
+    return kSec[(battery_hibernate_timeout < 5U) ? battery_hibernate_timeout : 2U];
+  }
+  constexpr uint8_t manual_brightness_pct() const noexcept {
+    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
+    return kPct[(manual_brightness < 5U) ? manual_brightness : 3U];
+  }
+  constexpr uint8_t day_brightness_pct() const noexcept {
+    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
+    return kPct[(day_brightness < 5U) ? day_brightness : 3U];
+  }
+  constexpr uint8_t night_brightness_pct() const noexcept {
+    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
+    return kPct[(night_brightness < 5U) ? night_brightness : 1U];
+  }
+  constexpr uint32_t return_to_home_ms() const noexcept {
+    constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
+    return kMs[(return_to_home_timeout < 7U) ? return_to_home_timeout : 3U];
+  }
 };
 
 static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
@@ -428,9 +578,8 @@ inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persi
 inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
 inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
 inline const char *pref_return_to_home_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kReturnToHomeTimeoutOpts, p.return_to_home_timeout, 3); }
-inline uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &p = persisted_prefs()) {
-  static constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
-  return kMs[(p.return_to_home_timeout < 7) ? p.return_to_home_timeout : 3];
+inline constexpr uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  return p.return_to_home_ms();
 }
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
@@ -679,11 +828,16 @@ struct AlertBannerState {
   std::string title = "";
   std::string message = "";
   std::string priority = "normal";
+  AlertPriority priority_level = AlertPriority::Normal;
   std::string camera_url = "";
   std::string loaded_camera_url = "";
   uint32_t start_ms = 0;
   uint32_t duration_ms = 10000U;
   int last_seen_alert_id = -1;
+
+  bool is_critical() const noexcept {
+    return priority_level == AlertPriority::Critical || priority == "critical";
+  }
 };
 
 struct MultiTimerSlot {
@@ -1366,6 +1520,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.alert_title              = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_TITLE)]);
   st.alert_message            = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_MESSAGE)]);
   st.alert_priority           = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_PRIORITY)]);
+  st.alert_priority_level     = parse_alert_priority(st.alert_priority);
   st.alert_duration           = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_DURATION)], 10);
   st.alert_chime              = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::ALERT_CHIME)]);
   st.alert_camera_url         = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_URL)]);
@@ -1413,6 +1568,7 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
   v3_check_field_count("active_media", payload, kCount);
 
   st.state          = std::string(f[static_cast<size_t>(MediaField::STATE)]);
+  st.playback_state = parse_media_playback_state(st.state);
   st.title          = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
   st.artist         = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
   st.album          = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);

@@ -233,6 +233,196 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active);
 
+// ==============================================================================
+// Pure C++20 FrameCadenceController (20 ms Active, 250 ms Wake, 20 ms Screensaver)
+// Replaces ~395 lines of YAML tick state machines across timers_and_fetchers.yaml
+// and power_manager.yaml; compiles standalone in tests/host/test_all.cpp.
+// ==============================================================================
+struct Cadence20msInputs {
+  uint32_t now_ms = 0U;
+  bool panel_on = true;
+  int display_power_state = 0;
+  int gui_page = 1;
+  int home_subpage = 0;
+  int active_game = 0;
+  bool game_sfx_enabled = true;
+  int pending_game_sfx = 0;
+  bool tools_anim_active = false;
+  bool interactive_slide = false;
+  bool find_my_active = false;
+  bool ringing_or_critical = false;
+  bool va_visible = false;
+  bool va_running = false;
+  bool tts_received = false;
+  bool tts_audio_active = false;
+  bool touch_active = false;
+  bool menu_scroll_active = false;
+  bool mww_running = false;
+  bool is_chip_p4 = false;
+  bool speaker_audio_busy = false;
+  bool render_in_flight = false;
+  uint32_t last_ambient_ms = 0U;
+  uint32_t last_disp_end_ms = 0U;
+  bool weather_step_pending = false;
+  bool sky_enabled = false;
+  bool sky_stepping = false;
+  bool sim_just_changed = false;
+  float motion_mag = 0.0f;
+  uint32_t home_rotate_due_ms = 0U;
+  uint32_t rotate_period_ms = 8000U;
+  uint32_t pause_exp_due_ms = 0U;
+  bool has_act_band = false;
+  int act_y0 = 0;
+  int act_y1 = 0;
+  bool greet_fading = false;
+  bool act_sliding = false;
+  bool act_fade_settle = false;
+};
+
+struct Cadence20msActions {
+  bool enable_game_audio_path = false;
+  int play_game_sfx_id = 0;
+  bool clear_pending_game_sfx = false;
+  bool va_transition_holdoff = false;
+  bool bump_user_touch_ms = false;
+  bool record_ambient_ms = false;
+  bool schedule_anim_full = false;
+  bool schedule_anim_band = false;
+  bool schedule_activity_rotate = false;
+  uint32_t activity_rotate_delay_ms = 0U;
+  bool schedule_band_now = false;
+  bool schedule_disp_now = false;
+  int band_y0 = 0;
+  int band_y1 = 0;
+  bool sync_disp_poller = false;
+  bool sync_disp_poller_val = false;
+  bool stop_anim_poller = false;
+  bool anim_driving_disp = false;
+};
+
+struct Cadence250msInputs {
+  uint32_t now_ms = 0U;
+  int display_power_state = 0;
+  bool is_hibernating = false;
+  int gui_page = 1;
+  int home_subpage = 0;
+  int system_menu_mode = 0;
+  int active_game = 0;
+  uint8_t activity_mask = 0U;
+  uint32_t rotate_period_ms = 8000U;
+  uint32_t home_rotate_due_ms = 0U;
+  uint32_t pause_exp_due_ms = 0U;
+  bool has_act_band = false;
+  int act_y0 = 0;
+  int act_y1 = 0;
+  bool sky_canvas_active = false;
+  float motion_mag = 0.0f;
+  bool anim_poller_running = false;
+  bool sky_motion_due = false;
+  bool greet_fade_due = false;
+  bool tool_anim_due = false;
+  bool va_busy = false;
+  bool alert_or_critical_busy = false;
+  bool home_overlay_motion_due = false;
+  bool nav_scroll_or_sim_dirty = false;
+  bool pending_wallpaper_fetch = false;
+  std::string_view latest_fw_version{};
+};
+
+struct Cadence250msActions {
+  bool ensure_anim_poller = false;
+  bool schedule_disp_now = false;
+  bool schedule_band_now = false;
+  bool schedule_activity_rotate = false;
+  uint32_t activity_rotate_delay_ms = 0U;
+  int band_y0 = 0;
+  int band_y1 = 0;
+  bool bump_user_touch_ms = false;
+  bool fetch_wallpaper = false;
+  bool fw_version_changed = false;
+};
+
+struct CadenceScreensaverInputs {
+  uint32_t now_ms = 0U;
+  int display_power_state = 0;
+  bool is_hibernating = false;
+  bool va_visible = false;
+  std::string_view screensaver_style{};
+  bool speaker_audio_busy = false;
+  bool alert_ringing = false;
+  bool mww_running = false;
+  bool is_chip_p4 = false;
+  bool render_in_flight = false;
+  uint32_t last_ambient_ms = 0U;
+  uint32_t last_disp_end_ms = 0U;
+};
+
+struct CadenceScreensaverActions {
+  bool record_ambient_ms = false;
+  bool schedule_anim_full = false;
+  bool sync_disp_poller = false;
+  bool sync_disp_poller_val = false;
+};
+
+class FrameCadenceController {
+ public:
+  static constexpr uint32_t interactive_gap_for(bool is_chip_p4, bool mww_running) noexcept {
+    return is_chip_p4 ? 36U : (mww_running ? 54U : 36U);
+  }
+
+  static constexpr bool ambient_step_ready(uint32_t now_ms, uint32_t last_ambient_ms,
+                                           uint32_t last_disp_end_ms, bool render_in_flight,
+                                           bool is_chip_p4, bool speaker_audio_busy,
+                                           bool va_busy, bool alert_busy,
+                                           bool mww_running) noexcept {
+    if (va_busy || render_in_flight) return false;
+    uint32_t min_post_idle = 18U;
+    uint32_t min_period = 54U;
+    if (is_chip_p4) {
+      min_post_idle = speaker_audio_busy ? 26U : 16U;
+      min_period = alert_busy ? 120U : (speaker_audio_busy ? 74U : 54U);
+    } else {
+      const bool audio_or_mww = speaker_audio_busy || mww_running;
+      min_post_idle = audio_or_mww ? 32U : 18U;
+      min_period = alert_busy ? 120U : (audio_or_mww ? 74U : 54U);
+    }
+    if (now_ms - last_disp_end_ms < min_post_idle) return false;
+    return (now_ms - last_ambient_ms >= min_period);
+  }
+
+  void reset();
+  Cadence20msActions evaluate_20ms(const Cadence20msInputs &in);
+  Cadence250msActions evaluate_250ms(const Cadence250msInputs &in);
+  CadenceScreensaverActions evaluate_screensaver_20ms(const CadenceScreensaverInputs &in) const;
+
+#if __has_include("esphome/core/defines.h")
+  Cadence20msActions step_20ms(uint32_t now_ms, bool panel_on, bool wallpaper_loaded,
+                               bool mww_running, bool va_running, bool tts_audio_active,
+                               bool speaker_audio_busy, uint32_t rotate_period_ms);
+  Cadence250msActions step_250ms(uint32_t now_ms, bool wallpaper_loaded, bool va_running,
+                                 std::string_view latest_fw_version, uint32_t rotate_period_ms);
+  CadenceScreensaverActions step_screensaver_20ms(uint32_t now_ms, bool speaker_audio_busy,
+                                                  bool mww_running) const;
+#endif
+
+ private:
+  int prev_audio_game_ = 0;
+  uint32_t last_va_anim_ms_ = 0U;
+  bool prev_tts_active_ = false;
+  bool prev_pause_exp_pending_20ms_ = false;
+  uint32_t last_cond_eval_ms_ = 0U;
+  bool last_sky_enabled_ = false;
+  bool cached_has_motion_ = false;
+  uint8_t idle_anim_ticks_ = 0U;
+
+  uint32_t prev_home_slot_ = 0U;
+  bool prev_pause_exp_pending_250ms_ = false;
+  int prev_disp_pwr_ = -1;
+  std::string prev_fw_ver_{};
+};
+
+FrameCadenceController &frame_cadence();
+
 // Reserved disp1 Component numeric timeout IDs:
 //   0x4C410001U..0x4C41000FU : UI compositor schedulers (below)
 //   0x4C410010U..0x4C41001FU : HAL panel power & MIPI-DCS SLPOUT/DISPON state machine (include/hal_panel_power.h)
@@ -705,6 +895,89 @@ inline void render_active_focus_overlay(esphome::display::Display &it, int /*pag
 // Returns true when a takeover owned the frame.
 bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext &ctx,
                              const SystemTakeoverState &st);
+
+template <typename DispT, typename TickT, typename EnableSpkFn, typename PlaySfxFn>
+inline void dispatch_cadence_20ms(uint32_t now_ms, DispT *disp, TickT *anim_tick,
+                                  bool panel_on, bool wallpaper_loaded,
+                                  bool mww_running, bool va_running,
+                                  bool tts_audio_active, bool speaker_audio_busy,
+                                  uint32_t rotate_period_ms,
+                                  EnableSpkFn &&enable_spk_fn, PlaySfxFn &&play_sfx_fn) {
+  const auto act = frame_cadence().step_20ms(
+      now_ms, panel_on, wallpaper_loaded, mww_running, va_running,
+      tts_audio_active, speaker_audio_busy, rotate_period_ms);
+  if (act.enable_game_audio_path) {
+    enable_spk_fn();
+  }
+  if (act.play_game_sfx_id > 0) {
+    play_sfx_fn(act.play_game_sfx_id);
+  }
+  if (act.va_transition_holdoff) {
+    sync_disp_poller_for_anim(disp, true);
+    return;
+  }
+  if (act.schedule_activity_rotate) {
+    schedule_activity_rotate_disp_update(disp, act.activity_rotate_delay_ms, act.band_y0, act.band_y1);
+  } else if (act.schedule_band_now) {
+    schedule_band_disp_update(disp, act.band_y0, act.band_y1);
+  } else if (act.schedule_disp_now) {
+    schedule_disp_update(disp);
+  }
+  if (act.record_ambient_ms) {
+    record_ambient_frame_ms(now_ms);
+  }
+  if (act.schedule_anim_band) {
+    schedule_anim_band_disp_update(disp, act.band_y0, act.band_y1);
+  } else if (act.schedule_anim_full) {
+    schedule_anim_disp_update(disp);
+  }
+  if (act.sync_disp_poller) {
+    sync_disp_poller_for_anim(disp, act.sync_disp_poller_val);
+  }
+  if (act.stop_anim_poller) {
+    sync_disp_poller_for_anim(disp, false);
+    set_ui_anim_poller(anim_tick, false);
+  }
+}
+
+template <typename DispT, typename TickT, typename FetchWallFn>
+inline void dispatch_cadence_250ms(uint32_t now_ms, DispT *disp, TickT *anim_tick,
+                                   bool wallpaper_loaded, bool va_running,
+                                   std::string_view latest_fw_version,
+                                   uint32_t rotate_period_ms,
+                                   FetchWallFn &&fetch_wall_fn) {
+  const auto act = frame_cadence().step_250ms(
+      now_ms, wallpaper_loaded, va_running, latest_fw_version, rotate_period_ms);
+  if (act.ensure_anim_poller) {
+    ensure_ui_anim_poller(anim_tick);
+  }
+  if (act.schedule_activity_rotate) {
+    schedule_activity_rotate_disp_update(disp, act.activity_rotate_delay_ms, act.band_y0, act.band_y1);
+  } else if (act.schedule_band_now) {
+    schedule_band_disp_update(disp, act.band_y0, act.band_y1);
+  }
+  if (act.schedule_disp_now || act.fw_version_changed) {
+    schedule_disp_update(disp);
+  }
+  if (act.fetch_wallpaper) {
+    fetch_wall_fn();
+  }
+}
+
+template <typename DispT>
+inline void dispatch_cadence_screensaver_20ms(uint32_t now_ms, DispT *disp,
+                                              bool speaker_audio_busy, bool mww_running) {
+  const auto act = frame_cadence().step_screensaver_20ms(now_ms, speaker_audio_busy, mww_running);
+  if (act.record_ambient_ms) {
+    record_ambient_frame_ms(now_ms);
+  }
+  if (act.schedule_anim_full) {
+    schedule_anim_disp_update(disp);
+  }
+  if (act.sync_disp_poller) {
+    sync_disp_poller_for_anim(disp, act.sync_disp_poller_val);
+  }
+}
 
 #endif  // __has_include("esphome/core/defines.h")
 

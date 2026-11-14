@@ -1327,7 +1327,7 @@ bool &weather_sim_dirty() {
   return dirty;
 }
 
-void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night) {
+void resolve_weather_sim_view(std::string_view sim_opt, std::string_view &cond, bool &is_night) noexcept {
   if (sim_opt.empty() || sim_opt == "Live (Home Assistant)") return;
   if (sim_opt == "Clear Night") { cond = "clear-night"; is_night = true; }
   else if (sim_opt == "Sunny / Clear Day") { cond = "sunny"; is_night = false; }
@@ -1345,6 +1345,14 @@ void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, boo
   else if (sim_opt == "Thunderstorm (Day)") { cond = "lightning-rainy"; is_night = false; }
   else if (sim_opt == "Thunderstorm (Night)") { cond = "lightning-rainy"; is_night = true; }
   else if (sim_opt == "Windy") { cond = "windy"; is_night = false; }
+}
+
+void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night) {
+  std::string_view sv = cond;
+  resolve_weather_sim_view(sim_opt, sv, is_night);
+  if (sv.data() != cond.data() || sv.size() != cond.size()) {
+    cond.assign(sv.data(), sv.size());
+  }
 }
 
 std::string format_weather_title(const std::string &c_in) {
@@ -1387,25 +1395,25 @@ bool &night_meteor_epoch_initialized() {
   return init;
 }
 
-bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms) {
-  if (cond.find("rain") != std::string::npos ||
-      cond.find("pouring") != std::string::npos ||
-      cond.find("drizzle") != std::string::npos ||
-      cond.find("snow") != std::string::npos ||
-      cond.find("sleet") != std::string::npos ||
-      cond.find("hail") != std::string::npos ||
-      cond.find("lightning") != std::string::npos ||
-      cond.find("thunder") != std::string::npos ||
-      cond.find("wind") != std::string::npos ||
-      cond.find("breez") != std::string::npos ||
-      cond.find("fog") != std::string::npos ||
-      cond.find("mist") != std::string::npos ||
-      cond.find("haze") != std::string::npos ||
-      cond.find("cloud") != std::string::npos ||
-      cond.find("overcast") != std::string::npos ||
-      cond.find("partly") != std::string::npos ||
-      cond.find("mostlysunny") != std::string::npos ||
-      cond.find("partlysunny") != std::string::npos) {
+bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms) {
+  if (cond.find("rain") != std::string_view::npos ||
+      cond.find("pouring") != std::string_view::npos ||
+      cond.find("drizzle") != std::string_view::npos ||
+      cond.find("snow") != std::string_view::npos ||
+      cond.find("sleet") != std::string_view::npos ||
+      cond.find("hail") != std::string_view::npos ||
+      cond.find("lightning") != std::string_view::npos ||
+      cond.find("thunder") != std::string_view::npos ||
+      cond.find("wind") != std::string_view::npos ||
+      cond.find("breez") != std::string_view::npos ||
+      cond.find("fog") != std::string_view::npos ||
+      cond.find("mist") != std::string_view::npos ||
+      cond.find("haze") != std::string_view::npos ||
+      cond.find("cloud") != std::string_view::npos ||
+      cond.find("overcast") != std::string_view::npos ||
+      cond.find("partly") != std::string_view::npos ||
+      cond.find("mostlysunny") != std::string_view::npos ||
+      cond.find("partlysunny") != std::string_view::npos) {
     return true;
   }
   if (is_night && (cond == "clear-night" || cond == "clearnight" ||
@@ -1416,6 +1424,22 @@ bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms)
     return true;
   }
   return false;
+}
+
+bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms) {
+  return has_weather_motion_sv(cond, is_night, now_ms);
+}
+
+bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
+                             std::string_view sun_state, uint32_t now_ms) {
+  const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
+  const bool sun_ok = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
+  if (!sun_ok && !sim_active) return false;
+  std::string_view cond = raw_cond;
+  bool is_night = (sun_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" ||
+                   (cond.find("night") != std::string_view::npos));
+  resolve_weather_sim_view(sim_opt, cond, is_night);
+  return has_weather_motion_sv(cond, is_night, now_ms);
 }
 
 namespace {

@@ -319,35 +319,16 @@ interval:
     id: screensaver_anim_tick
     then:
       - lambda: |-
-          // High-refresh animation loop for active screensavers (16.7 FPS idle, 12.5 FPS during audio / S3 wake-word).
-          // The PWR key is a GPIO binary_sensor (board HAL), so no PMU polling happens here.
-          const auto &rs = latter_ui::runtime_state();
-          bool ss_anim_driving = false;
-          if (rs.nav.display_power_state == 1 && !rs.voice.active && rs.voice.status_text.empty() && !rs.nav.is_hibernating) {
-            const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
-            if (s_style != "Ambient Clock" && s_style != "Screen Off") {
-              ss_anim_driving = true;
-              const uint32_t now_ss_ms = millis();
-              const bool speaker_audio_busy =
-                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-                  (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                  id(media_mixing_input).is_running() ||
-                  id(announcement_mixing_input).is_running() ||
-                  id(sound_mixing_input).is_running();
-              const bool mww_passive_busy = !speaker_audio_busy && !LATTER_CHIP_P4 && id(mww).is_running();
-              if (latter_ui::should_step_ambient_anim(now_ss_ms, speaker_audio_busy,
-                                                      rs.voice.active || !rs.voice.status_text.empty(),
-                                                      rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active,
-                                                      mww_passive_busy)) {
-                latter_ui::record_ambient_frame_ms(now_ss_ms);
-                latter_ui::schedule_anim_disp_update(&id(disp1));
-              }
-            }
-          }
-          if (rs.nav.display_power_state == 1 && !rs.voice.active && rs.voice.status_text.empty()) {
-            latter_ui::sync_disp_poller_for_anim(&id(disp1), ss_anim_driving);
-          }
+          // High-refresh animation loop for active screensavers via FrameCadenceController.
+          const bool speaker_audio_busy =
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+              (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              id(media_mixing_input).is_running() ||
+              id(announcement_mixing_input).is_running() ||
+              id(sound_mixing_input).is_running();
+          latter_ui::dispatch_cadence_screensaver_20ms(
+              millis(), &id(disp1), speaker_audio_busy, id(mww).is_running());
 
 script:
   # Single owner for every power-related actuator. The 1 s supervisor runs it, and state transitions

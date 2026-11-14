@@ -605,17 +605,19 @@ void test_battery_model_and_power_policy() {
   const std::string link_h = read_repo_file("../../include/hal_link_report.h");
   const std::string gfx_cpp = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
   const std::string comp_h = read_repo_file("../../include/ui_compositor.h");
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
   const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
   const std::string pwr_yaml = read_repo_file("../../modules/power_manager.yaml");
   const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
 
   LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() = start_m") != std::string::npos);
   LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("sync_disp_poller_for_anim(&id(disp1), anim_driving_disp)") != std::string::npos);
-  LATTER_CHECK(pwr_yaml.find("sync_disp_poller_for_anim(&id(disp1), ss_anim_driving)") != std::string::npos);
+  LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(disp, act.sync_disp_poller_val)") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("dispatch_cadence_20ms(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("dispatch_cadence_screensaver_20ms(") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("speaker_audio_busy") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("mww_passive_busy") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("app_weather_active") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("app_weather_active") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("mww_running") != std::string::npos);
   LATTER_CHECK(weather_cpp.find("cloud_shape_get<kColStep>") != std::string::npos);
   LATTER_CHECK(weather_cpp.find("last_rain_ms") == std::string::npos);
   LATTER_CHECK(weather_cpp.find("AnimeRainDrop") == std::string::npos);
@@ -1641,8 +1643,10 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(touch_cpp.find("WidgetId::HOME_ACTIVITY_CARD") == std::string::npos);
   LATTER_CHECK(gui_yaml.find("resolve_backdrop_mode(") != std::string::npos);
   LATTER_CHECK(gui_yaml.find("schedule_weather_disp_update(") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("resolve_backdrop_mode(") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("weather_sky_motion_stepping(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("resolve_backdrop_mode(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("weather_sky_motion_stepping(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("dispatch_cadence_20ms(") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("dispatch_cadence_250ms(") != std::string::npos);
 }
 
 // ==============================================================================
@@ -1856,7 +1860,7 @@ void test_phase4_audio_session_and_music_pause_timeout() {
 
   LATTER_CHECK(timers_yaml.find("id(preempt_va_for_alert).execute();") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("cancel_voice_assistant") == std::string::npos);
-  LATTER_CHECK(timers_yaml.find("paused_music_expiry_due_ms(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("paused_music_expiry_due_ms(") != std::string::npos);
 
   LATTER_CHECK(touch_cpp.find("set_play_intent(MusicPlayIntent::HomeQuickToggle") != std::string::npos);
   LATTER_CHECK(comp_cpp.find("is_music_paused_effective(") != std::string::npos);
@@ -1864,7 +1868,7 @@ void test_phase4_audio_session_and_music_pause_timeout() {
   LATTER_CHECK(home_cpp.find("is_music_paused_effective(") != std::string::npos);
   LATTER_CHECK(home_cpp.find("is_music_visible_on_home_activity(") != std::string::npos);
   LATTER_CHECK(home_cpp.find("has_pending_home_activity_fade_settle(") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("has_pending_home_activity_fade_settle(") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("has_pending_home_activity_fade_settle(") != std::string::npos);
   LATTER_CHECK(home_cpp.find("struct HomeActivityAnimState") != std::string::npos);
   LATTER_CHECK(home_cpp.find("fade_out_start_ms") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-039:") != std::string::npos);
@@ -2316,6 +2320,128 @@ void test_audio_path_and_intercom_arbitrator() {
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
 }
 
+// ==============================================================================
+// 14. PHASE 3 MODERNIZATION: FRAMECADENCECONTROLLER, STRONG ENUMS & CONSTEXPR PREFS
+// ==============================================================================
+void test_frame_cadence_and_typed_prefs() {
+  using namespace latter_ui;
+
+  // 1. Compile-time constexpr typed PersistedDevicePrefs verification (zero NVS v4 size overhead)
+  constexpr PersistedDevicePrefs kDefPrefs{};
+  static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
+                "PersistedDevicePrefs must stay POD");
+  static_assert(kDefPrefs.power_profile_enum() == PowerProfilePref::PortableCarry);
+  static_assert(kDefPrefs.wake_word_mode_enum() == WakeWordMode::DockedOnly);
+  static_assert(kDefPrefs.tap_to_wake_enum() == WakePolicyMode::DockedOnly);
+  static_assert(kDefPrefs.screensaver_style_enum() == ScreensaverStyle::AmbientClock);
+  static_assert(kDefPrefs.auto_brightness_enum() == AutoBrightnessMode::SunSynchronized);
+  static_assert(kDefPrefs.color_profile_enum() == ColorProfilePref::SteelBlue);
+  static_assert(kDefPrefs.va_style() == VaVisualStyle::Nebula);
+  static_assert(kDefPrefs.clock_face_style() == ClockFaceStyle::MinimalDigital);
+  static_assert(kDefPrefs.battery_screen_timeout_ms() == 30000U);
+  static_assert(kDefPrefs.docked_idle_timeout_ms() == 60000U);
+  static_assert(kDefPrefs.screen_timeout_ms(false) == 30000U);
+  static_assert(kDefPrefs.screen_timeout_ms(true) == 60000U);
+  static_assert(kDefPrefs.hibernate_delay_s() == 900U);
+  static_assert(kDefPrefs.manual_brightness_pct() == 90U);
+  static_assert(kDefPrefs.day_brightness_pct() == 90U);
+  static_assert(kDefPrefs.night_brightness_pct() == 70U);
+  static_assert(kDefPrefs.return_to_home_ms() == 120000U);
+
+  static_assert(parse_media_playback_state("playing") == MediaPlaybackState::Playing);
+  static_assert(parse_media_playback_state("paused") == MediaPlaybackState::Paused);
+  static_assert(parse_media_playback_state("idle") == MediaPlaybackState::Idle);
+  static_assert(parse_alert_priority("critical") == AlertPriority::Critical);
+  static_assert(parse_alert_priority("normal") == AlertPriority::Normal);
+
+  // Out-of-range uint8_t clamping fallback on PersistedDevicePrefs
+  PersistedDevicePrefs corrupt = kDefPrefs;
+  corrupt.battery_screen_timeout = 99U;
+  corrupt.docked_idle_timeout = 99U;
+  corrupt.battery_hibernate_timeout = 99U;
+  corrupt.return_to_home_timeout = 99U;
+  LATTER_CHECK(corrupt.battery_screen_timeout_ms() == 30000U);
+  LATTER_CHECK(corrupt.docked_idle_timeout_ms() == 60000U);
+  LATTER_CHECK(corrupt.hibernate_delay_s() == 900U);
+  LATTER_CHECK(corrupt.return_to_home_ms() == 120000U);
+
+  // 2. S3 vs P4 interactive & ambient frame cadence + post-transfer quiet windows
+  static_assert(FrameCadenceController::interactive_gap_for(true, true) == 36U);
+  static_assert(FrameCadenceController::interactive_gap_for(false, false) == 36U);
+  static_assert(FrameCadenceController::interactive_gap_for(false, true) == 54U);
+
+  // S3 with Octal-PSRAM wake word running requires 74ms period & 32ms post-transfer idle
+  LATTER_CHECK(!FrameCadenceController::ambient_step_ready(
+      1060U, 1000U, 1020U, false, false, false, false, false, true));
+  LATTER_CHECK(FrameCadenceController::ambient_step_ready(
+      1080U, 1000U, 1020U, false, false, false, false, false, true));
+  // P4 with SRAM wake word steps at 54ms period & 16ms post-transfer idle
+  LATTER_CHECK(FrameCadenceController::ambient_step_ready(
+      1060U, 1000U, 1020U, false, true, false, false, false, true));
+
+  // 3. FrameCadenceController 20ms VA speech transition 1-tick holdoff & 2-idle-tick self-stop
+  FrameCadenceController fc;
+  fc.reset();
+
+  Cadence20msInputs in20{};
+  in20.now_ms = 2000U;
+  in20.panel_on = true;
+  in20.display_power_state = 0;
+  in20.va_visible = true;
+  in20.va_running = true;
+  in20.tts_received = true;  // First tick where TTS starts!
+  auto act20 = fc.evaluate_20ms(in20);
+  LATTER_CHECK(act20.va_transition_holdoff);
+  LATTER_CHECK(!act20.schedule_anim_full);
+  LATTER_CHECK(act20.sync_disp_poller && act20.sync_disp_poller_val);
+
+  // 100ms later during TTS: schedules VA frame (gap >= 94ms)
+  in20.now_ms = 2100U;
+  act20 = fc.evaluate_20ms(in20);
+  LATTER_CHECK(!act20.va_transition_holdoff);
+  LATTER_CHECK(act20.schedule_anim_full);
+
+  // VA ends and nothing animating -> self-stops after 2 quiet 20ms ticks
+  in20 = Cadence20msInputs{};
+  in20.now_ms = 2120U;
+  act20 = fc.evaluate_20ms(in20);
+  LATTER_CHECK(!act20.stop_anim_poller);
+  in20.now_ms = 2140U;
+  act20 = fc.evaluate_20ms(in20);
+  LATTER_CHECK(act20.stop_anim_poller);
+
+  // 4. FrameCadenceController 250ms Home slot rotation, wallpaper wake fetch & FW version diff
+  Cadence250msInputs in250{};
+  in250.now_ms = 8000U;
+  in250.display_power_state = 0;
+  in250.gui_page = 1;
+  in250.home_subpage = 0;
+  in250.activity_mask = 0x02U;
+  in250.rotate_period_ms = 8000U;
+  in250.pending_wallpaper_fetch = true;
+  auto act250 = fc.evaluate_250ms(in250);
+  LATTER_CHECK(act250.ensure_anim_poller);
+  LATTER_CHECK(act250.schedule_disp_now);
+  LATTER_CHECK(act250.fetch_wallpaper);
+
+  in250.gui_page = 4;
+  in250.system_menu_mode = 5;
+  in250.latest_fw_version = "3.0.1";
+  act250 = fc.evaluate_250ms(in250);
+  LATTER_CHECK(act250.fw_version_changed);
+  act250 = fc.evaluate_250ms(in250);
+  LATTER_CHECK(!act250.fw_version_changed);
+
+  // 5. Source check: YAML function-pointer tables retired from system_core.yaml
+  const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");
+  LATTER_CHECK(sys_yaml.find("rt.get_select") == std::string::npos);
+  LATTER_CHECK(sys_yaml.find("rt.set_select") == std::string::npos);
+  LATTER_CHECK(sys_yaml.find("rt.get_switch") == std::string::npos);
+  LATTER_CHECK(sys_yaml.find("rt.toggle_switch") == std::string::npos);
+  LATTER_CHECK(sys_yaml.find("rt.get_number") == std::string::npos);
+  LATTER_CHECK(sys_yaml.find("rt.set_number") == std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -2332,6 +2458,7 @@ int main() {
   test_panel_dcs_timeout_isolation_and_wake_grace();
   test_display_lifecycle_controller();
   test_audio_path_and_intercom_arbitrator();
+  test_frame_cadence_and_typed_prefs();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
       "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "

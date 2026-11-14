@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "audio_router.h"
 #include "hal_power_pm.h"
@@ -80,6 +81,9 @@ enum class UiHostCmd : uint8_t {
   RELEASE_CAMERA_ART,
   STOP_DOORBELL_AUDIO,
   START_DOORBELL_PTT,
+  APPLY_DEVICE_PREFS_EFFECTS,
+  NOTIFY_WEATHER_SIM_CHANGED,
+  SET_LOCAL_SPEAKER_VOL_PCT,
 };
 
 enum class UiSelectId : uint8_t {
@@ -135,20 +139,8 @@ enum class UiNumberId : uint8_t {
 
 struct UiTouchRuntime {
   using ExecCmdFn = void (*)(UiHostCmd cmd, int arg0, int arg1);
-  using GetSelectFn = std::string (*)(UiSelectId id);
-  using SetSelectFn = void (*)(UiSelectId id, const std::string &opt, bool publish_also);
-  using GetSwitchFn = bool (*)(UiSwitchId id);
-  using ToggleSwitchFn = void (*)(UiSwitchId id);
-  using GetNumberFn = float (*)(UiNumberId id);
-  using SetNumberFn = void (*)(UiNumberId id, float val);
 
   ExecCmdFn exec_cmd{nullptr};
-  GetSelectFn get_select{nullptr};
-  SetSelectFn set_select{nullptr};
-  GetSwitchFn get_switch{nullptr};
-  ToggleSwitchFn toggle_switch{nullptr};
-  GetNumberFn get_number{nullptr};
-  SetNumberFn set_number{nullptr};
 
   // Per-event live hardware/ESPHome snapshot
   const char *friendly_name{""};
@@ -157,7 +149,7 @@ struct UiTouchRuntime {
   bool usb_connected{false};
   bool panel_is_on{true};
   bool local_mp_playing{false};
-  float local_mp_volume{0.6f};
+  mutable float local_mp_volume{0.6f};
   int album_art_w{0};
   std::string track_title{};
   std::string track_artist{};
@@ -176,24 +168,13 @@ struct UiTouchRuntime {
   void schedule_disp() const { cmd(UiHostCmd::SCHEDULE_DISP_UPDATE); }
   void schedule_band_disp(int y0, int y1) const { cmd(UiHostCmd::SCHEDULE_BAND_DISP_UPDATE, y0, y1); }
   void apply_power_policy() const { cmd(UiHostCmd::APPLY_POWER_POLICY); }
-  std::string select_opt(UiSelectId id) const {
-    return (get_select != nullptr) ? get_select(id) : std::string{};
-  }
-  void set_select_opt(UiSelectId id, const std::string &opt, bool pub = false) const {
-    if (set_select != nullptr) set_select(id, opt, pub);
-  }
-  bool sw_state(UiSwitchId id) const {
-    return (get_switch != nullptr) ? get_switch(id) : false;
-  }
-  void sw_toggle(UiSwitchId id) const {
-    if (toggle_switch != nullptr) toggle_switch(id);
-  }
-  float num_val(UiNumberId id) const {
-    return (get_number != nullptr) ? get_number(id) : 0.0f;
-  }
-  void set_num_val(UiNumberId id, float v) const {
-    if (set_number != nullptr) set_number(id, v);
-  }
+
+  std::string_view select_opt(UiSelectId id) const noexcept;
+  void set_select_opt(UiSelectId id, std::string_view opt, bool pub = false) const;
+  bool sw_state(UiSwitchId id) const noexcept;
+  void sw_toggle(UiSwitchId id) const;
+  float num_val(UiNumberId id) const noexcept;
+  void set_num_val(UiNumberId id, float v) const;
 };
 
 class TouchGestureEngine {
