@@ -1905,15 +1905,13 @@ void handle_calculator_keypad_tap(int tx, int ty) {
   }
   if (r == 0 && c == 1) {
     if (std::strcmp(st.entry, "0") != 0 && !st.error) {
-      char tmp[20];
+      const size_t len = std::strlen(st.entry);
       if (st.entry[0] == '-') {
-        std::snprintf(tmp, sizeof(tmp), "%s", st.entry + 1);
-      } else if (std::strlen(st.entry) + 1 < sizeof(st.entry)) {
-        std::snprintf(tmp, sizeof(tmp), "-%s", st.entry);
-      } else {
-        return;
+        std::memmove(st.entry, st.entry + 1, len);
+      } else if (len + 1 < sizeof(st.entry)) {
+        std::memmove(st.entry + 1, st.entry, len + 1);
+        st.entry[0] = '-';
       }
-      std::snprintf(st.entry, sizeof(st.entry), "%s", tmp);
     }
     return;
   }

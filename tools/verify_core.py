@@ -991,8 +991,6 @@ HOST_UI_STUBS: dict[str, str] = {
         "inline void yield() {}\n"
         "inline uint8_t progmem_read_byte(const uint8_t *p) { return p ? *p : 0; }\n"
         "}  // namespace esphome\n"
-        "using esphome::millis;\n"
-        "using esphome::micros;\n"
     ),
     "esphome/core/helpers.h": (
         "#pragma once\n"
@@ -1926,6 +1924,8 @@ using std::isnan;
 using std::to_string;
 using esphome::Color;
 using esphome::global_preferences;
+using esphome::micros;
+using esphome::millis;
 
 struct AppStub { void feed_wdt() {} void safe_reboot() {} };
 inline AppStub App;
@@ -2899,6 +2899,15 @@ def main(argv: list[str] | None = None) -> int:
                         f"[GCC ATTR ORDER] {rel} places C++ [[...]] attribute after GNU __attribute__/IRAM_ATTR "
                         "(put [[...]] before __attribute__)"
                     )
+                if not rel.startswith("components/latter_beacon/") and not re.search(
+                    r"\bnamespace\s+esphome\b", clean_cpp
+                ):
+                    m_unqual_hal = re.search(r"(?<![:\w.>])(?:millis|micros)\s*\(", clean_cpp)
+                    if m_unqual_hal:
+                        failures.append(
+                            f"[ESPHOME NAMESPACE] {rel} calls unqualified {m_unqual_hal.group(0).strip()!r} "
+                            "outside namespace esphome (use esphome::millis() / esphome::micros())"
+                        )
             if path.suffix.lower() in {".yaml", ".yml"}:
                 yclean = _strip_yaml_comments(txt)
                 if re.search(r"(?m)^globals\s*:", yclean):

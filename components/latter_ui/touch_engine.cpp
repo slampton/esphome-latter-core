@@ -114,7 +114,7 @@ inline void do_remote_send_key(int key_idx, int target_slot) {
   } else {
     rs.remote.action_feedback = kFeedback[k];
   }
-  rs.remote.feedback_timer = millis();
+  rs.remote.feedback_timer = esphome::millis();
   if (!remote_state().slots_summary.empty()) {
     latter_actions::emit_remote_action(slot_1based, act, cmd);
   }
