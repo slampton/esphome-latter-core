@@ -137,7 +137,7 @@ inline const esphome::Color kChromeCardBrdOn(52, 62, 78);
 inline const esphome::Color kChromeCardBrdOff(34, 40, 50);
 inline const esphome::Color kChromeDangerBg(34, 18, 22);
 inline const esphome::Color kChromeDangerBrd(148, 52, 52);
-inline const esphome::Color kChromeModalBg(18, 22, 29);
+inline const esphome::Color kChromeModalBg(16, 20, 28);
 inline const esphome::Color kChromeKeyBg(20, 25, 33);
 inline const esphome::Color kChromeKeyBrd(44, 54, 68);
 inline const esphome::Color kChromeWheelInnerRing(70, 82, 96);
@@ -145,6 +145,14 @@ inline const esphome::Color kChromeWheelOuterRing(42, 50, 62);
 inline const esphome::Color kChromeMuted(115, 128, 145);
 inline const esphome::Color kChromeSubtle(82, 94, 110);
 inline const esphome::Color kChromeCustomSecondary(192, 192, 192);
+
+// Universal 2-Tier Neutral Smoked Glass Material System (D-037):
+//   Clear        -> kChromeGlassTint(22, 27, 36), ~58% base floor (148/256) + frost lift over dark < 42
+//   ReadableDark -> kChromeModalBg(16, 20, 28), ~78-84% floor (200..216/256) for bright backdrops / HUDs / modals
+enum class GlassVariant : uint8_t {
+  Clear = 0,
+  ReadableDark = 1,
+};
 
 namespace PageId {
   static constexpr int CLOCK      = 0;

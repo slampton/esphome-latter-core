@@ -2029,21 +2029,21 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
   }
 
   render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  Color(18, 22, 30), ctx.col_slate * 0.45f, scale_s(14));
+                  kChromeModalBg, kChromeCardBorder, scale_s(14));
 
   auto tile_bg_color = [&](int val) -> Color {
-    if (val == 0) return Color(28, 34, 44);
-    if (val == 2) return Color(52, 64, 82);
-    if (val == 4) return Color(68, 86, 112);
-    if (val == 8) return ctx.col_orange * 0.85f;
-    if (val == 16) return ctx.col_orange;
-    if (val == 32) return ctx.col_red * 0.88f;
+    if (val == 0) return kChromeGlassTint;
+    if (val == 2) return kChromeTrack;
+    if (val == 4) return kChromeTrackBorder;
+    if (val == 8) return scale_color(ctx.col_orange, 0.72f);
+    if (val == 16) return scale_color(ctx.col_orange, 0.85f);
+    if (val == 32) return scale_color(ctx.col_red, 0.84f);
     if (val == 64) return ctx.col_red;
-    if (val == 128) return ctx.col_cyan * 0.78f;
+    if (val == 128) return scale_color(ctx.col_cyan, 0.78f);
     if (val == 256) return ctx.col_cyan;
-    if (val == 512) return ctx.col_green * 0.85f;
+    if (val == 512) return ctx.col_green;
     if (val == 1024) return ctx.col_magenta;
-    return ctx.col_gold;
+    return scale_color(ctx.col_gold, 0.62f);
   };
 
   for (int r = 0; r < 4; r++) {
@@ -2052,14 +2052,13 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
       int ty = board_y + gap + r * (tile_sz + gap);
       int val = grid[r][c];
       Color tc = tile_bg_color(val);
-      Color bc = (val >= 2048) ? ctx.col_white : (val > 0 ? tc * 1.25f : Color(36, 44, 56));
-      render_card_box(it, tx, ty, tile_sz, tile_sz, tc, bc, scale_s(8));
+      Color bc = (val >= 2048) ? ctx.col_gold : (val > 0 ? tc * 1.25f : kChromeCardBorder);
+      render_card_box(it, tx, ty, tile_sz, tile_sz, tc, bc, scale_s(8), GlassVariant::Clear, ctx.col_white);
       if (val > 0) {
         char v_str[12];
         std::snprintf(v_str, sizeof(v_str), "%d", val);
-        Color fg = (val >= 2048) ? ctx.col_bg : ctx.col_white;
         BaseFont *tf = (val < 100) ? ctx.font_date : ctx.font_small;
-        fast_print(it, tx + tile_sz / 2, ty + tile_sz / 2, tf, fg, TextAlign::CENTER, v_str);
+        fast_print(it, tx + tile_sz / 2, ty + tile_sz / 2, tf, ctx.col_white, TextAlign::CENTER, v_str);
       }
     }
   }
@@ -2243,7 +2242,7 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
   };
 
   render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  Color(18, 22, 30), ctx.col_slate * 0.45f, scale_s(14));
+                  kChromeModalBg, kChromeCardBorder, scale_s(14));
 
   for (int idx = 0; idx < 16; idx++) {
     int r = idx / 4;
@@ -2251,11 +2250,9 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
     int tx = board_x + gap + c * (card_sz + gap);
     int ty = board_y + gap + r * (card_sz + gap);
     bool is_open = matched[idx] || (idx == first_pick) || (idx == second_pick);
-    Color bg_c = matched[idx] ? Color(24, 38, 34)
-               : (is_open ? Color(36, 44, 58) : Color(28, 34, 46));
-    Color brd_c = matched[idx] ? ctx.col_green * 0.7f
-                : (is_open ? ctx.col_gold : ctx.theme_primary * 0.55f);
-    render_card_box(it, tx, ty, card_sz, card_sz, bg_c, brd_c, scale_s(8));
+    Color brd_c = matched[idx] ? ctx.col_green
+                : (is_open ? ctx.col_gold : kChromeCardBorder);
+    render_card_box(it, tx, ty, card_sz, card_sz, kChromeGlassTint, brd_c, scale_s(8));
     if (!matched[idx]) {
       frame_hits().add_rect(tx, ty, card_sz, card_sz, WidgetId::GRID_CARD_BASE,
                             kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
@@ -2265,7 +2262,7 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
     if (is_open) {
       draw_card_symbol(cards[idx], scx, scy, std::max(8, card_sz / 3 - 2));
     } else {
-      fast_filled_circle(it, scx, scy, std::max(3, card_sz / 8), ctx.theme_primary * 0.55f);
+      fast_filled_circle(it, scx, scy, std::max(3, card_sz / 8), ctx.theme_primary);
     }
   }
 
@@ -2384,24 +2381,24 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
                              true, false, 0U, ctx.col_white, ctx.col_black, ctx.col_dark_gray);
 
     } else if (g_idx == 4) {
-      render_card_box(it, icon_x - 48, icon_y - 48, 96, 96, Color(18, 22, 30), ctx.col_slate, 12);
-      render_card_box(it, icon_x - 42, icon_y - 42, 40, 40, Color(52, 64, 82), ctx.col_slate, 7);
+      render_card_box(it, icon_x - 48, icon_y - 48, 96, 96, kChromeModalBg, kChromeCardBorder, 12);
+      render_card_box(it, icon_x - 42, icon_y - 42, 40, 40, kChromeTrack, kChromeTrackBorder, 7);
       fast_print(it, icon_x - 22, icon_y - 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2");
-      render_card_box(it, icon_x + 2, icon_y - 42, 40, 40, ctx.col_orange, ctx.col_white, 7);
+      render_card_box(it, icon_x + 2, icon_y - 42, 40, 40, scale_color(ctx.col_orange, 0.85f), ctx.col_orange, 7);
       fast_print(it, icon_x + 22, icon_y - 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "16");
-      render_card_box(it, icon_x - 42, icon_y + 2, 40, 40, ctx.col_red, ctx.col_white, 7);
+      render_card_box(it, icon_x - 42, icon_y + 2, 40, 40, ctx.col_red, ctx.col_red, 7);
       fast_print(it, icon_x - 22, icon_y + 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "64");
-      render_card_box(it, icon_x + 2, icon_y + 2, 40, 40, ctx.col_gold, ctx.col_white, 7);
-      fast_print(it, icon_x + 22, icon_y + 22, ctx.font_small, ctx.col_bg, TextAlign::CENTER, "2K");
+      render_card_box(it, icon_x + 2, icon_y + 2, 40, 40, scale_color(ctx.col_gold, 0.62f), ctx.col_gold, 7);
+      fast_print(it, icon_x + 22, icon_y + 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2K");
 
     } else {
-      render_card_box(it, icon_x - 44, icon_y - 44, 40, 40, Color(36, 44, 58), ctx.col_gold, 8);
+      render_card_box(it, icon_x - 44, icon_y - 44, 40, 40, kChromeGlassTint, ctx.col_gold, 8);
       fast_filled_circle(it, icon_x - 24, icon_y - 24, 9, ctx.col_gold);
-      render_card_box(it, icon_x + 4, icon_y - 44, 40, 40, Color(28, 34, 46), ctx.theme_primary, 8);
+      render_card_box(it, icon_x + 4, icon_y - 44, 40, 40, kChromeGlassTint, kChromeCardBorder, 8);
       fast_filled_circle(it, icon_x + 24, icon_y - 24, 5, ctx.theme_primary);
-      render_card_box(it, icon_x - 44, icon_y + 4, 40, 40, Color(28, 34, 46), ctx.theme_primary, 8);
+      render_card_box(it, icon_x - 44, icon_y + 4, 40, 40, kChromeGlassTint, kChromeCardBorder, 8);
       fast_filled_circle(it, icon_x - 24, icon_y + 24, 5, ctx.theme_primary);
-      render_card_box(it, icon_x + 4, icon_y + 4, 40, 40, Color(36, 44, 58), ctx.col_gold, 8);
+      render_card_box(it, icon_x + 4, icon_y + 4, 40, 40, kChromeGlassTint, ctx.col_gold, 8);
       fast_filled_circle(it, icon_x + 24, icon_y + 24, 9, ctx.col_gold);
     }
   };

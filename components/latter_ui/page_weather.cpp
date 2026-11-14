@@ -390,7 +390,7 @@ void render_lunar_disc(esphome::display::Display &it, int moon_cx, int moon_cy, 
   for (int my = -moon_r; my <= moon_r; my++) {
     const int py = moon_cy + my;
     const int w_line = lunar_aa_half_span(moon_r, my);
-    const bool visible = (py >= 0 && py < SCREEN_H);
+    const bool visible = row_in_clip_band(py);
     uint16_t *row;
     if (tile != nullptr) {
       row = tile->px + static_cast<size_t>(my + moon_r) * dia + (moon_r - w_line);
@@ -440,6 +440,7 @@ void render_lunar_disc(esphome::display::Display &it, int moon_cx, int moon_cy, 
 
 // Writes one cloud band span with a pre-encoded hardware color; identical pixels to fast_hline.
 void cloud_span(esphome::display::Display &it, uint16_t *fb, int x0, int y, int len, uint16_t hw, esphome::Color c) {
+  if (!row_in_clip_band(y)) return;
   if (fb == nullptr || len <= 0 || y < 0 || y >= SCREEN_H || x0 < 0 || x0 + len > SCREEN_W) {
     fast_hline(it, x0, y, len, c);
     return;
@@ -1220,8 +1221,8 @@ void draw_tumbling_leaf_3d(esphome::display::Display &it, Vec3 center_3d, float 
 }
 
 // Renders the 4 bottom Weather Subpage navigation icons (Current, Forecast, Sun, Moon)
-// with a 100% transparent button background and a 1px dark drop-shadow (matching the flank/deck chevrons)
-// so the white icons float cleanly over any daytime, nighttime, cloudy, or stormy sky.
+// over the shared frosted-glass stadium mode bar (`render_in_app_mode_bar_track`),
+// with a gliding active capsule ring and co-located `FrameHitTable` hit/focus registration.
 void render_weather_subpage_icons(esphome::display::Display &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
   // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)

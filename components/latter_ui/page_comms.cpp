@@ -171,15 +171,15 @@ void render_intercom_subpage(esphome::display::Display &it, const UiFrameContext
     const std::string fit_fb = fit_text_to_width_font(feedback_str, scale_x(280), font_small);
     render_page_header(it, cx, fit_fb, font_small, ctx.theme_secondary);
   } else {
-    render_modern_card(it, cx, scale_y(44), 232, 34, 10, Color(18, 24, 34), ctx.theme_primary,
+    render_modern_card(it, cx, scale_y(44), 232, 34, 10, kChromeGlassTint, ctx.theme_primary,
                        intercom_live_call_mode() ? "Mode: Talk >" : "Mode: Broadcast >",
                        ctx.col_white, font_small);
   }
   frame_hits().add_centered_rect(cx, scale_y(44), scale_x(244), scale_y(42),
                                  WidgetId::INTERCOM_MODE_BTN, kHitTap | kHitFocusSlot, 0);
 
-  const Color card_bg = ui::chrome_card_bg_on();
-  const Color card_brd = ui::chrome_card_brd_on();
+  const Color card_bg = kChromeGlassTint;
+  const Color card_brd = kChromeCardBrdOn;
   const int c_left = layout().list_card_left;
   const int hit_w = scale_x(296);
   const int hit_h = scale_y(48);
@@ -193,7 +193,7 @@ void render_intercom_subpage(esphome::display::Display &it, const UiFrameContext
     }
     for (int i = 0; i < cnt; i++) {
       const int y_mid = layout().slot5_y(i);
-      const Color brd_c = t_all[i] ? ctx.theme_secondary : Color(66, 188, 106);
+      const Color brd_c = t_all[i] ? ctx.theme_secondary : ctx.col_green;
       render_modern_card(it, cx, y_mid, 290, 44, 12, card_bg, brd_c, nullptr, ctx.col_white, font_small);
       fast_filled_circle(it, c_left + scale_x(18), y_mid, scale_s(6), brd_c);
       const std::string fit_l = fit_text_to_width_font(t_lbls[i], layout().list_card_w - scale_x(46), font_small);
@@ -204,7 +204,7 @@ void render_intercom_subpage(esphome::display::Display &it, const UiFrameContext
     }
     if (cnt < 5) {
       const int unlock_y = layout().slot5_y(4);
-      render_modern_card(it, cx, unlock_y, 290, 44, 12, Color(18, 38, 28), Color(66, 188, 106),
+      render_modern_card(it, cx, unlock_y, 290, 44, 12, card_bg, ctx.col_green,
                          "Unlock Gate / Door", ctx.col_white, font_small);
       frame_hits().add_centered_rect(cx, unlock_y, hit_w, hit_h,
                                      static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + 4),
@@ -257,12 +257,12 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
 
   if (cam_quick_reply_open()) {
     render_page_header(it, cx, "DOORBELL ACTIONS", font_small, ctx.theme_primary);
-    const Color card_bg = ui::chrome_card_bg_on();
-    const Color card_brd = ui::chrome_card_brd_on();
+    const Color card_bg = kChromeGlassTint;
+    const Color card_brd = kChromeCardBrdOn;
     const int hit_w = scale_x(302);
     const int hit_h = scale_y(48);
 
-    render_modern_card(it, cx, layout().slot5_y(0), 296, 44, 12, Color(18, 40, 28), Color(66, 188, 106),
+    render_modern_card(it, cx, layout().slot5_y(0), 296, 44, 12, card_bg, ctx.col_green,
                        "Unlock Door / Gate", ctx.col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().slot5_y(0), hit_w, hit_h,
                                    static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + 0),
@@ -290,7 +290,7 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
     std::snprintf(view_lbl, sizeof(view_lbl), "%s • %s",
                   cam_landscape_mode() ? "90° View" : "Portrait", kNoiseNames[noise_idx]);
     const std::string fit_view = fit_text_to_width_font(view_lbl, layout().list_card_w - scale_x(16), font_small);
-    render_modern_card(it, cx, layout().slot5_y(4), 296, 44, 12, Color(18, 28, 40), ctx.theme_secondary,
+    render_modern_card(it, cx, layout().slot5_y(4), 296, 44, 12, card_bg, ctx.theme_secondary,
                        fit_view.c_str(), ctx.col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().slot5_y(4), hit_w, hit_h,
                                    WidgetId::CAM_NOISE_BTN, kHitTap | kHitFocusSlot, 4);
@@ -325,12 +325,12 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
   cur_cam_title = fit_text_to_width_font(cur_cam_title, scale_x(210), font_small);
 
   const Color hdr_brd = cam_intercom_ptt_active()
-                            ? Color(220, 58, 58)
-                            : (cam_call_active() ? Color(66, 188, 106) : ctx.theme_primary);
+                            ? ctx.col_red
+                            : (cam_call_active() ? ctx.col_green : ctx.theme_primary);
   const int hdr_w = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? 216 : 256;
   const int hdr_cx = (!LATTER_ROUND_DISPLAY && SCREEN_W != SCREEN_H) ? (cx - 24) : cx;
   const int hdr_cy = scale_y(40);
-  render_modern_card(it, hdr_cx, hdr_cy, hdr_w, 34, 10, Color(10, 14, 22), hdr_brd,
+  render_modern_card(it, hdr_cx, hdr_cy, hdr_w, 34, 10, kChromeModalBg, hdr_brd,
                      cur_cam_title.c_str(), ctx.col_white, font_small);
   if (cam_count > 1 && cam_intercom_status().empty()) {
     const int eff_hdr_w = scale_x(hdr_w);
@@ -347,8 +347,8 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
 #if !LATTER_ROUND_DISPLAY
   if (SCREEN_W != SCREEN_H) {
     render_modern_card(it, SCREEN_W - 34, hdr_cy, 48, 34, 9,
-                       cam_landscape_mode() ? Color(20, 42, 62) : Color(12, 16, 24),
-                       cam_landscape_mode() ? ctx.theme_primary : Color(58, 68, 84),
+                       kChromeModalBg,
+                       cam_landscape_mode() ? ctx.theme_primary : kChromeCardBorder,
                        "90°", cam_landscape_mode() ? ctx.col_white : ctx.theme_secondary, font_small);
     frame_hits().add_centered_rect(SCREEN_W - 34, hdr_cy, 58, scale_y(46),
                                    WidgetId::CAM_ORIENT_BTN, kHitTap | kHitFocusSlot, 0);
@@ -364,29 +364,28 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
 
     if (in_call) {
       render_modern_card(it, cx - scale_x(98), deck_y, 82, 38, 11,
-                         Color(92, 18, 22), Color(245, 72, 72), "End", ctx.col_white, font_small);
+                         kChromeModalBg, ctx.col_red, "End", ctx.col_white, font_small);
     } else {
       const bool is_listening = cam_listen_active();
       render_modern_card(it, cx - scale_x(98), deck_y, 82, 38, 11,
-                         is_listening ? Color(20, 42, 62) : Color(12, 16, 24),
-                         is_listening ? ctx.theme_primary : Color(58, 68, 84),
+                         kChromeModalBg,
+                         is_listening ? ctx.theme_primary : kChromeCardBorder,
                          is_listening ? "Mute" : "Audio",
                          is_listening ? ctx.col_white : ctx.theme_secondary, font_small);
     }
     frame_hits().add_centered_rect(cx - scale_x(98), deck_y, scale_x(90), scale_y(46),
                                    WidgetId::CAM_LISTEN_BTN, kHitTap | kHitFocusSlot, 0);
 
-    const Color call_bg  = speaking ? (pulse ? Color(145, 28, 32) : Color(92, 18, 22)) : Color(18, 44, 28);
-    const Color call_brd = speaking ? Color(245, 72, 72) : Color(66, 188, 106);
+    const Color call_brd = speaking ? (pulse ? ctx.col_white : ctx.col_red) : ctx.col_green;
     render_modern_card(it, cx, deck_y, 102, 40, 12,
-                       call_bg, call_brd,
+                       kChromeModalBg, call_brd,
                        !in_call ? "Listen+Talk" : (speaking ? "Cancel" : "Talk"),
                        ctx.col_white, font_small);
     frame_hits().add_centered_rect(cx, deck_y, scale_x(108), scale_y(48),
                                    WidgetId::CAM_PTT_BTN, kHitTap | kHitFocusSlot, 0);
 
     render_modern_card(it, cx + scale_x(98), deck_y, 82, 38, 11,
-                       Color(12, 16, 24), Color(58, 68, 84),
+                       kChromeModalBg, kChromeCardBorder,
                        "Reply", ctx.theme_secondary, font_small);
     frame_hits().add_centered_rect(cx + scale_x(98), deck_y, scale_x(90), scale_y(46),
                                    WidgetId::CAM_REPLY_MENU_BTN, kHitTap | kHitFocusSlot, 0);
@@ -398,7 +397,7 @@ void render_cameras_subpage(esphome::display::Display &it, const UiFrameContext 
   if (!hide_single_app_back) {
     if (has_frame && (!tools_direct_home() || !persisted_prefs().home_screen_enabled)) {
       render_glass_card(it, cx - scale_x(64), layout().back_y - scale_y(16), scale_x(128), scale_y(32),
-                        scale_s(16), kChromeGlassTint, 176);
+                        scale_s(16), kChromeModalBg, -1, GlassVariant::ReadableDark, ctx.col_white);
     }
     const char *back_lbl =
         (tools_direct_home() && persisted_prefs().home_screen_enabled) ? "Home" : "< Back";

@@ -72,10 +72,10 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
       render_page_header(it, cx, "CONTROL", font_small, theme_primary);
     }
 
-    const Color card_bg = ui::chrome_card_bg_off();
-    const Color card_brd = ui::chrome_card_brd_on();
+    const Color card_bg = kChromeGlassTint;
+    const Color card_brd = kChromeCardBrdOn;
 
-    render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, ui::chrome_danger_bg(), col_red,
+    render_modern_card(it, cx, layout().slot5_y(0), 276, 44, 12, kChromeGlassTint, col_red,
                        "Toggle Power", col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().slot5_y(0), layout().list_card_w, layout().slot5_h,
                                    WidgetId::REMOTE_PRIMARY_PWR, kHitTap | kHitFocusSlot, 0);
@@ -185,11 +185,11 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fill_rect_row_major(it, right_fx - pls, btm_fy - pth / 2, pls * 2 + 1, pth, col_white);
   frame_hits().add_circle(right_fx, btm_fy, f_r, WidgetId::REMOTE_VOL_DOWN, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
-  // Adaptive Frosted-Glass Concentric D-Pad
+  // Adaptive Frosted-Glass Concentric D-Pad (inner_hole_r avoids double-blending under center OK orb)
   const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));
   const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((SCREEN_W > 520) ?  86 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50));
   const int ok_r       = dpad_r_in - scale_s(8);
-  render_glass_circle(it, cx, dpad_cy, dpad_r_out, kChromeGlassTint, kChromeCardBorder);
+  render_glass_circle(it, cx, dpad_cy, dpad_r_out, kChromeGlassTint, kChromeCardBorder, dpad_r_in);
   fast_circle_aa(it, cx, dpad_cy, static_cast<float>(dpad_r_in), kChromeCardBorder, 1.5f);
 
   const int d_in  = (dpad_r_in * 707) / 1000;

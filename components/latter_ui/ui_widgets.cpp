@@ -28,29 +28,26 @@ namespace latter_ui {
 void render_pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r,
                         esphome::Color border_c, esphome::Color bg_c,
                         const char *label, esphome::Color text_c,
-                        esphome::display::BaseFont *font) {
+                        esphome::display::BaseFont *font,
+                        GlassVariant variant) {
   const int px0 = x1 - r;
   const int py0 = y_mid - r;
   const int pw = (x2 - x1) + 2 * r + 1;
   const int ph = 2 * r + 1;
+  if (pw <= 4 || ph <= 4) return;
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
   const GlassBackdrop bd = sample_glass_backdrop(px0, py0, pw, ph);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, bg_c, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot);
-  const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
-  if (neutral_brd) {
-    fill_round_rect_glass(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f,
-                          kChromeGlassSheen, rim_top, rim_bot, 1);
-    if (r > 1) {
-      fill_round_rect_glass(it, px0 + 1, py0 + 1, pw - 2, ph - 2, static_cast<float>(r) - 0.5f,
-                            eff_tint, a_top, a_bot);
-    }
-  } else {
-    stroke_round_rect_aa(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f, border_c, border_c, 2);
-    if (r > 2) {
-      fill_round_rect_glass(it, px0 + 2, py0 + 2, pw - 4, ph - 4, static_cast<float>(r) - 1.5f,
-                            eff_tint, a_top, a_bot);
-    }
+  resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+
+  fill_round_rect_glass(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f,
+                        rim_col, rim_top, rim_bot, 1);
+  if (r > 1 && pw > 2 && ph > 2) {
+    fill_round_rect_glass(it, px0 + 1, py0 + 1, pw - 2, ph - 2, static_cast<float>(r) - 0.5f,
+                          eff_tint, a_top, a_bot);
   }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
@@ -64,7 +61,8 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
                                   int w, int h, int r,
                                   esphome::Color bg_c, esphome::Color border_c,
                                   const char *label, esphome::Color text_c,
-                                  esphome::display::BaseFont *font) {
+                                  esphome::display::BaseFont *font,
+                                  GlassVariant variant) {
   if (SCREEN_W > 520) {
     if (w <= 340) w = scale_x(w);
     if (h <= 96)  h = scale_y(h);
@@ -76,42 +74,25 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
       w = SCREEN_W - 20;
     }
   }
+  if (w <= 4 || h <= 4) return bg_c;
   if (r > h / 2) r = h / 2;
+  if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
   const int x0 = cx_card - w / 2;
   const int y0 = cy_card - h / 2;
 
-  const bool is_lit_glass = (static_cast<int>(bg_c.r) + static_cast<int>(bg_c.g) + static_cast<int>(bg_c.b)) > 12;
-  const esphome::Color brd_top = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 28)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 32)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 38)))
-      : border_c;
-  const esphome::Color brd_btm = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>((static_cast<int>(border_c.r) * 180) >> 8),
-                       static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
-                       static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
-      : border_c;
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
+  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+  esphome::Color eff_tint;
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
 
-  esphome::Color surf_bg = bg_c;
-  if (is_lit_glass) {
-    const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
-    const esphome::Color ref_fg = (label != nullptr && label[0] != '\0') ? text_c : kChromeGlassSheen;
-    esphome::Color eff_tint;
-    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-    resolve_glass_fill(bd, bg_c, ref_fg, eff_tint, a_top, a_bot, rim_top, rim_bot);
-    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
-    if (neutral_brd) {
-      fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, rim_top, rim_bot, 1);
-    } else {
-      stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
-    }
-    fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
-    surf_bg = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
-  } else {
-    stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
-    fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_c, bg_c);
-  }
+  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
+  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, std::max(0.5f, static_cast<float>(r) - 1.0f),
+                        eff_tint, a_top, a_bot);
+  const esphome::Color surf_bg = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     fast_print(it, cx_card + 1, cy_card + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, label);
@@ -121,70 +102,61 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
 }
 
 esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, int w, int h,
-                               esphome::Color bg_c, esphome::Color border_c, int r) {
+                               esphome::Color bg_c, esphome::Color border_c, int r,
+                               GlassVariant variant, esphome::Color ref_text) {
   if (w <= 4 || h <= 4) return bg_c;
   if (r > h / 2) r = h / 2;
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
 
-  const bool is_lit_glass = (static_cast<int>(bg_c.r) + static_cast<int>(bg_c.g) + static_cast<int>(bg_c.b)) > 12;
-  const esphome::Color brd_top = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 28)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 32)),
-                       static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 38)))
-      : border_c;
-  const esphome::Color brd_btm = is_lit_glass
-      ? esphome::Color(static_cast<uint8_t>((static_cast<int>(border_c.r) * 180) >> 8),
-                       static_cast<uint8_t>((static_cast<int>(border_c.g) * 180) >> 8),
-                       static_cast<uint8_t>((static_cast<int>(border_c.b) * 180) >> 8))
-      : border_c;
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
+  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+  esphome::Color eff_tint;
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
 
-  if (is_lit_glass) {
-    const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
-    esphome::Color eff_tint;
-    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-    resolve_glass_fill(bd, bg_c, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot);
-    const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
-    if (neutral_brd) {
-      fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, rim_top, rim_bot, 1);
-    } else {
-      stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
-    }
-    fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
-    return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
-  }
-
-  stroke_round_rect_aa(it, x0, y0, w, h, static_cast<float>(r), brd_top, brd_btm, 1);
-  fill_round_rect_aa(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, bg_c, bg_c);
-  return bg_c;
+  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
+  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, std::max(0.5f, static_cast<float>(r) - 1.0f),
+                        eff_tint, a_top, a_bot);
+  return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 }
 
 esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
-                                   esphome::Color bg_c, esphome::Color border_c) {
+                                   esphome::Color bg_c, esphome::Color border_c,
+                                   int inner_hole_r, GlassVariant variant,
+                                   esphome::Color ref_text) {
   if (r <= 1) return bg_c;
-  const esphome::Color brd_top(
-      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.r) + 34)),
-      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.g) + 38)),
-      static_cast<uint8_t>(std::min(255, static_cast<int>(border_c.b) + 44)));
-  const esphome::Color brd_btm(
-      static_cast<uint8_t>((static_cast<int>(border_c.r) * 165) >> 8),
-      static_cast<uint8_t>((static_cast<int>(border_c.g) * 165) >> 8),
-      static_cast<uint8_t>((static_cast<int>(border_c.b) * 165) >> 8));
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
 
   const int d = 2 * r + 1;
   const GlassBackdrop bd = sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, bg_c, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot);
-  const bool neutral_brd = (std::max({border_c.r, border_c.g, border_c.b}) <= 96);
-  if (neutral_brd) {
-    fill_round_rect_glass(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
-                          kChromeGlassSheen, rim_top, rim_bot, 1);
+  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+
+  fill_round_rect_glass(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
+                        rim_col, rim_top, rim_bot, 1);
+  if (inner_hole_r <= 0) {
+    fill_round_rect_glass(it, cx_btn - r + 1, cy_btn - r + 1, d - 2, d - 2, static_cast<float>(r) - 0.5f,
+                          eff_tint, a_top, a_bot);
   } else {
-    stroke_round_rect_aa(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f, brd_top, brd_btm, 1);
+    const int hr = std::min(inner_hole_r, r - 2);
+    if (hr > 0) {
+      const int fill_r = r - 1;
+      const int ir = hr + 1;
+      const int ring_thick = fill_r - ir;
+      if (ring_thick > 0) {
+        fill_round_rect_glass(it, cx_btn - fill_r, cy_btn - fill_r, 2 * fill_r + 1, 2 * fill_r + 1,
+                              static_cast<float>(fill_r) + 0.5f, eff_tint, a_top, a_bot, ring_thick);
+      }
+      fill_round_rect_glass(it, cx_btn - ir, cy_btn - ir, 2 * ir + 1, 2 * ir + 1,
+                            static_cast<float>(ir) + 0.5f, rim_col, rim_bot, rim_top, 1);
+    }
   }
-  fill_round_rect_glass(it, cx_btn - r + 1, cy_btn - r + 1, d - 2, d - 2, static_cast<float>(r) - 0.5f,
-                        eff_tint, a_top, a_bot);
   return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 }
 
@@ -278,15 +250,22 @@ void render_viewport_scrollbar(esphome::display::Display &it, int cx, int y_pos,
   const int track_x0 = cx - (track_w / 2);
   const int track_y0 = y_pos - r_cap;
 
-  const esphome::Color col_track = is_dim ? kChromeTrackDim : kChromeTrack;
-  const esphome::Color col_brd   = is_dim ? kChromeTrackBorderDim : kChromeTrackBorder;
-
   const float cap = static_cast<float>(r_cap);
-  if (!is_dim) {
-    fill_round_rect_aa(it, track_x0 + 1, track_y0 + 1, track_w, track_h, cap, kChromeShadow);
+  const GlassBackdrop bd = sample_glass_backdrop(track_x0, track_y0, track_w, track_h);
+  esphome::Color eff_tint;
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_glass_fill(bd, kChromeGlassTint, kChromeGlassSheen, eff_tint, a_top, a_bot,
+                     rim_top, rim_bot, is_dim ? 104 : -1, GlassVariant::Clear);
+  if (is_dim) {
+    rim_top = (rim_top * 2) / 3;
+    rim_bot = (rim_bot * 2) / 3;
   }
-  stroke_round_rect_aa(it, track_x0, track_y0, track_w, track_h, cap, col_brd, col_brd, 1);
-  fill_round_rect_aa(it, track_x0 + 1, track_y0 + 1, track_w - 2, track_h - 2, cap - 1.0f, col_track);
+  fill_round_rect_glass(it, track_x0, track_y0, track_w, track_h, cap,
+                        kChromeGlassSheen, rim_top, rim_bot, 1);
+  if (track_h > 2) {
+    fill_round_rect_glass(it, track_x0 + 1, track_y0 + 1, track_w - 2, track_h - 2,
+                          std::max(0.5f, cap - 1.0f), eff_tint, a_top, a_bot);
+  }
 
   const int min_thumb_w = (SCREEN_W > 520) ? 28 : 20;
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
@@ -295,7 +274,10 @@ void render_viewport_scrollbar(esphome::display::Display &it, int cx, int y_pos,
   const float frac = clamped_start / max_start;
   const int thumb_x0 = track_x0 + static_cast<int>(std::round(frac * static_cast<float>(track_w - thumb_w)));
 
-  fill_round_rect_aa(it, thumb_x0, track_y0, thumb_w, track_h, cap, col_thumb);
+  const esphome::Color thumb_tint =
+      mix_color_q8(kChromeGlassSheen, col_thumb, is_semantic_glass_color(col_thumb) ? 96 : 48);
+  fill_round_rect_glass(it, thumb_x0, track_y0, thumb_w, track_h, cap,
+                        thumb_tint, is_dim ? 136 : 216, is_dim ? 120 : 196);
 }
 
 void render_dock_page_pips(esphome::display::Display &it, int cx, int y_pos, int total_pages,
@@ -485,14 +467,13 @@ void render_in_app_mode_bar_track(esphome::display::Display &it, int cx, const i
   const int left_cx  = win_xs[0];
   const int right_cx = win_xs[vis_count - 1];
   const int stride   = get_dock_slot_stride(win_xs, vis_count);
-  const esphome::Color track_bg = kChromeBarTrack;
 
   const int tx0 = left_cx - r_track;
   const int tw = (right_cx - left_cx) + 2 * r_track + 1;
   const int th = 2 * r_track + 1;
   const GlassBackdrop bd = sample_glass_backdrop(tx0, by - r_track, tw, th);
   const int track_alpha = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : 168;
-  render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha);
+  render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha, bd);
 
   const float rel_active = anim_active - anim_start;
   if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
@@ -504,14 +485,15 @@ void render_in_app_mode_bar_track(esphome::display::Display &it, int cx, const i
       } else if (rel_active > static_cast<float>(vis_count - 1)) {
         ring_alpha = std::max(0.20f, 1.0f - (rel_active - static_cast<float>(vis_count - 1)) * 1.6f);
       }
-      const esphome::Color ring_col(
-          static_cast<uint8_t>(track_bg.r + (theme_primary.r - track_bg.r) * ring_alpha),
-          static_cast<uint8_t>(track_bg.g + (theme_primary.g - track_bg.g) * ring_alpha),
-          static_cast<uint8_t>(track_bg.b + (theme_primary.b - track_bg.b) * ring_alpha));
-      stroke_round_rect_aa(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1,
-                           static_cast<float>(dr) + 0.5f, ring_col, ring_col, 2);
-      fill_round_rect_glass(it, abx - dr + 2, by - dr + 2, 2 * dr - 3, 2 * dr - 3,
-                            static_cast<float>(dr) - 1.5f, theme_primary, 48, 28);
+      const esphome::Color slot_rim = mix_color_q8(kChromeGlassSheen, theme_primary, kGlassSemanticRimMaxQ8);
+      const int slot_rim_top = static_cast<int>(std::round(132.0f * ring_alpha));
+      const int slot_rim_bot = static_cast<int>(std::round(64.0f * ring_alpha));
+      const int slot_wash_top = static_cast<int>(std::round(static_cast<float>(kGlassSemanticWashMaxQ8) * ring_alpha));
+      const int slot_wash_bot = static_cast<int>(std::round(24.0f * ring_alpha));
+      fill_round_rect_glass(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1,
+                            static_cast<float>(dr) + 0.5f, slot_rim, slot_rim_top, slot_rim_bot, 1);
+      fill_round_rect_glass(it, abx - dr + 1, by - dr + 1, 2 * dr - 1, 2 * dr - 1,
+                            static_cast<float>(dr) - 0.5f, theme_primary, slot_wash_top, slot_wash_bot);
     }
   }
 
@@ -736,18 +718,18 @@ bool is_sensitive_perimeter_action_impl(const std::string &domain_or_entity,
 }  // namespace
 
 // ==============================================================================
-// 2. Semantic Chrome Surface Tokens (zero dead chrome_remote_* shims)
+// 2. Semantic Chrome Surface Tokens (aligned 1:1 with ui_types.h kChrome* tokens)
 // ==============================================================================
-esphome::Color chrome_card_bg_on() { return esphome::Color(24, 30, 38); }
-esphome::Color chrome_card_bg_off() { return esphome::Color(15, 18, 24); }
-esphome::Color chrome_card_brd_on() { return esphome::Color(52, 62, 78); }
-esphome::Color chrome_card_brd_off() { return esphome::Color(34, 40, 50); }
-esphome::Color chrome_danger_bg() { return esphome::Color(34, 18, 22); }
-esphome::Color chrome_modal_bg() { return esphome::Color(18, 22, 29); }
-esphome::Color chrome_key_bg() { return esphome::Color(20, 25, 33); }
-esphome::Color chrome_key_brd() { return esphome::Color(44, 54, 68); }
-esphome::Color chrome_wheel_inner_ring() { return esphome::Color(70, 82, 96); }
-esphome::Color chrome_wheel_outer_ring() { return esphome::Color(42, 50, 62); }
+esphome::Color chrome_card_bg_on() { return kChromeCardBgOn; }
+esphome::Color chrome_card_bg_off() { return kChromeCardBgOff; }
+esphome::Color chrome_card_brd_on() { return kChromeCardBrdOn; }
+esphome::Color chrome_card_brd_off() { return kChromeCardBrdOff; }
+esphome::Color chrome_danger_bg() { return kChromeDangerBg; }
+esphome::Color chrome_modal_bg() { return kChromeModalBg; }
+esphome::Color chrome_key_bg() { return kChromeKeyBg; }
+esphome::Color chrome_key_brd() { return kChromeKeyBrd; }
+esphome::Color chrome_wheel_inner_ring() { return kChromeWheelInnerRing; }
+esphome::Color chrome_wheel_outer_ring() { return kChromeWheelOuterRing; }
 
 // ==============================================================================
 // 3. Deduplicated Canonical Vector Glyph Library
@@ -991,15 +973,30 @@ void toggle_switch(esphome::display::Display &it, int cx_sw, int cy_sw, bool is_
                    esphome::Color active_col) {
   const int sw_w = scale_x(40);
   const int sw_h = scale_y(22);
+  const int x0 = cx_sw - sw_w / 2;
+  const int y0 = cy_sw - sw_h / 2;
   const float rad = 0.5f * static_cast<float>(sw_h);
-  const esphome::Color track_c = is_on ? active_col : kChromeTrack;
-  const esphome::Color brd_c = is_on ? active_col : kChromeTrackBorder;
-  stroke_round_rect_aa(it, cx_sw - sw_w / 2, cy_sw - sw_h / 2, sw_w, sw_h, rad, brd_c, brd_c, 1);
-  fill_round_rect_aa(it, cx_sw - sw_w / 2 + 1, cy_sw - sw_h / 2 + 1, sw_w - 2, sw_h - 2, rad - 1.0f, track_c);
+
+  GlassVariant eff_var = GlassVariant::Clear;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(is_on ? active_col : kChromeGlassTint,
+                         is_on ? active_col : kChromeTrackBorder,
+                         eff_var, norm_tint, rim_col);
+  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, sw_w, sw_h);
+  esphome::Color eff_tint;
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_glass_fill(bd, norm_tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+
+  fill_round_rect_glass(it, x0, y0, sw_w, sw_h, rad,
+                        rim_col, is_on ? std::min(256, rim_top + 24) : rim_top, rim_bot, 1);
+  if (sw_w > 2 && sw_h > 2) {
+    fill_round_rect_glass(it, x0 + 1, y0 + 1, sw_w - 2, sw_h - 2,
+                          std::max(0.5f, rad - 1.0f), eff_tint, a_top, a_bot);
+  }
   const int thumb_r = std::max(5, sw_h / 2 - 3);
   const int thumb_cx = is_on ? (cx_sw + sw_w / 2 - thumb_r - 3) : (cx_sw - sw_w / 2 + thumb_r + 3);
   fast_filled_circle_aa(it, thumb_cx + 1, cy_sw + 1, thumb_r, kChromeShadow);
-  fast_filled_circle_aa(it, thumb_cx, cy_sw, thumb_r, kChromeGlassSheen);
+  fast_filled_circle_aa(it, thumb_cx, cy_sw, thumb_r, is_on ? kChromeGlassSheen : kChromeHomePill);
 }
 
 void toggle_card_row(esphome::display::Display &it, int cx, int y_mid, int w, int h,
@@ -1008,7 +1005,8 @@ void toggle_card_row(esphome::display::Display &it, int cx, int y_mid, int w, in
                      uint16_t widget_id, int16_t param) {
   const esphome::Color bg_c = is_on ? chrome_card_bg_on() : chrome_card_bg_off();
   const esphome::Color brd_c = is_on ? active_col : chrome_card_brd_off();
-  render_modern_card(it, cx, y_mid, w, h, 10, bg_c, brd_c, "", text_on, font);
+  const esphome::Color fg = is_on ? text_on : text_off;
+  render_modern_card(it, cx, y_mid, w, h, 10, bg_c, brd_c, "", fg, font);
   int eff_w = w;
   if (SCREEN_W > 520 && eff_w <= 340) eff_w = scale_x(eff_w);
   else if (SCREEN_W < 380 && h <= 48 && eff_w >= 240 && eff_w <= 330) eff_w = SCREEN_W - 88;
@@ -1019,7 +1017,6 @@ void toggle_card_row(esphome::display::Display &it, int cx, int y_mid, int w, in
   const int max_lbl_px = std::max(60, (sw_cx - scale_x(26)) - text_x);
   const std::string fit_lbl = fit_text_to_width_font(
       label != nullptr ? std::string(label) : std::string(), max_lbl_px, font);
-  const esphome::Color fg = is_on ? text_on : text_off;
   fast_print(it, text_x + 1, y_mid + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
   fast_print(it, text_x, y_mid, font, fg, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
   toggle_switch(it, sw_cx, y_mid, is_on, active_col);
@@ -1032,8 +1029,8 @@ void toggle_card_row(esphome::display::Display &it, int cx, int y_mid, int w, in
 void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r,
                  esphome::Color border_c, esphome::Color bg_c,
                  const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
-                 uint16_t widget_id, uint8_t flags, int16_t param) {
-  render_pill_button(it, x1, x2, y_mid, r, border_c, bg_c, label, text_c, font);
+                 uint16_t widget_id, uint8_t flags, int16_t param, GlassVariant variant) {
+  render_pill_button(it, x1, x2, y_mid, r, border_c, bg_c, label, text_c, font, variant);
   if (widget_id != WidgetId::NONE) {
     const int px0 = x1 - r;
     const int py0 = y_mid - r;
@@ -1166,9 +1163,11 @@ void confirm_modal(esphome::display::Display &it, int cx, const char *title,
   const int gap_x = (SCREEN_W < 380) ? 64 : scale_x(72);
 
   render_modern_card(it, cx - gap_x, btn_y, btn_w, btn_h, 12,
-                     chrome_card_bg_on(), chrome_card_brd_on(), cancel_lbl, col_white, font_body);
+                     chrome_card_bg_on(), chrome_card_brd_on(), cancel_lbl, col_white, font_body,
+                     GlassVariant::ReadableDark);
   render_modern_card(it, cx + gap_x, btn_y, btn_w, btn_h, 12,
-                     confirm_bg, confirm_border, confirm_lbl, col_white, font_body);
+                     confirm_bg, confirm_border, confirm_lbl, col_white, font_body,
+                     GlassVariant::ReadableDark);
 
   if (cancel_wid != WidgetId::NONE) {
     frame_hits().add_centered_rect(cx - gap_x, btn_y, btn_w, btn_h, cancel_wid, kHitTap | kHitFocusSlot, 0);
@@ -1188,7 +1187,8 @@ void game_over_sheet(esphome::display::Display &it, int cx, int cy,
   const int box_w = std::min(SCREEN_W - 28, scale_x(296));
   const int box_h = scale_y(196);
   render_card_box(it, cx - box_w / 2, cy - scale_y(96), box_w, box_h,
-                  chrome_modal_bg(), title_col, 14);
+                  chrome_modal_bg(), title_col, 14, GlassVariant::ReadableDark,
+                  is_new_best ? col_gold : col_slate);
   fast_print(it, cx, cy - scale_y(60), font_hdr, title_col, esphome::display::TextAlign::CENTER, title);
   if (score_line != nullptr && score_line[0] != '\0') {
     fast_print(it, cx, cy - scale_y(20), font_body, col_white, esphome::display::TextAlign::CENTER, score_line);
@@ -1201,7 +1201,7 @@ void game_over_sheet(esphome::display::Display &it, int cx, int cy,
   const int pill_hw = std::min(box_w / 2 - pill_r - 12, scale_x(72));
   pill_button(it, cx - pill_hw, cx + pill_hw, cy + scale_y(58), pill_r,
               theme_primary, chrome_card_bg_on(), cta_lbl, col_white, font_body,
-              cta_wid, kHitTap | kHitFocusSlot);
+              cta_wid, kHitTap | kHitFocusSlot, 0, GlassVariant::ReadableDark);
 }
 
 PinPadModalState &pin_pad_state() {
@@ -1282,7 +1282,8 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
   const bool show_err = (st.error_msg[0] != '\0' && (now_ms - st.error_ms) < 2200U);
   render_modern_card(it, cx, disp_y, disp_w, disp_h, 10,
                      chrome_modal_bg(), show_err ? col_red : chrome_card_brd_on(),
-                     "", col_white, font_small);
+                     "", st.len == 0 && !show_err ? col_slate : col_white, font_small,
+                     GlassVariant::ReadableDark);
   if (show_err) {
     fast_print(it, cx, disp_y, font_small, col_white, esphome::display::TextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
@@ -1326,7 +1327,8 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
     const esphome::Color bg  = is_ok && ok_ready ? chrome_card_bg_on() : chrome_key_bg();
     const esphome::Color fg  = (is_ok && !ok_ready) ? col_slate : col_white;
     render_modern_card(it, kx, ky, key_w, key_h, 10, bg, brd,
-                       kLabels[idx], fg, (is_ok || is_del) ? font_small : font_key);
+                       kLabels[idx], fg, (is_ok || is_del) ? font_small : font_key,
+                       GlassVariant::ReadableDark);
     frame_hits().add_centered_rect(kx, ky, key_w, key_h, kWids[idx], kHitTap | kHitFocusSlot,
                                    static_cast<int16_t>(idx));
   }

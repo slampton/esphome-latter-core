@@ -62,61 +62,6 @@ HomeActivityCardState &home_act_state() {
   return st;
 }
 
-// Computes an adaptive, slightly lighter 3D card palette that complements whichever
-// weather sky background is currently active on the Home screen.
-void resolve_home_card_palette(
-    bool show_weather_bg, bool is_night, const std::string &cond,
-    esphome::Color &out_card_bg, esphome::Color &out_card_brd, esphome::Color &out_btn_bg) {
-  using esphome::Color;
-  if (!show_weather_bg) {
-    out_card_bg  = kChromeGlassTint;
-    out_card_brd = kChromeCardBrdOn;
-    out_btn_bg   = Color(32, 39, 52);
-    return;
-  }
-  const bool is_fog = (cond.find("fog") != std::string::npos ||
-                       cond.find("mist") != std::string::npos ||
-                       cond.find("haze") != std::string::npos);
-  if (is_night) {
-    if (is_fog) {
-      out_card_bg  = Color(28, 36, 48);
-      out_card_brd = Color(58, 70, 88);
-      out_btn_bg   = Color(38, 48, 62);
-    } else {
-      out_card_bg  = kChromeGlassTint;
-      out_card_brd = kChromeCardBrdOn;
-      out_btn_bg   = Color(32, 39, 52);
-    }
-    return;
-  }
-
-  const bool is_partly = (cond.find("partly") != std::string::npos ||
-                          cond.find("mostlysunny") != std::string::npos ||
-                          cond.find("partlysunny") != std::string::npos);
-  const bool is_storm_or_rain = (cond.find("rain") != std::string::npos ||
-                                 cond.find("pouring") != std::string::npos ||
-                                 cond.find("drizzle") != std::string::npos ||
-                                 cond.find("lightning") != std::string::npos ||
-                                 cond.find("thunder") != std::string::npos);
-  if (is_fog) {
-    out_card_bg  = Color(50, 68, 88);
-    out_card_brd = Color(84, 106, 132);
-    out_btn_bg   = Color(62, 82, 104);
-  } else if (is_storm_or_rain) {
-    out_card_bg  = Color(34, 50, 74);
-    out_card_brd = Color(64, 86, 116);
-    out_btn_bg   = Color(44, 62, 90);
-  } else if (cond.find("cloud") != std::string::npos && !is_partly) {
-    out_card_bg  = Color(38, 58, 84);
-    out_card_brd = Color(70, 96, 128);
-    out_btn_bg   = Color(48, 72, 100);
-  } else {
-    out_card_bg  = Color(44, 76, 114);
-    out_card_brd = Color(78, 116, 160);
-    out_btn_bg   = Color(56, 92, 134);
-  }
-}
-
 void draw_home_activity_row_contents(
     esphome::display::Display &it, int row_y, const HomeActivityItem &cur_act,
     bool has_dropdown_ext, bool is_list_row, esphome::display::BaseFont *font_small,
@@ -1015,15 +960,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     }
     render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.theme_primary, true);
 
-    Color ov_bg = kChromeGlassTint;
-    Color ov_brd(56, 68, 86);
-    Color ov_btn(34, 42, 56);
-    if (use_custom_wallpaper) {
-      ov_bg  = sample_image_ambient_tint(ctx.home_wallpaper_art, Color(20, 25, 34));
-      ov_btn = sample_image_ambient_tint(ctx.home_wallpaper_art, Color(32, 40, 54));
-    } else if (eff_weather_bg) {
-      resolve_home_card_palette(eff_weather_bg, is_night, cond, ov_bg, ov_brd, ov_btn);
-    }
+    const Color ov_bg = kChromeGlassTint;
+    const Color ov_brd = kChromeCardBorder;
+    const Color ov_btn = kChromeGlassTint;
 
     if (act_count <= 0) {
       render_empty_state(it, cx, cy, "No active activities", ctx.font_small, ctx.col_slate);
@@ -1166,74 +1105,79 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     }
     const bool animating = (e < 1.0f);
 
-    Color tint, card_brd, btn_bg;
-    resolve_home_card_palette(eff_weather_bg, is_night, cond, tint, card_brd, btn_bg);
+    const Color tint = kChromeGlassTint;
+    const Color card_brd = kChromeCardBrdOn;
+    const Color btn_bg = kChromeGlassTint;
     const int card_r = std::min(card_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
     const int card_x0 = cx - card_w / 2;
     const int card_y0 = act_card_cy - card_h / 2;
-    const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
-    static int glass_alpha_state = 0;
-    const int glass_a = backdrop.valid
-        ? glass_alpha_smooth(glass_alpha_state, glass_alpha_for_text(tint, backdrop.bright, ctx.col_white))
-        : 256;
-    render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a, backdrop);
-    Color eff_card_tint;
-    int card_a_top = 0, card_a_bot = 0, card_rim_top = 0, card_rim_bot = 0;
-    resolve_glass_fill(backdrop, tint, ctx.col_white, eff_card_tint,
-                       card_a_top, card_a_bot, card_rim_top, card_rim_bot, glass_a);
-    const Color card_bg = backdrop.valid
-        ? mix_color_q8(backdrop.mean, eff_card_tint, (card_a_top + card_a_bot) / 2)
-        : eff_card_tint;
+    if ((card_y0 + card_h) > clip_y0() && card_y0 <= clip_y1()) {
+      const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
+      static int glass_alpha_state = 0;
+      static uint32_t last_glass_alpha_ms = 0;
+      const uint32_t alpha_dt_ms = (last_glass_alpha_ms == 0 || now_ms < last_glass_alpha_ms)
+                                       ? 16U
+                                       : (now_ms - last_glass_alpha_ms);
+      last_glass_alpha_ms = now_ms;
+      const int glass_a = backdrop.valid
+          ? glass_alpha_smooth(glass_alpha_state,
+                               glass_alpha_for_text(tint, backdrop.bright, ctx.col_white),
+                               alpha_dt_ms)
+          : 256;
+      render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a, backdrop,
+                        GlassVariant::Clear, ctx.col_white);
+      const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
 
-    const int rise = scale_y(16);
-    auto draw_row = [&](int item, int y, float alpha) {
-      if (item < 0 || item >= act_count || alpha <= 0.05f) return;
-      draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, ctx.font_small,
-                                      card_bg, btn_bg, ctx.theme_secondary, ctx.col_white,
-                                      std::min(1.0f, alpha));
-    };
-    auto change_in_place = [&](int from, int to, int y) {
-      if (!animating || from == to) {
-        draw_row(to, y, 1.0f);
-        return;
+      const int rise = scale_y(16);
+      auto draw_row = [&](int item, int y, float alpha) {
+        if (item < 0 || item >= act_count || alpha <= 0.05f) return;
+        draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, ctx.font_small,
+                                        card_bg, btn_bg, ctx.theme_secondary, ctx.col_white,
+                                        std::min(1.0f, alpha));
+      };
+      auto change_in_place = [&](int from, int to, int y) {
+        if (!animating || from == to) {
+          draw_row(to, y, 1.0f);
+          return;
+        }
+        draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+        draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+      };
+      if (!two) {
+        change_in_place(st.from_top, view.top, act_card_cy);
+      } else if (view.bottom < 0) {
+        if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
+        else draw_row(view.top, act_card_cy, 1.0f);
+      } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
+        draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
+        draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
+        draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+      } else if (animating && st.from_bottom >= 0) {
+        change_in_place(st.from_top, view.top, row_top);
+        change_in_place(st.from_bottom, view.bottom, row_bot);
+      } else {
+        draw_row(view.top, row_top, 1.0f);
+        draw_row(view.bottom, row_bot, 1.0f);
       }
-      draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-      draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
-    };
-    if (!two) {
-      change_in_place(st.from_top, view.top, act_card_cy);
-    } else if (view.bottom < 0) {
-      if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
-      else draw_row(view.top, act_card_cy, 1.0f);
-    } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
-      draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-      draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
-      draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
-    } else if (animating && st.from_bottom >= 0) {
-      change_in_place(st.from_top, view.top, row_top);
-      change_in_place(st.from_bottom, view.bottom, row_bot);
-    } else {
-      draw_row(view.top, row_top, 1.0f);
-      draw_row(view.bottom, row_bot, 1.0f);
-    }
 
-    const int card_right = cx + card_w / 2;
-    const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
-    const int div_h = scale_y(two ? 17 : 23);
-    if (two && view.bottom >= 0) {
-      fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, card_brd);
-      fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, card_brd);
-    } else {
-      fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, card_brd);
-    }
-    if (has_drop) {
-      const int div2_x = card_right - scale_x(52);
-      const int col_h = card_h / 2 - scale_y(10);
-      fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, card_brd);
-      const int d_bx = card_right - scale_x(26);
-      for (int w = -1; w <= 1; w++) {
-        fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
-        fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
+      const int card_right = cx + card_w / 2;
+      const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
+      const int div_h = scale_y(two ? 17 : 23);
+      if (two && view.bottom >= 0) {
+        fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, card_brd);
+        fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, card_brd);
+      } else {
+        fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, card_brd);
+      }
+      if (has_drop) {
+        const int div2_x = card_right - scale_x(52);
+        const int col_h = card_h / 2 - scale_y(10);
+        fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, card_brd);
+        const int d_bx = card_right - scale_x(26);
+        for (int w = -1; w <= 1; w++) {
+          fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
+          fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
+        }
       }
     }
 
@@ -1476,14 +1420,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int right_cx     = win_xs[vis_count - 1];
     const int clip_pad     = stride / 2 + dock_r;
 
-    Color dock_tint = kChromeGlassTint;
-    if (eff_weather_bg) {
-      Color dock_card_bg, dock_brd, dock_btn_bg;
-      resolve_home_card_palette(eff_weather_bg, is_night, cond, dock_card_bg, dock_brd, dock_btn_bg);
-      dock_tint = mix_color_q8(dock_btn_bg, kChromeHomePill, is_night ? 18 : 24);
-    } else if (use_custom_wallpaper) {
-      dock_tint = sample_image_ambient_tint(ctx.home_wallpaper_art, kChromeGlassTint);
-    }
+    const Color dock_tint = kChromeGlassTint;
 
     for (int g_idx = 0; g_idx < dock_count; g_idx++) {
       const float rel_slot = static_cast<float>(g_idx) - anim_start;

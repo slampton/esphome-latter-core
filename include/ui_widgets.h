@@ -22,21 +22,43 @@ namespace latter_ui {
 void render_pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r,
                         esphome::Color border_c, esphome::Color bg_c,
                         const char *label, esphome::Color text_c,
-                        esphome::display::BaseFont *font);
+                        esphome::display::BaseFont *font,
+                        GlassVariant variant = GlassVariant::Clear);
 
-// Center-origin frosted-glass card (cx_card, cy_card), returning resolved surface color.
+// Center-origin 2-tier smoked-glass card (cx_card, cy_card), returning resolved surface color.
 esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, int cy_card,
                                   int w, int h, int r,
                                   esphome::Color bg_c, esphome::Color border_c,
                                   const char *label, esphome::Color text_c,
-                                  esphome::display::BaseFont *font);
+                                  esphome::display::BaseFont *font,
+                                  GlassVariant variant = GlassVariant::Clear);
 
-// Top-left-origin frosted-glass card box (x0, y0, w, h), returning resolved surface color.
+// Top-left-origin 2-tier smoked-glass card box (x0, y0, w, h), returning resolved surface color.
 esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, int w, int h,
-                               esphome::Color bg_c, esphome::Color border_c, int r = 10);
+                               esphome::Color bg_c, esphome::Color border_c, int r = 10,
+                               GlassVariant variant = GlassVariant::Clear,
+                               esphome::Color ref_text = kChromeGlassSheen);
 
 esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
-                                   esphome::Color bg_c, esphome::Color border_c);
+                                   esphome::Color bg_c, esphome::Color border_c,
+                                   int inner_hole_r = 0,
+                                   GlassVariant variant = GlassVariant::Clear,
+                                   esphome::Color ref_text = kChromeGlassSheen);
+
+inline esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
+                                          esphome::Color bg_c, esphome::Color border_c,
+                                          GlassVariant variant,
+                                          esphome::Color ref_text = kChromeGlassSheen) {
+  return render_glass_circle(it, cx_btn, cy_btn, r, bg_c, border_c, 0, variant, ref_text);
+}
+
+inline esphome::Color render_glass_ring(esphome::display::Display &it, int cx_btn, int cy_btn,
+                                        int outer_r, int inner_hole_r,
+                                        esphome::Color bg_c, esphome::Color border_c,
+                                        GlassVariant variant = GlassVariant::Clear,
+                                        esphome::Color ref_text = kChromeGlassSheen) {
+  return render_glass_circle(it, cx_btn, cy_btn, outer_r, bg_c, border_c, inner_hole_r, variant, ref_text);
+}
 
 void render_scroll_chevron(esphome::display::Display &it, int x, int y, bool is_up,
                            esphome::Color c, esphome::Color shadow_c, bool shadow = false);
@@ -155,7 +177,7 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
                  esphome::Color border_c, esphome::Color bg_c,
                  const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
                  uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
-                 int16_t param = 0);
+                 int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
 
 // Canonical 68 px stride 4-column stepper row (matches UiLayout::hit_4col_stepper).
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,

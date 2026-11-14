@@ -79,9 +79,86 @@ void DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, 
     active_full = (active_y0 == 0 && active_y1 == (SCREEN_H - 1));
   }
 
+  active_idle_skip = false;
   has_pending_band = false;
   force_full = false;
   frame_hits().clear();
+}
+
+bool DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, bool anim_or_scroll_active,
+                                   int hhmm_key, uint32_t idle_state_sig, int home_clock_band_y1,
+                                   bool live_sec_active) {
+  const bool nav_changed = (page != last_page) || (subpage != last_subpage) || (overlay_sig != last_overlay_sig);
+  const bool hhmm_changed = (hhmm_key != last_hhmm);
+  const bool state_changed = (idle_state_sig != last_idle_state_sig);
+
+  last_page = page;
+  last_subpage = subpage;
+  last_overlay_sig = overlay_sig;
+  last_hhmm = hhmm_key;
+  last_idle_state_sig = idle_state_sig;
+
+  if (nav_changed || force_full || anim_or_scroll_active || live_sec_active || state_changed) {
+    active_y0 = 0;
+    active_y1 = SCREEN_H - 1;
+    active_full = true;
+    active_idle_skip = false;
+    has_pending_band = false;
+    force_full = false;
+    frame_hits().clear();
+    return true;
+  }
+
+  const bool is_home_clock_sub = (page == 1) && ((subpage & 0xFF) == 0);
+  if (has_pending_band) {
+    int py0 = pending_y0;
+    int py1 = pending_y1;
+    if (hhmm_changed) {
+      if (is_home_clock_sub) {
+        py0 = 0;
+        py1 = std::max(py1, home_clock_band_y1);
+      } else {
+        py0 = 0;
+        py1 = SCREEN_H - 1;
+      }
+    }
+    align_band(py0, py1, SCREEN_H, active_y0, active_y1);
+    active_full = (active_y0 == 0 && active_y1 == (SCREEN_H - 1));
+    active_idle_skip = false;
+    has_pending_band = false;
+    force_full = false;
+    frame_hits().clear();
+    return true;
+  }
+
+  // Static 1 Hz idle poller tick: on Home root (gui_page == 1 && home_subpage == 0), an HH:MM rollover
+  // restricts the dirty band to the date+clock vertical zone above HOME_WEATHER_HERO.
+  // Activity Overlay (home_subpage == 2) promotes HH:MM rollovers to full-frame so centered glass cards never straddle.
+  if (hhmm_changed) {
+    if (is_home_clock_sub) {
+      align_band(0, home_clock_band_y1, SCREEN_H, active_y0, active_y1);
+      active_full = (active_y0 == 0 && active_y1 == (SCREEN_H - 1));
+      active_idle_skip = false;
+      frame_hits().clear();
+      return true;
+    }
+    if ((page == 1 && (subpage & 0xFF) == 2) || page == 4 ||
+        (page == 8 && (((subpage & 0xFF) == 2) || ((subpage & 0xFF) == 9)))) {
+      active_y0 = 0;
+      active_y1 = SCREEN_H - 1;
+      active_full = true;
+      active_idle_skip = false;
+      frame_hits().clear();
+      return true;
+    }
+  }
+
+  // Unchanged static 1 Hz poll: skip frame render & panel DMA flush, keeping frame_hits() intact!
+  active_idle_skip = true;
+  active_y0 = 0;
+  active_y1 = 0;
+  active_full = false;
+  return false;
 }
 
 void mark_dirty_band(int y0, int y1) {
@@ -108,6 +185,72 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
 }
 
 #if __has_include("esphome/core/defines.h")
+
+uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
+  const auto &rs = runtime_state();
+  const auto &prefs = persisted_prefs();
+  const uint32_t batt_u8 = std::isnan(rs.hw_batt_level)
+      ? 255U
+      : static_cast<uint32_t>(std::clamp<int>(static_cast<int>(std::round(rs.hw_batt_level)), 0, 100));
+  uint32_t sig = batt_u8;
+  if (rs.hw_batt_charging) sig |= (1U << 8);
+  if (rs.hw_usb_connected) sig |= (1U << 9);
+  if (offline_pill_due(ctx.now_ms)) sig |= (1U << 10);
+  if (ui_focus_active(ctx.now_ms)) {
+    sig |= (1U << 11) | (static_cast<uint32_t>(ui_focus_index() & 0x3F) << 20);
+  }
+  sig |= (static_cast<uint32_t>(rs.nav.update_check_state & 0x03) << 12);
+  if (!rs.music.action_feedback.empty() && (ctx.now_ms - rs.music.feedback_timer < 3200U)) sig |= (1U << 14);
+  if (!rs.area.action_feedback.empty() && (ctx.now_ms - rs.area.feedback_timer < 3200U)) sig |= (1U << 15);
+  if (!rs.remote.action_feedback.empty() && (ctx.now_ms - rs.remote.feedback_timer < 3200U)) sig |= (1U << 16);
+  if (!rs.intercom.broadcast_feedback.empty() && (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 3600U)) sig |= (1U << 17);
+  if (rs.music.hud_active) sig |= (1U << 18);
+  if (ctx.ble_active) sig |= (1U << 19);
+  if (!cal_feedback_text().empty() && (ctx.now_ms - cal_feedback_ms() < 2200U)) sig |= (1U << 26);
+
+  if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 8) {
+    const int rssi_i = std::isnan(ctx.wifi_rssi) ? 0 : static_cast<int>(std::round(ctx.wifi_rssi));
+    const int mv_c = std::isnan(rs.hw_batt_voltage) ? 0 : static_cast<int>(std::round(rs.hw_batt_voltage * 100.0f));
+    const int imu_t = std::isnan(rs.hw_imu_temp) ? 0 : static_cast<int>(std::round(rs.hw_imu_temp * 10.0f));
+    sig ^= static_cast<uint32_t>((ctx.free_heap_kb << 16) ^ (rssi_i & 0xFFFF));
+    sig ^= static_cast<uint32_t>((mv_c & 0xFFFF) ^ ((imu_t & 0xFFF) << 16) ^
+                                 (static_cast<int>(ctx.ip_addr.size() & 0x0FU) << 28));
+  } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+    int src_cnt = 0;
+    if (ctx.local_media_playing || media_state().state == "playing") src_cnt++;
+    if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) src_cnt++;
+    if (prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) src_cnt++;
+    if (calendar_state().count > 0 && !calendar_state().summary.empty()) src_cnt++;
+    if (src_cnt >= 2) {
+      sig ^= static_cast<uint32_t>(ctx.now_ms / kHomeActivityRotateMs) * 0x9E3779B9U;
+    }
+  }
+  return sig;
+}
+
+bool compute_live_sec_active(const UiFrameContext &ctx) {
+  const auto &rs = runtime_state();
+  if (rs.nav.gui_page == 0) return true;
+  if (rs.nav.gui_page == 1) {
+    if (ctx.home_wake_greeting && ctx.now_ms < 26000U) return true;
+    if (rs.stopwatch.running || rs.timers.running ||
+        rs.timers.slots[0].running || rs.timers.slots[1].running || rs.timers.slots[2].running) {
+      return true;
+    }
+    return false;
+  }
+  if (rs.nav.gui_page == 2) {
+    return ctx.local_media_playing || (media_state().state == "playing");
+  }
+  if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 5 && rs.nav.update_check_state != 0) {
+    return true;
+  }
+  if (rs.nav.gui_page == 8) {
+    const int ts = rs.nav.tools_subpage;
+    return (ts == 1 || ts == 3 || ts == 4 || ts == 7 || ts == 8 || ts == 10 || ts == 12);
+  }
+  return false;
+}
 
 void render_active_focus_overlay(esphome::display::Display &it, uint32_t now_ms,
                                  esphome::Color theme_primary, esphome::Color col_white) {

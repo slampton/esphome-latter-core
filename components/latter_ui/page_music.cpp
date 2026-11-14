@@ -48,44 +48,35 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
   const int art_center_y = layout().music_art_cy;
   const bool apply_scrim = always_visible || music_hud_active;
   bool has_art = false;
-  bool rendered_art = false;
-  bool rendered_wall = false;
-  bool used_remote_art = false;
 
   const bool remote_art_ready = (!ms.art_url.empty() && ctx.remote_album_art.get_width() > 0);
   const bool local_art_ready  = (ctx.album_art.get_width() > 0);
 
   if (is_none) {
-    rendered_wall = render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg);
+    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg);
   } else {
     if (is_remote) {
       if (remote_art_ready) {
         has_art = true;
-        used_remote_art = true;
-        rendered_art = render_album_art_canvas(
+        render_album_art_canvas(
             it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
       }
     } else {
       if (local_art_ready) {
         has_art = true;
-        rendered_art = render_album_art_canvas(
+        render_album_art_canvas(
             it, ctx.album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
       } else if (remote_art_ready) {
         has_art = true;
-        used_remote_art = true;
-        rendered_art = render_album_art_canvas(
+        render_album_art_canvas(
             it, ctx.remote_album_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata);
       }
     }
     frame_base(it, ctx.col_bg);
   }
 
-  const Color glass_bg = rendered_art
-      ? (used_remote_art ? sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34))
-                         : sample_image_ambient_tint(ctx.album_art, Color(20, 25, 34)))
-      : (rendered_wall ? sample_image_ambient_tint(ctx.home_wallpaper_art, kChromeGlassTint)
-                       : kChromeGlassTint);
-  const Color glass_brd(62, 74, 92);
+  const Color glass_bg = kChromeGlassTint;
+  const Color glass_brd = kChromeCardBorder;
 
   std::string spk_title = rs.music.active_speaker_name.empty() ? ms.speaker_name : rs.music.active_speaker_name;
   if (spk_title.empty()) {
@@ -296,7 +287,7 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
       if (has_shadow) {
         fast_print(it, cx + 1, y_al + 1, ctx.font_small, ctx.col_black, TextAlign::CENTER, album.c_str());
       }
-      fast_print(it, cx, y_al, ctx.font_small, Color(154, 166, 182), TextAlign::CENTER, album.c_str());
+      fast_print(it, cx, y_al, ctx.font_small, ctx.col_slate, TextAlign::CENTER, album.c_str());
     }
 
     frame_hits().add_centered_rect(cx, y_ar, scale_x(240), scale_y(62),
@@ -323,8 +314,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     render_vertical_page_pips(it, show_up, show_down, ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
   };
 
-  Color card_bg = kChromeGlassTint;
-  const Color card_brd(56, 68, 84);
+  const Color card_bg = kChromeGlassTint;
+  const Color card_brd = kChromeCardBorder;
 
   const auto &ac = area_ctx_state();
   const bool has_wallpaper = (!ac.wallpaper_url.empty() &&
@@ -336,9 +327,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
   const bool is_none = (art_mode == "None");
 
   if (is_none) {
-    if (render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg)) {
-      card_bg = sample_image_ambient_tint(ctx.home_wallpaper_art, kChromeGlassTint);
-    }
+    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wallpaper, cx, ctx.col_bg);
   } else {
     if (!rs.nav.menu_scroll_active) {
       const bool rem_ready = (!ms.art_url.empty() && ctx.remote_album_art.get_width() > 0);
@@ -346,14 +335,11 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       if (is_rem) {
         if (rem_ready) {
           render_album_art_canvas(it, ctx.remote_album_art, cx, false, false, true, false, 2);
-          card_bg = sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34));
         }
       } else if (loc_ready) {
         render_album_art_canvas(it, ctx.album_art, cx, false, false, true, false, 2);
-        card_bg = sample_image_ambient_tint(ctx.album_art, Color(20, 25, 34));
       } else if (rem_ready) {
         render_album_art_canvas(it, ctx.remote_album_art, cx, false, false, true, false, 2);
-        card_bg = sample_image_ambient_tint(ctx.remote_album_art, Color(20, 25, 34));
       }
     }
     frame_base(it, ctx.col_bg);
@@ -686,11 +672,9 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     const int l_seek_x = layout().music_seek_left_x();
     const int r_seek_x = layout().music_seek_right_x();
     const int bar_x0   = layout().music_scrub_x0();
-    const int bar_x1   = layout().music_scrub_x1();
     const int bar_w    = layout().music_scrub_w();
 
-    const Color btn_brd(58, 68, 84);
-    render_glass_circle(it, l_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
+    render_glass_circle(it, l_seek_x, scrub_y, scale_s(20), card_bg, card_brd);
     fast_line(it, l_seek_x + 4, scrub_y - 6, l_seek_x - 2, scrub_y,     ctx.col_white);
     fast_line(it, l_seek_x - 2, scrub_y,     l_seek_x + 4, scrub_y + 6, ctx.col_white);
     fast_line(it, l_seek_x - 2, scrub_y - 6, l_seek_x - 8, scrub_y,     ctx.theme_secondary);
@@ -699,7 +683,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
                             WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
                             0, scale_s(16));
 
-    render_glass_circle(it, r_seek_x, scrub_y, scale_s(20), card_bg, btn_brd);
+    render_glass_circle(it, r_seek_x, scrub_y, scale_s(20), card_bg, card_brd);
     fast_line(it, r_seek_x - 4, scrub_y - 6, r_seek_x + 2, scrub_y,     ctx.col_white);
     fast_line(it, r_seek_x + 2, scrub_y,     r_seek_x - 4, scrub_y + 6, ctx.col_white);
     fast_line(it, r_seek_x + 2, scrub_y - 6, r_seek_x + 8, scrub_y,     ctx.theme_secondary);
@@ -708,11 +692,7 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
                             WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
                             0, scale_s(16));
 
-    fast_filled_circle(it, bar_x0, scrub_y, 5, ctx.col_dark_gray);
-    fast_filled_circle(it, bar_x1, scrub_y, 5, ctx.col_dark_gray);
-    fill_rect_row_major(it, bar_x0, scrub_y - 5, bar_w, 11, ctx.col_dark_gray);
-    fast_line(it, bar_x0, scrub_y - 5, bar_x1, scrub_y - 5, btn_brd);
-    fast_line(it, bar_x0, scrub_y + 5, bar_x1, scrub_y + 5, btn_brd);
+    render_card_box(it, bar_x0 - 5, scrub_y - 5, bar_w + 10, 11, card_bg, card_brd, 5);
     for (int q = 1; q <= 3; q++) {
       const int tx = bar_x0 + (bar_w * q) / 4;
       fast_line(it, tx, scrub_y - 8, tx, scrub_y - 6, ctx.col_slate);
@@ -721,20 +701,17 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
 
     const int knob_x = bar_x0 + static_cast<int>(prog * static_cast<float>(bar_w));
     if (knob_x > bar_x0) {
-      fast_filled_circle(it, bar_x0, scrub_y, 4, ctx.theme_primary);
-      fill_rect_row_major(it, bar_x0, scrub_y - 4, knob_x - bar_x0, 9, ctx.theme_primary);
+      fill_round_rect_aa(it, bar_x0 - 4, scrub_y - 4, (knob_x - bar_x0) + 8, 9, 4.5f, ctx.theme_primary);
       fast_hline(it, bar_x0, scrub_y - 3, knob_x - bar_x0, ctx.col_white);
     }
-    fast_filled_circle(it, knob_x, scrub_y, 9, ctx.col_white);
-    fast_filled_circle(it, knob_x, scrub_y, 6, ctx.theme_secondary);
-    fast_filled_circle(it, knob_x, scrub_y, 2, ctx.col_black);
+    fast_filled_circle_aa(it, knob_x, scrub_y, 9, ctx.col_white);
+    fast_filled_circle_aa(it, knob_x, scrub_y, 6, ctx.theme_secondary);
+    fast_filled_circle_aa(it, knob_x, scrub_y, 2, ctx.col_black);
     frame_hits().add_rect(bar_x0, scrub_y - scale_y(20), bar_w, scale_y(40),
                           WidgetId::MUSIC_SCRUB_BAR, kHitTap | kHitHorizSlider | kHitFocusSlot);
 
     auto draw_inspector_tool_card = [&](int card_cx, int card_cy, bool is_bio, const char *label, int slot_i) {
-      const Color t_bg = kChromeGlassTint;
-      const Color t_brd(48, 56, 70);
-      render_modern_card(it, card_cx, card_cy, 122, 86, 14, t_bg, t_brd, nullptr, ctx.col_white, ctx.font_small);
+      render_modern_card(it, card_cx, card_cy, 122, 86, 14, card_bg, card_brd, nullptr, ctx.col_white, ctx.font_small);
 
       const int ix = card_cx;
       const int iy = card_cy - 13;

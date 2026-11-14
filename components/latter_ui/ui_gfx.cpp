@@ -423,9 +423,10 @@ esphome::Color mix_color_q8(esphome::Color c_under, esphome::Color c_over, int a
 
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   GlassBackdrop out;
+  if (w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
   const uint16_t *fb = active_frame_buf16();
   const int xs = std::max(0, x0), xe = std::min(SCREEN_W, x0 + w);
-  const int ys = std::max(0, y0), ye = std::min(SCREEN_H, y0 + h);
+  const int ys = std::max(clip_y0(), y0), ye = std::min(clip_y1() + 1, y0 + h);
   if (fb == nullptr || xe <= xs || ye <= ys) return out;
   const float *lut = srgb_linear_lut();
   const int mode = active_frame_endian_mode();
@@ -472,50 +473,144 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   return out;
 }
 
-int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text) {
-  const float lt = relative_luminance(text);
-  for (int a = kGlassAlphaMinQ8; a < 256; a += 8) {
-    if (contrast_ratio(lt, relative_luminance(mix_color_q8(backdrop, tint, a))) >= kGlassTextContrast) return a;
-  }
-  return 256;
+bool is_semantic_glass_color(esphome::Color c) {
+  const int mx = std::max({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
+  const int mn = std::min({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
+  const int chroma = mx - mn;
+  if (chroma <= 12) return false;
+  if (c.r == kChromeHomePill.r && c.g == kChromeHomePill.g && c.b == kChromeHomePill.b) return false;
+  if (c.r <= c.g && c.g <= c.b && mx <= 96 && chroma <= 30) return false;
+  return true;
 }
 
-int glass_alpha_smooth(int &state, int target) {
-  if (state <= 0 || target >= state) state = target;
-  else state = std::max(target, state - kGlassAlphaFallQ8);
+void normalize_glass_chrome(esphome::Color caller_bg, esphome::Color caller_brd,
+                            GlassVariant &inout_variant, esphome::Color &out_base_tint,
+                            esphome::Color &out_rim_tint) {
+  if (inout_variant == GlassVariant::Clear &&
+      caller_bg.r == kChromeModalBg.r && caller_bg.g == kChromeModalBg.g && caller_bg.b == kChromeModalBg.b) {
+    inout_variant = GlassVariant::ReadableDark;
+  }
+  const esphome::Color neutral_base =
+      (inout_variant == GlassVariant::ReadableDark) ? kChromeModalBg : kChromeGlassTint;
+  const bool sem_bg = is_semantic_glass_color(caller_bg);
+  const bool sem_brd = is_semantic_glass_color(caller_brd);
+
+  if (sem_bg) {
+    const int bg_mx = std::max({static_cast<int>(caller_bg.r), static_cast<int>(caller_bg.g), static_cast<int>(caller_bg.b)});
+    const esphome::Color wash_src = (bg_mx < 56 && sem_brd) ? caller_brd : caller_bg;
+    out_base_tint = mix_color_q8(neutral_base, wash_src, kGlassSemanticWashMaxQ8);
+  } else if (sem_brd) {
+    out_base_tint = mix_color_q8(neutral_base, caller_brd, 28);
+  } else {
+    out_base_tint = neutral_base;
+  }
+
+  if (sem_brd) {
+    out_rim_tint = mix_color_q8(kChromeGlassSheen, caller_brd, kGlassSemanticRimMaxQ8);
+  } else if (sem_bg) {
+    out_rim_tint = mix_color_q8(kChromeGlassSheen, caller_bg, kGlassSemanticRimMaxQ8);
+  } else {
+    out_rim_tint = kChromeGlassSheen;
+  }
+}
+
+int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text, int min_alpha_q8) {
+  const float raw_lt = relative_luminance(text);
+  // Disabled/dummy sub-contrast tokens (lum < 0.18 cannot reach 4.5:1 even against pure black)
+  // solve against kChromeMuted so disabled glass pills stay translucent instead of spiking to 256.
+  const float lt = (raw_lt < 0.18f) ? relative_luminance(kChromeMuted) : raw_lt;
+  const int start_a = std::max(0, std::min(256, min_alpha_q8));
+  for (int a = start_a; a < 256; a += 8) {
+    if (contrast_ratio(lt, relative_luminance(mix_color_q8(backdrop, tint, a))) >= kGlassTextContrast) return a;
+  }
+  for (int a = start_a; a <= 248; a += 8) {
+    if (contrast_ratio(lt, relative_luminance(mix_color_q8(backdrop, tint, a))) >= kGlassTextContrastMin) return a;
+  }
+  return 248;
+}
+
+int glass_alpha_smooth(int &state, int target, uint32_t dt_ms) {
+  if (state <= 0 || target >= state) {
+    state = target;
+  } else {
+    const uint32_t clamped_dt = std::min<uint32_t>(dt_ms, 250U);
+    const int fall = (clamped_dt == 0U)
+        ? 0
+        : std::max(1, static_cast<int>((static_cast<uint32_t>(kGlassAlphaFallQ8) * clamped_dt + 8U) / 16U));
+    state = std::max(target, state - fall);
+  }
   return state;
 }
 
 void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::Color ref_text,
                         esphome::Color &out_tint, int &out_a_top, int &out_a_bot,
-                        int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8) {
+                        int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8,
+                        GlassVariant variant) {
   const int bg_lvl = bd.valid
       ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
       : 0;
   const int tint_lvl = (static_cast<int>(tint.r) + static_cast<int>(tint.g) + static_cast<int>(tint.b)) / 3;
   const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
-  int frost_q8 = (dark_tint && bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
-  if (dark_tint && bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
-    frost_q8 = std::max(frost_q8, 22);
+  const bool is_readable_dark = (variant == GlassVariant::ReadableDark);
+
+  int frost_q8 = 0;
+  if (dark_tint && !is_readable_dark) {
+    frost_q8 = (bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
+    if (bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
+      frost_q8 = std::max(frost_q8, 22);
+    }
   }
   out_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
-  const esphome::Color contrast_fg = dark_tint ? kChromeGlassSheen : ref_text;
-  const int base_a = (explicit_alpha_q8 >= 0)
+
+  // Always solve contrast against the caller's actual foreground text color (guarding only near-black dummy
+  // or intentionally disabled sub-contrast tokens < 0.18 lum that cannot reach 4.5:1 even on pure black).
+  const float raw_fg_lum = relative_luminance(ref_text);
+  const esphome::Color contrast_fg =
+      ((static_cast<int>(ref_text.r) + static_cast<int>(ref_text.g) + static_cast<int>(ref_text.b)) < 48)
+          ? kChromeGlassSheen
+          : ((raw_fg_lum < 0.18f) ? kChromeMuted : ref_text);
+  const float fg_lum = relative_luminance(contrast_fg);
+  const int floor_q8 = is_readable_dark ? kGlassReadableAlphaMinQ8 : kGlassAlphaMinQ8;
+
+  int base_a = (explicit_alpha_q8 >= 0)
       ? explicit_alpha_q8
-      : (bd.valid ? glass_alpha_for_text(out_tint, bd.bright, contrast_fg) : 168);
-  const int da = dark_tint ? ((bg_lvl < 42) ? (22 - (bg_lvl * 8) / 42) : 14) : 0;
+      : (bd.valid ? glass_alpha_for_text(out_tint, bd.bright, contrast_fg, floor_q8)
+                  : (is_readable_dark ? kGlassReadableAlphaMinQ8 : 160));
+
+  // Automatic 2-tier step-up: when Clear glass must step into ReadableDark alpha territory (>= 200/256)
+  // over bright backdrops or muted text, deepen out_tint onto kChromeModalBg to guarantee >= 4.5:1 contrast.
+  if (explicit_alpha_q8 < 0 && !is_readable_dark && dark_tint &&
+      (base_a >= 200 || contrast_ratio(fg_lum, relative_luminance(out_tint)) < kGlassTextContrastMin)) {
+    const esphome::Color stepped_tint = mix_color_q8(tint, kChromeModalBg, 192);
+    out_tint = stepped_tint;
+    if (bd.valid) {
+      base_a = glass_alpha_for_text(out_tint, bd.bright, contrast_fg, 200);
+    } else {
+      base_a = std::max(base_a, 200);
+    }
+  }
+
+  const int da = is_readable_dark ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
   out_a_top = std::min(256, base_a + da);
-  out_a_bot = std::max(kGlassAlphaMinQ8 - 16, base_a - (da * 2) / 3);
+  const int min_bot = is_readable_dark ? 200 : kGlassAlphaMinQ8;
+  out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
+  if (bd.valid && explicit_alpha_q8 < 0 &&
+      contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, out_tint, out_a_bot))) < kGlassTextContrastMin) {
+    out_a_bot = base_a;
+  }
   const int rim_boost = (bg_lvl < 32) ? ((32 - bg_lvl) * 18) / 32 : 8;
   out_rim_top = std::min(256, kGlassSheenTopQ8 + rim_boost);
   out_rim_bot = std::min(256, kGlassSheenBotQ8 + (rim_boost * 2) / 3);
 }
 
-esphome::Color sample_glass_surface_color(int x0, int y0, int w, int h, esphome::Color tint) {
+esphome::Color sample_glass_surface_color(int x0, int y0, int w, int h, esphome::Color tint, GlassVariant variant) {
   const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot);
+  resolve_glass_fill(bd, norm_tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
   return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 }
 
@@ -845,16 +940,22 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
                      esphome::Color color, esphome::display::TextAlign align, const char *text,
                      esphome::Color background) {
   if (base_font == nullptr || text == nullptr) return;
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if (cy1 < cy0) return;
 #ifdef USE_FONT
   auto *font = static_cast<esphome::font::Font *>(base_font);
   uint16_t *fb = active_frame_buf16();
   if (fb == nullptr || font->get_bpp() > 4) {
+    it.start_clipping(0, SCREEN_W - 1, cy0, cy1);
     it.print(x, y, base_font, color, align, text, background);
+    it.end_clipping();
     return;
   }
 
   int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
   it.get_text_bounds(x, y, text, base_font, align, &x_start, &y_start, &text_w, &text_h);
+  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
 
   const int bpp = font->get_bpp();
   const int bpp_max = (1 << bpp) - 1;
@@ -883,7 +984,7 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
       const uint16_t hw = lut[1];
       for (int i = 0; i < span_count; i++) {
         const int py = y_start + spans[i].y;
-        if (static_cast<unsigned>(py) >= static_cast<unsigned>(SCREEN_H)) continue;
+        if (py < cy0 || py > cy1) continue;
         int px = x_start + spans[i].x;
         int len = spans[i].len;
         if (px < 0) {
@@ -913,7 +1014,7 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
     uint8_t pixel_data = 0;
     for (int gy = 0; gy < glyph->height; gy++) {
       const int py = gy0 + gy;
-      uint16_t *row = (static_cast<unsigned>(py) < static_cast<unsigned>(SCREEN_H)) ? fb + py * SCREEN_W : nullptr;
+      uint16_t *row = (py >= cy0 && py <= cy1) ? fb + py * SCREEN_W : nullptr;
       for (int gx = 0; gx < glyph->width; gx++) {
         uint8_t pixel = 0;
         for (int bit = 0; bit < bpp; bit++) {
@@ -934,7 +1035,9 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
     x_at += glyph->advance;
   }
 #else
+  it.start_clipping(0, SCREEN_W - 1, cy0, cy1);
   it.print(x, y, base_font, color, align, text, background);
+  it.end_clipping();
 #endif
 }
 
@@ -1141,8 +1244,15 @@ void art_canvas_spans(ArtCanvasCache &e, int cx, int src_w, int src_h, bool is_s
     }
     return;
   }
-  const int start_y = is_letterbox ? scale_y(62) : 0;
-  const int end_y = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
+  if (!is_letterbox) {
+    for (int y = 0; y < SCREEN_H; y++) {
+      e.row_x0[y] = 0;
+      e.row_len[y] = static_cast<int16_t>(SCREEN_W);
+    }
+    return;
+  }
+  const int start_y = scale_y(62);
+  const int end_y = show_metadata ? scale_y(342) : scale_y(385);
   for (int y = std::max(0, start_y); y < std::min(SCREEN_H, end_y); y++) {
     int start_x = 0, end_x = 0;
     art_row_span(y, cx, start_x, end_x);
@@ -1212,16 +1322,13 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   const uint16_t *src_data = target_art.data;
   const int src_w = target_art.width;
   const int src_h = target_art.height;
+  const bool full_bleed = !is_standard && !is_letterbox;
 
-#if LATTER_ROUND_DISPLAY
-  frame_base(it, kChromeShadow);
-#else
-  if (!is_standard && !is_letterbox) {
+  if (full_bleed) {
     frame_base_claim();
   } else {
     frame_base(it, kChromeShadow);
   }
-#endif
   struct ArtTimer {
     uint64_t t0;
     ~ArtTimer() { prof_art_end(t0); }
@@ -1230,6 +1337,7 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   uint16_t *fb = active_frame_buf16();
   ArtCanvasCache *entries = art_canvas_entries();
   if (fb == nullptr || entries == nullptr) {
+    if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
     backdrop_active() = true;
     return true;
@@ -1256,20 +1364,30 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   }
 
   if (hit == nullptr) {
+    bool freshly_zeroed = false;
 #ifdef USE_ESP32
     if (victim->px == nullptr) {
       victim->px = static_cast<uint16_t *>(
-          heap_caps_malloc(sizeof(uint16_t) * SCREEN_W * SCREEN_H, MALLOC_CAP_SPIRAM));
+          heap_caps_calloc(static_cast<size_t>(SCREEN_W) * SCREEN_H, sizeof(uint16_t), MALLOC_CAP_SPIRAM));
+      freshly_zeroed = (victim->px != nullptr);
     }
 #endif
     if (victim->px == nullptr) {
+      if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);
       draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
       backdrop_active() = true;
       return true;
     }
+    if (!freshly_zeroed && full_bleed) {
+      std::memset(victim->px, 0, static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t));
+    }
+    const int saved_cy0 = clip_y0();
+    const int saved_cy1 = clip_y1();
+    reset_clip_y_band();
     active_frame_buf16() = victim->px;
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
     active_frame_buf16() = fb;
+    set_clip_y_band(saved_cy0, saved_cy1);
     art_canvas_spans(*victim, cx, src_w, src_h, is_standard, is_letterbox, apply_scrim, show_metadata);
     victim->data = src_data;
     victim->w = static_cast<int16_t>(src_w);
@@ -1280,13 +1398,21 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   }
   hit->last_use = use_seq;
 
-  const int y_lo = dirty_band().is_full() ? 0 : std::max(0, dirty_band().y0());
-  const int y_hi = dirty_band().is_full() ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().y1());
-  for (int y = y_lo; y <= y_hi; y++) {
-    const int len = hit->row_len[y];
-    if (len <= 0) continue;
-    const size_t off = static_cast<size_t>(y) * SCREEN_W + hit->row_x0[y];
-    std::memcpy(fb + off, hit->px + off, static_cast<size_t>(len) * sizeof(uint16_t));
+  const int raw_lo = dirty_band().is_full() ? 0 : std::max(0, dirty_band().y0());
+  const int raw_hi = dirty_band().is_full() ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().y1());
+  const int y_lo = std::max(clip_y0(), raw_lo);
+  const int y_hi = std::min(clip_y1(), raw_hi);
+  if (full_bleed && y_hi >= y_lo) {
+    const size_t off = static_cast<size_t>(y_lo) * SCREEN_W;
+    const size_t count = static_cast<size_t>(y_hi - y_lo + 1) * SCREEN_W;
+    std::memcpy(fb + off, hit->px + off, count * sizeof(uint16_t));
+  } else {
+    for (int y = y_lo; y <= y_hi; y++) {
+      const int len = hit->row_len[y];
+      if (len <= 0) continue;
+      const size_t off = static_cast<size_t>(y) * SCREEN_W + hit->row_x0[y];
+      std::memcpy(fb + off, hit->px + off, static_cast<size_t>(len) * sizeof(uint16_t));
+    }
   }
   backdrop_active() = true;
   return true;
@@ -1313,6 +1439,7 @@ void frame_base_begin() {
   frame_base_state().painted = false;
   frame_base_state().has_color = false;
   backdrop_active() = false;
+  set_clip_y_band(dirty_band().band_y0(), dirty_band().band_y1());
 }
 
 void frame_base_skip() {
@@ -1350,12 +1477,21 @@ bool frame_base_impl(esphome::display::Display &it, esphome::Color c) {
 FrameProfileScope::FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
   fb_clear_wait();
   t0_us = prof_now_us();
+  prev_disp_ms = last_disp_update_ms();
+  prev_ambient_ms = last_ambient_anim_ms();
   const uint32_t start_m = esphome::millis();
   last_disp_update_ms() = start_m;
   last_ambient_anim_ms() = start_m;
 }
 
+void FrameProfileScope::abort_idle() {
+  t0_us = 0;
+  last_disp_update_ms() = prev_disp_ms;
+  last_ambient_anim_ms() = prev_ambient_ms;
+}
+
 FrameProfileScope::~FrameProfileScope() {
+  reset_clip_y_band();
   if (t0_us == 0) return;
   fb_clear_frame_end();
   auto &fbs = frame_base_state();

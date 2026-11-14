@@ -123,6 +123,20 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const int stride   = get_dock_slot_stride(win_xs, vis_count);
     const float anim_start = mode_bar_anim().cur_start;
 
+    const bool has_bd = backdrop_active();
+    Color shared_inactive_cut{};
+    bool has_shared_inactive_cut = false;
+    auto resolve_mode_cut = [&](int slot_x, int slot_y, bool active_slot) -> Color {
+      if (has_bd || active_slot) {
+        return sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
+      }
+      if (!has_shared_inactive_cut) {
+        shared_inactive_cut = sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
+        has_shared_inactive_cut = true;
+      }
+      return shared_inactive_cut;
+    };
+
     for (int g_idx = 0; g_idx < cat_count; g_idx++) {
       const float rel_slot = static_cast<float>(g_idx) - anim_start;
       if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
@@ -170,13 +184,13 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
           }
         }
       } else if (cat == "switch") {
-        const Color cut_c = sample_glass_surface_color(bx - 12, by - 12, 25, 25);
+        const Color cut_c = resolve_mode_cut(bx, by, is_act);
         fast_filled_circle(it, bx - 5, by, 7, fg_c);
         fast_filled_circle(it, bx + 5, by, 7, fg_c);
         fill_rect_row_major(it, bx - 5, by - 7, 10, 15, fg_c);
         fast_filled_circle(it, bx + 5, by, 4, cut_c);
       } else if (cat == "climate") {
-        const Color cut_c = sample_glass_surface_color(bx - 12, by - 12, 25, 25);
+        const Color cut_c = resolve_mode_cut(bx, by, is_act);
         const int tx = bx - 2;
         fast_line(it, tx - 3, by - 11, tx + 3, by - 11, fg_c);
         fast_line(it, tx - 2, by - 12, tx + 2, by - 12, fg_c);
@@ -563,11 +577,10 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       const int orb_r = scale_s(16);
       const int dot_r = scale_s(4);
       right_limit = ox - orb_r - 4;
-      fast_filled_circle(it, ox, y_mid, orb_r, Color(20, 24, 32));
-      fast_filled_circle(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
-      fast_filled_circle(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
-      fast_filled_circle(it, ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
-      fast_circle(it, ox, y_mid, orb_r, is_act ? col_white : col_slate);
+      render_glass_circle(it, ox, y_mid, orb_r, kChromeGlassTint, is_act ? theme_primary : card_brd_off);
+      fast_filled_circle_aa(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
+      fast_filled_circle_aa(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
+      fast_filled_circle_aa(it, ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
                               static_cast<int16_t>(idx), scale_s(14));
@@ -620,11 +633,11 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
   const Color &col_gold = ctx.col_gold;
   const Color &col_green = ctx.col_green;
   const Color &col_red = ctx.col_red;
+  const Color &col_cyan = ctx.col_cyan;
 
   const bool is_fb = (now_ms - area_feedback_timer < 1500U && !area_action_feedback.empty());
-  const Color card_bg_on = ui::chrome_card_bg_on();
-  const Color card_bg_off = ui::chrome_card_bg_off();
-  const Color card_brd_off = ui::chrome_card_brd_off();
+  const Color glass_bg = kChromeGlassTint;
+  const Color card_brd_off = kChromeCardBorder;
   int tabs[4] = {0, 0, 0, 0};
   const int tab_count = collect_home_hub_tabs(tabs, ac);
   if (tab_count <= 0) {
@@ -669,7 +682,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const bool is_away     = (alarm_state == "armed_away");
 
     render_modern_card(it, cx, layout().area_card3_y(0), 296, 58, 14,
-                       is_disarmed ? Color(18, 36, 26) : card_bg_on,
+                       glass_bg,
                        is_disarmed ? col_green : card_brd_off,
                        "Disarm", col_white, font_date);
     ui::draw_icon_shield(it, cx - scale_x(118), layout().area_card3_y(0), is_disarmed ? col_green : col_slate);
@@ -678,7 +691,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 0);
 
     render_modern_card(it, cx, layout().area_card3_y(1), 296, 58, 14,
-                       is_home ? Color(38, 32, 16) : card_bg_on,
+                       glass_bg,
                        is_home ? col_gold : card_brd_off,
                        "Arm Home", col_white, font_date);
     frame_hits().add_centered_rect(cx, layout().area_card3_y(1), scale_x(296), scale_y(58),
@@ -686,7 +699,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 1);
 
     render_modern_card(it, cx, layout().area_card3_y(2), 296, 58, 14,
-                       is_away ? Color(40, 18, 22) : card_bg_on,
+                       glass_bg,
                        is_away ? col_red : card_brd_off,
                        "Arm Away", col_white, font_date);
     frame_hits().add_centered_rect(cx, layout().area_card3_y(2), scale_x(296), scale_y(58),
@@ -714,21 +727,22 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const int hero_y = scale_y(156);
     const int mode_y = scale_y(266);
     const Color mode_brd = (m == "heat") ? col_gold
-                         : ((m == "cool") ? Color(75, 175, 255)
+                         : ((m == "cool") ? col_cyan
                          : ((m == "auto" || m == "heat_cool") ? col_green : card_brd_off));
-    render_modern_card(it, cx, hero_y, 312, 84, 18, card_bg_on, mode_brd, nullptr, col_white, font_date);
+    const Color hero_surf = render_modern_card(it, cx, hero_y, 312, 84, 18, glass_bg, mode_brd,
+                                               nullptr, col_white, font_date);
     const int minus_x = cx - scale_x(115);
     const int plus_x  = cx + scale_x(115);
     const int btn_r   = scale_s(24);
     const int gl_s    = scale_s(8);
 
-    render_glass_circle(it, minus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
+    render_glass_circle(it, minus_x, hero_y, btn_r, glass_bg, card_brd_off);
     fast_hline(it, minus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, minus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
     frame_hits().add_circle(minus_x, hero_y, btn_r, WidgetId::CLIMATE_MINUS_BTN,
                             kHitTap | kHitFocusCircle, 0, scale_s(14));
 
-    render_glass_circle(it, plus_x, hero_y, btn_r, kChromeGlassTint, card_brd_off);
+    render_glass_circle(it, plus_x, hero_y, btn_r, glass_bg, card_brd_off);
     fast_hline(it, plus_x - gl_s, hero_y,     gl_s * 2 + 1, col_white);
     fast_hline(it, plus_x - gl_s, hero_y + 1, gl_s * 2 + 1, col_white);
     fast_vline(it, plus_x,     hero_y - gl_s, gl_s * 2 + 1, col_white);
@@ -743,7 +757,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
       std::snprintf(t_val, sizeof(t_val), "%s°", kUnknownGlyph);
     }
     fast_print(it, cx, hero_y, font_date, col_white, TextAlign::CENTER, t_val);
-    ui::draw_icon_thermometer(it, cx - scale_x(58), hero_y, mode_brd, kChromeShadow);
+    ui::draw_icon_thermometer(it, cx - scale_x(58), hero_y, mode_brd, hero_surf);
 
     const int M_XS[4] = {cx - scale_x(129), cx - scale_x(43), cx + scale_x(43), cx + scale_x(129)};
     const char *M_NAMES[4] = {"Heat", "Cool", "Auto", "Off"};
@@ -751,7 +765,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     for (int i = 0; i < 4; i++) {
       const bool act = (m == M_IDS[i]) || (i == 2 && m == "heat_cool");
       render_modern_card(it, M_XS[i], mode_y, 76, 48, 12,
-                         act ? card_bg_on : card_bg_off,
+                         glass_bg,
                          act ? mode_brd : card_brd_off,
                          M_NAMES[i], act ? col_white : col_slate, font_small);
       frame_hits().add_centered_rect(M_XS[i], mode_y, scale_x(76), scale_y(48),
@@ -772,15 +786,13 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
 
     if (show_garage) {
       const GarageState gs = wh_garage_state();
-      const Color g_bg  = (gs == GarageState::OPEN) ? Color(40, 24, 18)
-                        : ((gs == GarageState::CLOSED) ? card_bg_on : card_bg_off);
       const Color g_brd = (gs == GarageState::OPEN) ? col_gold
                         : ((gs == GarageState::CLOSED) ? col_green : card_brd_off);
       const char *g_lbl = (gs == GarageState::OPEN)   ? "Garage: Open (Close)"
                         : (gs == GarageState::CLOSED) ? "Garage: Closed (Open)"
                         : "Garage: Unknown";
       render_modern_card(it, cx, garage_y, 308, 72, 16,
-                         g_bg, g_brd, g_lbl,
+                         glass_bg, g_brd, g_lbl,
                          (gs == GarageState::UNKNOWN) ? col_slate : col_white, font_small);
       frame_hits().add_centered_rect(cx, garage_y, scale_x(308), scale_y(72),
                                      WidgetId::COVER_OPEN_BTN, kHitTap | kHitFocusSlot);
@@ -788,19 +800,17 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
 
     if (show_lock) {
       const LockState ls = wh_lock_state();
-      const Color l_bg  = (ls == LockState::LOCKED) ? Color(18, 36, 26)
-                        : ((ls == LockState::UNLOCKED) ? Color(40, 18, 22) : card_bg_off);
       const Color l_brd = (ls == LockState::LOCKED) ? col_green
                         : ((ls == LockState::UNLOCKED) ? col_red : card_brd_off);
       const char *l_lbl = (ls == LockState::LOCKED)   ? "Front Door: Locked"
                         : (ls == LockState::UNLOCKED) ? "Front Door: Unlocked"
                         : "Front Door: Unknown";
-      render_modern_card(it, cx, lock_y, 308, 72, 16,
-                         l_bg, l_brd, l_lbl,
-                         (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
+      const Color lock_surf = render_modern_card(it, cx, lock_y, 308, 72, 16,
+                                                 glass_bg, l_brd, l_lbl,
+                                                 (ls == LockState::UNKNOWN) ? col_slate : col_white, font_small);
       ui::draw_icon_lock(it, cx - scale_x(122), lock_y,
                          (ls == LockState::LOCKED) ? col_green : ((ls == LockState::UNLOCKED) ? col_red : col_slate),
-                         kChromeShadow, ls != LockState::UNLOCKED);
+                         lock_surf, ls != LockState::UNLOCKED);
       frame_hits().add_centered_rect(cx, lock_y, scale_x(308), scale_y(72),
                                      WidgetId::LOCK_ACTION_BTN, kHitTap | kHitFocusSlot);
     }
@@ -816,7 +826,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
     const bool is_dck = (sim_vacuum_state() == "Docked");
 
     render_modern_card(it, cx, layout().area_card3_y(0), 296, 58, 14,
-                       is_cln ? Color(18, 36, 26) : card_bg_on,
+                       glass_bg,
                        is_cln ? col_green : card_brd_off,
                        "Start Cleaning", col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().area_card3_y(0), scale_x(296), scale_y(58),
@@ -824,7 +834,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 0);
 
     render_modern_card(it, cx, layout().area_card3_y(1), 296, 58, 14,
-                       is_psd ? Color(38, 32, 16) : card_bg_on,
+                       glass_bg,
                        is_psd ? col_gold : card_brd_off,
                        "Pause Vacuum", col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().area_card3_y(1), scale_x(296), scale_y(58),
@@ -832,7 +842,7 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
                                    kHitTap | kHitFocusSlot, 1);
 
     render_modern_card(it, cx, layout().area_card3_y(2), 296, 58, 14,
-                       is_dck ? Color(22, 32, 46) : card_bg_on,
+                       glass_bg,
                        is_dck ? theme_primary : card_brd_off,
                        "Return to Dock", col_white, font_small);
     frame_hits().add_centered_rect(cx, layout().area_card3_y(2), scale_x(296), scale_y(58),
@@ -847,12 +857,24 @@ void render_whole_home_page(esphome::display::Display &it, const UiFrameContext 
   const int WH_Y = layout().app_dock_y;
   render_in_app_mode_bar_track(it, cx, WH_XS, tab_count, active_slot, false, false,
                                tab_count, active_slot, theme_primary, col_white);
+  const bool wh_has_bd = backdrop_active();
+  Color wh_inactive_cut{};
+  bool has_wh_inactive_cut = false;
   for (int i = 0; i < tab_count; i++) {
     const int bx = WH_XS[i];
     const int cat_id = tabs[i];
     const bool is_act = (i == active_slot);
     const Color fg_c = is_act ? theme_primary : col_white;
-    const Color cut_c = sample_glass_surface_color(bx - 14, WH_Y - 14, 29, 29);
+    Color cut_c{};
+    if (wh_has_bd || is_act) {
+      cut_c = sample_glass_surface_color(bx - 4, WH_Y - 4, 9, 9);
+    } else {
+      if (!has_wh_inactive_cut) {
+        wh_inactive_cut = sample_glass_surface_color(bx - 4, WH_Y - 4, 9, 9);
+        has_wh_inactive_cut = true;
+      }
+      cut_c = wh_inactive_cut;
+    }
 
     if (cat_id == 0) {
       static constexpr int8_t SH_HW[31] = {

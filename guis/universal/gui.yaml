@@ -215,18 +215,29 @@ display:
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
           rs.nav.menu_scroll_active ||
           (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
-      latter_ui::dirty_band().begin_frame(rs.nav.gui_page, prof_sub, takeover_sig, anim_or_scroll);
+      const int hhmm_key = latter_ui::compute_hhmm_key(ctx.now);
+      const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
+      const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);
+      const int home_clock_band_y1 =
+          (latter_ui::layout().home_clock_y + latter_ui::layout().home_weather_y) / 2 + latter_ui::scale_y(10);
+      if (!latter_ui::dirty_band().begin_frame(
+              rs.nav.gui_page, prof_sub, takeover_sig, anim_or_scroll,
+              hhmm_key, idle_state_sig, home_clock_band_y1, live_sec_active)) {
+        prof_frame_scope.abort_idle();
+        return;
+      }
 
       // Latch full-width 2px-aligned horizontal dirty band [band_y0, band_y1] across MipiDsi and
       // MipiSpiBuffer so MipiSpi always takes its contiguous full-width DMA fast path.
-      const int band_y0 = latter_ui::dirty_band().y0();
-      const int band_y1 = latter_ui::dirty_band().y1();
+      const int band_y0 = latter_ui::dirty_band().band_y0();
+      const int band_y1 = latter_ui::dirty_band().band_y1();
       it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
       it.draw_pixel_at(0, band_y0, id(col_bg));
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, Color(8, 8, 8));
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
       latter_ui::bind_frame_buffer(id(disp1), it);
       latter_ui::frame_base_begin();
+      latter_ui::set_clip_y_band(band_y0, band_y1);
 
       // System-owned global takeovers (OTA -> Hibernate -> Panel Off -> Alarm/Timer/Find-My ->
       // Voice Assistant -> Security PIN Pad -> Push Notification -> Docked Screensaver).

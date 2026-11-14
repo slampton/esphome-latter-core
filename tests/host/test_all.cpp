@@ -977,7 +977,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111302L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111303L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -1238,6 +1238,276 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_ui::ui_anim_poller_running() && anim.starts == 1);
 }
 
+// ==============================================================================
+// 8. PHASE 2: DIRTY-BAND SCISSOR COMPOSITOR, PARTIAL-BAND HIT TABLE & 2-TIER GLASS
+// ==============================================================================
+
+struct HostRgb {
+  uint8_t r{0};
+  uint8_t g{0};
+  uint8_t b{0};
+};
+
+enum class HostGlassVariant : uint8_t {
+  Clear = 0,
+  ReadableDark = 1,
+};
+
+float host_srgb_chan(uint8_t v) {
+  const float x = static_cast<float>(v) * (1.0f / 255.0f);
+  return (x <= 0.04045f) ? (x * (1.0f / 12.92f)) : std::pow((x + 0.055f) * (1.0f / 1.055f), 2.4f);
+}
+
+float host_rel_lum(HostRgb c) {
+  return 0.2126f * host_srgb_chan(c.r) + 0.7152f * host_srgb_chan(c.g) + 0.0722f * host_srgb_chan(c.b);
+}
+
+float host_contrast(float la, float lb) {
+  return (la > lb) ? ((la + 0.05f) / (lb + 0.05f)) : ((lb + 0.05f) / (la + 0.05f));
+}
+
+HostRgb host_mix_q8(HostRgb under, HostRgb over, int a) {
+  a = std::clamp(a, 0, 256);
+  const int ia = 256 - a;
+  return {
+      static_cast<uint8_t>((static_cast<int>(over.r) * a + static_cast<int>(under.r) * ia + 128) >> 8),
+      static_cast<uint8_t>((static_cast<int>(over.g) * a + static_cast<int>(under.g) * ia + 128) >> 8),
+      static_cast<uint8_t>((static_cast<int>(over.b) * a + static_cast<int>(under.b) * ia + 128) >> 8),
+  };
+}
+
+int host_glass_alpha_for_text(HostRgb tint, HostRgb backdrop, HostRgb text, int min_alpha_q8) {
+  const float lt = host_rel_lum(text);
+  const int start_a = std::clamp(min_alpha_q8, 0, 256);
+  for (int a = start_a; a < 256; a += 8) {
+    if (host_contrast(lt, host_rel_lum(host_mix_q8(backdrop, tint, a))) >= 5.0f) return a;
+  }
+  return 256;
+}
+
+int host_glass_alpha_smooth(int &state, int target, uint32_t dt_ms) {
+  if (state <= 0 || target >= state) {
+    state = target;
+  } else {
+    const uint32_t clamped_dt = std::min<uint32_t>(dt_ms, 250U);
+    const int fall = (clamped_dt == 0U)
+                         ? 0
+                         : std::max(1, static_cast<int>((4U * clamped_dt + 8U) / 16U));
+    state = std::max(target, state - fall);
+  }
+  return state;
+}
+
+void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
+                             HostRgb tint, HostRgb ref_text, HostGlassVariant variant,
+                             HostRgb &out_tint, int &out_a_top, int &out_a_bot) {
+  constexpr HostRgb kHomePill{175, 190, 210};
+  constexpr HostRgb kModalBg{16, 20, 28};
+  constexpr HostRgb kWhite{255, 255, 255};
+  constexpr int kAlphaClearMin = 148;
+  constexpr int kAlphaReadableMin = 208;
+
+  const int bg_lvl = bd_valid ? ((static_cast<int>(bd_mean.r) + bd_mean.g + bd_mean.b) / 3) : 0;
+  const int tint_lvl = (static_cast<int>(tint.r) + tint.g + tint.b) / 3;
+  const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
+  const bool is_readable = (variant == HostGlassVariant::ReadableDark);
+
+  int frost_q8 = 0;
+  if (dark_tint && !is_readable) {
+    frost_q8 = (bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
+    if (bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
+      frost_q8 = std::max(frost_q8, 22);
+    }
+  }
+  out_tint = (frost_q8 > 0) ? host_mix_q8(tint, kHomePill, frost_q8) : tint;
+
+  const HostRgb contrast_fg = ((static_cast<int>(ref_text.r) + ref_text.g + ref_text.b) < 48) ? kWhite : ref_text;
+  const float fg_lum = host_rel_lum(contrast_fg);
+  const int floor_q8 = is_readable ? kAlphaReadableMin : kAlphaClearMin;
+
+  int base_a = bd_valid ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)
+                        : (is_readable ? kAlphaReadableMin : 160);
+  if (!is_readable && dark_tint &&
+      (base_a >= 200 || host_contrast(fg_lum, host_rel_lum(out_tint)) < 4.5f)) {
+    out_tint = host_mix_q8(tint, kModalBg, 192);
+    base_a = bd_valid ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, 200)
+                      : std::max(base_a, 200);
+  }
+  const int da = is_readable ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
+  out_a_top = std::min(256, base_a + da);
+  const int min_bot = is_readable ? 200 : kAlphaClearMin;
+  out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
+  if (bd_valid && host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd_bright, out_tint, out_a_bot))) < 4.5f) {
+    out_a_bot = base_a;
+  }
+}
+
+void test_phase2_glass_and_scissor_compositor() {
+  // 1. DirtyBandTracker: minute-only band invalidation vs full-frame fallback invariants
+  auto &db = latter_ui::dirty_band();
+  db = latter_ui::DirtyBandTracker{};
+  const uint32_t sig_idle = latter_ui::compute_takeover_signature(false, false, true, 0, false, false, false, false);
+  const uint32_t sig_notif = latter_ui::compute_takeover_signature(false, false, true, 0, false, false, false, true);
+  const int home_sub = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+
+  // Initial settle frame -> full frame [0, SCREEN_H - 1]
+  db.begin_frame(1, home_sub, sig_idle, false);
+  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Minute-only tick marks just the clock readout band [93, 168] -> 2px-aligned [92, 169], partial frame!
+  latter_ui::mark_dirty_band(93, 168);
+  db.begin_frame(1, home_sub, sig_idle, false);
+  LATTER_CHECK(!db.is_full());
+  LATTER_CHECK(db.y0() == 92 && db.y1() == 169);
+  LATTER_CHECK((db.y0() & 1) == 0 && ((db.y1() - db.y0() + 1) % 2) == 0);
+
+  // Fallback A: subsequent frame with no mark_dirty_band promotes to full frame
+  db.begin_frame(1, home_sub, sig_idle, false);
+  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Fallback B: anim_or_scroll_active == true promotes even if mark_dirty_band was called
+  latter_ui::mark_dirty_band(93, 168);
+  db.begin_frame(1, home_sub, sig_idle, true);
+  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Fallback C: explicit mark_dirty_full() overrides pending narrow band
+  latter_ui::mark_dirty_band(93, 168);
+  latter_ui::mark_dirty_full();
+  db.begin_frame(1, home_sub, sig_idle, false);
+  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+
+  // Fallback D: page change or takeover change promotes narrow band to full frame
+  latter_ui::mark_dirty_band(93, 168);
+  db.begin_frame(0, 0, sig_idle, false);
+  LATTER_CHECK(db.is_full());
+  latter_ui::mark_dirty_band(93, 168);
+  db.begin_frame(0, 0, sig_notif, false);
+  LATTER_CHECK(db.is_full());
+
+  // 8-arg begin_frame: Home (subpage==0) HH:MM rollover band [0 .. home_clock_band_y1], static 1 Hz idle-skip
+  // preserving frame_hits(), Home Activity Overlay (subpage==2) HH:MM full-frame promotion, and state fallbacks
+  db = latter_ui::DirtyBandTracker{};
+  LATTER_CHECK(db.begin_frame(1, home_sub, sig_idle, false, 720, 85U, 174, false));
+  LATTER_CHECK(db.is_full() && !db.is_idle_skip() && db.band_y0() == 0 && db.band_y1() == latter_ui::SCREEN_H - 1);
+  latter_ui::frame_hits().add_centered_rect(233, 398, 280, 52, latter_ui::WidgetId::DOCK_SLOT_BASE,
+                                            latter_ui::kHitTap | latter_ui::kHitFocusSlot, 0);
+  LATTER_CHECK(latter_ui::frame_hits().count == 1);
+
+  // Unchanged static 1 Hz poll -> idle skip (returns false), preserving frame_hits() intact!
+  LATTER_CHECK(!db.begin_frame(1, home_sub, sig_idle, false, 720, 85U, 174, false));
+  LATTER_CHECK(db.is_idle_skip() && latter_ui::frame_hits().count == 1);
+
+  // Minute rollover (hhmm_key 720 -> 721) on Home subpage 0 -> partial 2px-aligned band [0 .. 175] above weather hero
+  LATTER_CHECK(db.begin_frame(1, home_sub, sig_idle, false, 721, 85U, 174, false));
+  LATTER_CHECK(!db.is_full() && !db.is_idle_skip() && db.band_y0() == 0 && db.band_y1() == 175);
+
+  // Home Activity Overlay (home_subpage == 2) promotes HH:MM rollover to full-frame so glass cards never get bisected
+  const int home_overlay_sub = latter_ui::compute_subpage_id(1, 2, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  LATTER_CHECK(db.begin_frame(1, home_overlay_sub, sig_idle, false, 721, 85U, 174, false));
+  LATTER_CHECK(db.is_full());
+  LATTER_CHECK(!db.begin_frame(1, home_overlay_sub, sig_idle, false, 721, 85U, 174, false));
+  LATTER_CHECK(db.is_idle_skip());
+  LATTER_CHECK(db.begin_frame(1, home_overlay_sub, sig_idle, false, 722, 85U, 174, false));
+  LATTER_CHECK(db.is_full() && !db.is_idle_skip() && db.band_y0() == 0 && db.band_y1() == latter_ui::SCREEN_H - 1);
+
+  // Battery/focus/status signature change or live_sec_active -> promotes to full frame
+  LATTER_CHECK(db.begin_frame(1, home_sub, sig_idle, false, 722, 86U, 174, false));
+  LATTER_CHECK(db.is_full() && db.band_y0() == 0 && db.band_y1() == latter_ui::SCREEN_H - 1);
+  LATTER_CHECK(db.begin_frame(1, home_sub, sig_idle, false, 722, 86U, 174, true));
+  LATTER_CHECK(db.is_full() && !db.is_idle_skip());
+
+  // 2. FrameHitTable: partial-band frame MUST preserve 100% of hit & rotary focus regions outside [y0, y1]
+  db.begin_frame(1, home_sub, sig_idle, false);  // settle on page 1
+  latter_ui::mark_dirty_band(92, 169);           // minute-only band
+  db.begin_frame(1, home_sub, sig_idle, false);
+  LATTER_CHECK(!db.is_full() && db.y0() == 92 && db.y1() == 169);
+
+  auto &ht = latter_ui::frame_hits();
+  LATTER_CHECK(ht.count == 0);
+  // Register interactive controls ABOVE (y=42), INSIDE (y=130), and BELOW (y=286, y=398, y=426) the [92, 169] band
+  ht.add_centered_rect(233, 42, 220, 36, latter_ui::WidgetId::REMOTE_SLOT_PILL,
+                       latter_ui::kHitTap | latter_ui::kHitFocusSlot, 0);
+  ht.add_centered_rect(233, 130, 260, 64, latter_ui::WidgetId::SUBHEADER_ACTION,
+                       latter_ui::kHitTap, 0);
+  ht.add_centered_rect(233, 286, 360, 68, latter_ui::WidgetId::LIST_SLOT_BASE,
+                       latter_ui::kHitTap | latter_ui::kHitFocusSlot, 0);
+  ht.add_circle(160, 398, 26, latter_ui::WidgetId::DOCK_SLOT_BASE,
+                latter_ui::kHitTap | latter_ui::kHitFocusSlot | latter_ui::kHitFocusCircle, 0, 14);
+  ht.add_centered_rect(233, 426, 120, 32, latter_ui::WidgetId::BACK_BUTTON,
+                       latter_ui::kHitTap | latter_ui::kHitFocusSlot, 0);
+
+  LATTER_CHECK(ht.count == 5);
+  LATTER_CHECK(ht.focus_count() == 4);
+  LATTER_CHECK(ht.hit_test(233, 42, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::REMOTE_SLOT_PILL);
+  LATTER_CHECK(ht.hit_test(233, 130, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::SUBHEADER_ACTION);
+  LATTER_CHECK(ht.hit_test(233, 286, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::LIST_SLOT_BASE);
+  LATTER_CHECK(ht.hit_test(160, 398 + 34, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::DOCK_SLOT_BASE);
+  LATTER_CHECK(ht.hit_test(233, 426, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::BACK_BUTTON);
+  LATTER_CHECK(ht.focus_at(0)->widget_id == latter_ui::WidgetId::REMOTE_SLOT_PILL);
+  LATTER_CHECK(ht.focus_at(2)->widget_id == latter_ui::WidgetId::DOCK_SLOT_BASE);
+  LATTER_CHECK(ht.focus_at(3)->widget_id == latter_ui::WidgetId::BACK_BUTTON);
+
+  // 3. GlassVariant (Clear vs ReadableDark) WCAG >= 4.5:1 contrast, alpha clamping & dt_ms smoothing invariants
+  constexpr HostRgb kClearTint{22, 27, 36};
+  constexpr HostRgb kReadableTint{16, 20, 28};
+  constexpr HostRgb kWhiteText{255, 255, 255};
+  constexpr HostRgb kMutedText{158, 158, 158};
+  constexpr HostRgb kBackdrops[5] = {
+      {6, 8, 12},        // Pitch-dark OLED / night sky
+      {34, 42, 56},      // Dim slate wallpaper
+      {92, 126, 168},    // Mid-day overcast
+      {156, 210, 252},   // Bright daytime cyan sky
+      {250, 252, 255},   // Sunlit snow / white camera region
+  };
+
+  for (const auto &bd : kBackdrops) {
+    for (HostRgb fg : {kWhiteText, kMutedText}) {
+      for (HostGlassVariant var : {HostGlassVariant::Clear, HostGlassVariant::ReadableDark}) {
+        const HostRgb base_tint = (var == HostGlassVariant::ReadableDark) ? kReadableTint : kClearTint;
+        HostRgb eff_tint{};
+        int a_top = 0, a_bot = 0;
+        host_resolve_glass_fill(true, bd, bd, base_tint, fg, var, eff_tint, a_top, a_bot);
+        const int min_floor = (var == HostGlassVariant::ReadableDark) ? 200 : 148;
+        LATTER_CHECK(a_bot >= min_floor && a_top >= a_bot && a_top <= 256);
+
+        const float fg_lum = host_rel_lum(fg);
+        const float top_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_top)));
+        const float bot_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_bot)));
+        LATTER_CHECK(top_cr >= 4.5f && bot_cr >= 4.5f);
+      }
+    }
+  }
+
+  // Calculator active operator (15% orange semantic wash on kChromeGlassTint + white text) & 2048 gold tile >= 4.5:1
+  const HostRgb calc_active_wash = host_mix_q8(kClearTint, HostRgb{255, 145, 30}, 38);
+  LATTER_CHECK(host_contrast(host_rel_lum(kWhiteText), host_rel_lum(calc_active_wash)) >= 8.0f);
+  const HostRgb tile_2048_wash = host_mix_q8(kClearTint, HostRgb{158, 133, 28}, 38);
+  LATTER_CHECK(host_contrast(host_rel_lum(kWhiteText), host_rel_lum(tile_2048_wash)) >= 8.0f);
+
+  // dt_ms-normalized glass_alpha_smooth: instant rise, proportional decay, clamped at 250 ms
+  int alpha_st = 0;
+  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 220, 16U) == 220);
+  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 240, 16U) == 240);  // Instant step-up on brighter backdrop
+  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 160, 16U) == 236);  // -4 at 60 FPS (16 ms)
+  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 160, 32U) == 228);  // -8 at 30 FPS (32 ms)
+  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 160, 1000U) >= 165);  // Clamped at 250 ms max jump
+
+  // Cross-check production headers & page sources so tokens and retired bespoke overrides never regress
+  const std::string ui_types_h = read_repo_file("../../include/ui_types.h");
+  const std::string ui_gfx_h = read_repo_file("../../include/ui_gfx.h");
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
+  const std::string comms_cpp = read_repo_file("../../components/latter_ui/page_comms.cpp");
+
+  LATTER_CHECK(ui_types_h.find("enum class GlassVariant : uint8_t") != std::string::npos);
+  LATTER_CHECK(ui_types_h.find("kChromeModalBg(16, 20, 28)") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassAlphaMinQ8 = 148") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassReadableAlphaMinQ8 = 208") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("resolve_home_card_palette") == std::string::npos);
+  LATTER_CHECK(tools_cpp.find("Color(230, 115, 0)") == std::string::npos);
+  LATTER_CHECK(comms_cpp.find("kChromeGlassTint, 176") == std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -1248,8 +1518,9 @@ int main() {
   test_beacon_boot_gate_and_touch_reboot_safety();
   test_device_prefs_v2_and_event_timer_sync();
   test_phase1_boot_wake_hibernate_and_ble_roaming();
+  test_phase2_glass_and_scissor_compositor();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
-      "HibernateSnapshot + BLE roaming/pause + WoM raise-to-wake, and hal_battery/hal_link_report verified.\n");
+      "2-tier GlassVariant + Y-scissor invariants, HibernateSnapshot + BLE roaming/pause, and hal_battery verified.\n");
   return 0;
 }

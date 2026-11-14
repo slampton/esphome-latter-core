@@ -85,10 +85,10 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   const esphome::Color col_gold = ctx.col_gold;
   const esphome::Color col_red = ctx.col_red;
 
-  const esphome::Color card_bg_on = ui::chrome_card_bg_on();
-  const esphome::Color card_bg_off = ui::chrome_card_bg_off();
-  const esphome::Color card_brd_on = ui::chrome_card_brd_on();
-  const esphome::Color card_brd_off = ui::chrome_card_brd_off();
+  const esphome::Color card_bg_on = kChromeGlassTint;
+  const esphome::Color card_bg_off = kChromeGlassTint;
+  const esphome::Color card_brd_on = kChromeCardBrdOn;
+  const esphome::Color card_brd_off = kChromeCardBrdOff;
 
   const int hit_w = card_hit_width(276, 44);
   const int hit_h = (SCREEN_W > 520) ? scale_y(44) : 44;
@@ -350,13 +350,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_action_card_y(layout().slot5_y(2), "Software Update >", card_brd_on, col_white, card_bg_on,
                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 2), 2);
     draw_toggle_card_y(layout().slot5_y(3), "BLE Beacon", ctx.ble_active, 3, 3);
-    draw_action_card_y(layout().slot5_y(4), "Restart Device", col_red, col_white, ui::chrome_danger_bg(),
+    draw_action_card_y(layout().slot5_y(4), "Restart Device", col_red, col_white, card_bg_on,
                        WidgetId::SYS_SECONDARY_BTN, 4);
     draw_back();
 
   } else if (system_menu_mode == 4) {
     ui::confirm_modal(it, cx, "RESTART DEVICE?", "Reboot firmware now", "",
-                      "Cancel", "Restart", col_red, ui::chrome_danger_bg(),
+                      "Cancel", "Restart", col_red, kChromeModalBg,
                       font_small, font_small, theme_primary, col_white, col_slate);
 
   } else if (system_menu_mode == 5) {

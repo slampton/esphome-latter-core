@@ -48,10 +48,13 @@ struct DirtyBandTracker {
   int active_y0{0};
   int active_y1{SCREEN_H - 1};
   bool active_full{true};
+  bool active_idle_skip{false};
 
   int last_page{-1};
   int last_subpage{-1};
   uint32_t last_overlay_sig{0xFFFFFFFFU};
+  int last_hhmm{-2};
+  uint32_t last_idle_state_sig{0xFFFFFFFFU};
 
   // Aligns any vertical span to 2px-aligned full-width rows:
   //   y0 -> even row (y0 & ~1), y1 -> odd row (min(SCREEN_H - 1, y1 | 1))
@@ -60,10 +63,16 @@ struct DirtyBandTracker {
   void mark_band(int y0, int y1);
   void mark_full();
   void begin_frame(int page, int subpage, uint32_t overlay_sig, bool anim_or_scroll_active = false);
+  bool begin_frame(int page, int subpage, uint32_t overlay_sig, bool anim_or_scroll_active,
+                   int hhmm_key, uint32_t idle_state_sig, int home_clock_band_y1,
+                   bool live_sec_active = false);
 
   constexpr int y0() const { return active_y0; }
   constexpr int y1() const { return active_y1; }
+  constexpr int band_y0() const { return active_y0; }
+  constexpr int band_y1() const { return active_y1; }
   constexpr bool is_full() const { return active_full; }
+  constexpr bool is_idle_skip() const { return active_idle_skip; }
 };
 
 DirtyBandTracker &dirty_band();
@@ -456,6 +465,15 @@ inline int compute_active_subpage_id() {
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
       cal_detail_mode(), timer_view_slot(), whole_home_tab());
 }
+
+inline int compute_hhmm_key(const esphome::ESPTime &now) {
+  return now.is_valid()
+      ? (static_cast<int>(now.day_of_year) * 1440 + static_cast<int>(now.hour) * 60 + static_cast<int>(now.minute))
+      : -1;
+}
+
+uint32_t compute_idle_state_signature(const UiFrameContext &ctx);
+bool compute_live_sec_active(const UiFrameContext &ctx);
 
 // Draws rotary/touchless focus ring from FrameHitTable::focus_at(ui_focus_index()).
 void render_active_focus_overlay(esphome::display::Display &it, uint32_t now_ms,

@@ -699,20 +699,46 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
   static float smooth_vad = 0.0f;
   static float smooth_think = 0.0f;
   static float smooth_speak = 0.0f;
+  static float spin_blend = 0.0f;
+  static uint32_t think_hold_until_ms = 0;
   static bool prev_speaking = false;
   static uint32_t speak_start_ms = 0;
+  static uint32_t last_va_frame_ms = 0;
+  static int prev_va_stage = -1;
+
+  const int cur_va_stage = is_speaking ? 2 : (is_thinking ? 1 : 0);
+  const bool gap_reset = (last_va_frame_ms == 0U || now_ms < last_va_frame_ms ||
+                          (now_ms - last_va_frame_ms) > 300U);
+  const bool turn_reset = (prev_va_stage >= 1 && cur_va_stage == 0);
+  if (gap_reset || turn_reset) {
+    smooth_vad = 0.0f;
+    smooth_think = 0.0f;
+    smooth_speak = 0.0f;
+    spin_blend = 0.0f;
+    think_hold_until_ms = 0U;
+    prev_speaking = false;
+    speak_start_ms = 0U;
+  }
+
+  const uint32_t raw_dt_ms = (!gap_reset && now_ms >= last_va_frame_ms)
+                                 ? (now_ms - last_va_frame_ms)
+                                 : 60U;
+  last_va_frame_ms = now_ms;
+  prev_va_stage = cur_va_stage;
 
   if (is_speaking && !prev_speaking) {
     speak_start_ms = now_ms;
   }
   prev_speaking = is_speaking;
 
+  const float dt_sec = std::clamp(static_cast<float>(raw_dt_ms) * 0.001f, 0.005f, 0.250f);
+  const float env_alpha = 1.0f - std::exp(-dt_sec * (1.0f / 0.24f));
   const float vad_target = va_vad_active ? 1.0f : 0.0f;
   const float think_target = is_thinking ? 1.0f : 0.0f;
   const float speak_target = is_speaking ? 1.0f : 0.0f;
-  smooth_vad += (vad_target - smooth_vad) * 0.22f;
-  smooth_think += (think_target - smooth_think) * 0.22f;
-  smooth_speak += (speak_target - smooth_speak) * 0.22f;
+  smooth_vad += (vad_target - smooth_vad) * env_alpha;
+  smooth_think += (think_target - smooth_think) * env_alpha;
+  smooth_speak += (speak_target - smooth_speak) * env_alpha;
 
   // ============================================================================
   // PROFILE: "LIGHT BAR" — 360-DEGREE SPINNING CYAN & ROYAL BLUE LIGHT RING
@@ -810,23 +836,19 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
     const esphome::Color c_halo_inner(110, 168, 255);
     const int cap_r = scale_min(12);
 
-    static uint32_t last_g_ms = 0;
     static float g_phase = 0.0f;
-    static float spin_blend = 0.0f;
-    static uint32_t think_hold_until_ms = 0;
-
-    float dt_g = (last_g_ms > 0 && now_ms >= last_g_ms && (now_ms - last_g_ms) <= 250U)
-                     ? (static_cast<float>(now_ms - last_g_ms) * 0.001f)
-                     : 0.045f;
-    last_g_ms = now_ms;
+    if (gap_reset) {
+      g_phase = 0.0f;
+    }
 
     if (is_thinking) {
       think_hold_until_ms = now_ms + 950U;
     }
-    const bool show_thinking_spin = is_thinking || (think_hold_until_ms > 0 && now_ms < think_hold_until_ms);
+    const bool show_thinking_spin = is_thinking || (think_hold_until_ms > 0U && now_ms < think_hold_until_ms);
 
-    float target_spin = show_thinking_spin ? 1.0f : 0.0f;
-    spin_blend += (target_spin - spin_blend) * 0.28f;
+    const float spin_alpha = 1.0f - std::exp(-dt_sec * (1.0f / 0.18f));
+    const float target_spin = show_thinking_spin ? 1.0f : 0.0f;
+    spin_blend += (target_spin - spin_blend) * spin_alpha;
 
     auto draw_glowing_capsule = [&](int bx, int by, int r, int half_h) {
       if (half_h <= 1) {
@@ -850,7 +872,7 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
     };
 
     if (show_thinking_spin || spin_blend > 0.15f) {
-      g_phase = std::fmod(g_phase + dt_g * 4.2f, 200.0f * PI_F);
+      g_phase = std::fmod(g_phase + dt_sec * 4.2f, 200.0f * PI_F);
       const float orbit_r = 40.0f * va_scale * spin_blend;
       static constexpr float LINE_X[3] = {-50.0f, 0.0f, 50.0f};
 
@@ -879,7 +901,7 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
     const int dot_off_x[3] = {-scale_min(50), 0, scale_min(50)};
 
     if (is_speaking) {
-      g_phase = std::fmod(g_phase + dt_g * 5.6f, 200.0f * PI_F);
+      g_phase = std::fmod(g_phase + dt_sec * 5.6f, 200.0f * PI_F);
       float syl_env = (0.50f + 0.30f * fast_sin(g_phase * 0.9f) + 0.20f * fast_cos(g_phase * 1.5f)) * smooth_speak;
       static constexpr float BAR_MULT[3] = {0.95f, 1.25f, 1.08f};
       static constexpr float BAR_PHASE[3] = {0.0f, 1.4f, 2.8f};
@@ -894,7 +916,7 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
 
     float wave_spd = 2.9f + 1.3f * smooth_vad;
     float wave_amp = (14.0f + 12.0f * smooth_vad) * va_scale;
-    g_phase = std::fmod(g_phase + dt_g * wave_spd, 200.0f * PI_F);
+    g_phase = std::fmod(g_phase + dt_sec * wave_spd, 200.0f * PI_F);
 
     for (int d = 0; d < 3; d++) {
       float ph = g_phase - static_cast<float>(d) * 2.094395f;
@@ -1551,10 +1573,9 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       fast_print(it, cx, y2, ctx.font_small, st.theme_secondary, TextAlign::CENTER, line2.c_str());
     }
 
-    const Color answer_bg = scale_color(ctx.col_green, 0.38f);
-    render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, answer_bg, ctx.col_green,
+    render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, kChromeModalBg, ctx.col_green,
                        "Answer", st.col_white, ctx.font_small);
-    render_modern_card(it, cx + scale_x(72), scale_y(412), 132, 36, 10, ui::chrome_card_bg_on(), accent_c,
+    render_modern_card(it, cx + scale_x(72), scale_y(412), 132, 36, 10, kChromeModalBg, accent_c,
                        "Dismiss", st.col_white, ctx.font_small);
 
     frame_hits().add_rect(0, 0, SCREEN_W, scale_y(380), WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap);
@@ -1591,7 +1612,7 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       frame_hits().add_rect(0, 0, SCREEN_W, scale_y(308), WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap);
     }
 
-    render_modern_card(it, cx, scale_y(336), 216, 44, 12, ui::chrome_card_bg_on(), accent_c,
+    render_modern_card(it, cx, scale_y(336), 216, 44, 12, kChromeGlassTint, accent_c,
                        "Dismiss", st.col_white, ctx.font_small);
     frame_hits().add_centered_rect(cx, scale_y(336), scale_x(216), scale_y(44),
                                    WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);

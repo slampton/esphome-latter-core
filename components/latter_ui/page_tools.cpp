@@ -401,11 +401,10 @@ void render_timers_subpage(esphome::display::Display &it, const UiFrameContext &
         disp_sec = s.remaining_sec;
       }
 
-      const Color card_bg  = is_act ? ui::chrome_card_bg_on() : kChromeGlassTint;
       const Color border_c = s.running ? ctx.theme_primary
                                        : (s.paused ? ctx.theme_secondary : kChromeCardBorder);
       render_card_box(it, t_left, y_mid - t_card_h / 2, t_card_w, t_card_h,
-                      card_bg, border_c, scale_s(16));
+                      kChromeGlassTint, border_c, scale_s(16));
 
       const Color bar_c = s.running ? ctx.theme_primary
                                     : (s.paused ? ctx.theme_secondary : kChromeCardBorder);
@@ -522,7 +521,7 @@ void render_timers_subpage(esphome::display::Display &it, const UiFrameContext &
   const int hero_w = (SCREEN_W > 520) ? scale_x(188) : 188;
   const int hero_h = (SCREEN_W > 520) ? scale_y(44) : 44;
   render_modern_card(it, ctx.cx, hero_y, 188, 44, 12,
-                     s_running ? kChromeCardBgOn : kChromeGlassTint,
+                     kChromeGlassTint,
                      s_running ? ctx.theme_secondary : ctx.theme_primary,
                      hero_lbl, ctx.col_white, ctx.font_btn_bold);
   frame_hits().add_centered_rect(ctx.cx, hero_y, hero_w, hero_h,
@@ -539,7 +538,7 @@ void render_timers_subpage(esphome::display::Display &it, const UiFrameContext &
     const int rst_w = (SCREEN_W > 520) ? scale_x(136) : 136;
     const int rst_h = (SCREEN_W > 520) ? scale_y(46) : 46;
     render_modern_card(it, ctx.cx, rst_y, 136, 46, 12,
-                       ui::chrome_danger_bg(), ctx.col_red,
+                       kChromeGlassTint, ctx.col_red,
                        "RESET", ctx.col_white, ctx.font_small);
     frame_hits().add_centered_rect(ctx.cx, rst_y, rst_w, rst_h,
                                    WidgetId::TIMER_RESET_BTN, kHitTap | kHitFocusSlot,
@@ -577,16 +576,15 @@ void render_alarms_subpage(esphome::display::Display &it, const UiFrameContext &
       const bool is_snoozed = ((now_epoch > 0U ? al.snooze_until > now_epoch : al.snooze_until > 0U) &&
                                (al.ringing_idx == (i + 1) || al.ringing_idx == 0));
 
-      const Color card_bg  = (ap.enabled || is_snoozed) ? ui::chrome_card_bg_on() : kChromeGlassTint;
       const Color border_c = is_snoozed ? ctx.theme_secondary
                                         : (ap.enabled ? kChromeCardBrdOn : kChromeCardBorder);
       render_card_box(it, a_left, y_mid - a_card_h / 2, a_card_w, a_card_h,
-                      card_bg, border_c, scale_s(16));
+                      kChromeGlassTint, border_c, scale_s(16));
 
       if (is_snoozed) {
         render_card_box(it, a_left + scale_x(24), y_mid - scale_y(22),
                         a_card_w - 2 * scale_x(24), scale_y(44),
-                        ui::chrome_card_bg_on(), ctx.theme_secondary, scale_s(12));
+                        kChromeGlassTint, ctx.theme_secondary, scale_s(12));
         fast_print(it, ctx.cx + 1, y_mid + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "DISMISS SNOOZE");
         fast_print(it, ctx.cx, y_mid, ctx.font_small, ctx.col_white, TextAlign::CENTER, "DISMISS SNOOZE");
         frame_hits().add_rect(a_left, y_mid - a_card_h / 2, a_card_w, a_card_h,
@@ -730,8 +728,8 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
     const int hero_w = (SCREEN_W > 520) ? scale_x(188) : 188;
     const int hero_h = (SCREEN_W > 520) ? scale_y(44) : 44;
     render_modern_card(it, ctx.cx, hero_y, 188, 44, 12,
-                       sw.running ? kChromeCardBgOn : kChromeGlassTint,
-                       sw.running ? ctx.theme_secondary : ctx.col_white,
+                       kChromeGlassTint,
+                       sw.running ? ctx.theme_secondary : kChromeCardBrdOn,
                        hero_lbl, ctx.col_white, ctx.font_small);
     frame_hits().add_rect(scale_x(40), scale_y(72), SCREEN_W - 2 * scale_x(40), scale_y(148),
                           WidgetId::SW_PRIMARY_BTN, kHitTap);
@@ -748,7 +746,7 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
     frame_hits().add_centered_rect(ctx.cx - sub_dx, sub_y, sub_w, sub_h,
                                    WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
 
-    render_modern_card(it, ctx.cx + sub_dx, sub_y, 124, 46, 12, kChromeDangerBg, ctx.col_red,
+    render_modern_card(it, ctx.cx + sub_dx, sub_y, 124, 46, 12, kChromeGlassTint, ctx.col_red,
                        "RESET", ctx.col_white, ctx.font_small);
     frame_hits().add_centered_rect(ctx.cx + sub_dx, sub_y, sub_w, sub_h,
                                    WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
@@ -829,12 +827,12 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   const int btn_rst_x = cx + scale_min(57);
   const int btn_r     = scale_min(36);
 
-  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeGlassTint,
+  render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeModalBg,
                       (sw.lap_ms > 0) ? ctx.col_red : ctx.theme_secondary);
   fast_print(it, btn_lap_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "LAP");
   fast_print(it, btn_lap_x, btn_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, "LAP");
 
-  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeGlassTint, kChromeCardBorder);
+  render_glass_circle(it, btn_rst_x, btn_y, btn_r, kChromeModalBg, kChromeCardBorder);
   fast_print(it, btn_rst_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "RESET");
   fast_print(it, btn_rst_x, btn_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "RESET");
 
@@ -905,7 +903,7 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
 
   if (!tools_direct_home()) {
     render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
-                      scale_min(15), kChromeGlassTint, 212);
+                      scale_min(15), kChromeModalBg, -1, GlassVariant::ReadableDark, ctx.col_white);
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
   }
 #endif
@@ -1170,8 +1168,8 @@ void render_calculator_subpage(esphome::display::Display &it, const UiFrameConte
     for (int c = 0; c < 4; c++) {
       const int kx_mid = layout().calc_col_x(c);
 
-      Color bg_c     = ui::chrome_key_bg();
-      Color border_c = ui::chrome_key_brd();
+      Color bg_c     = kChromeGlassTint;
+      Color border_c = kChromeCardBorder;
       Color text_c   = ctx.col_white;
 
       if (c == 3) {
@@ -1179,19 +1177,13 @@ void render_calculator_subpage(esphome::display::Display &it, const UiFrameConte
                                  ((r == 0 && st.op == 4) || (r == 1 && st.op == 3) ||
                                   (r == 2 && st.op == 2) || (r == 3 && st.op == 1));
         if (op_selected) {
-          bg_c     = ctx.col_white;
-          border_c = Color(255, 180, 80);
-          text_c   = Color(230, 115, 0);
+          bg_c     = ctx.col_orange;
+          border_c = ctx.col_orange;
         } else {
-          bg_c     = (r == 4) ? scale_color(ctx.theme_primary, 0.42f) : scale_color(ctx.col_orange, 0.48f);
-          border_c = (r == 4) ? ctx.theme_primary : Color(255, 145, 30);
+          border_c = (r == 4) ? ctx.theme_primary : scale_color(ctx.col_orange, 0.72f);
         }
-      } else if (r == 0) {
-        bg_c     = ui::chrome_card_bg_on();
-        border_c = ui::chrome_card_brd_on();
-      } else if (r == 4 && c == 2) {
-        bg_c     = ui::chrome_card_bg_on();
-        border_c = kChromeCardBorder;
+      } else if (r == 0 || (r == 4 && c == 2)) {
+        border_c = kChromeCardBrdOn;
       }
 
       const bool is_minus_key = (r == 2 && c == 3);
@@ -1652,7 +1644,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
       const std::string loc_hdr = fit_text_to_width_font(
           std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, ctx.font_small);
       render_card_box(it, ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                      kChromeGlassTint, ctx.theme_primary, scale_s(10));
+                      kChromeModalBg, ctx.theme_primary, scale_s(10));
       fast_print(it, ctx.cx + 1, scale_y(41) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, loc_hdr.c_str());
       fast_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
 
@@ -1660,7 +1652,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
       const int z_lx = ly.map_zoom_left_x();
       const int z_rx = ly.map_zoom_right_x();
       const int z_r  = scale_s(21);
-      render_glass_circle(it, z_lx, z_by, z_r, kChromeGlassTint,
+      render_glass_circle(it, z_lx, z_by, z_r, kChromeModalBg,
                           (cal_map_zoom() > 10) ? ctx.theme_primary : kChromeCardBorder);
       fill_rect_row_major(it, z_lx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)),
                           (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
@@ -1668,7 +1660,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
                               kHitTap | kHitFocusCircle, 0, scale_s(16));
 
       const Color fg_in = (cal_map_zoom() < 18) ? ctx.col_white : ctx.col_slate;
-      render_glass_circle(it, z_rx, z_by, z_r, kChromeGlassTint,
+      render_glass_circle(it, z_rx, z_by, z_r, kChromeModalBg,
                           (cal_map_zoom() < 18) ? ctx.theme_primary : kChromeCardBorder);
       fill_rect_row_major(it, z_rx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)), fg_in);
       fill_rect_row_major(it, z_rx - 1, z_by - scale_s(8), std::max(2, scale_s(3)), scale_s(17), fg_in);
@@ -1676,7 +1668,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
                               kHitTap | kHitFocusCircle, 0, scale_s(16));
 
       render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
-                        scale_s(16), kChromeGlassTint, 176);
+                        scale_s(16), kChromeModalBg, -1, GlassVariant::ReadableDark, ctx.col_white);
     } else {
       render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.theme_primary);
       render_empty_state(it, ctx.cx, scale_y(222), "Loading OpenStreetMap...", ctx.font_small, ctx.theme_secondary);
@@ -1832,8 +1824,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
       const Color brd_c = acts[i] ? ctx.theme_primary : kChromeCardBorder;
       const Color txt_c = acts[i] ? ctx.col_white : ctx.col_slate;
       render_card_box(it, card_x, ym - card_h / 2, card_w, card_h,
-                      acts[i] ? ui::chrome_card_bg_on() : kChromeGlassTint,
-                      brd_c, scale_s(12));
+                      kChromeGlassTint, brd_c, scale_s(12));
       if (acts[i]) {
         fill_rect_row_major(it, card_x + scale_x(8), ym - scale_y(12),
                             std::max(2, scale_x(3)), scale_y(24), ctx.theme_primary);
@@ -2187,7 +2178,7 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
     const int dis_y = scale_y(364);
     const int dis_w = (SCREEN_W > 520) ? scale_x(204) : 204;
     const int dis_h = (SCREEN_W > 520) ? scale_y(42) : 42;
-    render_modern_card(it, st.cx, dis_y, 204, 42, 12, ui::chrome_danger_bg(), ctx.col_red,
+    render_modern_card(it, st.cx, dis_y, 204, 42, 12, kChromeGlassTint, ctx.col_red,
                        "Dismiss", st.col_white, ctx.font_small);
     frame_hits().add_centered_rect(st.cx, dis_y, dis_w, dis_h,
                                    WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 1, scale_y(8));

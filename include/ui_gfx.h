@@ -141,8 +141,37 @@ inline uint16_t decode_hw_rgb565_raw(uint16_t hw) {
 }
 
 // ------------------------------------------------------------------------------
-// 2. Row-Major RGB565 Fast Drawing Primitives & Ordered Bayer Dither
+// 2. Row-Major RGB565 Fast Drawing Primitives, Active Y-Band Scissor & Bayer Dither
 // ------------------------------------------------------------------------------
+inline int &active_clip_y0_ref() {
+  static int y0 = 0;
+  return y0;
+}
+
+inline int &active_clip_y1_ref() {
+  static int y1 = SCREEN_H - 1;
+  return y1;
+}
+
+inline int clip_y0() { return active_clip_y0_ref(); }
+inline int clip_y1() { return active_clip_y1_ref(); }
+
+inline void set_clip_y_band(int y0, int y1) {
+  const int lo = std::max(0, std::min(SCREEN_H - 1, y0));
+  const int hi = std::max(-1, std::min(SCREEN_H - 1, y1));
+  active_clip_y0_ref() = lo;
+  active_clip_y1_ref() = hi;
+}
+
+inline void reset_clip_y_band() {
+  active_clip_y0_ref() = 0;
+  active_clip_y1_ref() = SCREEN_H - 1;
+}
+
+inline bool row_in_clip_band(int y) {
+  return y >= active_clip_y0_ref() && y <= active_clip_y1_ref();
+}
+
 static constexpr uint8_t kBayer4[4][4] = {
     {0, 8, 2, 10},
     {12, 4, 14, 6},
@@ -152,7 +181,7 @@ static constexpr uint8_t kBayer4[4][4] = {
 
 template <typename DisplayT>
 inline void fast_pixel(DisplayT &it, int x, int y, esphome::Color c) {
-  if (x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
+  if (x < 0 || x >= SCREEN_W || !row_in_clip_band(y)) return;
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
     fb[y * SCREEN_W + x] = encode_hw_rgb565(c);
@@ -163,7 +192,7 @@ inline void fast_pixel(DisplayT &it, int x, int y, esphome::Color c) {
 
 template <typename DisplayT>
 inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
-  if (w <= 0 || y < 0 || y >= SCREEN_H) return;
+  if (w <= 0 || !row_in_clip_band(y)) return;
   if (x < 0) {
     w += x;
     x = 0;
@@ -199,22 +228,21 @@ inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
 template <typename DisplayT>
 inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
   if (w <= 0 || h <= 0) return;
-  for (int row = 0; row < h; row++) {
-    fast_hline(it, x, y + row, w, c);
+  const int cy0 = std::max(y, clip_y0());
+  const int cy1 = std::min(y + h - 1, clip_y1());
+  for (int row = cy0; row <= cy1; row++) {
+    fast_hline(it, x, row, w, c);
   }
 }
 
 template <typename DisplayT>
 inline void fast_vline(DisplayT &it, int x, int y, int h, esphome::Color c) {
   if (h <= 0 || x < 0 || x >= SCREEN_W) return;
-  if (y < 0) {
-    h += y;
-    y = 0;
-  }
-  if (y + h > SCREEN_H) {
-    h = SCREEN_H - y;
-  }
-  if (h <= 0) return;
+  const int cy0 = std::max(y, clip_y0());
+  const int cy1 = std::min(y + h - 1, clip_y1());
+  if (cy1 < cy0) return;
+  y = cy0;
+  h = cy1 - cy0 + 1;
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
     const uint16_t px = encode_hw_rgb565(c);
@@ -237,10 +265,7 @@ inline void fast_rect_outline(DisplayT &it, int x, int y, int w, int h, esphome:
 
 template <typename DisplayT>
 inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
-  if (active_frame_buf16() == nullptr || r < 0) {
-    it.filled_circle(cx, cy, r, c);
-    return;
-  }
+  if (r < 0 || cy + r < clip_y0() || cy - r > clip_y1()) return;
   int dx = -r;
   int dy = 0;
   int err = 2 - 2 * r;
@@ -268,16 +293,15 @@ inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, esphome::Col
 
 template <typename DisplayT>
 inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+  if (r < 0 || cy + r < clip_y0() || cy - r > clip_y1()) return;
   uint16_t *fb = active_frame_buf16();
-  if (fb == nullptr || r < 0) {
-    it.circle(cx, cy, r, c);
-    return;
-  }
-  const uint16_t px = encode_hw_rgb565(c);
-  auto put = [fb, px](int x, int y) {
-    if (static_cast<unsigned>(x) < static_cast<unsigned>(SCREEN_W) &&
-        static_cast<unsigned>(y) < static_cast<unsigned>(SCREEN_H)) {
-      fb[y * SCREEN_W + x] = px;
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  const uint16_t px = (fb != nullptr) ? encode_hw_rgb565(c) : 0;
+  auto put = [&](int x, int y) {
+    if (static_cast<unsigned>(x) < static_cast<unsigned>(SCREEN_W) && y >= cy0 && y <= cy1) {
+      if (fb != nullptr) fb[y * SCREEN_W + x] = px;
+      else it.draw_pixel_at(x, y, c);
     }
   };
   int dx = -r;
@@ -304,11 +328,9 @@ inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
 
 template <typename DisplayT>
 inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c) {
-  uint16_t *fb = active_frame_buf16();
-  if (fb == nullptr) {
-    it.line(x1, y1, x2, y2, c);
-    return;
-  }
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if (std::max(y1, y2) < cy0 || std::min(y1, y2) > cy1) return;
   if (y1 == y2) {
     fast_hline(it, std::min(x1, x2), y1, std::abs(x2 - x1) + 1, c);
     return;
@@ -317,14 +339,15 @@ inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Col
     fast_vline(it, x1, std::min(y1, y2), std::abs(y2 - y1) + 1, c);
     return;
   }
-  const uint16_t px = encode_hw_rgb565(c);
+  uint16_t *fb = active_frame_buf16();
+  const uint16_t px = (fb != nullptr) ? encode_hw_rgb565(c) : 0;
   const int32_t dx = std::abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
   const int32_t dy = -std::abs(y2 - y1), sy = y1 < y2 ? 1 : -1;
   int32_t err = dx + dy;
   while (true) {
-    if (static_cast<unsigned>(x1) < static_cast<unsigned>(SCREEN_W) &&
-        static_cast<unsigned>(y1) < static_cast<unsigned>(SCREEN_H)) {
-      fb[y1 * SCREEN_W + x1] = px;
+    if (static_cast<unsigned>(x1) < static_cast<unsigned>(SCREEN_W) && y1 >= cy0 && y1 <= cy1) {
+      if (fb != nullptr) fb[y1 * SCREEN_W + x1] = px;
+      else it.draw_pixel_at(x1, y1, c);
     }
     if (x1 == x2 && y1 == y2) break;
     const int32_t e2 = 2 * err;
@@ -421,6 +444,7 @@ inline void fast_filled_triangle(DisplayT &it, int x1, int y1, int x2, int y2, i
     std::swap(x2, x3);
     std::swap(y2, y3);
   }
+  if (y3 < clip_y0() || y1 > clip_y1()) return;
   if (y1 == y3 && x1 == x2) {
     fast_hline(it, std::min(x1, x3), y1, std::abs(x3 - x1) + 1, c);
     return;
@@ -452,7 +476,7 @@ inline uint16_t dither_rgb565(uint32_t r88, uint32_t g88, uint32_t b88, int t) {
 
 template <typename DisplayT>
 inline void fast_hline_dither(DisplayT &it, int x, int y, int w, uint32_t r88, uint32_t g88, uint32_t b88) {
-  if (w <= 0 || y < 0 || y >= SCREEN_H) return;
+  if (w <= 0 || !row_in_clip_band(y)) return;
   if (x < 0) {
     w += x;
     x = 0;
@@ -476,7 +500,7 @@ inline void fast_hline_dither(DisplayT &it, int x, int y, int w, uint32_t r88, u
 
 template <typename DisplayT>
 inline void fast_pixel_blend(DisplayT &it, int x, int y, esphome::Color c, int a) {
-  if (a <= 0 || x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
+  if (a <= 0 || x < 0 || x >= SCREEN_W || !row_in_clip_band(y)) return;
   uint16_t *fb = active_frame_buf16();
   if (fb == nullptr) {
     if (a >= 128) fast_pixel(it, x, y, c);
@@ -561,14 +585,15 @@ template <typename DisplayT>
 inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad,
                                esphome::Color c_top, esphome::Color c_bot, int hole = 0) {
   if (w <= 0 || h <= 0) return;
+  const int ys = std::max(clip_y0(), y0);
+  const int ye = std::min(clip_y1() + 1, y0 + h);
+  if (ye <= ys) return;
   AaRoundRect o;
   o.init(x0, y0, w, h, rad);
   AaRoundRect in;
   const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
   if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
   const bool flat = (c_top.r == c_bot.r && c_top.g == c_bot.g && c_top.b == c_bot.b);
-  const int ys = std::max(0, y0);
-  const int ye = std::min(SCREEN_H, y0 + h);
   for (int py = ys; py < ye; py++) {
     float dy = 0.0f;
     int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
@@ -592,15 +617,25 @@ inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float
     };
     if (s1 >= s0) {
       int hs0 = 1, hs1 = 0;
-      if (has_hole) {
-        float idy = 0.0f;
-        int ie0 = 0, ie1 = -1;
-        if (!in.row(py, idy, hs0, hs1, ie0, ie1)) {
-          hs0 = 1;
-          hs1 = 0;
+      float idy = 0.0f;
+      int ie0 = 0, ie1 = -1;
+      const bool in_hit = has_hole && in.row(py, idy, hs0, hs1, ie0, ie1);
+      if (in_hit && hole > 1) {
+        span(s0, std::min(s1, ie0 - 1));
+        span(std::max(s0, ie1 + 1), s1);
+        if (hs1 >= hs0) {
+          for (int px = std::max(s0, ie0); px <= std::min(s1, hs0 - 1); px++) {
+            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
+          }
+          for (int px = std::max(s0, hs1 + 1); px <= std::min(s1, ie1); px++) {
+            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
+          }
+        } else {
+          for (int px = std::max(s0, ie0); px <= std::min(s1, ie1); px++) {
+            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
+          }
         }
-      }
-      if (hs1 >= hs0) {
+      } else if (in_hit && hs1 >= hs0) {
         span(s0, std::min(s1, hs0 - 1));
         span(std::max(s0, hs1 + 1), s1);
       } else {
@@ -642,9 +677,10 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color
   const float r2 = r * r;
   const float inv2r = 0.5f / r;
   const int span = static_cast<int>(std::ceil(ro));
-  for (int dyi = -span; dyi <= span; dyi++) {
+  const int dy_lo = std::max(-span, clip_y0() - cy);
+  const int dy_hi = std::min(span, clip_y1() - cy);
+  for (int dyi = dy_lo; dyi <= dy_hi; dyi++) {
     const int py = cy + dyi;
-    if (py < 0 || py >= SCREEN_H) continue;
     const float dy = static_cast<float>(dyi);
     const float dy2 = dy * dy;
     if (dy2 >= ro * ro) continue;
@@ -660,8 +696,12 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color
   }
 }
 
-static constexpr int kGlassAlphaMinQ8 = 154;
+static constexpr int kGlassAlphaMinQ8 = 148;          // ~58% Clear base floor
+static constexpr int kGlassReadableAlphaMinQ8 = 208;  // ~81% ReadableDark base floor (200..216/256)
+static constexpr int kGlassSemanticWashMaxQ8 = 38;    // <= 15% semantic interior wash
+static constexpr int kGlassSemanticRimMaxQ8 = 64;     // <= 25% semantic specular rim tint
 static constexpr float kGlassTextContrast = 5.0f;
+static constexpr float kGlassTextContrastMin = 4.5f;
 static constexpr int kGlassBrightPercent = 3;
 static constexpr int kGlassSheenTopQ8 = 92;
 static constexpr int kGlassSheenBotQ8 = 28;
@@ -678,17 +718,27 @@ float relative_luminance(esphome::Color c);
 float contrast_ratio(float la, float lb);
 esphome::Color mix_color_q8(esphome::Color c_under, esphome::Color c_over, int a);
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h);
-int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text);
-int glass_alpha_smooth(int &state, int target);
+bool is_semantic_glass_color(esphome::Color c);
+void normalize_glass_chrome(esphome::Color caller_bg, esphome::Color caller_brd,
+                            GlassVariant &inout_variant, esphome::Color &out_base_tint,
+                            esphome::Color &out_rim_tint);
+int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text,
+                         int min_alpha_q8 = kGlassAlphaMinQ8);
+int glass_alpha_smooth(int &state, int target, uint32_t dt_ms = 16U);
 void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::Color ref_text,
                         esphome::Color &out_tint, int &out_a_top, int &out_a_bot,
-                        int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8 = -1);
+                        int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8 = -1,
+                        GlassVariant variant = GlassVariant::Clear);
 esphome::Color sample_glass_surface_color(int x0, int y0, int w, int h,
-                                          esphome::Color tint = kChromeGlassTint);
+                                          esphome::Color tint = kChromeGlassTint,
+                                          GlassVariant variant = GlassVariant::Clear);
 
 template <int Mode>
 inline void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, float rad,
                                        esphome::Color tint, int a_top, int a_bot, int hole) {
+  const int ys = std::max(clip_y0(), y0);
+  const int ye = std::min(clip_y1() + 1, y0 + h);
+  if (ye <= ys) return;
   AaRoundRect o;
   o.init(x0, y0, w, h, rad);
   AaRoundRect in;
@@ -709,8 +759,6 @@ inline void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int 
     if (b > 31U) b = 31U;
     dst = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
   };
-  const int ys = std::max(0, y0);
-  const int ye = std::min(SCREEN_H, y0 + h);
   for (int py = ys; py < ye; py++) {
     float dy = 0.0f;
     int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
@@ -752,17 +800,27 @@ inline void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int 
       if (cov <= 0) return;
       mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
     };
+    auto inner_edge = [&](int px, float idy) {
+      if (px < 0 || px >= SCREEN_W) return;
+      const int cov = 255 - in.coverage(px, idy);
+      if (cov <= 0) return;
+      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
+    };
     if (s1 >= s0) {
       int hs0 = 1, hs1 = 0;
-      if (has_hole) {
-        float idy = 0.0f;
-        int ie0 = 0, ie1 = -1;
-        if (!in.row(py, idy, hs0, hs1, ie0, ie1)) {
-          hs0 = 1;
-          hs1 = 0;
+      float idy = 0.0f;
+      int ie0 = 0, ie1 = -1;
+      const bool in_hit = has_hole && in.row(py, idy, hs0, hs1, ie0, ie1);
+      if (in_hit && hole > 1) {
+        span(s0, std::min(s1, ie0 - 1));
+        span(std::max(s0, ie1 + 1), s1);
+        if (hs1 >= hs0) {
+          for (int px = std::max(s0, ie0); px <= std::min(s1, hs0 - 1); px++) inner_edge(px, idy);
+          for (int px = std::max(s0, hs1 + 1); px <= std::min(s1, ie1); px++) inner_edge(px, idy);
+        } else {
+          for (int px = std::max(s0, ie0); px <= std::min(s1, ie1); px++) inner_edge(px, idy);
         }
-      }
-      if (hs1 >= hs0) {
+      } else if (in_hit && hs1 >= hs0) {
         span(s0, std::min(s1, hs0 - 1));
         span(std::max(s0, hs1 + 1), s1);
       } else {
@@ -780,6 +838,7 @@ template <typename DisplayT>
 inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
                                   esphome::Color tint, int a_top, int a_bot, int hole = 0) {
   if (w <= 0 || h <= 0) return;
+  if (y0 + h <= clip_y0() || y0 > clip_y1()) return;
   uint16_t *fb = active_frame_buf16();
   if (fb == nullptr) {
     fill_round_rect_aa(it, x0, y0, w, h, rad, tint, tint, hole);
@@ -799,20 +858,27 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
 
 template <typename DisplayT>
 inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
-                              esphome::Color tint, int alpha_q8, const GlassBackdrop &bd) {
-  if (w <= 4 || h <= 4) return;
+                              esphome::Color tint, int alpha_q8, const GlassBackdrop &bd,
+                              GlassVariant variant = GlassVariant::Clear,
+                              esphome::Color ref_text = kChromeGlassSheen) {
+  if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
   r = std::max(2, std::min(r, std::min(w, h) / 2));
+  GlassVariant eff_var = variant;
+  esphome::Color norm_tint, rim_col;
+  normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, alpha_q8);
-  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), kChromeGlassSheen, rim_top, rim_bot, 1);
+  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, alpha_q8, eff_var);
+  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
   fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
 }
 
 template <typename DisplayT>
-inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8) {
-  if (w <= 4 || h <= 4) return;
-  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, sample_glass_backdrop(x0, y0, w, h));
+inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8,
+                              GlassVariant variant = GlassVariant::Clear,
+                              esphome::Color ref_text = kChromeGlassSheen) {
+  if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
+  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, sample_glass_backdrop(x0, y0, w, h), variant, ref_text);
 }
 
 inline bool &backdrop_active() {
@@ -862,7 +928,7 @@ inline void fast_print(DisplayT &it, int x, int y, FontT *font, esphome::Color c
 template <typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
                                  const uint16_t *row_buf, bool skip_black = false) {
-  if (span_w <= 0 || y < 0 || y >= SCREEN_H || row_buf == nullptr) return;
+  if (span_w <= 0 || !row_in_clip_band(y) || row_buf == nullptr) return;
   if (start_x < 0) {
     row_buf -= start_x;
     span_w += start_x;
@@ -1055,12 +1121,15 @@ struct FrameProfileScope {
   static constexpr uint32_t kSlowFrameUs = (SCREEN_W * SCREEN_H > 300000) ? 110000U : 65000U;
 
   uint64_t t0_us = 0;
+  uint32_t prev_disp_ms = 0;
+  uint32_t prev_ambient_ms = 0;
   int page = 0;
   int sub = 0;
   int pwr = 0;
 
   FrameProfileScope(int p, int s, int pw);
   ~FrameProfileScope();
+  void abort_idle();
 };
 
 }  // namespace latter_ui
