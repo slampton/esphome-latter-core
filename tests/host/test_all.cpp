@@ -1867,6 +1867,172 @@ void test_phase4_audio_session_and_music_pause_timeout() {
   LATTER_CHECK(ui_doc.find("### D-039:") != std::string::npos);
 }
 
+// ==============================================================================
+// 11. BATTERY WAKE REGRESSION: PANEL DCS TIMEOUT ISOLATION & POST-WAKE GRACE
+// ==============================================================================
+void test_panel_dcs_timeout_isolation_and_wake_grace() {
+  using namespace latter_ui;
+
+  // 1. Compile-time + runtime timeout ID isolation on disp1 Component
+  static_assert(kTimeoutPanelDcsId == 0x4C410010U, "Panel DCS timeout must live in HAL range 0x4C410010..0x4C41001F");
+  static_assert(kTimeoutPanelDcsId != kTimeoutAsyncDrawId);
+  static_assert(kTimeoutPanelDcsId != kTimeoutFbClearId);
+  static_assert(kTimeoutPanelDcsId != kTimeoutWeatherStepId);
+  static_assert(kTimeoutPanelDcsId != kTimeoutActivityRotateId);
+
+  // 2. Simulate disp1 numeric set_timeout table across Battery Screen Off -> Wake -> Home WeatherSky render
+  struct SimTimeoutEntry {
+    uint32_t id = 0U;
+    uint32_t due_ms = 0U;
+    std::function<void()> fn;
+  };
+  std::vector<SimTimeoutEntry> timeouts;
+  auto set_sim_timeout = [&](uint32_t id, uint32_t now_ms, uint32_t delay_ms, std::function<void()> fn) {
+    for (auto &e : timeouts) {
+      if (e.id == id) {
+        e.due_ms = now_ms + delay_ms;
+        e.fn = std::move(fn);
+        return;
+      }
+    }
+    timeouts.push_back(SimTimeoutEntry{id, now_ms + delay_ms, std::move(fn)});
+  };
+  auto run_due_timeouts = [&](uint32_t now_ms) {
+    for (size_t i = 0; i < timeouts.size();) {
+      if (static_cast<int32_t>(now_ms - timeouts[i].due_ms) >= 0) {
+        auto fn = std::move(timeouts[i].fn);
+        timeouts.erase(timeouts.begin() + static_cast<std::ptrdiff_t>(i));
+        if (fn) fn();
+      } else {
+        ++i;
+      }
+    }
+  };
+
+  PanelDcsState dcs{};
+  uint8_t hw_bri = 255U;
+  std::vector<uint8_t> dcs_log;
+
+  std::function<void(uint32_t)> service_sim;
+  service_sim = [&](uint32_t now_ms) {
+    const PanelDcsStepResult step = step_panel_dcs_state(dcs, now_ms);
+    if (step.send_slpout) dcs_log.push_back(0x11U);
+    if (step.send_dispon) dcs_log.push_back(0x29U);
+    if (step.apply_hw_bri) hw_bri = step.hw_bri;
+    if (step.send_dispoff) dcs_log.push_back(0x28U);
+    if (step.send_slpin) dcs_log.push_back(0x10U);
+    if (step.rearm_ms > 0U) {
+      set_sim_timeout(kTimeoutPanelDcsId, now_ms, step.rearm_ms, [&, due = now_ms + step.rearm_ms]() {
+        service_sim(due);
+      });
+    }
+  };
+
+  // Screen timeout on battery (t = 5000 ms): AWAKE -> ASLEEP (DISPOFF 0x28 + SLPIN 0x10, hw_bri = 0)
+  dcs.want_bri = 0U;
+  service_sim(5000U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::ASLEEP);
+  LATTER_CHECK(hw_bri == 0U);
+  LATTER_CHECK((dcs_log == std::vector<uint8_t>{0x28U, 0x10U}));
+  dcs_log.clear();
+
+  // Short Crown press / Tap-to-Wake / Pickup-to-Wake at t = 10000 ms:
+  // SLPOUT (0x11) fires immediately, panel enters WAKING, DISPON + brightness deferred +120 ms on kTimeoutPanelDcsId.
+  dcs.want_bri = 230U;
+  service_sim(10000U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::WAKING);
+  LATTER_CHECK(hw_bri == 0U);
+  LATTER_CHECK((dcs_log == std::vector<uint8_t>{0x11U}));
+
+  // Immediate Home render at t = 10003 ms schedules AsyncDraw, LiveWeatherSky / WakeGreeting (0x4C410003), and ActivityRotate.
+  // Regression check: none of those compositor timeouts may clobber kTimeoutPanelDcsId (0x4C410010)!
+  int weather_ticks = 0;
+  set_sim_timeout(kTimeoutAsyncDrawId, 10003U, 0U, []() {});
+  set_sim_timeout(kTimeoutWeatherStepId, 10003U, 66U, [&]() { ++weather_ticks; });
+  set_sim_timeout(kTimeoutWeatherStepId, 10003U, 1500U, [&]() { ++weather_ticks; });
+  set_sim_timeout(kTimeoutActivityRotateId, 10003U, 5000U, []() {});
+
+  run_due_timeouts(10050U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::WAKING);
+  LATTER_CHECK(hw_bri == 0U);
+
+  // At t = 10120 ms (+120 ms post-SLPOUT), kTimeoutPanelDcsId fires DISPON (0x29) + restores brightness 230.
+  run_due_timeouts(10120U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::AWAKE);
+  LATTER_CHECK(hw_bri == 230U);
+  LATTER_CHECK((dcs_log == std::vector<uint8_t>{0x11U, 0x29U}));
+  LATTER_CHECK(weather_ticks == 0);
+  run_due_timeouts(11510U);
+  LATTER_CHECK(weather_ticks == 1);
+
+  // 3. Early re-sleep during WAKING respects MIPI-DCS 120 ms SLPOUT->SLPIN minimum wait + poll self-heal
+  dcs = PanelDcsState{};
+  dcs.phase = PanelDcsState::ASLEEP;
+  dcs.want_bri = 180U;
+  PanelDcsStepResult w1 = step_panel_dcs_state(dcs, 20000U);
+  LATTER_CHECK(w1.send_slpout && !w1.send_dispon && w1.rearm_ms == 120U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::WAKING);
+
+  // Request screen-off at +40 ms (20040 ms): brightness drops to 0 immediately, SLPIN waits remaining 80 ms
+  dcs.want_bri = 0U;
+  PanelDcsStepResult w2 = step_panel_dcs_state(dcs, 20040U);
+  LATTER_CHECK(w2.apply_hw_bri && w2.hw_bri == 0U && !w2.send_slpin && !w2.send_dispoff && w2.rearm_ms == 80U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::WAKING);
+
+  PanelDcsStepResult w3 = step_panel_dcs_state(dcs, 20120U);
+  LATTER_CHECK(w3.send_slpin && !w3.send_dispoff && dcs.phase == PanelDcsState::ASLEEP);
+
+  // Self-healing poll path: if WAKING settled >=120 ms ago and want_bri > 0, next poll completes DISPON + AWAKE
+  dcs.want_bri = 200U;
+  (void)step_panel_dcs_state(dcs, 30000U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::WAKING);
+  LATTER_CHECK(panel_dcs_settle_left_for(dcs, 30050U) == 70U);
+  LATTER_CHECK(panel_dcs_settle_left_for(dcs, 30120U) == 0U);
+  PanelDcsStepResult w4 = step_panel_dcs_state(dcs, 30250U);
+  LATTER_CHECK(w4.send_dispon && w4.apply_hw_bri && w4.hw_bri == 200U && w4.rearm_ms == 0U);
+  LATTER_CHECK(dcs.phase == PanelDcsState::AWAKE);
+
+  // 4. Post-GPIO-wake fast-loop grace window (PmWakeGraceWindow, kPmWakeGraceMs = 600 ms)
+  static_assert(kPmWakeGraceMs == 600U, "Post-GPIO-wake grace must cover 20ms button debounce + 450ms double-tap");
+  PmWakeGraceWindow grace{};
+  LATTER_CHECK(!grace.active(0U));
+  LATTER_CHECK(grace.remaining_ms(0U) == 0U);
+
+  grace.arm(1000U);
+  LATTER_CHECK(grace.active(1000U) && grace.remaining_ms(1000U) == 600U);
+  LATTER_CHECK(grace.active(1020U));  // 20 ms pwr_key delayed_on_off debounce completes in fast loop
+  LATTER_CHECK(grace.active(1150U));  // 150 ms short press release completes in fast loop
+  LATTER_CHECK(grace.active(1450U));  // 450 ms wearable double-tap window completes in fast loop
+  LATTER_CHECK(grace.active(1599U) && grace.remaining_ms(1599U) == 1U);
+  LATTER_CHECK(!grace.active(1600U) && grace.remaining_ms(1600U) == 0U);
+
+  // Explicit clear on awake -> quiet transition
+  grace.arm(2000U);
+  LATTER_CHECK(grace.active(2100U));
+  grace.clear();
+  LATTER_CHECK(!grace.active(2100U));
+
+  // uint32_t millis() wraparound across 0xFFFFFFFFU (including exact 0U target sentinel)
+  grace.arm(0xFFFFFFFFU - 599U, 600U);  // target == 0U -> promoted to 1U sentinel
+  LATTER_CHECK(grace.until_ms == 1U);
+  LATTER_CHECK(grace.active(0xFFFFFFFFU));
+  LATTER_CHECK(grace.active(0U));
+  LATTER_CHECK(!grace.active(1U));
+
+  // 5. Source-level invariants across power_manager.yaml, pmu_axp2101.yaml, latter_core.h, power_pm.cpp
+  const std::string pm_yaml = read_repo_file("../../modules/power_manager.yaml");
+  const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  const std::string core_h = read_repo_file("../../components/latter_core/latter_core.h");
+  const std::string pm_cpp = read_repo_file("../../components/latter_core/power_pm.cpp");
+
+  LATTER_CHECK(pm_yaml.find("latter_ui::hal_panel_dcs_poll(&id(disp1));") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("latter_ui::PanelDcsState::AWAKE") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("last_screen_wake_ms()) < 300U") != std::string::npos);
+  LATTER_CHECK(core_h.find("::latter_ui::pm_poll_loop(now);") != std::string::npos);
+  LATTER_CHECK(pm_cpp.find("PmWakeGraceWindow grace") != std::string::npos);
+  LATTER_CHECK(pm_cpp.find("s_pm_grace_end_timer") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -1880,9 +2046,11 @@ int main() {
   test_phase2_glass_and_scissor_compositor();
   test_phase3_weather_sky_backdrop_and_home_scene();
   test_phase4_audio_session_and_music_pause_timeout();
+  test_panel_dcs_timeout_isolation_and_wake_grace();
   std::printf(
       "[HOST TEST PASS] Protocol v3 + device_prefs v2 + RPC (<=240B UTF-8), 7-panel UiLayout/HitTable/DirtyBand, "
       "2-tier GlassVariant + Y-scissor, Phase 3 WeatherSkyEngine/BackdropMode/HomeScene, "
-      "Phase 4 AudioSessionController + 5-min pause fade-out, HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
+      "Phase 4 AudioSessionController + 5-min pause fade-out, PanelDcs timeout isolation + 600ms wake grace, "
+      "HibernateSnapshot + BLE roaming, and hal_battery verified.\n");
   return 0;
 }

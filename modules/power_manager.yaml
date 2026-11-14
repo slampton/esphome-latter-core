@@ -206,7 +206,9 @@ interval:
             id(check_firmware_update).execute();
           }
 
-          // 9. Invariant 1: Sync display_power_state if Display light was turned off externally via HA
+          // 9. Invariant 1: Self-heal any settled pending DCS transition and sync display_power_state
+          // if Display light was turned off externally via HA.
+          latter_ui::hal_panel_dcs_poll(&id(disp1));
           if (rs.nav.display_power_state == 0 && !id(display_brightness).current_values.is_on() &&
               !rs.nav.is_hibernating && !rs.nav.ota_in_progress && (now_1s_ms > 10000U)) {
             id(turn_screen_off).execute();

@@ -6,6 +6,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
+#include "hal_power_pm.h"
 #include "latter_prof.h"
 #include "latter_rpc.h"
 
@@ -18,6 +19,7 @@ class LatterLoopProbe : public Component {
   void loop() override {
     ::esphome::latter_core::LoopProbeStats &s = ::esphome::latter_core::loop_probe_stats();
     const uint32_t now = millis();
+    ::latter_ui::pm_poll_loop(now);
     if (s.last_ms != 0) {
       const uint32_t gap = now - s.last_ms;
       const int b = gap < 20U ? 0 : gap < 50U ? 1 : gap < 200U ? 2 : gap < 1000U ? 3 : 4;

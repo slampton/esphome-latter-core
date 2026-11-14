@@ -291,11 +291,14 @@ struct PmWakePin {
 struct PmState {
   esp_pm_lock_handle_t lock;
   bool awake;
+  bool lock_held;
   bool dump_pending;
   uint32_t loop_interval_awake;
+  PmWakeGraceWindow grace;
   volatile uint32_t arm_mask;
   uint32_t entered_mask;
   PmWakePin pins[PM_WAKE_SLOTS];
+  volatile uint8_t wake_grace_isr;
   volatile uint32_t sleeps;
   volatile uint32_t slept_us;
   volatile uint32_t gpio_wakes;
@@ -311,10 +314,12 @@ struct PmState {
 
 static RTC_NOINIT_ATTR PmCrumb s_pm_crumb;
 static DRAM_ATTR esp_timer_handle_t s_pm_wake_loop_timer = nullptr;
+static DRAM_ATTR esp_timer_handle_t s_pm_grace_end_timer = nullptr;
+static std::atomic<uint8_t> s_pm_wake_grace_req{0U};
 
-static PmState g_pm_state = {nullptr, true, false, 16U, 0U, 0U,
+static PmState g_pm_state = {nullptr, true, false, false, 16U, {}, 0U, 0U,
                              {{-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}},
-                             0U, 0U, 0U, 0U,
+                             0U, 0U, 0U, 0U, 0U,
                              0U, 0U, 0U, {0U, 0U, 0U, 0U}, 0U,
                              0U, 0U};
 
@@ -326,12 +331,50 @@ struct PmWakeHist {
 };
 static PmWakeHist g_pm_wake_hist = {0U, 0U, 0U, {0U, 0U, 0U, 0U, 0U}};
 
-static void pm_wake_loop_timer_cb(void *) {
+static void pm_wake_app_loop() {
   [](auto &app) {
     if constexpr (requires { app.wake_loop_threadsafe(); }) {
       app.wake_loop_threadsafe();
     }
   }(esphome::App);
+}
+
+static void pm_grace_end_timer_cb(void *) {
+  pm_wake_app_loop();
+}
+
+static void pm_wake_loop_timer_cb(void *) {
+  PmState &st = g_pm_state;
+  if (st.wake_grace_isr != 0U) {
+    st.wake_grace_isr = 0U;
+    s_pm_wake_grace_req.store(1U, std::memory_order_relaxed);
+    if (s_pm_grace_end_timer != nullptr) {
+      (void) esp_timer_stop(s_pm_grace_end_timer);
+      (void) esp_timer_start_once(s_pm_grace_end_timer, static_cast<uint64_t>(kPmWakeGraceMs) * 1000ULL);
+    }
+  }
+  pm_wake_app_loop();
+}
+
+static void pm_sync_loop_and_lock(uint32_t now_ms) {
+  PmState &st = g_pm_state;
+  if (st.lock == nullptr) return;
+  if (!st.grace.active(now_ms)) {
+    st.grace.clear();
+  }
+  const bool want_fast = st.awake || st.grace.active(now_ms);
+  if (want_fast && !st.lock_held) {
+    esp_pm_lock_acquire(st.lock);
+    st.lock_held = true;
+  }
+  const uint32_t want_interval = want_fast ? st.loop_interval_awake : pm_quiet_loop_interval(st.arm_mask);
+  if (esphome::App.get_loop_interval() != want_interval) {
+    esphome::App.set_loop_interval(want_interval);
+  }
+  if (!want_fast && st.lock_held) {
+    esp_pm_lock_release(st.lock);
+    st.lock_held = false;
+  }
 }
 
 static esp_err_t IRAM_ATTR pm_light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
@@ -422,6 +465,7 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
   if (entered == 0) {
     if (gpio_woke) {
       st.gpio_unattributed = st.gpio_unattributed + 1U;
+      st.wake_grace_isr = 1U;
       if (s_pm_wake_loop_timer != nullptr) (void) esp_timer_start_once(s_pm_wake_loop_timer, 50);
     }
     return ESP_OK;
@@ -467,7 +511,9 @@ static esp_err_t IRAM_ATTR pm_light_sleep_exit_cb(int64_t slept_us, void *arg) {
     if (changed_hi != 0) REG_WRITE(GPIO_STATUS1_W1TS_REG, changed_hi);
   }
   if (gpio_woke || (changed_lo | changed_hi) != 0) {
-    // Wake the ESPHome main loop immediately once cache is back up (IRAM-safe esp_timer_start_once).
+    // Wake the ESPHome main loop immediately once cache is back up (IRAM-safe esp_timer_start_once)
+    // and arm a post-wake fast-loop grace window so button debounce, touch I2C, and WoM settle cleanly.
+    st.wake_grace_isr = 1U;
     if (s_pm_wake_loop_timer != nullptr) (void) esp_timer_start_once(s_pm_wake_loop_timer, 50);
   }
   return ESP_OK;
@@ -530,6 +576,12 @@ void pm_init() {
     targs.name = "latter_pm_wk";
     (void) esp_timer_create(&targs, &s_pm_wake_loop_timer);
   }
+  if (s_pm_grace_end_timer == nullptr) {
+    esp_timer_create_args_t gargs = {};
+    gargs.callback = &pm_grace_end_timer_cb;
+    gargs.name = "latter_pm_gr";
+    (void) esp_timer_create(&gargs, &s_pm_grace_end_timer);
+  }
   pm_keep_raw_outputs_driven();
 #ifdef LATTER_PWR_KEY_PIN
   st.pins[PM_WAKE_PWR_KEY].gpio = static_cast<int8_t>(LATTER_PWR_KEY_PIN);
@@ -554,6 +606,8 @@ void pm_init() {
   }
   esp_pm_lock_acquire(lock);
   st.awake = true;
+  st.lock_held = true;
+  st.grace.clear();
   st.awake_since_ms = esphome::millis();
   st.loop_interval_awake = esphome::App.get_loop_interval();
   st.lock = lock;
@@ -600,29 +654,33 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
     if (st.pins[i].gpio >= 0) valid |= 1UL << i;
   }
   const uint32_t arm = stay_awake ? 0U : (wake_mask & valid);
+  const uint32_t now_ms = esphome::millis();
+  if (s_pm_wake_grace_req.exchange(0U, std::memory_order_relaxed) != 0U && !stay_awake && !st.awake) {
+    st.grace.arm(now_ms, kPmWakeGraceMs);
+  }
   if (stay_awake == st.awake) {
     st.arm_mask = arm;
-    if (!stay_awake && esphome::App.get_loop_interval() != pm_quiet_loop_interval(arm)) {
-      esphome::App.set_loop_interval(pm_quiet_loop_interval(arm));
-    }
+    pm_sync_loop_and_lock(now_ms);
     return;
   }
-  const uint32_t now_ms = esphome::millis();
   if (stay_awake) {
-    esp_pm_lock_acquire(st.lock);
     st.awake_since_ms = now_ms;
     st.arm_mask = 0U;
-    esphome::App.set_loop_interval(st.loop_interval_awake);
+    st.grace.clear();
+    if (s_pm_grace_end_timer != nullptr) (void) esp_timer_stop(s_pm_grace_end_timer);
+    st.awake = true;
+    pm_sync_loop_and_lock(now_ms);
   } else {
     st.arm_mask = arm;
-    esphome::App.set_loop_interval(pm_quiet_loop_interval(arm));
-    esp_pm_lock_release(st.lock);
+    st.grace.clear();
+    if (s_pm_grace_end_timer != nullptr) (void) esp_timer_stop(s_pm_grace_end_timer);
+    st.awake = false;
+    pm_sync_loop_and_lock(now_ms);
     st.awake_ms_total += now_ms - st.awake_since_ms;
     st.dump_pending = true;
   }
-  st.awake = stay_awake;
   if (profiler_enabled()) {
-    LATTER_PROF_LOGI("[PROF:PM] lock=%s arm=0x%02lx loop=%lums", stay_awake ? "held" : "released",
+    LATTER_PROF_LOGI("[PROF:PM] lock=%s arm=0x%02lx loop=%lums", st.lock_held ? "held" : "released",
              static_cast<unsigned long>(arm), static_cast<unsigned long>(esphome::App.get_loop_interval()));
   }
 #elif LATTER_PM_DFS_ONLY
@@ -647,6 +705,21 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
 #else
   (void) stay_awake;
   (void) wake_mask;
+#endif
+}
+
+void pm_poll_loop(uint32_t now_ms) {
+#if LATTER_PM_AUTO_SLEEP
+  PmState &st = g_pm_state;
+  if (st.lock == nullptr) return;
+  if (s_pm_wake_grace_req.exchange(0U, std::memory_order_relaxed) != 0U && !st.awake) {
+    st.grace.arm(now_ms, kPmWakeGraceMs);
+  }
+  if (!st.awake) {
+    pm_sync_loop_and_lock(now_ms);
+  }
+#else
+  (void) now_ms;
 #endif
 }
 

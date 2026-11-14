@@ -40,9 +40,14 @@
 
 namespace latter_ui {
 
+// Reserved disp1 Component numeric timeout IDs:
+//   0x4C410001U..0x4C41000FU : UI compositor frame/weather/activity schedulers (include/ui_compositor.h)
+//   0x4C410010U..0x4C41001FU : HAL panel power & MIPI-DCS SLPOUT/DISPON state machine (this file)
+inline constexpr uint32_t kTimeoutPanelDcsId = 0x4C410010U;
+
 #if LATTER_HAS_ESPHOME_COMPONENT
 struct PanelTimeoutScheduler : public esphome::Component {
-  static constexpr uint32_t kTimeoutPanelDcs = 0x4C410003U;
+  static constexpr uint32_t kTimeoutPanelDcs = kTimeoutPanelDcsId;
 
   static void request(esphome::Component *comp, uint32_t delay_ms, std::function<void()> &&fn) {
     if (comp == nullptr) return;
@@ -65,12 +70,64 @@ inline PanelDcsState &panel_dcs_state() {
 
 inline constexpr uint32_t kPanelDcsSlpoutMs = 120U;
 
-// Milliseconds until the last SLPOUT has settled (0 = settled).
-inline uint32_t panel_dcs_settle_left_ms(uint32_t now_ms) {
-  const auto &st = panel_dcs_state();
-  if (st.slpout_ms == 0) return 0;
+// Milliseconds until the last SLPOUT has settled for state `st` (0 = settled).
+inline constexpr uint32_t panel_dcs_settle_left_for(const PanelDcsState &st, uint32_t now_ms) {
+  if (st.slpout_ms == 0) return 0U;
   const uint32_t since = now_ms - st.slpout_ms;
   return (since >= kPanelDcsSlpoutMs) ? 0U : (kPanelDcsSlpoutMs - since);
+}
+
+// Milliseconds until the last SLPOUT has settled (0 = settled).
+inline uint32_t panel_dcs_settle_left_ms(uint32_t now_ms) {
+  return panel_dcs_settle_left_for(panel_dcs_state(), now_ms);
+}
+
+struct PanelDcsStepResult {
+  bool send_slpout = false;
+  bool send_dispon = false;
+  bool send_dispoff = false;
+  bool send_slpin = false;
+  bool apply_hw_bri = false;
+  uint8_t hw_bri = 0;
+  uint32_t rearm_ms = 0;
+};
+
+// Pure state-machine transition for MIPI-DCS panel sleep/wake sequencing.
+inline constexpr PanelDcsStepResult step_panel_dcs_state(PanelDcsState &st, uint32_t now_ms) {
+  PanelDcsStepResult r{};
+  if (st.want_bri > 0) {
+    if (st.phase == PanelDcsState::ASLEEP) {
+      r.send_slpout = true;
+      st.slpout_ms = (now_ms != 0U) ? now_ms : 1U;
+      st.phase = PanelDcsState::WAKING;
+      r.rearm_ms = kPanelDcsSlpoutMs;
+      return r;
+    }
+    if (st.phase == PanelDcsState::WAKING) {
+      const uint32_t left = panel_dcs_settle_left_for(st, now_ms);
+      if (left > 0U) {
+        r.rearm_ms = left;
+        return r;
+      }
+      r.send_dispon = true;
+      st.phase = PanelDcsState::AWAKE;
+    }
+    r.apply_hw_bri = true;
+    r.hw_bri = st.want_bri;
+    return r;
+  }
+  if (st.phase == PanelDcsState::ASLEEP) return r;
+  r.apply_hw_bri = true;
+  r.hw_bri = 0;
+  const uint32_t left = panel_dcs_settle_left_for(st, now_ms);
+  if (left > 0U) {
+    r.rearm_ms = left;
+    return r;
+  }
+  if (st.phase == PanelDcsState::AWAKE) r.send_dispoff = true;
+  r.send_slpin = true;
+  st.phase = PanelDcsState::ASLEEP;
+  return r;
 }
 
 // Moves the panel one step towards panel_dcs_state().want_bri; re-arms itself while a DCS wait runs.
@@ -123,39 +180,29 @@ inline void hal_panel_dcs_service(DispT *disp) {
       PanelTimeoutScheduler::request(static_cast<esphome::Component *>(disp), delay_ms,
                                      [disp]() { hal_panel_dcs_service(disp); });
     };
-    const uint32_t now = hal_millis_now();
-    if (st.want_bri > 0) {
-      if (st.phase == PanelDcsState::ASLEEP) {
-        dcs(0x11);
-        st.slpout_ms = (now != 0) ? now : 1U;
-        st.phase = PanelDcsState::WAKING;
-        service_in(kPanelDcsSlpoutMs);
-        return;
-      }
-      if (st.phase == PanelDcsState::WAKING) {
-        const uint32_t left = panel_dcs_settle_left_ms(now);
-        if (left > 0) {
-          service_in(left);
-          return;
-        }
-        dcs(0x29);
-        st.phase = PanelDcsState::AWAKE;
-        LATTER_PROF_LOGI("[PROF:PANEL] dcs=wake");
-      }
-      apply_hw_bri(st.want_bri);
-      return;
+    const PanelDcsStepResult res = step_panel_dcs_state(st, hal_millis_now());
+    if (res.send_slpout) {
+      dcs(0x11);
+      // MIPI-DCS exit_sleep_mode (0x11): allow >= 5 ms oscillator/charge-pump lock before Frame #1 GRAM writes.
+      esphome::delay(5);
     }
-    if (st.phase == PanelDcsState::ASLEEP) return;
-    apply_hw_bri(0);
-    const uint32_t left = panel_dcs_settle_left_ms(now);
-    if (left > 0) {
-      service_in(left);
-      return;
+    if (res.send_dispon) {
+      dcs(0x29);
+      LATTER_PROF_LOGI("[PROF:PANEL] dcs=wake");
     }
-    if (st.phase == PanelDcsState::AWAKE) dcs(0x28);
-    dcs(0x10);
-    st.phase = PanelDcsState::ASLEEP;
-    LATTER_PROF_LOGI("[PROF:PANEL] dcs=sleep");
+    if (res.apply_hw_bri) {
+      apply_hw_bri(res.hw_bri);
+    }
+    if (res.send_dispoff) {
+      dcs(0x28);
+    }
+    if (res.send_slpin) {
+      dcs(0x10);
+      LATTER_PROF_LOGI("[PROF:PANEL] dcs=sleep");
+    }
+    if (res.rearm_ms > 0U) {
+      service_in(res.rearm_ms);
+    }
   } else {
     static bool warned = false;
     if (!warned) {
@@ -277,6 +324,28 @@ inline void hal_panel_dcs_flush(DispT *disp) {
 template <typename DispT>
 inline void hal_panel_dcs_flush(DispT *const *disp_pp) {
   if (disp_pp != nullptr) hal_panel_dcs_flush(*disp_pp);
+}
+
+// Non-blocking self-healing poll: completes any settled pending DCS transition (e.g. WAKING -> DISPON)
+// without stalling the main loop, guarding against dropped or cancelled Component timeouts.
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void hal_panel_dcs_poll(DispT *disp) {
+#if defined(USE_ESP32) && defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
+  const auto &st = panel_dcs_state();
+  const bool pending = (st.phase == PanelDcsState::WAKING) ||
+                       (st.want_bri == 0 && st.phase != PanelDcsState::ASLEEP);
+  if (pending && disp != nullptr && panel_dcs_settle_left_ms(hal_millis_now()) == 0U) {
+    hal_panel_dcs_service(disp);
+  }
+#else
+  (void)disp;
+#endif
+}
+
+template <typename DispT>
+inline void hal_panel_dcs_poll(DispT *const *disp_pp) {
+  if (disp_pp != nullptr) hal_panel_dcs_poll(*disp_pp);
 }
 
 // Switches FocalTech FT6336/FT3168 touch controllers (0x38) into low-power Period Monitor mode (REG 0x86=0x01)

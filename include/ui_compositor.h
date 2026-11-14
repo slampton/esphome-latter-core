@@ -232,16 +232,24 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active);
 
+// Reserved disp1 Component numeric timeout IDs:
+//   0x4C410001U..0x4C41000FU : UI compositor schedulers (below)
+//   0x4C410010U..0x4C41001FU : HAL panel power & MIPI-DCS SLPOUT/DISPON state machine (include/hal_panel_power.h)
+inline constexpr uint32_t kTimeoutAsyncDrawId = 0x4C410001U;
+inline constexpr uint32_t kTimeoutFbClearId = 0x4C410002U;
+inline constexpr uint32_t kTimeoutWeatherStepId = 0x4C410003U;
+inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
+
 #if __has_include("esphome/core/defines.h")
 
 // ------------------------------------------------------------------------------
 // Display Update Scheduler (ESPHome 2026.11+ numeric timeout IDs)
 // ------------------------------------------------------------------------------
 struct DisplayUpdateScheduler : public esphome::Component {
-  static constexpr uint32_t kTimeoutAsyncDraw = 0x4C410001U;
-  static constexpr uint32_t kTimeoutFbClear = 0x4C410002U;
-  static constexpr uint32_t kTimeoutWeatherStep = 0x4C410003U;
-  static constexpr uint32_t kTimeoutActivityRotate = 0x4C410004U;
+  static constexpr uint32_t kTimeoutAsyncDraw = kTimeoutAsyncDrawId;
+  static constexpr uint32_t kTimeoutFbClear = kTimeoutFbClearId;
+  static constexpr uint32_t kTimeoutWeatherStep = kTimeoutWeatherStepId;
+  static constexpr uint32_t kTimeoutActivityRotate = kTimeoutActivityRotateId;
 
   static inline uint32_t &weather_due_ms_ref() {
     static uint32_t due_ms = 0U;

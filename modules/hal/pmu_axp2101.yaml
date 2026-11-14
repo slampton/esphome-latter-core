@@ -90,10 +90,18 @@ binary_sensor:
             }
             return;
           }
-          if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
+          const uint32_t now_press_ms = millis();
+          const bool dcs_not_awake =
+              latter_ui::panel_dcs_state().phase != latter_ui::PanelDcsState::AWAKE;
+          const bool wake_guard_active =
+              (latter_ui::last_screen_wake_ms() != 0U) &&
+              ((now_press_ms - latter_ui::last_screen_wake_ms()) < 300U);
+          if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on() || dcs_not_awake) {
             latter_ui::pwr_key_wake_consumed() = true;
             latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
             id(wake_to_active_state).execute();
+          } else if (wake_guard_active) {
+            latter_ui::pwr_key_wake_consumed() = true;
           } else {
             latter_ui::pwr_key_wake_consumed() = false;
           }

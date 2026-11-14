@@ -103,9 +103,35 @@ inline constexpr uint32_t pm_wake_bit(PmWakeSlot slot) { return 1UL << static_ca
 constexpr uint32_t kPmQuietLoopIntervalMs = 1000U;
 constexpr uint32_t kPmQuietTouchLoopIntervalMs = 250U;
 
+// Post-GPIO-wake fast-loop grace window: holds the awake lock and active loop interval (~16 ms)
+// for 600 ms after any hardware wake-pin exit from light sleep so 20 ms button debounce filters,
+// capacitive touch I2C scans (including 40..450 ms wearable double-tap), and QMI8658 WoM I2C
+// status reads complete deterministically before returning to quiet sleep if no wake occurred.
+constexpr uint32_t kPmWakeGraceMs = 600U;
+
 inline constexpr uint32_t pm_quiet_loop_interval(uint32_t arm_mask) {
   return (arm_mask & pm_wake_bit(PM_WAKE_TOUCH)) != 0 ? kPmQuietTouchLoopIntervalMs : kPmQuietLoopIntervalMs;
 }
+
+struct PmWakeGraceWindow {
+  uint32_t until_ms = 0U;
+
+  constexpr void arm(uint32_t now_ms, uint32_t duration_ms = kPmWakeGraceMs) {
+    const uint32_t target = now_ms + duration_ms;
+    until_ms = (target == 0U) ? 1U : target;
+  }
+
+  constexpr void clear() { until_ms = 0U; }
+
+  constexpr bool active(uint32_t now_ms) const {
+    return until_ms != 0U && static_cast<int32_t>(until_ms - now_ms) > 0;
+  }
+
+  constexpr uint32_t remaining_ms(uint32_t now_ms) const {
+    if (!active(now_ms)) return 0U;
+    return until_ms - now_ms;
+  }
+};
 
 struct PmCrumbSleep {
   uint32_t t_us;
@@ -155,6 +181,7 @@ extern FlashWriteStats g_flash_write_stats;
 PmCrumb &pm_previous_crumb();
 void pm_init();
 void pm_apply(bool stay_awake, uint32_t wake_mask);
+void pm_poll_loop(uint32_t now_ms);
 void pm_note_imu(bool armed, uint32_t events);
 const char *pm_crash_where();
 bool pm_sleep_stats(PmSleepStats &out, uint32_t now_ms);
@@ -168,6 +195,7 @@ inline PmCrumb &pm_previous_crumb() {
 }
 inline void pm_init() {}
 inline void pm_apply(bool /*stay_awake*/, uint32_t /*wake_mask*/) {}
+inline void pm_poll_loop(uint32_t /*now_ms*/) {}
 inline void pm_note_imu(bool /*armed*/, uint32_t /*events*/) {}
 inline const char *pm_crash_where() { return ""; }
 inline bool pm_sleep_stats(PmSleepStats & /*out*/, uint32_t /*now_ms*/) { return false; }
