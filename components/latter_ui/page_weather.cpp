@@ -453,7 +453,7 @@ void cloud_span(esphome::display::Display &it, uint16_t *fb, int x0, int y, int 
 // raster and the shape cache so both use identical float math). Returns false for an empty column.
 bool cumulus_column_profile(int dx, float inv_hw, float scale, float phase_seed,
                                    int &h_top, int &h_bot, bool &sunlit_slope) {
-  float u = static_cast<float>(dx) * inv_hw; // -1.0 .. +1.0
+  float u = -static_cast<float>(dx) * inv_hw; // +1.0 (left) .. -1.0 (right): lit from upper-left Sun/Moon
   float env = 1.0f - u * u;
   if (env <= 0.02f) return false;
 
@@ -1544,19 +1544,106 @@ inline void draw_tapered_streak_q8(esphome::display::Display &it, uint16_t *fb,
   const int y_lo = clip_y0();
   const int y_hi = clip_y1();
   if (std::max(ty, hy) < y_lo || std::min(ty, hy) > y_hi) return;
+
+  static constexpr int kSkyInset = LATTER_ROUND_DISPLAY ? 5 : 0;
+  const int32_t dx_fp = ((hx - tx) << 16) / steps;
+  const int32_t dy_fp = ((hy - ty) << 16) / steps;
+  const int32_t da_fp = ((a_head_q8 - a_tail_q8) << 16) / steps;
+  const bool same_col = (col_tail.r == col_head.r && col_tail.g == col_head.g && col_tail.b == col_head.b);
+  const int32_t dr_fp = same_col ? 0 : (((static_cast<int>(col_head.r) - col_tail.r) << 16) / steps);
+  const int32_t dg_fp = same_col ? 0 : (((static_cast<int>(col_head.g) - col_tail.g) << 16) / steps);
+  const int32_t db_fp = same_col ? 0 : (((static_cast<int>(col_head.b) - col_tail.b) << 16) / steps);
+
+  int32_t x_fp = (tx << 16) + 0x8000;
+  int32_t y_fp = (ty << 16) + 0x8000;
+  int32_t a_fp = (a_tail_q8 << 16) + 0x8000;
+  int32_t r_fp = (static_cast<int>(col_tail.r) << 16) + 0x8000;
+  int32_t g_fp = (static_cast<int>(col_tail.g) << 16) + 0x8000;
+  int32_t b_fp = (static_cast<int>(col_tail.b) << 16) + 0x8000;
+
   for (int s = 0; s <= steps; s++) {
-    const int py = ty + ((hy - ty) * s) / steps;
-    if (py < y_lo || py > y_hi) continue;
-    const int px = tx + ((hx - tx) * s) / steps;
-    if (!is_inside_bezel(px, py, cy, 6)) continue;
-    const int u256 = (s * 256) / steps;
-    const int a_q8 = a_tail_q8 + (((a_head_q8 - a_tail_q8) * u256) >> 8);
-    if (a_q8 <= 0) continue;
-    const esphome::Color c(
-        static_cast<uint8_t>(col_tail.r + (((static_cast<int>(col_head.r) - col_tail.r) * u256) >> 8)),
-        static_cast<uint8_t>(col_tail.g + (((static_cast<int>(col_head.g) - col_tail.g) * u256) >> 8)),
-        static_cast<uint8_t>(col_tail.b + (((static_cast<int>(col_head.b) - col_tail.b) * u256) >> 8)));
-    blend_sky_pixel_q8(it, fb, px, py, c, a_q8);
+    const int py = y_fp >> 16;
+    const int px = x_fp >> 16;
+    const int a_q8 = a_fp >> 16;
+    if (a_q8 > 0 && py >= y_lo && py <= y_hi && is_inside_bezel(px, py, cy, kSkyInset)) {
+      const esphome::Color c = same_col
+          ? col_head
+          : esphome::Color(static_cast<uint8_t>(r_fp >> 16),
+                           static_cast<uint8_t>(g_fp >> 16),
+                           static_cast<uint8_t>(b_fp >> 16));
+      blend_sky_pixel_q8(it, fb, px, py, c, a_q8);
+    }
+    x_fp += dx_fp;
+    y_fp += dy_fp;
+    a_fp += da_fp;
+    if (!same_col) {
+      r_fp += dr_fp;
+      g_fp += dg_fp;
+      b_fp += db_fp;
+    }
+  }
+}
+
+inline void draw_soft_snowflake_q8(esphome::display::Display &it, uint16_t *fb,
+                                   int sx, int sy, float r_px, int peak_q8,
+                                   bool is_crystal, bool day_contrast,
+                                   esphome::Color c_core, esphome::Color c_arm, int cy) {
+  if (peak_q8 <= 1 || r_px <= 0.4f) return;
+  const float r_bound = is_crystal ? (r_px * 1.28f) : r_px;
+  const int r_i = static_cast<int>(std::ceil(r_bound));
+  const int y_lo = std::max(clip_y0(), sy - r_i);
+  const int y_hi = std::min(clip_y1(), sy + r_i);
+  if (y_lo > y_hi || sx + r_i < 0 || sx - r_i >= SCREEN_W) return;
+
+  static constexpr int kSkyInset = LATTER_ROUND_DISPLAY ? 5 : 0;
+  const float inv_r2 = 1.0f / (r_px * r_px);
+  const float inv_rc2 = 1.0f / (r_bound * r_bound);
+
+  for (int py = y_lo; py <= y_hi; py++) {
+    const int dy = py - sy;
+    const int dy2 = dy * dy;
+    const int x_lo = std::max(0, sx - r_i);
+    const int x_hi = std::min(SCREEN_W - 1, sx + r_i);
+    for (int px = x_lo; px <= x_hi; px++) {
+      if (!is_inside_bezel(px, py, cy, kSkyInset)) continue;
+      const int dx = px - sx;
+      const int d2_i = dx * dx + dy2;
+      const float d2 = static_cast<float>(d2_i) * inv_r2;
+
+      float cov = 0.0f;
+      if (d2 < 1.0f) {
+        const float u = 1.0f - d2;
+        cov = u * (0.42f + 0.58f * u);
+      }
+      if (is_crystal) {
+        const int adx = std::abs(dx);
+        const int ady = std::abs(dy);
+        if (dx == 0 || dy == 0) {
+          const float dc2 = static_cast<float>(d2_i) * inv_rc2;
+          if (dc2 < 1.0f) {
+            const float uc = 1.0f - dc2;
+            cov = std::max(cov, uc * uc * 0.78f);
+          }
+        } else if (adx == ady) {
+          const float dc2 = static_cast<float>(d2_i) * (inv_rc2 * 1.18f);
+          if (dc2 < 1.0f) {
+            const float uc = 1.0f - dc2;
+            cov = std::max(cov, uc * uc * 0.56f);
+          }
+        }
+      }
+      if (cov <= 0.02f) continue;
+
+      if (day_contrast && cov < 0.42f) {
+        const int rim_q8 = static_cast<int>((0.42f - cov) * 58.0f);
+        if (rim_q8 > 1) {
+          blend_sky_pixel_q8(it, fb, px, py, kChromeShadow, rim_q8);
+        }
+      }
+      const int a_q8 = std::min(256, static_cast<int>(static_cast<float>(peak_q8) * cov));
+      if (a_q8 <= 1) continue;
+      blend_sky_pixel_q8(it, fb, px, py, (cov >= 0.52f) ? c_core : c_arm, a_q8);
+    }
   }
 }
 
@@ -1576,6 +1663,7 @@ void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
                           cond.find("partlysunny") != std::string::npos);
   const bool is_storm = (cond.find("lightning") != std::string::npos ||
                          cond.find("thunder") != std::string::npos);
+  const bool is_pouring_precip = (cond == "pouring" || cond.find("heavy") != std::string::npos);
   const bool is_rain_precip = (cond.find("rain") != std::string::npos ||
                                cond.find("pouring") != std::string::npos ||
                                cond.find("drizzle") != std::string::npos);
@@ -1616,6 +1704,11 @@ void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
       c_zen = esphome::Color(14, 24, 38);
       c_mid = esphome::Color(20, 33, 50);
       c_hor = esphome::Color(28, 44, 65);
+      if (is_pouring_precip || is_storm) {
+        c_zen = scale_color(c_zen, 0.76f);
+        c_mid = scale_color(c_mid, 0.76f);
+        c_hor = scale_color(c_hor, 0.78f);
+      }
     } else if (is_overcast_canopy) {
       c_zen = esphome::Color(18, 32, 50);
       c_mid = esphome::Color(25, 42, 63);
@@ -1710,9 +1803,6 @@ void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
     if (is_night) {
       const int m_r = LATTER_ROUND_DISPLAY ? 24 : scale_min(30);
       render_lunar_disc(it, cel_cx, cel_cy, m_r, moon_cycle);
-      if (is_fog_mist || is_overcast_canopy) {
-        fast_circle(it, cel_cx, cel_cy, m_r + 3, esphome::Color(48, 62, 80));
-      }
     } else {
       const bool show_sun = (is_clear_day || is_partly || is_windy);
       if (show_sun || is_fog_mist) {
@@ -1788,15 +1878,20 @@ void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
     render_cumulus_cloud(it, static_cast<int>(342.0f * w_scale), 118, 0.98f, true, is_night, 5);
     render_cumulus_cloud(it, static_cast<int>(112.0f * w_scale), 188, 0.88f, true, is_night, 6);
   } else if (is_overcast_canopy) {
-    const esphome::Color c_wisp_crest =
+    esphome::Color c_wisp_crest =
         is_night ? esphome::Color(70, 90, 116)
                  : (is_rain_precip ? esphome::Color(106, 132, 162) : esphome::Color(134, 162, 192));
-    const esphome::Color c_wisp_body =
+    esphome::Color c_wisp_body =
         is_night ? esphome::Color(44, 60, 80)
                  : (is_rain_precip ? esphome::Color(72, 94, 120) : esphome::Color(92, 118, 146));
-    const esphome::Color c_wisp_base =
+    esphome::Color c_wisp_base =
         is_night ? esphome::Color(26, 36, 50)
                  : (is_rain_precip ? esphome::Color(44, 60, 82) : esphome::Color(56, 76, 100));
+    if (!is_night && is_pouring_precip) {
+      c_wisp_crest = scale_color(c_wisp_crest, 0.82f);
+      c_wisp_body  = scale_color(c_wisp_body,  0.82f);
+      c_wisp_base  = scale_color(c_wisp_base,  0.80f);
+    }
 
     render_cumulus_cloud(it, static_cast<int>(178.0f * w_scale),  86, 1.12f, true, is_night, 0);
     render_cumulus_cloud(it, static_cast<int>(340.0f * w_scale), 122, 1.06f, true, is_night, 1);
@@ -1835,6 +1930,70 @@ void bake_static_sky_base(esphome::display::Display &it, int cx, int cy,
   }
 }
 
+enum class RainTier : uint8_t {
+  Drizzle = 0,
+  Normal = 1,
+  Storm = 2,
+  Pouring = 3,
+};
+
+RainTier classify_rain_tier(std::string_view cond, bool is_storm) noexcept {
+  if (cond.find("drizzle") != std::string_view::npos) return RainTier::Drizzle;
+  if (cond == "pouring" || cond.find("heavy") != std::string_view::npos) return RainTier::Pouring;
+  if (is_storm) return RainTier::Storm;
+  return RainTier::Normal;
+}
+
+constexpr int rain_far_count(RainTier tier) noexcept {
+  switch (tier) {
+    case RainTier::Drizzle: return 20;
+    case RainTier::Normal:  return 36;
+    case RainTier::Storm:   return 48;
+    case RainTier::Pouring: return 56;
+  }
+  return 36;
+}
+
+constexpr int rain_near_count(RainTier tier) noexcept {
+  switch (tier) {
+    case RainTier::Drizzle: return 18;
+    case RainTier::Normal:  return 38;
+    case RainTier::Storm:   return 52;
+    case RainTier::Pouring: return 64;
+  }
+  return 38;
+}
+
+constexpr float rain_slant_for_tier(RainTier tier) noexcept {
+  switch (tier) {
+    case RainTier::Drizzle: return 0.08f;
+    case RainTier::Normal:  return 0.12f;
+    case RainTier::Storm:   return 0.18f;
+    case RainTier::Pouring: return 0.21f;
+  }
+  return 0.12f;
+}
+
+constexpr int gcd_int(int a, int b) noexcept {
+  while (b != 0) {
+    const int t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
+constexpr int coprime_lane_stride(int n) noexcept {
+  if (n <= 2) return 1;
+  int s = (n * 382) / 1000;
+  if (s < 1) s = 1;
+  while (gcd_int(s, n) != 1) {
+    s++;
+    if (s >= n) s = 1;
+  }
+  return s;
+}
+
 struct RainStreak {
   float x = 0.0f;
   float y = 0.0f;
@@ -1852,9 +2011,9 @@ struct LightningFlashState {
 };
 
 struct WeatherParticleEngine {
-  static constexpr int kFarVeilCount = 26;
-  static constexpr int kNearHeroCount = 30;
-  static constexpr int kSnowCount = 40;
+  static constexpr int kFarVeilCount = 56;
+  static constexpr int kNearHeroCount = 64;
+  static constexpr int kSnowCount = 64;
   static constexpr int kLeafCount = 10;
 
   bool inited = false;
@@ -1876,59 +2035,138 @@ WeatherParticleEngine &particle_engine() {
   return eng;
 }
 
-void spawn_rain_streak(RainStreak &st, int idx, int total_lanes, bool is_hero,
-                       bool is_heavy, float slant, bool initial_spread) {
+void spawn_rain_streak(RainStreak *pool, int active_cnt, int idx, bool is_hero,
+                       RainTier tier, float slant, bool initial_spread) {
+  RainStreak &st = pool[idx];
+  const float w_scale = static_cast<float>(SCREEN_W) * (1.0f / 466.0f);
   const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
   const int seed = static_cast<int>(st.pass_seq * 61U + static_cast<uint32_t>(idx) * 97U + (is_hero ? 503U : 17U));
   const float u_spd = hash2d_01(seed, 13);
   const float u_len = hash2d_01(seed, 29);
-  const float u_x   = hash2d_01(seed, 43);
   const float u_alf = hash2d_01(seed, 59);
 
   if (is_hero) {
-    // Near hero streaks: 160-220 px/s (scale_y-normalized) with 45-65 px (scale_y) head-to-tail taper
-    // -> guarantees >= 45% spatial overlap at 12.5 FPS (80 ms).
-    st.vy = (160.0f + u_spd * 60.0f) * h_scale;
-    st.len = (45.0f + u_len * 20.0f) * h_scale;
-    st.alpha_peak = static_cast<uint8_t>((is_heavy ? 132.0f : 112.0f) + u_alf * 36.0f);
+    switch (tier) {
+      case RainTier::Drizzle:
+        st.vy = (285.0f + u_spd * 45.0f) * h_scale;
+        st.len = (38.0f + u_len * 14.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(138.0f + u_alf * 30.0f);
+        break;
+      case RainTier::Normal:
+        st.vy = (372.0f + u_spd * 58.0f) * h_scale;
+        st.len = (46.0f + u_len * 18.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(168.0f + u_alf * 36.0f);
+        break;
+      case RainTier::Storm:
+        st.vy = (475.0f + u_spd * 70.0f) * h_scale;
+        st.len = (50.0f + u_len * 18.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(188.0f + u_alf * 38.0f);
+        break;
+      case RainTier::Pouring:
+        st.vy = (525.0f + u_spd * 80.0f) * h_scale;
+        st.len = (52.0f + u_len * 18.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(202.0f + u_alf * 40.0f);
+        break;
+    }
   } else {
-    // Far misty veil: slower 90-140 px/s (scale_y-normalized), soft low-alpha 25-38 Q8 streaks.
-    st.vy = (90.0f + u_spd * 50.0f) * h_scale;
-    st.len = (28.0f + u_len * 14.0f) * h_scale;
-    st.alpha_peak = static_cast<uint8_t>(25.0f + u_alf * 13.0f);
+    switch (tier) {
+      case RainTier::Drizzle:
+        st.vy = (185.0f + u_spd * 35.0f) * h_scale;
+        st.len = (26.0f + u_len * 10.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(42.0f + u_alf * 16.0f);
+        break;
+      case RainTier::Normal:
+        st.vy = (235.0f + u_spd * 45.0f) * h_scale;
+        st.len = (32.0f + u_len * 12.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(56.0f + u_alf * 22.0f);
+        break;
+      case RainTier::Storm:
+        st.vy = (310.0f + u_spd * 55.0f) * h_scale;
+        st.len = (36.0f + u_len * 14.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(68.0f + u_alf * 28.0f);
+        break;
+      case RainTier::Pouring:
+        st.vy = (345.0f + u_spd * 60.0f) * h_scale;
+        st.len = (38.0f + u_len * 16.0f) * h_scale;
+        st.alpha_peak = static_cast<uint8_t>(78.0f + u_alf * 32.0f);
+        break;
+    }
   }
 
-  const float max_y = static_cast<float>(SCREEN_H) + st.len;
-  const float drift_w = max_y * slant;
-  const int lane = (idx * 5 + static_cast<int>(st.pass_seq * 3U)) % std::max(1, total_lanes);
-  const float lane_w = (static_cast<float>(SCREEN_W - 16) + drift_w) / static_cast<float>(std::max(1, total_lanes));
-  const float x_top = 8.0f + (static_cast<float>(lane) + 0.10f + u_x * 0.80f) * lane_w;
+  // Full-count coprime lane stratification + 6-candidate 2D cross-track & mid-transit
+  // separation scoring so streaks never pile up into 2-5 drop clumps.
+  const int lanes = std::max(1, active_cnt);
+  const int stride = coprime_lane_stride(lanes);
+  const int cand_step = std::max(1, lanes / 6);
+  const float span_x = static_cast<float>(std::max(32, SCREEN_W - 8)) + static_cast<float>(SCREEN_H) * slant;
+  const float lane_w = span_x / static_cast<float>(lanes);
+  const float inv_rx = 1.0f / std::max(6.0f, (is_hero ? 18.0f : 14.0f) * w_scale);
+  const float inv_ry = 1.0f / std::max(24.0f, st.len * 1.65f);
+  const float t_look = (static_cast<float>(SCREEN_H) * 0.45f) / std::max(60.0f, st.vy);
+  const int peer_limit = initial_spread ? idx : active_cnt;
 
-  if (initial_spread) {
-    const float init_u = std::fmod(static_cast<float>(idx) * 0.61803399f + u_alf * 0.21f, 1.0f);
-    st.y = -st.len + init_u * (static_cast<float>(SCREEN_H) + st.len);
-    st.x = x_top - (st.y + st.len) * slant;
-  } else {
-    st.y = -4.0f - u_alf * st.len * 0.5f;
-    st.x = x_top;
+  float best_cross = 4.0f;
+  float best_y = -st.len;
+  float best_score = -1.0f;
+
+  for (int k = 0; k < 6; k++) {
+    const int k_seed = seed + k * 131;
+    const int lane = (idx * stride + static_cast<int>(st.pass_seq) * 11 + k * cand_step) % lanes;
+    const float jx = hash2d_01(k_seed, 43);
+    const float jy = hash2d_01(k_seed, 71);
+    const float cross_c = 4.0f + (static_cast<float>(lane) + 0.12f + jx * 0.76f) * lane_w;
+    float y_cand = 0.0f;
+    if (initial_spread) {
+      const float init_u = std::fmod(
+          static_cast<float>(idx) * 0.61803399f + static_cast<float>(k) * 0.1666667f + jy * 0.09f, 1.0f);
+      y_cand = -st.len + init_u * (static_cast<float>(SCREEN_H) + st.len);
+    } else {
+      y_cand = -4.0f - (static_cast<float>(k) * 0.16f + jy * 0.24f) * (st.len * 1.45f + 28.0f * h_scale);
+    }
+
+    float min_d2 = 1.0e9f;
+    for (int j = 0; j < peer_limit; j++) {
+      if (j == idx) continue;
+      const RainStreak &o = pool[j];
+      const float cross_o = o.x + o.y * slant;
+      const float dc = (cross_c - cross_o) * inv_rx;
+      const float dc2 = dc * dc;
+      if (dc2 >= min_d2) continue;
+      const float dy0 = (y_cand - o.y) * inv_ry;
+      const float dy_mid = ((y_cand + st.vy * t_look) - (o.y + o.vy * t_look)) * inv_ry;
+      const float pair_d2 = dc2 + std::min(dy0 * dy0, dy_mid * dy_mid);
+      if (pair_d2 < min_d2) min_d2 = pair_d2;
+    }
+    if (min_d2 > best_score) {
+      best_score = min_d2;
+      best_cross = cross_c;
+      best_y = y_cand;
+    }
   }
+
+  st.y = best_y;
+  st.x = best_cross - best_y * slant;
 }
 
-void init_particle_engine(WeatherParticleEngine &eng, uint32_t cond_hash, bool is_heavy, float slant) {
+void init_particle_engine(WeatherParticleEngine &eng, uint32_t cond_hash, RainTier tier, float slant) {
   eng.inited = true;
   eng.cond_hash = cond_hash;
-  for (int i = 0; i < WeatherParticleEngine::kFarVeilCount; i++) {
+  const int far_cnt = rain_far_count(tier);
+  const int near_cnt = rain_near_count(tier);
+  for (int i = 0; i < far_cnt; i++) {
     eng.far_veil[i].pass_seq = 0U;
-    spawn_rain_streak(eng.far_veil[i], i, 13, false, is_heavy, slant, true);
+    spawn_rain_streak(eng.far_veil, far_cnt, i, false, tier, slant, true);
   }
-  for (int i = 0; i < WeatherParticleEngine::kNearHeroCount; i++) {
+  for (int i = 0; i < near_cnt; i++) {
     eng.near_hero[i].pass_seq = 0U;
-    spawn_rain_streak(eng.near_hero[i], i, 15, true, is_heavy, slant, true);
+    spawn_rain_streak(eng.near_hero, near_cnt, i, true, tier, slant, true);
   }
-  const float cycle_h = static_cast<float>(std::max(40, SCREEN_H - 20));
+  const float flake_scale = std::max(1.0f, static_cast<float>(std::min(SCREEN_W, SCREEN_H)) * (1.0f / 420.0f));
+  const float margin_y = 10.0f * flake_scale;
+  const float cycle_h = static_cast<float>(SCREEN_H) + 2.0f * margin_y;
   for (int i = 0; i < WeatherParticleEngine::kSnowCount; i++) {
     eng.snow_pass[i] = 0U;
-    eng.snow_y[i] = std::fmod(static_cast<float>(i) * 0.381966f, 1.0f) * cycle_h;
+    eng.snow_y[i] = std::fmod(static_cast<float>(i) * 0.61803399f + 0.13f, 1.0f) * cycle_h;
   }
   for (int i = 0; i < WeatherParticleEngine::kLeafCount; i++) {
     eng.leaf_x[i] = hash2d_01(i, 7) * 480.0f - 240.0f;
@@ -2083,19 +2321,19 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
                         cond.find("pouring") != std::string::npos ||
                         cond.find("drizzle") != std::string::npos ||
                         is_storm);
-  const bool is_heavy_rain = (cond == "pouring" || cond.find("heavy") != std::string::npos || is_storm);
+  const RainTier rain_tier = classify_rain_tier(cond, is_storm);
   const bool is_snow = (cond.find("snow") != std::string::npos ||
                         cond.find("sleet") != std::string::npos ||
                         cond.find("hail") != std::string::npos);
   const bool is_clear_or_partly_night =
       (is_night && (cond == "clear-night" || cond == "clearnight" ||
                     cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
-  const float rain_slant = is_heavy_rain ? 0.16f : 0.11f;
+  const float rain_slant = rain_slant_for_tier(rain_tier);
 
   auto &eng = particle_engine();
   float dt_s = 0.0f;
   if (!eng.inited || eng.cond_hash != cond_hash) {
-    init_particle_engine(eng, cond_hash, is_heavy_rain, rain_slant);
+    init_particle_engine(eng, cond_hash, rain_tier, rain_slant);
     eng.last_step_ms = now_ms;
     dt_s = 0.0f;
   } else if (now_ms != eng.last_step_ms) {
@@ -2187,22 +2425,30 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
         lt.active = false;
       } else {
         const float env = std::exp(-static_cast<float>(el_ms) * (1.0f / 56.0f)) * precip_alpha;
-        const int sheet_q8 = static_cast<int>(env * 66.0f);
-        if (sheet_q8 > 1 && fb != nullptr) {
+        const int sheet_q8 = static_cast<int>(env * 72.0f);
+        if (sheet_q8 > 0 && fb != nullptr) {
+          static constexpr uint8_t kFlashBayer4[4][4] = {
+              {  0, 128,  32, 160},
+              {192,  64, 224,  96},
+              { 48, 176,  16, 144},
+              {240, 112, 208,  80},
+          };
+          static constexpr int kFlashInset = LATTER_ROUND_DISPLAY ? 5 : 0;
           const uint16_t wash_rgb = ((190 >> 3) << 11) | ((220 >> 2) << 5) | (255 >> 3);
           const int sr = (wash_rgb >> 11) & 0x1F;
           const int sg = (wash_rgb >> 5) & 0x3F;
           const int sb = wash_rgb & 0x1F;
-          const int y_lo = std::max(5, clip_y0());
-          const int y_hi = std::min(scale_y(320), std::min(SCREEN_H - 6, clip_y1()));
-          const int span_h = std::max(1, scale_y(320) - 5);
+          const int y_lo = std::max(kFlashInset, clip_y0());
+          const int y_hi = std::min(SCREEN_H - 1 - kFlashInset, clip_y1());
+          const int span_h = std::max(1, SCREEN_H - 1 - 2 * kFlashInset);
           for (int py = y_lo; py <= y_hi; py++) {
-            const int falloff_q8 = 256 - (((py - 5) * 180) / span_h);
+            const int falloff_q8 = 256 - (((py - kFlashInset) * 152) / span_h);
             const int a = (sheet_q8 * std::max(0, falloff_q8)) >> 8;
-            if (a <= 1) continue;
+            if (a <= 0) continue;
             const int inv = 256 - a;
+            const uint8_t *bayer_row = kFlashBayer4[py & 3];
 #if LATTER_ROUND_DISPLAY
-            const int hw = circle_half_span(py, 6);
+            const int hw = circle_half_span(py, 5);
             if (hw <= 0) continue;
             const int x0 = std::max(0, cx - hw);
             const int x1 = std::min(SCREEN_W - 1, cx + hw);
@@ -2216,9 +2462,10 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
               const int dr = (dst >> 11) & 0x1F;
               const int dg = (dst >> 5) & 0x3F;
               const int db = dst & 0x1F;
-              const uint16_t out = static_cast<uint16_t>((((sr * a + dr * inv) >> 8) << 11) |
-                                                         (((sg * a + dg * inv) >> 8) << 5) |
-                                                         ((sb * a + db * inv) >> 8));
+              const int d = bayer_row[px & 3];
+              const uint16_t out = static_cast<uint16_t>((((sr * a + dr * inv + d) >> 8) << 11) |
+                                                         (((sg * a + dg * inv + d) >> 8) << 5) |
+                                                         ((sb * a + db * inv + d) >> 8));
               row[px] = encode_hw_rgb565_raw(out);
             }
           }
@@ -2236,7 +2483,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
           const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 52.0f * w_scale);
           const int y3 = scale_y(208);
           const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 46.0f * w_scale);
-          const int y4 = scale_y(266);
+          const int y4 = scale_y(274);
 
           const int core_q8 = std::clamp(static_cast<int>(env * 250.0f), 0, 256);
           const int fork_q8 = std::clamp(static_cast<int>(env * 165.0f), 0, 256);
@@ -2245,13 +2492,13 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
           draw_tapered_streak_q8(it, fb, x0, y0, x1, y1, c_core, c_core, core_q8, core_q8, cy);
           draw_tapered_streak_q8(it, fb, x1, y1, x2, y2, c_core, c_core, core_q8, core_q8, cy);
           draw_tapered_streak_q8(it, fb, x2, y2, x3, y3, c_core, c_core, core_q8, core_q8, cy);
-          draw_tapered_streak_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, fork_q8, cy);
+          draw_tapered_streak_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, 0, cy);
 
           const int f1_dir = (x2 >= x1) ? 1 : -1;
           const int fx1 = x1 + f1_dir * scale_x(26), fy1 = y1 + scale_y(26);
-          const int fx2 = fx1 + f1_dir * scale_x(16), fy2 = fy1 + scale_y(26);
+          const int fx2 = fx1 + f1_dir * scale_x(18), fy2 = fy1 + scale_y(28);
           draw_tapered_streak_q8(it, fb, x1, y1, fx1, fy1, c_fork, c_fork, fork_q8, fork_q8 / 2, cy);
-          draw_tapered_streak_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, fork_q8 / 2, fork_q8 / 4, cy);
+          draw_tapered_streak_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, fork_q8 / 2, 0, cy);
         }
       }
     }
@@ -2320,66 +2567,75 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     }
   }
 
-  // 2E. 2-Layer Depth-of-Field Rain (Far Misty Veil + Near Hero Streaks)
+  // 2E. Calibrated 3-Tier 2-Layer Depth-of-Field Rain (Far Misty Veil + Near Hero Streaks)
   if (is_rain) {
-    const bool is_drizzle = (cond.find("drizzle") != std::string::npos);
-    const int far_cnt = is_drizzle ? 18 : WeatherParticleEngine::kFarVeilCount;
-    const int near_cnt = is_drizzle ? 14 : (is_heavy_rain ? WeatherParticleEngine::kNearHeroCount : 22);
+    const int far_cnt = rain_far_count(rain_tier);
+    const int near_cnt = rain_near_count(rain_tier);
 
     const esphome::Color far_col  = is_night ? esphome::Color(126, 166, 214) : esphome::Color(156, 196, 238);
     const esphome::Color near_tail= is_night ? esphome::Color(112, 158, 212) : esphome::Color(142, 188, 236);
     const esphome::Color near_head= is_night ? esphome::Color(204, 234, 255) : esphome::Color(228, 246, 255);
+    const float hero_tail_base =
+        (rain_tier == RainTier::Pouring) ? 34.0f
+        : (rain_tier == RainTier::Storm) ? 28.0f
+        : (rain_tier == RainTier::Drizzle) ? 18.0f
+        : 24.0f;
 
-    // Layer 1: Far misty veil (90-140 px/s, soft low-alpha ~25-38 Q8 streaks)
+    // Layer 1: Far atmospheric rain veil
     for (int i = 0; i < far_cnt; i++) {
       RainStreak &st = eng.far_veil[i];
       st.y += st.vy * dt_s;
       st.x -= st.vy * rain_slant * dt_s;
-      if (st.y - st.len > static_cast<float>(SCREEN_H - 6)) {
+      if (st.y - st.len > static_cast<float>(SCREEN_H + 2)) {
         st.pass_seq++;
-        spawn_rain_streak(st, i, 13, false, is_heavy_rain, rain_slant, false);
+        spawn_rain_streak(eng.far_veil, far_cnt, i, false, rain_tier, rain_slant, false);
       }
       const int hx = static_cast<int>(st.x + par_x * 0.25f);
       const int hy = static_cast<int>(st.y + par_y * 0.25f);
       const int tx = hx + static_cast<int>(st.len * rain_slant);
       const int ty = hy - static_cast<int>(st.len);
       const int a_head = static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha);
-      const int a_tail = static_cast<int>(static_cast<float>(st.alpha_peak) * 0.32f * precip_alpha);
+      const int a_tail = static_cast<int>(static_cast<float>(st.alpha_peak) * 0.34f * precip_alpha);
       draw_tapered_streak_q8(it, fb, tx, ty, hx, hy, far_col, far_col, a_tail, a_head, cy);
     }
 
-    // Layer 2: Near hero streaks (160-220 px/s, 45-65 px head-to-tail alpha taper -> >= 45% overlap at 12.5 FPS)
+    // Layer 2: Near hero raindrops (clump-free stratified lanes + 16.16 DDA tapered streaks)
     for (int i = 0; i < near_cnt; i++) {
       RainStreak &st = eng.near_hero[i];
       st.y += st.vy * dt_s;
       st.x -= st.vy * rain_slant * dt_s;
-      if (st.y - st.len > static_cast<float>(SCREEN_H - 4)) {
+      if (st.y - st.len > static_cast<float>(SCREEN_H + 2)) {
         st.pass_seq++;
-        spawn_rain_streak(st, i, 15, true, is_heavy_rain, rain_slant, false);
+        spawn_rain_streak(eng.near_hero, near_cnt, i, true, rain_tier, rain_slant, false);
       }
       const int hx = static_cast<int>(st.x + par_x * 0.72f);
       const int hy = static_cast<int>(st.y + par_y * 0.72f);
       const int tx = hx + static_cast<int>(st.len * rain_slant);
       const int ty = hy - static_cast<int>(st.len);
       const int a_head = static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha);
-      const int a_tail = static_cast<int>(10.0f * precip_alpha);
+      const int a_tail = static_cast<int>(hero_tail_base * precip_alpha);
       draw_tapered_streak_q8(it, fb, tx, ty, hx, hy, near_tail, near_head, a_tail, a_head, cy);
     }
   }
 
-  // 2F. Helical Snowfall (monotonic dt_s integration + Q8 alpha modulation)
+  // 2F. Resolution-Scaled Helical Snowfall (64 soft anti-aliased flakes across 3 depth tiers)
   if (is_snow) {
     const esphome::Color c_core(255, 255, 255);
     const esphome::Color c_arm  = is_night ? esphome::Color(215, 235, 255) : esphome::Color(230, 245, 255);
     const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
-    const float cycle_h = static_cast<float>(std::max(40, SCREEN_H - 20));
-    const int snow_span_w = std::max(24, SCREEN_W - 24);
+    const float flake_scale = std::max(1.0f, static_cast<float>(std::min(SCREEN_W, SCREEN_H)) * (1.0f / 420.0f));
+    const float margin_y = 10.0f * flake_scale;
+    const float cycle_h = static_cast<float>(SCREEN_H) + 2.0f * margin_y;
+    const int margin_x = static_cast<int>(std::ceil(8.0f * flake_scale));
+    const int snow_span_w = std::max(32, SCREEN_W + 2 * margin_x);
+    const bool day_contrast = !is_night;
 
     for (int i = 0; i < WeatherParticleEngine::kSnowCount; i++) {
-      const int perm_i = (i * 13 + 5) % WeatherParticleEngine::kSnowCount;
-      const float depth_u = static_cast<float>(i % 5) * 0.25f;
+      const int perm_i = (i * 23 + 7) % WeatherParticleEngine::kSnowCount;
+      const int tier_mod = i % 10;
+      const float depth_u = (tier_mod >= 7) ? 0.96f : ((tier_mod >= 3) ? 0.56f : 0.18f);
       const float depth_par = 0.28f + 0.65f * depth_u;
-      const float spd_y = (28.0f + depth_u * 18.0f + hash2d_01(perm_i * 19 + 3, 23) * 16.0f) * h_scale;
+      const float spd_y = (30.0f + depth_u * 22.0f + hash2d_01(perm_i * 19 + 3, 23) * 14.0f) * h_scale;
 
       eng.snow_y[i] += spd_y * dt_s;
       if (eng.snow_y[i] >= cycle_h) {
@@ -2389,41 +2645,31 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
 
       const int pass_seed = static_cast<int>(eng.snow_pass[i] * 43U + static_cast<uint32_t>(i) * 97U);
       const float rx_u  = hash2d_01(pass_seed, 13);
+      const float r_jit = hash2d_01(pass_seed, 29);
       const float phase = hash2d_01(pass_seed, 41) * (2.0f * PI_F);
-      const float base_lane = (static_cast<float>(perm_i) + (rx_u - 0.5f) * 2.5f) * (1.0f / 40.0f);
-      const float swirl_ang = eng.phase_s * (1.15f + 0.35f * depth_u) + phase;
-      int sx = 12 + static_cast<int>(base_lane * static_cast<float>(snow_span_w) +
-                                     fast_sin(swirl_ang) * (7.0f + 5.0f * depth_u) + par_x * depth_par);
-      const int sy = 12 + static_cast<int>(eng.snow_y[i] + par_y * depth_par);
-      while (sx < 10) sx += snow_span_w;
-      while (sx > SCREEN_W - 10) sx -= snow_span_w;
-      if (!is_inside_bezel(sx, sy, cy, 6)) continue;
+      const float base_lane =
+          (static_cast<float>(perm_i) + 0.15f + rx_u * 0.70f) *
+          (1.0f / static_cast<float>(WeatherParticleEngine::kSnowCount));
+      const float swirl_ang = eng.phase_s * (1.10f + 0.35f * depth_u) + phase;
+      const float swirl_px = fast_sin(swirl_ang) * (7.5f + 5.5f * depth_u) * flake_scale;
+      int sx = -margin_x + static_cast<int>(base_lane * static_cast<float>(snow_span_w) +
+                                            swirl_px + par_x * depth_par);
+      const int sy = static_cast<int>(eng.snow_y[i] - margin_y + par_y * depth_par);
+      while (sx < -margin_x) sx += snow_span_w;
+      while (sx >= SCREEN_W + margin_x) sx -= snow_span_w;
 
-      if (depth_u >= 0.85f) {
-        const int a_hi  = static_cast<int>(236.0f * precip_alpha);
-        const int a_mid = static_cast<int>(168.0f * precip_alpha);
-        const int a_tip = static_cast<int>(108.0f * precip_alpha);
-        blend_sky_pixel_q8(it, fb, sx, sy, c_core, a_hi);
-        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_mid);
-        blend_sky_pixel_q8(it, fb, sx - 1, sy, c_arm, a_mid);
-        blend_sky_pixel_q8(it, fb, sx, sy + 1, c_arm, a_mid);
-        blend_sky_pixel_q8(it, fb, sx, sy - 1, c_arm, a_mid);
-        blend_sky_pixel_q8(it, fb, sx + 2, sy, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx - 2, sy, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx, sy + 2, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx, sy - 2, c_arm, a_tip);
-      } else if (depth_u >= 0.45f) {
-        const int a_hi  = static_cast<int>(210.0f * precip_alpha);
-        const int a_tip = static_cast<int>(126.0f * precip_alpha);
-        blend_sky_pixel_q8(it, fb, sx, sy, c_core, a_hi);
-        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx - 1, sy, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx, sy + 1, c_arm, a_tip);
-        blend_sky_pixel_q8(it, fb, sx, sy - 1, c_arm, a_tip);
+      if (tier_mod >= 7) {
+        const float r_px = (3.15f + r_jit * 0.55f) * flake_scale;
+        const int peak_q8 = static_cast<int>(255.0f * precip_alpha);
+        draw_soft_snowflake_q8(it, fb, sx, sy, r_px, peak_q8, true, day_contrast, c_core, c_arm, cy);
+      } else if (tier_mod >= 3) {
+        const float r_px = (2.25f + r_jit * 0.45f) * flake_scale;
+        const int peak_q8 = static_cast<int>(242.0f * precip_alpha);
+        draw_soft_snowflake_q8(it, fb, sx, sy, r_px, peak_q8, false, day_contrast, c_core, c_arm, cy);
       } else {
-        const int a_far = static_cast<int>((125.0f + 45.0f * depth_u) * precip_alpha);
-        blend_sky_pixel_q8(it, fb, sx, sy, c_arm, a_far);
-        blend_sky_pixel_q8(it, fb, sx + 1, sy, c_arm, a_far / 2);
+        const float r_px = (1.55f + r_jit * 0.30f) * flake_scale;
+        const int peak_q8 = static_cast<int>(212.0f * precip_alpha);
+        draw_soft_snowflake_q8(it, fb, sx, sy, r_px, peak_q8, false, false, c_core, c_arm, cy);
       }
     }
   }

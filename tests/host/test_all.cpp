@@ -1051,7 +1051,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111501L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111502L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3309,6 +3309,16 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(tools_src.find("ToolsSubpage::INTERCOM") == std::string::npos);
   LATTER_CHECK(tools_src.find("tools_launcher_page_count(") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-046:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-047:") != std::string::npos);
+
+  const std::string wx_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  LATTER_CHECK(wx_src.find("m_r + 3") == std::string::npos);
+  LATTER_CHECK(wx_src.find("scale_y(320)") == std::string::npos);
+  LATTER_CHECK(wx_src.find("float u = -static_cast<float>(dx) * inv_hw;") != std::string::npos);
+  LATTER_CHECK(wx_src.find("enum class RainTier") != std::string::npos);
+  LATTER_CHECK(wx_src.find("coprime_lane_stride(") != std::string::npos);
+  LATTER_CHECK(wx_src.find("draw_soft_snowflake_q8(") != std::string::npos);
+  LATTER_CHECK(wx_src.find("kSnowCount = 64") != std::string::npos);
 }
 
 }  // namespace
