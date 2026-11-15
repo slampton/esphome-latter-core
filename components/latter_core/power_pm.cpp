@@ -45,17 +45,20 @@
 #include "esphome/components/esp32/crash_handler.h"
 #endif
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && defined(CONFIG_PM_ENABLE)
+#error "ESP32-P4 must not enable esp32_power_management (40 MHz XTAL DFS retunes 200 MHz PSRAM across esp_hosted SDIO DMA; use fixed CPLL + quiet-loop pacing)"
+#endif
+
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
 #define LATTER_PM_AUTO_SLEEP 1
 #else
 #define LATTER_PM_AUTO_SLEEP 0
 #endif
 
-#if defined(CONFIG_PM_ENABLE) && !defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE) && \
-    defined(CONFIG_IDF_TARGET_ESP32P4) && LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
-#define LATTER_PM_DFS_ONLY 1
+#if !LATTER_PM_AUTO_SLEEP && defined(CONFIG_IDF_TARGET_ESP32P4) && LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
+#define LATTER_PM_QUIET_LOOP_ONLY 1
 #else
-#define LATTER_PM_DFS_ONLY 0
+#define LATTER_PM_QUIET_LOOP_ONLY 0
 #endif
 
 #if LATTER_PM_AUTO_SLEEP
@@ -221,7 +224,7 @@ void start_stall_guard() {
   g_stall_loop_task = xTaskGetCurrentTaskHandle();
 #if LATTER_HAS_STATIC_TASK
   static esphome::StaticTask s_stall_task;
-#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)
+#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) && !defined(CONFIG_IDF_TARGET_ESP32P4)
   g.started = s_stall_task.create(stall_guard_task, "latter_stall", 3072, nullptr, 15, /*use_psram=*/true);
 #endif
   if (!g.started) {
@@ -300,7 +303,7 @@ bool firmware_rolled_back() {
 }
 
 // ------------------------------------------------------------------------------
-// Automatic Light Sleep (S3 Battery Boards) & 40 MHz DFS (P4 Battery Boards)
+// Automatic Light Sleep (S3 Battery Boards) & Quiet-Loop Pacing (P4 Battery Boards)
 // ------------------------------------------------------------------------------
 #if LATTER_PM_AUTO_SLEEP
 constexpr esp_pm_lock_type_t kPmAwakeLockType = ESP_PM_CPU_FREQ_MAX;
@@ -567,9 +570,9 @@ static inline void pm_keep_raw_outputs_driven() {
 }
 #endif  // LATTER_PM_AUTO_SLEEP
 
-#if LATTER_PM_DFS_ONLY
-static esp_pm_lock_handle_t s_p4_dfs_lock = nullptr;
-static bool s_p4_dfs_awake = true;
+#if LATTER_PM_QUIET_LOOP_ONLY
+static bool s_p4_quiet_inited = false;
+static bool s_p4_quiet_awake = true;
 static uint32_t s_p4_loop_interval_awake = 16U;
 #endif
 
@@ -652,19 +655,16 @@ void pm_init() {
            st.pins[PM_WAKE_PWR_KEY].gpio, st.pins[PM_WAKE_ACTION_BTN].gpio, st.pins[PM_WAKE_TOUCH].gpio,
            st.pins[PM_WAKE_IMU].gpio, static_cast<unsigned long>(kPmQuietLoopIntervalMs),
            static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
-#elif LATTER_PM_DFS_ONLY
-  // esp32_power_management configures 40 MHz DFS at setup_priority::POWER (ahead of on_boot: 800);
-  // pm_init() holds the MAX-frequency lock while active and pm_apply() releases it in battery quiet.
-  if (s_p4_dfs_lock != nullptr) return;
-  if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "latter_awake", &s_p4_dfs_lock) == ESP_OK &&
-      s_p4_dfs_lock != nullptr) {
-    esp_pm_lock_acquire(s_p4_dfs_lock);
-    s_p4_dfs_awake = true;
-    s_p4_loop_interval_awake = esphome::App.get_loop_interval();
-    ESP_LOGI("power", "ESP32-P4 DFS awake lock held at boot (quiet loop %lums, %lums with touch wake)",
-             static_cast<unsigned long>(kPmQuietLoopIntervalMs),
-             static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
-  }
+#elif LATTER_PM_QUIET_LOOP_ONLY
+  // ESP32-P4 keeps CPLL + 200 MHz PSRAM fixed (no 40 MHz XTAL MSPI speed-mode retuning across
+  // esp_hosted SDIO DMA) and stretches the battery screen-off loop so both RISC-V cores idle in wfi.
+  if (s_p4_quiet_inited) return;
+  s_p4_quiet_inited = true;
+  s_p4_quiet_awake = true;
+  s_p4_loop_interval_awake = esphome::App.get_loop_interval();
+  ESP_LOGI("power", "ESP32-P4 battery quiet-loop pacing ready (fixed CPLL/200MHz PSRAM; quiet loop %lums, %lums with touch wake)",
+           static_cast<unsigned long>(kPmQuietLoopIntervalMs),
+           static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
 #endif
 }
 
@@ -710,24 +710,18 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
     LATTER_PROF_LOGI("[PROF:PM] lock=%s arm=0x%02lx loop=%lums", st.lock_held ? "held" : "released",
              static_cast<unsigned long>(arm), static_cast<unsigned long>(esphome::App.get_loop_interval()));
   }
-#elif LATTER_PM_DFS_ONLY
-  if (s_p4_dfs_lock == nullptr) return;
+#elif LATTER_PM_QUIET_LOOP_ONLY
+  if (!s_p4_quiet_inited) return;
   const uint32_t target_quiet_loop = pm_quiet_loop_interval(wake_mask);
-  if (stay_awake == s_p4_dfs_awake) {
+  if (stay_awake == s_p4_quiet_awake) {
     if (!stay_awake && esphome::App.get_loop_interval() != target_quiet_loop) {
       esphome::App.set_loop_interval(target_quiet_loop);
     }
     return;
   }
-  if (stay_awake) {
-    esp_pm_lock_acquire(s_p4_dfs_lock);
-    esphome::App.set_loop_interval(s_p4_loop_interval_awake);
-  } else {
-    esphome::App.set_loop_interval(target_quiet_loop);
-    esp_pm_lock_release(s_p4_dfs_lock);
-  }
-  s_p4_dfs_awake = stay_awake;
-  LATTER_PROF_LOGI("[PROF:PM] p4_dfs=%s loop=%lums", stay_awake ? "max" : "40MHz",
+  esphome::App.set_loop_interval(stay_awake ? s_p4_loop_interval_awake : target_quiet_loop);
+  s_p4_quiet_awake = stay_awake;
+  LATTER_PROF_LOGI("[PROF:PM] p4_quiet=%s loop=%lums", stay_awake ? "awake" : "standby",
                    static_cast<unsigned long>(esphome::App.get_loop_interval()));
 #else
   (void) stay_awake;

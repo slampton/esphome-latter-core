@@ -2525,7 +2525,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
             ),
         ),
         (
-            "CORE_P4_BATT_DFS",
+            "CORE_P4_BATT_QUIET",
             (
                 "USE_ESP32",
                 "USE_I2C",
@@ -2537,7 +2537,6 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 "USE_LATTER_LOOP_PROBE",
                 "CONFIG_IDF_TARGET_ESP32P4=1",
                 "USE_ESP32_VARIANT_ESP32P4=1",
-                "CONFIG_PM_ENABLE=1",
                 "LATTER_CHIP_P4=1",
                 "LATTER_C6_RESET_PIN=54",
                 "LATTER_HAS_BATTERY=1",
@@ -3123,6 +3122,11 @@ def main(argv: list[str] | None = None) -> int:
         if "-DLATTER_CHIP_P4=1" in uncommented_yaml:
             if not re.search(r"esp32_hosted:\s*\n(?:[ \t]+.*\n)*?\s+use_psram:\s*true\b", uncommented_yaml):
                 failures.append(f"[P4 DMA] {bf.name} must set use_psram: true under esp32_hosted:")
+            if re.search(r"(?m)^power_management\s*:|\besp32_power_management\b|\bmin_frequency:\s*40MHz\b", uncommented_yaml):
+                failures.append(
+                    f"[P4 PM] {bf.name} must never enable esp32_power_management / 40MHz XTAL DFS "
+                    "(retunes 200 MHz PSRAM across esp_hosted SDIO DMA; use fixed CPLL + quiet-loop pacing)"
+                )
         if "platform: mipi_dsi" in uncommented_yaml:
             for dsi_req in (
                 'CONFIG_GDMA_ISR_IRAM_SAFE: "y"',

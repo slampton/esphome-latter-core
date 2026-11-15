@@ -1,8 +1,8 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core Power Management, Light Sleep, DFS, Stall Guard, Wake Attribution,
-// Power Profiles & Radio Policy (hal_power_pm.h)
+// Latter Core Power Management, Light Sleep, Quiet-Loop Pacing, Stall Guard,
+// Wake Attribution, Power Profiles & Radio Policy (hal_power_pm.h)
 // ==============================================================================
 
 #if __has_include("esphome/core/defines.h")
@@ -89,7 +89,7 @@ inline void log_stall_summary() {}
 #endif
 
 // ------------------------------------------------------------------------------
-// 2. Automatic Light Sleep (S3 Battery) & 40 MHz DFS (P4 Battery)
+// 2. Automatic Light Sleep (S3 Battery) & Quiet-Loop Pacing (P4 Battery)
 // ------------------------------------------------------------------------------
 enum PmWakeSlot : uint8_t {
   PM_WAKE_PWR_KEY = 0,

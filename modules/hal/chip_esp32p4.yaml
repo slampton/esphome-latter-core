@@ -4,7 +4,6 @@
 # ==============================================================================
 
 substitutions:
-  pm_profiling: "false"
   wake_profiling: "n"
 
 esp32:
