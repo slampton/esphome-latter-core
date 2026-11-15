@@ -219,6 +219,7 @@ touchscreen:
       number: GPIO38
       mode: INPUT_PULLUP
     touch_timeout: 120ms
+    update_interval: never
 
 script:
   - id: hal_release_deep_sleep_holds

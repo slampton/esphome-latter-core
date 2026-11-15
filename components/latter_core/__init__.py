@@ -80,11 +80,46 @@ async def to_code(config: dict[str, Any]) -> None:
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
     if CORE.is_esp32:
+        from esphome.components import esp32
+
         if hasattr(CORE, "require_wake_loop_threadsafe"):
             CORE.require_wake_loop_threadsafe()
         # Flash-write counters for System: Link Report (nvs=, power_pm.cpp defines the wraps).
         cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
         cg.add_build_flag("-Wl,--wrap=esp_flash_erase_region")
+        # Upstream sendspin-cpp hardcodes LOG_LOCAL_LEVEL=ESP_LOG_DEBUG, which leaks per-frame/handshake
+        # D (...) and I (...) lines through ESPHome's esp-idf log bridge at INFO level. Clamp sendspin-cpp
+        # to ESP_LOG_WARN unless the user explicitly asked for DEBUG/VERBOSE logger output.
+        logger_cfg = CORE.config.get("logger", {})
+        logger_level = str(logger_cfg.get("level", "DEBUG")).upper()
+        sendspin_tag_level = str(logger_cfg.get("logs", {}).get("esp-idf", logger_level)).upper()
+        if (
+            "sendspin" in CORE.config
+            and logger_level not in ("DEBUG", "VERBOSE", "VERY_VERBOSE")
+            and sendspin_tag_level not in ("DEBUG", "VERBOSE", "VERY_VERBOSE")
+        ):
+            esp32.add_src_cmake(
+                """\
+function(_latter_quiet_sendspin_logs)
+  if(COMMAND idf_build_get_property)
+    idf_build_get_property(_latter_build_comps BUILD_COMPONENTS)
+    if("sendspin__sendspin-cpp" IN_LIST _latter_build_comps)
+      idf_component_get_property(_latter_ss_lib sendspin__sendspin-cpp COMPONENT_LIB)
+      if(_latter_ss_lib AND TARGET ${_latter_ss_lib})
+        get_target_property(_latter_ss_defs ${_latter_ss_lib} COMPILE_DEFINITIONS)
+        if(_latter_ss_defs)
+          list(FILTER _latter_ss_defs EXCLUDE REGEX "^LOG_LOCAL_LEVEL=")
+          list(APPEND _latter_ss_defs "LOG_LOCAL_LEVEL=ESP_LOG_WARN")
+          set_target_properties(${_latter_ss_lib} PROPERTIES COMPILE_DEFINITIONS "${_latter_ss_defs}")
+        else()
+          target_compile_definitions(${_latter_ss_lib} PRIVATE LOG_LOCAL_LEVEL=ESP_LOG_WARN)
+        endif()
+      endif()
+    endif()
+  endif()
+endfunction()
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL _latter_quiet_sendspin_logs)"""
+            )
 
     if "wifi" in CORE.config:
         from esphome.components import wifi

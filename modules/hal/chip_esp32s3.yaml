@@ -61,6 +61,7 @@ esp32:
       CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: ${wake_profiling}
     advanced:
       enable_idf_experimental_features: true
+      execute_from_psram: true
       nvs_cache_in_psram: true
 
 psram:

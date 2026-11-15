@@ -14,6 +14,12 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #endif
+#if __has_include("esphome/core/static_task.h")
+#include "esphome/core/static_task.h"
+#define LATTER_HAS_STATIC_TASK 1
+#else
+#define LATTER_HAS_STATIC_TASK 0
+#endif
 
 #include <cstdio>
 #include <cstring>
@@ -213,7 +219,20 @@ void start_stall_guard() {
   auto &g = stall_guard();
   if (g.started) return;
   g_stall_loop_task = xTaskGetCurrentTaskHandle();
+#if LATTER_HAS_STATIC_TASK
+  static esphome::StaticTask s_stall_task;
+#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)
+  g.started = s_stall_task.create(stall_guard_task, "latter_stall", 3072, nullptr, 15, /*use_psram=*/true);
+#endif
+  if (!g.started) {
+    g.started = s_stall_task.create(stall_guard_task, "latter_stall", 2560, nullptr, 15, /*use_psram=*/false);
+  }
+  if (g.started) {
+    g_stall_guard_task_handle = s_stall_task.get_handle();
+  }
+#else
   g.started = xTaskCreate(stall_guard_task, "latter_stall", 2560, nullptr, 15, &g_stall_guard_task_handle) == pdPASS;
+#endif
   if (!g.started) {
     ESP_LOGW("latter", "Stall guard task could not start");
   }

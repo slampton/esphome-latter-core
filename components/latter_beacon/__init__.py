@@ -20,6 +20,7 @@ import esphome.codegen as cg
 from esphome.components.esp32 import (
     add_idf_sdkconfig_option,
     get_esp32_variant,
+    is_idf_sdkconfig_option_enabled,
     request_bluetooth,
     request_software_coexistence,
 )
@@ -109,14 +110,24 @@ def _final_validate(config: ConfigType) -> ConfigType:
 FINAL_VALIDATE_SCHEMA = _final_validate
 
 
+def _sdkconfig_flag_enabled(options: dict[str, object], key: str) -> bool:
+    if is_idf_sdkconfig_option_enabled(key):
+        return True
+    raw = options.get(key)
+    val = getattr(raw, "value", raw)
+    return val is True or str(val).strip().strip('"').lower() == "y"
+
+
 def _code_runs_from_psram() -> bool:
     """Code and rodata execute from PSRAM (XIP): flash erases keep the cache and interrupts running."""
     framework = CORE.config.get("esp32", {}).get("framework", {})
     if framework.get("advanced", {}).get("execute_from_psram", False):
         return True
     options = framework.get("sdkconfig_options", {})
+    if _sdkconfig_flag_enabled(options, "CONFIG_SPIRAM_XIP_FROM_PSRAM"):
+        return True
     return all(
-        str(options.get(key, "")).lower() == "y"
+        _sdkconfig_flag_enabled(options, key)
         for key in ("CONFIG_SPIRAM_FETCH_INSTRUCTIONS", "CONFIG_SPIRAM_RODATA")
     )
 

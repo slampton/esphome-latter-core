@@ -866,7 +866,25 @@ text_sensor:
                     ms.art_url != rs.music.loaded_art_url) {
                   id(fetch_remote_art_debounced).execute();
                 }
-                id(throttled_disp_update).execute();
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                } else if (rs.nav.display_power_state == 0 && !rs.voice.active &&
+                           rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+                  int act_n = 0, act_y0 = 0, act_y1 = 0;
+                  const auto *act_items = latter_ui::home_activity_rendered_items(act_n);
+                  bool music_in_card = false;
+                  for (int i = 0; i < act_n; ++i) {
+                    if (act_items[i].kind == 3 && act_items[i].in_deck) {
+                      music_in_card = true;
+                      break;
+                    }
+                  }
+                  if (music_in_card && latter_ui::home_activity_band(act_y0, act_y1)) {
+                    latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
+                  } else {
+                    id(throttled_disp_update).execute();
+                  }
+                }
               }
             }
 
@@ -894,7 +912,25 @@ text_sensor:
                     ms.art_url != rs.music.loaded_art_url) {
                   id(fetch_remote_art_debounced).execute();
                 }
-                id(throttled_disp_update).execute();
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                } else if (rs.nav.display_power_state == 0 && !rs.voice.active &&
+                           rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+                  int act_n = 0, act_y0 = 0, act_y1 = 0;
+                  const auto *act_items = latter_ui::home_activity_rendered_items(act_n);
+                  bool music_in_card = false;
+                  for (int i = 0; i < act_n; ++i) {
+                    if (act_items[i].kind == 3 && act_items[i].in_deck) {
+                      music_in_card = true;
+                      break;
+                    }
+                  }
+                  if (music_in_card && !x.empty() && latter_ui::home_activity_band(act_y0, act_y1)) {
+                    latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
+                  } else {
+                    id(throttled_disp_update).execute();
+                  }
+                }
               }
             }
 
@@ -919,7 +955,9 @@ text_sensor:
                     ms.art_url != rs.music.loaded_art_url) {
                   id(fetch_remote_art_debounced).execute();
                 }
-                id(throttled_disp_update).execute();
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                }
               }
             }
 

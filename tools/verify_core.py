@@ -1574,6 +1574,8 @@ HOST_UI_STUBS: dict[str, str] = {
     "freertos/task.h": (
         "#pragma once\n"
         "#include \"freertos/FreeRTOS.h\"\n"
+        "typedef void (*TaskFunction_t)(void *);\n"
+        "#define tskNO_AFFINITY 0x7FFFFFFF\n"
         "typedef enum { eRunning = 0, eReady = 1, eBlocked = 2, eSuspended = 3, eDeleted = 4 } eTaskState;\n"
         "typedef uint64_t configRUN_TIME_COUNTER_TYPE;\n"
         "typedef struct {\n"
@@ -1597,6 +1599,24 @@ HOST_UI_STUBS: dict[str, str] = {
         "inline UBaseType_t uxTaskGetSystemState(TaskStatus_t *, UBaseType_t, configRUN_TIME_COUNTER_TYPE *) {\n"
         "  return 0;\n"
         "}\n"
+    ),
+    "esphome/core/static_task.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include \"freertos/FreeRTOS.h\"\n"
+        "#include \"freertos/task.h\"\n"
+        "namespace esphome {\n"
+        "class StaticTask {\n"
+        " public:\n"
+        "  bool create(TaskFunction_t, const char *, uint32_t, void *, UBaseType_t, bool, BaseType_t = tskNO_AFFINITY) {\n"
+        "    handle_ = reinterpret_cast<TaskHandle_t>(1);\n"
+        "    return true;\n"
+        "  }\n"
+        "  TaskHandle_t get_handle() const { return handle_; }\n"
+        " private:\n"
+        "  TaskHandle_t handle_{nullptr};\n"
+        "};\n"
+        "}  // namespace esphome\n"
     ),
     "driver/gpio.h": (
         "#pragma once\n"
@@ -2470,6 +2490,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 "USE_MICROPHONE",
                 "USE_LATTER_LOOP_PROBE",
                 "CONFIG_IDF_TARGET_ESP32S3=1",
+                "CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1",
                 "LATTER_HAS_BATTERY=1",
                 "LATTER_BATTERY_MAH=500",
                 "LATTER_HAS_IMU=1",
@@ -2492,6 +2513,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
                 "USE_MICROPHONE",
                 "USE_LATTER_LOOP_PROBE",
                 "CONFIG_IDF_TARGET_ESP32S3=1",
+                "CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1",
                 "LATTER_HAS_BATTERY=1",
                 "LATTER_BATTERY_MAH=400",
                 "LATTER_HAS_IMU=1",
@@ -3113,6 +3135,19 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(
                     f"[DSI IRAM] {bf.name} still wraps retired esp_lcd_dpi_panel_register_event_callbacks"
                 )
+        if "-DLATTER_CHIP_P4=0" in uncommented_yaml and not re.search(
+            r"(?m)^\s*execute_from_psram:\s*true\b", uncommented_yaml
+        ):
+            failures.append(f"[S3 PSRAM XIP] {bf.name} must set execute_from_psram: true under esp32.framework.advanced")
+        m_touch = re.search(r"(?m)^touchscreen:\s*\n((?:[ \t]+.*\n?)*)", uncommented_yaml)
+        if (
+            m_touch
+            and "interrupt_pin:" in m_touch.group(1)
+            and not re.search(r"(?m)^\s*update_interval:\s*never\b", m_touch.group(1))
+        ):
+            failures.append(
+                f"[TOUCH POLLING] {bf.name} interrupt-driven touchscreen must set update_interval: never"
+            )
 
     panel_cpp = (ROOT / "components" / "latter_core" / "panel_power.cpp").read_text(encoding="utf-8")
     panel_hdr = (

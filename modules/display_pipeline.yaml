@@ -22,7 +22,10 @@ image:
     current_image:
       id: album_art
     on_image_display:
-      - script.execute: throttled_disp_update
+      - lambda: |-
+          if (latter_ui::runtime_state().nav.gui_page == 2) {
+            id(throttled_disp_update).execute();
+          }
 
   - platform: online_image
     id: remote_album_art
@@ -38,7 +41,9 @@ image:
           if (!ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
             id(fetch_remote_art_debounced).execute();
           }
-      - script.execute: throttled_disp_update
+          if (rs.nav.gui_page == 2) {
+            id(throttled_disp_update).execute();
+          }
       - script.execute: sync_wake_word_state
     on_error:
       - lambda: 'latter_ui::runtime_state().music.loaded_art_url = "";'

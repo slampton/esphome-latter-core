@@ -589,8 +589,8 @@ script:
     mode: restart
     then:
       - delay: 3s
-      - lambda: 'latter_ui::log_boot_summary();'
       - logger.replay_boot_logs:
+      - lambda: 'latter_ui::log_boot_summary();'
 
   - id: sync_ui_touch_runtime
     mode: single
