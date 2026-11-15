@@ -542,48 +542,46 @@ void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::C
                         esphome::Color &out_tint, int &out_a_top, int &out_a_bot,
                         int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8,
                         GlassVariant variant) {
-  const int bg_lvl = bd.valid
-      ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
-      : 0;
-  const int tint_lvl = (static_cast<int>(tint.r) + static_cast<int>(tint.g) + static_cast<int>(tint.b)) / 3;
   const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
   const bool is_readable_dark = (variant == GlassVariant::ReadableDark);
 
-  int frost_q8 = 0;
-  if (dark_tint && !is_readable_dark) {
-    frost_q8 = (bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
-    if (bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
-      frost_q8 = std::max(frost_q8, 22);
-    }
+  if (!is_readable_dark) {
+    // Fixed, backdrop-invariant Clear frosted-glass template across all pages and weather conditions.
+    const int frost_q8 = dark_tint ? (is_semantic_glass_color(tint) ? 32 : 54) : 0;
+    out_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
+    const int base_a = (explicit_alpha_q8 >= 0) ? explicit_alpha_q8 : kGlassClearAlphaQ8;
+    const int da = dark_tint ? 12 : 0;
+    out_a_top = std::min(256, base_a + da);
+    out_a_bot = std::max(0, base_a - (da * 2) / 3);
+    out_rim_top = std::min(256, kGlassSheenTopQ8 + 18);
+    out_rim_bot = std::min(256, kGlassSheenBotQ8 + 12);
+    return;
   }
-  out_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
 
-  // Always solve contrast against the caller's actual foreground text color (guarding only near-black dummy
-  // or intentionally disabled sub-contrast tokens < 0.18 lum that cannot reach 4.5:1 even on pure black).
+  const int bg_lvl = bd.valid
+      ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
+      : 0;
+  out_tint = tint;
+
+  // Reserved ReadableDark tier: solve contrast against caller's foreground text color.
   const float raw_fg_lum = relative_luminance(ref_text);
   const esphome::Color contrast_fg =
       ((static_cast<int>(ref_text.r) + static_cast<int>(ref_text.g) + static_cast<int>(ref_text.b)) < 48)
           ? kChromeGlassSheen
           : ((raw_fg_lum < 0.18f) ? kChromeMuted : ref_text);
   const float fg_lum = relative_luminance(contrast_fg);
-  const int floor_q8 = is_readable_dark ? kGlassReadableAlphaMinQ8 : kGlassAlphaMinQ8;
 
   int base_a = explicit_alpha_q8;
   if (base_a < 0) {
-    if (bd.valid) {
-      const int solved_a = glass_alpha_for_text(out_tint, bd.bright, contrast_fg, floor_q8);
-      base_a = is_readable_dark ? solved_a : std::min(kGlassClearAlphaMaxQ8, solved_a);
-    } else {
-      base_a = is_readable_dark ? kGlassReadableAlphaMinQ8 : 156;
-    }
+    base_a = bd.valid
+        ? glass_alpha_for_text(out_tint, bd.bright, contrast_fg, kGlassReadableAlphaMinQ8)
+        : kGlassReadableAlphaMinQ8;
   }
 
-  const int da = is_readable_dark ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
-  const int max_top = (is_readable_dark || explicit_alpha_q8 >= 0) ? 256 : (kGlassClearAlphaMaxQ8 + 10);
-  out_a_top = std::min(max_top, base_a + da);
-  const int min_bot = is_readable_dark ? 200 : kGlassAlphaMinQ8;
-  out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
-  if (is_readable_dark && bd.valid && explicit_alpha_q8 < 0 &&
+  const int da = 8;
+  out_a_top = std::min(256, base_a + da);
+  out_a_bot = std::max(200, base_a - (da * 2) / 3);
+  if (bd.valid && explicit_alpha_q8 < 0 &&
       contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, out_tint, out_a_bot))) < kGlassTextContrastMin) {
     out_a_bot = base_a;
   }

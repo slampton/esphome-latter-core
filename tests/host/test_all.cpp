@@ -1374,37 +1374,39 @@ void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
                              HostRgb &out_tint, int &out_a_top, int &out_a_bot) {
   constexpr HostRgb kHomePill{175, 190, 210};
   constexpr HostRgb kWhite{255, 255, 255};
-  constexpr int kAlphaClearMin = 148;
-  constexpr int kAlphaClearMax = 174;
+  constexpr int kAlphaClearBase = 104;
   constexpr int kAlphaReadableMin = 208;
 
-  const int bg_lvl = bd_valid ? ((static_cast<int>(bd_mean.r) + bd_mean.g + bd_mean.b) / 3) : 0;
-  const int tint_lvl = (static_cast<int>(tint.r) + tint.g + tint.b) / 3;
   const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
   const bool is_readable = (variant == HostGlassVariant::ReadableDark);
 
-  int frost_q8 = 0;
-  if (dark_tint && !is_readable) {
-    frost_q8 = (bg_lvl < 42) ? (32 - (bg_lvl * 32) / 42) : 0;
-    if (bg_lvl >= 18 && bg_lvl < 84 && tint_lvl <= bg_lvl + 8) {
-      frost_q8 = std::max(frost_q8, 22);
-    }
+  if (!is_readable) {
+    const int mx = std::max({static_cast<int>(tint.r), static_cast<int>(tint.g), static_cast<int>(tint.b)});
+    const int mn = std::min({static_cast<int>(tint.r), static_cast<int>(tint.g), static_cast<int>(tint.b)});
+    const int chroma = mx - mn;
+    const bool sem_tint = (chroma > 12) &&
+                          !(tint.r == kHomePill.r && tint.g == kHomePill.g && tint.b == kHomePill.b) &&
+                          !(tint.r <= tint.g && tint.g <= tint.b && mx <= 96 && chroma <= 30);
+    const int frost_q8 = dark_tint ? (sem_tint ? 32 : 54) : 0;
+    out_tint = (frost_q8 > 0) ? host_mix_q8(tint, kHomePill, frost_q8) : tint;
+    const int da = dark_tint ? 12 : 0;
+    out_a_top = std::min(256, kAlphaClearBase + da);
+    out_a_bot = std::max(0, kAlphaClearBase - (da * 2) / 3);
+    return;
   }
-  out_tint = (frost_q8 > 0) ? host_mix_q8(tint, kHomePill, frost_q8) : tint;
 
+  (void)bd_mean;
+  out_tint = tint;
   const HostRgb contrast_fg = ((static_cast<int>(ref_text.r) + ref_text.g + ref_text.b) < 48) ? kWhite : ref_text;
   const float fg_lum = host_rel_lum(contrast_fg);
-  const int floor_q8 = is_readable ? kAlphaReadableMin : kAlphaClearMin;
 
-  int base_a = bd_valid
-      ? (is_readable ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)
-                     : std::min(kAlphaClearMax, host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, floor_q8)))
-      : (is_readable ? kAlphaReadableMin : 156);
-  const int da = is_readable ? 8 : (dark_tint ? ((bg_lvl < 42) ? (20 - (bg_lvl * 6) / 42) : 12) : 0);
-  out_a_top = std::min(is_readable ? 256 : (kAlphaClearMax + 10), base_a + da);
-  const int min_bot = is_readable ? 200 : kAlphaClearMin;
-  out_a_bot = std::max(min_bot, base_a - (da * 2) / 3);
-  if (is_readable && bd_valid && host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd_bright, out_tint, out_a_bot))) < 4.5f) {
+  const int base_a = bd_valid
+      ? host_glass_alpha_for_text(out_tint, bd_bright, contrast_fg, kAlphaReadableMin)
+      : kAlphaReadableMin;
+  const int da = 8;
+  out_a_top = std::min(256, base_a + da);
+  out_a_bot = std::max(200, base_a - (da * 2) / 3);
+  if (bd_valid && host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd_bright, out_tint, out_a_bot))) < 4.5f) {
     out_a_bot = base_a;
   }
 }
@@ -1527,6 +1529,12 @@ void test_phase2_glass_and_scissor_compositor() {
       {250, 252, 255},   // Sunlit snow / white camera region
   };
 
+  HostRgb ref_clear_tint{};
+  int ref_clear_top = 0, ref_clear_bot = 0;
+  host_resolve_glass_fill(false, HostRgb{}, HostRgb{}, kClearTint, kWhiteText,
+                          HostGlassVariant::Clear, ref_clear_tint, ref_clear_top, ref_clear_bot);
+  LATTER_CHECK(ref_clear_top == 116 && ref_clear_bot == 96);
+
   for (const auto &bd : kBackdrops) {
     for (HostRgb fg : {kWhiteText, kMutedText}) {
       for (HostGlassVariant var : {HostGlassVariant::Clear, HostGlassVariant::ReadableDark}) {
@@ -1534,11 +1542,15 @@ void test_phase2_glass_and_scissor_compositor() {
         HostRgb eff_tint{};
         int a_top = 0, a_bot = 0;
         host_resolve_glass_fill(true, bd, bd, base_tint, fg, var, eff_tint, a_top, a_bot);
-        const int min_floor = (var == HostGlassVariant::ReadableDark) ? 200 : 148;
-        const int max_ceil = (var == HostGlassVariant::ReadableDark) ? 256 : 184;
-        LATTER_CHECK(a_bot >= min_floor && a_top >= a_bot && a_top <= max_ceil);
 
-        if (var == HostGlassVariant::ReadableDark) {
+        if (var == HostGlassVariant::Clear) {
+          // D-041: Clear glass is strictly backdrop- and weather-invariant across all luminance levels
+          LATTER_CHECK(eff_tint.r == ref_clear_tint.r &&
+                       eff_tint.g == ref_clear_tint.g &&
+                       eff_tint.b == ref_clear_tint.b);
+          LATTER_CHECK(a_top == 116 && a_bot == 96);
+        } else {
+          LATTER_CHECK(a_bot >= 200 && a_top >= a_bot && a_top <= 256);
           const float fg_lum = host_rel_lum(fg);
           const float top_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_top)));
           const float bot_cr = host_contrast(fg_lum, host_rel_lum(host_mix_q8(bd, eff_tint, a_bot)));
@@ -1571,10 +1583,12 @@ void test_phase2_glass_and_scissor_compositor() {
 
   LATTER_CHECK(ui_types_h.find("enum class GlassVariant : uint8_t") != std::string::npos);
   LATTER_CHECK(ui_types_h.find("kChromeModalBg(16, 20, 28)") != std::string::npos);
-  LATTER_CHECK(ui_gfx_h.find("kGlassAlphaMinQ8 = 148") != std::string::npos);
-  LATTER_CHECK(ui_gfx_h.find("kGlassClearAlphaMaxQ8 = 174") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassAlphaMinQ8 = 96") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassClearAlphaQ8 = 104") != std::string::npos);
+  LATTER_CHECK(ui_gfx_h.find("kGlassClearAlphaMaxQ8 = 116") != std::string::npos);
   LATTER_CHECK(ui_gfx_h.find("kGlassReadableAlphaMinQ8 = 208") != std::string::npos);
   LATTER_CHECK(home_cpp.find("resolve_home_card_palette") == std::string::npos);
+  LATTER_CHECK(home_cpp.find("glass_alpha_for_text") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("Color(230, 115, 0)") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
   LATTER_CHECK(comms_cpp.find("kChromeGlassTint, 176") == std::string::npos);

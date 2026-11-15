@@ -38,7 +38,8 @@ void render_pill_button(esphome::display::Display &it, int x1, int x2, int y_mid
   GlassVariant eff_var = variant;
   esphome::Color norm_tint, rim_col;
   normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd = sample_glass_backdrop(px0, py0, pw, ph);
+  const GlassBackdrop bd =
+      (eff_var == GlassVariant::ReadableDark) ? sample_glass_backdrop(px0, py0, pw, ph) : GlassBackdrop{};
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
@@ -251,11 +252,10 @@ void render_viewport_scrollbar(esphome::display::Display &it, int cx, int y_pos,
   const int track_y0 = y_pos - r_cap;
 
   const float cap = static_cast<float>(r_cap);
-  const GlassBackdrop bd = sample_glass_backdrop(track_x0, track_y0, track_w, track_h);
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, kChromeGlassTint, kChromeGlassSheen, eff_tint, a_top, a_bot,
-                     rim_top, rim_bot, is_dim ? 104 : -1, GlassVariant::Clear);
+  resolve_glass_fill(GlassBackdrop{}, kChromeGlassTint, kChromeGlassSheen, eff_tint, a_top, a_bot,
+                     rim_top, rim_bot, is_dim ? 72 : -1, GlassVariant::Clear);
   if (is_dim) {
     rim_top = (rim_top * 2) / 3;
     rim_bot = (rim_bot * 2) / 3;
@@ -435,11 +435,10 @@ void render_offline_pill(esphome::display::Display &it, int cx, uint32_t now_ms,
   const float rad = 0.5f * static_cast<float>(pill_h);
   const int sy0 = round_top ? y0 : (y0 - r);
   const int sh = round_top ? pill_h : (pill_h + r);
-  const GlassBackdrop bd = sample_glass_backdrop(x0 - 1, std::max(0, sy0 - 1), pill_w + 2, pill_h + 2);
-  const int min_gold_a = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, text_c) : 184;
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, kChromeGlassTint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, min_gold_a);
+  resolve_glass_fill(GlassBackdrop{}, kChromeGlassTint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot,
+                     -1, GlassVariant::Clear);
   fill_round_rect_glass(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, kChromeGlassSheen, rim_top, rim_bot, 1);
   fill_round_rect_glass(it, x0, sy0, pill_w, sh, rad, eff_tint, a_top, a_bot);
   const int text_top = y0 + pad_y - (base - glyph_h);
@@ -471,9 +470,7 @@ void render_in_app_mode_bar_track(esphome::display::Display &it, int cx, const i
   const int tx0 = left_cx - r_track;
   const int tw = (right_cx - left_cx) + 2 * r_track + 1;
   const int th = 2 * r_track + 1;
-  const GlassBackdrop bd = sample_glass_backdrop(tx0, by - r_track, tw, th);
-  const int track_alpha = bd.valid ? glass_alpha_for_text(kChromeGlassTint, bd.bright, kChromeGlassSheen) : 168;
-  render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, track_alpha, bd);
+  render_glass_card(it, tx0, by - r_track, tw, th, r_track, kChromeGlassTint, -1, GlassVariant::Clear);
 
   const float rel_active = anim_active - anim_start;
   if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
@@ -982,7 +979,8 @@ void toggle_switch(esphome::display::Display &it, int cx_sw, int cy_sw, bool is_
   normalize_glass_chrome(is_on ? active_col : kChromeGlassTint,
                          is_on ? active_col : kChromeTrackBorder,
                          eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, sw_w, sw_h);
+  const GlassBackdrop bd =
+      (eff_var == GlassVariant::ReadableDark) ? sample_glass_backdrop(x0, y0, sw_w, sw_h) : GlassBackdrop{};
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);

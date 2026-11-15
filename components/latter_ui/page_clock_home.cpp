@@ -264,10 +264,9 @@ void draw_home_activity_row_contents(
     render_glass_circle(it, act_bx, gy, btn_r, fg_btn_fill, fg_sec);
   } else if (alpha > 0.01f && btn_r > 1) {
     const int d = 2 * btn_r + 1;
-    const GlassBackdrop btn_bd = sample_glass_backdrop(act_bx - btn_r, gy - btn_r, d, d);
     Color btn_eff;
     int raw_at = 0, raw_ab = 0, raw_rt = 0, raw_rb = 0;
-    resolve_glass_fill(btn_bd, fg_btn_fill, fg_sec, btn_eff, raw_at, raw_ab, raw_rt, raw_rb,
+    resolve_glass_fill(GlassBackdrop{}, fg_btn_fill, fg_sec, btn_eff, raw_at, raw_ab, raw_rt, raw_rb,
                        -1, GlassVariant::Clear);
     const int at = static_cast<int>(std::lround(static_cast<float>(raw_at) * alpha));
     const int ab = static_cast<int>(std::lround(static_cast<float>(raw_ab) * alpha));
@@ -1358,23 +1357,18 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int card_x0 = cx - card_w / 2;
     const int card_y0 = act_card_cy - card_h / 2;
     if ((card_y0 + card_h) > clip_y0() && card_y0 <= clip_y1()) {
-      const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
-      static int glass_alpha_state = 0;
-      static uint32_t last_glass_alpha_ms = 0;
-      const uint32_t alpha_dt_ms = (last_glass_alpha_ms == 0 || now_ms < last_glass_alpha_ms)
-                                       ? 16U
-                                       : (now_ms - last_glass_alpha_ms);
-      last_glass_alpha_ms = now_ms;
-      const int target_glass_a = backdrop.valid
-          ? std::min(kGlassClearAlphaMaxQ8,
-                     glass_alpha_for_text(tint, backdrop.bright, ctx.col_white))
-          : 156;
-      const int glass_a = backdrop.valid
-          ? glass_alpha_smooth(glass_alpha_state, target_glass_a, alpha_dt_ms)
-          : 156;
-      render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, glass_a, backdrop,
+      const GlassBackdrop anim_bd =
+          animating ? sample_glass_backdrop(card_x0, card_y0, card_w, card_h) : GlassBackdrop{};
+      render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, -1,
                         GlassVariant::Clear, ctx.col_white);
-      const Color card_bg = backdrop.valid ? mix_color_q8(backdrop.mean, tint, glass_a) : tint;
+      Color card_bg = tint;
+      if (animating) {
+        Color eff_tint;
+        int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+        resolve_glass_fill(GlassBackdrop{}, tint, ctx.col_white, eff_tint,
+                           a_top, a_bot, rim_top, rim_bot, -1, GlassVariant::Clear);
+        card_bg = anim_bd.valid ? mix_color_q8(anim_bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
+      }
 
       const int prev_clip_y0 = clip_y0();
       const int prev_clip_y1 = clip_y1();
@@ -1805,11 +1799,13 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                             static_cast<uint8_t>(ctx.col_white.b * alpha));
       const int app_id = dock_apps[g_idx];
       const int d = 2 * dock_r + 1;
-      const GlassBackdrop bd = sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d);
+      const bool needs_cutout = (app_id == 5 || app_id == 6 || app_id == 9 || app_id == 12);
+      const GlassBackdrop bd =
+          needs_cutout ? sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d) : GlassBackdrop{};
       Color eff_tint;
       int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-      resolve_glass_fill(bd, dock_tint, kChromeGlassSheen, eff_tint,
-                         raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
+      resolve_glass_fill(GlassBackdrop{}, dock_tint, kChromeGlassSheen, eff_tint,
+                         raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot, -1, GlassVariant::Clear);
       const int a_top     = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
       const int a_bot     = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
       const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(raw_rim_top) * alpha));

@@ -728,8 +728,9 @@ inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy,
                         });
 }
 
-static constexpr int kGlassAlphaMinQ8 = 148;          // ~58% Clear base floor
-static constexpr int kGlassClearAlphaMaxQ8 = 174;     // ~68% Clear base ceiling (preserves see-through glass)
+static constexpr int kGlassAlphaMinQ8 = 96;           // ~37.5% fixed Clear bottom alpha
+static constexpr int kGlassClearAlphaQ8 = 104;        // ~40.6% fixed Clear base alpha
+static constexpr int kGlassClearAlphaMaxQ8 = 116;     // ~45.3% fixed Clear top alpha
 static constexpr int kGlassReadableAlphaMinQ8 = 208;  // ~81% ReadableDark base floor (200..216/256)
 static constexpr int kGlassSemanticWashMaxQ8 = 38;    // <= 15% semantic interior wash
 static constexpr int kGlassSemanticRimMaxQ8 = 64;     // <= 25% semantic specular rim tint
@@ -911,7 +912,9 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
                               GlassVariant variant = GlassVariant::Clear,
                               esphome::Color ref_text = kChromeGlassSheen) {
   if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
-  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, sample_glass_backdrop(x0, y0, w, h), variant, ref_text);
+  const GlassBackdrop bd =
+      (variant == GlassVariant::ReadableDark) ? sample_glass_backdrop(x0, y0, w, h) : GlassBackdrop{};
+  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, bd, variant, ref_text);
 }
 
 inline bool &backdrop_active() {
