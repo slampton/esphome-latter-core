@@ -373,6 +373,118 @@ struct CadenceScreensaverActions {
   bool sync_disp_poller_val = false;
 };
 
+// Pure-C++20 Home Activity Card model, recurrence-aware alarm windowing, and pinning/carousel
+// resolver (D-028 / D-039 / D-045). Shared across firmware TUs and host unit tests.
+static constexpr uint32_t kHomeActivityRotateMs = 8000U;
+static constexpr int kMaxHomeActivity = 12;
+static constexpr int kUpcomingAlarmDeckMinutes = 360;  // 6h front-card upcoming window (D-045)
+static constexpr int kUpcomingAlarmPinMinutes = 120;   // 2h imminent top-pin window (Android At-a-Glance baseline)
+
+struct HomeActivityItem {
+  int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar, 6 = Intercom/Doorbell
+  int slot_idx = 0;    // Timer slot (0..2), Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3), or Calendar slot
+  bool is_active = false;
+  bool urgent_pin = false;
+  bool in_deck = true;
+  std::string label{};
+};
+
+struct HomeActivityView {
+  int top = -1;
+  int bottom = -1;
+  bool pinned = false;
+  int front_count = 0;
+  int visible_rows = 0;
+};
+
+inline int next_alarm_minutes_until(uint8_t alarm_h, uint8_t alarm_m, bool enabled,
+                                    uint8_t recurrence, int cur_hour, int cur_min,
+                                    int cur_day_of_week = -1) {
+  if (!enabled || cur_hour < 0 || cur_hour > 23 || cur_min < 0 || cur_min > 59 ||
+      alarm_h > 23 || alarm_m > 59) {
+    return -1;
+  }
+  const int now_total_m = cur_hour * 60 + cur_min;
+  const int a_total_m = static_cast<int>(alarm_h) * 60 + static_cast<int>(alarm_m);
+  const int start_day = (a_total_m > now_total_m) ? 0 : 1;
+  if (cur_day_of_week < 1 || cur_day_of_week > 7 || recurrence == 0 || recurrence == 3) {
+    return start_day * 1440 + (a_total_m - now_total_m);
+  }
+  // ESPTime::day_of_week: 1=SUN, 2=MON, ..., 6=FRI, 7=SAT
+  for (int d = start_day; d <= start_day + 7; ++d) {
+    const int cand_dow = ((cur_day_of_week - 1 + d) % 7) + 1;
+    const bool matches = (recurrence == 1)
+                             ? (cand_dow >= 2 && cand_dow <= 6)
+                             : ((recurrence == 2) ? (cand_dow == 1 || cand_dow == 7) : true);
+    if (matches) {
+      return d * 1440 + (a_total_m - now_total_m);
+    }
+  }
+  return -1;
+}
+
+inline HomeActivityView resolve_home_activity_view(const HomeActivityItem items[], int count,
+                                                   uint32_t now_ms, bool two_line) {
+  HomeActivityView v;
+  if (count <= 0) return v;
+
+  // Top-pin priority hierarchy (D-045):
+  //   1. Live Intercom / Doorbell (kind == 6)
+  //   2. Running Countdown Timer  (kind == 1, sorted shortest remaining first)
+  //   3. Snoozed Alarm            (kind == 4, slot_idx == 0)
+  //   4. Running Stopwatch        (kind == 2)
+  //   5. Imminent Armed Alarm     (kind == 4, slot_idx >= 1, <= 2h, sorted soonest first)
+  static constexpr int kPinKindOrder[5] = {6, 1, 4, 2, 4};
+  int pin = -1;
+  for (int pass = 0; pass < 5 && pin < 0; ++pass) {
+    const int target_kind = kPinKindOrder[pass];
+    for (int i = 0; i < count; ++i) {
+      if (!items[i].urgent_pin || items[i].kind != target_kind) continue;
+      if (pass == 2 && items[i].slot_idx != 0) continue;
+      if (pass == 4 && items[i].slot_idx == 0) continue;
+      pin = i;
+      break;
+    }
+  }
+
+  int deck[kMaxHomeActivity];
+  int n = 0;
+  for (int i = 0; i < count && n < kMaxHomeActivity; ++i) {
+    if ((items[i].in_deck || items[i].urgent_pin) && i != pin) {
+      deck[n++] = i;
+    }
+  }
+
+  v.front_count = (pin >= 0 ? 1 : 0) + n;
+  if (v.front_count <= 0) {
+    return v;
+  }
+
+  const uint32_t slot = now_ms / kHomeActivityRotateMs;
+  if (pin >= 0) {
+    v.top = pin;
+    v.pinned = true;
+    if (two_line && n > 0) {
+      v.bottom = (n == 1) ? deck[0] : deck[slot % static_cast<uint32_t>(n)];
+    }
+    v.visible_rows = (v.bottom >= 0) ? 2 : 1;
+    return v;
+  }
+
+  const int max_lines = two_line ? 2 : 1;
+  if (n <= max_lines) {
+    v.top = deck[0];
+    if (two_line && n > 1) v.bottom = deck[1];
+    v.visible_rows = (v.bottom >= 0) ? 2 : 1;
+    return v;
+  }
+
+  v.top = deck[slot % static_cast<uint32_t>(n)];
+  if (two_line) v.bottom = deck[(slot + 1U) % static_cast<uint32_t>(n)];
+  v.visible_rows = (v.bottom >= 0) ? 2 : 1;
+  return v;
+}
+
 class FrameCadenceController {
  public:
   static constexpr uint32_t interactive_gap_for(bool is_chip_p4, bool mww_running) noexcept {

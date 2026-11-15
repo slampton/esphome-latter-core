@@ -923,6 +923,35 @@ std::string fit_text_to_width_font_base(const std::string &raw_str, int max_w, e
   return result;
 }
 
+int text_ink_right_edge_impl(esphome::display::Display &it, esphome::display::BaseFont *base_font,
+                             const char *text) {
+  if (base_font == nullptr || text == nullptr || *text == '\0') return 0;
+  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
+  it.get_text_bounds(0, 0, text, base_font, esphome::display::TextAlign::CENTER_LEFT,
+                     &x_start, &y_start, &text_w, &text_h);
+#ifdef USE_FONT
+  auto *font = static_cast<esphome::font::Font *>(base_font);
+  int x_at = x_start;
+  int max_x1 = 0;
+  bool any = false;
+  for (const char *p = text; *p != 0;) {
+    const auto *glyph = font->find_glyph(latter_utf8_next(p));
+    if (glyph == nullptr) {
+      x_at += std::max(4, font->get_height() / 3);
+      continue;
+    }
+    if (glyph->width > 0) {
+      const int gx1 = x_at + glyph->offset_x + glyph->width;
+      max_x1 = any ? std::max(max_x1, gx1) : gx1;
+      any = true;
+    }
+    x_at += glyph->advance;
+  }
+  if (any) return max_x1;
+#endif
+  return x_start + text_w;
+}
+
 void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::display::BaseFont *base_font,
                      esphome::Color color, esphome::display::TextAlign align, const char *text,
                      esphome::Color background) {

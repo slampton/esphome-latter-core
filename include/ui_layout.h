@@ -174,27 +174,45 @@ struct UiLayout {
     const int hh = (h > 520) ? 36 : 28;
     return (tx >= cx - hw && tx <= cx + hw && ty >= home_weather_y - hh && ty <= home_weather_y + hh);
   }
-  // Home activity card (docs/device-ui-design.md D-028).
+  // Home activity card (docs/device-ui-design.md D-028 / D-045).
   constexpr bool home_activity_two_line() const { return !is_round; }
+  constexpr int home_activity_max_rows() const { return is_round ? 1 : 2; }
   constexpr int home_activity_w() const { return (w > 520) ? scale_x(380) : std::min(380, w - 32); }
-  constexpr int home_activity_pitch() const { return scale_y(46); }
-  constexpr int home_activity_h() const { return is_round ? scale_y(68) : (2 * scale_y(46) + scale_y(12)); }
-  constexpr int home_activity_dock_gap() const { return mm_to_px(3.0f); }
-  constexpr int home_activity_cy(int weather_h) const {
-    return is_round ? ((home_weather_y + weather_h / 2) + (dock_y - dock_r)) / 2
-                    : (dock_y - dock_r - home_activity_dock_gap() - home_activity_h() / 2);
+  constexpr int home_activity_pitch() const { return scale_y(56); }
+  constexpr int home_activity_h_for_rows(int rows) const {
+    if (is_round) return scale_y(68);
+    return (rows >= 2) ? (scale_y(60) + home_activity_pitch()) : scale_y(60);
   }
-  constexpr bool home_activity_has_drop(int count) const { return count > (is_round ? 1 : 2); }
-  constexpr int home_dock_zone_top(int weather_h, bool card_shown) const {
+  constexpr int home_activity_h() const { return home_activity_h_for_rows(home_activity_max_rows()); }
+  constexpr int home_activity_dock_gap() const { return mm_to_px(3.0f); }
+  constexpr int home_activity_bottom() const { return dock_y - dock_r - home_activity_dock_gap(); }
+  constexpr int home_activity_cy_for_h(int weather_h, int card_h) const {
+    return is_round ? ((home_weather_y + weather_h / 2) + (dock_y - dock_r)) / 2
+                    : (home_activity_bottom() - card_h / 2);
+  }
+  constexpr int home_activity_cy_for_rows(int weather_h, int rows) const {
+    return home_activity_cy_for_h(weather_h, home_activity_h_for_rows(rows));
+  }
+  constexpr int home_activity_cy(int weather_h) const {
+    return home_activity_cy_for_rows(weather_h, home_activity_max_rows());
+  }
+  constexpr bool home_activity_has_drop(int front_count) const {
+    return front_count > home_activity_max_rows();
+  }
+  constexpr int home_dock_zone_top(int weather_h, bool card_shown, int shown_rows = 2) const {
     const int base_y = scale_y(320);
     if (!card_shown) return base_y;
-    const int below_card = home_activity_cy(weather_h) + home_activity_h() / 2 + mm_to_px(1.0f);
+    const int r = (shown_rows <= 1) ? 1 : home_activity_max_rows();
+    const int ch = home_activity_h_for_rows(r);
+    const int ccy = home_activity_cy_for_h(weather_h, ch);
+    const int below_card = ccy + ch / 2 + mm_to_px(1.0f);
     return std::min(dock_y - dock_hit_r(), std::max(base_y, below_card));
   }
-  constexpr bool hit_home_activity(int tx, int ty, int weather_h) const {
+  constexpr bool hit_home_activity(int tx, int ty, int weather_h, int shown_rows = 2) const {
+    const int r = (shown_rows <= 1) ? 1 : home_activity_max_rows();
     const int hw = home_activity_w() / 2;
-    const int hh = home_activity_h() / 2 + scale_y(4);
-    const int acy = home_activity_cy(weather_h);
+    const int hh = home_activity_h_for_rows(r) / 2 + scale_y(4);
+    const int acy = home_activity_cy_for_rows(weather_h, r);
     return (tx >= cx - hw && tx <= cx + hw && ty >= acy - hh && ty <= acy + hh);
   }
 
@@ -333,6 +351,11 @@ inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
 inline bool &home_activity_card_shown() {
   static bool shown = false;
   return shown;
+}
+
+inline int &home_activity_rendered_rows() {
+  static int rows = 0;
+  return rows;
 }
 
 inline int &home_weather_text_h() {

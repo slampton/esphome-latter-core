@@ -49,26 +49,60 @@ void render_battery_indicator(
   }
 }
 
-// Home activity card transitions (D-028 / D-039): row carousel slide + 210 ms disappearance fade-out
-// (kMotionMs, ease-out cubic; 0 = settled).
+// Home activity card transitions (D-028 / D-039 / D-045): adaptive 0 <-> 1 <-> 2 row morph,
+// carousel slide, and 210 ms appear/disappear transitions (kMotionMs, ease-out cubic; 0 = settled).
+inline bool same_activity_id(const HomeActivityItem &a, const HomeActivityItem &b) {
+  if (a.kind == 0 || b.kind == 0 || a.kind != b.kind) return false;
+  if (a.kind == 5) return a.label == b.label;
+  return a.slot_idx == b.slot_idx;
+}
+
 struct HomeActivityAnimState {
-  int top = -1;
-  int bottom = -1;
-  int from_top = -1;
-  int from_bottom = -1;
+  int cur_rows = 0;
+  int from_rows = 0;
+  HomeActivityItem cur_top_item{};
+  HomeActivityItem cur_bot_item{};
+  HomeActivityItem from_top_item{};
+  HomeActivityItem from_bot_item{};
+  int from_h = 0;
+  float from_alpha = 1.0f;
+  int last_drawn_h = 0;
+  float last_drawn_alpha = 0.0f;
+  bool from_has_drop = false;
+  bool cur_has_drop = false;
   uint32_t anim_start_ms = 0;
   bool was_visible = false;
+  bool was_on_home_main = false;
   uint32_t fade_out_start_ms = 0;
-  bool fade_out_two = false;
+  int fade_out_rows = 1;
   bool fade_out_has_drop = false;
   HomeActivityItem fade_out_top_item{};
   HomeActivityItem fade_out_bot_item{};
-  int fade_out_card_h = 0;
+  int fade_out_from_h = 0;
+  float fade_out_from_alpha = 1.0f;
 };
 
 HomeActivityAnimState &home_act_state() {
   static HomeActivityAnimState st;
   return st;
+}
+
+void reset_home_activity_anim_state(bool on_home_main) {
+  auto &st = home_act_state();
+  st.cur_rows = 0;
+  st.from_rows = 0;
+  st.cur_top_item = HomeActivityItem{};
+  st.cur_bot_item = HomeActivityItem{};
+  st.from_top_item = HomeActivityItem{};
+  st.from_bot_item = HomeActivityItem{};
+  st.from_h = 0;
+  st.from_alpha = 1.0f;
+  st.last_drawn_h = 0;
+  st.last_drawn_alpha = 0.0f;
+  st.anim_start_ms = 0U;
+  st.was_visible = false;
+  st.was_on_home_main = on_home_main;
+  st.fade_out_start_ms = 0U;
 }
 
 HomeActivityItem s_rendered_act_items[kMaxHomeActivity]{};
@@ -90,15 +124,13 @@ void draw_home_activity_row_contents(
     bool has_dropdown_ext, bool is_list_row, esphome::display::BaseFont *font_small,
     esphome::Color card_bg, esphome::Color btn_bg,
     esphome::Color theme_secondary, esphome::Color col_white,
-    float alpha = 1.0f) {
+    float alpha = 1.0f, bool is_two_row_card = false) {
   using esphome::Color;
   using esphome::display::TextAlign;
 
   const Color fg_w   = (alpha >= 0.99f) ? col_white       : lerp_color(card_bg, col_white, alpha);
   const Color fg_sh  = (alpha >= 0.99f) ? kChromeShadow   : lerp_color(card_bg, kChromeShadow, alpha);
   const Color fg_sec = (alpha >= 0.99f) ? theme_secondary : lerp_color(card_bg, theme_secondary, alpha);
-  const Color fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, theme_secondary, alpha);
-  (void) fg_btn;
   const Color fg_btn_fill = (alpha >= 0.99f) ? btn_bg : lerp_color(card_bg, btn_bg, alpha);
 
   const int cx_ref     = SCREEN_CX;
@@ -112,7 +144,10 @@ void draw_home_activity_row_contents(
   const int div1_x     = is_list_row ? (card_right - scale_x(44)) : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
   const int act_bx     = is_list_row ? (card_right - scale_x(22)) : (has_dropdown_ext ? (card_right - scale_x(80))  : (card_right - scale_x(28)));
   const int max_txt    = std::max(64, div1_x - txt_x - scale_x(8));
-  const int btn_r      = is_list_row ? scale_s(13) : ((SCREEN_W < 380) ? 16 : scale_s(19));
+  const int btn_r      = is_list_row
+                             ? scale_s(13)
+                             : (is_two_row_card ? ((SCREEN_W < 380) ? 15 : scale_s(17))
+                                                : ((SCREEN_W < 380) ? 16 : scale_s(18)));
 
   const int gy = row_y;
   if (is_list_row) {
@@ -493,10 +528,16 @@ bool is_home_activity_fading_out(uint32_t now_ms) {
 bool has_pending_home_activity_fade_settle(uint32_t now_ms) {
   const auto &rs = runtime_state();
   if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != 0) return false;
-  const uint32_t t0 = home_act_state().fade_out_start_ms;
-  if (t0 == 0U || now_ms < t0) return false;
-  const uint32_t el = now_ms - t0;
-  return el >= kMotionMs && el < (kMotionMs + 250U);
+  const auto &st = home_act_state();
+  if (st.fade_out_start_ms != 0U && now_ms >= st.fade_out_start_ms) {
+    const uint32_t el = now_ms - st.fade_out_start_ms;
+    if (el >= kMotionMs && el < (kMotionMs + 250U)) return true;
+  }
+  if (st.anim_start_ms != 0U && now_ms >= st.anim_start_ms) {
+    const uint32_t el = now_ms - st.anim_start_ms;
+    if (el >= kMotionMs && el < (kMotionMs + 250U)) return true;
+  }
+  return false;
 }
 
 bool home_activity_slide_active(uint32_t now_ms) {
@@ -541,7 +582,8 @@ int collect_home_activities(
     int alarm3_h, int alarm3_m, bool alarm3_en,
     HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour, int cur_min,
-    const std::string &calendar_agenda_raw) {
+    const std::string &calendar_agenda_raw,
+    int cur_day_of_week) {
   int count = 0;
 
   // 0. Active Live Intercom / Doorbell Call (highest urgent pin priority)
@@ -559,35 +601,87 @@ int collect_home_activities(
     out_items[count++] = {6, 0, true, true, true, lbl};
   }
 
-  // 1. Active or Paused Countdown Timers (locks top slot ONLY if running with <= 60 seconds left)
+  // 1. Running Countdown Timers (all running timers pin live, sorted shortest remaining first)
   auto *t_slots = timer_slots();
-  for (int pass = 0; pass < 2; pass++) {
-    for (int i = 0; i < 3 && count < kMaxHomeActivity; i++) {
-      const bool match = (pass == 0) ? t_slots[i].running : (!t_slots[i].running && t_slots[i].paused);
-      if (match) {
-        const auto &s = t_slots[i];
-        const std::string t_name = s.name.empty() ? ("Timer " + std::to_string(i + 1)) : s.name;
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%s • %02d:%02d",
-                      t_name.c_str(), s.remaining_sec / 60, s.remaining_sec % 60);
-        const bool is_urgent = s.running && (s.remaining_sec <= 60);
-        out_items[count++] = {1, i, s.running, is_urgent, true, std::string(buf)};
+  int run_order[3] = {0, 1, 2};
+  if (t_slots[run_order[1]].remaining_sec < t_slots[run_order[0]].remaining_sec) std::swap(run_order[0], run_order[1]);
+  if (t_slots[run_order[2]].remaining_sec < t_slots[run_order[1]].remaining_sec) std::swap(run_order[1], run_order[2]);
+  if (t_slots[run_order[1]].remaining_sec < t_slots[run_order[0]].remaining_sec) std::swap(run_order[0], run_order[1]);
+  for (int k = 0; k < 3 && count < kMaxHomeActivity; ++k) {
+    const int i = run_order[k];
+    if (!t_slots[i].running) continue;
+    const auto &s = t_slots[i];
+    const std::string t_name = s.name.empty() ? ("Timer " + std::to_string(i + 1)) : s.name;
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%s • %02d:%02d",
+                  t_name.c_str(), s.remaining_sec / 60, s.remaining_sec % 60);
+    out_items[count++] = {1, i, true, true, true, std::string(buf)};
+  }
+
+  // 2. Snoozed Alarm (actively counting down to re-ring -> urgent pin)
+  if (alarm_snooze_until > 0 && count < kMaxHomeActivity) {
+    out_items[count++] = {4, 0, true, true, true, "Alarm • Snoozed"};
+  }
+
+  // 3. Running Stopwatch (live ticking -> urgent pin)
+  const uint32_t sw_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
+  char sw_buf[48] = "";
+  if (stopwatch_running || sw_ms > 0) {
+    const int mins = static_cast<int>((sw_ms / 60000U) % 60U);
+    const int secs = static_cast<int>((sw_ms / 1000U) % 60U);
+    const int tenths = static_cast<int>((sw_ms / 100U) % 10U);
+    std::snprintf(sw_buf, sizeof(sw_buf), "Stopwatch • %02d:%02d.%d", mins, secs, tenths);
+    if (stopwatch_running && count < kMaxHomeActivity) {
+      out_items[count++] = {2, 0, true, true, true, std::string(sw_buf)};
+    }
+  }
+
+  // Pre-evaluate armed alarms (recurrence-aware, sorted soonest-firing first)
+  struct PendingAlarmEntry {
+    int slot_1based = 0;
+    int mins_until = -1;
+    std::string label{};
+  };
+  PendingAlarmEntry pend_alarms[3]{};
+  int n_pend_alarms = 0;
+  if (alarm_snooze_until == 0) {
+    const auto &prefs = persisted_prefs();
+    const int a_hrs[3] = {alarm1_h, alarm2_h, alarm3_h};
+    const int a_mns[3] = {alarm1_m, alarm2_m, alarm3_m};
+    const bool a_ens[3] = {alarm1_en, alarm2_en, alarm3_en};
+    for (int i = 0; i < 3; ++i) {
+      if (!a_ens[i] || a_hrs[i] < 0 || a_hrs[i] > 23 || a_mns[i] < 0 || a_mns[i] > 59) continue;
+      char t_buf[16], ap_buf[8] = "";
+      format_time_hhmm(a_hrs[i], a_mns[i], is_24h_format, t_buf, sizeof(t_buf), ap_buf);
+      char buf[48];
+      if (!is_24h_format && ap_buf[0] != '\0') {
+        std::snprintf(buf, sizeof(buf), "Alarm • %s %s", t_buf, ap_buf);
+      } else {
+        std::snprintf(buf, sizeof(buf), "Alarm • %s", t_buf);
+      }
+      const int mins_u = next_alarm_minutes_until(
+          static_cast<uint8_t>(a_hrs[i]), static_cast<uint8_t>(a_mns[i]), true,
+          prefs.alarms[i].recurrence, cur_hour, cur_min, cur_day_of_week);
+      pend_alarms[n_pend_alarms++] = {i + 1, mins_u, std::string(buf)};
+    }
+    for (int a = 0; a < n_pend_alarms - 1; ++a) {
+      for (int b = a + 1; b < n_pend_alarms; ++b) {
+        const int ma = (pend_alarms[a].mins_until > 0) ? pend_alarms[a].mins_until : 999999;
+        const int mb = (pend_alarms[b].mins_until > 0) ? pend_alarms[b].mins_until : 999999;
+        if (mb < ma) std::swap(pend_alarms[a], pend_alarms[b]);
       }
     }
   }
 
-  // 2. Active or Paused Stopwatch (locks top slot whenever actively running)
-  const uint32_t sw_ms = stopwatch_running ? (now_ms - stopwatch_start_time) : stopwatch_elapsed_ms;
-  if ((stopwatch_running || sw_ms > 0) && count < kMaxHomeActivity) {
-    const int mins = static_cast<int>((sw_ms / 60000U) % 60U);
-    const int secs = static_cast<int>((sw_ms / 1000U) % 60U);
-    const int tenths = static_cast<int>((sw_ms / 100U) % 10U);
-    char buf[48];
-    std::snprintf(buf, sizeof(buf), "Stopwatch • %02d:%02d.%d", mins, secs, tenths);
-    out_items[count++] = {2, 0, stopwatch_running, stopwatch_running, true, std::string(buf)};
+  // 4. Imminent Armed Alarms (<= 2h: Android At-a-Glance upcoming-alarm pin priority)
+  for (int a = 0; a < n_pend_alarms && count < kMaxHomeActivity; ++a) {
+    const int mu = pend_alarms[a].mins_until;
+    if (mu > 0 && mu <= kUpcomingAlarmPinMinutes) {
+      out_items[count++] = {4, pend_alarms[a].slot_1based, false, true, true, pend_alarms[a].label};
+    }
   }
 
-  // 3. Active or Recently-Paused Music Queue (D-039: 5-min live-pause window)
+  // 5. Active or Recently-Paused Music Queue (D-039: 5-min live-pause window)
   const auto &ms = media_state();
   const bool is_playing_eff = music_playing;
   if (is_playing_eff) {
@@ -609,37 +703,30 @@ int collect_home_activities(
     out_items[count++] = {3, 0, is_playing_eff, false, true, m_txt};
   }
 
-  // 4. Armed or Snoozed Alarms
-  if (alarm_snooze_until > 0 && count < kMaxHomeActivity) {
-    out_items[count++] = {4, 0, true, false, true, "Alarm • Snoozed"};
-  } else {
-    const int a_hrs[3] = {alarm1_h, alarm2_h, alarm3_h};
-    const int a_mns[3] = {alarm1_m, alarm2_m, alarm3_m};
-    const bool a_ens[3] = {alarm1_en, alarm2_en, alarm3_en};
-    const int now_total_m = (cur_hour >= 0 && cur_min >= 0) ? (cur_hour * 60 + cur_min) : -1;
-    for (int i = 0; i < 3 && count < kMaxHomeActivity; i++) {
-      if (!a_ens[i]) continue;
-      char t_buf[16], ap_buf[8] = "";
-      format_time_hhmm(a_hrs[i], a_mns[i], is_24h_format, t_buf, sizeof(t_buf), ap_buf);
-      char buf[48];
-      if (!is_24h_format && ap_buf[0] != '\0') {
-        std::snprintf(buf, sizeof(buf), "Alarm • %s %s", t_buf, ap_buf);
-      } else {
-        std::snprintf(buf, sizeof(buf), "Alarm • %s", t_buf);
-      }
-      bool within_4h = false;
-      if (now_total_m >= 0) {
-        const int a_total_m = a_hrs[i] * 60 + a_mns[i];
-        const int diff_m = (a_total_m - now_total_m + 1440) % 1440;
-        if (diff_m > 0 && diff_m <= 240) {
-          within_4h = true;
-        }
-      }
-      out_items[count++] = {4, i + 1, false, false, within_4h, std::string(buf)};
+  // 6. Upcoming Armed Alarms in front-card window (2h < mins_until <= 6h)
+  for (int a = 0; a < n_pend_alarms && count < kMaxHomeActivity; ++a) {
+    const int mu = pend_alarms[a].mins_until;
+    if (mu > kUpcomingAlarmPinMinutes && mu <= kUpcomingAlarmDeckMinutes) {
+      out_items[count++] = {4, pend_alarms[a].slot_1based, false, false, true, pend_alarms[a].label};
     }
   }
 
-  // 5. Today's Upcoming Calendar Events (up to 3 TODAY items in rotating deck; first future item in overlay)
+  // 7. Paused Countdown Timers & Paused Stopwatch
+  for (int i = 0; i < 3 && count < kMaxHomeActivity; ++i) {
+    if (!t_slots[i].running && t_slots[i].paused) {
+      const auto &s = t_slots[i];
+      const std::string t_name = s.name.empty() ? ("Timer " + std::to_string(i + 1)) : s.name;
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "%s • %02d:%02d",
+                    t_name.c_str(), s.remaining_sec / 60, s.remaining_sec % 60);
+      out_items[count++] = {1, i, false, false, true, std::string(buf)};
+    }
+  }
+  if (!stopwatch_running && sw_ms > 0 && count < kMaxHomeActivity) {
+    out_items[count++] = {2, 0, false, false, true, std::string(sw_buf)};
+  }
+
+  // 8. Today's Upcoming Calendar Events (up to 3 TODAY items in rotating deck)
   CalendarRecord cal_recs[8];
   const size_t n_cal = parse_calendar_records(calendar_agenda_raw, cal_recs, 8);
   int added_today = 0;
@@ -649,6 +736,14 @@ int collect_home_activities(
           5, static_cast<int>(c), false, false, true,
           std::string(cal_recs[c].time) + " • " + std::string(cal_recs[c].title)};
       ++added_today;
+    }
+  }
+
+  // 9. Off-deck items (> 6h armed alarms & future calendar) kept exclusively for Active Items sheet
+  for (int a = 0; a < n_pend_alarms && count < kMaxHomeActivity; ++a) {
+    const int mu = pend_alarms[a].mins_until;
+    if (mu <= 0 || mu > kUpcomingAlarmDeckMinutes) {
+      out_items[count++] = {4, pend_alarms[a].slot_1based, false, false, false, pend_alarms[a].label};
     }
   }
   if (added_today == 0 && n_cal > 0 && count < kMaxHomeActivity) {
@@ -668,47 +763,6 @@ int collect_home_activities(
     }
   }
   return kept;
-}
-
-HomeActivityView resolve_home_activity_view(const HomeActivityItem items[], int count,
-                                            uint32_t now_ms, bool two_line) {
-  HomeActivityView v;
-  if (count <= 0) return v;
-  int pin = -1;
-  for (int i = 0; i < count && pin < 0; i++) {
-    if (items[i].kind == 6 && items[i].urgent_pin) pin = i;
-  }
-  for (int i = 0; i < count && pin < 0; i++) {
-    if (items[i].kind == 2 && items[i].urgent_pin) pin = i;
-  }
-  for (int i = 0; i < count && pin < 0; i++) {
-    if (items[i].kind == 1 && items[i].urgent_pin) pin = i;
-  }
-  int deck[kMaxHomeActivity];
-  int n = 0;
-  for (int i = 0; i < count && n < kMaxHomeActivity; i++) {
-    if (items[i].in_deck && i != pin) deck[n++] = i;
-  }
-  const uint32_t slot = now_ms / kHomeActivityRotateMs;
-  if (pin >= 0) {
-    v.top = pin;
-    v.pinned = true;
-    if (two_line && n > 0) v.bottom = deck[slot % static_cast<uint32_t>(n)];
-    return v;
-  }
-  if (n == 0) {
-    v.top = 0;
-    return v;
-  }
-  const int lines = two_line ? 2 : 1;
-  if (n <= lines) {
-    v.top = deck[0];
-    if (two_line && n > 1) v.bottom = deck[1];
-    return v;
-  }
-  v.top = deck[slot % static_cast<uint32_t>(n)];
-  if (two_line) v.bottom = deck[(slot + 1U) % static_cast<uint32_t>(n)];
-  return v;
 }
 
 int get_activity_overlay_card_y(int vis_count, int row_idx) {
@@ -977,9 +1031,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     uint32_t snooze{0xFFFFFFFFU};
     uint8_t a_h[3]{0, 0, 0};
     uint8_t a_m[3]{0, 0, 0};
+    uint8_t a_rec[3]{0xFFU, 0xFFU, 0xFFU};
     uint8_t a_en{0xFFU};
     int cur_h{-2};
     int cur_m{-2};
+    int cur_dow{-2};
     uint8_t src_mask{0xFFU};
     std::string cal_raw{};
     bool intercom_on{false};
@@ -1001,6 +1057,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       (prefs.alarms[2].enabled ? 4U : 0U);
   const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
   const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
+  const int cur_dow = ctx.now.is_valid() ? ctx.now.day_of_week : -1;
   const uint8_t cur_mask = activity_source_mask();
   const bool eff_cleared = music_playing ? false : music_queue_cleared();
   const bool eff_paused_memo =
@@ -1030,7 +1087,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       act_memo.a_h[0] != prefs.alarms[0].hour || act_memo.a_m[0] != prefs.alarms[0].minute ||
       act_memo.a_h[1] != prefs.alarms[1].hour || act_memo.a_m[1] != prefs.alarms[1].minute ||
       act_memo.a_h[2] != prefs.alarms[2].hour || act_memo.a_m[2] != prefs.alarms[2].minute ||
-      act_memo.cur_h != cur_h || act_memo.cur_m != cur_m ||
+      act_memo.a_rec[0] != prefs.alarms[0].recurrence ||
+      act_memo.a_rec[1] != prefs.alarms[1].recurrence ||
+      act_memo.a_rec[2] != prefs.alarms[2].recurrence ||
+      act_memo.cur_h != cur_h || act_memo.cur_m != cur_m || act_memo.cur_dow != cur_dow ||
       act_memo.src_mask != cur_mask ||
       act_memo.cal_raw != cs.summary ||
       act_memo.intercom_on != cur_intercom ||
@@ -1043,7 +1103,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
         prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
         prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
-        act_memo.items, cur_h, cur_m, cs.summary);
+        act_memo.items, cur_h, cur_m, cs.summary, cur_dow);
     act_memo.sw_tick = cur_sw_tick;
     act_memo.t_flags = cur_t_flags;
     for (int ti = 0; ti < 3; ti++) {
@@ -1051,6 +1111,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       act_memo.t_names[ti] = ts_chk[ti].name;
       act_memo.a_h[ti] = prefs.alarms[ti].hour;
       act_memo.a_m[ti] = prefs.alarms[ti].minute;
+      act_memo.a_rec[ti] = prefs.alarms[ti].recurrence;
     }
     act_memo.is_24h = is_24h_format;
     act_memo.music_on = music_playing;
@@ -1062,6 +1123,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     act_memo.a_en = cur_a_en;
     act_memo.cur_h = cur_h;
     act_memo.cur_m = cur_m;
+    act_memo.cur_dow = cur_dow;
     act_memo.src_mask = cur_mask;
     act_memo.cal_raw = cs.summary;
     act_memo.intercom_on = cur_intercom;
@@ -1095,8 +1157,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   if (home_subpage == 2) {
     s_act_deck_rotates = false;
     home_activity_card_shown() = false;
-    home_act_state().was_visible = false;
-    home_act_state().fade_out_start_ms = 0U;
+    home_activity_rendered_rows() = 0;
+    reset_home_activity_anim_state(false);
     if (bd_mode == BackdropMode::CustomWallpaper) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
     } else if ((show_weather_bg || sim_override_on) && weather_ready) {
@@ -1261,7 +1323,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                 : 999999U;
   const bool greeting_active = wake_greeting_latched() && (greet_el < kWakeGreetingTotalMs);
 
-  // ZONE 4: Home activity card (D-028 / D-038)
+  // ZONE 4: Adaptive 0 / 1 / 2 Row Home Activity Card (D-028 / D-038 / D-039 / D-045)
   if (ctx.font_date != nullptr) {
     static bool weather_h_measured = false;
     if (!weather_h_measured) {
@@ -1271,249 +1333,416 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       weather_h_measured = true;
     }
   }
-  const int act_card_cy = ly.home_activity_cy(home_weather_text_h());
-  home_activity_card_shown() = (home_subpage == 0 && !greeting_active && act_count > 0);
-  if (home_activity_card_shown()) {
-    const int card_h = ly.home_activity_h();
-    const int card_w = ly.home_activity_w();
-    const int pitch = ly.home_activity_pitch();
-    const int row_top = two ? (act_card_cy - pitch / 2) : act_card_cy;
-    const int row_bot = act_card_cy + pitch / 2;
-    const bool has_drop = ly.home_activity_has_drop(act_count);
-    rs.nav.home_activity_idx = view.top;
-    s_act_band_y0 = std::max(0, act_card_cy - card_h / 2 - 2);
-    s_act_band_y1 = std::min(SCREEN_H - 1, act_card_cy + card_h / 2 + 2);
+  const int weather_h = home_weather_text_h();
+  const int act_card_cy = ly.home_activity_cy(weather_h);
+  const int max_card_h = ly.home_activity_h();
+  const int max_card_y1 = ly.is_round ? (act_card_cy + max_card_h / 2) : ly.home_activity_bottom();
+  const int max_card_y0 = max_card_y1 - max_card_h;
+  const int max_band_y0 = std::max(0, max_card_y0 - 2);
+  const int max_band_y1 = std::min(SCREEN_H - 1, max_card_y1 + 2);
+  const int h1 = ly.home_activity_h_for_rows(1);
+  const int card_w = ly.home_activity_w();
+  const int pitch = ly.home_activity_pitch();
 
-    int deck_cnt = 0;
-    for (int di = 0; di < act_count; ++di) {
-      if (act_items[di].in_deck && (!view.pinned || di != view.top)) ++deck_cnt;
-    }
-    s_act_deck_rotates = view.pinned ? (two && deck_cnt > 1) : (deck_cnt > (two ? 2 : 1));
+  const int target_rows = (home_subpage == 0 && !greeting_active) ? view.visible_rows : 0;
+  home_activity_card_shown() = (target_rows > 0);
+  home_activity_rendered_rows() = target_rows;
 
-    auto &st = home_act_state();
-    st.fade_out_start_ms = 0U;
-    st.was_visible = true;
-    st.fade_out_two = two && (view.bottom >= 0);
-    st.fade_out_has_drop = has_drop;
-    st.fade_out_card_h = card_h;
-    st.fade_out_top_item =
-        (view.top >= 0 && view.top < act_count) ? act_items[view.top] : HomeActivityItem{};
-    st.fade_out_bot_item =
-        (st.fade_out_two && view.bottom >= 0 && view.bottom < act_count) ? act_items[view.bottom]
-                                                                         : HomeActivityItem{};
-    if (view.top != st.top || view.bottom != st.bottom) {
-      st.from_top = st.top;
-      st.from_bottom = st.bottom;
-      st.top = view.top;
-      st.bottom = view.bottom;
-      st.anim_start_ms = (st.from_top >= 0) ? ((now_ms == 0) ? 1U : now_ms) : 0U;
-    }
-    float e = 1.0f;
-    if (st.anim_start_ms != 0) {
-      const uint32_t el = now_ms - st.anim_start_ms;
-      if (el < kMotionMs) {
-        e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
-      } else {
-        st.anim_start_ms = 0;
-      }
-    }
-    const bool animating = (e < 1.0f);
-
+  auto draw_glass_activity_surface = [&](int card_x0, int card_y0, int box_h, float surf_alpha,
+                                         bool sample_bd, Color &out_card_bg) -> bool {
+    if (box_h <= 4 || surf_alpha <= 0.01f) return false;
+    if ((card_y0 + box_h) <= clip_y0() || card_y0 > clip_y1()) return false;
     const Color tint = kChromeGlassTint;
-    const Color card_brd = kChromeCardBrdOn;
-    const Color btn_bg = kChromeGlassTint;
-    const int card_r = std::min(card_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
-    const int card_x0 = cx - card_w / 2;
-    const int card_y0 = act_card_cy - card_h / 2;
-    if ((card_y0 + card_h) > clip_y0() && card_y0 <= clip_y1()) {
+    const int card_r = std::min(box_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
+    if (surf_alpha >= 0.995f) {
       const GlassBackdrop anim_bd =
-          animating ? sample_glass_backdrop(card_x0, card_y0, card_w, card_h) : GlassBackdrop{};
-      render_glass_card(it, card_x0, card_y0, card_w, card_h, card_r, tint, -1,
+          sample_bd ? sample_glass_backdrop(card_x0, card_y0, card_w, box_h) : GlassBackdrop{};
+      render_glass_card(it, card_x0, card_y0, card_w, box_h, card_r, tint, -1,
                         GlassVariant::Clear, ctx.col_white);
-      Color card_bg = tint;
-      if (animating) {
+      out_card_bg = tint;
+      if (sample_bd) {
         Color eff_tint;
         int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
         resolve_glass_fill(GlassBackdrop{}, tint, ctx.col_white, eff_tint,
                            a_top, a_bot, rim_top, rim_bot, -1, GlassVariant::Clear);
-        card_bg = anim_bd.valid ? mix_color_q8(anim_bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
+        out_card_bg = anim_bd.valid ? mix_color_q8(anim_bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
       }
+      return true;
+    }
 
+    const int prev_clip_y0 = clip_y0();
+    const int prev_clip_y1 = clip_y1();
+    const int sc_y0 = std::max(prev_clip_y0, card_y0);
+    const int sc_y1 = std::min(prev_clip_y1, card_y0 + box_h - 1);
+    if (sc_y0 > sc_y1) return false;
+    set_clip_y_band(sc_y0, sc_y1);
+    const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, box_h);
+    Color eff_tint;
+    int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+    resolve_glass_fill(GlassBackdrop{}, tint, ctx.col_white, eff_tint,
+                       raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot,
+                       -1, GlassVariant::Clear);
+    const int a_top = static_cast<int>(std::lround(static_cast<float>(raw_a_top) * surf_alpha));
+    const int a_bot = static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * surf_alpha));
+    const int rim_top = static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * surf_alpha));
+    const int rim_bot = static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * surf_alpha));
+    if (rim_top > 0 || rim_bot > 0) {
+      fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r),
+                            kChromeGlassSheen, rim_top, rim_bot, 1);
+    }
+    if ((a_top > 0 || a_bot > 0) && card_w > 2 && box_h > 2) {
+      fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
+                            std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
+    }
+    const int mean_a = (a_top + a_bot) / 2;
+    const Color base_mean = backdrop.valid ? backdrop.mean : ctx.col_bg;
+    out_card_bg = mix_color_q8(base_mean, eff_tint, mean_a);
+    set_clip_y_band(prev_clip_y0, prev_clip_y1);
+    return true;
+  };
+
+  auto &st = home_act_state();
+  if (home_activity_card_shown()) {
+    const int target_h = ly.home_activity_h_for_rows(target_rows);
+    const int target_y1 = ly.is_round ? (ly.home_activity_cy_for_h(weather_h, target_h) + target_h / 2)
+                                      : ly.home_activity_bottom();
+    const int target_y0 = target_y1 - target_h;
+    const int target_cy = target_y0 + target_h / 2;
+    const bool has_drop = ly.home_activity_has_drop(view.front_count);
+    rs.nav.home_activity_idx = view.top;
+
+    s_act_deck_rotates = two ? (view.front_count > 2) : (!view.pinned && view.front_count > 1);
+
+    const HomeActivityItem top_item =
+        (view.top >= 0 && view.top < act_count) ? act_items[view.top] : HomeActivityItem{};
+    const HomeActivityItem bot_item =
+        (target_rows >= 2 && view.bottom >= 0 && view.bottom < act_count) ? act_items[view.bottom]
+                                                                          : HomeActivityItem{};
+
+    const bool fresh_home_entry = !st.was_on_home_main;
+    st.was_on_home_main = true;
+
+    const bool had_active_anim = (st.anim_start_ms != 0U);
+    if (st.anim_start_ms != 0U && now_ms >= st.anim_start_ms &&
+        (now_ms - st.anim_start_ms) >= kMotionMs) {
+      st.anim_start_ms = 0U;
+    }
+
+    if (fresh_home_entry) {
+      st.from_rows = target_rows;
+      st.cur_rows = target_rows;
+      st.from_top_item = top_item;
+      st.from_bot_item = bot_item;
+      st.cur_top_item = top_item;
+      st.cur_bot_item = bot_item;
+      st.from_has_drop = has_drop;
+      st.cur_has_drop = has_drop;
+      st.from_h = target_h;
+      st.from_alpha = 1.0f;
+      st.anim_start_ms = 0U;
+    } else if (!st.was_visible || st.fade_out_start_ms != 0U) {
+      st.from_rows = 0;
+      st.from_top_item = HomeActivityItem{};
+      st.from_bot_item = HomeActivityItem{};
+      st.from_has_drop = has_drop;
+      st.from_h = (st.last_drawn_h > 0) ? st.last_drawn_h : std::max(scale_y(26), (h1 * 3) / 5);
+      st.from_alpha = (st.last_drawn_alpha > 0.02f) ? st.last_drawn_alpha : 0.0f;
+      st.cur_rows = target_rows;
+      st.cur_top_item = top_item;
+      st.cur_bot_item = bot_item;
+      st.cur_has_drop = has_drop;
+      st.anim_start_ms = (now_ms == 0U) ? 1U : now_ms;
+    } else {
+      const bool rows_changed = (target_rows != st.cur_rows);
+      const bool top_id_changed = !same_activity_id(top_item, st.cur_top_item);
+      const bool bot_id_changed =
+          (target_rows >= 2) ? !same_activity_id(bot_item, st.cur_bot_item) : false;
+      if (rows_changed || top_id_changed || bot_id_changed) {
+        st.from_rows = st.cur_rows;
+        st.from_top_item = st.cur_top_item;
+        st.from_bot_item = st.cur_bot_item;
+        st.from_has_drop = st.cur_has_drop;
+        st.from_h = (st.last_drawn_h > 0) ? st.last_drawn_h : ly.home_activity_h_for_rows(st.cur_rows);
+        st.from_alpha = (st.last_drawn_alpha > 0.02f) ? st.last_drawn_alpha : 1.0f;
+        st.cur_rows = target_rows;
+        st.cur_top_item = top_item;
+        st.cur_bot_item = bot_item;
+        st.cur_has_drop = has_drop;
+        st.anim_start_ms = (now_ms == 0U) ? 1U : now_ms;
+      } else {
+        st.cur_top_item = top_item;
+        st.cur_bot_item = bot_item;
+        st.cur_has_drop = has_drop;
+      }
+    }
+    st.was_visible = true;
+    st.fade_out_start_ms = 0U;
+
+    float e = 1.0f;
+    if (st.anim_start_ms != 0U) {
+      const uint32_t el = (now_ms >= st.anim_start_ms) ? (now_ms - st.anim_start_ms) : 0U;
+      if (el < kMotionMs) {
+        e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
+      } else {
+        st.anim_start_ms = 0U;
+      }
+    }
+    const bool animating = (e < 1.0f);
+    if (animating || had_active_anim) {
+      s_act_band_y0 = max_band_y0;
+      s_act_band_y1 = max_band_y1;
+    } else {
+      s_act_band_y0 = std::max(0, target_y0 - 2);
+      s_act_band_y1 = std::min(SCREEN_H - 1, target_y1 + 2);
+    }
+
+    const int card_h = animating
+                           ? static_cast<int>(std::lround(
+                                 static_cast<float>(st.from_h) +
+                                 static_cast<float>(target_h - st.from_h) * e))
+                           : target_h;
+    const float surf_alpha = animating
+                                 ? std::clamp(st.from_alpha + (1.0f - st.from_alpha) * e, 0.0f, 1.0f)
+                                 : 1.0f;
+    const int card_y1 = ly.is_round ? (ly.home_activity_cy_for_h(weather_h, card_h) + card_h / 2)
+                                    : ly.home_activity_bottom();
+    const int card_y0 = card_y1 - card_h;
+    const int cur_cy = card_y0 + card_h / 2;
+    const int card_x0 = cx - card_w / 2;
+    st.last_drawn_h = card_h;
+    st.last_drawn_alpha = surf_alpha;
+
+    Color card_bg = kChromeGlassTint;
+    if (draw_glass_activity_surface(card_x0, card_y0, card_h, surf_alpha, animating, card_bg)) {
+      const Color btn_bg = kChromeGlassTint;
       const int prev_clip_y0 = clip_y0();
       const int prev_clip_y1 = clip_y1();
       const int inner_y0 = std::max(prev_clip_y0, card_y0 + 1);
       const int inner_y1 = std::min(prev_clip_y1, card_y0 + card_h - 2);
+      const int y_top_slot = card_y0 + h1 / 2;
+      const int y_bot_slot = card_y1 - h1 / 2;
+      const float shrink_out_a = std::clamp(1.0f - e * 1.65f, 0.0f, 1.0f);
+
       if (inner_y0 <= inner_y1) {
         set_clip_y_band(inner_y0, inner_y1);
         const int rise = scale_y(16);
-        auto draw_row = [&](int item, int y, float alpha) {
-          if (item < 0 || item >= act_count || alpha <= 0.05f) return;
-          draw_home_activity_row_contents(it, y, act_items[item], has_drop, false, ctx.font_small,
+        auto draw_item = [&](const HomeActivityItem &it_act, int y, float alpha, bool two_row_style) {
+          if (it_act.kind == 0 || alpha <= 0.04f) return;
+          draw_home_activity_row_contents(it, y, it_act, has_drop, false, ctx.font_small,
                                           card_bg, btn_bg, ctx.theme_secondary, ctx.col_white,
-                                          std::min(1.0f, alpha));
+                                          std::min(1.0f, alpha), two_row_style);
         };
-        auto change_in_place = [&](int from, int to, int y) {
-          if (!animating || from == to) {
-            draw_row(to, y, 1.0f);
+        auto change_in_place = [&](const HomeActivityItem &from_it, const HomeActivityItem &to_it,
+                                   int y, bool two_row_style) {
+          if (!animating || from_it.kind == 0 || same_activity_id(from_it, to_it)) {
+            draw_item(to_it, y, surf_alpha, two_row_style);
             return;
           }
-          draw_row(from, y - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-          draw_row(to, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
+          draw_item(from_it, y - static_cast<int>(static_cast<float>(rise) * e),
+                    (1.0f - e) * surf_alpha, two_row_style);
+          draw_item(to_it, y + static_cast<int>(static_cast<float>(rise) * (1.0f - e)),
+                    e * surf_alpha, two_row_style);
         };
-        if (!two) {
-          change_in_place(st.from_top, view.top, act_card_cy);
-        } else if (view.bottom < 0) {
-          if (animating && st.from_bottom < 0) change_in_place(st.from_top, view.top, act_card_cy);
-          else draw_row(view.top, act_card_cy, 1.0f);
-        } else if (animating && st.from_bottom >= 0 && !view.pinned && view.top == st.from_bottom) {
-          draw_row(st.from_top, row_top - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e);
-          draw_row(view.top, row_bot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f);
-          draw_row(view.bottom, row_bot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e);
-        } else if (animating && st.from_bottom >= 0) {
-          change_in_place(st.from_top, view.top, row_top);
-          change_in_place(st.from_bottom, view.bottom, row_bot);
+
+        if (animating && st.from_rows == 0) {
+          const int rise_in = static_cast<int>(static_cast<float>(scale_y(10)) * (1.0f - e));
+          if (target_rows == 1) {
+            draw_item(st.cur_top_item, cur_cy + rise_in, surf_alpha, false);
+          } else {
+            draw_item(st.cur_top_item, y_top_slot + rise_in, surf_alpha, true);
+            draw_item(st.cur_bot_item, y_bot_slot + rise_in, surf_alpha, true);
+          }
+        } else if (animating && st.from_rows == 1 && target_rows == 2) {
+          if (same_activity_id(st.cur_top_item, st.from_top_item)) {
+            draw_item(st.cur_top_item, y_top_slot, 1.0f, true);
+            draw_item(st.cur_bot_item, y_bot_slot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e, true);
+          } else if (same_activity_id(st.cur_bot_item, st.from_top_item)) {
+            draw_item(st.cur_top_item, y_top_slot - static_cast<int>(static_cast<float>(scale_y(10)) * (1.0f - e)), e, true);
+            draw_item(st.cur_bot_item, y_bot_slot, 1.0f, true);
+          } else {
+            draw_item(st.from_top_item, y_bot_slot - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e, true);
+            draw_item(st.cur_top_item, y_top_slot, e, true);
+            draw_item(st.cur_bot_item, y_bot_slot, e, true);
+          }
+        } else if (animating && st.from_rows == 2 && target_rows == 1) {
+          if (same_activity_id(st.cur_top_item, st.from_bot_item)) {
+            draw_item(st.from_top_item, y_top_slot, shrink_out_a, true);
+            draw_item(st.cur_top_item, y_bot_slot, 1.0f, false);
+          } else if (same_activity_id(st.cur_top_item, st.from_top_item)) {
+            draw_item(st.from_bot_item, y_bot_slot, shrink_out_a, true);
+            draw_item(st.cur_top_item, y_top_slot, 1.0f, false);
+          } else {
+            draw_item(st.from_top_item, y_top_slot, shrink_out_a, true);
+            draw_item(st.cur_top_item, y_bot_slot, e, false);
+          }
+        } else if (target_rows == 1) {
+          change_in_place(st.from_top_item, st.cur_top_item, cur_cy, false);
+        } else if (animating && st.from_rows == 2 && !view.pinned &&
+                   same_activity_id(st.cur_top_item, st.from_bot_item)) {
+          draw_item(st.from_top_item, y_top_slot - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e, true);
+          draw_item(st.cur_top_item, y_bot_slot - static_cast<int>(static_cast<float>(pitch) * e), 1.0f, true);
+          draw_item(st.cur_bot_item, y_bot_slot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e, true);
+        } else if (animating) {
+          change_in_place(st.from_top_item, st.cur_top_item, y_top_slot, true);
+          change_in_place(st.from_bot_item, st.cur_bot_item, y_bot_slot, true);
         } else {
-          draw_row(view.top, row_top, 1.0f);
-          draw_row(view.bottom, row_bot, 1.0f);
+          draw_item(st.cur_top_item, y_top_slot, 1.0f, true);
+          draw_item(st.cur_bot_item, y_bot_slot, 1.0f, true);
+        }
+
+        const Color div_col = (surf_alpha >= 0.99f)
+                                  ? kChromeCardBrdOn
+                                  : lerp_color(card_bg, kChromeCardBrdOn, surf_alpha);
+        const int card_right = cx + card_w / 2;
+        const int div2_x = card_right - scale_x(52);
+        const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
+
+        float row_sep_a = 0.0f;
+        if (target_rows == 2 && st.from_rows == 2) row_sep_a = surf_alpha;
+        else if (target_rows == 2 && st.from_rows == 0) row_sep_a = surf_alpha;
+        else if (target_rows == 2 && st.from_rows == 1) row_sep_a = animating ? e : 1.0f;
+        else if (target_rows == 1 && st.from_rows == 2 && animating) row_sep_a = shrink_out_a;
+        if (row_sep_a > 0.05f) {
+          const int sep_x0 = card_x0 + scale_x(18);
+          const int sep_x1 = (has_drop ? div2_x : card_right) - scale_x(12);
+          if (sep_x1 > sep_x0) {
+            const Color sep_col = (row_sep_a >= 0.99f)
+                                      ? kChromeCardBrdOn
+                                      : lerp_color(card_bg, kChromeCardBrdOn, row_sep_a);
+            fast_hline(it, sep_x0, cur_cy, sep_x1 - sep_x0 + 1, sep_col);
+          }
+        }
+
+        if (target_rows == 2) {
+          const int div_h = scale_y(16);
+          fast_line(it, div1_x, y_top_slot - div_h, div1_x, y_top_slot + div_h, div_col);
+          if (!animating || st.from_rows != 1 || e > 0.25f) {
+            fast_line(it, div1_x, y_bot_slot - div_h, div1_x, y_bot_slot + div_h, div_col);
+          }
+        } else {
+          const int div_h = scale_y(18);
+          fast_line(it, div1_x, cur_cy - div_h, div1_x, cur_cy + div_h, div_col);
+        }
+
+        if (has_drop) {
+          const int col_h = std::max(scale_y(12), card_h / 2 - scale_y(10));
+          fast_line(it, div2_x, cur_cy - col_h, div2_x, cur_cy + col_h, div_col);
+          const Color chev_col = (surf_alpha >= 0.99f)
+                                     ? ctx.col_white
+                                     : lerp_color(card_bg, ctx.col_white, surf_alpha);
+          const int d_bx = card_right - scale_x(26);
+          for (int w = -1; w <= 1; w++) {
+            fast_line(it, d_bx - 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
+            fast_line(it, d_bx + 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
+          }
         }
         set_clip_y_band(prev_clip_y0, prev_clip_y1);
-      }
-
-      const int card_right = cx + card_w / 2;
-      const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
-      const int div_h = scale_y(two ? 17 : 23);
-      if (two && view.bottom >= 0) {
-        fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, card_brd);
-        fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, card_brd);
-      } else {
-        fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, card_brd);
-      }
-      if (has_drop) {
-        const int div2_x = card_right - scale_x(52);
-        const int col_h = card_h / 2 - scale_y(10);
-        fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, card_brd);
-        const int d_bx = card_right - scale_x(26);
-        for (int w = -1; w <= 1; w++) {
-          fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
-          fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, ctx.col_white);
-        }
       }
     }
 
     register_home_activity_hit_regions(
-        frame_hits(), cx, act_card_cy, card_w, card_h,
-        two && (view.bottom >= 0), has_drop, view.top, view.bottom,
+        frame_hits(), cx, target_cy, card_w, target_h,
+        (target_rows >= 2) && (view.bottom >= 0), has_drop, view.top, view.bottom,
         scale_x(56), scale_x(52));
   } else {
     s_act_deck_rotates = false;
-    auto &st = home_act_state();
     if (home_subpage != 0 || greeting_active) {
-      st.was_visible = false;
-      st.fade_out_start_ms = 0U;
-      st.top = -1;
-      st.bottom = -1;
-      st.anim_start_ms = 0U;
+      reset_home_activity_anim_state(false);
     } else {
+      st.was_on_home_main = true;
       if (st.was_visible) {
         st.was_visible = false;
-        st.top = -1;
-        st.bottom = -1;
-        st.from_top = -1;
-        st.from_bottom = -1;
+        st.fade_out_rows = (st.cur_rows >= 2) ? 2 : 1;
+        st.fade_out_has_drop = st.cur_has_drop;
+        st.fade_out_top_item = st.cur_top_item;
+        st.fade_out_bot_item = st.cur_bot_item;
+        st.fade_out_from_h =
+            (st.last_drawn_h > 0) ? st.last_drawn_h : ly.home_activity_h_for_rows(st.fade_out_rows);
+        st.fade_out_from_alpha = (st.last_drawn_alpha > 0.02f) ? st.last_drawn_alpha : 1.0f;
+        st.cur_rows = 0;
+        st.from_rows = 0;
         st.anim_start_ms = 0U;
         st.fade_out_start_ms = (now_ms == 0U) ? 1U : now_ms;
       }
       if (st.fade_out_start_ms != 0U) {
+        s_act_band_y0 = max_band_y0;
+        s_act_band_y1 = max_band_y1;
         const uint32_t el = (now_ms >= st.fade_out_start_ms) ? (now_ms - st.fade_out_start_ms) : 0U;
         if (el >= kMotionMs) {
           st.fade_out_start_ms = 0U;
+          st.last_drawn_h = 0;
+          st.last_drawn_alpha = 0.0f;
         } else {
           const float e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
-          const float fade_alpha = std::clamp(1.0f - e, 0.0f, 1.0f);
-          const int card_h = (st.fade_out_card_h > 0) ? st.fade_out_card_h : ly.home_activity_h();
-          const int card_w = ly.home_activity_w();
-          const int pitch = ly.home_activity_pitch();
-          const int row_top = st.fade_out_two ? (act_card_cy - pitch / 2) : act_card_cy;
-          const int row_bot = act_card_cy + pitch / 2;
-          const int card_r = std::min(card_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
+          const float fade_alpha = std::clamp(st.fade_out_from_alpha * (1.0f - e), 0.0f, 1.0f);
+          const int min_collapse_h = std::max(scale_y(26), (h1 * 3) / 5);
+          const int fade_h = static_cast<int>(std::lround(
+              static_cast<float>(st.fade_out_from_h) +
+              static_cast<float>(min_collapse_h - st.fade_out_from_h) * e));
+          const int card_y1 = ly.is_round ? (ly.home_activity_cy_for_h(weather_h, fade_h) + fade_h / 2)
+                                          : ly.home_activity_bottom();
+          const int card_y0 = card_y1 - fade_h;
+          const int cur_cy = card_y0 + fade_h / 2;
           const int card_x0 = cx - card_w / 2;
-          const int card_y0 = act_card_cy - card_h / 2;
-          s_act_band_y0 = std::max(0, card_y0 - 2);
-          s_act_band_y1 = std::min(SCREEN_H - 1, card_y0 + card_h + 2);
+          st.last_drawn_h = fade_h;
+          st.last_drawn_alpha = fade_alpha;
 
-          const int prev_clip_y0 = clip_y0();
-          const int prev_clip_y1 = clip_y1();
-          const int sc_y0 = std::max(prev_clip_y0, card_y0);
-          const int sc_y1 = std::min(prev_clip_y1, card_y0 + card_h - 1);
-          if (fade_alpha > 0.01f && sc_y0 <= sc_y1) {
-            set_clip_y_band(sc_y0, sc_y1);
-            const Color tint = kChromeGlassTint;
-            const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, card_h);
-            Color eff_tint;
-            int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-            resolve_glass_fill(backdrop, tint, ctx.col_white, eff_tint,
-                               raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot,
-                               -1, GlassVariant::Clear);
-            const int a_top = static_cast<int>(std::lround(static_cast<float>(raw_a_top) * fade_alpha));
-            const int a_bot = static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * fade_alpha));
-            const int rim_top = static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * fade_alpha));
-            const int rim_bot = static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * fade_alpha));
-            if (rim_top > 0 || rim_bot > 0) {
-              fill_round_rect_glass(it, card_x0, card_y0, card_w, card_h, static_cast<float>(card_r),
-                                    kChromeGlassSheen, rim_top, rim_bot, 1);
-            }
-            if ((a_top > 0 || a_bot > 0) && card_w > 2 && card_h > 2) {
-              fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, card_h - 2,
-                                    std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
-            }
-            const int mean_a = (a_top + a_bot) / 2;
-            const Color base_mean = backdrop.valid ? backdrop.mean : ctx.col_bg;
-            const Color card_bg = mix_color_q8(base_mean, eff_tint, mean_a);
-
-            const int inner_y0 = std::max(sc_y0, card_y0 + 1);
-            const int inner_y1 = std::min(sc_y1, card_y0 + card_h - 2);
+          Color card_bg = kChromeGlassTint;
+          if (draw_glass_activity_surface(card_x0, card_y0, fade_h, fade_alpha, true, card_bg)) {
+            const int prev_clip_y0 = clip_y0();
+            const int prev_clip_y1 = clip_y1();
+            const int inner_y0 = std::max(prev_clip_y0, card_y0 + 1);
+            const int inner_y1 = std::min(prev_clip_y1, card_y1 - 2);
             if (inner_y0 <= inner_y1) {
               set_clip_y_band(inner_y0, inner_y1);
-              if (st.fade_out_two) {
+              const int y_top_slot = card_y0 + h1 / 2;
+              const int y_bot_slot = card_y1 - h1 / 2;
+              if (st.fade_out_rows >= 2) {
                 if (st.fade_out_top_item.kind != 0) {
                   draw_home_activity_row_contents(
-                      it, row_top, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
-                      card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+                      it, y_top_slot, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
+                      card_bg, kChromeGlassTint, ctx.theme_secondary, ctx.col_white, fade_alpha, true);
                 }
                 if (st.fade_out_bot_item.kind != 0) {
                   draw_home_activity_row_contents(
-                      it, row_bot, st.fade_out_bot_item, st.fade_out_has_drop, false, ctx.font_small,
-                      card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+                      it, y_bot_slot, st.fade_out_bot_item, st.fade_out_has_drop, false, ctx.font_small,
+                      card_bg, kChromeGlassTint, ctx.theme_secondary, ctx.col_white, fade_alpha, true);
                 }
               } else if (st.fade_out_top_item.kind != 0) {
                 draw_home_activity_row_contents(
-                    it, act_card_cy, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
-                    card_bg, tint, ctx.theme_secondary, ctx.col_white, fade_alpha);
+                    it, cur_cy, st.fade_out_top_item, st.fade_out_has_drop, false, ctx.font_small,
+                    card_bg, kChromeGlassTint, ctx.theme_secondary, ctx.col_white, fade_alpha, false);
               }
 
               const Color div_col = lerp_color(card_bg, kChromeCardBrdOn, fade_alpha);
               const int card_right = cx + card_w / 2;
+              const int div2_x = card_right - scale_x(52);
               const int div1_x = st.fade_out_has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
-              const int div_h = scale_y(st.fade_out_two ? 17 : 23);
-              if (st.fade_out_two) {
-                fast_line(it, div1_x, row_top - div_h, div1_x, row_top + div_h, div_col);
-                fast_line(it, div1_x, row_bot - div_h, div1_x, row_bot + div_h, div_col);
+              if (st.fade_out_rows >= 2) {
+                const int sep_x0 = card_x0 + scale_x(18);
+                const int sep_x1 = (st.fade_out_has_drop ? div2_x : card_right) - scale_x(12);
+                if (sep_x1 > sep_x0) {
+                  fast_hline(it, sep_x0, cur_cy, sep_x1 - sep_x0 + 1, div_col);
+                }
+                const int div_h = scale_y(16);
+                fast_line(it, div1_x, y_top_slot - div_h, div1_x, y_top_slot + div_h, div_col);
+                fast_line(it, div1_x, y_bot_slot - div_h, div1_x, y_bot_slot + div_h, div_col);
               } else {
-                fast_line(it, div1_x, act_card_cy - div_h, div1_x, act_card_cy + div_h, div_col);
+                const int div_h = scale_y(18);
+                fast_line(it, div1_x, cur_cy - div_h, div1_x, cur_cy + div_h, div_col);
               }
               if (st.fade_out_has_drop) {
-                const int div2_x = card_right - scale_x(52);
-                const int col_h = card_h / 2 - scale_y(10);
-                fast_line(it, div2_x, act_card_cy - col_h, div2_x, act_card_cy + col_h, div_col);
+                const int col_h = std::max(scale_y(12), fade_h / 2 - scale_y(10));
+                fast_line(it, div2_x, cur_cy - col_h, div2_x, cur_cy + col_h, div_col);
                 const Color chev_col = lerp_color(card_bg, ctx.col_white, fade_alpha);
                 const int d_bx = card_right - scale_x(26);
                 for (int w = -1; w <= 1; w++) {
-                  fast_line(it, d_bx - 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, chev_col);
-                  fast_line(it, d_bx + 8, act_card_cy - 4 + w, d_bx, act_card_cy + 4 + w, chev_col);
+                  fast_line(it, d_bx - 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
+                  fast_line(it, d_bx + 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
                 }
               }
+              set_clip_y_band(prev_clip_y0, prev_clip_y1);
             }
-            set_clip_y_band(prev_clip_y0, prev_clip_y1);
           }
         }
       }
@@ -1854,8 +2083,8 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
   const int pg = runtime_state().nav.gui_page;
   if (pg != PageId::HOME) {
     home_activity_card_shown() = false;
-    home_act_state().was_visible = false;
-    home_act_state().fade_out_start_ms = 0U;
+    home_activity_rendered_rows() = 0;
+    reset_home_activity_anim_state(false);
   }
   switch (pg) {
     case PageId::CLOCK:

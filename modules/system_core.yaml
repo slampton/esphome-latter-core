@@ -617,6 +617,7 @@ script:
           rt.time_valid = now_t.is_valid();
           rt.time_hour = rt.time_valid ? now_t.hour : -1;
           rt.time_minute = rt.time_valid ? now_t.minute : -1;
+          rt.time_day_of_week = rt.time_valid ? now_t.day_of_week : -1;
           rt.time_epoch = rt.time_valid ? static_cast<uint32_t>(now_t.timestamp) : 0U;
 
           if (rt.exec_cmd == nullptr) {

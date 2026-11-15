@@ -942,6 +942,7 @@ struct TextCacheEntry {
 
 std::string sanitize_utf8_for_font(const std::string &str);
 std::string fit_text_to_width_font_base(const std::string &raw_str, int max_w, esphome::display::BaseFont *font);
+int text_ink_right_edge_impl(esphome::display::Display &it, esphome::display::BaseFont *font, const char *text);
 void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::display::BaseFont *font,
                      esphome::Color color, esphome::display::TextAlign align, const char *text,
                      esphome::Color background);
@@ -952,6 +953,11 @@ void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome:
 template <typename FontT>
 inline std::string fit_text_to_width_font(const std::string &raw_str, int max_w, FontT *font) {
   return fit_text_to_width_font_base(raw_str, max_w, static_cast<esphome::display::BaseFont *>(font));
+}
+
+template <typename DisplayT, typename FontT>
+inline int text_ink_right_edge(DisplayT &it, FontT *font, const char *text) {
+  return text_ink_right_edge_impl(it, static_cast<esphome::display::BaseFont *>(font), text);
 }
 
 template <typename DisplayT, typename FontT>

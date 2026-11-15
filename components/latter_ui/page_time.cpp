@@ -86,7 +86,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   const bool has_bd_shadow = backdrop_active();
 
   // 1. Optional user-defined Local Clock Label above the local time readout
-  const int time_y = local_only ? scale_y(has_label ? 210 : 198)
+  const int time_y = local_only ? scale_y(has_label ? 172 : 160)
                                 : scale_y(has_label ? 142 : 134);
   const int tz_y = time_y + scale_y(local_only ? 54 : 50);
 
@@ -148,12 +148,15 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
     } else {
       const int ss_y = time_y - scale_y(14);
       const int ap_y = time_y + scale_y(16);
+      const int ss_ink_w = text_ink_right_edge(it, sec_font, ":00");
+      const int ap_ink_w = text_ink_right_edge(it, ctx.font_small, ap_buf);
+      const int ap_x = stack_x + std::max(0, ss_ink_w - ap_ink_w);
       if (has_bd_shadow) {
         fast_print(it, stack_x + 1, ss_y + 1, sec_font, kChromeShadow, TextAlign::CENTER_LEFT, ss_buf);
-        fast_print(it, stack_x + 1, ap_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER_LEFT, ap_buf);
+        fast_print(it, ap_x + 1, ap_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER_LEFT, ap_buf);
       }
       fast_print(it, stack_x, ss_y, sec_font, ctx.theme_primary, TextAlign::CENTER_LEFT, ss_buf);
-      fast_print(it, stack_x, ap_y, ctx.font_small, ctx.col_slate, TextAlign::CENTER_LEFT, ap_buf);
+      fast_print(it, ap_x, ap_y, ctx.font_small, ctx.col_slate, TextAlign::CENTER_LEFT, ap_buf);
     }
   } else {
     if (has_bd_shadow) {
@@ -362,13 +365,13 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   if (disp_sec >= 3600) {
     std::snprintf(t_buf, sizeof(t_buf), "%d:%02d:%02d",
                   disp_sec / 3600, (disp_sec % 3600) / 60, disp_sec % 60);
-    render_time_readout(it, cx, t_buf, ctx.font_date, ctx.col_white, scale_y(210));
+    render_time_readout(it, cx, t_buf, ctx.font_date, ctx.col_white, scale_y(172));
   } else {
     std::snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, disp_sec % 60);
-    render_time_readout(it, cx, t_buf, ctx.font_time, ctx.col_white, scale_y(202));
+    render_time_readout(it, cx, t_buf, ctx.font_time, ctx.col_white, scale_y(164));
   }
 
-  const int p_y = scale_y(274);
+  const int p_y = scale_y(236);
   const int p_r = std::max(14, scale_y(20));
   const int p_hw = std::max(p_r + 8, std::min(scale_x(92), safe_span(p_y, 24) / 2));
   if (s.running) {
@@ -385,10 +388,10 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   if (!s.running && !s.paused) {
     static const char *const kTimerStepLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
     const int step_h = (SCREEN_H < 400) ? 32 : 38;
-    ui::stepper_row(it, cx, scale_y(336), step_h, kTimerStepLabels, ctx.font_small,
+    ui::stepper_row(it, cx, scale_y(298), step_h, kTimerStepLabels, ctx.font_small,
                     ctx.col_white, WidgetId::STEPPER_BASE);
   } else {
-    const int ext_y = scale_y(354);
+    const int ext_y = scale_y(316);
     const int ext_r = std::max(12, scale_y(18));
     const int gap = scale_x(12);
     const int box_w = std::max(2 * ext_r + 8,
@@ -489,7 +492,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   }
   std::snprintf(mm_buf, sizeof(mm_buf), "%02u", static_cast<unsigned>(ap.minute));
 
-  const int time_y = scale_y(188);
+  const int time_y = scale_y(150);
   auto *num_font = (SCREEN_W < 300) ? ctx.font_chrono_time : ctx.font_time;
   int hh_w = 0, col_w = 0, mm_w = 0, ap_w = 0;
   int hx_off = 0, cx_off = 0, mx_off = 0, ax_off = 0, base = 0, num_th = 0, ap_th = 0;
@@ -559,13 +562,13 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   static const char *const kHourStepLabels[4] = {"-6h", "-1h", "+1h", "+6h"};
   static const char *const kMinStepLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
   const int step_h = (SCREEN_H < 400) ? 32 : 38;
-  ui::stepper_row(it, cx, scale_y(264), step_h,
+  ui::stepper_row(it, cx, scale_y(226), step_h,
                   hh_focused ? kHourStepLabels : kMinStepLabels,
                   ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
 
   char rec_lbl[32];
   std::snprintf(rec_lbl, sizeof(rec_lbl), "Repeat: %s", alarm_recurrence_label(ap.recurrence));
-  const int rec_y = scale_y(358);
+  const int rec_y = scale_y(320);
   const int rec_r = std::max(12, scale_y(19));
   const int rec_hw = std::max(rec_r + 8, std::min(scale_x(112), safe_span(rec_y, 24) / 2));
   ui::pill_button(it, cx - rec_hw + rec_r, cx + rec_hw - rec_r, rec_y, rec_r,
@@ -593,29 +596,15 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   render_progress_arc_r224(it, cx, ctx.cy, sw_prog,
                            rs.stopwatch.running ? ctx.col_green : ctx.theme_primary);
 
-  // Anchor controls comfortably above the bottom mode bar while clamping sw_y <= cy - scale_min(28)
-  // so tall displays (720x720) never push the stopwatch time below the horizontal center line.
-  const int mode_bar_top = layout().app_dock_y - layout().dock_r;
-  const int main_r = std::max(13, scale_min(19));
-  const int sub_r = std::max(10, scale_min(14));
-  const int gap_dock = scale_min(24);
-  const int gap_btns = scale_min(16);
-  const int gap_time = scale_min(40);
+  const int sw_y = scale_y(176);
+  const int btn_y = scale_y(250);
 
-  const int sub_y_cand = mode_bar_top - gap_dock - sub_r;
-  const int main_y_cand = sub_y_cand - sub_r - gap_btns - main_r;
-  const int sw_y_cand = main_y_cand - main_r - gap_time;
-  const int sw_y = std::min(sw_y_cand, ctx.cy - scale_min(28));
-  const int main_y = sw_y + gap_time + main_r;
-  const int sub_y = main_y + main_r + gap_btns + sub_r;
-
-  // 1. Recent Lap Splits ABOVE the stopwatch readout (plain canvas text, up to 3 rows)
+  // 1. Recent Lap Splits ABOVE the stopwatch readout (plain canvas text, up to 2 rows)
   const int total_laps = static_cast<int>(rs.stopwatch.lap_count);
   if (total_laps > 0) {
-    const int vis_laps = std::min(3, std::min(total_laps, static_cast<int>(StopwatchRuntimeState::kMaxLapSplits)));
-    const int lap_step = scale_min(26);
-    const int lap_bottom_y = sw_y - scale_min(56);
-    const int lap_y0 = std::max(layout().hdr_y + scale_min(38), lap_bottom_y - 2 * lap_step);
+    const int vis_laps = std::min(2, std::min(total_laps, static_cast<int>(StopwatchRuntimeState::kMaxLapSplits)));
+    const int lap_y0 = scale_y(92);
+    const int lap_step = scale_y(26);
     const int span_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 36) : scale_x(216),
                                 safe_span(lap_y0, 24));
     const int left_x = cx - (span_w / 2);
@@ -656,31 +645,37 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   }
   fast_print(it, cx, sw_y, sw_font, ctx.col_white, TextAlign::CENTER, sw_buf);
 
-  // 3. Stacked Controls: primary START / PAUSE / RESUME below time, smaller LAP / RESET below it
-  const int main_hw = std::max(main_r + 8, std::min(scale_x(88), safe_span(main_y, 24) / 2));
-  auto *main_font = (SCREEN_W < 300) ? ctx.font_small : ctx.font_btn_bold;
-  const int sub_hw = std::max(sub_r + 8, std::min(scale_x(58), safe_span(sub_y, 24) / 2));
+  // 3. Side-by-Side Controls: START / PAUSE / RESUME (left) + LAP / RESET (right), well above mode bar
+  const int btn_r = std::max(14, scale_y(20));
+  const int half_gap = std::max(6, scale_w(10));
+  const int box_w = std::max(2 * btn_r + 12,
+                             std::min(scale_x(132), (safe_span(btn_y, 24) - 2 * half_gap) / 2));
+  const int l_x0 = cx - half_gap - box_w + btn_r;
+  const int l_x1 = cx - half_gap - btn_r;
+  const int r_x0 = cx + half_gap + btn_r;
+  const int r_x1 = cx + half_gap + box_w - btn_r;
+  auto *btn_font = (SCREEN_W < 340) ? ctx.font_small : ctx.font_btn_bold;
 
   if (rs.stopwatch.running) {
-    ui::pill_button(it, cx - main_hw + main_r, cx + main_hw - main_r, main_y, main_r,
+    ui::pill_button(it, l_x0, l_x1, btn_y, btn_r,
                     ctx.col_gold, Color(65, 45, 0),
-                    "PAUSE", ctx.col_white, main_font, WidgetId::SW_PRIMARY_BTN);
-    ui::pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
+                    "PAUSE", ctx.col_white, btn_font, WidgetId::SW_PRIMARY_BTN);
+    ui::pill_button(it, r_x0, r_x1, btn_y, btn_r,
                     ctx.theme_secondary, ui::chrome_card_bg_on(),
-                    "LAP", ctx.theme_secondary, ctx.font_small, WidgetId::SW_LAP_BTN);
+                    "LAP", ctx.theme_secondary, btn_font, WidgetId::SW_LAP_BTN);
   } else {
-    ui::pill_button(it, cx - main_hw + main_r, cx + main_hw - main_r, main_y, main_r,
+    ui::pill_button(it, l_x0, l_x1, btn_y, btn_r,
                     ctx.col_green, Color(0, 56, 28),
-                    (cur_sw_ms > 0U) ? "RESUME" : "START", ctx.col_white, main_font,
+                    (cur_sw_ms > 0U) ? "RESUME" : "START", ctx.col_white, btn_font,
                     WidgetId::SW_PRIMARY_BTN);
     if (cur_sw_ms > 0U) {
-      ui::pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
+      ui::pill_button(it, r_x0, r_x1, btn_y, btn_r,
                       kChromeDangerBrd, ui::chrome_danger_bg(),
-                      "RESET", ctx.col_white, ctx.font_small, WidgetId::SW_RESET_BTN);
+                      "RESET", ctx.col_white, btn_font, WidgetId::SW_RESET_BTN);
     } else {
-      render_pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
+      render_pill_button(it, r_x0, r_x1, btn_y, btn_r,
                          ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
-                         "LAP", ctx.col_slate, ctx.font_small);
+                         "LAP", ctx.col_slate, btn_font);
     }
   }
 }

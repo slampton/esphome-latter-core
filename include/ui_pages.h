@@ -58,27 +58,12 @@ void render_docked_screensaver(esphome::display::Display &it, const UiFrameConte
 
 // ------------------------------------------------------------------------------
 // 3. Shared Home / Activity Deck State & Helpers (page_clock_home.cpp + touch_engine.cpp)
+//    (Pure-C++20 HomeActivityItem / HomeActivityView / next_alarm_minutes_until /
+//     resolve_home_activity_view live in include/ui_compositor.h)
 // ------------------------------------------------------------------------------
-static constexpr uint32_t kHomeActivityRotateMs = 8000U;
 static constexpr uint32_t kWakeGreetingHoldMs = 2800U;
 static constexpr uint32_t kWakeGreetingFadeMs = 1200U;
 static constexpr uint32_t kWakeGreetingTotalMs = kWakeGreetingHoldMs + kWakeGreetingFadeMs;
-static constexpr int kMaxHomeActivity = 12;
-
-struct HomeActivityItem {
-  int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar, 6 = Intercom/Doorbell
-  int slot_idx = 0;    // Timer slot (0..2), Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3), or Calendar slot
-  bool is_active = false;
-  bool urgent_pin = false;
-  bool in_deck = true;
-  std::string label{};
-};
-
-struct HomeActivityView {
-  int top = -1;
-  int bottom = -1;
-  bool pinned = false;
-};
 
 int &home_activity_overlay_page();
 uint32_t &wake_greeting_start_ms();
@@ -105,10 +90,9 @@ int collect_home_activities(
     int alarm3_h, int alarm3_m, bool alarm3_en,
     HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour = -1, int cur_min = -1,
-    const std::string &calendar_agenda_raw = "");
+    const std::string &calendar_agenda_raw = "",
+    int cur_day_of_week = -1);
 
-HomeActivityView resolve_home_activity_view(const HomeActivityItem items[], int count,
-                                            uint32_t now_ms, bool two_line);
 int get_activity_overlay_card_y(int vis_count, int row_idx);
 
 // ------------------------------------------------------------------------------

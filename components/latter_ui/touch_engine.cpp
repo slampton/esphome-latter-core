@@ -933,7 +933,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
           prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
           prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
-          fallback_items, rt_.time_hour, rt_.time_minute, calendar_state().summary);
+          fallback_items, rt_.time_hour, rt_.time_minute, calendar_state().summary,
+          rt_.time_day_of_week);
       act_items = fallback_items;
     }
 
@@ -2459,7 +2460,9 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 
   // 3. Home Dock Horizontal Window Swipe
   if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
-      gest.start_y >= ly.home_dock_zone_top(home_weather_text_h(), home_activity_card_shown())) {
+      gest.start_y >= ly.home_dock_zone_top(
+                          home_weather_text_h(), home_activity_card_shown(),
+                          home_activity_rendered_rows())) {
     if (std::abs(dx) >= ly.swipe_short() && std::abs(dx) > std::abs(dy)) {
       int dock_apps[kMaxDockApps];
       const int dock_cnt = collect_home_dock_apps(dock_apps);
@@ -2775,7 +2778,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 
     // 4. Page 1 Home Dock Tap / Release Swipe
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
-      if (gest.start_y >= ly.home_dock_zone_top(home_weather_text_h(), home_activity_card_shown()) &&
+      if (gest.start_y >= ly.home_dock_zone_top(
+                              home_weather_text_h(), home_activity_card_shown(),
+                              home_activity_rendered_rows()) &&
           std::abs(dx) >= ly.dock_release_swipe() && std::abs(dx) > std::abs(dy)) {
         int dock_apps[kMaxDockApps];
         const int dock_cnt = collect_home_dock_apps(dock_apps);
