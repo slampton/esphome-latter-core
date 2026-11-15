@@ -2523,9 +2523,6 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     }
   }
 
-  frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(180), scale_y(32),
-                                 WidgetId::WEATHER_MODE_BTN, kHitTap);
-
   if (sky_weather_subpage == 0) {
     // ----------------------------------------------------------------------
     // SUBPAGE 0: CURRENT CONDITIONS (CLEAN DATA-FOCUSED DASHBOARD)

@@ -116,7 +116,6 @@ enum class UiSwitchId : uint8_t {
   VA_WAKE_SCREEN,
   DOCKED_SCREENSAVER,
   INSTANT_CROWN_HIBERNATE,
-  SHOW_UTC_CLOCK,
 };
 
 enum class UiNumberId : uint8_t {

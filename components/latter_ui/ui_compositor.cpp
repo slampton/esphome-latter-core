@@ -761,7 +761,11 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     }
     th = (th ^ static_cast<uint32_t>(rs.nav.alarm_edit_field)) * 16777619U;
     th = (th ^ (prefs.show_utc_clock ? 1U : 0U)) * 16777619U;
-    for (const char *p = prefs.world_clocks_csv; *p != '\0'; ++p) {
+    for (const char *p = prefs.local_clock_label; *p != '\0'; ++p) {
+      th = (th ^ static_cast<unsigned char>(*p)) * 16777619U;
+    }
+    th = (th ^ 0xFFU) * 16777619U;
+    for (const char *p = prefs.world_clocks_spec; *p != '\0'; ++p) {
       th = (th ^ static_cast<unsigned char>(*p)) * 16777619U;
     }
     th = (th ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;

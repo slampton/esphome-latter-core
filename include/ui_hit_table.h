@@ -123,9 +123,6 @@ namespace WidgetId {
   static constexpr uint16_t HOME_ACT_ACTION_1  = 533;  // param = rendered act_items slot index
   static constexpr uint16_t HOME_ACT_EXPAND    = 534;  // opens Active Items overlay (home_subpage = 2)
 
-  // Weather & Forecast (Page 5)
-  static constexpr uint16_t WEATHER_MODE_BTN   = 550;
-
   // Area Control & Home Hub (Page 6 / Page 9)
   static constexpr uint16_t AREA_PICKER_PILL   = 600;
   static constexpr uint16_t AREA_CARD_TAP      = 610;  // 610..612 (param = slot_idx)
@@ -185,10 +182,6 @@ namespace WidgetId {
   static constexpr uint16_t CAM_NOISE_BTN       = 825;
   static constexpr uint16_t CAM_ORIENT_BTN      = 826;
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
-  static constexpr uint16_t TIME_MODE_BTN       = 840;  // param = TimeSubpage (0..3)
-  static constexpr uint16_t TIME_ADD_ZONE_BTN   = 841;
-  static constexpr uint16_t TIME_WORLD_DEL_BASE  = 847; // 847..848 (param = active entry idx)
-  static constexpr uint16_t TIME_ZONE_PICK_BASE  = 850; // 850..854 (param = picker item idx: 0=UTC, 1..24=catalog)
 }  // namespace WidgetId
 
 struct HitRegion {

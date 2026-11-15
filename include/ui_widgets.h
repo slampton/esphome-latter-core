@@ -97,7 +97,8 @@ void render_empty_state(esphome::display::Display &it, int cx, int cy, const cha
                         esphome::display::BaseFont *font, esphome::Color text_c);
 
 void render_time_readout(esphome::display::Display &it, int cx, const char *text,
-                         esphome::display::BaseFont *font_time, esphome::Color color);
+                         esphome::display::BaseFont *font_time, esphome::Color color,
+                         int y_pos = scale_y(202));
 
 bool offline_pill_due(uint32_t now_ms);
 void render_offline_pill(esphome::display::Display &it, int cx, uint32_t now_ms,
@@ -179,7 +180,7 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
                  uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
                  int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
 
-// Canonical 68 px stride 4-column stepper row (matches UiLayout::hit_4col_stepper).
+// Canonical 4-column stepper row (80 px reference stride; matches UiLayout::hit_4col_stepper).
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  const char *const labels[4], esphome::display::BaseFont *font,
                  esphome::Color col_text, uint16_t base_widget_id = WidgetId::STEPPER_BASE);

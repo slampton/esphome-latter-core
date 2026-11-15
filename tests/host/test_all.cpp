@@ -818,9 +818,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 5U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 49U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 55U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 6U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 44U);
 
   // Time + Weather dock tokens + 11-slot dock array capacity (9 user tokens + Settings)
@@ -1048,7 +1048,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111402L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111403L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -2734,7 +2734,8 @@ void test_time_app_world_clocks_alarms_and_horology() {
   // 1. Out-of-the-box defaults: Home Time Tap -> "Time App", Show UTC Clock -> false, Clock Faces renamed
   LATTER_CHECK(std::string_view(pref_home_clock_tap_cstr(p)) == "Time App");
   LATTER_CHECK(!p.show_utc_clock);
-  LATTER_CHECK(std::string_view(p.world_clocks_csv).empty());
+  LATTER_CHECK(std::string_view(p.local_clock_label).empty());
+  LATTER_CHECK(std::string_view(p.world_clocks_spec).empty());
   LATTER_CHECK(std::string_view(kClockFaceOpts[0]) == "Minimal Digital");
   LATTER_CHECK(std::string_view(kClockFaceOpts[1]) == "Modern Analog");
   LATTER_CHECK(std::string_view(kClockFaceOpts[2]) == "Hybrid Digital");
@@ -2743,10 +2744,15 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(resolve_backdrop_mode(10, 0, true, false, true) == BackdropMode::CustomWallpaper);
   LATTER_CHECK(resolve_backdrop_mode(0, 0, true, false, true) == BackdropMode::SolidBlack);
 
-  // 2. World Clocks CSV normalization, Local TZ parser, active World Clock collector & day-delta wall math
-  LATTER_CHECK(normalize_world_clocks_csv(
-                   " Asia/Tokyo , UTC , Europe/London, Asia/Tokyo, Asia/Kolkata, America/New_York, Australia/Sydney ")
-               == "Asia/Tokyo,Europe/London,Asia/Kolkata,America/New_York");
+  // 2. Local Clock Label sanitization, World Clocks '<label>|<iana>;...' spec, active collector & day-delta wall math
+  LATTER_CHECK(sanitize_clock_label("  San  Francisco | Bay ; Home  ") == "San Francisco Bay Home");
+  LATTER_CHECK(sanitize_clock_label("1234567890123456789012345678901\xC3\xA9") ==
+               "1234567890123456789012345678901");  // Truncates cleanly at UTF-8 codepoint boundary <= 32 bytes
+
+  LATTER_CHECK(normalize_world_clocks_spec(
+                   " Kyoto | Asia/Tokyo ; UTC|UTC ; |Europe/London ; kyoto|Asia/Tokyo ; "
+                   "Bengaluru|Asia/Kolkata ; Hanoi|Asia/Bangkok ; Bangkok|Asia/Bangkok ")
+               == "Kyoto|Asia/Tokyo;London|Europe/London;Bengaluru|Asia/Kolkata;Hanoi|Asia/Bangkok");
 
   const LocalTzInfo tz = parse_local_tz_info("America/Los_Angeles|Oakland|PDT|-420|1");
   LATTER_CHECK(tz.valid && tz.iana == "America/Los_Angeles" && tz.city == "Oakland");
@@ -2754,21 +2760,34 @@ void test_time_app_world_clocks_alarms_and_horology() {
 
   uint64_t chg = 0ULL;
   uint32_t eff = 0U;
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "  Oakland Studio  ", false, chg, eff));
+  LATTER_CHECK(std::string_view(p.local_clock_label) == "Oakland Studio");
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "", false, chg, eff));
+  LATTER_CHECK(std::string_view(p.local_clock_label).empty());
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::SHOW_UTC_CLOCK, "1", false, chg, eff));
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::WORLD_CLOCKS, "Asia/Tokyo,Asia/Kolkata,Europe/London", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(
+      p, PrefKey::WORLD_CLOCKS,
+      "Kyoto|Asia/Tokyo;Bengaluru|Asia/Kolkata;Hanoi|Asia/Bangkok;Bangkok|Asia/Bangkok",
+      false, chg, eff));
   auto &ac = area_ctx_state();
   ac = AreaContextState{};
-  ac.world_clocks_summary = "Asia/Tokyo|Tokyo|JST|540|0;Europe/London|London|BST|60|1";
+  ac.world_clocks_summary =
+      "Asia/Tokyo|Kyoto|JST|540|0;Asia/Bangkok|Hanoi|ICT|420|0;Asia/Bangkok|Bangkok|ICT|420|0";
 
   WorldClockEntry entries[kMaxWorldClocks + 1]{};
   const int wc_cnt = collect_active_world_clocks(p, ac, entries);
-  LATTER_CHECK(wc_cnt == 4);
+  LATTER_CHECK(wc_cnt == 5);
   LATTER_CHECK(entries[0].is_pinned_utc && entries[0].city == "UTC" && entries[0].utc_offset_min == 0);
-  LATTER_CHECK(entries[1].iana == "Asia/Tokyo" && entries[1].abbr == "JST" && entries[1].utc_offset_min == 540);
-  // Offline fallback for Asia/Kolkata (not in ac.world_clocks_summary) resolves +330 ("UTC+5:30")
-  LATTER_CHECK(entries[2].iana == "Asia/Kolkata" && entries[2].city == "Kolkata" && entries[2].utc_offset_min == 330);
+  LATTER_CHECK(entries[1].iana == "Asia/Tokyo" && entries[1].city == "Kyoto" &&
+               entries[1].abbr == "JST" && entries[1].utc_offset_min == 540);
+  // Offline fallback for Asia/Kolkata (not in ac.world_clocks_summary) preserves custom city label "Bengaluru" +330
+  LATTER_CHECK(entries[2].iana == "Asia/Kolkata" && entries[2].city == "Bengaluru" && entries[2].utc_offset_min == 330);
   LATTER_CHECK(entries[2].abbr == "UTC+5:30");
-  LATTER_CHECK(entries[3].iana == "Europe/London" && entries[3].abbr == "BST" && entries[3].is_dst);
+  // Two distinct custom cities sharing Asia/Bangkok preserve independent labels
+  LATTER_CHECK(entries[3].iana == "Asia/Bangkok" && entries[3].city == "Hanoi" && entries[3].abbr == "ICT");
+  LATTER_CHECK(entries[4].iana == "Asia/Bangkok" && entries[4].city == "Bangkok" && entries[4].abbr == "ICT");
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::WORLD_CLOCKS, "", false, chg, eff));
+  LATTER_CHECK(std::string_view(p.world_clocks_spec).empty());
 
   // Wall-clock day delta: 2026-07-15 03:30:00 UTC (Oakland PDT -420 is 20:30 Tue; Tokyo +540 is 12:30 Wed => +1d)
   const uint32_t sample_epoch = 1784086200U;  // 03:30:00 UTC (divisible by 60)
@@ -2822,15 +2841,12 @@ void test_time_app_world_clocks_alarms_and_horology() {
   DeviceRuntimeState &rs_ctx = runtime_state();
   rs_ctx.nav.gui_page = 10;  // PageId::TIME
   rs_ctx.nav.time_subpage = 0;
-  rs_ctx.nav.world_clock_picker_page = -1;
   const int ctx_time_clock = compute_touch_context(rs_ctx);
-  rs_ctx.nav.world_clock_picker_page = 0;
-  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_time_clock);
-  rs_ctx.nav.world_clock_picker_page = -1;
 
   rs_ctx.nav.time_subpage = 1;
   rs_ctx.timers.view_slot = 0;
   const int ctx_timers_root = compute_touch_context(rs_ctx);
+  LATTER_CHECK(ctx_timers_root != ctx_time_clock);
   rs_ctx.timers.view_slot = 1;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_timers_root);
   rs_ctx.timers.view_slot = 0;
@@ -2868,8 +2884,9 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(!alarm_editor_blink_dim(2000U, 1000U));
   LATTER_CHECK(alarm_editor_blink_dim(2500U, 1000U));
 
-  // 6. Source-level guards for Time App, swipe-up-only Home, retired Tools bloat, and SDF AA Clock Faces
+  // 6. Source-level guards for Time App, mode-bar-exclusive headers, swipe-up-only Home, and SDF AA Clock Faces
   const std::string time_cpp = read_repo_file("../../components/latter_ui/page_time.cpp");
+  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
   const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
   const std::string clock_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
   const std::string widgets_cpp = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
@@ -2878,16 +2895,24 @@ void test_time_app_world_clocks_alarms_and_horology() {
   const std::string hit_h = read_repo_file("../../include/ui_hit_table.h");
   LATTER_CHECK(time_cpp.find("render_time_page(") != std::string::npos);
   LATTER_CHECK(time_cpp.find("split_action_card_row(") != std::string::npos);
-  LATTER_CHECK(time_cpp.find("UTC (UTC+0)") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("local_clock_label") != std::string::npos);
   LATTER_CHECK(time_cpp.find("alarm_editor_blink_dim(") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("TIME_ADD_ZONE_BTN") == std::string::npos);
+  LATTER_CHECK(time_cpp.find("TIME_WORLD_DEL_BASE") == std::string::npos);
+  LATTER_CHECK(time_cpp.find("TIME_MODE_BTN") == std::string::npos);
+  LATTER_CHECK(weather_cpp.find("WEATHER_MODE_BTN") == std::string::npos);
   LATTER_CHECK(time_cpp.find("TIME_UTC_TOGGLE_BTN") == std::string::npos);
   LATTER_CHECK(time_cpp.find("Tap LAP while running") == std::string::npos);
   LATTER_CHECK(widgets_cpp.find("frame_hits().add_rect(x0, y0, split_w, h") != std::string::npos);
   LATTER_CHECK(widgets_cpp.find("frame_hits().add_rect(div_x, y0, right_w, h") != std::string::npos);
   LATTER_CHECK(layout_h.find("is_home_pill_tap") == std::string::npos);
   LATTER_CHECK(hit_h.find("HOME_BAR") == std::string::npos);
+  LATTER_CHECK(hit_h.find("TIME_MODE_BTN") == std::string::npos);
+  LATTER_CHECK(hit_h.find("WEATHER_MODE_BTN") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("is_home_pill_tap") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("HOME_BAR") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("TIME_MODE_BTN") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("WEATHER_MODE_BTN") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("stopwatch_modern_digital") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("SW_STYLE_BTN") == std::string::npos);
   LATTER_CHECK(clock_cpp.find("draw_aa_tapered_hand(") != std::string::npos);

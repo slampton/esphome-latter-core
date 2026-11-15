@@ -223,9 +223,10 @@ enum class DevicePrefsField : size_t {
   THEME_COLOR_HEX = 50,  // theme_color_hex (string)
   HOME_CLOCK_TAP_ACTION = 51,  // home_clock_tap_action (string)
   SHOW_UTC_CLOCK = 52,  // show_utc_clock (bool)
-  WORLD_CLOCKS = 53,  // world_clocks (csv)
+  WORLD_CLOCKS = 53,  // world_clocks (string)
   ALARMS_SUMMARY = 54,  // alarms_summary (string)
-  COUNT = 55
+  LOCAL_CLOCK_LABEL = 55,  // local_clock_label (string)
+  COUNT = 56
 };
 
 }  // namespace latter_ui

@@ -285,7 +285,7 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 5U;
+static constexpr uint16_t kPersistedPrefsVersion = 6U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -338,7 +338,8 @@ enum class PrefKey : uint8_t {
   SHOW_UTC_CLOCK = 46,
   WORLD_CLOCKS = 47,
   ALARMS_SUMMARY = 48,
-  COUNT = 49,
+  LOCAL_CLOCK_LABEL = 49,
+  COUNT = 50,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -393,8 +394,9 @@ struct PersistedDevicePrefs {
   uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
   uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
-  bool show_utc_clock = false;             // Pin dedicated UTC World Clock card on Time App -> Clock tab
-  char world_clocks_csv[160]{};            // Up to 4 comma-separated IANA time zone IDs
+  bool show_utc_clock = false;             // Pin dedicated UTC World Clock row on Time App -> Clock tab
+  char local_clock_label[33]{};            // Optional user-defined label shown above local time (<= 32 bytes)
+  char world_clocks_spec[260]{};           // Up to 4 semicolon-delimited '<label>|<iana>' World Clock entries
   bool weather_background = true;
   bool home_sun = true;
   bool home_moon = true;
@@ -645,7 +647,8 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
   if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
-  p.world_clocks_csv[sizeof(p.world_clocks_csv) - 1] = '\0';
+  p.local_clock_label[sizeof(p.local_clock_label) - 1] = '\0';
+  p.world_clocks_spec[sizeof(p.world_clocks_spec) - 1] = '\0';
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
   if (p.album_sort_order >= 3) p.album_sort_order = 0;
@@ -960,7 +963,6 @@ struct NavRuntimeState {
   int home_dock_page = 0;
   int time_subpage = 0;
   int world_clock_page = 0;
-  int world_clock_picker_page = -1;
   uint8_t alarm_edit_field = 1;  // 0 = HH focused, 1 = MM focused
   int sky_weather_subpage = 0;
   int area_subpage = 0;
@@ -1912,54 +1914,96 @@ inline bool is_valid_iana_zone_token(std::string_view sv) noexcept {
   return true;
 }
 
-inline std::string normalize_world_clocks_csv(std::string_view csv) {
-  std::string zones[kMaxWorldClocks];
-  int count = 0;
-  size_t start = 0;
-  while (start <= csv.size() && count < kMaxWorldClocks) {
-    size_t pos = csv.find(',', start);
-    if (pos == std::string_view::npos) pos = csv.size();
-    std::string_view tok = trim_ascii_ws(csv.substr(start, pos - start));
-    start = pos + 1;
-    if (!is_valid_iana_zone_token(tok)) continue;
-    if (tok == "UTC" || tok == "Etc/UTC" || tok == "Etc/GMT" || tok == "GMT") continue;
-    bool dup = false;
-    for (int i = 0; i < count; ++i) {
-      if (zones[i] == tok) {
-        dup = true;
-        break;
+inline std::string sanitize_clock_label(std::string_view sv, size_t max_bytes = 32) {
+  std::string cleaned;
+  cleaned.reserve(sv.size() < max_bytes ? sv.size() : max_bytes);
+  bool prev_space = true;
+  for (unsigned char uc : sv) {
+    if (uc < 0x20U || uc == 0x7FU || uc == '|' || uc == ';' || uc == 0x1EU || uc == 0x1FU ||
+        uc == ' ' || uc == '\t' || uc == '\r' || uc == '\n') {
+      if (!prev_space) {
+        cleaned.push_back(' ');
+        prev_space = true;
       }
+      continue;
     }
-    if (!dup) zones[count++] = std::string(tok);
+    cleaned.push_back(static_cast<char>(uc));
+    prev_space = false;
   }
-  std::string out;
-  for (int i = 0; i < count; ++i) {
-    if (i > 0) out.push_back(',');
-    out.append(zones[i]);
+  while (!cleaned.empty() && cleaned.back() == ' ') {
+    cleaned.pop_back();
   }
-  return out;
+  if (cleaned.size() > max_bytes) {
+    size_t cut = max_bytes;
+    while (cut > 0 && (static_cast<unsigned char>(cleaned[cut]) & 0xC0U) == 0x80U) {
+      --cut;
+    }
+    cleaned.resize(cut);
+    while (!cleaned.empty() && cleaned.back() == ' ') {
+      cleaned.pop_back();
+    }
+  }
+  return cleaned;
 }
 
-inline int parse_world_clocks_list(std::string_view csv, std::string out_zones[kMaxWorldClocks]) {
+struct WorldClockSpecItem {
+  std::string label = "";
+  std::string iana = "";
+};
+
+inline int parse_world_clocks_spec(std::string_view spec, WorldClockSpecItem out_items[kMaxWorldClocks]) {
+  auto eq_ascii_ci = [](std::string_view a, std::string_view b) noexcept -> bool {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+      unsigned char ca = static_cast<unsigned char>(a[i]);
+      unsigned char cb = static_cast<unsigned char>(b[i]);
+      if (ca >= 'A' && ca <= 'Z') ca = static_cast<unsigned char>(ca + ('a' - 'A'));
+      if (cb >= 'A' && cb <= 'Z') cb = static_cast<unsigned char>(cb + ('a' - 'A'));
+      if (ca != cb) return false;
+    }
+    return true;
+  };
   int count = 0;
   size_t start = 0;
-  while (start <= csv.size() && count < kMaxWorldClocks) {
-    size_t pos = csv.find(',', start);
-    if (pos == std::string_view::npos) pos = csv.size();
-    std::string_view tok = trim_ascii_ws(csv.substr(start, pos - start));
+  while (start <= spec.size() && count < kMaxWorldClocks) {
+    size_t pos = spec.find(';', start);
+    if (pos == std::string_view::npos) pos = spec.size();
+    std::string_view rec = trim_ascii_ws(spec.substr(start, pos - start));
     start = pos + 1;
-    if (!is_valid_iana_zone_token(tok)) continue;
-    if (tok == "UTC" || tok == "Etc/UTC" || tok == "Etc/GMT" || tok == "GMT") continue;
+    if (rec.empty()) continue;
+    const size_t pipe = rec.find('|');
+    if (pipe == std::string_view::npos) continue;
+    const std::string_view raw_lbl = rec.substr(0, pipe);
+    const std::string_view iana = trim_ascii_ws(rec.substr(pipe + 1));
+    if (!is_valid_iana_zone_token(iana)) continue;
+    if (iana == "UTC" || iana == "Etc/UTC" || iana == "Etc/GMT" || iana == "GMT") continue;
+    std::string lbl = sanitize_clock_label(raw_lbl);
+    if (lbl.empty()) lbl = city_from_iana_fallback(iana);
     bool dup = false;
     for (int i = 0; i < count; ++i) {
-      if (out_zones[i] == tok) {
+      if (out_items[i].iana == iana && eq_ascii_ci(out_items[i].label, lbl)) {
         dup = true;
         break;
       }
     }
-    if (!dup) out_zones[count++] = std::string(tok);
+    if (!dup) {
+      out_items[count++] = WorldClockSpecItem{std::move(lbl), std::string(iana)};
+    }
   }
   return count;
+}
+
+inline std::string normalize_world_clocks_spec(std::string_view spec) {
+  WorldClockSpecItem items[kMaxWorldClocks];
+  const int count = parse_world_clocks_spec(spec, items);
+  std::string out;
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) out.push_back(';');
+    out.append(items[i].label);
+    out.push_back('|');
+    out.append(items[i].iana);
+  }
+  return out;
 }
 
 inline LocalTzInfo parse_local_tz_info(std::string_view raw) {
@@ -1983,39 +2027,52 @@ inline int collect_active_world_clocks(const PersistedDevicePrefs &p,
   if (p.show_utc_clock) {
     out_entries[total++] = WorldClockEntry{"UTC", "UTC", "UTC", 0, false, true};
   }
-  std::string zones[kMaxWorldClocks];
-  const int z_cnt = parse_world_clocks_list(p.world_clocks_csv, zones);
+  WorldClockSpecItem items[kMaxWorldClocks];
+  const int z_cnt = parse_world_clocks_spec(p.world_clocks_spec, items);
   if (z_cnt == 0) return total;
 
   std::string_view summary_recs[8];
   const size_t s_cnt = ac.world_clocks_summary.empty()
                            ? 0
                            : v3_split_fields(ac.world_clocks_summary, summary_recs, 8, ';');
+  bool used_rec[8]{};
 
   for (int i = 0; i < z_cnt && total < (kMaxWorldClocks + 1); ++i) {
-    const std::string &iana = zones[i];
-    bool matched_ha = false;
+    const std::string &iana = items[i].iana;
+    const std::string &custom_lbl = items[i].label;
+    int match_r = -1;
+    std::string_view matched_cols[5];
     for (size_t r = 0; r < s_cnt; ++r) {
+      if (used_rec[r]) continue;
       std::string_view cols[5];
       if (v3_split_fields(summary_recs[r], cols, 5, '|') == 5 && cols[0] == iana) {
-        const int off = std::clamp(v3_parse_int(cols[3], 0), -840, 840);
-        out_entries[total++] = WorldClockEntry{
-            iana,
-            cols[1].empty() ? city_from_iana_fallback(iana) : std::string(cols[1]),
-            cols[2].empty() ? format_utc_offset_str(off) : std::string(cols[2]),
-            off,
-            v3_parse_bool(cols[4]),
-            false,
-        };
-        matched_ha = true;
-        break;
+        if (cols[1] == custom_lbl) {
+          for (int c = 0; c < 5; ++c) matched_cols[c] = cols[c];
+          match_r = static_cast<int>(r);
+          break;
+        }
+        if (match_r < 0) {
+          for (int c = 0; c < 5; ++c) matched_cols[c] = cols[c];
+          match_r = static_cast<int>(r);
+        }
       }
     }
-    if (!matched_ha) {
+    if (match_r >= 0) {
+      used_rec[match_r] = true;
+      const int off = std::clamp(v3_parse_int(matched_cols[3], 0), -840, 840);
+      out_entries[total++] = WorldClockEntry{
+          iana,
+          custom_lbl.empty() ? city_from_iana_fallback(iana) : custom_lbl,
+          matched_cols[2].empty() ? format_utc_offset_str(off) : std::string(matched_cols[2]),
+          off,
+          v3_parse_bool(matched_cols[4]),
+          false,
+      };
+    } else {
       const int off = catalog_std_offset_min_for_iana(iana);
       out_entries[total++] = WorldClockEntry{
           iana,
-          city_from_iana_fallback(iana),
+          custom_lbl.empty() ? city_from_iana_fallback(iana) : custom_lbl,
           format_utc_offset_str(off),
           off,
           false,
@@ -2150,6 +2207,7 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::SHOW_UTC_CLOCK: return "show_utc_clock";
     case PrefKey::WORLD_CLOCKS: return "world_clocks";
     case PrefKey::ALARMS_SUMMARY: return "alarms_summary";
+    case PrefKey::LOCAL_CLOCK_LABEL: return "local_clock_label";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -2204,8 +2262,9 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::RETURN_TO_HOME_TIMEOUT: return pref_return_to_home_timeout_cstr(p);
     case PrefKey::HOME_CLOCK_TAP_ACTION: return pref_home_clock_tap_cstr(p);
     case PrefKey::SHOW_UTC_CLOCK: return p.show_utc_clock ? "1" : "0";
-    case PrefKey::WORLD_CLOCKS: return std::string(p.world_clocks_csv);
+    case PrefKey::WORLD_CLOCKS: return std::string(p.world_clocks_spec);
     case PrefKey::ALARMS_SUMMARY: return format_alarms_summary(p);
+    case PrefKey::LOCAL_CLOCK_LABEL: return std::string(p.local_clock_label);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -2213,7 +2272,7 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
 
 inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                                 bool cascade_profile, uint64_t &changed_mask, uint32_t &effects_mask) {
-  if (sv.empty() && key != PrefKey::WORLD_CLOCKS) return false;
+  if (sv.empty() && key != PrefKey::WORLD_CLOCKS && key != PrefKey::LOCAL_CLOCK_LABEL) return false;
   auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff, bool is_prof_subkey = false) -> bool {
     int idx = find_opt_index(opts, sv);
     if (idx < 0) return false;
@@ -2369,9 +2428,17 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::SHOW_UTC_CLOCK:
       return apply_bool(p.show_utc_clock, 0);
     case PrefKey::WORLD_CLOCKS: {
-      const std::string norm = normalize_world_clocks_csv(sv);
-      if (std::string_view(p.world_clocks_csv) == norm) return false;
-      copy_bounded_cstr(p.world_clocks_csv, norm);
+      const std::string norm = normalize_world_clocks_spec(sv);
+      if (std::string_view(p.world_clocks_spec) == norm) return false;
+      copy_bounded_cstr(p.world_clocks_spec, norm);
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= kPrefEffectRedraw;
+      return true;
+    }
+    case PrefKey::LOCAL_CLOCK_LABEL: {
+      const std::string norm = sanitize_clock_label(sv);
+      if (std::string_view(p.local_clock_label) == norm) return false;
+      copy_bounded_cstr(p.local_clock_label, norm);
       changed_mask |= pref_key_bit(key);
       effects_mask |= kPrefEffectRedraw;
       return true;
@@ -2426,7 +2493,8 @@ inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persi
     constexpr uint64_t kExcludeUnlessDirty =
         pref_key_bit(PrefKey::BLE_BEACON_ENABLED) |
         pref_key_bit(PrefKey::WORLD_CLOCKS) |
-        pref_key_bit(PrefKey::ALARMS_SUMMARY);
+        pref_key_bit(PrefKey::ALARMS_SUMMARY) |
+        pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL);
     const uint64_t seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
@@ -2503,6 +2571,7 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::SHOW_UTC_CLOCK, PrefKey::SHOW_UTC_CLOCK);
   apply_f(DevicePrefsField::WORLD_CLOCKS, PrefKey::WORLD_CLOCKS);
   apply_f(DevicePrefsField::ALARMS_SUMMARY, PrefKey::ALARMS_SUMMARY);
+  apply_f(DevicePrefsField::LOCAL_CLOCK_LABEL, PrefKey::LOCAL_CLOCK_LABEL);
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
@@ -3486,9 +3555,7 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 10:
       sub = rs.nav.time_subpage;
-      if (sub == 0 && rs.nav.world_clock_picker_page >= 0) {
-        drill = 1;
-      } else if (sub == 1 && rs.timers.view_slot > 0) {
+      if (sub == 1 && rs.timers.view_slot > 0) {
         drill = rs.timers.view_slot;
       } else if (sub == 2 && rs.alarms.edit_idx > 0) {
         drill = rs.alarms.edit_idx;

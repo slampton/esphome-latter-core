@@ -203,7 +203,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int weather_sub, int area_sub, int rem_sub,
                                  int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
                                  int hub_tab,
-                                 int time_sub = 0, int wc_pg = 0, int wc_pick = -1,
+                                 int time_sub = 0, int wc_pg = 0,
                                  int alarm_edit = 0, int home_set_pg = 1) {
   switch (gui_page) {
     case 1:
@@ -228,8 +228,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
       return hub_tab;
     case 10:
       return (time_sub & 0x0F) | ((wc_pg & 0x0F) << 4) |
-             (((wc_pick + 1) & 0x0F) << 8) | ((timer_slot & 0x0F) << 12) |
-             ((alarm_edit & 0x0F) << 16);
+             ((timer_slot & 0x0F) << 8) | ((alarm_edit & 0x0F) << 12);
     default:
       return 0;
   }
@@ -878,7 +877,7 @@ inline int compute_active_subpage_id() {
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
       cal_detail_mode(), timer_view_slot(), home_hub_tab(),
-      rs.nav.time_subpage, rs.nav.world_clock_page, rs.nav.world_clock_picker_page,
+      rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page);
 }
 

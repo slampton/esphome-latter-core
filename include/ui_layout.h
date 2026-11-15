@@ -311,9 +311,9 @@ inline constexpr UiLayout layout() {
   return UiLayout{};
 }
 
-// Canonical 68 px column stride shared by ui::stepper_row and hit_4col_stepper.
+// Canonical 4-column stepper stride shared by ui::stepper_row and hit_4col_stepper.
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
-  const int stride = scale_x(68);
+  const int stride = (SCREEN_W < 380) ? 66 : scale_x(80);
   if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
   if (tx < cx - stride) return 0;
   if (tx < cx)          return 1;
@@ -423,8 +423,7 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   if (anchor == PageId::TIME) {
     return gui_page == PageId::TIME &&
            timer_view_slot() == 0 &&
-           runtime_state().alarms.edit_idx == 0 &&
-           runtime_state().nav.world_clock_picker_page < 0;
+           runtime_state().alarms.edit_idx == 0;
   }
   if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
   if (anchor == PageId::HOME_HUB) return gui_page == PageId::HOME_HUB;
@@ -461,8 +460,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
-  if (gui_page == PageId::TIME &&
-      (timer_view_slot() > 0 || alarm_edit_idx > 0 || runtime_state().nav.world_clock_picker_page >= 0)) {
+  if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
     return false;
   }
   if (gui_page == PageId::CAMERAS && cam_quick_reply_open()) return false;

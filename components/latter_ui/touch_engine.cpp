@@ -183,7 +183,6 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
   } else if (chosen_app == PageId::TIME) {
     rs.nav.time_subpage = TimeSubpage::CLOCK;
     rs.nav.world_clock_page = 0;
-    rs.nav.world_clock_picker_page = -1;
     rs.nav.alarm_edit_field = 1;
     timer_view_slot() = 0;
     rs.alarms.edit_idx = 0;
@@ -227,9 +226,6 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
   if (chosen_app != PageId::CAMERAS) {
     rs.nav.tools_subpage = 0;
   }
-  if (chosen_app != PageId::TIME) {
-    rs.nav.world_clock_picker_page = -1;
-  }
   rs.nav.remote_subpage = 0;
   rs.nav.active_game = 0;
   mark_dirty_full();
@@ -238,39 +234,6 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
 
 inline void record_stopwatch_lap(StopwatchRuntimeState &sw, uint32_t cur_ms) {
   sw.record_lap_elapsed(cur_ms);
-}
-
-inline bool mutate_world_clock_csv(PersistedDevicePrefs &prefs, std::string_view target_iana,
-                                   bool remove_only, bool *out_added = nullptr) {
-  if (out_added != nullptr) *out_added = false;
-  if (target_iana.empty()) return false;
-  std::string zones[kMaxWorldClocks];
-  int cnt = parse_world_clocks_list(prefs.world_clocks_csv, zones);
-  int found_idx = -1;
-  for (int i = 0; i < cnt; ++i) {
-    if (zones[i] == target_iana) {
-      found_idx = i;
-      break;
-    }
-  }
-  if (found_idx >= 0) {
-    for (int i = found_idx; i + 1 < cnt; ++i) {
-      zones[i] = zones[i + 1];
-    }
-    --cnt;
-  } else {
-    if (remove_only || cnt >= static_cast<int>(kMaxWorldClocks)) return false;
-    zones[cnt++] = std::string(target_iana);
-    if (out_added != nullptr) *out_added = true;
-  }
-  std::string next_csv;
-  for (int i = 0; i < cnt; ++i) {
-    if (i > 0) next_csv.push_back(',');
-    next_csv.append(zones[i]);
-  }
-  std::snprintf(prefs.world_clocks_csv, sizeof(prefs.world_clocks_csv), "%s", next_csv.c_str());
-  latter_actions::sync_local_pref_key_edit(PrefKey::WORLD_CLOCKS);
-  return true;
 }
 
 inline void handle_home_activity_action(const HomeActivityItem *items, int count, int item_idx,
@@ -351,7 +314,6 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     tools_direct_home() = false;
     rs.nav.gui_page = PageId::TIME;
     rs.nav.time_subpage = TimeSubpage::TIMERS;
-    rs.nav.world_clock_picker_page = -1;
     rs.alarms.edit_idx = 0;
     timer_view_slot() = (s_idx >= 0 && s_idx < 3) ? (s_idx + 1) : 0;
   } else if (kind == 2) {
@@ -366,7 +328,6 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
       tools_direct_home() = false;
       rs.nav.gui_page = PageId::TIME;
       rs.nav.time_subpage = TimeSubpage::STOPWATCH;
-      rs.nav.world_clock_picker_page = -1;
       timer_view_slot() = 0;
       rs.alarms.edit_idx = 0;
     }
@@ -385,7 +346,6 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     tools_direct_home() = false;
     rs.nav.gui_page = PageId::TIME;
     rs.nav.time_subpage = TimeSubpage::ALARMS;
-    rs.nav.world_clock_picker_page = -1;
     timer_view_slot() = 0;
     rs.alarms.edit_idx = (s_idx >= 1 && s_idx <= 3) ? s_idx : 0;
     rs.nav.alarm_edit_field = 1;
@@ -488,7 +448,6 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   rs.nav.sky_weather_subpage = 0;
   rs.nav.time_subpage = TimeSubpage::CLOCK;
   rs.nav.world_clock_page = 0;
-  rs.nav.world_clock_picker_page = -1;
   rs.nav.home_settings_page = 1;
   if (was_cam_page && anchor != 12) {
     rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
@@ -554,7 +513,6 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   rs.nav.tools_subpage = 0;
   rs.nav.tools_menu_page = 0;
   rs.nav.sky_weather_subpage = 0;
-  rs.nav.world_clock_picker_page = -1;
   rs.nav.home_settings_page = 1;
   if (was_cam_page) {
     rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
@@ -2176,29 +2134,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   if (rs.nav.gui_page == PageId::TIME) {
     const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
 
-    // Drilldown 1: On-Device World Clock Picker (Tab 0: [0] = UTC, [1..24] = cities)
-    if (sub == TimeSubpage::CLOCK && rs.nav.world_clock_picker_page >= 0) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        gest.active = false;
-        rs.nav.world_clock_picker_page = -1;
-        mark_dirty_full();
-        rt_.schedule_disp();
-        return;
-      }
-      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-          touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
-        gest.active = false;
-        const int tot_pg = (1 + static_cast<int>(kWorldClockCatalogCount) + 4) / 5;
-        rs.nav.world_clock_picker_page = std::clamp(
-            rs.nav.world_clock_picker_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1),
-            0, tot_pg - 1);
-        rt_.schedule_disp();
-        return;
-      }
-      return;  // Picker list vertical swipe & city row taps resolve in on_touch_up
-    }
-
-    // Drilldown 2: Single-Timer Detail View (Tab 1, view_slot == 1..3)
+    // Drilldown 1: Single-Timer Detail View (Tab 1, view_slot == 1..3)
     if (sub == TimeSubpage::TIMERS && timer_view_slot() > 0) {
       int &view_idx = timer_view_slot();
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
@@ -2711,7 +2647,6 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   if (rs.nav.gui_page == PageId::TIME && gest.start_y < ly.home_zone_y()) {
     const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
     const bool in_drilldown =
-        (sub == TimeSubpage::CLOCK && rs.nav.world_clock_picker_page >= 0) ||
         (sub == TimeSubpage::TIMERS && timer_view_slot() != 0) ||
         (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx != 0);
     if (!in_drilldown && std::abs(dx) >= ly.wide_swipe() && std::abs(dx) > std::abs(dy)) {
@@ -2722,7 +2657,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       rt_.schedule_disp();
       return;
     }
-    if (sub == TimeSubpage::CLOCK && rs.nav.world_clock_picker_page < 0 &&
+    if (sub == TimeSubpage::CLOCK &&
         gest.start_y < ly.mode_bar_zone_top() &&
         std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
       WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
@@ -3249,10 +3184,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (wid == WidgetId::WEATHER_MODE_BTN) {
-        rs.nav.sky_weather_subpage = (rs.nav.sky_weather_subpage + 1) % 4;
-        mark_dirty_full();
-        rt_.schedule_disp();
       }
 
     // 9. Page 6 Area Control Taps (Picker List & 3-Card Domain Controls)
@@ -3692,122 +3623,58 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       }
 
     // 14. Page 10 Consolidated 4-Tab Time App (Mode Bar, World Clocks, Timers & Alarms Overviews)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::TIME) {
+    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::TIME &&
+               gest.max_travel <= ly.tap_max()) {
       const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
-      if (sub == TimeSubpage::CLOCK && rs.nav.world_clock_picker_page >= 0) {
-        const int tot_items = 1 + static_cast<int>(kWorldClockCatalogCount);
-        const int tot_pg = (tot_items + 4) / 5;
-        if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx) && tot_pg > 1) {
-          rs.nav.world_clock_picker_page = std::clamp(
-              rs.nav.world_clock_picker_page + ((dy < 0) ? 1 : -1), 0, tot_pg - 1);
-          rt_.schedule_disp();
-        } else if (gest.max_travel <= ly.tap_max() &&
-                   wid >= WidgetId::TIME_ZONE_PICK_BASE && wid < WidgetId::TIME_ZONE_PICK_BASE + 5 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-          const int item_idx = hit->param;
-          if (item_idx == 0) {
-            rt_.sw_toggle(UiSwitchId::SHOW_UTC_CLOCK);
-            if (prefs.show_utc_clock) {
-              rs.nav.world_clock_picker_page = -1;
-              rs.nav.world_clock_page = 0;
-              mark_dirty_full();
-            } else {
-              WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
-              const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-              rs.nav.world_clock_page = std::clamp(
-                  rs.nav.world_clock_page, 0, std::max(0, (tot_wc - 1) / 2));
-            }
-            rt_.schedule_disp();
-          } else if (item_idx >= 1 && item_idx <= static_cast<int>(kWorldClockCatalogCount)) {
-            bool added = false;
-            if (mutate_world_clock_csv(prefs, kWorldClockCatalog[item_idx - 1].iana, false, &added)) {
-              if (added) {
-                rs.nav.world_clock_picker_page = -1;
-                WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
-                const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-                rs.nav.world_clock_page = std::max(0, (tot_wc - 1) / 2);
-                mark_dirty_full();
-              }
-              rt_.schedule_disp();
-            }
-          }
-        }
-      } else if (gest.max_travel <= ly.tap_max()) {
-        if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
-          const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
-          if (target_sub != sub) {
-            rs.nav.time_subpage = target_sub;
-            mark_dirty_full();
-            rt_.schedule_disp();
-          }
-        } else if (wid == WidgetId::TIME_MODE_BTN) {
-          rs.nav.time_subpage = (sub + 1) % 4;
+      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+        const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
+        if (target_sub != sub) {
+          rs.nav.time_subpage = target_sub;
           mark_dirty_full();
           rt_.schedule_disp();
-        } else if (sub == TimeSubpage::CLOCK) {
-          if (wid == WidgetId::TIME_ADD_ZONE_BTN &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            rs.nav.world_clock_picker_page = 0;
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (wid >= WidgetId::TIME_WORLD_DEL_BASE && wid < WidgetId::TIME_WORLD_DEL_BASE + 2 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
-            const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-            const int idx = hit->param;
-            if (idx >= 0 && idx < tot_wc) {
-              if (wc_entries[idx].is_pinned_utc) {
-                if (prefs.show_utc_clock) rt_.sw_toggle(UiSwitchId::SHOW_UTC_CLOCK);
-              } else {
-                mutate_world_clock_csv(prefs, wc_entries[idx].iana, true);
-              }
-              const int next_tot = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-              rs.nav.world_clock_page = std::clamp(
-                  rs.nav.world_clock_page, 0, std::max(0, (next_tot - 1) / 2));
-              rt_.schedule_disp();
-            }
-          } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID)) {
-            WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
-            const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-            const int max_pg = std::max(0, (tot_wc - 1) / 2);
-            rs.nav.world_clock_page = std::clamp(
-                rs.nav.world_clock_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, max_pg);
-            rt_.schedule_disp();
-          }
-        } else if (sub == TimeSubpage::TIMERS && timer_view_slot() == 0) {
-          if (wid >= WidgetId::TIMER_TAB_BASE && wid < WidgetId::TIMER_TAB_BASE + 3 &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            timer_view_slot() = std::clamp(static_cast<int>(hit->param), 0, 2) + 1;
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (wid >= WidgetId::TIMER_PRESET_BASE && wid < WidgetId::TIMER_PRESET_BASE + 3 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            const int idx = std::clamp(static_cast<int>(hit->param), 0, 2);
-            toggle_timer_slot_run(timer_slots()[idx], now_rel, rt_);
-          }
-        } else if (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx == 0) {
-          if (wid == WidgetId::ALARM_SNOOZE_CANCEL &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+        }
+      } else if (sub == TimeSubpage::CLOCK) {
+        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID)) {
+          WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
+          const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
+          const int max_pg = std::max(0, (tot_wc - 1) / 2);
+          rs.nav.world_clock_page = std::clamp(
+              rs.nav.world_clock_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, max_pg);
+          rt_.schedule_disp();
+        }
+      } else if (sub == TimeSubpage::TIMERS && timer_view_slot() == 0) {
+        if (wid >= WidgetId::TIMER_TAB_BASE && wid < WidgetId::TIMER_TAB_BASE + 3 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+          timer_view_slot() = std::clamp(static_cast<int>(hit->param), 0, 2) + 1;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::TIMER_PRESET_BASE && wid < WidgetId::TIMER_PRESET_BASE + 3 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+          const int idx = std::clamp(static_cast<int>(hit->param), 0, 2);
+          toggle_timer_slot_run(timer_slots()[idx], now_rel, rt_);
+        }
+      } else if (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx == 0) {
+        if (wid == WidgetId::ALARM_SNOOZE_CANCEL &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+          rs.alarms.snooze_until = 0;
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+          const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
+          prefs.alarms[a_idx].enabled = !prefs.alarms[a_idx].enabled;
+          if (!prefs.alarms[a_idx].enabled && rs.alarms.ringing_idx == a_idx + 1) {
             rs.alarms.snooze_until = 0;
-            rt_.schedule_disp();
-          } else if (wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
-            prefs.alarms[a_idx].enabled = !prefs.alarms[a_idx].enabled;
-            if (!prefs.alarms[a_idx].enabled && rs.alarms.ringing_idx == a_idx + 1) {
-              rs.alarms.snooze_until = 0;
-            }
-            latter_actions::sync_local_alarms_edit(now_rel);
-            rt_.schedule_disp();
-          } else if (wid >= WidgetId::ALARM_CARD_BASE && wid < WidgetId::ALARM_CARD_BASE + 3 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-            const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
-            rs.alarms.edit_idx = a_idx + 1;
-            rs.nav.alarm_edit_field = 1;
-            mark_dirty_full();
-            rt_.schedule_disp();
           }
+          latter_actions::sync_local_alarms_edit(now_rel);
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::ALARM_CARD_BASE && wid < WidgetId::ALARM_CARD_BASE + 3 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+          const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
+          rs.alarms.edit_idx = a_idx + 1;
+          rs.nav.alarm_edit_field = 1;
+          mark_dirty_full();
+          rt_.schedule_disp();
         }
       }
     }
@@ -4085,7 +3952,6 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
     case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
     case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
-    case W::SHOW_UTC_CLOCK: return p.show_utc_clock;
   }
   return false;
 }
@@ -4106,7 +3972,6 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
     case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
     case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
-    case W::SHOW_UTC_CLOCK: pk = K::SHOW_UTC_CLOCK; next_val = !p.show_utc_clock; break;
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;

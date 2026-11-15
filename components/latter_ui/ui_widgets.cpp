@@ -388,9 +388,12 @@ void render_empty_state(esphome::display::Display &it, int cx, int cy, const cha
 }
 
 void render_time_readout(esphome::display::Display &it, int cx, const char *text,
-                         esphome::display::BaseFont *font_time, esphome::Color color) {
+                         esphome::display::BaseFont *font_time, esphome::Color color, int y_pos) {
   if (text == nullptr || font_time == nullptr) return;
-  fast_print(it, cx, scale_y(142), font_time, color, esphome::display::TextAlign::CENTER, text);
+  if (backdrop_active()) {
+    fast_print(it, cx + 1, y_pos + 1, font_time, kChromeShadow, esphome::display::TextAlign::CENTER, text);
+  }
+  fast_print(it, cx, y_pos, font_time, color, esphome::display::TextAlign::CENTER, text);
 }
 
 bool offline_pill_due(uint32_t now_ms) {
@@ -1040,8 +1043,8 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  const char *const labels[4], esphome::display::BaseFont *font,
                  esphome::Color col_text, uint16_t base_widget_id) {
-  const int btn_w = (SCREEN_W < 340) ? 58 : scale_x(60);
-  const int step = scale_x(68);
+  const int btn_w = (SCREEN_W < 380) ? 50 : scale_x(60);
+  const int step = (SCREEN_W < 380) ? 66 : scale_x(80);
   const int eff_h = (SCREEN_H > 520 && h <= 64) ? scale_y(h) : h;
   const int y_mid = y_top + eff_h / 2;
   const int rad = std::max(4, scale_s(8));
