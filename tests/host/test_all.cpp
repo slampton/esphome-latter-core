@@ -2893,9 +2893,16 @@ void test_time_app_world_clocks_alarms_and_horology() {
   const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   const std::string layout_h = read_repo_file("../../include/ui_layout.h");
   const std::string hit_h = read_repo_file("../../include/ui_hit_table.h");
+  const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
   LATTER_CHECK(time_cpp.find("render_time_page(") != std::string::npos);
   LATTER_CHECK(time_cpp.find("split_action_card_row(") != std::string::npos);
   LATTER_CHECK(time_cpp.find("local_clock_label") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("text_ink_right_edge(it, sec_font, \":00\")") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("scale_y(has_label ? 172 : 160)") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("scale_y(164)") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("scale_y(150)") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("std::min(2, std::min(total_laps") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("scale_y(102), latter_ui::scale_y(200)") != std::string::npos);
   LATTER_CHECK(time_cpp.find("alarm_editor_blink_dim(") != std::string::npos);
   LATTER_CHECK(time_cpp.find("TIME_ADD_ZONE_BTN") == std::string::npos);
   LATTER_CHECK(time_cpp.find("TIME_WORLD_DEL_BASE") == std::string::npos);

@@ -111,7 +111,7 @@ interval:
               if (cur_blink != s_prev_alarm_blink) {
                 s_prev_alarm_blink = cur_blink;
                 latter_ui::schedule_band_disp_update(
-                    &id(disp1), latter_ui::scale_y(140), latter_ui::scale_y(238));
+                    &id(disp1), latter_ui::scale_y(102), latter_ui::scale_y(200));
               }
             } else {
               s_prev_alarm_blink = false;
