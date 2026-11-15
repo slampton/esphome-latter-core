@@ -744,12 +744,30 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
       act_mask |= (1U << 2);
     }
-    if (rs.alarms.snooze_until > 0 ||
-        prefs.alarms[0].enabled || prefs.alarms[1].enabled || prefs.alarms[2].enabled) {
+    if (rs.alarms.snooze_until > 0) {
       act_mask |= (1U << 3);
+    } else {
+      const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
+      const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
+      const int cur_dow = ctx.now.is_valid() ? ctx.now.day_of_week : -1;
+      for (int ai = 0; ai < 3; ++ai) {
+        const auto &ap = prefs.alarms[ai];
+        const int mins_u = next_alarm_minutes_until(
+            ap.hour, ap.minute, ap.enabled, ap.recurrence, cur_h, cur_m, cur_dow);
+        if (mins_u > 0 && mins_u <= kUpcomingAlarmDeckMinutes) {
+          act_mask |= (1U << (6 + ai * 2));
+        }
+        if (mins_u > 0 && mins_u <= kUpcomingAlarmPinMinutes) {
+          act_mask |= (1U << (7 + ai * 2));
+        }
+      }
     }
     if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
-    if (is_home_activity_fading_out(ctx.now_ms)) act_mask |= (1U << 5);
+    if (is_home_activity_fading_out(ctx.now_ms) ||
+        home_activity_slide_active(ctx.now_ms) ||
+        has_pending_home_activity_fade_settle(ctx.now_ms)) {
+      act_mask |= (1U << 5);
+    }
     sig ^= (act_mask * 0x27D4EB2FU);
   } else if (rs.nav.gui_page == PageId::TIME) {
     uint32_t th = 2166136261U;

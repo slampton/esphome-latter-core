@@ -2926,6 +2926,194 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(clock_cpp.find("render_analog_chapter_ring(") != std::string::npos);
 }
 
+void test_home_activity_card_d045() {
+  using namespace latter_ui;
+
+  // 1. Recurrence-aware next_alarm_minutes_until (0=Daily, 1=Weekdays, 2=Weekends, 3=Once; 1=SUN..7=SAT)
+  LATTER_CHECK(next_alarm_minutes_until(7, 0, false, 0, 6, 0, 2) == -1);
+  LATTER_CHECK(next_alarm_minutes_until(24, 0, true, 0, 6, 0, 2) == -1);
+  LATTER_CHECK(next_alarm_minutes_until(7, 0, true, 0, -1, 0, 2) == -1);
+
+  // Daily / Once same-day & cross-midnight windows
+  LATTER_CHECK(next_alarm_minutes_until(23, 30, true, 0, 22, 0, 3) == 90);    // <= 120m pin window
+  LATTER_CHECK(next_alarm_minutes_until(3, 0, true, 3, 22, 0, 3) == 300);     // 121..360m deck window
+  LATTER_CHECK(next_alarm_minutes_until(15, 0, true, 0, 8, 0, 3) == 420);     // > 360m off-deck
+  LATTER_CHECK(next_alarm_minutes_until(8, 0, true, 0, 8, 0, 3) == 1440);     // exact cur minute -> next occurrence
+
+  // Weekdays (2=MON..6=FRI): Friday night skips Sat/Sun; Sunday late night enters Monday window
+  LATTER_CHECK(next_alarm_minutes_until(6, 30, true, 1, 23, 0, 6) == 3330);   // Fri 23:00 -> Mon 06:30 (> 6h)
+  LATTER_CHECK(next_alarm_minutes_until(4, 0, true, 1, 23, 0, 1) == 300);     // Sun 23:00 -> Mon 04:00 (5h -> in deck!)
+  LATTER_CHECK(next_alarm_minutes_until(6, 30, true, 1, 5, 0, 2) == 90);      // Mon 05:00 -> Mon 06:30 (90m -> pinned!)
+
+  // Weekends (1=SUN, 7=SAT): Friday night enters Saturday morning window; Sunday night skips Mon..Fri
+  LATTER_CHECK(next_alarm_minutes_until(4, 0, true, 2, 23, 0, 6) == 300);     // Fri 23:00 -> Sat 04:00 (5h -> in deck!)
+  LATTER_CHECK(next_alarm_minutes_until(8, 0, true, 2, 23, 0, 1) == 7740);    // Sun 23:00 -> Sat 08:00 (> 6h)
+
+  // 2. Off-deck items (> 6h alarms / future calendar) never open the front card or inflate height
+  {
+    const HomeActivityItem off_only[2] = {
+        {4, 1, false, false, false, "Alarm • 7:00 AM"},
+        {5, 0, false, false, false, "FRI 10:00 • Dentist"},
+    };
+    const HomeActivityView vr = resolve_home_activity_view(off_only, 2, 0U, false);
+    const HomeActivityView vn = resolve_home_activity_view(off_only, 2, 0U, true);
+    LATTER_CHECK(vr.front_count == 0 && vr.visible_rows == 0 && vr.top == -1 && vr.bottom == -1);
+    LATTER_CHECK(vn.front_count == 0 && vn.visible_rows == 0 && vn.top == -1 && vn.bottom == -1);
+  }
+
+  // 3. Single front-deck item + off-deck alarm -> 1-line card (visible_rows == 1, front_count == 1)
+  {
+    const HomeActivityItem one_plus_off[2] = {
+        {3, 0, true, false, true, "Artist • Track"},
+        {4, 1, false, false, false, "Alarm • 8:00 AM"},
+    };
+    const HomeActivityView v = resolve_home_activity_view(one_plus_off, 2, 0U, true);
+    LATTER_CHECK(v.front_count == 1 && v.visible_rows == 1 && v.top == 0 && v.bottom == -1 && !v.pinned);
+  }
+
+  // 4. Two unpinned front-deck items: static 2-row on non-round, rotating 1-row on round
+  {
+    const HomeActivityItem two_front[2] = {
+        {3, 0, true, false, true, "Artist • Track"},
+        {5, 0, false, false, true, "TODAY 14:00 • Design Sync"},
+    };
+    const HomeActivityView vn0 = resolve_home_activity_view(two_front, 2, 0U, true);
+    const HomeActivityView vn1 = resolve_home_activity_view(two_front, 2, kHomeActivityRotateMs, true);
+    LATTER_CHECK(vn0.front_count == 2 && vn0.visible_rows == 2 && vn0.top == 0 && vn0.bottom == 1);
+    LATTER_CHECK(vn1.top == 0 && vn1.bottom == 1);  // Static when all items fit!
+
+    const HomeActivityView vr0 = resolve_home_activity_view(two_front, 2, 0U, false);
+    const HomeActivityView vr1 = resolve_home_activity_view(two_front, 2, kHomeActivityRotateMs, false);
+    LATTER_CHECK(vr0.front_count == 2 && vr0.visible_rows == 1 && vr0.top == 0 && vr0.bottom == -1);
+    LATTER_CHECK(vr1.front_count == 2 && vr1.visible_rows == 1 && vr1.top == 1 && vr1.bottom == -1);
+  }
+
+  // 5. Three unpinned front-deck items conveyor-rotate every 8 s on non-round
+  {
+    const HomeActivityItem three_front[3] = {
+        {3, 0, true, false, true, "Artist • Track"},
+        {4, 1, false, false, true, "Alarm • 6:30 AM"},
+        {5, 0, false, false, true, "TODAY 16:00 • Flight"},
+    };
+    const HomeActivityView s0 = resolve_home_activity_view(three_front, 3, 0U, true);
+    const HomeActivityView s1 = resolve_home_activity_view(three_front, 3, kHomeActivityRotateMs, true);
+    const HomeActivityView s2 = resolve_home_activity_view(three_front, 3, kHomeActivityRotateMs * 2U, true);
+    LATTER_CHECK(s0.front_count == 3 && s0.visible_rows == 2 && s0.top == 0 && s0.bottom == 1);
+    LATTER_CHECK(s1.top == 1 && s1.bottom == 2);
+    LATTER_CHECK(s2.top == 2 && s2.bottom == 0);
+  }
+
+  // 6. Urgent pin hierarchy: Doorbell (6) > Running Timer (1, any remaining) > Snoozed (4,0) > Stopwatch (2) > <=2h Alarm (4,1..3)
+  {
+    const HomeActivityItem timer_and_deck[3] = {
+        {1, 0, true, true, true, "Timer 1 • 14:25"},
+        {3, 0, true, false, true, "Artist • Track"},
+        {5, 0, false, false, true, "TODAY 18:00 • Dinner"},
+    };
+    const HomeActivityView p0 = resolve_home_activity_view(timer_and_deck, 3, 0U, true);
+    const HomeActivityView p1 = resolve_home_activity_view(timer_and_deck, 3, kHomeActivityRotateMs, true);
+    LATTER_CHECK(p0.pinned && p0.visible_rows == 2 && p0.top == 0 && p0.bottom == 1);
+    LATTER_CHECK(p1.pinned && p1.visible_rows == 2 && p1.top == 0 && p1.bottom == 2);
+
+    // Multi-pin competition: Doorbell pins Row 0 while Running Timer & Snoozed Alarm rotate in Row 1 (never dropped)
+    const HomeActivityItem multi_pin[4] = {
+        {4, 1, false, true, true, "Alarm • 7:00 AM"},   // Imminent <= 2h alarm
+        {2, 0, true, true, true, "Stopwatch • 01:12.4"},
+        {4, 0, true, true, true, "Alarm • Snoozed"},
+        {1, 1, true, true, true, "Timer 2 • 08:00"},
+    };
+    const HomeActivityView mp0 = resolve_home_activity_view(multi_pin, 4, 0U, true);
+    const HomeActivityView mp1 = resolve_home_activity_view(multi_pin, 4, kHomeActivityRotateMs, true);
+    LATTER_CHECK(mp0.pinned && mp0.top == 3 && mp0.front_count == 4 && mp0.visible_rows == 2 && mp0.bottom == 0);
+    LATTER_CHECK(mp1.pinned && mp1.top == 3 && mp1.bottom == 1);
+
+    const HomeActivityItem snooze_vs_sw[2] = {
+        {2, 0, true, true, true, "Stopwatch • 00:10.0"},
+        {4, 0, true, true, true, "Alarm • Snoozed"},
+    };
+    const HomeActivityView svs = resolve_home_activity_view(snooze_vs_sw, 2, 0U, true);
+    LATTER_CHECK(svs.pinned && svs.top == 1 && svs.bottom == 0);
+
+    const HomeActivityItem sw_vs_imm_alarm[2] = {
+        {4, 2, false, true, true, "Alarm • 6:45 AM"},
+        {2, 0, true, true, true, "Stopwatch • 00:10.0"},
+    };
+    const HomeActivityView swa = resolve_home_activity_view(sw_vs_imm_alarm, 2, 0U, true);
+    LATTER_CHECK(swa.pinned && swa.top == 1 && swa.bottom == 0);
+
+    const HomeActivityItem db_vs_timer[2] = {
+        {1, 0, true, true, true, "Timer 1 • 00:15"},
+        {6, 0, true, true, true, "Doorbell • Ringing"},
+    };
+    const HomeActivityView dbt = resolve_home_activity_view(db_vs_timer, 2, 0U, true);
+    LATTER_CHECK(dbt.pinned && dbt.top == 1 && dbt.bottom == 0);
+  }
+
+  // 7. 5-Board Geometry Clearance & Disjoint 1-Row / 2-Row Hit Regions
+  struct BoardSpec {
+    int w;
+    int h;
+    bool round;
+    bool wearable;
+    int ppi;
+    int weather_h;
+  };
+  constexpr BoardSpec kBoards[5] = {
+      {466, 466, true, false, 266, 32},
+      {480, 480, false, false, 313, 32},
+      {410, 502, false, true, 315, 32},
+      {320, 480, false, false, 165, 32},
+      {720, 720, false, false, 254, 45},
+  };
+  for (const auto &b : kBoards) {
+    const UiPanelLayout L = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const int card_w = (b.w > 520) ? scale_x_for(380, b.w) : std::min(380, b.w - 32);
+    const int pitch = scale_y_for(56, b.h);
+    const int h1 = b.round ? scale_y_for(68, b.h) : scale_y_for(60, b.h);
+    const int h2 = b.round ? h1 : (h1 + pitch);
+    const int dock_top = L.dock_y - L.dock_r;
+    const int gap = mm_to_px_for(3.0f, b.ppi);
+
+    for (int rows = 1; rows <= (b.round ? 1 : 2); ++rows) {
+      const int ch = (rows == 2) ? h2 : h1;
+      const int y1 = b.round ? (((L.home_weather_y + b.weather_h / 2 + dock_top) / 2) + ch / 2)
+                             : (dock_top - gap);
+      const int y0 = y1 - ch;
+      const int cy = y0 + ch / 2;
+      LATTER_CHECK(y0 >= L.home_weather_y + b.weather_h / 2 + 4);
+      LATTER_CHECK(y1 <= dock_top);
+
+      FrameHitTable hits{};
+      register_home_activity_hit_regions(
+          hits, L.cx, cy, card_w, ch, rows == 2, true, 0, rows == 2 ? 1 : -1,
+          scale_x_for(56, b.w), scale_x_for(52, b.w));
+      const HitRegion *r0 = hits.find_by_id(WidgetId::HOME_ACT_ROW_0);
+      const HitRegion *a0 = hits.find_by_id(WidgetId::HOME_ACT_ACTION_0);
+      const HitRegion *ex = hits.find_by_id(WidgetId::HOME_ACT_EXPAND);
+      LATTER_CHECK(r0 != nullptr && a0 != nullptr && ex != nullptr);
+      LATTER_CHECK(r0->x1 < a0->x0 && a0->x1 < ex->x0);
+      if (rows == 2) {
+        const HitRegion *r1 = hits.find_by_id(WidgetId::HOME_ACT_ROW_1);
+        const HitRegion *a1 = hits.find_by_id(WidgetId::HOME_ACT_ACTION_1);
+        LATTER_CHECK(r1 != nullptr && a1 != nullptr);
+        LATTER_CHECK(r0->y1 < r1->y0 && a0->y1 < a1->y0);
+        LATTER_CHECK(r0->height() >= 56 && r1->height() >= 56);
+      }
+    }
+  }
+
+  // 8. Source-level invariants for D-045
+  const std::string layout_h = read_repo_file("../../include/ui_layout.h");
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(layout_h.find("home_activity_h_for_rows(") != std::string::npos);
+  LATTER_CHECK(layout_h.find("home_activity_rendered_rows()") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("draw_glass_activity_surface") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("kUpcomingAlarmPinMinutes") != std::string::npos);
+  LATTER_CHECK(home_cpp.find("kUpcomingAlarmDeckMinutes") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-045:") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -2945,6 +3133,7 @@ int main() {
   test_frame_cadence_and_typed_prefs();
   test_v3_domain_reducer_and_timer_alarm();
   test_time_app_world_clocks_alarms_and_horology();
+  test_home_activity_card_d045();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

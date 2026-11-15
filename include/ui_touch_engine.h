@@ -146,6 +146,7 @@ struct UiTouchRuntime {
   bool time_valid{false};
   int time_hour{-1};
   int time_minute{-1};
+  int time_day_of_week{-1};
   uint32_t time_epoch{0};
 
   esphome::Color *theme_primary{nullptr};
