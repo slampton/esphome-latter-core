@@ -818,18 +818,20 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 4U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 45U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 51U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 5U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 49U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 55U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 44U);
 
-  // Weather dock token + 10-slot dock array capacity (8 user tokens + Settings)
-  LATTER_CHECK(latter_ui::kMaxDockApps == 10);
+  // Time + Weather dock tokens + 11-slot dock array capacity (9 user tokens + Settings)
+  LATTER_CHECK(latter_ui::kMaxDockApps == 11);
+  LATTER_CHECK(latter_ui::dock_app_id_for_token("time") == 10);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("weather") == 5);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("camera") == 12);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("cameras") == 12);
   LATTER_CHECK(latter_ui::dock_app_id_for_token("home_hub") == 9);
   LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
+  LATTER_CHECK(latter_ui::PageId::TIME == 10);
   LATTER_CHECK(latter_ui::PageId::CAMERAS == 12);
 
   // Start screen cameras direct resolution
@@ -890,11 +892,11 @@ void test_device_prefs_v2_and_event_timer_sync() {
   p = latter_ui::PersistedDevicePrefs{};
   latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
   latter_ui::seed_default_prefs_if_needed(
-      "Tabletop Dock", "Modern Roman (Analog)", "Home", "Aurora",
+      "Tabletop Dock", "Modern Analog", "Home", "Aurora",
       "Full Screen", "Alphabetical", "Newest on Top", "Oldest on Top");
   LATTER_CHECK(std::string_view(latter_ui::pref_power_profile_cstr()) == "Tabletop Dock");
   LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Docked Only");
-  LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == "Modern Roman (Analog)");
+  LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == "Modern Analog");
   LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Aurora");
   LATTER_CHECK(p.prefs_seq == 0U && p.dirty_mask == 0ULL);
 
@@ -992,9 +994,12 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
       p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "0", false, nav_chg, nav_eff));
   LATTER_CHECK(!p.home_screen_enabled);
-  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Clock");
-  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 0);
+  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Time App");
+  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 10);
   LATTER_CHECK((nav_eff & latter_ui::kPrefEffectNavPolicy) != 0U);
+  LATTER_CHECK(latter_ui::set_pref_by_key_str(
+      p, latter_ui::PrefKey::START_SCREEN, "Clock Face", false, nav_chg, nav_eff));
+  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 0);
 
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
       p, latter_ui::PrefKey::START_SCREEN, "Area Controls", false, nav_chg, nav_eff));
@@ -1015,12 +1020,17 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));   // Paused on Now Playing returns Home
   rs.music.overlay_mode = 2;
   LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, true));    // Idle Library menu returns Home
-  rs.nav.gui_page = 8;
-  rs.nav.tools_subpage = 1;
+  rs.nav.gui_page = 10;
+  rs.nav.time_subpage = 1;
   rs.timers.running = true;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Active countdown stays put
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Active Time App countdown stays put
   rs.timers.running = false;
   LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  rs.nav.time_subpage = 3;
+  rs.stopwatch.running = true;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Active Time App stopwatch stays put
+  rs.stopwatch.running = false;
+  rs.nav.gui_page = 8;
   rs.nav.tools_subpage = 5;
   LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));  // Flashlight stays put
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
@@ -1038,7 +1048,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111401L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111402L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -2714,6 +2724,112 @@ void test_v3_domain_reducer_and_timer_alarm() {
   LATTER_CHECK(home_dock_page() == 0);
 }
 
+void test_time_app_world_clocks_alarms_and_horology() {
+  using namespace latter_ui;
+
+  reset_runtime_state();
+  auto &p = persisted_prefs();
+  p = PersistedDevicePrefs{};
+
+  // 1. Out-of-the-box defaults: Home Time Tap -> "Time App", Show UTC Clock -> false, Clock Faces renamed
+  LATTER_CHECK(std::string_view(pref_home_clock_tap_cstr(p)) == "Time App");
+  LATTER_CHECK(!p.show_utc_clock);
+  LATTER_CHECK(std::string_view(p.world_clocks_csv).empty());
+  LATTER_CHECK(std::string_view(kClockFaceOpts[0]) == "Minimal Digital");
+  LATTER_CHECK(std::string_view(kClockFaceOpts[1]) == "Modern Analog");
+  LATTER_CHECK(std::string_view(kClockFaceOpts[2]) == "Hybrid Digital");
+
+  // Backdrop mode: PageId::TIME (10) uses CustomWallpaper; PageId::CLOCK (0) uses pure SolidBlack
+  LATTER_CHECK(resolve_backdrop_mode(10, 0, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, false, true) == BackdropMode::SolidBlack);
+
+  // 2. World Clocks CSV normalization, Local TZ parser, active World Clock collector & day-delta wall math
+  LATTER_CHECK(normalize_world_clocks_csv(
+                   " Asia/Tokyo , UTC , Europe/London, Asia/Tokyo, Asia/Kolkata, America/New_York, Australia/Sydney ")
+               == "Asia/Tokyo,Europe/London,Asia/Kolkata,America/New_York");
+
+  const LocalTzInfo tz = parse_local_tz_info("America/Los_Angeles|Oakland|PDT|-420|1");
+  LATTER_CHECK(tz.valid && tz.iana == "America/Los_Angeles" && tz.city == "Oakland");
+  LATTER_CHECK(tz.abbr == "PDT" && tz.utc_offset_min == -420 && tz.is_dst);
+
+  uint64_t chg = 0ULL;
+  uint32_t eff = 0U;
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::SHOW_UTC_CLOCK, "1", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::WORLD_CLOCKS, "Asia/Tokyo,Asia/Kolkata,Europe/London", false, chg, eff));
+  auto &ac = area_ctx_state();
+  ac = AreaContextState{};
+  ac.world_clocks_summary = "Asia/Tokyo|Tokyo|JST|540|0;Europe/London|London|BST|60|1";
+
+  WorldClockEntry entries[kMaxWorldClocks + 1]{};
+  const int wc_cnt = collect_active_world_clocks(p, ac, entries);
+  LATTER_CHECK(wc_cnt == 4);
+  LATTER_CHECK(entries[0].is_pinned_utc && entries[0].city == "UTC" && entries[0].utc_offset_min == 0);
+  LATTER_CHECK(entries[1].iana == "Asia/Tokyo" && entries[1].abbr == "JST" && entries[1].utc_offset_min == 540);
+  // Offline fallback for Asia/Kolkata (not in ac.world_clocks_summary) resolves +330 ("UTC+5:30")
+  LATTER_CHECK(entries[2].iana == "Asia/Kolkata" && entries[2].city == "Kolkata" && entries[2].utc_offset_min == 330);
+  LATTER_CHECK(entries[2].abbr == "UTC+5:30");
+  LATTER_CHECK(entries[3].iana == "Europe/London" && entries[3].abbr == "BST" && entries[3].is_dst);
+
+  // Wall-clock day delta: 2026-07-15 03:30:00 UTC (Oakland PDT -420 is 20:30 Tue; Tokyo +540 is 12:30 Wed => +1d)
+  const uint32_t sample_epoch = 1784086200U;  // 03:30:00 UTC (divisible by 60)
+  const int utc_sec_of_day = static_cast<int>(sample_epoch % 86400U);
+  int h24 = 0, mm = 0, day_delta = 0;
+  compute_world_clock_wall_time(sample_epoch, -420, 540, h24, mm, day_delta);
+  const int expected_tokyo_min = ((utc_sec_of_day / 60) + 540 + 1440) % 1440;
+  LATTER_CHECK(h24 == expected_tokyo_min / 60 && mm == expected_tokyo_min % 60);
+  // Test explicit cross-midnight +1d and -1d boundaries (at 02:00 UTC: -420 is prev day 19:00, +540 is same UTC day 11:00 -> +1d)
+  compute_world_clock_wall_time(86400U * 10U + 2U * 3600U, -420, 540, h24, mm, day_delta);
+  LATTER_CHECK(h24 == 11 && mm == 0 && day_delta == 1);
+  // At 22:00 UTC: +540 is next UTC day 07:00, -420 is same UTC day 15:00 -> Honolulu (-600) vs Tokyo (+540): Honolulu is 12:00 (-1d relative to Tokyo)
+  compute_world_clock_wall_time(86400U * 10U + 22U * 3600U, 540, -600, h24, mm, day_delta);
+  LATTER_CHECK(h24 == 12 && mm == 0 && day_delta == -1);
+  // Half-hour zone Asia/Kolkata (+330) at 02:15 UTC -> 07:45
+  compute_world_clock_wall_time(86400U * 10U + 2U * 3600U + 15U * 60U, 0, 330, h24, mm, day_delta);
+  LATTER_CHECK(h24 == 7 && mm == 45 && day_delta == 0);
+
+  // 3. Alarms 2-way summary codec (0=Daily, 1=Weekdays, 2=Weekends, 3=Once) + outbound sync_local_alarms_edit
+  chg = 0ULL;
+  eff = 0U;
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::ALARMS_SUMMARY, "06:47|1|1;08:15|0|2;21:05|1|3", false, chg, eff));
+  LATTER_CHECK(p.alarms[0].hour == 6 && p.alarms[0].minute == 47 && p.alarms[0].enabled && p.alarms[0].recurrence == 1);
+  LATTER_CHECK(p.alarms[1].hour == 8 && p.alarms[1].minute == 15 && !p.alarms[1].enabled && p.alarms[1].recurrence == 2);
+  LATTER_CHECK(p.alarms[2].hour == 21 && p.alarms[2].minute == 5 && p.alarms[2].enabled && p.alarms[2].recurrence == 3);
+  LATTER_CHECK(format_alarms_summary(p) == "06:47|1|1;08:15|0|2;21:05|1|3");
+  LATTER_CHECK(!set_pref_by_key_str(p, PrefKey::ALARMS_SUMMARY, "25:00|1|0;08:00|0|0;09:00|0|0", false, chg, eff));
+
+  MockRpcOutbox alarm_outbox{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  link_state().ha_connected = true;
+  p.prefs_seq = 12U;
+  p.alarms[0].minute = 48;
+  latter_actions::sync_local_alarms_edit(5000U, &alarm_outbox);
+  LATTER_CHECK(!alarm_outbox.published.empty());
+  LATTER_CHECK(alarm_outbox.published.back().find("alarms_summary=06:48|1|1;08:15|0|2;21:05|1|3") != std::string::npos);
+
+  // 4. Multi-lap Digital Stopwatch split history & started_in_analog provenance
+  StopwatchRuntimeState sw{};
+  sw.running = true;
+  sw.started_in_analog = false;
+  sw.start_time_ms = 1000U;
+  sw.record_lap_elapsed(12450U);  // Lap 1 split: 12,450 ms
+  LATTER_CHECK(sw.lap_count == 1 && sw.lap_splits_ms[0] == 12450U && sw.lap_ms == 12450U);
+  sw.record_lap_elapsed(27900U);  // Total 27,900 ms -> Lap 2 split: 15,450 ms (ring [1])
+  LATTER_CHECK(sw.lap_count == 2 && sw.lap_splits_ms[0] == 12450U && sw.lap_splits_ms[1] == 15450U);
+  sw.reset();
+  LATTER_CHECK(!sw.running && sw.lap_count == 0 && sw.elapsed_ms == 0U && !sw.started_in_analog);
+
+  // 5. Source-level guards for Time App, retired Tools bloat, and SDF AA Clock Faces
+  const std::string time_cpp = read_repo_file("../../components/latter_ui/page_time.cpp");
+  const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
+  const std::string clock_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  LATTER_CHECK(time_cpp.find("render_time_page(") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("split_action_card_row(") != std::string::npos);
+  LATTER_CHECK(tools_cpp.find("stopwatch_modern_digital") == std::string::npos);
+  LATTER_CHECK(tools_cpp.find("SW_STYLE_BTN") == std::string::npos);
+  LATTER_CHECK(clock_cpp.find("draw_aa_tapered_hand(") != std::string::npos);
+  LATTER_CHECK(clock_cpp.find("render_analog_chapter_ring(") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -2732,6 +2848,7 @@ int main() {
   test_audio_path_and_intercom_arbitrator();
   test_frame_cadence_and_typed_prefs();
   test_v3_domain_reducer_and_timer_alarm();
+  test_time_app_world_clocks_alarms_and_horology();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

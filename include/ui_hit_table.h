@@ -148,41 +148,50 @@ namespace WidgetId {
   static constexpr uint16_t HUB_DOMAIN_CARD    = 680;  // 680..685 (param = domain_idx)
   static constexpr uint16_t HUB_ROW_ACTION     = 690;  // 690..694 (param = item_idx)
 
-  // Tools & Comms (Page 8)
-  static constexpr uint16_t TOOLS_CARD_BASE    = 700;  // 700..705 (param = subpage)
-  static constexpr uint16_t TIMER_TAB_BASE     = 710;  // 710..712 (param = slot 0..2)
-  static constexpr uint16_t TIMER_PRESET_BASE  = 715;  // 715..718 (param = minutes/seconds)
-  static constexpr uint16_t TIMER_PRIMARY_BTN  = 720;
-  static constexpr uint16_t TIMER_RESET_BTN    = 721;
-  static constexpr uint16_t SW_PRIMARY_BTN     = 725;
-  static constexpr uint16_t SW_RESET_BTN       = 726;
-  static constexpr uint16_t SW_STYLE_BTN       = 727;
-  static constexpr uint16_t SW_LAP_BTN         = 728;
-  static constexpr uint16_t ALARM_CARD_BASE    = 730;  // 730..732 (param = alarm 0..2)
-  static constexpr uint16_t ALARM_TOGGLE_BASE  = 735;  // 735..737 (param = alarm 0..2)
-  static constexpr uint16_t ALARM_RECUR_BTN    = 740;
-  static constexpr uint16_t ALARM_SAVE_BTN     = 741;
-  static constexpr uint16_t CALC_KEY_BASE      = 750;  // 750..769 (param = key code)
-  static constexpr uint16_t DICE_ROLL_BTN      = 770;
-  static constexpr uint16_t DICE_COUNT_BTN     = 771;
-  static constexpr uint16_t COIN_FLIP_BTN      = 775;
-  static constexpr uint16_t LEVEL_ZERO_BTN     = 781;
-  static constexpr uint16_t CAL_EVENT_BASE     = 790;  // 790..794 (param = event idx)
-  static constexpr uint16_t CAL_QUICK_ADD_BTN  = 795;
-  static constexpr uint16_t CAL_PRESET_BASE    = 796;  // 796..800 (param = preset idx 0..4)
-  static constexpr uint16_t CAL_ZOOM_IN_BTN    = 802;
-  static constexpr uint16_t CAL_ZOOM_OUT_BTN   = 803;
-  static constexpr uint16_t INTERCOM_ROW_BASE  = 810;  // 810..814 (param = target idx)
-  static constexpr uint16_t INTERCOM_PTT_BTN   = 815;
-  static constexpr uint16_t INTERCOM_MODE_BTN  = 816;
-  static constexpr uint16_t CAM_PREV_BTN       = 820;
-  static constexpr uint16_t CAM_NEXT_BTN       = 821;
-  static constexpr uint16_t CAM_LISTEN_BTN     = 822;
-  static constexpr uint16_t CAM_PTT_BTN        = 823;
-  static constexpr uint16_t CAM_REPLY_MENU_BTN = 824;
-  static constexpr uint16_t CAM_NOISE_BTN      = 825;
-  static constexpr uint16_t CAM_ORIENT_BTN     = 826;
-  static constexpr uint16_t CAM_REPLY_BASE     = 830;  // 830..833 (param = reply idx)
+  // Tools, Time & Comms (Page 8 / Page 10)
+  static constexpr uint16_t TOOLS_CARD_BASE     = 700;  // 700..705 (param = subpage)
+  static constexpr uint16_t TIMER_TAB_BASE      = 710;  // 710..712 (param = slot 0..2)
+  static constexpr uint16_t TIMER_PRESET_BASE   = 715;  // 715..718 (param = minutes/seconds)
+  static constexpr uint16_t TIMER_PRIMARY_BTN   = 720;
+  static constexpr uint16_t TIMER_RESET_BTN     = 721;
+  static constexpr uint16_t TIMER_PLUS_1M_BTN   = 722;
+  static constexpr uint16_t SW_PRIMARY_BTN      = 725;
+  static constexpr uint16_t SW_RESET_BTN        = 726;
+  static constexpr uint16_t SW_LAP_BTN          = 728;
+  static constexpr uint16_t ALARM_CARD_BASE     = 730;  // 730..732 (param = alarm 0..2)
+  static constexpr uint16_t ALARM_TOGGLE_BASE   = 735;  // 735..737 (param = alarm 0..2)
+  static constexpr uint16_t ALARM_RECUR_BTN     = 740;
+  static constexpr uint16_t ALARM_SAVE_BTN      = 741;
+  static constexpr uint16_t ALARM_HH_BTN        = 742;
+  static constexpr uint16_t ALARM_MM_BTN        = 743;
+  static constexpr uint16_t ALARM_SNOOZE_CANCEL = 744;
+  static constexpr uint16_t CALC_KEY_BASE       = 750;  // 750..769 (param = key code)
+  static constexpr uint16_t DICE_ROLL_BTN       = 770;
+  static constexpr uint16_t DICE_COUNT_BTN      = 771;
+  static constexpr uint16_t COIN_FLIP_BTN       = 775;
+  static constexpr uint16_t LEVEL_ZERO_BTN      = 781;
+  static constexpr uint16_t CAL_EVENT_BASE      = 790;  // 790..794 (param = event idx)
+  static constexpr uint16_t CAL_QUICK_ADD_BTN   = 795;
+  static constexpr uint16_t CAL_PRESET_BASE     = 796;  // 796..800 (param = preset idx 0..4)
+  static constexpr uint16_t CAL_ZOOM_IN_BTN     = 802;
+  static constexpr uint16_t CAL_ZOOM_OUT_BTN    = 803;
+  static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = target idx)
+  static constexpr uint16_t INTERCOM_PTT_BTN    = 815;
+  static constexpr uint16_t INTERCOM_MODE_BTN   = 816;
+  static constexpr uint16_t CAM_PREV_BTN        = 820;
+  static constexpr uint16_t CAM_NEXT_BTN        = 821;
+  static constexpr uint16_t CAM_LISTEN_BTN      = 822;
+  static constexpr uint16_t CAM_PTT_BTN         = 823;
+  static constexpr uint16_t CAM_REPLY_MENU_BTN  = 824;
+  static constexpr uint16_t CAM_NOISE_BTN       = 825;
+  static constexpr uint16_t CAM_ORIENT_BTN      = 826;
+  static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
+  static constexpr uint16_t TIME_MODE_BTN       = 840;  // param = TimeSubpage (0..3)
+  static constexpr uint16_t TIME_ADD_ZONE_BTN   = 841;
+  static constexpr uint16_t TIME_UTC_TOGGLE_BTN = 842;
+  static constexpr uint16_t TIME_WORLD_CARD_BASE = 845; // 845..846 (param = active card idx)
+  static constexpr uint16_t TIME_WORLD_DEL_BASE  = 847; // 847..848 (param = active card idx)
+  static constexpr uint16_t TIME_ZONE_PICK_BASE  = 850; // 850..854 (param = catalog idx)
 }  // namespace WidgetId
 
 struct HitRegion {

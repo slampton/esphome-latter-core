@@ -180,8 +180,6 @@ namespace SystemMenuMode {
 
 namespace ToolsSubpage {
   static constexpr int LAUNCHER   = 0;
-  static constexpr int TIMERS     = 1;
-  static constexpr int ALARMS     = 2;
   static constexpr int STOPWATCH  = 3;
   static constexpr int DICE       = 4;
   static constexpr int FLASHLIGHT = 5;
@@ -191,6 +189,13 @@ namespace ToolsSubpage {
   static constexpr int CALENDAR   = 9;
   static constexpr int INTERCOM   = 10;
 }  // namespace ToolsSubpage
+
+namespace TimeSubpage {
+  static constexpr int CLOCK     = 0;
+  static constexpr int TIMERS    = 1;
+  static constexpr int ALARMS    = 2;
+  static constexpr int STOPWATCH = 3;
+}  // namespace TimeSubpage
 
 namespace AreaSubpage {
   static constexpr int OVERVIEW     = 0;
@@ -638,9 +643,31 @@ inline void format_time_hhmm(int hour, int minute, bool is_24h, char *out_buf,
 
 // (Shared UI navigation sub-view accessors live in include/latter_state.h)
 
+inline bool clock_smooth_sweep_active(bool usb_connected, uint32_t now_ms,
+                                      uint32_t latest_input_ms, uint8_t clock_face) noexcept {
+  if (clock_face == 0U) return false;
+  if (usb_connected || LATTER_IS_STATIONARY || !LATTER_HAS_BATTERY) return true;
+  return (latest_input_ms != 0U) && ((now_ms - latest_input_ms) < 15000U);
+}
+
+inline float smooth_second_with_frac(int sec, uint32_t now_ms, bool smooth_active) noexcept {
+  const int clamped_sec = std::clamp(sec, 0, 59);
+  if (!smooth_active) {
+    return static_cast<float>(clamped_sec);
+  }
+  static int s_last_sec = -1;
+  static uint32_t s_anchor_ms = 0U;
+  if (clamped_sec != s_last_sec || (now_ms - s_anchor_ms) > 1500U) {
+    s_last_sec = clamped_sec;
+    s_anchor_ms = now_ms;
+  }
+  const float frac = std::clamp(static_cast<float>(now_ms - s_anchor_ms) * 0.001f, 0.0f, 0.999f);
+  return static_cast<float>(clamped_sec) + frac;
+}
+
 inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
                                  int sys_mode, int weather_sub, int area_sub, int rem_sub, int tools_sub,
-                                 int hh_tab = 0) {
+                                 int hh_tab = 0, int time_sub = 0) {
   int sub = 0;
   if (gui_page == 1) sub = home_sub;
   else if (gui_page == 2) sub = music_mode;
@@ -651,6 +678,7 @@ inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int
   else if (gui_page == 7) sub = rem_sub;
   else if (gui_page == 8) sub = tools_sub;
   else if (gui_page == 9) sub = hh_tab;
+  else if (gui_page == 10) sub = time_sub;
   return (gui_page * 100) + sub;
 }
 

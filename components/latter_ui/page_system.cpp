@@ -271,10 +271,14 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     char disp_labels[9][36];
     const char *start_lbl =
         (ctx.default_start_app_opt == "Area Controls") ? "Area"
-        : (ctx.default_start_app_opt.empty() ? "Home" : ctx.default_start_app_opt.c_str());
+        : ((ctx.default_start_app_opt == "Time App") ? "Time"
+        : ((ctx.default_start_app_opt == "Clock Face") ? "Clock"
+        : (ctx.default_start_app_opt.empty() ? "Home" : ctx.default_start_app_opt.c_str())));
     std::snprintf(disp_labels[0], sizeof(disp_labels[0]), "Start Screen: %s", start_lbl);
-    std::snprintf(disp_labels[1], sizeof(disp_labels[1]), "Clock Face: %s",
-                  prefs.clock_face_digital ? "Digital" : "Analog");
+    const char *face_lbl =
+        (ctx.clock_face_style_opt == "Modern Analog") ? "Analog"
+        : ((ctx.clock_face_style_opt == "Hybrid Digital") ? "Hybrid" : "Minimal");
+    std::snprintf(disp_labels[1], sizeof(disp_labels[1]), "Clock Face: %s", face_lbl);
     std::snprintf(disp_labels[2], sizeof(disp_labels[2]), "Format: %s",
                   prefs.is_24h_format ? "24-Hour" : "12-Hour");
     std::snprintf(disp_labels[3], sizeof(disp_labels[3]), "Color: %s", ctx.theme_palette_opt.c_str());

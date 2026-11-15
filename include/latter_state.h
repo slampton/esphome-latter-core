@@ -48,6 +48,7 @@ namespace PageId {
   static constexpr int REMOTE     = 7;
   static constexpr int TOOLS      = 8;
   static constexpr int HOME_HUB   = 9;
+  static constexpr int TIME       = 10;
   static constexpr int CAMERAS    = 12;
 }  // namespace PageId
 
@@ -119,8 +120,8 @@ enum class VaVisualStyle : uint8_t {
 
 enum class ClockFaceStyle : uint8_t {
   MinimalDigital = 0,
-  ModernRoman    = 1,
-  ModernBold     = 2,
+  ModernAnalog   = 1,
+  HybridDigital  = 2,
 };
 
 enum class MediaPlaybackState : uint8_t {
@@ -210,6 +211,8 @@ struct AreaContextState {
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
   std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,thermostat,entry,vacuum")
   std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
+  std::string local_tz_info = "";        // "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
+  std::string world_clocks_summary = ""; // ";"-delimited "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
 };
 
 // Protocol v3 active_media state.
@@ -282,7 +285,7 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 4U;
+static constexpr uint16_t kPersistedPrefsVersion = 5U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -331,7 +334,11 @@ enum class PrefKey : uint8_t {
   BLE_BEACON_MODE = 42,
   HOME_SCREEN_ENABLED = 43,
   RETURN_TO_HOME_TIMEOUT = 44,
-  COUNT = 45,
+  HOME_CLOCK_TAP_ACTION = 45,
+  SHOW_UTC_CLOCK = 46,
+  WORLD_CLOCKS = 47,
+  ALARMS_SUMMARY = 48,
+  COUNT = 49,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -382,9 +389,12 @@ struct PersistedDevicePrefs {
   uint8_t night_start_hour = 20;           // 0..23
   uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
   uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
-  uint8_t start_screen = 0;                // 0..9 ("Home", "Clock", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
-  uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)")
+  uint8_t start_screen = 0;                // 0..10 ("Home", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
+  uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
+  uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
+  bool show_utc_clock = false;             // Pin dedicated UTC World Clock card on Time App -> Clock tab
+  char world_clocks_csv[160]{};            // Up to 4 comma-separated IANA time zone IDs
   bool weather_background = true;
   bool home_sun = true;
   bool home_moon = true;
@@ -535,13 +545,15 @@ inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
     "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
-inline constexpr const char *const kStartScreenOpts[10] = {
-    "Home", "Clock", "Media", "Home Hub", "Area Controls",
+inline constexpr const char *const kStartScreenOpts[11] = {
+    "Home", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls",
     "Remote", "Weather", "Cameras", "Games", "Tools"};
+inline constexpr const char *const kHomeClockTapOpts[2] = {
+    "Time App", "Clock Face"};
 inline constexpr const char *const kReturnToHomeTimeoutOpts[7] = {
     "15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never"};
 inline constexpr const char *const kClockFaceOpts[3] = {
-    "Minimal Digital", "Modern Roman (Analog)", "Modern Digital (Bold)"};
+    "Minimal Digital", "Modern Analog", "Hybrid Digital"};
 inline constexpr const char *const kTimeFormatOpts[2] = {"12-Hour (AM/PM)", "24-Hour"};
 inline constexpr const char *const kAlbumArtStyleOpts[4] = {
     "Full Screen", "Letterbox", "Standard", "None"};
@@ -600,6 +612,7 @@ inline constexpr uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &
 }
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
+inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeClockTapOpts, p.home_clock_tap_action); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
 inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
@@ -626,11 +639,13 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.night_start_hour > 23) p.night_start_hour = 20;
   if (p.color_profile >= 5) p.color_profile = 0;
   if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
-  if (p.start_screen >= 10) p.start_screen = 0;
-  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = 1;  // Single-app mode cannot start on Home
+  if (p.start_screen >= 11) p.start_screen = 0;
+  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = 1;  // Single-app mode cannot start on Home -> Time App
   if (p.return_to_home_timeout >= 7) p.return_to_home_timeout = 3;
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
+  if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
+  p.world_clocks_csv[sizeof(p.world_clocks_csv) - 1] = '\0';
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
   if (p.album_sort_order >= 3) p.album_sort_order = 0;
@@ -652,7 +667,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   p.battery_hibernate_timeout = 4;  // Disabled
 #endif
 #if !LATTER_ROUND_DISPLAY
-  if (p.clock_face == 1) p.clock_face = 0;  // Rectangular panels clamp Modern Roman (Analog) -> Minimal Digital
+  if (p.clock_face == 1) p.clock_face = 0;  // Rectangular panels clamp Modern Analog -> Minimal Digital
 #endif
   p.clock_face_digital = (p.clock_face != 1);
   p.is_24h_format = (p.time_format == 1);
@@ -884,10 +899,35 @@ struct TimerRuntimeState {
 };
 
 struct StopwatchRuntimeState {
+  static constexpr uint8_t kMaxLapSplits = 8;
   bool running = false;
+  bool started_in_analog = false;
   uint32_t start_time_ms = 0;
   uint32_t elapsed_ms = 0;
   uint32_t lap_ms = 0;
+  uint32_t lap_splits_ms[kMaxLapSplits]{};
+  uint8_t lap_count = 0;
+
+  void record_lap_elapsed(uint32_t cur_elapsed_ms) {
+    const uint32_t split_ms = (cur_elapsed_ms >= lap_ms) ? (cur_elapsed_ms - lap_ms) : cur_elapsed_ms;
+    lap_splits_ms[lap_count % kMaxLapSplits] = split_ms;
+    if (lap_count < 255U) {
+      ++lap_count;
+    } else {
+      lap_count = static_cast<uint8_t>((lap_count % kMaxLapSplits) + kMaxLapSplits);
+    }
+    lap_ms = cur_elapsed_ms;
+  }
+
+  void reset() {
+    running = false;
+    started_in_analog = false;
+    start_time_ms = 0;
+    elapsed_ms = 0;
+    lap_ms = 0;
+    for (uint32_t &sp : lap_splits_ms) sp = 0;
+    lap_count = 0;
+  }
 };
 
 struct AlarmRuntimeState {
@@ -915,8 +955,13 @@ struct VoiceSessionState {
 struct NavRuntimeState {
   int gui_page = 1;
   int home_subpage = 0;
+  int home_settings_page = 1;
   int home_activity_idx = 0;
   int home_dock_page = 0;
+  int time_subpage = 0;
+  int world_clock_page = 0;
+  int world_clock_picker_page = -1;
+  uint8_t alarm_edit_field = 1;  // 0 = HH focused, 1 = MM focused
   int sky_weather_subpage = 0;
   int area_subpage = 0;
   int remote_subpage = 0;
@@ -1599,6 +1644,8 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.security_pin_policy      = std::string(f[static_cast<size_t>(AreaCtxField::SECURITY_PIN_POLICY)]);
   st.home_categories          = std::string(f[static_cast<size_t>(AreaCtxField::HOME_CATEGORIES)]);
   st.area_icon                = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ICON)]);
+  st.local_tz_info            = std::string(f[static_cast<size_t>(AreaCtxField::LOCAL_TZ_INFO)]);
+  st.world_clocks_summary     = std::string(f[static_cast<size_t>(AreaCtxField::WORLD_CLOCKS_SUMMARY)]);
   return true;
 }
 
@@ -1741,6 +1788,317 @@ inline uint32_t parse_hex_rgb_u24(std::string_view sv, uint32_t fallback) {
   return rgb;
 }
 
+template <size_t N>
+inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
+  static_assert(N > 0, "Destination buffer must be non-empty");
+  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
+  if (n > 0) std::memcpy(dst, src.data(), n);
+  dst[n] = '\0';
+}
+
+// ==============================================================================
+// Time App: World Clock Catalog, TZ Metadata Parsers & Alarm Summary Codec
+// ==============================================================================
+static constexpr int kMaxWorldClocks = 4;
+
+struct WorldClockCatalogItem {
+  const char *iana;
+  const char *city;
+  int16_t std_offset_min;
+};
+
+inline constexpr WorldClockCatalogItem kWorldClockCatalog[24] = {
+    {"America/Los_Angeles", "Los Angeles", -480},
+    {"America/Denver", "Denver", -420},
+    {"America/Chicago", "Chicago", -360},
+    {"America/New_York", "New York", -300},
+    {"America/Toronto", "Toronto", -300},
+    {"America/Sao_Paulo", "Sao Paulo", -180},
+    {"America/Argentina/Buenos_Aires", "Buenos Aires", -180},
+    {"Pacific/Honolulu", "Honolulu", -600},
+    {"America/Anchorage", "Anchorage", -540},
+    {"Europe/London", "London", 0},
+    {"Europe/Paris", "Paris", 60},
+    {"Europe/Berlin", "Berlin", 60},
+    {"Europe/Zurich", "Zurich", 60},
+    {"Africa/Cairo", "Cairo", 120},
+    {"Africa/Johannesburg", "Johannesburg", 120},
+    {"Asia/Dubai", "Dubai", 240},
+    {"Asia/Kolkata", "Kolkata", 330},
+    {"Asia/Bangkok", "Bangkok", 420},
+    {"Asia/Singapore", "Singapore", 480},
+    {"Asia/Hong_Kong", "Hong Kong", 480},
+    {"Asia/Shanghai", "Shanghai", 480},
+    {"Asia/Tokyo", "Tokyo", 540},
+    {"Asia/Seoul", "Seoul", 540},
+    {"Australia/Sydney", "Sydney", 600},
+};
+inline constexpr size_t kWorldClockCatalogCount =
+    sizeof(kWorldClockCatalog) / sizeof(kWorldClockCatalog[0]);
+
+struct LocalTzInfo {
+  std::string iana = "";
+  std::string city = "";
+  std::string abbr = "";
+  int utc_offset_min = 0;
+  bool is_dst = false;
+  bool valid = false;
+};
+
+struct WorldClockEntry {
+  std::string iana = "";
+  std::string city = "";
+  std::string abbr = "";
+  int utc_offset_min = 0;
+  bool is_dst = false;
+  bool is_pinned_utc = false;
+};
+
+inline std::string format_utc_offset_str(int offset_min) {
+  if (offset_min == 0) return "UTC+0";
+  const char sign = (offset_min >= 0) ? '+' : '-';
+  const int abs_m = std::abs(offset_min);
+  const int h = abs_m / 60;
+  const int m = abs_m % 60;
+  char buf[16];
+  if (m == 0) {
+    std::snprintf(buf, sizeof(buf), "UTC%c%d", sign, h);
+  } else {
+    std::snprintf(buf, sizeof(buf), "UTC%c%d:%02d", sign, h, m);
+  }
+  return std::string(buf);
+}
+
+inline std::string city_from_iana_fallback(std::string_view iana) {
+  for (const auto &item : kWorldClockCatalog) {
+    if (iana == item.iana) return item.city;
+  }
+  const size_t slash = iana.rfind('/');
+  std::string city(slash == std::string_view::npos ? iana : iana.substr(slash + 1));
+  for (char &c : city) {
+    if (c == '_') c = ' ';
+  }
+  return city;
+}
+
+inline int catalog_std_offset_min_for_iana(std::string_view iana, bool *found = nullptr) {
+  for (const auto &item : kWorldClockCatalog) {
+    if (iana == item.iana) {
+      if (found != nullptr) *found = true;
+      return item.std_offset_min;
+    }
+  }
+  if (found != nullptr) *found = false;
+  return 0;
+}
+
+inline std::string_view trim_ascii_ws(std::string_view sv) noexcept {
+  while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' || sv.front() == '\n')) {
+    sv.remove_prefix(1);
+  }
+  while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) {
+    sv.remove_suffix(1);
+  }
+  return sv;
+}
+
+inline bool is_valid_iana_zone_token(std::string_view sv) noexcept {
+  if (sv.empty() || sv.size() > 48) return false;
+  for (char c : sv) {
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '/' || c == '_' || c == '-' || c == '+';
+    if (!ok) return false;
+  }
+  return true;
+}
+
+inline std::string normalize_world_clocks_csv(std::string_view csv) {
+  std::string zones[kMaxWorldClocks];
+  int count = 0;
+  size_t start = 0;
+  while (start <= csv.size() && count < kMaxWorldClocks) {
+    size_t pos = csv.find(',', start);
+    if (pos == std::string_view::npos) pos = csv.size();
+    std::string_view tok = trim_ascii_ws(csv.substr(start, pos - start));
+    start = pos + 1;
+    if (!is_valid_iana_zone_token(tok)) continue;
+    if (tok == "UTC" || tok == "Etc/UTC" || tok == "Etc/GMT" || tok == "GMT") continue;
+    bool dup = false;
+    for (int i = 0; i < count; ++i) {
+      if (zones[i] == tok) {
+        dup = true;
+        break;
+      }
+    }
+    if (!dup) zones[count++] = std::string(tok);
+  }
+  std::string out;
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) out.push_back(',');
+    out.append(zones[i]);
+  }
+  return out;
+}
+
+inline int parse_world_clocks_list(std::string_view csv, std::string out_zones[kMaxWorldClocks]) {
+  int count = 0;
+  size_t start = 0;
+  while (start <= csv.size() && count < kMaxWorldClocks) {
+    size_t pos = csv.find(',', start);
+    if (pos == std::string_view::npos) pos = csv.size();
+    std::string_view tok = trim_ascii_ws(csv.substr(start, pos - start));
+    start = pos + 1;
+    if (!is_valid_iana_zone_token(tok)) continue;
+    if (tok == "UTC" || tok == "Etc/UTC" || tok == "Etc/GMT" || tok == "GMT") continue;
+    bool dup = false;
+    for (int i = 0; i < count; ++i) {
+      if (out_zones[i] == tok) {
+        dup = true;
+        break;
+      }
+    }
+    if (!dup) out_zones[count++] = std::string(tok);
+  }
+  return count;
+}
+
+inline LocalTzInfo parse_local_tz_info(std::string_view raw) {
+  LocalTzInfo info{};
+  if (raw.empty()) return info;
+  std::string_view cols[5];
+  if (v3_split_fields(raw, cols, 5, '|') != 5 || cols[0].empty()) return info;
+  info.iana = std::string(cols[0]);
+  info.city = cols[1].empty() ? city_from_iana_fallback(cols[0]) : std::string(cols[1]);
+  info.utc_offset_min = std::clamp(v3_parse_int(cols[3], 0), -840, 840);
+  info.abbr = cols[2].empty() ? format_utc_offset_str(info.utc_offset_min) : std::string(cols[2]);
+  info.is_dst = v3_parse_bool(cols[4]);
+  info.valid = true;
+  return info;
+}
+
+inline int collect_active_world_clocks(const PersistedDevicePrefs &p,
+                                       const AreaContextState &ac,
+                                       WorldClockEntry out_entries[kMaxWorldClocks + 1]) {
+  int total = 0;
+  if (p.show_utc_clock) {
+    out_entries[total++] = WorldClockEntry{"UTC", "UTC", "UTC", 0, false, true};
+  }
+  std::string zones[kMaxWorldClocks];
+  const int z_cnt = parse_world_clocks_list(p.world_clocks_csv, zones);
+  if (z_cnt == 0) return total;
+
+  std::string_view summary_recs[8];
+  const size_t s_cnt = ac.world_clocks_summary.empty()
+                           ? 0
+                           : v3_split_fields(ac.world_clocks_summary, summary_recs, 8, ';');
+
+  for (int i = 0; i < z_cnt && total < (kMaxWorldClocks + 1); ++i) {
+    const std::string &iana = zones[i];
+    bool matched_ha = false;
+    for (size_t r = 0; r < s_cnt; ++r) {
+      std::string_view cols[5];
+      if (v3_split_fields(summary_recs[r], cols, 5, '|') == 5 && cols[0] == iana) {
+        const int off = std::clamp(v3_parse_int(cols[3], 0), -840, 840);
+        out_entries[total++] = WorldClockEntry{
+            iana,
+            cols[1].empty() ? city_from_iana_fallback(iana) : std::string(cols[1]),
+            cols[2].empty() ? format_utc_offset_str(off) : std::string(cols[2]),
+            off,
+            v3_parse_bool(cols[4]),
+            false,
+        };
+        matched_ha = true;
+        break;
+      }
+    }
+    if (!matched_ha) {
+      const int off = catalog_std_offset_min_for_iana(iana);
+      out_entries[total++] = WorldClockEntry{
+          iana,
+          city_from_iana_fallback(iana),
+          format_utc_offset_str(off),
+          off,
+          false,
+          false,
+      };
+    }
+  }
+  return total;
+}
+
+inline int infer_local_utc_offset_min(uint32_t utc_epoch, int local_hour, int local_min, int local_sec) noexcept {
+  const int utc_day_sec = static_cast<int>(utc_epoch % 86400U);
+  const int loc_day_sec = std::clamp(local_hour, 0, 23) * 3600 +
+                          std::clamp(local_min, 0, 59) * 60 +
+                          std::clamp(local_sec, 0, 59);
+  int diff_sec = loc_day_sec - utc_day_sec;
+  if (diff_sec <= -43200) diff_sec += 86400;
+  if (diff_sec > 50400) diff_sec -= 86400;
+  const int rounded_min = (diff_sec >= 0) ? ((diff_sec + 30) / 60) : ((diff_sec - 30) / 60);
+  return std::clamp(rounded_min, -720, 840);
+}
+
+inline void compute_world_clock_wall_time(uint32_t utc_epoch,
+                                          int local_utc_offset_min,
+                                          int target_utc_offset_min,
+                                          int &out_hour24,
+                                          int &out_min,
+                                          int &out_day_delta) noexcept {
+  auto floor_day = [](int64_t sec) -> int64_t {
+    return (sec >= 0) ? (sec / 86400LL) : ((sec - 86399LL) / 86400LL);
+  };
+  const int64_t local_adj = static_cast<int64_t>(utc_epoch) + static_cast<int64_t>(local_utc_offset_min) * 60LL;
+  const int64_t target_adj = static_cast<int64_t>(utc_epoch) + static_cast<int64_t>(target_utc_offset_min) * 60LL;
+  const int64_t local_day = floor_day(local_adj);
+  const int64_t target_day = floor_day(target_adj);
+  const int rem = static_cast<int>(target_adj - target_day * 86400LL);
+  out_hour24 = std::clamp(rem / 3600, 0, 23);
+  out_min = std::clamp((rem % 3600) / 60, 0, 59);
+  out_day_delta = std::clamp(static_cast<int>(target_day - local_day), -2, 2);
+}
+
+inline std::string format_alarms_summary(const PersistedDevicePrefs &p = persisted_prefs()) {
+  char buf[64];
+  std::snprintf(buf, sizeof(buf),
+                "%02u:%02u|%u|%u;%02u:%02u|%u|%u;%02u:%02u|%u|%u",
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[0].hour, 23)),
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[0].minute, 59)),
+                p.alarms[0].enabled ? 1U : 0U,
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[0].recurrence, 3)),
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[1].hour, 23)),
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[1].minute, 59)),
+                p.alarms[1].enabled ? 1U : 0U,
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[1].recurrence, 3)),
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[2].hour, 23)),
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[2].minute, 59)),
+                p.alarms[2].enabled ? 1U : 0U,
+                static_cast<unsigned>(std::min<uint8_t>(p.alarms[2].recurrence, 3)));
+  return std::string(buf);
+}
+
+inline bool parse_alarms_summary(std::string_view sv, PersistedAlarmPref (&out)[3]) noexcept {
+  std::string_view recs[4];
+  if (v3_split_fields(sv, recs, 4, ';') != 3) return false;
+  for (int i = 0; i < 3; ++i) {
+    std::string_view cols[4];
+    if (v3_split_fields(recs[i], cols, 4, '|') != 3) return false;
+    const size_t colon = cols[0].find(':');
+    if (colon == std::string_view::npos || colon == 0 || colon + 1 >= cols[0].size()) return false;
+    const int hh = v3_parse_int(cols[0].substr(0, colon), -1);
+    const int mm = v3_parse_int(cols[0].substr(colon + 1), -1);
+    const int en = v3_parse_int(cols[1], -1);
+    const int rec = v3_parse_int(cols[2], -1);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || (en != 0 && en != 1) || rec < 0 || rec > 3) {
+      return false;
+    }
+    out[i].hour = static_cast<uint8_t>(hh);
+    out[i].minute = static_cast<uint8_t>(mm);
+    out[i].enabled = (en == 1);
+    out[i].recurrence = static_cast<uint8_t>(rec);
+  }
+  return true;
+}
+
 inline const char *pref_key_name(PrefKey key) {
   switch (key) {
     case PrefKey::POWER_PROFILE: return "power_profile";
@@ -1788,6 +2146,10 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::BLE_BEACON_MODE: return "ble_beacon_mode";
     case PrefKey::HOME_SCREEN_ENABLED: return "home_screen_enabled";
     case PrefKey::RETURN_TO_HOME_TIMEOUT: return "return_to_home_timeout";
+    case PrefKey::HOME_CLOCK_TAP_ACTION: return "home_clock_tap_action";
+    case PrefKey::SHOW_UTC_CLOCK: return "show_utc_clock";
+    case PrefKey::WORLD_CLOCKS: return "world_clocks";
+    case PrefKey::ALARMS_SUMMARY: return "alarms_summary";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -1840,6 +2202,10 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::BLE_BEACON_MODE: return pref_ble_beacon_mode_cstr(p);
     case PrefKey::HOME_SCREEN_ENABLED: return p.home_screen_enabled ? "1" : "0";
     case PrefKey::RETURN_TO_HOME_TIMEOUT: return pref_return_to_home_timeout_cstr(p);
+    case PrefKey::HOME_CLOCK_TAP_ACTION: return pref_home_clock_tap_cstr(p);
+    case PrefKey::SHOW_UTC_CLOCK: return p.show_utc_clock ? "1" : "0";
+    case PrefKey::WORLD_CLOCKS: return std::string(p.world_clocks_csv);
+    case PrefKey::ALARMS_SUMMARY: return format_alarms_summary(p);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -1847,7 +2213,7 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
 
 inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                                 bool cascade_profile, uint64_t &changed_mask, uint32_t &effects_mask) {
-  if (sv.empty()) return false;
+  if (sv.empty() && key != PrefKey::WORLD_CLOCKS) return false;
   auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff, bool is_prof_subkey = false) -> bool {
     int idx = find_opt_index(opts, sv);
     if (idx < 0) return false;
@@ -1990,7 +2356,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::HOME_SCREEN_ENABLED: {
       const bool chg = apply_bool(p.home_screen_enabled, kPrefEffectNavPolicy);
       if (!p.home_screen_enabled && p.start_screen == 0) {
-        p.start_screen = 1;  // Coerce Home -> Clock when Home Screen is disabled
+        p.start_screen = 1;  // Coerce Home -> Time App when Home Screen is disabled
         changed_mask |= pref_key_bit(PrefKey::START_SCREEN);
         effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
       }
@@ -1998,6 +2364,36 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     }
     case PrefKey::RETURN_TO_HOME_TIMEOUT:
       return apply_enum(p.return_to_home_timeout, kReturnToHomeTimeoutOpts, 0);
+    case PrefKey::HOME_CLOCK_TAP_ACTION:
+      return apply_enum(p.home_clock_tap_action, kHomeClockTapOpts, 0);
+    case PrefKey::SHOW_UTC_CLOCK:
+      return apply_bool(p.show_utc_clock, 0);
+    case PrefKey::WORLD_CLOCKS: {
+      const std::string norm = normalize_world_clocks_csv(sv);
+      if (std::string_view(p.world_clocks_csv) == norm) return false;
+      copy_bounded_cstr(p.world_clocks_csv, norm);
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= kPrefEffectRedraw;
+      return true;
+    }
+    case PrefKey::ALARMS_SUMMARY: {
+      PersistedAlarmPref parsed[3]{};
+      if (!parse_alarms_summary(sv, parsed)) return false;
+      bool diff = false;
+      for (int i = 0; i < 3; ++i) {
+        if (p.alarms[i].hour != parsed[i].hour ||
+            p.alarms[i].minute != parsed[i].minute ||
+            p.alarms[i].enabled != parsed[i].enabled ||
+            p.alarms[i].recurrence != parsed[i].recurrence) {
+          p.alarms[i] = parsed[i];
+          diff = true;
+        }
+      }
+      if (!diff) return false;
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= kPrefEffectRedraw;
+      return true;
+    }
     case PrefKey::COUNT:
       break;
   }
@@ -2022,11 +2418,16 @@ inline std::string encode_prefs_mask(uint64_t mask, const PersistedDevicePrefs &
 }
 
 // On first-time adoption (prefs_seq == 0), advertise compiled board defaults (excluding
-// ble_beacon_enabled unless explicitly toggled locally) so Latter seeds board-appropriate defaults.
+// ble_beacon_enabled, world_clocks, and alarms_summary unless explicitly edited locally)
+// so Latter seeds board-appropriate defaults without clobbering Studio-configured lists.
 inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.prefs_seq == 0) {
     constexpr uint64_t kAllMask = (1ULL << static_cast<uint8_t>(PrefKey::COUNT)) - 1ULL;
-    const uint64_t seed_mask = (kAllMask & ~pref_key_bit(PrefKey::BLE_BEACON_ENABLED)) | p.dirty_mask;
+    constexpr uint64_t kExcludeUnlessDirty =
+        pref_key_bit(PrefKey::BLE_BEACON_ENABLED) |
+        pref_key_bit(PrefKey::WORLD_CLOCKS) |
+        pref_key_bit(PrefKey::ALARMS_SUMMARY);
+    const uint64_t seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
   return encode_prefs_mask(p.dirty_mask, p);
@@ -2098,6 +2499,10 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::GAME_SOUND_EFFECTS, PrefKey::GAME_SOUND_EFFECTS);
   apply_f(DevicePrefsField::BLE_BEACON_ENABLED, PrefKey::BLE_BEACON_ENABLED);
   apply_f(DevicePrefsField::BLE_BEACON_MODE, PrefKey::BLE_BEACON_MODE);
+  apply_f(DevicePrefsField::HOME_CLOCK_TAP_ACTION, PrefKey::HOME_CLOCK_TAP_ACTION);
+  apply_f(DevicePrefsField::SHOW_UTC_CLOCK, PrefKey::SHOW_UTC_CLOCK);
+  apply_f(DevicePrefsField::WORLD_CLOCKS, PrefKey::WORLD_CLOCKS);
+  apply_f(DevicePrefsField::ALARMS_SUMMARY, PrefKey::ALARMS_SUMMARY);
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
@@ -2340,9 +2745,10 @@ inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local
   return next_pct;
 }
 
-static constexpr int kMaxDockApps = 10;
+static constexpr int kMaxDockApps = 11;
 
 inline int dock_app_id_for_token(std::string_view tok) {
+  if (tok == "time") return 10;
   if (tok == "music") return 2;
   if (tok == "home_hub") return 9;
   if (tok == "area") return 6;
@@ -2367,8 +2773,9 @@ inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = are
 
 inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_prefs()) {
   const std::string_view opt(pref_start_screen_cstr(p));
-  if (opt == "Home") return p.home_screen_enabled ? 1 : 0;
-  if (opt == "Clock") return 0;
+  if (opt == "Home") return p.home_screen_enabled ? 1 : 10;
+  if (opt == "Time App") return 10;
+  if (opt == "Clock Face") return 0;
   if (opt == "Media") return 2;
   if (opt == "Home Hub") return 9;
   if (opt == "Area Controls") return 6;
@@ -2377,7 +2784,7 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
   if (opt == "Cameras") return 12;
   if (opt == "Games") return 3;
   if (opt == "Tools") return 8;
-  return p.home_screen_enabled ? 1 : 0;
+  return p.home_screen_enabled ? 1 : 10;
 }
 
 inline int resolve_start_screen_page(const PersistedDevicePrefs &p = persisted_prefs()) {
@@ -2428,8 +2835,11 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
   if (rt.nav.gui_page == 2 && rt.music.overlay_mode == 0 && media_playing) {
     return false;
   }
+  if (rt.nav.gui_page == 10) {
+    if (rt.nav.time_subpage == 1 && rt.timers.running) return false;
+    if (rt.nav.time_subpage == 3 && rt.stopwatch.running) return false;
+  }
   if (rt.nav.gui_page == 8) {
-    if (rt.nav.tools_subpage == 1 && rt.timers.running) return false;
     if (rt.nav.tools_subpage == 3 && rt.stopwatch.running) return false;
     if (rt.nav.tools_subpage == 5 || rt.nav.tools_subpage == 7) {
       return false;
@@ -2460,14 +2870,6 @@ struct HibernateSnapshot {
 
 static_assert(std::is_trivially_copyable_v<HibernateSnapshot>,
               "HibernateSnapshot must remain a POD blob for ESPPreferenceObject.");
-
-template <size_t N>
-inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
-  static_assert(N > 0, "Destination buffer must be non-empty");
-  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
-  if (n > 0) std::memcpy(dst, src.data(), n);
-  dst[n] = '\0';
-}
 
 #if LATTER_HAS_ESP_PREFS
 inline esphome::ESPPreferenceObject &hibernate_snapshot_handle() {

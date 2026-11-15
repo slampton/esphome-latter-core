@@ -402,7 +402,7 @@ inline std::string toggled_dock_csv(const char *token) {
   return out;
 }
 
-static constexpr const char *kHomeSettingsDockTokens[5] = {"music", "area", "remote", "games", "tools"};
+static constexpr const char *kHomeSettingsDockTokens[6] = {"time", "music", "area", "remote", "games", "tools"};
 
 inline int collect_home_dock_apps(int *out_apps) {
   int n = 0;
@@ -427,6 +427,12 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   const int anchor = resolve_anchor_dock_app(p);
   if (anchor == PageId::HOME) return gui_page == PageId::HOME;
   if (anchor == PageId::CLOCK) return gui_page == PageId::CLOCK;
+  if (anchor == PageId::TIME) {
+    return gui_page == PageId::TIME &&
+           timer_view_slot() == 0 &&
+           runtime_state().alarms.edit_idx == 0 &&
+           runtime_state().nav.world_clock_picker_page < 0;
+  }
   if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
   if (anchor == PageId::HOME_HUB) return gui_page == PageId::HOME_HUB;
   if (anchor == PageId::AREA) {
@@ -461,7 +467,11 @@ inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
 inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int music_overlay_mode,
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
-  if (gui_page == PageId::HOME || alert_ringing) return false;
+  if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
+  if (gui_page == PageId::TIME &&
+      (timer_view_slot() > 0 || alarm_edit_idx > 0 || runtime_state().nav.world_clock_picker_page >= 0)) {
+    return false;
+  }
   if (gui_page == PageId::CAMERAS && cam_quick_reply_open()) return false;
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
@@ -476,9 +486,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
   if (gui_page == PageId::TOOLS && tools_subpage > 0) {
     const bool direct_root = tools_direct_home() &&
-        ((tools_subpage == ToolsSubpage::TIMERS && timer_view_slot() == 0) ||
-         (tools_subpage == ToolsSubpage::ALARMS && alarm_edit_idx == 0) ||
-         (tools_subpage == ToolsSubpage::STOPWATCH) ||
+        ((tools_subpage == ToolsSubpage::STOPWATCH) ||
          (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()));
     if (!direct_root) return false;
   }
@@ -655,7 +663,7 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0) {
       home_dock_anim().win_animating = false;
       home_dock_anim().act_animating = false;
     }
-    if (gui_page != 5 && gui_page != 6 && gui_page != 9) {
+    if (gui_page != 5 && gui_page != 6 && gui_page != 9 && gui_page != 10) {
       mode_bar_anim().win_animating = false;
       mode_bar_anim().act_animating = false;
     }

@@ -143,7 +143,8 @@ bool DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, 
       return true;
     }
     if ((page == 1 && (subpage & 0xFF) == 2) || page == 4 ||
-        (page == 8 && (((subpage & 0xFF) == 2) || ((subpage & 0xFF) == 9)))) {
+        (page == 8 && ((subpage & 0xFF) == 9)) ||
+        (page == 10 && (subpage & 0x0F) == 2)) {
       active_y0 = 0;
       active_y1 = SCREEN_H - 1;
       active_full = true;
@@ -208,11 +209,24 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
   Cadence20msActions out{};
   const uint32_t interactive_gap = interactive_gap_for(in.is_chip_p4, in.mww_running);
 
-  // 1. Tools Suite (Stopwatch, Dice, Bubble Level, Coin Flip)
-  if (in.panel_on && in.display_power_state == 0 && in.gui_page == 8 && !in.va_visible &&
-      in.tools_anim_active) {
+  // 1. Tools Suite (Stopwatch, Dice, Bubble Level, Coin Flip) & Time App Digital Stopwatch
+  if (in.panel_on && in.display_power_state == 0 && !in.va_visible &&
+      ((in.gui_page == 8 && in.tools_anim_active) || (in.gui_page == 10 && in.time_anim_active))) {
     out.anim_driving_disp = true;
     if (!in.render_in_flight && (in.now_ms - in.last_ambient_ms >= interactive_gap)) {
+      out.record_ambient_ms = true;
+      out.schedule_anim_full = true;
+    }
+  }
+
+  // 1b. Standalone Clock Face smooth ~20 FPS mechanical second-hand sweep (power-aware)
+  if (in.panel_on && in.display_power_state == 0 && in.gui_page == 0 &&
+      in.clock_smooth_sweep && !in.va_visible) {
+    out.anim_driving_disp = true;
+    if (ambient_step_ready(in.now_ms, in.last_ambient_ms, in.last_disp_end_ms,
+                           in.render_in_flight, in.is_chip_p4, in.speaker_audio_busy,
+                           in.va_visible, in.ringing_or_critical,
+                           !in.speaker_audio_busy && !in.is_chip_p4 && in.mww_running)) {
       out.record_ambient_ms = true;
       out.schedule_anim_full = true;
     }
@@ -401,7 +415,8 @@ Cadence250msActions FrameCadenceController::evaluate_250ms(const Cadence250msInp
       const bool need_anim_wake =
           in.va_busy || in.alert_or_critical_busy ||
           (in.gui_page == 3 && in.active_game > 0) ||
-          in.tool_anim_due || in.greet_fade_due || home_rotate_imminent || in.sky_motion_due ||
+          in.tool_anim_due || in.time_anim_due || in.clock_sweep_due ||
+          in.greet_fade_due || home_rotate_imminent || in.sky_motion_due ||
           pause_exp_imminent || pause_exp_crossed ||
           in.home_overlay_motion_due || in.nav_scroll_or_sim_dirty;
       if (need_anim_wake) {
@@ -479,6 +494,13 @@ Cadence20msActions FrameCadenceController::step_20ms(
       (rs.nav.tools_subpage == ToolsSubpage::DICE && dice_state().anim_active) ||
       (rs.nav.tools_subpage == ToolsSubpage::LEVEL) ||
       (rs.nav.tools_subpage == ToolsSubpage::COIN_FLIP && coin_state().anim_active);
+  in.time_anim_active =
+      (rs.nav.time_subpage == TimeSubpage::STOPWATCH && rs.stopwatch.running);
+  const uint32_t latest_in_20ms =
+      std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
+  in.clock_smooth_sweep =
+      (rs.nav.gui_page == PageId::CLOCK) &&
+      clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_20ms, prefs.clock_face);
   in.interactive_slide =
       any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) || rs.nav.menu_scroll_active;
   in.find_my_active = rs.alarms.find_my_active;
@@ -613,6 +635,14 @@ Cadence250msActions FrameCadenceController::step_250ms(
          (rs.nav.tools_subpage == ToolsSubpage::DICE && dice_state().anim_active) ||
          (rs.nav.tools_subpage == ToolsSubpage::LEVEL) ||
          (rs.nav.tools_subpage == ToolsSubpage::COIN_FLIP && coin_state().anim_active));
+    in.time_anim_due =
+        (rs.nav.gui_page == PageId::TIME) &&
+        (rs.nav.time_subpage == TimeSubpage::STOPWATCH && rs.stopwatch.running);
+    const uint32_t latest_in_clock =
+        std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
+    in.clock_sweep_due =
+        (rs.nav.gui_page == PageId::CLOCK) &&
+        clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_clock, prefs.clock_face);
     in.home_overlay_motion_due =
         home_activity_slide_active(now_ms) ||
         has_pending_home_activity_fade_settle(now_ms) ||
@@ -721,6 +751,21 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
     if (is_home_activity_fading_out(ctx.now_ms)) act_mask |= (1U << 5);
     sig ^= (act_mask * 0x27D4EB2FU);
+  } else if (rs.nav.gui_page == PageId::TIME) {
+    uint32_t th = 2166136261U;
+    for (int i = 0; i < 3; ++i) {
+      th = (th ^ prefs.alarms[i].hour) * 16777619U;
+      th = (th ^ prefs.alarms[i].minute) * 16777619U;
+      th = (th ^ (prefs.alarms[i].enabled ? 1U : 0U)) * 16777619U;
+      th = (th ^ prefs.alarms[i].recurrence) * 16777619U;
+    }
+    th = (th ^ static_cast<uint32_t>(rs.nav.alarm_edit_field)) * 16777619U;
+    th = (th ^ (prefs.show_utc_clock ? 1U : 0U)) * 16777619U;
+    for (const char *p = prefs.world_clocks_csv; *p != '\0'; ++p) {
+      th = (th ^ static_cast<unsigned char>(*p)) * 16777619U;
+    }
+    th = (th ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;
+    sig ^= (th | 1U);
   }
   return sig;
 }
@@ -728,6 +773,12 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
 bool compute_live_sec_active(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   if (rs.nav.gui_page == PageId::CLOCK) return true;
+  if (rs.nav.gui_page == PageId::TIME) {
+    if (rs.nav.time_subpage == TimeSubpage::CLOCK) return true;
+    if (rs.nav.time_subpage == TimeSubpage::TIMERS) return true;
+    if (rs.nav.time_subpage == TimeSubpage::STOPWATCH) return rs.stopwatch.running;
+    return false;
+  }
   if (rs.nav.gui_page == PageId::HOME) {
     if (ctx.home_wake_greeting &&
         (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, true))) {
@@ -754,7 +805,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   }
   if (rs.nav.gui_page == PageId::TOOLS) {
     const int ts = rs.nav.tools_subpage;
-    return (ts == ToolsSubpage::TIMERS || ts == ToolsSubpage::STOPWATCH ||
+    return (ts == ToolsSubpage::STOPWATCH ||
             ts == ToolsSubpage::DICE || ts == ToolsSubpage::LEVEL ||
             ts == ToolsSubpage::COIN_FLIP || ts == ToolsSubpage::INTERCOM);
   }

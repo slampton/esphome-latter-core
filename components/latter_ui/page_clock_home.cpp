@@ -731,30 +731,16 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
   const int cx = ctx.cx;
   const int cy = ctx.cy;
   const bool is_24h_format = prefs.is_24h_format;
-  [[maybe_unused]] const float batt = rs.hw_batt_level;
-  [[maybe_unused]] const bool is_charging = rs.hw_batt_charging;
   const UiStrView clock_face_opt = ctx.clock_face_style_opt;
-  [[maybe_unused]] esphome::display::BaseFont *font_batt =
-      (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
 
-  const bool is_minimal_digital = (clock_face_opt == "Minimal Digital");
-  const bool is_ring_digital    = (clock_face_opt == "Modern Digital (Bold)") ||
-                                  (clock_face_opt.empty() && prefs.clock_face_digital);
+  const bool is_minimal_digital = (clock_face_opt == "Minimal Digital") ||
+                                  (clock_face_opt.empty() && prefs.clock_face == 0U);
+  const bool is_ring_digital    = (clock_face_opt == "Hybrid Digital") ||
+                                  (clock_face_opt.empty() && prefs.clock_face == 2U);
+
+  frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::HOME_TIME_READOUT, kHitTap);
 
   if (is_minimal_digital) {
-#if LATTER_ROUND_DISPLAY
-    fast_circle(it, cx, cy, 230, ctx.col_dark_gray);
-    render_battery_indicator(it, cx, 348, batt, is_charging, font_batt,
-                             ctx.theme_primary, ctx.col_gold, ctx.col_green);
-#else
-    fast_rect_outline(it, 6, 6, SCREEN_W - 12, SCREEN_H - 12, ctx.col_dark_gray);
-#if LATTER_HAS_BATTERY
-    render_battery_indicator(it, layout().battery_cx, layout().battery_y, batt, is_charging, font_batt,
-                             ctx.theme_primary, ctx.col_gold, ctx.col_green);
-#endif
-#endif
-    frame_hits().add_centered_rect(cx, cy - scale_y(8), scale_x(260), scale_y(96),
-                                   WidgetId::HOME_TIME_READOUT, kHitTap);
     if (!ctx.now.is_valid()) {
       fast_print(it, cx, cy - scale_y(8), ctx.font_time, ctx.col_slate,
                  esphome::display::TextAlign::CENTER, kUnknownGlyph);
@@ -782,48 +768,21 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
     return;
   }
 
-  // FACE 1 (MODERN ROMAN ANALOG) & FACE 2 (MODERN DIGITAL WITH CHAPTER RING)
+  // FACE 1 (MODERN ANALOG) & FACE 2 (HYBRID DIGITAL) — SDF anti-aliased horology
   const float dial_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
-  const int r_outer = static_cast<int>(230.0f * dial_scale);
-  const int r_mid   = static_cast<int>(228.0f * dial_scale);
-  const int r_inner = static_cast<int>(222.0f * dial_scale);
-  const int r_t_out = static_cast<int>(220.0f * dial_scale);
-  const int r_t_in5 = static_cast<int>(212.0f * dial_scale);
-  const int r_t_in1 = static_cast<int>(216.0f * dial_scale);
+  const int r_dial = static_cast<int>(224.0f * dial_scale);
 
-  fast_circle(it, cx, cy, r_outer, ctx.col_dark_gray);
-  fast_circle(it, cx, cy, r_mid, ctx.col_slate);
-  fast_circle(it, cx, cy, r_inner, ctx.col_dark_gray);
-
-  for (int i = 0; i < 60; i++) {
-    if (!is_ring_digital && i == 30) continue;
-    const float s = DIAL_SIN[i];
-    const float c = DIAL_COS[i];
-    const int r_in = (i % 5 == 0) ? r_t_in5 : r_t_in1;
-    const esphome::Color &tick_col = (i % 5 == 0) ? ctx.col_slate : ctx.col_gray;
-    fast_line(it, cx + static_cast<int>(r_in * s), cy - static_cast<int>(r_in * c),
-              cx + static_cast<int>(r_t_out * s), cy - static_cast<int>(r_t_out * c), tick_col);
-  }
-
-#if LATTER_HAS_BATTERY
-  const int dial_batt_y = cy + static_cast<int>(115.0f * dial_scale);
-  render_battery_indicator(it, cx, dial_batt_y, batt, is_charging, font_batt,
-                           ctx.theme_primary, ctx.col_gold, ctx.col_green);
-#endif
-
-  frame_hits().add_centered_rect(cx, cy, scale_x(260), scale_y(160),
-                                 WidgetId::HOME_TIME_READOUT, kHitTap);
+  ui::render_analog_chapter_ring(it, cx, cy, r_dial,
+                                 ctx.col_white, ctx.col_slate, ctx.col_gray, true);
 
   if (!ctx.now.is_valid()) {
     if (is_ring_digital) {
-      fast_print(it, cx, cy - static_cast<int>(28.0f * dial_scale), ctx.font_time, ctx.col_slate,
+      fast_print(it, cx, cy - static_cast<int>(12.0f * dial_scale), ctx.font_time, ctx.col_slate,
                  esphome::display::TextAlign::CENTER, kUnknownGlyph);
     } else {
-      fast_print(it, cx, cy + static_cast<int>(72.0f * dial_scale), ctx.font_date, ctx.col_slate,
+      fast_print(it, cx, cy + static_cast<int>(78.0f * dial_scale), ctx.font_date, ctx.col_slate,
                  esphome::display::TextAlign::CENTER, kUnknownGlyph);
-      fast_filled_circle(it, cx, cy, 7, ctx.col_white);
-      fast_filled_circle(it, cx, cy, 4, ctx.col_red);
-      fast_filled_circle(it, cx, cy, 2, ctx.col_dark_gray);
+      ui::render_center_arbor_aa(it, cx, cy, ctx.col_white, ctx.col_red, ctx.col_dark_gray);
     }
     return;
   }
@@ -831,34 +790,35 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
   const int hour = ctx.now.hour;
   const int min = ctx.now.minute;
   const int sec = ctx.now.second;
-  const int sec_idx = ((sec % 60) + 60) % 60;
+  const uint32_t latest_in = std::max(last_user_touch_ms(), last_screen_wake_ms());
+  const bool smooth_on =
+      clock_smooth_sweep_active(rs.hw_usb_connected, ctx.now_ms, latest_in, prefs.clock_face);
+  const float sec_f = smooth_second_with_frac(sec, ctx.now_ms, smooth_on);
+  const float s_angle = (sec_f / 60.0f) * (2.0f * PI_F);
 
   char date_buf[32];
   esphome::ESPTime now_copy = ctx.now;
   now_copy.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
 
   if (is_ring_digital) {
-    const float s_sec = DIAL_SIN[sec_idx];
-    const float c_sec = DIAL_COS[sec_idx];
-    const float perp_x = -c_sec;
-    const float perp_y = -s_sec;
-    const float r_s_in = 205.0f * dial_scale;
-    const float r_s_out = 220.0f * dial_scale;
-    for (int w = -1; w <= 1; w++) {
-      const int x1 = cx + static_cast<int>(r_s_in * s_sec + w * perp_x);
-      const int y1 = cy - static_cast<int>(r_s_in * c_sec - w * perp_y);
-      const int x2 = cx + static_cast<int>(r_s_out * s_sec + w * perp_x);
-      const int y2 = cy - static_cast<int>(r_s_out * c_sec - w * perp_y);
-      fast_line(it, x1, y1, x2, y2, ctx.theme_primary);
-    }
+    float sin_s = 0.0f, cos_s = 1.0f;
+    fast_sincos(s_angle, sin_s, cos_s);
+    const float r_s_in  = 200.0f * dial_scale;
+    const float r_s_out = 219.0f * dial_scale;
+    const float cx_f = static_cast<float>(cx);
+    const float cy_f = static_cast<float>(cy);
+    ui::draw_aa_line(it,
+                     cx_f + r_s_in * sin_s, cy_f - r_s_in * cos_s,
+                     cx_f + r_s_out * sin_s, cy_f - r_s_out * cos_s,
+                     std::max(2.4f, 3.0f * dial_scale), ctx.theme_primary);
 
-    fast_print(it, cx, cy - static_cast<int>(103.0f * dial_scale), ctx.font_date, ctx.theme_primary,
+    fast_print(it, cx, cy - static_cast<int>(86.0f * dial_scale), ctx.font_date, ctx.theme_primary,
                esphome::display::TextAlign::CENTER, date_buf);
 
     char dig_buf[16];
     char ap_str[8] = "";
     format_time_hhmm(hour, min, is_24h_format, dig_buf, sizeof(dig_buf), ap_str);
-    fast_print(it, cx, cy - static_cast<int>(28.0f * dial_scale), ctx.font_time, ctx.col_white,
+    fast_print(it, cx, cy - static_cast<int>(8.0f * dial_scale), ctx.font_time, ctx.col_white,
                esphome::display::TextAlign::CENTER, dig_buf);
 
     char sec_buf[32];
@@ -867,10 +827,10 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
     } else {
       std::snprintf(sec_buf, sizeof(sec_buf), "%s  •  %02ds", ap_str, sec);
     }
-    fast_print(it, cx, cy + static_cast<int>(29.0f * dial_scale), ctx.font_small, ctx.theme_secondary,
+    fast_print(it, cx, cy + static_cast<int>(52.0f * dial_scale), ctx.font_small, ctx.theme_secondary,
                esphome::display::TextAlign::CENTER, sec_buf);
   } else {
-    fast_print(it, cx, cy - static_cast<int>(129.0f * dial_scale), ctx.font_date, ctx.theme_primary,
+    fast_print(it, cx, cy - static_cast<int>(118.0f * dial_scale), ctx.font_date, ctx.theme_primary,
                esphome::display::TextAlign::CENTER, date_buf);
     char time_buf[32];
     if (is_24h_format) {
@@ -880,46 +840,41 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
       if (h12 == 0) h12 = 12;
       std::snprintf(time_buf, sizeof(time_buf), "%d:%02d %s", h12, min, hour >= 12 ? "pm" : "am");
     }
-    fast_print(it, cx, cy + static_cast<int>(72.0f * dial_scale), ctx.font_date, ctx.col_slate,
+    fast_print(it, cx, cy + static_cast<int>(82.0f * dial_scale), ctx.font_date, ctx.col_slate,
                esphome::display::TextAlign::CENTER, time_buf);
 
-    const float h_angle = ((hour % 12) + min / 60.0f + sec / 3600.0f) * (2.0f * PI_F / 12.0f);
-    const float m_angle = (min + sec / 60.0f) * (2.0f * PI_F / 60.0f);
+    const float h_angle = ((hour % 12) + min / 60.0f + sec_f / 3600.0f) * (2.0f * PI_F / 12.0f);
+    const float m_angle = (min + sec_f / 60.0f) * (2.0f * PI_F / 60.0f);
+    const float cx_f = static_cast<float>(cx);
+    const float cy_f = static_cast<float>(cy);
+
+    ui::draw_aa_tapered_hand(it, cx_f, cy_f, h_angle,
+                             16.0f * dial_scale, 94.0f * dial_scale,
+                             std::max(6.5f, 8.2f * dial_scale), std::max(2.6f, 3.4f * dial_scale),
+                             ctx.col_white, ctx.theme_primary, true, true);
+
+    ui::draw_aa_tapered_hand(it, cx_f, cy_f, m_angle,
+                             20.0f * dial_scale, 154.0f * dial_scale,
+                             std::max(5.0f, 6.2f * dial_scale), std::max(2.0f, 2.5f * dial_scale),
+                             ctx.col_slate, ctx.col_white, true, true);
 
     {
-      float sin_h = 0.0f, cos_h = 1.0f;
-      fast_sincos(h_angle, sin_h, cos_h);
-      const float h_len = 88.0f * dial_scale;
-      fast_filled_triangle(it, cx - static_cast<int>(7.0f * cos_h), cy - static_cast<int>(7.0f * sin_h),
-                           cx + static_cast<int>(7.0f * cos_h), cy + static_cast<int>(7.0f * sin_h),
-                           cx + static_cast<int>(h_len * sin_h), cy - static_cast<int>(h_len * cos_h),
-                           ctx.col_white);
+      float sin_s = 0.0f, cos_s = 1.0f;
+      fast_sincos(s_angle, sin_s, cos_s);
+      const float tip_x  = cx_f + 174.0f * dial_scale * sin_s;
+      const float tip_y  = cy_f - 174.0f * dial_scale * cos_s;
+      const float tail_x = cx_f - 32.0f * dial_scale * sin_s;
+      const float tail_y = cy_f + 32.0f * dial_scale * cos_s;
+      ui::draw_aa_line(it, tail_x + 1.0f, tail_y + 1.5f, tip_x + 1.0f, tip_y + 1.5f,
+                       std::max(1.6f, 2.0f * dial_scale), kChromeShadow, 128);
+      ui::draw_aa_line(it, tail_x, tail_y, tip_x, tip_y,
+                       std::max(1.5f, 1.9f * dial_scale), ctx.col_red);
+      fast_filled_circle(it, static_cast<int>(std::lround(tail_x)),
+                         static_cast<int>(std::lround(tail_y)),
+                         std::max(3, static_cast<int>(4.0f * dial_scale)), ctx.col_red);
     }
 
-    {
-      float sin_m = 0.0f, cos_m = 1.0f;
-      fast_sincos(m_angle, sin_m, cos_m);
-      const float m_len = 148.0f * dial_scale;
-      fast_filled_triangle(it, cx - static_cast<int>(4.0f * cos_m), cy - static_cast<int>(4.0f * sin_m),
-                           cx + static_cast<int>(4.0f * cos_m), cy + static_cast<int>(4.0f * sin_m),
-                           cx + static_cast<int>(m_len * sin_m), cy - static_cast<int>(m_len * cos_m),
-                           ctx.col_slate);
-    }
-
-    {
-      const float sin_s = DIAL_SIN[sec_idx];
-      const float cos_s = DIAL_COS[sec_idx];
-      const int tip_x = cx + static_cast<int>(168.0f * dial_scale * sin_s);
-      const int tip_y = cy - static_cast<int>(168.0f * dial_scale * cos_s);
-      const int tail_x = cx - static_cast<int>(30.0f * dial_scale * sin_s);
-      const int tail_y = cy + static_cast<int>(30.0f * dial_scale * cos_s);
-      fast_line(it, tail_x, tail_y, tip_x, tip_y, ctx.col_red);
-      fast_filled_circle(it, tail_x, tail_y, 4, ctx.col_red);
-    }
-
-    fast_filled_circle(it, cx, cy, 7, ctx.col_white);
-    fast_filled_circle(it, cx, cy, 4, ctx.col_red);
-    fast_filled_circle(it, cx, cy, 2, ctx.col_dark_gray);
+    ui::render_center_arbor_aa(it, cx, cy, ctx.col_white, ctx.col_red, ctx.col_dark_gray);
   }
 }
 
@@ -972,22 +927,36 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.theme_primary);
 
-    static const char *const kLabels[5] = {"Music", "Area", "Remote", "Games", "Tools"};
+    static const char *const kDockLabels[6] = {"Time", "Music", "Area", "Remote", "Games", "Tools"};
+    const int cur_pg = (rs.nav.home_settings_page == 2) ? 2 : 1;
+    const int page_base = (cur_pg == 2) ? 5 : 0;
+    const int vis_rows = (cur_pg == 2) ? 2 : 5;
     char buf[48];
-    for (int i = 0; i < 5; i++) {
-      const bool shown = dock_app_listed(kHomeSettingsDockTokens[i]);
-      std::snprintf(buf, sizeof(buf), "%s Icon: %s", kLabels[i], shown ? "Shown" : "Hidden");
-      const int y_mid = layout().slot5_y(i);
-      const Color bg_c  = shown ? kChromeGlassTint : kChromeCardBgOff;
-      const Color brd_c = shown ? kChromeCardBrdOn : kChromeCardBrdOff;
-      const Color txt_c = shown ? ctx.col_white    : ctx.col_slate;
+    for (int r = 0; r < vis_rows; r++) {
+      const int item_idx = page_base + r;
+      bool row_on = true;
+      if (item_idx == 0) {
+        std::snprintf(buf, sizeof(buf), "Time Tap: %s",
+                      (prefs.home_clock_tap_action == 0U) ? "Time App" : "Clock Face");
+      } else {
+        const int tok_idx = item_idx - 1;
+        row_on = dock_app_listed(kHomeSettingsDockTokens[tok_idx]);
+        std::snprintf(buf, sizeof(buf), "%s Icon: %s",
+                      kDockLabels[tok_idx], row_on ? "Shown" : "Hidden");
+      }
+      const int y_mid = layout().slot5_y(r);
+      const Color bg_c  = row_on ? kChromeGlassTint : kChromeCardBgOff;
+      const Color brd_c = row_on ? kChromeCardBrdOn : kChromeCardBrdOff;
+      const Color txt_c = row_on ? ctx.col_white    : ctx.col_slate;
       render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12,
                          bg_c, brd_c, buf, txt_c, ctx.font_small);
       frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
-                                     WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,
-                                     static_cast<int16_t>(i));
+                                     WidgetId::LIST_SLOT_BASE + r, kHitTap | kHitFocusSlot,
+                                     static_cast<int16_t>(item_idx));
     }
 
+    render_vertical_page_pips(it, cur_pg == 2, cur_pg == 1,
+                              ctx.col_bg, ctx.col_white, kChromePipInactive);
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
     return;
   }
@@ -1770,6 +1739,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         fast_filled_circle(it, bx - sd(2), by + sd(1), sdr(7), c);
         fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(6), c);
         fill_rect_row_major(it, bx - sd(9), by + sd(4), sdr(16), sdr(7), c);
+      } else if (app_id == PageId::TIME) {
+        ui::draw_icon_clock_face(it, bx, by, sdr(13), c);
       }
     };
 
@@ -1916,6 +1887,9 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
       break;
     case PageId::HOME_HUB:
       render_home_hub_page(it, ctx);
+      break;
+    case PageId::TIME:
+      render_time_page(it, ctx);
       break;
     case PageId::CAMERAS:
       render_cameras_page(it, ctx);

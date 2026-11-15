@@ -245,5 +245,39 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
                    esphome::Color theme_primary, esphome::Color col_white,
                    esphome::Color col_slate, esphome::Color col_red);
 
+// ------------------------------------------------------------------------------
+// 4. Shared Sub-Pixel SDF Horology Primitives & Split Action Card Row
+// ------------------------------------------------------------------------------
+void draw_aa_line(esphome::display::Display &it, float x0, float y0, float x1, float y1,
+                  float width, esphome::Color col, int alpha_max = 255);
+
+void draw_aa_tapered_hand(esphome::display::Display &it, float cx, float cy, float angle_rad,
+                          float tail_len, float tip_len, float root_w, float tip_w,
+                          esphome::Color body_col, esphome::Color lume_col,
+                          bool draw_lume = true, bool draw_shadow = true);
+
+void render_analog_chapter_ring(esphome::display::Display &it, int cx, int cy, int r_dial,
+                                esphome::Color cardinal_col, esphome::Color major_col,
+                                esphome::Color minor_col, bool double_twelve = true);
+
+void render_center_arbor_aa(esphome::display::Display &it, int cx, int cy,
+                            esphome::Color outer_col, esphome::Color cap_col,
+                            esphome::Color jewel_col);
+
+void draw_icon_clock_face(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col);
+
+// Shared 2-zone glass card row used by Time App -> Timers & Alarms:
+//   - Left 72%: primary readout + secondary caption (taps open detail/editor)
+//   - Right 28%: toggle switch (action_is_toggle=true) or play/pause button (action_is_toggle=false)
+void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                           const char *primary_txt, esphome::display::BaseFont *font_pri,
+                           esphome::Color pri_col,
+                           const char *secondary_txt, esphome::display::BaseFont *font_sec,
+                           esphome::Color sec_col,
+                           bool card_active, esphome::Color accent_col,
+                           bool action_is_toggle, bool action_on,
+                           uint16_t left_wid, uint16_t right_wid, int16_t param = 0);
+
 }  // namespace ui
 }  // namespace latter_ui

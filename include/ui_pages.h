@@ -39,6 +39,7 @@ void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &c
 void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_comms_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
@@ -140,7 +141,6 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
 // ------------------------------------------------------------------------------
 std::string strip_trailing_paren_state(const std::string &s);
 
-bool &stopwatch_modern_digital();
 void reset_calculator_state();
 void handle_calculator_keypad_tap(int tx, int ty);
 

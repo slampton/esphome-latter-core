@@ -11,15 +11,6 @@
 
 namespace latter_ui {
 
-// ==============================================================================
-// Shared Tools State & Helpers (declared in include/ui_pages.h)
-// ==============================================================================
-
-bool &stopwatch_modern_digital() {
-  static bool modern = (LATTER_ROUND_DISPLAY == 0);
-  return modern;
-}
-
 namespace {
 
 int wrap_text_lines(const std::string &text, int max_w, esphome::display::BaseFont *font,
@@ -104,36 +95,9 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
   const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
   auto S = [](int v466) constexpr -> int { return scale_s(v466); };
 
-  if (app_id == ToolsSubpage::TIMERS) {
-    // 1. Timers: 2px-stroke hourglass with solid filled upper/lower sand bulbs
-    fill_rect_row_major(it, ix - S(11), iy - S(14), 2 * S(11) + 1, thick, col_white);
-    fill_rect_row_major(it, ix - S(11), iy + S(13), 2 * S(11) + 1, thick, col_white);
-    for (int t = 0; t < thick; t++) {
-      fast_line(it, ix - S(9) + t, iy - S(12), ix - S(2) + t, iy, col_white);
-      fast_line(it, ix + S(9) - t, iy - S(12), ix + S(2) - t, iy, col_white);
-      fast_line(it, ix - S(2) + t, iy, ix - S(9) + t, iy + S(12), col_white);
-      fast_line(it, ix + S(2) - t, iy, ix + S(9) - t, iy + S(12), col_white);
-    }
-    fast_filled_triangle(it, ix - S(5), iy - S(7), ix + S(5), iy - S(7), ix, iy - S(2), col_white);
-    fast_line(it, ix, iy - S(2), ix, iy + S(4), theme_secondary);
-    fast_filled_triangle(it, ix - S(6), iy + S(11), ix + S(6), iy + S(11), ix, iy + S(4), col_white);
-
-  } else if (app_id == ToolsSubpage::ALARMS) {
-    // 2. Alarms: Twin solid filled bells, 2px clock bezel, angled legs & 2px hands
-    fast_filled_circle(it, ix - S(10), iy - S(9), S(4), col_white);
-    fast_filled_circle(it, ix + S(10), iy - S(9), S(4), col_white);
-    fast_filled_circle(it, ix, iy + S(2), S(14), surf_bg);
-    for (int t = 0; t < thick; t++) {
-      fast_circle(it, ix, iy + S(2), S(12) - t, col_white);
-      fast_line(it, ix - S(8) + t, iy + S(12), ix - S(11) + t, iy + S(16), col_white);
-      fast_line(it, ix + S(8) - t, iy + S(12), ix + S(11) - t, iy + S(16), col_white);
-      fast_line(it, ix + t, iy + S(2), ix + t, iy - S(5), col_white);
-      fast_line(it, ix, iy + S(2) + t, ix + S(5), iy + S(5) + t, col_white);
-    }
-    fast_filled_circle(it, ix, iy + S(2), S(2), col_white);
-
-  } else if (app_id == ToolsSubpage::STOPWATCH) {
-    // 3. Stopwatch: 2px chronometer bezel, bold top crown, angled pusher & 2px sweep hand
+#if LATTER_ROUND_DISPLAY
+  if (app_id == ToolsSubpage::STOPWATCH) {
+    // Classic Round Chronograph: 2px chronometer bezel, bold top crown, angled pusher & 2px sweep hand
     fill_rect_row_major(it, ix - S(4), iy - S(16), 2 * S(4) + 1, thick, col_white);
     fill_rect_row_major(it, ix - S(1), iy - S(16) + thick, 2 * S(1) + 1, S(4), col_white);
     for (int t = 0; t < thick; t++) {
@@ -148,8 +112,9 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
     for (int t = 0; t < thick; t++) {
       fast_line(it, ix + t, iy + S(2), ix + S(6), iy - S(4) + t, col_white);
     }
-
-  } else if (app_id == ToolsSubpage::DICE) {
+  } else
+#endif
+  if (app_id == ToolsSubpage::DICE) {
     // 4. Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips
     const int d_r = S(5);
     const int x0 = ix - S(13);
@@ -270,29 +235,22 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     int id;
     const char *label;
   };
-#if LATTER_HAS_IMU
-  static constexpr ToolItemDef kPage0[3][2] = {
-      {{ToolsSubpage::TIMERS, "Timers"},         {ToolsSubpage::ALARMS, "Alarms"}},
-      {{ToolsSubpage::STOPWATCH, "Stopwatch"},   {ToolsSubpage::LEVEL, "Level"}},
-      {{ToolsSubpage::FLASHLIGHT, "Flashlight"}, {ToolsSubpage::CALCULATOR, "Calculator"}},
-  };
-  static constexpr ToolItemDef kPage1[3][2] = {
-      {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
-      {{ToolsSubpage::CALENDAR, "Calendar"},     {ToolsSubpage::INTERCOM, "Intercom"}},
-      {{PageId::CAMERAS, "Camera"},              {0, ""}},
-  };
-#else
-  static constexpr ToolItemDef kPage0[3][2] = {
-      {{ToolsSubpage::TIMERS, "Timers"},         {ToolsSubpage::ALARMS, "Alarms"}},
-      {{ToolsSubpage::STOPWATCH, "Stopwatch"},   {ToolsSubpage::FLASHLIGHT, "Flashlight"}},
-      {{ToolsSubpage::CALCULATOR, "Calculator"}, {ToolsSubpage::CALENDAR, "Calendar"}},
-  };
-  static constexpr ToolItemDef kPage1[3][2] = {
-      {{ToolsSubpage::INTERCOM, "Intercom"},     {PageId::CAMERAS, "Camera"}},
-      {{ToolsSubpage::DICE, "Dice Roll"},        {ToolsSubpage::COIN_FLIP, "Coin Flip"}},
-      {{0, ""},                                  {0, ""}},
-  };
+  static constexpr ToolItemDef kItems[] = {
+#if LATTER_ROUND_DISPLAY
+      {ToolsSubpage::STOPWATCH, "Stopwatch"},
 #endif
+#if LATTER_HAS_IMU
+      {ToolsSubpage::LEVEL, "Level"},
+#endif
+      {ToolsSubpage::FLASHLIGHT, "Flashlight"},
+      {ToolsSubpage::CALCULATOR, "Calculator"},
+      {ToolsSubpage::CALENDAR, "Calendar"},
+      {ToolsSubpage::INTERCOM, "Intercom"},
+      {PageId::CAMERAS, "Camera"},
+      {ToolsSubpage::DICE, "Dice Roll"},
+      {ToolsSubpage::COIN_FLIP, "Coin Flip"},
+  };
+  static constexpr int kTotalItems = static_cast<int>(sizeof(kItems) / sizeof(kItems[0]));
 
   const auto &ly = layout();
   const int raw_w = (SCREEN_W < 380) ? 110 : 122;
@@ -304,15 +262,17 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
   const int max_vis_y = scale_y(395);
 
   auto draw_grid_for_page = [&](int pg_idx, int y_shift, bool register_hits) {
-    const auto &grid = (pg_idx == 0) ? kPage0 : kPage1;
+    const int base_idx = pg_idx * 6;
     for (int r = 0; r < 3; r++) {
       const int cy_card = row_cy[r] + y_shift;
       if (cy_card < min_vis_y || cy_card > max_vis_y) continue;
       for (int c = 0; c < 2; c++) {
-        const int app_id = grid[r][c].id;
+        const int item_idx = base_idx + r * 2 + c;
+        if (item_idx >= kTotalItems) continue;
+        const int app_id = kItems[item_idx].id;
         if (app_id == 0) continue;
         const int cx_card = col_cx[c];
-        render_tool_launcher_card(it, cx_card, cy_card, app_id, grid[r][c].label, ctx);
+        render_tool_launcher_card(it, cx_card, cy_card, app_id, kItems[item_idx].label, ctx);
         if (register_hits) {
           const uint16_t slot = static_cast<uint16_t>(r * 2 + c);
           frame_hits().add_centered_rect(cx_card, cy_card, eff_w, eff_h,
@@ -350,333 +310,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
                             ctx.col_bg, ctx.col_white, kChromePipInactive);
 }
 
-void render_timers_subpage(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const auto *slots = timer_slots();
-  const int view_idx = timer_view_slot();
-
-  if (view_idx == 0) {
-    render_page_header(it, ctx.cx, "TIMERS", ctx.font_small, ctx.theme_primary);
-
-    int best_run_idx = -1;
-    int best_run_rem = 999999;
-    for (int i = 0; i < 3; i++) {
-      if (slots[i].running) {
-        const int r_s = (slots[i].target_ms > ctx.now_ms)
-                            ? static_cast<int>((slots[i].target_ms - ctx.now_ms + 999U) / 1000U)
-                            : 0;
-        if (r_s < best_run_rem) {
-          best_run_rem = r_s;
-          best_run_idx = i;
-        }
-      }
-    }
-    if (best_run_idx >= 0 && slots[best_run_idx].duration_sec > 0) {
-      float prog = 0.0f;
-      if (ctx.now_ms < slots[best_run_idx].target_ms) {
-        prog = static_cast<float>(slots[best_run_idx].target_ms - ctx.now_ms) /
-               (static_cast<float>(slots[best_run_idx].duration_sec) * 1000.0f);
-      }
-      render_progress_arc_r224(it, ctx.cx, ctx.cy, prog, ctx.theme_primary);
-    }
-
-    const int t_card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : layout().tool_card3_w;
-    const int t_card_h = layout().tool_card3_h;
-    const int t_left   = ctx.cx - (t_card_w / 2);
-    const int t_div_x  = layout().tool_card3_div_x();
-    const int bx       = (t_div_x + t_left + t_card_w) / 2;
-
-    for (int i = 0; i < 3; i++) {
-      const auto &s = slots[i];
-      const int y_mid = layout().tool_card3_y(i);
-      const bool is_act = (s.running || s.paused);
-      int disp_sec = s.duration_sec;
-      if (s.running) {
-        disp_sec = (s.target_ms > ctx.now_ms)
-                       ? static_cast<int>((s.target_ms - ctx.now_ms + 999U) / 1000U)
-                       : 0;
-      } else if (s.paused) {
-        disp_sec = s.remaining_sec;
-      }
-
-      const Color border_c = s.running ? ctx.theme_primary
-                                       : (s.paused ? ctx.theme_secondary : kChromeCardBorder);
-      render_card_box(it, t_left, y_mid - t_card_h / 2, t_card_w, t_card_h,
-                      kChromeGlassTint, border_c, scale_s(16));
-
-      const Color bar_c = s.running ? ctx.theme_primary
-                                    : (s.paused ? ctx.theme_secondary : kChromeCardBorder);
-      fill_rect_row_major(it, t_left + scale_x(11), y_mid - scale_y(21),
-                          std::max(3, scale_x(4)), scale_y(42), bar_c);
-
-      char t_buf[20];
-      const int hrs  = disp_sec / 3600;
-      const int mins = (disp_sec % 3600) / 60;
-      const int secs = disp_sec % 60;
-      if (hrs > 0) {
-        std::snprintf(t_buf, sizeof(t_buf), "%d:%02d:%02d", hrs, mins, secs);
-        fast_print(it, t_left + scale_x(25), y_mid - scale_y(11), ctx.font_date,
-                   is_act ? ctx.col_white : ctx.col_slate, TextAlign::CENTER_LEFT, t_buf);
-      } else {
-        std::snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, secs);
-        fast_print(it, t_left + scale_x(25), y_mid - scale_y(2), ctx.font_chrono_time,
-                   is_act ? ctx.col_white : ctx.col_slate, TextAlign::BASELINE_LEFT, t_buf);
-      }
-
-      std::string lbl = format_timer_slot_label(i);
-      if (s.running) lbl += " • Running";
-      else if (s.paused) lbl += " • Paused";
-      else if (!s.name.empty()) lbl += " • Saved";
-      lbl = fit_text_to_width_font(lbl, std::max(60, t_div_x - (t_left + scale_x(32))), ctx.font_small);
-      const Color sub_c = s.running ? ctx.theme_primary
-                                    : (s.paused ? ctx.theme_secondary : ctx.col_slate);
-      fast_print(it, t_left + scale_x(27), y_mid + scale_y(18), ctx.font_small, sub_c,
-                 TextAlign::CENTER_LEFT, lbl.c_str());
-
-      fast_line(it, t_div_x, y_mid - scale_y(22), t_div_x, y_mid + scale_y(22), kChromeCardBorder);
-      render_glass_circle(it, bx, y_mid, scale_s(18), kChromeGlassTint,
-                          is_act ? ctx.theme_primary : ctx.theme_secondary);
-      if (s.running) {
-        fill_rect_row_major(it, bx - scale_s(5), y_mid - scale_s(6),
-                            std::max(2, scale_s(3)), scale_s(13), ctx.col_white);
-        fill_rect_row_major(it, bx + scale_s(2), y_mid - scale_s(6),
-                            std::max(2, scale_s(3)), scale_s(13), ctx.col_white);
-      } else {
-        const Color tri_c = s.paused ? ctx.col_white : ctx.theme_primary;
-        fast_filled_triangle(it, bx - scale_s(4), y_mid - scale_s(7),
-                             bx - scale_s(4), y_mid + scale_s(7),
-                             bx + scale_s(7), y_mid, tri_c);
-      }
-
-      frame_hits().add_rect(t_left, y_mid - t_card_h / 2, t_div_x - t_left, t_card_h,
-                            WidgetId::TIMER_TAB_BASE + static_cast<uint16_t>(i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-      frame_hits().add_rect(t_div_x, y_mid - t_card_h / 2, (t_left + t_card_w) - t_div_x, t_card_h,
-                            WidgetId::TIMER_PRIMARY_BTN,
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-    }
-
-    render_back_button(it, ctx.cx, ctx.font_small, layout().back_y,
-                       tools_direct_home() ? "Home" : "< Back");
-    return;
-  }
-
-  // Single-Timer Detail & Editor View (view_idx == 1..3)
-  const int s_idx = (view_idx >= 1 && view_idx <= 3) ? (view_idx - 1) : 0;
-  const auto &s = slots[s_idx];
-  const bool s_running = s.running;
-  const bool s_paused  = s.paused;
-  const int s_dur_sec  = s.duration_sec;
-  const int disp_sec = s_running
-                           ? ((s.target_ms > ctx.now_ms)
-                                  ? static_cast<int>((s.target_ms - ctx.now_ms + 999U) / 1000U)
-                                  : 0)
-                           : (s_paused ? s.remaining_sec : s_dur_sec);
-
-  if ((s_running || s_paused) && s_dur_sec > 0) {
-    float prog = 0.0f;
-    if (s_running) {
-      if (ctx.now_ms < s.target_ms) {
-        prog = static_cast<float>(s.target_ms - ctx.now_ms) /
-               (static_cast<float>(s_dur_sec) * 1000.0f);
-      }
-    } else {
-      prog = static_cast<float>(s.remaining_sec) / static_cast<float>(s_dur_sec);
-    }
-    render_progress_arc_r224(it, ctx.cx, ctx.cy, prog,
-                             s_paused ? ctx.theme_secondary : ctx.theme_primary);
-  }
-
-  const std::string hdr = fit_text_to_width_font(
-      format_timer_header_upper(s_idx), scale_x(280), ctx.font_small);
-  render_page_header(it, ctx.cx, hdr, ctx.font_small, ctx.theme_primary);
-
-  // Bare countdown readout directly on background (no non-interactive glass box)
-  char t_buf[24];
-  const int hrs  = disp_sec / 3600;
-  const int mins = (disp_sec % 3600) / 60;
-  const int secs = disp_sec % 60;
-  if (hrs > 0) {
-    std::snprintf(t_buf, sizeof(t_buf), "%d:%02d:%02d", hrs, mins, secs);
-    render_time_readout(it, ctx.cx, t_buf, ctx.font_date, ctx.col_white);
-  } else {
-    std::snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, secs);
-    render_time_readout(it, ctx.cx, t_buf, ctx.font_time, ctx.col_white);
-  }
-
-  const char *st_lbl = s_running ? "Running"
-                       : (s_paused ? "Paused" : (s.name.empty() ? "Ready" : "Saved Preset"));
-  const Color st_col = s_running ? ctx.theme_secondary
-                       : (s_paused ? ctx.theme_primary : ctx.col_slate);
-  if (backdrop_active()) {
-    fast_print(it, ctx.cx + 1, scale_y(192) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, st_lbl);
-  }
-  fast_print(it, ctx.cx, scale_y(192), ctx.font_small, st_col, TextAlign::CENTER, st_lbl);
-
-  // Interactive Hero START / PAUSE / RESUME Frosted-Glass Button at y = 248
-  const char *hero_lbl = (!s_running && !s_paused) ? "START" : (s_running ? "PAUSE" : "RESUME");
-  const int hero_y = scale_y(248);
-  const int hero_w = (SCREEN_W > 520) ? scale_x(188) : 188;
-  const int hero_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-  render_modern_card(it, ctx.cx, hero_y, 188, 44, 12,
-                     kChromeGlassTint,
-                     s_running ? ctx.theme_secondary : ctx.theme_primary,
-                     hero_lbl, ctx.col_white, ctx.font_btn_bold);
-  frame_hits().add_centered_rect(ctx.cx, hero_y, hero_w, hero_h,
-                                 WidgetId::TIMER_PRIMARY_BTN, kHitTap | kHitFocusSlot,
-                                 static_cast<int16_t>(s_idx), scale_y(8));
-
-  // Interactive 4-Column Stepper (-5m, -1m, +1m, +5m) or RESET Button at y = 324
-  if (!s_running && !s_paused) {
-    static constexpr const char *kTimerStepperLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
-    ui::stepper_row(it, ctx.cx, scale_y(324) - scale_y(23), 46, kTimerStepperLabels,
-                    ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
-  } else {
-    const int rst_y = scale_y(324);
-    const int rst_w = (SCREEN_W > 520) ? scale_x(136) : 136;
-    const int rst_h = (SCREEN_W > 520) ? scale_y(46) : 46;
-    render_modern_card(it, ctx.cx, rst_y, 136, 46, 12,
-                       kChromeGlassTint, ctx.col_red,
-                       "RESET", ctx.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(ctx.cx, rst_y, rst_w, rst_h,
-                                   WidgetId::TIMER_RESET_BTN, kHitTap | kHitFocusSlot,
-                                   static_cast<int16_t>(s_idx), scale_y(6));
-  }
-
-  render_back_button(it, ctx.cx, ctx.font_small, layout().back_y, "< Back");
-}
-
-void render_alarms_subpage(esphome::display::Display &it, const UiFrameContext &ctx,
-                           const DeviceRuntimeState &rs) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const auto &prefs = persisted_prefs();
-  const auto &al = rs.alarms;
-  static constexpr const char *kRecLabels[4] = {"Daily", "Weekdays", "Weekends", "Once"};
-
-  if (al.edit_idx == 0) {
-    render_page_header(it, ctx.cx, "ALARMS", ctx.font_small, ctx.theme_primary);
-    if (!can_wake_for_on_battery_alarm()) {
-      render_sub_header(it, ctx.cx, "Docked wake only", ctx.font_small, kChromeBackLabel);
-    }
-
-    const int a_card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : layout().tool_card3_w;
-    const int a_card_h = layout().tool_card3_h;
-    const int a_left   = ctx.cx - (a_card_w / 2);
-    const int a_div_x  = layout().tool_card3_div_x();
-    const int sw_cx    = (a_div_x + a_left + a_card_w) / 2;
-
-    const uint32_t now_epoch = ctx.now.is_valid() ? static_cast<uint32_t>(ctx.now.timestamp) : 0U;
-    for (int i = 0; i < 3; i++) {
-      const auto &ap = prefs.alarms[i];
-      const int y_mid = layout().tool_card3_y(i);
-      const bool is_snoozed = ((now_epoch > 0U ? al.snooze_until > now_epoch : al.snooze_until > 0U) &&
-                               (al.ringing_idx == (i + 1) || al.ringing_idx == 0));
-
-      const Color border_c = is_snoozed ? ctx.theme_secondary
-                                        : (ap.enabled ? kChromeCardBrdOn : kChromeCardBorder);
-      render_card_box(it, a_left, y_mid - a_card_h / 2, a_card_w, a_card_h,
-                      kChromeGlassTint, border_c, scale_s(16));
-
-      if (is_snoozed) {
-        render_card_box(it, a_left + scale_x(24), y_mid - scale_y(22),
-                        a_card_w - 2 * scale_x(24), scale_y(44),
-                        kChromeGlassTint, ctx.theme_secondary, scale_s(12));
-        fast_print(it, ctx.cx + 1, y_mid + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "DISMISS SNOOZE");
-        fast_print(it, ctx.cx, y_mid, ctx.font_small, ctx.col_white, TextAlign::CENTER, "DISMISS SNOOZE");
-        frame_hits().add_rect(a_left, y_mid - a_card_h / 2, a_card_w, a_card_h,
-                              WidgetId::ALARM_CARD_BASE + static_cast<uint16_t>(i),
-                              kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-        continue;
-      }
-
-      const Color bar_c = ap.enabled ? ctx.theme_primary : kChromeCardBorder;
-      fill_rect_row_major(it, a_left + scale_x(11), y_mid - scale_y(21),
-                          std::max(3, scale_x(4)), scale_y(42), bar_c);
-
-      char t_buf[16];
-      char ap_buf[8] = "";
-      format_time_hhmm(ap.hour, ap.minute, prefs.is_24h_format, t_buf, sizeof(t_buf), ap_buf, true);
-      const Color time_col = ap.enabled ? ctx.col_white : ctx.col_slate;
-      fast_print(it, a_left + scale_x(25), y_mid - scale_y(2), ctx.font_chrono_time,
-                 time_col, TextAlign::BASELINE_LEFT, t_buf);
-      if (!prefs.is_24h_format && ap_buf[0] != '\0') {
-        int h12 = ap.hour % 12;
-        if (h12 == 0) h12 = 12;
-        const int ap_x = a_left + scale_x((h12 >= 10) ? 139 : 115);
-        fast_print(it, ap_x, y_mid - scale_y(2), ctx.font_small,
-                   ap.enabled ? ctx.theme_secondary : ctx.col_slate,
-                   TextAlign::BASELINE_LEFT, ap_buf);
-      }
-
-      fast_print(it, a_left + scale_x(27), y_mid + scale_y(18), ctx.font_small,
-                 ap.enabled ? ctx.theme_primary : ctx.col_slate,
-                 TextAlign::CENTER_LEFT, kRecLabels[ap.recurrence & 3]);
-
-      fast_line(it, a_div_x, y_mid - scale_y(22), a_div_x, y_mid + scale_y(22), border_c);
-      ui::toggle_switch(it, sw_cx, y_mid, ap.enabled, ctx.theme_primary);
-
-      frame_hits().add_rect(a_left, y_mid - a_card_h / 2, a_div_x - a_left, a_card_h,
-                            WidgetId::ALARM_CARD_BASE + static_cast<uint16_t>(i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-      frame_hits().add_rect(a_div_x, y_mid - a_card_h / 2, (a_left + a_card_w) - a_div_x, a_card_h,
-                            WidgetId::ALARM_TOGGLE_BASE + static_cast<uint16_t>(i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-    }
-
-    render_back_button(it, ctx.cx, ctx.font_small, layout().back_y,
-                       tools_direct_home() ? "Home" : "< Back");
-    return;
-  }
-
-  // Edit Alarm View (al.edit_idx == 1..3) — time readout is plain text; enable/disable lives only on Alarms switch
-  const int idx = std::clamp(al.edit_idx - 1, 0, 2);
-  const auto &ap = prefs.alarms[idx];
-
-  char hdr_b[24];
-  std::snprintf(hdr_b, sizeof(hdr_b), "EDIT ALARM %d", idx + 1);
-  render_page_header(it, ctx.cx, hdr_b, ctx.font_small, ctx.theme_primary);
-
-  char t_buf[16];
-  char ap_buf[8] = "";
-  format_time_hhmm(ap.hour, ap.minute, prefs.is_24h_format, t_buf, sizeof(t_buf), ap_buf);
-  render_time_readout(it, ctx.cx, t_buf, ctx.font_time, ctx.col_white);
-  if (!prefs.is_24h_format && ap_buf[0] != '\0') {
-    int h12 = ap.hour % 12;
-    if (h12 == 0) h12 = 12;
-    const int ap_x = ctx.cx + scale_x((h12 >= 10) ? 107 : 84);
-    if (backdrop_active()) {
-      fast_print(it, ap_x + 1, scale_y(151) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER_LEFT, ap_buf);
-    }
-    fast_print(it, ap_x, scale_y(151), ctx.font_small, ctx.theme_secondary, TextAlign::CENTER_LEFT, ap_buf);
-  }
-
-  static constexpr const char *kAlarmStepperLabels[4] = {"-1h", "+1h", "-5m", "+5m"};
-  ui::stepper_row(it, ctx.cx, scale_y(236) - scale_y(23), 46, kAlarmStepperLabels,
-                  ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
-
-  static constexpr const char *kRecNames[4] = {
-      "Repeat: Daily", "Repeat: Weekdays", "Repeat: Weekends", "Repeat: Once"};
-  const int rec_y = scale_y(316);
-  const int rec_w = (SCREEN_W > 520) ? scale_x(264) : ((SCREEN_W < 380) ? (SCREEN_W - 88) : 264);
-  const int rec_h = (SCREEN_W > 520) ? scale_y(46) : 46;
-  render_modern_card(it, ctx.cx, rec_y, 264, 46, 12,
-                     kChromeGlassTint, kChromeCardBrdOn,
-                     kRecNames[ap.recurrence & 3], ctx.col_white, ctx.font_small);
-  const int chev_x = rec_w / 2 - scale_x(17);
-  fast_line(it, ctx.cx - chev_x, rec_y, ctx.cx - chev_x + 6, rec_y - 6, ctx.theme_secondary);
-  fast_line(it, ctx.cx - chev_x, rec_y, ctx.cx - chev_x + 6, rec_y + 6, ctx.theme_secondary);
-  fast_line(it, ctx.cx + chev_x, rec_y, ctx.cx + chev_x - 6, rec_y - 6, ctx.theme_secondary);
-  fast_line(it, ctx.cx + chev_x, rec_y, ctx.cx + chev_x - 6, rec_y + 6, ctx.theme_secondary);
-  frame_hits().add_centered_rect(ctx.cx, rec_y, rec_w, rec_h,
-                                 WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
-
-  render_back_button(it, ctx.cx, ctx.font_small, layout().back_y, "< Back");
-}
-
+#if LATTER_ROUND_DISPLAY
 void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContext &ctx,
                               const StopwatchRuntimeState &sw) {
   using esphome::Color;
@@ -687,109 +321,17 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   const int secs   = static_cast<int>((total_ms / 1000U) % 60U);
   const int tenths = static_cast<int>((total_ms / 100U) % 10U);
 
-  // Modern Digital Stopwatch (always used on rectangular/square displays; toggleable via header tap on round)
-  if (!LATTER_ROUND_DISPLAY || stopwatch_modern_digital()) {
-    const float min_prog = static_cast<float>(total_ms % 60000U) / 60000.0f;
-    render_progress_arc_r224(it, ctx.cx, ctx.cy, min_prog,
-                             sw.running ? ctx.theme_secondary : ctx.col_slate);
-
-    render_page_header(it, ctx.cx, LATTER_ROUND_DISPLAY ? "STOPWATCH  (DIGITAL)" : "STOPWATCH",
-                       ctx.font_small, ctx.theme_primary);
-#if LATTER_ROUND_DISPLAY
-    frame_hits().add_rect(ctx.cx - scale_min(110), 0, 2 * scale_min(110) + 1, scale_min(68),
-                          WidgetId::SW_STYLE_BTN, kHitTap | kHitFocusSlot);
-#endif
-
-    char main_buf[32];
-    std::snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
-    render_time_readout(it, ctx.cx, main_buf, ctx.font_time, ctx.col_white);
-
-    if (sw.lap_ms > 0) {
-      const int l_mins   = static_cast<int>((sw.lap_ms / 60000U) % 60U);
-      const int l_secs   = static_cast<int>((sw.lap_ms / 1000U) % 60U);
-      const int l_tenths = static_cast<int>((sw.lap_ms / 100U) % 10U);
-      char lap_buf[32];
-      std::snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
-      if (backdrop_active()) {
-        fast_print(it, ctx.cx + 1, scale_y(192) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, lap_buf);
-      }
-      fast_print(it, ctx.cx, scale_y(192), ctx.font_small, ctx.theme_primary, TextAlign::CENTER, lap_buf);
-    } else {
-      const char *st_lbl = sw.running ? "Running" : "Ready";
-      if (backdrop_active()) {
-        fast_print(it, ctx.cx + 1, scale_y(192) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, st_lbl);
-      }
-      fast_print(it, ctx.cx, scale_y(192), ctx.font_small,
-                 sw.running ? ctx.theme_secondary : ctx.col_slate, TextAlign::CENTER, st_lbl);
-    }
-
-    const char *hero_lbl = sw.running ? "PAUSE" : (total_ms > 0 ? "RESUME" : "START");
-    const int hero_y = scale_y(248);
-    const int hero_w = (SCREEN_W > 520) ? scale_x(188) : 188;
-    const int hero_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-    render_modern_card(it, ctx.cx, hero_y, 188, 44, 12,
-                       kChromeGlassTint,
-                       sw.running ? ctx.theme_secondary : kChromeCardBrdOn,
-                       hero_lbl, ctx.col_white, ctx.font_small);
-    frame_hits().add_rect(scale_x(40), scale_y(72), SCREEN_W - 2 * scale_x(40), scale_y(148),
-                          WidgetId::SW_PRIMARY_BTN, kHitTap);
-    frame_hits().add_centered_rect(ctx.cx, hero_y, hero_w, hero_h,
-                                   WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
-
-    const int sub_y  = scale_y(324);
-    const int sub_dx = scale_x(70);
-    const int sub_w  = (SCREEN_W > 520) ? scale_x(124) : 124;
-    const int sub_h  = (SCREEN_W > 520) ? scale_y(46) : 46;
-    render_modern_card(it, ctx.cx - sub_dx, sub_y, 124, 46, 12, kChromeGlassTint,
-                       (sw.lap_ms > 0) ? ctx.col_red : kChromeCardBrdOn,
-                       "LAP / SPLIT", ctx.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(ctx.cx - sub_dx, sub_y, sub_w, sub_h,
-                                   WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
-
-    render_modern_card(it, ctx.cx + sub_dx, sub_y, 124, 46, 12, kChromeGlassTint, ctx.col_red,
-                       "RESET", ctx.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(ctx.cx + sub_dx, sub_y, sub_w, sub_h,
-                                   WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot, 0, scale_y(6));
-
-    if (!tools_direct_home()) {
-      render_back_button(it, ctx.cx, ctx.font_small, layout().back_y, "< Back");
-    }
-    return;
-  }
-
-#if LATTER_ROUND_DISPLAY
-  // Classic Round Chronograph Dial (default on round displays; tap 12 o'clock bezel for digital)
+  // Classic Round Analog Chronograph Dial (D-042: round displays only via Tools -> Stopwatch)
   const int cx = ctx.cx;
   const int cy = ctx.cy;
+  const float cx_f = static_cast<float>(cx);
+  const float cy_f = static_cast<float>(cy);
+
   fast_circle(it, cx, cy, scale_min(230), ctx.col_white);
   fast_circle(it, cx, cy, scale_min(228), ctx.theme_secondary);
-  fast_circle(it, cx, cy, scale_min(197), ctx.col_dark_gray);
-  fast_circle(it, cx, cy, scale_min(196), ctx.theme_secondary);
-
-  for (int s = 0; s < 60; s++) {
-    const float t_sin = DIAL_SIN[s];
-    const float t_cos = DIAL_COS[s];
-    if (s % 5 == 0) {
-      const float perp_x = -t_cos;
-      const float perp_y = t_sin;
-      const int x1 = cx + static_cast<int>(scale_min_f(196.0f) * t_sin);
-      const int y1 = cy - static_cast<int>(scale_min_f(196.0f) * t_cos);
-      const int x2 = cx + static_cast<int>(scale_min_f(227.0f) * t_sin);
-      const int y2 = cy - static_cast<int>(scale_min_f(227.0f) * t_cos);
-      fast_line(it, x1 + static_cast<int>(perp_x), y1 + static_cast<int>(perp_y),
-                x2 + static_cast<int>(perp_x), y2 + static_cast<int>(perp_y), ctx.theme_secondary);
-      fast_line(it, x1 - static_cast<int>(perp_x), y1 - static_cast<int>(perp_y),
-                x2 - static_cast<int>(perp_x), y2 - static_cast<int>(perp_y), ctx.col_slate);
-      fast_line(it, x1, y1, x2, y2, ctx.col_white);
-    } else {
-      const int x1 = cx + static_cast<int>(scale_min_f(210.0f) * t_sin);
-      const int y1 = cy - static_cast<int>(scale_min_f(210.0f) * t_cos);
-      const int x2 = cx + static_cast<int>(scale_min_f(227.0f) * t_sin);
-      const int y2 = cy - static_cast<int>(scale_min_f(227.0f) * t_cos);
-      fast_line(it, x1, y1, x2, y2, ctx.col_slate);
-      fast_line(it, x1 + 1, y1, x2 + 1, y2, ctx.col_slate);
-    }
-  }
+  ui::render_analog_chapter_ring(it, cx, cy, scale_min(227),
+                                 ctx.theme_secondary, ctx.col_white, ctx.col_slate, true);
+  fast_circle(it, cx, cy, scale_min(196), ctx.col_dark_gray);
 
   static constexpr int kChronoTicks[11] = {0, 5, 10, 15, 20, 25, 35, 40, 45, 50, 55};
   static constexpr const char *kChronoStrs[11] = {"0", "5", "10", "15", "20", "25", "35", "40", "45", "50", "55"};
@@ -836,66 +378,43 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   fast_print(it, btn_rst_x + 1, btn_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "RESET");
   fast_print(it, btn_rst_x, btn_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "RESET");
 
-  // Split-Second (Rattrapante) Ghost Hand via fast_sincos
+  // Split-Second (Rattrapante) Ghost Hand via sub-pixel SDF AA
   if (sw.lap_ms > 0) {
     const float lap_angle = (static_cast<float>(sw.lap_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
     float l_sin = 0.0f, l_cos = 1.0f;
     fast_sincos(lap_angle, l_sin, l_cos);
-    const int lx = cx + static_cast<int>(scale_min_f(154.0f) * l_sin);
-    const int ly_end = cy - static_cast<int>(scale_min_f(154.0f) * l_cos);
-    fast_line(it, cx, cy, lx, ly_end, ctx.col_red);
-    fast_line(it, cx + 1, cy, lx + 1, ly_end, ctx.col_red);
+    ui::draw_aa_line(it, cx_f, cy_f,
+                     cx_f + scale_min_f(154.0f) * l_sin,
+                     cy_f - scale_min_f(154.0f) * l_cos,
+                     2.0f, ctx.col_red);
     fast_circle(it,
                 cx + static_cast<int>(scale_min_f(158.0f) * l_sin),
                 cy - static_cast<int>(scale_min_f(158.0f) * l_cos),
                 scale_min(4), ctx.col_red);
   }
 
-  // Main Central Arrow Hand (20 FPS High-Beat Sweep via fast_sincos)
+  // Main Central Chronograph Sweep Hand via sub-pixel SDF AA
   const float chrono_angle = (static_cast<float>(total_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
   float s_sin = 0.0f, s_cos = 1.0f;
   fast_sincos(chrono_angle, s_sin, s_cos);
 
-  const int tip_x      = cx + static_cast<int>(scale_min_f(178.0f) * s_sin);
-  const int tip_y      = cy - static_cast<int>(scale_min_f(178.0f) * s_cos);
-  const int arr_base_x = cx + static_cast<int>(scale_min_f(152.0f) * s_sin);
-  const int arr_base_y = cy - static_cast<int>(scale_min_f(152.0f) * s_cos);
-  const int tail_x     = cx - static_cast<int>(scale_min_f(36.0f) * s_sin);
-  const int tail_y     = cy + static_cast<int>(scale_min_f(36.0f) * s_cos);
+  ui::draw_aa_tapered_hand(it, cx_f, cy_f, chrono_angle,
+                           scale_min_f(36.0f), scale_min_f(178.0f),
+                           scale_min_f(2.4f), scale_min_f(0.9f),
+                           ctx.col_white, ctx.theme_secondary, false, true);
 
-  const float perp_x = s_cos;
-  const float perp_y = s_sin;
-  const int left_x   = arr_base_x + static_cast<int>(scale_min_f(8.0f) * perp_x);
-  const int left_y   = arr_base_y + static_cast<int>(scale_min_f(8.0f) * perp_y);
-  const int right_x  = arr_base_x - static_cast<int>(scale_min_f(8.0f) * perp_x);
-  const int right_y  = arr_base_y - static_cast<int>(scale_min_f(8.0f) * perp_y);
-
-  fast_line(it, tail_x + static_cast<int>(perp_x), tail_y + static_cast<int>(perp_y),
-            arr_base_x + static_cast<int>(perp_x), arr_base_y + static_cast<int>(perp_y), ctx.theme_secondary);
-  fast_line(it, tail_x - static_cast<int>(perp_x), tail_y - static_cast<int>(perp_y),
-            arr_base_x - static_cast<int>(perp_x), arr_base_y - static_cast<int>(perp_y), ctx.col_slate);
-  fast_line(it, tail_x, tail_y, arr_base_x, arr_base_y, ctx.col_white);
-
-  fast_filled_triangle(it, tip_x, tip_y, left_x, left_y, right_x, right_y, ctx.col_white);
-  fast_line(it, tip_x, tip_y, left_x, left_y, ctx.theme_secondary);
-  fast_line(it, tip_x, tip_y, right_x, right_y, ctx.col_slate);
-  fast_line(it, left_x, left_y, right_x, right_y, ctx.theme_secondary);
-
-  fast_filled_circle(it, tail_x, tail_y, scale_min(8), ctx.col_dark_gray);
-  fast_circle(it, tail_x, tail_y, scale_min(8), ctx.theme_secondary);
+  const int tail_x = cx - static_cast<int>(scale_min_f(36.0f) * s_sin);
+  const int tail_y = cy + static_cast<int>(scale_min_f(36.0f) * s_cos);
+  fast_filled_circle(it, tail_x, tail_y, scale_min(7), ctx.col_dark_gray);
+  fast_circle(it, tail_x, tail_y, scale_min(7), ctx.theme_secondary);
   fast_filled_circle(it, tail_x, tail_y, scale_min(3), ctx.theme_secondary);
 
-  fast_filled_circle(it, cx, cy, scale_min(9), ctx.theme_secondary);
-  fast_circle(it, cx, cy, scale_min(9), ctx.col_slate);
-  fast_filled_circle(it, cx, cy, scale_min(6), ctx.col_dark_gray);
-  fast_filled_circle(it, cx, cy, scale_min(2), ctx.col_white);
+  ui::render_center_arbor_aa(it, cx, cy, ctx.theme_secondary, ctx.col_dark_gray, ctx.col_white);
 
-  // Hit-table order (top-most wins): dial face start/pause -> 12 o'clock style toggle -> LAP/RESET circles -> Back
+  // Hit-table order: dial face start/pause -> LAP/RESET circles -> Back
   frame_hits().add_rect(scale_min(40), scale_min(69),
                         SCREEN_W - 2 * scale_min(40), scale_min(210),
                         WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
-  frame_hits().add_rect(cx - scale_min(110), 0, 2 * scale_min(110) + 1, scale_min(68),
-                        WidgetId::SW_STYLE_BTN, kHitTap | kHitFocusSlot);
   frame_hits().add_circle(btn_lap_x, btn_y, btn_r,
                           WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
   frame_hits().add_circle(btn_rst_x, btn_y, btn_r,
@@ -906,8 +425,8 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
                       scale_min(15), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
   }
-#endif
 }
+#endif
 
 void render_dice_subpage(esphome::display::Display &it, const UiFrameContext &ctx) {
   using esphome::Color;
@@ -2218,15 +1737,11 @@ void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx)
   }
 
   switch (sub) {
-    case ToolsSubpage::TIMERS:
-      render_timers_subpage(it, ctx);
-      break;
-    case ToolsSubpage::ALARMS:
-      render_alarms_subpage(it, ctx, rs);
-      break;
+#if LATTER_ROUND_DISPLAY
     case ToolsSubpage::STOPWATCH:
       render_stopwatch_subpage(it, ctx, rs.stopwatch);
       break;
+#endif
     case ToolsSubpage::DICE:
       render_dice_subpage(it, ctx);
       break;

@@ -432,6 +432,26 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   return false;
 }
 
+// Persist local alarm mutations (Time App toggle/editor, Home quick-disable, Once auto-clear)
+// and push alarms_summary upstream via Protocol v3 set_device_prefs when HA is connected.
+template <typename OutboxT = std::nullptr_t>
+inline void sync_local_pref_key_edit(latter_ui::PrefKey key, OutboxT outbox = nullptr) {
+  auto &p = latter_ui::persisted_prefs();
+  const uint64_t bit = latter_ui::pref_key_bit(key);
+  p.dirty_mask |= bit;
+  latter_ui::save_persisted_prefs();
+  if (latter_ui::link_state().ha_connected) {
+    const std::string changes = latter_ui::encode_prefs_mask(bit, p);
+    emit_set_device_prefs(p.prefs_seq, changes, outbox);
+  }
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void sync_local_alarms_edit(uint32_t now_ms = 0, OutboxT outbox = nullptr) {
+  (void)now_ms;
+  sync_local_pref_key_edit(latter_ui::PrefKey::ALARMS_SUMMARY, outbox);
+}
+
 }  // namespace latter_actions
 
 namespace latter_ui {

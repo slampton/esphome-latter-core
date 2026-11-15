@@ -147,7 +147,7 @@ constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
     return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
-      (gui_page == 8 && !tools_full_bleed) || gui_page == 9) {
+      (gui_page == 8 && !tools_full_bleed) || gui_page == 9 || gui_page == 10) {
     return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   return BackdropMode::SolidBlack;
@@ -202,10 +202,12 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int sys_mode, int sys_dash_pg, int sleep_pg, int disp_pg,
                                  int weather_sub, int area_sub, int rem_sub,
                                  int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
-                                 int hub_tab) {
+                                 int hub_tab,
+                                 int time_sub = 0, int wc_pg = 0, int wc_pick = -1,
+                                 int alarm_edit = 0, int home_set_pg = 1) {
   switch (gui_page) {
     case 1:
-      return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8);
+      return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8) | ((home_set_pg & 0x0F) << 16);
     case 2:
       return music_mode;
     case 3:
@@ -224,6 +226,10 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
              ((cal_detail & 0x0F) << 16) | ((timer_slot & 0x0F) << 20);
     case 9:
       return hub_tab;
+    case 10:
+      return (time_sub & 0x0F) | ((wc_pg & 0x0F) << 4) |
+             (((wc_pick + 1) & 0x0F) << 8) | ((timer_slot & 0x0F) << 12) |
+             ((alarm_edit & 0x0F) << 16);
     default:
       return 0;
   }
@@ -248,6 +254,8 @@ struct Cadence20msInputs {
   bool game_sfx_enabled = true;
   int pending_game_sfx = 0;
   bool tools_anim_active = false;
+  bool time_anim_active = false;
+  bool clock_smooth_sweep = false;
   bool interactive_slide = false;
   bool find_my_active = false;
   bool ringing_or_critical = false;
@@ -321,6 +329,8 @@ struct Cadence250msInputs {
   bool sky_motion_due = false;
   bool greet_fade_due = false;
   bool tool_anim_due = false;
+  bool time_anim_due = false;
+  bool clock_sweep_due = false;
   bool va_busy = false;
   bool alert_or_critical_busy = false;
   bool home_overlay_motion_due = false;
@@ -867,7 +877,9 @@ inline int compute_active_subpage_id() {
       rs.nav.sleep_menu_page, rs.nav.display_menu_page,
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
-      cal_detail_mode(), timer_view_slot(), home_hub_tab());
+      cal_detail_mode(), timer_view_slot(), home_hub_tab(),
+      rs.nav.time_subpage, rs.nav.world_clock_page, rs.nav.world_clock_picker_page,
+      rs.alarms.edit_idx, rs.nav.home_settings_page);
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {

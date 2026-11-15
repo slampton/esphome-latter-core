@@ -225,11 +225,20 @@ display:
           weather_sky_active &&
           latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, true);
 
+      const bool clock_sweep_hint =
+          (rs.nav.gui_page == latter_ui::PageId::CLOCK) &&
+          latter_ui::clock_smooth_sweep_active(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, prefs.clock_face);
+      const bool time_sw_hint =
+          (rs.nav.gui_page == latter_ui::PageId::TIME &&
+           rs.nav.time_subpage == latter_ui::TimeSubpage::STOPWATCH &&
+           rs.stopwatch.running);
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
           weather_sky_stepping_hint ||
+          clock_sweep_hint ||
+          time_sw_hint ||
           latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
           rs.nav.menu_scroll_active ||

@@ -2929,8 +2929,8 @@ def main(argv: list[str] | None = None) -> int:
     combined_opts = state_h_txt + "\n" + power_h_txt
     for req_opt in (
         "Minimal Digital",
-        "Modern Roman (Analog)",
-        "Modern Digital (Bold)",
+        "Modern Analog",
+        "Hybrid Digital",
         "Nebula",
         "Solaris",
         "Rings",

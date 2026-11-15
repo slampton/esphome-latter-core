@@ -180,7 +180,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       if (wallpaper_cleared) {
         eff.mark_dirty_full = true;
       }
-      if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 ||
+      if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
           gp == PageId::CAMERAS || (gp == 8 && r.nav.tools_subpage == 10)) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
@@ -372,7 +372,7 @@ bool TimerAlarmController::should_redraw_va_timer_(const DeviceRuntimeState &rs)
   if (rs.voice.active || !rs.voice.status_text.empty() || rs.nav.display_power_state != 0) {
     return false;
   }
-  return (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 1) ||
+  return (rs.nav.gui_page == 10 && rs.nav.time_subpage == 1) ||
          (rs.nav.gui_page == 1 && (rs.nav.home_subpage == 0 || rs.nav.home_subpage == 2));
 }
 
@@ -478,7 +478,7 @@ AlarmTickEffects TimerAlarmController::tick_alarms_1s(bool time_valid, uint32_t 
 
     if (trig_idx > 0) {
       if (need_save) {
-        save_persisted_prefs();
+        latter_actions::sync_local_alarms_edit(now_ms);
         eff.prefs_saved = true;
       }
       if (rs.nav.home_subpage == 2) {

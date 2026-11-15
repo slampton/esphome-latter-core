@@ -442,10 +442,12 @@ script:
             return;
           }
 
-          if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3) {
+          if ((rs.nav.gui_page == 10 && rs.nav.time_subpage == 3) ||
+              (LATTER_ROUND_DISPLAY && rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3)) {
             latter_ui::display_lifecycle().note_activity(now_c);
             if (!rs.stopwatch.running) {
               rs.stopwatch.running = true;
+              rs.stopwatch.started_in_analog = (rs.nav.gui_page == 8);
               rs.stopwatch.start_time_ms = millis() - rs.stopwatch.elapsed_ms;
               rs.nav.sleep_start_time = 0;
               id(display_brightness).turn_on().perform();

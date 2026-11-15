@@ -38,7 +38,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `42` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `44` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -48,7 +48,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `4` | `area_name` | `AreaCtxField::AREA_NAME` | `string` | Friendly display name of the active Area |
 | `5` | `site_id` | `AreaCtxField::SITE_ID` | `string` | Active Site ID |
 | `6` | `ble_closest_proxy` | `AreaCtxField::BLE_CLOSEST_PROXY` | `string` | Friendly name of closest Bluetooth proxy |
-| `7` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Home dock apps in order, and the only ones shown (music, home_hub, area, remote, weather, camera, games, tools; Settings is always last). Empty until set: the device shows defaults.dock_apps |
+| `7` | `dock_apps` | `AreaCtxField::DOCK_APPS` | `csv` | Home dock apps in order, and the only ones shown (music, home_hub, area, remote, weather, time, camera, games, tools; Settings is always last). Empty until set: the device shows defaults.dock_apps |
 | `8` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper |
 | `9` | `available_domains` | `AreaCtxField::AVAILABLE_DOMAINS` | `csv` | Comma-separated enabled Area categories with >= 1 entity in the active Area, in configured order (scene, light, cover, fan, switch, climate, media, all); empty when no categories have entities |
 | `10` | `area_temp` | `AreaCtxField::AREA_TEMP` | `string` | Formatted Area temperature |
@@ -83,6 +83,8 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `39` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
 | `40` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, thermostat, entry, vacuum); empty when no categories have entities |
 | `41` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
+| `42` | `local_tz_info` | `AreaCtxField::LOCAL_TZ_INFO` | `string` | Pipe-delimited local time zone status ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>') |
+| `43` | `world_clocks_summary` | `AreaCtxField::WORLD_CLOCKS_SUMMARY` | `string` | Semicolon-delimited configured World Clocks ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>;...') |
 
 ### `sensor.<device>_active_media` (`MediaField`, `18` total fields)
 
@@ -146,7 +148,7 @@ Upcoming calendar agenda events and next-event headline.
 | `3` | `summary` | `CalendarField::SUMMARY` | `records` | 0x1E-joined time|title|location|all_day agenda records (up to 5; time is a local label such as TODAY 14:30, TOM ALL DAY or NOV 20 08:05; all_day 1 or 0) |
 | `4` | `count` | `CalendarField::EVENT_COUNT` | `u16` | Number of upcoming agenda events |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `51` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `55` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -172,9 +174,9 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `20` | `color_profile` | `DevicePrefsField::COLOR_PROFILE` | `string` | Theme accent preset (Steel Blue|Pink|Blue|Green|Custom) |
 | `21` | `va_visual_profile` | `DevicePrefsField::VA_VISUAL_PROFILE` | `string` | Voice assistant visual overlay style (Nebula|Solaris|Rings|Light Bar|Dot Wave) |
 | `22` | `home_screen_enabled` | `DevicePrefsField::HOME_SCREEN_ENABLED` | `bool` | 1 = enable the Home Screen and App Dock, 0 = single-app mode locked to start_screen |
-| `23` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Clock|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
+| `23` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Time App|Clock Face|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
 | `24` | `return_to_home_timeout` | `DevicePrefsField::RETURN_TO_HOME_TIMEOUT` | `string` | Idle timeout before resetting navigation back to the Home Screen (15s|30s|1 min|2 min|5 min|10 min|Never) |
-| `25` | `clock_face` | `DevicePrefsField::CLOCK_FACE` | `string` | Clock face style (Minimal Digital|Modern Roman (Analog)|Modern Digital (Bold)) |
+| `25` | `clock_face` | `DevicePrefsField::CLOCK_FACE` | `string` | Clock face style (Minimal Digital|Modern Analog|Hybrid Digital) |
 | `26` | `time_format` | `DevicePrefsField::TIME_FORMAT` | `string` | Clock time format (12-Hour (AM/PM)|24-Hour) |
 | `27` | `weather_background` | `DevicePrefsField::WEATHER_BACKGROUND` | `bool` | 1 = animate ambient weather particles on Home screen, else 0 |
 | `28` | `home_sun` | `DevicePrefsField::HOME_SUN` | `bool` | 1 = show daytime solar disc on Home screen, else 0 |
@@ -200,6 +202,10 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `48` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
 | `49` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
 | `50` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
+| `51` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
+| `52` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
+| `53` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `csv` | Comma-separated IANA time zone IDs (up to 4) shown on the Time App Clock tab |
+| `54` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
 
 ## 3. ESPHome Device Actions (`esphome.<node>_<action>`)
 

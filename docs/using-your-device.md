@@ -2,10 +2,10 @@
 
 ## Getting around
 
-- **Home:** swipe up from the bottom edge, or tap the pill at the bottom of the screen.
-- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Display & Home**; **Settings → Home** on the device shows or hides Music, Alarms, Area, Remote and Games and saves the change to Studio too. Settings is always in the dock. Until Home Assistant has sent the dock, the device shows Music, Alarms, Area, Remote, Games and Tools.
-- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Display & Home**.
-- **Apps with modes:** Weather, Area Control, and Home Hub have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
+- **Home:** swipe up from the bottom edge, or tap the pill at the bottom of the screen. Tapping the clock readout on Home opens the **Time** app by default (configurable in **Studio → Devices → Interface → Home Time Tap** to open either **Time App** or the standalone **Clock Face**).
+- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Interface**; **Settings → Home** on the device toggles Home Time Tap and shows or hides Time, Music, Area, Remote, Games, and Tools, saving the change to Studio too. Settings is always in the dock.
+- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Interface**.
+- **Apps with modes:** Weather, Area Control, Home Hub, and Time have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
 - **Button:**
   - On battery boards, a short press of the crown wakes the screen, turns it off, snoozes an alarm, or dismisses a notification, depending on what's showing.
   - A long press starts a 5-second hibernate countdown. With **Sleep & Wake: Hold Crown Power Off** on, it hibernates immediately instead.
@@ -14,14 +14,15 @@
 
 | App | Highlights |
 | :--- | :--- |
-| **Clock** | Minimal Digital, Modern Roman (analog), Modern Digital (Bold) |
+| **Clock** | Zero-chrome standalone faces (**Minimal Digital**, **Modern Analog** on round displays, and **Hybrid Digital**) with anti-aliased hands and smooth 20 FPS sweep on USB power (and for 15 s after wake/touch on battery). Tap anywhere to return Home. |
 | **Home** | Clock, date, weather, today's agenda, wallpaper, and the app dock |
+| **Time** | 4-tab app: **Clock** (real-time `HH:MM:SS`, local time zone & DST status, 1-tap `UTC` reference card, and up to 4 per-Device World Clocks synced with Studio), **Timers** (3 slots with `+1M` quick-extend), **Alarms** (3 slots with 1-minute precision, daily/weekday/weekend/once repeats, 5-minute snooze, and 2-way Studio sync; on Remote Assistant, scheduled alarms run while USB-docked), and **Stopwatch** (digital tenths readout with lap splits) |
 | **Music** | Now playing, a seek bar with multi-tap skip (−10 s to +10 min), speaker picker, transfer to another speaker, join or unjoin speaker groups, a library of favorites, playlists, artists, albums, podcasts, radio, and audiobooks, the queue, lyrics, and bios |
 | **Area Control** | 3 cards per page with fill sliders. Categories: Scenes, Lights, Blinds & Curtains, Fans, Switches, Climate, Media, All Devices. Open a light's detail view for a color wheel or a 2700–6500 K slider. |
 | **Home Hub** | Tabs for Alarm, Thermostat, Garage & Locks, and Vacuum. Opening actions (unlocking locks, disarming alarms, opening garage/gate/door covers—including doorbell unlock) obey the device's **Perimeter Security Policy** in Studio (`Auto`, `Allow`, `Require PIN` via an on-device keypad, or `Block`), while locking, arming, and closing covers remain one-tap. |
 | **Remote** | D-pad, Home, Back, volume, and a device list with master power. Up to 10 remotes. |
 | **Sky & Weather** | Current conditions, 5-day forecast, sun, and moon. Animated effects: clouds, fog, 3-layer rain, snow, storms with lightning, and the occasional meteor at night. |
-| **Tools** | Timers (3), alarms (3, with daily, weekday, weekend, or one-time repeats and a 5-minute snooze; on Remote Assistant, scheduled alarms run while USB-docked), stopwatch, calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, camera (carousel of auto-refreshing snapshots, about 1–2 fps, doorbell call), dice, coin flip, flashlight, and a level (IMU boards only) |
+| **Tools** | Calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, dice, coin flip, flashlight, a level (IMU boards only), and the classic Analog Chronograph stopwatch (round displays only; cameras also live as a dedicated top-level view) |
 | **Games** | Marbles, Archery, Bricks, Chomp, 2048, Memory Match. On IMU boards the first four are tilt-controlled, with touch-drag as a fallback. On boards without an IMU, touch steering is always used. |
 | **Settings** | Device status, sleep and wake, display, audio, voice, and firmware update |
 

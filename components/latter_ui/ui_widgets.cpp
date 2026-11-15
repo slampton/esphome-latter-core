@@ -1336,5 +1336,265 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
                                  WidgetId::PIN_PAD_CANCEL, kHitTap, 0);
 }
 
+// ==============================================================================
+// 4. Shared Sub-Pixel SDF Horology Primitives & Split Action Card Row
+// ==============================================================================
+void draw_aa_line(esphome::display::Display &it, float x0, float y0, float x1, float y1,
+                  float width, esphome::Color col, int alpha_max) {
+  if (width <= 0.05f || alpha_max <= 0) return;
+  const float r = 0.5f * width;
+  const float pad = r + 1.25f;
+  const int min_y = std::max(clip_y0(), static_cast<int>(std::floor(std::min(y0, y1) - pad)));
+  const int max_y = std::min(clip_y1(), static_cast<int>(std::ceil(std::max(y0, y1) + pad)));
+  if (min_y > max_y) return;
+
+  const int bbox_x0 = std::max(0, static_cast<int>(std::floor(std::min(x0, x1) - pad)));
+  const int bbox_x1 = std::min(SCREEN_W - 1, static_cast<int>(std::ceil(std::max(x0, x1) + pad)));
+  if (bbox_x0 > bbox_x1) return;
+
+  const float vx = x1 - x0;
+  const float vy = y1 - y0;
+  const float len2 = vx * vx + vy * vy;
+  const float inv_len2 = (len2 > 1e-4f) ? (1.0f / len2) : 0.0f;
+  const bool steep_enough = (std::fabs(vy) > 0.75f);
+  const float slope_xy = steep_enough ? (vx / vy) : 0.0f;
+  const float row_half_span = steep_enough
+      ? (pad * std::sqrt(1.0f + slope_xy * slope_xy) + 1.5f)
+      : 0.0f;
+
+  for (int py = min_y; py <= max_y; ++py) {
+    const float yc = static_cast<float>(py) + 0.5f;
+    int rx0 = bbox_x0;
+    int rx1 = bbox_x1;
+    if (steep_enough) {
+      const float x_cross = x0 + (yc - y0) * slope_xy;
+      rx0 = std::max(bbox_x0, static_cast<int>(std::floor(x_cross - row_half_span)));
+      rx1 = std::min(bbox_x1, static_cast<int>(std::ceil(x_cross + row_half_span)));
+    }
+    for (int px = rx0; px <= rx1; ++px) {
+      const float xc = static_cast<float>(px) + 0.5f;
+      const float t = (inv_len2 > 0.0f)
+          ? std::clamp(((xc - x0) * vx + (yc - y0) * vy) * inv_len2, 0.0f, 1.0f)
+          : 0.0f;
+      const float dx = xc - (x0 + t * vx);
+      const float dy = yc - (y0 + t * vy);
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      const float cov = r + 0.5f - dist;
+      if (cov > 0.0f) {
+        const int a = (cov >= 1.0f) ? alpha_max
+                                    : ((static_cast<int>(cov * 255.0f + 0.5f) * alpha_max) / 255);
+        fast_pixel_blend(it, px, py, col, a);
+      }
+    }
+  }
+}
+
+void draw_aa_tapered_hand(esphome::display::Display &it, float cx, float cy, float angle_rad,
+                          float tail_len, float tip_len, float root_w, float tip_w,
+                          esphome::Color body_col, esphome::Color lume_col,
+                          bool draw_lume, bool draw_shadow) {
+  float s_ang = 0.0f, c_ang = 1.0f;
+  fast_sincos(angle_rad, s_ang, c_ang);
+  const float ux = s_ang;
+  const float uy = -c_ang;
+
+  const float x0 = cx - tail_len * ux;
+  const float y0 = cy - tail_len * uy;
+  const float x1 = cx + tip_len * ux;
+  const float y1 = cy + tip_len * uy;
+  const float total_len = tail_len + tip_len;
+  if (total_len <= 0.5f) return;
+
+  if (draw_shadow) {
+    const float sh_off = static_cast<float>(std::max(1, scale_min(2)));
+    draw_aa_line(it, x0 + sh_off, y0 + sh_off + 0.5f, x1 + sh_off, y1 + sh_off + 0.5f,
+                 0.55f * (root_w + tip_w), kChromeShadow, 92);
+  }
+
+  const float max_r = 0.5f * std::max(root_w, tip_w);
+  const float pad = max_r + 1.5f;
+  const int min_y = std::max(clip_y0(), static_cast<int>(std::floor(std::min(y0, y1) - pad)));
+  const int max_y = std::min(clip_y1(), static_cast<int>(std::ceil(std::max(y0, y1) + pad)));
+  const int bbox_x0 = std::max(0, static_cast<int>(std::floor(std::min(x0, x1) - pad)));
+  const int bbox_x1 = std::min(SCREEN_W - 1, static_cast<int>(std::ceil(std::max(x0, x1) + pad)));
+  if (min_y <= max_y && bbox_x0 <= bbox_x1) {
+    const float vx = x1 - x0;
+    const float vy = y1 - y0;
+    const float inv_len2 = 1.0f / (total_len * total_len);
+    const bool steep_enough = (std::fabs(vy) > 0.75f);
+    const float slope_xy = steep_enough ? (vx / vy) : 0.0f;
+    const float row_half_span = steep_enough
+        ? (pad * std::sqrt(1.0f + slope_xy * slope_xy) + 1.5f)
+        : 0.0f;
+
+    for (int py = min_y; py <= max_y; ++py) {
+      const float yc = static_cast<float>(py) + 0.5f;
+      int rx0 = bbox_x0;
+      int rx1 = bbox_x1;
+      if (steep_enough) {
+        const float x_cross = x0 + (yc - y0) * slope_xy;
+        rx0 = std::max(bbox_x0, static_cast<int>(std::floor(x_cross - row_half_span)));
+        rx1 = std::min(bbox_x1, static_cast<int>(std::ceil(x_cross + row_half_span)));
+      }
+      for (int px = rx0; px <= rx1; ++px) {
+        const float xc = static_cast<float>(px) + 0.5f;
+        const float t = std::clamp(((xc - x0) * vx + (yc - y0) * vy) * inv_len2, 0.0f, 1.0f);
+        const float hw = 0.5f * (root_w + (tip_w - root_w) * t);
+        const float dx = xc - (x0 + t * vx);
+        const float dy = yc - (y0 + t * vy);
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        const float cov = hw + 0.5f - dist;
+        if (cov > 0.0f) {
+          fast_pixel_blend(it, px, py, body_col, aa_coverage_8(cov));
+        }
+      }
+    }
+  }
+
+  if (draw_lume && tip_len > 18.0f) {
+    const float l0 = 0.28f * tip_len;
+    const float l1 = 0.86f * tip_len;
+    const float lw = std::max(1.4f, 0.34f * (root_w + tip_w));
+    draw_aa_line(it, cx + l0 * ux, cy + l0 * uy, cx + l1 * ux, cy + l1 * uy, lw, lume_col, 245);
+  }
+}
+
+void render_analog_chapter_ring(esphome::display::Display &it, int cx, int cy, int r_dial,
+                                esphome::Color cardinal_col, esphome::Color major_col,
+                                esphome::Color minor_col, bool double_twelve) {
+  const float fcx = static_cast<float>(cx);
+  const float fcy = static_cast<float>(cy);
+  const float r_out = static_cast<float>(r_dial);
+  const float w_card = std::max(2.6f, scale_min_f(3.6f));
+  const float w_maj = std::max(2.0f, scale_min_f(2.6f));
+  const float w_min = std::max(1.1f, scale_min_f(1.4f));
+  const float len_card = scale_min_f(22.0f);
+  const float len_maj = scale_min_f(16.0f);
+  const float len_min = scale_min_f(8.5f);
+
+  for (int i = 0; i < 60; ++i) {
+    const float rad = (static_cast<float>(i) / 60.0f) * 2.0f * PI_F - HALF_PI_F;
+    float s = 0.0f, c = 1.0f;
+    fast_sincos(rad, s, c);
+    if (i == 0 && double_twelve) {
+      const float sep = scale_min_f(3.4f);
+      const float nx = -s;
+      const float ny = c;
+      const float r_in = r_out - len_card;
+      draw_aa_line(it, fcx + r_in * c - sep * nx, fcy + r_in * s - sep * ny,
+                   fcx + r_out * c - sep * nx, fcy + r_out * s - sep * ny,
+                   w_maj, cardinal_col, 255);
+      draw_aa_line(it, fcx + r_in * c + sep * nx, fcy + r_in * s + sep * ny,
+                   fcx + r_out * c + sep * nx, fcy + r_out * s + sep * ny,
+                   w_maj, cardinal_col, 255);
+    } else if (i % 15 == 0) {
+      const float r_in = r_out - len_card;
+      draw_aa_line(it, fcx + r_in * c, fcy + r_in * s, fcx + r_out * c, fcy + r_out * s,
+                   w_card, cardinal_col, 255);
+    } else if (i % 5 == 0) {
+      const float r_in = r_out - len_maj;
+      draw_aa_line(it, fcx + r_in * c, fcy + r_in * s, fcx + r_out * c, fcy + r_out * s,
+                   w_maj, major_col, 235);
+    } else {
+      const float r_in = r_out - len_min;
+      draw_aa_line(it, fcx + r_in * c, fcy + r_in * s, fcx + r_out * c, fcy + r_out * s,
+                   w_min, minor_col, 175);
+    }
+  }
+}
+
+void render_center_arbor_aa(esphome::display::Display &it, int cx, int cy,
+                            esphome::Color outer_col, esphome::Color cap_col,
+                            esphome::Color jewel_col) {
+  const int r_outer = std::max(6, scale_min(8));
+  const int r_cap = std::max(4, scale_min(5));
+  const int r_jewel = std::max(2, scale_min(2));
+  fast_filled_circle_aa(it, cx + 1, cy + 1, r_outer + 1, kChromeShadow);
+  fast_filled_circle_aa(it, cx, cy, r_outer, outer_col);
+  fast_filled_circle_aa(it, cx, cy, r_cap, cap_col);
+  fast_filled_circle_aa(it, cx, cy, r_jewel, jewel_col);
+}
+
+void draw_icon_clock_face(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col) {
+  const float fr = static_cast<float>(std::max(7, r));
+  fast_circle_aa(it, cx, cy, fr, col, 2.0f);
+  const float fcx = static_cast<float>(cx);
+  const float fcy = static_cast<float>(cy);
+  draw_aa_line(it, fcx, fcy, fcx - fr * 0.42f, fcy - fr * 0.32f, 2.0f, col);
+  draw_aa_line(it, fcx, fcy, fcx + fr * 0.48f, fcy - fr * 0.48f, 1.8f, col);
+  fast_filled_circle_aa(it, cx, cy, 2, col);
+}
+
+void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                           const char *primary_txt, esphome::display::BaseFont *font_pri,
+                           esphome::Color pri_col,
+                           const char *secondary_txt, esphome::display::BaseFont *font_sec,
+                           esphome::Color sec_col,
+                           bool card_active, esphome::Color accent_col,
+                           bool action_is_toggle, bool action_on,
+                           uint16_t left_wid, uint16_t right_wid, int16_t param) {
+  using esphome::display::TextAlign;
+  const int x0 = cx - w / 2;
+  const int y0 = cy - h / 2;
+  const int rad = std::min(h / 2, scale_s(14));
+  render_modern_card(it, cx, cy, w, h, rad,
+                     card_active ? chrome_card_bg_on() : chrome_card_bg_off(),
+                     card_active ? accent_col : chrome_card_brd_off(),
+                     "", pri_col, font_pri, GlassVariant::Clear);
+
+  const int split_w = (w * 70) / 100;
+  const int div_x = x0 + split_w;
+  const int div_pad = std::max(6, h / 5);
+  fast_vline(it, div_x, y0 + div_pad, h - 2 * div_pad, kChromeCardBorder);
+
+  const int text_x = x0 + scale_x(16);
+  const int max_text_w = std::max(scale_x(40), split_w - scale_x(24));
+  if (secondary_txt != nullptr && secondary_txt[0] != '\0') {
+    const std::string pri_clamped = fit_text_to_width_font_base(primary_txt, max_text_w, font_pri);
+    const std::string sec_clamped = fit_text_to_width_font_base(secondary_txt, max_text_w, font_sec);
+    fast_print(it, text_x, cy - scale_y(9), font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
+    fast_print(it, text_x, cy + scale_y(13), font_sec, sec_col, TextAlign::CENTER_LEFT, sec_clamped.c_str());
+  } else {
+    const std::string pri_clamped = fit_text_to_width_font_base(
+        (primary_txt != nullptr) ? primary_txt : "", max_text_w, font_pri);
+    fast_print(it, text_x, cy, font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
+  }
+
+  const int right_w = w - split_w;
+  const int right_cx = div_x + right_w / 2;
+  if (action_is_toggle) {
+    toggle_switch(it, right_cx, cy, action_on, accent_col);
+  } else {
+    const int btn_r = std::max(12, std::min(h / 2 - 6, scale_s(17)));
+    fast_filled_circle_aa(it, right_cx, cy, btn_r,
+                          action_on ? accent_col : kChromeTrack);
+    fast_circle_aa(it, right_cx, cy, static_cast<float>(btn_r),
+                   action_on ? accent_col : kChromeTrackBorder, 1.5f);
+    if (action_on) {
+      // Crisp pause bars
+      const int bw = std::max(2, scale_s(3));
+      const int bh = std::max(8, scale_s(11));
+      const int gap = std::max(2, scale_s(3));
+      fill_rect_row_major(it, right_cx - gap - bw + 1, cy - bh / 2, bw, bh, esphome::Color(12, 16, 22));
+      fill_rect_row_major(it, right_cx + gap, cy - bh / 2, bw, bh, esphome::Color(12, 16, 22));
+    } else {
+      // Crisp play triangle
+      const int th = std::max(5, scale_s(6));
+      const int tw = std::max(7, scale_s(9));
+      fast_filled_triangle(it,
+                           right_cx - tw / 2 + 2, cy - th,
+                           right_cx - tw / 2 + 2, cy + th,
+                           right_cx + tw / 2 + 2, cy,
+                           esphome::Color(245, 248, 252));
+    }
+  }
+
+  frame_hits().add_rect(x0, y0, div_x - 1, y0 + h - 1,
+                        left_wid, kHitTap | kHitFocusSlot, param);
+  frame_hits().add_rect(div_x, y0, x0 + w - 1, y0 + h - 1,
+                        right_wid, kHitTap | kHitFocusSlot, param);
+}
+
 }  // namespace ui
 }  // namespace latter_ui

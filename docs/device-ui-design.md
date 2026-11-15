@@ -1,6 +1,6 @@
 # Device UI design guide
 
-This guide is the standard for the on-device GUI: the universal GUI shell in [`guis/universal/`](../guis/universal/), the compiled `latter_ui` component in [`components/latter_ui/`](../components/latter_ui/) (`ui_gfx.cpp`, `ui_mdi.cpp`, `hit_table.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `touch_engine.cpp`, and the 10 `page_*.cpp` translation units), and the C++ UI headers in [`include/`](../include/) (`ui_types.h`, `ui_mdi.h`, `ui_gfx.h`, `ui_hit_table.h`, `ui_layout.h`, `ui_widgets.h`, `ui_compositor.h`, `ui_touch_engine.h`, and `ui_pages.h`). Read it before changing the device UI. [Building a GUI](building-a-gui.md) explains how to replace the GUI; [Porting hardware](porting-hardware.md) explains how to add a board. Both defer to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
+This guide is the standard for the on-device GUI: the universal GUI shell in [`guis/universal/`](../guis/universal/), the compiled `latter_ui` component in [`components/latter_ui/`](../components/latter_ui/) (`ui_gfx.cpp`, `ui_mdi.cpp`, `hit_table.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `touch_engine.cpp`, and the 11 `page_*.cpp` translation units), and the C++ UI headers in [`include/`](../include/) (`ui_types.h`, `ui_mdi.h`, `ui_gfx.h`, `ui_hit_table.h`, `ui_layout.h`, `ui_widgets.h`, `ui_compositor.h`, `ui_touch_engine.h`, and `ui_pages.h`). Read it before changing the device UI. [Building a GUI](building-a-gui.md) explains how to replace the GUI; [Porting hardware](porting-hardware.md) explains how to add a board. Both defer to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
 
 Each rule is marked:
 
@@ -105,7 +105,7 @@ One motion system (D-015): every UI transition is time-based and eases out cubic
 
 | Motion | Implementation |
 | :--- | :--- |
-| Home dock page slide, mode-bar capsule glide | `DockSlideAnimator` (`ui_layout.h`): `home_dock_anim()` on page 1, `mode_bar_anim()` on pages 5, 6 and 9 |
+| Home dock page slide, mode-bar capsule glide | `DockSlideAnimator` (`ui_layout.h`): `home_dock_anim()` on page 1, `mode_bar_anim()` on pages 5, 6, 9 and 10 |
 | List and carousel page transitions (System, Music, Tools and Games launchers) | `start_menu_scroll()` starts the tween (`menu_scroll_start_ms`); renderers read `menu_scroll_shift(span)`; `gui.yaml` requests animation frames while `menu_scroll_active` |
 
 Frame pacing:
@@ -170,18 +170,19 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | Back label | `render_back_button(it, cx, font, layout().back_y, label, text = kChromeBackLabel)` | `UiLayout::back_y` | Returning from a sub-page ([3.3](#33-return-paths)). `"Home"` draws the home pill. **Enforced: `[BACK BUTTON Y]`**. |
 | Home pill | `render_home_indicator_bar(it, cx, layout().home_bar_y)` | `UiLayout::home_bar_y` | Top-level pages; drawn by `gui.yaml` after the page |
 | Home dock | `get_home_dock_window_xs` + the Home renderer; `home_dock_anim()` | `UiLayout::dock_y`, `dock_r` | Page 1 only: floating frosted-glass circular app icons, 4 per window |
-| In-app mode bar | `render_in_app_mode_bar_track(...)`; `mode_bar_anim()` | `UiLayout::app_dock_y`, `dock_r` | Switching the middle view of a multi-mode app (pages 5, 6, 9). A frosted-glass stadium track with a gliding glass capsule ring; no separators between slots. |
+| In-app mode bar | `render_in_app_mode_bar_track(...)`; `mode_bar_anim()` | `UiLayout::app_dock_y`, `dock_r` | Switching the middle view of a multi-mode app (pages 5, 6, 9, 10). A frosted-glass stadium track with a gliding glass capsule ring; no separators between slots. |
 | Viewport scrollbar | `render_viewport_scrollbar(it, cx, y, total, start_idx, thumb, dim)` | `dock_pips_y` / `app_dock_pips_y` | Under the Home dock and a mode bar when there are more than 4 items (D-016) |
 | Page pips | `render_dock_page_pips(it, cx, y, pages, active, c_active, c_inactive)` | Caller | Paged carousels: Games launcher, camera carousel (D-016) |
 | Vertical chevrons | `render_vertical_page_pips(it, show_up, show_down, bg, active, inactive)` | Right-edge column per width bucket | Paged vertical lists: 5-slot lists and the Tools launcher (D-016) |
 | Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | Registered `kHitFocusSlot` / `kHitFocusCircle` regions in `frame_hits()` (`FrameHitTable`), read via `focus_at()` / `focus_count()` | Rotary / button navigation |
-| Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Tools pages (D-007) |
-| Battery indicator | `render_battery_indicator` (`page_clock_home.cpp`) | `UiLayout::battery_cx/y` | Clock and Home |
+| Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` (round: 4 rings at `R − 10 … R − 7`); `LATTER_CORNER_R` with padding 5 wearable / 3 other and thickness 5 | A ringing timer or alarm on Time / Tools pages (D-007) |
+| Battery indicator | `render_battery_indicator` (`page_clock_home.cpp`) | `UiLayout::battery_cx/y` | Home (D-042 removes battery chrome from Clock) |
 | Time readout | `render_time_readout(it, cx, text, font_time, color)` (`ui_widgets.h`) | `scale_y(142)` | The big readout on the timer, alarm editor and stopwatch pages (one component, one font) |
+| Analog horology | `ui::draw_aa_line`, `ui::draw_aa_tapered_hand`, `ui::render_analog_chapter_ring`, `ui::render_center_arbor_aa` (`ui_widgets.h`) | Caller | Sub-pixel SDF anti-aliased chapter rings, tapered watch hands, and center arbor across `PageId::CLOCK` (`Modern Analog`, `Hybrid Digital`) and the round-only `Tools` Analog Chronograph (D-042) |
 | Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` | Live items (timers, stopwatch, music, alarms, calendar), filtered by the Device's Activity Card setting. One line on the round panel, two elsewhere; glass over the backdrop; rotates every 8 s, sliding upward, only when there are more items than lines (D-028, D-029) |
 | Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge (a tab on rectangular panels; floating inside the bezel on round), sized from the text and mm padding | Home Assistant disconnected for 8 s or more (D-026) |
 | Tool launcher card | `render_tool_launcher_card` (`page_tools.cpp`) | `UiLayout::tools_*` | The Tools grid |
-| Toggle switch & row | `ui::toggle_switch`, `ui::toggle_card_row` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Boolean switches across Settings, Music, Area Control and Timers/Alarms (D-031) |
+| Toggle & split-action row | `ui::toggle_switch`, `ui::toggle_card_row`, `ui::split_action_card_row` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Boolean switches and dual-target 3-card rows (`area_card3_*`) across Settings, Music, Area Control, and Time (`Timers` / `Alarms`) (D-031, D-042) |
 | Shared pill & stepper | `ui::pill_button`, `ui::stepper_row` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` (`68px` stride) | Frosted-glass pill actions and 4-column steppers with co-located hit regions (D-031, D-032) |
 | HSV color wheel | `ui::hsv_color_wheel` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Single LUT-backed custom color picker ring and Save action (D-031) |
 | Modals & PIN pad | `ui::confirm_modal`, `ui::game_over_sheet`, `ui::pin_pad_modal` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Destructive confirmation sheets, game-over summaries, and the 3×4 Security PIN keypad modal (`PinPadModalState`) for 3-tier perimeter security actions (D-031) |
@@ -196,26 +197,27 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 
 ### 3.1 Page map
 
-`runtime_state().nav.gui_page` selects the page; `PageId` in `ui_types.h` names pages 1–9. Each page reads its sub-state from `runtime_state()`.
+`runtime_state().nav.gui_page` selects the page; `PageId` in `ui_types.h` names pages 0–10 and 12. Each page reads its sub-state from `runtime_state()`.
 
 | Page | `PageId` | User-facing name | Sub-state |
 | :--- | :--- | :--- | :--- |
-| 0 | — | Clock | — (face from **Display: Clock Face**: Minimal Digital, Modern Roman (Analog), Modern Digital (Bold)) |
-| 1 | `HOME` | Home | `home_subpage`: 0 dock, 1 Home settings |
+| 0 | `CLOCK` | Clock | — (zero-chrome face from **Display: Clock Face**: Minimal Digital, Modern Analog, Hybrid Digital) |
+| 1 | `HOME` | Home | `home_subpage`: 0 dock, 1 Home settings, 2 Activity overlay |
 | 2 | `MUSIC` | Music | `music_overlay_mode`: `MusicOverlayMode` 0–6 (now playing, speakers, library categories, item browser, speaker actions, music hub, track inspector) |
 | 3 | `GAMES` | Games | `active_game`: 0 launcher, 1 Marbles, 2 Archery, 3 Bricks, 4 Chomp, 5 2048, 6 Memory Match |
 | 4 | `SYSTEM` | Settings | `system_menu_mode`: 0 dashboard, 1–12 menus |
 | 5 | `WEATHER` | Sky & Weather | `sky_weather_subpage`: 0–3, switched by the mode bar |
 | 6 | `AREA` | Area Control | `area_subpage`: 0 entity cards, 1 Area picker; categories switched by the mode bar |
 | 7 | `REMOTE` | Remote | `remote_subpage`: 0 remote, 1 control list (master power and up to 10 devices) |
-| 8 | `TOOLS` | Tools | `tools_subpage`: `ToolsSubpage` (0 launcher, 1 timers, 2 alarms, 3 stopwatch, 4 dice, 5 flashlight, 6 calculator, 7 level, 8 coin flip, 9 calendar, 10 intercom) |
+| 8 | `TOOLS` | Tools | `tools_subpage`: `ToolsSubpage` (0 launcher, 3 round-only Analog Chronograph on `LATTER_ROUND_DISPLAY=1`, 4 dice, 5 flashlight, 6 calculator, 7 level, 8 coin flip, 9 calendar, 10 intercom) |
 | 9 | `HOME_HUB` | Home Hub | `home_hub_tab()`: 0 alarm, 1 thermostat, 2 garage & locks, 3 vacuum, switched by the mode bar; drawn by `render_home_hub_page` (D-013) |
+| 10 | `TIME` | Time | `time_subpage`: `TimeSubpage` 0–3 (`Clock` + World Clocks, `Timers`, `Alarms`, `Stopwatch`), switched by the mode bar; drawn by `render_time_page` (D-042) |
 | 12 | `CAMERAS` | Cameras | Full-screen live camera view, quick replies, noise reduction, and carousel |
 
 ### 3.2 Home dock vs in-app mode bar
 
-- **Home dock (Page 1):** floating circular app icons, four per window, paged by a horizontal swipe in the dock zone, with the viewport scrollbar when there are more than four apps. The list comes from Latter's dock setting (`collect_home_dock_apps`, up to 8); Remote appears only when a remote is configured, and Settings is always last.
-- **In-app mode bar (pages 5, 6, 9):** a connected stadium-pill track at `app_dock_y`. Tap a slot or swipe sideways in the lower zone; the capsule glides. More than four modes adds conveyor chevrons and the scrollbar.
+- **Home dock (Page 1):** floating circular app icons, four per window, paged by a horizontal swipe in the dock zone, with the viewport scrollbar when there are more than four apps. The list comes from Latter's dock setting (`collect_home_dock_apps`, up to 9); Remote appears only when a remote is configured, and Settings is always last.
+- **In-app mode bar (pages 5, 6, 9, 10):** a connected stadium-pill track at `app_dock_y`. Tap a slot or swipe sideways in the lower zone; the capsule glides. More than four modes adds conveyor chevrons and the scrollbar.
 - Both use the 210 ms motion and the same slot geometry (D-003).
 
 ### 3.3 Return paths
@@ -268,7 +270,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 2. **Watermark latch** on every panel (D-012, D-031): draw `(0, y0)` and `(W − 1, y1)` with `Color(8, 8, 8)`, then `col_bg`, latching full width `x = 0 .. W − 1` across the `2px`-aligned dirty band (`y0 & ~1` to `min(H − 1, y1 | 1)`). This preserves `MipiSpiBuffer`'s contiguous `stride == SCREEN_W` zero-copy DMA fast path while cutting pixel bus traffic 5–12× on localized updates. These four `it.draw_pixel_at` calls are the only raw primitive calls the GUI makes.
 3. `bind_frame_buffer(disp1, it)` binds the software framebuffer for direct scanline writes; `frame_base_begin()` resets the base state.
 4. `latter_ui::render_system_takeovers(...)` in priority order ([3.4](#34-takeover-priority)), each starting with `frame_base(it, col_bg)` (or `frame_base_skip()` when the panel is off).
-5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` (or `render_page_wallpaper_base` on System Settings, Sky & Weather, Area Control, Remote, Tools, and Home Hub) from `gui.yaml`; Home paints its own base (the daytime sky or wallpaper), and Music claims the base with `frame_base_claim()` on full-screen art or falls back to `render_page_wallpaper_base` (configured wallpaper or solid `col_bg`) when **Music: Album Art Style** is `None`.
+5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` (or `render_page_wallpaper_base` on System Settings, Sky & Weather, Area Control, Remote, Tools, Home Hub, and Time) from `gui.yaml`; Home paints its own base (the daytime sky or wallpaper), and Music claims the base with `frame_base_claim()` on full-screen art or falls back to `render_page_wallpaper_base` (configured wallpaper or solid `col_bg`) when **Music: Album Art Style** is `None`.
 6. Chrome: focus overlay (`render_active_focus_overlay`), home pill, Offline pill.
 7. `FrameProfileScope` ends: logs a frame that never painted a base, records timing, and starts the next DMA clear.
 
@@ -327,7 +329,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 - No product or board names in UI logic (**`[TRAITS NOT NAMES]`**).
 - **Descriptive option names, no third-party names** (D-020): voice-overlay styles are Nebula, Solaris, Rings, Light Bar and Dot Wave; screensavers are Ambient Clock, Aurora, Starfield, Digital Rain and Fireworks; the games are Marbles, Archery, Bricks, Chomp, 2048 and Memory Match. The wake-word models keep their upstream names. **Enforced: `[TERMINOLOGY]`**.
 - Unknown values show `—`; no demo defaults (**`[UNKNOWN GLYPH INVARIANT]`**).
-- Fixed option labels are part of the product: clock faces (Minimal Digital, Modern Roman (Analog), Modern Digital (Bold)) and **Sleep & Wake: Power Profile** names (**`[POWER PROFILE INVARIANT]`**).
+- Fixed option labels are part of the product: clock faces (Minimal Digital, Modern Analog, Hybrid Digital) and **Sleep & Wake: Power Profile** names (**`[POWER PROFILE INVARIANT]`**).
 - Casing: page headers and overlay titles in UPPERCASE ("HOME SETTINGS", "FIRMWARE UPDATE"); status lines and empty states in sentence case, with an ellipsis for progress ("Preparing flash..."). *Documented only.*
 
 ## 8. Performance
@@ -612,6 +614,12 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Date:** 2026-11-14
 - **Decision:** Replace backdrop-adaptive alpha and frost modulation in `GlassVariant::Clear` (`resolve_glass_fill`, `page_clock_home.cpp`, `ui_widgets.cpp`) with one single, deterministic, backdrop-invariant Clear frosted-glass template across the entire UI: neutral `kChromeGlassTint` frost-lifted by fixed `frost_q8 = 54` toward `kChromeHomePill` (`frost_q8 = 32` for semantic-washed tints), fixed `kGlassClearAlphaQ8 = 104` (`~40.6 %` base), `kGlassAlphaMinQ8 = 96` (`37.5 %` bottom), `kGlassClearAlphaMaxQ8 = 116` (`45.3 %` top), and fixed specular rim `110 -> 40` Q8—with zero modification from current weather conditions, clouds, or backdrop luminance (`bd.bright` / `bd.mean`). Remove per-frame `glass_alpha_for_text` overrides on the Home Activity Card, in-app mode bar (`render_in_app_mode_bar_track`), and `render_offline_pill`, and skip `sample_glass_backdrop` PSRAM readbacks on `GlassVariant::Clear` surfaces that do not draw negative-space icon cutouts. Keep `GlassVariant::ReadableDark` (`kChromeModalBg`) reserved as an opt-in token with zero active callers. Amends D-029 (2), D-030, D-037 (1), and D-040 (1).
 - **Why:** Dropping `frost_q8` to `0` over bright `LiveWeatherSky` (`bg_lvl >= 84`) while stepping `Clear` alpha up to `174–184/256` (`68–72 %` opaque dark `(22, 27, 36)`)—and `up to 248/256` on the Weather mode bar—made Home and Weather glass noticeably darker and murkier than System/Tools cards even over lower-screen blue sky where clouds do not reach. A single `37.5–45.3 %` frosted silver-slate template matches the crisp System/Tools look on black while transmitting `~60 %` of live daytime skies cleanly.
+- **Status:** Accepted; implemented 2026-11-14.
+
+### D-042: Consolidated 4-tab `Time` app (`PageId::TIME = 10`), zero-chrome SDF anti-aliased `PageId::CLOCK` faces with ~20 FPS sweep, round-only `Tools` Analog Chronograph, and 2-way World Clocks & Alarms sync
+- **Date:** 2026-11-14
+- **Decision:** (1) **Consolidated 4-Tab `Time` App (`PageId::TIME = 10`, dock token `"time"`, `components/latter_ui/page_time.cpp`)**: Promote Timers, Alarms, Digital Stopwatch, and a live World Clock view into a top-level 4-tab app driven by the shared stadium mode bar (`TimeSubpage::CLOCK = 0`, `TIMERS = 1`, `ALARMS = 2`, `STOPWATCH = 3`), adding `page_time.cpp` as the 11th `page_*.cpp` translation unit and `"time"` (`Time`, `kMaxDockApps = 11`) to the Home Dock catalog (off by default in `defaults.dock_apps`). Add `home_clock_tap_action` (`"Time App"` default vs `"Clock Face"`), expand `start_screen` with `"Time App"` (`PageId::TIME`) and `"Clock Face"` (`PageId::CLOCK`, coercing `"Home"` -> `"Time App"` when `home_screen_enabled == false`, amending D-036), and keep drilldowns (`Timer Detail`, `Alarm Editor`, `World Clock Picker`) above `< Back` at `layout().back_y`. (2) **Time App Tabs & Shared Controls**: Tab 0 (`Clock`) renders tabular `HH:MM` + right-stacked `:SS` (`AM/PM`), local `<City> • <ABBR> (UTC±H[:MM]) • DST|Standard` (`area_context.local_tz_info`), a 1-tap `UTC` pin (`show_utc_clock`), and up to 4 per-Device IANA `world_clocks` (`area_context.world_clocks_summary`, editable both in Latter Studio and via the 24-city on-device `+ Zone` picker). Tab 1 (`Timers`) and Tab 2 (`Alarms`) share `ui::split_action_card_row` (`layout().area_card3_*`), add a `+1M` quick-extend pill (`WidgetId::TIMER_PLUS_1M_BTN`) in Timer Detail, upgrade the Alarm Editor to **1-minute precision** (tappable `HH`/`MM` focus halves + `[-6h,-1h,+1h,+6h]` / `[-5m,-1m,+1m,+5m]` steppers + `±1` rotary stepping), and sync 3 alarms two-way via `device_prefs.alarms_summary` (`kPersistedPrefsVersion = 5U`, `LATTER_SDK_REV = 2026111402`). Tab 3 (`Stopwatch`) renders one Modern Digital stopwatch across all 5 boards with up to 3 visible lap splits (`StopwatchRuntimeState::lap_splits_ms[8]`) and `H:MM:SS.t` formatting past 60 min. (3) **Capability-Gated `Tools` Cleanup (`LATTER_ROUND_DISPLAY`)**: Retire `ToolsSubpage::TIMERS`, `ToolsSubpage::ALARMS`, `stopwatch_modern_digital()`, and `WidgetId::SW_STYLE_BTN` across all boards, retaining `ToolsSubpage::STOPWATCH = 3` strictly as the classic round Analog Chronograph on `LATTER_ROUND_DISPLAY == 1` (`started_in_analog` routes Home Activity Card taps back to `Tools -> Stopwatch` when started there, or `Time -> Stopwatch` otherwise). (4) **Zero-Chrome SDF Anti-Aliased `PageId::CLOCK` Faces & Power-Aware Sweep**: Remove the bottom Home indicator pill (`can_go_home` returns `false` for `PageId::CLOCK`), battery badge, and `Minimal Digital` outer border on `PageId::CLOCK`; rename the canonical faces to `Minimal Digital`, `Modern Analog`, and `Hybrid Digital`; centralize sub-pixel SDF anti-aliased dial and tapered-hand primitives (`ui::draw_aa_line`, `ui::draw_aa_tapered_hand`, `ui::render_analog_chapter_ring`, `ui::render_center_arbor_aa` in `ui_widgets.h` / `ui_widgets.cpp`); and run phase-locked ~20 FPS smooth second-hand sweep (`clock_smooth_sweep_active` / `smooth_second_with_frac`) on USB/mains and for 15 s post-input on battery, stepping cleanly at 1 Hz on battery idle. Amends D-003, D-032, and D-036.
+- **Why:** Grouping Clock + World Clocks, Timers, Alarms, and Digital Stopwatch into one mode-bar app matches Sky & Weather and Home Hub, declutters Tools down to hardware/utility tools (preserving the round Analog Chronograph where round horology shines), eliminates jagged 1-bit Bresenham watch hands and redundant chrome on standalone Clock Faces, and unlocks 1-minute alarm scheduling and remote time-zone tracking synced two-way with Latter Studio.
 - **Status:** Accepted; implemented 2026-11-14.
 
 ## Known gaps

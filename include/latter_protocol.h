@@ -97,7 +97,9 @@ enum class AreaCtxField : size_t {
   SECURITY_PIN_POLICY = 39,  // security_pin_policy (string)
   HOME_CATEGORIES = 40,  // home_categories (csv)
   AREA_ICON = 41,  // area_icon (string)
-  COUNT = 42
+  LOCAL_TZ_INFO = 42,  // local_tz_info (string)
+  WORLD_CLOCKS_SUMMARY = 43,  // world_clocks_summary (string)
+  COUNT = 44
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -219,7 +221,11 @@ enum class DevicePrefsField : size_t {
   BLE_BEACON_MODE = 48,  // ble_beacon_mode (string)
   WEATHER_SIM_CONDITION = 49,  // weather_sim_condition (string)
   THEME_COLOR_HEX = 50,  // theme_color_hex (string)
-  COUNT = 51
+  HOME_CLOCK_TAP_ACTION = 51,  // home_clock_tap_action (string)
+  SHOW_UTC_CLOCK = 52,  // show_utc_clock (bool)
+  WORLD_CLOCKS = 53,  // world_clocks (csv)
+  ALARMS_SUMMARY = 54,  // alarms_summary (string)
+  COUNT = 55
 };
 
 }  // namespace latter_ui
