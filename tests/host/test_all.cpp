@@ -2818,12 +2818,76 @@ void test_time_app_world_clocks_alarms_and_horology() {
   sw.reset();
   LATTER_CHECK(!sw.running && sw.lap_count == 0 && sw.elapsed_ms == 0U && !sw.started_in_analog);
 
-  // 5. Source-level guards for Time App, retired Tools bloat, and SDF AA Clock Faces
+  // 5. Drilldown-aware compute_touch_context & 1 Hz Alarm Editor focus blink
+  DeviceRuntimeState &rs_ctx = runtime_state();
+  rs_ctx.nav.gui_page = 10;  // PageId::TIME
+  rs_ctx.nav.time_subpage = 0;
+  rs_ctx.nav.world_clock_picker_page = -1;
+  const int ctx_time_clock = compute_touch_context(rs_ctx);
+  rs_ctx.nav.world_clock_picker_page = 0;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_time_clock);
+  rs_ctx.nav.world_clock_picker_page = -1;
+
+  rs_ctx.nav.time_subpage = 1;
+  rs_ctx.timers.view_slot = 0;
+  const int ctx_timers_root = compute_touch_context(rs_ctx);
+  rs_ctx.timers.view_slot = 1;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_timers_root);
+  rs_ctx.timers.view_slot = 0;
+
+  rs_ctx.nav.time_subpage = 2;
+  rs_ctx.alarms.edit_idx = 0;
+  const int ctx_alarms_root = compute_touch_context(rs_ctx);
+  rs_ctx.alarms.edit_idx = 2;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_alarms_root);
+  rs_ctx.alarms.edit_idx = 0;
+
+  rs_ctx.nav.gui_page = 12;  // PageId::CAMERAS
+  rs_ctx.intercom.cam_quick_reply_open = false;
+  const int ctx_cam_root = compute_touch_context(rs_ctx);
+  rs_ctx.intercom.cam_quick_reply_open = true;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
+  rs_ctx.intercom.cam_quick_reply_open = false;
+
+  rs_ctx.nav.gui_page = 8;  // PageId::TOOLS -> Calendar
+  rs_ctx.nav.tools_subpage = 9;
+  rs_ctx.cal.detail_mode = 0;
+  rs_ctx.cal.quick_add_open = false;
+  const int ctx_cal_root = compute_touch_context(rs_ctx);
+  rs_ctx.cal.detail_mode = 1;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cal_root);
+  rs_ctx.cal.detail_mode = 0;
+  rs_ctx.cal.quick_add_open = true;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cal_root);
+  rs_ctx.cal.quick_add_open = false;
+
+  LATTER_CHECK(!alarm_editor_blink_dim(1000U, 1000U));
+  LATTER_CHECK(!alarm_editor_blink_dim(1499U, 1000U));
+  LATTER_CHECK(alarm_editor_blink_dim(1500U, 1000U));
+  LATTER_CHECK(alarm_editor_blink_dim(1999U, 1000U));
+  LATTER_CHECK(!alarm_editor_blink_dim(2000U, 1000U));
+  LATTER_CHECK(alarm_editor_blink_dim(2500U, 1000U));
+
+  // 6. Source-level guards for Time App, swipe-up-only Home, retired Tools bloat, and SDF AA Clock Faces
   const std::string time_cpp = read_repo_file("../../components/latter_ui/page_time.cpp");
   const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
   const std::string clock_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+  const std::string widgets_cpp = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string layout_h = read_repo_file("../../include/ui_layout.h");
+  const std::string hit_h = read_repo_file("../../include/ui_hit_table.h");
   LATTER_CHECK(time_cpp.find("render_time_page(") != std::string::npos);
   LATTER_CHECK(time_cpp.find("split_action_card_row(") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("UTC (UTC+0)") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("alarm_editor_blink_dim(") != std::string::npos);
+  LATTER_CHECK(time_cpp.find("TIME_UTC_TOGGLE_BTN") == std::string::npos);
+  LATTER_CHECK(time_cpp.find("Tap LAP while running") == std::string::npos);
+  LATTER_CHECK(widgets_cpp.find("frame_hits().add_rect(x0, y0, split_w, h") != std::string::npos);
+  LATTER_CHECK(widgets_cpp.find("frame_hits().add_rect(div_x, y0, right_w, h") != std::string::npos);
+  LATTER_CHECK(layout_h.find("is_home_pill_tap") == std::string::npos);
+  LATTER_CHECK(hit_h.find("HOME_BAR") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("is_home_pill_tap") == std::string::npos);
+  LATTER_CHECK(touch_cpp.find("HOME_BAR") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("stopwatch_modern_digital") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("SW_STYLE_BTN") == std::string::npos);
   LATTER_CHECK(clock_cpp.find("draw_aa_tapered_hand(") != std::string::npos);

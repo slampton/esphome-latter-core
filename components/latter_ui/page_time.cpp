@@ -112,35 +112,46 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   const auto &ac = area_ctx_state();
   const int cx = ctx.cx;
 
-  // On-device IANA World Clock Picker Drilldown (24 major global cities, 5 per page)
+  // On-device World Clock Picker Drilldown: top option [0] = UTC (UTC+0), followed by 24 global cities
   if (rs.nav.world_clock_picker_page >= 0) {
     render_page_header(it, cx, "ADD WORLD CLOCK", ctx.font_small, ctx.theme_primary);
-    const int total_pages = (static_cast<int>(kWorldClockCatalogCount) + 4) / 5;
+    const int total_items = 1 + static_cast<int>(kWorldClockCatalogCount);
+    const int total_pages = (total_items + 4) / 5;
     const int pg = std::clamp(static_cast<int>(rs.nav.world_clock_picker_page), 0, total_pages - 1);
     const int base_idx = pg * 5;
+    const int card_w = layout().list_card_w;
+    const int card_h = layout().slot5_h;
+    const int card_r = std::min(card_h / 2, scale_s(12));
     char row_buf[64];
     for (int r = 0; r < 5; ++r) {
-      const int cat_idx = base_idx + r;
-      if (cat_idx >= static_cast<int>(kWorldClockCatalogCount)) break;
-      const auto &item = kWorldClockCatalog[cat_idx];
-      const bool selected = csv_contains_iana_zone(prefs.world_clocks_csv, item.iana);
-      const std::string off_str = format_utc_offset_str(item.std_offset_min);
-      std::snprintf(row_buf, sizeof(row_buf), "%s (%s)", item.city, off_str.c_str());
+      const int item_idx = base_idx + r;
+      if (item_idx >= total_items) break;
+      bool selected = false;
+      if (item_idx == 0) {
+        selected = prefs.show_utc_clock;
+        std::snprintf(row_buf, sizeof(row_buf), "UTC (UTC+0)");
+      } else {
+        const auto &item = kWorldClockCatalog[item_idx - 1];
+        selected = csv_contains_iana_zone(prefs.world_clocks_csv, item.iana);
+        const std::string off_str = format_utc_offset_str(item.std_offset_min);
+        std::snprintf(row_buf, sizeof(row_buf), "%s (%s)", item.city, off_str.c_str());
+      }
 
       const int y_mid = layout().slot5_y(r);
       const std::string fit_lbl = fit_text_to_width_font(
-          row_buf, layout().list_card_w - scale_x(24), ctx.font_small);
-      render_modern_card(it, cx, y_mid, layout().list_card_w, 44, 12,
-                         selected ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                         selected ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                         fit_lbl.c_str(),
-                         selected ? ctx.theme_primary : ctx.col_white,
-                         ctx.font_small);
+          row_buf, card_w - scale_x(24), ctx.font_small);
+      const Color fg = selected ? ctx.theme_primary : ctx.col_white;
+      render_card_box(it, cx - card_w / 2, y_mid - card_h / 2, card_w, card_h,
+                      selected ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                      selected ? ctx.theme_primary : ui::chrome_card_brd_off(),
+                      card_r, GlassVariant::Clear, fg);
+      fast_print(it, cx + 1, y_mid + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, fit_lbl.c_str());
+      fast_print(it, cx, y_mid, ctx.font_small, fg, TextAlign::CENTER, fit_lbl.c_str());
       frame_hits().add_centered_rect(
-          cx, y_mid, layout().list_card_w, layout().slot5_h,
+          cx, y_mid, card_w, card_h,
           static_cast<uint16_t>(WidgetId::TIME_ZONE_PICK_BASE + r),
           kHitTap | kHitFocusSlot,
-          static_cast<int16_t>(cat_idx));
+          static_cast<int16_t>(item_idx));
     }
     render_vertical_page_pips(it, pg > 0, pg + 1 < total_pages,
                               ctx.col_bg, ctx.col_white, kChromePipInactive);
@@ -152,9 +163,16 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(180), scale_y(32),
                                  WidgetId::TIME_MODE_BTN, kHitTap);
 
-  // 1. Live HH:MM + right-stacked :SS (+ AM/PM in 12h mode) — no date, no battery
-  const int time_y = scale_y(114);
+  WorldClockEntry entries[kMaxWorldClocks + 1]{};
+  const int total_wc = collect_active_world_clocks(prefs, ac, entries);
+  const bool local_only = (total_wc <= 0);
+
+  // 1. Live HH:MM + right-stacked :SS (+ AM/PM in 12h mode) — centered lower when no extra zones are shown
+  const int time_y = scale_y(local_only ? 158 : 108);
+  const int tz_y = scale_y(local_only ? 212 : 156);
+  const int act_y = scale_y(local_only ? 272 : 190);
   const bool has_bd_shadow = backdrop_active();
+
   if (ctx.now.is_valid()) {
     char hhmm_buf[16];
     char ap_buf[8] = "";
@@ -204,7 +222,10 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
       fast_print(it, stack_x, ap_y, ctx.font_small, ctx.col_slate, TextAlign::CENTER_LEFT, ap_buf);
     }
   } else {
-    render_time_readout(it, cx, "--:--", ctx.font_time, ctx.col_slate);
+    if (has_bd_shadow) {
+      fast_print(it, cx + 1, time_y + 1, ctx.font_time, kChromeShadow, TextAlign::CENTER, "--:--");
+    }
+    fast_print(it, cx, time_y, ctx.font_time, ctx.col_slate, TextAlign::CENTER, "--:--");
   }
 
   // 2. Local Time Zone + UTC Offset + DST / Standard Indicator Line
@@ -219,7 +240,6 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   const bool local_is_dst = ltz.valid ? ltz.is_dst : (ctx.now.is_valid() && ctx.now.is_dst);
   const std::string off_lbl = format_utc_offset_str(local_off_min);
 
-  const int tz_y = scale_y(166);
   std::string tz_line;
   if (ltz.valid) {
     const char *dst_tag = local_is_dst ? "DST" : "Standard";
@@ -241,82 +261,43 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   }
   fast_print(it, cx, tz_y, tz_font, ctx.col_slate, TextAlign::CENTER, tz_line.c_str());
 
-  // 3. Compact Action Row: Dedicated [UTC] 1-tap toggle + [+ Zone] picker button
-  const int act_y = scale_y(198);
+  // 3. Single Centered [+ Zone] Action Pill (UTC lives at top of the + Zone picker)
   const int custom_cnt = count_custom_world_clocks(prefs.world_clocks_csv);
-  const int pill_r = std::max(10, scale_y(14));
-  const int pill_gap = scale_x(6);
-  const int pill_w = std::min(scale_x(122), (safe_span(act_y, 20) - pill_gap * 2) / 2);
+  const int pill_r = local_only ? std::max(12, scale_y(16)) : std::max(11, scale_y(14));
+  const int pill_hw = std::max(pill_r + 8,
+                               std::min(local_only ? scale_x(64) : scale_x(58), safe_span(act_y, 24) / 2));
   auto *pill_font = (SCREEN_W < 300) ? ctx.font_micro : ctx.font_small;
-
-  const char *utc_lbl = prefs.show_utc_clock ? "UTC: On" : "UTC";
-  const char *zone_lbl = (custom_cnt < static_cast<int>(kMaxWorldClocks)) ? "+ Zone" : "Zones (4)";
-  ui::pill_button(it, cx - pill_gap - pill_w, cx - pill_gap, act_y, pill_r,
-                  prefs.show_utc_clock ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                  prefs.show_utc_clock ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                  utc_lbl,
-                  prefs.show_utc_clock ? ctx.theme_primary : ctx.col_white,
-                  pill_font,
-                  WidgetId::TIME_UTC_TOGGLE_BTN, kHitTap | kHitFocusSlot);
-  ui::pill_button(it, cx + pill_gap, cx + pill_gap + pill_w, act_y, pill_r,
-                  (custom_cnt > 0) ? ui::chrome_card_brd_on() : ui::chrome_card_brd_off(),
+  const char *zone_lbl = (custom_cnt < static_cast<int>(kMaxWorldClocks) || !prefs.show_utc_clock)
+                             ? "+ Zone"
+                             : "Zones (5)";
+  ui::pill_button(it, cx - pill_hw + pill_r, cx + pill_hw - pill_r, act_y, pill_r,
+                  !local_only ? ui::chrome_card_brd_on() : ui::chrome_card_brd_off(),
                   ui::chrome_card_bg_off(),
                   zone_lbl,
                   ctx.col_white,
                   pill_font,
                   WidgetId::TIME_ADD_ZONE_BTN, kHitTap | kHitFocusSlot);
 
-  // 4. World Clocks Area (up to 2 cards per page above mode bar, or clean Local TZ status card)
-  WorldClockEntry entries[kMaxWorldClocks + 1]{};
-  const int total_wc = collect_active_world_clocks(prefs, ac, entries);
-  if (total_wc <= 0) {
-    const int card_cy = scale_y(278);
-    const int card_h = scale_y(72);
-    const int card_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 24) : layout().area_card3_w,
-                                safe_span(card_cy, 18));
-    render_modern_card(it, cx, card_cy, card_w, card_h, 14,
-                       ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                       "", ctx.col_white, ctx.font_small);
-    const std::string primary_tz = fit_text_to_width_font(
-        ltz.valid ? ltz.iana : std::string("Local System Clock"),
-        card_w - scale_x(24), ctx.font_small);
-    const std::string secondary_tz = fit_text_to_width_font(
-        off_lbl + " \xE2\x80\xA2 " +
-            (local_is_dst ? "Daylight Saving (DST)" : "Standard Time"),
-        card_w - scale_x(24), ctx.font_micro);
-    fast_print(it, cx, card_cy - scale_y(11), ctx.font_small, ctx.col_white,
-               TextAlign::CENTER, primary_tz.c_str());
-    fast_print(it, cx, card_cy + scale_y(12), ctx.font_micro, ctx.col_slate,
-               TextAlign::CENTER, secondary_tz.c_str());
+  if (local_only) {
     return;
   }
 
+  // 4. World Clock Readout Rows (plain canvas text; frosted glass strictly on the [x] button)
   const int total_pages = (total_wc + 1) / 2;
   const int cur_pg = std::clamp(static_cast<int>(rs.nav.world_clock_page), 0, total_pages - 1);
   const int base_idx = cur_pg * 2;
-  const int card_h = scale_y(46);
+  const int del_r = std::max(11, scale_s(13));
 
   for (int row = 0; row < 2; ++row) {
     const int idx = base_idx + row;
     if (idx >= total_wc) break;
     const auto &wc = entries[idx];
-    const int cy_card = scale_y(row == 0 ? 252 : 306);
-    const int card_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 24) : layout().area_card3_w,
-                                safe_span(cy_card, 18));
-    const int x0 = cx - (card_w / 2);
-    const int x1 = x0 + card_w;
-    const int del_w = std::max(30, scale_x(38));
-    const int del_div_x = x1 - del_w;
-
-    render_modern_card(it, cx, cy_card, card_w, card_h, 12,
-                       wc.is_pinned_utc ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                       wc.is_pinned_utc ? ui::chrome_card_brd_on() : ui::chrome_card_brd_off(),
-                       "", ctx.col_white, ctx.font_small);
-
-    // Subtle divider separating the remove [x] action on the right
-    const int div_pad = std::max(6, card_h / 5);
-    fast_vline(it, del_div_x, cy_card - (card_h / 2) + div_pad,
-               card_h - 2 * div_pad, ui::chrome_card_brd_off());
+    const int cy_row = scale_y(row == 0 ? 246 : 298);
+    const int row_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 28) : layout().area_card3_w,
+                               safe_span(cy_row, 20));
+    const int x0 = cx - (row_w / 2);
+    const int x1 = x0 + row_w;
+    const int del_cx = x1 - del_r;
 
     char rem_time_buf[20] = "--:--";
     const char *day_lbl = "Today";
@@ -329,7 +310,8 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
                                     rem_h, rem_m, day_delta);
       char hhmm[12];
       char ap[6] = "";
-      format_time_hhmm(rem_h, rem_m, prefs.is_24h_format, hhmm, sizeof(hhmm), ap, wc.is_pinned_utc || prefs.is_24h_format);
+      format_time_hhmm(rem_h, rem_m, prefs.is_24h_format, hhmm, sizeof(hhmm), ap,
+                       wc.is_pinned_utc || prefs.is_24h_format);
       if (prefs.is_24h_format || wc.is_pinned_utc) {
         std::snprintf(rem_time_buf, sizeof(rem_time_buf), "%s", hhmm);
       } else {
@@ -343,34 +325,43 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
     auto *wc_time_font = (SCREEN_W < 320) ? ctx.font_small : ctx.font_btn_bold;
     it.get_text_bounds(0, 0, rem_time_buf, wc_time_font, TextAlign::TOP_LEFT, &x_off, &base, &time_w, &th);
 
-    const int pad_x = scale_x(12);
-    const int time_right_x = del_div_x - scale_x(8);
-    const int text_max_w = std::max(scale_x(60), (time_right_x - time_w - scale_x(8)) - (x0 + pad_x));
+    const int time_right_x = del_cx - del_r - scale_x(10);
+    const int text_max_w = std::max(scale_x(60), (time_right_x - time_w - scale_x(8)) - x0);
     const std::string city_fit = fit_text_to_width_font(wc.city, text_max_w, ctx.font_small);
     std::string sub_meta = std::string(day_lbl) + " \xE2\x80\xA2 " + wc.abbr;
     if (wc.is_dst) sub_meta += " \xE2\x80\xA2 DST";
     const std::string sub_fit = fit_text_to_width_font(sub_meta, text_max_w, ctx.font_micro);
 
-    fast_print(it, x0 + pad_x, cy_card - scale_y(8), ctx.font_small,
+    const Color rem_col = wc.is_pinned_utc ? ctx.theme_secondary : ctx.theme_primary;
+    if (has_bd_shadow) {
+      fast_print(it, x0 + 1, cy_row - scale_y(8) + 1, ctx.font_small,
+                 kChromeShadow, TextAlign::CENTER_LEFT, city_fit.c_str());
+      fast_print(it, x0 + 1, cy_row + scale_y(10) + 1, ctx.font_micro,
+                 kChromeShadow, TextAlign::CENTER_LEFT, sub_fit.c_str());
+      fast_print(it, time_right_x + 1, cy_row + 1, wc_time_font,
+                 kChromeShadow, TextAlign::CENTER_RIGHT, rem_time_buf);
+    }
+    fast_print(it, x0, cy_row - scale_y(8), ctx.font_small,
                ctx.col_white, TextAlign::CENTER_LEFT, city_fit.c_str());
-    fast_print(it, x0 + pad_x, cy_card + scale_y(10), ctx.font_micro,
+    fast_print(it, x0, cy_row + scale_y(10), ctx.font_micro,
                ctx.col_slate, TextAlign::CENTER_LEFT, sub_fit.c_str());
-    fast_print(it, time_right_x, cy_card, wc_time_font,
-               wc.is_pinned_utc ? ctx.theme_secondary : ctx.theme_primary,
-               TextAlign::CENTER_RIGHT, rem_time_buf);
+    fast_print(it, time_right_x, cy_row, wc_time_font,
+               rem_col, TextAlign::CENTER_RIGHT, rem_time_buf);
 
-    // Crisp vector 'x' remove glyph in right action cell
-    const int del_cx = (del_div_x + x1) / 2;
-    const int xr = std::max(4, scale_s(5));
-    ui::draw_aa_line(it, static_cast<float>(del_cx - xr), static_cast<float>(cy_card - xr),
-                     static_cast<float>(del_cx + xr), static_cast<float>(cy_card + xr),
+    // Compact frosted-glass circular [x] remove button
+    render_glass_circle(it, del_cx, cy_row, del_r,
+                        ui::chrome_card_bg_off(), ui::chrome_card_brd_off());
+    const int xr = std::max(4, scale_s(4));
+    ui::draw_aa_line(it, static_cast<float>(del_cx - xr), static_cast<float>(cy_row - xr),
+                     static_cast<float>(del_cx + xr), static_cast<float>(cy_row + xr),
                      1.6f, ctx.col_slate);
-    ui::draw_aa_line(it, static_cast<float>(del_cx - xr), static_cast<float>(cy_card + xr),
-                     static_cast<float>(del_cx + xr), static_cast<float>(cy_card - xr),
+    ui::draw_aa_line(it, static_cast<float>(del_cx - xr), static_cast<float>(cy_row + xr),
+                     static_cast<float>(del_cx + xr), static_cast<float>(cy_row - xr),
                      1.6f, ctx.col_slate);
-    frame_hits().add_rect(del_div_x, cy_card - (card_h / 2) - 2, x1 + 4, cy_card + (card_h / 2) + 2,
-                          static_cast<uint16_t>(WidgetId::TIME_WORLD_DEL_BASE + row),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
+    frame_hits().add_circle(del_cx, cy_row, del_r,
+                            static_cast<uint16_t>(WidgetId::TIME_WORLD_DEL_BASE + row),
+                            kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            static_cast<int16_t>(idx), scale_s(8));
   }
 
   if (total_pages > 1) {
@@ -485,12 +476,14 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   }
 
   const int p_y = scale_y(214);
+  const int p_r = std::max(14, scale_y(20));
+  const int p_hw = std::max(p_r + 8, std::min(scale_x(92), safe_span(p_y, 24) / 2));
   if (s.running) {
-    ui::pill_button(it, cx - scale_x(82), cx + scale_x(82), p_y, scale_y(21),
+    ui::pill_button(it, cx - p_hw + p_r, cx + p_hw - p_r, p_y, p_r,
                     ctx.col_gold, Color(65, 45, 0), "PAUSE", ctx.col_white, ctx.font_btn_bold,
                     WidgetId::TIMER_PRIMARY_BTN);
   } else {
-    ui::pill_button(it, cx - scale_x(82), cx + scale_x(82), p_y, scale_y(21),
+    ui::pill_button(it, cx - p_hw + p_r, cx + p_hw - p_r, p_y, p_r,
                     ctx.theme_primary, ui::chrome_card_bg_on(),
                     s.paused ? "RESUME" : "START", ctx.col_white, ctx.font_btn_bold,
                     WidgetId::TIMER_PRIMARY_BTN);
@@ -502,13 +495,15 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
                     ctx.col_white, WidgetId::STEPPER_BASE);
   } else {
     const int ext_y = scale_y(282);
+    const int ext_r = std::max(12, scale_y(18));
     const int gap = scale_x(8);
-    const int btn_w = std::min(scale_x(118), (safe_span(ext_y, 20) - gap * 2) / 2);
-    ui::pill_button(it, cx - gap - btn_w, cx - gap, ext_y, scale_y(18),
+    const int box_w = std::max(2 * ext_r + 8,
+                               std::min(scale_x(118), (safe_span(ext_y, 20) - gap * 2) / 2));
+    ui::pill_button(it, cx - gap - box_w + ext_r, cx - gap - ext_r, ext_y, ext_r,
                     ctx.theme_secondary, ui::chrome_card_bg_on(),
                     "+1M", ctx.theme_secondary, ctx.font_small,
                     WidgetId::TIMER_PLUS_1M_BTN);
-    ui::pill_button(it, cx + gap, cx + gap + btn_w, ext_y, scale_y(18),
+    ui::pill_button(it, cx + gap + ext_r, cx + gap + box_w - ext_r, ext_y, ext_r,
                     kChromeDangerBrd, ui::chrome_danger_bg(),
                     "RESET", ctx.col_white, ctx.font_small,
                     WidgetId::TIMER_RESET_BTN);
@@ -542,11 +537,11 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
       std::snprintf(snz_buf, sizeof(snz_buf), "Snoozed %u:%02u \xE2\x80\xA2 Dismiss",
                     static_cast<unsigned>(rem_s / 60U), static_cast<unsigned>(rem_s % 60U));
       const int snz_y = scale_y(92);
-      const int snz_w = std::min(scale_x(250), safe_span(snz_y, 20));
-      render_modern_card(it, cx, snz_y, snz_w, 30, 12,
-                         Color(48, 34, 6), ctx.col_gold, snz_buf, ctx.col_gold, ctx.font_micro);
-      frame_hits().add_centered_rect(cx, snz_y, snz_w, scale_y(32),
-                                     WidgetId::ALARM_SNOOZE_CANCEL, kHitTap | kHitFocusSlot);
+      const int snz_r = std::max(11, scale_y(15));
+      const int snz_hw = std::max(snz_r + 8, std::min(scale_x(124), safe_span(snz_y, 20) / 2));
+      ui::pill_button(it, cx - snz_hw + snz_r, cx + snz_hw - snz_r, snz_y, snz_r,
+                      ctx.col_gold, Color(48, 34, 6), snz_buf, ctx.col_gold, ctx.font_micro,
+                      WidgetId::ALARM_SNOOZE_CANCEL, kHitTap | kHitFocusSlot);
       y_shift = scale_y(14);
     }
 
@@ -602,14 +597,14 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   }
   std::snprintf(mm_buf, sizeof(mm_buf), "%02u", static_cast<unsigned>(ap.minute));
 
-  const int time_y = scale_y(132);
+  const int time_y = scale_y(128);
   auto *num_font = (SCREEN_W < 300) ? ctx.font_chrono_time : ctx.font_time;
-  int hh_w = 0, col_w = 0, mm_w = 0, ap_w = 0, x_off = 0, base = 0, th = 0;
-  it.get_text_bounds(0, 0, hh_buf, num_font, TextAlign::TOP_LEFT, &x_off, &base, &hh_w, &th);
-  it.get_text_bounds(0, 0, ":", num_font, TextAlign::TOP_LEFT, &x_off, &base, &col_w, &th);
-  it.get_text_bounds(0, 0, mm_buf, num_font, TextAlign::TOP_LEFT, &x_off, &base, &mm_w, &th);
+  int hh_w = 0, col_w = 0, mm_w = 0, ap_w = 0, x_off = 0, base = 0, num_th = 0, ap_th = 0;
+  it.get_text_bounds(0, 0, hh_buf, num_font, TextAlign::TOP_LEFT, &x_off, &base, &hh_w, &num_th);
+  it.get_text_bounds(0, 0, ":", num_font, TextAlign::TOP_LEFT, &x_off, &base, &col_w, &num_th);
+  it.get_text_bounds(0, 0, mm_buf, num_font, TextAlign::TOP_LEFT, &x_off, &base, &mm_w, &num_th);
   if (!prefs.is_24h_format) {
-    it.get_text_bounds(0, 0, ap_buf, ctx.font_date, TextAlign::TOP_LEFT, &x_off, &base, &ap_w, &th);
+    it.get_text_bounds(0, 0, ap_buf, ctx.font_date, TextAlign::TOP_LEFT, &x_off, &base, &ap_w, &ap_th);
   }
   const int ap_gap = prefs.is_24h_format ? 0 : scale_x(8);
   const int total_w = hh_w + col_w + mm_w + ap_gap + ap_w;
@@ -619,23 +614,45 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   const int mm_x = col_x + col_w;
   const int mm_cx = mm_x + (mm_w / 2);
 
-  fast_print(it, x_start, time_y, num_font,
-             hh_focused ? ctx.col_white : ctx.col_slate, TextAlign::CENTER_LEFT, hh_buf);
+  // Slow 1 Hz blink on the focused field (stays solid white during active tapping/stepping)
+  const uint32_t latest_in = std::max(last_user_touch_ms(), ui_focus_last_ms());
+  const bool blink_dim = alarm_editor_blink_dim(ctx.now_ms, latest_in);
+  const Color active_col = blink_dim ? mix_color_q8(ctx.col_bg, ctx.col_slate, 84) : ctx.col_white;
+  const Color hh_col = hh_focused ? active_col : ctx.col_slate;
+  const Color mm_col = !hh_focused ? active_col : ctx.col_slate;
+  const bool has_bd_shadow = backdrop_active();
+
+  if (has_bd_shadow) {
+    if (!(hh_focused && blink_dim)) {
+      fast_print(it, x_start + 1, time_y + 1, num_font, kChromeShadow, TextAlign::CENTER_LEFT, hh_buf);
+    }
+    fast_print(it, col_x + 1, time_y + 1, num_font, kChromeShadow, TextAlign::CENTER_LEFT, ":");
+    if (!(!hh_focused && blink_dim)) {
+      fast_print(it, mm_x + 1, time_y + 1, num_font, kChromeShadow, TextAlign::CENTER_LEFT, mm_buf);
+    }
+  }
+  fast_print(it, x_start, time_y, num_font, hh_col, TextAlign::CENTER_LEFT, hh_buf);
   fast_print(it, col_x, time_y, num_font, ctx.col_slate, TextAlign::CENTER_LEFT, ":");
-  fast_print(it, mm_x, time_y, num_font,
-             !hh_focused ? ctx.col_white : ctx.col_slate, TextAlign::CENTER_LEFT, mm_buf);
+  fast_print(it, mm_x, time_y, num_font, mm_col, TextAlign::CENTER_LEFT, mm_buf);
   if (!prefs.is_24h_format) {
+    if (has_bd_shadow) {
+      fast_print(it, mm_x + mm_w + ap_gap + 1, time_y + scale_y(8) + 1, ctx.font_date,
+                 kChromeShadow, TextAlign::CENTER_LEFT, ap_buf);
+    }
     fast_print(it, mm_x + mm_w + ap_gap, time_y + scale_y(8), ctx.font_date,
                ctx.theme_secondary, TextAlign::CENTER_LEFT, ap_buf);
   }
 
-  // Active field underline + generous hit zones for HH vs MM
-  const int ul_y = time_y + (th / 2) + scale_y(6);
+  // Active field underline placed strictly below the exact rendered ink bottom of "00"
+  int ul_x_dummy = 0, ul_y0 = 0, ul_w_dummy = 0, ul_ink_h = 0;
+  it.get_text_bounds(0, time_y, "00", num_font, TextAlign::CENTER_LEFT,
+                     &ul_x_dummy, &ul_y0, &ul_w_dummy, &ul_ink_h);
+  const int ul_y = ul_y0 + ul_ink_h + std::max(4, scale_y(6));
   const int ul_x0 = hh_focused ? x_start : mm_x;
   const int ul_w = hh_focused ? hh_w : mm_w;
   fill_rect_row_major(it, ul_x0, ul_y, std::max(16, ul_w), std::max(2, scale_y(3)), ctx.theme_primary);
 
-  const int hit_h = std::max(48, th + scale_y(18));
+  const int hit_h = std::max(48, ul_ink_h + scale_y(20));
   frame_hits().add_centered_rect(hh_cx, time_y, std::max(56, hh_w + scale_x(16)), hit_h,
                                  WidgetId::ALARM_HH_BTN, kHitTap | kHitFocusSlot);
   frame_hits().add_centered_rect(mm_cx, time_y, std::max(56, mm_w + scale_x(16)), hit_h,
@@ -643,19 +660,19 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
 
   static const char *const kHourStepLabels[4] = {"-6h", "-1h", "+1h", "+6h"};
   static const char *const kMinStepLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
-  ui::stepper_row(it, cx, scale_y(198), 38,
+  ui::stepper_row(it, cx, scale_y(202), 38,
                   hh_focused ? kHourStepLabels : kMinStepLabels,
                   ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
 
   char rec_lbl[32];
   std::snprintf(rec_lbl, sizeof(rec_lbl), "Repeat: %s", alarm_recurrence_label(ap.recurrence));
-  const int rec_y = scale_y(280);
-  const int rec_w = std::min(scale_x(232), safe_span(rec_y, 20));
-  render_modern_card(it, cx, rec_y, rec_w, 42, 14,
-                     ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
-                     rec_lbl, ctx.theme_secondary, ctx.font_small);
-  frame_hits().add_centered_rect(cx, rec_y, rec_w, scale_y(44),
-                                 WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot);
+  const int rec_y = scale_y(282);
+  const int rec_r = std::max(13, scale_y(19));
+  const int rec_hw = std::max(rec_r + 8, std::min(scale_x(112), safe_span(rec_y, 20) / 2));
+  ui::pill_button(it, cx - rec_hw + rec_r, cx + rec_hw - rec_r, rec_y, rec_r,
+                  ui::chrome_card_brd_on(), ui::chrome_card_bg_off(),
+                  rec_lbl, ctx.theme_secondary, ctx.font_small,
+                  WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot);
 
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
 }
@@ -666,6 +683,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
 
   const auto &rs = runtime_state();
   const int cx = ctx.cx;
+  const bool has_bd_shadow = backdrop_active();
 
   render_page_header(it, cx, "STOPWATCH", ctx.font_small, ctx.theme_primary);
   frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(180), scale_y(32),
@@ -680,84 +698,81 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
 
   char sw_buf[24];
   format_stopwatch_tenths(cur_sw_ms, sw_buf, sizeof(sw_buf));
-  const int sw_y = scale_y(118);
+  const int sw_y = scale_y(108);
   auto *sw_font = (cur_sw_ms >= 3600000U || SCREEN_W < 320) ? ctx.font_chrono_time : ctx.font_time;
   int bw = 0, x_off = 0, base = 0, th = 0;
   it.get_text_bounds(0, 0, sw_buf, sw_font, TextAlign::TOP_LEFT, &x_off, &base, &bw, &th);
   if (bw > safe_span(sw_y, 16)) {
     sw_font = ctx.font_chrono_time;
   }
-  if (backdrop_active()) {
+  if (has_bd_shadow) {
     fast_print(it, cx + 1, sw_y + 1, sw_font, kChromeShadow, TextAlign::CENTER, sw_buf);
   }
   fast_print(it, cx, sw_y, sw_font, ctx.col_white, TextAlign::CENTER, sw_buf);
 
-  // Side-by-side 2-pill control row
-  const int ctrl_y = scale_y(190);
-  const int gap = scale_x(8);
-  const int btn_w = std::min(scale_x(122), (safe_span(ctrl_y, 20) - gap * 2) / 2);
-  const int pill_r = std::max(14, scale_y(18));
-  auto *btn_font = (SCREEN_W < 300) ? ctx.font_small : ctx.font_btn_bold;
+  // Stacked controls: primary START / PAUSE / RESUME right below time, smaller LAP / RESET below it
+  const int main_y = scale_y(168);
+  const int main_r = std::max(14, scale_y(19));
+  const int main_hw = std::max(main_r + 8, std::min(scale_x(88), safe_span(main_y, 24) / 2));
+  auto *main_font = (SCREEN_W < 300) ? ctx.font_small : ctx.font_btn_bold;
+
+  const int sub_y = scale_y(216);
+  const int sub_r = std::max(11, scale_y(14));
+  const int sub_hw = std::max(sub_r + 8, std::min(scale_x(58), safe_span(sub_y, 24) / 2));
 
   if (rs.stopwatch.running) {
-    ui::pill_button(it, cx - gap - btn_w, cx - gap, ctrl_y, pill_r,
+    ui::pill_button(it, cx - main_hw + main_r, cx + main_hw - main_r, main_y, main_r,
                     ctx.col_gold, Color(65, 45, 0),
-                    "PAUSE", ctx.col_white, btn_font, WidgetId::SW_PRIMARY_BTN);
-    ui::pill_button(it, cx + gap, cx + gap + btn_w, ctrl_y, pill_r,
+                    "PAUSE", ctx.col_white, main_font, WidgetId::SW_PRIMARY_BTN);
+    ui::pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
                     ctx.theme_secondary, ui::chrome_card_bg_on(),
-                    "LAP", ctx.theme_secondary, btn_font, WidgetId::SW_LAP_BTN);
+                    "LAP", ctx.theme_secondary, ctx.font_small, WidgetId::SW_LAP_BTN);
   } else {
-    ui::pill_button(it, cx - gap - btn_w, cx - gap, ctrl_y, pill_r,
+    ui::pill_button(it, cx - main_hw + main_r, cx + main_hw - main_r, main_y, main_r,
                     ctx.col_green, Color(0, 56, 28),
-                    (cur_sw_ms > 0U) ? "RESUME" : "START", ctx.col_white, btn_font,
+                    (cur_sw_ms > 0U) ? "RESUME" : "START", ctx.col_white, main_font,
                     WidgetId::SW_PRIMARY_BTN);
     if (cur_sw_ms > 0U) {
-      ui::pill_button(it, cx + gap, cx + gap + btn_w, ctrl_y, pill_r,
+      ui::pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
                       kChromeDangerBrd, ui::chrome_danger_bg(),
-                      "RESET", ctx.col_white, btn_font, WidgetId::SW_RESET_BTN);
+                      "RESET", ctx.col_white, ctx.font_small, WidgetId::SW_RESET_BTN);
     } else {
-      render_pill_button(it, cx + gap, cx + gap + btn_w, ctrl_y, pill_r,
+      render_pill_button(it, cx - sub_hw + sub_r, cx + sub_hw - sub_r, sub_y, sub_r,
                          ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
-                         "LAP", ctx.col_slate, btn_font);
+                         "LAP", ctx.col_slate, ctx.font_small);
     }
   }
 
-  // Recent Lap Splits List (up to 3 visible rows cleanly above the 4-icon mode bar)
+  // Recent Lap Splits (plain canvas text without frosted-glass backing; up to 3 rows above mode bar)
   const int total_laps = static_cast<int>(rs.stopwatch.lap_count);
   if (total_laps <= 0) {
-    const int empty_y = scale_y(274);
-    fast_print(it, cx, empty_y, ctx.font_micro, ctx.col_slate,
-               TextAlign::CENTER, "Tap LAP while running to record splits");
     return;
   }
 
   const int vis_laps = std::min(3, std::min(total_laps, static_cast<int>(StopwatchRuntimeState::kMaxLapSplits)));
-  const int card_cy = scale_y(280);
-  const int card_h = scale_y(96);
-  const int card_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 28) : layout().area_card3_w,
-                              safe_span(scale_y(312), 20));
-  render_modern_card(it, cx, card_cy, card_w, card_h, 12,
-                     ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                     "", ctx.col_white, ctx.font_small);
-
-  const int left_x = cx - (card_w / 2) + scale_x(14);
-  const int right_x = cx + (card_w / 2) - scale_x(14);
+  const int span_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 36) : scale_x(236),
+                              safe_span(scale_y(304), 24));
+  const int left_x = cx - (span_w / 2);
+  const int right_x = cx + (span_w / 2);
   auto *lap_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
   for (int k = 0; k < vis_laps; ++k) {
     const int lap_num = total_laps - k;
     const int ring_idx = (total_laps - 1 - k) % static_cast<int>(StopwatchRuntimeState::kMaxLapSplits);
     const uint32_t split_ms = rs.stopwatch.lap_splits_ms[ring_idx];
-    const int row_y = card_cy + (k - 1) * scale_y(28);
+    const int row_y = scale_y(254) + k * scale_y(25);
 
     char lap_lbl[20];
     std::snprintf(lap_lbl, sizeof(lap_lbl), "Lap %d", lap_num);
     char split_lbl[24];
     format_stopwatch_tenths(split_ms, split_lbl, sizeof(split_lbl));
 
+    const Color split_col = (k == 0) ? ctx.theme_secondary : ctx.col_white;
+    if (has_bd_shadow) {
+      fast_print(it, left_x + 1, row_y + 1, lap_font, kChromeShadow, TextAlign::CENTER_LEFT, lap_lbl);
+      fast_print(it, right_x + 1, row_y + 1, lap_font, kChromeShadow, TextAlign::CENTER_RIGHT, split_lbl);
+    }
     fast_print(it, left_x, row_y, lap_font, ctx.col_slate, TextAlign::CENTER_LEFT, lap_lbl);
-    fast_print(it, right_x, row_y, lap_font,
-               (k == 0) ? ctx.theme_secondary : ctx.col_white,
-               TextAlign::CENTER_RIGHT, split_lbl);
+    fast_print(it, right_x, row_y, lap_font, split_col, TextAlign::CENTER_RIGHT, split_lbl);
   }
 }
 

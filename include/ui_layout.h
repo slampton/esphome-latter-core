@@ -292,7 +292,7 @@ struct UiLayout {
   constexpr int flick_min() const { return mm_to_px(1.7f); }           // 18 px: music track-inspector flick
   constexpr int dock_release_swipe() const { return mm_to_px(1.9f); }  // 20 px: Home dock page swipe on release
   constexpr int swipe_short() const { return mm_to_px(2.1f); }         // 22 px: dock swipe while moving, music lists
-  constexpr int swipe_min() const { return mm_to_px(2.3f); }           // 24 px: swipe-up home, pill-tap travel, mode bar, 2048
+  constexpr int swipe_min() const { return mm_to_px(2.3f); }           // 24 px: swipe-up home, mode bar, 2048
   constexpr int list_swipe() const { return mm_to_px(2.5f); }          // 26 px: vertical list and carousel paging
   constexpr int page_swipe() const { return mm_to_px(2.7f); }          // 28 px: in-app mode bars, map pan, cameras
   constexpr int tap_max() const { return mm_to_px(2.9f); }             // 30 px: a touch that moved less is a tap
@@ -305,13 +305,6 @@ struct UiLayout {
   constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
   constexpr int dock_hit_r() const { return std::max(dock_r + 16, mm_to_px(3.6f)); }
-
-  template <typename TouchT>
-  constexpr bool is_home_pill_tap(const TouchT &t) const {
-    const int pill_y = is_round ? scale_min(422) : (h - mm_to_px(2.8f));
-    const int pill_hw = std::max(scale_x(64), mm_to_px(6.5f));
-    return (t.y >= pill_y && std::abs(t.x - cx) <= pill_hw);
-  }
 };
 
 inline constexpr UiLayout layout() {

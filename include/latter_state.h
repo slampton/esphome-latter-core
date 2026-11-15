@@ -3437,4 +3437,70 @@ inline std::string build_carousel_camera_url(const std::string &base_cam_url,
   return chosen_url;
 }
 
+inline constexpr bool alarm_editor_blink_dim(uint32_t now_ms, uint32_t last_input_ms) noexcept {
+  const uint32_t elapsed = (now_ms >= last_input_ms) ? (now_ms - last_input_ms) : 0U;
+  if (elapsed < 500U) return false;
+  return (((elapsed - 500U) / 500U) % 2U) == 0U;
+}
+
+inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  const int gp = rs.nav.gui_page;
+  int sub = 0;
+  int drill = 0;
+  switch (gp) {
+    case 1:
+      sub = rs.nav.home_subpage;
+      break;
+    case 2:
+      sub = rs.music.overlay_mode;
+      if (sub == 3) {
+        for (char ch : rs.music.selected_category_mode) {
+          drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0xFF;
+        }
+      }
+      break;
+    case 3:
+      sub = rs.nav.active_game;
+      break;
+    case 4:
+      sub = rs.nav.system_menu_mode;
+      break;
+    case 5:
+      sub = rs.nav.sky_weather_subpage;
+      break;
+    case 6:
+      sub = rs.nav.area_subpage;
+      drill = (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") ? 1 : 0;
+      break;
+    case 7:
+      sub = rs.nav.remote_subpage;
+      break;
+    case 8:
+      sub = rs.nav.tools_subpage;
+      if (sub == 9) {
+        drill = (rs.cal.detail_mode > 0) ? rs.cal.detail_mode : (rs.cal.quick_add_open ? 3 : 0);
+      }
+      break;
+    case 9:
+      sub = home_hub_tab();
+      break;
+    case 10:
+      sub = rs.nav.time_subpage;
+      if (sub == 0 && rs.nav.world_clock_picker_page >= 0) {
+        drill = 1;
+      } else if (sub == 1 && rs.timers.view_slot > 0) {
+        drill = rs.timers.view_slot;
+      } else if (sub == 2 && rs.alarms.edit_idx > 0) {
+        drill = rs.alarms.edit_idx;
+      }
+      break;
+    case 12:
+      drill = rs.intercom.cam_quick_reply_open ? 1 : 0;
+      break;
+    default:
+      break;
+  }
+  return (gp * 10000) + ((sub & 0x3F) * 256) + (drill & 0xFF);
+}
+
 }  // namespace latter_ui

@@ -665,23 +665,6 @@ inline float smooth_second_with_frac(int sec, uint32_t now_ms, bool smooth_activ
   return static_cast<float>(clamped_sec) + frac;
 }
 
-inline int compute_touch_context(int gui_page, int home_sub, int music_mode, int active_game,
-                                 int sys_mode, int weather_sub, int area_sub, int rem_sub, int tools_sub,
-                                 int hh_tab = 0, int time_sub = 0) {
-  int sub = 0;
-  if (gui_page == 1) sub = home_sub;
-  else if (gui_page == 2) sub = music_mode;
-  else if (gui_page == 3) sub = active_game;
-  else if (gui_page == 4) sub = sys_mode;
-  else if (gui_page == 5) sub = weather_sub;
-  else if (gui_page == 6) sub = area_sub;
-  else if (gui_page == 7) sub = rem_sub;
-  else if (gui_page == 8) sub = tools_sub;
-  else if (gui_page == 9) sub = hh_tab;
-  else if (gui_page == 10) sub = time_sub;
-  return (gui_page * 100) + sub;
-}
-
 // Returns false when neither the clock nor Home Assistant's moon phase is known (outputs untouched then).
 inline bool compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const std::string &fallback_phase,
                                        double &out_cycle, int *out_illum = nullptr, std::string *out_label = nullptr) {

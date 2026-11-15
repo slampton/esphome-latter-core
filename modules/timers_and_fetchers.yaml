@@ -98,6 +98,26 @@ interval:
             latter_ui::display_lifecycle().note_activity(millis());
           }
 
+          // Slow 1 Hz active-field blink in Time App -> Alarms Editor (500 ms half-period band flush)
+          {
+            static bool s_prev_alarm_blink = false;
+            if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating &&
+                rs.nav.gui_page == latter_ui::PageId::TIME &&
+                rs.nav.time_subpage == latter_ui::TimeSubpage::ALARMS &&
+                rs.alarms.edit_idx > 0 && !rs.voice.active && rs.voice.status_text.empty()) {
+              const uint32_t latest_in = std::max(latter_ui::last_user_touch_ms(),
+                                                  latter_ui::ui_focus_last_ms());
+              const bool cur_blink = latter_ui::alarm_editor_blink_dim(millis(), latest_in);
+              if (cur_blink != s_prev_alarm_blink) {
+                s_prev_alarm_blink = cur_blink;
+                latter_ui::schedule_band_disp_update(
+                    &id(disp1), latter_ui::scale_y(84), latter_ui::scale_y(182));
+              }
+            } else {
+              s_prev_alarm_blink = false;
+            }
+          }
+
           // Camera snapshot refresh while the Camera app is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)
           if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 12 &&
               !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&

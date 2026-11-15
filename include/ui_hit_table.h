@@ -21,7 +21,6 @@ namespace WidgetId {
 
   // Universal navigation & list/grid primitives
   static constexpr uint16_t BACK_BUTTON        = 10;
-  static constexpr uint16_t HOME_BAR           = 11;
   static constexpr uint16_t SUBHEADER_PREV     = 12;
   static constexpr uint16_t SUBHEADER_NEXT     = 13;
   static constexpr uint16_t SUBHEADER_ACTION   = 14;
@@ -188,10 +187,8 @@ namespace WidgetId {
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
   static constexpr uint16_t TIME_MODE_BTN       = 840;  // param = TimeSubpage (0..3)
   static constexpr uint16_t TIME_ADD_ZONE_BTN   = 841;
-  static constexpr uint16_t TIME_UTC_TOGGLE_BTN = 842;
-  static constexpr uint16_t TIME_WORLD_CARD_BASE = 845; // 845..846 (param = active card idx)
-  static constexpr uint16_t TIME_WORLD_DEL_BASE  = 847; // 847..848 (param = active card idx)
-  static constexpr uint16_t TIME_ZONE_PICK_BASE  = 850; // 850..854 (param = catalog idx)
+  static constexpr uint16_t TIME_WORLD_DEL_BASE  = 847; // 847..848 (param = active entry idx)
+  static constexpr uint16_t TIME_ZONE_PICK_BASE  = 850; // 850..854 (param = picker item idx: 0=UTC, 1..24=catalog)
 }  // namespace WidgetId
 
 struct HitRegion {

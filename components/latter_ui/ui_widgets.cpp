@@ -239,7 +239,6 @@ void render_home_indicator_bar(esphome::display::Display &it, int cx, int y_pos,
   const float cap = 0.5f * static_cast<float>(bar_h);
   fill_round_rect_aa(it, cx - half_w, y_pos - cap_r + 1, 2 * half_w + 1, bar_h, cap, kChromeShadow);
   fill_round_rect_aa(it, cx - half_w, y_pos - cap_r, 2 * half_w + 1, bar_h, cap, bar_col);
-  frame_hits().add_centered_rect(cx, y_pos, scale_x(180), scale_y(36), WidgetId::HOME_BAR, kHitTap);
 }
 
 void render_viewport_scrollbar(esphome::display::Display &it, int cx, int y_pos, int total_items,
@@ -1041,17 +1040,26 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  const char *const labels[4], esphome::display::BaseFont *font,
                  esphome::Color col_text, uint16_t base_widget_id) {
-  const int btn_w = scale_x(62);
+  const int btn_w = (SCREEN_W < 340) ? 58 : scale_x(60);
   const int step = scale_x(68);
-  const int y_mid = y_top + h / 2;
+  const int eff_h = (SCREEN_H > 520 && h <= 64) ? scale_y(h) : h;
+  const int y_mid = y_top + eff_h / 2;
+  const int rad = std::max(4, scale_s(8));
   const esphome::Color bg_c = chrome_card_bg_on();
   const esphome::Color brd_c = chrome_card_brd_on();
   for (int i = 0; i < 4; i++) {
     const int bx = cx + static_cast<int>((static_cast<float>(i) - 1.5f) * static_cast<float>(step));
-    render_modern_card(it, bx, y_mid, btn_w, h, 8, bg_c, brd_c, labels[i], col_text, font);
+    render_card_box(it, bx - btn_w / 2, y_top, btn_w, eff_h, bg_c, brd_c, rad,
+                    GlassVariant::Clear, col_text);
+    if (labels[i] != nullptr && labels[i][0] != '\0' && font != nullptr) {
+      fast_print(it, bx + 1, y_mid + 1, font, kChromeShadow,
+                 esphome::display::TextAlign::CENTER, labels[i]);
+      fast_print(it, bx, y_mid, font, col_text,
+                 esphome::display::TextAlign::CENTER, labels[i]);
+    }
     if (base_widget_id != WidgetId::NONE) {
       frame_hits().add_centered_rect(
-          bx, y_mid, btn_w, h,
+          bx, y_mid, btn_w, eff_h,
           static_cast<uint16_t>(base_widget_id + i),
           kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
     }
@@ -1538,10 +1546,10 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
   const int rad = std::min(h / 2, scale_s(14));
-  render_modern_card(it, cx, cy, w, h, rad,
-                     card_active ? chrome_card_bg_on() : chrome_card_bg_off(),
-                     card_active ? accent_col : chrome_card_brd_off(),
-                     "", pri_col, font_pri, GlassVariant::Clear);
+  render_card_box(it, x0, y0, w, h,
+                  card_active ? chrome_card_bg_on() : chrome_card_bg_off(),
+                  card_active ? accent_col : chrome_card_brd_off(),
+                  rad, GlassVariant::Clear, pri_col);
 
   const int split_w = (w * 70) / 100;
   const int div_x = x0 + split_w;
@@ -1553,11 +1561,14 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
   if (secondary_txt != nullptr && secondary_txt[0] != '\0') {
     const std::string pri_clamped = fit_text_to_width_font_base(primary_txt, max_text_w, font_pri);
     const std::string sec_clamped = fit_text_to_width_font_base(secondary_txt, max_text_w, font_sec);
+    fast_print(it, text_x + 1, cy - scale_y(9) + 1, font_pri, kChromeShadow, TextAlign::CENTER_LEFT, pri_clamped.c_str());
     fast_print(it, text_x, cy - scale_y(9), font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
+    fast_print(it, text_x + 1, cy + scale_y(13) + 1, font_sec, kChromeShadow, TextAlign::CENTER_LEFT, sec_clamped.c_str());
     fast_print(it, text_x, cy + scale_y(13), font_sec, sec_col, TextAlign::CENTER_LEFT, sec_clamped.c_str());
   } else {
     const std::string pri_clamped = fit_text_to_width_font_base(
         (primary_txt != nullptr) ? primary_txt : "", max_text_w, font_pri);
+    fast_print(it, text_x + 1, cy + 1, font_pri, kChromeShadow, TextAlign::CENTER_LEFT, pri_clamped.c_str());
     fast_print(it, text_x, cy, font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
   }
 
@@ -1590,9 +1601,9 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
     }
   }
 
-  frame_hits().add_rect(x0, y0, div_x - 1, y0 + h - 1,
+  frame_hits().add_rect(x0, y0, split_w, h,
                         left_wid, kHitTap | kHitFocusSlot, param);
-  frame_hits().add_rect(div_x, y0, x0 + w - 1, y0 + h - 1,
+  frame_hits().add_rect(div_x, y0, right_w, h,
                         right_wid, kHitTap | kHitFocusSlot, param);
 }
 
