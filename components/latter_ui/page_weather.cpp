@@ -1584,6 +1584,32 @@ inline void draw_tapered_streak_q8(esphome::display::Display &it, uint16_t *fb,
   }
 }
 
+inline void draw_lightning_seg_q8(esphome::display::Display &it, uint16_t *fb,
+                                  int tx, int ty, int hx, int hy,
+                                  esphome::Color c_core, esphome::Color c_glow,
+                                  int a0_q8, int a1_q8,
+                                  int core_hw, int glow_r, int cy) {
+  if (a0_q8 <= 0 && a1_q8 <= 0) return;
+  const int span = std::max(1, glow_r - core_hw + 1);
+  const float inv_span = 1.0f / static_cast<float>(span);
+  for (int ox = -glow_r; ox <= glow_r; ox++) {
+    const int aox = std::abs(ox);
+    if (aox <= core_hw) continue;
+    const float u = 1.0f - static_cast<float>(aox - core_hw) * inv_span;
+    const float k = 0.54f * u * u;
+    draw_tapered_streak_q8(it, fb, tx + ox, ty, hx + ox, hy, c_glow, c_glow,
+                           static_cast<int>(static_cast<float>(a0_q8) * k),
+                           static_cast<int>(static_cast<float>(a1_q8) * k), cy);
+  }
+  for (int ox = -core_hw; ox <= core_hw; ox++) {
+    const float k = (ox == 0) ? 1.0f : 0.90f;
+    const esphome::Color c_end = (ox == 0 || a1_q8 > 0) ? c_core : c_glow;
+    draw_tapered_streak_q8(it, fb, tx + ox, ty, hx + ox, hy, c_core, c_end,
+                           static_cast<int>(static_cast<float>(a0_q8) * k),
+                           static_cast<int>(static_cast<float>(a1_q8) * k), cy);
+  }
+}
+
 inline void draw_soft_snowflake_q8(esphome::display::Display &it, uint16_t *fb,
                                    int sx, int sy, float r_px, int peak_q8,
                                    bool is_crystal, bool day_contrast,
@@ -2421,11 +2447,18 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     }
     if (lt.active) {
       const uint32_t el_ms = now_ms - lt.flash_start_ms;
-      if (el_ms >= 180U) {
+      if (el_ms >= 480U) {
         lt.active = false;
       } else {
-        const float env = std::exp(-static_cast<float>(el_ms) * (1.0f / 56.0f)) * precip_alpha;
-        const int sheet_q8 = static_cast<int>(env * 72.0f);
+        const float t_ms = static_cast<float>(el_ms);
+        const float primary = (t_ms <= 75.0f)
+            ? (1.0f - (t_ms * (0.14f / 75.0f)))
+            : (0.86f * std::exp(-(t_ms - 75.0f) * (1.0f / 115.0f)));
+        const bool has_restrike = ((lt.flash_seq % 3U) != 2U);
+        const float dt_re = (t_ms - 185.0f) * (1.0f / 54.0f);
+        const float restrike = has_restrike ? (0.88f * std::exp(-dt_re * dt_re)) : 0.0f;
+        const float env = std::min(1.0f, std::max(primary, restrike)) * precip_alpha;
+        const int sheet_q8 = static_cast<int>(env * 78.0f);
         if (sheet_q8 > 0 && fb != nullptr) {
           static constexpr uint8_t kFlashBayer4[4][4] = {
               {  0, 128,  32, 160},
@@ -2471,34 +2504,50 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
           }
         }
 
-        if (el_ms < 140U) {
+        if (el_ms < 430U) {
           const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
           const int b_seed = static_cast<int>(lt.flash_seq * 43U + 19U);
-          const int x0 = static_cast<int>((140.0f + hash2d_01(b_seed, 11) * 186.0f) * w_scale);
-          const int y0 = scale_y(68);
-          const int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 44.0f * w_scale);
-          const int y1 = scale_y(112);
-          const int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 48.0f * w_scale);
+          const int x0 = static_cast<int>((132.0f + hash2d_01(b_seed, 11) * 202.0f) * w_scale);
+          const int y0 = scale_y(54);
+          const int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 52.0f * w_scale);
+          const int y1 = scale_y(104);
+          const int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 56.0f * w_scale);
           const int y2 = scale_y(158);
-          const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 52.0f * w_scale);
-          const int y3 = scale_y(208);
-          const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 46.0f * w_scale);
-          const int y4 = scale_y(274);
+          const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 60.0f * w_scale);
+          const int y3 = scale_y(214);
+          const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 54.0f * w_scale);
+          const int y4 = scale_y(270);
+          const int x5 = x4 + static_cast<int>((hash2d_01(b_seed, 89) - 0.5f) * 46.0f * w_scale);
+          const int y5 = scale_y(324);
 
-          const int core_q8 = std::clamp(static_cast<int>(env * 250.0f), 0, 256);
-          const int fork_q8 = std::clamp(static_cast<int>(env * 165.0f), 0, 256);
+          const int core_q8 = std::clamp(static_cast<int>(env * 256.0f), 0, 256);
+          const int mid_q8  = (core_q8 * 3) / 4;
+          const int fork_q8 = std::clamp(static_cast<int>(env * 210.0f), 0, 256);
+          const int trunk_hw = (SCREEN_W >= 600) ? 2 : 1;
+          const int glow_hi  = std::max(3, scale_min(4));
+          const int glow_mid = std::max(2, scale_min(3));
+          const int glow_tip = std::max(2, scale_min(2));
           const esphome::Color c_core(255, 255, 255);
-          const esphome::Color c_fork(155, 215, 255);
-          draw_tapered_streak_q8(it, fb, x0, y0, x1, y1, c_core, c_core, core_q8, core_q8, cy);
-          draw_tapered_streak_q8(it, fb, x1, y1, x2, y2, c_core, c_core, core_q8, core_q8, cy);
-          draw_tapered_streak_q8(it, fb, x2, y2, x3, y3, c_core, c_core, core_q8, core_q8, cy);
-          draw_tapered_streak_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, 0, cy);
+          const esphome::Color c_fork(150, 212, 255);
+
+          draw_lightning_seg_q8(it, fb, x0, y0, x1, y1, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi, cy);
+          draw_lightning_seg_q8(it, fb, x1, y1, x2, y2, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi, cy);
+          draw_lightning_seg_q8(it, fb, x2, y2, x3, y3, c_core, c_fork, core_q8, core_q8, 1, glow_mid, cy);
+          draw_lightning_seg_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, mid_q8,  1, glow_mid, cy);
+          draw_lightning_seg_q8(it, fb, x4, y4, x5, y5, c_core, c_fork, mid_q8,  0,       0, glow_tip, cy);
 
           const int f1_dir = (x2 >= x1) ? 1 : -1;
-          const int fx1 = x1 + f1_dir * scale_x(26), fy1 = y1 + scale_y(26);
-          const int fx2 = fx1 + f1_dir * scale_x(18), fy2 = fy1 + scale_y(28);
-          draw_tapered_streak_q8(it, fb, x1, y1, fx1, fy1, c_fork, c_fork, fork_q8, fork_q8 / 2, cy);
-          draw_tapered_streak_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, fork_q8 / 2, 0, cy);
+          const int fx1 = x1 + f1_dir * scale_x(30), fy1 = y1 + scale_y(30);
+          const int fx2 = fx1 + f1_dir * scale_x(22), fy2 = fy1 + scale_y(32);
+          draw_lightning_seg_q8(it, fb, x1, y1, fx1, fy1, c_core, c_fork, fork_q8, (fork_q8 * 3) / 5, 0, glow_tip, cy);
+          draw_lightning_seg_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, (fork_q8 * 3) / 5, 0,     0, glow_tip, cy);
+
+          const int f2_dir = -f1_dir;
+          const int gx1 = x3 + f2_dir * scale_x(26), gy1 = y3 + scale_y(28);
+          const int gx2 = gx1 + f2_dir * scale_x(18), gy2 = gy1 + scale_y(26);
+          const int f2_q8 = (fork_q8 * 4) / 5;
+          draw_lightning_seg_q8(it, fb, x3, y3, gx1, gy1, c_core, c_fork, f2_q8, f2_q8 / 2, 0, glow_tip, cy);
+          draw_lightning_seg_q8(it, fb, gx1, gy1, gx2, gy2, c_fork, c_fork, f2_q8 / 2, 0,   0, glow_tip, cy);
         }
       }
     }

@@ -1051,7 +1051,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111502L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111503L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3318,6 +3318,8 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(wx_src.find("enum class RainTier") != std::string::npos);
   LATTER_CHECK(wx_src.find("coprime_lane_stride(") != std::string::npos);
   LATTER_CHECK(wx_src.find("draw_soft_snowflake_q8(") != std::string::npos);
+  LATTER_CHECK(wx_src.find("draw_lightning_seg_q8(") != std::string::npos);
+  LATTER_CHECK(wx_src.find("el_ms >= 480U") != std::string::npos);
   LATTER_CHECK(wx_src.find("kSnowCount = 64") != std::string::npos);
 }
 
