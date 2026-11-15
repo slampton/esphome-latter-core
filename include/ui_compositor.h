@@ -147,7 +147,7 @@ constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
     return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
-      (gui_page == 8 && !tools_full_bleed) || gui_page == 9 || gui_page == 10) {
+      ((gui_page == 8 || gui_page == 9) && !tools_full_bleed) || gui_page == 10) {
     return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   return BackdropMode::SolidBlack;
@@ -204,7 +204,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
                                  int hub_tab,
                                  int time_sub = 0, int wc_pg = 0,
-                                 int alarm_edit = 0, int home_set_pg = 1) {
+                                 int alarm_edit = 0, int home_set_pg = 1,
+                                 int hub_mode_pg = 0, int hub_drill = 0) {
   switch (gui_page) {
     case 1:
       return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8) | ((home_set_pg & 0x0F) << 16);
@@ -225,7 +226,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
       return (tools_sub & 0xFF) | ((tools_menu_pg & 0xFF) << 8) |
              ((cal_detail & 0x0F) << 16) | ((timer_slot & 0x0F) << 20);
     case 9:
-      return hub_tab;
+      return (hub_tab & 0x0F) | ((hub_mode_pg & 0x0F) << 4) | ((hub_drill & 0x0F) << 8);
     case 10:
       return (time_sub & 0x0F) | ((wc_pg & 0x0F) << 4) |
              ((timer_slot & 0x0F) << 8) | ((alarm_edit & 0x0F) << 12);
@@ -981,6 +982,10 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
 
 inline int compute_active_subpage_id() {
   const auto &rs = runtime_state();
+  const int hub_drill =
+      (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
+      (rs.intercom.cam_quick_reply_open ? 2 : 0) |
+      (rs.intercom.live_call_mode ? 4 : 0);
   return compute_subpage_id(
       rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
       rs.music.overlay_mode, rs.nav.active_game,
@@ -990,7 +995,8 @@ inline int compute_active_subpage_id() {
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
       cal_detail_mode(), timer_view_slot(), home_hub_tab(),
       rs.nav.time_subpage, rs.nav.world_clock_page,
-      rs.alarms.edit_idx, rs.nav.home_settings_page);
+      rs.alarms.edit_idx, rs.nav.home_settings_page,
+      home_hub_mode_bar_page(), hub_drill);
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {

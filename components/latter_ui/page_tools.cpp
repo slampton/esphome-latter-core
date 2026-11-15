@@ -201,26 +201,6 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
                             (r == 0 && c == 1) ? theme_secondary : col_white);
       }
     }
-
-  } else if (app_id == ToolsSubpage::INTERCOM) {
-    // 10. Intercom: Solid filled megaphone horn + handle & 2 radiating acoustic wave arcs
-    fill_rect_row_major(it, ix - S(12), iy - S(3), S(5), S(7), col_white);
-    fast_filled_triangle(it, ix - S(7), iy - S(3), ix - S(7), iy + S(3), ix + S(4), iy + S(10), col_white);
-    fast_filled_triangle(it, ix - S(7), iy - S(3), ix + S(4), iy + S(10), ix + S(4), iy - S(10), col_white);
-    fill_rect_row_major(it, ix - S(8), iy + S(4), S(3), S(6), theme_secondary);
-    fast_line(it, ix + S(8), iy - S(5), ix + S(10), iy, col_white);
-    fast_line(it, ix + S(10), iy, ix + S(8), iy + S(5), col_white);
-    fast_line(it, ix + S(11), iy - S(8), ix + S(14), iy, theme_secondary);
-    fast_line(it, ix + S(14), iy, ix + S(11), iy + S(8), theme_secondary);
-
-  } else if (app_id == PageId::CAMERAS) {
-    // 12. Camera: Sculpted camera body, top prism & dual-ring lens
-    fill_rect_row_major(it, ix - S(13), iy - S(8), S(26), S(19), col_white);
-    fill_rect_row_major(it, ix - S(5), iy - S(12), S(10), S(4), col_white);
-    fast_filled_circle(it, ix, iy + S(1), S(7), surf_bg);
-    fast_circle(it, ix, iy + S(1), S(5), theme_secondary);
-    fast_filled_circle(it, ix, iy + S(1), S(2), col_white);
-    fast_filled_circle(it, ix + S(9), iy - S(5), S(1), surf_bg);
   }
 
   fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, ctx.font_small, kChromeShadow,
@@ -245,12 +225,13 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
       {ToolsSubpage::FLASHLIGHT, "Flashlight"},
       {ToolsSubpage::CALCULATOR, "Calculator"},
       {ToolsSubpage::CALENDAR, "Calendar"},
-      {ToolsSubpage::INTERCOM, "Intercom"},
-      {PageId::CAMERAS, "Camera"},
       {ToolsSubpage::DICE, "Dice Roll"},
       {ToolsSubpage::COIN_FLIP, "Coin Flip"},
   };
   static constexpr int kTotalItems = static_cast<int>(sizeof(kItems) / sizeof(kItems[0]));
+  static_assert(kTotalItems == tools_launcher_item_count(),
+                "Tools launcher item table must match tools_launcher_item_count()");
+  static constexpr int kTotalPages = tools_launcher_page_count(kTotalItems);
 
   const auto &ly = layout();
   const int raw_w = (SCREEN_W < 380) ? 110 : 122;
@@ -284,29 +265,29 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     }
   };
 
-  const int cur_pg = (rs.nav.tools_menu_page == 0) ? 0 : 1;
-  if (rs.nav.menu_scroll_active) {
+  const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, kTotalPages - 1);
+  if (rs.nav.menu_scroll_active && kTotalPages > 1) {
     const int full_span = scale_y(252);
     const int offset = menu_scroll_shift(full_span);
     const int out_dy = -rs.nav.menu_scroll_dir * offset;
     const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
-    const int tgt_pg = (rs.nav.menu_scroll_target_page == 0) ? 0 : 1;
+    const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, kTotalPages - 1);
     draw_grid_for_page(cur_pg, out_dy, false);
     draw_grid_for_page(tgt_pg, in_dy, false);
   } else {
     draw_grid_for_page(cur_pg, 0, true);
   }
 
-  if (rs.nav.menu_scroll_active && !backdrop_active()) {
+  if (rs.nav.menu_scroll_active && kTotalPages > 1 && !backdrop_active()) {
     fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), ctx.col_bg);
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
   }
 
   render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
-  const int active_pip_pg = rs.nav.menu_scroll_active
-                                ? ((rs.nav.menu_scroll_target_page == 0) ? 0 : 1)
+  const int active_pip_pg = (rs.nav.menu_scroll_active && kTotalPages > 1)
+                                ? std::clamp(rs.nav.menu_scroll_target_page, 0, kTotalPages - 1)
                                 : cur_pg;
-  render_vertical_page_pips(it, active_pip_pg == 1, active_pip_pg == 0,
+  render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < kTotalPages,
                             ctx.col_bg, ctx.col_white, kChromePipInactive);
 }
 
@@ -1723,11 +1704,6 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const int sub = rs.nav.tools_subpage;
-
-  if (sub == ToolsSubpage::INTERCOM) {
-    render_comms_page(it, ctx);
-    return;
-  }
 
   if (sub == ToolsSubpage::FLASHLIGHT) {
     if (!frame_base(it, ctx.col_white)) {

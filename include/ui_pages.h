@@ -2,11 +2,11 @@
 
 // ==============================================================================
 // Latter Concrete Compiled Page & Overlay Declarations (include/ui_pages.h)
-// Replaces 9 header-only template page files (~14,000L) with concrete C++20
-// entry points compiled in 10 dedicated translation units under components/latter_ui/:
+// Concrete C++20 entry points compiled in dedicated translation units under
+// components/latter_ui/:
 //   page_clock_home.cpp, page_music.cpp, page_weather.cpp, page_area_hub.cpp,
-//   page_remote.cpp, page_system.cpp, page_ambient_va.cpp, page_tools.cpp,
-//   page_comms.cpp, page_games.cpp.
+//   page_home_hub.cpp, page_remote.cpp, page_system.cpp, page_ambient_va.cpp,
+//   page_tools.cpp, page_time.cpp, page_games.cpp.
 // ==============================================================================
 
 #include <cstdint>
@@ -40,8 +40,6 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_comms_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
 
 // ------------------------------------------------------------------------------

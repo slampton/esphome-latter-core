@@ -187,7 +187,6 @@ namespace ToolsSubpage {
   static constexpr int LEVEL      = 7;
   static constexpr int COIN_FLIP  = 8;
   static constexpr int CALENDAR   = 9;
-  static constexpr int INTERCOM   = 10;
 }  // namespace ToolsSubpage
 
 namespace TimeSubpage {

@@ -215,13 +215,21 @@ inline void emit_area_action(std::string_view entity_id,
 }
 
 template <typename OutboxT = std::nullptr_t>
-inline void emit_alarm_action(std::string_view alarm_service,
+inline void emit_alarm_action(std::string_view action,
                               std::string_view code = "",
                               OutboxT outbox = nullptr) {
-  latter_rpc::emit(outbox, "area_action", {
-    {"action", alarm_service},
-    {"code", code},
-  });
+  if (code.empty()) {
+    latter_rpc::emit(outbox, "area_action", {
+      {"entity_id", "home_hub.alarm"},
+      {"action", action},
+    });
+  } else {
+    latter_rpc::emit(outbox, "area_action", {
+      {"entity_id", "home_hub.alarm"},
+      {"action", action},
+      {"code", code},
+    });
+  }
 }
 
 // 8. set_active_area

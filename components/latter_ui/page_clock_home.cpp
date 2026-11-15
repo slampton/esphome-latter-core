@@ -2115,13 +2115,11 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
       render_tools_page(it, ctx);
       break;
     case PageId::HOME_HUB:
+    case PageId::CAMERAS:
       render_home_hub_page(it, ctx);
       break;
     case PageId::TIME:
       render_time_page(it, ctx);
-      break;
-    case PageId::CAMERAS:
-      render_cameras_page(it, ctx);
       break;
     default:
       render_home_page(it, ctx);

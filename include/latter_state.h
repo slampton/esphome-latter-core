@@ -163,8 +163,27 @@ struct LinkState {
   uint32_t last_wifi_connect_ms = 0;
 };
 
+namespace HomeHubTab {
+  static constexpr int ALARM      = 0;
+  static constexpr int CAMERAS    = 1;
+  static constexpr int INTERCOM   = 2;
+  static constexpr int THERMOSTAT = 3;
+  static constexpr int ENTRY      = 4;
+  static constexpr int VACUUM     = 5;
+}  // namespace HomeHubTab
+
+inline constexpr int kMaxHomeHubTabs = 6;
+
+inline constexpr uint16_t kAlarmCapCodeDisarm = 0x01U;
+inline constexpr uint16_t kAlarmCapCodeArm    = 0x02U;
+inline constexpr uint16_t kAlarmCapArmHome    = 0x04U;
+inline constexpr uint16_t kAlarmCapArmAway    = 0x08U;
+inline constexpr uint16_t kAlarmCapArmNight   = 0x10U;
+inline constexpr uint16_t kAlarmCapDefault    = kAlarmCapArmHome | kAlarmCapArmAway;
+
 struct HomeHubState {
   int tab = 0;
+  int mode_bar_page = 0;
   int thermostat_target_f = -1;
   float thermostat_current_f = NAN;
   std::string thermostat_mode = "";
@@ -190,6 +209,7 @@ struct AreaContextState {
   int covers_open = 0;
   std::string alarm_entity = "";
   std::string alarm_state = "";
+  uint16_t alarm_caps = 0;
   std::string thermostat_entity = "";
   std::string lock_entity = "";
   std::string garage_entity = "";
@@ -209,7 +229,7 @@ struct AreaContextState {
   std::string activity_card = "";        // "1" / "0"; empty = not set -> kDefaultActivityCard
   std::string activity_sources = "";     // csv of source keys; empty = not set -> kDefaultActivitySources
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
-  std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,thermostat,entry,vacuum")
+  std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,cameras,intercom,thermostat,entry,vacuum")
   std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
   std::string local_tz_info = "";        // "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
   std::string world_clocks_summary = ""; // ";"-delimited "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
@@ -1106,6 +1126,7 @@ struct IntercomRuntimeState {
   std::string cam_intercom_status = "";
   int cam_noise_idx = 0;
   bool cam_landscape_mode = false;
+  bool cam_expanded_fullscreen = false;
   uint32_t last_cam_live_fetch_ms = 0;
   bool cam_download_in_progress = false;
 };
@@ -1481,19 +1502,21 @@ inline int parse_area_categories_csv(std::string_view csv, std::string *out_cats
   return n;
 }
 
-inline int home_category_tab_for_token(std::string_view sv) {
-  if (sv == "alarm") return 0;
-  if (sv == "thermostat") return 1;
-  if (sv == "entry") return 2;
-  if (sv == "vacuum") return 3;
+inline int home_category_tab_for_token(std::string_view sv) noexcept {
+  if (sv == "alarm") return HomeHubTab::ALARM;
+  if (sv == "cameras") return HomeHubTab::CAMERAS;
+  if (sv == "intercom") return HomeHubTab::INTERCOM;
+  if (sv == "thermostat") return HomeHubTab::THERMOSTAT;
+  if (sv == "entry") return HomeHubTab::ENTRY;
+  if (sv == "vacuum") return HomeHubTab::VACUUM;
   return -1;
 }
 
-inline int parse_home_categories_csv(std::string_view csv, int out_tabs[4]) {
-  if (csv.empty() || out_tabs == nullptr) return 0;
+inline int parse_home_categories_csv(std::string_view csv, int *out_tabs, int max_tabs = kMaxHomeHubTabs) {
+  if (csv.empty() || out_tabs == nullptr || max_tabs <= 0) return 0;
   int n = 0;
   size_t start = 0;
-  while (start <= csv.size() && n < 4) {
+  while (start <= csv.size() && n < max_tabs) {
     size_t pos = csv.find(',', start);
     std::string_view part =
         (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start);
@@ -1648,7 +1671,15 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.area_icon                = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ICON)]);
   st.local_tz_info            = std::string(f[static_cast<size_t>(AreaCtxField::LOCAL_TZ_INFO)]);
   st.world_clocks_summary     = std::string(f[static_cast<size_t>(AreaCtxField::WORLD_CLOCKS_SUMMARY)]);
+  const uint32_t raw_alarm_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::ALARM_CAPS)], 0U);
+  st.alarm_caps = (raw_alarm_caps != 0U)
+                      ? static_cast<uint16_t>(raw_alarm_caps & 0xFFFFU)
+                      : (!st.alarm_entity.empty() ? kAlarmCapDefault : 0U);
   return true;
+}
+
+inline uint16_t effective_alarm_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
+  return (ac.alarm_caps != 0U) ? ac.alarm_caps : kAlarmCapDefault;
 }
 
 static constexpr uint8_t kActivitySourceAll = 0x3E;
@@ -2829,15 +2860,15 @@ inline int dock_app_id_for_token(std::string_view tok) {
   return -1;
 }
 
-inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = area_ctx_state()) {
+inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = area_ctx_state(),
+                                 int max_tabs = kMaxHomeHubTabs) {
+  if (out_tabs == nullptr || max_tabs <= 0) return 0;
   if (ac.epoch == 0U) {
-    out_tabs[0] = 0;
-    out_tabs[1] = 1;
-    out_tabs[2] = 2;
-    out_tabs[3] = 3;
-    return 4;
+    const int n = std::min(max_tabs, kMaxHomeHubTabs);
+    for (int i = 0; i < n; ++i) out_tabs[i] = i;
+    return n;
   }
-  return parse_home_categories_csv(ac.home_categories, out_tabs);
+  return parse_home_categories_csv(ac.home_categories, out_tabs, max_tabs);
 }
 
 inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_prefs()) {
@@ -2864,9 +2895,35 @@ inline int resolve_start_screen_page(int app) {
   return app;
 }
 
+inline constexpr bool is_alarm_entity_target(std::string_view domain_or_entity) noexcept {
+  return domain_or_entity == "home_hub.alarm" ||
+         domain_or_entity == "alarm_control_panel" ||
+         domain_or_entity.rfind("alarm_control_panel.", 0) == 0;
+}
+
+inline constexpr bool is_alarm_disarm_action(std::string_view action) noexcept {
+  return action == "disarm" ||
+         action == "alarm_disarm" ||
+         action == "alarm_control_panel.alarm_disarm";
+}
+
+inline constexpr bool is_alarm_arm_action(std::string_view action) noexcept {
+  return action == "arm_home" ||
+         action == "arm_away" ||
+         action == "arm_night" ||
+         action.rfind("alarm_arm_", 0) == 0 ||
+         action.rfind("alarm_control_panel.alarm_arm_", 0) == 0;
+}
+
 inline bool is_sensitive_perimeter_action_impl(const std::string &domain_or_entity,
-                                              const std::string &action, int level = 100) {
-  if (action == "unlock" || action == "disarm" || action == "unlock_door" || action == "open_cover") {
+                                               const std::string &action, int level = 100) {
+  if (is_alarm_disarm_action(action)) {
+    return true;
+  }
+  if (is_alarm_entity_target(domain_or_entity) && is_alarm_arm_action(action)) {
+    return (effective_alarm_caps() & kAlarmCapCodeArm) != 0U;
+  }
+  if (action == "unlock" || action == "unlock_door" || action == "open_cover") {
     return true;
   }
   if (domain_or_entity == "lock" && action == "open") {
@@ -2883,6 +2940,39 @@ inline bool is_sensitive_perimeter_action_impl(const std::string &domain_or_enti
     return true;
   }
   return false;
+}
+
+inline bool evaluate_perimeter_action_blocked(std::string_view policy,
+                                              const std::string &domain_or_entity,
+                                              const std::string &action,
+                                              int level = 100) {
+  if (policy != "block") return false;
+  if (is_alarm_arm_action(action)) return false;
+  return is_sensitive_perimeter_action_impl(domain_or_entity, action, level);
+}
+
+inline bool evaluate_perimeter_pin_prompt(std::string_view policy,
+                                          const std::string &domain_or_entity,
+                                          const std::string &action,
+                                          int level,
+                                          uint16_t alarm_caps,
+                                          bool is_stationary) {
+  if (is_alarm_entity_target(domain_or_entity) ||
+      is_alarm_disarm_action(action) ||
+      is_alarm_arm_action(action)) {
+    if (is_alarm_disarm_action(action)) {
+      if (policy == "block") return false;
+      return ((alarm_caps & kAlarmCapCodeDisarm) != 0U) || (policy == "require_pin");
+    }
+    if (is_alarm_arm_action(action)) {
+      return (alarm_caps & kAlarmCapCodeArm) != 0U;
+    }
+    return false;
+  }
+  if (!is_sensitive_perimeter_action_impl(domain_or_entity, action, level)) return false;
+  if (policy == "allow" || policy == "block") return false;
+  if (policy == "require_pin") return true;
+  return is_stationary;
 }
 
 inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
@@ -3238,6 +3328,7 @@ inline int &light_insp_bri_pct() { return runtime_state().area.light_insp_bri_pc
 inline std::string &area_color_hex_param() { return runtime_state().area.color_hex_param; }
 
 inline int &home_hub_tab() { return home_hub_state().tab; }
+inline int &home_hub_mode_bar_page() { return home_hub_state().mode_bar_page; }
 inline int &home_hub_thermostat_target_f() { return home_hub_state().thermostat_target_f; }
 inline std::string &home_hub_thermostat_mode() { return home_hub_state().thermostat_mode; }
 inline GarageState &home_hub_garage_state() { return home_hub_state().garage_state; }
@@ -3423,8 +3514,14 @@ inline bool &cam_intercom_ptt_active() { return runtime_state().intercom.cam_int
 inline std::string &cam_intercom_status() { return runtime_state().intercom.cam_intercom_status; }
 inline int &cam_noise_idx() { return runtime_state().intercom.cam_noise_idx; }
 inline bool &cam_landscape_mode() { return runtime_state().intercom.cam_landscape_mode; }
+inline bool &cam_expanded_fullscreen() { return runtime_state().intercom.cam_expanded_fullscreen; }
 inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last_cam_live_fetch_ms; }
 inline bool &cam_download_in_progress() { return runtime_state().intercom.cam_download_in_progress; }
+
+inline bool is_camera_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  return rs.nav.gui_page == PageId::CAMERAS ||
+         (rs.nav.gui_page == PageId::HOME_HUB && home_hub_state().tab == HomeHubTab::CAMERAS);
+}
 
 inline int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
                                        std::string out_labels[5], bool out_all[5] = nullptr) {
@@ -3552,6 +3649,9 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 9:
       sub = home_hub_tab();
+      drill = (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
+              (rs.intercom.cam_quick_reply_open ? 2 : 0) |
+              (rs.intercom.live_call_mode ? 4 : 0);
       break;
     case 10:
       sub = rs.nav.time_subpage;

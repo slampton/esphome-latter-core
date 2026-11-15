@@ -62,6 +62,7 @@ RETIRED_PATHS = (
     "include/ui_ambient_va.h",
     "include/ui_system.h",
     "components/latter_ui/gesture_engine.cpp",
+    "components/latter_ui/page_comms.cpp",
     "modules/features",
     "modules/latter_client.yaml",
     "modules/area_control.yaml",

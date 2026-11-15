@@ -308,27 +308,26 @@ void render_vertical_page_pips(esphome::display::Display &it, bool show_up, bool
                                esphome::Color col_inactive) {
   (void)col_inactive;
   if (!show_up && !show_down) return;
-#if LATTER_ROUND_DISPLAY
-  const int mask_x = 395;
-  const int chev_x = 415;
-#else
-  const int mask_x = (SCREEN_W < 380) ? (SCREEN_W - 30) : ((SCREEN_W > 520) ? (SCREEN_W - 88) : (SCREEN_W - 42));
-  const int chev_x = (SCREEN_W < 380) ? (SCREEN_W - 15) : ((SCREEN_W > 520) ? (SCREEN_W - 48) : (SCREEN_W - 21));
-#endif
+  int mask_x = 0, chev_x = 0, hit_x0 = 0, hit_w = 0, min_hit_h = 0;
+  compute_vertical_page_pips_x(SCREEN_W, LATTER_ROUND_DISPLAY != 0, LATTER_PANEL_PPI,
+                               mask_x, chev_x, hit_x0, hit_w, min_hit_h);
   const int up_y = scale_y(162);
   const int dn_y = scale_y(278);
-  if (!backdrop_active()) {
+  if (!backdrop_active() && mask_x < SCREEN_W) {
     fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
   }
   if (show_up) {
     render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, backdrop_active());
-    frame_hits().add_rect(mask_x - scale_x(12), scale_y(70), SCREEN_W - (mask_x - scale_x(12)),
-                          SCREEN_CY - scale_y(70), WidgetId::CHEVRON_UP, kHitTap);
+    const int up_y0 = std::min(scale_y(70), std::max(0, SCREEN_CY - min_hit_h));
+    const int up_h = std::max(min_hit_h, SCREEN_CY - up_y0);
+    frame_hits().add_rect(hit_x0, up_y0, hit_w, std::min(SCREEN_H - up_y0, up_h),
+                          WidgetId::CHEVRON_UP, kHitTap);
   }
   if (show_down) {
     render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, backdrop_active());
-    frame_hits().add_rect(mask_x - scale_x(12), SCREEN_CY, SCREEN_W - (mask_x - scale_x(12)),
-                          (SCREEN_H - scale_y(70)) - SCREEN_CY, WidgetId::CHEVRON_DOWN, kHitTap);
+    const int dn_h = std::max(min_hit_h, (SCREEN_H - scale_y(70)) - SCREEN_CY);
+    frame_hits().add_rect(hit_x0, SCREEN_CY, hit_w, std::min(SCREEN_H - SCREEN_CY, dn_h),
+                          WidgetId::CHEVRON_DOWN, kHitTap);
   }
 }
 
@@ -1257,21 +1256,19 @@ void pin_pad_backspace() {
 
 bool is_perimeter_action_blocked(const std::string &policy, const std::string &domain_or_entity,
                                  const std::string &action, int level) {
-  if (policy != "block") return false;
-  return is_sensitive_perimeter_action_impl(domain_or_entity, action, level);
+  return evaluate_perimeter_action_blocked(policy, domain_or_entity, action, level);
 }
 
 bool requires_perimeter_pin_prompt(const std::string &policy, const std::string &domain_or_entity,
-                                   const std::string &action, int level, bool alarm_has_code) {
-  if (!is_sensitive_perimeter_action_impl(domain_or_entity, action, level)) return false;
-  if (policy == "allow" || policy == "block") return false;
-  if (policy == "require_pin") return true;
-#if LATTER_IS_STATIONARY
-  (void)alarm_has_code;
-  return true;
-#else
-  return alarm_has_code;
-#endif
+                                   const std::string &action, int level, uint16_t alarm_caps) {
+  return evaluate_perimeter_pin_prompt(
+      policy, domain_or_entity, action, level, alarm_caps, LATTER_IS_STATIONARY != 0);
+}
+
+bool requires_perimeter_pin_prompt(const std::string &policy, const std::string &domain_or_entity,
+                                   const std::string &action, int level) {
+  return requires_perimeter_pin_prompt(
+      policy, domain_or_entity, action, level, effective_alarm_caps());
 }
 
 void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,

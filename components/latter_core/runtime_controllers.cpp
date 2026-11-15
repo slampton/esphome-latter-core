@@ -113,26 +113,32 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     }
 
     {
-      int hh_tabs[4] = {0, 0, 0, 0};
+      int hh_tabs[kMaxHomeHubTabs]{};
       const int hh_cnt = collect_home_hub_tabs(hh_tabs, st);
       if (hh_cnt > 0) {
-        bool hh_ok = false;
+        int active_slot = -1;
         for (int i = 0; i < hh_cnt; i++) {
           if (hh_tabs[i] == home_hub_tab()) {
-            hh_ok = true;
+            active_slot = i;
             break;
           }
         }
-        if (!hh_ok) {
+        if (active_slot < 0) {
           home_hub_tab() = hh_tabs[0];
-          if (r.nav.gui_page == 9) eff.mark_dirty_full = true;
+          home_hub_mode_bar_page() = 0;
+          if (r.nav.gui_page == PageId::HOME_HUB) eff.mark_dirty_full = true;
+        } else {
+          sync_mode_bar_window(home_hub_mode_bar_page(), active_slot, hh_cnt);
         }
-      } else if (r.nav.gui_page == 9) {
-        eff.mark_dirty_full = true;
+      } else {
+        home_hub_mode_bar_page() = 0;
+        if (r.nav.gui_page == PageId::HOME_HUB) {
+          eff.mark_dirty_full = true;
+        }
       }
     }
 
-    if (r.nav.gui_page == PageId::CAMERAS &&
+    if (is_camera_view_active(r) &&
         r.alert.loaded_camera_url.empty() &&
         (!st.camera_snapshot_url.empty() || !st.cameras_summary.empty())) {
       eff.fetch_on_demand_camera = true;
@@ -181,7 +187,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.mark_dirty_full = true;
       }
       if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
-          gp == PageId::CAMERAS || (gp == 8 && r.nav.tools_subpage == 10)) {
+          gp == PageId::CAMERAS) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
         }

@@ -213,7 +213,11 @@ display:
           ((rs.nav.gui_page == latter_ui::PageId::TOOLS) &&
            ((rs.nav.tools_subpage == latter_ui::ToolsSubpage::FLASHLIGHT) ||
             (rs.nav.tools_subpage == latter_ui::ToolsSubpage::CALENDAR && latter_ui::cal_detail_mode() == 2 && ctx.camera_snapshot_art.width > 16))) ||
-          (rs.nav.gui_page == latter_ui::PageId::CAMERAS && !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16);
+          (((rs.nav.gui_page == latter_ui::PageId::HOME_HUB &&
+             latter_ui::home_hub_tab() == latter_ui::HomeHubTab::CAMERAS &&
+             latter_ui::cam_expanded_fullscreen()) ||
+            rs.nav.gui_page == latter_ui::PageId::CAMERAS) &&
+           !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16);
       const bool weather_sim_active = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
       const latter_ui::BackdropMode bd_mode = latter_ui::resolve_backdrop_mode(
           rs.nav.gui_page, rs.nav.home_subpage, ctx.home_weather_bg, weather_sim_active,

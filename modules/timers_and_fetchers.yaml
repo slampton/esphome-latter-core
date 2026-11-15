@@ -118,8 +118,8 @@ interval:
             }
           }
 
-          // Camera snapshot refresh while the Camera app is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)
-          if (rs.nav.display_power_state == 0 && rs.nav.gui_page == 12 &&
+          // Camera snapshot refresh while Home Hub Cameras tab is open (500 ms P4 / 900 ms S3, 4.5 s watchdog)
+          if (rs.nav.display_power_state == 0 && latter_ui::is_camera_view_active(rs) &&
               !latter_ui::cam_quick_reply_open() && !latter_ui::cam_intercom_ptt_active() &&
               !rs.voice.active && rs.voice.status_text.empty()) {
             uint32_t now_cam_ms = millis();
@@ -312,7 +312,7 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              return !rs.alert.camera_url.empty() && rs.nav.gui_page == 12;
+              return !rs.alert.camera_url.empty() && latter_ui::is_camera_view_active(rs);
           then:
             - lambda: 'latter_ui::cam_download_in_progress() = true;'
             - online_image.set_url:
@@ -330,7 +330,7 @@ script:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
               return !rs.alert.active &&
-                     !(rs.nav.gui_page == 12 || (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 9));
+                     !(latter_ui::is_camera_view_active(rs) || (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 9));
           then:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();

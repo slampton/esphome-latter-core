@@ -788,6 +788,26 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     }
     th = (th ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;
     sig ^= (th | 1U);
+  } else if (is_camera_view_active(rs) || rs.nav.gui_page == PageId::HOME_HUB) {
+    const auto &ac = area_ctx_state();
+    const auto &hh = home_hub_state();
+    uint32_t hh_sig = 2166136261U;
+    hh_sig = (hh_sig ^ ac.rev) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(ac.alarm_caps)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.thermostat_target_f + 10)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.lock_state)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.garage_state)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.intercom.cam_carousel_idx)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.width)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.height)) * 16777619U;
+    const uint32_t flags =
+        (rs.intercom.cam_call_active ? 1U : 0U) |
+        (rs.intercom.cam_listen_active ? 2U : 0U) |
+        (rs.intercom.cam_intercom_ptt_active ? 4U : 0U) |
+        (rs.intercom.cam_landscape_mode ? 8U : 0U) |
+        (!rs.intercom.cam_intercom_status.empty() ? 16U : 0U);
+    hh_sig = (hh_sig ^ flags) * 16777619U;
+    sig ^= (hh_sig | 1U);
   }
   return sig;
 }
@@ -822,14 +842,27 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
       rs.nav.update_check_state != static_cast<int>(UpdateCheckState::Idle)) {
     return true;
   }
-  if (rs.nav.gui_page == PageId::CAMERAS) {
+  if (is_camera_view_active(rs)) {
     return true;
+  }
+  if (rs.nav.gui_page == PageId::HOME_HUB) {
+    const auto &ac = area_ctx_state();
+    if (home_hub_tab() == HomeHubTab::ALARM &&
+        (rs.area.alarm_state == "arming" || rs.area.alarm_state == "pending" ||
+         rs.area.alarm_state == "triggered" || ac.alarm_state == "arming" ||
+         ac.alarm_state == "pending" || ac.alarm_state == "triggered")) {
+      return true;
+    }
+    if (home_hub_tab() == HomeHubTab::INTERCOM &&
+        (rs.intercom.cam_call_active || rs.intercom.cam_intercom_ptt_active)) {
+      return true;
+    }
   }
   if (rs.nav.gui_page == PageId::TOOLS) {
     const int ts = rs.nav.tools_subpage;
     return (ts == ToolsSubpage::STOPWATCH ||
             ts == ToolsSubpage::DICE || ts == ToolsSubpage::LEVEL ||
-            ts == ToolsSubpage::COIN_FLIP || ts == ToolsSubpage::INTERCOM);
+            ts == ToolsSubpage::COIN_FLIP);
   }
   return false;
 }

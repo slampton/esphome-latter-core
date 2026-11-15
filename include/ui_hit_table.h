@@ -140,11 +140,14 @@ namespace WidgetId {
   static constexpr uint16_t COVER_CLOSE_BTN    = 652;
   static constexpr uint16_t COVER_POS_SLIDER   = 653;
   static constexpr uint16_t LOCK_ACTION_BTN    = 660;
+  static constexpr uint16_t ENTRY_LOCK_CARD    = 661;
+  static constexpr uint16_t ENTRY_GARAGE_CARD  = 662;
   static constexpr uint16_t ALARM_MODE_BASE    = 665;  // 665..669
+  static constexpr uint16_t VACUUM_ACTION_BASE = 670;  // 670..672
   static constexpr uint16_t HUB_DOMAIN_CARD    = 680;  // 680..685 (param = domain_idx)
   static constexpr uint16_t HUB_ROW_ACTION     = 690;  // 690..694 (param = item_idx)
 
-  // Tools, Time & Comms (Page 8 / Page 10)
+  // Tools, Time & Home Hub Comms (Page 8 / Page 9 / Page 10)
   static constexpr uint16_t TOOLS_CARD_BASE     = 700;  // 700..705 (param = subpage)
   static constexpr uint16_t TIMER_TAB_BASE      = 710;  // 710..712 (param = slot 0..2)
   static constexpr uint16_t TIMER_PRESET_BASE   = 715;  // 715..718 (param = minutes/seconds)
@@ -174,6 +177,9 @@ namespace WidgetId {
   static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = target idx)
   static constexpr uint16_t INTERCOM_PTT_BTN    = 815;
   static constexpr uint16_t INTERCOM_MODE_BTN   = 816;
+  static constexpr uint16_t INTERCOM_SEG_BROADCAST = 817;
+  static constexpr uint16_t INTERCOM_SEG_CALL   = 818;
+  static constexpr uint16_t INTERCOM_UNLOCK_BTN = 819;
   static constexpr uint16_t CAM_PREV_BTN        = 820;
   static constexpr uint16_t CAM_NEXT_BTN        = 821;
   static constexpr uint16_t CAM_LISTEN_BTN      = 822;
@@ -181,6 +187,8 @@ namespace WidgetId {
   static constexpr uint16_t CAM_REPLY_MENU_BTN  = 824;
   static constexpr uint16_t CAM_NOISE_BTN       = 825;
   static constexpr uint16_t CAM_ORIENT_BTN      = 826;
+  static constexpr uint16_t CAM_SNAPSHOT_CARD   = 827;
+  static constexpr uint16_t CAM_UNLOCK_BTN      = 828;
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
 }  // namespace WidgetId
 
@@ -546,6 +554,33 @@ struct TouchRouter {
     handler();
   }
 };
+
+inline constexpr int tools_launcher_item_count_for(bool round_display, bool has_imu) noexcept {
+  return 5 + (round_display ? 1 : 0) + (has_imu ? 1 : 0);
+}
+
+inline constexpr int tools_launcher_page_count(int item_count) noexcept {
+  return (item_count <= 6) ? 1 : ((item_count + 5) / 6);
+}
+
+inline constexpr void compute_vertical_page_pips_x(
+    int screen_w, bool is_round, int ppi,
+    int &out_mask_x, int &out_chev_x, int &out_hit_x0, int &out_hit_w, int &out_min_hit_h) noexcept {
+  if (is_round) {
+    out_mask_x = scale_w_for(395, screen_w);
+    out_chev_x = scale_w_for(415, screen_w);
+  } else {
+    out_mask_x = (screen_w < 380) ? (screen_w - 30) : ((screen_w > 520) ? (screen_w - 88) : (screen_w - 42));
+    out_chev_x = (screen_w < 380) ? (screen_w - 15) : ((screen_w > 520) ? (screen_w - 48) : (screen_w - 21));
+  }
+  const int min_hit = mm_to_px_for(7.0f, ppi);
+  const int raw_x0 = out_mask_x - scale_x_for(12, screen_w);
+  const int raw_w = screen_w - raw_x0;
+  out_hit_w = (raw_w >= min_hit) ? raw_w : ((min_hit <= screen_w) ? min_hit : screen_w);
+  out_hit_x0 = screen_w - out_hit_w;
+  if (out_hit_x0 < 0) out_hit_x0 = 0;
+  out_min_hit_h = min_hit;
+}
 
 inline TouchRouter &touch_router() {
   static TouchRouter s_router;

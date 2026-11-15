@@ -821,7 +821,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 6U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 44U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 45U);
 
   // Time + Weather dock tokens + 11-slot dock array capacity (9 user tokens + Settings)
   LATTER_CHECK(latter_ui::kMaxDockApps == 11);
@@ -861,15 +861,18 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
   LATTER_CHECK(!latter_ui::is_configured_remote_slot(""));
 
-  // Ordered Home Hub category CSV parser & collect_home_hub_tabs
-  int hh_tabs[4] = {-1, -1, -1, -1};
+  // Ordered Home Hub category CSV parser & collect_home_hub_tabs (6-category Home Hub)
+  int hh_tabs[latter_ui::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1, -1};
   latter_ui::AreaContextState uninit_ac{};
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 4);
-  LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 && hh_tabs[3] == 3);
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 6);
+  LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 &&
+               hh_tabs[3] == 3 && hh_tabs[4] == 4 && hh_tabs[5] == 5);
   uninit_ac.epoch = 10U;
-  uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum";
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 2);
-  LATTER_CHECK(hh_tabs[0] == 3 && hh_tabs[1] == 1);
+  uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum,cameras";
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 3);
+  LATTER_CHECK(hh_tabs[0] == latter_ui::HomeHubTab::VACUUM &&
+               hh_tabs[1] == latter_ui::HomeHubTab::THERMOSTAT &&
+               hh_tabs[2] == latter_ui::HomeHubTab::CAMERAS);
   uninit_ac.home_categories.clear();
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
 
@@ -1048,7 +1051,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111403L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111501L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -1589,7 +1592,7 @@ void test_phase2_glass_and_scissor_compositor() {
   const std::string ui_gfx_h = read_repo_file("../../include/ui_gfx.h");
   const std::string home_cpp = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
   const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
-  const std::string comms_cpp = read_repo_file("../../components/latter_ui/page_comms.cpp");
+  const std::string home_hub_cpp = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
 
   LATTER_CHECK(ui_types_h.find("enum class GlassVariant : uint8_t") != std::string::npos);
   LATTER_CHECK(ui_types_h.find("kChromeModalBg(16, 20, 28)") != std::string::npos);
@@ -1601,8 +1604,8 @@ void test_phase2_glass_and_scissor_compositor() {
   LATTER_CHECK(home_cpp.find("glass_alpha_for_text") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("Color(230, 115, 0)") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
-  LATTER_CHECK(comms_cpp.find("kChromeGlassTint, 176") == std::string::npos);
-  LATTER_CHECK(comms_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
+  LATTER_CHECK(home_hub_cpp.find("kChromeGlassTint, 176") == std::string::npos);
+  LATTER_CHECK(home_hub_cpp.find("GlassVariant::ReadableDark") == std::string::npos);
 }
 
 void test_phase3_weather_sky_backdrop_and_home_scene() {
@@ -2858,12 +2861,17 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_alarms_root);
   rs_ctx.alarms.edit_idx = 0;
 
-  rs_ctx.nav.gui_page = 12;  // PageId::CAMERAS
+  rs_ctx.nav.gui_page = 9;  // PageId::HOME_HUB -> CAMERAS
+  home_hub_tab() = HomeHubTab::CAMERAS;
+  rs_ctx.intercom.cam_expanded_fullscreen = false;
   rs_ctx.intercom.cam_quick_reply_open = false;
   const int ctx_cam_root = compute_touch_context(rs_ctx);
   rs_ctx.intercom.cam_quick_reply_open = true;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
   rs_ctx.intercom.cam_quick_reply_open = false;
+  rs_ctx.intercom.cam_expanded_fullscreen = true;
+  LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
+  rs_ctx.intercom.cam_expanded_fullscreen = false;
 
   rs_ctx.nav.gui_page = 8;  // PageId::TOOLS -> Calendar
   rs_ctx.nav.tools_subpage = 9;
@@ -3114,6 +3122,195 @@ void test_home_activity_card_d045() {
   LATTER_CHECK(ui_doc.find("### D-045:") != std::string::npos);
 }
 
+void test_home_hub_v6_alarm_caps_and_tools_pagination() {
+  using namespace latter_ui;
+
+  reset_runtime_state();
+
+  // 1. 6-category Home Hub CSV order, deduplication, conveyor windowing & ALARM_CAPS parsing
+  LATTER_CHECK(kMaxHomeHubTabs == 6);
+  LATTER_CHECK(std::string_view(kDefaultHomeCategories) ==
+               "alarm,cameras,intercom,thermostat,entry,vacuum");
+
+  int tabs[kMaxHomeHubTabs]{};
+  LATTER_CHECK(parse_home_categories_csv(kDefaultHomeCategories, tabs, kMaxHomeHubTabs) == 6);
+  LATTER_CHECK(tabs[0] == HomeHubTab::ALARM &&
+               tabs[1] == HomeHubTab::CAMERAS &&
+               tabs[2] == HomeHubTab::INTERCOM &&
+               tabs[3] == HomeHubTab::THERMOSTAT &&
+               tabs[4] == HomeHubTab::ENTRY &&
+               tabs[5] == HomeHubTab::VACUUM);
+
+  LATTER_CHECK(parse_home_categories_csv(
+                   "intercom,alarm,cameras,intercom,bogus,vacuum", tabs, kMaxHomeHubTabs) == 4);
+  LATTER_CHECK(tabs[0] == HomeHubTab::INTERCOM &&
+               tabs[1] == HomeHubTab::ALARM &&
+               tabs[2] == HomeHubTab::CAMERAS &&
+               tabs[3] == HomeHubTab::VACUUM);
+
+  // 4-slot conveyor windowing across 6 tabs
+  int start_idx = 0;
+  sync_mode_bar_window(start_idx, 0, 6);
+  LATTER_CHECK(start_idx == 0);
+  sync_mode_bar_window(start_idx, 3, 6);
+  LATTER_CHECK(start_idx == 0);
+  sync_mode_bar_window(start_idx, 4, 6);
+  LATTER_CHECK(start_idx == 1);
+  sync_mode_bar_window(start_idx, 5, 6);
+  LATTER_CHECK(start_idx == 2);
+  sync_mode_bar_window(start_idx, 1, 6);
+  LATTER_CHECK(start_idx == 1);
+
+  // Protocol v3 AreaCtxField::ALARM_CAPS (field 44) parsing & 0x0C fallback
+  auto build_ac_payload = [](uint32_t rev, std::string_view alarm_ent, std::string_view caps_str,
+                             std::string_view cats_str) {
+    std::string p = "v3\x1f" "1\x1f" + std::to_string(rev);
+    for (size_t i = 3; i < static_cast<size_t>(AreaCtxField::COUNT); ++i) {
+      p.push_back(kProtocolFieldSep);
+      if (i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) p.append(alarm_ent);
+      else if (i == static_cast<size_t>(AreaCtxField::HOME_CATEGORIES)) p.append(cats_str);
+      else if (i == static_cast<size_t>(AreaCtxField::ALARM_CAPS)) p.append(caps_str);
+    }
+    return p;
+  };
+
+  AreaContextState ac{};
+  HomeHubState hub{};
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_ac_payload(1U, "alarm_control_panel.home_alarm", "29", "alarm,cameras,entry"), ac, hub));
+  LATTER_CHECK(ac.alarm_caps == 29U);  // 0x1D = disarm_pin | arm_home | arm_away | arm_night
+  LATTER_CHECK(effective_alarm_caps(ac) == 29U);
+
+  // Configured alarm entity with unset/0 ALARM_CAPS defaults to kAlarmCapDefault (0x0C: arm_home | arm_away)
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_ac_payload(2U, "alarm_control_panel.home_alarm", "0", "alarm"), ac, hub));
+  LATTER_CHECK(ac.alarm_caps == kAlarmCapDefault && effective_alarm_caps(ac) == 0x0CU);
+
+  // 2. Separate Security Alarm PIN Capability Gating vs Lock/Garage Perimeter Policy
+  // Case A: HA alarm requires PIN to disarm (0x01) ONLY, code_arm_required == false (0x0D)
+  const uint16_t caps_disarm_only = kAlarmCapCodeDisarm | kAlarmCapArmHome | kAlarmCapArmAway;
+  for (std::string_view pol : {std::string_view(""), std::string_view("allow"), std::string_view("require_pin")}) {
+    LATTER_CHECK(!evaluate_perimeter_action_blocked(pol, "home_hub.alarm", "disarm", 0));
+    LATTER_CHECK(evaluate_perimeter_pin_prompt(pol, "home_hub.alarm", "disarm", 0, caps_disarm_only, false));
+    LATTER_CHECK(evaluate_perimeter_pin_prompt(pol, "alarm_control_panel.home_alarm", "disarm", 0, caps_disarm_only, true));
+
+    // Arming NEVER prompts or blocks when code_arm_required (0x02) is 0!
+    for (const char *arm_act : {"arm_home", "arm_away", "arm_night"}) {
+      LATTER_CHECK(!evaluate_perimeter_action_blocked(pol, "home_hub.alarm", arm_act, 0));
+      LATTER_CHECK(!evaluate_perimeter_pin_prompt(pol, "home_hub.alarm", arm_act, 0, caps_disarm_only, false));
+      LATTER_CHECK(!evaluate_perimeter_pin_prompt(pol, "home_hub.alarm", arm_act, 0, caps_disarm_only, true));
+    }
+  }
+  // Under "block", disarm is blocked while arming without code_arm_required remains unblocked & unprompted
+  LATTER_CHECK(evaluate_perimeter_action_blocked("block", "home_hub.alarm", "disarm", 0));
+  LATTER_CHECK(!evaluate_perimeter_action_blocked("block", "home_hub.alarm", "arm_away", 0));
+  LATTER_CHECK(!evaluate_perimeter_pin_prompt("block", "home_hub.alarm", "arm_away", 0, caps_disarm_only, true));
+
+  // Case B: HA alarm has code_arm_required == true (0x02) -> arming prompts for PIN!
+  const uint16_t caps_arm_and_disarm = caps_disarm_only | kAlarmCapCodeArm;
+  for (const char *arm_act : {"arm_home", "arm_away", "arm_night"}) {
+    LATTER_CHECK(evaluate_perimeter_pin_prompt("allow", "home_hub.alarm", arm_act, 0, caps_arm_and_disarm, false));
+    LATTER_CHECK(!evaluate_perimeter_action_blocked("block", "home_hub.alarm", arm_act, 0));
+  }
+
+  // Case C: HA alarm has no code configured at all (0x0C) -> disarm prompts only under "require_pin"
+  LATTER_CHECK(!evaluate_perimeter_pin_prompt("allow", "home_hub.alarm", "disarm", 0, kAlarmCapDefault, true));
+  LATTER_CHECK(!evaluate_perimeter_pin_prompt("", "home_hub.alarm", "disarm", 0, kAlarmCapDefault, true));
+  LATTER_CHECK(evaluate_perimeter_pin_prompt("require_pin", "home_hub.alarm", "disarm", 0, kAlarmCapDefault, false));
+
+  // Case D: Lock & Garage perimeter policy preserved (unlock/open gated; lock/close never gated)
+  LATTER_CHECK(!evaluate_perimeter_pin_prompt("allow", "home_hub.lock", "unlock", 0, caps_disarm_only, true));
+  LATTER_CHECK(evaluate_perimeter_pin_prompt("require_pin", "home_hub.lock", "unlock", 0, caps_disarm_only, false));
+  LATTER_CHECK(evaluate_perimeter_action_blocked("block", "home_hub.lock", "unlock", 0));
+  LATTER_CHECK(!evaluate_perimeter_pin_prompt("require_pin", "home_hub.lock", "lock", 0, caps_disarm_only, true));
+  LATTER_CHECK(!evaluate_perimeter_action_blocked("block", "home_hub.garage", "turn_off", 0));
+  LATTER_CHECK(evaluate_perimeter_pin_prompt("require_pin", "home_hub.garage", "turn_on", 100, caps_disarm_only, false));
+
+  // Canonical emit_alarm_action JSON framing (omits "code" when empty; includes "code" when provided)
+  MockRpcOutbox rpc_box{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_actions::emit_alarm_action("arm_home", "", &rpc_box);
+  LATTER_CHECK(!rpc_box.published.empty());
+  LATTER_CHECK(rpc_box.published.back().find("\"entity_id\":\"home_hub.alarm\"") != std::string::npos);
+  LATTER_CHECK(rpc_box.published.back().find("\"action\":\"arm_home\"") != std::string::npos);
+  LATTER_CHECK(rpc_box.published.back().find("\"code\"") == std::string::npos);
+
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  rpc_box.published.clear();
+  latter_actions::emit_alarm_action("disarm", "2468", &rpc_box);
+  LATTER_CHECK(!rpc_box.published.empty());
+  LATTER_CHECK(rpc_box.published.back().find("\"entity_id\":\"home_hub.alarm\"") != std::string::npos);
+  LATTER_CHECK(rpc_box.published.back().find("\"action\":\"disarm\"") != std::string::npos);
+  LATTER_CHECK(rpc_box.published.back().find("\"code\":\"2468\"") != std::string::npos);
+
+  // 3. Tools N-page launcher pagination & round vertical pips bezel-safe X scaling
+  static_assert(tools_launcher_item_count_for(false, false) == 5);
+  static_assert(tools_launcher_item_count_for(false, true) == 6);
+  static_assert(tools_launcher_item_count_for(true, false) == 6);
+  static_assert(tools_launcher_item_count_for(true, true) == 7);
+
+  static_assert(tools_launcher_page_count(0) == 1);
+  static_assert(tools_launcher_page_count(1) == 1);
+  static_assert(tools_launcher_page_count(6) == 1);
+  static_assert(tools_launcher_page_count(7) == 2);
+  static_assert(tools_launcher_page_count(12) == 2);
+  static_assert(tools_launcher_page_count(13) == 3);
+  static_assert(tools_launcher_page_count(19) == 4);
+
+  struct PanelProfile {
+    int w;
+    int h;
+    bool round;
+    int ppi;
+  };
+  constexpr PanelProfile kPanels[7] = {
+      {320, 480, false, 165},
+      {360, 360, true, 260},
+      {410, 502, false, 315},
+      {412, 412, true, 286},
+      {466, 466, true, 266},
+      {480, 480, false, 313},
+      {720, 720, false, 254},
+  };
+  for (const auto &p : kPanels) {
+    int mask_x = 0, chev_x = 0, hit_x0 = 0, hit_w = 0, min_hit_h = 0;
+    compute_vertical_page_pips_x(p.w, p.round, p.ppi, mask_x, chev_x, hit_x0, hit_w, min_hit_h);
+    const int min_7mm = mm_to_px_for(7.0f, p.ppi);
+    LATTER_CHECK(mask_x >= 0 && chev_x > mask_x && chev_x + 8 <= p.w);
+    LATTER_CHECK(hit_x0 >= 0 && hit_x0 + hit_w <= p.w);
+    LATTER_CHECK(hit_w >= min_7mm && min_hit_h >= min_7mm);
+  }
+
+  // 4. Camera view active predicate & source-level architectural guards
+  reset_runtime_state();
+  auto &rs_cam = runtime_state();
+  rs_cam.nav.gui_page = PageId::HOME_HUB;
+  home_hub_tab() = HomeHubTab::ALARM;
+  LATTER_CHECK(!is_camera_view_active(rs_cam));
+  home_hub_tab() = HomeHubTab::CAMERAS;
+  LATTER_CHECK(is_camera_view_active(rs_cam));
+  const int sub_cam_framed = compute_subpage_id(
+      PageId::HOME_HUB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      HomeHubTab::CAMERAS, 0, 0, 0, 1, 0, 0);
+  const int sub_cam_expanded = compute_subpage_id(
+      PageId::HOME_HUB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      HomeHubTab::CAMERAS, 0, 0, 0, 1, 0, 1);
+  LATTER_CHECK(sub_cam_expanded != sub_cam_framed);
+  rs_cam.nav.gui_page = PageId::CAMERAS;
+  LATTER_CHECK(is_camera_view_active(rs_cam));
+
+  const std::string hh_src = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
+  const std::string area_src = read_repo_file("../../components/latter_ui/page_area_hub.cpp");
+  const std::string tools_src = read_repo_file("../../components/latter_ui/page_tools.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(hh_src.find("render_home_hub_page(") != std::string::npos);
+  LATTER_CHECK(hh_src.find("render_in_app_mode_bar_track(") != std::string::npos);
+  LATTER_CHECK(area_src.find("render_home_hub_page(") == std::string::npos);
+  LATTER_CHECK(tools_src.find("ToolsSubpage::INTERCOM") == std::string::npos);
+  LATTER_CHECK(tools_src.find("tools_launcher_page_count(") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-046:") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -3134,6 +3331,7 @@ int main() {
   test_v3_domain_reducer_and_timer_alarm();
   test_time_app_world_clocks_alarms_and_horology();
   test_home_activity_card_d045();
+  test_home_hub_v6_alarm_caps_and_tools_pagination();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

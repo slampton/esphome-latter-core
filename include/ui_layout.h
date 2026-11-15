@@ -436,6 +436,14 @@ inline int collect_home_dock_apps(int *out_apps) {
   return n;
 }
 
+inline constexpr int tools_launcher_item_count() noexcept {
+  return tools_launcher_item_count_for(LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0);
+}
+
+inline constexpr int tools_launcher_page_count() noexcept {
+  return tools_launcher_page_count(tools_launcher_item_count());
+}
+
 inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_game,
                               int music_overlay_mode, int area_subpage, bool area_picker,
                               int remote_subpage, int tools_subpage,
@@ -449,7 +457,11 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
            runtime_state().alarms.edit_idx == 0;
   }
   if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
-  if (anchor == PageId::HOME_HUB) return gui_page == PageId::HOME_HUB;
+  if (anchor == PageId::HOME_HUB) {
+    return gui_page == PageId::HOME_HUB &&
+           !cam_expanded_fullscreen() &&
+           !cam_quick_reply_open();
+  }
   if (anchor == PageId::AREA) {
     if (runtime_state().area.active_area_id.empty()) {
       return gui_page == PageId::AREA &&
@@ -460,7 +472,10 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   if (anchor == PageId::REMOTE) return gui_page == PageId::REMOTE && remote_subpage == 0;
   if (anchor == PageId::WEATHER) return gui_page == PageId::WEATHER;
   if (anchor == PageId::CAMERAS) {
-    return gui_page == PageId::CAMERAS && !cam_quick_reply_open();
+    return (gui_page == PageId::CAMERAS ||
+            (gui_page == PageId::HOME_HUB && home_hub_tab() == HomeHubTab::CAMERAS)) &&
+           !cam_expanded_fullscreen() &&
+           !cam_quick_reply_open();
   }
   if (anchor == PageId::GAMES) return gui_page == PageId::GAMES && active_game == 0;
   if (anchor == PageId::TOOLS) {
@@ -484,6 +499,9 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
   if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
+    return false;
+  }
+  if (gui_page == PageId::HOME_HUB && (cam_expanded_fullscreen() || cam_quick_reply_open())) {
     return false;
   }
   if (gui_page == PageId::CAMERAS && cam_quick_reply_open()) return false;
@@ -553,10 +571,10 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
     out_xs[2] = cx + scale_x(84);
   } else {
 #if LATTER_ROUND_DISPLAY
-    out_xs[0] = 112;
-    out_xs[1] = 193;
-    out_xs[2] = 274;
-    out_xs[3] = 355;
+    out_xs[0] = scale_w(112);
+    out_xs[1] = scale_w(193);
+    out_xs[2] = scale_w(274);
+    out_xs[3] = scale_w(355);
 #else
     const int stride = (SCREEN_W < 380) ? 74 : scale_x(98);
     out_xs[0] = cx - (stride * 3) / 2;
@@ -688,7 +706,7 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0) {
 inline int get_dock_slot_stride(const int *win_xs, int vis_count) {
   if (vis_count >= 2) return win_xs[1] - win_xs[0];
 #if LATTER_ROUND_DISPLAY
-  return 81;
+  return scale_w(81);
 #else
   return (SCREEN_W < 380) ? 74 : scale_x(98);
 #endif

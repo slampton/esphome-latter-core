@@ -237,8 +237,9 @@ void pin_pad_backspace();
 bool is_perimeter_action_blocked(const std::string &policy, const std::string &domain_or_entity,
                                  const std::string &action, int level = 100);
 bool requires_perimeter_pin_prompt(const std::string &policy, const std::string &domain_or_entity,
-                                   const std::string &action, int level = 100,
-                                   bool alarm_has_code = false);
+                                   const std::string &action, int level = 100);
+bool requires_perimeter_pin_prompt(const std::string &policy, const std::string &domain_or_entity,
+                                   const std::string &action, int level, uint16_t alarm_caps);
 
 void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
                    esphome::display::BaseFont *font_hdr, esphome::display::BaseFont *font_key,

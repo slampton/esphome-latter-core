@@ -15,7 +15,7 @@ static constexpr const char *kDefaultDockApps = "music,home_hub,area,remote,game
 static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_card
 static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
-static constexpr const char *kDefaultHomeCategories = "alarm,thermostat,entry,vacuum";  // defaults.home_categories
+static constexpr const char *kDefaultHomeCategories = "alarm,cameras,intercom,thermostat,entry,vacuum";  // defaults.home_categories
 
 enum class PowerProfile : uint8_t {
   PORTABLE_CARRY = 0,
@@ -99,7 +99,8 @@ enum class AreaCtxField : size_t {
   AREA_ICON = 41,  // area_icon (string)
   LOCAL_TZ_INFO = 42,  // local_tz_info (string)
   WORLD_CLOCKS_SUMMARY = 43,  // world_clocks_summary (string)
-  COUNT = 44
+  ALARM_CAPS = 44,  // alarm_caps (u16)
+  COUNT = 45
 };
 
 // Domain: active_media (sensor.<device>_active_media)
