@@ -23,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -40,7 +40,7 @@ jobs:
       # a brief outage of a download host does not fail a build that did not change them. Wake word models are
       # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
       - name: Restore downloaded remote files
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: '**/.esphome/external_files'
           key: external-files-esphome-2026.11.0b4-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
@@ -117,11 +117,11 @@ jobs:
         device: [pocket-assistant, mobile-assistant, wrist-assist, remote-assistant, desk-assistant]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Python
         id: py
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -133,7 +133,7 @@ jobs:
       # at it. Build directories are never cached: CMake stores absolute tool paths that a later runner
       # does not have (a cached build dir failed with "ninja --version: no such file or directory").
       - name: Restore ESP-IDF toolchain cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/esphome
           key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0b4
@@ -145,7 +145,7 @@ jobs:
       # a brief outage of a download host does not fail a build that did not change them. Wake word models are
       # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
       - name: Restore downloaded remote files
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: '**/.esphome/external_files'
           key: external-files-esphome-2026.11.0b4-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
@@ -164,7 +164,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

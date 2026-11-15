@@ -61,7 +61,7 @@ jobs:
             subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Board facts release gate (no L-confidence facts)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -128,13 +128,13 @@ jobs:
           EOF
 
       - name: Upload artifact for ${{ matrix.device.slug }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.device.slug }}
           path: dist/
 
       - name: Upload debug symbols for ${{ matrix.device.slug }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: elf-${{ matrix.device.slug }}
           path: elf/
@@ -155,12 +155,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download all device build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: build-*
           path: _site
@@ -183,13 +183,13 @@ jobs:
           git push origin "HEAD:refs/heads/stable" --force
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
