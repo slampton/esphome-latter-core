@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Latter — Web Firmware Installer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Firmware Installer | Latter</title>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
   :root, [data-theme="dark"] {
@@ -45,6 +45,21 @@
     flex-direction: column;
     font-size: 14px;
     line-height: 1.45;
+  }
+  .visually-hidden:where(:not(:focus-within, :active)) {
+    position: absolute !important;
+    clip-path: inset(50%) !important;
+    overflow: hidden !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    white-space: nowrap !important;
+  }
+  :where(a:any-link, button, select):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   header.topbar {
     display: flex;
@@ -97,7 +112,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 28px;
+    min-block-size: 28px;
     border: none;
     border-radius: 5px;
     background: transparent;
@@ -117,7 +132,7 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .container {
+  main.container {
     max-width: 1040px;
     width: 100%;
     margin: 0 auto;
@@ -141,36 +156,65 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
     gap: 12px;
-    margin-bottom: 22px;
+    margin-bottom: 10px;
   }
   .dev-card {
+    position: relative;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px;
-    cursor: pointer;
     transition: border-color 0.15s ease, background 0.15s ease;
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
-  .dev-card:hover {
+  .dev-card:has(.card-select-btn:hover) {
     background: var(--card-hover);
   }
   .dev-card.selected {
     border-color: var(--accent);
     background: var(--accent-subtle);
   }
-  .dev-card-hdr {
+  .dev-card:has(.card-select-btn:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .dev-card header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
   }
-  .dev-card-hdr strong {
+  .dev-card h2 {
+    margin: 0;
     font-size: 15.5px;
     font-weight: 500;
+  }
+  .card-select-btn {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
     color: var(--text-strong);
+    text-align: left;
+    cursor: pointer;
+    min-block-size: 24px;
+  }
+  .card-select-btn:focus-visible {
+    outline: none;
+  }
+  .card-select-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .dev-card a {
+    position: relative;
+    z-index: 1;
   }
   .chip-tag {
     font-size: 11px;
@@ -180,17 +224,44 @@
     border: 1px solid var(--border);
     color: var(--accent);
     font-weight: 500;
+    white-space: nowrap;
   }
   .dev-sub {
+    margin: 0;
     font-size: 12.5px;
     color: var(--text-strong);
     font-weight: 500;
   }
-  .dev-hw {
-    font-size: 12px;
-    color: var(--muted);
+  .dev-card footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     margin-top: auto;
     padding-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .hw-buy-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 24px;
+    padding: 2px 6px;
+    margin-right: -6px;
+    border-radius: 6px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .hw-buy-link:hover {
+    text-decoration: underline;
+    background: var(--accent-subtle);
+  }
+  .aff-note {
+    margin: 0 0 22px;
+    font-size: 12px;
+    color: var(--muted);
   }
   .installer-panel {
     background: var(--card);
@@ -214,6 +285,13 @@
     color: var(--muted);
     font-size: 13px;
   }
+  .installer-meta a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .installer-meta a:hover {
+    text-decoration: underline;
+  }
   .rev-picker {
     margin-top: 12px;
     display: grid;
@@ -222,6 +300,7 @@
   }
   .rev-picker select {
     max-width: 260px;
+    min-block-size: 32px;
     padding: 6px 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -237,6 +316,7 @@
     background: var(--accent);
     color: #ffffff;
     border: none;
+    min-block-size: 40px;
     padding: 11px 22px;
     border-radius: 8px;
     font-size: 14px;
@@ -253,7 +333,7 @@
     border-radius: 12px;
     padding: 18px 22px;
   }
-  .steps-card h3 {
+  .steps-card h2 {
     margin: 0 0 10px;
     font-size: 15px;
     font-weight: 500;
@@ -280,57 +360,58 @@
 <header class="topbar">
   <div class="brand-row">
     <div class="brand-logo">
-      <svg viewBox="0 0 24 24"><path d="M1.047 19.011L7.016 9.448A0.969 0.969 0 0 1 8.663 10.476L5.908 14.89L12.724 14.89A2.28 2.28 0 0 1 14.659 18.377L13.621 20.039A0.969 0.969 0 0 1 11.974 19.011L13.012 17.349A0.339 0.339 0 0 0 12.724 16.831L4.697 16.831L2.694 20.039A0.969 0.969 0 0 1 1.047 19.011ZM22.953 4.989L16.984 14.552A0.969 0.969 0 0 1 15.337 13.524L18.092 9.11L11.276 9.11A2.28 2.28 0 0 1 9.341 5.623L10.379 3.961A0.969 0.969 0 0 1 12.026 4.989L10.988 6.651A0.339 0.339 0 0 0 11.276 7.169L19.303 7.169L21.306 3.961A0.969 0.969 0 0 1 22.953 4.989Z"/></svg>
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M1.047 19.011L7.016 9.448A0.969 0.969 0 0 1 8.663 10.476L5.908 14.89L12.724 14.89A2.28 2.28 0 0 1 14.659 18.377L13.621 20.039A0.969 0.969 0 0 1 11.974 19.011L13.012 17.349A0.339 0.339 0 0 0 12.724 16.831L4.697 16.831L2.694 20.039A0.969 0.969 0 0 1 1.047 19.011ZM22.953 4.989L16.984 14.552A0.969 0.969 0 0 1 15.337 13.524L18.092 9.11L11.276 9.11A2.28 2.28 0 0 1 9.341 5.623L10.379 3.961A0.969 0.969 0 0 1 12.026 4.989L10.988 6.651A0.339 0.339 0 0 0 11.276 7.169L19.303 7.169L21.306 3.961A0.969 0.969 0 0 1 22.953 4.989Z"/></svg>
     </div>
     <strong style="font-size:18px;font-weight:500;">Latter Web Installer</strong>
     <span class="nav-badge">v3.0.0</span>
   </div>
   <div class="theme-icon-group" role="group" aria-label="Color Theme">
-    <button type="button" class="theme-icon-btn" data-theme-btn="light" title="Light Theme" onclick="setTheme('light')">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    <button type="button" class="theme-icon-btn" data-theme-btn="light" aria-label="Light Theme" aria-pressed="false" onclick="setTheme('light')">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
     </button>
-    <button type="button" class="theme-icon-btn" data-theme-btn="dark" title="Dark Theme" onclick="setTheme('dark')">
-      <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    <button type="button" class="theme-icon-btn" data-theme-btn="dark" aria-label="Dark Theme" aria-pressed="true" onclick="setTheme('dark')">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>
-    <button type="button" class="theme-icon-btn" data-theme-btn="auto" title="Auto (System)" onclick="setTheme('auto')">
-      <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <button type="button" class="theme-icon-btn" data-theme-btn="auto" aria-label="Auto Theme" aria-pressed="false" onclick="setTheme('auto')">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
     </button>
   </div>
 </header>
 
-<div class="container">
+<main class="container">
   <div class="hero">
     <h1>Select Your Hardware</h1>
     <p>Choose your Waveshare display below and connect it via USB-C to flash Latter OS directly from Chrome or Edge.</p>
   </div>
 
   <div class="device-grid" id="device-grid"></div>
+  <p class="aff-note">Hardware purchase links are Waveshare affiliate links—buying through them supports Latter at no extra cost to you.</p>
 
   <div class="installer-panel">
     <div class="installer-meta">
       <h2 id="sel-title">Pocket Assistant (1.75" Round AMOLED)</h2>
-      <p id="sel-desc">Target: Waveshare ESP32-S3-Touch-AMOLED-1.75C &bull; 466&times;466 Circular QSPI AMOLED</p>
+      <p id="sel-desc"></p>
       <div class="rev-picker" id="rev-picker" hidden>
         <label for="rev-select">ESP32-P4 chip revision</label>
-        <select id="rev-select" onchange="selectVariant(this.value)"></select>
-        <p class="rev-hint">Check the boot log line <code>chip revision: v1.x</code> or <code>v3.x</code>. A build for one revision will not boot on the other.</p>
+        <select id="rev-select" aria-describedby="rev-hint" onchange="selectVariant(this.value)"></select>
+        <p class="rev-hint" id="rev-hint">Check the boot log line <code>chip revision: v1.x</code> or <code>v3.x</code>. A build for one revision will not boot on the other.</p>
       </div>
     </div>
     <esp-web-install-button id="install-btn" manifest="manifests/pocket-assistant.json">
-      <button slot="activate" class="btn-install" id="install-btn-label">Connect &amp; Install Pocket Assistant</button>
+      <button slot="activate" type="button" class="btn-install" id="install-btn-label">Connect &amp; Install Pocket Assistant</button>
     </esp-web-install-button>
   </div>
 
   <div class="steps-card">
-    <h3>Onboarding Steps</h3>
+    <h2>Onboarding Steps</h2>
     <ol>
       <li>Click <strong>Connect &amp; Install</strong> above and select your board's USB serial port in Chrome or Edge.</li>
       <li>Once flashing completes, configure Wi-Fi directly in the browser dialog (Improv Serial over the same USB cable).</li>
-      <li>Install <a href="https://github.com/slampton/ha-latter" target="_blank" rel="noopener">Latter (<code>ha-latter</code>)</a> via HACS in Home Assistant and accept the auto-discovered device.</li>
+      <li>Add the discovered ESPHome device in Home Assistant (leave <em>Allow the device to perform Home Assistant actions</em> off), install <a href="https://github.com/slampton/ha-latter" target="_blank" rel="noopener">Latter (<code>ha-latter</code>)</a> via HACS, and accept <strong>Discovered: Latter</strong>.</li>
       <li>Prefer compiling in <strong>ESPHome Device Builder</strong>? Browse the turnkey YAML configs in <a href="https://github.com/slampton/esphome-latter-core/tree/main/devices" target="_blank" rel="noopener"><code>esphome-latter-core/devices/</code></a>.</li>
     </ol>
   </div>
-</div>
+</main>
 
 <script>
 const DEVICES = [
@@ -340,6 +421,7 @@ const DEVICES = [
     chip: "ESP32-S3",
     subtitle: "1.75\" Round AMOLED Handheld (466×466)",
     hardware: "Waveshare ESP32-S3-Touch-AMOLED-1.75C",
+    buyUrl: "https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm?&aff_id=140049",
     manifest: "manifests/pocket-assistant.json"
   },
   {
@@ -348,6 +430,7 @@ const DEVICES = [
     chip: "ESP32-S3",
     subtitle: "2.16\" Square AMOLED Handheld (480×480)",
     hardware: "Waveshare ESP32-S3-Touch-AMOLED-2.16 (SKU 33969)",
+    buyUrl: "https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm?&aff_id=140049",
     manifest: "manifests/mobile-assistant.json"
   },
   {
@@ -356,14 +439,16 @@ const DEVICES = [
     chip: "ESP32-S3",
     subtitle: "2.06\" Rectangular Smartwatch (410×502)",
     hardware: "Waveshare ESP32-S3-Touch-AMOLED-2.06",
+    buyUrl: "https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm?&aff_id=140049",
     manifest: "manifests/wrist-assist.json"
   },
   {
     slug: "remote-assistant",
     title: "Remote Assistant",
     chip: "ESP32-P4 + C6",
-    subtitle: "3.5\" Widescreen Handheld + Camera (320×480)",
+    subtitle: "3.5\" Widescreen Handheld (320×480)",
     hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (SKU 33360)",
+    buyUrl: "https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-3.5.htm?&aff_id=140049",
     variants: [
       { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/remote-assistant-rev3.json" },
       { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/remote-assistant-rev1.json" }
@@ -375,6 +460,7 @@ const DEVICES = [
     chip: "ESP32-P4 + C6",
     subtitle: "4.0\" Stationary HD Panel (720×720)",
     hardware: "Waveshare ESP32-P4-86-Panel-ETH-2RO (SKU 31570)",
+    buyUrl: "https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-4b.htm?&aff_id=140049",
     variants: [
       { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/desk-assistant-rev1.json" },
       { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/desk-assistant-rev3.json" }
@@ -393,7 +479,9 @@ function setTheme(pref) {
   const eff = THEME_PREF === "auto" ? (sysDark.matches ? "dark" : "light") : THEME_PREF;
   document.body.setAttribute("data-theme", eff);
   document.querySelectorAll("[data-theme-btn]").forEach(b => {
-    b.classList.toggle("active", b.getAttribute("data-theme-btn") === THEME_PREF);
+    const active = b.getAttribute("data-theme-btn") === THEME_PREF;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-pressed", active ? "true" : "false");
   });
 }
 
@@ -401,7 +489,15 @@ function selectDevice(slug) {
   const dev = DEVICES.find(d => d.slug === slug) || DEVICES[0];
   SELECTED_SLUG = dev.slug;
   document.getElementById("sel-title").textContent = `${dev.title} — ${dev.subtitle}`;
-  document.getElementById("sel-desc").textContent = `Target: ${dev.hardware}`;
+  const descEl = document.getElementById("sel-desc");
+  descEl.textContent = `Target: ${dev.hardware} · `;
+  const buyAnchor = document.createElement("a");
+  buyAnchor.href = dev.buyUrl;
+  buyAnchor.target = "_blank";
+  buyAnchor.rel = "noopener";
+  buyAnchor.textContent = `Buy ${dev.title} hardware ↗`;
+  descEl.appendChild(buyAnchor);
+
   const picker = document.getElementById("rev-picker");
   const sel = document.getElementById("rev-select");
   if (dev.variants) {
@@ -427,16 +523,24 @@ function selectVariant(variantId) {
 
 function renderCards() {
   const grid = document.getElementById("device-grid");
-  grid.innerHTML = DEVICES.map(d => `
-    <div class="dev-card ${d.slug === SELECTED_SLUG ? 'selected' : ''}" onclick="selectDevice('${d.slug}')">
-      <div class="dev-card-hdr">
-        <strong>${d.title}</strong>
+  grid.innerHTML = DEVICES.map(d => {
+    const isSel = d.slug === SELECTED_SLUG;
+    return `
+    <article class="dev-card ${isSel ? 'selected' : ''}">
+      <header>
+        <h2>
+          <button type="button" class="card-select-btn" aria-pressed="${isSel}" onclick="selectDevice('${d.slug}')">${d.title}</button>
+        </h2>
         <span class="chip-tag">${d.chip}</span>
-      </div>
-      <div class="dev-sub">${d.subtitle}</div>
-      <div class="dev-hw">${d.hardware}</div>
-    </div>
-  `).join("");
+      </header>
+      <p class="dev-sub">${d.subtitle}</p>
+      <footer>
+        <span>${d.hardware}</span>
+        <a class="hw-buy-link" href="${d.buyUrl}" target="_blank" rel="noopener">Buy hardware<span class="visually-hidden"> for ${d.title}</span> &nearr;</a>
+      </footer>
+    </article>
+  `;
+  }).join("");
 }
 
 setTheme(THEME_PREF);

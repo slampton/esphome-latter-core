@@ -1,109 +1,76 @@
 # Using Your Device
 
-## Getting around
+## Getting Around
 
-- **Home:** swipe up from the bottom edge. Tapping the clock readout on Home opens the **Time** app by default (configurable in **Studio → Devices → Interface → Home Time Tap** to open either **Time App** or the standalone **Clock Face**).
-- **Home dock:** tap an app. If more than four apps are enabled, swipe the dock sideways. The dock's apps and their order are set in **Studio → Devices → Interface**; **Settings → Home** on the device toggles Home Time Tap and shows or hides Time, Music, Area, Remote, Games, and Tools, saving the change to Studio too. Settings is always in the dock.
-- **Activity card:** above the dock, Home shows a card with running timers, the stopwatch, the music queue, upcoming alarms and the next calendar event. Two items at a time on rectangular screens, one on round ones; when there are more, they rotate every 8 seconds. Tap a line to open it, or use its button. The card and each of its sources can be turned off in **Studio → Devices → Interface**.
-- **Apps with modes:** Weather, Area Control, Home Hub, and Time have a mode bar along the bottom. Tap a mode, or swipe sideways in the lower part of the screen. In Area Control, swiping on the cards moves the sliders, and swiping below the cards changes the category.
-- **Button:**
-  - On battery boards, a short press of the crown wakes the screen, turns it off, snoozes an alarm, or dismisses a notification, depending on what's showing.
-  - A long press starts a 5-second hibernate countdown. With **Sleep & Wake: Hold Crown Power Off** on, it hibernates immediately instead.
+- **Go Home:** swipe up from the bottom edge (the bottom home pill indicates when swipe-up-to-Home is active).
+  - Tapping the **clock readout** on Home opens the **Time** app by default (configurable in **Studio → Devices → Interface → Home Time Tap** or **Settings → Home** on the device to open either **Time App** or the zero-chrome **Clock Face**).
+  - Tapping the **Area icon badge** (shown on BLE-roaming devices) opens **Area Control** directly.
+- **App Dock & Single-App Mode:** tap an app in the dock, or swipe the dock sideways when more than four apps are enabled. Dock apps and their order (`Music`, `Home Hub`, `Area`, `Remote`, `Weather`, `Time`, `Cameras`, `Games`, `Tools`, with `Settings` always last) are configured in **Studio → Devices → Interface** (**Settings → Home** on the device also provides quick toggles for `Time`, `Music`, `Area`, `Remote`, `Games`, and `Tools`). Turning **Enable Home Screen** off in Studio locks the device into single-app kiosk mode on your chosen **Start Screen**.
+- **Adaptive Activity Card:** above the dock, Home surfaces active items—live doorbell/intercom calls, running timers, snoozed or upcoming (`<= 6 h`) alarms, running stopwatch, active/recently paused music, and the next calendar event. It collapses to **0 rows** when idle, expands to **1 row** for a single item (and on round screens), and shows **2 rows** on rectangular screens when two or more items are active, rotating secondary items every 8 s while pinning urgent items (calls, timers, snoozed alarms, stopwatch, alarms within 2 h) on top.
+- **Mode Bars:** **Time**, **Area Control**, **Home Hub**, and **Sky & Weather** show a mode bar along the bottom—tap a tab or swipe sideways below the content cards.
+- **Physical Button (`Crown` / `K1`):**
+  - Short press wakes the screen, puts an idle screen to sleep, snoozes a ringing alarm, or dismisses an alert banner.
+  - Long press starts a 5-second hibernate countdown (or powers off immediately when **Hold Crown to Power Off** is enabled).
+
+---
 
 ## Apps
 
 | App | Highlights |
 | :--- | :--- |
-| **Clock** | Zero-chrome standalone faces (**Minimal Digital**, **Modern Analog** on round displays, and **Hybrid Digital**) with anti-aliased hands and smooth 20 FPS sweep on USB power (and for 15 s after wake/touch on battery). Tap anywhere to return Home. |
-| **Home** | Clock, date, weather, today's agenda, wallpaper, and the app dock |
-| **Time** | 4-tab app: **Clock** (real-time `HH:MM:SS`, optional custom **Local Clock Label** above local time, local time zone & DST status below, and up to 4 custom-labeled World Clocks plus optional `UTC` configured in **Studio → Devices → Interface → Time**), **Timers** (3 slots with `+1M` quick-extend), **Alarms** (3 slots with 1-minute precision, blinking active `HH`/`MM` edit field, daily/weekday/weekend/once repeats, 5-minute snooze, and 2-way Studio sync; on Remote Assistant, scheduled alarms run while USB-docked), and **Stopwatch** (up to 2 recent lap splits above the digital tenths readout, with side-by-side `START` and `LAP`/`RESET` pills) |
-| **Music** | Now playing, a seek bar with multi-tap skip (−10 s to +10 min), speaker picker, transfer to another speaker, join or unjoin speaker groups, a library of favorites, playlists, artists, albums, podcasts, radio, and audiobooks, the queue, lyrics, and bios |
-| **Area Control** | 3 cards per page with fill sliders. Categories: Scenes, Lights, Blinds & Curtains, Fans, Switches, Climate, Media, All Devices. Open a light's detail view for a color wheel or a 2700–6500 K slider. |
-| **Home Hub** | Tabs for Alarm, Thermostat, Garage & Locks, and Vacuum. Opening actions (unlocking locks, disarming alarms, opening garage/gate/door covers—including doorbell unlock) obey the device's **Perimeter Security Policy** in Studio (`Auto`, `Allow`, `Require PIN` via an on-device keypad, or `Block`), while locking, arming, and closing covers remain one-tap. |
-| **Remote** | D-pad, Home, Back, volume, and a device list with master power. Up to 10 remotes. |
-| **Sky & Weather** | Current conditions, 5-day forecast, sun, and moon. Animated effects: clouds, fog, 3-layer rain, snow, storms with lightning, and the occasional meteor at night. |
-| **Tools** | Calculator, calendar (agenda, quick-add, event map with zoom and pan), intercom, dice, coin flip, flashlight, a level (IMU boards only), and the classic Analog Chronograph stopwatch (round displays only; cameras also live as a dedicated top-level view) |
-| **Games** | Marbles, Archery, Bricks, Chomp, 2048, Memory Match. On IMU boards the first four are tilt-controlled, with touch-drag as a fallback. On boards without an IMU, touch steering is always used. |
-| **Settings** | Device status, sleep and wake, display, audio, voice, and firmware update |
+| **Clock** | Three zero-chrome SDF faces (**Minimal Digital**, **Modern Analog** on round panels, **Hybrid Digital**) with anti-aliased hands and smooth 20 FPS sweep on USB power (and for 15 s after wake/touch on battery). Tap anywhere to return Home. |
+| **Home** | Clock, date, roaming Area icon badge, live weather sky or `720p` wallpaper, adaptive `0/1/2`-row Activity Card, and app dock |
+| **Time** | 4-tab app: **Clock** (`HH:MM:SS`, optional custom **Local Clock Label**, local time zone & DST status, optional `UTC` card, and up to 4 custom-city **World Clocks**), **Timers** (3 local slots with `+1M` quick-extend + Assist timers), **Alarms** (3 recurring NVS slots with 1-minute precision, daily/weekday/weekend/once schedules, 5-minute snooze, and 2-way Studio sync), and **Stopwatch** (lap splits + `START` / `LAP` / `RESET`) |
+| **Music** | Now Playing, seek bar with multi-tap skip (−10 s to +10 min), speaker picker, seamless Music Assistant queue transfer, speaker group join/unjoin, library browser (favorites, playlists, artists, albums, podcasts, radio, audiobooks), queue, lyrics, and Wikipedia bios |
+| **Area Control** | Paginated fill-slider cards (`3`, `5`, or `6` per page depending on screen geometry) across ordered categories: Scenes, Lights (HSV color wheel + 2700–6500 K slider), Blinds & Curtains, Fans, Switches, Climate, Media, and optional All Devices |
+| **Home Hub** | 6-tab whole-home deck: **Alarm**, **Cameras** (up to 10 snapshots, fullscreen/landscape toggle, doorbell listen/reply/unlock), **Intercom** (broadcast or call another display), **Thermostat**, **Entry & Garage** (door lock + garage cover), and **Vacuum**. Alarm arming/disarming prompts a PIN whenever your Home Assistant alarm panel requires one (`alarm_caps`), while locks, garage covers, and code-less alarms follow the device's **Perimeter Security Policy** (`Auto`, `Allow`, `Require PIN`, or `Block`). |
+| **Remote** | Tactile D-pad, Home, Back, transport, volume, and power across up to 10 TVs, streaming boxes, or AV receivers |
+| **Sky & Weather** | Current conditions, 5-day forecast, solar arc, and 3D lunar phase over animated clouds, fog, rain, snow, plasma-bolt storms, tumbling leaves, and night shooting stars |
+| **Tools** | Calculator, Calendar (agenda, quick-add, zoomable OpenStreetMap event pins), Dice, Coin Flip, and Flashlight on all boards, plus Bubble Level (IMU boards) and classic Analog Chronograph (round displays)—5 to 7 utilities per board |
+| **Games** | Marbles, Archery, Bricks, Chomp, 2048, and Memory Match (tilt-steered with touch fallback on IMU boards; touch-steered elsewhere) |
+| **Settings** | On-device status, Home quick toggles, sleep & wake, display/theme, audio, voice, and firmware update—synced 2-way with Latter Studio |
 
-## Voice
+---
 
-The wake word runs on the device with [micro_wake_word](https://github.com/kahrendt/microWakeWord). Speech recognition and replies go through your Home Assistant Assist pipeline.
+## Voice Assistant
 
-- **Wake words:** Okay Nabu (the default), Hey Jarvis, Hey Mycroft, Alexa, and Hey Luna. Up to two can be active at once. Choose them with Home Assistant's **Wake word** and **Wake word 2** selects on the device (Assist satellite settings) or in Settings > Voice on the device; both change the same setting, and the device keeps it across restarts.
-- **When it listens:** controlled by **Voice: Wake Word Mode**: `Docked Only` (the default on battery devices), `Always On`, or `Disabled`. The wake word is paused while this device plays media or a ringing alarm or timer, during voice replies, games, a doorbell call, OTA updates, and while Wi-Fi is down. (There is no on-device echo cancellation yet, so it can't listen over its own speaker.)
-- **Music during voice:** music pauses while you speak and resumes after the reply, unless you asked it to stop.
-- **Visual styles:** 5 animations for the voice overlay: Nebula, Solaris, Rings, Light Bar, and Dot Wave.
+On-device wake-word detection runs via [microWakeWord](https://github.com/kahrendt/microWakeWord); speech-to-text, intent handling, and replies run through your Home Assistant Assist pipeline.
 
-## Power profiles
+- **Wake words:** *Okay Nabu* (default), *Hey Jarvis*, *Hey Mycroft*, *Alexa*, and *Hey Luna* (up to two active simultaneously, selected on the device's Home Assistant Assist satellite or in **Studio → Devices → Audio**).
+- **Wake Word Mode:** `Docked Only` (default on battery boards), `Always On`, or `Disabled`. Wake-word listening pauses automatically during local speaker playback, ringing alarms/timers, active voice replies, games, doorbell streams, OTA updates, and Wi-Fi disconnects.
+- **Media preemption & visual styles:** music pauses synchronously when a voice turn begins and resumes once both Assist and announcement buffers drain (and fades out cleanly if left paused for 5 minutes). Choose from 5 reactive overlays: *Nebula*, *Solaris*, *Rings*, *Light Bar*, and *Dot Wave*.
 
-**Sleep & Wake: Power Profile** sets several sleep and wake options at once. Changing any one of them by hand switches the profile to `Custom`.
+---
 
-| Profile | Wake word | Tap to wake | Pickup to wake | Screen timeout on battery | Screen timeout when docked | Hibernate after |
+## Power Profiles, Sleep & Battery
+
+**Power Profile** configures sleep, wake, and idle behavior as a preset; editing any individual timeout or wake control switches the profile to `Custom`.
+
+| Profile | Wake Word | Tap to Wake | Pickup to Wake | Battery Screen Timeout | Docked Idle Timeout | Hibernate After |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| Portable Carry | Docked only | Docked only | Docked only | 30 s | 1 min | 15 min |
-| Handheld Roaming | Docked only | Always | Always | 30 s | 1 min | 30 min |
-| Wearable Watch | Docked only | Always | Always | 15 s | 1 min | 15 min |
-| Tabletop Dock | Docked only | Docked only | Off | 30 s | 5 min | 15 min |
-| Always-On Wall / Desk | Always | Always | Off | Never | 5 min | Off |
+| **Portable Carry** | Docked Only | Docked Only | Docked Only | 30 s | 1 min | 15 min |
+| **Handheld Roaming** | Docked Only | Always On | Always On | 30 s | 1 min | 30 min |
+| **Wearable Watch** | Docked Only | Always On | Always On | 15 s | 1 min | 15 min |
+| **Tabletop Dock** | Docked Only | Docked Only | Disabled | 30 s | 5 min | 15 min |
+| **Always-On Wall / Desk** | Always On | Always On | Disabled | Never | 5 min | Disabled |
 
-A device doesn't hibernate while it's on USB power or while music, a timer, a voice session, a game, or a call is active.
-
-How the wake inputs behave when the screen is off:
-
-- **Pickup to wake** is a raise gesture: a deliberate movement followed by the screen settling roughly face-up for a moment. Arm swing, walking, and pocket jostling don't wake the screen.
-- **Tap to wake** on a watch running on battery needs a **double tap**, so sleeve and skin contact don't wake it. On USB power, and on every other device, a single tap wakes it.
-- **Animated weather** on the Home screen runs continuously on USB power. On battery it animates for 10 seconds after you wake or touch the screen, then holds still until the next touch.
-- **Light sleep (ESP32-S3 battery devices).** With the screen off on battery and nothing playing, listening or ringing, the main loop stretches to `5,000 ms` and the processor sleeps between Wi-Fi modem-sleep intervals (`WIFI_PS_MAX_MODEM`) and timer ticks (`~5–8 mA` average on home Wi-Fi; `~2–4 mA` off-site once exponential Wi-Fi scan backoff engages and the BLE beacon pauses). It stays connected to Home Assistant, and timers and alarms still fire on time. Hardware GPIO interrupts from the crown, the action button, a tap (when Tap to Wake works on battery) and a pickup (when Pickup to Wake works on battery) wake the loop immediately; commands from Home Assistant can take a fraction of a second longer to arrive than with the screen on.
-
-Whether music follows the device when you pick another Area on it (or Bluetooth moves it) is a Latter setting: **Studio → Devices → Audio & Voice → Media Follows This Device to Its New Area**.
+- **Wake gestures & battery weather motion:** Pickup to wake requires a deliberate raise-and-settle gesture; Wrist Assist requires a **double tap** on battery (single tap when docked and on all other boards) to prevent sleeve wakes. On battery, the Home weather sky animates for **35 seconds** after wake or touch, then fades precipitation out over **800 ms** into a 0 FPS cached sky frame.
+- **Screen-off quiet & light sleep:** On ESP32-S3 battery boards, screen-off quiet stretches the main loop to **`1,000 ms`** (**`250 ms`** with touch wake armed), pauses the raw-HCI BLE beacon in `< 1 ms` (staying active on USB when `BLE Beacon Mode` is `Always`), and enters automatic FreeRTOS light sleep in `WIFI_PS_MAX_MODEM` (`~5–8 mA` on home Wi-Fi; `~2–4 mA` off-site with exponential scan backoff). GPIO interrupts from buttons, touch, or IMU wake the loop immediately, and armed alarms/timers still fire on time. ESP32-P4 battery boards (`Remote Assistant`) keep fixed `CPLL` clocks and pace the quiet loop at `1,000 / 250 ms`.
+- **Charging & cell protection:** Single-cell 3.7 V LiPo boards charge at `<= 0.5C` (`200 mA` floor, `500 mA` cap, with automatic `65 °C` die-temperature foldback) and estimate state-of-charge from load-compensated OCV curves blended with the AXP2101 fuel gauge. At `10%`, **Battery Low** asserts; at sustained empty (`3.40 V` resting / `3.30 V` loaded for 30 s), the device saves a `HibernateSnapshot` to NVS, disconnects cleanly, and powers off the AXP2101 rails (`Remote Assistant` runs scheduled wake alarms while USB-docked, since `K1` wakes AXP2101 `PWRON` rather than LP deep sleep).
 
 ---
 
-## Battery
+## Home Assistant Entities, Studio Sync & Logs
 
-Battery devices use a single-cell 3.7 V LiPo. Every battery board handles it the same way. Only the cell's capacity differs.
+Instead of cluttering Home Assistant with ~45 ESPHome configuration entities, Latter uses a **3-tier sleep-safe model**:
 
-- **Charging.** Plug in USB-C. The charger runs at about half the cell's capacity per hour (0.5C, with a `200 mA` minimum floor and up to `500 mA`—folding back automatically if the PMIC die temperature reaches `65 °C`), then holds 4.20 V until the current tapers to termination. **Battery Charge State** reads `Charging`, `Full`, `Not Charging` (on USB, charger paused) or `Discharging`. A typical charge from empty takes 2 to 2.5 hours.
-- **Battery Level** blends the AXP2101 hardware fuel gauge (where fitted) with resting-voltage estimation: Latter compensates for the voltage drop caused by the screen or speaker, smooths the reading over about a minute, and maps it across per-capacity (`400`, `500`, and `1000+` mAh) LiPo OCV/internal-resistance curves measured from full cell discharges. On battery the level never goes up. While charging it never goes down and stops at 99 %. It reads 100 % only once the charger reports the charge is complete, and holds 100 % until you unplug.
-- **Low battery.** At 10 % the **Battery Low** entity turns on, and the device shows a "Battery Low" notice the next time its screen is on. It never wakes the screen just to show the notice.
-- **Automatic power-off.** When the cell reaches empty (3.40 V at rest, or 3.30 V under load) and stays there for 30 seconds—or when `Remote Assistant` (`P4 3.5`) enters scheduled/critical battery power-off (since its `K1` button wires to AXP2101 `PWRON` rather than an RTC GPIO)—the device powers down cleanly: it saves state, disconnects from Home Assistant and switches the AXP2101 power rails off, so the cell is never run flat. A short voltage dip from Wi-Fi or the speaker doesn't trigger it. Plug in USB or press the power button (`crown` / `K1`) to turn it back on. (`Remote Assistant` rings scheduled alarms when docked on USB-C; on S3 battery boards, armed alarms wake from light/hibernation sleep unless the cell is critically empty.) If the cell is still past empty when it starts, it switches straight back off before the screen and Wi-Fi come up; charge it first.
-- The level reflects the cell as fitted. Older or damaged cells sag more under load and reach the power-off point sooner.
+1. **Latter Studio (`device_prefs` 2-Way Sync):** All 50 device preferences (display, clock, dock, categories, brightness, wake-word sensitivities, sort orders, alarms, World Clocks) live in **Latter Studio** and sync two-way with NVS—even allowing you to configure a handheld while it is asleep or hibernating.
+2. **Automation Entities on the `Latter` Device:** Sleep-safe controls and state entities for Home Assistant automations—`Power Profile` (`select`), `Wake Word Mode` (`select`), `Alert Volume` (`number`), `Find My Device` (`button`), `Activate Screensaver` (`button`), `Timer Active` & `Alarm Ringing` (`binary_sensor`), `Timer Remaining` (`sensor`), and BLE `Current Area` / `BLE Distance` / `device_tracker`. → [Entities reference](https://github.com/slampton/ha-latter/blob/main/docs/reference/entities.md)
+3. **Hardware & Diagnostic Entities on the `ESPHome` Device:**
+   - **Media, Voice & Firmware:** `Music` (Sendspin `media_player`), Assist satellite + `Wake word` / `Wake word 2` selects, `Display: Screen Backlight`, and `Project Firmware` (`update`, plus `System: C6 Co-Processor Firmware` on ESP32-P4).
+   - **Battery & Actions:** `Battery Level`, `Battery Voltage`, `Battery Charging`, `Battery Charge State`, `Battery Low`, `USB Power Connected`, `Actions: Hibernate Device` (battery boards), and `Actions: Restart Device`.
+   - **Diagnostics & Telemetry:** `System: RPC Outbox` (bound Zero-Privilege RPC channel—leave enabled), `System: Hardware Manifest`, `System: Link Report` (15-minute Wi-Fi/API/sleep/battery summary), `Wi-Fi Signal`, `IP Address`, `Firmware Version`, `System: Telemetry Profiler` (streams `[PROF:*]` frame, touch, audio, power, and sleep logs while on), `System: Log Memory Report`, and internal RAM / PSRAM low-water sensors.
 
----
-
-## Settings exposed to Home Assistant
-
-These appear as entities on the ESPHome device. Most of them can also be changed in Studio.
-
-| Group | Entities |
-| :--- | :--- |
-| **Display** | Clock Face, Time Format, Start Screen, Color Profile, Auto Brightness Mode (Disabled, Sun Synchronized, Time Schedule), Day / Night / Manual Brightness, Day Start Hour, Night Start Hour, and Screen Backlight |
-| **Home** | Weather Background, Sun, Moon, Wake Greeting (the dock and the activity card are Latter settings, not entities) |
-| **Sleep & Wake** | Power Profile, Screensaver Style (Ambient Clock, Aurora, Starfield, Digital Rain, Fireworks), Battery Screen Timeout, Docked Idle Timeout, Battery Hibernate Timeout, Pickup to Wake, Tap to Wake, Docked Screensaver, Hold Crown Power Off (to never hibernate, set Battery Hibernate Timeout to Disabled) |
-| **Voice** | Wake Word Mode, a sensitivity setting for each wake word, Visual Profile, Wake Screen on Assist (the wake words themselves are Home Assistant's Assist satellite Wake word selects) |
-| **Music** | Album Art Style, Overlay Style, Album / Artist Album / Podcast sort orders, Show Speaker Shortcut, Show Library Shortcut |
-| **Sound** | Speaker Volume, Volume Step Size, Alert Volume, Game Sound Effects |
-| **Area** | Default Category, Show All Category, BLE Presence Beacon (off out of the box; Latter turns it on for devices with BLE presence tracking), BLE Presence Beacon Mode |
-| **Actions** | Trigger Voice Assistant, Find My Device, Activate Screensaver, Hibernate Device (battery boards), Restart Device |
-| **Status** | Battery Level, Battery Voltage, Battery Charging, Battery Charge State, Battery Low and USB Power Connected (battery boards only), Timer Active, Timer Remaining, Alarm Ringing, Wi-Fi Signal, IP Address, Firmware Version, Hardware Manifest |
-| **Diagnostics & Developer** | System: RPC Outbox (the bound Zero-Privilege RPC channel read by Latter; leave enabled). System: Link Report, a line of Wi-Fi, Home Assistant and battery-sleep counters (beacon timeouts, disconnects, signal, longest time without Home Assistant, share of time in light sleep and held awake, what woke the device, and on battery boards the battery voltage, level, charge state and average drain) refreshed every 15 minutes. Developer group: System: Telemetry Profiler (logs per-frame render times, touch, audio, power, and memory), System: Log Memory Report, System: Internal RAM Low Water, Internal RAM Largest Block, PSRAM Low Water, and Developer: Weather Simulation (forces any of 16 weather conditions to preview them) |
-
-### Logs
-
-At the default `INFO` log level the device is quiet once it has booted. Taps, gestures, frames, voice-turn steps, Bluetooth beacon cycles and wake word pauses log at `DEBUG`, and `[PROF:*]` diagnostics only while the profiler is on. These lines still log at `INFO`:
-
-- the boot summary: SDK revision, display buffers, `[PROF:BOOT]` with the reset reason, crash flag and previous power-off, and charger and light-sleep setup. They are replayed to every log viewer that connects, so a viewer opened after a restart still shows why the device restarted.
-- real events: wake word detected, Assist timers started, cancelled or finished, alarms and timers firing, hibernate countdown and power-off, Home Assistant client changes.
-- warnings and errors, always.
-
-To see more:
-
-1. Turn on **System: Telemetry Profiler**: `[PROF:*]` lines for frames, touch, audio, power, battery, memory, light sleep and wake sources, until you turn it off. Turn it off afterwards: it adds log traffic and CPU time.
-2. For everything, set `logger:` `level: DEBUG` in the device's configuration in ESPHome Device Builder and install. `DEBUG` lines are compiled out of the default `INFO` build, so a runtime log-level change can't bring them back.
-
-Crash details survive a restart: the next boot's `[PROF:BOOT]` line and ESPHome's crash report show them, and Latter raises a "Device restarted after a crash" repair in Home Assistant.
-
-### Reset to defaults
-
-To put every setting above back to its default, open the device in Latter Studio and choose **Tools → Danger Zone → Reset**, or call the `latter.reset_device` service. The device erases its saved settings, including the Wi-Fi driver's cached network data and RF calibration, then restarts. Wi-Fi and pairing are compiled into the firmware, so it rejoins Home Assistant on its own and stays bound to Latter. A second checkbox also resets Latter's options for that device.
+### Logs & Reset to Defaults
+- **Boot & crash forensics:** Default `INFO` builds stay quiet after boot while replaying the boot summary (`SDK rev`, `[PROF:BOOT]` reset reason, crash/rollback flags, charger, and sleep config) to any newly connected log viewer; panics raise a **"Device restarted after a crash"** repair in Home Assistant.
+- **Reset to defaults:** Open **Studio → Devices → Tools → Danger Zone → Reset to Defaults** (or call `latter.reset_device`). Erasing device settings wipes NVS and reboots cleanly while keeping compiled-in/provisioned Wi-Fi, API encryption, ESPHome binding, and Music Assistant player links intact.

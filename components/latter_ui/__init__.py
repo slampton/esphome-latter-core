@@ -1,4 +1,4 @@
-"""Latter UI component: stages the 8 clean Latter UI C++20 headers and compiles page/widget TUs."""
+"""Latter UI component: stages the 9 clean Latter UI C++20 headers and compiles page/widget TUs."""
 
 from __future__ import annotations
 

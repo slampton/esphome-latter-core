@@ -1,108 +1,80 @@
-# Device Protocol
+# Device Protocol & Backend Interaction
 
-This is the contract between an ESPHome Device and the [Latter integration](https://github.com/slampton/ha-latter). Implement it and your Device receives Latter's Area, media, remote, weather, and agenda state, whether or not you use the rest of this SDK.
+This guide explains how an ESPHome Device and the **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** Home Assistant integration discover, authenticate, and synchronize state at runtime. Implement this contract and your Device receives Area controls, media, remotes, weather, calendar events, and two-way Studio preferences—whether you build on `esphome-latter-core` or your own firmware.
 
-The protocol has four parts:
-1. **Discovery.** How Latter identifies a compatible ESPHome Device.
-2. **Hardware manifest.** What the Device reports about its capabilities and boot health.
-3. **Inbound.** Native API actions Latter calls on the bound ESPHome Device (`latter_push_v3`, `set_browse_slots`, `set_area_slots`, `show_notification`, `latter_set_beacon_uuid`, `latter_factory_reset`, `latter_ping`).
-4. **Outbound.** Zero-privilege diagnostic RPC frames published on **`System: RPC Outbox`** (`latter_rpc_outbox`).
+> **Canonical Wire Schema:** Exact field indices, enum constants, action variables, RPC methods, and Home Assistant service signatures are auto-generated from [`protocol/latter_v3.json`](../protocol/latter_v3.json) into **[`DEVICE_CONTRACT.md`](../DEVICE_CONTRACT.md)**. This page explains how the pieces work together at runtime.
 
-The full display reference implementation is [`modules/latter_display_firmware.yaml`](../modules/latter_display_firmware.yaml) (backed by [`modules/base.yaml`](../modules/base.yaml) and [`modules/system_core.yaml`](../modules/system_core.yaml)). The smallest headless implementation is [`modules/base.yaml`](../modules/base.yaml) (see [`examples/minimal_headless_companion.yaml`](../examples/minimal_headless_companion.yaml)).
+The contract has four moving parts:
+1. **Discovery & Bound Identity.** How `ha-latter` identifies and binds to an ESPHome Device by `esphome_device_id` and MAC address.
+2. **Handshake, Hardware Manifest & Offline Preference Sync.** What `device_hello` reports on connect and how offline NVS edits reconcile.
+3. **Inbound (`HA -> Device`).** Bound Native API actions (`latter_push_v3`, `latter_set_slots`, `latter_show_notification`, `latter_device_command`, `latter_set_beacon_uuid`, `latter_factory_reset`, `latter_ui_input`, `latter_ping`).
+4. **Outbound (`Device -> HA`).** Zero-privilege diagnostic RPC frames emitted on **`System: RPC Outbox`** (`latter_rpc_outbox`).
 
-> ESPHome exposes an API action named `foo` on a Device named `my-panel` as the Home Assistant service `esphome.my_panel_foo`. Latter binds each Device to its ESPHome device ID and MAC address, resolving both inbound actions and the outbound `text_sensor` outbox strictly from that bound ESPHome device—never from entity slugs or substring matches. **Devices never require ESPHome's *"Allow the device to perform Home Assistant actions"* permission.**
+Reference implementations: [`modules/latter_display_firmware.yaml`](../modules/latter_display_firmware.yaml) for displays and [`modules/base.yaml`](../modules/base.yaml) ([`examples/minimal_headless_companion.yaml`](../examples/minimal_headless_companion.yaml)) for headless nodes. **Devices never require ESPHome's *"Allow the device to perform Home Assistant actions"* permission.**
 
 ---
 
-## 1. Discovery
+## 1. Discovery & Strict Bound Identity
 
-An ESPHome device counts as a Latter Device if it has at least one ESPHome entity **and** meets **any** of these conditions:
-- It registers at least one of the actions `latter_ping`, `latter_push_v3`, `set_browse_slots`, `set_area_slots`, or `show_notification`.
+An ESPHome device qualifies as a Latter Device if it has at least one ESPHome entity **and** meets **any** of these checks:
+- It registers at least one Latter Native API action (`latter_ping`, `latter_push_v3`, `latter_device_command`, `latter_set_slots`, or `latter_show_notification`).
 - Its model or firmware version string contains `latter`.
 - It exposes an `update` entity whose ID ends in `_project_firmware`.
 
-Latter rescans after Home Assistant starts, on device-registry changes, and whenever ESPHome registers one of the actions above. After setup, Latter calls each bound Device's `latter_ping` action so a `device_hello` emitted while Home Assistant was still starting is never missed.
+When you accept **Discovered: Latter**, `ha-latter` creates a Device subentry storing `esphome_device_id` and hardware MAC (`via_device_id`). Every inbound `esphome.<node>_latter_*` call and outbound `System: RPC Outbox` subscription resolves strictly from that bound ESPHome device—never from entity slugs or substring matches. You can run multiple identical boards and rename them freely in Home Assistant without editing YAML.
 
-**Minimum to be discovered.** [`modules/base.yaml`](../modules/base.yaml) declares `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_set_beacon_uuid`, `System: Hardware Manifest`, and `System: RPC Outbox`:
-
-```yaml
-api:
-  actions:
-    - action: latter_ping
-      id: latter_ping_action   # fixed id so base.yaml and system_core.yaml never conflict
-      then:
-        - script.execute: send_device_hello
-```
+**Minimum to be discovered (`modules/base.yaml`):** declares `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `System: Hardware Manifest`, and `System: RPC Outbox`. After Home Assistant starts, `ha-latter` calls `latter_ping` on every bound Device so a `device_hello` emitted during startup is never missed.
 
 ---
 
-## 2. Hardware manifest
+## 2. Handshake, Hardware Manifest & Two-Way Preference Sync
 
-Each Device describes itself in two places, both built from the board's `LATTER_*` compile-time traits by [`include/hal_manifest.h`](../include/hal_manifest.h):
+Each Device describes its hardware in two places, both generated at compile time from `LATTER_*` flags by [`include/hal_manifest.h`](../include/hal_manifest.h):
 
-| Where | Built by | Content |
+| Surface | Builder | Purpose |
 | :--- | :--- | :--- |
-| `manifest` field of `device_hello` (emitted on `System: RPC Outbox` on every Home Assistant connection and on `latter_ping`) | `latter_ui::build_hardware_manifest_json()` | Full manifest including audio rates, beacon metadata, and boot health keys (`sdk`, `reset`, `crash`, `rollback`) |
-| Text sensor **`System: Hardware Manifest`** (`latter_hardware_manifest`), published at boot and every 300 s | `latter_ui::build_hardware_manifest_state_json()` | Compact copy (`<= 230` bytes, inside Home Assistant's 255-character state limit) |
+| **`device_hello`** (emitted on `System: RPC Outbox` on API connect and `latter_ping`) | `latter_ui::build_hardware_manifest_json()` | Full Manifest v2 JSON (`v: 2`, `contract: 3`), plus `prefs_seq` and `dirty_prefs` for offline NVS preference reconciliation |
+| **`System: Hardware Manifest`** (`latter_hardware_manifest`, published at boot and every 300 s) | `latter_ui::build_hardware_manifest_state_json()` | Compact `<= 230`-byte copy inside Home Assistant's 255-character state limit |
 
-Latter reads the `text_sensor` of the bound ESPHome device and overlays the latest `device_hello` manifest on top of it.
-
-| Key | Used by Latter for |
+| Manifest Keys | How `ha-latter` Uses Them |
 | :--- | :--- |
-| `w`, `h` | Server-side image render dimensions (`LATTER_SCREEN_W`, `LATTER_SCREEN_H`) |
-| `shape` | `circle` (`LATTER_ROUND_DISPLAY=1`) applies circular masking; `square` otherwise |
-| `stationary`, `wearable` | Roaming classification (`stationary == 0` or `wearable == 1`), enabling Voice Follows Me Area tracking |
-| `display` | `0` marks a headless node (omitted from display popups, notifications, and remote assignments) |
-| `beacon` (`uuid`, `major`, `minor`), or `minor` | Matches iBeacon advertisements for BLE Area presence |
-| `audio` (`out_rate`, `out_ch`) | Sample rate and channel count for doorbell listen streams |
-| `imu` | Enables motion settings in Latter Studio |
-| `board` | Hardware board identifier (`LATTER_BOARD_ID`) |
-| `sdk`, `reset`, `crash`, `rollback` | Firmware revision lockstep (`LATTER_SDK_REV`) and boot health Repairs |
+| `w`, `h`, `shape`, `ips` | Server-side baseline-JPEG crop dimensions (`<= 720×720` wallpapers, `<= 480×480` art) and circular masking (`circle` vs. `square` / `none`) |
+| `display`, `touch`, `imu`, `battery`, `has_rtc` | Gates Studio views/controls (`Display` & `Interface` hide when `display == 0`; motion wake hides when `imu == 0`; battery policy hides when `battery == 0`) |
+| `stationary`, `wearable` | Classifies roaming hardware (`stationary == 0` or `wearable == 1`), enabling *Voice Follows Me* Area tracking |
+| `slot_count`, `card_slot_count`, `max_payload_bytes` | Sizes paginated browse lists (`5` or `7`) and Area entity card pages (`3`, `5`, or `6`) to the panel geometry |
+| `audio` (`out_rate`, `out_ch`, `out_bits`, `in_rate`), `mic`, `spk` | Matches FFmpeg sample rate/channels for doorbell audio streams and gates Tier 2 wake-word / alert-volume entities |
+| `beacon` (`uuid`, `major`, `minor`), `board`, `chip`, `psram_mb` | Pairs BLE iBeacon advertisements (`minor` + MAC + provisioned 128-bit System UUID) and populates Studio diagnostics |
+| `sdk`, `fw`, `boot_id`, `reset`, `crash`, `rollback` | Enforces `MIN_FIRMWARE_SDK_REV` lockstep and raises Home Assistant Repairs on panics, brownouts, or OTA rollbacks |
+
+**Sleep-Safe Two-Way `device_prefs` Reconciliation:**
+- Studio and Tier 2 Home Assistant entities write preferences immediately to the Device's subentry—even while a battery Device is hibernating—incrementing `prefs_seq` and pushing the `device_prefs` domain when connected.
+- On-device **Settings** edits save to `PersistedDevicePrefs` v6 in NVS (`include/latter_state.h`) and emit `set_device_prefs` (`base_seq`, `changes`). If the Device was offline when edited, `device_hello` sends `prefs_seq` + `dirty_prefs` on reconnect so `ha-latter` merges offline edits with per-key last-writer-wins reconciliation before pushing the converged `device_prefs` frame.
 
 ---
 
 ## 3. Inbound (`HA -> Device` Native API Actions)
 
-### 3a. `latter_push_v3` (Protocol v3 Domain Push)
+All eight ESPHome Native API actions use the `latter_` prefix (full variable schemas in [`DEVICE_CONTRACT.md` §3](../DEVICE_CONTRACT.md#3-esphome-device-actions-esphomenode_action)):
 
-Latter pushes each of the 5 Protocol v3 domains (`area_context`, `active_media`, `remote_config`, `weather_forecast`, `calendar_agenda`) via `latter_push_v3`, unpacked into `latter_ui::protocol_state()` (`include/latter_state.h` + generated `include/latter_protocol.h` from [`protocol/latter_v3.json`](../protocol/latter_v3.json)):
-
-| Variable | Type | Notes |
-| :--- | :--- | :--- |
-| `domain` | string | `area_context`, `active_media`, `remote_config`, `weather_forecast`, or `calendar_agenda` |
-| `payload` | string | `\x1f`-packed (`0x1F`) payload prefixed with `v3\x1f<epoch>\x1f<rev>\x1f...`. Domain revisions are content-hashed; the Device resets its rev guards on epoch change or API reconnect. |
-
-Image URLs (`art_url`, `wallpaper_url`, `camera_snapshot_url`, `alert_camera_url`, and per-event `map_url`) carry deterministic, day-bucketed, resource-scoped HMAC signatures.
-
-### 3b. `set_browse_slots` and `set_area_slots`
-
-Paginated lists (music library pages, Area pickers, calendar pages, lyrics, and Area/Site entity cards) arrive through `set_browse_slots` and `set_area_slots`, both handled by `latter_ui::apply_slots_action(...)` (`include/latter_state.h`) with the 6-variable Protocol v3 schema:
-
-| Variable | Type | Notes |
-| :--- | :--- | :--- |
-| `contract` | int | `3` for Protocol v3 |
-| `req_id` | int | Monotonic request correlation ID (`0` for unsolicited pushes); stale responses are discarded |
-| `mode` | string | `areas`/`area_areas`, `entities`/`home`, `calendar_agenda`, `lyrics`, or music browse modes |
-| `page` | int | 1-based page number |
-| `total_pages` | int | Total page count |
-| `slots` | string | `\x1e`-delimited records with `\x1f`-delimited fields, unpacked into `DeviceRuntimeState::slots` |
-
-### 3c. `show_notification`, `latter_set_beacon_uuid`, `latter_factory_reset`, and `ui_input`
-
-- **`show_notification`** (`title`, `message`, `priority`, `duration`, `chime`, `camera_url`, `alert_id`): Deduplicates by `alert_id` via `latter_ui::trigger_alert_banner(...)`, wakes the panel, plays the requested chime, and optionally loads the signed camera snapshot.
-- **`latter_set_beacon_uuid`** (`uuid`): Updates the System's 128-bit BLE presence UUID in `latter_beacon` (persisting to NVS only on change).
-- **`latter_factory_reset`** (no variables): Turns the panel off, erases NVS preferences, and reboots cleanly.
-- **`ui_input`** (`action: string`, `delta: int`): Drives GUI navigation (`home`, `back`, `select`, `next`, `prev`).
+- **`latter_push_v3` (`domain`, `payload`)**: Pushes any of the **6 Protocol v3 domains**—`area_context` (Area climate/counts, Home Hub states & capability bitmasks `alarm_caps` / `climate_caps` / `vacuum_caps`, `area_icon`, `home_categories`, `local_tz_info`, `world_clocks_summary`, alerts, and cameras), `active_media`, `remote_config`, `weather_forecast`, `calendar_agenda`, and `device_prefs`. Payloads are `\x1f`-delimited (`v3\x1f<epoch>\x1f<rev>\x1f...`), content-hashed per domain, and reduced by `latter_ui::v3_domain_reducer()` (`include/latter_state.h`, `components/latter_core/runtime_controllers.cpp`). On API reconnect, `latter_ui::reset_all_v3_rev_guards()` clears revision guards so fresh state applies cleanly.
+- **`latter_set_slots` (`is_area_slots`, `req_id`, `mode`, `page`, `total_pages`, `slots`)**: Unified paginator pushing `\x1e`-separated records into `SlotBank` (`AREA` when `is_area_slots == true`, `BROWSE`/`CALENDAR` otherwise). Out-of-order responses with stale `req_id` are discarded.
+- **`latter_show_notification` (`title`, `message`, `priority`, `duration`, `chime`, `camera_url`, `alert_id`)**: Deduplicates by `alert_id`, wakes the panel, plays the embedded WAV chime, and loads the signed baseline-JPEG camera snapshot if present.
+- **`latter_device_command` (`command`)**: Executes immediate lifecycle/UI commands (`restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`).
+- **`latter_set_beacon_uuid` (`uuid`)**, **`latter_factory_reset`**, **`latter_ui_input` (`action`, `delta`)**, and **`latter_ping`**: Provision the System's 128-bit BLE UUID into `latter_beacon` NVS, wipe NVS preferences and reboot, inject directional/navigation inputs (`up|down|left|right|select|back|home`), or trigger `device_hello`.
 
 ---
 
-## 4. Outbound (`Device -> HA` Diagnostic RPC Outbox)
+## 4. Outbound (`Device -> HA` Diagnostic RPC Outbox & Security)
 
-Instead of calling `homeassistant.action`, Latter Devices emit compact JSON envelopes on **`System: RPC Outbox`** (`id: latter_rpc_outbox`) through typed C++ helpers in [`include/latter_actions.h`](../include/latter_actions.h) backed by `latter_rpc::emit` ([`include/latter_rpc.h`](../include/latter_rpc.h)):
+Instead of calling `homeassistant.action`, firmware emits typed RPC calls on **`System: RPC Outbox`** (`latter_rpc_outbox`, bound at boot via `latter_rpc::bind_default_outbox`) using helpers in [`include/latter_actions.h`](../include/latter_actions.h):
 
 ```cpp
-latter_actions::emit_music_browse(
-    &id(latter_rpc_outbox), "favorites", 1, 5, req_id, "", "Alphabetical");
+// Automatically issues a monotonic req_id, uses LATTER_SLOT_COUNT, and emits on latter_rpc_outbox
+const int req_id = latter_actions::emit_music_browse("favorites", 1);
 ```
 
-Each frame is formatted as `<boot_hex>:<seq>:<part>/<total>|<json_slice>` (`<= 230` bytes per frame, UTF-8 codepoint-boundary safe, paced across loop passes when `total > 1`). The Home Assistant integration subscribes strictly to each bound ESPHome device's outbox entity, reassembles multi-part envelopes, deduplicates `(boot_hex, seq)`, and enforces Area and security Policies on perimeter actions.
+`latter_rpc::emit` ([`include/latter_rpc.h`](../include/latter_rpc.h)) slices JSON envelopes along UTF-8 codepoint boundaries into `<boot_hex>:<seq>:<part>/<total>|<json_slice>` frames (`<= 230` bytes each), paced across loop ticks by `LatterLoopProbe` when `total > 1`. `LatterRpcReceiver` in `ha-latter` (`identity.py`) reassembles chunks, deduplicates `(boot_hex, seq)`, injects the bound Device identity, and dispatches to the 17 outbound RPC handlers ([`DEVICE_CONTRACT.md` §4](../DEVICE_CONTRACT.md#4-firmware-rpc-outbox-methods-latter_rpc_outbox)).
+
+**Separate Alarm Capability PINs vs. Perimeter Security:**
+- `area_context` field `alarm_caps` (`AreaCtxField::ALARM_CAPS`) encodes the Home Assistant alarm entity's supported arm modes plus `code_disarm_required` and `code_arm_required`. When an alarm panel uses its own code, arming/disarming prompts `ui::pin_pad_modal` as required by `alarm_caps` and passes the entered code straight through to Home Assistant's `alarm_control_panel` (arming is never blocked by `security_pin_policy: block`).
+- Opening locks (`unlock`/`open`), opening garage/gate covers, and disarming code-less alarm panels are governed by the Device's Studio **Perimeter Security Policy** (`auto`, `allow`, `require_pin`, or `block`), verified server-side in constant time against the Device Security PIN (falling back to the System Security PIN).

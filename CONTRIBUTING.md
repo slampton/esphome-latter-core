@@ -37,4 +37,5 @@ python tools/check_protocol_usage.py
 python tools/check_boards.py --check-docs
 python tools/new_board.py --bringup --check
 python tools/gen_sounds.py --check
+python tools/gen_mdi_pack.py --check
 ```

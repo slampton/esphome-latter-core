@@ -55,18 +55,18 @@ packages:
   latter_pmu:       !include ../modules/hal/pmu_axp2101.yaml                # omit when LATTER_HAS_BATTERY=0
 ```
 
-### Compiled C++20 HAL translation units (`components/latter_core/`)
+### Compiled C++20 HAL drivers (`components/latter_core/` & `include/hal_*.h`)
 
-Hardware support compiles directly inside [`components/latter_core/`](../components/latter_core/) alongside header contracts in [`include/`](../include/):
+Hardware drivers compile inside [`components/latter_core/`](../components/latter_core/) alongside header contracts in [`include/`](../include/) (full component inventory in [Architecture](architecture.md#include--components-3-component-compiled-c20-sdk)):
 
-| Translation unit | Header | Responsibility |
-| :--- | :--- | :--- |
-| `power_battery.cpp` | `include/hal_battery.h` | AXP2101 boot init, 0.5C charge current derived from `LATTER_BATTERY_MAH`, `65 °C` die-temperature foldback, rail keep-masks, hibernate/alarm-sleep entry, and load-compensated OCV + fuel-gauge state-of-charge modeling |
-| `imu_qmi8658.cpp` | `include/hal_imu_qmi8658.h` | QMI8658 active, accelerometer-only, power-down, and hardware wake-on-motion (`INT1`) register programming |
-| `panel_power.cpp` | `include/hal_panel_power.h` | Backlight PWM (`ledc_channel_config` initialized once), `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep, and FocalTech touch low-power monitor mode |
-| `audio_es8311.cpp` | `include/audio_router.h` | ES8311 / ES7210 low-power standby and wake register transitions |
-| `power_pm.cpp` | `include/hal_power_pm.h` | `latter_awake` power-management lock, light-sleep wake-pin critical section and ISR edge re-delivery, raw runtime GPIO retention (`LATTER_TOUCH_RST_PIN`), Wi-Fi modem-sleep policy, and wake/memory diagnostics |
-| `esphome_bridge.cpp` | `include/esphome_bridge.h` | `ESPHOME_VERSION_CODE` `static_assert` guard, `VoiceAssistant` synchronous abort, `MipiDsi` zero-copy framebuffer access, and throttled OTA lifecycle handlers (`handle_ota_*`) |
+| File(s) | Responsibility |
+| :--- | :--- |
+| `power_battery.cpp` + `include/hal_battery.h` | AXP2101 boot init, 0.5C charge current derived from `LATTER_BATTERY_MAH`, `65 °C` die-temperature foldback, rail keep-masks, hibernate/alarm-sleep entry, load-compensated OCV + fuel-gauge state-of-charge modeling, and PCF85063 hardware RTC restore/sync (`LATTER_HAS_RTC=1`) |
+| `imu_qmi8658.cpp` + `include/hal_imu_qmi8658.h` | QMI8658 active, accelerometer-only, power-down, and hardware wake-on-motion (`INT1`) register programming |
+| `include/hal_panel_power.h` + `panel_power.cpp` | Backlight PWM (`ledc_channel_config` initialized once), `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep templates, and FocalTech touch low-power monitor-mode bus helper |
+| `audio_es8311.cpp` + `include/audio_router.h` | ES8311 / ES7210 low-power standby and wake register transitions |
+| `power_pm.cpp` + `include/hal_power_pm.h` | `latter_awake` power-management lock, `DisplayLifecycleController`, light-sleep wake-pin critical section & ISR edge re-delivery, `< 1 ms` `latter_beacon` pause/resume, raw GPIO retention (`LATTER_TOUCH_RST_PIN`), and Wi-Fi modem-sleep policy |
+| `esphome_bridge.cpp` + `include/esphome_bridge.h` | `ESPHOME_VERSION_CODE` `static_assert` guard, `VoiceAssistant` synchronous abort, `MipiDsi` zero-copy framebuffer access, and throttled OTA lifecycle handlers (`handle_ota_*`) |
 
 - **QMI8658 interrupt:** set `imu_int1_pin` in `substitutions:` to match `-DLATTER_IMU_INT1_PIN=<gpio>`. With the screen off, raise-to-wake arms hardware wake-on-motion instead of polling the accelerometer.
 - **Axis inversions:** apply board-specific axis inversions (`- multiply: -1.0` via `!extend`) in the board file, not in the shared module.
@@ -86,6 +86,7 @@ esphome:
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=1"
+    - "-DLATTER_HAS_RTC=0"         # set 1 when PCF85063 @ 0x51 is fitted on bus_internal
     - "-DLATTER_BATTERY_MAH=1000"  # fitted cell (boards/facts power.battery_mah)
     - "-DLATTER_IS_STATIONARY=0"
     - "-DLATTER_IS_WEARABLE=0"

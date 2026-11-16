@@ -147,9 +147,9 @@ inline const esphome::Color kChromeMuted(115, 128, 145);
 inline const esphome::Color kChromeSubtle(82, 94, 110);
 inline const esphome::Color kChromeCustomSecondary(192, 192, 192);
 
-// Universal 2-Tier Neutral Smoked Glass Material System (D-037):
-//   Clear        -> kChromeGlassTint(22, 27, 36), ~58% base floor (148/256) + frost lift over dark < 42
-//   ReadableDark -> kChromeModalBg(16, 20, 28), ~78-84% floor (200..216/256) for bright backdrops / HUDs / modals
+// Universal 2-Tier Neutral Smoked Glass Material System (D-037, D-041):
+//   Clear        -> kChromeGlassTint(22, 27, 36), fixed backdrop-invariant 37.5-45.3% frosted template (96..116/256)
+//   ReadableDark -> kChromeModalBg(16, 20, 28), ~81-95% floor (208..244/256) reserved for high-opacity opt-in
 enum class GlassVariant : uint8_t {
   Clear = 0,
   ReadableDark = 1,

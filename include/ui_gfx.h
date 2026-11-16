@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter UI Graphics Primitives, WCAG 4.5:1 Frosted Glass, 1-bpp Span Cache,
+// Latter UI Graphics Primitives, 2-Tier Frosted Glass (D-041), 1-bpp Span Cache,
 // ArtCanvasCache, Dirty-Band Frame Base & FrameProfileScope (include/ui_gfx.h)
 // ==============================================================================
 

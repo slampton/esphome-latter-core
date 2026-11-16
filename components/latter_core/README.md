@@ -1,6 +1,6 @@
 # `latter_core` Component & Upstream ESPHome Bridge Notes
 
-`components/latter_core` is the unified non-UI C++20 runtime and hardware abstraction component for `esphome-latter-core`. It stages the 13 non-UI headers (`latter_prof.h`, `hal_manifest.h`, `esphome_bridge.h`, `audio_router.h`, `hal_imu_qmi8658.h`, `hal_battery.h`, `hal_panel_power.h`, `hal_power_pm.h`, `hal_link_report.h`, `latter_protocol.h`, `latter_state.h`, `latter_rpc.h`, `latter_actions.h`), compiles the hardware drivers (`audio_es8311.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp`, `power_battery.cpp`, `power_pm.cpp`, `esphome_bridge.cpp`), registers the paced RPC outbox loop probe (`LatterLoopProbe`), and auto-loads `latter_ui` unless `gui: "none"` is configured.
+`components/latter_core` is the unified non-UI C++20 runtime and hardware abstraction component for `esphome-latter-core`. It stages the 13 non-UI headers (`latter_prof.h`, `hal_manifest.h`, `esphome_bridge.h`, `audio_router.h`, `hal_imu_qmi8658.h`, `hal_battery.h`, `hal_panel_power.h`, `hal_power_pm.h`, `hal_link_report.h`, `latter_protocol.h`, `latter_state.h`, `latter_rpc.h`, `latter_actions.h`), compiles the 8 core translation units (`audio_es8311.cpp`, `audio_session.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp`, `power_battery.cpp`, `power_pm.cpp`, `runtime_controllers.cpp`, `esphome_bridge.cpp`), registers `LatterLoopProbe` (pacing outbound RPC frames, `pm_poll_loop`, `AudioPathArbitrator::poll_loop`, and `CoreTimeoutBridge`), and auto-loads `latter_ui` unless `gui: "none"` is configured.
 
 ---
 

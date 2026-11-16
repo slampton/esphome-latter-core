@@ -4,18 +4,18 @@
 
 ```mermaid
 flowchart TD
-    D["devices/*.yaml<br/>one per product"] --> B["boards/*.yaml + modules/hal/<br/>hardware abstraction"]
+    D["devices/*.yaml<br/>one per product"] --> B["boards/*.yaml + modules/hal/<br/>hardware abstraction & facts"]
     D --> U["modules/latter_display_firmware.yaml<br/>shared display firmware umbrella"]
     U --> M["modules/<br/>base · system_core · power_manager · audio_voice<br/>display_pipeline · timers_and_fetchers"]
     U --> G["guis/universal/gui.yaml<br/>display lambda + UiTouchEngine"]
-    G --> CUI["components/latter_ui<br/>compiled page TUs · FrameHitTable · widgets · 2px band compositor"]
-    M --> CC["components/latter_core<br/>Protocol v3 · RPC outbox · state · NVS · HAL drivers · esphome_bridge"]
+    G --> CUI["components/latter_ui<br/>11 page_*.cpp · FrameHitTable · 2-tier glass · 7,447 MDI · 2px band compositor"]
+    M --> CC["components/latter_core<br/>Protocol v3 · RPC outbox · runtime/audio/power controllers · HAL · esphome_bridge"]
     B --> CC
     CUI --> H["include/*.h"]
     CC --> H
 ```
 
-A device config combines its board HAL with the shared display firmware umbrella and the three compiled SDK components (`latter_core`, `latter_ui`, `latter_beacon`):
+Each product file in `devices/` combines its board HAL with the shared display umbrella and the three compiled C++20 PlatformIO components (`latter_core`, `latter_ui`, `latter_beacon`):
 
 ```yaml
 # devices/pocket-assistant.yaml (abridged)
@@ -29,80 +29,58 @@ packages:
   latter_firmware: !include ../modules/latter_display_firmware.yaml
 ```
 
-Device files define only the parts that differ per product: the `wifi` ID, the `ble_ctrl` presence beacon (`latter_beacon`: raw HCI with no host stack, over VHCI on an on-chip controller or over `esp_hosted` on the ESP32-P4) and its iBeacon minor, `improv_serial`, the firmware `update` source, and default substitutions (power profile, clock face, `api_reboot_timeout`). All runtime and persisted state lives in compiled C++ structs (`DeviceRuntimeState` and `PersistedDevicePrefs` in `include/latter_state.h`), with zero YAML `globals:`.
+Device files define only what varies per SKU: `wifi` (`id: wifi_ctrl`), `latter_beacon` (`id: ble_ctrl` + `minor`), `improv_serial`, the `Project Firmware` HTTPS OTA manifest URL, and product default substitutions. All volatile runtime state lives in `DeviceRuntimeState` and all 50 persisted device preferences live in `PersistedDevicePrefs` v6 + cold-boot `HibernateSnapshot` v2 (`include/latter_state.h`), with **zero YAML `globals:`**.
 
 ---
 
-## Directory map
+## Directory Map
 
-### `boards/`: hardware abstraction (one file per board)
-A board file defines:
-- **Hardware:** the display, touchscreen, I2C/SPI/MIPI-DSI buses, and GPIO pins.
-- **Modules:** which shared `modules/hal/*.yaml` packages to include (`chip_esp32s3.yaml` or `chip_esp32p4.yaml`, `audio_es8311_duplex.yaml` or `audio_es8311_es7210_duplex.yaml`, and optional `pmu_axp2101.yaml` / `imu_qmi8658.yaml`).
-- **Build settings:** explicit `LATTER_*` capability flags and board-specific `sdkconfig_options`.
-- **HAL scripts:** board-level pad holds and hibernate entry (`hal_release_deep_sleep_holds`, `hal_enter_hardware_hibernate`).
+### `boards/`: Hardware Abstraction & Machine Facts
+Each board pairs `boards/<board_id>.yaml` with a schematic-verified `boards/facts/<board_id>.json` ledger checked by `tools/check_boards.py`:
+- **Buses & peripherals:** display (`mipi_spi` or `mipi_dsi`), touchscreen, I2C, and GPIO pins.
+- **Shared HAL packages (`modules/hal/`):** chip config (`chip_esp32s3.yaml` or `chip_esp32p4.yaml`), full-duplex 48 kHz audio (`audio_es8311_duplex.yaml` or `audio_es8311_es7210_duplex.yaml`), plus optional `pmu_axp2101.yaml` and `imu_qmi8658.yaml`.
+- **Compile-time traits:** explicit `LATTER_*` capability flags (`LATTER_SCREEN_W/H`, `LATTER_PANEL_PPI`, `LATTER_HAS_IMU`, `LATTER_HAS_BATTERY`, `LATTER_HAS_RTC`, etc.) and HAL scripts (`hal_release_deep_sleep_holds`, `hal_enter_hardware_hibernate`). → [Porting hardware](porting-hardware.md)
 
-→ [Porting hardware](porting-hardware.md)
-
-### `modules/`: the core OS (13 YAML modules)
+### `modules/`: Core OS (13 YAML Modules)
 
 | File | Role |
 | :--- | :--- |
-| `latter_display_firmware.yaml` | Umbrella entry point included by `devices/*.yaml` and custom display builds. Configures `latter_core:`, boot-log replay (`logger:`), `safe_mode:`, all core modules, and `guis/universal/gui.yaml`. |
-| `base.yaml` | Shared foundation for both display and headless nodes: Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `latter_set_beacon_uuid`, `time:` (`ha_time` + `sntp_time`), `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox` (`latter_rpc_outbox`). |
-| `system_core.yaml` | Includes `base.yaml`, enforces `LATTER_SDK_REV == LATTER_YAML_REV`, declares display-node API actions (`set_browse_slots`, `set_area_slots`, `show_notification`, `latter_factory_reset`, `ui_input`), deduplicates both OTA platforms (`http_request` pull-OTA and Noise-encrypted `esphome` `id: ota_esphome` via `handle_ota_*`), exposes diagnostic lifecycle controls (`Actions: Restart Device`, `System: Log Memory Report`, `System: Telemetry Profiler`), and wires `PersistedDevicePrefs` v2 NVS sync, the boot sequence, `boot_button`, and `ui_input_event`. |
-| `power_manager.yaml` | Power state machine (active, screensaver, screen off, hibernate), 1 s and 50 ms supervisors, hibernate sequencing, and script `apply_power_policy`, the sole owner of the `latter_awake` lock and power actuators. |
-| `audio_voice.yaml` | Audio mixer (no output-side resampling: every source arrives at `audio_out_rate`), Sendspin media source, media player, `micro_wake_word` (vendored models in `models/`), `voice_assistant`, internal WAV `latter_sound_player` (`sounds/<rate>/`), and voice/TTS lifecycle scripts. |
-| `display_pipeline.yaml` | `http_request`, Sendspin album art, 3 `online_image` slots (artwork, wallpaper, camera; JPEG decoded to RGB565 in PSRAM), and the diagnostic `Display: Screen Backlight` light backed by `hal_set_display_brightness`. |
-| `timers_and_fetchers.yaml` | Local countdown timer tick, alarm schedule evaluation, event-driven `timer_alarm_state` RPC emission, and outbound RPC fetch scripts (`include/latter_actions.h`). |
-| `hal/chip_esp32s3.yaml`, `hal/chip_esp32p4.yaml` | Shared chip `sdkconfig_options`, ESP32-S3 automatic light sleep, and ESP32-P4 dynamic frequency scaling + `esp32_hosted` PSRAM SDIO setup. |
+| `latter_display_firmware.yaml` | Umbrella package for display builds: configures `latter_core:`, boot-log replay (`logger:`), `safe_mode:`, all core modules below, and `guis/universal/gui.yaml`. |
+| `base.yaml` | Shared foundation for both display and headless nodes: Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `time:` (`ha_time` + `sntp_time`), `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox` (`latter_rpc_outbox`). |
+| `system_core.yaml` | Includes `base.yaml`, enforces `LATTER_SDK_REV == LATTER_YAML_REV`, declares display Native API actions (`latter_set_slots`, `latter_show_notification`, `latter_set_beacon_uuid`, `latter_factory_reset`, `latter_ui_input`), deduplicates pull + Noise-encrypted push OTA (`handle_ota_*`), exposes diagnostic controls (`Actions: Restart Device`, `System: Log Memory Report`, `System: Telemetry Profiler`, `System: Link Report`), restores cold-boot UTC from PCF85063 RTC (`LATTER_HAS_RTC=1`), and hydrates `PersistedDevicePrefs` v6 + `HibernateSnapshot` v2. |
+| `power_manager.yaml` | Power state machine (active, screensaver, screen-off quiet, hibernate), `1 s` lifecycle supervisor (`DisplayLifecycleController`), `20 ms` cadence tick (`FrameCadenceController`), hibernate sequencing, and script `apply_power_policy`—the sole owner of the `latter_awake` lock. |
+| `audio_voice.yaml` | Audio mixer, Sendspin `Music` media player, `micro_wake_word` (`models/`), `voice_assistant`, internal WAV `latter_sound_player` (`sounds/<rate>/`), and voice/TTS lifecycle hooks coordinated by `AudioPathArbitrator` and `AudioSessionController`. |
+| `display_pipeline.yaml` | `http_request`, Sendspin album art, 3 `online_image` slots (artwork, wallpaper, camera; baseline JPEG decoded to RGB565 in PSRAM), and `Display: Screen Backlight` (`hal_set_display_brightness`). |
+| `timers_and_fetchers.yaml` | 1 Hz countdown timer & recurring alarm evaluation (`TimerAlarmController`), event-driven `timer_alarm_state` RPC emission, and outbound fetch helpers. |
+| `hal/chip_esp32s3.yaml`, `hal/chip_esp32p4.yaml` | Shared chip `sdkconfig_options`, ESP32-S3 automatic FreeRTOS light sleep (`240/80 MHz`), and ESP32-P4 fixed-`CPLL` / `200 MHz` PSRAM + `esp_ldo` PHY rail + `esp32_hosted` PSRAM SDIO setup (no P4 DFS). |
 | `hal/audio_es8311_duplex.yaml`, `hal/audio_es8311_es7210_duplex.yaml` | Full-duplex 48 kHz I2S bus, ES8311 / ES7210 codecs, `physical_speaker` (`timeout: 4s`), `latter_mic` resampler microphone (16 kHz), and codec mute/standby scripts. |
-| `hal/pmu_axp2101.yaml`, `hal/imu_qmi8658.yaml` | Optional AXP2101 battery/USB/PWR-key handling and QMI8658 accelerometer/tilt/wake-on-motion modules included only by boards that fit those peripherals. |
+| `hal/pmu_axp2101.yaml`, `hal/imu_qmi8658.yaml` | Optional AXP2101 battery/charger/PWR-key telemetry (+ PCF85063 RTC when `LATTER_HAS_RTC=1`) and QMI8658 accelerometer/tilt/wake-on-motion packages. |
 
-### `guis/universal/gui.yaml`: the GUI
-Fonts, color palette, the `display:` render lambda (an `!extend` of `disp1` calling `latter_ui::render_system_takeovers(...)` and latching `DirtyBandTracker`'s `2px` horizontal dirty bands), and `touchscreen:` forwarding into the compiled `UiTouchEngine`. → [Building a GUI](building-a-gui.md)
+### `include/` & `components/`: 3-Component Compiled C++20 SDK
 
-### `include/` & `components/`: 3-component compiled C++20 SDK
-
-| Component / Header | Contents |
+| Component | Staged Headers & Compiled Translation Units |
 | :--- | :--- |
-| `components/latter_core/` + `include/{esphome_bridge,hal_*,audio_router,latter_*}.h` | Compiled HAL & core runtime: `power_battery.cpp` (AXP2101 charger/rails + capacity-derived OCV/fuel-gauge model), `audio_es8311.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp` (backlight LEDC, SPI/QSPI DCS sleep, FocalTech touch monitor mode), `power_pm.cpp` (light-sleep awake lock, wake pins, Wi-Fi power policy), and `esphome_bridge.cpp` (`VoiceAssistant` synchronous abort, `MipiDsi` framebuffer pointer, OTA lifecycle helpers). Also provides Protocol v3 state (`latter_state.h`), zero-privilege RPC helpers (`latter_rpc.h`, `latter_actions.h`), hardware manifest builder (`hal_manifest.h`), link diagnostics (`hal_link_report.h`), and `[PROF:*]` flight recorder (`latter_prof.h`). Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
-| `components/latter_ui/` + `include/ui_*.h` | Compiled C++20 UI engine: per-domain page translation units (`page_*.cpp`), `FrameHitTable` (`hit_table.cpp`), `UiTouchEngine` (`touch_engine.cpp`), frosted-glass widgets (`ui_widgets.cpp`), `DirtyBandTracker` `2px` dirty-band compositor (`ui_compositor.cpp`), row-major RGB565 `fast_*` primitives (`ui_gfx.h`), and `UiLayout` anchors and millimetre gesture thresholds (`ui_layout.h`). |
-| `components/latter_beacon/` | Raw-HCI BLE iBeacon advertiser (`ble_ctrl`) over VHCI on ESP32-S3 or `esp_hosted` on ESP32-P4, requiring zero Bluedroid/NimBLE host stack RAM. |
+| **`components/latter_core/`** *(13 headers, 8 `.cpp` TUs)* | **Headers (`include/`):** `esphome_bridge.h`, `hal_manifest.h`, `hal_battery.h`, `hal_imu_qmi8658.h`, `hal_panel_power.h` (LEDC PWM + SPI/QSPI DCS `0x10`/`0x11` sleep templates), `hal_power_pm.h` (`DisplayLifecycleController`, `CoreTimeoutBridge`), `hal_link_report.h`, `audio_router.h` (`AudioPathArbitrator`, `AudioSessionController`, `IntercomSessionController`, C++ media actions), `latter_protocol.h` (generated), `latter_state.h` (`PersistedDevicePrefs` v6, `HibernateSnapshot` v2, `V3DomainReducer`, `TimerAlarmController`), `latter_rpc.h`, `latter_actions.h`, `latter_prof.h`.<br/>**TUs:** `power_battery.cpp` (AXP2101 + OCV/fuel-gauge + PCF85063 RTC), `audio_es8311.cpp`, `audio_session.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp` (touch monitor-mode bus helper), `power_pm.cpp`, `runtime_controllers.cpp`, `esphome_bridge.cpp`, plus `LatterLoopProbe` (`latter_core.h`) and `--wrap=nvs_set_blob` / `--wrap=esp_flash_erase_region` `[PROF:FLASH]` probes. Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
+| **`components/latter_ui/`** *(9 headers, 17 `.cpp` TUs)* | **Headers (`include/`):** `ui_types.h`, `ui_gfx.h` (`fast_*` RGB565 primitives & 2-tier neutral glass), `ui_mdi.h` (7,447 baked MDI vector icons), `ui_hit_table.h` (`FrameHitTable`), `ui_layout.h` (`UiLayout` & mm gesture math), `ui_widgets.h`, `ui_compositor.h` (`DirtyBandTracker`, `FrameCadenceController`, `render_system_takeovers`), `ui_touch_engine.h` (`UiTouchEngine`), `ui_pages.h`.<br/>**TUs:** `ui_gfx.cpp`, `ui_mdi.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `hit_table.cpp`, `touch_engine.cpp`, and **11 domain renderers**: `page_clock_home.cpp`, `page_time.cpp`, `page_music.cpp`, `page_area_hub.cpp`, `page_home_hub.cpp`, `page_remote.cpp`, `page_weather.cpp`, `page_tools.cpp`, `page_games.cpp`, `page_ambient_va.cpp`, `page_system.cpp`. |
+| **`components/latter_beacon/`** | `latter_beacon.h` / `latter_beacon.cpp`: raw-HCI BLE iBeacon advertiser (`ble_ctrl`) over VHCI on ESP32-S3 or `esp_hosted` on ESP32-P4 with zero Bluedroid/NimBLE host-stack RAM and `< 1 ms` warm `pause()`/`enable()` transitions. |
 
-### `examples/`
-| File | What it shows |
-| :--- | :--- |
-| `minimal_headless_companion.yaml` | A headless ESP32-S3 node using `latter_core` (`gui: "none"`) and `modules/base.yaml`. |
-| `custom_display_template.yaml` | A complete 480×480 board HAL with stub HAL scripts, running the full core and universal GUI. Start here when porting. |
-| `bringup/*.yaml` | Auto-generated bench bring-up probes per `boards/facts/<id>.json` (`python tools/new_board.py --bringup`). |
-
-### `manifests/` and `index.html`
-The ESP Web Tools installer page and per-device manifests. The release workflow rebuilds the manifests with real checksums when it publishes.
+### `guis/`, `examples/`, `manifests/` & `index.html`
+- **`guis/universal/gui.yaml`**: Fonts, WCAG-verified palette, `!extend disp1` render lambda (`DirtyBandTracker` `2px` dirty bands + `render_system_takeovers` + 11 `page_*.cpp` views), and `!extend touch_screen` forwarding into `UiTouchEngine`. → [Building a GUI](building-a-gui.md)
+- **`examples/`**: `minimal_headless_companion.yaml` (`modules/base.yaml` + `gui: "none"`), `custom_display_template.yaml` (standalone 480×480 board + GUI template), and `bringup/*.yaml` (`tools/new_board.py --bringup`).
+- **`manifests/` & `index.html`**: GitHub Pages ESP Web Tools installer and per-device/per-silicon release manifests.
 
 ---
 
-## Battery power and light sleep
+## Power Management, Sleep & OTA Safety
 
-The ESP32-S3 battery boards declare ESPHome's `power_management:` (`modules/hal/chip_esp32s3.yaml`: `enable_light_sleep: true`, 240 MHz maximum, 80 MHz minimum, `CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"`). ESP-IDF enters automatic light sleep whenever no task is runnable and no power-management lock is held. Latter coordinates everything in [`components/latter_core/power_pm.cpp`](../components/latter_core/power_pm.cpp) (`include/hal_power_pm.h`), driven exclusively by script `apply_power_policy`:
+- **Single Awake-Lock Owner (`latter_awake`).** Coordinated exclusively in [`power_pm.cpp`](../components/latter_core/power_pm.cpp) (`include/hal_power_pm.h`) via `apply_power_policy`. Held while the screen or screensaver is active, USB power is connected, or audio, wake word, Assist, OTA, games, ringing alarms/timers, Find My, alerts, or doorbell audio are active; released only in battery screen-off quiet.
+- **ESP32-S3 Automatic Light Sleep (`~5–8 mA`).** `chip_esp32s3.yaml` enables `enable_light_sleep: true` (`240 MHz` max / `80 MHz` min, `CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP: "n"`). Releasing `latter_awake` arms GPIO wake pins (`LATTER_PWR_KEY_PIN`, `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN`, `LATTER_IMU_INT1_PIN` with ISR edge re-delivery), pauses `latter_beacon` in `< 1 ms` via `HCI_LE_Set_Adv_Enable(0)` (staying active on USB when `ble_beacon_mode == "Always"`), and stretches the main loop to **`1,000 ms`** (**`250 ms`** while touch wake is armed). Smoothed RSSI below **`-65 dBm`** holds `weak_link` awake until RSSI stays above **`-61 dBm`** for 2 minutes; off-site (`!wifi_connected`), Wi-Fi scans back off exponentially (`15 s -> 60 s -> 300 s`, `~2–4 mA`).
+- **ESP32-P4 Fixed-CPLL Quiet Loop & MIPI-DSI OTA.** ESP32-P4 boards intentionally omit `power_management:` (`40 MHz` XTAL DFS retunes MSPI timing across `esp_hosted` SDIO DMA and causes WDT resets), keeping fixed `CPLL` (`360` / `400 MHz`) + `200 MHz` PSRAM and pacing battery screen-off loops at `1,000 ms` (`250 ms` touch wake) so both RISC-V cores idle in `wfi`. On `waveshare_p4_86_panel.yaml`, ESPHome `2026.11.0b4+` natively places the MIPI-DSI refresh callback in IRAM (`CONFIG_LCD_DSI_ISR_CACHE_SAFE`), paired with `CONFIG_GDMA_ISR_IRAM_SAFE: "y"`, `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"`, and `-DLATTER_DSI_IRAM_SAFE=1` (`>= 10%` / `>= 800 ms` OTA redraws) so DPI scanout never tears during flash erases.
 
-- **Awake lock (`latter_awake`).** Held whenever the screen is on or showing a screensaver, the device is USB-docked, or audio, wake word, a voice turn, OTA, a game, a ringing alarm or timer, Find My, an alert banner, or a doorbell stream is active. It is released only in screen-off quiet on battery.
-- **Wake pins & `1,000 ms` / `250 ms` quiet loop.** Releasing `latter_awake` arms the wake pins inside the light-sleep critical section (`LATTER_PWR_KEY_PIN`, `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN` when tap-to-wake is `Always On`, and `LATTER_IMU_INT1_PIN` while wake-on-motion is armed; pin edges are re-delivered to ESPHome ISRs on exit) and stretches the main loop interval to **`1,000 ms`** (**`250 ms`** while touch wake is armed).
-- **Wi-Fi power save & `-65 dBm` weak-link gate.** Screen-off quiet keeps the Home Assistant API link up in modem sleep while monitoring smoothed RSSI (`include/hal_link_report.h`): if smoothed RSSI drops below **`-65 dBm`** (cleared only after staying above **`-61 dBm`** for 2 minutes; `kWeakLink*`), `weak_link` is added to `stay_awake` so the Home Assistant API connection does not drop at weak signal.
-- **Off-site radio backoff.** When away from known Wi-Fi (`!wifi_connected`), `ha_link_settling` caps at 30 s, Wi-Fi scans back off exponentially (`15 s -> 60 s -> 300 s`, resetting immediately on wake input), and `latter_beacon` pauses.
-- **ESP32-P4 power.** ESP32-P4 boards keep `CPLL` (`400 MHz` / `360 MHz`) and `200 MHz` PSRAM fixed—never `esp32_power_management` (`min_frequency: 40MHz` XTAL DFS retunes MSPI timing across `esp_hosted` SDIO DMA)—and stretch the battery screen-off main loop to `1,000 ms` (`250 ms` with touch wake) so both RISC-V cores idle in `wfi`. On `Remote Assistant` (`waveshare_p4_35`), where `K1` (`GPIO49`) is not an LP deep-sleep wake pin (`!LATTER_PWR_KEY_DEEP_SLEEP_WAKE`), battery hibernate powers off the AXP2101 cleanly (woken by `K1`), while scheduled alarms run whenever USB-docked.
+---
 
-## Build and release
+## Build, CI & Requirements
 
-- **CI** ([`validate.yml`](../.github/workflows/validate.yml)) runs on every push and PR: `tools/verify_core.py`, `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, C++20 host unit tests (`tests/host/test_all.cpp`), `esphome config` across examples, bring-up probes, and all five device configs, and full 5-device firmware compilation on `dev` before fast-forwarding `main`.
-- **Release** ([`release.yml`](../.github/workflows/release.yml)) runs on a `v*` tag:
-  1. Verifies zero `L`-confidence board facts (`tools/check_boards.py --release --check-docs`) and compiles all device variants with the `esphome/esphome:2026.11.0b4` container.
-  2. Writes manifests with each OTA image's MD5 and attaches debug `.elf` symbols.
-  3. Publishes binaries, manifests, and the installer page to GitHub Pages.
-
-## Requirements for building
-
-- **ESPHome:** 2026.11.0b4 or newer. `min_version` is set in every device config, and [`include/esphome_bridge.h`](../include/esphome_bridge.h) enforces `ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)` alongside `LATTER_SDK_REV == LATTER_YAML_REV`.
-- **Framework:** ESP-IDF with C++20.
-- **PSRAM:** required on every board (full-frame RGB565 display buffers live in PSRAM).
-- **Compiler settings:** `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"` on every board.
+- **Validation Gate (`validate.yml`):** Runs `tools/verify_core.py`, `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, `tools/gen_mdi_pack.py --check`, C++20 host unit tests (`tests/host/test_all.cpp`), `esphome config` across examples/probes/devices, and full 5-device firmware compilation on `dev` before fast-forwarding `main`.
+- **Release (`release.yml`):** Enforces zero `L`-confidence board facts (`check_boards.py --release --check-docs`), compiles all device and P4 silicon variants in `esphome/esphome:2026.11.0b4`, generates MD5 OTA manifests + `.elf` debug symbols, and deploys the Web Installer to GitHub Pages.
+- **Compiler Requirements:** ESPHome `2026.11.0b4+` (`ESPHOME_VERSION_CODE` + `LATTER_SDK_REV == LATTER_YAML_REV` static asserts in `include/esphome_bridge.h`), ESP-IDF 5.5+ C++20, PSRAM full-frame RGB565 display buffers, `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`), and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"`.

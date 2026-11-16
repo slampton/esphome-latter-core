@@ -4,8 +4,9 @@
 #         I2C Touch, and I2S Audio
 # Purpose:
 #   1. Copy-paste starter template for porting the full Latter C++20 UI OS
-#      (Clock faces, 20 FPS Weather, Assist, Music Assistant, Area Control,
-#      Home Hub, up to 10 remotes, 6 Games, 11 Tools) to a new screen.
+#      (Clock faces, 4-tab Time, WeatherSkyEngine, Assist, Music Assistant,
+#      Area Control, 6-tab Home Hub, up to 10 remotes, 6 Games, 5-7 Tools)
+#      to a new screen.
 #   2. Automated CI target verifying that all C++20 headers in include/
 #      and modules/latter_display_firmware.yaml validate cleanly.
 # ==============================================================================
