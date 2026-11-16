@@ -821,7 +821,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 6U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 45U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 47U);
 
   // Time + Weather dock tokens + 11-slot dock array capacity (9 user tokens + Settings)
   LATTER_CHECK(latter_ui::kMaxDockApps == 11);
@@ -1051,7 +1051,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111503L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111504L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3195,7 +3195,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
     LATTER_CHECK(evaluate_perimeter_pin_prompt(pol, "alarm_control_panel.home_alarm", "disarm", 0, caps_disarm_only, true));
 
     // Arming NEVER prompts or blocks when code_arm_required (0x02) is 0!
-    for (const char *arm_act : {"arm_home", "arm_away", "arm_night"}) {
+    for (const char *arm_act : {"arm_home", "arm_away", "arm_night", "arm_vacation"}) {
       LATTER_CHECK(!evaluate_perimeter_action_blocked(pol, "home_hub.alarm", arm_act, 0));
       LATTER_CHECK(!evaluate_perimeter_pin_prompt(pol, "home_hub.alarm", arm_act, 0, caps_disarm_only, false));
       LATTER_CHECK(!evaluate_perimeter_pin_prompt(pol, "home_hub.alarm", arm_act, 0, caps_disarm_only, true));
@@ -3208,7 +3208,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 
   // Case B: HA alarm has code_arm_required == true (0x02) -> arming prompts for PIN!
   const uint16_t caps_arm_and_disarm = caps_disarm_only | kAlarmCapCodeArm;
-  for (const char *arm_act : {"arm_home", "arm_away", "arm_night"}) {
+  for (const char *arm_act : {"arm_home", "arm_away", "arm_night", "arm_vacation"}) {
     LATTER_CHECK(evaluate_perimeter_pin_prompt("allow", "home_hub.alarm", arm_act, 0, caps_arm_and_disarm, false));
     LATTER_CHECK(!evaluate_perimeter_action_blocked("block", "home_hub.alarm", arm_act, 0));
   }
@@ -3323,6 +3323,355 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(wx_src.find("kSnowCount = 64") != std::string::npos);
 }
 
+void test_home_hub_d048_button_only_glass_and_conditional_controls() {
+  using namespace latter_ui;
+
+  static_assert(LATTER_SDK_REV == 2026111504L, "LATTER_SDK_REV must match 2026111504L");
+  static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
+  static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
+  static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 47U);
+
+  reset_runtime_state();
+
+  // 1. Protocol v3 AreaCtxField::ALARM_CAPS (+0x20 arm_vacation), CLIMATE_CAPS (45), VACUUM_CAPS (46)
+  auto build_hub_caps_payload = [](uint32_t rev, std::string_view alarm_caps,
+                                   std::string_view climate_caps, std::string_view vacuum_caps,
+                                   std::string_view t_temp, std::string_view t_mode,
+                                   std::string_view vac_st) {
+    std::string p = "v3\x1f" "1\x1f" + std::to_string(rev);
+    for (size_t i = 3; i < static_cast<size_t>(AreaCtxField::COUNT); ++i) {
+      p.push_back(kProtocolFieldSep);
+      if (i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) p.append("alarm_control_panel.home");
+      else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)) p.append(t_temp);
+      else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)) p.append(t_mode);
+      else if (i == static_cast<size_t>(AreaCtxField::VACUUM_STATE)) p.append(vac_st);
+      else if (i == static_cast<size_t>(AreaCtxField::ALARM_CAPS)) p.append(alarm_caps);
+      else if (i == static_cast<size_t>(AreaCtxField::CLIMATE_CAPS)) p.append(climate_caps);
+      else if (i == static_cast<size_t>(AreaCtxField::VACUUM_CAPS)) p.append(vacuum_caps);
+    }
+    return p;
+  };
+
+  AreaContextState ac{};
+  HomeHubState hub{};
+  // Unset/0 caps fall back cleanly to spec defaults (0x0C, 0x4F, 0x0B)
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_hub_caps_payload(1U, "0", "0", "0", "72", "heat", "idle"), ac, hub));
+  LATTER_CHECK(effective_alarm_caps(ac) == kAlarmCapDefault);
+  LATTER_CHECK(effective_climate_caps(ac) == kClimateCapDefault);
+  LATTER_CHECK(effective_vacuum_caps(ac) == kVacuumCapDefault);
+  LATTER_CHECK(hub.thermostat_target_f == 72 && hub.thermostat_mode == "heat");
+  LATTER_CHECK(hub.vacuum_state == "Idle");
+  LATTER_CHECK(normalize_vacuum_state_str("error") == "Error");
+  LATTER_CHECK(normalize_vacuum_state_str("docked") == "Docked");
+
+  // Full caps + Celsius setpoint parsing (21.5 C -> 22 C; 0xFF climate_caps, 0x3F alarm_caps & vacuum_caps)
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_hub_caps_payload(2U, "63", "255", "63", "21.5", "heat_cool", "returning"), ac, hub));
+  LATTER_CHECK(effective_alarm_caps(ac) == 0x3FU);
+  LATTER_CHECK(effective_climate_caps(ac) == 0xFFU);
+  LATTER_CHECK(effective_vacuum_caps(ac) == 0x3FU);
+  LATTER_CHECK(hub.thermostat_target_f == 22 && hub.thermostat_mode == "heat_cool");
+  LATTER_CHECK(hub.vacuum_state == "Returning");
+
+  // 2. Conditional Security Alarm buttons + FrameHitTable across all 5 flagship panels
+  struct HubBoard {
+    int w;
+    int h;
+    bool round;
+    bool wearable;
+    int ppi;
+  };
+  constexpr HubBoard kHubBoards[5] = {
+      {466, 466, true, false, 266},
+      {480, 480, false, false, 313},
+      {410, 502, false, true, 315},
+      {320, 480, false, false, 165},
+      {720, 720, false, false, 254},
+  };
+
+  auto register_alarm_hits = [](FrameHitTable &ht, const HubBoard &b, std::string_view alarm_st,
+                                uint16_t caps) {
+    ht.clear();
+    HomeHubActionSpec acts[4]{};
+    const int n = resolve_alarm_actions(alarm_st, caps, acts);
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const int min_s = (b.w < b.h) ? b.w : b.h;
+    const int content_top = ly.hdr_y + ((b.h < 400) ? 20 : scale_y_for(28, b.h));
+    const int content_bot = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) -
+                            ((b.h < 400) ? 4 : scale_y_for(6, b.h));
+    const bool two = home_hub_uses_two_rows(
+        n, content_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi);
+    const int avail_h = std::max(140, content_bot - content_top);
+    const int hero_h = two
+        ? std::clamp((avail_h * 44) / 100, 66, scale_y_for(104, b.h))
+        : std::clamp((avail_h * 56) / 100, 82, scale_y_for(132, b.h));
+    const int deck_top = content_top + hero_h + std::max(6, scale_y_for(10, b.h));
+    HomeHubPillGeom geoms[4]{};
+    const int gcnt = compute_home_hub_pill_deck(
+        n, deck_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi, two, geoms);
+    int codes[4]{};
+    for (int i = 0; i < gcnt; ++i) codes[i] = acts[i].code;
+    register_home_hub_pill_deck_hits(ht, WidgetId::ALARM_MODE_BASE, codes, geoms, gcnt);
+    return gcnt;
+  };
+
+  for (const auto &b : kHubBoards) {
+    const int min_7mm = mm_to_px_for(7.0f, b.ppi);
+    FrameHitTable ht{};
+
+    // Disarmed with default 0x0C -> ONLY Arm Home (+1) & Arm Away (+2); NEVER Disarm (+0)
+    LATTER_CHECK(register_alarm_hits(ht, b, "disarmed", kAlarmCapDefault) == 2);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 0) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 1) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 2) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 3) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 4) == nullptr);
+
+    // Disarmed (or empty) with all 4 arm modes (0x3C) -> 4 non-overlapping Arm hit rects, zero Disarm
+    const uint16_t all_arm =
+        kAlarmCapArmHome | kAlarmCapArmAway | kAlarmCapArmNight | kAlarmCapArmVacation;
+    LATTER_CHECK(register_alarm_hits(ht, b, "", all_arm) == 4);
+    LATTER_CHECK(ht.find_by_id(WidgetId::ALARM_MODE_BASE + 0) == nullptr);
+    for (uint16_t c = 1; c <= 4; ++c) {
+      const HitRegion *r = ht.find_by_id(static_cast<uint16_t>(WidgetId::ALARM_MODE_BASE + c));
+      LATTER_CHECK(r != nullptr);
+      LATTER_CHECK(r->x0 >= 0 && r->x1 < b.w && r->y0 >= 0 && r->y1 < b.h);
+      LATTER_CHECK(r->height() >= std::min(min_7mm, 34));
+    }
+
+    // Armed / arming / pending / triggered -> ONLY single centered Disarm (+0), zero Arm hit rects!
+    for (std::string_view armed_st : {std::string_view("armed_home"), std::string_view("armed_away"),
+                                      std::string_view("armed_night"), std::string_view("armed_vacation"),
+                                      std::string_view("arming"), std::string_view("pending"),
+                                      std::string_view("triggered")}) {
+      LATTER_CHECK(register_alarm_hits(ht, b, armed_st, 0x3FU) == 1);
+      const HitRegion *dis = ht.find_by_id(WidgetId::ALARM_MODE_BASE + 0);
+      LATTER_CHECK(dis != nullptr && std::abs(dis->cx() - b.w / 2) <= 1);
+      LATTER_CHECK(dis->width() >= min_7mm && dis->height() >= min_7mm);
+      for (uint16_t c = 1; c <= 4; ++c) {
+        LATTER_CHECK(ht.find_by_id(static_cast<uint16_t>(WidgetId::ALARM_MODE_BASE + c)) == nullptr);
+      }
+    }
+  }
+
+  // 3. Conditional Robot Vacuum buttons by state + VACUUM_CAPS
+  auto register_vac_hits = [](FrameHitTable &ht, const HubBoard &b, std::string_view vst,
+                              uint16_t vcaps) {
+    ht.clear();
+    HomeHubActionSpec acts[4]{};
+    const int n = resolve_vacuum_actions(vst, vcaps, acts);
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const int min_s = (b.w < b.h) ? b.w : b.h;
+    const int content_top = ly.hdr_y + ((b.h < 400) ? 20 : scale_y_for(28, b.h));
+    const int content_bot = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) -
+                            ((b.h < 400) ? 4 : scale_y_for(6, b.h));
+    const int avail_h = std::max(140, content_bot - content_top);
+    const int hero_h = std::clamp((avail_h * 56) / 100, 82, scale_y_for(132, b.h));
+    const int deck_top = content_top + hero_h + std::max(6, scale_y_for(10, b.h));
+    HomeHubPillGeom geoms[4]{};
+    const int gcnt = compute_home_hub_pill_deck(
+        n, deck_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi, false, geoms);
+    int codes[4]{};
+    for (int i = 0; i < gcnt; ++i) codes[i] = acts[i].code;
+    register_home_hub_pill_deck_hits(ht, WidgetId::VACUUM_ACTION_BASE, codes, geoms, gcnt);
+    return gcnt;
+  };
+
+  for (const auto &b : kHubBoards) {
+    FrameHitTable ht{};
+
+    // Docked (standard 0x0B): single centered Clean (+0); NEVER Pause (+1), Dock (+2), or Stop (+3)
+    LATTER_CHECK(register_vac_hits(ht, b, "Docked", kVacuumCapDefault) == 1);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 1) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 3) == nullptr);
+
+    // Docked (full 0x3F): Clean (+0), Spot (+4), Locate (+5); NEVER Dock (+2), Pause (+1), or Stop (+3)
+    LATTER_CHECK(register_vac_hits(ht, b, "docked", 0x3FU) == 3);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 4) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 5) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 1) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 3) == nullptr);
+
+    // Cleaning (0x2B = Start | Pause | ReturnHome | Locate): Pause (+1), Dock (+2), Locate (+5); NEVER Clean (+0)
+    LATTER_CHECK(register_vac_hits(ht, b, "Cleaning", 0x2BU) == 3);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 1) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 5) != nullptr);
+
+    // Cleaning without Pause (0x0D = Start | Stop | ReturnHome): Stop (+3) + Dock (+2); NEVER Clean (+0) or Pause (+1)
+    LATTER_CHECK(register_vac_hits(ht, b, "cleaning", 0x0DU) == 2);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 1) == nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 3) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) != nullptr);
+
+    // Paused / Idle: Resume (+0) + Dock (+2)
+    HomeHubActionSpec p_acts[4]{};
+    LATTER_CHECK(resolve_vacuum_actions("Paused", kVacuumCapDefault, p_acts) == 2);
+    LATTER_CHECK(std::string_view(p_acts[0].label) == "Resume" && p_acts[0].code == 0);
+    LATTER_CHECK(std::string_view(p_acts[1].label) == "Dock" && p_acts[1].code == 2);
+    LATTER_CHECK(register_vac_hits(ht, b, "Idle", kVacuumCapDefault) == 2);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) != nullptr);
+
+    // Returning: Pause (+1) + Clean (+0); NEVER Dock (+2)!
+    LATTER_CHECK(register_vac_hits(ht, b, "Returning", 0x3FU) == 2);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 1) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) == nullptr);
+
+    // Error: Locate (+5), Resume (+0), Dock (+2)
+    LATTER_CHECK(register_vac_hits(ht, b, "Error", 0x3FU) == 3);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 5) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 0) != nullptr);
+    LATTER_CHECK(ht.find_by_id(WidgetId::VACUUM_ACTION_BASE + 2) != nullptr);
+  }
+
+  // 4. Conditional Thermostat controls + dynamic HVAC mode pills + Celsius 10..35 clamp
+  LATTER_CHECK(!thermostat_shows_setpoint_buttons("off", kClimateCapDefault));
+  LATTER_CHECK(!thermostat_shows_setpoint_buttons("OFF", 0xFFU));
+  LATTER_CHECK(!thermostat_shows_setpoint_buttons("heat", kClimateCapOff | kClimateCapHeat));
+  LATTER_CHECK(thermostat_shows_setpoint_buttons("heat", kClimateCapDefault));
+  LATTER_CHECK(thermostat_shows_setpoint_buttons("fan_only", 0x7FU));
+
+  // Fahrenheit clamp 50..90 vs Celsius clamp 10..35
+  LATTER_CHECK(step_thermostat_setpoint(50, -1, kClimateCapDefault) == 50);
+  LATTER_CHECK(step_thermostat_setpoint(90, +1, kClimateCapDefault) == 90);
+  LATTER_CHECK(step_thermostat_setpoint(72, +1, kClimateCapDefault) == 73);
+  LATTER_CHECK(step_thermostat_setpoint(0, +1, kClimateCapDefault) == 71);
+
+  const uint16_t caps_celsius = kClimateCapDefault | kClimateCapCelsius;
+  LATTER_CHECK(step_thermostat_setpoint(10, -1, caps_celsius) == 10);
+  LATTER_CHECK(step_thermostat_setpoint(35, +1, caps_celsius) == 35);
+  LATTER_CHECK(step_thermostat_setpoint(21, +1, caps_celsius) == 22);
+  LATTER_CHECK(step_thermostat_setpoint(21, -1, caps_celsius) == 20);
+  LATTER_CHECK(step_thermostat_setpoint(72, -1, caps_celsius) == 20);  // Out-of-C-range resets from 21 C
+
+  for (const auto &b : kHubBoards) {
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const int min_s = (b.w < b.h) ? b.w : b.h;
+    const int min_hit = mm_to_px_for(7.0f, b.ppi);
+    const int content_top = ly.hdr_y + ((b.h < 400) ? 20 : scale_y_for(28, b.h));
+    const int content_bot = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) -
+                            ((b.h < 400) ? 4 : scale_y_for(6, b.h));
+    const int avail_h = std::max(140, content_bot - content_top);
+
+    // Mode == "off": zero -/+ hit rects; only advertised Heat (0) & Off (3) pills registered
+    {
+      FrameHitTable ht{};
+      const uint16_t heat_only_caps = kClimateCapOff | kClimateCapHeat | kClimateCapTargetTemp;
+      ThermostatModeSpec modes[6]{};
+      const int mc = resolve_thermostat_modes("off", heat_only_caps, modes);
+      LATTER_CHECK(mc == 2 && modes[0].code == 0 && !modes[0].active &&
+                   modes[1].code == 3 && modes[1].active);
+      const bool show_btns = thermostat_shows_setpoint_buttons("off", heat_only_caps);
+      LATTER_CHECK(!show_btns);
+      const int hero_h = std::clamp((avail_h * 58) / 100, 84, scale_y_for(136, b.h));
+      const int hero_cy = content_top + hero_h / 2 + std::max(2, scale_y_for(4, b.h));
+      const int hero_w = std::min(scale_x_for(328, b.w),
+                                  band_safe_span_for(hero_cy, hero_h, b.w, b.h, b.round, b.wearable, 14));
+      const int btn_r = std::clamp(hero_h / 3, 18, scale_s_for(26, min_s));
+      const int btn_hit_r = std::max(btn_r, std::min(min_hit / 2, hero_h / 2));
+      const int minus_cx = (b.w / 2 - hero_w / 2) + btn_r + std::max(8, scale_x_for(12, b.w));
+      const int plus_cx = (b.w / 2 + hero_w / 2) - btn_r - std::max(8, scale_x_for(12, b.w));
+      register_thermostat_stepper_hits(ht, show_btns, minus_cx, plus_cx, hero_cy, btn_r, btn_hit_r);
+
+      const int mode_top = (hero_cy - hero_h / 2) + hero_h + std::max(6, scale_y_for(10, b.h));
+      HomeHubPillGeom geoms[6]{};
+      const int gcnt = compute_home_hub_pill_deck(
+          mc, mode_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi, false, geoms);
+      int codes[6]{modes[0].code, modes[1].code};
+      register_home_hub_pill_deck_hits(ht, WidgetId::CLIMATE_MODE_BASE, codes, geoms, gcnt);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_MINUS_BTN) == nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_PLUS_BTN) == nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_MODE_BASE + 0) != nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_MODE_BASE + 3) != nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_MODE_BASE + 1) == nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::CLIMATE_MODE_BASE + 2) == nullptr);
+    }
+
+    // Mode == "heat" with all 6 HVAC modes (0x7F): -/+ stepper hits + all 6 mode pills (including Fan +4 & Dry +5)
+    {
+      FrameHitTable ht{};
+      const uint16_t all_clim = 0x7FU;
+      ThermostatModeSpec modes[6]{};
+      const int mc = resolve_thermostat_modes("heat", all_clim, modes);
+      LATTER_CHECK(mc == 6);
+      LATTER_CHECK(modes[0].code == 0 && modes[0].active &&
+                   modes[1].code == 1 && !modes[1].active &&
+                   modes[2].code == 2 && modes[3].code == 4 &&
+                   modes[4].code == 5 && modes[5].code == 3);
+      const bool two = home_hub_uses_two_rows(
+          mc, content_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi);
+      LATTER_CHECK(two);
+      const int hero_h = std::clamp((avail_h * 46) / 100, 68, scale_y_for(108, b.h));
+      const int hero_cy = content_top + hero_h / 2 + std::max(2, scale_y_for(4, b.h));
+      const int hero_w = std::min(scale_x_for(328, b.w),
+                                  band_safe_span_for(hero_cy, hero_h, b.w, b.h, b.round, b.wearable, 14));
+      const int btn_r = std::clamp(hero_h / 3, 18, scale_s_for(26, min_s));
+      const int btn_hit_r = std::max(btn_r, std::min(min_hit / 2, hero_h / 2));
+      const int minus_cx = (b.w / 2 - hero_w / 2) + btn_r + std::max(8, scale_x_for(12, b.w));
+      const int plus_cx = (b.w / 2 + hero_w / 2) - btn_r - std::max(8, scale_x_for(12, b.w));
+      const bool show_btns = thermostat_shows_setpoint_buttons("heat", all_clim);
+      LATTER_CHECK(show_btns);
+      register_thermostat_stepper_hits(ht, show_btns, minus_cx, plus_cx, hero_cy, btn_r, btn_hit_r);
+
+      const int mode_top = (hero_cy - hero_h / 2) + hero_h + std::max(6, scale_y_for(10, b.h));
+      HomeHubPillGeom geoms[6]{};
+      const int gcnt = compute_home_hub_pill_deck(
+          mc, mode_top, content_bot, b.w, b.h, b.round, b.wearable, b.ppi, two, geoms);
+      int codes[6]{};
+      for (int i = 0; i < gcnt; ++i) codes[i] = modes[i].code;
+      register_home_hub_pill_deck_hits(ht, WidgetId::CLIMATE_MODE_BASE, codes, geoms, gcnt);
+      const HitRegion *minus_r = ht.find_by_id(WidgetId::CLIMATE_MINUS_BTN);
+      const HitRegion *plus_r = ht.find_by_id(WidgetId::CLIMATE_PLUS_BTN);
+      LATTER_CHECK(minus_r != nullptr && plus_r != nullptr && minus_r->x1 < plus_r->x0);
+      for (uint16_t c = 0; c < 6; ++c) {
+        const HitRegion *mr = ht.find_by_id(static_cast<uint16_t>(WidgetId::CLIMATE_MODE_BASE + c));
+        LATTER_CHECK(mr != nullptr && mr->x0 >= 0 && mr->x1 < b.w && mr->y0 > plus_r->y1);
+      }
+    }
+  }
+
+  // 5. Source-level D-048 guards: zero passive-text glass containers or static helper subtext in Home Hub
+  const std::string hh_src = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
+  const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(hh_src.find("PIN to Disarm") == std::string::npos);
+  LATTER_CHECK(hh_src.find("Tap mode below") == std::string::npos);
+  LATTER_CHECK(hh_src.find("Select vacuum command") == std::string::npos);
+  LATTER_CHECK(hh_src.find("render_empty_state(") == std::string::npos);
+  // render_card_box may appear ONLY inside draw_frosted_pill, render_camera_selector_pill,
+  // render_cameras_tab (tappable snapshot frame + Expand badge), render_intercom_tab (tappable rows),
+  // and render_entry_card — NEVER inside render_alarm_tab, render_thermostat_tab, or render_vacuum_tab!
+  const size_t alarm_fn = hh_src.find("void render_alarm_tab(");
+  const size_t cam_fn = hh_src.find("void render_camera_action_pills(");
+  const size_t therm_fn = hh_src.find("void render_thermostat_tab(");
+  const size_t entry_fn = hh_src.find("void render_entry_card(");
+  const size_t vac_fn = hh_src.find("void render_vacuum_tab(");
+  const size_t page_fn = hh_src.find("void render_home_hub_page(");
+  LATTER_CHECK(alarm_fn != std::string::npos && cam_fn > alarm_fn);
+  LATTER_CHECK(therm_fn != std::string::npos && entry_fn > therm_fn);
+  LATTER_CHECK(vac_fn != std::string::npos && page_fn > vac_fn);
+  LATTER_CHECK(hh_src.substr(alarm_fn, cam_fn - alarm_fn).find("render_card_box(") == std::string::npos);
+  LATTER_CHECK(hh_src.substr(therm_fn, entry_fn - therm_fn).find("render_card_box(") == std::string::npos);
+  LATTER_CHECK(hh_src.substr(vac_fn, page_fn - vac_fn).find("render_card_box(") == std::string::npos);
+  LATTER_CHECK(te_src.find("\"arm_vacation\"") != std::string::npos);
+  LATTER_CHECK(te_src.find("\"clean_spot\"") != std::string::npos);
+  LATTER_CHECK(te_src.find("\"locate\"") != std::string::npos);
+  LATTER_CHECK(te_src.find("\"fan_only\"") != std::string::npos);
+  LATTER_CHECK(te_src.find("\"dry\"") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-047:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-048:") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -3344,6 +3693,7 @@ int main() {
   test_time_app_world_clocks_alarms_and_horology();
   test_home_activity_card_d045();
   test_home_hub_v6_alarm_caps_and_tools_pagination();
+  test_home_hub_d048_button_only_glass_and_conditional_controls();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

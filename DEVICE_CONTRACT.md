@@ -38,7 +38,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `45` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `47` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -85,7 +85,9 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `41` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
 | `42` | `local_tz_info` | `AreaCtxField::LOCAL_TZ_INFO` | `string` | Pipe-delimited local time zone status ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>') |
 | `43` | `world_clocks_summary` | `AreaCtxField::WORLD_CLOCKS_SUMMARY` | `string` | Semicolon-delimited configured World Clocks ('<iana>|<label>|<abbr>|<utc_offset_min>|<is_dst>;...') |
-| `44` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night) |
+| `44` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night, 32=supports_arm_vacation) |
+| `45` | `climate_caps` | `AreaCtxField::CLIMATE_CAPS` | `u16` | Thermostat capability & HVAC mode bitmask (1=off, 2=heat, 4=cool, 8=heat_cool_or_auto, 16=fan_only, 32=dry, 64=target_temp, 128=celsius) |
+| `46` | `vacuum_caps` | `AreaCtxField::VACUUM_CAPS` | `u16` | Robot vacuum capability bitmask from VacuumEntityFeature (1=start, 2=pause, 4=stop, 8=return_home, 16=clean_spot, 32=locate) |
 
 ### `sensor.<device>_active_media` (`MediaField`, `18` total fields)
 

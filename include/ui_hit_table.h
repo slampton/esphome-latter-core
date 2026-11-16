@@ -134,7 +134,7 @@ namespace WidgetId {
   static constexpr uint16_t LIGHT_COLOR_BTN    = 633;
   static constexpr uint16_t CLIMATE_MINUS_BTN  = 640;
   static constexpr uint16_t CLIMATE_PLUS_BTN   = 641;
-  static constexpr uint16_t CLIMATE_MODE_BASE  = 642;  // 642..646
+  static constexpr uint16_t CLIMATE_MODE_BASE  = 642;  // 642..647 (0=heat, 1=cool, 2=heat_cool, 3=off, 4=fan_only, 5=dry)
   static constexpr uint16_t COVER_OPEN_BTN     = 650;
   static constexpr uint16_t COVER_STOP_BTN     = 651;
   static constexpr uint16_t COVER_CLOSE_BTN    = 652;
@@ -142,8 +142,8 @@ namespace WidgetId {
   static constexpr uint16_t LOCK_ACTION_BTN    = 660;
   static constexpr uint16_t ENTRY_LOCK_CARD    = 661;
   static constexpr uint16_t ENTRY_GARAGE_CARD  = 662;
-  static constexpr uint16_t ALARM_MODE_BASE    = 665;  // 665..669
-  static constexpr uint16_t VACUUM_ACTION_BASE = 670;  // 670..672
+  static constexpr uint16_t ALARM_MODE_BASE    = 665;  // 665..669 (0=disarm, 1=arm_home, 2=arm_away, 3=arm_night, 4=arm_vacation)
+  static constexpr uint16_t VACUUM_ACTION_BASE = 670;  // 670..675 (0=start, 1=pause, 2=return_to_base, 3=stop, 4=clean_spot, 5=locate)
   static constexpr uint16_t HUB_DOMAIN_CARD    = 680;  // 680..685 (param = domain_idx)
   static constexpr uint16_t HUB_ROW_ACTION     = 690;  // 690..694 (param = item_idx)
 
@@ -580,6 +580,142 @@ inline constexpr void compute_vertical_page_pips_x(
   out_hit_x0 = screen_w - out_hit_w;
   if (out_hit_x0 < 0) out_hit_x0 = 0;
   out_min_hit_h = min_hit;
+}
+
+struct HomeHubPillGeom {
+  int cx{0};
+  int cy{0};
+  int w{0};
+  int h{0};
+  int hit_w{0};
+  int hit_h{0};
+};
+
+inline constexpr int band_safe_span_for(
+    int cy_band, int h_band, int screen_w, int screen_h, bool is_round,
+    bool is_wearable = false, int inset = 14) noexcept {
+  const int half_h = (h_band / 2 > 1) ? (h_band / 2) : 1;
+  int y_top = cy_band - half_h;
+  if (y_top < 0) y_top = 0;
+  if (y_top >= screen_h) y_top = screen_h - 1;
+  int y_bot = cy_band + half_h;
+  if (y_bot < 0) y_bot = 0;
+  if (y_bot >= screen_h) y_bot = screen_h - 1;
+  const int s_top = safe_span_for(y_top, screen_w, screen_h, is_round, is_wearable, inset);
+  const int s_bot = safe_span_for(y_bot, screen_w, screen_h, is_round, is_wearable, inset);
+  return (s_top < s_bot) ? s_top : s_bot;
+}
+
+inline constexpr bool home_hub_uses_two_rows(
+    int count, int content_top, int content_bot,
+    int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi) noexcept {
+  if (count > 4) return true;
+  if (count < 4) return false;
+  const int avail_h = (content_bot - content_top > 140) ? (content_bot - content_top) : 140;
+  const int min_hit = mm_to_px_for(7.0f, ppi);
+  const int gap = (scale_x_for(8, screen_w) > 6) ? scale_x_for(8, screen_w) : 6;
+  const int est_row_y = content_bot - avail_h / 4;
+  const int est_h = (scale_y_for(46, screen_h) > 38) ? scale_y_for(46, screen_h) : 38;
+  const int single_safe = band_safe_span_for(est_row_y, est_h, screen_w, screen_h, is_round, is_wearable, 14);
+  const int thr = (min_hit < 72) ? min_hit : 72;
+  return ((single_safe - 3 * gap) / 4) < thr;
+}
+
+inline constexpr int compute_home_hub_pill_deck(
+    int count, int deck_top, int content_bot,
+    int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi,
+    bool two_rows, HomeHubPillGeom *out_geoms) noexcept {
+  if (count <= 0 || out_geoms == nullptr) return 0;
+  const int cx = screen_w / 2;
+  const int deck_h = (content_bot - deck_top > 40) ? (content_bot - deck_top) : 40;
+  const int min_hit = mm_to_px_for(7.0f, ppi);
+  const int gap = (scale_x_for(8, screen_w) > 6) ? scale_x_for(8, screen_w) : 6;
+
+  if (two_rows && count >= 4) {
+    const int row_stride = deck_h / 2;
+    int pill_h = row_stride - 5;
+    if (pill_h < 30) pill_h = 30;
+    const int max_ph = scale_y_for(46, screen_h);
+    if (pill_h > max_ph) pill_h = max_ph;
+    const int cap_hit_h = (min_hit < row_stride) ? min_hit : row_stride;
+    const int hit_h = (pill_h > cap_hit_h) ? pill_h : cap_hit_h;
+    const int top_cnt = (count + 1) / 2;
+    const int bot_cnt = count - top_cnt;
+    const int row_cnts[2] = {top_cnt, bot_cnt};
+    int idx = 0;
+    for (int r = 0; r < 2; ++r) {
+      const int rc = row_cnts[r];
+      if (rc <= 0) continue;
+      const int row_cy = deck_top + r * row_stride + row_stride / 2;
+      const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 14);
+      const int max_rw = scale_x_for(332, screen_w);
+      const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
+      const int raw_pw = (row_w - (rc - 1) * gap) / rc;
+      const int pill_w = (raw_pw > 44) ? raw_pw : 44;
+      const int total_w = rc * pill_w + (rc - 1) * gap;
+      const int x_left = cx - total_w / 2;
+      const int hit_w = (rc == 1 && pill_w < min_hit) ? min_hit : pill_w;
+      for (int c = 0; c < rc; ++c) {
+        const int pcx = x_left + c * (pill_w + gap) + pill_w / 2;
+        out_geoms[idx++] = HomeHubPillGeom{pcx, row_cy, pill_w, pill_h, hit_w, hit_h};
+      }
+    }
+    return idx;
+  }
+
+  const int row_cy = deck_top + deck_h / 2;
+  int pill_h = deck_h - 8;
+  const int min_ph = (count == 1) ? 40 : 36;
+  const int max_ph = scale_y_for((count == 1) ? 54 : 50, screen_h);
+  if (pill_h < min_ph) pill_h = min_ph;
+  if (pill_h > max_ph) pill_h = max_ph;
+  const int cap_hit_h = (min_hit < deck_h) ? min_hit : deck_h;
+  const int hit_h = (pill_h > cap_hit_h) ? pill_h : cap_hit_h;
+  const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 12);
+  if (count == 1) {
+    const int max_single_w = scale_x_for(204, screen_w);
+    int pill_w = (max_single_w < safe_w) ? max_single_w : safe_w;
+    if (pill_w < 64) pill_w = 64;
+    const int hit_w = (pill_w > min_hit) ? pill_w : ((min_hit < safe_w) ? min_hit : pill_w);
+    out_geoms[0] = HomeHubPillGeom{cx, row_cy, pill_w, pill_h, hit_w, hit_h};
+    return 1;
+  }
+
+  const int max_rw = scale_x_for(336, screen_w);
+  const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
+  const int raw_pw = (row_w - (count - 1) * gap) / count;
+  const int pill_w = (raw_pw > 44) ? raw_pw : 44;
+  const int total_w = count * pill_w + (count - 1) * gap;
+  const int x_left = cx - total_w / 2;
+  for (int i = 0; i < count; ++i) {
+    const int pcx = x_left + i * (pill_w + gap) + pill_w / 2;
+    out_geoms[i] = HomeHubPillGeom{pcx, row_cy, pill_w, pill_h, pill_w, hit_h};
+  }
+  return count;
+}
+
+inline void register_home_hub_pill_deck_hits(
+    FrameHitTable &hits, uint16_t base_widget_id,
+    const int *codes, const HomeHubPillGeom *geoms, int count) {
+  if (codes == nullptr || geoms == nullptr || count <= 0) return;
+  for (int i = 0; i < count; ++i) {
+    const int hw = (geoms[i].hit_w > geoms[i].w) ? geoms[i].hit_w : geoms[i].w;
+    const int hh = (geoms[i].hit_h > geoms[i].h) ? geoms[i].hit_h : geoms[i].h;
+    hits.add_centered_rect(geoms[i].cx, geoms[i].cy, hw, hh,
+                           static_cast<uint16_t>(base_widget_id + codes[i]),
+                           kHitTap | kHitFocusSlot, static_cast<int16_t>(codes[i]));
+  }
+}
+
+inline void register_thermostat_stepper_hits(
+    FrameHitTable &hits, bool show_setpoint_btns,
+    int minus_cx, int plus_cx, int hero_cy, int btn_r, int btn_hit_r) {
+  if (!show_setpoint_btns || btn_r <= 0) return;
+  const int pad = (btn_hit_r > btn_r) ? (btn_hit_r - btn_r) : 0;
+  hits.add_circle(minus_cx, hero_cy, btn_r, WidgetId::CLIMATE_MINUS_BTN,
+                  kHitTap | kHitFocusCircle, -1, pad);
+  hits.add_circle(plus_cx, hero_cy, btn_r, WidgetId::CLIMATE_PLUS_BTN,
+                  kHitTap | kHitFocusCircle, 1, pad);
 }
 
 inline TouchRouter &touch_router() {

@@ -684,6 +684,7 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
     return false;
   }
   rs.area.feedback_timer = now_ms;
+  mark_dirty_full();
   do_execute_alarm_action();
   rt_.schedule_disp();
   return true;
@@ -3511,19 +3512,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (home_hub_tab() == HomeHubTab::ALARM &&
-                   wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 4) {
+                   wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5) {
           const int mode_i = static_cast<int>(wid - WidgetId::ALARM_MODE_BASE);
-          static constexpr const char *kAlarmActs[4] = {
+          static constexpr const char *kAlarmActs[5] = {
               "disarm",
               "arm_home",
               "arm_away",
               "arm_night",
+              "arm_vacation",
           };
-          static constexpr const char *kAlarmFb[4] = {
+          static constexpr const char *kAlarmFb[5] = {
               "Disarming System...",
               "Arming Home...",
               "Arming Away...",
               "Arming Night...",
+              "Arming Vacation...",
           };
           rs.area.action_feedback = kAlarmFb[mode_i];
           gate_or_dispatch_alarm_action(kAlarmActs[mode_i], now_rel);
@@ -3665,21 +3668,25 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           }
         } else if (home_hub_tab() == HomeHubTab::THERMOSTAT) {
           if (wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) {
+            const uint16_t c_caps = effective_climate_caps();
+            const bool is_c = (c_caps & kClimateCapCelsius) != 0U;
             int &tf = home_hub_thermostat_target_f();
-            if (tf < 40 || tf > 100) tf = 70;
-            tf = std::clamp(tf + ((wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1), 50, 90);
+            tf = step_thermostat_setpoint(
+                tf, (wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1, c_caps);
             rs.area.target_entity_id = "home_hub.thermostat";
             rs.area.target_action = "set_temperature";
             rs.area.target_level = tf;
             char fb[36];
-            std::snprintf(fb, sizeof(fb), "Setpoint -> %dF", tf);
+            std::snprintf(fb, sizeof(fb), "Setpoint -> %d\xC2\xB0%c", tf, is_c ? 'C' : 'F');
             rs.area.action_feedback = fb;
             rs.area.feedback_timer = now_rel;
             do_execute_area_action();
             rt_.schedule_disp();
-          } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 4) {
-            static constexpr const char *kClimModes[4] = {"heat", "cool", "heat_cool", "off"};
-            static constexpr const char *kClimLabels[4] = {"Heat", "Cool", "Auto", "Off"};
+          } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) {
+            static constexpr const char *kClimModes[6] = {
+                "heat", "cool", "heat_cool", "off", "fan_only", "dry"};
+            static constexpr const char *kClimLabels[6] = {
+                "Heat", "Cool", "Auto", "Off", "Fan", "Dry"};
             const int m_i = static_cast<int>(wid - WidgetId::CLIMATE_MODE_BASE);
             home_hub_thermostat_mode() = kClimModes[m_i];
             rs.area.target_entity_id = "home_hub.thermostat";
@@ -3687,6 +3694,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rs.area.target_level = home_hub_thermostat_target_f();
             rs.area.action_feedback = std::string("HVAC: ") + kClimLabels[m_i];
             rs.area.feedback_timer = now_rel;
+            mark_dirty_full();
             do_execute_area_action();
             rt_.schedule_disp();
           }
@@ -3713,26 +3721,35 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (home_hub_tab() == HomeHubTab::VACUUM &&
-                   ((wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 3) ||
-                    (wid >= WidgetId::HUB_ROW_ACTION && wid < WidgetId::HUB_ROW_ACTION + 3))) {
-          const int v_card = (wid >= WidgetId::VACUUM_ACTION_BASE)
-              ? static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE)
-              : static_cast<int>(wid - WidgetId::HUB_ROW_ACTION);
+                   wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6) {
+          const int v_act = static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE);
           rs.area.target_entity_id = "home_hub.vacuum";
-          if (v_card == 0) {
+          if (v_act == 0) {
             home_hub_vacuum_state() = "Cleaning";
             rs.area.target_action = "start";
             rs.area.action_feedback = "Vacuum Started";
-          } else if (v_card == 1) {
+          } else if (v_act == 1) {
             home_hub_vacuum_state() = "Paused";
             rs.area.target_action = "pause";
             rs.area.action_feedback = "Vacuum Paused";
-          } else {
-            home_hub_vacuum_state() = "Docked";
+          } else if (v_act == 2) {
+            home_hub_vacuum_state() = "Returning";
             rs.area.target_action = "return_to_base";
             rs.area.action_feedback = "Returning to Dock";
+          } else if (v_act == 3) {
+            home_hub_vacuum_state() = "Idle";
+            rs.area.target_action = "stop";
+            rs.area.action_feedback = "Vacuum Stopped";
+          } else if (v_act == 4) {
+            home_hub_vacuum_state() = "Cleaning";
+            rs.area.target_action = "clean_spot";
+            rs.area.action_feedback = "Spot Cleaning";
+          } else {
+            rs.area.target_action = "locate";
+            rs.area.action_feedback = "Locating Vacuum...";
           }
           rs.area.feedback_timer = now_rel;
+          mark_dirty_full();
           do_execute_area_action();
           rt_.schedule_disp();
         }

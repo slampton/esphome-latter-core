@@ -100,7 +100,9 @@ enum class AreaCtxField : size_t {
   LOCAL_TZ_INFO = 42,  // local_tz_info (string)
   WORLD_CLOCKS_SUMMARY = 43,  // world_clocks_summary (string)
   ALARM_CAPS = 44,  // alarm_caps (u16)
-  COUNT = 45
+  CLIMATE_CAPS = 45,  // climate_caps (u16)
+  VACUUM_CAPS = 46,  // vacuum_caps (u16)
+  COUNT = 47
 };
 
 // Domain: active_media (sensor.<device>_active_media)
