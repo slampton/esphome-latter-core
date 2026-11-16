@@ -303,6 +303,44 @@ def check_board(
             f"({'0x51 PCF85063 present' if want_rtc else 'no 0x51 RTC'} in facts.i2c_devices)"
         )
 
+    # 6b. First-party Touch HAL contract (boards/facts.touch <-> boards/<id>.yaml touchscreen:).
+    if str(facts.get("latter_flags", {}).get("LATTER_HAS_TOUCH")) == "1":
+        t_facts = facts.get("touch")
+        if not isinstance(t_facts, dict):
+            err("LATTER_HAS_TOUCH=1 requires a 'touch' object in boards/facts")
+        else:
+            proto = str(t_facts.get("protocol", "")).lower()
+            t_addr = str(t_facts.get("address", "")).lower()
+            delivery = str(t_facts.get("delivery", ""))
+            if proto not in {"ft6336", "ft3168", "gt911", "cst9217", "cst816s"}:
+                err(f"touch.protocol '{proto}' is not a registered Latter Touch HAL protocol")
+            if t_addr not in known_addrs:
+                err(f"touch.address '{t_addr}' is not listed in facts.i2c_devices")
+            if not re.search(r"(?m)^\s*-\s*platform:\s*latter_core\b", scan["code"]):
+                err("touchscreen block must use first-party 'platform: latter_core'")
+            if not re.search(rf"(?m)^\s*protocol:\s*{re.escape(proto)}\b", scan["code"]):
+                err(f"touchscreen block must declare 'protocol: {proto}'")
+            int_gpio = t_facts.get("int_gpio")
+            if delivery == "irq":
+                if not isinstance(int_gpio, int):
+                    err("touch.delivery=='irq' requires integer touch.int_gpio")
+                else:
+                    ip = by_gpio.get(int_gpio)
+                    if ip is None or ip.get("role") != "touch_int":
+                        err(f"touch.int_gpio={int_gpio} does not match a touch_int net in facts.pins")
+                    if scan["flags"].get("LATTER_TOUCH_INT_PIN") != str(int_gpio):
+                        err(f"LATTER_TOUCH_INT_PIN must equal touch.int_gpio ({int_gpio})")
+            elif delivery == "polled":
+                if int_gpio is not None:
+                    err("touch.delivery=='polled' must have touch.int_gpio = null")
+            else:
+                err(f"touch.delivery must be 'irq' or 'polled', got {delivery!r}")
+            rst_gpio = t_facts.get("rst_gpio")
+            if rst_gpio is not None:
+                rp = by_gpio.get(int(rst_gpio))
+                if rp is None or rp.get("role") != "touch_reset":
+                    err(f"touch.rst_gpio={rst_gpio} does not match a touch_reset net in facts.pins")
+
     # 7. Backlight PWM floor.
     bl = facts.get("backlight") or {}
     if bl.get("min_pwm_hz"):

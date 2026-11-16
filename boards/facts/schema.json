@@ -60,6 +60,21 @@
       }
     },
     "display": {"type": "object"},
+    "touch": {
+      "type": ["object", "null"],
+      "required": ["protocol", "address", "delivery", "active_poll_ms"],
+      "properties": {
+        "protocol": {"enum": ["ft6336", "ft3168", "gt911", "cst9217", "cst816s"]},
+        "address": {"type": "string", "pattern": "^0x[0-9a-fA-F]{2}$"},
+        "delivery": {"enum": ["irq", "polled"]},
+        "active_poll_ms": {"type": "integer", "minimum": 4, "maximum": 50},
+        "int_gpio": {"type": ["integer", "null"]},
+        "rst_gpio": {"type": ["integer", "null"]},
+        "swap_xy": {"type": "boolean"},
+        "mirror_x": {"type": "boolean"},
+        "mirror_y": {"type": "boolean"}
+      }
+    },
     "backlight": {
       "type": ["object", "null"],
       "properties": {

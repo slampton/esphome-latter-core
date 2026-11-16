@@ -19,12 +19,13 @@
     ]
   },
   "display": {"bus": "qspi", "controller": "CO5300", "width": 466, "height": 466, "shape": "round", "offset_x": 6, "te": "GPIO13 (routed, unused)", "low_power": "DCS sleep (0x10/0x11, 120 ms before 0x29)", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
+  "touch": {"protocol": "cst9217", "address": "0x5a", "delivery": "irq", "active_poll_ms": 16, "int_gpio": 11, "rst_gpio": 2, "mirror_x": true, "mirror_y": true},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
     {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
     {"address": "0x18", "part": "ES8311"},
     {"address": "0x40", "part": "ES7210", "note": "MIC3 = ES8311 output loopback (AEC reference, TDM)"},
-    {"address": "0x5a", "part": "CST9217", "note": "driven by the cst9220 platform"},
+    {"address": "0x5a", "part": "CST9217", "note": "latter_core Touch HAL"},
     {"address": "0x6b", "part": "QMI8658"}
   ],
   "latter_flags": {

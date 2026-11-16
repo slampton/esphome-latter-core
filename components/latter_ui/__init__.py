@@ -19,6 +19,7 @@ UI_HEADERS: tuple[str, ...] = (
     "ui_types.h",
     "ui_mdi.h",
     "ui_gfx.h",
+    "ui_touch_recognizer.h",
     "ui_hit_table.h",
     "ui_layout.h",
     "ui_widgets.h",

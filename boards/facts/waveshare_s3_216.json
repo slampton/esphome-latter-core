@@ -21,12 +21,13 @@
     ]
   },
   "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "active_area_mm": [38.99, 38.99], "te": "unrouted", "low_power": "DCS sleep", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
+  "touch": {"protocol": "cst9217", "address": "0x5a", "delivery": "irq", "active_poll_ms": 16, "int_gpio": 11, "rst_gpio": 40},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
     {"address": "0x34", "part": "AXP2101", "note": "IRQ not routed"},
     {"address": "0x18", "part": "ES8311"},
     {"address": "0x40", "part": "ES7210"},
-    {"address": "0x5a", "part": "CST9217", "note": "marketed as CST9220"},
+    {"address": "0x5a", "part": "CST9217", "note": "latter_core Touch HAL (marketed as CST9220)"},
     {"address": "0x6b", "part": "QMI8658"},
     {"address": "0x51", "part": "PCF85063", "note": "RTC, UTC backup clock"}
   ],

@@ -223,9 +223,79 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   };
 
   // ===========================================================================
-  // SUBPAGE 2: LIGHT COLOR (HSV WHEEL) & WHITE KELVIN INSPECTOR
+  // SUBPAGE 2: ENTITY LEVEL, COLOR (HSV WHEEL) & WHITE KELVIN INSPECTOR (D-050)
   // ===========================================================================
   if (area_subpage == 2) {
+    const std::string &insp_dom = light_insp_domain();
+    if (insp_dom == "cover" || insp_dom == "fan") {
+      const bool is_cov = (insp_dom == "cover");
+      std::string hdr_name = light_insp_name();
+      for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      std::string fit_ln = fit_text_to_width_font(hdr_name, scale_x(260), font_small);
+      render_page_header(it, cx, fit_ln.c_str(), font_small, theme_primary);
+
+      const int cur_pct = std::clamp(light_insp_bri_pct(), 0, 100);
+      const bool is_on_st = light_insp_active() && (cur_pct > 0);
+      char sub_st[48];
+      if (is_cov) {
+        if (!is_on_st || cur_pct == 0) std::snprintf(sub_st, sizeof(sub_st), "Closed");
+        else if (cur_pct >= 99) std::snprintf(sub_st, sizeof(sub_st), "Open  •  100%%");
+        else std::snprintf(sub_st, sizeof(sub_st), "Open  •  %d%%", cur_pct);
+      } else {
+        if (!is_on_st || cur_pct == 0) std::snprintf(sub_st, sizeof(sub_st), "Off");
+        else std::snprintf(sub_st, sizeof(sub_st), "Running  •  %d%%", cur_pct);
+      }
+      render_sub_header(it, cx, sub_st, font_small, is_on_st ? theme_secondary : col_slate);
+
+      const int sl_card_w = layout().light_slider_card_w();
+      const int b_cy = scale_y(172);
+      render_modern_card(it, cx, b_cy, sl_card_w, 68, 16, card_bg_on,
+                         is_on_st ? theme_primary : card_brd_off, nullptr, col_white, font_small);
+      frame_hits().add_centered_rect(cx, b_cy, sl_card_w, scale_y(68),
+                                     WidgetId::LIGHT_BRI_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot);
+      const int b_max_w = layout().light_bri_bar_w();
+      const int b_fill_w = (b_max_w * cur_pct) / 100;
+      const Color dom_fill = is_cov ? Color(34, 68, 96) : Color(24, 76, 64);
+      if (b_fill_w > 6) {
+        fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(30), b_fill_w, scale_y(60),
+                              static_cast<float>(scale_s(12)), dom_fill, 156, 136);
+      }
+      char b_buf[48];
+      std::snprintf(b_buf, sizeof(b_buf), "%s: %d%%", is_cov ? "Position" : "Speed", cur_pct);
+      fast_print(it, cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
+
+      // 4 Quick-Preset Pills (0/25/50/100% for Cover; Off/33/66/100% for Fan)
+      const int preset_vals[4] = {0, is_cov ? 25 : 33, is_cov ? 50 : 66, 100};
+      const char *const cov_lbls[4] = {"Close", "25%", "50%", "Open"};
+      const char *const fan_lbls[4] = {"Off", "33%", "66%", "100%"};
+      HomeHubPillGeom p_geoms[4]{};
+      const int deck_top = scale_y(236);
+      const int deck_bot = layout().back_y - scale_y(26);
+      const bool two_r = home_hub_uses_two_rows(
+          4, deck_top, deck_bot, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+      const int n_p = compute_home_hub_pill_deck(
+          4, deck_top, deck_bot, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, two_r, p_geoms);
+      for (int p = 0; p < n_p; ++p) {
+        const bool sel = (std::abs(cur_pct - preset_vals[p]) <= 4) &&
+                         ((preset_vals[p] == 0) ? !is_on_st : is_on_st);
+        const char *lbl = is_cov ? cov_lbls[p] : fan_lbls[p];
+        render_modern_card(it, p_geoms[p].cx, p_geoms[p].cy, p_geoms[p].w, p_geoms[p].h, 12,
+                           sel ? card_bg_on : card_bg_off, sel ? theme_primary : card_brd_off,
+                           lbl, sel ? theme_primary : col_white, font_small);
+        const int hw = std::max(p_geoms[p].w, p_geoms[p].hit_w);
+        const int hh = std::max(p_geoms[p].h, p_geoms[p].hit_h);
+        frame_hits().add_centered_rect(
+            p_geoms[p].cx, p_geoms[p].cy, hw, hh,
+            static_cast<uint16_t>(WidgetId::ENTITY_PRESET_BASE + p),
+            kHitTap | kHitFocusSlot, static_cast<int16_t>(preset_vals[p]));
+      }
+
+      render_back_button(it, cx, font_small, layout().back_y, "< Back");
+      return;
+    }
+
     const bool is_kelvin_mode = (light_insp_mode() == 1);
     render_modern_card(it, cx, layout().hdr_y, 212, 34, 10, card_bg_on, theme_primary,
                        is_kelvin_mode ? "Mode: White Temp >" : "Mode: Color Wheel >",
@@ -292,11 +362,13 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const auto *list_slots = rs.slots_for(latter_rpc::SlotChannel::AREA_LIST);
     const int list_page = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::AREA_LIST)];
     const int list_total_pages = rs.slot_total_pages[static_cast<size_t>(latter_rpc::SlotChannel::AREA_LIST)];
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::AREA, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
 
     for (int i = 0; i < 5; i++) {
       const auto &s = list_slots[i];
       if (s.name.empty() && s.id.empty()) continue;
-      const int y_mid = layout().slot5_y(i);
+      const int y_mid = layout().slot5_y(i) + bounce_y;
       const bool is_act = s.active || (!s.id.empty() && s.id == rs.area.active_area_id);
       const Color brd_c = is_act ? theme_primary : card_brd_off;
       const Color txt_c = is_act ? theme_primary : col_white;
@@ -484,6 +556,8 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   const int browse_page = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)];
   const int browse_total_pages = rs.slot_total_pages[static_cast<size_t>(latter_rpc::SlotChannel::AREA_ENTITIES)];
   const int card_slots = static_cast<int>(std::min<size_t>(DeviceRuntimeState::kCardSlotsPerPage, 3));
+  const int card_bounce_y = edge_bounce().offset_px(
+      PageId::AREA, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
   bool any_card = false;
 
   for (int idx = 0; idx < card_slots; idx++) {
@@ -493,7 +567,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const std::string &dtype = s.type;
     const bool is_act = s.active;
     const int level = s.level;
-    const int y_mid = layout().area_card3_y(idx);
+    const int y_mid = layout().area_card3_y(idx) + card_bounce_y;
 
     if (raw_name.empty() && id_str.empty()) continue;
     any_card = true;
@@ -584,18 +658,21 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
                               static_cast<int16_t>(idx), scale_s(14));
+    } else if (has_slider) {
+      // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
+      const int cx_ch = r_right - scale_x(18);
+      for (int w = -1; w <= 0; ++w) {
+        fast_line(it, cx_ch - 4 + w, y_mid - 6, cx_ch + 2 + w, y_mid, is_act ? col_white : col_slate);
+        fast_line(it, cx_ch + 2 + w, y_mid, cx_ch - 4 + w, y_mid + 6, is_act ? col_white : col_slate);
+      }
     }
 
+    // D-050: Overview cards register tap-only bodies (zero kHitHorizSlider) so horizontal swipes
+    // anywhere on Area Control switch categories and vertical swipes always page entity slots.
     const int body_w = std::max(8, right_limit - (r_div_x + 1));
-    if (has_slider) {
-      frame_hits().add_rect(r_div_x + 1, y_mid - r_card_h / 2, body_w, r_card_h,
-                            static_cast<uint16_t>(WidgetId::AREA_CARD_SLIDER + idx),
-                            kHitTap | kHitHorizSlider, static_cast<int16_t>(idx));
-    } else {
-      frame_hits().add_rect(r_div_x + 1, y_mid - r_card_h / 2, body_w, r_card_h,
-                            static_cast<uint16_t>(WidgetId::AREA_CARD_TAP + idx),
-                            kHitTap, static_cast<int16_t>(idx));
-    }
+    frame_hits().add_rect(r_div_x + 1, y_mid - r_card_h / 2, body_w, r_card_h,
+                          static_cast<uint16_t>(WidgetId::AREA_CARD_TAP + idx),
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
   }
 
   if (!any_card) {

@@ -20,11 +20,12 @@
     ]
   },
   "display": {"bus": "mipi_dsi", "controller": "ST7703", "width": 720, "height": 720, "shape": "square", "ips": true, "lanes": 2, "lane_mbps": 480, "dpi_clock_mhz": 38, "te": "test point only"},
+  "touch": {"protocol": "gt911", "address": "0x5d", "delivery": "polled", "active_poll_ms": 8, "int_gpio": null, "rst_gpio": null},
   "backlight": {"type": "analog_fb_rc", "min_pwm_hz": 5000},
   "i2c_devices": [
     {"address": "0x18", "part": "ES8311"},
     {"address": "0x40", "part": "ES7210", "note": "MIC1 FL, MIC2 FR, MIC3 AEC loopback (TDM), MIC4 NC"},
-    {"address": "0x5d", "part": "GT911", "note": "alternate address 0x14; INT on a test point only"}
+    {"address": "0x5d", "part": "GT911", "note": "latter_core Touch HAL (8 ms race-free 0x814E poll; auto-fallback 0x14); INT on test point only"}
   ],
   "latter_flags": {
     "LATTER_SCREEN_W": 720, "LATTER_SCREEN_H": 720, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 254,

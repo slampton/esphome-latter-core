@@ -1,6 +1,7 @@
 #include "esphome/core/defines.h"
 #include "hal_battery.h"
 #include "ui_pages.h"
+#include "ui_touch_recognizer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -275,7 +276,9 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     draw_grid_for_page(cur_pg, out_dy, false);
     draw_grid_for_page(tgt_pg, in_dy, false);
   } else {
-    draw_grid_for_page(cur_pg, 0, true);
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::TOOLS, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
+    draw_grid_for_page(cur_pg, bounce_y, true);
   }
 
   if (rs.nav.menu_scroll_active && kTotalPages > 1 && !backdrop_active()) {
@@ -1318,9 +1321,11 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
     const int card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : ly.list_card_w;
     const int card_x = ctx.cx - card_w / 2;
     const int card_h = std::min(scale_y(44), ly.slot5_stride - 6);
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::TOOLS, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
     for (int i = 0; i < 5; i++) {
       if (names[i].empty()) continue;
-      const int ym = ly.slot5_y(i);
+      const int ym = ly.slot5_y(i) + bounce_y;
       const Color brd_c = acts[i] ? ctx.theme_primary : kChromeCardBorder;
       const Color txt_c = acts[i] ? ctx.col_white : ctx.col_slate;
       render_card_box(it, card_x, ym - card_h / 2, card_w, card_h,

@@ -9,6 +9,7 @@
 #include "audio_router.h"
 #include "hal_panel_power.h"
 #include "hal_power_pm.h"
+#include "hal_touch.h"
 #include "latter_prof.h"
 #include "latter_rpc.h"
 

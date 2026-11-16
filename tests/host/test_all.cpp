@@ -41,10 +41,12 @@
 #include "../../include/hal_manifest.h"
 #include "../../include/hal_panel_power.h"
 #include "../../include/hal_power_pm.h"
+#include "../../include/hal_touch.h"
 #include "../../components/latter_core/power_pm.cpp"
 #include "../../components/latter_core/runtime_controllers.cpp"
 #include "../../include/ui_hit_table.h"
 #include "../../components/latter_ui/hit_table.cpp"
+#include "../../include/ui_touch_recognizer.h"
 #include "../../include/ui_compositor.h"
 #include "../../components/latter_ui/ui_compositor.cpp"
 #include "../../include/ui_mdi.h"
@@ -328,11 +330,11 @@ constexpr PanelSpec kFlagshipPanels[7] = {
 };
 
 void test_ui_layout_hit_table_and_dirty_band() {
-  // Exact 466x466 @ 316 PPI reference calibration invariants (D-002)
+  // Exact 466x466 @ 316 PPI reference calibration invariants (D-002, D-049 kinematic deadband)
   const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 316);
-  LATTER_CHECK(ref.drag_start == 7);
+  LATTER_CHECK(ref.drag_start == 8);
+  LATTER_CHECK(ref.tap_max == 21);
   LATTER_CHECK(ref.swipe_min == 29);
-  LATTER_CHECK(ref.tap_max == 36);
   LATTER_CHECK(ref.dock_hit_r >= 43);
   LATTER_CHECK(ref.back_y == 426);
   LATTER_CHECK(ref.home_bar_y == 434);
@@ -346,8 +348,8 @@ void test_ui_layout_hit_table_and_dirty_band() {
     const auto ly = latter_ui::compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi);
     const int min_dim = (p.w < p.h) ? p.w : p.h;
     LATTER_CHECK(ly.drag_start >= 3);
-    LATTER_CHECK(ly.swipe_min > ly.drag_start);
-    LATTER_CHECK(ly.tap_max > ly.swipe_min);
+    LATTER_CHECK(ly.tap_max > ly.drag_start);
+    LATTER_CHECK(ly.swipe_min > ly.tap_max);
     LATTER_CHECK(ly.dock_hit_r >= latter_ui::mm_to_px_for(3.6f, p.ppi));
     LATTER_CHECK(ly.hdr_y > 0 && ly.hdr_y < ly.sub_hdr_y);
     LATTER_CHECK(ly.sub_hdr_y < ly.dock_y);
@@ -676,7 +678,8 @@ void test_music_remote_override_and_volume_feedback() {
   const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   LATTER_CHECK(touch_cpp.find("set_remote_play_override(") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("step_music_volume_feedback(") != std::string::npos);
-  LATTER_CHECK(touch_cpp.find("touch_router().note_tap(") != std::string::npos);
+  // D-049: Waking auto-hidden Music HUD must NOT arm global tap cooldown so Tap 2 fires immediately
+  LATTER_CHECK(touch_cpp.find("touch_router().note_tap(") == std::string::npos);
   LATTER_CHECK(touch_cpp.find(".last_tap_ms") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("{\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"}") != std::string::npos);
 
@@ -818,7 +821,7 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 6U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 7U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 47U);
@@ -1051,7 +1054,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111504L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111505L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -2444,7 +2447,7 @@ void test_frame_cadence_and_typed_prefs() {
                 "PersistedDevicePrefs must stay POD");
   static_assert(kDefPrefs.power_profile_enum() == PowerProfilePref::PortableCarry);
   static_assert(kDefPrefs.wake_word_mode_enum() == WakeWordMode::DockedOnly);
-  static_assert(kDefPrefs.tap_to_wake_enum() == WakePolicyMode::DockedOnly);
+  static_assert(kDefPrefs.tap_to_wake_enum() == TapWakeMode::DockedOnly);
   static_assert(kDefPrefs.screensaver_style_enum() == ScreensaverStyle::AmbientClock);
   static_assert(kDefPrefs.auto_brightness_enum() == AutoBrightnessMode::SunSynchronized);
   static_assert(kDefPrefs.color_profile_enum() == ColorProfilePref::SteelBlue);
@@ -3326,7 +3329,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111504L, "LATTER_SDK_REV must match 2026111504L");
+  static_assert(LATTER_SDK_REV == 2026111505L, "LATTER_SDK_REV must match 2026111505L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);
@@ -3670,6 +3673,194 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(te_src.find("\"dry\"") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-047:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-048:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-049:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-050:") != std::string::npos);
+}
+
+// ==============================================================================
+// 19. D-049 & D-050: FIRST-PARTY TOUCH HAL, KINEMATIC DEADBAND & ENTITY INSPECTOR
+// ==============================================================================
+void test_touch_hal_kinematic_gestures_and_d049_d050() {
+  using namespace latter_ui;
+
+  // 1. First-Party Touch HAL Frame Decoders (FT6336/FT3168, GT911, CST9217, CST816S)
+  {
+    const uint8_t ft_down[5] = {0x01U, 0x81U, 0x2CU, 0x00U, 0xF0U};  // Contact at (300, 240)
+    const auto s_ft = decode_focaltech_frame(ft_down);
+    LATTER_CHECK(s_ft.kind == TouchSampleKind::Contact && s_ft.raw_x == 300 && s_ft.raw_y == 240 && !s_ft.ack_buffer);
+
+    const uint8_t ft_lift_cnt0[5] = {0x00U, 0x81U, 0x2CU, 0x00U, 0xF0U};
+    LATTER_CHECK(decode_focaltech_frame(ft_lift_cnt0).kind == TouchSampleKind::Released);
+
+    const uint8_t ft_lift_flag[5] = {0x01U, 0x41U, 0x2CU, 0x00U, 0xF0U};  // Event flag 01 = Lift
+    LATTER_CHECK(decode_focaltech_frame(ft_lift_flag).kind == TouchSampleKind::Released);
+
+    const uint8_t ft_corrupt[5] = {0x0FU, 0x80U, 0x10U, 0x00U, 0x10U};   // Count 15 -> Released/ignored
+    LATTER_CHECK(decode_focaltech_frame(ft_corrupt).kind == TouchSampleKind::Released);
+
+    // GT911: status & 0x80 == 0 MUST return NotReady with ack_buffer == false (no premature 0x814E clear!)
+    const uint8_t gt_pt[4] = {0x68U, 0x01U, 0xAEU, 0x02U};  // (360, 686) little-endian
+    const auto s_gt_busy = decode_gt911_frame(0x01U, gt_pt);
+    LATTER_CHECK(s_gt_busy.kind == TouchSampleKind::NotReady && !s_gt_busy.ack_buffer);
+
+    const auto s_gt_down = decode_gt911_frame(0x81U, gt_pt);
+    LATTER_CHECK(s_gt_down.kind == TouchSampleKind::Contact && s_gt_down.ack_buffer &&
+                 s_gt_down.raw_x == 360 && s_gt_down.raw_y == 686);
+
+    const auto s_gt_up = decode_gt911_frame(0x80U, nullptr);
+    LATTER_CHECK(s_gt_up.kind == TouchSampleKind::Released && s_gt_up.ack_buffer);
+
+    // CST9217: requires 0xAB trailer sync byte and low nibble 0x06 for active finger
+    const uint8_t cst_bad[5] = {0x06U, 0x10U, 0x20U, 0x34U, 0x00U};
+    LATTER_CHECK(decode_cst9217_frame(cst_bad).kind == TouchSampleKind::Invalid);
+
+    const uint8_t cst_up[5] = {0x00U, 0x10U, 0x20U, 0x34U, 0xABU};
+    LATTER_CHECK(decode_cst9217_frame(cst_up).kind == TouchSampleKind::Released &&
+                 decode_cst9217_frame(cst_up).ack_buffer);
+
+    const uint8_t cst_down[5] = {0x06U, 0x17U, 0x1DU, 0x42U, 0xABU};  // x=(0x17<<4)|4=372, y=(0x1D<<4)|2=466
+    const auto s_cst = decode_cst9217_frame(cst_down);
+    LATTER_CHECK(s_cst.kind == TouchSampleKind::Contact && s_cst.raw_x == 372 && s_cst.raw_y == 466 && s_cst.ack_buffer);
+
+    const uint8_t c816_down[6] = {0x00U, 0x01U, 0x80U, 0xFAU, 0x01U, 0x04U};  // (250, 260)
+    const auto s_816 = decode_cst816s_frame(c816_down);
+    LATTER_CHECK(s_816.kind == TouchSampleKind::Contact && s_816.raw_x == 250 && s_816.raw_y == 260);
+
+    static_assert(default_active_poll_ms(TouchHalProtocol::GT911) == 8U);
+    static_assert(default_active_poll_ms(TouchHalProtocol::FT6336) == 10U);
+    static_assert(default_active_poll_ms(TouchHalProtocol::FT3168) == 10U);
+    static_assert(default_active_poll_ms(TouchHalProtocol::CST9217) == 16U);
+  }
+
+  // 2. Kinematic Deadband, Fast-Flick Velocity & Axis Lock Across All 5 Flagship PPIs
+  for (int ppi : {165, 254, 266, 313, 315}) {
+    const KinematicMetrics km = KinematicMetrics::for_ppi(ppi);
+    const int slop = km.tap_slop_px;
+    const int lock_px = km.axis_lock_px;
+    const int live_px = km.swipe_live_px;
+    const int flick_px = km.swipe_flick_px;
+    LATTER_CHECK(flick_px <= slop);
+    LATTER_CHECK(slop < live_px);
+    LATTER_CHECK(lock_px <= live_px);
+
+    // Quick tap with ~1.2 mm finger roll keeps tap_cancelled == false
+    TouchGestureState g{};
+    g.begin(160, 240, 1000U, PageId::HOME, 101);
+    const int roll_px = std::max(1, mm_to_px_for(1.20f, ppi));
+    g.record_move(160 + roll_px, 240, 1025U, ppi);
+    LATTER_CHECK(!g.tap_cancelled && !g.swipe_committed);
+    LATTER_CHECK(eval_kinematic_horiz_swipe(roll_px, 0, 25U, true, ppi, g.axis_lock) == 0);
+
+    // Deadband micro-drag (~2.0 mm over 250 ms = 8 mm/s < 38 mm/s): neither swipe nor tap!
+    g.begin(160, 240, 2000U, PageId::HOME, 101);
+    const int dead_px = slop + 2;
+    if (dead_px < live_px) {
+      g.record_move(160 - dead_px, 240, 2250U, ppi);
+      LATTER_CHECK(g.tap_cancelled);
+      LATTER_CHECK(eval_kinematic_horiz_swipe(-dead_px, 0, 250U, false, ppi, g.axis_lock) == 0);
+      LATTER_CHECK(eval_kinematic_horiz_swipe(-dead_px, 0, 250U, true, ppi, g.axis_lock) == 0);
+    }
+
+    // Fast 2-sample flick (~1.85 mm in 35 ms = ~53 mm/s >= 38 mm/s): commits cleanly on release!
+    g.begin(160, 240, 3000U, PageId::HOME, 101);
+    const int fast_px = std::max(flick_px, slop + 1);
+    g.record_move(160 - fast_px, 240, 3035U, ppi);
+    LATTER_CHECK(g.tap_cancelled);
+    LATTER_CHECK(eval_kinematic_horiz_swipe(-fast_px, 0, 35U, true, ppi, g.axis_lock) == +1);
+
+    // Live swipe (>= 2.5 mm): commits immediately during on_touch_move (is_release == false)
+    g.begin(160, 240, 4000U, PageId::HOME, 101);
+    const int full_px = live_px + 2;
+    g.record_move(160 + full_px, 242, 4090U, ppi);
+    LATTER_CHECK(g.axis_lock == GestureAxisLock::Horizontal);
+    LATTER_CHECK(eval_kinematic_horiz_swipe(full_px, 2, 90U, false, ppi, g.axis_lock) == -1);
+    LATTER_CHECK(eval_kinematic_vert_swipe(full_px, 2, 90U, false, ppi, g.axis_lock) == 0);
+  }
+
+  // 3. Clamped vs. Wrapping Pagers & EdgeBounceState
+  {
+    edge_bounce().clear();
+    bool changed = true;
+    // Boundary swipe left on Home Dock page 0 clamps at 0 and triggers 135 ms rubber-band bounce
+    const int p0 = step_pager_index(0, 0, 2, -1, /*wrap=*/false,
+                                    GestureAxisLock::Horizontal, PageId::HOME, 5000U, changed);
+    LATTER_CHECK(p0 == 0 && !changed);
+    LATTER_CHECK(edge_bounce().is_active(PageId::HOME, GestureAxisLock::Horizontal, 5040U));
+    LATTER_CHECK(edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Horizontal, 5065U, 266) > 0);
+    LATTER_CHECK(!edge_bounce().is_active(PageId::HOME, GestureAxisLock::Horizontal, 5200U));
+    LATTER_CHECK(edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Horizontal, 5200U, 266) == 0);
+
+    // Wrapping mode-bar pager wraps 0 -> 3 and 3 -> 0 with zero edge bounce
+    edge_bounce().clear();
+    const int w_prev = step_pager_index(0, 0, 3, -1, /*wrap=*/true,
+                                        GestureAxisLock::Horizontal, PageId::WEATHER, 6000U, changed);
+    LATTER_CHECK(w_prev == 3 && changed &&
+                 !edge_bounce().is_active(PageId::WEATHER, GestureAxisLock::Horizontal, 6010U));
+  }
+
+  // 4. Target-Scoped Debounce (rapid same-target vs. 0 ms cross-target)
+  {
+    touch_router() = TouchRouter{};
+    const uint32_t key_vol_up = make_tap_target_key(PageId::REMOTE, WidgetId::REMOTE_VOL_UP, 0);
+    const uint32_t key_vol_dn = make_tap_target_key(PageId::REMOTE, WidgetId::REMOTE_VOL_DOWN, 0);
+    LATTER_CHECK(touch_router().allow_tap(1000U, TOUCH_DEBOUNCE_RAPID, key_vol_up));
+    LATTER_CHECK(!touch_router().allow_tap(1040U, TOUCH_DEBOUNCE_RAPID, key_vol_up));  // < 65ms same target blocked
+    LATTER_CHECK(touch_router().allow_tap(1025U, TOUCH_DEBOUNCE_RAPID, key_vol_dn));   // 25ms cross-target allowed!
+    LATTER_CHECK(touch_router().allow_tap(1095U, TOUCH_DEBOUNCE_RAPID, key_vol_dn));   // +70ms >= 65ms repeater allowed!
+  }
+
+  // 5. 4-Option tap_to_wake Power Policy & Wearable Watch Double-Tap Window
+  {
+    (void)accept_screen_off_tap("Disabled", false, 900U);  // reset internal gate
+    // Single Tap: wakes immediately on battery or USB
+    LATTER_CHECK(accept_screen_off_tap("Single Tap", false, 1000U));
+    LATTER_CHECK(accept_screen_off_tap("Single Tap", true, 1200U));
+
+    // Double Tap: 1st tap arms, < 35ms bounce rejected, 35..450ms 2nd tap wakes, > 450ms re-arms
+    (void)accept_screen_off_tap("Disabled", false, 1900U);
+    LATTER_CHECK(!accept_screen_off_tap("Double Tap", false, 2000U));  // Tap 1 arms
+    LATTER_CHECK(!accept_screen_off_tap("Double Tap", false, 2020U));  // 20ms contact bounce ignored
+    LATTER_CHECK(accept_screen_off_tap("Double Tap", false, 2240U));   // 240ms Tap 2 wakes!
+
+    LATTER_CHECK(!accept_screen_off_tap("Double Tap", false, 3000U));  // New Tap 1 arms
+    LATTER_CHECK(!accept_screen_off_tap("Double Tap", false, 3600U));  // 600ms > 450ms -> re-arms as Tap 1
+    LATTER_CHECK(accept_screen_off_tap("Double Tap", false, 3820U));   // +220ms -> wakes!
+    LATTER_CHECK(accept_screen_off_tap("Double Tap", true, 3950U));    // Docked on USB wakes on single tap!
+
+    // Docked Only & Disabled
+    LATTER_CHECK(!accept_screen_off_tap("Docked Only", false, 5000U));
+    LATTER_CHECK(accept_screen_off_tap("Docked Only", true, 5100U));
+    LATTER_CHECK(!accept_screen_off_tap("Disabled", false, 5200U));
+    LATTER_CHECK(!accept_screen_off_tap("Disabled", true, 5300U));
+
+    // PowerProfile preset mapping: Wearable Watch -> Double Tap; Handheld Roaming & Wall/Desk -> Single Tap
+    PersistedDevicePrefs pp{};
+    uint64_t chg = 0ULL;
+    uint32_t eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Wearable Watch", true, chg, eff));
+    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Double Tap");
+    chg = 0ULL;
+    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Handheld Roaming", true, chg, eff));
+    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Single Tap");
+    chg = 0ULL;
+    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Always-On Wall / Desk", true, chg, eff));
+    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Single Tap");
+    chg = 0ULL;
+    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Portable Carry", true, chg, eff));
+    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Docked Only");
+  }
+
+  // 6. D-050 Source Guards: zero inline horizontal sliders on Area Overview; generalized Entity Inspector
+  {
+    const std::string area_src = read_repo_file("../../components/latter_ui/page_area_hub.cpp");
+    const std::string touch_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+    LATTER_CHECK(area_src.find("AREA_CARD_SLIDER") == std::string::npos);
+    LATTER_CHECK(area_src.find("WidgetId::AREA_CARD_TOGGLE") != std::string::npos);
+    LATTER_CHECK(area_src.find("WidgetId::AREA_CARD_TAP") != std::string::npos);
+    LATTER_CHECK(area_src.find("WidgetId::ENTITY_PRESET_BASE") != std::string::npos);
+    LATTER_CHECK(touch_src.find("tap_max_loose") == std::string::npos);
+    LATTER_CHECK(touch_src.find("try_commit_kinematic_swipe_") != std::string::npos);
+  }
 }
 
 }  // namespace
@@ -3694,6 +3885,7 @@ int main() {
   test_home_activity_card_d045();
   test_home_hub_v6_alarm_caps_and_tools_pagination();
   test_home_hub_d048_button_only_glass_and_conditional_controls();
+  test_touch_hal_kinematic_gestures_and_d049_d050();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

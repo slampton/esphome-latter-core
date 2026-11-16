@@ -213,8 +213,9 @@ display:
     update_interval: 1s
 
 touchscreen:
-  - platform: ft5x06
+  - platform: latter_core
     id: touch_screen
+    protocol: ft3168
     display: disp1
     i2c_id: bus_internal
     address: 0x38

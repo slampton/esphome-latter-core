@@ -755,9 +755,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   if (rs.nav.display_power_state != 0 || !rt_.panel_is_on) {
     const std::string_view tw_mode = rt_.select_opt(UiSelectId::TAP_WAKE_MODE);
-    if (tw_mode == "Disabled") return;
-    if (tw_mode == "Docked Only" && !rt_.usb_connected) return;
-    if (!accept_screen_off_tap(rt_.usb_connected, now_touch)) return;
+    if (!accept_screen_off_tap(tw_mode, rt_.usb_connected, now_touch)) return;
     note_wake_reason(WakeReason::TOUCH);
     rt_.cmd(UiHostCmd::WAKE_TO_ACTIVE);
     return;
@@ -884,14 +882,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   // ----------------------------------------------------------------------------
   // 2. Active Page Touch-Down Initialization & Immediate Hit-Table Controls
   // ----------------------------------------------------------------------------
-  gest.start_page = rs.nav.gui_page;
-  gest.start_context = compute_touch_context(rs);
-  gest.active = true;
-  gest.swipe_committed = false;
+  gest.begin(touch.x, touch.y, now_touch, rs.nav.gui_page, compute_touch_context(rs));
 
   const auto &ly = layout();
   const HitRegion *hit = frame_hits().hit_test(touch.x, touch.y, kHitTap);
   const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
+  const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
 
   // Whenever an explicit < Back tap is consumed on touch-down, terminate the gesture
   // immediately so releasing the finger never fires a secondary action on the parent screen.
@@ -899,9 +895,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     gest.active = false;
   }
 
-  // Universal bottom-edge swipe-up home guard: defer chin touches to on_touch_move / on_touch_up
+  // Universal bottom-edge swipe-up home guard: defer bottom-zone touches to on_touch_move / on_touch_up
   // without swallowing direct taps on an explicit < Back button near the bottom bezel.
-  if (can_go_home(rs) && wid != WidgetId::BACK_BUTTON && touch.y >= ly.chin_guard_y()) {
+  if (can_go_home(rs) && wid != WidgetId::BACK_BUTTON && touch.y >= ly.home_zone_y()) {
     return;
   }
 
@@ -989,7 +985,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
     if (rs.nav.home_subpage == 2) {
       if (wid == WidgetId::BACK_BUTTON) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.nav.home_subpage = 0;
           home_activity_overlay_page() = 0;
           mark_dirty_full();
@@ -998,101 +994,28 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::HOME_ACTIVITY_PREV || wid == WidgetId::CHEVRON_UP) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL, tkey)) {
+          gest.active = false;
           home_activity_overlay_page() = std::max(0, home_activity_overlay_page() - 1);
           rt_.schedule_disp();
         }
         return;
       }
       if (wid == WidgetId::HOME_ACTIVITY_NEXT || wid == WidgetId::CHEVRON_DOWN) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL, tkey)) {
+          gest.active = false;
           const int max_pg = std::max(0, (act_count - 1) / 5);
           home_activity_overlay_page() = std::min(max_pg, home_activity_overlay_page() + 1);
           rt_.schedule_disp();
         }
         return;
       }
-      if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-          const bool quick_tap = (touch.x >= hit->x1 - scale_x(56));
-          handle_home_activity_action(act_items, act_count, hit->param, quick_tap,
-                                      now_touch, rs, prefs, rt_);
-        }
-        return;
-      }
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_DISMISS)) {
-        rs.nav.home_subpage = 0;
-        home_activity_overlay_page() = 0;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      }
-      return;
+      return;  // Vertical page swipe, slot taps & outside-tap dismiss resolve in on_touch_up
     }
 
-    // Home subpage 0: Hero zones, Roaming Area icon & FrameHitTable Activity sub-regions
-    // (Dock slots resolve on_touch_up so dock swipe works!)
-    if (wid == WidgetId::HOME_QUICK_BTN) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        const bool is_night = (weather_state().sun_state == "below_horizon");
-        rs.nav.gui_page = PageId::WEATHER;
-        rs.nav.sky_weather_subpage = is_night ? 3 : 2;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if (wid == WidgetId::HOME_AREA_ICON) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        const auto &ac = area_ctx_state();
-        if (!ac.area_id.empty()) {
-          rs.area.active_area_id = ac.area_id;
-          rs.area.active_area_name = ac.area_name.empty() ? latter_area_label() : ac.area_name;
-        }
-        launch_dock_app(PageId::AREA, rs, rt_, now_touch);
-      }
-      return;
-    }
-    if (wid == WidgetId::HOME_TIME_READOUT) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        if (prefs.home_clock_tap_action == 0U) {
-          launch_dock_app(PageId::TIME, rs, rt_, now_touch);
-        } else {
-          rs.nav.gui_page = PageId::CLOCK;
-          mark_dirty_full();
-          rt_.schedule_disp();
-        }
-      }
-      return;
-    }
-    if (wid == WidgetId::HOME_WEATHER_HERO) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rs.nav.gui_page = PageId::WEATHER;
-        rs.nav.sky_weather_subpage = 0;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if (wid == WidgetId::HOME_ACT_EXPAND && act_count > 0) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        home_activity_overlay_page() = 0;
-        rs.nav.home_subpage = 2;
-        mark_dirty_full();
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if ((wid == WidgetId::HOME_ACT_ROW_0 || wid == WidgetId::HOME_ACT_ROW_1 ||
-         wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1) &&
-        act_count > 0) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        const bool quick_tap =
-            (wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1);
-        handle_home_activity_action(act_items, act_count, hit->param, quick_tap,
-                                    now_touch, rs, prefs, rt_);
-      }
-      return;
-    }
+    // Home subpage 0: Full-canvas horizontal Dock swipe (D-049) — all hero & dock taps resolve
+    // on verified release (<=10 ms) in on_touch_up so swipes anywhere on Home never trigger taps.
+    (void)act_items;
     return;
   }
 
@@ -1104,18 +1027,19 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       const bool controls_shown = always_vis || rs.music.hud_active;
 
       if (!controls_shown) {
+        gest.active = false;
         rs.music.hud_active = true;
         rs.music.hud_timer = now_touch;
-        rs.nav.hud_wake_finger_released = false;
+        rs.nav.hud_wake_finger_released = true;
         hud_just_woken_ms_ = now_touch;
-        touch_router().note_tap(now_touch);
         rt_.schedule_disp();
         return;
       }
 
       if (wid == WidgetId::MUSIC_QUEUE_BTN) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-          music_scroll_tap_lockout_until_ms() = now_touch + 280U;
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          gest.active = false;
+          music_scroll_tap_lockout_until_ms() = now_touch + 220U;
           rs.music.direct_nav = false;
           rs.music.overlay_mode = 5;
           mark_dirty_full();
@@ -1124,7 +1048,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::MUSIC_SPEAKER_BTN) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          gest.active = false;
           rs.music.selected_category_mode = "speakers";
           rs.music.selected_category_title = "SPEAKERS";
           reset_music_loading_slots(rs, "Loading...");
@@ -1139,7 +1064,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::MUSIC_BROWSE_BTN) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          gest.active = false;
           rs.music.category_page = 1;
           rs.nav.menu_scroll_active = false;
           rs.music.direct_nav = true;
@@ -1150,7 +1076,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::MUSIC_PLAY_PAUSE) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          gest.active = false;
           const auto &ms = media_state();
           const bool was_playing = is_music_playing_effective(
               !ms.is_local, rt_.local_mp_playing, ms.state, now_touch);
@@ -1158,12 +1085,13 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.music.feedback_timer = now_touch;
           rs.music.hud_timer = now_touch;
           rt_.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
-          rt_.schedule_disp();
+          rt_.schedule_band_disp(0, ly.music_art_cy + scale_s(56));
         }
         return;
       }
       if (wid == WidgetId::MUSIC_PREV_BTN || wid == WidgetId::MUSIC_NEXT_BTN) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          gest.active = false;
           const bool is_next = (wid == WidgetId::MUSIC_NEXT_BTN);
           const bool is_speech = (rs.music.active_playback_media_type == "podcast" ||
                                   rs.music.active_playback_media_type == "audiobook");
@@ -1176,18 +1104,19 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           }
           rs.music.feedback_timer = now_touch;
           rs.music.hud_timer = now_touch;
-          rt_.schedule_disp();
+          rt_.schedule_band_disp(0, scale_y(96));
         }
         return;
       }
       if (wid == WidgetId::MUSIC_VOL_SLIDER) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          gest.active = false;
           step_music_volume_feedback(
               hit->param, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
               media_state().is_local, rt_.local_mp_volume, now_touch, rs.music);
           rs.music.hud_timer = now_touch;
           rt_.cmd(UiHostCmd::MUSIC_STEP_VOLUME, (hit->param > 0) ? 1 : -1);
-          rt_.schedule_disp();
+          rt_.schedule_band_disp(0, scale_y(96));
         }
         return;
       }
@@ -1829,14 +1758,56 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
     if (rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
-      if (wid == WidgetId::LIGHT_COLOR_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      const std::string &idom = light_insp_domain();
+      if (idom == "cover" || idom == "fan") {
+        if (wid >= WidgetId::ENTITY_PRESET_BASE && wid < WidgetId::ENTITY_PRESET_BASE + 4 &&
+            touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          gest.active = false;
+          const int pct = std::clamp(static_cast<int>(hit->param), 0, 100);
+          light_insp_bri_pct() = pct;
+          light_insp_active() = (pct > 0);
+          const int sl_i = light_insp_slot();
+          if (sl_i >= 0 && sl_i < 3) {
+            rs.area_entity_slots()[sl_i].level = pct;
+            rs.area_entity_slots()[sl_i].active = (pct > 0);
+          }
+          rs.area.target_entity_id = light_insp_entity_id();
+          if (pct == 0) {
+            rs.area.target_action = (idom == "cover") ? "close_cover" : "turn_off";
+            rs.area.target_level = 0;
+          } else if (pct >= 100 && idom == "cover") {
+            rs.area.target_action = "open_cover";
+            rs.area.target_level = 100;
+          } else {
+            rs.area.target_action = "set_level";
+            rs.area.target_level = pct;
+          }
+          rs.area.feedback_timer = now_touch;
+          do_execute_area_action();
+          rt_.schedule_disp();
+          return;
+        }
+        if (wid == WidgetId::LIGHT_BRI_SLIDER) {
+          const float f = hit->norm_x(touch.x);
+          const int raw_b = static_cast<int>(f * 100.0f);
+          const int min_b = (idom == "cover") ? 0 : 5;
+          light_insp_bri_pct() = std::clamp(((raw_b + 2) / 5) * 5, min_b, 100);
+          light_insp_active() = (light_insp_bri_pct() > 0);
+          rt_.schedule_disp();
+          return;
+        }
+        return;
+      }
+      if (wid == WidgetId::LIGHT_COLOR_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        gest.active = false;
         light_insp_mode() = (light_insp_mode() == 0) ? 1 : 0;
+        mark_dirty_full();
         rt_.schedule_disp();
         return;
       }
       if (wid == WidgetId::COLOR_WHEEL_RING) {
         float hue = 0.0f, sat = 1.0f;
-        if (ui::hsv_wheel_pick(touch.x, touch.y, SCREEN_CX, scale_y(176), 140, 62, hue, sat)) {
+        if (ui::hsv_wheel_pick(touch.x, touch.y, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
           light_insp_hue_deg() = hue;
           light_insp_sat() = sat;
           update_light_inspector_hex(hue, sat);
@@ -1865,7 +1836,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   // Page 7: Universal TV Remote
   if (rs.nav.gui_page == PageId::REMOTE) {
     if (rs.nav.remote_subpage == 1) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.remote.action_feedback.clear();
         rs.nav.remote_subpage = 0;
         mark_dirty_full();
@@ -1873,7 +1844,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-          touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
+          touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        gest.active = false;
         int valid_slots[MAX_REMOTE_SLOTS] = {0};
         const int valid_count = collect_configured_remote_slots(valid_slots);
         const int total_pages = std::max(1, (valid_count + 3) / 4);
@@ -1891,7 +1863,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     rs.remote.active_slot = act_slot;
 
     if (wid == WidgetId::REMOTE_SLOT_PILL) {
-      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        gest.active = false;
         rs.remote.action_feedback.clear();
         rs.nav.remote_subpage = 1;
         mark_dirty_full();
@@ -1914,7 +1887,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       case WidgetId::REMOTE_VOL_DOWN:   remote_key = 8; break;
       default: break;
     }
-    if (remote_key >= 0 && touch_router().allow_tap(now_touch, debounce_ms)) {
+    if (remote_key >= 0 && touch_router().allow_tap(now_touch, debounce_ms, tkey)) {
+      gest.active = false;
       do_remote_send_key(remote_key, act_slot);
       rt_.schedule_disp();
     }
@@ -2309,13 +2283,404 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   }
 }
 
+bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms) {
+  auto &gest = touch_gesture();
+  if (!gest.active || gest.swipe_committed || gest.axis_lock == GestureAxisLock::Slider) {
+    return gest.swipe_committed;
+  }
+  if (!is_release && (now_ms - gest.last_swipe_ms < TOUCH_POST_SWIPE_LOCKOUT)) {
+    return false;
+  }
+
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  const auto &ly = layout();
+  const int dx = gest.last_x - gest.start_x;
+  const int dy = gest.last_y - gest.start_y;
+  const uint32_t dur_ms = (now_ms >= gest.start_ms) ? (now_ms - gest.start_ms) : 0U;
+
+  const int v_dir = eval_kinematic_vert_swipe(
+      dx, dy, dur_ms, is_release, LATTER_PANEL_PPI, gest.axis_lock);
+  const int h_dir = eval_kinematic_horiz_swipe(
+      dx, dy, dur_ms, is_release, LATTER_PANEL_PPI, gest.axis_lock);
+
+  auto commit_swipe = [&]() {
+    gest.swipe_committed = true;
+    gest.tap_cancelled = true;
+    gest.last_swipe_ms = now_ms;
+  };
+
+  // 1. Universal Bottom-Edge Steep Upward Swipe -> Home ([HOME PREDICATE])
+  if (can_go_home(rs) && gest.start_y >= ly.home_zone_y() && v_dir > 0) {
+    commit_swipe();
+    navigate_home(now_ms);
+    return true;
+  }
+
+  // 2. Page 1: Home (Full-Canvas App Dock Horizontal Swipe & Settings / Active Items Vertical Paging)
+  if (rs.nav.gui_page == PageId::HOME) {
+    if (rs.nav.home_subpage == 0) {
+      if (h_dir != 0) {
+        commit_swipe();
+        int dock_apps[kMaxDockApps]{};
+        const int dock_cnt = collect_home_dock_apps(dock_apps);
+        const int dock_pages = std::max(1, (dock_cnt + 3) / 4);
+        bool changed = false;
+        home_dock_page() = step_pager_index(
+            home_dock_page(), 0, dock_pages - 1, h_dir, /*wrap=*/false,
+            GestureAxisLock::Horizontal, PageId::HOME, now_ms, changed);
+        if (changed) {
+          rt_.schedule_disp();
+        } else {
+          rt_.schedule_band_disp(dock_dirty_band_y0(), SCREEN_H - 1);
+        }
+        return true;
+      }
+      return false;
+    }
+    if (rs.nav.home_subpage == 1 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      bool changed = false;
+      rs.nav.home_settings_page = step_pager_index(
+          rs.nav.home_settings_page, 1, 2, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::HOME, now_ms, changed);
+      rt_.schedule_disp();
+      return true;
+    }
+    if (rs.nav.home_subpage == 2 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      int act_cnt = 0;
+      (void)home_activity_rendered_items(act_cnt);
+      const int max_pg = std::max(0, (act_cnt - 1) / 5);
+      bool changed = false;
+      home_activity_overlay_page() = step_pager_index(
+          home_activity_overlay_page(), 0, max_pg, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::HOME, now_ms, changed);
+      rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
+  // 3. Page 2: Music Vertical Menus & Browse Lists (Modes 1, 2, 3, 7, 8)
+  if (rs.nav.gui_page == PageId::MUSIC) {
+    if (rs.music.overlay_mode == 2 && !rs.nav.menu_scroll_active &&
+        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+      bool changed = false;
+      const int target_pg = step_pager_index(
+          rs.music.category_page, 1, 2, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
+      if (changed) {
+        rs.nav.menu_scroll_active = true;
+        rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
+        rs.nav.menu_scroll_target_page = target_pg;
+        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      } else {
+        rt_.schedule_disp();
+      }
+      return true;
+    }
+    if ((rs.music.overlay_mode == 1 || rs.music.overlay_mode == 3 ||
+         rs.music.overlay_mode == 7 || rs.music.overlay_mode == 8) &&
+        !rs.nav.menu_scroll_active && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+      int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
+      const int b_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC));
+      const bool wrap_list = (rs.music.overlay_mode == 3) &&
+                             (rs.music.selected_category_mode == "artist" ||
+                              rs.music.selected_category_mode == "album");
+      bool changed = false;
+      const int next_pg = step_pager_index(
+          b_page, 1, b_tot, v_dir, wrap_list,
+          GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
+      if (changed) {
+        b_page = next_pg;
+        last_music_page_req_ms() = now_ms;
+        rs.nav.menu_scroll_active = false;
+        media_fetch_browse(now_ms);
+      }
+      rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
+  // 4. Page 3: Games Carousel & 2048 Board Flicks
+  if (rs.nav.gui_page == PageId::GAMES) {
+    if (rs.nav.active_game == 0 && !rs.nav.menu_scroll_active && h_dir != 0) {
+      commit_swipe();
+      rs.nav.menu_scroll_active = true;
+      rs.nav.menu_scroll_dir = h_dir;
+      rs.nav.menu_scroll_target_page = step_wrap(rs.nav.game_carousel_idx, h_dir, 6);
+      rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      return true;
+    }
+    if (rs.nav.active_game == 5 && is_release &&
+        (std::abs(dx) >= ly.flick_min() || std::abs(dy) >= ly.flick_min())) {
+      commit_swipe();
+      if (std::abs(dx) > std::abs(dy)) {
+        game_2048_pending_dir() = (dx > 0) ? 2 : 4;
+      } else {
+        game_2048_pending_dir() = (dy > 0) ? 3 : 1;
+      }
+      rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
+  // 5. Page 4: System Animated 2-Page Vertical Menus (Modes 0, 1, 2)
+  if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
+      (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
+      v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    commit_swipe();
+    const int cur_pg = (rs.nav.system_menu_mode == 0)
+                           ? rs.nav.system_dashboard_page
+                           : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page
+                                                             : rs.nav.display_menu_page);
+    bool changed = false;
+    const int target_pg = step_pager_index(
+        cur_pg, 1, 2, v_dir, /*wrap=*/false,
+        GestureAxisLock::Vertical, PageId::SYSTEM, now_ms, changed);
+    if (changed) {
+      rs.nav.menu_scroll_active = true;
+      rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
+      rs.nav.menu_scroll_target_page = target_pg;
+      rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+    } else {
+      rt_.schedule_disp();
+    }
+    return true;
+  }
+
+  // 6. Page 5: Weather & Sky (Unified Canvas + Mode Bar Horizontal Wrapping Swipe)
+  if (rs.nav.gui_page == PageId::WEATHER && h_dir != 0) {
+    commit_swipe();
+    rs.nav.sky_weather_subpage = step_wrap(rs.nav.sky_weather_subpage, h_dir, 4);
+    mark_dirty_full();
+    rt_.schedule_disp();
+    return true;
+  }
+
+  // 7. Page 6: Area Control (Picker List, Unified Canvas+ModeBar Category Swipe, Full-Canvas Entity Paging)
+  if (rs.nav.gui_page == PageId::AREA) {
+    if (rs.nav.area_subpage == AreaSubpage::PICKER || rs.area.browse_mode == "areas") {
+      if (v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+        commit_swipe();
+        int &a_pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
+        const int a_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_LIST));
+        bool changed = false;
+        const int next_pg = step_pager_index(
+            a_pg, 1, a_tot, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::AREA, now_ms, changed);
+        if (changed) {
+          a_pg = next_pg;
+          do_fetch_area_list_browse();
+        }
+        rt_.schedule_disp();
+        return true;
+      }
+      return false;
+    }
+    if (rs.nav.area_subpage == AreaSubpage::OVERVIEW) {
+      if (h_dir != 0) {
+        commit_swipe();
+        std::string cats[8];
+        const int cat_cnt = collect_area_categories(cats);
+        if (cat_cnt > 1) {
+          int cur_c = 0;
+          for (int i = 0; i < cat_cnt; i++) {
+            if (cats[i] == rs.area.domain_filter) {
+              cur_c = i;
+              break;
+            }
+          }
+          const int next_c = step_wrap(cur_c, h_dir, cat_cnt);
+          rs.area.domain_filter = cats[next_c];
+          sync_mode_bar_window(area_cat_dock_page(), next_c, cat_cnt);
+          rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+          do_fetch_area_browse();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+        return true;
+      }
+      if (v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+        commit_swipe();
+        int &pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
+        const int tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES));
+        bool changed = false;
+        const int next_pg = step_pager_index(
+            pg, 1, tot, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::AREA, now_ms, changed);
+        if (changed) {
+          pg = next_pg;
+          do_fetch_area_browse();
+        }
+        rt_.schedule_disp();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 8. Page 7: Remote Slot Selector Vertical List
+  if (rs.nav.gui_page == PageId::REMOTE && rs.nav.remote_subpage == 1 &&
+      v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    commit_swipe();
+    int valid_slots[MAX_REMOTE_SLOTS] = {0};
+    const int valid_count = collect_configured_remote_slots(valid_slots);
+    const int total_pages = std::max(1, (valid_count + 3) / 4);
+    bool changed = false;
+    remote_control_page() = step_pager_index(
+        remote_control_page(), 0, total_pages - 1, v_dir, /*wrap=*/false,
+        GestureAxisLock::Vertical, PageId::REMOTE, now_ms, changed);
+    rt_.schedule_disp();
+    return true;
+  }
+
+  // 9. Page 8: Tools Launcher Grid & Calendar Agenda Vertical Paging / Map Pan
+  if (rs.nav.gui_page == PageId::TOOLS) {
+    if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active &&
+        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      const int total_pages = std::max(1, tools_launcher_page_count());
+      const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
+      rs.nav.tools_menu_page = cur_pg;
+      bool changed = false;
+      const int target_pg = step_pager_index(
+          cur_pg, 0, total_pages - 1, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::TOOLS, now_ms, changed);
+      if (changed) {
+        rs.nav.menu_scroll_active = true;
+        rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+        rs.nav.menu_scroll_target_page = target_pg;
+        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      } else {
+        rt_.schedule_disp();
+      }
+      return true;
+    }
+    if (rs.nav.tools_subpage == ToolsSubpage::CALENDAR) {
+      if (cal_detail_mode() == 2 && is_release && (h_dir != 0 || v_dir != 0)) {
+        commit_swipe();
+        if (std::abs(dx) >= std::abs(dy)) {
+          const int step_x = (std::abs(dx) >= ly.fast_pan()) ? 2 : 1;
+          cal_map_pan_x() = std::clamp(cal_map_pan_x() + ((dx < 0) ? step_x : -step_x), -4, 4);
+        } else {
+          const int step_y = (std::abs(dy) >= ly.fast_pan()) ? 2 : 1;
+          cal_map_pan_y() = std::clamp(cal_map_pan_y() + ((dy < 0) ? step_y : -step_y), -4, 4);
+        }
+        rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
+        return true;
+      }
+      if (cal_detail_mode() == 0 && !cal_quick_add_open() &&
+          v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+        commit_swipe();
+        int &c_pg = rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR);
+        const int c_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::CALENDAR));
+        bool changed = false;
+        const int next_pg = step_pager_index(
+            c_pg, 1, c_tot, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::TOOLS, now_ms, changed);
+        if (changed) {
+          c_pg = next_pg;
+          do_fetch_calendar_browse();
+        }
+        rt_.schedule_disp();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 10. Page 9: Home Hub (Unified Canvas + Mode Bar Tab Step & Expanded Camera Carousel)
+  if (rs.nav.gui_page == PageId::HOME_HUB || rs.nav.gui_page == PageId::CAMERAS) {
+    if (rs.nav.gui_page == PageId::CAMERAS) {
+      rs.nav.gui_page = PageId::HOME_HUB;
+      home_hub_tab() = HomeHubTab::CAMERAS;
+    }
+    if (cam_quick_reply_open()) return false;
+    if (home_hub_tab() == HomeHubTab::CAMERAS && cam_expanded_fullscreen()) {
+      if (h_dir != 0) {
+        commit_swipe();
+        std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
+        const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
+        if (c_total > 1) {
+          cam_carousel_idx() = step_wrap(cam_carousel_idx(), h_dir, c_total);
+          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+          rs.alert.loaded_camera_url.clear();
+          last_cam_live_fetch_ms() = now_ms;
+          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+          rt_.schedule_disp();
+        }
+        return true;
+      }
+      return false;
+    }
+    if (h_dir != 0) {
+      commit_swipe();
+      int hh_tabs[kMaxHomeHubTabs]{};
+      const int hh_cnt = collect_home_hub_tabs(hh_tabs);
+      if (hh_cnt > 1) {
+        int cur_slot = 0;
+        for (int i = 0; i < hh_cnt; i++) {
+          if (hh_tabs[i] == home_hub_tab()) {
+            cur_slot = i;
+            break;
+          }
+        }
+        const int next_slot = step_wrap(cur_slot, h_dir, hh_cnt);
+        enter_home_hub_tab(hh_tabs[next_slot], false, rs, rt_, now_ms);
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // 11. Page 10: Time App (Unified Canvas + Mode Bar 4-Tab Swipe & World Clock Vertical Paging)
+  if (rs.nav.gui_page == PageId::TIME) {
+    const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
+    const bool in_drilldown =
+        (sub == TimeSubpage::TIMERS && timer_view_slot() != 0) ||
+        (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx != 0);
+    if (!in_drilldown && h_dir != 0) {
+      commit_swipe();
+      rs.nav.time_subpage = step_wrap(sub, h_dir, 4);
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return true;
+    }
+    if (!in_drilldown && sub == TimeSubpage::CLOCK &&
+        v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+      commit_swipe();
+      WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
+      const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
+      const int tot_pg = std::max(1, (tot_wc + 1) / 2);
+      bool changed = false;
+      rs.nav.world_clock_page = step_pager_index(
+          rs.nav.world_clock_page, 0, tot_pg - 1, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::TIME, now_ms, changed);
+      rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
 void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   auto &gest = touch_gesture();
   if (!gest.active) return;
 
   auto &rs = runtime_state();
   auto &prefs = persisted_prefs();
-  gest.last_touch_ms = now_u;
   last_user_touch_ms() = now_u;
 
   if (rs.nav.display_power_state == 0 && !rs.voice.active &&
@@ -2324,13 +2689,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     display_lifecycle().note_activity(now_u);
   }
 
-  if (tx != gest.last_x || ty != gest.last_y) {
-    gest.last_x = tx;
-    gest.last_y = ty;
-    gest.sample_count += 1;
-    const int cur_dist = std::max(std::abs(tx - gest.start_x), std::abs(ty - gest.start_y));
-    if (cur_dist > gest.max_travel) gest.max_travel = cur_dist;
-  }
+  gest.record_move(tx, ty, now_u, LATTER_PANEL_PPI);
 
   // Active steering games receive continuous touch coordinates
   if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game > 0 && rs.nav.active_game != 5) {
@@ -2349,6 +2708,8 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       (now_u - last_disp_update_ms() >= 42U)) {
     float hue = 0.0f, sat = 1.0f;
     if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(180), 156, 56, hue, sat)) {
+      gest.axis_lock = GestureAxisLock::Slider;
+      gest.tap_cancelled = true;
       color_wheel_hue_deg() = hue;
       color_wheel_sat() = sat;
       const esphome::Color c = hsv_to_rgb(hue / 360.0f, sat, 1.0f);
@@ -2363,47 +2724,21 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     return;
   }
 
-  if (now_u - gest.last_swipe_ms < TOUCH_POST_SWIPE_LOCKOUT) return;
   if (gest.swipe_committed) return;
 
   const auto &ly = layout();
   const int dx = tx - gest.start_x;
   const int dy = ty - gest.start_y;
 
-  // 1. Universal bottom-edge swipe-up -> Home ([HOME PREDICATE])
-  const bool can_swipe_home = can_go_home(rs);
-  if (can_swipe_home && gest.start_y >= ly.home_zone_y() &&
-      dy <= -ly.swipe_min() && std::abs(dy) > std::abs(dx)) {
-    gest.swipe_committed = true;
-    gest.last_swipe_ms = now_u;
-    navigate_home(now_u);
-    return;
-  }
-
-  // 2. Horizontal Slider Drags via FrameHitTable (kHitHorizSlider)
+  // Dedicated Horizontal Sliders (Music Track Inspector & Area Entity Level/Kelvin Inspector)
   const HitRegion *sl_hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitHorizSlider);
-  if (sl_hit != nullptr && std::abs(dx) >= ly.drag_start() && std::abs(dx) >= std::abs(dy)) {
-    if (sl_hit->widget_id >= WidgetId::AREA_CARD_SLIDER &&
-        sl_hit->widget_id < WidgetId::AREA_CARD_SLIDER + 3 &&
-        rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::OVERVIEW &&
-        rs.area.browse_mode != "areas") {
-      const int idx = std::clamp(static_cast<int>(sl_hit->param), 0, 2);
-      auto &sl = rs.area_entity_slots()[idx];
-      if (!sl.id.empty() && sl.type != "scene" && sl.type != "switch") {
-        const float f = sl_hit->norm_x(tx);
-        const int stepped = std::clamp(((static_cast<int>(f * 100.0f) + 2) / 5) * 5, 5, 100);
-        if (stepped != sl.level && (now_u - last_area_slider_ms_ >= 36U)) {
-          sl.level = stepped;
-          sl.active = true;
-          last_area_slider_ms_ = now_u;
-          const int y_mid = ly.area_card3_y(idx);
-          const int hh = ly.area_card3_h / 2 + 4;
-          rt_.schedule_band_disp(y_mid - hh, y_mid + hh);
-        }
-        return;
-      }
-    } else if (sl_hit->widget_id == WidgetId::MUSIC_SCRUB_BAR &&
-               rs.nav.gui_page == PageId::MUSIC && rs.music.overlay_mode == 6) {
+  if (sl_hit != nullptr &&
+      (gest.axis_lock == GestureAxisLock::Slider ||
+       (std::abs(dx) >= ly.drag_start() && std::abs(dx) >= std::abs(dy)))) {
+    gest.axis_lock = GestureAxisLock::Slider;
+    gest.tap_cancelled = true;
+    if (sl_hit->widget_id == WidgetId::MUSIC_SCRUB_BAR &&
+        rs.nav.gui_page == PageId::MUSIC && rs.music.overlay_mode == 6) {
       const float dur = media_state().duration;
       if (!std::isnan(dur) && dur > 0.0f && (now_u - last_disp_update_ms() >= 42U)) {
         rs.music.pos_base = sl_hit->norm_x(tx) * dur;
@@ -2411,8 +2746,9 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
         rt_.schedule_band_disp(scale_y(182), ly.music_scrub_y + scale_y(24));
       }
       return;
-    } else if (sl_hit->widget_id == WidgetId::LIGHT_TEMP_SLIDER &&
-               rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
+    }
+    if (sl_hit->widget_id == WidgetId::LIGHT_TEMP_SLIDER &&
+        rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
       const int raw_k = 2000 + static_cast<int>(sl_hit->norm_x(tx) * 4500.0f);
       const int next_k = std::clamp(((raw_k + 50) / 100) * 100, 2000, 6500);
       if (next_k != light_insp_kelvin() && (now_u - last_disp_update_ms() >= 42U)) {
@@ -2420,23 +2756,31 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
         rt_.schedule_disp();
       }
       return;
-    } else if (sl_hit->widget_id == WidgetId::LIGHT_BRI_SLIDER &&
-               rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
+    }
+    if (sl_hit->widget_id == WidgetId::LIGHT_BRI_SLIDER &&
+        rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
       const int raw_b = static_cast<int>(sl_hit->norm_x(tx) * 100.0f);
-      const int next_b = std::clamp(((raw_b + 2) / 5) * 5, 5, 100);
+      const int min_b = (light_insp_domain() == "cover") ? 0 : 5;
+      const int next_b = std::clamp(((raw_b + 2) / 5) * 5, min_b, 100);
       if (next_b != light_insp_bri_pct() && (now_u - last_disp_update_ms() >= 42U)) {
         light_insp_bri_pct() = next_b;
+        if (light_insp_domain() == "cover" || light_insp_domain() == "fan") {
+          light_insp_active() = (next_b > 0);
+        }
         rt_.schedule_disp();
       }
       return;
     }
   }
 
-  // Light Inspector HSV Wheel continuous drag (Area Subpage 2)
+  // Light Inspector HSV Wheel continuous drag (Area Subpage 2, light domain)
   if (rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
-      light_insp_mode() == 0 && (now_u - last_disp_update_ms() >= 42U)) {
+      light_insp_domain() == "light" && light_insp_mode() == 0 &&
+      (now_u - last_disp_update_ms() >= 42U)) {
     float hue = 0.0f, sat = 1.0f;
-    if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(176), 140, 62, hue, sat)) {
+    if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
+      gest.axis_lock = GestureAxisLock::Slider;
+      gest.tap_cancelled = true;
       light_insp_hue_deg() = hue;
       light_insp_sat() = sat;
       update_light_inspector_hex(hue, sat);
@@ -2445,267 +2789,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     }
   }
 
-  // 3. Home Dock Horizontal Window Swipe
-  if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
-      gest.start_y >= ly.home_dock_zone_top(
-                          home_weather_text_h(), home_activity_card_shown(),
-                          home_activity_rendered_rows())) {
-    if (std::abs(dx) >= ly.swipe_short() && std::abs(dx) > std::abs(dy)) {
-      int dock_apps[kMaxDockApps];
-      const int dock_cnt = collect_home_dock_apps(dock_apps);
-      const int dock_pages = (dock_cnt + 3) / 4;
-      if (dock_pages > 1) {
-        const int target_pg = std::clamp(home_dock_page() + ((dx < 0) ? 1 : -1), 0, dock_pages - 1);
-        if (target_pg != home_dock_page()) {
-          gest.swipe_committed = true;
-          gest.last_swipe_ms = now_u;
-          home_dock_page() = target_pg;
-          rt_.schedule_disp();
-        }
-      }
-    }
-    return;
-  }
-
-  // 4. Weather Page Horizontal Subpage Swipe
-  if (rs.nav.gui_page == PageId::WEATHER && gest.start_y < ly.home_zone_y()) {
-    if (std::abs(dx) >= ly.wide_swipe() && std::abs(dx) > std::abs(dy)) {
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      rs.nav.sky_weather_subpage = step_wrap(rs.nav.sky_weather_subpage, (dx < 0) ? 1 : -1, 4);
-      mark_dirty_full();
-      rt_.schedule_disp();
-    }
-    return;
-  }
-
-  // 5. System Animated 2-Page Vertical Scroll (Modes 0, 1, 2)
-  if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
-      (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
-      gest.start_y < scale_y(404)) {
-    if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-      const int cur_pg = (rs.nav.system_menu_mode == 0)
-                             ? rs.nav.system_dashboard_page
-                             : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page
-                                                               : rs.nav.display_menu_page);
-      const int target_pg = (dy < 0) ? 2 : 1;
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      if (target_pg != cur_pg) {
-        rs.nav.menu_scroll_active = true;
-        rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
-        rs.nav.menu_scroll_target_page = target_pg;
-        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-      }
-    }
-    return;
-  }
-
-  // 6. Games Launcher Horizontal Carousel Swipe
-  if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game == 0 && !rs.nav.menu_scroll_active &&
-      gest.start_y < ly.home_zone_y()) {
-    if (std::abs(dx) >= ly.list_swipe() && std::abs(dx) > std::abs(dy)) {
-      const int dir = (dx < 0) ? 1 : -1;
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      rs.nav.menu_scroll_active = true;
-      rs.nav.menu_scroll_dir = dir;
-      rs.nav.menu_scroll_target_page = step_wrap(rs.nav.game_carousel_idx, dir, 6);
-      rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-    }
-    return;
-  }
-
-  // 7. Tools Launcher Vertical Page Swipe (generalized N-page 0 .. total_pages - 1)
-  if (rs.nav.gui_page == PageId::TOOLS && rs.nav.tools_subpage == ToolsSubpage::LAUNCHER &&
-      !rs.nav.menu_scroll_active && gest.start_y < ly.home_zone_y()) {
-    const int total_pages = tools_launcher_page_count();
-    if (total_pages > 1) {
-      if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-        const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
-        rs.nav.tools_menu_page = cur_pg;
-        const int target_pg = std::clamp(cur_pg + ((dy < 0) ? 1 : -1), 0, total_pages - 1);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        if (target_pg != cur_pg) {
-          rs.nav.menu_scroll_active = true;
-          rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
-          rs.nav.menu_scroll_target_page = target_pg;
-          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-        }
-      }
-    }
-    return;
-  }
-
-  // 8. Music Library Category Vertical Scroll (Mode 2)
-  if (rs.nav.gui_page == PageId::MUSIC && rs.music.overlay_mode == 2 &&
-      !rs.nav.menu_scroll_active && gest.start_y < scale_y(404)) {
-    if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-      const int target_pg = (dy < 0) ? 2 : 1;
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      music_scroll_tap_lockout_until_ms() = now_u + 180U;
-      if (target_pg != rs.music.category_page) {
-        rs.nav.menu_scroll_active = true;
-        rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
-        rs.nav.menu_scroll_target_page = target_pg;
-        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-      }
-    }
-    return;
-  }
-
-  // 9. Area Control Category Canvas / Mode-Bar Swipe & Vertical Entity Paging
-  if (rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::OVERVIEW &&
-      rs.area.browse_mode != "areas" && sl_hit == nullptr) {
-    if (gest.start_y >= ly.mode_bar_zone_top() && gest.start_y < ly.edge_guard_y() &&
-        std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-      std::string cats[8];
-      const int cat_cnt = collect_area_categories(cats);
-      if (cat_cnt > 4) {
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        area_cat_dock_page() = std::clamp(area_cat_dock_page() + ((dx < 0) ? 4 : -4), 0, cat_cnt - 4);
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if (gest.start_y < ly.mode_bar_zone_top() &&
-        std::abs(dx) >= ly.canvas_swipe() && std::abs(dx) > std::abs(dy)) {
-      std::string cats[8];
-      const int cat_cnt = collect_area_categories(cats);
-      if (cat_cnt > 1) {
-        int cur_c = 0;
-        for (int i = 0; i < cat_cnt; i++) {
-          if (cats[i] == rs.area.domain_filter) {
-            cur_c = i;
-            break;
-          }
-        }
-        const int next_c = step_wrap(cur_c, (dx < 0) ? 1 : -1, cat_cnt);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        rs.area.domain_filter = cats[next_c];
-        sync_mode_bar_window(area_cat_dock_page(), next_c, cat_cnt);
-        rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-        do_fetch_area_browse();
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if (gest.start_y < ly.mode_bar_zone_top() &&
-        std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-      int &pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-      const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-      if (tot > 1) {
-        const int next_pg = std::clamp(pg + ((dy < 0) ? 1 : -1), 1, tot);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        if (next_pg != pg) {
-          pg = next_pg;
-          do_fetch_area_browse();
-          rt_.schedule_disp();
-        }
-      }
-      return;
-    }
-  }
-
-  // 10. Home Hub Horizontal Tab / Mode-Bar Swipe (and Expanded Camera Carousel)
-  if ((rs.nav.gui_page == PageId::HOME_HUB || rs.nav.gui_page == PageId::CAMERAS) &&
-      gest.start_y < ly.home_zone_y()) {
-    if (rs.nav.gui_page == PageId::CAMERAS) {
-      rs.nav.gui_page = PageId::HOME_HUB;
-      home_hub_tab() = HomeHubTab::CAMERAS;
-    }
-    if (cam_quick_reply_open()) {
-      return;
-    }
-    if (home_hub_tab() == HomeHubTab::CAMERAS && cam_expanded_fullscreen()) {
-      if (std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-        std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
-        const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        if (c_total > 1) {
-          cam_carousel_idx() = step_wrap(cam_carousel_idx(), (dx < 0) ? 1 : -1, c_total);
-          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-          rs.alert.loaded_camera_url.clear();
-          last_cam_live_fetch_ms() = now_u;
-          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-          rt_.schedule_disp();
-        }
-      }
-      return;
-    }
-    if (gest.start_y >= ly.mode_bar_zone_top() && gest.start_y < ly.edge_guard_y() &&
-        std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-      int hh_tabs[kMaxHomeHubTabs]{};
-      const int hh_cnt = collect_home_hub_tabs(hh_tabs);
-      if (hh_cnt > 4) {
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        home_hub_mode_bar_page() = std::clamp(
-            home_hub_mode_bar_page() + ((dx < 0) ? 4 : -4), 0, hh_cnt - 4);
-        rt_.schedule_disp();
-      }
-      return;
-    }
-    if (std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-      int hh_tabs[kMaxHomeHubTabs]{};
-      const int hh_cnt = collect_home_hub_tabs(hh_tabs);
-      if (hh_cnt > 1) {
-        int cur_slot = 0;
-        for (int i = 0; i < hh_cnt; i++) {
-          if (hh_tabs[i] == home_hub_tab()) {
-            cur_slot = i;
-            break;
-          }
-        }
-        const int next_slot = step_wrap(cur_slot, (dx < 0) ? 1 : -1, hh_cnt);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        enter_home_hub_tab(hh_tabs[next_slot], false, rs, rt_, now_u);
-        mark_dirty_full();
-        rt_.schedule_disp();
-      }
-    }
-    return;
-  }
-
-  // 11. Time App Horizontal Mode-Bar Tab Swipe & World Clock Vertical Paging
-  if (rs.nav.gui_page == PageId::TIME && gest.start_y < ly.home_zone_y()) {
-    const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
-    const bool in_drilldown =
-        (sub == TimeSubpage::TIMERS && timer_view_slot() != 0) ||
-        (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx != 0);
-    if (!in_drilldown && std::abs(dx) >= ly.wide_swipe() && std::abs(dx) > std::abs(dy)) {
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_u;
-      rs.nav.time_subpage = step_wrap(sub, (dx < 0) ? 1 : -1, 4);
-      mark_dirty_full();
-      rt_.schedule_disp();
-      return;
-    }
-    if (sub == TimeSubpage::CLOCK &&
-        gest.start_y < ly.mode_bar_zone_top() &&
-        std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-      WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
-      const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
-      const int tot_pg = (tot_wc + 1) / 2;
-      if (tot_pg > 1) {
-        const int next_pg = std::clamp(rs.nav.world_clock_page + ((dy < 0) ? 1 : -1), 0, tot_pg - 1);
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_u;
-        if (next_pg != rs.nav.world_clock_page) {
-          rs.nav.world_clock_page = next_pg;
-          rt_.schedule_disp();
-        }
-      }
-    }
-    return;
-  }
+  (void)try_commit_kinematic_swipe_(false, now_u);
 }
 
 void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
@@ -2724,45 +2808,15 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
   const int dx = gest.last_x - gest.start_x;
   const int dy = gest.last_y - gest.start_y;
   const TouchPt tp{gest.last_x, gest.last_y};
-  const HitRegion *hit = frame_hits().hit_test(tp.x, tp.y, kHitTap);
-  if (hit == nullptr && gest.max_travel <= ly.tap_max_loose()) {
-    hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap);
-  }
-  const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
   const HitRegion *start_slider = frame_hits().hit_test(gest.start_x, gest.start_y, kHitHorizSlider);
 
   const int cur_ctx = compute_touch_context(rs);
 
   if (cur_ctx == gest.start_context) {
-    // 1. Universal Bottom-Edge Swipe-Up -> Home ([HOME PREDICATE]; tap-on-pill disabled)
-    const bool allow_home = can_go_home(rs);
-    if (!gest.swipe_committed && allow_home && gest.start_y >= ly.home_zone_y() &&
-        dy <= -ly.swipe_min() && std::abs(dy) > std::abs(dx)) {
-      gest.swipe_committed = true;
-      gest.last_swipe_ms = now_rel;
-      navigate_home(now_rel);
-
-    // 2. Commit Horizontal Slider Releases (Area Card Slider / Light Inspector / Music Scrubber)
-    } else if (!gest.swipe_committed && start_slider != nullptr && gest.max_travel >= ly.drag_start()) {
-      if (start_slider->widget_id >= WidgetId::AREA_CARD_SLIDER &&
-          start_slider->widget_id < WidgetId::AREA_CARD_SLIDER + 3 &&
-          rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::OVERVIEW) {
-        const int idx = std::clamp(static_cast<int>(start_slider->param), 0, 2);
-        auto &sl = rs.area_entity_slots()[idx];
-        if (!sl.id.empty()) {
-          const int stepped = std::clamp(
-              ((static_cast<int>(start_slider->norm_x(tp.x) * 100.0f) + 2) / 5) * 5, 5, 100);
-          sl.level = stepped;
-          sl.active = true;
-          rs.area.target_entity_id = sl.id;
-          char fb[48];
-          std::snprintf(fb, sizeof(fb), "%s -> %d%%",
-                        strip_trailing_paren_state(sl.name).c_str(), stepped);
-          rs.area.action_feedback = fb;
-          gate_or_dispatch_area_action(sl.id, "set_level", stepped, "PERIMETER PIN", now_rel);
-        }
-      } else if (start_slider->widget_id == WidgetId::MUSIC_SCRUB_BAR &&
-                 rs.nav.gui_page == PageId::MUSIC && rs.music.overlay_mode == 6) {
+    // 1. Commit Dedicated Horizontal Slider & Color Wheel Releases First
+    if (!gest.swipe_committed && start_slider != nullptr) {
+      if (start_slider->widget_id == WidgetId::MUSIC_SCRUB_BAR &&
+          rs.nav.gui_page == PageId::MUSIC && rs.music.overlay_mode == 6) {
         const float dur = media_state().duration;
         if (!std::isnan(dur) && dur > 0.0f) {
           rs.music.pos_base = start_slider->norm_x(tp.x) * dur;
@@ -2780,19 +2834,33 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.schedule_disp();
       } else if (start_slider->widget_id == WidgetId::LIGHT_BRI_SLIDER &&
                  rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
+        const std::string &idom = light_insp_domain();
+        const int pct = light_insp_bri_pct();
+        const int sl_i = light_insp_slot();
+        if (sl_i >= 0 && sl_i < 3) {
+          rs.area_entity_slots()[sl_i].level = pct;
+          rs.area_entity_slots()[sl_i].active = (pct > 0);
+        }
         rs.area.target_entity_id = light_insp_entity_id();
-        rs.area.target_action = "set_level";
-        rs.area.target_level = light_insp_bri_pct();
+        if (pct == 0 && (idom == "cover" || idom == "fan")) {
+          rs.area.target_action = (idom == "cover") ? "close_cover" : "turn_off";
+          rs.area.target_level = 0;
+        } else if (pct >= 100 && idom == "cover") {
+          rs.area.target_action = "open_cover";
+          rs.area.target_level = 100;
+        } else {
+          rs.area.target_action = "set_level";
+          rs.area.target_level = pct;
+        }
         rs.area.feedback_timer = now_rel;
         do_execute_area_action();
         rt_.schedule_disp();
       }
-
-    // 3. Light Inspector HSV Color Wheel Release -> Dispatch Color Action
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::AREA &&
-               rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL && light_insp_mode() == 0) {
+               rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
+               light_insp_domain() == "light" && light_insp_mode() == 0) {
       float hue = 0.0f, sat = 1.0f;
-      if (ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(176), 140, 62, hue, sat)) {
+      if (ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
         light_insp_hue_deg() = hue;
         light_insp_sat() = sat;
         update_light_inspector_hex(hue, sat);
@@ -2803,38 +2871,101 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         do_execute_area_action();
         rt_.schedule_disp();
       }
+    } else {
+      // 2. Evaluate Unified Kinematic Swipe / Fast-Flick Commit Across All Pages
+      (void)try_commit_kinematic_swipe_(true, now_rel);
+    }
 
-    // 4. Page 1 Home Dock Tap / Release Swipe
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
-      if (gest.start_y >= ly.home_dock_zone_top(
-                              home_weather_text_h(), home_activity_card_shown(),
-                              home_activity_rendered_rows()) &&
-          std::abs(dx) >= ly.dock_release_swipe() && std::abs(dx) > std::abs(dy)) {
-        int dock_apps[kMaxDockApps];
-        const int dock_cnt = collect_home_dock_apps(dock_apps);
-        const int dock_pages = (dock_cnt + 3) / 4;
-        if (dock_pages > 1) {
-          home_dock_page() = std::clamp(home_dock_page() + ((dx < 0) ? 1 : -1), 0, dock_pages - 1);
+    // 3. Strict Tap Resolution (D-049): Only eligible when !swipe_committed && !tap_cancelled
+    const bool tap_valid = !gest.swipe_committed && !gest.tap_cancelled && (gest.max_travel <= ly.tap_max());
+    const HitRegion *hit = tap_valid ? frame_hits().hit_test(tp.x, tp.y, kHitTap) : nullptr;
+    if (hit == nullptr && tap_valid) {
+      hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap);
+    }
+    const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
+    const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
+
+    if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
+      int act_count = 0;
+      const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
+      HomeActivityItem fallback_items[kMaxHomeActivity];
+      if (act_count <= 0) {
+        const auto &ms_hm = media_state();
+        const bool m_play = is_music_playing_effective(
+            !ms_hm.is_local, rt_.local_mp_playing, ms_hm.state, now_rel);
+        const std::string &m_t = (!ms_hm.is_local || rt_.track_title.empty()) ? ms_hm.title : rt_.track_title;
+        const std::string &m_a = (!ms_hm.is_local || rt_.track_artist.empty()) ? ms_hm.artist : rt_.track_artist;
+        act_count = collect_home_activities(
+            now_rel, prefs.is_24h_format,
+            rs.stopwatch.running, rs.stopwatch.start_time_ms, rs.stopwatch.elapsed_ms,
+            m_play, m_t, m_a, rs.alarms.snooze_until,
+            prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
+            prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
+            prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
+            fallback_items, rt_.time_hour, rt_.time_minute, calendar_state().summary,
+            rt_.time_day_of_week);
+        act_items = fallback_items;
+      }
+
+      if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          launch_dock_app(hit->param, rs, rt_, now_rel);
+        }
+      } else if (wid == WidgetId::HOME_QUICK_BTN) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const bool is_night = (weather_state().sun_state == "below_horizon");
+          rs.nav.gui_page = PageId::WEATHER;
+          rs.nav.sky_weather_subpage = is_night ? 3 : 2;
+          mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (gest.max_travel <= ly.tap_max() &&
-                 wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) {
-        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
-          launch_dock_app(hit->param, rs, rt_, now_rel);
+      } else if (wid == WidgetId::HOME_AREA_ICON) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const auto &ac = area_ctx_state();
+          if (!ac.area_id.empty()) {
+            rs.area.active_area_id = ac.area_id;
+            rs.area.active_area_name = ac.area_name.empty() ? latter_area_label() : ac.area_name;
+          }
+          launch_dock_app(PageId::AREA, rs, rt_, now_rel);
+        }
+      } else if (wid == WidgetId::HOME_TIME_READOUT) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          if (prefs.home_clock_tap_action == 0U) {
+            launch_dock_app(PageId::TIME, rs, rt_, now_rel);
+          } else {
+            rs.nav.gui_page = PageId::CLOCK;
+            mark_dirty_full();
+            rt_.schedule_disp();
+          }
+        }
+      } else if (wid == WidgetId::HOME_WEATHER_HERO) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.nav.gui_page = PageId::WEATHER;
+          rs.nav.sky_weather_subpage = 0;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else if (wid == WidgetId::HOME_ACT_EXPAND && act_count > 0) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          home_activity_overlay_page() = 0;
+          rs.nav.home_subpage = 2;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else if ((wid == WidgetId::HOME_ACT_ROW_0 || wid == WidgetId::HOME_ACT_ROW_1 ||
+                  wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1) &&
+                 act_count > 0) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const bool quick_tap =
+              (wid == WidgetId::HOME_ACT_ACTION_0 || wid == WidgetId::HOME_ACT_ACTION_1);
+          handle_home_activity_action(act_items, act_count, hit->param, quick_tap,
+                                      now_rel, rs, prefs, rt_);
         }
       }
 
-    // 4b. Page 1 Home Settings (2-page vertical swipe + Time Tap / Dock icon toggles)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 1) {
-      if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx)) {
-        const int next_pg = (dy < 0) ? 2 : 1;
-        if (next_pg != rs.nav.home_settings_page) {
-          rs.nav.home_settings_page = next_pg;
-          rt_.schedule_disp();
-        }
-      } else if (gest.max_travel <= ly.tap_max() &&
-                 wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
-                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+    } else if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 1) {
+      if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int item_idx = hit->param;
         if (item_idx == 0) {
           rt_.set_select_opt(UiSelectId::HOME_CLOCK_TAP_ACTION,
@@ -2847,93 +2978,91 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       }
 
+    } else if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 2) {
+      int act_count = 0;
+      const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
+      if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 && act_count > 0) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const bool quick_tap = (tp.x >= hit->x1 - scale_x(56));
+          handle_home_activity_action(act_items, act_count, hit->param, quick_tap,
+                                      now_rel, rs, prefs, rt_);
+        }
+      } else if (wid == WidgetId::NONE &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_DISMISS, tkey)) {
+        rs.nav.home_subpage = 0;
+        home_activity_overlay_page() = 0;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+
     // 5. Page 2 Music Browse Lists (Modes 1, 2, 3, 7, 8)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::MUSIC &&
+    } else if (tap_valid && rs.nav.gui_page == PageId::MUSIC &&
+               !rs.nav.menu_scroll_active &&
                (rs.music.overlay_mode == 1 || rs.music.overlay_mode == 2 ||
                 rs.music.overlay_mode == 3 || rs.music.overlay_mode == 7 ||
                 rs.music.overlay_mode == 8)) {
       int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
       const int b_tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
-
-      if (rs.music.overlay_mode != 2 &&
-          std::abs(dy) >= ly.swipe_short() && std::abs(dy) > std::abs(dx) && b_tot > 1) {
-        gest.swipe_committed = true;
-        gest.last_swipe_ms = now_rel;
-        music_scroll_tap_lockout_until_ms() = now_rel + 180U;
-        const int step_d = (dy < 0) ? 1 : -1;
-        const bool wrap_list = (rs.music.overlay_mode == 3) &&
-                               (rs.music.selected_category_mode == "artist" ||
-                                rs.music.selected_category_mode == "album");
-        const int next_pg = wrap_list ? step_wrap_1based(b_page, step_d, b_tot)
-                                      : std::clamp(b_page + step_d, 1, b_tot);
-        if (next_pg != b_page) {
-          b_page = next_pg;
-          last_music_page_req_ms() = now_rel;
-          rs.nav.menu_scroll_active = false;
-          media_fetch_browse(now_rel);
-          rt_.schedule_disp();
+      if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
+        if (rs.music.overlay_mode == 2) {
+          const int target_pg = (rs.music.category_page == 1) ? 2 : 1;
+          rs.nav.menu_scroll_active = true;
+          rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
+          rs.nav.menu_scroll_target_page = target_pg;
+          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        } else if (b_tot > 1) {
+          const int step_d = (wid == WidgetId::CHEVRON_UP) ? -1 : 1;
+          const bool wrap_list = (rs.music.overlay_mode == 3) &&
+                                 (rs.music.selected_category_mode == "artist" ||
+                                  rs.music.selected_category_mode == "album");
+          const int next_pg = wrap_list ? step_wrap_1based(b_page, step_d, b_tot)
+                                        : std::clamp(b_page + step_d, 1, b_tot);
+          if (next_pg != b_page) {
+            b_page = next_pg;
+            media_fetch_browse(now_rel);
+            rt_.schedule_disp();
+          }
         }
-      } else if (!rs.nav.menu_scroll_active && gest.max_travel <= ly.tap_max_loose()) {
-        if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
-          if (rs.music.overlay_mode == 2) {
-            const int target_pg = (rs.music.category_page == 1) ? 2 : 1;
-            rs.nav.menu_scroll_active = true;
-            rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
-            rs.nav.menu_scroll_target_page = target_pg;
-            rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-          } else if (b_tot > 1) {
-            const int step_d = (wid == WidgetId::CHEVRON_UP) ? -1 : 1;
-            const bool wrap_list = (rs.music.overlay_mode == 3) &&
-                                   (rs.music.selected_category_mode == "artist" ||
-                                    rs.music.selected_category_mode == "album");
-            const int next_pg = wrap_list ? step_wrap_1based(b_page, step_d, b_tot)
-                                          : std::clamp(b_page + step_d, 1, b_tot);
-            if (next_pg != b_page) {
-              b_page = next_pg;
-              media_fetch_browse(now_rel);
+      } else if (now_rel >= music_scroll_tap_lockout_until_ms()) {
+        if (rs.music.overlay_mode == 1) {
+          int slot_idx = -1;
+          if (wid >= WidgetId::MUSIC_SPK_GROUP && wid < WidgetId::MUSIC_SPK_GROUP + 5) {
+            slot_idx = hit->param;
+          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
+            slot_idx = hit->param;
+          }
+          if (slot_idx >= 0 && slot_idx < 5) {
+            const auto &sl = rs.music_slots()[slot_idx];
+            if (!sl.name.empty() && !sl.id.empty()) {
+              rs.music.target_speaker_id = sl.id;
+              rs.music.target_speaker_name = sl.name;
+              rs.music.overlay_mode = 4;
+              mark_dirty_full();
               rt_.schedule_disp();
             }
           }
-        } else if (now_rel >= music_scroll_tap_lockout_until_ms()) {
-          if (rs.music.overlay_mode == 1) {
-            int slot_idx = -1;
-            if (wid >= WidgetId::MUSIC_SPK_GROUP && wid < WidgetId::MUSIC_SPK_GROUP + 5) {
-              slot_idx = hit->param;
-            } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
-              slot_idx = hit->param;
-            }
-            if (slot_idx >= 0 && slot_idx < 5) {
-              const auto &sl = rs.music_slots()[slot_idx];
-              if (!sl.name.empty() && !sl.id.empty()) {
-                rs.music.target_speaker_id = sl.id;
-                rs.music.target_speaker_name = sl.name;
-                rs.music.overlay_mode = 4;
-                mark_dirty_full();
-                rt_.schedule_disp();
-              }
-            }
-          } else if (rs.music.overlay_mode == 2 &&
-                     wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
-            const int idx = hit->param;
-            if (idx == 0) { rs.music.selected_category_mode = "favorites"; rs.music.selected_category_title = "FAVORITES"; }
-            else if (idx == 1) { rs.music.selected_category_mode = "playlist"; rs.music.selected_category_title = "PLAYLISTS"; }
-            else if (idx == 2) { rs.music.selected_category_mode = "artist"; rs.music.selected_category_title = "ARTISTS"; rs.music.drilldown_artist_page = 1; }
-            else if (idx == 3) { rs.music.selected_category_mode = "album"; rs.music.selected_category_title = "ALBUMS"; rs.music.drilldown_album_page = 1; }
-            else if (idx == 4) { rs.music.selected_category_mode = "podcast"; rs.music.selected_category_title = "PODCASTS"; }
-            else if (idx == 5) { rs.music.selected_category_mode = "radio"; rs.music.selected_category_title = "RADIO"; }
-            else if (idx == 6) { rs.music.selected_category_mode = "audiobook"; rs.music.selected_category_title = "AUDIOBOOKS"; }
-            reset_music_loading_slots(rs, "Loading...");
-            b_page = 1;
-            rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-            rs.music.overlay_mode = 3;
-            media_fetch_browse(now_rel);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (rs.music.overlay_mode == 3) {
-            if (wid == WidgetId::MUSIC_PLAY_PAUSE) {
-              const int slot_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
-              if (!rs.music_slots()[slot_idx].id.empty()) {
-                rt_.cmd(UiHostCmd::PLAY_MUSIC_SLOT, slot_idx + 1);
+        } else if (rs.music.overlay_mode == 2 &&
+                   wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
+          const int idx = hit->param;
+          if (idx == 0) { rs.music.selected_category_mode = "favorites"; rs.music.selected_category_title = "FAVORITES"; }
+          else if (idx == 1) { rs.music.selected_category_mode = "playlist"; rs.music.selected_category_title = "PLAYLISTS"; }
+          else if (idx == 2) { rs.music.selected_category_mode = "artist"; rs.music.selected_category_title = "ARTISTS"; rs.music.drilldown_artist_page = 1; }
+          else if (idx == 3) { rs.music.selected_category_mode = "album"; rs.music.selected_category_title = "ALBUMS"; rs.music.drilldown_album_page = 1; }
+          else if (idx == 4) { rs.music.selected_category_mode = "podcast"; rs.music.selected_category_title = "PODCASTS"; }
+          else if (idx == 5) { rs.music.selected_category_mode = "radio"; rs.music.selected_category_title = "RADIO"; }
+          else if (idx == 6) { rs.music.selected_category_mode = "audiobook"; rs.music.selected_category_title = "AUDIOBOOKS"; }
+          reset_music_loading_slots(rs, "Loading...");
+          b_page = 1;
+          rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+          rs.music.overlay_mode = 3;
+          media_fetch_browse(now_rel);
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (rs.music.overlay_mode == 3) {
+          if (wid == WidgetId::MUSIC_PLAY_PAUSE) {
+            const int slot_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
+            if (!rs.music_slots()[slot_idx].id.empty()) {
+              rt_.cmd(UiHostCmd::PLAY_MUSIC_SLOT, slot_idx + 1);
               }
             } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
               const int slot_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
@@ -2980,29 +3109,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         }
-      }
 
-    // 6. Page 3 Games (2048 Swipes & Launcher Play/Sound/Carousel Taps)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::GAMES && rs.nav.active_game == 5) {
-      if (std::abs(dx) >= ly.flick_min() || std::abs(dy) >= ly.flick_min()) {
-        if (std::abs(dx) > std::abs(dy)) {
-          game_2048_pending_dir() = (dx > 0) ? 2 : 4;
-        } else {
-          game_2048_pending_dir() = (dy > 0) ? 3 : 1;
-        }
-      } else {
-        rs.nav.marble_touch_x = static_cast<float>(tp.x);
-        rs.nav.marble_touch_y = static_cast<float>(tp.y);
-        rs.nav.game_btn_pressed = true;
-      }
+    // 6. Page 3 Games (2048 Tap & Launcher Play/Sound/Carousel Taps)
+    } else if (tap_valid && rs.nav.gui_page == PageId::GAMES && rs.nav.active_game == 5) {
+      rs.nav.marble_touch_x = static_cast<float>(tp.x);
+      rs.nav.marble_touch_y = static_cast<float>(tp.y);
+      rs.nav.game_btn_pressed = true;
       rt_.schedule_disp();
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::GAMES &&
-               rs.nav.active_game == 0 && !rs.nav.menu_scroll_active &&
-               gest.max_travel <= ly.tap_max()) {
-      if (wid == WidgetId::GAMES_SOUND_BTN) {
+    } else if (tap_valid && rs.nav.gui_page == PageId::GAMES &&
+               rs.nav.active_game == 0 && !rs.nav.menu_scroll_active) {
+      if (wid == WidgetId::GAMES_SOUND_BTN &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rt_.sw_toggle(UiSwitchId::GAME_SOUND);
         rt_.schedule_disp();
-      } else if (wid == WidgetId::GAMES_PLAY_BTN || wid == WidgetId::GAMES_HERO_CARD) {
+      } else if ((wid == WidgetId::GAMES_PLAY_BTN || wid == WidgetId::GAMES_HERO_CARD) &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.active_game = rs.nav.game_carousel_idx + 1;
         audio_arbitrator().cancel_media_idle_debounce();
         if (rt_.local_mp_playing) {
@@ -3011,7 +3132,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
         mark_dirty_full();
         rt_.schedule_disp();
-      } else if (wid == WidgetId::GAMES_PREV_BTN || wid == WidgetId::GAMES_NEXT_BTN) {
+      } else if ((wid == WidgetId::GAMES_PREV_BTN || wid == WidgetId::GAMES_NEXT_BTN) &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
         const int dir = (wid == WidgetId::GAMES_NEXT_BTN) ? 1 : -1;
         rs.nav.menu_scroll_active = true;
         rs.nav.menu_scroll_dir = dir;
@@ -3020,23 +3142,24 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       }
 
     // 7. Page 4 System Scrollable Menus (Modes 0, 1, 2) via SYS_TOGGLE_ROW / SYS_BRI_SLIDER / COLOR_SWATCH_BASE
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::SYSTEM &&
+    } else if (tap_valid && rs.nav.gui_page == PageId::SYSTEM &&
                !rs.nav.menu_scroll_active &&
                (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 ||
-                rs.nav.system_menu_mode == 2) &&
-               gest.max_travel <= ly.tap_max()) {
+                rs.nav.system_menu_mode == 2)) {
       const int cur_pg = (rs.nav.system_menu_mode == 0)
                              ? rs.nav.system_dashboard_page
                              : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page
                                                                : rs.nav.display_menu_page);
-      if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
+      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
         const int target_pg = (cur_pg == 1) ? 2 : 1;
         rs.nav.menu_scroll_active = true;
         rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
         rs.nav.menu_scroll_target_page = target_pg;
         rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
       } else if (rs.nav.system_menu_mode == 0 &&
-                 wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
+                 wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int slot = hit->param;
         const int item_idx = (rs.nav.system_dashboard_page == 1) ? slot : (slot + 3);
         if (item_idx == 0) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
@@ -3056,7 +3179,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         mark_dirty_full();
         rt_.schedule_disp();
       } else if (rs.nav.system_menu_mode == 1 &&
-                 wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
+                 wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int slot_idx = hit->param;
         const int idx = (rs.nav.sleep_menu_page == 1) ? slot_idx : (slot_idx + 5);
         if (idx == 0) {
@@ -3073,7 +3197,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         } else if (idx == 2) {
           rt_.set_select_opt(UiSelectId::TAP_WAKE_MODE,
                              cycle_option(rt_.select_opt(UiSelectId::TAP_WAKE_MODE),
-                                          {"Always On", "Docked Only", "Disabled"}));
+                                          {"Single Tap", "Double Tap", "Docked Only", "Disabled"}));
         } else if (idx == 3) {
 #if LATTER_HAS_BATTERY
           rt_.set_select_opt(UiSelectId::DISPLAY_OFF_TIMEOUT,
@@ -3105,7 +3229,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 #endif
         }
         rt_.schedule_disp();
-      } else if (rs.nav.system_menu_mode == 2) {
+      } else if (rs.nav.system_menu_mode == 2 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (wid >= WidgetId::COLOR_SWATCH_BASE && wid < WidgetId::COLOR_SWATCH_BASE + 10) {
           rs.nav.system_menu_mode = 13;
           mark_dirty_full();
@@ -3194,23 +3319,22 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       }
 
     // 7b. Page 4 System Confirm Modals (Mode 4 Reboot / Mode 6 Firmware Update — release-triggered)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::SYSTEM &&
+    } else if (tap_valid && rs.nav.gui_page == PageId::SYSTEM &&
                !rs.nav.menu_scroll_active &&
-               (rs.nav.system_menu_mode == 4 || rs.nav.system_menu_mode == 6) &&
-               gest.max_travel <= ly.tap_max()) {
-      if (wid == WidgetId::CONFIRM_CANCEL && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+               (rs.nav.system_menu_mode == 4 || rs.nav.system_menu_mode == 6)) {
+      if (wid == WidgetId::CONFIRM_CANCEL && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.system_menu_mode = (rs.nav.system_menu_mode == 4) ? 3 : 5;
         mark_dirty_full();
         rt_.schedule_disp();
-      } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+      } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rt_.cmd((rs.nav.system_menu_mode == 4) ? UiHostCmd::RESTART_DEVICE
                                                : UiHostCmd::TRIGGER_FIRMWARE_UPDATE);
       }
 
     // 8. Page 5 Weather Mode Bar Taps
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::WEATHER &&
-               gest.max_travel <= ly.tap_max()) {
-      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+    } else if (tap_valid && rs.nav.gui_page == PageId::WEATHER) {
+      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
         if (target_sub != rs.nav.sky_weather_subpage) {
           rs.nav.sky_weather_subpage = target_sub;
@@ -3219,63 +3343,61 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       }
 
-    // 9. Page 6 Area Control Taps (Picker List & 3-Card Domain Controls)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::AREA) {
+    // 9. Page 6 Area Control Taps (Picker List & D-050 Split Toggle / Entity Inspector Cards)
+    } else if (tap_valid && rs.nav.gui_page == PageId::AREA) {
       if (rs.nav.area_subpage == AreaSubpage::PICKER || rs.area.browse_mode == "areas") {
         int &a_pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
         const int a_tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_LIST);
-        if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx) && a_tot > 1) {
-          const int next_pg = std::clamp(a_pg + ((dy < 0) ? 1 : -1), 1, a_tot);
+        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) && a_tot > 1 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          const int next_pg =
+              std::clamp(a_pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, a_tot);
           if (next_pg != a_pg) {
             a_pg = next_pg;
             do_fetch_area_list_browse();
             rt_.schedule_disp();
           }
-        } else if (gest.max_travel <= ly.tap_max()) {
-          if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) && a_tot > 1) {
-            const int next_pg =
-                std::clamp(a_pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, a_tot);
-            if (next_pg != a_pg) {
-              a_pg = next_pg;
-              do_fetch_area_list_browse();
-              rt_.schedule_disp();
-            }
-          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) {
-            const int s_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
-            const auto &asl = rs.area_list_slots()[s_idx];
-            if (!asl.id.empty()) {
-              rs.area.active_area_id = asl.id;
-              rs.area.active_area_name = strip_trailing_paren_state(asl.name);
-              rs.nav.area_subpage = AreaSubpage::OVERVIEW;
-              rs.area.browse_mode = "entities";
-              rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
-              do_select_active_area_latter();
-              do_fetch_area_browse();
-              mark_dirty_full();
-              rt_.schedule_disp();
-            }
+        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int s_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
+          const auto &asl = rs.area_list_slots()[s_idx];
+          if (!asl.id.empty()) {
+            rs.area.active_area_id = asl.id;
+            rs.area.active_area_name = strip_trailing_paren_state(asl.name);
+            rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+            rs.area.browse_mode = "entities";
+            rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+            do_select_active_area_latter();
+            do_fetch_area_browse();
+            mark_dirty_full();
+            rt_.schedule_disp();
           }
         }
-      } else if (rs.nav.area_subpage == AreaSubpage::OVERVIEW && gest.max_travel <= ly.tap_max()) {
+      } else if (rs.nav.area_subpage == AreaSubpage::OVERVIEW) {
         std::string cats[8];
         const int cat_cnt = collect_area_categories(cats);
-        if (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) {
+        if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           if (cat_cnt > 4) {
             area_cat_dock_page() = std::clamp(
                 area_cat_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 4 : -4), 0, cat_cnt - 4);
             rt_.schedule_disp();
           }
-        } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+        } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           if (cat_cnt > 0) {
             const int c_idx = std::clamp(static_cast<int>(hit->param), 0, cat_cnt - 1);
             if (cats[c_idx] != rs.area.domain_filter) {
               rs.area.domain_filter = cats[c_idx];
+              sync_mode_bar_window(area_cat_dock_page(), c_idx, cat_cnt);
               rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
               do_fetch_area_browse();
+              mark_dirty_full();
               rt_.schedule_disp();
             }
           }
-        } else if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
+        } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           int &pg = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
           const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::AREA_ENTITIES);
           const int next_pg = std::clamp(pg + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, std::max(1, tot));
@@ -3284,37 +3406,51 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             do_fetch_area_browse();
             rt_.schedule_disp();
           }
-        } else if (wid == WidgetId::LIGHT_ORB_BTN) {
+        } else if (wid == WidgetId::LIGHT_ORB_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           const auto &sl = rs.area_entity_slots()[idx];
           if (!sl.id.empty()) {
             light_insp_entity_id() = sl.id;
             light_insp_name() = strip_trailing_paren_state(sl.name);
+            light_insp_domain() = "light";
+            light_insp_slot() = idx;
+            light_insp_active() = sl.active;
+            light_insp_mode() = 0;  // HSV Color Wheel mode
             if (sl.level > 0) light_insp_bri_pct() = sl.level;
             rs.nav.area_subpage = AreaSubpage::LIGHT_DETAIL;
             mark_dirty_full();
             rt_.schedule_disp();
           }
-        } else if ((wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) ||
-                   (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3) ||
-                   (wid >= WidgetId::AREA_CARD_SLIDER && wid < WidgetId::AREA_CARD_SLIDER + 3)) {
+        } else if (((wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) ||
+                    (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3)) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           auto &sl = rs.area_entity_slots()[idx];
           if (!sl.id.empty() && sl.type != "text") {
-            const bool is_slider_zone =
-                (wid >= WidgetId::AREA_CARD_SLIDER && wid < WidgetId::AREA_CARD_SLIDER + 3);
-            rs.area.target_entity_id = sl.id;
-            if (is_slider_zone && sl.type != "scene" && sl.type != "switch") {
-              const int stepped = std::clamp(
-                  ((static_cast<int>(hit->norm_x(tp.x) * 100.0f) + 2) / 5) * 5, 5, 100);
-              sl.level = stepped;
-              sl.active = true;
-              char fb[48];
-              std::snprintf(fb, sizeof(fb), "%s -> %d%%",
-                            strip_trailing_paren_state(sl.name).c_str(), stepped);
-              rs.area.action_feedback = fb;
-              gate_or_dispatch_area_action(sl.id, "set_level", stepped, "PERIMETER PIN", now_rel);
+            const bool is_card_body =
+                (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3);
+            if (is_card_body &&
+                (sl.type == "light" || sl.type == "cover" || sl.type == "fan")) {
+              // D-050: Right body opens generalized Entity Inspector (Brightness / Position / Speed)
+              light_insp_entity_id() = sl.id;
+              light_insp_name() = strip_trailing_paren_state(sl.name);
+              light_insp_domain() = sl.type;
+              light_insp_slot() = idx;
+              light_insp_active() = sl.active;
+              light_insp_mode() = 1;  // Level / White Temp mode
+              if (sl.level >= 0) {
+                light_insp_bri_pct() = sl.level;
+              } else {
+                light_insp_bri_pct() = sl.active ? 100 : ((sl.type == "light") ? 50 : 0);
+              }
+              rs.nav.area_subpage = AreaSubpage::LIGHT_DETAIL;
+              mark_dirty_full();
+              rt_.schedule_disp();
+            } else if (is_card_body && sl.type == "media_player") {
+              launch_dock_app(PageId::MUSIC, rs, rt_, now_rel);
             } else {
+              rs.area.target_entity_id = sl.id;
               const bool prev_act = sl.active;
               const bool next_act = (sl.type == "scene") ? true : !sl.active;
               sl.active = next_act;
@@ -3334,38 +3470,32 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       }
 
     // 10. Page 7 Remote Subpage 1 (Slot Selector & Power Actions)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::REMOTE &&
+    } else if (tap_valid && rs.nav.gui_page == PageId::REMOTE &&
                rs.nav.remote_subpage == 1) {
-      int valid_slots[MAX_REMOTE_SLOTS] = {0};
-      const int valid_count = collect_configured_remote_slots(valid_slots);
-      const int total_pages = std::max(1, (valid_count + 3) / 4);
-      if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx) && total_pages > 1) {
-        remote_control_page() = std::clamp(
-            remote_control_page() + ((dy < 0) ? 1 : -1), 0, total_pages - 1);
+      if (wid == WidgetId::REMOTE_PRIMARY_PWR &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        do_remote_send_key(9, -1);
         rt_.schedule_disp();
-      } else if (gest.max_travel <= ly.tap_max()) {
-        if (wid == WidgetId::REMOTE_PRIMARY_PWR) {
-          do_remote_send_key(9, -1);
-          rt_.schedule_disp();
-        } else if (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4) {
-          do_remote_send_key(9, hit->param);
-          rt_.schedule_disp();
-        } else if (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4) {
-          rs.remote.active_slot = hit->param;
-          rs.remote.action_feedback.clear();
-          rs.nav.remote_subpage = 0;
-          do_remote_select_slot(hit->param + 1);
-          mark_dirty_full();
-          rt_.schedule_disp();
-        }
+      } else if (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        do_remote_send_key(9, hit->param);
+        rt_.schedule_disp();
+      } else if (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.remote.active_slot = hit->param;
+        rs.remote.action_feedback.clear();
+        rs.nav.remote_subpage = 0;
+        do_remote_select_slot(hit->param + 1);
+        mark_dirty_full();
+        rt_.schedule_disp();
       }
 
-    // 11. Page 8 Tools Launcher & Calendar Release Taps/Swipes
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::TOOLS) {
-      if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active &&
-          gest.max_travel <= ly.tap_max()) {
+    // 11. Page 8 Tools Launcher & Calendar Release Taps
+    } else if (tap_valid && rs.nav.gui_page == PageId::TOOLS) {
+      if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active) {
         const int total_pages = tools_launcher_page_count();
-        if (wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) {
+        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           if (total_pages > 1) {
             const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
             rs.nav.tools_menu_page = cur_pg;
@@ -3378,7 +3508,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
             }
           }
-        } else if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) {
+        } else if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int target_sub = hit->param;
           if (target_sub > 0) {
             rs.nav.tools_subpage = target_sub;
@@ -3399,94 +3530,62 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       } else if (rs.nav.tools_subpage == ToolsSubpage::CALENDAR) {
         if (cal_detail_mode() == 2) {
-          if (std::abs(dx) >= ly.page_swipe() || std::abs(dy) >= ly.page_swipe()) {
-            gest.swipe_committed = true;
-            gest.last_swipe_ms = now_rel;
-            if (std::abs(dx) >= std::abs(dy)) {
-              const int step_x = (std::abs(dx) >= ly.fast_pan()) ? 2 : 1;
-              cal_map_pan_x() = std::clamp(cal_map_pan_x() + ((dx < 0) ? step_x : -step_x), -4, 4);
-            } else {
-              const int step_y = (std::abs(dy) >= ly.fast_pan()) ? 2 : 1;
-              cal_map_pan_y() = std::clamp(cal_map_pan_y() + ((dy < 0) ? step_y : -step_y), -4, 4);
-            }
+          if (wid == WidgetId::CAL_ZOOM_OUT_BTN && cal_map_zoom() > 10 &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            cal_map_zoom()--;
+            cal_map_pan_x() /= 2;
+            cal_map_pan_y() /= 2;
+            rt_.schedule_disp();
             rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-          } else if (gest.max_travel <= ly.tap_max()) {
-            if (wid == WidgetId::CAL_ZOOM_OUT_BTN && cal_map_zoom() > 10) {
-              cal_map_zoom()--;
-              cal_map_pan_x() /= 2;
-              cal_map_pan_y() /= 2;
-              rt_.schedule_disp();
-              rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-            } else if (wid == WidgetId::CAL_ZOOM_IN_BTN && cal_map_zoom() < 18) {
-              cal_map_zoom()++;
-              cal_map_pan_x() = std::clamp(cal_map_pan_x() * 2, -4, 4);
-              cal_map_pan_y() = std::clamp(cal_map_pan_y() * 2, -4, 4);
-              rt_.schedule_disp();
-              rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-            } else if (tp.y <= scale_y(68) && (cal_map_pan_x() != 0 || cal_map_pan_y() != 0)) {
-              cal_map_pan_x() = 0;
-              cal_map_pan_y() = 0;
-              rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-            }
+          } else if (wid == WidgetId::CAL_ZOOM_IN_BTN && cal_map_zoom() < 18 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            cal_map_zoom()++;
+            cal_map_pan_x() = std::clamp(cal_map_pan_x() * 2, -4, 4);
+            cal_map_pan_y() = std::clamp(cal_map_pan_y() * 2, -4, 4);
+            rt_.schedule_disp();
+            rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
+          } else if (tp.y <= scale_y(68) && (cal_map_pan_x() != 0 || cal_map_pan_y() != 0) &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+            cal_map_pan_x() = 0;
+            cal_map_pan_y() = 0;
+            rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
           }
-        } else if (cal_detail_mode() == 0 && !cal_quick_add_open()) {
-          int &c_pg = rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR);
-          const int c_tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::CALENDAR);
-          if (std::abs(dy) >= ly.list_swipe() && std::abs(dy) > std::abs(dx) && c_tot > 1) {
-            const int next_pg = std::clamp(c_pg + ((dy < 0) ? 1 : -1), 1, c_tot);
-            if (next_pg != c_pg) {
-              c_pg = next_pg;
-              do_fetch_calendar_browse();
-              rt_.schedule_disp();
-            }
-          } else if (gest.max_travel <= ly.tap_max() &&
-              wid >= WidgetId::CAL_EVENT_BASE && wid < WidgetId::CAL_EVENT_BASE + 5) {
-            const int slot_idx = std::clamp(static_cast<int>(wid - WidgetId::CAL_EVENT_BASE), 0, 4);
-            const auto &csl = rs.calendar_slots()[slot_idx];
-            if (!csl.name.empty()) {
-              parse_calendar_slot_meta(csl.name, csl.id, cal_detail_time(),
-                                       cal_detail_title(), cal_detail_location(),
-                                       cal_detail_map_url());
+        } else if (cal_detail_mode() == 0 && !cal_quick_add_open() &&
+                   wid >= WidgetId::CAL_EVENT_BASE && wid < WidgetId::CAL_EVENT_BASE + 5 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int slot_idx = std::clamp(static_cast<int>(wid - WidgetId::CAL_EVENT_BASE), 0, 4);
+          const auto &csl = rs.calendar_slots()[slot_idx];
+          if (!csl.name.empty()) {
+            parse_calendar_slot_meta(csl.name, csl.id, cal_detail_time(),
+                                     cal_detail_title(), cal_detail_location(),
+                                     cal_detail_map_url());
+            cal_detail_mode() = 1;
+            mark_dirty_full();
+            rt_.schedule_disp();
+          } else {
+            CalendarRecord recs[5];
+            const size_t n_rec = parse_calendar_records(calendar_state().summary, recs, 5);
+            if (static_cast<size_t>(slot_idx) < n_rec) {
+              cal_detail_time() = std::string(recs[slot_idx].time);
+              cal_detail_title() = std::string(recs[slot_idx].title);
+              cal_detail_location() = std::string(recs[slot_idx].location);
+              cal_detail_map_url().clear();
               cal_detail_mode() = 1;
               mark_dirty_full();
               rt_.schedule_disp();
-            } else {
-              CalendarRecord recs[5];
-              const size_t n_rec = parse_calendar_records(calendar_state().summary, recs, 5);
-              if (static_cast<size_t>(slot_idx) < n_rec) {
-                cal_detail_time() = std::string(recs[slot_idx].time);
-                cal_detail_title() = std::string(recs[slot_idx].title);
-                cal_detail_location() = std::string(recs[slot_idx].location);
-                cal_detail_map_url().clear();
-                cal_detail_mode() = 1;
-                mark_dirty_full();
-                rt_.schedule_disp();
-              }
             }
           }
         }
       }
 
     // 12. Page 9 Home Hub Controls (Alarm, Cameras, Intercom, Thermostat, Entry, Vacuum)
-    } else if (!gest.swipe_committed &&
+    } else if (tap_valid &&
                (rs.nav.gui_page == PageId::HOME_HUB || rs.nav.gui_page == PageId::CAMERAS)) {
       if (rs.nav.gui_page == PageId::CAMERAS) {
         rs.nav.gui_page = PageId::HOME_HUB;
         home_hub_tab() = HomeHubTab::CAMERAS;
       }
-      if (home_hub_tab() == HomeHubTab::CAMERAS && cam_expanded_fullscreen() &&
-          !cam_quick_reply_open() && std::abs(dx) >= ly.page_swipe() && std::abs(dx) > std::abs(dy)) {
-        std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
-        const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
-        if (c_total > 1) {
-          cam_carousel_idx() = step_wrap(cam_carousel_idx(), (dx < 0) ? 1 : -1, c_total);
-          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-          rs.alert.loaded_camera_url.clear();
-          last_cam_live_fetch_ms() = now_rel;
-          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-          rt_.schedule_disp();
-        }
-      } else if (gest.max_travel <= ly.tap_max()) {
+      {
         int hh_tabs[kMaxHomeHubTabs]{};
         const int hh_tab_cnt = collect_home_hub_tabs(hh_tabs);
         const bool mode_bar_visible =
@@ -3495,7 +3594,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         if (hh_tab_cnt <= 0) {
           // No Home Controls configured: ignore taps on empty state.
         } else if (mode_bar_visible &&
-                   (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT)) {
+                   (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           if (hh_tab_cnt > 4) {
             home_hub_mode_bar_page() = std::clamp(
                 home_hub_mode_bar_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 4 : -4),
@@ -3503,7 +3603,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (mode_bar_visible &&
-                   wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+                   wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int slot = std::clamp(static_cast<int>(hit->param), 0, hh_tab_cnt - 1);
           const int target_tab = hh_tabs[slot];
           if (target_tab != home_hub_tab()) {
@@ -3512,7 +3613,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (home_hub_tab() == HomeHubTab::ALARM &&
-                   wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5) {
+                   wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int mode_i = static_cast<int>(wid - WidgetId::ALARM_MODE_BASE);
           static constexpr const char *kAlarmActs[5] = {
               "disarm",
@@ -3534,7 +3636,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
           const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
           if (cam_quick_reply_open()) {
-            if (wid >= WidgetId::CAM_REPLY_BASE && wid < WidgetId::CAM_REPLY_BASE + 3) {
+            if (wid >= WidgetId::CAM_REPLY_BASE && wid < WidgetId::CAM_REPLY_BASE + 3 &&
+                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
               static constexpr const char *kDoorbellReplies[3] = {
                   "On my way!",
                   "Please leave it at the door.",
@@ -3549,18 +3652,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               intercom_session().emit_current_cmd();
               mark_dirty_full();
               rt_.schedule_disp();
-            } else if (wid == WidgetId::CAM_UNLOCK_BTN) {
+            } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
+                       touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
               cam_quick_reply_open() = false;
               mark_dirty_full();
               gate_or_dispatch_doorbell_unlock(now_rel, false);
             }
-          } else if (wid == WidgetId::CAM_SNAPSHOT_CARD) {
+          } else if (wid == WidgetId::CAM_SNAPSHOT_CARD &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             cam_expanded_fullscreen() = !cam_expanded_fullscreen();
             last_cam_live_fetch_ms() = now_rel;
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             mark_dirty_full();
             rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_ORIENT_BTN) {
+          } else if (wid == WidgetId::CAM_ORIENT_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             cam_landscape_mode() = !cam_landscape_mode();
             cam_intercom_status() = cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
             rs.intercom.cam_status_ms = now_rel;
@@ -3569,7 +3675,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             mark_dirty_full();
             rt_.schedule_disp();
-          } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1) {
+          } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
             cam_carousel_idx() = step_wrap(
                 cam_carousel_idx(), (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
             rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
@@ -3577,7 +3684,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             last_cam_live_fetch_ms() = now_rel;
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_LISTEN_BTN) {
+          } else if (wid == WidgetId::CAM_LISTEN_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (cam_call_active()) {
               intercom_session().stop_call_with_hw(now_rel);
             } else {
@@ -3591,7 +3699,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               }
               rt_.schedule_disp();
             }
-          } else if (wid == WidgetId::CAM_PTT_BTN) {
+          } else if (wid == WidgetId::CAM_PTT_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (!cam_call_active()) {
               intercom_session().start_call(now_rel);
               rt_.schedule_disp();
@@ -3603,39 +3712,47 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             } else {
               rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
             }
-          } else if (wid == WidgetId::CAM_REPLY_MENU_BTN) {
+          } else if (wid == WidgetId::CAM_REPLY_MENU_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             cam_quick_reply_open() = true;
             mark_dirty_full();
             rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_UNLOCK_BTN) {
+          } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             gate_or_dispatch_doorbell_unlock(now_rel, false);
           }
         } else if (home_hub_tab() == HomeHubTab::INTERCOM) {
-          if (wid == WidgetId::INTERCOM_SEG_BROADCAST) {
+          if (wid == WidgetId::INTERCOM_SEG_BROADCAST &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (intercom_live_call_mode()) {
               intercom_live_call_mode() = false;
               mark_dirty_full();
               rt_.schedule_disp();
             }
-          } else if (wid == WidgetId::INTERCOM_SEG_CALL) {
+          } else if (wid == WidgetId::INTERCOM_SEG_CALL &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (!intercom_live_call_mode()) {
               intercom_live_call_mode() = true;
               mark_dirty_full();
               rt_.schedule_disp();
             }
-          } else if (wid == WidgetId::INTERCOM_MODE_BTN) {
+          } else if (wid == WidgetId::INTERCOM_MODE_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             intercom_live_call_mode() = !intercom_live_call_mode();
             mark_dirty_full();
             rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_LISTEN_BTN) {
+          } else if (wid == WidgetId::CAM_LISTEN_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (cam_call_active()) {
               intercom_session().stop_call_with_hw(now_rel);
               mark_dirty_full();
               rt_.schedule_disp();
             }
-          } else if (wid == WidgetId::INTERCOM_UNLOCK_BTN) {
+          } else if (wid == WidgetId::INTERCOM_UNLOCK_BTN &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             gate_or_dispatch_doorbell_unlock(now_rel, true);
-          } else if (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5) {
+          } else if (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             const int slot_idx = static_cast<int>(wid - WidgetId::INTERCOM_ROW_BASE);
             if (!intercom_live_call_mode()) {
               static constexpr const char *kBroadcastPresets[3] = {
@@ -3667,7 +3784,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (home_hub_tab() == HomeHubTab::THERMOSTAT) {
-          if (wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) {
+          if ((wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
             const uint16_t c_caps = effective_climate_caps();
             const bool is_c = (c_caps & kClimateCapCelsius) != 0U;
             int &tf = home_hub_thermostat_target_f();
@@ -3682,7 +3800,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rs.area.feedback_timer = now_rel;
             do_execute_area_action();
             rt_.schedule_disp();
-          } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) {
+          } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             static constexpr const char *kClimModes[6] = {
                 "heat", "cool", "heat_cool", "off", "fan_only", "dry"};
             static constexpr const char *kClimLabels[6] = {
@@ -3699,7 +3818,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (home_hub_tab() == HomeHubTab::ENTRY) {
-          if (wid == WidgetId::COVER_OPEN_BTN || wid == WidgetId::ENTRY_GARAGE_CARD) {
+          if ((wid == WidgetId::COVER_OPEN_BTN || wid == WidgetId::ENTRY_GARAGE_CARD) &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             const GarageState prev_g = home_hub_garage_state();
             const bool want_open = (prev_g != GarageState::OPEN);
             home_hub_garage_state() = want_open ? GarageState::OPEN : GarageState::CLOSED;
@@ -3709,7 +3829,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                               want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
               home_hub_garage_state() = prev_g;
             }
-          } else if (wid == WidgetId::LOCK_ACTION_BTN || wid == WidgetId::ENTRY_LOCK_CARD) {
+          } else if ((wid == WidgetId::LOCK_ACTION_BTN || wid == WidgetId::ENTRY_LOCK_CARD) &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             const LockState prev_l = home_hub_lock_state();
             const bool want_lock = (prev_l == LockState::UNLOCKED);
             home_hub_lock_state() = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
@@ -3721,7 +3842,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (home_hub_tab() == HomeHubTab::VACUUM &&
-                   wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6) {
+                   wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int v_act = static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE);
           rs.area.target_entity_id = "home_hub.vacuum";
           if (v_act == 0) {
@@ -3756,10 +3878,10 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       }
 
     // 14. Page 10 Consolidated 4-Tab Time App (Mode Bar, World Clocks, Timers & Alarms Overviews)
-    } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::TIME &&
-               gest.max_travel <= ly.tap_max()) {
+    } else if (tap_valid && rs.nav.gui_page == PageId::TIME) {
       const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
-      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+      if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
         if (target_sub != sub) {
           rs.nav.time_subpage = target_sub;
@@ -3768,7 +3890,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       } else if (sub == TimeSubpage::CLOCK) {
         if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID)) {
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           WorldClockEntry wc_entries[kMaxWorldClocks + 1]{};
           const int tot_wc = collect_active_world_clocks(prefs, area_ctx_state(), wc_entries);
           const int max_pg = std::max(0, (tot_wc - 1) / 2);
@@ -3778,22 +3900,22 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       } else if (sub == TimeSubpage::TIMERS && timer_view_slot() == 0) {
         if (wid >= WidgetId::TIMER_TAB_BASE && wid < WidgetId::TIMER_TAB_BASE + 3 &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           timer_view_slot() = std::clamp(static_cast<int>(hit->param), 0, 2) + 1;
           mark_dirty_full();
           rt_.schedule_disp();
         } else if (wid >= WidgetId::TIMER_PRESET_BASE && wid < WidgetId::TIMER_PRESET_BASE + 3 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           toggle_timer_slot_run(timer_slots()[idx], now_rel, rt_);
         }
       } else if (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx == 0) {
         if (wid == WidgetId::ALARM_SNOOZE_CANCEL &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.alarms.snooze_until = 0;
           rt_.schedule_disp();
         } else if (wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           prefs.alarms[a_idx].enabled = !prefs.alarms[a_idx].enabled;
           if (!prefs.alarms[a_idx].enabled && rs.alarms.ringing_idx == a_idx + 1) {
@@ -3802,7 +3924,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           latter_actions::sync_local_alarms_edit(now_rel);
           rt_.schedule_disp();
         } else if (wid >= WidgetId::ALARM_CARD_BASE && wid < WidgetId::ALARM_CARD_BASE + 3 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON)) {
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           rs.alarms.edit_idx = a_idx + 1;
           rs.nav.alarm_edit_field = 1;

@@ -34,6 +34,7 @@ CORE_HEADERS: tuple[str, ...] = (
     "hal_battery.h",
     "hal_panel_power.h",
     "hal_power_pm.h",
+    "hal_touch.h",
     "hal_link_report.h",
     "latter_protocol.h",
     "latter_state.h",

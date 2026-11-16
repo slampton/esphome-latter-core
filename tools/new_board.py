@@ -387,9 +387,35 @@ def render_board(facts: dict[str, Any]) -> str:
         pkg_lines.append("  latter_imu: !include ../modules/hal/imu_qmi8658.yaml")
     if facts["power"].get("pmu") == "AXP2101":
         pkg_lines.append("  latter_pmu: !include ../modules/hal/pmu_axp2101.yaml")
+    touch_lines = ["# TODO touchscreen: id touch_screen, platform: latter_core."]
+    t_spec = facts.get("touch")
+    if isinstance(t_spec, dict) and t_spec.get("protocol"):
+        t_ms = int(t_spec.get("active_poll_ms", 10))
+        touch_lines = [
+            "touchscreen:",
+            "  - platform: latter_core",
+            f"    protocol: {str(t_spec['protocol']).lower()}",
+            "    id: touch_screen",
+            "    display: disp1",
+            "    i2c_id: bus_internal",
+            f"    address: {t_spec['address']}",
+        ]
+        if t_spec.get("delivery") == "irq" and t_spec.get("int_gpio") is not None:
+            touch_lines += [
+                "    interrupt_pin:",
+                f"      number: GPIO{t_spec['int_gpio']}",
+                "      mode: INPUT_PULLUP",
+                f"    active_poll_interval: {t_ms}ms",
+                "    update_interval: never",
+            ]
+        else:
+            touch_lines += [
+                f"    active_poll_interval: {t_ms}ms",
+                f"    update_interval: {t_ms}ms",
+            ]
     body += [
         "# TODO display: id disp1, full-frame PSRAM buffer (docs/porting-hardware.md section 1).",
-        "# TODO touchscreen: id touch_screen, interrupt-driven if INT is routed.",
+        *touch_lines,
         "# TODO audio: include ../modules/hal/audio_es8311_duplex.yaml or audio_es8311_es7210_duplex.yaml",
         "#      (or define one i2s_audio bus with full_duplex: true, latter_mic_i2s + resampler latter_mic,",
         "#      physical_speaker, speaker_enable, and codecs at audio_out_rate).",

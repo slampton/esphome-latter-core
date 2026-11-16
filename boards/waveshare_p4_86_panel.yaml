@@ -145,11 +145,14 @@ display:
 # GT911: TP_INT is unrouted (test point TP2), so no interrupt_pin, and no reset_pin
 # (resetting with INT floating can strap the controller to 0x14).
 touchscreen:
-  - platform: gt911
+  - platform: latter_core
+    protocol: gt911
     id: touch_screen
     display: disp1
     i2c_id: bus_internal
-    update_interval: 16ms
+    address: 0x5D
+    active_poll_interval: 8ms
+    update_interval: 8ms
 
 script:
   - id: hal_release_deep_sleep_holds

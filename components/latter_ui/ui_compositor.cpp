@@ -254,14 +254,22 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
     }
   }
 
-  // 3. Dock slide, menu scroll, Find My radar, and ringing/critical alert pulse
+  // 3. Dock slide (localized band), menu scroll, Find My radar, and ringing/critical alert pulse
   if (in.panel_on && in.display_power_state == 0 && !in.va_visible &&
-      (in.interactive_slide || in.ringing_or_critical)) {
+      (in.interactive_slide || in.dock_anim_active || in.ringing_or_critical)) {
     out.anim_driving_disp = true;
-    const uint32_t gap = (in.interactive_slide || in.find_my_active) ? interactive_gap : 120U;
+    const uint32_t gap =
+        (in.interactive_slide || in.dock_anim_active || in.find_my_active) ? interactive_gap : 120U;
     if (!in.render_in_flight && (in.now_ms - in.last_ambient_ms >= gap)) {
       out.record_ambient_ms = true;
-      out.schedule_anim_full = true;
+      if (in.dock_anim_active && !in.interactive_slide && !in.ringing_or_critical &&
+          in.dock_y1 > in.dock_y0) {
+        out.band_y0 = in.dock_y0;
+        out.band_y1 = in.dock_y1;
+        out.schedule_anim_band = true;
+      } else {
+        out.schedule_anim_full = true;
+      }
     }
   }
 
@@ -323,7 +331,7 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
     if (in.motion_mag > 0.055f) {
       out.bump_user_touch_ms = true;
     }
-    const bool touch_busy = in.touch_active || in.menu_scroll_active;
+    const bool touch_busy = in.touch_active || in.menu_scroll_active || in.dock_anim_active;
     if (!touch_busy && (in.sim_just_changed || ui_overlay_animating || in.sky_stepping)) {
       out.anim_driving_disp = true;
       if (in.greet_fading || in.act_sliding || in.act_fade_settle) {
@@ -502,7 +510,10 @@ Cadence20msActions FrameCadenceController::step_20ms(
       (rs.nav.gui_page == PageId::CLOCK) &&
       clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_20ms, prefs.clock_face);
   in.interactive_slide =
-      any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) || rs.nav.menu_scroll_active;
+      rs.nav.menu_scroll_active || any_vert_bounce_active(rs.nav.gui_page, now_ms);
+  in.dock_anim_active = any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms);
+  in.dock_y0 = dock_dirty_band_y0();
+  in.dock_y1 = SCREEN_H - 1;
   in.find_my_active = rs.alarms.find_my_active;
   in.ringing_or_critical =
       rs.alarms.find_my_active || rs.alarms.ringing || rs.timers.ringing ||
@@ -648,7 +659,8 @@ Cadence250msActions FrameCadenceController::step_250ms(
         has_pending_home_activity_fade_settle(now_ms) ||
         is_home_activity_carousel_animating(now_ms);
     in.nav_scroll_or_sim_dirty =
-        any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+        any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms) ||
+        any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
         rs.nav.menu_scroll_active || weather_sim_dirty();
   }
 

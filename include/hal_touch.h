@@ -1,0 +1,225 @@
+#pragma once
+
+// ==============================================================================
+// Latter First-Party Touch HAL: Protocol Decoders, Telemetry & Driver Interface
+// (include/hal_touch.h)
+// ==============================================================================
+// Unifies FocalTech (FT6336 / FT3168), Goodix (GT911), and Hynitron (CST9217 /
+// CST816S) capacitive touch controllers behind one deterministic state machine:
+//   - Trigger-pulse init (FT REG 0xA4=0x01, 0x88=0x06) + post-sleep restore
+//   - Zero idle I2C traffic on interrupt-wired boards
+//   - High-rate 8-10 ms active-finger tracking while pressed (even on level-hold INT)
+//   - Hardware-verified finger lift (0 ms touch_timeout -> zero +120 ms lag)
+//   - Race-free GT911 0x814E ack (never clears 0x814E when status & 0x80 == 0)
+//   - IRAM GPIO ISR App.wake_loop_threadsafe() + wake_pulse latch for <40 ms taps
+// ==============================================================================
+
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+
+#include <cstddef>
+#include <cstdint>
+
+namespace latter_ui {
+
+enum class TouchHalProtocol : uint8_t {
+  FT6336 = 0,
+  FT3168 = 1,
+  GT911 = 2,
+  CST9217 = 3,
+  CST816S = 4,
+};
+
+enum class TouchSampleKind : uint8_t {
+  NotReady = 0,   // No new scan frame ready yet (keep current finger state; do NOT ack)
+  Contact = 1,    // Active finger contact at (raw_x, raw_y)
+  Released = 2,   // Hardware-verified finger lift (count == 0 or lift flag)
+  Invalid = 3,    // Bus NACK or corrupt frame trailer (skip update safely)
+};
+
+struct TouchDecodedSample {
+  TouchSampleKind kind{TouchSampleKind::NotReady};
+  int16_t raw_x{0};
+  int16_t raw_y{0};
+  bool ack_buffer{false};
+};
+
+// FocalTech FT5x06 / FT6336 / FT3168 5-byte frame starting at REG 0x02:
+//   buf[0] = TD_STATUS (bits [3:0] = touch point count 0..2)
+//   buf[1] = P1_XH (bits [7:6] = Event Flag: 00=Press, 01=Lift, 10=Contact, 11=Reserved; bits [3:0] = X[11:8])
+//   buf[2] = P1_XL (X[7:0])
+//   buf[3] = P1_YH (bits [7:4] = Touch ID; bits [3:0] = Y[11:8])
+//   buf[4] = P1_YL (Y[7:0])
+inline constexpr TouchDecodedSample decode_focaltech_frame(const uint8_t buf[5]) noexcept {
+  const uint8_t count = static_cast<uint8_t>(buf[0] & 0x0FU);
+  const uint8_t event_flag = static_cast<uint8_t>((buf[1] >> 6U) & 0x03U);
+  if (count == 0U || count > 5U || event_flag == 0x01U || event_flag == 0x03U) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
+  }
+  const int16_t x = static_cast<int16_t>(((static_cast<uint16_t>(buf[1] & 0x0FU)) << 8U) | buf[2]);
+  const int16_t y = static_cast<int16_t>(((static_cast<uint16_t>(buf[3] & 0x0FU)) << 8U) | buf[4]);
+  return TouchDecodedSample{TouchSampleKind::Contact, x, y, false};
+}
+
+// Goodix GT911 status byte (0x814E) + optional first-point 4-byte coordinates (0x8150..0x8153).
+// CRITICAL: When bit 7 (buffer_status) is 0, ack_buffer MUST be false so 0x814E is never cleared mid-scan.
+inline constexpr TouchDecodedSample decode_gt911_frame(uint8_t status_814e,
+                                                       const uint8_t *pt_8150_4bytes) noexcept {
+  if ((status_814e & 0x80U) == 0U) {
+    return TouchDecodedSample{TouchSampleKind::NotReady, 0, 0, false};
+  }
+  const uint8_t count = static_cast<uint8_t>(status_814e & 0x0FU);
+  if (count == 0U || count > 5U || pt_8150_4bytes == nullptr) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, true};
+  }
+  const int16_t x = static_cast<int16_t>(static_cast<uint16_t>(pt_8150_4bytes[0]) |
+                                         (static_cast<uint16_t>(pt_8150_4bytes[1]) << 8U));
+  const int16_t y = static_cast<int16_t>(static_cast<uint16_t>(pt_8150_4bytes[2]) |
+                                         (static_cast<uint16_t>(pt_8150_4bytes[3]) << 8U));
+  return TouchDecodedSample{TouchSampleKind::Contact, x, y, true};
+}
+
+// Hynitron CST9217 / CST9220 5-byte report at 0xD000:
+//   buf[0] bits [3:0] == 0x06 -> finger contact; buf[4] must equal 0xAB sync marker.
+inline constexpr TouchDecodedSample decode_cst9217_frame(const uint8_t buf[5]) noexcept {
+  if (buf[4] != 0xABU) {
+    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, true};
+  }
+  if ((buf[0] & 0x0FU) != 0x06U) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, true};
+  }
+  const int16_t x = static_cast<int16_t>((static_cast<uint16_t>(buf[1]) << 4U) |
+                                         ((static_cast<uint16_t>(buf[3]) >> 4U) & 0x0FU));
+  const int16_t y = static_cast<int16_t>((static_cast<uint16_t>(buf[2]) << 4U) |
+                                         (static_cast<uint16_t>(buf[3]) & 0x0FU));
+  return TouchDecodedSample{TouchSampleKind::Contact, x, y, true};
+}
+
+// Hynitron CST816S / CST816D 6-byte report starting at REG 0x01 (extensible single-touch IC):
+inline constexpr TouchDecodedSample decode_cst816s_frame(const uint8_t buf[6]) noexcept {
+  const uint8_t count = static_cast<uint8_t>(buf[1] & 0x0FU);
+  const uint8_t event_flag = static_cast<uint8_t>((buf[2] >> 6U) & 0x03U);
+  if (count == 0U || event_flag == 0x01U) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
+  }
+  const int16_t x = static_cast<int16_t>(((static_cast<uint16_t>(buf[2] & 0x0FU)) << 8U) | buf[3]);
+  const int16_t y = static_cast<int16_t>(((static_cast<uint16_t>(buf[4] & 0x0FU)) << 8U) | buf[5]);
+  return TouchDecodedSample{TouchSampleKind::Contact, x, y, false};
+}
+
+inline constexpr const char *touch_hal_protocol_name(TouchHalProtocol p) noexcept {
+  switch (p) {
+    case TouchHalProtocol::FT6336: return "ft6336";
+    case TouchHalProtocol::FT3168: return "ft3168";
+    case TouchHalProtocol::GT911: return "gt911";
+    case TouchHalProtocol::CST9217: return "cst9217";
+    case TouchHalProtocol::CST816S: return "cst816s";
+  }
+  return "unknown";
+}
+
+inline constexpr uint16_t default_active_poll_ms(TouchHalProtocol p) noexcept {
+  switch (p) {
+    case TouchHalProtocol::GT911: return 8U;
+    case TouchHalProtocol::FT6336:
+    case TouchHalProtocol::FT3168:
+    case TouchHalProtocol::CST816S: return 10U;
+    case TouchHalProtocol::CST9217: return 16U;
+  }
+  return 10U;
+}
+
+struct TouchHalTelemetry {
+  uint32_t irq_edges{0};
+  uint32_t i2c_reads{0};
+  uint32_t i2c_errors{0};
+  uint32_t contacts{0};
+  uint32_t releases{0};
+  uint32_t wake_pulses{0};
+  uint32_t max_active_gap_ms{0};
+  uint32_t last_sample_ms{0};
+};
+
+inline TouchHalTelemetry &touch_hal_telemetry() noexcept {
+  static TouchHalTelemetry s_tel{};
+  return s_tel;
+}
+
+using TouchPumpFn = void (*)(void *ctx);
+
+struct TouchPumpBridge {
+  void *ctx{nullptr};
+  TouchPumpFn fn{nullptr};
+
+  void bind(void *c, TouchPumpFn f) noexcept {
+    ctx = c;
+    fn = f;
+  }
+};
+
+inline TouchPumpBridge &touch_pump_bridge() noexcept {
+  static TouchPumpBridge s_bridge{};
+  return s_bridge;
+}
+
+inline void hal_touch_pump() noexcept {
+  const auto &b = touch_pump_bridge();
+  if (b.fn != nullptr) b.fn(b.ctx);
+}
+
+}  // namespace latter_ui
+
+#if defined(USE_TOUCHSCREEN) && defined(USE_I2C) && \
+    __has_include("esphome/components/touchscreen/touchscreen.h") && \
+    __has_include("esphome/components/i2c/i2c.h")
+#include "esphome/components/i2c/i2c.h"
+#include "esphome/components/touchscreen/touchscreen.h"
+#include "esphome/core/gpio.h"
+#include "esphome/core/helpers.h"
+
+namespace esphome::latter_core {
+
+struct LatterTouchIrqStore {
+  volatile bool irq_pending{false};
+  volatile uint32_t edge_count{0};
+  static void gpio_intr(LatterTouchIrqStore *store);
+};
+
+class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice {
+ public:
+  void set_protocol(::latter_ui::TouchHalProtocol proto);
+  void set_interrupt_pin(InternalGPIOPin *pin) { this->interrupt_pin_ = pin; }
+  void set_reset_pin(GPIOPin *pin) { this->reset_pin_ = pin; }
+  void set_active_poll_ms(uint16_t ms);
+
+  float get_setup_priority() const override;
+  void setup() override;
+  void update() override;
+  void loop() override;
+  void pump_from_host();
+
+ protected:
+  bool init_controller_();
+  void service_once_(uint32_t now);
+  void update_touches() override;
+
+  ::latter_ui::TouchHalProtocol protocol_{::latter_ui::TouchHalProtocol::FT6336};
+  InternalGPIOPin *interrupt_pin_{nullptr};
+  GPIOPin *reset_pin_{nullptr};
+  LatterTouchIrqStore irq_store_{};
+  HighFrequencyLoopRequester touch_hf_{};
+  uint32_t last_edge_snapshot_{0};
+  uint32_t last_service_ms_{0};
+  uint16_t active_poll_ms_{10};
+  bool active_poll_explicit_{false};
+  bool finger_down_{false};
+  bool hf_held_{false};
+  bool poll_due_{false};
+  bool in_service_{false};
+  bool had_irq_this_pass_{false};
+  bool wake_pulse_active_{false};
+};
+
+}  // namespace esphome::latter_core
+#endif

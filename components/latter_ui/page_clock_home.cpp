@@ -1974,6 +1974,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     };
 
     const float anim_start = home_dock_anim().step_window(start_idx, now_ms);
+    const int dock_bounce_x = edge_bounce().offset_px(
+        PageId::HOME, GestureAxisLock::Horizontal, now_ms, LATTER_PANEL_PPI);
     const int stride       = get_dock_slot_stride(win_xs, vis_count);
     const int left_cx      = win_xs[0];
     const int right_cx     = win_xs[vis_count - 1];
@@ -1984,7 +1986,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     for (int g_idx = 0; g_idx < dock_count; g_idx++) {
       const float rel_slot = static_cast<float>(g_idx) - anim_start;
       if (rel_slot < -0.85f || rel_slot > static_cast<float>(vis_count - 1) + 0.85f) continue;
-      const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride)));
+      const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride))) + dock_bounce_x;
       if (bx < left_cx - clip_pad || bx > right_cx + clip_pad) continue;
 
       float alpha = 1.0f;

@@ -539,6 +539,10 @@ inline RaiseToWakeDetector &raise_wake_detector() {
   return raise_to_wake();
 }
 
+inline bool tap_wake_needs_double_tap(std::string_view tw_mode, bool usb_on) {
+  return (tw_mode == "Double Tap") && !usb_on;
+}
+
 inline bool tap_wake_needs_double_tap(bool usb_on) {
 #if LATTER_IS_WEARABLE
   return !usb_on;
@@ -548,16 +552,33 @@ inline bool tap_wake_needs_double_tap(bool usb_on) {
 #endif
 }
 
-inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
-  if (!tap_wake_needs_double_tap(usb_on)) return true;
+inline bool accept_screen_off_tap(std::string_view tw_mode, bool usb_on, uint32_t now_ms) {
   static uint32_t first_tap_ms = 0;
+  if (tw_mode == "Disabled") {
+    first_tap_ms = 0;
+    return false;
+  }
+  if (tw_mode == "Docked Only") {
+    first_tap_ms = 0;
+    return usb_on;
+  }
+  if (!tap_wake_needs_double_tap(tw_mode, usb_on)) {
+    first_tap_ms = 0;
+    return true;
+  }
   if (first_tap_ms == 0 || (now_ms - first_tap_ms) > 450U) {
     first_tap_ms = (now_ms == 0) ? 1U : now_ms;
     return false;
   }
-  if ((now_ms - first_tap_ms) < 40U) return false;
+  if ((now_ms - first_tap_ms) < 35U) return false;
   first_tap_ms = 0;
   return true;
+}
+
+inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
+  return accept_screen_off_tap(
+      tap_wake_needs_double_tap(usb_on) ? std::string_view{"Double Tap"} : std::string_view{"Single Tap"},
+      usb_on, now_ms);
 }
 
 inline constexpr uint32_t kBatteryMotionWindowMs = 35000U;

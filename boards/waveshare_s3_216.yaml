@@ -184,9 +184,9 @@ display:
     update_interval: 1s
 
 touchscreen:
-  - platform: cst9220
+  - platform: latter_core
+    protocol: cst9217
     id: touch_screen
-    setup_priority: -100
     display: disp1
     i2c_id: bus_internal
     address: 0x5A
@@ -194,7 +194,7 @@ touchscreen:
       number: GPIO11
       mode: INPUT_PULLUP
     reset_pin: GPIO40
-    touch_timeout: 120ms
+    active_poll_interval: 16ms
     update_interval: never
 
 script:

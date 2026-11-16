@@ -158,7 +158,9 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       const int shift = menu_scroll_shift(max_shift);
       return (menu_scroll_dir == 1) ? shift : (max_shift - shift);
     }
-    return (cur_page == 2) ? max_shift : 0;
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::SYSTEM, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
+    return ((cur_page == 2) ? max_shift : 0) - bounce_y;
   };
 
   char buf[64];

@@ -2212,6 +2212,7 @@ float weather_precip_alpha_scale() {
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond) {
   if (!has_motion_cond) return false;
+  if (touch_gesture().active) return false;
   if (battery_motion_allowed(usb_connected, now_ms, latest_input_ms)) return true;
   const auto &st = sky_fade_state();
   return (st.precip_alpha_scale > 0.001f) || !st.calm_frame_rendered;

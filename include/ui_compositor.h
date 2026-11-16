@@ -257,6 +257,9 @@ struct Cadence20msInputs {
   bool time_anim_active = false;
   bool clock_smooth_sweep = false;
   bool interactive_slide = false;
+  bool dock_anim_active = false;
+  int dock_y0 = 0;
+  int dock_y1 = 0;
   bool find_my_active = false;
   bool ringing_or_critical = false;
   bool va_visible = false;

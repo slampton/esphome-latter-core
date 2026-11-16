@@ -40,10 +40,10 @@ struct PowerProfileSpec {
 
 inline constexpr PowerProfileSpec kPowerProfiles[] = {
     {PowerProfile::PORTABLE_CARRY, "Portable Carry", "Docked Only", "Docked Only", "Docked Only", "30s", "1 min", "15 min", true},
-    {PowerProfile::HANDHELD_ROAMING, "Handheld Roaming", "Docked Only", "Always On", "Always On", "30s", "1 min", "30 min", true},
-    {PowerProfile::WEARABLE_WATCH, "Wearable Watch", "Docked Only", "Always On", "Always On", "15s", "1 min", "15 min", true},
+    {PowerProfile::HANDHELD_ROAMING, "Handheld Roaming", "Docked Only", "Single Tap", "Always On", "30s", "1 min", "30 min", true},
+    {PowerProfile::WEARABLE_WATCH, "Wearable Watch", "Docked Only", "Double Tap", "Always On", "15s", "1 min", "15 min", true},
     {PowerProfile::TABLETOP_DOCK, "Tabletop Dock", "Docked Only", "Docked Only", "Disabled", "30s", "5 min", "15 min", true},
-    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On", "Always On", "Disabled", "Never", "5 min", "Disabled", true},
+    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On", "Single Tap", "Disabled", "Never", "5 min", "Disabled", true},
 };
 
 enum class ProtocolHeaderField : size_t {

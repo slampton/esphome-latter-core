@@ -30,6 +30,12 @@ void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
   }
   const uint8_t wr[2] = {0x86, static_cast<uint8_t>(sleep ? 0x01 : 0x00)};
   if (bus->write(0x38, wr, 2) == esphome::i2c::ERROR_OK) {
+    if (!sleep) {
+      const uint8_t trig_mode[2] = {0xA4, 0x01};
+      const uint8_t act_rate[2] = {0x88, 0x06};
+      (void) bus->write(0x38, trig_mode, 2);
+      (void) bus->write(0x38, act_rate, 2);
+    }
     s_last_sleep = want;
     LATTER_PROF_LOGI("[PROF:TOUCH] monitor_mode=%d", want);
   }

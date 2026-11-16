@@ -93,6 +93,7 @@ display:
     auto_clear_enabled: false
     lambda: |-
       const auto &rs = latter_ui::runtime_state();
+      latter_ui::hal_touch_pump();
       const int prof_sub = latter_ui::compute_active_subpage_id();
       latter_ui::FrameProfileScope prof_frame_scope(rs.nav.gui_page, prof_sub, rs.nav.display_power_state);
 
@@ -238,13 +239,17 @@ display:
            rs.stopwatch.running);
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
+      const bool dock_anim_now =
+          latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
+      const bool vert_bounce_now =
+          latter_ui::any_vert_bounce_active(rs.nav.gui_page, ctx.now_ms);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
           weather_sky_stepping_hint ||
           clock_sweep_hint ||
           time_sw_hint ||
           latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
-          latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+          vert_bounce_now ||
           rs.nav.menu_scroll_active ||
           (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
       const int hhmm_key = latter_ui::compute_hhmm_key(ctx.now);
@@ -320,9 +325,11 @@ display:
       int act_y0 = 0, act_y1 = 0;
       const bool has_act_band = latter_ui::home_activity_band(act_y0, act_y1);
       const bool act_sliding_now = latter_ui::home_activity_slide_active(ctx.now_ms);
-      if (latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
-          rs.nav.menu_scroll_active || coin_toss_active || greet_fading_now) {
+      if (rs.nav.menu_scroll_active || vert_bounce_now || coin_toss_active || greet_fading_now) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
+      } else if (dock_anim_now) {
+        latter_ui::schedule_anim_band_disp_update(
+            &id(disp1), latter_ui::dock_dirty_band_y0(), latter_ui::SCREEN_H - 1);
       } else if (weather_sky_active && !va_visible && !alert_ringing) {
         const bool w_has_motion = latter_ui::evaluate_sky_has_motion(
             ctx.weather_sim_opt, latter_ui::weather_state().condition,
@@ -364,6 +371,8 @@ display:
         }
       }
 
+      latter_ui::hal_touch_pump();
+
 touchscreen:
   - id: !extend touch_screen
     on_touch:
@@ -376,7 +385,7 @@ touchscreen:
     on_update:
       then:
         - lambda: |-
-            id(sync_ui_touch_runtime).execute();
+            id(sync_ui_touch_runtime_fast).execute();
             latter_ui::touch_router().dispatch_move(touches, [](int tx, int ty) {
               latter_ui::touch_engine().on_update(tx, ty, millis());
             });

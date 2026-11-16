@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include "ui_touch_recognizer.h"
+
 namespace latter_ui {
 
 static constexpr uint8_t kHitTap         = 0x01;
@@ -132,6 +134,8 @@ namespace WidgetId {
   static constexpr uint16_t LIGHT_BRI_SLIDER   = 631;
   static constexpr uint16_t LIGHT_TEMP_SLIDER  = 632;
   static constexpr uint16_t LIGHT_COLOR_BTN    = 633;
+  static constexpr uint16_t ENTITY_POWER_BTN   = 634;
+  static constexpr uint16_t ENTITY_PRESET_BASE = 635;  // 635..638 (0..3 presets: 25%/50%/75%/100%)
   static constexpr uint16_t CLIMATE_MINUS_BTN  = 640;
   static constexpr uint16_t CLIMATE_PLUS_BTN   = 641;
   static constexpr uint16_t CLIMATE_MODE_BASE  = 642;  // 642..647 (0=heat, 1=cool, 2=heat_cool, 3=off, 4=fan_only, 5=dry)
@@ -471,9 +475,10 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.home_date_y = (h > 520) ? ((h * 52) / 466) : 52;
   L.home_clock_y = (h > 520) ? ((h * 128) / 466) : 128;
   L.home_weather_y = (h > 520) ? ((h * 200) / 466) : 200;
-  L.drag_start = mm_to_px_for(0.6f, ppi);
-  L.swipe_min = mm_to_px_for(2.3f, ppi);
-  L.tap_max = mm_to_px_for(2.9f, ppi);
+  const auto km = KinematicMetrics::for_ppi(ppi);
+  L.drag_start = km.slider_start_px;
+  L.tap_max = km.tap_slop_px;
+  L.swipe_min = km.swipe_live_px;
   const int min_dock_hit = mm_to_px_for(3.6f, ppi);
   L.dock_hit_r = ((L.dock_r + 16) > min_dock_hit) ? (L.dock_r + 16) : min_dock_hit;
   return L;
@@ -483,23 +488,38 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
 // Pure C++20 Standardized Touch Timing Constants, Gesture State & TouchRouter
 // Shared between TouchGestureEngine (ui_touch_engine.h) and host unit tests.
 // ==============================================================================
-static constexpr uint32_t TOUCH_DEBOUNCE_RAPID     = 100;  // ms: Rapid steppers
-static constexpr uint32_t TOUCH_DEBOUNCE_BUTTON    = 150;  // ms: Standard buttons & pills
-static constexpr uint32_t TOUCH_DEBOUNCE_WAKE      = 180;  // ms: Post-wake settling lockout
-static constexpr uint32_t TOUCH_DEBOUNCE_DISMISS   = 200;  // ms: Overlay/HUD dismissal
-static constexpr uint32_t TOUCH_DEBOUNCE_SCROLL    = 250;  // ms: Page transitions & chevrons
-static constexpr uint32_t TOUCH_GUARD_DISMISS      = 250;  // ms: Minimum post-wake delay
-static constexpr uint32_t TOUCH_POST_SWIPE_LOCKOUT = 200;  // ms: Ignore moves right after swipe
+static constexpr uint32_t TOUCH_DEBOUNCE_RAPID     = 65;   // ms: Repeaters (Vol, Prev/Next, D-Pad, Steppers, Keypad)
+static constexpr uint32_t TOUCH_DEBOUNCE_BUTTON    = 110;  // ms: Same-target stateful buttons & pills
+static constexpr uint32_t TOUCH_DEBOUNCE_WAKE      = 150;  // ms: Post-wake settling lockout
+static constexpr uint32_t TOUCH_DEBOUNCE_DISMISS   = 160;  // ms: Overlay/HUD dismissal
+static constexpr uint32_t TOUCH_DEBOUNCE_SCROLL    = 160;  // ms: Page transitions & chevrons
+static constexpr uint32_t TOUCH_GUARD_DISMISS      = 220;  // ms: Minimum post-wake delay
+static constexpr uint32_t TOUCH_POST_SWIPE_LOCKOUT = 150;  // ms: Ignore moves right after swipe
 
 inline uint32_t &touch_last_tap_ms() {
   static uint32_t s_last_tap_ms = 0;
   return s_last_tap_ms;
 }
 
-inline bool touch_allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) {
+inline uint32_t &touch_last_target_key() {
+  static uint32_t s_last_target_key = 0;
+  return s_last_target_key;
+}
+
+inline bool touch_allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON,
+                            uint32_t target_key = 0) {
   uint32_t &last = touch_last_tap_ms();
-  if (now_ms - last <= cooldown_ms) return false;
-  last = now_ms;
+  uint32_t &last_key = touch_last_target_key();
+  if (last != 0U) {
+    if (target_key != 0U && last_key != 0U && target_key != last_key) {
+      // Cross-target tap: zero UI lockout; only guard against <15 ms hardware contact bounce.
+      if ((now_ms - last) < 15U) return false;
+    } else {
+      if ((now_ms - last) <= cooldown_ms) return false;
+    }
+  }
+  last = (now_ms == 0U) ? 1U : now_ms;
+  last_key = target_key;
   return true;
 }
 
@@ -522,6 +542,52 @@ struct TouchGestureState {
   int start_context = 0;
   bool active = false;
   bool swipe_committed = false;
+  bool tap_cancelled = false;
+  GestureAxisLock axis_lock = GestureAxisLock::None;
+
+  void begin(int tx, int ty, uint32_t now_ms, int page_id, int ctx_id) noexcept {
+    start_x = tx;
+    start_y = ty;
+    last_x = tx;
+    last_y = ty;
+    max_travel = 0;
+    sample_count = 1;
+    start_ms = now_ms;
+    last_touch_ms = now_ms;
+    start_page = page_id;
+    start_context = ctx_id;
+    active = true;
+    swipe_committed = false;
+    tap_cancelled = false;
+    axis_lock = GestureAxisLock::None;
+  }
+
+  void record_move(int tx, int ty, uint32_t now_ms, int ppi) noexcept {
+    last_touch_ms = now_ms;
+    if (tx == last_x && ty == last_y) return;
+    last_x = tx;
+    last_y = ty;
+    sample_count += 1;
+    const int dx = tx - start_x;
+    const int dy = ty - start_y;
+    const int adx = (dx < 0) ? -dx : dx;
+    const int ady = (dy < 0) ? -dy : dy;
+    const int cur_dist = (adx > ady) ? adx : ady;
+    if (cur_dist > max_travel) max_travel = cur_dist;
+
+    const KinematicMetrics km = KinematicMetrics::for_ppi(ppi);
+    // Strict D-049 deadband: exceeding kTapSlopMm irreversibly cancels tap eligibility.
+    if (max_travel > km.tap_slop_px) {
+      tap_cancelled = true;
+    }
+    if (axis_lock == GestureAxisLock::None && cur_dist >= km.axis_lock_px) {
+      if (is_axis_dominant(dx, dy)) {
+        axis_lock = GestureAxisLock::Horizontal;
+      } else if (is_axis_dominant(dy, dx)) {
+        axis_lock = GestureAxisLock::Vertical;
+      }
+    }
+  }
 };
 
 inline TouchGestureState &touch_gesture() {
@@ -530,12 +596,19 @@ inline TouchGestureState &touch_gesture() {
 }
 
 struct TouchRouter {
-  inline bool allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON) const {
-    return touch_allow_tap(now_ms, cooldown_ms);
+  inline bool allow_tap(uint32_t now_ms, uint32_t cooldown_ms = TOUCH_DEBOUNCE_BUTTON,
+                        uint32_t target_key = 0) const {
+    return touch_allow_tap(now_ms, cooldown_ms, target_key);
   }
 
-  inline void note_tap(uint32_t now_ms) const {
-    touch_last_tap_ms() = now_ms;
+  inline void note_tap(uint32_t now_ms, uint32_t target_key = 0) const {
+    touch_last_tap_ms() = (now_ms == 0U) ? 1U : now_ms;
+    touch_last_target_key() = target_key;
+  }
+
+  inline void clear_tap() const {
+    touch_last_tap_ms() = 0U;
+    touch_last_target_key() = 0U;
   }
 
   template <typename TouchT, typename TouchesT, typename HandlerFn>

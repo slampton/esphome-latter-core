@@ -378,7 +378,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     }
 
   } else if (music_overlay_mode == 1) {
-    int list_shift = 0;
+    int list_shift = edge_bounce().offset_px(
+        PageId::MUSIC, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     if (rs.nav.menu_scroll_active) {
       list_shift = rs.nav.menu_scroll_dir * (scale_y(116) - menu_scroll_shift(scale_y(116)));
     }
@@ -467,7 +468,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
     const bool is_podcast_list = (cat_mode == "podcast");
     const bool is_drill = (cat_mode == "artist" || cat_mode == "album" || cat_mode == "artist_albums");
 
-    int list_shift = 0;
+    int list_shift = edge_bounce().offset_px(
+        PageId::MUSIC, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     if (rs.nav.menu_scroll_active) {
       list_shift = rs.nav.menu_scroll_dir * (scale_y(116) - menu_scroll_shift(scale_y(116)));
     }

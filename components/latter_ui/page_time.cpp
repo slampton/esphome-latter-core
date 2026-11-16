@@ -1,5 +1,6 @@
 #include "esphome/core/defines.h"
 #include "ui_pages.h"
+#include "ui_touch_recognizer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -205,11 +206,13 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   rs.nav.world_clock_page = cur_pg;
   const int base_idx = cur_pg * 2;
   const int vis_rows = std::min(2, total_wc - base_idx);
+  const int bounce_y = edge_bounce().offset_px(
+      PageId::TIME, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
 
   for (int row = 0; row < vis_rows; ++row) {
     const int idx = base_idx + row;
     const auto &wc = entries[idx];
-    const int cy_row = (total_wc == 1) ? scale_y(258) : scale_y(row == 0 ? 246 : 298);
+    const int cy_row = ((total_wc == 1) ? scale_y(258) : scale_y(row == 0 ? 246 : 298)) + bounce_y;
     const int row_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 28) : layout().area_card3_w,
                                safe_span(cy_row, 20));
     const int x0 = cx - (row_w / 2);

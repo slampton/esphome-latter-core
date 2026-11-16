@@ -88,6 +88,13 @@ enum class WakePolicyMode : uint8_t {
   Disabled   = 2,
 };
 
+enum class TapWakeMode : uint8_t {
+  SingleTap  = 0,
+  DoubleTap  = 1,
+  DockedOnly = 2,
+  Disabled   = 3,
+};
+
 enum class ScreensaverStyle : uint8_t {
   AmbientClock = 0,
   Aurora       = 1,
@@ -328,7 +335,7 @@ struct BrowseSlotItem {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 6U;
+static constexpr uint16_t kPersistedPrefsVersion = 7U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -417,7 +424,7 @@ struct PersistedDevicePrefs {
   // Tier 2 + Tier 3 Device Preferences (compact enum indices / integers / bools)
   uint8_t power_profile = 0;               // 0..5 ("Portable Carry" .. "Custom")
   uint8_t wake_word_mode = 0;              // 0..2 ("Docked Only", "Always On", "Disabled")
-  uint8_t tap_to_wake = 1;                 // 0..2 ("Always On", "Docked Only", "Disabled")
+  uint8_t tap_to_wake = 2;                 // 0..3 ("Single Tap", "Double Tap", "Docked Only", "Disabled")
   uint8_t pickup_to_wake = 1;              // 0..2 ("Always On", "Docked Only", "Disabled")
   uint8_t battery_screen_timeout = 2;      // 0..5 ("10s", "15s", "30s", "1 min", "2 min", "Never")
   uint8_t docked_idle_timeout = 3;         // 0..6 ("10s", "15s", "30s", "1 min", "2 min", "5 min", "Never")
@@ -490,8 +497,8 @@ struct PersistedDevicePrefs {
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
     return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
   }
-  constexpr WakePolicyMode tap_to_wake_enum() const noexcept {
-    return static_cast<WakePolicyMode>((tap_to_wake < 3U) ? tap_to_wake : 1U);
+  constexpr TapWakeMode tap_to_wake_enum() const noexcept {
+    return static_cast<TapWakeMode>((tap_to_wake < 4U) ? tap_to_wake : 2U);
   }
   constexpr WakePolicyMode pickup_to_wake_enum() const noexcept {
     return static_cast<WakePolicyMode>((pickup_to_wake < 3U) ? pickup_to_wake : 1U);
@@ -572,6 +579,8 @@ inline constexpr const char *const kPowerProfileOpts[6] = {
     "Tabletop Dock", "Always-On Wall / Desk", "Custom"};
 inline constexpr const char *const kWakeWordModeOpts[3] = {
     "Docked Only", "Always On", "Disabled"};
+inline constexpr const char *const kTapWakeOpts[4] = {
+    "Single Tap", "Double Tap", "Docked Only", "Disabled"};
 inline constexpr const char *const kWakePolicyOpts[3] = {
     "Always On", "Docked Only", "Disabled"};
 inline constexpr const char *const kBattScreenTimeoutOpts[6] = {
@@ -638,7 +647,7 @@ inline const char *opt_at_clamped(const char *const (&opts)[N], uint8_t idx, uin
 
 inline const char *pref_power_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPowerProfileOpts, p.power_profile); }
 inline const char *pref_wake_word_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakeWordModeOpts, p.wake_word_mode); }
-inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.tap_to_wake, 1); }
+inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTapWakeOpts, p.tap_to_wake, 2); }
 inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.pickup_to_wake, 1); }
 inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattScreenTimeoutOpts, p.battery_screen_timeout, 2); }
 inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kDockedIdleTimeoutOpts, p.docked_idle_timeout, 3); }
@@ -670,7 +679,7 @@ inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_pre
 inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.power_profile >= 6) p.power_profile = 0;
   if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
-  if (p.tap_to_wake >= 3) p.tap_to_wake = 1;
+  if (p.tap_to_wake >= 4) p.tap_to_wake = 2;
   if (p.pickup_to_wake >= 3) p.pickup_to_wake = 1;
   if (p.battery_screen_timeout >= 6) p.battery_screen_timeout = 2;
   if (p.docked_idle_timeout >= 7) p.docked_idle_timeout = 3;
@@ -735,11 +744,11 @@ inline bool apply_power_profile_to_prefs(PersistedDevicePrefs &p, std::string_vi
 
   struct SpecRow { uint8_t ww; uint8_t tap; uint8_t pick; uint8_t batt_scr; uint8_t dock_idle; uint8_t hib; bool saver; };
   static constexpr SpecRow kRows[5] = {
-      {0, 1, 1, 2, 3, 2, true},  // Portable Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
-      {0, 0, 0, 2, 3, 3, true},  // Handheld Roaming: Docked Only, Always On, Always On, 30s, 1 min, 30 min, true
-      {0, 0, 0, 1, 3, 2, true},  // Wearable Watch: Docked Only, Always On, Always On, 15s, 1 min, 15 min, true
-      {0, 1, 2, 2, 5, 2, true},  // Tabletop Dock: Docked Only, Docked Only, Disabled, 30s, 5 min, 15 min, true
-      {1, 0, 2, 5, 5, 4, true},  // Always-On Wall / Desk: Always On, Always On, Disabled, Never, 5 min, Disabled, true
+      {0, 2, 1, 2, 3, 2, true},  // Portable Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
+      {0, 0, 0, 2, 3, 3, true},  // Handheld Roaming: Docked Only, Single Tap, Always On, 30s, 1 min, 30 min, true
+      {0, 1, 0, 1, 3, 2, true},  // Wearable Watch: Docked Only, Double Tap, Always On, 15s, 1 min, 15 min, true
+      {0, 2, 2, 2, 5, 2, true},  // Tabletop Dock: Docked Only, Docked Only, Disabled, 30s, 5 min, 15 min, true
+      {1, 0, 2, 5, 5, 4, true},  // Always-On Wall / Desk: Always On, Single Tap, Disabled, Never, 5 min, Disabled, true
   };
   const SpecRow &r = kRows[idx];
   const uint8_t eff_pick = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? r.pick : 2;
@@ -1104,7 +1113,10 @@ struct AreaRuntimeState {
   uint32_t feedback_timer = 0;
   std::string light_insp_entity_id = "";
   std::string light_insp_name = "Light";
+  std::string light_insp_domain = "light";
   int light_insp_mode = 0;
+  int light_insp_slot = -1;
+  bool light_insp_active = true;
   float light_insp_hue_deg = 35.0f;
   float light_insp_sat = 0.85f;
   int light_insp_kelvin = 3500;
@@ -2538,7 +2550,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::WAKE_WORD_MODE:
       return apply_enum(p.wake_word_mode, kWakeWordModeOpts, kPrefEffectWakeWordSync, true);
     case PrefKey::TAP_TO_WAKE:
-      return apply_enum(p.tap_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy, true);
+      return apply_enum(p.tap_to_wake, kTapWakeOpts, kPrefEffectPowerPolicy, true);
     case PrefKey::PICKUP_TO_WAKE:
       return apply_enum(p.pickup_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy, true);
     case PrefKey::BATTERY_SCREEN_TIMEOUT:
@@ -3497,7 +3509,10 @@ inline std::string &area_available_domains_csv() { return runtime_state().area.a
 inline int &area_cat_dock_page() { return runtime_state().area.cat_dock_page; }
 inline std::string &light_insp_entity_id() { return runtime_state().area.light_insp_entity_id; }
 inline std::string &light_insp_name() { return runtime_state().area.light_insp_name; }
+inline std::string &light_insp_domain() { return runtime_state().area.light_insp_domain; }
 inline int &light_insp_mode() { return runtime_state().area.light_insp_mode; }
+inline int &light_insp_slot() { return runtime_state().area.light_insp_slot; }
+inline bool &light_insp_active() { return runtime_state().area.light_insp_active; }
 inline float &light_insp_hue_deg() { return runtime_state().area.light_insp_hue_deg; }
 inline float &light_insp_sat() { return runtime_state().area.light_insp_sat; }
 inline int &light_insp_kelvin() { return runtime_state().area.light_insp_kelvin; }

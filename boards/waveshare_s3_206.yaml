@@ -210,7 +210,8 @@ display:
     update_interval: 1s
 
 touchscreen:
-  - platform: ft5x06
+  - platform: latter_core
+    protocol: ft3168
     id: touch_screen
     display: disp1
     i2c_id: bus_internal
@@ -218,7 +219,7 @@ touchscreen:
     interrupt_pin:
       number: GPIO38
       mode: INPUT_PULLUP
-    touch_timeout: 120ms
+    active_poll_interval: 10ms
     update_interval: never
 
 script:

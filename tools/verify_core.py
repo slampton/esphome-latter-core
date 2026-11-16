@@ -640,7 +640,9 @@ HOST_LAMBDA_HEADERS: tuple[str, ...] = (
     "hal_link_report.h",
     "hal_manifest.h",
     "hal_panel_power.h",
+    "hal_touch.h",
     "ui_hit_table.h",
+    "ui_touch_recognizer.h",
     "ui_compositor.h",
 )
 
@@ -1920,6 +1922,7 @@ YAML_FULL_LAMBDA_PREAMBLE = """\
 #include "hal_link_report.h"
 #include "hal_panel_power.h"
 #include "hal_power_pm.h"
+#include "hal_touch.h"
 #include "audio_router.h"
 #include "latter_prof.h"
 #include "latter_protocol.h"
@@ -1929,6 +1932,7 @@ YAML_FULL_LAMBDA_PREAMBLE = """\
 #include "latter_core.h"
 #include "latter_beacon.h"
 #include "ui_pages.h"
+#include "ui_touch_recognizer.h"
 #include "ui_touch_engine.h"
 
 #include <algorithm>

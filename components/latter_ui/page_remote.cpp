@@ -1,5 +1,6 @@
 #include "esphome/core/defines.h"
 #include "ui_pages.h"
+#include "ui_touch_recognizer.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -82,9 +83,11 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 
     const int start_idx = cur_page * 4;
     const int vis_count = std::min(4, std::max(0, valid_count - start_idx));
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::REMOTE, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     for (int row = 0; row < vis_count; row++) {
       const int s_idx = valid_slots[start_idx + row];
-      const int y_mid = layout().slot5_y(row + 1);
+      const int y_mid = layout().slot5_y(row + 1) + bounce_y;
       const bool is_sel = (s_idx == slot);
       const bool is_primary_slot = (s_idx == valid_slots[0]);
 

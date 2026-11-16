@@ -303,21 +303,21 @@ struct UiLayout {
     return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx >= map_zoom_right_x() - r);
   }
 
-  // 10. Touch thresholds in millimetres (docs/device-ui-design.md D-002), converted with LATTER_PANEL_PPI.
-  //     Calibrated so the 466 px reference panel (266 ppi) preserves its exact pixel distances;
-  //     TouchGestureEngine reads every gesture threshold from here (latter-verify [TOUCH MM]).
-  constexpr int drag_start() const { return mm_to_px(0.6f); }          //  6 px: a card slider drag starts
-  constexpr int flick_min() const { return mm_to_px(1.7f); }           // 18 px: music track-inspector flick
-  constexpr int dock_release_swipe() const { return mm_to_px(1.9f); }  // 20 px: Home dock page swipe on release
-  constexpr int swipe_short() const { return mm_to_px(2.1f); }         // 22 px: dock swipe while moving, music lists
-  constexpr int swipe_min() const { return mm_to_px(2.3f); }           // 24 px: swipe-up home, mode bar, 2048
-  constexpr int list_swipe() const { return mm_to_px(2.5f); }          // 26 px: vertical list and carousel paging
-  constexpr int page_swipe() const { return mm_to_px(2.7f); }          // 28 px: in-app mode bars, map pan, cameras
-  constexpr int tap_max() const { return mm_to_px(2.9f); }             // 30 px: a touch that moved less is a tap
-  constexpr int wide_swipe() const { return mm_to_px(2.9f); }          // 30 px: Sky & Weather subpage swipe
-  constexpr int canvas_swipe() const { return mm_to_px(3.25f); }       // 34 px: Area Control canvas category swipe
-  constexpr int tap_max_loose() const { return mm_to_px(3.45f); }      // 36 px: music browser taps
-  constexpr int fast_pan() const { return mm_to_px(10.5f); }           // 110 px: a map drag pans two tiles
+  // 10. Physical kinematic touch thresholds in millimetres (docs/device-ui-design.md D-049),
+  //     converted with LATTER_PANEL_PPI so tap_max() (1.65 mm) < swipe_min() (2.35 mm) across all panels.
+  constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
+  constexpr int swipe_flick() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
+  constexpr int flick_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
+  constexpr int tap_max() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).tap_slop_px; }
+  constexpr int axis_lock() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).axis_lock_px; }
+  constexpr int dock_release_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
+  constexpr int swipe_short() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int swipe_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int list_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int page_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int wide_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int canvas_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
+  constexpr int fast_pan() const { return mm_to_px(10.5f); }
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
   constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
   constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
@@ -689,7 +689,12 @@ inline DockSlideAnimator &mode_bar_anim() {
   return anim;
 }
 
-inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0) {
+inline int dock_dirty_band_y0() {
+  const auto ly = layout();
+  return std::max(0, std::min(ly.dock_y, ly.app_dock_y) - ly.dock_r - scale_y(16));
+}
+
+inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0, uint32_t now_ms = 0U) {
   if (gui_page >= 0) {
     if (gui_page != 1 || home_subpage != 0) {
       home_dock_anim().win_animating = false;
@@ -700,7 +705,14 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0) {
       mode_bar_anim().act_animating = false;
     }
   }
-  return home_dock_anim().is_animating() || mode_bar_anim().is_animating();
+  const bool bounce_h = (now_ms != 0U && gui_page >= 0) &&
+                        edge_bounce().is_active(gui_page, GestureAxisLock::Horizontal, now_ms);
+  return home_dock_anim().is_animating() || mode_bar_anim().is_animating() || bounce_h;
+}
+
+inline bool any_vert_bounce_active(int gui_page, uint32_t now_ms) {
+  return (now_ms != 0U && gui_page >= 0) &&
+         edge_bounce().is_active(gui_page, GestureAxisLock::Vertical, now_ms);
 }
 
 inline int get_dock_slot_stride(const int *win_xs, int vis_count) {
