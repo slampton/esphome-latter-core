@@ -235,9 +235,11 @@ display:
           (rs.nav.gui_page == latter_ui::PageId::CLOCK) &&
           latter_ui::clock_smooth_sweep_active(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, prefs.clock_face);
       const bool time_sw_hint =
-          (rs.nav.gui_page == latter_ui::PageId::TIME &&
-           rs.nav.time_subpage == latter_ui::TimeSubpage::STOPWATCH &&
-           rs.stopwatch.running);
+          ((rs.nav.gui_page == latter_ui::PageId::TIME &&
+            rs.nav.time_subpage == latter_ui::TimeSubpage::STOPWATCH) ||
+           (rs.nav.gui_page == latter_ui::PageId::TOOLS &&
+            rs.nav.tools_subpage == latter_ui::ToolsSubpage::STOPWATCH)) &&
+          rs.stopwatch.running;
       const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool dock_anim_now =

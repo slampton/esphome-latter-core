@@ -284,6 +284,12 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
 void draw_aa_line(esphome::display::Display &it, float x0, float y0, float x1, float y1,
                   float width, esphome::Color col, int alpha_max = 255);
 
+void draw_aa_disc(esphome::display::Display &it, float cx, float cy, float r,
+                  esphome::Color col, int alpha_max = 255);
+
+void draw_aa_ring(esphome::display::Display &it, float cx, float cy, float r,
+                  float thick, esphome::Color col, int alpha_max = 255);
+
 void draw_aa_tapered_hand(esphome::display::Display &it, float cx, float cy, float angle_rad,
                           float tail_len, float tip_len, float root_w, float tip_w,
                           esphome::Color body_col, esphome::Color lume_col,

@@ -270,16 +270,16 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   const int secs   = static_cast<int>((total_ms / 1000U) % 60U);
   const int tenths = static_cast<int>((total_ms / 100U) % 10U);
 
-  // Classic Round Analog Chronograph Dial (D-042: round displays only via Tools -> Stopwatch)
+  // Classic Round Analog Chronograph Dial (D-042 / D-053: round displays only via Tools -> Stopwatch)
   const int cx = ctx.cx;
   const int cy = ctx.cy;
-  const float cx_f = static_cast<float>(cx);
-  const float cy_f = static_cast<float>(cy);
+  const float cx_f = static_cast<float>(cx) + 0.5f;
+  const float cy_f = static_cast<float>(cy) + 0.5f;
 
   fast_circle(it, cx, cy, scale_min(230), ctx.col_white);
   fast_circle(it, cx, cy, scale_min(228), ctx.theme_secondary);
   ui::render_analog_chapter_ring(it, cx, cy, scale_min(227),
-                                 ctx.theme_secondary, ctx.col_white, ctx.col_slate, true);
+                                 ctx.theme_secondary, ctx.col_white, ctx.col_slate, false);
   fast_circle(it, cx, cy, scale_min(196), ctx.col_dark_gray);
 
   static constexpr int kChronoTicks[11] = {0, 5, 10, 15, 20, 25, 35, 40, 45, 50, 55};
@@ -330,33 +330,40 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   // Split-Second (Rattrapante) Ghost Hand via sub-pixel SDF AA
   if (sw.lap_ms > 0) {
     const float lap_angle = (static_cast<float>(sw.lap_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
-    float l_sin = 0.0f, l_cos = 1.0f;
-    fast_sincos(lap_angle, l_sin, l_cos);
+    const float l_sin = std::sin(lap_angle);
+    const float l_cos = std::cos(lap_angle);
     ui::draw_aa_line(it, cx_f, cy_f,
                      cx_f + scale_min_f(154.0f) * l_sin,
                      cy_f - scale_min_f(154.0f) * l_cos,
-                     2.0f, ctx.col_red);
-    fast_circle(it,
-                cx + static_cast<int>(scale_min_f(158.0f) * l_sin),
-                cy - static_cast<int>(scale_min_f(158.0f) * l_cos),
-                scale_min(4), ctx.col_red);
+                     std::max(1.8f, scale_min_f(2.0f)), ctx.col_red);
+    ui::draw_aa_ring(it,
+                     cx_f + scale_min_f(158.0f) * l_sin,
+                     cy_f - scale_min_f(158.0f) * l_cos,
+                     scale_min_f(4.0f), std::max(1.4f, scale_min_f(1.6f)), ctx.col_red);
   }
 
-  // Main Central Chronograph Sweep Hand via sub-pixel SDF AA
+  // Main Central Chronograph Sweep Hand: uniform-width cylindrical AA needle + coaxial sub-pixel counterweight
   const float chrono_angle = (static_cast<float>(total_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
-  float s_sin = 0.0f, s_cos = 1.0f;
-  fast_sincos(chrono_angle, s_sin, s_cos);
+  const float s_sin = std::sin(chrono_angle);
+  const float s_cos = std::cos(chrono_angle);
+  const float tail_len = scale_min_f(36.0f);
+  const float tip_len  = scale_min_f(178.0f);
+  const float tail_xf  = cx_f - tail_len * s_sin;
+  const float tail_yf  = cy_f + tail_len * s_cos;
+  const float tip_xf   = cx_f + tip_len * s_sin;
+  const float tip_yf   = cy_f - tip_len * s_cos;
+  const float needle_w = std::max(2.0f, scale_min_f(2.2f));
+  const float cw_outer = scale_min_f(7.0f);
+  const float cw_inner = scale_min_f(5.6f);
+  const float cw_pip   = scale_min_f(3.0f);
 
-  ui::draw_aa_tapered_hand(it, cx_f, cy_f, chrono_angle,
-                           scale_min_f(36.0f), scale_min_f(178.0f),
-                           scale_min_f(2.4f), scale_min_f(0.9f),
-                           ctx.col_white, ctx.theme_secondary, false, true);
-
-  const int tail_x = cx - static_cast<int>(scale_min_f(36.0f) * s_sin);
-  const int tail_y = cy + static_cast<int>(scale_min_f(36.0f) * s_cos);
-  fast_filled_circle(it, tail_x, tail_y, scale_min(7), ctx.col_dark_gray);
-  fast_circle(it, tail_x, tail_y, scale_min(7), ctx.theme_secondary);
-  fast_filled_circle(it, tail_x, tail_y, scale_min(3), ctx.theme_secondary);
+  ui::draw_aa_line(it, tail_xf + 1.0f, tail_yf + 1.2f, tip_xf + 1.0f, tip_yf + 1.2f,
+                   needle_w, kChromeShadow, 96);
+  ui::draw_aa_disc(it, tail_xf + 1.0f, tail_yf + 1.2f, cw_outer, kChromeShadow, 96);
+  ui::draw_aa_line(it, tail_xf, tail_yf, tip_xf, tip_yf, needle_w, ctx.col_white);
+  ui::draw_aa_disc(it, tail_xf, tail_yf, cw_outer, ctx.theme_secondary);
+  ui::draw_aa_disc(it, tail_xf, tail_yf, cw_inner, ctx.col_dark_gray);
+  ui::draw_aa_disc(it, tail_xf, tail_yf, cw_pip, ctx.theme_secondary);
 
   ui::render_center_arbor_aa(it, cx, cy, ctx.theme_secondary, ctx.col_dark_gray, ctx.col_white);
 

@@ -2002,12 +2002,67 @@ void draw_aa_line(esphome::display::Display &it, float x0, float y0, float x1, f
   }
 }
 
+void draw_aa_disc(esphome::display::Display &it, float cx, float cy, float r,
+                  esphome::Color col, int alpha_max) {
+  if (r <= 0.05f || alpha_max <= 0) return;
+  const float pad = r + 1.0f;
+  const int min_y = std::max(clip_y0(), static_cast<int>(std::floor(cy - pad)));
+  const int max_y = std::min(clip_y1(), static_cast<int>(std::ceil(cy + pad)));
+  if (min_y > max_y) return;
+  const int min_x = std::max(0, static_cast<int>(std::floor(cx - pad)));
+  const int max_x = std::min(SCREEN_W - 1, static_cast<int>(std::ceil(cx + pad)));
+  if (min_x > max_x) return;
+
+  for (int py = min_y; py <= max_y; ++py) {
+    const float dy = (static_cast<float>(py) + 0.5f) - cy;
+    const float dy2 = dy * dy;
+    for (int px = min_x; px <= max_x; ++px) {
+      const float dx = (static_cast<float>(px) + 0.5f) - cx;
+      const float dist = std::sqrt(dx * dx + dy2);
+      const float cov = r + 0.5f - dist;
+      if (cov > 0.0f) {
+        const int a = (cov >= 1.0f) ? alpha_max
+                                    : ((static_cast<int>(cov * 255.0f + 0.5f) * alpha_max) / 255);
+        fast_pixel_blend(it, px, py, col, a);
+      }
+    }
+  }
+}
+
+void draw_aa_ring(esphome::display::Display &it, float cx, float cy, float r,
+                  float thick, esphome::Color col, int alpha_max) {
+  if (r <= 0.25f || thick <= 0.05f || alpha_max <= 0) return;
+  const float half_t = 0.5f * thick;
+  const float pad = r + half_t + 1.0f;
+  const int min_y = std::max(clip_y0(), static_cast<int>(std::floor(cy - pad)));
+  const int max_y = std::min(clip_y1(), static_cast<int>(std::ceil(cy + pad)));
+  if (min_y > max_y) return;
+  const int min_x = std::max(0, static_cast<int>(std::floor(cx - pad)));
+  const int max_x = std::min(SCREEN_W - 1, static_cast<int>(std::ceil(cx + pad)));
+  if (min_x > max_x) return;
+
+  for (int py = min_y; py <= max_y; ++py) {
+    const float dy = (static_cast<float>(py) + 0.5f) - cy;
+    const float dy2 = dy * dy;
+    for (int px = min_x; px <= max_x; ++px) {
+      const float dx = (static_cast<float>(px) + 0.5f) - cx;
+      const float dist = std::sqrt(dx * dx + dy2);
+      const float cov = half_t + 0.5f - std::fabs(dist - r);
+      if (cov > 0.0f) {
+        const int a = (cov >= 1.0f) ? alpha_max
+                                    : ((static_cast<int>(cov * 255.0f + 0.5f) * alpha_max) / 255);
+        fast_pixel_blend(it, px, py, col, a);
+      }
+    }
+  }
+}
+
 void draw_aa_tapered_hand(esphome::display::Display &it, float cx, float cy, float angle_rad,
                           float tail_len, float tip_len, float root_w, float tip_w,
                           esphome::Color body_col, esphome::Color lume_col,
                           bool draw_lume, bool draw_shadow) {
-  float s_ang = 0.0f, c_ang = 1.0f;
-  fast_sincos(angle_rad, s_ang, c_ang);
+  const float s_ang = std::sin(angle_rad);
+  const float c_ang = std::cos(angle_rad);
   const float ux = s_ang;
   const float uy = -c_ang;
 
@@ -2075,8 +2130,8 @@ void draw_aa_tapered_hand(esphome::display::Display &it, float cx, float cy, flo
 void render_analog_chapter_ring(esphome::display::Display &it, int cx, int cy, int r_dial,
                                 esphome::Color cardinal_col, esphome::Color major_col,
                                 esphome::Color minor_col, bool double_twelve) {
-  const float fcx = static_cast<float>(cx);
-  const float fcy = static_cast<float>(cy);
+  const float fcx = static_cast<float>(cx) + 0.5f;
+  const float fcy = static_cast<float>(cy) + 0.5f;
   const float r_out = static_cast<float>(r_dial);
   const float w_card = std::max(2.6f, scale_min_f(3.6f));
   const float w_maj = std::max(2.0f, scale_min_f(2.6f));
@@ -2087,8 +2142,8 @@ void render_analog_chapter_ring(esphome::display::Display &it, int cx, int cy, i
 
   for (int i = 0; i < 60; ++i) {
     const float rad = (static_cast<float>(i) / 60.0f) * 2.0f * PI_F - HALF_PI_F;
-    float s = 0.0f, c = 1.0f;
-    fast_sincos(rad, s, c);
+    const float s = std::sin(rad);
+    const float c = std::cos(rad);
     if (i == 0 && double_twelve) {
       const float sep = scale_min_f(3.4f);
       const float nx = -s;

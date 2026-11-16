@@ -2938,6 +2938,9 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(touch_cpp.find("WEATHER_MODE_BTN") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("stopwatch_modern_digital") == std::string::npos);
   LATTER_CHECK(tools_cpp.find("SW_STYLE_BTN") == std::string::npos);
+  LATTER_CHECK(tools_cpp.find("ctx.col_slate, false);") != std::string::npos);
+  LATTER_CHECK(tools_cpp.find("ui::draw_aa_disc(") != std::string::npos);
+  LATTER_CHECK(tools_cpp.find("ui::draw_aa_ring(") != std::string::npos);
   LATTER_CHECK(clock_cpp.find("draw_aa_tapered_hand(") != std::string::npos);
   LATTER_CHECK(clock_cpp.find("render_analog_chapter_ring(") != std::string::npos);
 }

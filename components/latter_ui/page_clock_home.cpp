@@ -760,12 +760,12 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
   now_copy.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
 
   if (is_ring_digital) {
-    float sin_s = 0.0f, cos_s = 1.0f;
-    fast_sincos(s_angle, sin_s, cos_s);
+    const float sin_s = std::sin(s_angle);
+    const float cos_s = std::cos(s_angle);
     const float r_s_in  = 200.0f * dial_scale;
     const float r_s_out = 219.0f * dial_scale;
-    const float cx_f = static_cast<float>(cx);
-    const float cy_f = static_cast<float>(cy);
+    const float cx_f = static_cast<float>(cx) + 0.5f;
+    const float cy_f = static_cast<float>(cy) + 0.5f;
     ui::draw_aa_line(it,
                      cx_f + r_s_in * sin_s, cy_f - r_s_in * cos_s,
                      cx_f + r_s_out * sin_s, cy_f - r_s_out * cos_s,
@@ -804,8 +804,8 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
 
     const float h_angle = ((hour % 12) + min / 60.0f + sec_f / 3600.0f) * (2.0f * PI_F / 12.0f);
     const float m_angle = (min + sec_f / 60.0f) * (2.0f * PI_F / 60.0f);
-    const float cx_f = static_cast<float>(cx);
-    const float cy_f = static_cast<float>(cy);
+    const float cx_f = static_cast<float>(cx) + 0.5f;
+    const float cy_f = static_cast<float>(cy) + 0.5f;
 
     ui::draw_aa_tapered_hand(it, cx_f, cy_f, h_angle,
                              16.0f * dial_scale, 94.0f * dial_scale,
@@ -818,19 +818,19 @@ void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx)
                              ctx.col_slate, ctx.col_white, true, true);
 
     {
-      float sin_s = 0.0f, cos_s = 1.0f;
-      fast_sincos(s_angle, sin_s, cos_s);
+      const float sin_s = std::sin(s_angle);
+      const float cos_s = std::cos(s_angle);
       const float tip_x  = cx_f + 174.0f * dial_scale * sin_s;
       const float tip_y  = cy_f - 174.0f * dial_scale * cos_s;
       const float tail_x = cx_f - 32.0f * dial_scale * sin_s;
       const float tail_y = cy_f + 32.0f * dial_scale * cos_s;
+      const float tail_r = std::max(3.0f, 4.0f * dial_scale);
       ui::draw_aa_line(it, tail_x + 1.0f, tail_y + 1.5f, tip_x + 1.0f, tip_y + 1.5f,
                        std::max(1.6f, 2.0f * dial_scale), kChromeShadow, 128);
+      ui::draw_aa_disc(it, tail_x + 1.0f, tail_y + 1.5f, tail_r, kChromeShadow, 128);
       ui::draw_aa_line(it, tail_x, tail_y, tip_x, tip_y,
-                       std::max(1.5f, 1.9f * dial_scale), ctx.col_red);
-      fast_filled_circle(it, static_cast<int>(std::lround(tail_x)),
-                         static_cast<int>(std::lround(tail_y)),
-                         std::max(3, static_cast<int>(4.0f * dial_scale)), ctx.col_red);
+                       std::max(1.8f, 2.0f * dial_scale), ctx.col_red);
+      ui::draw_aa_disc(it, tail_x, tail_y, tail_r, ctx.col_red);
     }
 
     ui::render_center_arbor_aa(it, cx, cy, ctx.col_white, ctx.col_red, ctx.col_dark_gray);
