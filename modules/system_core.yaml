@@ -56,7 +56,9 @@ esphome:
                 id(sys_link_report).update();
               }
               id(apply_power_policy).execute();  // holds the light-sleep awake lock while the link settles
-              id(ha_post_connect_boot_replay).execute();
+              if (!is_ha_conn) {
+                id(log_client_boot_replay).execute();
+              }
             };
 
             rs.on_ha_client_disconnected = +[](const std::string &client_info) {
@@ -585,7 +587,11 @@ interval:
           latter_ui::link_report_sample();
 
 script:
-  - id: ha_post_connect_boot_replay
+  # Replay the boot ringbuffer and [PROF:BOOT] summary only when a log-viewer client (esphome logs /
+  # Device Builder) connects. Home Assistant connects with subscribe_logs: false and receives boot/crash
+  # forensics via sys_link_report and device_hello, so skipping replay on HA connects avoids a ~120 ms
+  # loop stall during initial v3 hydration and avoids re-dumping stale @...ms boot errors into open viewers.
+  - id: log_client_boot_replay
     mode: restart
     then:
       - delay: 3s
