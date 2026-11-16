@@ -1059,7 +1059,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111601L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111602L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3337,7 +3337,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111601L, "LATTER_SDK_REV must match 2026111601L");
+  static_assert(LATTER_SDK_REV == 2026111602L, "LATTER_SDK_REV must match 2026111602L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);

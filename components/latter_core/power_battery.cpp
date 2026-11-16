@@ -18,6 +18,9 @@
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_sleep.h>
+#ifdef USE_WIFI
+#include <esp_wifi.h>
+#endif
 #include <soc/soc_caps.h>
 #include <sys/time.h>
 #include <time.h>
@@ -182,6 +185,17 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
 
 #if defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_PM_SUPPORT_EXT0_WAKEUP
   esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN), LATTER_PWR_KEY_ACTIVE_HIGH ? 1 : 0);
+#endif
+#ifdef USE_WIFI
+  // Mirror esphome#22715 (espressif/esp-idf#19443): leave the AP cleanly before esp_deep_sleep_start()
+  // or AXP2101 power-off so esp_wifi_stop() never retransmits 32 duplicate PMF Disassociation frames.
+  // On early cold-boot battery cutoff Wi-Fi is uninitialized, so esp_wifi_sta_get_ap_info() returns immediately.
+  wifi_ap_record_t ap_info;
+  if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+    ESP_LOGI("power", "Disconnecting Wi-Fi station cleanly before hibernate/deep sleep");
+    (void)esp_wifi_disconnect();
+    esphome::delay(100);
+  }
 #endif
   if (sec_until_alarm > 0 && sec_until_alarm <= 43200) {
     uint64_t wake_sec = static_cast<uint64_t>((sec_until_alarm > 90) ? (sec_until_alarm - 90) : 15);

@@ -477,6 +477,8 @@ def render_device(facts: dict[str, Any]) -> str:
             "",
             "wifi:",
             "  id: wifi_ctrl",
+            "  fast_connect: true",
+            "  lease_cache: true",
             "",
             *beacon_lines(facts, minor),
             "",

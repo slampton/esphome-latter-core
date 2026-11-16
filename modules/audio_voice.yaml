@@ -137,6 +137,7 @@ media_source:
     decode_memory: psram
     buffer_size: ${sendspin_buffer_size}
     sample_rate: ${audio_out_rate}  # Music Assistant converts server-side; the device never resamples
+    bits_per_sample: ${audio_out_bits}  # Explicit 16-bit wire contract matching full-duplex I2S bus
 
   - platform: audio_file
     id: sound_file_source

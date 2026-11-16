@@ -26,7 +26,7 @@
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
 static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
-              "Latter requires ESPHome 2026.11.0b4 or newer (devices/*.yaml min_version).");
+              "Latter requires ESPHome 2026.11.0b5 or newer (devices/*.yaml min_version).");
 #endif
 
 #ifdef USE_ESP32
@@ -38,7 +38,7 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "latter_state.h"
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111601L
+#define LATTER_SDK_REV 2026111602L
 #endif
 
 namespace esphome {
