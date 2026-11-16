@@ -864,9 +864,14 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
   LATTER_CHECK(!latter_ui::is_configured_remote_slot(""));
 
-  // Ordered Home Hub category CSV parser & collect_home_hub_tabs (6-category Home Hub)
+  // Ordered Home Hub category CSV parser & collect_home_hub_tabs (6-category Home Hub, zero pre-sync placeholder tabs)
   int hh_tabs[latter_ui::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1, -1};
   latter_ui::AreaContextState uninit_ac{};
+  LATTER_CHECK(uninit_ac.epoch == 0U && uninit_ac.home_categories.empty());
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
+  uninit_ac.home_categories = latter_ui::kDefaultHomeCategories;
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);  // epoch == 0 still returns 0
+  uninit_ac.epoch = 1U;
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 6);
   LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 &&
                hh_tabs[3] == 3 && hh_tabs[4] == 4 && hh_tabs[5] == 5);
@@ -3341,11 +3346,13 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   auto build_hub_caps_payload = [](uint32_t rev, std::string_view alarm_caps,
                                    std::string_view climate_caps, std::string_view vacuum_caps,
                                    std::string_view t_temp, std::string_view t_mode,
-                                   std::string_view vac_st) {
+                                   std::string_view vac_st, bool with_entities = true) {
     std::string p = "v3\x1f" "1\x1f" + std::to_string(rev);
     for (size_t i = 3; i < static_cast<size_t>(AreaCtxField::COUNT); ++i) {
       p.push_back(kProtocolFieldSep);
-      if (i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) p.append("alarm_control_panel.home");
+      if (with_entities && i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) p.append("alarm_control_panel.home");
+      else if (with_entities && i == static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)) p.append("climate.home");
+      else if (with_entities && i == static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)) p.append("vacuum.home");
       else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)) p.append(t_temp);
       else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)) p.append(t_mode);
       else if (i == static_cast<size_t>(AreaCtxField::VACUUM_STATE)) p.append(vac_st);
@@ -3356,11 +3363,22 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
     return p;
   };
 
+  // Fresh pre-sync AreaContextState{} -> 0 tabs and 0U effective caps across all domains
+  {
+    const AreaContextState fresh_ac{};
+    int fresh_tabs[kMaxHomeHubTabs]{};
+    LATTER_CHECK(fresh_ac.epoch == 0U && fresh_ac.home_categories.empty());
+    LATTER_CHECK(collect_home_hub_tabs(fresh_tabs, fresh_ac) == 0);
+    LATTER_CHECK(effective_alarm_caps(fresh_ac) == 0U);
+    LATTER_CHECK(effective_climate_caps(fresh_ac) == 0U);
+    LATTER_CHECK(effective_vacuum_caps(fresh_ac) == 0U);
+  }
+
   AreaContextState ac{};
   HomeHubState hub{};
-  // Unset/0 caps fall back cleanly to spec defaults (0x0C, 0x4F, 0x0B)
+  // Configured entities with unset/0 caps fall back cleanly to spec defaults (0x0C, 0x4F, 0x0B)
   LATTER_CHECK(parse_v3_area_ctx_payload(
-      build_hub_caps_payload(1U, "0", "0", "0", "72", "heat", "idle"), ac, hub));
+      build_hub_caps_payload(1U, "0", "0", "0", "72", "heat", "idle", true), ac, hub));
   LATTER_CHECK(effective_alarm_caps(ac) == kAlarmCapDefault);
   LATTER_CHECK(effective_climate_caps(ac) == kClimateCapDefault);
   LATTER_CHECK(effective_vacuum_caps(ac) == kVacuumCapDefault);
@@ -3371,12 +3389,26 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
 
   // Full caps + Celsius setpoint parsing (21.5 C -> 22 C; 0xFF climate_caps, 0x3F alarm_caps & vacuum_caps)
   LATTER_CHECK(parse_v3_area_ctx_payload(
-      build_hub_caps_payload(2U, "63", "255", "63", "21.5", "heat_cool", "returning"), ac, hub));
+      build_hub_caps_payload(2U, "63", "255", "63", "21.5", "heat_cool", "returning", true), ac, hub));
   LATTER_CHECK(effective_alarm_caps(ac) == 0x3FU);
   LATTER_CHECK(effective_climate_caps(ac) == 0xFFU);
   LATTER_CHECK(effective_vacuum_caps(ac) == 0x3FU);
   LATTER_CHECK(hub.thermostat_target_f == 22 && hub.thermostat_mode == "heat_cool");
   LATTER_CHECK(hub.vacuum_state == "Returning");
+
+  // Unassigned entities -> effective_*_caps MUST return 0U even if wire caps/states were non-zero
+  AreaContextState empty_ent_ac{};
+  HomeHubState empty_ent_hub{};
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_hub_caps_payload(3U, "63", "255", "63", "72", "heat", "cleaning", false),
+      empty_ent_ac, empty_ent_hub));
+  LATTER_CHECK(empty_ent_ac.epoch == 1U);
+  LATTER_CHECK(empty_ent_ac.alarm_entity.empty() && empty_ent_ac.thermostat_entity.empty() &&
+               empty_ent_ac.lock_entity.empty() && empty_ent_ac.garage_entity.empty() &&
+               empty_ent_ac.vacuum_entity.empty());
+  LATTER_CHECK(empty_ent_ac.alarm_caps == 0U && effective_alarm_caps(empty_ent_ac) == 0U);
+  LATTER_CHECK(empty_ent_ac.climate_caps == 0U && effective_climate_caps(empty_ent_ac) == 0U);
+  LATTER_CHECK(empty_ent_ac.vacuum_caps == 0U && effective_vacuum_caps(empty_ent_ac) == 0U);
 
   // 2. Conditional Security Alarm buttons + FrameHitTable across all 5 flagship panels
   struct HubBoard {
@@ -3643,10 +3675,53 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
     }
   }
 
-  // 5. Source-level D-048 guards: zero passive-text glass containers or static helper subtext in Home Hub
+  // 5. Unassigned entity zero-hit-rect proofs across all 5 flagship panels + source-level guards
+  for (const auto &b : kHubBoards) {
+    FrameHitTable ht{};
+    // Unassigned alarm -> 0U caps -> 0 actions -> 0 hit rects (disarmed or armed)
+    LATTER_CHECK(register_alarm_hits(ht, b, "disarmed", effective_alarm_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(ht.count == 0);
+    LATTER_CHECK(register_alarm_hits(ht, b, "armed_away", effective_alarm_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(ht.count == 0);
+
+    // Unassigned vacuum -> 0U caps -> 0 actions -> 0 hit rects (Docked or Cleaning)
+    LATTER_CHECK(register_vac_hits(ht, b, "Docked", effective_vacuum_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(ht.count == 0);
+    LATTER_CHECK(register_vac_hits(ht, b, "Cleaning", effective_vacuum_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(ht.count == 0);
+
+    // Unassigned thermostat -> 0U caps -> no -/+ buttons and 0 mode pills -> 0 hit rects
+    ht.clear();
+    const uint16_t no_clim = effective_climate_caps(empty_ent_ac);
+    LATTER_CHECK(no_clim == 0U);
+    LATTER_CHECK(!thermostat_shows_setpoint_buttons("heat", no_clim));
+    ThermostatModeSpec no_modes[6]{};
+    LATTER_CHECK(resolve_thermostat_modes("heat", no_clim, no_modes) == 0);
+    register_thermostat_stepper_hits(ht, thermostat_shows_setpoint_buttons("heat", no_clim),
+                                     80, b.w - 80, 140, 22, 26);
+    HomeHubPillGeom no_geoms[6]{};
+    const int no_gcnt = compute_home_hub_pill_deck(
+        0, 210, 340, b.w, b.h, b.round, b.wearable, b.ppi, false, no_geoms);
+    int no_codes[6]{};
+    register_home_hub_pill_deck_hits(ht, WidgetId::CLIMATE_MODE_BASE, no_codes, no_geoms, no_gcnt);
+    LATTER_CHECK(no_gcnt == 0 && ht.count == 0);
+
+    // Unassigned lock + garage -> !show_lock && !show_garage -> 0 hit rects
+    ht.clear();
+    const bool show_lock = !empty_ent_ac.lock_entity.empty();
+    const bool show_garage = !empty_ent_ac.garage_entity.empty();
+    LATTER_CHECK(!show_lock && !show_garage && ht.count == 0);
+  }
+
+  // 6. Source-level D-048 & zero-dummy guards: zero passive-text glass containers, static helper subtext, or unassigned fallbacks
   const std::string hh_src = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
   const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(hh_src.find("has_cfg_pair") == std::string::npos);
+  LATTER_CHECK(hh_src.find("No Security Alarm configured") != std::string::npos);
+  LATTER_CHECK(hh_src.find("No Thermostat configured") != std::string::npos);
+  LATTER_CHECK(hh_src.find("No Entry Controls configured") != std::string::npos);
+  LATTER_CHECK(hh_src.find("No Robot Vacuum configured") != std::string::npos);
   LATTER_CHECK(hh_src.find("PIN to Disarm") == std::string::npos);
   LATTER_CHECK(hh_src.find("Tap mode below") == std::string::npos);
   LATTER_CHECK(hh_src.find("Select vacuum command") == std::string::npos);

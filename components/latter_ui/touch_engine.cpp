@@ -203,7 +203,7 @@ inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeSta
   if (slot >= 0) {
     home_hub_tab() = target_tab;
     sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt);
-  } else if (hh_cnt > 0 && target_tab < 0) {
+  } else if (hh_cnt > 0) {
     slot = 0;
     for (int i = 0; i < hh_cnt; ++i) {
       if (hh_tabs[i] == home_hub_tab()) {
@@ -214,10 +214,14 @@ inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeSta
     home_hub_tab() = hh_tabs[slot];
     sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt);
   } else {
+    home_hub_mode_bar_page() = 0;
     home_hub_tab() = (target_tab >= 0) ? target_tab : HomeHubTab::ALARM;
   }
 
-  const bool now_cam = (home_hub_tab() == HomeHubTab::CAMERAS);
+  const auto &ac = area_ctx_state();
+  const bool has_cam_src =
+      !ac.camera_snapshot_url.empty() || !ac.cameras_summary.empty() || !rs.alert.camera_url.empty();
+  const bool now_cam = (hh_cnt > 0 && home_hub_tab() == HomeHubTab::CAMERAS && has_cam_src);
   if (was_cam && !now_cam) {
     leave_home_hub_cameras_if_active(rs, rt, now_ms);
   } else if (now_cam) {
@@ -717,6 +721,9 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
 bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool from_intercom) {
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
+  if (ac.lock_entity.empty() && ac.garage_entity.empty()) {
+    return false;
+  }
   if (ac.lock_entity.empty() && !ac.garage_entity.empty()) {
     rs.area.target_entity_id = "home_hub.garage";
     rs.area.action_feedback = "Opening Garage...";
@@ -3691,6 +3698,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (home_hub_tab() == HomeHubTab::ALARM &&
+                   !area_ctx_state().alarm_entity.empty() &&
                    wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5 &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int mode_i = static_cast<int>(wid - WidgetId::ALARM_MODE_BASE);
@@ -3861,7 +3869,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               }
             }
           }
-        } else if (home_hub_tab() == HomeHubTab::THERMOSTAT) {
+        } else if (home_hub_tab() == HomeHubTab::THERMOSTAT &&
+                   !area_ctx_state().thermostat_entity.empty()) {
           if ((wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
             const uint16_t c_caps = effective_climate_caps();
@@ -3896,7 +3905,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.schedule_disp();
           }
         } else if (home_hub_tab() == HomeHubTab::ENTRY) {
-          if ((wid == WidgetId::COVER_OPEN_BTN || wid == WidgetId::ENTRY_GARAGE_CARD) &&
+          if (!area_ctx_state().garage_entity.empty() &&
+              (wid == WidgetId::COVER_OPEN_BTN || wid == WidgetId::ENTRY_GARAGE_CARD) &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             const GarageState prev_g = home_hub_garage_state();
             const bool want_open = (prev_g != GarageState::OPEN);
@@ -3907,7 +3917,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                               want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
               home_hub_garage_state() = prev_g;
             }
-          } else if ((wid == WidgetId::LOCK_ACTION_BTN || wid == WidgetId::ENTRY_LOCK_CARD) &&
+          } else if (!area_ctx_state().lock_entity.empty() &&
+                     (wid == WidgetId::LOCK_ACTION_BTN || wid == WidgetId::ENTRY_LOCK_CARD) &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             const LockState prev_l = home_hub_lock_state();
             const bool want_lock = (prev_l == LockState::UNLOCKED);
@@ -3920,6 +3931,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (home_hub_tab() == HomeHubTab::VACUUM &&
+                   !area_ctx_state().vacuum_entity.empty() &&
                    wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6 &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int v_act = static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE);

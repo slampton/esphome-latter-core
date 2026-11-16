@@ -205,7 +205,7 @@ Each component has one implementation. Use it; don't hand-draw the same role.
 | 6 | `AREA` | Area Control | `area_subpage`: 0 entity cards, 1 Area picker; categories switched by the mode bar |
 | 7 | `REMOTE` | Remote | `remote_subpage`: 0 remote, 1 control list (master power and up to 10 devices) |
 | 8 | `TOOLS` | Tools | `tools_subpage`: `ToolsSubpage` (0 N-page launcher via `tools_launcher_page_count()`, 3 round-only Analog Chronograph on `LATTER_ROUND_DISPLAY=1`, 4 dice, 5 flashlight, 6 calculator, 7 level, 8 coin flip, 9 calendar) |
-| 9 | `HOME_HUB` | Home Hub | `home_hub_tab()`: `HomeHubTab` 0–5 (`alarm`, `cameras` framed + expanded full-bleed, `intercom` `Broadcast` \| `Call Display`, `thermostat`, `entry`, `vacuum`), switched by the 4-slot conveyor mode bar; drawn by `render_home_hub_page` (`page_home_hub.cpp`, D-046) |
+| 9 | `HOME_HUB` | Home Hub | `home_hub_tab()`: `HomeHubTab` 0–5 (`alarm`, `cameras` framed + expanded full-bleed, `intercom` `Broadcast` \| `Call Display`, `thermostat`, `entry`, `vacuum`), switched by the 4-slot conveyor mode bar strictly from synced `area_context.home_categories` (rendering passive empty states with zero placeholder tabs or controls before sync or when unassigned); drawn by `render_home_hub_page` (`page_home_hub.cpp`, D-046, D-048) |
 | 10 | `TIME` | Time | `time_subpage`: `TimeSubpage` 0–3 (`Clock` + World Clocks, `Timers`, `Alarms`, `Stopwatch`), switched by the mode bar; drawn by `render_time_page` (D-042) |
 | 12 | `CAMERAS` | Cameras | Dock / Start Screen shortcut token redirecting directly to `PageId::HOME_HUB` (`HomeHubTab::CAMERAS`, D-046) |
 

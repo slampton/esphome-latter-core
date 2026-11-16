@@ -1103,7 +1103,7 @@ struct AreaRuntimeState {
   std::string available_domains_csv = "";
   int cat_dock_page = 0;
   std::string alarm_entity = "";
-  std::string alarm_state = "disarmed";
+  std::string alarm_state = "";
   std::string alarm_service = "alarm_control_panel.alarm_disarm";
   std::string target_entity_id = "";
   std::string target_action = "toggle";
@@ -1680,9 +1680,11 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.vacuum_entity     = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
 
   const uint32_t raw_climate_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::CLIMATE_CAPS)], 0U);
-  st.climate_caps = (raw_climate_caps != 0U)
-                        ? static_cast<uint16_t>(raw_climate_caps & 0xFFFFU)
-                        : (!st.thermostat_entity.empty() ? kClimateCapDefault : 0U);
+  st.climate_caps = st.thermostat_entity.empty()
+                        ? 0U
+                        : ((raw_climate_caps != 0U)
+                               ? static_cast<uint16_t>(raw_climate_caps & 0xFFFFU)
+                               : kClimateCapDefault);
   const bool is_celsius = (st.climate_caps & kClimateCapCelsius) != 0U;
   const float min_valid_t = is_celsius ? 4.0f : 35.0f;
   const float max_valid_t = is_celsius ? 45.0f : 110.0f;
@@ -1717,25 +1719,32 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.local_tz_info            = std::string(f[static_cast<size_t>(AreaCtxField::LOCAL_TZ_INFO)]);
   st.world_clocks_summary     = std::string(f[static_cast<size_t>(AreaCtxField::WORLD_CLOCKS_SUMMARY)]);
   const uint32_t raw_alarm_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::ALARM_CAPS)], 0U);
-  st.alarm_caps = (raw_alarm_caps != 0U)
-                      ? static_cast<uint16_t>(raw_alarm_caps & 0xFFFFU)
-                      : (!st.alarm_entity.empty() ? kAlarmCapDefault : 0U);
+  st.alarm_caps = st.alarm_entity.empty()
+                      ? 0U
+                      : ((raw_alarm_caps != 0U)
+                             ? static_cast<uint16_t>(raw_alarm_caps & 0xFFFFU)
+                             : kAlarmCapDefault);
   const uint32_t raw_vacuum_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::VACUUM_CAPS)], 0U);
-  st.vacuum_caps = (raw_vacuum_caps != 0U)
-                       ? static_cast<uint16_t>(raw_vacuum_caps & 0xFFFFU)
-                       : (!st.vacuum_entity.empty() ? kVacuumCapDefault : 0U);
+  st.vacuum_caps = st.vacuum_entity.empty()
+                       ? 0U
+                       : ((raw_vacuum_caps != 0U)
+                              ? static_cast<uint16_t>(raw_vacuum_caps & 0xFFFFU)
+                              : kVacuumCapDefault);
   return true;
 }
 
 inline uint16_t effective_alarm_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
+  if (ac.alarm_entity.empty()) return 0U;
   return (ac.alarm_caps != 0U) ? ac.alarm_caps : kAlarmCapDefault;
 }
 
 inline uint16_t effective_climate_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
+  if (ac.thermostat_entity.empty()) return 0U;
   return (ac.climate_caps != 0U) ? ac.climate_caps : kClimateCapDefault;
 }
 
 inline uint16_t effective_vacuum_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
+  if (ac.vacuum_entity.empty()) return 0U;
   return (ac.vacuum_caps != 0U) ? ac.vacuum_caps : kVacuumCapDefault;
 }
 
@@ -1766,12 +1775,12 @@ struct ThermostatModeSpec {
 
 inline constexpr int resolve_alarm_actions(std::string_view alarm_state, uint16_t eff_alarm_caps,
                                            HomeHubActionSpec out_specs[4]) noexcept {
-  if (out_specs == nullptr) return 0;
+  if (out_specs == nullptr || eff_alarm_caps == 0U) return 0;
   if (!alarm_state.empty() && !eq_ascii_ci_sv(alarm_state, "disarmed")) {
     out_specs[0] = HomeHubActionSpec{0, "Disarm", "Disarm"};
     return 1;
   }
-  uint16_t caps = (eff_alarm_caps != 0U) ? eff_alarm_caps : kAlarmCapDefault;
+  uint16_t caps = eff_alarm_caps;
   if ((caps & 0x3CU) == 0U) caps |= kAlarmCapDefault;
   int cnt = 0;
   if ((caps & kAlarmCapArmHome) != 0U) {
@@ -1791,8 +1800,8 @@ inline constexpr int resolve_alarm_actions(std::string_view alarm_state, uint16_
 
 inline constexpr int resolve_vacuum_actions(std::string_view vacuum_state, uint16_t eff_vacuum_caps,
                                             HomeHubActionSpec out_specs[4]) noexcept {
-  if (out_specs == nullptr) return 0;
-  const uint16_t caps = (eff_vacuum_caps != 0U) ? eff_vacuum_caps : kVacuumCapDefault;
+  if (out_specs == nullptr || eff_vacuum_caps == 0U) return 0;
+  const uint16_t caps = eff_vacuum_caps;
   int cnt = 0;
 
   if (vacuum_state.empty() || eq_ascii_ci_sv(vacuum_state, "docked")) {
@@ -1826,14 +1835,14 @@ inline constexpr int resolve_vacuum_actions(std::string_view vacuum_state, uint1
 
 inline constexpr bool thermostat_shows_setpoint_buttons(std::string_view cur_mode,
                                                         uint16_t eff_climate_caps) noexcept {
-  const uint16_t caps = (eff_climate_caps != 0U) ? eff_climate_caps : kClimateCapDefault;
-  return ((caps & kClimateCapTargetTemp) != 0U) && !eq_ascii_ci_sv(cur_mode, "off");
+  if (eff_climate_caps == 0U) return false;
+  return ((eff_climate_caps & kClimateCapTargetTemp) != 0U) && !eq_ascii_ci_sv(cur_mode, "off");
 }
 
 inline constexpr int resolve_thermostat_modes(std::string_view cur_mode, uint16_t eff_climate_caps,
                                               ThermostatModeSpec out_specs[6]) noexcept {
-  if (out_specs == nullptr) return 0;
-  uint16_t caps = (eff_climate_caps != 0U) ? eff_climate_caps : kClimateCapDefault;
+  if (out_specs == nullptr || eff_climate_caps == 0U) return 0;
+  uint16_t caps = eff_climate_caps;
   if ((caps & 0x3FU) == 0U) caps |= (kClimateCapDefault & 0x3FU);
   int cnt = 0;
   if ((caps & kClimateCapHeat) != 0U) {
@@ -3050,12 +3059,7 @@ inline int dock_app_id_for_token(std::string_view tok) {
 
 inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = area_ctx_state(),
                                  int max_tabs = kMaxHomeHubTabs) {
-  if (out_tabs == nullptr || max_tabs <= 0) return 0;
-  if (ac.epoch == 0U) {
-    const int n = std::min(max_tabs, kMaxHomeHubTabs);
-    for (int i = 0; i < n; ++i) out_tabs[i] = i;
-    return n;
-  }
+  if (out_tabs == nullptr || max_tabs <= 0 || ac.epoch == 0U) return 0;
   return parse_home_categories_csv(ac.home_categories, out_tabs, max_tabs);
 }
 

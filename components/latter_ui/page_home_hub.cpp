@@ -208,9 +208,14 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
 
   const int cx = ctx.cx;
   render_page_header(it, cx, "SECURITY ALARM", ctx.font_small, ctx.theme_primary);
+  if (ac.alarm_entity.empty()) {
+    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
+                               "No Security Alarm configured", ctx.font_small, ctx.col_slate);
+    return;
+  }
 
   const std::string &alarm_state =
-      (ac.epoch == 0U && ac.alarm_entity.empty()) ? ac.alarm_state : rs.area.alarm_state;
+      !ac.alarm_state.empty() ? ac.alarm_state : rs.area.alarm_state;
   const uint16_t caps = effective_alarm_caps(ac);
   const bool pulse = ((ctx.now_ms / 400U) % 2U) != 0U;
   const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
@@ -541,7 +546,7 @@ bool render_cameras_tab(esphome::display::Display &it, const UiFrameContext &ctx
     }
 
     const int hdr_cy = (SCREEN_H < 400) ? 34 : scale_y(42);
-    render_camera_selector_pill(it, ctx, names, cam_count, hdr_cy, true);
+    render_camera_selector_pill(it, ctx, names, cam_count, hdr_cy, has_url);
 
     const int deck_cy = layout().back_y - ((SCREEN_H < 400) ? 36 : scale_y(48));
     if (has_url) {
@@ -783,6 +788,11 @@ void render_thermostat_tab(esphome::display::Display &it, const UiFrameContext &
 
   const int cx = ctx.cx;
   render_page_header(it, cx, "THERMOSTAT", ctx.font_small, ctx.theme_primary);
+  if (ac.thermostat_entity.empty()) {
+    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
+                               "No Thermostat configured", ctx.font_small, ctx.col_slate);
+    return;
+  }
 
   const std::string &m = home_hub_thermostat_mode();
   const uint16_t eff_caps = effective_climate_caps(ac);
@@ -993,9 +1003,13 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
     render_page_header(it, cx, "ENTRY & GARAGE", ctx.font_small, ctx.theme_primary);
   }
 
-  const bool has_cfg_pair = (ac.epoch > 0U) && (!ac.lock_entity.empty() || !ac.garage_entity.empty());
-  const bool show_lock = !has_cfg_pair || !ac.lock_entity.empty();
-  const bool show_garage = !has_cfg_pair || !ac.garage_entity.empty();
+  const bool show_lock = !ac.lock_entity.empty();
+  const bool show_garage = !ac.garage_entity.empty();
+  if (!show_lock && !show_garage) {
+    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
+                               "No Entry Controls configured", ctx.font_small, ctx.col_slate);
+    return;
+  }
 
   const int avail_h = std::max(120, content_bot - content_top);
   const int min_hit = UiLayout::mm_to_px(7.0f);
@@ -1055,6 +1069,11 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
 
   const int cx = ctx.cx;
   render_page_header(it, cx, "ROBOT VACUUM", ctx.font_small, ctx.theme_primary);
+  if (ac.vacuum_entity.empty()) {
+    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
+                               "No Robot Vacuum configured", ctx.font_small, ctx.col_slate);
+    return;
+  }
 
   const std::string &vst = home_hub_vacuum_state();
   const bool is_cln = eq_ascii_ci_sv(vst, "cleaning");
