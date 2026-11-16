@@ -1054,7 +1054,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111506L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111601L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3329,7 +3329,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111506L, "LATTER_SDK_REV must match 2026111506L");
+  static_assert(LATTER_SDK_REV == 2026111601L, "LATTER_SDK_REV must match 2026111601L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);
@@ -3922,6 +3922,34 @@ void test_custom_icon_tiers_and_d051() {
     LATTER_CHECK(time_src.find("draw_icon_clock_solid") != std::string::npos);
     LATTER_CHECK(time_src.find("sample_glass_surface_color") == std::string::npos);
     LATTER_CHECK(doc_src.find("### D-051:") != std::string::npos);
+    LATTER_CHECK(doc_src.find("### D-052:") != std::string::npos);
+  }
+
+  // 3. D-052: First-class kHitLongPress (480 ms hold-in-place, slop cancellation & Remote OK/Home/Back)
+  {
+    TouchGestureState g{};
+    g.begin(233, 233, 1000U, PageId::REMOTE, 70);
+    g.arm_long_press(WidgetId::REMOTE_DPAD_OK, 0);
+    LATTER_CHECK(g.long_press_armed && !g.long_press_fired);
+    LATTER_CHECK(!g.should_fire_long_press(1479U));  // 479 ms < 480 ms
+    LATTER_CHECK(g.should_fire_long_press(1480U));   // 480 ms stationary hold fires!
+    g.mark_long_press_fired();
+    LATTER_CHECK(g.long_press_fired && !g.long_press_armed && g.tap_cancelled);
+    LATTER_CHECK(!g.should_fire_long_press(1600U));  // never double-fires while held
+
+    // Exceeding kTapSlopMm (1.65 mm) disarms long_press_armed irreversibly
+    g.begin(233, 233, 2000U, PageId::REMOTE, 70);
+    g.arm_long_press(WidgetId::REMOTE_DPAD_OK, 0);
+    const int slop_px = KinematicMetrics::for_ppi(266).tap_slop_px;
+    g.record_move(233 + slop_px + 2, 233, 2120U, 266);
+    LATTER_CHECK(g.tap_cancelled && !g.long_press_armed);
+    LATTER_CHECK(!g.should_fire_long_press(2600U));
+
+    // Verify page_remote.cpp stamps kHitLongPress on OK, Home, and Back
+    const std::string rem_src = read_repo_file("../../components/latter_ui/page_remote.cpp");
+    LATTER_CHECK(rem_src.find("WidgetId::REMOTE_DPAD_OK, kHitTap | kHitLongPress") != std::string::npos);
+    LATTER_CHECK(rem_src.find("WidgetId::REMOTE_NAV_HOME, kHitTap | kHitLongPress") != std::string::npos);
+    LATTER_CHECK(rem_src.find("WidgetId::REMOTE_NAV_BACK, kHitTap | kHitLongPress") != std::string::npos);
   }
 }
 

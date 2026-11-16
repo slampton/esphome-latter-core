@@ -17,6 +17,7 @@ static constexpr uint8_t kHitTap         = 0x01;
 static constexpr uint8_t kHitHorizSlider = 0x02;
 static constexpr uint8_t kHitFocusSlot   = 0x04;
 static constexpr uint8_t kHitFocusCircle = 0x08;
+static constexpr uint8_t kHitLongPress   = 0x10;
 
 namespace WidgetId {
   static constexpr uint16_t NONE               = 0;
@@ -561,9 +562,13 @@ struct TouchGestureState {
   uint32_t last_swipe_ms = 0;
   int start_page = 0;
   int start_context = 0;
+  uint16_t long_press_wid = 0;
+  int16_t long_press_param = 0;
   bool active = false;
   bool swipe_committed = false;
   bool tap_cancelled = false;
+  bool long_press_armed = false;
+  bool long_press_fired = false;
   GestureAxisLock axis_lock = GestureAxisLock::None;
 
   void begin(int tx, int ty, uint32_t now_ms, int page_id, int ctx_id) noexcept {
@@ -577,10 +582,32 @@ struct TouchGestureState {
     last_touch_ms = now_ms;
     start_page = page_id;
     start_context = ctx_id;
+    long_press_wid = 0;
+    long_press_param = 0;
     active = true;
     swipe_committed = false;
     tap_cancelled = false;
+    long_press_armed = false;
+    long_press_fired = false;
     axis_lock = GestureAxisLock::None;
+  }
+
+  void arm_long_press(uint16_t wid, int16_t param = 0) noexcept {
+    long_press_wid = wid;
+    long_press_param = param;
+    long_press_armed = (wid != 0U);
+    long_press_fired = false;
+  }
+
+  bool should_fire_long_press(uint32_t now_ms) const noexcept {
+    return active && long_press_armed && !long_press_fired && !tap_cancelled && !swipe_committed &&
+           (now_ms >= start_ms) && ((now_ms - start_ms) >= kinematics::kLongPressHoldMs);
+  }
+
+  void mark_long_press_fired() noexcept {
+    long_press_fired = true;
+    long_press_armed = false;
+    tap_cancelled = true;
   }
 
   void record_move(int tx, int ty, uint32_t now_ms, int ppi) noexcept {
@@ -597,9 +624,10 @@ struct TouchGestureState {
     if (cur_dist > max_travel) max_travel = cur_dist;
 
     const KinematicMetrics km = KinematicMetrics::for_ppi(ppi);
-    // Strict D-049 deadband: exceeding kTapSlopMm irreversibly cancels tap eligibility.
+    // Strict D-049 deadband: exceeding kTapSlopMm irreversibly cancels tap and long-press eligibility.
     if (max_travel > km.tap_slop_px) {
       tap_cancelled = true;
+      long_press_armed = false;
     }
     if (axis_lock == GestureAxisLock::None && cur_dist >= km.axis_lock_px) {
       if (is_axis_dominant(dx, dy)) {

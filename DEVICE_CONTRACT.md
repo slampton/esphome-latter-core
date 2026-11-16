@@ -236,7 +236,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `area_browse` | `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Areas, Area domains, or paginated controllable entities |
 | `area_action` | `entity_id`, `action`, `level`, `area_id`, `code` | Execute an explicit domain action on an Area or specific entity |
 | `set_active_area` | `area_id` | Set the active Area context for a Latter device (an on-device Area pick). Whether media follows is the Device's Latter setting |
-| `remote_action` | `slot`, `action`, `command` | Send a TV/AV remote command or select active remote slot |
+| `remote_action` | `slot`, `action`, `command`, `hold_secs` | Send a TV/AV remote command or select active remote slot |
 | `calendar_fetch` | `req_id`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
 | `calendar_create_event` | `summary`, `in_minutes`, `duration_minutes` | Create a new event on the primary configured calendar |
 | `intercom_broadcast` | `message` | Broadcast a voice announcement to chosen speakers, the speakers in occupied Areas, or every speaker |
@@ -255,7 +255,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `latter.set_active_speaker` | `entity_id`, `transfer_queue`, `target_device` | Change the active target media_player for the ESPHome device and optionally transfer the active playback queue. |
 | `latter.media_volume` | `target_device`, `entity_id`, `action`, `volume_level` | Set or step the volume, or toggle mute, on the active speaker. If a volume override is mapped for that speaker (for example an AV receiver), the change goes to the override entity. |
 | `latter.set_active_area` | `area_id`, `target_device` | Switch the active area context by area_id or area name. The device's speaker follows to the new area when the device's "Media follows this Device" setting is on. On roaming devices with Voice Follows Me enabled, this also moves the device's Home Assistant Area so area-aware Assist commands target it. |
-| `latter.remote_action` | `slot`, `action`, `command`, `target_device` | Select one of the up to 10 configured TV remote slots or send a remote command. |
+| `latter.remote_action` | `slot`, `action`, `command`, `hold_secs`, `target_device` | Select one of the up to 10 configured TV remote slots or send a remote command. |
 | `latter.area_browse` | `target_device`, `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Home Assistant areas, curated area entities, or home-wide alarm entities and push paginated slots to the ESPHome device. |
 | `latter.area_action` | `target_device`, `entity_id`, `area_id`, `action`, `level`, `code` | Execute a normalized area control, light color/Kelvin, thermostat, lock, vacuum, or home security alarm action. |
 | `latter.calendar_fetch` | `target_device`, `req_id`, `days`, `page`, `page_size` | Refresh upcoming system calendar events and push a 5-slot agenda page to the ESPHome device. |

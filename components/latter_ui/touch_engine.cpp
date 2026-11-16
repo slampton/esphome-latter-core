@@ -91,7 +91,23 @@ inline void do_remote_select_slot(int slot_num) {
   }
 }
 
-inline void do_remote_send_key(int key_idx, int target_slot) {
+inline int remote_key_for_widget(uint16_t wid) noexcept {
+  switch (wid) {
+    case WidgetId::REMOTE_DPAD_UP:    return 0;
+    case WidgetId::REMOTE_DPAD_DOWN:  return 1;
+    case WidgetId::REMOTE_DPAD_LEFT:  return 2;
+    case WidgetId::REMOTE_DPAD_RIGHT: return 3;
+    case WidgetId::REMOTE_DPAD_OK:    return 4;
+    case WidgetId::REMOTE_NAV_BACK:   return 5;
+    case WidgetId::REMOTE_NAV_HOME:   return 6;
+    case WidgetId::REMOTE_VOL_UP:     return 7;
+    case WidgetId::REMOTE_VOL_DOWN:   return 8;
+    default: return -1;
+  }
+}
+
+inline void do_remote_send_key(int key_idx, int target_slot, bool long_press = false,
+                               uint32_t now_override_ms = 0U) {
   auto &rs = runtime_state();
   int res_slot = (target_slot == -1) ? resolve_active_remote_slot(0)
                                      : resolve_active_remote_slot(target_slot);
@@ -105,16 +121,24 @@ inline void do_remote_send_key(int key_idx, int target_slot) {
     "Up", "Down", "Left", "Right", "Select",
     "Back", "Home", "Vol +", "Vol -", "Toggle Power"
   };
+  static constexpr const char *kHoldFeedback[10] = {
+    "Hold Up", "Hold Down", "Hold Left", "Hold Right", "Hold OK",
+    "Hold Back", "Hold Home", "Vol +", "Vol -", "Toggle Power"
+  };
   int k = (key_idx >= 0 && key_idx < 10) ? key_idx : 0;
-  const char *act = (k == 7) ? "volume_up" : ((k == 8) ? "volume_down" : ((k == 9) ? "toggle" : "command"));
+  const char *act = long_press
+                        ? "long_press"
+                        : ((k == 7) ? "volume_up"
+                                    : ((k == 8) ? "volume_down"
+                                                : ((k == 9) ? "toggle" : "command")));
   const char *cmd = kCanonicalCmds[k];
   const std::string *t_names = remote_slots_name();
   if (k == 9 && !t_names[res_slot].empty()) {
     rs.remote.action_feedback = "Power: " + t_names[res_slot];
   } else {
-    rs.remote.action_feedback = kFeedback[k];
+    rs.remote.action_feedback = long_press ? kHoldFeedback[k] : kFeedback[k];
   }
-  rs.remote.feedback_timer = esphome::millis();
+  rs.remote.feedback_timer = (now_override_ms != 0U) ? now_override_ms : esphome::millis();
   if (!remote_state().slots_summary.empty()) {
     latter_actions::emit_remote_action(slot_1based, act, cmd);
   }
@@ -731,6 +755,7 @@ bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool 
 }
 
 void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
+  cancel_core_timeout(kTimeoutTouchLongPressId);
   auto &rs = runtime_state();
   auto &prefs = persisted_prefs();
   const TouchPt touch{tx, ty};
@@ -1873,23 +1898,19 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
 
-    int remote_key = -1;
-    uint32_t debounce_ms = TOUCH_DEBOUNCE_RAPID;
-    switch (wid) {
-      case WidgetId::REMOTE_DPAD_UP:    remote_key = 0; break;
-      case WidgetId::REMOTE_DPAD_DOWN:  remote_key = 1; break;
-      case WidgetId::REMOTE_DPAD_LEFT:  remote_key = 2; break;
-      case WidgetId::REMOTE_DPAD_RIGHT: remote_key = 3; break;
-      case WidgetId::REMOTE_DPAD_OK:    remote_key = 4; debounce_ms = TOUCH_DEBOUNCE_BUTTON; break;
-      case WidgetId::REMOTE_NAV_BACK:   remote_key = 5; debounce_ms = TOUCH_DEBOUNCE_BUTTON; break;
-      case WidgetId::REMOTE_NAV_HOME:   remote_key = 6; debounce_ms = TOUCH_DEBOUNCE_BUTTON; break;
-      case WidgetId::REMOTE_VOL_UP:     remote_key = 7; break;
-      case WidgetId::REMOTE_VOL_DOWN:   remote_key = 8; break;
-      default: break;
+    if (hit != nullptr && (hit->flags & kHitLongPress) != 0U) {
+      gest.arm_long_press(wid, hit->param);
+      schedule_core_timeout(kTimeoutTouchLongPressId, kinematics::kLongPressHoldMs, []() {
+        touch_engine().tick(esphome::millis());
+      });
+      rt_.schedule_disp();
+      return;  // Short tap (< 480 ms) resolves on_touch_up; hold (>= 480 ms) fires in tick()
     }
-    if (remote_key >= 0 && touch_router().allow_tap(now_touch, debounce_ms, tkey)) {
+
+    const int remote_key = remote_key_for_widget(wid);
+    if (remote_key >= 0 && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
       gest.active = false;
-      do_remote_send_key(remote_key, act_slot);
+      do_remote_send_key(remote_key, act_slot, false, now_touch);
       rt_.schedule_disp();
     }
     return;
@@ -2789,7 +2810,55 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     }
   }
 
+  if (!gest.long_press_armed) {
+    cancel_core_timeout(kTimeoutTouchLongPressId);
+  }
+  if (try_commit_long_press_(now_u)) {
+    return;
+  }
   (void)try_commit_kinematic_swipe_(false, now_u);
+}
+
+void TouchGestureEngine::tick(uint32_t now_ms) {
+  (void)try_commit_long_press_(now_ms);
+}
+
+bool TouchGestureEngine::try_commit_long_press_(uint32_t now_ms) {
+  auto &gest = touch_gesture();
+  if (!gest.should_fire_long_press(now_ms)) return false;
+
+  auto &rs = runtime_state();
+  if (compute_touch_context(rs) != gest.start_context) {
+    gest.long_press_armed = false;
+    cancel_core_timeout(kTimeoutTouchLongPressId);
+    return false;
+  }
+
+  const HitRegion *reg = frame_hits().find_by_id_param(gest.long_press_wid, gest.long_press_param);
+  if (reg != nullptr && !reg->contains_padded(gest.last_x, gest.last_y)) {
+    gest.long_press_armed = false;
+    cancel_core_timeout(kTimeoutTouchLongPressId);
+    return false;
+  }
+
+  gest.mark_long_press_fired();
+  cancel_core_timeout(kTimeoutTouchLongPressId);
+
+  if (rs.nav.gui_page == PageId::REMOTE && rs.nav.remote_subpage == 0) {
+    const int remote_key = remote_key_for_widget(gest.long_press_wid);
+    if (remote_key >= 0) {
+      const int act_slot = resolve_active_remote_slot(rs.remote.active_slot);
+      rs.remote.active_slot = act_slot;
+      const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, gest.long_press_wid, gest.long_press_param);
+      if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        do_remote_send_key(remote_key, act_slot, /*long_press=*/true, now_ms);
+        rt_.schedule_disp();
+        return true;
+      }
+    }
+  }
+  rt_.schedule_disp();
+  return true;
 }
 
 void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
@@ -3469,25 +3538,34 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       }
 
-    // 10. Page 7 Remote Subpage 1 (Slot Selector & Power Actions)
-    } else if (tap_valid && rs.nav.gui_page == PageId::REMOTE &&
-               rs.nav.remote_subpage == 1) {
-      if (wid == WidgetId::REMOTE_PRIMARY_PWR &&
-          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        do_remote_send_key(9, -1);
-        rt_.schedule_disp();
-      } else if (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4 &&
-                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        do_remote_send_key(9, hit->param);
-        rt_.schedule_disp();
-      } else if (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4 &&
-                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        rs.remote.active_slot = hit->param;
-        rs.remote.action_feedback.clear();
-        rs.nav.remote_subpage = 0;
-        do_remote_select_slot(hit->param + 1);
-        mark_dirty_full();
-        rt_.schedule_disp();
+    // 10. Page 7 Remote Release Taps (Subpage 0 Long-Press-Capable Keys & Subpage 1 Slot/Power)
+    } else if (tap_valid && rs.nav.gui_page == PageId::REMOTE) {
+      if (rs.nav.remote_subpage == 0) {
+        const int remote_key = remote_key_for_widget(wid);
+        if (remote_key >= 0 && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int act_slot = resolve_active_remote_slot(rs.remote.active_slot);
+          rs.remote.active_slot = act_slot;
+          do_remote_send_key(remote_key, act_slot, /*long_press=*/false, now_rel);
+          rt_.schedule_disp();
+        }
+      } else if (rs.nav.remote_subpage == 1) {
+        if (wid == WidgetId::REMOTE_PRIMARY_PWR &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          do_remote_send_key(9, -1, false, now_rel);
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          do_remote_send_key(9, hit->param, false, now_rel);
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.remote.active_slot = hit->param;
+          rs.remote.action_feedback.clear();
+          rs.nav.remote_subpage = 0;
+          do_remote_select_slot(hit->param + 1);
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
       }
 
     // 11. Page 8 Tools Launcher & Calendar Release Taps
@@ -3946,7 +4024,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         static_cast<unsigned long>(dur_p), static_cast<int>(gest.swipe_committed),
         gest.start_context, end_ctx, static_cast<unsigned long>(rel_exec_us));
   }
+  cancel_core_timeout(kTimeoutTouchLongPressId);
+  const bool had_lp_visual = (gest.long_press_wid != 0U);
   gest.active = false;
+  gest.long_press_armed = false;
+  if (had_lp_visual) {
+    rt_.schedule_disp();
+  }
 }
 
 void TouchGestureEngine::on_input_event(const std::string &action, int delta, uint32_t now_in) {

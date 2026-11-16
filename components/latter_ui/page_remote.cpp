@@ -160,12 +160,21 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   const int btm_fy   = dpad_cy + flank_dy;
   const int f_r      = scale_s(19);
 
-  // 1. HOME: Top-Left
-  const Color home_surf = render_glass_circle(it, left_fx, top_fy, f_r, kChromeGlassTint, kChromeCardBorder);
+  const auto &gest = touch_gesture();
+  const auto hold_brd = [&](uint16_t wid, Color base_brd) -> Color {
+    if (!gest.active || gest.long_press_wid != wid) return base_brd;
+    if (gest.long_press_fired) return theme_secondary;
+    return gest.long_press_armed ? theme_primary : base_brd;
+  };
+
+  // 1. HOME: Top-Left (supports tap & long-press)
+  const Color home_surf = render_glass_circle(
+      it, left_fx, top_fy, f_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_NAV_HOME, kChromeCardBorder));
   fast_filled_triangle(it, left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
   fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
   fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), home_surf);
-  frame_hits().add_circle(left_fx, top_fy, f_r, WidgetId::REMOTE_NAV_HOME, kHitTap | kHitFocusCircle, 0, scale_s(20));
+  frame_hits().add_circle(
+      left_fx, top_fy, f_r, WidgetId::REMOTE_NAV_HOME, kHitTap | kHitLongPress | kHitFocusCircle, 0, scale_s(20));
 
   // 2. VOL UP: Top-Right
   const int pls = scale_s(7);
@@ -175,13 +184,15 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fill_rect_row_major(it, right_fx - pth / 2, top_fy - pls, pth, pls * 2 + 1, col_white);
   frame_hits().add_circle(right_fx, top_fy, f_r, WidgetId::REMOTE_VOL_UP, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
-  // 3. BACK: Bottom-Left
-  render_glass_circle(it, left_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
+  // 3. BACK: Bottom-Left (supports tap & long-press)
+  render_glass_circle(
+      it, left_fx, btm_fy, f_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_NAV_BACK, kChromeCardBorder));
   fast_line(it, left_fx + scale_s(3), btm_fy - scale_s(7), left_fx - scale_s(4), btm_fy, col_white);
   fast_line(it, left_fx + scale_s(4), btm_fy - scale_s(7), left_fx - scale_s(3), btm_fy, col_white);
   fast_line(it, left_fx - scale_s(4), btm_fy, left_fx + scale_s(3), btm_fy + scale_s(7), col_white);
   fast_line(it, left_fx - scale_s(3), btm_fy, left_fx + scale_s(4), btm_fy + scale_s(7), col_white);
-  frame_hits().add_circle(left_fx, btm_fy, f_r, WidgetId::REMOTE_NAV_BACK, kHitTap | kHitFocusCircle, 0, scale_s(20));
+  frame_hits().add_circle(
+      left_fx, btm_fy, f_r, WidgetId::REMOTE_NAV_BACK, kHitTap | kHitLongPress | kHitFocusCircle, 0, scale_s(20));
 
   // 4. VOL DOWN: Bottom-Right
   render_glass_circle(it, right_fx, btm_fy, f_r, kChromeGlassTint, kChromeCardBorder);
@@ -227,10 +238,10 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   frame_hits().add_centered_rect(cx - arr_mid, dpad_cy, scale_x(44), scale_y(56), WidgetId::REMOTE_DPAD_LEFT, kHitTap | kHitFocusSlot);
   frame_hits().add_centered_rect(cx + arr_mid, dpad_cy, scale_x(44), scale_y(56), WidgetId::REMOTE_DPAD_RIGHT, kHitTap | kHitFocusSlot);
 
-  render_glass_circle(it, cx, dpad_cy, ok_r, kChromeGlassTint, theme_primary);
+  render_glass_circle(it, cx, dpad_cy, ok_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_DPAD_OK, theme_primary));
   fast_print(it, cx + 1, dpad_cy + 1, font_date, kChromeShadow, TextAlign::CENTER, "OK");
   fast_print(it, cx, dpad_cy, font_date, col_white, TextAlign::CENTER, "OK");
-  frame_hits().add_circle(cx, dpad_cy, ok_r, WidgetId::REMOTE_DPAD_OK, kHitTap | kHitFocusCircle);
+  frame_hits().add_circle(cx, dpad_cy, ok_r, WidgetId::REMOTE_DPAD_OK, kHitTap | kHitLongPress | kHitFocusCircle);
 }
 
 }  // namespace latter_ui

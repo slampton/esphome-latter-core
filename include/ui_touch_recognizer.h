@@ -32,6 +32,7 @@ inline constexpr float kSwipeLiveMm = 2.35f;
 inline constexpr float kFlickMinVelMmPerSec = 38.0f;
 inline constexpr float kEdgeBouncePeakMm = 1.35f;
 inline constexpr uint32_t kEdgeBounceDurationMs = 135U;
+inline constexpr uint32_t kLongPressHoldMs = 480U;
 }  // namespace kinematics
 
 enum class GestureAxisLock : uint8_t {

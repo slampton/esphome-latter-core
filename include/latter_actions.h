@@ -245,8 +245,20 @@ template <typename OutboxT = std::nullptr_t>
 inline void emit_remote_action(int slot_1based,
                                std::string_view action,
                                std::string_view command = "",
-                               OutboxT outbox = nullptr) {
+                               OutboxT outbox = nullptr,
+                               float hold_secs = 0.0f) {
   const std::string slot_str = std::to_string(std::max(1, slot_1based));
+  if (hold_secs > 0.0f) {
+    char hold_buf[16];
+    std::snprintf(hold_buf, sizeof(hold_buf), "%.2f", static_cast<double>(hold_secs));
+    latter_rpc::emit(outbox, "remote_action", {
+      {"slot", slot_str},
+      {"action", action},
+      {"command", command},
+      {"hold_secs", hold_buf},
+    });
+    return;
+  }
   latter_rpc::emit(outbox, "remote_action", {
     {"slot", slot_str},
     {"action", action},

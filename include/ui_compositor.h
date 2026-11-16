@@ -555,6 +555,7 @@ inline constexpr uint32_t kTimeoutAsyncDrawId = 0x4C410001U;
 inline constexpr uint32_t kTimeoutFbClearId = 0x4C410002U;
 inline constexpr uint32_t kTimeoutWeatherStepId = 0x4C410003U;
 inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
+inline constexpr uint32_t kTimeoutTouchLongPressId = 0x4C410005U;
 
 #if __has_include("esphome/core/defines.h")
 
