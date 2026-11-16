@@ -130,38 +130,69 @@ esphome::Color chrome_wheel_inner_ring();
 esphome::Color chrome_wheel_outer_ring();
 
 // ------------------------------------------------------------------------------
-// 3. Deduplicated Canonical Vector Glyph Library (fast_* / AA primitives only)
+// 3. Canonical Solid + Negative-Space Custom Glyph Library (D-008 / D-051)
+//    Every glyph takes an explicit container-resolved pixel half-size `r`
+//    (zero internal `scale_s` double-scaling) and renders row-major AA solid
+//    silhouettes with true transparent negative-space cutouts.
 // ------------------------------------------------------------------------------
+inline constexpr int dock_icon_r(int dock_r = layout().dock_r) {
+  return dock_icon_r_for(dock_r);
+}
+inline constexpr int card_icon_r(int card_h) {
+  return card_icon_r_for(card_h);
+}
+inline constexpr int hero_icon_r(int hero_h) {
+  return hero_icon_r_for(hero_h, SCREEN_MIN_DIM);
+}
+
 void draw_icon_power(esphome::display::Display &it, int cx, int cy, int r,
-                     esphome::Color col, esphome::Color bg_cut);
-void draw_icon_thermometer(esphome::display::Display &it, int cx, int cy,
-                           esphome::Color col, esphome::Color bulb_inner);
-void draw_icon_eighth_notes(esphome::display::Display &it, int cx, int cy, esphome::Color col);
-void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, esphome::Color col, bool waves = true);
-void draw_icon_lock(esphome::display::Display &it, int cx, int cy, esphome::Color col,
-                    esphome::Color keyhole_col, bool is_locked = true);
-void draw_icon_shield(esphome::display::Display &it, int cx, int cy, esphome::Color col);
-void draw_icon_hourglass(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, esphome::Color accent, int half_h = 13);
-void draw_icon_alarm_clock(esphome::display::Display &it, int cx, int cy,
-                           esphome::Color col, esphome::Color surf_bg, int radius = 11);
-void draw_icon_stopwatch(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, esphome::Color accent, int radius = 11);
-void draw_icon_calendar(esphome::display::Display &it, int cx, int cy,
-                        esphome::Color col, esphome::Color accent, int half_w = 11);
-void draw_icon_camera(esphome::display::Display &it, int cx, int cy,
-                      esphome::Color col, esphome::Color surf_bg, int half_w = 11);
-void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, bool rays = false);
-void draw_icon_fan(esphome::display::Display &it, int cx, int cy, esphome::Color col);
-void draw_icon_blinds(esphome::display::Display &it, int cx, int cy, esphome::Color col);
-void draw_icon_settings_gear(esphome::display::Display &it, int cx, int cy,
-                             esphome::Color col, esphome::Color surf_bg);
-void draw_icon_remote(esphome::display::Display &it, int cx, int cy,
-                      esphome::Color col, esphome::Color surf_bg);
-void draw_icon_gamepad(esphome::display::Display &it, int cx, int cy,
-                       esphome::Color col, esphome::Color surf_bg);
-void draw_icon_wrench(esphome::display::Display &it, int cx, int cy, esphome::Color col);
+                     esphome::Color col, bool shadow = false);
+void draw_icon_clock_solid(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow = false);
+void draw_icon_hourglass(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow = false);
+void draw_icon_alarm_clock(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow = false);
+void draw_icon_stopwatch(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow = false);
+void draw_icon_shield_home(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow = false);
+void draw_icon_camera(esphome::display::Display &it, int cx, int cy, int r,
+                      esphome::Color col, bool shadow = false);
+void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool waves = true, bool shadow = false);
+void draw_icon_thermometer(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow = false);
+void draw_icon_lock(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool is_locked = true, bool shadow = false);
+void draw_icon_garage_door(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool is_open = false, bool shadow = false);
+void draw_icon_robot_vacuum(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool shadow = false);
+void draw_icon_eighth_notes(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool shadow = false);
+void draw_icon_calendar(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow = false);
+void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow = false);
+void draw_icon_ceiling_fan(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow = false);
+void draw_icon_curtains(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow = false);
+void draw_icon_blinds_slats(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool is_open = false, bool shadow = false);
+void draw_icon_switch_pill(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool is_on = true, bool shadow = false);
+void draw_icon_sparkle(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow = false);
+void draw_icon_bento_grid(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow = false);
+void draw_icon_droplet(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow = false);
+void draw_icon_intercom_handset(esphome::display::Display &it, int cx, int cy, int r,
+                                esphome::Color col, bool shadow = false);
+void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow = false);
 
 // ------------------------------------------------------------------------------
 // 4. Interactive Hit-Registered Widgets & Modals
@@ -265,9 +296,6 @@ void render_analog_chapter_ring(esphome::display::Display &it, int cx, int cy, i
 void render_center_arbor_aa(esphome::display::Display &it, int cx, int cy,
                             esphome::Color outer_col, esphome::Color cap_col,
                             esphome::Color jewel_col);
-
-void draw_icon_clock_face(esphome::display::Display &it, int cx, int cy, int r,
-                          esphome::Color col);
 
 // Shared 2-zone glass card row used by Time App -> Timers & Alarms:
 //   - Left 72%: primary readout + secondary caption (taps open detail/editor)

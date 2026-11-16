@@ -730,238 +730,843 @@ esphome::Color chrome_wheel_inner_ring() { return kChromeWheelInnerRing; }
 esphome::Color chrome_wheel_outer_ring() { return kChromeWheelOuterRing; }
 
 // ==============================================================================
-// 3. Deduplicated Canonical Vector Glyph Library
+// 3. Canonical Solid + Negative-Space Custom Glyph Library (D-008 / D-051)
+//    Row-major sub-pixel AA CSG rasterizer with zero per-pixel sqrtf/sinf/cosf,
+//    true transparent negative-space cutouts, fast_hline interior span batching,
+//    and single-pass (+1, +1) kChromeShadow drop shadows.
 // ==============================================================================
-void draw_icon_power(esphome::display::Display &it, int cx, int cy, int r,
-                     esphome::Color col, esphome::Color bg_cut) {
-  const int ring_r = std::max(5, (r * 52) / 100);
-  fast_circle_aa(it, cx, cy + 1, static_cast<float>(ring_r), col, 2.0f);
-  fill_rect_row_major(it, cx - scale_s(4), cy - ring_r - 2, scale_s(8) + 1, scale_s(6), bg_cut);
-  fill_rect_row_major(it, cx - 1, cy - ring_r - 2, 3, ring_r + 2, col);
-}
+namespace {
 
-void draw_icon_thermometer(esphome::display::Display &it, int cx, int cy,
-                           esphome::Color col, esphome::Color bulb_inner) {
-  const int stem_h = scale_s(14);
-  const int bulb_r = scale_s(5);
-  fill_round_rect_aa(it, cx - scale_s(2), cy - stem_h / 2 - 2, 2 * scale_s(2) + 1, stem_h,
-                     static_cast<float>(scale_s(2)), col);
-  fast_filled_circle_aa(it, cx, cy + stem_h / 2, bulb_r, col);
-  if (bulb_r > 2) {
-    fast_filled_circle_aa(it, cx, cy + stem_h / 2, bulb_r - 2, bulb_inner);
+inline float sd_circle_px(float x, float y, float cx0, float cy0, float rad) noexcept {
+  if (rad <= 0.05f) return 4.0f;
+  const float dx = x - cx0;
+  const float dy = y - cy0;
+  const float d2 = dx * dx + dy * dy;
+  const float ro = rad + 1.25f;
+  if (d2 >= ro * ro) return 2.0f;
+  if (rad > 1.25f) {
+    const float ri = rad - 1.25f;
+    if (d2 <= ri * ri) return -2.0f;
+    return (d2 - rad * rad) * (0.5f / rad);
   }
+  return (d2 - rad * rad) / std::max(0.70f, 1.35f * rad);
 }
 
-void draw_icon_eighth_notes(esphome::display::Display &it, int cx, int cy, esphome::Color col) {
-  const int dx = scale_s(6);
-  const int top_y = cy - scale_s(9);
-  const int bot_y = cy + scale_s(5);
-  const int head_r = std::max(3, scale_s(4));
-  fast_filled_circle_aa(it, cx - dx, bot_y + 1, head_r, col);
-  fast_filled_circle_aa(it, cx + dx - 1, bot_y - 1, head_r, col);
-  fill_rect_row_major(it, cx - dx + head_r - 1, top_y + 2, 2, (bot_y - top_y), col);
-  fill_rect_row_major(it, cx + dx + head_r - 2, top_y, 2, (bot_y - top_y), col);
-  fast_line(it, cx - dx + head_r - 1, top_y + 2, cx + dx + head_r - 1, top_y, col);
-  fast_line(it, cx - dx + head_r - 1, top_y + 3, cx + dx + head_r - 1, top_y + 1, col);
+inline float sd_ring_px(float x, float y, float cx0, float cy0,
+                        float r_mid, float half_thick) noexcept {
+  const float ht = std::max(0.45f, half_thick);
+  const float r_out = r_mid + ht;
+  const float r_in = std::max(0.0f, r_mid - ht);
+  const float d_out = sd_circle_px(x, y, cx0, cy0, r_out);
+  if (r_in <= 0.1f) return d_out;
+  return std::max(d_out, -sd_circle_px(x, y, cx0, cy0, r_in));
 }
 
-void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, esphome::Color col, bool waves) {
-  const int bx = cx - scale_s(7);
-  fill_rect_row_major(it, bx, cy - scale_s(4), scale_s(4), scale_s(8) + 1, col);
-  fast_filled_triangle(it, bx + scale_s(3), cy - scale_s(4),
-                       bx + scale_s(9), cy - scale_s(9),
-                       bx + scale_s(9), cy + scale_s(9), col);
-  fast_filled_triangle(it, bx + scale_s(3), cy - scale_s(4),
-                       bx + scale_s(3), cy + scale_s(4),
-                       bx + scale_s(9), cy + scale_s(9), col);
-  if (waves) {
-    const int wx = bx + scale_s(12);
-    fast_line(it, wx, cy - scale_s(4), wx + scale_s(2), cy, col);
-    fast_line(it, wx + scale_s(2), cy, wx, cy + scale_s(4), col);
-    fast_line(it, wx + scale_s(4), cy - scale_s(7), wx + scale_s(7), cy, col);
-    fast_line(it, wx + scale_s(7), cy, wx + scale_s(4), cy + scale_s(7), col);
+inline float sd_rbox_px(float x, float y, float cx0, float cy0,
+                        float hx, float hy, float cr) noexcept {
+  if (hx <= 0.05f || hy <= 0.05f) return 4.0f;
+  const float r = std::clamp(cr, 0.0f, std::min(hx, hy));
+  const float dx = std::fabs(x - cx0) - (hx - r);
+  const float dy = std::fabs(y - cy0) - (hy - r);
+  if (dx <= 0.0f || dy <= 0.0f) {
+    return std::max(dx, dy) - r;
   }
+  if (r <= 0.15f) return std::max(dx, dy);
+  const float d2 = dx * dx + dy * dy;
+  const float ro = r + 1.25f;
+  if (d2 >= ro * ro) return 2.0f;
+  if (r > 1.25f) {
+    const float ri = r - 1.25f;
+    if (d2 <= ri * ri) return -2.0f;
+    return (d2 - r * r) * (0.5f / r);
+  }
+  return (d2 - r * r) / std::max(0.70f, 1.35f * r);
 }
 
-void draw_icon_lock(esphome::display::Display &it, int cx, int cy, esphome::Color col,
-                    esphome::Color keyhole_col, bool is_locked) {
-  const int bw = scale_s(16);
-  const int bh = scale_s(12);
-  const int by = cy - scale_s(1);
-  const int sh_r = scale_s(5);
-  const int sh_cx = is_locked ? cx : (cx + scale_s(4));
-  fast_circle_aa(it, sh_cx, by - scale_s(2), static_cast<float>(sh_r), col, 2.0f);
-  fill_round_rect_aa(it, cx - bw / 2, by, bw, bh, 3.0f, col);
-  fast_filled_circle_aa(it, cx, by + bh / 2 - 1, std::max(1, scale_s(2)), keyhole_col);
-}
+struct SdfCapsule {
+  float ax{0.0f}, ay{0.0f}, vx{0.0f}, vy{0.0f};
+  float inv_len2{0.0f}, rad{1.0f}, ro2{4.0f}, ri2{-1.0f}, inv2r{0.5f};
 
-void draw_icon_shield(esphome::display::Display &it, int cx, int cy, esphome::Color col) {
-  const int hw = scale_s(9);
-  const int top_y = cy - scale_s(10);
-  const int mid_y = cy + scale_s(1);
-  const int bot_y = cy + scale_s(10);
-  fast_line(it, cx, top_y, cx - hw, top_y + scale_s(3), col);
-  fast_line(it, cx, top_y, cx + hw, top_y + scale_s(3), col);
-  fast_vline(it, cx - hw, top_y + scale_s(3), mid_y - (top_y + scale_s(3)), col);
-  fast_vline(it, cx + hw, top_y + scale_s(3), mid_y - (top_y + scale_s(3)), col);
-  fast_line(it, cx - hw, mid_y, cx, bot_y, col);
-  fast_line(it, cx + hw, mid_y, cx, bot_y, col);
-}
+  static SdfCapsule make(float x0, float y0, float x1, float y1, float r_px) noexcept {
+    SdfCapsule c{};
+    c.ax = x0;
+    c.ay = y0;
+    c.vx = x1 - x0;
+    c.vy = y1 - y0;
+    const float l2 = c.vx * c.vx + c.vy * c.vy;
+    c.inv_len2 = (l2 > 1e-4f) ? (1.0f / l2) : 0.0f;
+    c.rad = std::max(0.40f, r_px);
+    const float ro = c.rad + 1.25f;
+    c.ro2 = ro * ro;
+    if (c.rad > 1.25f) {
+      const float ri = c.rad - 1.25f;
+      c.ri2 = ri * ri;
+      c.inv2r = 0.5f / c.rad;
+    } else {
+      c.ri2 = -1.0f;
+      c.inv2r = 1.0f / std::max(0.70f, 1.35f * c.rad);
+    }
+    return c;
+  }
 
-void draw_icon_hourglass(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, esphome::Color accent, int half_h) {
-  const int hh = scale_s(half_h);
-  const int hw = std::max(5, (hh * 82) / 100);
-  fill_rect_row_major(it, cx - hw - 1, cy - hh, 2 * hw + 3, 2, col);
-  fill_rect_row_major(it, cx - hw - 1, cy + hh - 1, 2 * hw + 3, 2, col);
-  fast_line(it, cx - hw + 1, cy - hh + 2, cx - 1, cy, col);
-  fast_line(it, cx - hw + 2, cy - hh + 2, cx, cy, col);
-  fast_line(it, cx + hw - 1, cy - hh + 2, cx + 1, cy, col);
-  fast_line(it, cx + hw - 2, cy - hh + 2, cx, cy, col);
-  fast_line(it, cx - 1, cy, cx - hw + 1, cy + hh - 2, col);
-  fast_line(it, cx, cy, cx - hw + 2, cy + hh - 2, col);
-  fast_line(it, cx + 1, cy, cx + hw - 1, cy + hh - 2, col);
-  fast_line(it, cx, cy, cx + hw - 2, cy + hh - 2, col);
-  const int sw = std::max(3, hw / 2);
-  fast_filled_triangle(it, cx - sw, cy - hh / 2, cx + sw, cy - hh / 2, cx, cy - 2, col);
-  fast_line(it, cx, cy - 2, cx, cy + 3, accent);
-  fast_filled_triangle(it, cx - sw - 1, cy + hh - 3, cx + sw + 1, cy + hh - 3, cx, cy + 3, col);
-}
+  inline float eval(float x, float y) const noexcept {
+    const float px = x - ax;
+    const float py = y - ay;
+    const float t = (inv_len2 > 0.0f)
+        ? std::clamp((px * vx + py * vy) * inv_len2, 0.0f, 1.0f)
+        : 0.0f;
+    const float qx = px - t * vx;
+    const float qy = py - t * vy;
+    const float d2 = qx * qx + qy * qy;
+    if (d2 >= ro2) return 2.0f;
+    if (d2 <= ri2) return -2.0f;
+    return (d2 - rad * rad) * inv2r;
+  }
+};
 
-void draw_icon_alarm_clock(esphome::display::Display &it, int cx, int cy,
-                           esphome::Color col, esphome::Color surf_bg, int radius) {
-  const int r = scale_s(radius);
-  const int bell_off = std::max(5, (r * 86) / 100);
-  const int bell_r = std::max(3, r / 3);
-  fast_filled_circle_aa(it, cx - bell_off, cy - bell_off + 1, bell_r, col);
-  fast_filled_circle_aa(it, cx + bell_off, cy - bell_off + 1, bell_r, col);
-  fast_filled_circle_aa(it, cx, cy + 2, r + 2, surf_bg);
-  fast_circle_aa(it, cx, cy + 2, static_cast<float>(r), col, 2.0f);
-  fast_line(it, cx - (r * 7) / 10, cy + r, cx - r, cy + r + scale_s(3), col);
-  fast_line(it, cx + (r * 7) / 10, cy + r, cx + r, cy + r + scale_s(3), col);
-  fast_line(it, cx, cy + 2, cx, cy + 2 - std::max(3, r / 2), col);
-  fast_line(it, cx, cy + 2, cx + std::max(3, r / 2), cy + 4, col);
-  fast_filled_circle_aa(it, cx, cy + 2, std::max(1, scale_s(2)), col);
-}
+struct SdfSymTri {
+  float cx0{0.0f}, y_top{0.0f}, y_bot{1.0f}, nx{1.0f}, ny{0.0f};
 
-void draw_icon_stopwatch(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, esphome::Color accent, int radius) {
-  const int r = scale_s(radius);
-  fill_rect_row_major(it, cx - scale_s(4), cy - r - scale_s(4), 2 * scale_s(4) + 1, 2, col);
-  fill_rect_row_major(it, cx - 1, cy - r - scale_s(2), 3, scale_s(3), col);
-  fast_line(it, cx + (r * 7) / 10, cy - (r * 7) / 10, cx + r, cy - r, col);
-  fast_circle_aa(it, cx, cy + 2, static_cast<float>(r), col, 2.0f);
-  fast_filled_circle_aa(it, cx, cy + 2, std::max(1, scale_s(2)), col);
-  fast_line(it, cx, cy + 2, cx + std::max(3, r / 2), cy + 2 - std::max(3, r / 2), accent);
-}
+  static SdfSymTri make(float cx, float y_apex, float y_base, float hw_base) noexcept {
+    SdfSymTri t{};
+    t.cx0 = cx;
+    t.y_top = y_apex;
+    t.y_bot = y_base;
+    const float h = std::max(0.5f, y_base - y_apex);
+    const float hw = std::max(0.5f, hw_base);
+    const float inv_len = 1.0f / std::sqrt(h * h + hw * hw);
+    t.nx = h * inv_len;
+    t.ny = -hw * inv_len;
+    return t;
+  }
 
-void draw_icon_calendar(esphome::display::Display &it, int cx, int cy,
-                        esphome::Color col, esphome::Color accent, int half_w) {
-  const int hw = scale_s(half_w);
-  const int hh = scale_s(half_w);
-  stroke_round_rect_aa(it, cx - hw, cy - hh + 2, 2 * hw + 1, 2 * hh - 1, 3.0f, col, col, 2);
-  fill_rect_row_major(it, cx - hw + 2, cy - hh + 3, 2 * hw - 3, std::max(3, hh / 2), accent);
-  fill_rect_row_major(it, cx - hw / 2 - 1, cy - hh - 1, 2, 4, col);
-  fill_rect_row_major(it, cx + hw / 2, cy - hh - 1, 2, 4, col);
-  const int dot_r = std::max(1, scale_s(1));
-  for (int r = 0; r < 2; r++) {
-    for (int c = -1; c <= 1; c++) {
-      fast_filled_circle(it, cx + c * (hw / 2), cy + 2 + r * std::max(3, hh / 3), dot_r, col);
+  inline float eval(float x, float y) const noexcept {
+    const float ax = std::fabs(x - cx0);
+    const float d_side = ax * nx + (y - y_top) * ny;
+    return std::max({d_side, y - y_bot, y_top - y});
+  }
+};
+
+template <typename Fn>
+void rasterize_sdf_icon(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow, Fn &&sdf_px) {
+  if (r <= 1) return;
+  const int bound_r = std::clamp(r + 2, 3, 44);
+  const int dx_min = std::max(-bound_r, -cx);
+  const int dx_max = std::min(bound_r + (shadow ? 1 : 0), SCREEN_W - 1 - cx);
+  if (dx_min > dx_max) return;
+
+  const int dy_min = -bound_r;
+  const int dy_max = bound_r + (shadow ? 1 : 0);
+  const int y_start = std::max(cy + dy_min, clip_y0());
+  const int y_end = std::min(cy + dy_max, clip_y1());
+  if (y_start > y_end) return;
+
+  const int span_w = dx_max - dx_min + 1;
+  uint8_t prev_cov[96]{};
+  uint8_t cur_cov[96]{};
+
+  auto fill_cov_row = [&](int dy, uint8_t *dst) {
+    if (dy > bound_r) {
+      std::memset(dst, 0, static_cast<size_t>(span_w));
+      return;
+    }
+    const float fy = static_cast<float>(dy);
+    for (int i = 0; i < span_w; ++i) {
+      const int dx = dx_min + i;
+      if (dx > bound_r) {
+        dst[i] = 0U;
+      } else {
+        const float d = sdf_px(static_cast<float>(dx), fy);
+        dst[i] = static_cast<uint8_t>(aa_coverage_8(0.5f - d));
+      }
+    }
+  };
+
+  if (shadow && y_start > (cy + dy_min)) {
+    fill_cov_row((y_start - 1) - cy, prev_cov);
+  }
+
+  for (int py = y_start; py <= y_end; ++py) {
+    fill_cov_row(py - cy, cur_cov);
+    int i = 0;
+    while (i < span_w) {
+      const uint8_t fg = cur_cov[i];
+      if (fg == 255U) {
+        int run_end = i + 1;
+        while (run_end < span_w && cur_cov[run_end] == 255U) {
+          ++run_end;
+        }
+        fast_hline(it, cx + dx_min + i, py, run_end - i, col);
+        i = run_end;
+        continue;
+      }
+      const int px = cx + dx_min + i;
+      if (shadow && i > 0) {
+        const int sh = prev_cov[i - 1];
+        if (sh > 0) {
+          const int sa = (sh * 184) >> 8;
+          if (sa > 0) fast_pixel_blend(it, px, py, kChromeShadow, sa);
+        }
+      }
+      if (fg > 0U) {
+        fast_pixel_blend(it, px, py, col, static_cast<int>(fg));
+      }
+      ++i;
+    }
+    if (shadow) {
+      std::memcpy(prev_cov, cur_cov, static_cast<size_t>(span_w));
     }
   }
 }
 
-void draw_icon_camera(esphome::display::Display &it, int cx, int cy,
-                      esphome::Color col, esphome::Color surf_bg, int half_w) {
-  const int hw = scale_s(half_w);
-  const int hh = std::max(5, (hw * 75) / 100);
-  fill_round_rect_aa(it, cx - hw, cy - hh + 2, 2 * hw + 1, 2 * hh - 1, 4.0f, col);
-  fill_round_rect_aa(it, cx - scale_s(5), cy - hh - 1, 2 * scale_s(5) + 1, 4, 2.0f, col);
-  const int lr = std::max(3, hh / 2);
-  fast_filled_circle_aa(it, cx, cy + 2, lr + 1, surf_bg);
-  fast_circle_aa(it, cx, cy + 2, static_cast<float>(lr), col, 1.5f);
+}  // namespace
+
+void draw_icon_power(esphome::display::Display &it, int cx, int cy, int r,
+                     esphome::Color col, bool shadow) {
+  const int eff_r = std::max(6, (r * 62) / 100);
+  const float rf = static_cast<float>(eff_r);
+  const float ring_cy = 0.10f * rf;
+  const float ring_r = 0.76f * rf;
+  const float ht = std::max(1.05f, 0.15f * rf);
+  // Gap at top (±31 deg around 12 o'clock) with rounded arc end-caps + top stem
+  static constexpr float kSin31 = 0.515038f;
+  static constexpr float kCos31 = 0.857167f;
+  const float cap_x = ring_r * kSin31;
+  const float cap_y = ring_cy - ring_r * kCos31;
+  const SdfCapsule stem = SdfCapsule::make(0.0f, -0.86f * rf, 0.0f, 0.02f * rf, ht);
+
+  rasterize_sdf_icon(it, cx, cy, eff_r, col, shadow, [&](float x, float y) -> float {
+    float d_arc = 4.0f;
+    const float ry = y - ring_cy;
+    const float ax = std::fabs(x);
+    if (!(ry < 0.0f && ax < (-ry * (kSin31 / kCos31)))) {
+      d_arc = sd_ring_px(x, y, 0.0f, ring_cy, ring_r, ht);
+    }
+    d_arc = std::min(d_arc, sd_circle_px(ax, y, cap_x, cap_y, ht));
+    return std::min(d_arc, stem.eval(x, y));
+  });
 }
 
-void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy,
-                         esphome::Color col, bool rays) {
-  const int r = scale_s(7);
-  fast_filled_circle_aa(it, cx, cy - scale_s(3), r, col);
-  fill_rect_row_major(it, cx - scale_s(4), cy + r - scale_s(5), 2 * scale_s(4) + 1, scale_s(5), col);
-  fast_hline(it, cx - scale_s(3), cy + r + scale_s(2), 2 * scale_s(3) + 1, col);
-  if (rays) {
-    const int ro = r + scale_s(4);
-    fast_line(it, cx, cy - scale_s(3) - ro, cx, cy - scale_s(3) - ro - scale_s(2), col);
-    fast_line(it, cx - ro, cy - scale_s(3), cx - ro - scale_s(2), cy - scale_s(3), col);
-    fast_line(it, cx + ro, cy - scale_s(3), cx + ro + scale_s(2), cy - scale_s(3), col);
-  }
+void draw_icon_clock_solid(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float dial_r = 0.96f * rf;
+  const float hand_w = std::max(1.05f, 0.105f * rf);
+  const float tick_w = std::max(0.85f, 0.075f * rf);
+  const SdfCapsule h_hand = SdfCapsule::make(0.0f, 0.0f, -0.38f * rf, -0.25f * rf, hand_w * 1.08f);
+  const SdfCapsule m_hand = SdfCapsule::make(0.0f, 0.0f, 0.48f * rf, -0.32f * rf, hand_w);
+  const SdfCapsule t_top = SdfCapsule::make(0.0f, -0.80f * rf, 0.0f, -0.68f * rf, tick_w);
+  const SdfCapsule t_bot = SdfCapsule::make(0.0f, 0.68f * rf, 0.0f, 0.80f * rf, tick_w);
+  const SdfCapsule t_lft = SdfCapsule::make(-0.80f * rf, 0.0f, -0.68f * rf, 0.0f, tick_w);
+  const SdfCapsule t_rgt = SdfCapsule::make(0.68f * rf, 0.0f, 0.80f * rf, 0.0f, tick_w);
+  const float arbor_r = std::max(1.25f, 0.135f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_disc = sd_circle_px(x, y, 0.0f, 0.0f, dial_r);
+    if (d_disc >= 1.5f) return d_disc;
+    float d_cut = std::min({h_hand.eval(x, y), m_hand.eval(x, y),
+                            sd_circle_px(x, y, 0.0f, 0.0f, arbor_r)});
+    if (r >= 11) {
+      d_cut = std::min({d_cut, t_top.eval(x, y), t_bot.eval(x, y),
+                        t_lft.eval(x, y), t_rgt.eval(x, y)});
+    }
+    return std::max(d_disc, -d_cut);
+  });
 }
 
-void draw_icon_fan(esphome::display::Display &it, int cx, int cy, esphome::Color col) {
-  const int br = scale_s(4);
-  const int off = scale_s(5);
-  fast_filled_circle_aa(it, cx, cy - off, br, col);
-  fast_filled_circle_aa(it, cx, cy + off, br, col);
-  fast_filled_circle_aa(it, cx - off, cy, br, col);
-  fast_filled_circle_aa(it, cx + off, cy, br, col);
-  fast_filled_circle_aa(it, cx, cy, std::max(2, scale_s(2)), kChromeShadow);
+void draw_icon_hourglass(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float cap_hx = 0.72f * rf;
+  const float cap_hy = std::max(1.0f, 0.095f * rf);
+  const float cap_y = 0.86f * rf;
+  const float bulb_span = 0.80f * rf;
+  const float wall = std::max(1.65f, 0.175f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ay = std::fabs(y);
+    const float ax = std::fabs(x);
+    const float d_caps = std::min(
+        sd_rbox_px(x, y, 0.0f, -cap_y, cap_hx, cap_hy, cap_hy),
+        sd_rbox_px(x, y, 0.0f, cap_y, cap_hx, cap_hy, cap_hy));
+
+    float d_bulb = 4.0f;
+    if (ay <= bulb_span + 1.5f) {
+      const float u = std::clamp(ay / bulb_span, 0.0f, 1.0f);
+      const float s = u * u * (3.0f - 2.0f * u);
+      const float hw_out = (0.17f + 0.49f * s) * rf;
+      const float inv_n = 1.0f / (1.0f + 1.36f * u * (1.0f - u));
+      d_bulb = std::max((ax - hw_out) * inv_n, ay - bulb_span);
+    }
+    const float d_solid = std::min(d_caps, d_bulb);
+    if (d_solid >= 1.5f) return d_solid;
+
+    // Smooth upper glass cavity cutout + subtle upper-lower sand air pocket
+    float d_cut = 4.0f;
+    const float y_top_in = -(bulb_span - std::max(1.2f, 0.08f * rf));
+    const float y_neck_in = -0.10f * rf;
+    if (y >= y_top_in - 1.5f && y <= y_neck_in + 1.5f) {
+      const float u = std::clamp(-y / bulb_span, 0.0f, 1.0f);
+      const float s = u * u * (3.0f - 2.0f * u);
+      const float hw_in = std::max(0.0f, (0.17f + 0.49f * s) * rf - wall);
+      const float inv_n = 1.0f / (1.0f + 1.36f * u * (1.0f - u));
+      d_cut = std::max({(ax - hw_in) * inv_n, y_top_in - y, y - y_neck_in});
+    }
+    if (r >= 11) {
+      // Subtle negative-space air crescent above the settled sand mound in lower bulb
+      const float y_lo0 = 0.15f * rf;
+      const float y_lo1 = 0.36f * rf;
+      if (y >= y_lo0 - 1.5f && y <= y_lo1 + 1.5f) {
+        const float u = std::clamp(y / bulb_span, 0.0f, 1.0f);
+        const float s = u * u * (3.0f - 2.0f * u);
+        const float hw_in = std::max(0.0f, (0.17f + 0.49f * s) * rf - wall);
+        const float sand_arch = y_lo1 - 0.08f * rf * std::max(0.0f, 1.0f - (ax / std::max(1.0f, hw_in)));
+        d_cut = std::min(d_cut, std::max({ax - hw_in, y_lo0 - y, y - sand_arch}));
+      }
+    }
+    return std::max(d_solid, -d_cut);
+  });
 }
 
-void draw_icon_blinds(esphome::display::Display &it, int cx, int cy, esphome::Color col) {
-  const int hw = scale_s(10);
-  const int top_y = cy - scale_s(9);
-  fill_rect_row_major(it, cx - hw, top_y, 2 * hw + 1, 3, col);
-  for (int i = 1; i <= 3; i++) {
-    fill_rect_row_major(it, cx - hw + 2, top_y + i * scale_s(5), 2 * hw - 3, 2, col);
-  }
-  fast_vline(it, cx + hw - 2, top_y + 2, scale_s(17), col);
+void draw_icon_alarm_clock(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float dial_cy = 0.10f * rf;
+  const float dial_r = 0.74f * rf;
+  const float moat_r = dial_r + std::max(1.35f, 0.13f * rf);
+  const float bell_x = 0.56f * rf;
+  const float bell_y = -0.54f * rf;
+  const float bell_r = 0.34f * rf;
+  const float foot_w = std::max(1.05f, 0.11f * rf);
+  const SdfCapsule foot_l = SdfCapsule::make(-0.40f * rf, 0.66f * rf, -0.58f * rf, 0.90f * rf, foot_w);
+  const SdfCapsule foot_r = SdfCapsule::make(0.40f * rf, 0.66f * rf, 0.58f * rf, 0.90f * rf, foot_w);
+  const float hand_w = std::max(1.0f, 0.10f * rf);
+  const SdfCapsule h_hand = SdfCapsule::make(0.0f, dial_cy, -0.28f * rf, dial_cy - 0.20f * rf, hand_w * 1.05f);
+  const SdfCapsule m_hand = SdfCapsule::make(0.0f, dial_cy, 0.36f * rf, dial_cy - 0.26f * rf, hand_w);
+  const float arbor_r = std::max(1.15f, 0.12f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float d_dial = sd_circle_px(x, y, 0.0f, dial_cy, dial_r);
+    const float d_bells = std::max(
+        sd_circle_px(ax, y, bell_x, bell_y, bell_r),
+        -sd_circle_px(x, y, 0.0f, dial_cy, moat_r));
+    const float d_feet = std::min(foot_l.eval(x, y), foot_r.eval(x, y));
+    const float d_solid = std::min({d_dial, d_bells, d_feet});
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_cut = std::min({h_hand.eval(x, y), m_hand.eval(x, y),
+                                  sd_circle_px(x, y, 0.0f, dial_cy, arbor_r)});
+    return std::max(d_solid, -d_cut);
+  });
 }
 
-void draw_icon_settings_gear(esphome::display::Display &it, int cx, int cy,
-                             esphome::Color col, esphome::Color surf_bg) {
-  const int ro = scale_s(9);
-  const int tooth_r = scale_s(11);
-  for (int i = 0; i < 8; i++) {
-    const float rad = static_cast<float>(i) * (PI_F * 0.25f);
-    float sv = 0.0f, cv = 1.0f;
-    fast_sincos(rad, sv, cv);
-    fast_filled_circle_aa(it, cx + static_cast<int>(std::round(cv * tooth_r)),
-                          cy + static_cast<int>(std::round(sv * tooth_r)),
-                          std::max(2, scale_s(2)), col);
-  }
-  fast_filled_circle_aa(it, cx, cy, ro, col);
-  fast_filled_circle_aa(it, cx, cy, std::max(3, scale_s(4)), surf_bg);
+void draw_icon_stopwatch(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float dial_cy = 0.14f * rf;
+  const float dial_r = 0.76f * rf;
+  const float stem_w = std::max(1.05f, 0.11f * rf);
+  const SdfCapsule crown_cap = SdfCapsule::make(-0.24f * rf, -0.86f * rf, 0.24f * rf, -0.86f * rf,
+                                                std::max(1.0f, 0.095f * rf));
+  const SdfCapsule crown_stem = SdfCapsule::make(0.0f, -0.86f * rf, 0.0f, -0.58f * rf, stem_w);
+  const SdfCapsule pusher = SdfCapsule::make(0.50f * rf, -0.36f * rf, 0.72f * rf, -0.58f * rf, stem_w);
+  const float hand_w = std::max(1.0f, 0.10f * rf);
+  const SdfCapsule sweep = SdfCapsule::make(0.0f, dial_cy, 0.36f * rf, dial_cy - 0.36f * rf, hand_w);
+  const float arbor_r = std::max(1.15f, 0.125f * rf);
+  const float tick_r = std::max(0.80f, 0.07f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_dial = sd_circle_px(x, y, 0.0f, dial_cy, dial_r);
+    const float d_solid = std::min({d_dial, crown_cap.eval(x, y),
+                                    crown_stem.eval(x, y), pusher.eval(x, y)});
+    if (d_solid >= 1.5f) return d_solid;
+    float d_cut = std::min(sweep.eval(x, y), sd_circle_px(x, y, 0.0f, dial_cy, arbor_r));
+    if (r >= 11) {
+      d_cut = std::min({d_cut,
+                        sd_circle_px(x, y, 0.0f, dial_cy - 0.55f * rf, tick_r),
+                        sd_circle_px(x, y, -0.55f * rf, dial_cy, tick_r),
+                        sd_circle_px(x, y, 0.0f, dial_cy + 0.55f * rf, tick_r)});
+    }
+    return std::max(d_solid, -d_cut);
+  });
 }
 
-void draw_icon_remote(esphome::display::Display &it, int cx, int cy,
-                      esphome::Color col, esphome::Color surf_bg) {
-  const int hw = scale_s(7);
-  const int hh = scale_s(12);
-  fill_round_rect_aa(it, cx - hw, cy - hh, 2 * hw + 1, 2 * hh + 1, 4.0f, col);
-  fast_filled_circle_aa(it, cx, cy - scale_s(4), std::max(3, scale_s(4)), surf_bg);
-  fast_filled_circle_aa(it, cx - scale_s(3), cy + scale_s(5), std::max(1, scale_s(1)), surf_bg);
-  fast_filled_circle_aa(it, cx + scale_s(3), cy + scale_s(5), std::max(1, scale_s(1)), surf_bg);
-  fast_filled_circle_aa(it, cx - scale_s(3), cy + scale_s(9), std::max(1, scale_s(1)), surf_bg);
-  fast_filled_circle_aa(it, cx + scale_s(3), cy + scale_s(9), std::max(1, scale_s(1)), surf_bg);
+void draw_icon_shield_home(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float sh_hw = 0.84f * rf;
+  const float y_top = -0.94f * rf;
+  const float y_sh = -0.74f * rf;
+  const float y_mid = -0.14f * rf;
+  const float y_tip = 0.96f * rf;
+  const SdfSymTri roof = SdfSymTri::make(0.0f, -0.50f * rf, -0.06f * rf, 0.48f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    float hw = sh_hw;
+    float inv_n = 1.0f;
+    if (y > y_mid) {
+      const float u = std::clamp((y - y_mid) / (y_tip - y_mid), 0.0f, 1.0f);
+      hw = sh_hw * (1.0f - 0.20f * u - 0.80f * u * u);
+      inv_n = 1.0f / (1.0f + 0.36f * u * u);
+    }
+    const float y_crest = y_top + (y_sh - y_top) * std::min(1.0f, ax / sh_hw);
+    const float d_shield = std::max({(ax - hw) * inv_n, (y_crest - y) * 0.97f, y - y_tip});
+    if (d_shield >= 1.5f) return d_shield;
+
+    // Centered negative-space house cutout (pitched roof + walls, with subtle solid doorway arch)
+    const float d_walls = sd_rbox_px(x, y, 0.0f, 0.15f * rf, 0.33f * rf, 0.23f * rf, 0.05f * rf);
+    float d_house = std::min(roof.eval(x, y), d_walls);
+    if (r >= 12) {
+      const float d_door = sd_rbox_px(x, y, 0.0f, 0.28f * rf, 0.105f * rf, 0.14f * rf, 0.09f * rf);
+      d_house = std::max(d_house, -d_door);
+    }
+    return std::max(d_shield, -d_house);
+  });
 }
 
-void draw_icon_gamepad(esphome::display::Display &it, int cx, int cy,
-                       esphome::Color col, esphome::Color surf_bg) {
-  const int hw = scale_s(11);
-  const int hh = scale_s(7);
-  fill_round_rect_aa(it, cx - hw, cy - hh, 2 * hw + 1, 2 * hh + 1, static_cast<float>(hh), col);
-  fill_rect_row_major(it, cx - scale_s(6), cy - scale_s(1), scale_s(5), 2, surf_bg);
-  fill_rect_row_major(it, cx - scale_s(4), cy - scale_s(3), 2, scale_s(5), surf_bg);
-  fast_filled_circle_aa(it, cx + scale_s(5), cy - scale_s(2), std::max(1, scale_s(1)), surf_bg);
-  fast_filled_circle_aa(it, cx + scale_s(3), cy + scale_s(2), std::max(1, scale_s(1)), surf_bg);
+void draw_icon_camera(esphome::display::Display &it, int cx, int cy, int r,
+                      esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float lens_cy = 0.14f * rf;
+  const float moat_r = 0.42f * rf;
+  const float pupil_r = 0.21f * rf;
+  const float flash_r = std::max(0.90f, 0.085f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_body = sd_rbox_px(x, y, 0.0f, 0.14f * rf, 0.92f * rf, 0.64f * rf, 0.20f * rf);
+    const float d_hump = sd_rbox_px(x, y, 0.0f, -0.52f * rf, 0.40f * rf, 0.24f * rf, 0.12f * rf);
+    const float d_solid = std::min(d_body, d_hump);
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_lens_moat = std::max(
+        sd_circle_px(x, y, 0.0f, lens_cy, moat_r),
+        -sd_circle_px(x, y, 0.0f, lens_cy, pupil_r));
+    float d_cut = d_lens_moat;
+    if (r >= 11) {
+      d_cut = std::min(d_cut, sd_circle_px(x, y, 0.62f * rf, -0.24f * rf, flash_r));
+    }
+    return std::max(d_solid, -d_cut);
+  });
 }
 
-void draw_icon_wrench(esphome::display::Display &it, int cx, int cy, esphome::Color col) {
-  const int d = scale_s(8);
-  fast_line(it, cx - d, cy + d, cx + d - 2, cy - d + 2, col);
-  fast_line(it, cx - d + 1, cy + d, cx + d - 1, cy - d + 2, col);
-  fast_line(it, cx - d, cy + d - 1, cx + d - 2, cy - d + 1, col);
-  fast_circle_aa(it, cx + scale_s(5), cy - scale_s(5), static_cast<float>(scale_s(5)), col, 2.0f);
-  fast_filled_circle_aa(it, cx - d + 1, cy + d - 1, std::max(2, scale_s(2)), col);
+void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool waves, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float shift_x = waves ? 0.0f : (0.24f * rf);
+  const float arc_cx = -0.06f * rf + shift_x;
+  const float r1 = 0.46f * rf;
+  const float r2 = 0.80f * rf;
+  const float w_ht = std::max(0.95f, 0.095f * rf);
+  static constexpr float kSin40 = 0.642788f;
+  static constexpr float kCos40 = 0.766044f;
+
+  // Flared cone normal from (-0.48, 0.30) to (-0.04, 0.74): dx=0.44, dy=0.44 (45 deg)
+  static constexpr float kInvSqrt2 = 0.707107f;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ay = std::fabs(y);
+    const float lx = x - shift_x;
+    const float d_box = sd_rbox_px(lx, y, -0.68f * rf, 0.0f, 0.20f * rf, 0.32f * rf, 0.08f * rf);
+    const float d_cone_slope = ((ay - 0.30f * rf) - (lx + 0.50f * rf)) * kInvSqrt2;
+    const float d_cone = std::max({d_cone_slope, -0.52f * rf - lx, lx - (-0.04f * rf), ay - 0.76f * rf});
+    float d = std::min(d_box, d_cone);
+
+    if (waves) {
+      const float wx = x - arc_cx;
+      auto eval_wave = [&](float rw) -> float {
+        float dw = 4.0f;
+        if (wx > 0.0f && ay <= wx * (kSin40 / kCos40)) {
+          dw = sd_ring_px(x, y, arc_cx, 0.0f, rw, w_ht);
+        }
+        return std::min(dw, sd_circle_px(x, ay, arc_cx + rw * kCos40, rw * kSin40, w_ht));
+      };
+      d = std::min({d, eval_wave(r1), eval_wave(r2)});
+    }
+    return d;
+  });
+}
+
+void draw_icon_thermometer(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float tx = (r >= 10) ? (-0.10f * rf) : 0.0f;
+  const float stem_w = std::max(1.8f, 0.25f * rf);
+  const float bulb_cy = 0.48f * rf;
+  const float bulb_r = 0.46f * rf;
+  const SdfCapsule stem = SdfCapsule::make(tx, -0.72f * rf, tx, bulb_cy, stem_w);
+  const float tick_h = std::max(0.85f, 0.075f * rf);
+  const SdfCapsule tk0 = SdfCapsule::make(tx + stem_w + 0.14f * rf, -0.68f * rf,
+                                          tx + stem_w + 0.40f * rf, -0.68f * rf, tick_h);
+  const SdfCapsule tk1 = SdfCapsule::make(tx + stem_w + 0.14f * rf, -0.38f * rf,
+                                          tx + stem_w + 0.32f * rf, -0.38f * rf, tick_h);
+  const SdfCapsule tk2 = SdfCapsule::make(tx + stem_w + 0.14f * rf, -0.08f * rf,
+                                          tx + stem_w + 0.40f * rf, -0.08f * rf, tick_h);
+  const SdfCapsule slit = SdfCapsule::make(tx, -0.68f * rf, tx, -0.10f * rf,
+                                           std::max(0.80f, 0.085f * rf));
+  const float inner_r = std::max(1.1f, 0.18f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d_solid = std::min(stem.eval(x, y), sd_circle_px(x, y, tx, bulb_cy, bulb_r));
+    if (r >= 10) {
+      d_solid = std::min({d_solid, tk0.eval(x, y), tk1.eval(x, y), tk2.eval(x, y)});
+    }
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_cut = std::min(slit.eval(x, y), sd_circle_px(x, y, tx, bulb_cy, inner_r));
+    return std::max(d_solid, -d_cut);
+  });
+}
+
+void draw_icon_lock(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool is_locked, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float body_cy = 0.40f * rf;
+  const float body_hx = 0.72f * rf;
+  const float body_hy = 0.50f * rf;
+  const float sh_cx = is_locked ? 0.0f : (0.28f * rf);
+  const float sh_cy = is_locked ? (-0.18f * rf) : (-0.30f * rf);
+  const float sh_r = 0.36f * rf;
+  const float sh_ht = std::max(1.15f, 0.125f * rf);
+  const float l_leg_end = is_locked ? 0.02f * rf : -0.18f * rf;
+  const SdfCapsule leg_l = SdfCapsule::make(sh_cx - sh_r, sh_cy, sh_cx - sh_r, l_leg_end, sh_ht);
+  const SdfCapsule leg_r = SdfCapsule::make(sh_cx + sh_r, sh_cy, sh_cx + sh_r, 0.04f * rf, sh_ht);
+  const SdfCapsule kh_slot = SdfCapsule::make(0.0f, 0.34f * rf, 0.0f, 0.62f * rf,
+                                              std::max(0.90f, 0.09f * rf));
+  const float kh_r = std::max(1.25f, 0.155f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_body = sd_rbox_px(x, y, 0.0f, body_cy, body_hx, body_hy, 0.20f * rf);
+    float d_arch = 4.0f;
+    if (y <= sh_cy + 0.5f) {
+      d_arch = sd_ring_px(x, y, sh_cx, sh_cy, sh_r, sh_ht);
+    }
+    const float d_solid = std::min({d_body, d_arch, leg_l.eval(x, y), leg_r.eval(x, y)});
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_cut = std::min(sd_circle_px(x, y, 0.0f, 0.32f * rf, kh_r), kh_slot.eval(x, y));
+    return std::max(d_solid, -d_cut);
+  });
+}
+
+void draw_icon_garage_door(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool is_open, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const SdfSymTri roof = SdfSymTri::make(0.0f, -0.92f * rf, -0.26f * rf, 0.96f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_walls = sd_rbox_px(x, y, 0.0f, 0.30f * rf, 0.84f * rf, 0.58f * rf, 0.08f * rf);
+    const float d_facade = std::min(roof.eval(x, y), d_walls);
+    if (d_facade >= 1.5f) return d_facade;
+
+    const float d_bay = sd_rbox_px(x, y, 0.0f, 0.38f * rf, 0.58f * rf, 0.52f * rf, 0.04f * rf);
+    float d_slats = 4.0f;
+    const float slat_hx = 0.48f * rf;
+    const float slat_hy = std::max(0.85f, 0.085f * rf);
+    if (is_open) {
+      d_slats = sd_rbox_px(x, y, 0.0f, 0.02f * rf, slat_hx, slat_hy * 1.15f, 0.5f);
+    } else {
+      d_slats = std::min({
+          sd_rbox_px(x, y, 0.0f, 0.06f * rf, slat_hx, slat_hy, 0.5f),
+          sd_rbox_px(x, y, 0.0f, 0.36f * rf, slat_hx, slat_hy, 0.5f),
+          sd_rbox_px(x, y, 0.0f, 0.66f * rf, slat_hx, slat_hy, 0.5f)});
+    }
+    const float d_cut = std::max(d_bay, -d_slats);
+    return std::max(d_facade, -d_cut);
+  });
+}
+
+void draw_icon_robot_vacuum(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float body_r = 0.94f * rf;
+  const float bump_r = 0.72f * rf;
+  const float bump_ht = std::max(0.85f, 0.075f * rf);
+  const float turret_moat = 0.36f * rf;
+  const float turret_cap = 0.18f * rf;
+  const SdfCapsule dock_slit = SdfCapsule::make(-0.24f * rf, 0.66f * rf, 0.24f * rf, 0.66f * rf,
+                                                std::max(0.75f, 0.065f * rf));
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_body = sd_circle_px(x, y, 0.0f, 0.0f, body_r);
+    if (d_body >= 1.5f) return d_body;
+
+    float d_bumper = 4.0f;
+    if (y < -0.18f * rf && std::fabs(x) < 0.66f * rf) {
+      d_bumper = sd_ring_px(x, y, 0.0f, 0.0f, bump_r, bump_ht);
+    }
+    const float d_lidar = std::max(
+        sd_circle_px(x, y, 0.0f, 0.06f * rf, turret_moat),
+        -sd_circle_px(x, y, 0.0f, 0.06f * rf, turret_cap));
+    float d_cut = std::min(d_bumper, d_lidar);
+    if (r >= 12) {
+      d_cut = std::min(d_cut, dock_slit.eval(x, y));
+    }
+    return std::max(d_body, -d_cut);
+  });
+}
+
+void draw_icon_eighth_notes(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float head_r = std::max(2.2f, 0.29f * rf);
+  const float lx = -0.44f * rf;
+  const float ly = 0.56f * rf;
+  const float rx = 0.38f * rf;
+  const float ry = 0.38f * rf;
+  const float stem_w = std::max(1.0f, 0.105f * rf);
+  const float sx_l = lx + head_r - stem_w * 0.6f;
+  const float sy_l = -0.64f * rf;
+  const float sx_r = rx + head_r - stem_w * 0.6f;
+  const float sy_r = -0.84f * rf;
+  const SdfCapsule stem_l = SdfCapsule::make(sx_l, sy_l, sx_l, ly, stem_w);
+  const SdfCapsule stem_r = SdfCapsule::make(sx_r, sy_r, sx_r, ry, stem_w);
+  const SdfCapsule beam_hi = SdfCapsule::make(sx_l, sy_l, sx_r, sy_r, std::max(1.2f, 0.135f * rf));
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return std::min({sd_circle_px(x, y, lx, ly, head_r),
+                     sd_circle_px(x, y, rx, ry, head_r),
+                     stem_l.eval(x, y), stem_r.eval(x, y),
+                     beam_hi.eval(x, y)});
+  });
+}
+
+void draw_icon_calendar(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float tab_w = std::max(1.0f, 0.11f * rf);
+  const SdfCapsule ring_l = SdfCapsule::make(-0.44f * rf, -0.92f * rf, -0.44f * rf, -0.58f * rf, tab_w);
+  const SdfCapsule ring_r = SdfCapsule::make(0.44f * rf, -0.92f * rf, 0.44f * rf, -0.58f * rf, tab_w);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_page = sd_rbox_px(x, y, 0.0f, 0.12f * rf, 0.86f * rf, 0.78f * rf, 0.18f * rf);
+    const float d_solid = std::min({d_page, ring_l.eval(x, y), ring_r.eval(x, y)});
+    if (d_solid >= 1.5f) return d_solid;
+
+    const float seam_h = std::max(0.80f, 0.075f * rf);
+    float d_cut = sd_rbox_px(x, y, 0.0f, -0.26f * rf, 0.90f * rf, seam_h, 0.0f);
+    const float pip_s = std::max(0.95f, 0.115f * rf);
+    for (int rr = 0; rr < 2; ++rr) {
+      const float py = (0.08f + static_cast<float>(rr) * 0.40f) * rf;
+      for (int cc = -1; cc <= 1; ++cc) {
+        const float px = static_cast<float>(cc) * 0.42f * rf;
+        d_cut = std::min(d_cut, sd_rbox_px(x, y, px, py, pip_s, pip_s, 0.35f * pip_s));
+      }
+    }
+    return std::max(d_solid, -d_cut);
+  });
+}
+
+void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float dome_cy = -0.24f * rf;
+  const float dome_r = 0.64f * rf;
+  const float seam_h = std::max(0.80f, 0.07f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_dome = sd_circle_px(x, y, 0.0f, dome_cy, dome_r);
+    const float d_neck = sd_rbox_px(x, y, 0.0f, 0.26f * rf, 0.38f * rf, 0.24f * rf, 0.08f * rf);
+    const float d_base = sd_rbox_px(x, y, 0.0f, 0.72f * rf, 0.30f * rf, 0.16f * rf, 0.08f * rf);
+    const float d_solid = std::min({d_dome, d_neck, d_base});
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_seam = sd_rbox_px(x, y, 0.0f, 0.50f * rf, 0.50f * rf, seam_h, 0.0f);
+    return std::max(d_solid, -d_seam);
+  });
+}
+
+void draw_icon_ceiling_fan(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float hub_r = 0.24f * rf;
+  const float pin_r = std::max(0.75f, 0.075f * rf);
+  const float moat_r = 0.34f * rf;
+
+  auto sd_blade = [&](float u, float v) -> float {
+    // Swept symmetric paddle blade extending along +v from moat_r to 0.96*rf
+    const float tip_cy = 0.72f * rf;
+    const float tip_rx = 0.23f * rf;
+    const float tip_ry = 0.24f * rf;
+    const float dx_e = (u - 0.08f * rf) / tip_rx;
+    const float dy_e = (v - tip_cy) / tip_ry;
+    const float d_tip = (dx_e * dx_e + dy_e * dy_e - 1.0f) * (0.5f * std::min(tip_rx, tip_ry));
+    float d_arm = 4.0f;
+    if (v >= 0.28f * rf && v <= tip_cy + 1.0f) {
+      const float t = std::clamp((v - 0.30f * rf) / (tip_cy - 0.30f * rf), 0.0f, 1.0f);
+      const float u_lo = -0.11f * rf;
+      const float u_hi = (0.11f + 0.18f * t) * rf;
+      d_arm = std::max({u_lo - u, u - u_hi, 0.30f * rf - v, v - tip_cy});
+    }
+    return std::min(d_tip, d_arm);
+  };
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_hub = std::max(sd_circle_px(x, y, 0.0f, 0.0f, hub_r),
+                                 -sd_circle_px(x, y, 0.0f, 0.0f, pin_r));
+    const float d_blades = std::max(
+        std::min({sd_blade(x, -y), sd_blade(y, x), sd_blade(-x, y), sd_blade(-y, -x)}),
+        -sd_circle_px(x, y, 0.0f, 0.0f, moat_r));
+    return std::min(d_hub, d_blades);
+  });
+}
+
+void draw_icon_curtains(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float rod_hy = std::max(0.95f, 0.095f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float d_rod = sd_rbox_px(x, y, 0.0f, -0.82f * rf, 0.94f * rf, rod_hy, rod_hy);
+    // Twin sculpted curtain panels sweeping outward toward tie-back waist at y = +0.20*rf
+    float d_panel = 4.0f;
+    if (y >= -0.68f * rf - 1.5f && y <= 0.88f * rf + 1.5f) {
+      const float u = std::clamp((y - (-0.68f * rf)) / (1.56f * rf), 0.0f, 1.0f);
+      const float inner_x = (0.08f + 0.36f * std::min(1.0f, u * 1.45f)) * rf;
+      const float d_drape = std::max({ax - 0.84f * rf, inner_x - ax,
+                                      -0.68f * rf - y, y - 0.88f * rf});
+      const float seam_h = std::max(0.75f, 0.06f * rf);
+      const float d_tie = (r >= 11)
+          ? sd_rbox_px(ax, y, 0.64f * rf, 0.24f * rf, 0.26f * rf, seam_h, 0.0f)
+          : 4.0f;
+      d_panel = std::max(d_drape, -d_tie);
+    }
+    return std::min(d_rod, d_panel);
+  });
+}
+
+void draw_icon_blinds_slats(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool is_open, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float cord_x = 0.68f * rf;
+  const SdfCapsule cord = SdfCapsule::make(cord_x, -0.72f * rf, cord_x, 0.56f * rf,
+                                           std::max(0.75f, 0.065f * rf));
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d = sd_rbox_px(x, y, 0.0f, -0.76f * rf, 0.88f * rf,
+                         std::max(1.1f, 0.12f * rf), 0.08f * rf);
+    const int n_slats = is_open ? 2 : 4;
+    const float slat_hy = std::max(0.90f, 0.085f * rf);
+    for (int s = 0; s < n_slats; ++s) {
+      const float sy = (-0.36f + static_cast<float>(s) * 0.36f) * rf;
+      d = std::min(d, sd_rbox_px(x, y, -0.08f * rf, sy, 0.66f * rf, slat_hy, slat_hy));
+    }
+    d = std::min({d, cord.eval(x, y), sd_circle_px(x, y, cord_x, 0.64f * rf, std::max(1.2f, 0.13f * rf))});
+    return d;
+  });
+}
+
+void draw_icon_switch_pill(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool is_on, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float pill_hx = 0.92f * rf;
+  const float pill_hy = 0.54f * rf;
+  const float thumb_cx = (is_on ? 0.38f : -0.38f) * rf;
+  const float thumb_r = 0.34f * rf;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_pill = sd_rbox_px(x, y, 0.0f, 0.0f, pill_hx, pill_hy, pill_hy);
+    if (d_pill >= 1.5f) return d_pill;
+    return std::max(d_pill, -sd_circle_px(x, y, thumb_cx, 0.0f, thumb_r));
+  });
+}
+
+void draw_icon_sparkle(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float ray_w = std::max(0.85f, 0.08f * rf);
+  const SdfCapsule d1 = SdfCapsule::make(-0.52f * rf, -0.52f * rf, 0.52f * rf, 0.52f * rf, ray_w);
+  const SdfCapsule d2 = SdfCapsule::make(-0.52f * rf, 0.52f * rf, 0.52f * rf, -0.52f * rf, ray_w);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    // Sculpted 4-point concave diamond star + 4 subtle diagonal rays
+    const float u_x = std::clamp(ax / (0.94f * rf), 0.0f, 1.0f);
+    const float u_y = std::clamp(ay / (0.94f * rf), 0.0f, 1.0f);
+    const float w_h = 0.24f * rf * (1.0f - u_x) * (1.0f - u_x) + std::max(0.75f, 0.06f * rf) * (1.0f - u_x);
+    const float w_v = 0.24f * rf * (1.0f - u_y) * (1.0f - u_y) + std::max(0.75f, 0.06f * rf) * (1.0f - u_y);
+    const float star_h = std::max(ay - w_h, ax - 0.94f * rf);
+    const float star_v = std::max(ax - w_v, ay - 0.94f * rf);
+    return std::min({star_h, star_v, d1.eval(x, y), d2.eval(x, y),
+                     sd_circle_px(x, y, 0.0f, 0.0f, 0.24f * rf)});
+  });
+}
+
+void draw_icon_bento_grid(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float off = 0.44f * rf;
+  const float th = 0.34f * rf;
+  const float cr = 0.12f * rf;
+  const float hole = std::max(1.0f, 0.14f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    float d = sd_rbox_px(ax, ay, off, off, th, th, cr);
+    if (x > 0.0f && y > 0.0f && r >= 10) {
+      d = std::max(d, -sd_rbox_px(x, y, off, off, hole, hole, 0.04f * rf));
+    }
+    return d;
+  });
+}
+
+void draw_icon_droplet(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(5, r));
+  const float bulb_cy = 0.24f * rf;
+  const float bulb_r = 0.62f * rf;
+  const SdfSymTri cone = SdfSymTri::make(0.0f, -0.92f * rf, bulb_cy + 0.06f * rf, bulb_r * 0.98f);
+  const SdfCapsule glint = SdfCapsule::make(-0.26f * rf, 0.14f * rf, -0.14f * rf, 0.42f * rf,
+                                            std::max(0.80f, 0.085f * rf));
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_solid = std::min(sd_circle_px(x, y, 0.0f, bulb_cy, bulb_r), cone.eval(x, y));
+    if (d_solid >= 1.5f || r < 8) return d_solid;
+    return std::max(d_solid, -glint.eval(x, y));
+  });
+}
+
+void draw_icon_intercom_handset(esphome::display::Display &it, int cx, int cy, int r,
+                                esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const SdfCapsule spine = SdfCapsule::make(-0.54f * rf, -0.34f * rf, 0.34f * rf, 0.54f * rf,
+                                            std::max(1.25f, 0.17f * rf));
+  const SdfCapsule ear = SdfCapsule::make(-0.66f * rf, -0.62f * rf, -0.36f * rf, -0.32f * rf,
+                                          std::max(1.5f, 0.22f * rf));
+  const SdfCapsule mic = SdfCapsule::make(0.32f * rf, 0.36f * rf, 0.62f * rf, 0.66f * rf,
+                                          std::max(1.5f, 0.22f * rf));
+  const float w_ht = std::max(0.85f, 0.085f * rf);
+  const float w_cx = 0.04f * rf;
+  const float w_cy = -0.04f * rf;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d = std::min({spine.eval(x, y), ear.eval(x, y), mic.eval(x, y)});
+    if (x > w_cx + 0.04f * rf && y < w_cy - 0.04f * rf) {
+      d = std::min({d,
+                    sd_ring_px(x, y, w_cx, w_cy, 0.44f * rf, w_ht),
+                    sd_ring_px(x, y, w_cx, w_cy, 0.74f * rf, w_ht)});
+    }
+    return d;
+  });
+}
+
+void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float dome_r = 0.56f * rf;
+  const float dome_cy = -0.18f * rf;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_knob = sd_circle_px(x, y, 0.0f, -0.82f * rf, 0.14f * rf);
+    const float d_dome = sd_circle_px(x, y, 0.0f, dome_cy, dome_r);
+    const float d_skirt = sd_rbox_px(x, y, 0.0f, 0.12f * rf, dome_r, 0.30f * rf, 0.06f * rf);
+    const float d_brim = sd_rbox_px(x, y, 0.0f, 0.44f * rf, 0.78f * rf,
+                                    std::max(1.0f, 0.11f * rf), 0.11f * rf);
+    const float d_clap = std::max(
+        sd_circle_px(x, y, 0.0f, 0.68f * rf, 0.20f * rf),
+        -sd_rbox_px(x, y, 0.0f, 0.48f * rf, 0.50f * rf, std::max(1.0f, 0.11f * rf), 0.0f));
+    return std::min({d_knob, d_dome, d_skirt, d_brim, d_clap});
+  });
 }
 
 // ==============================================================================
@@ -1521,17 +2126,6 @@ void render_center_arbor_aa(esphome::display::Display &it, int cx, int cy,
   fast_filled_circle_aa(it, cx, cy, r_outer, outer_col);
   fast_filled_circle_aa(it, cx, cy, r_cap, cap_col);
   fast_filled_circle_aa(it, cx, cy, r_jewel, jewel_col);
-}
-
-void draw_icon_clock_face(esphome::display::Display &it, int cx, int cy, int r,
-                          esphome::Color col) {
-  const float fr = static_cast<float>(std::max(7, r));
-  fast_circle_aa(it, cx, cy, fr, col, 2.0f);
-  const float fcx = static_cast<float>(cx);
-  const float fcy = static_cast<float>(cy);
-  draw_aa_line(it, fcx, fcy, fcx - fr * 0.42f, fcy - fr * 0.32f, 2.0f, col);
-  draw_aa_line(it, fcx, fcy, fcx + fr * 0.48f, fcy - fr * 0.48f, 1.8f, col);
-  fast_filled_circle_aa(it, cx, cy, 2, col);
 }
 
 void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w, int h,

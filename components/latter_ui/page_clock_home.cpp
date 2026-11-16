@@ -150,122 +150,20 @@ void draw_home_activity_row_contents(
                                                 : ((SCREEN_W < 380) ? 16 : scale_s(18)));
 
   const int gy = row_y;
-  if (is_list_row) {
-    if (cur_act.kind == 1) {
-      fill_rect_row_major(it, gx - 6, gy - 9, 13, 2, fg_w);
-      fill_rect_row_major(it, gx - 6, gy + 8, 13, 2, fg_w);
-      fast_line(it, gx - 5, gy - 7, gx - 1, gy, fg_w);
-      fast_line(it, gx + 5, gy - 7, gx + 1, gy, fg_w);
-      fast_line(it, gx - 1, gy, gx - 5, gy + 7, fg_w);
-      fast_line(it, gx + 1, gy, gx + 5, gy + 7, fg_w);
-      fast_filled_triangle(it, gx - 3, gy - 4, gx + 3, gy - 4, gx, gy - 1, fg_w);
-      fast_filled_triangle(it, gx - 4, gy + 7, gx + 4, gy + 7, gx, gy + 2, fg_w);
-    } else if (cur_act.kind == 2) {
-      fill_rect_row_major(it, gx - 2, gy - 10, 5, 2, fg_w);
-      fast_line(it, gx + 5, gy - 6, gx + 7, gy - 8, fg_w);
-      fast_circle(it, gx, gy + 1, 8, fg_w);
-      fast_circle(it, gx, gy + 1, 7, fg_sec);
-      fast_line(it, gx, gy + 1, gx + 4, gy - 3, fg_w);
-      fast_pixel(it, gx, gy + 1, fg_w);
-    } else if (cur_act.kind == 3) {
-      fast_filled_circle(it, gx - 4, gy + 5, 3, fg_w);
-      fast_filled_circle(it, gx + 4, gy + 3, 3, fg_w);
-      fill_rect_row_major(it, gx - 2, gy - 6, 2, 11, fg_w);
-      fill_rect_row_major(it, gx + 5, gy - 8, 2, 11, fg_w);
-      fast_line(it, gx - 2, gy - 6, gx + 6, gy - 8, fg_w);
-      fast_line(it, gx - 2, gy - 5, gx + 6, gy - 7, fg_w);
-    } else if (cur_act.kind == 5) {
-      fast_rect_outline(it, gx - 7, gy - 6, 15, 14, fg_w);
-      fill_rect_row_major(it, gx - 7, gy - 6, 15, 4, fg_w);
-      fill_rect_row_major(it, gx - 4, gy - 8, 2, 3, fg_w);
-      fill_rect_row_major(it, gx + 3, gy - 8, 2, 3, fg_w);
-      fill_rect_row_major(it, gx - 4, gy + 1, 2, 2, fg_sec);
-      fill_rect_row_major(it, gx,     gy + 1, 2, 2, fg_w);
-      fill_rect_row_major(it, gx + 4, gy + 1, 2, 2, fg_w);
-    } else if (cur_act.kind == 6) {
-      fill_rect_row_major(it, gx - 7, gy - 6, 4, 5, fg_w);
-      fill_rect_row_major(it, gx + 2, gy + 2, 5, 4, fg_w);
-      fast_line(it, gx - 5, gy - 2, gx + 2, gy + 4, fg_w);
-      fast_line(it, gx - 4, gy - 2, gx + 3, gy + 4, fg_w);
-      fast_line(it, gx + 2, gy - 5, gx + 5, gy - 5, fg_sec);
-      fast_line(it, gx + 5, gy - 5, gx + 5, gy - 2, fg_sec);
-      fast_line(it, gx + 4, gy - 8, gx + 8, gy - 8, fg_sec);
-      fast_line(it, gx + 8, gy - 8, gx + 8, gy - 4, fg_sec);
-    } else {
-      fast_filled_circle(it, gx - 6, gy - 6, 2, fg_w);
-      fast_filled_circle(it, gx + 6, gy - 6, 2, fg_w);
-      fast_circle(it, gx, gy + 1, 8, fg_w);
-      fast_line(it, gx - 5, gy + 8, gx - 7, gy + 10, fg_w);
-      fast_line(it, gx + 5, gy + 8, gx + 7, gy + 10, fg_w);
-      fast_line(it, gx, gy + 1, gx,     gy - 4, fg_w);
-      fast_line(it, gx, gy + 1, gx + 4, gy + 3, fg_w);
-    }
+  const int icon_r = is_list_row ? scale_s(8) : scale_s(10);
+  const bool icon_sh = (alpha >= 0.85f);
+  if (cur_act.kind == 1) {
+    ui::draw_icon_hourglass(it, gx, gy, icon_r, fg_w, icon_sh);
+  } else if (cur_act.kind == 2) {
+    ui::draw_icon_stopwatch(it, gx, gy, icon_r, fg_w, icon_sh);
+  } else if (cur_act.kind == 3) {
+    ui::draw_icon_eighth_notes(it, gx, gy, icon_r, fg_w, icon_sh);
+  } else if (cur_act.kind == 5) {
+    ui::draw_icon_calendar(it, gx, gy, icon_r, fg_w, icon_sh);
+  } else if (cur_act.kind == 6) {
+    ui::draw_icon_intercom_handset(it, gx, gy, icon_r, fg_w, icon_sh);
   } else {
-    if (cur_act.kind == 1) {
-      fill_rect_row_major(it, gx - 9, gy - 12, 19, 2, fg_w);
-      fill_rect_row_major(it, gx - 9, gy + 11, 19, 2, fg_w);
-      fast_line(it, gx - 7, gy - 10, gx - 1, gy, fg_w);
-      fast_line(it, gx - 6, gy - 10, gx,     gy, fg_w);
-      fast_line(it, gx + 7, gy - 10, gx + 1, gy, fg_w);
-      fast_line(it, gx + 6, gy - 10, gx,     gy, fg_w);
-      fast_line(it, gx - 1, gy, gx - 7, gy + 10, fg_w);
-      fast_line(it, gx,     gy, gx - 6, gy + 10, fg_w);
-      fast_line(it, gx + 1, gy, gx + 7, gy + 10, fg_w);
-      fast_line(it, gx,     gy, gx + 6, gy + 10, fg_w);
-      fast_filled_triangle(it, gx - 4, gy - 6, gx + 4, gy - 6, gx, gy - 1, fg_w);
-      fast_filled_triangle(it, gx - 5, gy + 9, gx + 5, gy + 9, gx, gy + 3, fg_w);
-    } else if (cur_act.kind == 2) {
-      fill_rect_row_major(it, gx - 3, gy - 13, 7, 2, fg_w);
-      fill_rect_row_major(it, gx - 1, gy - 11, 3, 2, fg_w);
-      fast_line(it, gx + 7, gy - 7, gx + 10, gy - 10, fg_w);
-      fast_line(it, gx + 8, gy - 6, gx + 11, gy - 9,  fg_w);
-      fast_circle(it, gx, gy + 2, 10, fg_w);
-      fast_circle(it, gx, gy + 2, 9,  fg_w);
-      fast_line(it, gx,     gy + 2, gx + 5, gy - 3, fg_w);
-      fast_line(it, gx + 1, gy + 2, gx + 5, gy - 2, fg_w);
-      fast_filled_circle(it, gx, gy + 2, 2, fg_w);
-    } else if (cur_act.kind == 3) {
-      fast_filled_circle(it, gx - 6, gy + 6, 4, fg_w);
-      fast_filled_circle(it, gx + 5, gy + 4, 4, fg_w);
-      fill_rect_row_major(it, gx - 3, gy - 9,  2, 15, fg_w);
-      fill_rect_row_major(it, gx + 8, gy - 11, 2, 15, fg_w);
-      fast_line(it, gx - 3, gy - 9, gx + 9, gy - 11, fg_w);
-      fast_line(it, gx - 3, gy - 8, gx + 9, gy - 10, fg_w);
-      fast_line(it, gx - 3, gy - 7, gx + 9, gy - 9,  fg_w);
-    } else if (cur_act.kind == 5) {
-      fast_rect_outline(it, gx - 10, gy - 9, 21, 20, fg_w);
-      fast_rect_outline(it, gx - 9,  gy - 8, 19, 18, fg_w);
-      fill_rect_row_major(it, gx - 9, gy - 8, 19, 5, fg_w);
-      fill_rect_row_major(it, gx - 6, gy - 12, 3, 4, fg_w);
-      fill_rect_row_major(it, gx + 4, gy - 12, 3, 4, fg_w);
-      for (int r = 0; r < 2; r++) {
-        for (int c = 0; c < 3; c++) {
-          fill_rect_row_major(it, gx - 6 + c * 5, gy - 1 + r * 5, 3, 3, (r == 0 && c == 1) ? fg_sec : fg_w);
-        }
-      }
-    } else if (cur_act.kind == 6) {
-      fill_rect_row_major(it, gx - 9, gy - 9, 5, 6, fg_w);
-      fill_rect_row_major(it, gx + 3, gy + 3, 6, 5, fg_w);
-      for (int w = -1; w <= 1; w++) {
-        fast_line(it, gx - 6 + w, gy - 4, gx + 4 + w, gy + 5, fg_w);
-      }
-      fast_line(it, gx + 2, gy - 6, gx + 6, gy - 6, fg_sec);
-      fast_line(it, gx + 6, gy - 6, gx + 6, gy - 2, fg_sec);
-      fast_line(it, gx + 4, gy - 10, gx + 10, gy - 10, fg_sec);
-      fast_line(it, gx + 10, gy - 10, gx + 10, gy - 4, fg_sec);
-    } else {
-      fast_filled_circle(it, gx - 8, gy - 7, 3, fg_w);
-      fast_filled_circle(it, gx + 8, gy - 7, 3, fg_w);
-      fast_circle(it, gx, gy + 2, 10, fg_w);
-      fast_circle(it, gx, gy + 2, 9,  fg_w);
-      fast_line(it, gx - 6, gy + 10, gx - 9, gy + 13, fg_w);
-      fast_line(it, gx - 5, gy + 10, gx - 8, gy + 13, fg_w);
-      fast_line(it, gx + 6, gy + 10, gx + 9, gy + 13, fg_w);
-      fast_line(it, gx + 5, gy + 10, gx + 8, gy + 13, fg_w);
-      fast_line(it, gx, gy + 2, gx,     gy - 4, fg_w);
-      fast_line(it, gx, gy + 2, gx + 4, gy + 4, fg_w);
-      fast_filled_circle(it, gx, gy + 2, 2, fg_w);
-    }
+    ui::draw_icon_alarm_clock(it, gx, gy, icon_r, fg_w, icon_sh);
   }
 
   struct FitActMemo {
@@ -317,11 +215,12 @@ void draw_home_activity_row_contents(
     }
   }
 
-  const int sym_s = is_list_row ? 5 : 6;
+  const int sym_s = is_list_row ? scale_s(5) : scale_s(6);
   if (cur_act.kind == 5) {
+    const int ch_dx = std::max(2, scale_x(3));
     for (int w = -1; w <= 0; w++) {
-      fast_line(it, act_bx - 3 + w, gy - sym_s, act_bx + 3 + w, gy, fg_w);
-      fast_line(it, act_bx + 3 + w, gy, act_bx - 3 + w, gy + sym_s, fg_w);
+      fast_line(it, act_bx - ch_dx + w, gy - sym_s, act_bx + ch_dx + w, gy, fg_w);
+      fast_line(it, act_bx + ch_dx + w, gy, act_bx - ch_dx + w, gy + sym_s, fg_w);
     }
   } else if (cur_act.kind == 4) {
     for (int w = -1; w <= 0; w++) {
@@ -329,13 +228,17 @@ void draw_home_activity_row_contents(
       fast_line(it, act_bx - sym_s + w, gy + sym_s, act_bx + sym_s + w, gy - sym_s, fg_w);
     }
   } else if (cur_act.kind == 6) {
-    const int sq = sym_s - 1;
+    const int sq = std::max(3, sym_s - 1);
     fill_rect_row_major(it, act_bx - sq, gy - sq, sq * 2 + 1, sq * 2 + 1, fg_w);
   } else if (cur_act.is_active) {
-    fill_rect_row_major(it, act_bx - 5, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
-    fill_rect_row_major(it, act_bx + 3, gy - sym_s, 3, sym_s * 2 + 1, fg_w);
+    const int pw = std::max(2, scale_s(3));
+    const int px = std::max(3, scale_x(5));
+    fill_rect_row_major(it, act_bx - px, gy - sym_s, pw, sym_s * 2 + 1, fg_w);
+    fill_rect_row_major(it, act_bx + px - pw + 1, gy - sym_s, pw, sym_s * 2 + 1, fg_w);
   } else {
-    fast_filled_triangle(it, act_bx - 4, gy - sym_s, act_bx - 4, gy + sym_s, act_bx + sym_s + 1, gy, fg_w);
+    fast_filled_triangle(it, act_bx - scale_x(4), gy - sym_s,
+                         act_bx - scale_x(4), gy + sym_s,
+                         act_bx + sym_s + 1, gy, fg_w);
   }
 }
 
@@ -367,9 +270,11 @@ void render_home_activity_card_row(
 
   if (has_dropdown_ext) {
     fast_line(it, div2_x, pill_y - div_h, div2_x, pill_y + div_h, card_brd);
+    const int ch_w = scale_x(8);
+    const int ch_h = scale_y(4);
     for (int w = -1; w <= 1; w++) {
-      fast_line(it, drop_bx - 8, pill_y - 4 + w, drop_bx, pill_y + 4 + w, col_white);
-      fast_line(it, drop_bx + 8, pill_y - 4 + w, drop_bx, pill_y + 4 + w, col_white);
+      fast_line(it, drop_bx - ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
+      fast_line(it, drop_bx + ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
     }
   }
 }
@@ -1631,9 +1536,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                      ? ctx.col_white
                                      : lerp_color(card_bg, ctx.col_white, surf_alpha);
           const int d_bx = card_right - scale_x(26);
+          const int ch_w = scale_x(8);
+          const int ch_h = scale_y(4);
           for (int w = -1; w <= 1; w++) {
-            fast_line(it, d_bx - 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
-            fast_line(it, d_bx + 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
+            fast_line(it, d_bx - ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
+            fast_line(it, d_bx + ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
           }
         }
         set_clip_y_band(prev_clip_y0, prev_clip_y1);
@@ -1736,9 +1643,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                 fast_line(it, div2_x, cur_cy - col_h, div2_x, cur_cy + col_h, div_col);
                 const Color chev_col = lerp_color(card_bg, ctx.col_white, fade_alpha);
                 const int d_bx = card_right - scale_x(26);
+                const int ch_w = scale_x(8);
+                const int ch_h = scale_y(4);
                 for (int w = -1; w <= 1; w++) {
-                  fast_line(it, d_bx - 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
-                  fast_line(it, d_bx + 8, cur_cy - 4 + w, d_bx, cur_cy + 4 + w, chev_col);
+                  fast_line(it, d_bx - ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
+                  fast_line(it, d_bx + ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
                 }
               }
               set_clip_y_band(prev_clip_y0, prev_clip_y1);
@@ -1806,7 +1715,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     auto sd = [dk](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * dk)); };
     auto sdr = [dk](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * dk))); };
 
-    auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow, Color cut_c) {
+    auto draw_dock_glyph = [&](int app_id, int bx, int by, Color c, bool is_shadow, Color cut_c,
+                               bool want_shadow = false) {
       if (app_id == 6) {
         fast_filled_triangle(it, bx + sd(11), by - sd(15), bx + sd(6), by - sd(7), bx + sd(16), by - sd(7), c);
         fill_rect_row_major(it, bx + sd(8), by - sd(14), sdr(7), sdr(3), c);
@@ -1969,7 +1879,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(6), c);
         fill_rect_row_major(it, bx - sd(9), by + sd(4), sdr(16), sdr(7), c);
       } else if (app_id == PageId::TIME) {
-        ui::draw_icon_clock_face(it, bx, by, sdr(13), c);
+        if (!is_shadow) {
+          ui::draw_icon_clock_solid(it, bx, by, ui::dock_icon_r(dock_r), c, want_shadow);
+        }
       }
     };
 
@@ -2018,9 +1930,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                             static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
       const Color slot_cut_c = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
       if (alpha > 0.55f) {
-        draw_dock_glyph(app_id, bx + 1, dock_y + 1, ctx.col_black, true, ctx.col_black);
+        draw_dock_glyph(app_id, bx + 1, dock_y + 1, ctx.col_black, true, ctx.col_black, false);
       }
-      draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false, slot_cut_c);
+      draw_dock_glyph(app_id, bx, dock_y, slot_fg_c, false, slot_cut_c, alpha > 0.55f);
     }
 
     const int pips_y = ly.dock_pips_y;

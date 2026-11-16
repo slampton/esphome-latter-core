@@ -336,6 +336,27 @@ inline constexpr int scale_w_for(int v466, int screen_w) {
   return (v466 * screen_w + 233) / 466;
 }
 
+// Canonical container-proportional custom icon half-size tiers (D-051):
+//   1. dock_icon_r_for: ~55-56% optical fill inside 2 * dock_r across Home Dock & all 4 Mode Bars
+//   2. card_icon_r_for: ~45% optical fill inside tall 3-card Area / Entry rows
+//   3. hero_icon_r_for: center-stage status hero glyph clamped cleanly inside hero_h
+inline constexpr int dock_icon_r_for(int dock_r) {
+  const int r = (dock_r * 15 + 13) / 27;
+  return (r < 8) ? 8 : r;
+}
+
+inline constexpr int card_icon_r_for(int card_h) {
+  const int r = (card_h * 22 + 50) / 100;
+  return (r < 10) ? 10 : r;
+}
+
+inline constexpr int hero_icon_r_for(int hero_h, int screen_min_dim) {
+  const int lo = scale_s_for(13, screen_min_dim);
+  const int hi = scale_s_for(24, screen_min_dim);
+  const int raw = (hero_h * 20 + 50) / 100;
+  return (raw < lo) ? lo : ((raw > hi) ? hi : raw);
+}
+
 inline constexpr int chord_half_span_constexpr(int r, int dy, bool round_nearest = false) {
   if (dy < 0) dy = -dy;
   if (dy == 0) return (r > 0) ? r : 0;

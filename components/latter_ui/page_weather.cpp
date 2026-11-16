@@ -1006,68 +1006,83 @@ std::string format_forecast_short_name(const std::string &c) {
 }
 
 void render_forecast_glyph(esphome::display::Display &it, int gx, int gy, const std::string &c_name) {
+  auto S = [](int v) -> int { return scale_s(v); };
+  auto SR = [](int v) -> int { return std::max(1, scale_s(v)); };
+  const int thick = (SCREEN_MIN_DIM > 520) ? 2 : 1;
+
   if (c_name == "sunny" || c_name == "clear-day" || c_name == "clear" || c_name == "clearday") {
-    fast_filled_circle(it, gx, gy, 7, esphome::Color(250, 185, 30));
-    fast_circle(it, gx, gy, 10, esphome::Color(255, 215, 80));
-    // 4 cardinal + 4 diagonal micro sun rays
+    fast_filled_circle_aa(it, gx, gy, SR(7), esphome::Color(250, 185, 30));
+    fast_circle_aa(it, gx, gy, static_cast<float>(SR(10)), esphome::Color(255, 215, 80), static_cast<float>(thick));
     esphome::Color ray_c(255, 225, 100);
-    fast_line(it, gx, gy - 12, gx, gy - 10, ray_c);
-    fast_line(it, gx, gy + 10, gx, gy + 12, ray_c);
-    fast_line(it, gx - 12, gy, gx - 10, gy, ray_c);
-    fast_line(it, gx + 10, gy, gx + 12, gy, ray_c);
+    for (int t = 0; t < thick; ++t) {
+      fast_line(it, gx + t, gy - S(12), gx + t, gy - S(10), ray_c);
+      fast_line(it, gx + t, gy + S(10), gx + t, gy + S(12), ray_c);
+      fast_line(it, gx - S(12), gy + t, gx - S(10), gy + t, ray_c);
+      fast_line(it, gx + S(10), gy + t, gx + S(12), gy + t, ray_c);
+    }
   } else if (c_name == "clear-night" || c_name == "clearnight") {
     const esphome::Color moon_c(225, 235, 250);
-    for (int dy = -8; dy <= 8; dy++) {
-      for (int dx = -6; dx <= 10; dx++) {
-        const int ox = dx - 2;
-        if (ox * ox + dy * dy <= 64) {
-          const int cx_d = dx + 1;
-          const int cy_d = dy + 1;
-          if (cx_d * cx_d + cy_d * cy_d > 49) {
+    const int ro = SR(8);
+    const int rc = SR(7);
+    const int ox_c = S(2);
+    const int cx_c = S(1);
+    for (int dy = -ro; dy <= ro; dy++) {
+      for (int dx = -ro + ox_c; dx <= ro + ox_c; dx++) {
+        const int ox = dx - ox_c;
+        if (ox * ox + dy * dy <= ro * ro) {
+          const int cx_d = dx + cx_c;
+          const int cy_d = dy + cx_c;
+          if (cx_d * cx_d + cy_d * cy_d > rc * rc) {
             fast_pixel(it, gx + dx, gy + dy, moon_c);
           }
         }
       }
     }
   } else if (c_name == "partlycloudy" || c_name == "partly-cloudy" || c_name == "mostlycloudy" || c_name == "mostlysunny" || c_name == "partlysunny") {
-    fast_filled_circle(it, gx - 4, gy - 4, 6, esphome::Color(245, 175, 30));
-    fast_filled_circle(it, gx + 2, gy + 1, 6, esphome::Color(175, 190, 210));
-    fast_filled_circle(it, gx - 3, gy + 2, 5, esphome::Color(155, 170, 190));
-    fast_filled_circle(it, gx + 7, gy + 3, 4, esphome::Color(145, 160, 180));
+    fast_filled_circle_aa(it, gx - S(4), gy - S(4), SR(6), esphome::Color(245, 175, 30));
+    fast_filled_circle_aa(it, gx + S(2), gy + S(1), SR(6), esphome::Color(175, 190, 210));
+    fast_filled_circle_aa(it, gx - S(3), gy + S(2), SR(5), esphome::Color(155, 170, 190));
+    fast_filled_circle_aa(it, gx + S(7), gy + S(3), SR(4), esphome::Color(145, 160, 180));
   } else if (c_name == "rainy" || c_name == "pouring" || c_name == "drizzle" || c_name == "heavy-rain") {
-    fast_filled_circle(it, gx, gy - 2, 6, esphome::Color(130, 145, 170));
-    fast_filled_circle(it, gx - 5, gy - 1, 5, esphome::Color(115, 130, 155));
-    fast_filled_circle(it, gx + 5, gy, 4, esphome::Color(115, 130, 155));
-    fast_line(it, gx - 4, gy + 6, gx - 6, gy + 10, esphome::Color(70, 170, 245));
-    fast_line(it, gx + 2, gy + 6, gx, gy + 10, esphome::Color(70, 170, 245));
+    fast_filled_circle_aa(it, gx, gy - S(2), SR(6), esphome::Color(130, 145, 170));
+    fast_filled_circle_aa(it, gx - S(5), gy - S(1), SR(5), esphome::Color(115, 130, 155));
+    fast_filled_circle_aa(it, gx + S(5), gy, SR(4), esphome::Color(115, 130, 155));
+    for (int t = 0; t < thick; ++t) {
+      fast_line(it, gx - S(4) + t, gy + S(6), gx - S(6) + t, gy + S(10), esphome::Color(70, 170, 245));
+      fast_line(it, gx + S(2) + t, gy + S(6), gx + t, gy + S(10), esphome::Color(70, 170, 245));
+    }
   } else if (c_name == "snowy" || c_name == "snowy-rainy" || c_name == "sleet" || c_name == "hail") {
-    fast_filled_circle(it, gx, gy - 2, 6, esphome::Color(160, 175, 195));
-    fast_pixel(it, gx - 3, gy + 7, esphome::Color(255, 255, 255));
-    fast_pixel(it, gx + 3, gy + 7, esphome::Color(255, 255, 255));
-    fast_pixel(it, gx, gy + 9, esphome::Color(255, 255, 255));
+    fast_filled_circle_aa(it, gx, gy - S(2), SR(6), esphome::Color(160, 175, 195));
+    fill_rect_row_major(it, gx - S(3), gy + S(7), thick, thick, esphome::Color(255, 255, 255));
+    fill_rect_row_major(it, gx + S(3), gy + S(7), thick, thick, esphome::Color(255, 255, 255));
+    fill_rect_row_major(it, gx, gy + S(9), thick, thick, esphome::Color(255, 255, 255));
   } else if (c_name == "lightning" || c_name == "lightning-rainy" || c_name == "thunderstorm") {
-    fast_filled_circle(it, gx, gy - 3, 6, esphome::Color(110, 120, 140));
-    fast_line(it, gx - 1, gy + 3, gx - 3, gy + 7, esphome::Color(255, 220, 40));
-    fast_line(it, gx - 3, gy + 7, gx + 1, gy + 7, esphome::Color(255, 220, 40));
-    fast_line(it, gx + 1, gy + 7, gx - 1, gy + 11, esphome::Color(255, 220, 40));
+    fast_filled_circle_aa(it, gx, gy - S(3), SR(6), esphome::Color(110, 120, 140));
+    for (int t = 0; t < thick; ++t) {
+      fast_line(it, gx - S(1) + t, gy + S(3), gx - S(3) + t, gy + S(7), esphome::Color(255, 220, 40));
+      fast_line(it, gx - S(3), gy + S(7) + t, gx + S(1), gy + S(7) + t, esphome::Color(255, 220, 40));
+      fast_line(it, gx + S(1) + t, gy + S(7), gx - S(1) + t, gy + S(11), esphome::Color(255, 220, 40));
+    }
   } else if (c_name == "windy" || c_name == "windy-variant" || c_name == "breezy") {
-    fast_line(it, gx - 9, gy - 3, gx + 5, gy - 3, esphome::Color(160, 190, 220));
-    fast_line(it, gx - 6, gy + 1, gx + 8, gy + 1, esphome::Color(180, 210, 235));
-    fast_line(it, gx - 4, gy + 5, gx + 4, gy + 5, esphome::Color(140, 170, 200));
-    // Tiny windblown leaf accent
-    fast_line(it, gx + 6, gy - 5, gx + 9, gy - 3, esphome::Color(125, 195, 95));
-    fast_line(it, gx + 6, gy - 4, gx + 9, gy - 3, esphome::Color(230, 185, 55));
+    for (int t = 0; t < thick; ++t) {
+      fast_line(it, gx - S(9), gy - S(3) + t, gx + S(5), gy - S(3) + t, esphome::Color(160, 190, 220));
+      fast_line(it, gx - S(6), gy + S(1) + t, gx + S(8), gy + S(1) + t, esphome::Color(180, 210, 235));
+      fast_line(it, gx - S(4), gy + S(5) + t, gx + S(4), gy + S(5) + t, esphome::Color(140, 170, 200));
+    }
+    fast_line(it, gx + S(6), gy - S(5), gx + S(9), gy - S(3), esphome::Color(125, 195, 95));
+    fast_line(it, gx + S(6), gy - S(4), gx + S(9), gy - S(3), esphome::Color(230, 185, 55));
   } else if (c_name == "fog" || c_name == "foggy" || c_name == "mist" || c_name == "misty" || c_name == "haze") {
-    // Layered horizontal mist veils with soft diffused sun/moon glow above
-    fast_filled_circle(it, gx, gy - 4, 5, esphome::Color(135, 155, 175));
-    fast_line(it, gx - 9, gy - 1, gx + 9, gy - 1, esphome::Color(185, 205, 225));
-    fast_line(it, gx - 7, gy + 2, gx + 10, gy + 2, esphome::Color(155, 178, 200));
-    fast_line(it, gx - 10, gy + 5, gx + 6, gy + 5, esphome::Color(130, 152, 175));
-    fast_line(it, gx - 5, gy + 8, gx + 8, gy + 8, esphome::Color(105, 125, 148));
+    fast_filled_circle_aa(it, gx, gy - S(4), SR(5), esphome::Color(135, 155, 175));
+    for (int t = 0; t < thick; ++t) {
+      fast_line(it, gx - S(9), gy - S(1) + t, gx + S(9), gy - S(1) + t, esphome::Color(185, 205, 225));
+      fast_line(it, gx - S(7), gy + S(2) + t, gx + S(10), gy + S(2) + t, esphome::Color(155, 178, 200));
+      fast_line(it, gx - S(10), gy + S(5) + t, gx + S(6), gy + S(5) + t, esphome::Color(130, 152, 175));
+      fast_line(it, gx - S(5), gy + S(8) + t, gx + S(8), gy + S(8) + t, esphome::Color(105, 125, 148));
+    }
   } else {
-    fast_filled_circle(it, gx, gy - 1, 7, esphome::Color(165, 180, 200));
-    fast_filled_circle(it, gx - 5, gy + 1, 5, esphome::Color(145, 160, 180));
-    fast_filled_circle(it, gx + 5, gy + 1, 5, esphome::Color(145, 160, 180));
+    fast_filled_circle_aa(it, gx, gy - S(1), SR(7), esphome::Color(165, 180, 200));
+    fast_filled_circle_aa(it, gx - S(5), gy + S(1), SR(5), esphome::Color(145, 160, 180));
+    fast_filled_circle_aa(it, gx + S(5), gy + S(1), SR(5), esphome::Color(145, 160, 180));
   }
 }
 
@@ -1225,98 +1240,111 @@ void draw_tumbling_leaf_3d(esphome::display::Display &it, Vec3 center_3d, float 
 // with a gliding active capsule ring and co-located `FrameHitTable` hit/focus registration.
 void render_weather_subpage_icons(esphome::display::Display &it, int active_subpage,
                                          esphome::Color col_active, esphome::Color col_inactive) {
-  // Standardized 4-Icon Row Geometry (x = {112, 193, 274, 355}, y = 359, r = 27)
-  const int stride = LATTER_ROUND_DISPLAY ? 81 : ((SCREEN_W < 380) ? 74 : scale_x(98));
-  const int ICON_XS[4] = {
-      SCREEN_CX - (stride * 3) / 2,
-      SCREEN_CX - (stride / 2),
-      SCREEN_CX + (stride / 2),
-      SCREEN_CX + (stride * 3) / 2};
+  int ICON_XS[4] = {0, 0, 0, 0};
+  bool has_l = false, has_r = false;
+  get_mode_bar_window_xs(4, 0, SCREEN_CX, ICON_XS, has_l, has_r);
   const int ICON_Y = layout().app_dock_y;
+  const int ir = ui::dock_icon_r(layout().dock_r);
+  const float dk = static_cast<float>(ir) / 15.0f;
+  auto sd = [dk](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * dk)); };
+  auto sdr = [dk](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * dk))); };
 
-  auto draw_icon_glyph = [&](int idx, int bx, int by, esphome::Color c) {
-    if (idx == 0) {
-      // 0. Current Weather: Enlarged Thermometer (r_bulb = 6, stem h = 20)
-      fast_line(it, bx - 3, by - 14, bx + 3, by - 14, c);
-      fast_line(it, bx - 2, by - 15, bx + 2, by - 15, c);
-      fast_line(it, bx - 3, by - 14, bx - 3, by + 3, c);
-      fast_line(it, bx - 2, by - 14, bx - 2, by + 3, c);
-      fast_line(it, bx + 3, by - 14, bx + 3, by + 3, c);
-      fast_line(it, bx + 2, by - 14, bx + 2, by + 3, c);
-      fast_circle(it, bx, by + 8, 6, c);
-      fast_circle(it, bx, by + 8, 5, c);
-      fast_filled_circle(it, bx, by + 8, 3, c);
-      fill_rect_row_major(it, bx - 1, by - 5, 3, 13, c);
-      fast_line(it, bx + 5, by - 10, bx + 8, by - 10, c);
-      fast_line(it, bx + 5, by - 5,  bx + 8, by - 5,  c);
-      fast_line(it, bx + 5, by,      bx + 8, by,      c);
-    } else if (idx == 1) {
-      // 1. Forecast: Enlarged 3-day ascending bars + bold 2px rising trend arrow
-      int fy = by + 1;
-      fast_line(it, bx - 14, fy + 11, bx + 14, fy + 11, c);
-      fast_line(it, bx - 14, fy + 12, bx + 14, fy + 12, c);
-      fill_rect_row_major(it, bx - 12, fy + 4, 5, 7, c);
-      fill_rect_row_major(it, bx - 3,  fy - 2, 5, 13, c);
-      fill_rect_row_major(it, bx + 6,  fy - 7, 5, 18, c);
-      fast_line(it, bx - 13, fy + 2, bx + 11, fy - 13, c);
-      fast_line(it, bx - 13, fy + 3, bx + 11, fy - 12, c);
-      fast_line(it, bx - 12, fy + 3, bx + 12, fy - 12, c);
-      fast_line(it, bx + 12, fy - 13, bx + 5,  fy - 13, c);
-      fast_line(it, bx + 12, fy - 12, bx + 6,  fy - 12, c);
-      fast_line(it, bx + 12, fy - 13, bx + 12, fy - 6,  c);
-      fast_line(it, bx + 11, fy - 13, bx + 11, fy - 7,  c);
-    } else if (idx == 2) {
-      // 2. Sun: Enlarged solid filled solar disc (r = 8) + 8 symmetrical 2px rays (r = 11..16)
-      fast_filled_circle(it, bx, by, 8, c);
-      // Cardinal rays (r = 11..16)
-      fast_line(it, bx,     by - 11, bx,     by - 16, c);
-      fast_line(it, bx + 1, by - 11, bx + 1, by - 16, c);
-      fast_line(it, bx,     by + 11, bx,     by + 16, c);
-      fast_line(it, bx + 1, by + 11, bx + 1, by + 16, c);
-      fast_line(it, bx - 11, by,     bx - 16, by,     c);
-      fast_line(it, bx - 11, by + 1, bx - 16, by + 1, c);
-      fast_line(it, bx + 11, by,     bx + 16, by,     c);
-      fast_line(it, bx + 11, by + 1, bx + 16, by + 1, c);
-      // Diagonal rays (r = 11..15)
-      fast_line(it, bx - 8, by - 8, bx - 11, by - 11, c);
-      fast_line(it, bx - 9, by - 8, bx - 11, by - 10, c);
-      fast_line(it, bx + 8, by - 8, bx + 11, by - 11, c);
-      fast_line(it, bx + 9, by - 8, bx + 11, by - 10, c);
-      fast_line(it, bx - 8, by + 8, bx - 11, by + 11, c);
-      fast_line(it, bx - 9, by + 8, bx - 11, by + 10, c);
-      fast_line(it, bx + 8, by + 8, bx + 11, by + 11, c);
-      fast_line(it, bx + 9, by + 8, bx + 11, by + 10, c);
-    } else {
-      // 3. Moon: Enlarged CSG Scanline Filled Crescent (Outer r=13.5 minus tilted shadow sphere r=11.2)
-      for (int dy = -14; dy <= 14; dy++) {
-        for (int dx = -14; dx <= 14; dx++) {
-          int d_out_x = dx - 2;
-          int d_out_y = dy;
-          int d_out_sq = d_out_x * d_out_x + d_out_y * d_out_y;
-          if (d_out_sq <= 182) {
-            int d_cut_x = dx - 8;
-            int d_cut_y = dy + 4;
-            int d_cut_sq = d_cut_x * d_cut_x + d_cut_y * d_cut_y;
-            if (d_cut_sq > 125) {
-              fast_pixel(it, bx + dx, by + dy, c);
-            }
-          }
+  auto draw_forecast_chart = [&](int bx, int by, esphome::Color c) {
+    const int fy = by + sd(1);
+    const int base_y = fy + sd(11);
+    const int base_th = std::max(2, sdr(2));
+    const int bw = std::max(3, sdr(5));
+    fill_rect_row_major(it, bx - sd(13), base_y, 2 * sd(13) + 1, base_th, c);
+    fill_rect_row_major(it, bx - sd(11), base_y - sdr(7), bw, sdr(7), c);
+    fill_rect_row_major(it, bx - bw / 2, base_y - sdr(12), bw, sdr(12), c);
+    fill_rect_row_major(it, bx + sd(11) - bw + 1, base_y - sdr(17), bw, sdr(17), c);
+    const float aw = std::max(1.8f, 0.14f * static_cast<float>(ir));
+    const float ax0 = static_cast<float>(bx - sd(12));
+    const float ay0 = static_cast<float>(fy + sd(2));
+    const float ax1 = static_cast<float>(bx + sd(11));
+    const float ay1 = static_cast<float>(fy - sd(12));
+    ui::draw_aa_line(it, ax0, ay0, ax1, ay1, aw, c);
+    ui::draw_aa_line(it, ax1, ay1, static_cast<float>(bx + sd(4)), ay1, aw, c);
+    ui::draw_aa_line(it, ax1, ay1, ax1, static_cast<float>(fy - sd(5)), aw, c);
+  };
+
+  auto draw_sun_glyph = [&](int bx, int by, esphome::Color c) {
+    fast_filled_circle_aa(it, bx, by, std::max(5, sdr(8)), c);
+    const float rw = std::max(1.8f, 0.14f * static_cast<float>(ir));
+    const float r0 = 0.72f * static_cast<float>(ir);
+    const float r1 = 1.03f * static_cast<float>(ir);
+    static constexpr float kInvSqrt2 = 0.70710678f;
+    const float d0 = r0 * kInvSqrt2;
+    const float d1 = r1 * kInvSqrt2;
+    const float fbx = static_cast<float>(bx);
+    const float fby = static_cast<float>(by);
+    ui::draw_aa_line(it, fbx, fby - r0, fbx, fby - r1, rw, c);
+    ui::draw_aa_line(it, fbx, fby + r0, fbx, fby + r1, rw, c);
+    ui::draw_aa_line(it, fbx - r0, fby, fbx - r1, fby, rw, c);
+    ui::draw_aa_line(it, fbx + r0, fby, fbx + r1, fby, rw, c);
+    ui::draw_aa_line(it, fbx - d0, fby - d0, fbx - d1, fby - d1, rw, c);
+    ui::draw_aa_line(it, fbx + d0, fby - d0, fbx + d1, fby - d1, rw, c);
+    ui::draw_aa_line(it, fbx - d0, fby + d0, fbx - d1, fby + d1, rw, c);
+    ui::draw_aa_line(it, fbx + d0, fby + d0, fbx + d1, fby + d1, rw, c);
+  };
+
+  auto draw_moon_glyph = [&](int bx, int by, esphome::Color c) {
+    const float rf = static_cast<float>(ir);
+    const float ro = 0.90f * rf;
+    const float rc = 0.75f * rf;
+    const float ox_c = 0.13f * rf;
+    const float cx_c = 0.53f * rf;
+    const float cy_c = -0.27f * rf;
+    const float ro_hi2 = (ro + 1.1f) * (ro + 1.1f);
+    const float ro_lo2 = std::max(0.0f, ro - 1.1f) * std::max(0.0f, ro - 1.1f);
+    const float rc_hi2 = (rc + 1.1f) * (rc + 1.1f);
+    const float rc_lo2 = std::max(0.0f, rc - 1.1f) * std::max(0.0f, rc - 1.1f);
+    const float inv_2ro = 0.5f / std::max(1.0f, ro);
+    const float inv_2rc = 0.5f / std::max(1.0f, rc);
+    for (int dy = -ir; dy <= ir; ++dy) {
+      const int py = by + dy;
+      if (!row_in_clip_band(py)) continue;
+      const float fy = static_cast<float>(dy);
+      for (int dx = -ir; dx <= ir; ++dx) {
+        const float fx = static_cast<float>(dx);
+        const float do2 = (fx - ox_c) * (fx - ox_c) + fy * fy;
+        if (do2 >= ro_hi2) continue;
+        const float dc2 = (fx - cx_c) * (fx - cx_c) + (fy - cy_c) * (fy - cy_c);
+        if (dc2 <= rc_lo2) continue;
+        const float sd_out = (do2 <= ro_lo2) ? -1.0f : ((do2 - ro * ro) * inv_2ro);
+        const float sd_cut = (dc2 >= rc_hi2) ? 1.0f : ((dc2 - rc * rc) * inv_2rc);
+        const float d = std::max(sd_out, -sd_cut);
+        if (d >= 0.65f) continue;
+        if (d <= -0.65f) {
+          fast_pixel(it, bx + dx, py, c);
+        } else {
+          const int a_q8 = static_cast<int>((0.65f - d) * (256.0f / 1.30f));
+          if (a_q8 > 4) fast_pixel_blend(it, bx + dx, py, c, a_q8);
         }
       }
     }
   };
 
-  esphome::Color shadow_c(0, 0, 0);
   render_in_app_mode_bar_track(it, SCREEN_CX, ICON_XS, 4, active_subpage,
                                false, false, 4, active_subpage,
                                col_active, col_inactive);
   for (int i = 0; i < 4; i++) {
-    int bx = ICON_XS[i];
-    int by = ICON_Y;
-    bool is_act = (i == active_subpage);
-    esphome::Color fg_c = is_act ? col_active : col_inactive;
-    draw_icon_glyph(i, bx + 1, by + 1, shadow_c);
-    draw_icon_glyph(i, bx,     by,     fg_c);
+    const int bx = ICON_XS[i];
+    const int by = ICON_Y;
+    const bool is_act = (i == active_subpage);
+    const esphome::Color fg_c = is_act ? col_active : col_inactive;
+    if (i == 0) {
+      ui::draw_icon_thermometer(it, bx, by, ir, fg_c, true);
+    } else if (i == 1) {
+      draw_forecast_chart(bx + 1, by + 1, kChromeShadow);
+      draw_forecast_chart(bx, by, fg_c);
+    } else if (i == 2) {
+      draw_sun_glyph(bx + 1, by + 1, kChromeShadow);
+      draw_sun_glyph(bx, by, fg_c);
+    } else {
+      draw_moon_glyph(bx + 1, by + 1, kChromeShadow);
+      draw_moon_glyph(bx, by, fg_c);
+    }
   }
 }
 
@@ -2842,27 +2870,22 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     else snprintf(temp_num, sizeof(temp_num), "%s", kUnknownGlyph);
     int w_num = 0, x_off = 0, base = 0, th = 0;
     font_time->measure(temp_num, &w_num, &x_off, &base, &th);
-    const int num_cx = cx - 5;
+    const int num_cx = cx - scale_x(5);
     const int deg_cx = num_cx + (w_num / 2) + scale_x(18);
     const int deg_cy = scale_y(100);
     const Color col_deg_silver(204, 214, 228);
-    const Color col_deg_aa(120, 132, 148);
 
     if (backdrop_active()) {
       fast_print(it, num_cx + 2, scale_y(120) + 2, font_time, kChromeShadow, TextAlign::CENTER, temp_num);
     }
     fast_print(it, num_cx, scale_y(120), font_time, col_white, TextAlign::CENTER, temp_num);
 
-    for (int dy = -9; dy <= 9; dy++) {
-      for (int dx = -9; dx <= 9; dx++) {
-        int d2 = dx * dx + dy * dy;
-        if (d2 >= 30 && d2 <= 64) {
-          fast_pixel(it, deg_cx + dx, deg_cy + dy, col_deg_silver);
-        } else if ((d2 >= 25 && d2 < 30) || (d2 > 64 && d2 <= 70)) {
-          fast_pixel(it, deg_cx + dx, deg_cy + dy, col_deg_aa);
-        }
-      }
+    const float deg_r = std::max(5.0f, static_cast<float>(scale_s(7)));
+    const float deg_th = std::max(2.0f, static_cast<float>(scale_s(2)) + 0.35f);
+    if (backdrop_active()) {
+      fast_circle_aa(it, deg_cx + 1, deg_cy + 1, deg_r, kChromeShadow, deg_th);
     }
+    fast_circle_aa(it, deg_cx, deg_cy, deg_r, col_deg_silver, deg_th);
 
     std::string cond_title = fit_text_to_width_font(format_weather_title(cond), scale_x(340), font_date);
     if (backdrop_active()) {
@@ -2880,25 +2903,19 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     const Color icon_c(185, 225, 255);
     const bool has_bd_shadow = backdrop_active();
 
-    // 2px-stroke outline Up/Down arrow primitive matching Humidity & Wind icon weight
     auto draw_temp_arrow_glyph = [&](int ax, int ay, bool is_up, Color c) {
-      // 2px vertical shaft (height 19px)
-      fast_line(it, ax,     ay - 9, ax,     ay + 9, c);
-      fast_line(it, ax + 1, ay - 9, ax + 1, ay + 9, c);
+      const float fax = static_cast<float>(ax);
+      const float fay = static_cast<float>(ay);
+      const float ah = static_cast<float>(scale_s(10));
+      const float aw = static_cast<float>(scale_s(6));
+      const float st = std::max(2.0f, static_cast<float>(scale_s(2)));
+      ui::draw_aa_line(it, fax, fay - ah + 1.0f, fax, fay + ah - 1.0f, st, c);
       if (is_up) {
-        fast_line(it, ax,     ay - 10, ax - 6, ay - 3, c);
-        fast_line(it, ax + 1, ay - 10, ax - 5, ay - 3, c);
-        fast_line(it, ax,     ay - 9,  ax - 6, ay - 2, c);
-        fast_line(it, ax + 1, ay - 10, ax + 7, ay - 3, c);
-        fast_line(it, ax,     ay - 10, ax + 6, ay - 3, c);
-        fast_line(it, ax + 1, ay - 9,  ax + 7, ay - 2, c);
+        ui::draw_aa_line(it, fax, fay - ah, fax - aw, fay - ah + aw + 1.0f, st, c);
+        ui::draw_aa_line(it, fax, fay - ah, fax + aw, fay - ah + aw + 1.0f, st, c);
       } else {
-        fast_line(it, ax,     ay + 10, ax - 6, ay + 3, c);
-        fast_line(it, ax + 1, ay + 10, ax - 5, ay + 3, c);
-        fast_line(it, ax,     ay + 9,  ax - 6, ay + 2, c);
-        fast_line(it, ax + 1, ay + 10, ax + 7, ay + 3, c);
-        fast_line(it, ax,     ay + 10, ax + 6, ay + 3, c);
-        fast_line(it, ax + 1, ay + 9,  ax + 7, ay + 2, c);
+        ui::draw_aa_line(it, fax, fay + ah, fax - aw, fay + ah - aw - 1.0f, st, c);
+        ui::draw_aa_line(it, fax, fay + ah, fax + aw, fay + ah - aw - 1.0f, st, c);
       }
     };
 
@@ -2917,12 +2934,15 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
         font_date->measure(hi_str, &w_hi, &x_off, &base, &th);
         font_date->measure(lo_str, &w_lo, &x_off, &base, &th);
       }
-      const int total_hilo_w = 14 + 10 + w_hi + 32 + 14 + 10 + w_lo;
+      const int arr_slot = scale_x(14);
+      const int arr_pad = scale_x(10);
+      const int pair_gap = scale_x(32);
+      const int total_hilo_w = arr_slot + arr_pad + w_hi + pair_gap + arr_slot + arr_pad + w_lo;
       const int hilo_left = cx - (total_hilo_w / 2);
-      const int up_arr_x = hilo_left + 7;
-      const int hi_txt_x = hilo_left + 14 + 10;
-      const int dn_arr_x = hi_txt_x + w_hi + 32 + 7;
-      const int lo_txt_x = dn_arr_x + 7 + 10;
+      const int up_arr_x = hilo_left + arr_slot / 2;
+      const int hi_txt_x = hilo_left + arr_slot + arr_pad;
+      const int dn_arr_x = hi_txt_x + w_hi + pair_gap + arr_slot / 2;
+      const int lo_txt_x = dn_arr_x + (arr_slot - arr_slot / 2) + arr_pad;
 
       if (has_bd_shadow) draw_temp_arrow_glyph(up_arr_x + 1, hilo_y + 1, true, kChromeShadow);
       draw_temp_arrow_glyph(up_arr_x, hilo_y, true,  icon_c);
@@ -2944,73 +2964,49 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
       }
     }
 
-    auto draw_droplet_outline = [&](int dx, int dy, Color c) {
-      fast_line(it, dx,     dy - 11, dx - 7, dy + 1, c);
-      fast_line(it, dx + 1, dy - 10, dx - 6, dy + 1, c);
-      fast_line(it, dx,     dy - 11, dx + 7, dy + 1, c);
-      fast_line(it, dx - 1, dy - 10, dx + 6, dy + 1, c);
-      for (int i = 17; i < 43; i += 2) {
-        int i1 = std::min(43, i + 2);
-        int x0_o = dx + static_cast<int>(roundf(7.2f * DIAL_SIN[i]));
-        int y0_o = (dy + 3) - static_cast<int>(roundf(7.2f * DIAL_COS[i]));
-        int x1_o = dx + static_cast<int>(roundf(7.2f * DIAL_SIN[i1]));
-        int y1_o = (dy + 3) - static_cast<int>(roundf(7.2f * DIAL_COS[i1]));
-        fast_line(it, x0_o, y0_o, x1_o, y1_o, c);
-
-        int x0_i = dx + static_cast<int>(roundf(6.0f * DIAL_SIN[i]));
-        int y0_i = (dy + 3) - static_cast<int>(roundf(6.0f * DIAL_COS[i]));
-        int x1_i = dx + static_cast<int>(roundf(6.0f * DIAL_SIN[i1]));
-        int y1_i = (dy + 3) - static_cast<int>(roundf(6.0f * DIAL_COS[i1]));
-        fast_line(it, x0_i, y0_i, x1_i, y1_i, c);
-      }
-      fast_line(it, dx - 3, dy + 2, dx - 3, dy + 5, c);
-      fast_pixel(it, dx - 2, dy + 6, c);
-    };
-    const int drop_x = cx - ((SCREEN_W < 380) ? 96 : (large_cur ? 124 : 105));
-    if (has_bd_shadow) draw_droplet_outline(drop_x + 1, tele_y + 1, kChromeShadow);
-    draw_droplet_outline(drop_x, tele_y, icon_c);
+    const int drop_r = scale_s(10);
+    const int drop_x = cx - ((SCREEN_W < 380) ? 96 : (large_cur ? scale_x(120) : 105));
+    ui::draw_icon_droplet(it, drop_x, tele_y, drop_r, icon_c, has_bd_shadow);
     char hum_str[20];
     if (!std::isnan(weather_humidity)) snprintf(hum_str, sizeof(hum_str), "%.0f%%", weather_humidity);
     else snprintf(hum_str, sizeof(hum_str), "%s%%", kUnknownGlyph);
+    const int hum_tx = drop_x + drop_r + scale_x(8);
     if (large_cur) {
-      if (has_bd_shadow) fast_print(it, drop_x + 19, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
-      fast_print(it, drop_x + 18, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
+      if (has_bd_shadow) fast_print(it, hum_tx + 1, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
+      fast_print(it, hum_tx, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, hum_str);
     } else {
-      if (has_bd_shadow) fast_print(it, drop_x + 19, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
-      fast_print(it, drop_x + 18, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, hum_str);
+      if (has_bd_shadow) fast_print(it, hum_tx + 1, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, hum_str);
+      fast_print(it, hum_tx, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, hum_str);
     }
 
     auto draw_wind_glyph = [&](int wx, int wy, Color c) {
-      fast_hline(it, wx - 12, wy - 4, 16, c);
-      fast_hline(it, wx - 12, wy - 3, 16, c);
-      int tc_x = wx + 3, tc_y = wy - 8;
+      const int g_th = std::max(2, scale_s(2));
+      const float wk = static_cast<float>(scale_s(100)) * 0.01f;
+      fill_rect_row_major(it, wx - scale_s(12), wy - scale_s(4), scale_s(16), g_th, c);
+      const int tc_x = wx + scale_s(3), tc_y = wy - scale_s(8);
       static constexpr uint8_t TOP_ARC[10] = {30, 25, 20, 15, 10, 5, 0, 55, 50, 46};
       for (int k = 0; k < 9; k++) {
         int i0 = TOP_ARC[k], i1 = TOP_ARC[k + 1];
-        int x0 = tc_x + static_cast<int>(roundf(4.5f * DIAL_SIN[i0]));
-        int y0 = tc_y - static_cast<int>(roundf(4.5f * DIAL_COS[i0]));
-        int x1 = tc_x + static_cast<int>(roundf(4.5f * DIAL_SIN[i1]));
-        int y1 = tc_y - static_cast<int>(roundf(4.5f * DIAL_COS[i1]));
-        fast_line(it, x0, y0, x1, y1, c);
-        fast_line(it, x0, y0 + 1, x1, y1 + 1, c);
+        int x0 = tc_x + static_cast<int>(roundf(4.5f * wk * DIAL_SIN[i0]));
+        int y0 = tc_y - static_cast<int>(roundf(4.5f * wk * DIAL_COS[i0]));
+        int x1 = tc_x + static_cast<int>(roundf(4.5f * wk * DIAL_SIN[i1]));
+        int y1 = tc_y - static_cast<int>(roundf(4.5f * wk * DIAL_COS[i1]));
+        for (int t = 0; t < g_th; ++t) fast_line(it, x0, y0 + t, x1, y1 + t, c);
       }
-      fast_hline(it, wx - 14, wy + 1, 26, c);
-      fast_hline(it, wx - 14, wy + 2, 26, c);
-      fast_hline(it, wx - 9, wy + 6, 15, c);
-      fast_hline(it, wx - 9, wy + 7, 15, c);
-      int bc_x = wx + 5, bc_y = wy + 10;
+      fill_rect_row_major(it, wx - scale_s(14), wy + scale_s(1), scale_s(26), g_th, c);
+      fill_rect_row_major(it, wx - scale_s(9), wy + scale_s(6), scale_s(15), g_th, c);
+      const int bc_x = wx + scale_s(5), bc_y = wy + scale_s(10);
       static constexpr uint8_t BOT_ARC[10] = {0, 5, 10, 15, 20, 25, 30, 35, 40, 44};
       for (int k = 0; k < 9; k++) {
         int i0 = BOT_ARC[k], i1 = BOT_ARC[k + 1];
-        int x0 = bc_x + static_cast<int>(roundf(4.2f * DIAL_SIN[i0]));
-        int y0 = bc_y - static_cast<int>(roundf(4.2f * DIAL_COS[i0]));
-        int x1 = bc_x + static_cast<int>(roundf(4.2f * DIAL_SIN[i1]));
-        int y1 = bc_y - static_cast<int>(roundf(4.2f * DIAL_COS[i1]));
-        fast_line(it, x0, y0, x1, y1, c);
-        fast_line(it, x0, y0 - 1, x1, y1 - 1, c);
+        int x0 = bc_x + static_cast<int>(roundf(4.2f * wk * DIAL_SIN[i0]));
+        int y0 = bc_y - static_cast<int>(roundf(4.2f * wk * DIAL_COS[i0]));
+        int x1 = bc_x + static_cast<int>(roundf(4.2f * wk * DIAL_SIN[i1]));
+        int y1 = bc_y - static_cast<int>(roundf(4.2f * wk * DIAL_COS[i1]));
+        for (int t = 0; t < g_th; ++t) fast_line(it, x0, y0 - t, x1, y1 - t, c);
       }
     };
-    const int w_icon_x = cx - 5;
+    const int w_icon_x = cx - scale_x(5);
     if (has_bd_shadow) draw_wind_glyph(w_icon_x + 1, tele_y + 1, kChromeShadow);
     draw_wind_glyph(w_icon_x, tele_y, icon_c);
     char wind_str[28];
@@ -3024,12 +3020,13 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     } else {
       snprintf(wind_str, sizeof(wind_str), "%s mph", kUnknownGlyph);
     }
+    const int wind_tx = w_icon_x + scale_x(20);
     if (large_cur) {
-      if (has_bd_shadow) fast_print(it, w_icon_x + 21, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
-      fast_print(it, w_icon_x + 20, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);
+      if (has_bd_shadow) fast_print(it, wind_tx + 1, tele_y + 1, font_date, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
+      fast_print(it, wind_tx, tele_y, font_date, col_white, TextAlign::CENTER_LEFT, wind_str);
     } else {
-      if (has_bd_shadow) fast_print(it, w_icon_x + 21, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
-      fast_print(it, w_icon_x + 20, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
+      if (has_bd_shadow) fast_print(it, wind_tx + 1, tele_y + 1, font_small, kChromeShadow, TextAlign::CENTER_LEFT, wind_str);
+      fast_print(it, wind_tx, tele_y, font_small, col_white, TextAlign::CENTER_LEFT, wind_str);
     }
 
   } else if (sky_weather_subpage == 1) {

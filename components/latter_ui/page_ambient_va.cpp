@@ -1589,14 +1589,9 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
     fast_print(it, cx, scale_y(72), ctx.font_small, accent_c, TextAlign::CENTER, hdr_lbl);
 
     if (has_cam_url) {
-      fast_rect_outline(it, cx - 14, scale_y(112), 22, 18, st.col_white);
-      fast_filled_triangle(it, cx + 8, scale_y(121), cx + 15, scale_y(115), cx + 15, scale_y(127), st.theme_secondary);
-      fast_circle(it, cx - 3, scale_y(121), 4, accent_c);
+      ui::draw_icon_camera(it, cx, scale_y(120), scale_s(16), accent_c, true);
     } else {
-      fast_filled_circle(it, cx, scale_y(118), 9, accent_c);
-      fill_rect_row_major(it, cx - 9, scale_y(118), 19, 8, accent_c);
-      fill_rect_row_major(it, cx - 12, scale_y(118) + 8, 25, 2, st.col_white);
-      fast_filled_circle(it, cx, scale_y(118) + 12, 3, st.col_white);
+      ui::draw_icon_bell(it, cx, scale_y(120), scale_s(16), accent_c, true);
     }
 
     fast_print(it, cx, scale_y(168), ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());

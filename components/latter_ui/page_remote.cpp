@@ -121,9 +121,9 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
         const int p_cx = narrow ? (SCREEN_W - 36) : (cx + scale_x(120));
         const int p_r  = scale_s(18);
         const bool is_dev_on = remote_slot_states_on()[s_idx];
-        const Color p_surf = render_glass_circle(
+        (void) render_glass_circle(
             it, p_cx, y_mid, p_r, kChromeGlassTint, is_dev_on ? theme_secondary : col_red);
-        ui::draw_icon_power(it, p_cx, y_mid, p_r, col_white, p_surf);
+        ui::draw_icon_power(it, p_cx, y_mid, p_r, col_white, true);
         frame_hits().add_circle(p_cx, y_mid, p_r,
                                 static_cast<uint16_t>(WidgetId::REMOTE_SEC_PWR + row),
                                 kHitTap | kHitFocusCircle, static_cast<int16_t>(s_idx), scale_s(16));

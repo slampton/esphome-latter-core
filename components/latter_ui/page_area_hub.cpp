@@ -11,33 +11,6 @@ namespace latter_ui {
 
 namespace {
 
-// 90-Degree Symmetric 4-Blade Ceiling Fan Pixel Predicate (Central Motor Hub + 1px Moat + 4 Swept Paddle Blades)
-bool is_ceiling_fan_blade_arm(float u, float v) {
-  if (v < 4.2f || v > 13.0f) return false;
-  if (v <= 9.6f) {
-    const float u_min = -1.5f;
-    const float u_max = 1.5f + (v - 4.2f) * 0.44f;
-    return (u >= u_min && u <= u_max);
-  }
-  const float du = (u - 1.2f) / 3.1f;
-  const float dv = (v - 9.6f) / 3.3f;
-  return (du * du + dv * dv) <= 1.0f;
-}
-
-bool is_ceiling_fan_4blade_pixel(int dx, int dy) {
-  const int r2 = dx * dx + dy * dy;
-  if (r2 <= 1) return false;   // Negative-space center motor pin
-  if (r2 <= 10) return true;   // Solid central motor housing (r ~ 3.2px)
-  if (r2 <= 18) return false;  // Crisp negative-space collar moat around motor hub
-  if (r2 > 172) return false;
-  const float fx = static_cast<float>(dx);
-  const float fy = static_cast<float>(dy);
-  return is_ceiling_fan_blade_arm(fx, -fy) ||  // Top blade
-         is_ceiling_fan_blade_arm(fy,  fx) ||  // Right blade
-         is_ceiling_fan_blade_arm(-fx, fy) ||  // Bottom blade
-         is_ceiling_fan_blade_arm(-fy, -fx);   // Left blade
-}
-
 bool is_curtain_entity(const std::string &name, const std::string &id_str) {
   std::string s = name + " " + id_str;
   for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -118,24 +91,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
                                  theme_primary, col_white, start_idx);
 
     const int ICON_Y   = layout().app_dock_y;
+    const int ir       = ui::dock_icon_r(layout().dock_r);
     const int left_cx  = win_xs[0];
     const int right_cx = win_xs[vis_count - 1];
     const int stride   = get_dock_slot_stride(win_xs, vis_count);
     const float anim_start = mode_bar_anim().cur_start;
-
-    const bool has_bd = backdrop_active();
-    Color shared_inactive_cut{};
-    bool has_shared_inactive_cut = false;
-    auto resolve_mode_cut = [&](int slot_x, int slot_y, bool active_slot) -> Color {
-      if (has_bd || active_slot) {
-        return sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
-      }
-      if (!has_shared_inactive_cut) {
-        shared_inactive_cut = sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
-        has_shared_inactive_cut = true;
-      }
-      return shared_inactive_cut;
-    };
 
     for (int g_idx = 0; g_idx < cat_count; g_idx++) {
       const float rel_slot = static_cast<float>(g_idx) - anim_start;
@@ -156,68 +116,24 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       const Color fg_c(static_cast<uint8_t>(16 + (raw_c.r - 16) * alpha),
                        static_cast<uint8_t>(20 + (raw_c.g - 20) * alpha),
                        static_cast<uint8_t>(27 + (raw_c.b - 27) * alpha));
+      const bool sh = (alpha > 0.65f);
 
       if (cat == "scene") {
-        fast_line(it, bx, by - 11, bx, by + 11, fg_c);
-        fast_line(it, bx - 11, by, bx + 11, by, fg_c);
-        fast_line(it, bx - 6, by - 6, bx + 6, by + 6, fg_c);
-        fast_line(it, bx - 6, by + 6, bx + 6, by - 6, fg_c);
-        fast_filled_circle(it, bx, by, 3, fg_c);
+        ui::draw_icon_sparkle(it, bx, by, ir, fg_c, sh);
       } else if (cat == "light") {
-        fast_filled_circle(it, bx, by - 4, 8, fg_c);
-        fill_rect_row_major(it, bx - 5, by + 1, 11, 5, fg_c);
-        fill_rect_row_major(it, bx - 4, by + 7, 9, 3, fg_c);
-        fast_hline(it, bx - 2, by + 11, 5, fg_c);
+        ui::draw_icon_lightbulb(it, bx, by, ir, fg_c, sh);
       } else if (cat == "cover") {
-        fast_rect_outline(it, bx - 10, by - 9, 21, 19, fg_c);
-        fast_hline(it, bx - 10, by - 8, 21, fg_c);
-        fast_filled_triangle(it, bx - 9, by - 7, bx - 1, by - 7, bx - 9, by + 3, fg_c);
-        fill_rect_row_major(it, bx - 9, by + 3, 4, 6, fg_c);
-        fast_filled_triangle(it, bx + 9, by - 7, bx + 1, by - 7, bx + 9, by + 3, fg_c);
-        fill_rect_row_major(it, bx + 6, by + 3, 4, 6, fg_c);
+        ui::draw_icon_curtains(it, bx, by, ir, fg_c, sh);
       } else if (cat == "fan") {
-        for (int dy = -13; dy <= 13; dy++) {
-          for (int dx = -13; dx <= 13; dx++) {
-            if (is_ceiling_fan_4blade_pixel(dx, dy)) {
-              fast_pixel(it, bx + dx, by + dy, fg_c);
-            }
-          }
-        }
+        ui::draw_icon_ceiling_fan(it, bx, by, ir, fg_c, sh);
       } else if (cat == "switch") {
-        const Color cut_c = resolve_mode_cut(bx, by, is_act);
-        fast_filled_circle(it, bx - 5, by, 7, fg_c);
-        fast_filled_circle(it, bx + 5, by, 7, fg_c);
-        fill_rect_row_major(it, bx - 5, by - 7, 10, 15, fg_c);
-        fast_filled_circle(it, bx + 5, by, 4, cut_c);
+        ui::draw_icon_switch_pill(it, bx, by, ir, fg_c, true, sh);
       } else if (cat == "climate") {
-        const Color cut_c = resolve_mode_cut(bx, by, is_act);
-        const int tx = bx - 2;
-        fast_line(it, tx - 3, by - 11, tx + 3, by - 11, fg_c);
-        fast_line(it, tx - 2, by - 12, tx + 2, by - 12, fg_c);
-        fast_line(it, tx - 3, by - 11, tx - 3, by + 3,  fg_c);
-        fast_line(it, tx - 2, by - 11, tx - 2, by + 3,  fg_c);
-        fast_line(it, tx + 3, by - 11, tx + 3, by + 3,  fg_c);
-        fast_line(it, tx + 2, by - 11, tx + 2, by + 3,  fg_c);
-        fast_filled_circle(it, tx, by + 7, 5, fg_c);
-        fast_filled_circle(it, tx, by + 7, 3, cut_c);
-        fast_filled_circle(it, tx, by + 7, 1, fg_c);
-        fill_rect_row_major(it, tx - 1, by - 4, 3, 10, fg_c);
-        fill_rect_row_major(it, tx + 5, by - 9, 4, 2, fg_c);
-        fill_rect_row_major(it, tx + 5, by - 5, 3, 2, fg_c);
-        fill_rect_row_major(it, tx + 5, by - 1, 4, 2, fg_c);
+        ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
       } else if (cat == "media") {
-        ui::draw_icon_eighth_notes(it, bx, by, fg_c);
+        ui::draw_icon_eighth_notes(it, bx, by, ir, fg_c, sh);
       } else {
-        for (int dy = -10; dy <= 10; dy++) {
-          for (int dx = -10; dx <= 10; dx++) {
-            const int ax = std::abs(dx), ay = std::abs(dy);
-            if (ax < 2 || ax > 9 || ay < 2 || ay > 9) continue;
-            const int lx = ax - 2, ly = ay - 2;
-            if ((lx == 0 || lx == 7) && (ly == 0 || ly == 7)) continue;
-            if (dx > 0 && dy > 0 && lx >= 2 && lx <= 5 && ly >= 2 && ly <= 5) continue;
-            fast_pixel(it, bx + dx, by + dy, fg_c);
-          }
-        }
+        ui::draw_icon_bento_grid(it, bx, by, ir, fg_c, sh);
       }
     }
   };
@@ -377,10 +293,14 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                      static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
                                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-      if (is_act) fast_filled_circle(it, area_l + 19, y_mid, 6, theme_primary);
-      else fast_circle(it, area_l + 19, y_mid, 5, col_slate);
-      std::string fit_n = fit_text_to_width_font(s.name, layout().list_card_w - 54, font_small);
-      fast_print(it, area_l + 37, y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
+      const int dot_x = area_l + scale_x(19);
+      if (is_act) {
+        fast_filled_circle_aa(it, dot_x, y_mid, scale_s(6), theme_primary);
+      } else {
+        fast_circle_aa(it, dot_x, y_mid, static_cast<float>(scale_s(5)), col_slate, 1.5f);
+      }
+      std::string fit_n = fit_text_to_width_font(s.name, layout().list_card_w - scale_x(54), font_small);
+      fast_print(it, area_l + scale_x(37), y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     }
 
     if (list_total_pages > 1) {
@@ -412,28 +332,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
     const int tele_y = layout().sub_hdr_y;
     const Color icon_c(185, 225, 255);
-
-    auto draw_mini_thermometer = [&](int tx, int ty, Color c) {
-      fast_rect_outline(it, tx - 2, ty - 9, 5, 11, c);
-      fast_filled_circle(it, tx, ty + 4, 4, c);
-      fast_vline(it, tx, ty - 4, 7, c);
-      fast_hline(it, tx + 4, ty - 6, 3, c);
-      fast_hline(it, tx + 4, ty - 2, 3, c);
-    };
-
-    auto draw_mini_droplet = [&](int dx, int dy, Color c) {
-      fast_line(it, dx, dy - 8, dx - 5, dy + 1, c);
-      fast_line(it, dx, dy - 8, dx + 5, dy + 1, c);
-      for (int i = 17; i < 43; i += 3) {
-        const int i1 = std::min(43, i + 3);
-        const int x0 = dx + static_cast<int>(std::roundf(5.2f * DIAL_SIN[i]));
-        const int y0 = (dy + 2) - static_cast<int>(std::roundf(5.2f * DIAL_COS[i]));
-        const int x1 = dx + static_cast<int>(std::roundf(5.2f * DIAL_SIN[i1]));
-        const int y1 = (dy + 2) - static_cast<int>(std::roundf(5.2f * DIAL_COS[i1]));
-        fast_line(it, x0, y0, x1, y1, c);
-      }
-      fast_pixel(it, dx - 2, dy + 3, c);
-    };
+    const bool tele_sh = backdrop_active();
+    const int tr = scale_s(8);
+    const int icon_slot = 2 * tr;
+    const int txt_pad = scale_x(5);
+    const int pair_gap = scale_x(22);
 
     char t_str[16] = "", h_str[16] = "";
     int w_t = 0, w_h = 0, x_off = 0, base = 0, th = 0;
@@ -449,23 +352,23 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     }
 
     if (has_t && has_h) {
-      const int total_w = 12 + 6 + w_t + 22 + 12 + 6 + w_h;
+      const int total_w = icon_slot + txt_pad + w_t + pair_gap + icon_slot + txt_pad + w_h;
       const int left_x = cx - (total_w / 2);
-      draw_mini_thermometer(left_x + 5, tele_y, icon_c);
-      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
-      const int drop_x = left_x + 12 + 6 + w_t + 22;
-      draw_mini_droplet(drop_x + 5, tele_y, icon_c);
-      fast_print(it, drop_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      ui::draw_icon_thermometer(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
+      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      const int drop_x = left_x + icon_slot + txt_pad + w_t + pair_gap;
+      ui::draw_icon_droplet(it, drop_x + tr, tele_y, tr, icon_c, tele_sh);
+      fast_print(it, drop_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     } else if (has_t) {
-      const int total_w = 12 + 6 + w_t;
+      const int total_w = icon_slot + txt_pad + w_t;
       const int left_x = cx - (total_w / 2);
-      draw_mini_thermometer(left_x + 5, tele_y, icon_c);
-      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      ui::draw_icon_thermometer(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
+      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
     } else {
-      const int total_w = 12 + 6 + w_h;
+      const int total_w = icon_slot + txt_pad + w_h;
       const int left_x = cx - (total_w / 2);
-      draw_mini_droplet(left_x + 5, tele_y, icon_c);
-      fast_print(it, left_x + 12 + 6, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      ui::draw_icon_droplet(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
+      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     }
   } else {
     const char *sub_lbl = (area_domain_filter == "scene")   ? "Lighting Scenes"
@@ -479,76 +382,31 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     render_sub_header(it, cx, sub_lbl, font_small, col_slate);
   }
 
+  const int card_ir = ui::card_icon_r(layout().area_card3_h);
   auto draw_tall_card_icon = [&](int gx, int gy, const std::string &dtype,
                                  const std::string &name, const std::string &id_str,
                                  bool is_on, Color fg_c) {
     if (dtype == "light") {
-      const Color bulb_c = is_on ? col_gold : fg_c;
-      if (is_on) {
-        fast_filled_circle(it, gx, gy - 4, 9, bulb_c);
-        fill_rect_row_major(it, gx - 5, gy + 1, 11, 5, bulb_c);
-      } else {
-        fast_circle(it, gx, gy - 4, 9, bulb_c);
-        fast_circle(it, gx, gy - 4, 8, bulb_c);
-        fast_rect_outline(it, gx - 5, gy + 2, 11, 4, bulb_c);
-      }
-      fill_rect_row_major(it, gx - 4, gy + 7, 9, 3, fg_c);
-      fast_hline(it, gx - 2, gy + 11, 5, fg_c);
+      ui::draw_icon_lightbulb(it, gx, gy, card_ir, is_on ? col_gold : fg_c, true);
     } else if (dtype == "cover") {
-      const bool is_curt = is_curtain_entity(name, id_str);
       const Color cov_c = is_on ? theme_primary : fg_c;
-      if (is_curt) {
-        fill_rect_row_major(it, gx - 12, gy - 12, 25, 2, fg_c);
-        fast_filled_triangle(it, gx - 11, gy - 10, gx - 2, gy - 10, gx - 11, gy + 3, cov_c);
-        fill_rect_row_major(it, gx - 11, gy + 3, 5, 9, cov_c);
-        fast_line(it, gx - 11, gy + 3, gx - 5, gy + 3, col_white);
-        fast_filled_triangle(it, gx + 11, gy - 10, gx + 2, gy - 10, gx + 11, gy + 3, cov_c);
-        fill_rect_row_major(it, gx + 7, gy + 3, 5, 9, cov_c);
-        fast_line(it, gx + 6, gy + 3, gx + 11, gy + 3, col_white);
+      if (is_curtain_entity(name, id_str)) {
+        ui::draw_icon_curtains(it, gx, gy, card_ir, cov_c, true);
       } else {
-        fast_rect_outline(it, gx - 11, gy - 11, 23, 22, fg_c);
-        fill_rect_row_major(it, gx - 11, gy - 11, 23, 3, fg_c);
-        const int num_slats = is_on ? 2 : 4;
-        for (int s = 0; s < num_slats; s++) {
-          const int sy = (gy - 5) + s * 4;
-          fast_hline(it, gx - 8, sy,     17, cov_c);
-          fast_hline(it, gx - 8, sy + 1, 17, cov_c);
-        }
-        fast_line(it, gx + 8, gy - 8, gx + 8, gy + 6, theme_secondary);
-        fast_filled_circle(it, gx + 8, gy + 7, 2, theme_secondary);
+        ui::draw_icon_blinds_slats(it, gx, gy, card_ir, cov_c, is_on, true);
       }
     } else if (dtype == "fan") {
       const Color fan_c = is_on ? Color(48, 196, 156) : fg_c;
-      for (int dy = -13; dy <= 13; dy++) {
-        for (int dx = -13; dx <= 13; dx++) {
-          if (is_ceiling_fan_4blade_pixel(dx, dy)) {
-            const int r2 = dx * dx + dy * dy;
-            fast_pixel(it, gx + dx, gy + dy, (r2 <= 10 && is_on) ? col_white : fan_c);
-          }
-        }
-      }
+      ui::draw_icon_ceiling_fan(it, gx, gy, card_ir, fan_c, true);
     } else if (dtype == "scene" || dtype == "script") {
-      fast_line(it, gx, gy - 11, gx, gy + 11, col_gold);
-      fast_line(it, gx - 11, gy, gx + 11, gy, col_gold);
-      fast_line(it, gx - 6, gy - 6, gx + 6, gy + 6, col_gold);
-      fast_line(it, gx - 6, gy + 6, gx + 6, gy - 6, col_gold);
-      fast_filled_circle(it, gx, gy, 3, col_white);
+      ui::draw_icon_sparkle(it, gx, gy, card_ir, col_gold, true);
     } else if (dtype == "climate") {
-      const Color cl_c = is_on ? col_gold : fg_c;
-      fast_rect_outline(it, gx - 3, gy - 12, 7, 15, fg_c);
-      fast_filled_circle(it, gx, gy + 6, 6, cl_c);
-      fill_rect_row_major(it, gx - 1, gy - 6, 3, 10, cl_c);
-      fast_line(it, gx + 6, gy - 9, gx + 9, gy - 9, theme_secondary);
-      fast_line(it, gx + 6, gy - 5, gx + 8, gy - 5, theme_secondary);
-      fast_line(it, gx + 6, gy - 1, gx + 9, gy - 1, theme_secondary);
+      ui::draw_icon_thermometer(it, gx, gy, card_ir, is_on ? col_gold : fg_c, true);
     } else if (dtype == "media_player") {
-      ui::draw_icon_eighth_notes(it, gx + 2, gy - 1, theme_primary);
+      ui::draw_icon_eighth_notes(it, gx, gy, card_ir, theme_primary, true);
     } else {
-      const Color sw_c = is_on ? theme_primary : kChromeCardBrdOn;
-      fast_filled_circle(it, gx - 5, gy, 7, sw_c);
-      fast_filled_circle(it, gx + 5, gy, 7, sw_c);
-      fill_rect_row_major(it, gx - 5, gy - 7, 10, 15, sw_c);
-      fast_filled_circle(it, is_on ? (gx + 5) : (gx - 5), gy, 5, col_white);
+      const Color sw_c = is_on ? theme_primary : fg_c;
+      ui::draw_icon_switch_pill(it, gx, gy, card_ir, sw_c, is_on, true);
     }
   };
 
@@ -661,9 +519,12 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     } else if (has_slider) {
       // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
       const int cx_ch = r_right - scale_x(18);
+      const int ch_dx = std::max(3, scale_x(4));
+      const int ch_dy = std::max(4, scale_y(6));
+      const Color ch_col = is_act ? col_white : col_slate;
       for (int w = -1; w <= 0; ++w) {
-        fast_line(it, cx_ch - 4 + w, y_mid - 6, cx_ch + 2 + w, y_mid, is_act ? col_white : col_slate);
-        fast_line(it, cx_ch + 2 + w, y_mid, cx_ch - 4 + w, y_mid + 6, is_act ? col_white : col_slate);
+        fast_line(it, cx_ch - ch_dx + w, y_mid - ch_dy, cx_ch + ch_dx / 2 + w, y_mid, ch_col);
+        fast_line(it, cx_ch + ch_dx / 2 + w, y_mid, cx_ch - ch_dx + w, y_mid + ch_dy, ch_col);
       }
     }
 

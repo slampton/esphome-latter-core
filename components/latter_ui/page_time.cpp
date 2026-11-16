@@ -51,20 +51,19 @@ void render_time_mode_bar(esphome::display::Display &it, const UiFrameContext &c
                                ctx.theme_primary, ctx.col_white, 0);
 
   const int by = layout().app_dock_y;
+  const int ir = ui::dock_icon_r(layout().dock_r);
   for (int i = 0; i < 4; ++i) {
     const int bx = win_xs[i];
     const bool is_act = (i == active_sub);
     const Color fg_c = is_act ? ctx.theme_primary : ctx.col_white;
-    const Color cut_c = sample_glass_surface_color(bx - 4, by - 4, 9, 9);
-    const Color acc_c = is_act ? ctx.theme_secondary : fg_c;
     if (i == TimeSubpage::CLOCK) {
-      ui::draw_icon_clock_face(it, bx, by, std::max(8, scale_s(10)), fg_c);
+      ui::draw_icon_clock_solid(it, bx, by, ir, fg_c, true);
     } else if (i == TimeSubpage::TIMERS) {
-      ui::draw_icon_hourglass(it, bx, by, fg_c, acc_c, std::max(8, scale_s(11)));
+      ui::draw_icon_hourglass(it, bx, by, ir, fg_c, true);
     } else if (i == TimeSubpage::ALARMS) {
-      ui::draw_icon_alarm_clock(it, bx, by, fg_c, cut_c, std::max(7, scale_s(10)));
+      ui::draw_icon_alarm_clock(it, bx, by, ir, fg_c, true);
     } else {
-      ui::draw_icon_stopwatch(it, bx, by, fg_c, acc_c, std::max(7, scale_s(10)));
+      ui::draw_icon_stopwatch(it, bx, by, ir, fg_c, true);
     }
   }
 }

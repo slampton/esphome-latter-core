@@ -2494,7 +2494,7 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
                       game_sound_on ? ctx.theme_secondary : kChromeCardBorder);
   frame_hits().add_circle(spk_x, spk_y, spk_r + 6, WidgetId::GAMES_SOUND_BTN, kHitTap | kHitFocusCircle, 1);
   Color spk_c = game_sound_on ? ctx.col_white : ctx.col_slate;
-  ui::draw_icon_speaker(it, spk_x, spk_y, spk_c, game_sound_on);
+  ui::draw_icon_speaker(it, spk_x, spk_y, std::max(10, (spk_r * 56) / 100), spk_c, game_sound_on, true);
   if (!game_sound_on) {
     const int sl = scale_s(10);
     fast_line(it, spk_x - sl - 1, spk_y - sl, spk_x + sl, spk_y + sl + 1, ctx.col_red);

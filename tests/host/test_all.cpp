@@ -1054,7 +1054,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111505L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111506L);
 
   // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
@@ -3329,7 +3329,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111505L, "LATTER_SDK_REV must match 2026111505L");
+  static_assert(LATTER_SDK_REV == 2026111506L, "LATTER_SDK_REV must match 2026111506L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);
@@ -3864,6 +3864,67 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
   }
 }
 
+void test_custom_icon_tiers_and_d051() {
+  using namespace latter_ui;
+
+  // 1. Container-proportional dock_icon_r_for across all flagship geometries (54..57% optical fill)
+  static_assert(dock_icon_r_for(24) == 13);  // 320x480 Remote (dock_r=24 -> 27/49 = 55.1%)
+  static_assert(dock_icon_r_for(27) == 15);  // 410x502, 466x466, 480x480 (dock_r=27 -> 31/55 = 56.4%)
+  static_assert(dock_icon_r_for(40) == 22);  // 720x720 Desk (dock_r=40 -> 45/81 = 55.6%)
+
+  for (const auto &p : kFlagshipPanels) {
+    const auto base = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi);
+    const int ir = dock_icon_r_for(base.dock_r);
+    const float fill = static_cast<float>(2 * ir + 1) / static_cast<float>(2 * base.dock_r + 1);
+    LATTER_CHECK(fill >= 0.53f && fill <= 0.58f);
+
+    const int card_ir = card_icon_r_for(base.area_card3_h);
+    LATTER_CHECK(card_ir >= 13 && card_ir * 2 + 1 <= base.area_card3_h - 16);
+
+    const int min_dim = std::min(p.w, p.h);
+    const int hero_compact = hero_icon_r_for(66, min_dim);
+    const int hero_tall = hero_icon_r_for((p.h > 520) ? 204 : 132, min_dim);
+    LATTER_CHECK(hero_compact >= scale_s_for(13, min_dim));
+    LATTER_CHECK(hero_tall <= scale_s_for(24, min_dim));
+    if (p.w == 320) {
+      LATTER_CHECK(ir == 13);
+    } else if (p.w == 720) {
+      LATTER_CHECK(ir == 22);
+      LATTER_CHECK(card_ir == 22);
+      LATTER_CHECK(hero_tall == 37);
+    } else if (p.w >= 410) {
+      LATTER_CHECK(ir == 15);
+    }
+  }
+
+  // 2. Source-level guards: zero internal scale_s() double-scaling inside draw_icon_*, D-051 glyphs & docs
+  {
+    const std::string w_hdr = read_repo_file("../../include/ui_widgets.h");
+    const std::string w_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+    const std::string home_src = read_repo_file("../../components/latter_ui/page_clock_home.cpp");
+    const std::string hub_src = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
+    const std::string time_src = read_repo_file("../../components/latter_ui/page_time.cpp");
+    const std::string doc_src = read_repo_file("../../docs/device-ui-design.md");
+
+    LATTER_CHECK(w_hdr.find("draw_icon_clock_face") == std::string::npos);
+    LATTER_CHECK(w_hdr.find("draw_icon_clock_solid") != std::string::npos);
+    LATTER_CHECK(w_hdr.find("draw_icon_shield_home") != std::string::npos);
+
+    const size_t glyph_sec_start = w_src.find("void draw_icon_power(");
+    const size_t glyph_sec_end = w_src.find("void toggle_switch(");
+    LATTER_CHECK(glyph_sec_start != std::string::npos && glyph_sec_end != std::string::npos &&
+                 glyph_sec_start < glyph_sec_end);
+    const std::string glyph_sec = w_src.substr(glyph_sec_start, glyph_sec_end - glyph_sec_start);
+    LATTER_CHECK(glyph_sec.find("scale_s(") == std::string::npos);
+
+    LATTER_CHECK(home_src.find("draw_icon_clock_solid") != std::string::npos);
+    LATTER_CHECK(hub_src.find("draw_icon_shield_home") != std::string::npos);
+    LATTER_CHECK(time_src.find("draw_icon_clock_solid") != std::string::npos);
+    LATTER_CHECK(time_src.find("sample_glass_surface_color") == std::string::npos);
+    LATTER_CHECK(doc_src.find("### D-051:") != std::string::npos);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -3887,6 +3948,7 @@ int main() {
   test_home_hub_v6_alarm_caps_and_tools_pagination();
   test_home_hub_d048_button_only_glass_and_conditional_controls();
   test_touch_hal_kinematic_gestures_and_d049_d050();
+  test_custom_icon_tiers_and_d051();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

@@ -75,39 +75,6 @@ void draw_frosted_pill(esphome::display::Display &it, int cx_pill, int cy_pill,
   }
 }
 
-void draw_icon_garage_door(esphome::display::Display &it, int cx, int cy,
-                           esphome::Color col, esphome::Color cut_c, bool is_open) {
-  const int hw = std::max(8, scale_s(12));
-  const int hh = std::max(7, scale_s(10));
-  fast_filled_triangle(it, cx, cy - hh - 2, cx - hw - 2, cy - hh + 5, cx + hw + 2, cy - hh + 5, col);
-  fill_rect_row_major(it, cx - hw, cy - hh + 5, 2 * hw + 1, 2 * hh - 3, col);
-  fill_rect_row_major(it, cx - hw + 3, cy - hh + 7, 2 * hw - 5, 2 * hh - 5, cut_c);
-  if (!is_open) {
-    const int slat_w = 2 * hw - 7;
-    const int slat_h = std::max(2, (2 * hh - 9) / 3);
-    for (int s = 0; s < 3; ++s) {
-      fill_rect_row_major(it, cx - slat_w / 2, cy - hh + 8 + s * (slat_h + 1), slat_w, slat_h, col);
-    }
-  } else {
-    fill_rect_row_major(it, cx - hw + 4, cy - hh + 8, 2 * hw - 7, std::max(2, scale_s(3)), col);
-  }
-}
-
-void draw_icon_robot_vacuum(esphome::display::Display &it, int cx, int cy,
-                            esphome::Color col, esphome::Color cut_c, esphome::Color accent_c,
-                            bool drop_shadow = false) {
-  const int r = std::max(8, scale_s(11));
-  if (drop_shadow) {
-    fast_filled_circle_aa(it, cx + 1, cy + 2, r, kChromeShadow);
-  }
-  fast_filled_circle_aa(it, cx, cy + 1, r, col);
-  fast_hline(it, cx - r + 3, cy - r / 2 + 1, 2 * r - 5, cut_c);
-  fast_hline(it, cx - r + 2, cy - r / 2 + 2, 2 * r - 3, cut_c);
-  fast_filled_circle_aa(it, cx, cy + 2, std::max(3, r / 2 - 1), cut_c);
-  fast_filled_circle_aa(it, cx, cy + 2, std::max(2, r / 4), accent_c);
-  fast_hline(it, cx - 3, cy + r - 3, 7, cut_c);
-}
-
 void render_framed_camera_preview(esphome::display::Display &it, ArtImageView img,
                                   int x0, int y0, int w, int h, int corner_r) {
   if (!img.valid() || w <= 8 || h <= 8) return;
@@ -184,24 +151,11 @@ void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContex
                                ctx.theme_primary, ctx.col_white, start_idx);
 
   const int by = layout().app_dock_y;
+  const int ir = ui::dock_icon_r(layout().dock_r);
   const int left_cx = win_xs[0];
   const int right_cx = win_xs[vis_count - 1];
   const int stride = get_dock_slot_stride(win_xs, vis_count);
   const float anim_start = mode_bar_anim().cur_start;
-
-  const bool has_bd = backdrop_active();
-  Color shared_inactive_cut{};
-  bool has_shared_inactive_cut = false;
-  auto resolve_cut = [&](int slot_x, int slot_y, bool is_act) -> Color {
-    if (has_bd || is_act) {
-      return sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
-    }
-    if (!has_shared_inactive_cut) {
-      shared_inactive_cut = sample_glass_surface_color(slot_x - 4, slot_y - 4, 9, 9);
-      has_shared_inactive_cut = true;
-    }
-    return shared_inactive_cut;
-  };
 
   for (int g_idx = 0; g_idx < tab_count; ++g_idx) {
     const float rel_slot = static_cast<float>(g_idx) - anim_start;
@@ -220,28 +174,27 @@ void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContex
     const Color fg_c(static_cast<uint8_t>(16 + (raw_c.r - 16) * alpha),
                      static_cast<uint8_t>(20 + (raw_c.g - 20) * alpha),
                      static_cast<uint8_t>(27 + (raw_c.b - 27) * alpha));
-    const Color cut_c = resolve_cut(bx, by, is_act);
-    const Color acc_c = is_act ? ctx.theme_secondary : fg_c;
+    const bool sh = (alpha > 0.65f);
 
     switch (tabs[g_idx]) {
       case HomeHubTab::ALARM:
-        ui::draw_icon_shield(it, bx, by, fg_c);
+        ui::draw_icon_shield_home(it, bx, by, ir, fg_c, sh);
         break;
       case HomeHubTab::CAMERAS:
-        ui::draw_icon_camera(it, bx, by, fg_c, cut_c, std::max(8, scale_s(10)));
+        ui::draw_icon_camera(it, bx, by, ir, fg_c, sh);
         break;
       case HomeHubTab::INTERCOM:
-        ui::draw_icon_speaker(it, bx, by, fg_c, true);
+        ui::draw_icon_speaker(it, bx, by, ir, fg_c, true, sh);
         break;
       case HomeHubTab::THERMOSTAT:
-        ui::draw_icon_thermometer(it, bx, by, fg_c, cut_c);
+        ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
         break;
       case HomeHubTab::ENTRY:
-        ui::draw_icon_lock(it, bx, by, fg_c, cut_c, true);
+        ui::draw_icon_lock(it, bx, by, ir, fg_c, true, sh);
         break;
       case HomeHubTab::VACUUM:
       default:
-        draw_icon_robot_vacuum(it, bx, by, fg_c, cut_c, acc_c);
+        ui::draw_icon_robot_vacuum(it, bx, by, ir, fg_c, sh);
         break;
     }
   }
@@ -307,8 +260,7 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   // D-048: Status readout rendered directly over wallpaper with 1px kChromeShadow (never inside a glass card).
   const int icon_cy = hero_y0 + (is_fb ? (hero_h * 25) / 100 : (hero_h * 32) / 100);
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
-  ui::draw_icon_shield(it, cx + 1, icon_cy + 1, kChromeShadow);
-  ui::draw_icon_shield(it, cx, icon_cy, badge_col);
+  ui::draw_icon_shield_home(it, cx, icon_cy, ui::hero_icon_r(hero_h), badge_col, true);
 
   auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
@@ -748,10 +700,11 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
       render_card_box(it, x0, cy_r - card_h / 2, w_r, card_h,
                       ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
                       std::min(12, card_h / 2), GlassVariant::Clear, ctx.col_white);
-      ui::draw_icon_speaker(it, x0 + scale_x(20), cy_r, ctx.theme_primary, true);
+      const int spk_r = std::clamp(card_h / 3, 9, scale_s(13));
+      ui::draw_icon_speaker(it, x0 + scale_x(22), cy_r, spk_r, ctx.theme_primary, true, true);
       const std::string fit_l = fit_text_to_width_font(
-          std::string(kBroadcastLabels[i]), std::max(60, w_r - scale_x(52)), ctx.font_small);
-      draw_shadowed_text(it, x0 + scale_x(40), cy_r, ctx.font_small, ctx.col_white,
+          std::string(kBroadcastLabels[i]), std::max(60, w_r - scale_x(54)), ctx.font_small);
+      draw_shadowed_text(it, x0 + scale_x(42), cy_r, ctx.font_small, ctx.col_white,
                          TextAlign::CENTER_LEFT, fit_l.c_str());
       frame_hits().add_centered_rect(cx, cy_r, w_r, hit_h,
                                      static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
@@ -985,17 +938,18 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
 
   const int x0 = cx - card_w / 2;
   const int y0 = cy - card_h / 2;
-  const Color surf = render_card_box(it, x0, y0, card_w, card_h,
-                                     ui::chrome_card_bg_on(), state_col,
-                                     std::max(12, scale_s(16)), GlassVariant::Clear, ctx.col_white);
+  (void) render_card_box(it, x0, y0, card_w, card_h,
+                         ui::chrome_card_bg_on(), state_col,
+                         std::max(12, scale_s(16)), GlassVariant::Clear, ctx.col_white);
 
-  const int icon_cx = x0 + std::max(22, scale_x(28));
+  const int ir = std::min(ui::card_icon_r(card_h), scale_s(20));
+  const int icon_cx = x0 + ir + std::max(12, scale_x(16));
   if (is_lock) {
     const bool locked = (std::strcmp(state_txt, "Unlocked") != 0);
-    ui::draw_icon_lock(it, icon_cx, cy, state_col, surf, locked);
+    ui::draw_icon_lock(it, icon_cx, cy, ir, state_col, locked, true);
   } else {
     const bool open = (std::strcmp(state_txt, "Open") == 0);
-    draw_icon_garage_door(it, icon_cx, cy, state_col, surf, open);
+    ui::draw_icon_garage_door(it, icon_cx, cy, ir, state_col, open, true);
   }
 
   const int min_hit = UiLayout::mm_to_px(7.0f);
@@ -1003,7 +957,7 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
   const int pill_h = std::clamp(card_h - 16, 32, scale_y(44));
   const int pill_cx = x0 + card_w - pill_w / 2 - std::max(8, scale_x(10));
 
-  const int txt_x0 = icon_cx + std::max(16, scale_x(20));
+  const int txt_x0 = icon_cx + ir + std::max(10, scale_x(14));
   const int txt_max_w = std::max(54, (pill_cx - pill_w / 2 - 8) - txt_x0);
   auto *pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
   auto *sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
@@ -1129,10 +1083,9 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   const int hero_y0 = content_top;
 
   // D-048: Robot vacuum icon + status text rendered directly over wallpaper with kChromeShadow
-  // (using kChromeShadow for negative-space lines instead of glass surface readbacks).
   const int icon_cy = hero_y0 + (is_fb ? (hero_h * 25) / 100 : (hero_h * 32) / 100);
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
-  draw_icon_robot_vacuum(it, cx, icon_cy, st_col, kChromeShadow, ctx.theme_primary, true);
+  ui::draw_icon_robot_vacuum(it, cx, icon_cy, ui::hero_icon_r(hero_h), st_col, true);
 
   auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));

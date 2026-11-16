@@ -195,8 +195,8 @@ void render_music_now_playing(esphome::display::Display &it, const UiFrameContex
     fill_rect_row_major(it, right_flank_x - pls,     btm_fy,     pls * 2 + 1, pth, ctx.col_white);
 
     if (ctx.music_show_speaker_shortcut) {
-      ui::draw_icon_speaker(it, left_flank_x + 1, top_fy + 1, ctx.col_black, true);
-      ui::draw_icon_speaker(it, left_flank_x,     top_fy,     ctx.col_white, true);
+      const int spk_r = std::max(8, (flank_r * 58) / 100);
+      ui::draw_icon_speaker(it, left_flank_x, top_fy, spk_r, ctx.col_white, true, true);
       frame_hits().add_circle(left_flank_x, top_fy, flank_r,
                               WidgetId::MUSIC_SPEAKER_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
                               0, scale_s(26));
@@ -370,7 +370,8 @@ void render_music_menus(esphome::display::Display &it, const UiFrameContext &ctx
       const Color brd = (i < 3) ? ctx.theme_primary : card_brd;
       render_modern_card(it, cx, ym, 276, 44, 12, card_bg, brd, kHubLabels[i], ctx.col_white, ctx.font_small);
       if (i == 1) {
-        ui::draw_icon_eighth_notes(it, layout().list_card_left + scale_x(22), ym, ctx.theme_primary);
+        ui::draw_icon_eighth_notes(it, layout().list_card_left + scale_x(22), ym, scale_s(10),
+                                   ctx.theme_primary, true);
       }
       frame_hits().add_centered_rect(cx, ym, layout().list_card_w, layout().slot5_h,
                                      WidgetId::LIST_SLOT_BASE + i, kHitTap | kHitFocusSlot,

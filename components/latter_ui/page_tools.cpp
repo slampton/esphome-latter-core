@@ -90,55 +90,37 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
       kChromeGlassTint, kChromeCardBorder, nullptr, ctx.col_white, ctx.font_small);
 
   const Color col_white = ctx.col_white;
-  const Color theme_secondary = ctx.theme_secondary;
   const int ix = cx_card;
   const int iy = cy_card - scale_y(13);
   const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
   auto S = [](int v466) constexpr -> int { return scale_s(v466); };
+  const int ir = S(14);
 
 #if LATTER_ROUND_DISPLAY
   if (app_id == ToolsSubpage::STOPWATCH) {
-    // Classic Round Chronograph: 2px chronometer bezel, bold top crown, angled pusher & 2px sweep hand
-    fill_rect_row_major(it, ix - S(4), iy - S(16), 2 * S(4) + 1, thick, col_white);
-    fill_rect_row_major(it, ix - S(1), iy - S(16) + thick, 2 * S(1) + 1, S(4), col_white);
-    for (int t = 0; t < thick; t++) {
-      fast_line(it, ix + S(9) + t, iy - S(8) + t, ix + S(13) + t, iy - S(12) + t, col_white);
-      fast_circle(it, ix, iy + S(2), S(12) - t, col_white);
-    }
-    fast_line(it, ix, iy - S(8), ix, iy - S(6), theme_secondary);
-    fast_line(it, ix, iy + S(10), ix, iy + S(12), theme_secondary);
-    fast_line(it, ix - S(10), iy + S(2), ix - S(8), iy + S(2), theme_secondary);
-    fast_line(it, ix + S(8), iy + S(2), ix + S(10), iy + S(2), theme_secondary);
-    fast_filled_circle(it, ix, iy + S(2), S(2), col_white);
-    for (int t = 0; t < thick; t++) {
-      fast_line(it, ix + t, iy + S(2), ix + S(6), iy - S(4) + t, col_white);
-    }
+    ui::draw_icon_stopwatch(it, ix, iy, ir, col_white, true);
   } else
 #endif
   if (app_id == ToolsSubpage::DICE) {
-    // 4. Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips
+    // Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips
     const int d_r = S(5);
     const int x0 = ix - S(13);
     const int y0 = iy - S(13);
     const int s = 2 * S(13) + 1;
-    fill_rect_row_major(it, x0 + d_r, y0, s - 2 * d_r, s, col_white);
-    fill_rect_row_major(it, x0, y0 + d_r, s, s - 2 * d_r, col_white);
-    fast_filled_circle(it, x0 + d_r, y0 + d_r, d_r, col_white);
-    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + d_r, d_r, col_white);
-    fast_filled_circle(it, x0 + d_r, y0 + s - 1 - d_r, d_r, col_white);
-    fast_filled_circle(it, x0 + s - 1 - d_r, y0 + s - 1 - d_r, d_r, col_white);
-    fast_filled_circle(it, ix, iy, S(2), surf_bg);
-    fast_filled_circle(it, ix - S(7), iy - S(7), S(2), surf_bg);
-    fast_filled_circle(it, ix + S(7), iy - S(7), S(2), surf_bg);
-    fast_filled_circle(it, ix - S(7), iy + S(7), S(2), surf_bg);
-    fast_filled_circle(it, ix + S(7), iy + S(7), S(2), surf_bg);
+    fill_round_rect_aa(it, x0 + 1, y0 + 1, s, s, static_cast<float>(d_r), kChromeShadow);
+    fill_round_rect_aa(it, x0, y0, s, s, static_cast<float>(d_r), col_white);
+    fast_filled_circle_aa(it, ix, iy, S(2), surf_bg);
+    fast_filled_circle_aa(it, ix - S(7), iy - S(7), S(2), surf_bg);
+    fast_filled_circle_aa(it, ix + S(7), iy - S(7), S(2), surf_bg);
+    fast_filled_circle_aa(it, ix - S(7), iy + S(7), S(2), surf_bg);
+    fast_filled_circle_aa(it, ix + S(7), iy + S(7), S(2), surf_bg);
 
   } else if (app_id == ToolsSubpage::FLASHLIGHT) {
-    // 5. Flashlight: Solid filled sculpted torch body & reflector head + 3 bold light beams
+    // Flashlight: Solid filled sculpted torch body & reflector head + 3 bold light beams
     fast_filled_triangle(it, ix - S(9), iy - S(7), ix + S(9), iy - S(7), ix - S(5), iy - S(1), col_white);
     fast_filled_triangle(it, ix + S(9), iy - S(7), ix - S(5), iy - S(1), ix + S(5), iy - S(1), col_white);
     fill_rect_row_major(it, ix - S(5), iy + S(1), 2 * S(5) + 1, S(14), col_white);
-    fast_filled_circle(it, ix, iy + S(14), S(5), col_white);
+    fast_filled_circle_aa(it, ix, iy + S(14), S(5), col_white);
     fill_rect_row_major(it, ix - S(1), iy + S(5), 2 * S(1) + 1, S(5), surf_bg);
     for (int t = 0; t < thick; t++) {
       fast_line(it, ix + t, iy - S(10), ix + t, iy - S(16), col_white);
@@ -147,61 +129,44 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
     }
 
   } else if (app_id == ToolsSubpage::CALCULATOR) {
-    // 6. Calculator: 2px frame, solid LCD display bar & 3x2 grid of solid keypad pills
+    // Calculator: Solid rounded body with negative-space LCD readout & 3x2 keypad cutouts
     const int cw = 2 * S(12) + 1;
     const int ch = 2 * S(15) + 1;
-    for (int t = 0; t < thick; t++) {
-      fast_rect_outline(it, ix - S(12) + t, iy - S(15) + t, cw - 2 * t, ch - 2 * t, col_white);
-    }
-    fill_rect_row_major(it, ix - S(8), iy - S(11), 2 * S(8) + 1, S(6), col_white);
+    const int cx0 = ix - S(12);
+    const int cy0 = iy - S(15);
+    fill_round_rect_aa(it, cx0 + 1, cy0 + 1, cw, ch, static_cast<float>(S(4)), kChromeShadow);
+    fill_round_rect_aa(it, cx0, cy0, cw, ch, static_cast<float>(S(4)), col_white);
+    fill_rect_row_major(it, ix - S(8), iy - S(11), 2 * S(8) + 1, S(6), surf_bg);
     for (int r = 0; r < 2; r++) {
-      const int ky = iy - S(1) + r * S(6);
-      fill_rect_row_major(it, ix - S(8), ky, S(4), S(3), col_white);
-      fill_rect_row_major(it, ix - S(2), ky, S(4), S(3), col_white);
-      fill_rect_row_major(it, ix + S(4), ky, S(4), S(3), col_white);
+      const int ky = iy - S(1) + r * S(5);
+      fill_rect_row_major(it, ix - S(8), ky, S(4), S(3), surf_bg);
+      fill_rect_row_major(it, ix - S(2), ky, S(4), S(3), surf_bg);
+      fill_rect_row_major(it, ix + S(4), ky, S(4), S(3), surf_bg);
     }
-    fill_rect_row_major(it, ix - S(8), iy + S(10), S(4), thick, col_white);
-    fill_rect_row_major(it, ix - S(2), iy + S(10), S(10), thick, col_white);
+    fill_rect_row_major(it, ix - S(8), iy + S(9), S(4), std::max(2, S(3)), surf_bg);
+    fill_rect_row_major(it, ix - S(2), iy + S(9), S(10), std::max(2, S(3)), surf_bg);
 
   } else if (app_id == ToolsSubpage::LEVEL) {
-    // 7. Bubble Level: 2px outer ring, cardinal crosshairs, inner ring & solid center bubble
-    for (int t = 0; t < thick; t++) {
-      fast_circle(it, ix, iy, S(14) - t, col_white);
-      fast_line(it, ix + t, iy - S(17), ix + t, iy - S(13), col_white);
-      fast_line(it, ix + t, iy + S(13), ix + t, iy + S(17), col_white);
-      fast_line(it, ix - S(17), iy + t, ix - S(13), iy + t, col_white);
-      fast_line(it, ix + S(13), iy + t, ix + S(17), iy + t, col_white);
-    }
-    fast_circle(it, ix, iy, S(7), theme_secondary);
-    fast_filled_circle(it, ix, iy, S(4), col_white);
+    // Bubble Level: Solid outer medallion + cardinal crosshairs + negative-space vial moat & solid center bubble
+    fast_filled_circle_aa(it, ix + 1, iy + 1, S(13), kChromeShadow);
+    fast_filled_circle_aa(it, ix, iy, S(13), col_white);
+    fill_rect_row_major(it, ix - thick / 2, iy - S(16), thick, S(4), col_white);
+    fill_rect_row_major(it, ix - thick / 2, iy + S(13), thick, S(4), col_white);
+    fill_rect_row_major(it, ix - S(16), iy - thick / 2, S(4), thick, col_white);
+    fill_rect_row_major(it, ix + S(13), iy - thick / 2, S(4), thick, col_white);
+    fast_filled_circle_aa(it, ix, iy, S(7), surf_bg);
+    fast_filled_circle_aa(it, ix, iy, S(4), col_white);
 
   } else if (app_id == ToolsSubpage::COIN_FLIP) {
-    // 8. Coin Flip: 2px outer medallion rim, inner struck ring & solid house emblem
-    for (int t = 0; t < thick; t++) {
-      fast_circle(it, ix, iy, S(15) - t, col_white);
-    }
-    fast_circle(it, ix, iy, S(11), theme_secondary);
-    fast_filled_triangle(it, ix - S(7), iy, ix + S(7), iy, ix, iy - S(7), col_white);
-    fill_rect_row_major(it, ix - S(5), iy, 2 * S(5) + 1, S(7), col_white);
-    fast_filled_circle(it, ix, iy + S(1), S(2), surf_bg);
-    fast_line(it, ix, iy + S(3), ix, iy + S(6), surf_bg);
+    // Coin Flip: Solid medallion with negative-space inner ring & house cutout
+    fast_filled_circle_aa(it, ix + 1, iy + 1, S(14), kChromeShadow);
+    fast_filled_circle_aa(it, ix, iy, S(14), col_white);
+    fast_circle_aa(it, ix, iy, static_cast<float>(S(10)), surf_bg, static_cast<float>(std::max(2, S(2))));
+    fast_filled_triangle(it, ix - S(6), iy, ix + S(6), iy, ix, iy - S(6), surf_bg);
+    fill_rect_row_major(it, ix - S(4), iy, 2 * S(4) + 1, S(6), surf_bg);
 
   } else if (app_id == ToolsSubpage::CALENDAR) {
-    // 9. Calendar: 2px page frame, solid header band, twin binder rings & 3x2 date pips
-    const int cal_w = 2 * S(13) + 1;
-    const int cal_h = S(26);
-    for (int t = 0; t < thick; t++) {
-      fast_rect_outline(it, ix - S(13) + t, iy - S(12) + t, cal_w - 2 * t, cal_h - 2 * t, col_white);
-    }
-    fill_rect_row_major(it, ix - S(13) + 1, iy - S(12) + 1, cal_w - 2, S(6), col_white);
-    fill_rect_row_major(it, ix - S(7), iy - S(15), S(3), S(5), col_white);
-    fill_rect_row_major(it, ix + S(5), iy - S(15), S(3), S(5), col_white);
-    for (int r = 0; r < 2; r++) {
-      for (int c = 0; c < 3; c++) {
-        fill_rect_row_major(it, ix - S(8) + c * S(7), iy - S(1) + r * S(6), S(3), S(3),
-                            (r == 0 && c == 1) ? theme_secondary : col_white);
-      }
-    }
+    ui::draw_icon_calendar(it, ix, iy, ir, col_white, true);
   }
 
   fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, ctx.font_small, kChromeShadow,
