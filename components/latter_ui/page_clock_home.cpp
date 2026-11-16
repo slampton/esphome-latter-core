@@ -1746,26 +1746,25 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         fast_line(it, bx - sd(5), by - sd(9),  bx + sd(13), by - sd(12), c);
       } else if (app_id == 7) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-9, 9, -16, 16>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
+          draw_cached_dock_mask<-7, 7, -15, 15>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
             const int ax = std::abs(dx);
             const int ay = std::abs(dy);
-            if (ax > 9 || ay > 16) return false;
-            if (ax > 6 && ay > 13 && ((ax - 6) * (ax - 6) + (ay - 13) * (ay - 13) > 10)) {
+            if (ax > 7 || ay > 15) return false;
+            if (ax > 4 && ay > 12 && ((ax - 4) * (ax - 4) + (ay - 12) * (ay - 12) > 10)) {
               return false;
             }
-            if (dy >= -13 && dy <= -12 && ax >= 4 && ax <= 6) {
+            if (dy >= -12 && dy <= -11 && dx >= 2 && dx <= 4) {
               return false;
             }
-            const int dpy = dy + 4;
+            const int dpy = dy + 3;
             const int r2 = dx * dx + dpy * dpy;
-            if (r2 >= 6 && r2 <= 34) {
-              if (r2 >= 16 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
+            if (r2 >= 6 && r2 <= 29) {
+              if (r2 >= 14 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
                 return true;
               }
               return false;
             }
-            if (((dy >= 4 && dy <= 5) || (dy >= 8 && dy <= 9) || (dy >= 12 && dy <= 13)) &&
-                (ax <= 1 || (ax >= 4 && ax <= 6))) {
+            if (((dy >= 6 && dy <= 7) || (dy >= 10 && dy <= 11)) && (ax >= 2 && ax <= 4)) {
               return false;
             }
             return true;
@@ -1788,14 +1787,14 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         }
       } else if (app_id == 3) {
         if (!is_shadow) {
-          draw_cached_dock_mask<-19, 19, -12, 12>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
-            static constexpr int8_t GP_OUT_MAX[25] = {
-               9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15, 13
+          draw_cached_dock_mask<-19, 19, -12, 11>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
+            static constexpr int8_t GP_OUT_MAX[24] = {
+               9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15
             };
-            static constexpr int8_t GP_OUT_MIN[25] = {
-               0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  6,  8,  9,  9, 10, 10, 11, 11, 12, 12
+            static constexpr int8_t GP_OUT_MIN[24] = {
+               0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  6,  8,  9,  9, 10, 10, 11, 12, 13
             };
-            if (dy < -12 || dy > 12) return false;
+            if (dy < -12 || dy > 11) return false;
             const int row = dy + 12;
             const int ax = std::abs(dx);
             if (ax < GP_OUT_MIN[row] || ax > GP_OUT_MAX[row]) return false;

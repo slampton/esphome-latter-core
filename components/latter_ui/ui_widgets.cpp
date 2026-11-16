@@ -951,27 +951,40 @@ void draw_icon_power(esphome::display::Display &it, int cx, int cy, int r,
 void draw_icon_clock_solid(esphome::display::Display &it, int cx, int cy, int r,
                            esphome::Color col, bool shadow) {
   const float rf = static_cast<float>(std::max(6, r));
-  const float dial_r = 0.96f * rf;
-  const float hand_w = std::max(1.05f, 0.105f * rf);
-  const float tick_w = std::max(0.85f, 0.075f * rf);
-  const SdfCapsule h_hand = SdfCapsule::make(0.0f, 0.0f, -0.38f * rf, -0.25f * rf, hand_w * 1.08f);
-  const SdfCapsule m_hand = SdfCapsule::make(0.0f, 0.0f, 0.48f * rf, -0.32f * rf, hand_w);
-  const SdfCapsule t_top = SdfCapsule::make(0.0f, -0.80f * rf, 0.0f, -0.68f * rf, tick_w);
-  const SdfCapsule t_bot = SdfCapsule::make(0.0f, 0.68f * rf, 0.0f, 0.80f * rf, tick_w);
-  const SdfCapsule t_lft = SdfCapsule::make(-0.80f * rf, 0.0f, -0.68f * rf, 0.0f, tick_w);
-  const SdfCapsule t_rgt = SdfCapsule::make(0.68f * rf, 0.0f, 0.80f * rf, 0.0f, tick_w);
-  const float arbor_r = std::max(1.25f, 0.135f * rf);
+  const float dial_r = 0.94f * rf;
+  const float hw_hour = std::max(0.76f, 0.070f * rf);
+  const float hw_min = std::max(0.68f, 0.056f * rf);
+  const SdfCapsule h_hand = SdfCapsule::make(0.0f, 0.0f, -0.37f * rf, -0.15f * rf, hw_hour);
+  const SdfCapsule m_hand = SdfCapsule::make(0.0f, 0.0f, 0.39f * rf, -0.45f * rf, hw_min);
+  const float tick_card_w = std::max(0.76f, 0.068f * rf);
+  const SdfCapsule t_vert = SdfCapsule::make(0.0f, 0.60f * rf, 0.0f, 0.77f * rf, tick_card_w);
+  const SdfCapsule t_horiz = SdfCapsule::make(0.60f * rf, 0.0f, 0.77f * rf, 0.0f, tick_card_w);
+  const float dot_r = std::max(0.84f, 0.066f * rf);
+  const float dot_s30 = 0.350000f * rf;   // 0.70 * sin(30 deg)
+  const float dot_c30 = 0.606218f * rf;   // 0.70 * cos(30 deg)
+  const float arbor_r = std::max(1.22f, 0.132f * rf);
+  const float pin_r = std::max(0.75f, 0.056f * rf);
 
   rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
     const float d_disc = sd_circle_px(x, y, 0.0f, 0.0f, dial_r);
     if (d_disc >= 1.5f) return d_disc;
     float d_cut = std::min({h_hand.eval(x, y), m_hand.eval(x, y),
                             sd_circle_px(x, y, 0.0f, 0.0f, arbor_r)});
-    if (r >= 11) {
-      d_cut = std::min({d_cut, t_top.eval(x, y), t_bot.eval(x, y),
-                        t_lft.eval(x, y), t_rgt.eval(x, y)});
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    if (r >= 10) {
+      d_cut = std::min({d_cut, t_vert.eval(ax, ay), t_horiz.eval(ax, ay)});
     }
-    return std::max(d_disc, -d_cut);
+    if (r >= 12) {
+      d_cut = std::min({d_cut,
+                        sd_circle_px(ax, ay, dot_s30, dot_c30, dot_r),
+                        sd_circle_px(ax, ay, dot_c30, dot_s30, dot_r)});
+    }
+    float res = std::max(d_disc, -d_cut);
+    if (r >= 13) {
+      res = std::min(res, sd_circle_px(x, y, 0.0f, 0.0f, pin_r));
+    }
+    return res;
   });
 }
 
