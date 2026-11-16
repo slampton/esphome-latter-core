@@ -574,6 +574,8 @@ static inline void pm_keep_raw_outputs_driven() {
 static bool s_p4_quiet_inited = false;
 static bool s_p4_quiet_awake = true;
 static uint32_t s_p4_loop_interval_awake = 16U;
+static uint32_t s_p4_wake_mask = 0U;
+static PmWakeGraceWindow s_p4_grace{};
 #endif
 
 PmCrumb &pm_previous_crumb() {
@@ -712,14 +714,18 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
   }
 #elif LATTER_PM_QUIET_LOOP_ONLY
   if (!s_p4_quiet_inited) return;
-  const uint32_t target_quiet_loop = pm_quiet_loop_interval(wake_mask);
+  s_p4_wake_mask = stay_awake ? 0U : wake_mask;
+  if (stay_awake) s_p4_grace.clear();
+  const uint32_t now_p4 = esphome::millis();
+  const uint32_t target_loop =
+      (stay_awake || s_p4_grace.active(now_p4)) ? s_p4_loop_interval_awake : pm_quiet_loop_interval(wake_mask);
   if (stay_awake == s_p4_quiet_awake) {
-    if (!stay_awake && esphome::App.get_loop_interval() != target_quiet_loop) {
-      esphome::App.set_loop_interval(target_quiet_loop);
+    if (esphome::App.get_loop_interval() != target_loop) {
+      esphome::App.set_loop_interval(target_loop);
     }
     return;
   }
-  esphome::App.set_loop_interval(stay_awake ? s_p4_loop_interval_awake : target_quiet_loop);
+  esphome::App.set_loop_interval(target_loop);
   s_p4_quiet_awake = stay_awake;
   LATTER_PROF_LOGI("[PROF:PM] p4_quiet=%s loop=%lums", stay_awake ? "awake" : "standby",
                    static_cast<unsigned long>(esphome::App.get_loop_interval()));
@@ -738,6 +744,37 @@ void pm_poll_loop(uint32_t now_ms) {
   }
   if (!st.awake) {
     pm_sync_loop_and_lock(now_ms);
+  }
+#elif LATTER_PM_QUIET_LOOP_ONLY
+  if (!s_p4_quiet_inited || s_p4_quiet_awake) return;
+  if (!s_p4_grace.active(now_ms)) {
+    s_p4_grace.clear();
+  }
+  const uint32_t want_loop =
+      s_p4_grace.active(now_ms) ? s_p4_loop_interval_awake : pm_quiet_loop_interval(s_p4_wake_mask);
+  if (esphome::App.get_loop_interval() != want_loop) {
+    esphome::App.set_loop_interval(want_loop);
+  }
+#else
+  (void) now_ms;
+#endif
+}
+
+void pm_wake_grace_arm(uint32_t now_ms) {
+#if LATTER_PM_AUTO_SLEEP
+  PmState &st = g_pm_state;
+  if (st.lock == nullptr || st.awake) return;
+  st.grace.arm(now_ms, kPmWakeGraceMs);
+  if (s_pm_grace_end_timer != nullptr) {
+    (void) esp_timer_stop(s_pm_grace_end_timer);
+    (void) esp_timer_start_once(s_pm_grace_end_timer, static_cast<uint64_t>(kPmWakeGraceMs) * 1000ULL);
+  }
+  pm_sync_loop_and_lock(now_ms);
+#elif LATTER_PM_QUIET_LOOP_ONLY
+  if (!s_p4_quiet_inited || s_p4_quiet_awake) return;
+  s_p4_grace.arm(now_ms, kPmWakeGraceMs);
+  if (esphome::App.get_loop_interval() != s_p4_loop_interval_awake) {
+    esphome::App.set_loop_interval(s_p4_loop_interval_awake);
   }
 #else
   (void) now_ms;

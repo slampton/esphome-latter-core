@@ -10,6 +10,13 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
+#ifdef USE_ESP32
+#include <esp_attr.h>
+#endif
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+
 #include "hal_panel_power.h"
 #include "hal_power_pm.h"
 #include "latter_prof.h"
@@ -294,7 +301,7 @@ void LatterTouchscreen::update_touches() {
 
     case P::GT911: {
       uint8_t status = 0;
-      if (!this->read_byte_reg16(0x814E, &status)) {
+      if (this->read_register16(0x814E, &status, 1) != i2c::ERROR_OK) {
         tel.i2c_errors++;
         this->skip_update_ = true;
         return;
@@ -303,19 +310,20 @@ void LatterTouchscreen::update_touches() {
         this->skip_update_ = true;
         return;
       }
+      const uint8_t ack_814e[3] = {0x81, 0x4E, 0x00};
       uint8_t pt[4]{};
       const uint8_t cnt = static_cast<uint8_t>(status & 0x0FU);
       if (cnt >= 1U && cnt <= 5U) {
         if (this->read_register16(0x8150, pt, 4) != i2c::ERROR_OK) {
           tel.i2c_errors++;
-          (void) this->write_byte_reg16(0x814E, 0x00);
+          (void) this->write(ack_814e, 3);
           this->skip_update_ = true;
           return;
         }
       }
       dec = ::latter_ui::decode_gt911_frame(status, (cnt >= 1U && cnt <= 5U) ? pt : nullptr);
       if (dec.ack_buffer) {
-        (void) this->write_byte_reg16(0x814E, 0x00);
+        (void) this->write(ack_814e, 3);
       }
       break;
     }

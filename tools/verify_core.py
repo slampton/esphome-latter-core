@@ -1037,6 +1037,7 @@ HOST_UI_STUBS: dict[str, str] = {
         "#include \"esphome/core/log.h\"\n"
         "namespace esphome {\n"
         "namespace setup_priority {\n"
+        "inline constexpr float DATA = 600.0f;\n"
         "inline constexpr float AFTER_WIFI = 250.0f;\n"
         "inline constexpr float LATE = -100.0f;\n"
         "}  // namespace setup_priority\n"
@@ -1049,6 +1050,8 @@ HOST_UI_STUBS: dict[str, str] = {
         "  virtual float get_setup_priority() const { return 0.0f; }\n"
         "  void disable_loop() {}\n"
         "  void enable_loop() {}\n"
+        "  void mark_failed() {}\n"
+        "  bool is_failed() const { return false; }\n"
         "  const LogString *get_component_log_str() const { return nullptr; }\n"
         "  bool status_has_error() const { return false; }\n"
         "  void status_clear_error() {}\n"
@@ -1311,6 +1314,86 @@ HOST_UI_STUBS: dict[str, str] = {
         "  ErrorCode read(uint8_t, uint8_t *, size_t) { return ERROR_OK; }\n"
         "};\n"
         "}  // namespace esphome::i2c\n"
+    ),
+    "esphome/components/i2c/i2c.h": (
+        "#pragma once\n"
+        "#include \"esphome/components/i2c/i2c_bus.h\"\n"
+        "namespace esphome::i2c {\n"
+        "class I2CDevice {\n"
+        " public:\n"
+        "  void set_i2c_address(uint8_t addr) { this->address_ = addr; }\n"
+        "  bool read_byte(uint8_t, uint8_t *) { return true; }\n"
+        "  bool write_byte(uint8_t, uint8_t) { return true; }\n"
+        "  bool read_bytes(uint8_t, uint8_t *, uint8_t) { return true; }\n"
+        "  ErrorCode read_register16(uint16_t, uint8_t *, size_t) { return ERROR_OK; }\n"
+        "  ErrorCode write_register16(uint16_t, const uint8_t *, size_t) { return ERROR_OK; }\n"
+        "  ErrorCode write(const uint8_t *, size_t, bool = true) { return ERROR_OK; }\n"
+        " protected:\n"
+        "  uint8_t address_{0};\n"
+        "  I2CBus *bus_{nullptr};\n"
+        "};\n"
+        "}  // namespace esphome::i2c\n"
+    ),
+    "esphome/core/gpio.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "namespace esphome {\n"
+        "namespace gpio {\n"
+        "enum InterruptType : uint8_t {\n"
+        "  INTERRUPT_RISING_EDGE = 1,\n"
+        "  INTERRUPT_FALLING_EDGE = 2,\n"
+        "  INTERRUPT_ANY_EDGE = 3,\n"
+        "};\n"
+        "}  // namespace gpio\n"
+        "class GPIOPin {\n"
+        " public:\n"
+        "  virtual ~GPIOPin() = default;\n"
+        "  virtual void setup() {}\n"
+        "  virtual bool digital_read() { return true; }\n"
+        "  virtual void digital_write(bool) {}\n"
+        "};\n"
+        "class InternalGPIOPin : public GPIOPin {\n"
+        " public:\n"
+        "  template <typename T>\n"
+        "  void attach_interrupt(void (*)(T *), T *, gpio::InterruptType) {}\n"
+        "};\n"
+        "}  // namespace esphome\n"
+    ),
+    "esphome/components/touchscreen/touchscreen.h": (
+        "#pragma once\n"
+        "#include <cstdint>\n"
+        "#include <map>\n"
+        "#include \"esphome/core/component.h\"\n"
+        "namespace esphome::touchscreen {\n"
+        "enum : uint8_t {\n"
+        "  STATE_NONE = 0,\n"
+        "  STATE_PRESSED = 1,\n"
+        "  STATE_UPDATED = 2,\n"
+        "  STATE_RELEASING = 4,\n"
+        "  STATE_RELEASED = 8,\n"
+        "};\n"
+        "struct TouchPoint {\n"
+        "  uint8_t id{0};\n"
+        "  uint8_t state{0};\n"
+        "  int16_t x{0}, y{0}, x_prev{0}, y_prev{0}, x_org{0}, y_org{0};\n"
+        "};\n"
+        "struct TouchInterruptStore {\n"
+        "  volatile bool touched{false};\n"
+        "  bool init{false};\n"
+        "};\n"
+        "class Touchscreen : public PollingComponent {\n"
+        " protected:\n"
+        "  virtual void update_touches() = 0;\n"
+        "  void add_raw_touch_position_(uint8_t, int16_t, int16_t, int16_t = 0) {}\n"
+        "  void send_touches_() {}\n"
+        "  int16_t x_raw_min_{0}, x_raw_max_{0}, y_raw_min_{0}, y_raw_max_{0};\n"
+        "  uint16_t display_width_{466}, display_height_{466};\n"
+        "  bool swap_x_y_{false}, invert_x_{false}, invert_y_{false};\n"
+        "  bool first_touch_{true}, need_update_{false}, is_touched_{false}, skip_update_{false};\n"
+        "  TouchInterruptStore store_{};\n"
+        "  std::map<uint8_t, TouchPoint> touches_{};\n"
+        "};\n"
+        "}  // namespace esphome::touchscreen\n"
     ),
     "esphome/components/wifi/wifi_component.h": (
         "#pragma once\n"
@@ -2488,6 +2571,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
             (
                 "USE_ESP32",
                 "USE_I2C",
+                "USE_TOUCHSCREEN",
                 "USE_API",
                 "USE_WIFI",
                 "USE_VOICE_ASSISTANT",
@@ -2511,6 +2595,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
             (
                 "USE_ESP32",
                 "USE_I2C",
+                "USE_TOUCHSCREEN",
                 "USE_API",
                 "USE_WIFI",
                 "USE_VOICE_ASSISTANT",
@@ -2534,6 +2619,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
             (
                 "USE_ESP32",
                 "USE_I2C",
+                "USE_TOUCHSCREEN",
                 "USE_API",
                 "USE_WIFI",
                 "USE_VOICE_ASSISTANT",
@@ -2556,6 +2642,7 @@ def run_subprocess_gates(failures: list[str]) -> None:
             (
                 "USE_ESP32",
                 "USE_I2C",
+                "USE_TOUCHSCREEN",
                 "USE_API",
                 "USE_WIFI",
                 "USE_VOICE_ASSISTANT",
