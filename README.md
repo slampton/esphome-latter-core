@@ -13,15 +13,6 @@ Turnkey firmware and a compiled C++20 UI/OS for five off-the-shelf Waveshare ESP
 | **[ha-latter](https://github.com/slampton/ha-latter)** | Home Assistant | Integration and **Latter Studio**: live entity mapping, BLE Area presence, signed ESP32 image/audio proxy, and automations. **Start there** if you're setting up a home. |
 | **esphome-latter-core** *(this repo)* | ESP32-S3 / ESP32-P4 | Compiled C++20 firmware (`latter_core`, `latter_ui`, `latter_beacon`), [Web Installer](https://slampton.github.io/esphome-latter-core/), and hardware/UI SDK. |
 
-```mermaid
-flowchart LR
-    DEV["ESP32-S3 / P4 Display<br/>(esphome-latter-core)"] -- "System: RPC Outbox<br/>(zero-privilege taps & sync)" --> HA["Latter Integration<br/>(ha-latter)"]
-    HA -- "latter_push_v3 & latter_set_slots<br/>(6 domains + signed LAN media)" --> DEV
-    BLE["ESPHome BLE Proxies"] -- "RSSI" --> HA
-    HA <--> STUDIO["Latter Studio<br/>(live admin panel)"]
-    HA <--> ECOSYS["HA Areas · Assist · Music Assistant"]
-```
-
 ---
 
 ## Supported Hardware & 3-Minute Setup
@@ -70,6 +61,15 @@ All five boards run the **exact same firmware and universal GUI**. Each board fi
 ---
 
 ## Under the Hood
+
+```mermaid
+flowchart LR
+    DEV["ESP32-S3 / P4 Display<br/>(esphome-latter-core)"] -- "System: RPC Outbox<br/>(zero-privilege taps & sync)" --> HA["Latter Integration<br/>(ha-latter)"]
+    HA -- "latter_push_v3 & latter_set_slots<br/>(6 domains + signed LAN media)" --> DEV
+    BLE["ESPHome BLE Proxies"] -- "RSSI" --> HA
+    HA <--> STUDIO["Latter Studio<br/>(live admin panel)"]
+    HA <--> ECOSYS["HA Areas · Assist · Music Assistant"]
+```
 
 If you're evaluating the firmware or building on the SDK, these are the engineering choices doing the heavy lifting—each linked directly to source:
 
