@@ -1753,10 +1753,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
             if (ax > 4 && ay > 12 && ((ax - 4) * (ax - 4) + (ay - 12) * (ay - 12) > 10)) {
               return false;
             }
-            if (dy >= -12 && dy <= -11 && dx >= 2 && dx <= 4) {
-              return false;
-            }
-            const int dpy = dy + 3;
+            const int dpy = dy + 6;
             const int r2 = dx * dx + dpy * dpy;
             if (r2 >= 6 && r2 <= 29) {
               if (r2 >= 14 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
@@ -1764,7 +1761,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
               }
               return false;
             }
-            if (((dy >= 6 && dy <= 7) || (dy >= 10 && dy <= 11)) && (ax >= 2 && ax <= 4)) {
+            if (((dy >= 3 && dy <= 4) || (dy >= 8 && dy <= 9)) && (ax >= 2 && ax <= 4)) {
               return false;
             }
             return true;
