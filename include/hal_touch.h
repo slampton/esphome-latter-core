@@ -46,15 +46,21 @@ struct TouchDecodedSample {
 };
 
 // FocalTech FT5x06 / FT6336 / FT3168 5-byte frame starting at REG 0x02:
-//   buf[0] = TD_STATUS (bits [3:0] = touch point count 0..2)
+//   buf[0] = TD_STATUS (bits [3:0] = touch point count 0..5)
 //   buf[1] = P1_XH (bits [7:6] = Event Flag: 00=Press, 01=Lift, 10=Contact, 11=Reserved; bits [3:0] = X[11:8])
 //   buf[2] = P1_XL (X[7:0])
 //   buf[3] = P1_YH (bits [7:4] = Touch ID; bits [3:0] = Y[11:8])
 //   buf[4] = P1_YL (Y[7:0])
 inline constexpr TouchDecodedSample decode_focaltech_frame(const uint8_t buf[5]) noexcept {
   const uint8_t count = static_cast<uint8_t>(buf[0] & 0x0FU);
+  if (count > 5U) {
+    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, false};
+  }
+  if (count == 0U) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
+  }
   const uint8_t event_flag = static_cast<uint8_t>((buf[1] >> 6U) & 0x03U);
-  if (count == 0U || count > 5U || event_flag == 0x01U || event_flag == 0x03U) {
+  if (event_flag != 0x00U && event_flag != 0x02U) {
     return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
   }
   const int16_t x = static_cast<int16_t>(((static_cast<uint16_t>(buf[1] & 0x0FU)) << 8U) | buf[2]);
@@ -69,8 +75,11 @@ inline constexpr TouchDecodedSample decode_gt911_frame(uint8_t status_814e,
   if ((status_814e & 0x80U) == 0U) {
     return TouchDecodedSample{TouchSampleKind::NotReady, 0, 0, false};
   }
-  const uint8_t count = static_cast<uint8_t>(status_814e & 0x0FU);
-  if (count == 0U || count > 5U || pt_8150_4bytes == nullptr) {
+  const uint8_t count = static_cast<uint8_t>(status_814e & 0x07U);
+  if (count > 5U) {
+    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, true};
+  }
+  if (count == 0U || pt_8150_4bytes == nullptr) {
     return TouchDecodedSample{TouchSampleKind::Released, 0, 0, true};
   }
   const int16_t x = static_cast<int16_t>(static_cast<uint16_t>(pt_8150_4bytes[0]) |
@@ -80,20 +89,24 @@ inline constexpr TouchDecodedSample decode_gt911_frame(uint8_t status_814e,
   return TouchDecodedSample{TouchSampleKind::Contact, x, y, true};
 }
 
-// Hynitron CST9217 / CST9220 5-byte report at 0xD000:
-//   buf[0] bits [3:0] == 0x06 -> finger contact; buf[4] must equal 0xAB sync marker.
-inline constexpr TouchDecodedSample decode_cst9217_frame(const uint8_t buf[5]) noexcept {
-  if (buf[4] != 0xABU) {
-    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, true};
+// Hynitron CST9217 / CST9220 7-byte single-point report starting at 0xD000 (cstxxx::report_size(1) == 7):
+//   buf[0] = (id << 4) | event (event == 0x06 -> TOUCH_EVENT_DOWN)
+//   buf[1] = X[11:4], buf[2] = Y[11:4], buf[3] = (X[3:0] << 4) | Y[3:0], buf[4] = Z (pressure)
+//   buf[5] = FINGER_COUNT (0xD005, bits [6:0]; 0 -> all fingers lifted)
+//   buf[6] = SYNC_BYTE (0xD006, must equal 0xAB; writing an ack back corrupts long presses, so ack_buffer = false)
+inline constexpr TouchDecodedSample decode_cst9217_frame(const uint8_t buf[7]) noexcept {
+  if (buf[6] != 0xABU) {
+    return TouchDecodedSample{TouchSampleKind::NotReady, 0, 0, false};
   }
-  if ((buf[0] & 0x0FU) != 0x06U) {
-    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, true};
+  const uint8_t num_touches = static_cast<uint8_t>(buf[5] & 0x7FU);
+  if (num_touches == 0U || (buf[0] & 0x0FU) != 0x06U) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
   }
   const int16_t x = static_cast<int16_t>((static_cast<uint16_t>(buf[1]) << 4U) |
                                          ((static_cast<uint16_t>(buf[3]) >> 4U) & 0x0FU));
   const int16_t y = static_cast<int16_t>((static_cast<uint16_t>(buf[2]) << 4U) |
                                          (static_cast<uint16_t>(buf[3]) & 0x0FU));
-  return TouchDecodedSample{TouchSampleKind::Contact, x, y, true};
+  return TouchDecodedSample{TouchSampleKind::Contact, x, y, false};
 }
 
 // Hynitron CST816S / CST816D 6-byte report starting at REG 0x01 (extensible single-touch IC):
@@ -200,6 +213,7 @@ class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice
   void pump_from_host();
 
  protected:
+  void finish_setup_();
   bool init_controller_();
   void service_once_(uint32_t now);
   void update_touches() override;
@@ -212,7 +226,10 @@ class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice
   uint32_t last_edge_snapshot_{0};
   uint32_t last_service_ms_{0};
   uint16_t active_poll_ms_{10};
+  uint16_t detected_chip_id_{0};
   bool active_poll_explicit_{false};
+  bool setup_complete_{false};
+  bool irq_active_high_{false};
   bool finger_down_{false};
   bool hf_held_{false};
   bool poll_due_{false};

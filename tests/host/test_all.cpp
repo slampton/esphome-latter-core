@@ -3695,8 +3695,8 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     const uint8_t ft_lift_flag[5] = {0x01U, 0x41U, 0x2CU, 0x00U, 0xF0U};  // Event flag 01 = Lift
     LATTER_CHECK(decode_focaltech_frame(ft_lift_flag).kind == TouchSampleKind::Released);
 
-    const uint8_t ft_corrupt[5] = {0x0FU, 0x80U, 0x10U, 0x00U, 0x10U};   // Count 15 -> Released/ignored
-    LATTER_CHECK(decode_focaltech_frame(ft_corrupt).kind == TouchSampleKind::Released);
+    const uint8_t ft_corrupt[5] = {0x0FU, 0x80U, 0x10U, 0x00U, 0x10U};   // Count 15 (> 5) -> Invalid/ignored
+    LATTER_CHECK(decode_focaltech_frame(ft_corrupt).kind == TouchSampleKind::Invalid);
 
     // GT911: status & 0x80 == 0 MUST return NotReady with ack_buffer == false (no premature 0x814E clear!)
     const uint8_t gt_pt[4] = {0x68U, 0x01U, 0xAEU, 0x02U};  // (360, 686) little-endian
@@ -3710,17 +3710,18 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     const auto s_gt_up = decode_gt911_frame(0x80U, nullptr);
     LATTER_CHECK(s_gt_up.kind == TouchSampleKind::Released && s_gt_up.ack_buffer);
 
-    // CST9217: requires 0xAB trailer sync byte and low nibble 0x06 for active finger
-    const uint8_t cst_bad[5] = {0x06U, 0x10U, 0x20U, 0x34U, 0x00U};
-    LATTER_CHECK(decode_cst9217_frame(cst_bad).kind == TouchSampleKind::Invalid);
+    // CST9217 / CST9220: 7-byte single-point report at 0xD000 (buf[5]=count, buf[6]=0xAB sync, ack_buffer=false)
+    const uint8_t cst_bad[7] = {0x06U, 0x10U, 0x20U, 0x34U, 0x20U, 0x01U, 0x00U};
+    LATTER_CHECK(decode_cst9217_frame(cst_bad).kind == TouchSampleKind::NotReady &&
+                 !decode_cst9217_frame(cst_bad).ack_buffer);
 
-    const uint8_t cst_up[5] = {0x00U, 0x10U, 0x20U, 0x34U, 0xABU};
+    const uint8_t cst_up[7] = {0x00U, 0x10U, 0x20U, 0x34U, 0x00U, 0x00U, 0xABU};
     LATTER_CHECK(decode_cst9217_frame(cst_up).kind == TouchSampleKind::Released &&
-                 decode_cst9217_frame(cst_up).ack_buffer);
+                 !decode_cst9217_frame(cst_up).ack_buffer);
 
-    const uint8_t cst_down[5] = {0x06U, 0x17U, 0x1DU, 0x42U, 0xABU};  // x=(0x17<<4)|4=372, y=(0x1D<<4)|2=466
+    const uint8_t cst_down[7] = {0x06U, 0x17U, 0x1DU, 0x42U, 0x20U, 0x01U, 0xABU};  // x=(0x17<<4)|4=372, y=(0x1D<<4)|2=466
     const auto s_cst = decode_cst9217_frame(cst_down);
-    LATTER_CHECK(s_cst.kind == TouchSampleKind::Contact && s_cst.raw_x == 372 && s_cst.raw_y == 466 && s_cst.ack_buffer);
+    LATTER_CHECK(s_cst.kind == TouchSampleKind::Contact && s_cst.raw_x == 372 && s_cst.raw_y == 466 && !s_cst.ack_buffer);
 
     const uint8_t c816_down[6] = {0x00U, 0x01U, 0x80U, 0xFAU, 0x01U, 0x04U};  // (250, 260)
     const auto s_816 = decode_cst816s_frame(c816_down);
