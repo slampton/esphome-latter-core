@@ -3075,10 +3075,9 @@ def main(argv: list[str] | None = None) -> int:
         "Starfield",
         "Digital Rain",
         "Fireworks",
-        "Portable Carry",
+        "Pocket Carry",
         "Handheld Roaming",
         "Wearable Watch",
-        "Tabletop Dock",
         "Always-On Wall / Desk",
     ):
         if f'"{req_opt}"' not in combined_opts:

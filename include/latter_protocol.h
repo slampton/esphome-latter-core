@@ -18,12 +18,11 @@ static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,swi
 static constexpr const char *kDefaultHomeCategories = "alarm,cameras,intercom,thermostat,entry,vacuum";  // defaults.home_categories
 
 enum class PowerProfile : uint8_t {
-  PORTABLE_CARRY = 0,
+  POCKET_CARRY = 0,
   HANDHELD_ROAMING = 1,
   WEARABLE_WATCH = 2,
-  TABLETOP_DOCK = 3,
-  ALWAYS_ON_STATIONARY = 4,
-  CUSTOM = 5,
+  ALWAYS_ON_STATIONARY = 3,
+  CUSTOM = 4,
 };
 
 struct PowerProfileSpec {
@@ -39,10 +38,9 @@ struct PowerProfileSpec {
 };
 
 inline constexpr PowerProfileSpec kPowerProfiles[] = {
-    {PowerProfile::PORTABLE_CARRY, "Portable Carry", "Docked Only", "Docked Only", "Docked Only", "30s", "1 min", "15 min", true},
+    {PowerProfile::POCKET_CARRY, "Pocket Carry", "Docked Only", "Docked Only", "Docked Only", "30s", "1 min", "15 min", true},
     {PowerProfile::HANDHELD_ROAMING, "Handheld Roaming", "Docked Only", "Single Tap", "Always On", "30s", "1 min", "30 min", true},
     {PowerProfile::WEARABLE_WATCH, "Wearable Watch", "Docked Only", "Double Tap", "Always On", "15s", "1 min", "15 min", true},
-    {PowerProfile::TABLETOP_DOCK, "Tabletop Dock", "Docked Only", "Docked Only", "Disabled", "30s", "5 min", "15 min", true},
     {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On", "Single Tap", "Disabled", "Never", "5 min", "Disabled", true},
 };
 

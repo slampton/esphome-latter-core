@@ -48,11 +48,10 @@ On-device wake-word detection runs via [microWakeWord](https://github.com/kahren
 
 | Profile | Wake Word | Tap to Wake | Pickup to Wake | Battery Screen Timeout | Docked Idle Timeout | Hibernate After |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Portable Carry** | Docked Only | Docked Only | Docked Only | 30 s | 1 min | 15 min |
-| **Handheld Roaming** | Docked Only | Always On | Always On | 30 s | 1 min | 30 min |
-| **Wearable Watch** | Docked Only | Always On | Always On | 15 s | 1 min | 15 min |
-| **Tabletop Dock** | Docked Only | Docked Only | Disabled | 30 s | 5 min | 15 min |
-| **Always-On Wall / Desk** | Always On | Always On | Disabled | Never | 5 min | Disabled |
+| **Pocket Carry** | Docked Only | Docked Only | Docked Only | 30 s | 1 min | 15 min |
+| **Handheld Roaming** | Docked Only | Single Tap | Always On | 30 s | 1 min | 30 min |
+| **Wearable Watch** | Docked Only | Double Tap | Always On | 15 s | 1 min | 15 min |
+| **Always-On Wall / Desk** | Always On | Single Tap | Disabled | Never | 5 min | Disabled |
 
 - **Wake gestures & battery weather motion:** Pickup to wake requires a deliberate raise-and-settle gesture; Wrist Assist requires a **double tap** on battery (single tap when docked and on all other boards) to prevent sleeve wakes. On battery, the Home weather sky animates for **35 seconds** after wake or touch, then fades precipitation out over **800 ms** into a 0 FPS cached sky frame.
 - **Screen-off quiet & light sleep:** On ESP32-S3 battery boards, screen-off quiet stretches the main loop to **`1,000 ms`** (**`250 ms`** with touch wake armed), pauses the raw-HCI BLE beacon in `< 1 ms` (staying active on USB when `BLE Beacon Mode` is `Always`), and enters automatic FreeRTOS light sleep in `WIFI_PS_MAX_MODEM` (`~5–8 mA` on home Wi-Fi; `~2–4 mA` off-site with exponential scan backoff). GPIO interrupts from buttons, touch, or IMU wake the loop immediately, and armed alarms/timers still fire on time. ESP32-P4 battery boards (`Remote Assistant`) keep fixed `CPLL` clocks and pace the quiet loop at `1,000 / 250 ms`.

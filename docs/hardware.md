@@ -25,7 +25,7 @@ Latter firmware supports five Waveshare boards. Purchase links are in the [devic
 | **IMU** | QMI8658 | QMI8658 | QMI8658 | — | — |
 | **RTC** | — | PCF85063 | PCF85063 | — | — |
 | **Power** | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | Battery (AXP2101) | USB / mains |
-| **Default power profile** | Portable Carry | Handheld Roaming | Wearable Watch | Tabletop Dock | Always-On Wall / Desk |
+| **Default power profile** | Pocket Carry | Handheld Roaming | Wearable Watch | Handheld Roaming | Always-On Wall / Desk |
 | **Board file** | [`waveshare_s3_175c.yaml`](../boards/waveshare_s3_175c.yaml) | [`waveshare_s3_216.yaml`](../boards/waveshare_s3_216.yaml) | [`waveshare_s3_206.yaml`](../boards/waveshare_s3_206.yaml) | [`waveshare_p4_35.yaml`](../boards/waveshare_p4_35.yaml) | [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml) |
 
 PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the listing for your exact variant.

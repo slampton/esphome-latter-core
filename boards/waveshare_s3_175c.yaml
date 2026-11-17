@@ -30,7 +30,7 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
-  default_power_profile: "Portable Carry"
+  default_power_profile: "Pocket Carry"
   # Music read-ahead (PSRAM). 512 KB (~5.5 s of 48 kHz mono PCM / longer FLAC) rides out multi-second
   # handheld Wi-Fi stalls while keeping ~700 KB of PSRAM free alongside wallpaper, album art, and TTS
   # announcements so a full-screen camera/doorbell snapshot (434 KB) decodes with comfortable headroom.

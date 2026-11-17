@@ -15,29 +15,26 @@ namespace latter_ui {
 namespace {
 
 enum class PowerProfile : uint8_t {
-  PORTABLE_CARRY = 0,
+  POCKET_CARRY = 0,
   HANDHELD_ROAMING = 1,
   WEARABLE_WATCH = 2,
-  TABLETOP_DOCK = 3,
-  ALWAYS_ON_STATIONARY = 4,
-  CUSTOM = 5,
+  ALWAYS_ON_STATIONARY = 3,
+  CUSTOM = 4,
 };
 
 PowerProfile parse_power_profile_local(UiStrView opt) {
-  if (opt == "Portable Carry") return PowerProfile::PORTABLE_CARRY;
+  if (opt == "Pocket Carry") return PowerProfile::POCKET_CARRY;
   if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
   if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
-  if (opt == "Tabletop Dock") return PowerProfile::TABLETOP_DOCK;
   if (opt == "Always-On Wall / Desk") return PowerProfile::ALWAYS_ON_STATIONARY;
   return PowerProfile::CUSTOM;
 }
 
 const char *power_profile_short_label_local(UiStrView opt) {
   switch (parse_power_profile_local(opt)) {
-    case PowerProfile::PORTABLE_CARRY:       return "Portable";
+    case PowerProfile::POCKET_CARRY:         return "Pocket";
     case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
     case PowerProfile::WEARABLE_WATCH:       return "Watch";
-    case PowerProfile::TABLETOP_DOCK:        return "Tabletop";
     case PowerProfile::ALWAYS_ON_STATIONARY: return "Wall/Desk";
     case PowerProfile::CUSTOM:               return "Custom";
   }

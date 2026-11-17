@@ -3788,8 +3788,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         if (idx == 0) {
           rt_.set_select_opt(UiSelectId::POWER_PROFILE,
                              cycle_option(rt_.select_opt(UiSelectId::POWER_PROFILE),
-                                          {"Portable Carry", "Handheld Roaming", "Wearable Watch",
-                                           "Tabletop Dock", "Always-On Wall / Desk"}));
+                                          {"Pocket Carry", "Handheld Roaming", "Wearable Watch",
+                                           "Always-On Wall / Desk"}));
         } else if (idx == 1) {
 #if LATTER_HAS_IMU
           rt_.set_select_opt(UiSelectId::PICKUP_WAKE_MODE,

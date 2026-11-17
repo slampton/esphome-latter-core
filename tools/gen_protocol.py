@@ -10,10 +10,9 @@ import sys
 from typing import Any
 
 PROFILE_ENUM_MAP: dict[str, str] = {
-    "Portable Carry": "PORTABLE_CARRY",
+    "Pocket Carry": "POCKET_CARRY",
     "Handheld Roaming": "HANDHELD_ROAMING",
     "Wearable Watch": "WEARABLE_WATCH",
-    "Tabletop Dock": "TABLETOP_DOCK",
     "Always-On Wall / Desk": "ALWAYS_ON_STATIONARY",
 }
 

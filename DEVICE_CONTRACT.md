@@ -157,7 +157,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | Index | Field | C++ Enum | Type | Description |
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `prefs_seq` | `DevicePrefsField::PREFS_SEQ` | `u32` | Monotonic preference sequence counter incremented by Home Assistant on every preference update |
-| `4` | `power_profile` | `DevicePrefsField::POWER_PROFILE` | `string` | Active power/sleep profile (Portable Carry|Handheld Roaming|Wearable Watch|Tabletop Dock|Always-On Wall / Desk|Custom) |
+| `4` | `power_profile` | `DevicePrefsField::POWER_PROFILE` | `string` | Active power/sleep profile (Pocket Carry|Handheld Roaming|Wearable Watch|Always-On Wall / Desk|Custom) |
 | `5` | `wake_word_mode` | `DevicePrefsField::WAKE_WORD_MODE` | `string` | Wake word policy (Docked Only|Always On|Disabled) |
 | `6` | `tap_to_wake` | `DevicePrefsField::TAP_TO_WAKE` | `string` | Touch wake policy (Single Tap|Double Tap|Docked Only|Disabled) |
 | `7` | `pickup_to_wake` | `DevicePrefsField::PICKUP_TO_WAKE` | `string` | IMU pickup wake policy (Always On|Docked Only|Disabled) |

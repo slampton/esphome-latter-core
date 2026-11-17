@@ -15,7 +15,7 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
-  default_power_profile: "Portable Carry"
+  default_power_profile: "Pocket Carry"
   art_resize: "466x466"
   sendspin_art_resize: "466x466"
   initial_art_url: "http://homeassistant.local:8123/static/icons/favicon-192x192.png"

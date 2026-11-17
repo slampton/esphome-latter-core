@@ -689,6 +689,12 @@ A standing decision stays in force until a new entry supersedes it. Changing one
 - **Why:** Hardcoding 11 top-level app tokens into a CSV prevented users from pinning deep subpages (`Sky & Weather -> Moon`, `Time -> Stopwatch`, `Home Hub -> Alarm`, individual `Tools` or `Games`) or triggering Home Assistant quick actions (calling for help, scenes, scripts, lights, blinds, locks) directly from the App Dock or a dedicated multi-page launcher, while partial on-device dock toggles couldn't scale to 63 routes, 7,447 MDI icons, and HA entity pickers.
 - **Status:** Accepted; implemented 2026-11-16.
 
+### D-055: Streamline `PowerProfile` presets (`Pocket Carry`, `Handheld Roaming`, `Wearable Watch`, `Always-On Wall / Desk`, `Custom`)
+- **Date:** 2026-11-16
+- **Decision:** (`protocol/latter_v3.json`, `include/latter_protocol.h`, `include/latter_state.h`, `include/hal_power_pm.h`, `components/latter_ui/page_system.cpp`, `components/latter_ui/touch_engine.cpp`, `kPersistedPrefsVersion = 9U`, `LATTER_SDK_REV = 2026111604`) Rename `"Portable Carry"` (`PowerProfile::PORTABLE_CARRY`) to **`"Pocket Carry"`** (`PowerProfile::POCKET_CARRY`, short label `"Pocket"` — keeping `tap_to_wake = "Docked Only"` and `pickup_to_wake = "Docked Only"` so battery pocket carry never wakes on fabric contact or stride motion while keeping `ble_beacon_mode = "Handheld + Screen Off"` active across `Pocket Carry`, `Handheld Roaming`, and `Wearable Watch` for seamless screen-off Area tracking until hibernate), retire the redundant **`"Tabletop Dock"`** preset (`PowerProfile::TABLETOP_DOCK`), and move `boards/waveshare_p4_35.yaml` / `devices/remote-assistant.yaml` onto **`"Handheld Roaming"`** (`LATTER_HAS_IMU == 0` automatically clamps `pickup_to_wake` to `"Disabled"`). Amends D-050 (5).
+- **Why:** `"Portable Carry"` obscured its distinct physical purpose relative to `"Handheld Roaming"` (preventing accidental screen wakes inside a pocket), while `"Tabletop Dock"` duplicated handheld battery timeouts without adding meaningful behavior once non-IMU handhelds automatically disable `pickup_to_wake`.
+- **Status:** Accepted; implemented 2026-11-16.
+
 ## Known gaps
 
 Nothing here contradicts a standing decision; these are the places the code doesn't fully reach it yet.

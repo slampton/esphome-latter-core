@@ -69,12 +69,11 @@ enum class GarageState : uint8_t {
 };
 
 enum class PowerProfilePref : uint8_t {
-  PortableCarry    = 0,
+  PocketCarry      = 0,
   HandheldRoaming  = 1,
   WearableWatch    = 2,
-  TabletopDock     = 3,
-  AlwaysOnWallDesk = 4,
-  Custom           = 5,
+  AlwaysOnWallDesk = 3,
+  Custom           = 4,
 };
 
 enum class WakeWordMode : uint8_t {
@@ -393,7 +392,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 8U;
+static constexpr uint16_t kPersistedPrefsVersion = 9U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -480,7 +479,7 @@ struct PersistedDevicePrefs {
   bool defaults_seeded = false;
 
   // Tier 2 + Tier 3 Device Preferences (compact enum indices / integers / bools)
-  uint8_t power_profile = 0;               // 0..5 ("Portable Carry" .. "Custom")
+  uint8_t power_profile = 0;               // 0..4 ("Pocket Carry" .. "Custom")
   uint8_t wake_word_mode = 0;              // 0..2 ("Docked Only", "Always On", "Disabled")
   uint8_t tap_to_wake = 2;                 // 0..3 ("Single Tap", "Double Tap", "Docked Only", "Disabled")
   uint8_t pickup_to_wake = 1;              // 0..2 ("Always On", "Docked Only", "Disabled")
@@ -550,7 +549,7 @@ struct PersistedDevicePrefs {
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS v4 POD layout)
   constexpr PowerProfilePref power_profile_enum() const noexcept {
-    return static_cast<PowerProfilePref>((power_profile < 6U) ? power_profile : 0U);
+    return static_cast<PowerProfilePref>((power_profile < 5U) ? power_profile : 0U);
   }
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
     return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
@@ -632,9 +631,9 @@ inline PersistedDevicePrefs &persisted_prefs() {
   return prefs;
 }
 
-inline constexpr const char *const kPowerProfileOpts[6] = {
-    "Portable Carry", "Handheld Roaming", "Wearable Watch",
-    "Tabletop Dock", "Always-On Wall / Desk", "Custom"};
+inline constexpr const char *const kPowerProfileOpts[5] = {
+    "Pocket Carry", "Handheld Roaming", "Wearable Watch",
+    "Always-On Wall / Desk", "Custom"};
 inline constexpr const char *const kWakeWordModeOpts[3] = {
     "Docked Only", "Always On", "Disabled"};
 inline constexpr const char *const kTapWakeOpts[4] = {
@@ -736,7 +735,7 @@ inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = per
 inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
 
 inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
-  if (p.power_profile >= 6) p.power_profile = 0;
+  if (p.power_profile >= 5) p.power_profile = 0;
   if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
   if (p.tap_to_wake >= 4) p.tap_to_wake = 2;
   if (p.pickup_to_wake >= 3) p.pickup_to_wake = 1;
@@ -799,20 +798,19 @@ inline bool apply_power_profile_to_prefs(PersistedDevicePrefs &p, std::string_vi
     }
   };
   set_u8(p.power_profile, static_cast<uint8_t>(idx), PrefKey::POWER_PROFILE, kPrefEffectSleepTimer);
-  if (idx == 5) return true;  // Custom leaves individual sub-keys untouched
+  if (idx == 4) return true;  // Custom leaves individual sub-keys untouched
 
   struct SpecRow { uint8_t ww; uint8_t tap; uint8_t pick; uint8_t batt_scr; uint8_t dock_idle; uint8_t hib; bool saver; };
-  static constexpr SpecRow kRows[5] = {
-      {0, 2, 1, 2, 3, 2, true},  // Portable Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
+  static constexpr SpecRow kRows[4] = {
+      {0, 2, 1, 2, 3, 2, true},  // Pocket Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
       {0, 0, 0, 2, 3, 3, true},  // Handheld Roaming: Docked Only, Single Tap, Always On, 30s, 1 min, 30 min, true
       {0, 1, 0, 1, 3, 2, true},  // Wearable Watch: Docked Only, Double Tap, Always On, 15s, 1 min, 15 min, true
-      {0, 2, 2, 2, 5, 2, true},  // Tabletop Dock: Docked Only, Docked Only, Disabled, 30s, 5 min, 15 min, true
       {1, 0, 2, 5, 5, 4, true},  // Always-On Wall / Desk: Always On, Single Tap, Disabled, Never, 5 min, Disabled, true
   };
   const SpecRow &r = kRows[idx];
   const uint8_t eff_pick = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? r.pick : 2;
   const uint8_t eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? r.hib : 4;
-  const uint8_t eff_ble_mode = (idx == 1) ? 1U : 0U;  // Handheld Roaming -> "Handheld + Screen Off", others -> "Handheld Only"
+  const uint8_t eff_ble_mode = (idx <= 2) ? 1U : 0U;  // Pocket Carry, Handheld Roaming & Wearable Watch -> "Handheld + Screen Off", Always-On -> "Handheld Only"
   set_u8(p.wake_word_mode, r.ww, PrefKey::WAKE_WORD_MODE, kPrefEffectWakeWordSync);
   set_u8(p.tap_to_wake, r.tap, PrefKey::TAP_TO_WAKE, kPrefEffectPowerPolicy);
   set_u8(p.pickup_to_wake, eff_pick, PrefKey::PICKUP_TO_WAKE, kPrefEffectPowerPolicy);
@@ -2877,8 +2875,9 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     effects_mask |= (eff | kPrefEffectRedraw);
     if (key == PrefKey::CLOCK_FACE) p.clock_face_digital = (p.clock_face != 1);
     if (key == PrefKey::TIME_FORMAT) p.is_24h_format = (p.time_format == 1);
-    if (cascade_profile && is_prof_subkey && p.power_profile != 5) {
-      p.power_profile = 5;  // Custom
+    if (cascade_profile && is_prof_subkey &&
+        p.power_profile != static_cast<uint8_t>(PowerProfilePref::Custom)) {
+      p.power_profile = static_cast<uint8_t>(PowerProfilePref::Custom);
       changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
     }
     return true;
@@ -2893,8 +2892,9 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     if (key == PrefKey::DOCKED_SCREENSAVER && was_true && !b) {
       effects_mask |= kPrefEffectDockedSaverOff;
     }
-    if (cascade_profile && is_prof_subkey && p.power_profile != 5) {
-      p.power_profile = 5;  // Custom
+    if (cascade_profile && is_prof_subkey &&
+        p.power_profile != static_cast<uint8_t>(PowerProfilePref::Custom)) {
+      p.power_profile = static_cast<uint8_t>(PowerProfilePref::Custom);
       changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
     }
     return true;

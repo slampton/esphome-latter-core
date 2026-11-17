@@ -12,7 +12,7 @@ Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter com
   - `modules/base.yaml`: Shared Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `time:`, `latter_ping` (`id: latter_ping_action`), `latter_push_v3`, `latter_device_command`, `send_device_hello`, `System: Hardware Manifest`, and `System: RPC Outbox`.
   - `modules/latter_display_firmware.yaml`: Umbrella package included by `devices/*.yaml` pulling in `system_core.yaml`, `power_manager.yaml`, `audio_voice.yaml`, `display_pipeline.yaml`, `timers_and_fetchers.yaml`, and `guis/universal/gui.yaml`.
   - `modules/hal/`: Shared chip (`chip_esp32s3.yaml`, `chip_esp32p4.yaml`), full-duplex audio (`audio_es8311_duplex.yaml`, `audio_es8311_es7210_duplex.yaml`), `pmu_axp2101.yaml`, and `imu_qmi8658.yaml` packages.
-  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_ui::runtime_state()`) and all persisted preferences live in `PersistedDevicePrefs` v8 + cold-boot `HibernateSnapshot` v3 (`latter_ui::persisted_prefs()`, `latter_ui::hibernate_snapshot()`).
+  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_ui::runtime_state()`) and all persisted preferences live in `PersistedDevicePrefs` v9 + cold-boot `HibernateSnapshot` v3 (`latter_ui::persisted_prefs()`, `latter_ui::hibernate_snapshot()`).
 
 ## 2. Verification & Tooling Commands
 
