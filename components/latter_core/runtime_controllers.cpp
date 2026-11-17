@@ -334,6 +334,16 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       eff.schedule_disp_update = true;
     }
   } else if (sv_dom == "device_prefs") {
+    const int tot_tools_pg = std::max(1, active_tools_launcher_page_count(prefs));
+    if (r.nav.tools_menu_page < 0 || r.nav.tools_menu_page >= tot_tools_pg) {
+      r.nav.tools_menu_page = std::max(0, tot_tools_pg - 1);
+    }
+    const int tot_games = active_games_launcher_count(prefs);
+    if (tot_games <= 0) {
+      r.nav.game_carousel_idx = 0;
+    } else if (r.nav.game_carousel_idx < 0 || r.nav.game_carousel_idx >= tot_games) {
+      r.nav.game_carousel_idx = std::max(0, tot_games - 1);
+    }
     eff.apply_device_prefs_effects = true;
   } else if (sv_dom == "shortcuts") {
     ShortcutItem dock_buf[kMaxEffectiveDockItems]{};

@@ -16,6 +16,8 @@ static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_c
 static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
 static constexpr const char *kDefaultHomeCategories = "alarm,cameras,intercom,thermostat,entry,vacuum";  // defaults.home_categories
+static constexpr const char *kDefaultToolsItems = "stopwatch,level,flashlight,calculator,dice,coin_flip";  // defaults.tools_items
+static constexpr const char *kDefaultGamesItems = "marbles,archery,bricks,chomp,2048,memory";  // defaults.games_items
 
 enum class ShortcutRouteCap : uint8_t {
   NONE = 0,
@@ -342,7 +344,9 @@ enum class DevicePrefsField : size_t {
   WORLD_CLOCKS = 52,  // world_clocks (string)
   ALARMS_SUMMARY = 53,  // alarms_summary (string)
   LOCAL_CLOCK_LABEL = 54,  // local_clock_label (string)
-  COUNT = 55
+  TOOLS_ITEMS = 55,  // tools_items (csv)
+  GAMES_ITEMS = 56,  // games_items (csv)
+  COUNT = 57
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

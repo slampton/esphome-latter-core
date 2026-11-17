@@ -2277,11 +2277,27 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
                            int &game_carousel_idx, bool menu_scroll_active,
                            int menu_scroll_dir, int menu_scroll_target_page) {
   const int cx = ctx.cx;
-  const auto &prefs = persisted_prefs();
+  const auto &prefs = device_prefs();
   const bool game_sound_on = ctx.game_sound_enabled;
+  const bool compact_w = (SCREEN_W < 380);
 
-  if (game_carousel_idx < 0 || game_carousel_idx >= 6) {
+  int enabled_ids[kMaxGamesLauncherItems]{};
+  const int game_count = collect_enabled_games(enabled_ids, prefs);
+  if (game_count <= 0) {
     game_carousel_idx = 0;
+    fast_print(it, cx, compact_w ? 64 : scale_y(84), ctx.font_games_title,
+               ctx.theme_primary, TextAlign::CENTER, "GAMES");
+    if (backdrop_active()) {
+      fast_print(it, cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
+                 TextAlign::CENTER, "No games enabled");
+    }
+    fast_print(it, cx, ctx.cy, ctx.font_small, ctx.col_slate,
+               TextAlign::CENTER, "No games enabled");
+    return;
+  }
+
+  if (game_carousel_idx < 0 || game_carousel_idx >= game_count) {
+    game_carousel_idx = std::clamp(game_carousel_idx, 0, game_count - 1);
   }
 
   auto draw_game_icon = [&](int g_idx, int icon_x, int icon_y) {
@@ -2448,7 +2464,6 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     fast_print(it, start_x + w_lbl + gap_px, score_y, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, val_str);
   };
 
-  const bool compact_w = (SCREEN_W < 380);
   const int icon_cx = compact_w ? cx : (cx - scale_x(118));
   const int card_cy = compact_w ? 158 : scale_y(194);
   const int text_cx = compact_w ? cx : (cx + scale_x(57));
@@ -2456,36 +2471,49 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
   const int base_score_y = compact_w ? 274 : scale_y(216);
   const int pips_y = compact_w ? 314 : scale_y(282);
   const int btn_row_y = layout().app_dock_y;
+  const int cur_game_id = enabled_ids[game_carousel_idx];
+  const int cur_g_idx = cur_game_id - 1;
 
-  if (menu_scroll_active) {
+  if (menu_scroll_active && game_count > 1) {
     int offset = menu_scroll_shift(scale_x(252));
     int full_span = scale_x(252);
     int out_dx = -menu_scroll_dir * offset;
     int in_dx = menu_scroll_dir * (full_span - offset);
+    const int tgt_slot = std::clamp(menu_scroll_target_page, 0, game_count - 1);
+    const int tgt_g_idx = enabled_ids[tgt_slot] - 1;
 
-    draw_game_card(game_carousel_idx, icon_cx + out_dx, card_cy, text_cx + out_dx, base_title_y, base_score_y);
-    draw_game_card(menu_scroll_target_page, icon_cx + in_dx, card_cy, text_cx + in_dx, base_title_y, base_score_y);
+    draw_game_card(cur_g_idx, icon_cx + out_dx, card_cy, text_cx + out_dx, base_title_y, base_score_y);
+    draw_game_card(tgt_g_idx, icon_cx + in_dx, card_cy, text_cx + in_dx, base_title_y, base_score_y);
   } else {
-    draw_game_card(game_carousel_idx, icon_cx, card_cy, text_cx, base_title_y, base_score_y);
+    const int bounce_x = edge_bounce().offset_px(
+        PageId::GAMES, GestureAxisLock::Horizontal, ctx.now_ms, LATTER_PANEL_PPI);
+    draw_game_card(cur_g_idx, icon_cx + bounce_x, card_cy, text_cx + bounce_x, base_title_y, base_score_y);
 
-    // Co-register carousel flank tap zones + center hero card tap zone
+    // Co-register carousel flank tap zones (when > 1 game enabled) + center hero card tap zone
     const int flank_w = scale_x(72);
     const int hero_top = scale_y(112);
     const int hero_h = std::max(80, pips_y - hero_top - scale_y(8));
-    frame_hits().add_rect(0, hero_top, flank_w, hero_h, WidgetId::GAMES_PREV_BTN, kHitTap, -1);
-    frame_hits().add_rect(SCREEN_W - flank_w, hero_top, flank_w, hero_h, WidgetId::GAMES_NEXT_BTN, kHitTap, 1);
-    frame_hits().add_rect(flank_w, hero_top, SCREEN_W - 2 * flank_w, hero_h,
-                          WidgetId::GAMES_HERO_CARD, kHitTap, static_cast<int16_t>(game_carousel_idx));
+    if (game_count > 1) {
+      frame_hits().add_rect(0, hero_top, flank_w, hero_h, WidgetId::GAMES_PREV_BTN, kHitTap, -1);
+      frame_hits().add_rect(SCREEN_W - flank_w, hero_top, flank_w, hero_h, WidgetId::GAMES_NEXT_BTN, kHitTap, 1);
+      frame_hits().add_rect(flank_w, hero_top, SCREEN_W - 2 * flank_w, hero_h,
+                            WidgetId::GAMES_HERO_CARD, kHitTap, static_cast<int16_t>(cur_game_id));
+    } else {
+      frame_hits().add_rect(scale_x(24), hero_top, SCREEN_W - 2 * scale_x(24), hero_h,
+                            WidgetId::GAMES_HERO_CARD, kHitTap, static_cast<int16_t>(cur_game_id));
+    }
   }
 
   fast_print(it, cx, compact_w ? 64 : scale_y(84), ctx.font_games_title, ctx.theme_primary, TextAlign::CENTER, "GAMES");
 
-  int active_pip = menu_scroll_active ? menu_scroll_target_page : game_carousel_idx;
-  render_dock_page_pips(it, cx, pips_y, 6, active_pip, ctx.col_white, kChromePipInactive);
+  const int active_pip = (menu_scroll_active && game_count > 1)
+                             ? std::clamp(menu_scroll_target_page, 0, game_count - 1)
+                             : game_carousel_idx;
+  render_dock_page_pips(it, cx, pips_y, game_count, active_pip, ctx.col_white, kChromePipInactive);
 
   ui::pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22),
                   ctx.theme_primary, kChromeGlassTint, "PLAY", ctx.col_white, ctx.font_btn_bold,
-                  WidgetId::GAMES_PLAY_BTN, kHitTap | kHitFocusSlot, 0);
+                  WidgetId::GAMES_PLAY_BTN, kHitTap | kHitFocusSlot, static_cast<int16_t>(cur_game_id));
 
   const int spk_x = cx - scale_x(91);
   const int spk_y = btn_row_y;

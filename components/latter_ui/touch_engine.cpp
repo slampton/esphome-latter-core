@@ -606,7 +606,16 @@ inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
       launch_dock_app(PageId::GAMES, rs, rt, now_ms);
       rs.nav.shortcut_origin = origin;
       rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
-      rs.nav.game_carousel_idx = g_id - 1;
+      int enabled_ids[kMaxGamesLauncherItems]{};
+      const int game_cnt = collect_enabled_games(enabled_ids, device_prefs());
+      int matched_slot = 0;
+      for (int i = 0; i < game_cnt; ++i) {
+        if (enabled_ids[i] == g_id) {
+          matched_slot = i;
+          break;
+        }
+      }
+      rs.nav.game_carousel_idx = matched_slot;
       rs.nav.active_game = g_id;
       audio_arbitrator().cancel_media_idle_debounce();
       if (rt.local_mp_playing) {
@@ -737,6 +746,7 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
         s.target_ms = now_ms + static_cast<uint32_t>(s.remaining_sec) * 1000U;
       }
       sync_multi_timer_state();
+      latter_actions::check_and_emit_timer_alarm_state(now_ms);
       rt.apply_power_policy();
     } else if (kind == 2) {
       if (rs.stopwatch.running) {
@@ -746,6 +756,7 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
         rs.stopwatch.running = true;
         rs.stopwatch.start_time_ms = now_ms - rs.stopwatch.elapsed_ms;
       }
+      latter_actions::check_and_emit_timer_alarm_state(now_ms);
     } else if (kind == 3) {
       const uint32_t intent_ts = (esphome::millis() != 0U) ? esphome::millis() : now_ms;
       audio_session().set_play_intent(MusicPlayIntent::HomeQuickToggle, intent_ts);
@@ -1260,6 +1271,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         rs.alarms.snooze_until = (rt_.time_epoch > 0) ? (rt_.time_epoch + 300U)
                                                       : ((now_touch / 1000U) + 300U);
         rs.alarms.ringing = false;
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         last_screen_wake_ms() = now_touch;
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
         mark_dirty_full();
@@ -1276,6 +1288,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         }
         rs.alarms.ringing = false;
         rs.alarms.snooze_until = 0;
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         last_screen_wake_ms() = now_touch;
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
@@ -1290,6 +1303,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         rs.timers.ringing = false;
         rs.timers.va_timer_name.clear();
         sync_multi_timer_state();
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         last_screen_wake_ms() = now_touch;
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
@@ -2406,6 +2420,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.stopwatch.running = false;
           rs.stopwatch.elapsed_ms = now_touch - rs.stopwatch.start_time_ms;
         }
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         rt_.schedule_disp();
         return;
       }
@@ -2419,11 +2434,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        rs.stopwatch.running = false;
-        rs.stopwatch.started_in_analog = false;
-        rs.stopwatch.elapsed_ms = 0;
-        rs.stopwatch.lap_ms = 0;
-        rs.stopwatch.lap_count = 0;
+        rs.stopwatch.reset();
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         rt_.schedule_disp();
       }
       return;
@@ -2730,6 +2742,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           rs.stopwatch.running = false;
           rs.stopwatch.elapsed_ms = now_touch - rs.stopwatch.start_time_ms;
         }
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         rt_.schedule_disp();
         return;
       }
@@ -2743,11 +2756,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         gest.active = false;
-        rs.stopwatch.running = false;
-        rs.stopwatch.started_in_analog = false;
-        rs.stopwatch.elapsed_ms = 0;
-        rs.stopwatch.lap_ms = 0;
-        rs.stopwatch.lap_count = 0;
+        rs.stopwatch.reset();
+        latter_actions::check_and_emit_timer_alarm_state(now_touch);
         rt_.schedule_disp();
         return;
       }
@@ -2904,10 +2914,20 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   if (rs.nav.gui_page == PageId::GAMES) {
     if (rs.nav.active_game == 0 && !rs.nav.menu_scroll_active && h_dir != 0) {
       commit_swipe();
-      rs.nav.menu_scroll_active = true;
-      rs.nav.menu_scroll_dir = h_dir;
-      rs.nav.menu_scroll_target_page = step_wrap(rs.nav.game_carousel_idx, h_dir, 6);
-      rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      const int game_cnt = active_games_launcher_count(device_prefs());
+      if (game_cnt > 1) {
+        const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
+        rs.nav.game_carousel_idx = cur_slot;
+        rs.nav.menu_scroll_active = true;
+        rs.nav.menu_scroll_dir = h_dir;
+        rs.nav.menu_scroll_target_page = step_wrap(cur_slot, h_dir, game_cnt);
+        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      } else {
+        bool changed = false;
+        (void)step_pager_index(0, 0, 0, h_dir, /*wrap=*/false,
+                               GestureAxisLock::Horizontal, PageId::GAMES, now_ms, changed);
+        rt_.schedule_disp();
+      }
       return true;
     }
     if (rs.nav.active_game == 5 && is_release &&
@@ -3039,7 +3059,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active &&
         v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       commit_swipe();
-      const int total_pages = std::max(1, tools_launcher_page_count());
+      const int total_pages = std::max(1, active_tools_launcher_page_count(device_prefs()));
       const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
       rs.nav.tools_menu_page = cur_pg;
       bool changed = false;
@@ -3726,21 +3746,36 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.schedule_disp();
       } else if ((wid == WidgetId::GAMES_PLAY_BTN || wid == WidgetId::GAMES_HERO_CARD) &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        rs.nav.active_game = rs.nav.game_carousel_idx + 1;
-        audio_arbitrator().cancel_media_idle_debounce();
-        if (rt_.local_mp_playing) {
-          rt_.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);
+        int enabled_ids[kMaxGamesLauncherItems]{};
+        const int game_cnt = collect_enabled_games(enabled_ids, device_prefs());
+        if (game_cnt > 0) {
+          const int slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
+          rs.nav.game_carousel_idx = slot;
+          const int resolved_game =
+              (hit != nullptr && hit->param >= 1 && hit->param <= 6)
+                  ? static_cast<int>(hit->param)
+                  : enabled_ids[slot];
+          rs.nav.active_game = resolved_game;
           audio_arbitrator().cancel_media_idle_debounce();
+          if (rt_.local_mp_playing) {
+            rt_.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);
+            audio_arbitrator().cancel_media_idle_debounce();
+          }
+          mark_dirty_full();
+          rt_.schedule_disp();
         }
-        mark_dirty_full();
-        rt_.schedule_disp();
       } else if ((wid == WidgetId::GAMES_PREV_BTN || wid == WidgetId::GAMES_NEXT_BTN) &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int dir = (wid == WidgetId::GAMES_NEXT_BTN) ? 1 : -1;
-        rs.nav.menu_scroll_active = true;
-        rs.nav.menu_scroll_dir = dir;
-        rs.nav.menu_scroll_target_page = step_wrap(rs.nav.game_carousel_idx, dir, 6);
-        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        const int game_cnt = active_games_launcher_count(device_prefs());
+        if (game_cnt > 1) {
+          const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
+          rs.nav.game_carousel_idx = cur_slot;
+          const int dir = (wid == WidgetId::GAMES_NEXT_BTN) ? 1 : -1;
+          rs.nav.menu_scroll_active = true;
+          rs.nav.menu_scroll_dir = dir;
+          rs.nav.menu_scroll_target_page = step_wrap(cur_slot, dir, game_cnt);
+          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        }
       }
 
     // 7. Page 4 System Scrollable Menus (Modes 0, 1, 2) via SYS_TOGGLE_ROW / SYS_BRI_SLIDER / COLOR_SWATCH_BASE
@@ -4099,7 +4134,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     // 11. Page 8 Tools Launcher & Calendar Release Taps
     } else if (tap_valid && rs.nav.gui_page == PageId::TOOLS) {
       if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active) {
-        const int total_pages = tools_launcher_page_count();
+        const int total_pages = active_tools_launcher_page_count(device_prefs());
         if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           if (total_pages > 1) {
@@ -4682,11 +4717,16 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
         return;
       }
       if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game == 0 && !rs.nav.menu_scroll_active) {
-        rs.nav.menu_scroll_active = true;
-        rs.nav.menu_scroll_dir = (step > 0) ? 1 : -1;
-        rs.nav.menu_scroll_target_page = step_wrap(rs.nav.game_carousel_idx, step, 6);
-        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
-        return;
+        const int game_cnt = active_games_launcher_count(device_prefs());
+        if (game_cnt > 1) {
+          const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
+          rs.nav.game_carousel_idx = cur_slot;
+          rs.nav.menu_scroll_active = true;
+          rs.nav.menu_scroll_dir = (step > 0) ? 1 : -1;
+          rs.nav.menu_scroll_target_page = step_wrap(cur_slot, step, game_cnt);
+          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+          return;
+        }
       }
     }
     if (focus_cnt > 0) {
@@ -4705,7 +4745,9 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
         rs.alarms.ringing = false;
         rs.timers.ringing = false;
         rs.alarms.find_my_active = false;
+        latter_actions::check_and_emit_timer_alarm_state(now_in);
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
+        mark_dirty_full();
         rt_.schedule_disp();
       }
       return;

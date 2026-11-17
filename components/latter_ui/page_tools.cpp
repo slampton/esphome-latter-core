@@ -177,27 +177,23 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
 
 void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs) {
-  struct ToolItemDef {
-    int id;
-    const char *label;
-  };
-  static constexpr ToolItemDef kItems[] = {
-#if LATTER_ROUND_DISPLAY
-      {ToolsSubpage::STOPWATCH, "Stopwatch"},
-#endif
-#if LATTER_HAS_IMU
-      {ToolsSubpage::LEVEL, "Level"},
-#endif
-      {ToolsSubpage::FLASHLIGHT, "Flashlight"},
-      {ToolsSubpage::CALCULATOR, "Calculator"},
-      {ToolsSubpage::CALENDAR, "Calendar"},
-      {ToolsSubpage::DICE, "Dice Roll"},
-      {ToolsSubpage::COIN_FLIP, "Coin Flip"},
-  };
-  static constexpr int kTotalItems = static_cast<int>(sizeof(kItems) / sizeof(kItems[0]));
-  static_assert(kTotalItems == tools_launcher_item_count(),
-                "Tools launcher item table must match tools_launcher_item_count()");
-  static constexpr int kTotalPages = tools_launcher_page_count(kTotalItems);
+  using esphome::display::TextAlign;
+
+  ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
+  const int total_items = collect_tools_launcher_items(items, device_prefs());
+  const int total_pages = tools_launcher_page_count(total_items);
+
+  if (total_items <= 0) {
+    runtime_state().nav.tools_menu_page = 0;
+    render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
+    if (backdrop_active()) {
+      fast_print(it, ctx.cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
+                 TextAlign::CENTER, "No tools enabled");
+    }
+    fast_print(it, ctx.cx, ctx.cy, ctx.font_small, ctx.col_slate,
+               TextAlign::CENTER, "No tools enabled");
+    return;
+  }
 
   const auto &ly = layout();
   const int raw_w = (SCREEN_W < 380) ? 110 : 122;
@@ -215,11 +211,11 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
       if (cy_card < min_vis_y || cy_card > max_vis_y) continue;
       for (int c = 0; c < 2; c++) {
         const int item_idx = base_idx + r * 2 + c;
-        if (item_idx >= kTotalItems) continue;
-        const int app_id = kItems[item_idx].id;
+        if (item_idx >= total_items) continue;
+        const int app_id = items[item_idx].id;
         if (app_id == 0) continue;
         const int cx_card = col_cx[c];
-        render_tool_launcher_card(it, cx_card, cy_card, app_id, kItems[item_idx].label, ctx);
+        render_tool_launcher_card(it, cx_card, cy_card, app_id, items[item_idx].label, ctx);
         if (register_hits) {
           const uint16_t slot = static_cast<uint16_t>(r * 2 + c);
           frame_hits().add_centered_rect(cx_card, cy_card, eff_w, eff_h,
@@ -231,13 +227,16 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     }
   };
 
-  const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, kTotalPages - 1);
-  if (rs.nav.menu_scroll_active && kTotalPages > 1) {
+  const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
+  if (rs.nav.tools_menu_page != cur_pg) {
+    runtime_state().nav.tools_menu_page = cur_pg;
+  }
+  if (rs.nav.menu_scroll_active && total_pages > 1) {
     const int full_span = scale_y(252);
     const int offset = menu_scroll_shift(full_span);
     const int out_dy = -rs.nav.menu_scroll_dir * offset;
     const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
-    const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, kTotalPages - 1);
+    const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1);
     draw_grid_for_page(cur_pg, out_dy, false);
     draw_grid_for_page(tgt_pg, in_dy, false);
   } else {
@@ -246,16 +245,16 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     draw_grid_for_page(cur_pg, bounce_y, true);
   }
 
-  if (rs.nav.menu_scroll_active && kTotalPages > 1 && !backdrop_active()) {
+  if (rs.nav.menu_scroll_active && total_pages > 1 && !backdrop_active()) {
     fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), ctx.col_bg);
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
   }
 
   render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
-  const int active_pip_pg = (rs.nav.menu_scroll_active && kTotalPages > 1)
-                                ? std::clamp(rs.nav.menu_scroll_target_page, 0, kTotalPages - 1)
+  const int active_pip_pg = (rs.nav.menu_scroll_active && total_pages > 1)
+                                ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
                                 : cur_pg;
-  render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < kTotalPages,
+  render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < total_pages,
                             ctx.col_bg, ctx.col_white, kChromePipInactive);
 }
 

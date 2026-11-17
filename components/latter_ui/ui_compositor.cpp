@@ -759,6 +759,9 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
       act_mask |= (1U << 2);
     }
+    if (!rs.stopwatch.running && rs.stopwatch.elapsed_ms > 0U) {
+      act_mask |= (1U << 12);
+    }
     if (rs.alarms.snooze_until > 0) {
       act_mask |= (1U << 3);
     } else {
@@ -826,6 +829,20 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         (!rs.intercom.cam_intercom_status.empty() ? 16U : 0U);
     hh_sig = (hh_sig ^ flags) * 16777619U;
     sig ^= (hh_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::TOOLS) {
+    uint32_t tl_sig = 2166136261U;
+    for (unsigned char c : effective_tools_items_sv(prefs)) {
+      tl_sig = (tl_sig ^ c) * 16777619U;
+    }
+    tl_sig = (tl_sig ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;
+    sig ^= (tl_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::GAMES) {
+    uint32_t gm_sig = 2166136261U;
+    for (unsigned char c : effective_games_items_sv(prefs)) {
+      gm_sig = (gm_sig ^ c) * 16777619U;
+    }
+    gm_sig = (gm_sig ^ static_cast<uint32_t>(rs.nav.game_carousel_idx)) * 16777619U;
+    sig ^= (gm_sig | 1U);
   }
   return sig;
 }

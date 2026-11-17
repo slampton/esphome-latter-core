@@ -178,17 +178,6 @@ namespace SystemMenuMode {
   static constexpr int COLOR_WHEEL    = 13;
 }  // namespace SystemMenuMode
 
-namespace ToolsSubpage {
-  static constexpr int LAUNCHER   = 0;
-  static constexpr int STOPWATCH  = 3;
-  static constexpr int DICE       = 4;
-  static constexpr int FLASHLIGHT = 5;
-  static constexpr int CALCULATOR = 6;
-  static constexpr int LEVEL      = 7;
-  static constexpr int COIN_FLIP  = 8;
-  static constexpr int CALENDAR   = 9;
-}  // namespace ToolsSubpage
-
 namespace TimeSubpage {
   static constexpr int CLOCK     = 0;
   static constexpr int TIMERS    = 1;

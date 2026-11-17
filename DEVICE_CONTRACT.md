@@ -35,6 +35,8 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 | `activity_sources` | `calendar,music_queue,stopwatch,alarms,timers` |
 | `area_categories` | `scene,light,cover,fan,switch,climate,media` |
 | `home_categories` | `alarm,cameras,intercom,thermostat,entry,vacuum` |
+| `tools_items` | `stopwatch,level,flashlight,calculator,dice,coin_flip` |
+| `games_items` | `marbles,archery,bricks,chomp,2048,memory` |
 
 ## 2. Domain Payloads
 
@@ -150,7 +152,7 @@ Upcoming calendar agenda events and next-event headline.
 | `3` | `summary` | `CalendarField::SUMMARY` | `records` | 0x1E-joined time|title|location|all_day agenda records (up to 5; time is a local label such as TODAY 14:30, TOM ALL DAY or NOV 20 08:05; all_day 1 or 0) |
 | `4` | `count` | `CalendarField::EVENT_COUNT` | `u16` | Number of upcoming agenda events |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `55` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `57` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -208,6 +210,8 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `52` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
 | `53` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
 | `54` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
+| `55` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip; Calendar remains independent) |
+| `56` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -229,7 +233,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter_push_v3` | `domain: string`, `payload: string` | Push a revision-guarded Protocol v3 domain payload directly to the bound Device over the ESPHome Native API |
 | `latter_set_beacon_uuid` | `uuid: string` | Provision the System's random 128-bit BLE iBeacon UUID into NVS and restart advertising if active |
 | `latter_factory_reset` | *(none)* | Reset to defaults: erases every saved setting (the whole NVS partition, including the Wi-Fi driver's cached network data and RF calibration) and reboots. Compiled-in Wi-Fi credentials and the API key are kept, so the device rejoins Home Assistant unchanged |
-| `latter_device_command` | `command: string` | Execute a typed Device lifecycle, diagnostic, or UI command (restart|find_my|activate_screensaver|trigger_va|log_memory_report) |
+| `latter_device_command` | `command: string` | Execute a typed Device lifecycle, diagnostic, or UI command (restart|find_my|activate_screensaver|trigger_va|log_memory_report|dismiss_ringing|cancel_timer|reset_stopwatch) |
 | `latter_set_slots` | `is_area_slots: bool`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots or Area/Site entity control slots to the device |
 | `latter_show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot; alert_id > 0 deduplicates repeats |
 | `latter_ui_input` | `action: string`, `delta: int` | Remote navigation input: action up|down|left|right|select|back|home (canonical navigation actions); delta overrides the step for directional actions (0 = derive from action) |
@@ -254,7 +258,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `save_custom_color` | `hex_color` | Save a custom RGB accent color from the on-device color wheel |
 | `shortcut_action` | `entity_id`, `action`, `code` | Execute an allowlisted Home Assistant entity action from a configured App Dock or Pinned shortcut |
 | `set_device_prefs` | `base_seq`, `changes` | Persist on-device settings edits back to the Device subentry and increment prefs_seq |
-| `timer_alarm_state` | `timer_running`, `timer_paused`, `remaining_sec`, `ringing` | Report on-device countdown timer and alarm ringing state transitions to Home Assistant |
+| `timer_alarm_state` | `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Report on-device countdown timer, stopwatch, and alarm ringing state transitions to Home Assistant |
 
 ## 5. Public Home Assistant Services (`latter.<service>`)
 
@@ -278,4 +282,4 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction`, `code` | Listen to a doorbell camera's noise-reduced audio on a Latter device, reply by push-to-talk or quick reply (spoken with TTS on the camera's media_player), select a carousel camera, unlock the door's lock, or ring other Latter displays with a notification (call_target). There is no live device-to-door audio. |
 | `latter.reset_device` | `target_device`, `device_settings`, `latter_options` | Reset a Latter device. Device settings erases everything saved on the device (its settings and the Wi-Fi driver's cached data) and restarts it; Wi-Fi credentials and the API key are compiled into the firmware, so it rejoins Home Assistant unchanged. Latter options puts this device's Latter options back to the defaults it got when it was added, keeping its ESPHome binding and its Music Assistant player link. |
 | `latter.set_device_prefs` | `target_device`, `base_seq`, `changes` | Apply on-device preference updates from a bound Latter Device (or admin automation) into the Device's sleep-safe subentry configuration. |
-| `latter.timer_alarm_state` | `target_device`, `timer_running`, `timer_paused`, `remaining_sec`, `ringing` | Event-driven timer and alarm state update reported by a bound Latter Device. |
+| `latter.timer_alarm_state` | `target_device`, `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Event-driven timer, stopwatch, and alarm state update reported by a bound Latter Device. |

@@ -821,9 +821,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 10U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 49U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 55U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 11U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 51U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 57U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 46U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -1055,7 +1055,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111605L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111606L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3332,7 +3332,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111605L, "LATTER_SDK_REV must match 2026111605L");
+  static_assert(LATTER_SDK_REV == 2026111606L, "LATTER_SDK_REV must match 2026111606L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
@@ -4117,6 +4117,296 @@ void test_universal_shortcuts_and_pinned_app() {
   LATTER_CHECK(outbox.frames.back().find("\"entity_id\":\"script.call_thu\"") != std::string::npos);
 }
 
+void test_tools_games_launcher_prefs_and_stopwatch_commands() {
+  using namespace latter_ui;
+  reset_runtime_state();
+
+  // 1. Protocol v3 & PersistedDevicePrefs v11 schema invariants
+  static_assert(kPersistedPrefsVersion == 11U, "PersistedDevicePrefs must be bumped to v11");
+  static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 55U);
+  static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 56U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 57U);
+  static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 49U);
+  static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 50U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 51U);
+
+  LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
+               "stopwatch,level,flashlight,calculator,dice,coin_flip");
+  LATTER_CHECK(std::string_view(kDefaultGamesItems) ==
+               "marbles,archery,bricks,chomp,2048,memory");
+  LATTER_CHECK(device_prefs_state().tools_items == kDefaultToolsItems);
+  LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
+  LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
+  LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
+
+  // 2. CSV normalization: custom ordering, whitespace trim, dedup, calendar exclusion & empty fallback
+  LATTER_CHECK(normalize_tools_items_csv(" coin_flip , flashlight , calendar , dice , coin_flip , bogus ") ==
+               "coin_flip,flashlight,dice");
+  LATTER_CHECK(normalize_tools_items_csv("") == kDefaultToolsItems);
+  LATTER_CHECK(normalize_tools_items_csv("calendar,unknown") == kDefaultToolsItems);
+
+  LATTER_CHECK(normalize_games_items_csv(" memory , 2048 , chomp , memory , invalid ") ==
+               "memory,2048,chomp");
+  LATTER_CHECK(normalize_games_items_csv("") == kDefaultGamesItems);
+  LATTER_CHECK(normalize_games_items_csv("chess,checkers") == kDefaultGamesItems);
+
+  // 3. Cold adoption hello dirty_prefs excludes tools_items & games_items unless locally marked dirty
+  {
+    PersistedDevicePrefs cold{};
+    const std::string seed = build_hello_dirty_prefs(cold);
+    LATTER_CHECK(seed.find("tools_items=") == std::string::npos);
+    LATTER_CHECK(seed.find("games_items=") == std::string::npos);
+  }
+
+  // 4. Protocol v3 device_prefs parsing, NVS POD round-trip, empty-string fallback & reducer clamping
+  reset_all_v3_rev_guards();
+  auto &rt = runtime_state();
+  rt.nav.gui_page = PageId::GAMES;
+  rt.nav.game_carousel_idx = 5;
+  rt.nav.tools_menu_page = 1;
+
+  std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+  dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "21";
+  dp_tok[static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS)] = "dice,flashlight";
+  dp_tok[static_cast<size_t>(DevicePrefsField::GAMES_ITEMS)] = "2048,marbles";
+  uint32_t eff = 0U;
+  LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(90, 1, dp_tok), eff, 1200U));
+  LATTER_CHECK((eff & kPrefEffectNavPolicy) != 0U && (eff & kPrefEffectRedraw) != 0U);
+  LATTER_CHECK(std::string_view(persisted_prefs().tools_items) == "dice,flashlight");
+  LATTER_CHECK(std::string_view(persisted_prefs().games_items) == "2048,marbles");
+  LATTER_CHECK(device_prefs_state().tools_items == "dice,flashlight");
+  LATTER_CHECK(device_prefs_state().games_items == "2048,marbles");
+  LATTER_CHECK(device_prefs_state().nvs_save_pending);
+
+  V3ReduceContext rctx{};
+  rctx.now_ms = 1200U;
+  const auto red_eff = v3_domain_reducer().reduce("device_prefs", rctx);
+  LATTER_CHECK(red_eff.apply_device_prefs_effects);
+  LATTER_CHECK(rt.nav.game_carousel_idx == 1);  // Clamped from 5 -> 1 (2 enabled games: 0..1)
+  LATTER_CHECK(rt.nav.tools_menu_page == 0);    // Clamped from 1 -> 0 (3 items: Dice, Flashlight, Calendar = 1 page)
+
+  // POD NVS binary blob round-trip + empty/corrupt NVS buffer fallback to spec defaults
+  LATTER_CHECK(save_persisted_prefs());
+  alignas(PersistedDevicePrefs) uint8_t raw_nvs[sizeof(PersistedDevicePrefs)]{};
+  std::memcpy(raw_nvs, &persisted_prefs(), sizeof(PersistedDevicePrefs));
+  PersistedDevicePrefs restored{};
+  std::memcpy(&restored, raw_nvs, sizeof(PersistedDevicePrefs));
+  LATTER_CHECK(restored.magic == kPersistedPrefsMagic && restored.version == kPersistedPrefsVersion);
+  clamp_prefs_to_capabilities(restored);
+  LATTER_CHECK(std::string_view(restored.tools_items) == "dice,flashlight");
+  LATTER_CHECK(std::string_view(restored.games_items) == "2048,marbles");
+
+  PersistedDevicePrefs empty_nvs{};
+  empty_nvs.tools_items[0] = '\0';
+  empty_nvs.games_items[0] = '\0';
+  clamp_prefs_to_capabilities(empty_nvs);
+  LATTER_CHECK(std::string_view(empty_nvs.tools_items) == kDefaultToolsItems);
+  LATTER_CHECK(std::string_view(empty_nvs.games_items) == kDefaultGamesItems);
+
+  // Empty wire fields in Protocol v3 device_prefs restore kDefaultToolsItems / kDefaultGamesItems
+  dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "22";
+  dp_tok[static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS)] = "";
+  dp_tok[static_cast<size_t>(DevicePrefsField::GAMES_ITEMS)] = "";
+  eff = 0U;
+  LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(90, 2, dp_tok), eff, 1500U));
+  LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
+  LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
+  LATTER_CHECK(device_prefs_state().tools_items == kDefaultToolsItems);
+  LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
+
+  // 5. Capability filtering & ordering for Tools (with independent Calendar) and Games
+  {
+    ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
+    // Round + IMU with custom order: level, stopwatch, coin_flip + independent Calendar = 4 items
+    int n = collect_tools_launcher_items_for("level,stopwatch,coin_flip", true, true, items);
+    LATTER_CHECK(n == 4);
+    LATTER_CHECK(items[0].id == ToolsSubpage::LEVEL && std::string_view(items[0].label) == "Level");
+    LATTER_CHECK(items[1].id == ToolsSubpage::STOPWATCH && std::string_view(items[1].label) == "Stopwatch");
+    LATTER_CHECK(items[2].id == ToolsSubpage::COIN_FLIP && std::string_view(items[2].label) == "Coin Flip");
+    LATTER_CHECK(items[3].id == ToolsSubpage::CALENDAR && std::string_view(items[3].label) == "Calendar");
+
+    // Rectangular non-IMU board with only stopwatch,level configured -> Calendar stays intact (1 item),
+    // and utility-only query returns 0 items with safe 1-page clamp!
+    n = collect_tools_launcher_items_for("stopwatch,level", false, false, items, kMaxToolsLauncherItems, true);
+    LATTER_CHECK(n == 1 && items[0].id == ToolsSubpage::CALENDAR);
+    const int n_no_cal = collect_tools_launcher_items_for(
+        "stopwatch,level", false, false, items, kMaxToolsLauncherItems, false);
+    LATTER_CHECK(n_no_cal == 0 && tools_launcher_page_count(n_no_cal) == 1);
+
+    // Default 6 utility tools + Calendar on Round + IMU -> 7 items across 2 pages
+    n = collect_tools_launcher_items_for(kDefaultToolsItems, true, true, items);
+    LATTER_CHECK(n == 7 && tools_launcher_page_count(n) == 2);
+    // Default on Rectangular non-IMU -> 4 utility tools + Calendar = 5 items on 1 page
+    n = collect_tools_launcher_items_for(kDefaultToolsItems, false, false, items);
+    LATTER_CHECK(n == 5 && tools_launcher_page_count(n) == 1);
+
+    int g_ids[kMaxGamesLauncherItems]{};
+    const int gc = collect_enabled_games_for("memory,bricks,chomp", g_ids);
+    LATTER_CHECK(gc == 3 && g_ids[0] == 6 && g_ids[1] == 3 && g_ids[2] == 4);
+    LATTER_CHECK(collect_enabled_games_for("unknown", g_ids) == 0);
+  }
+
+  // 6. Stopwatch live timer_alarm_state transitions, >3s drift, reconnect force_if_active, and co-existence with timers
+  reset_runtime_state();
+  MockRpcOutbox sw_box{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  link_state().ha_connected = true;
+  auto &rs = runtime_state();
+
+  // Idle -> no emission
+  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.empty());
+
+  // Start stopwatch at t=1000ms -> emits stopwatch_running=1, stopwatch_paused=0, stopwatch_elapsed_sec=0
+  rs.stopwatch.running = true;
+  rs.stopwatch.start_time_ms = 1000U;
+  rs.stopwatch.elapsed_ms = 0U;
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 1U);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_running\":\"1\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_paused\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"0\"") != std::string::npos);
+
+  // Steady 1 Hz advance (+3s -> elapsed 3s) does NOT emit Wi-Fi traffic
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(4000U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 1U);
+
+  // Even while a countdown timer is running steadily, a >3s stopwatch jump MUST still emit!
+  rs.timers.running = true;
+  rs.timers.remaining_sec = 60;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(5000U, false, &sw_box));  // timer start transition
+  LATTER_CHECK(sw_box.published.size() == 2U);
+
+  rs.timers.remaining_sec = 59;        // steady timer (-1s)
+  rs.stopwatch.start_time_ms = 0U;     // jump stopwatch elapsed from ~4s -> 6s? Let's jump to 25s at t=25000 while timer matches!
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  rs.timers.remaining_sec = 58;
+  rs.stopwatch.start_time_ms = 1000U;  // at t=7000ms expected sw is 4 + 2 = 6s; simulate clock jump by shifting start_time_ms
+  // Shift start_time_ms back so cur_sw_sec = 22s vs expected 6s (>3s drift) while timer_rem=58s matches expected!
+  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(7000U, false, &sw_box));
+  rs.stopwatch.start_time_ms = 0U;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(25000U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 3U);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"25\"") != std::string::npos);
+
+  // Pause stopwatch at 27,400ms -> emits stopwatch_running=0, stopwatch_paused=1, stopwatch_elapsed_sec=27
+  rs.timers.running = false;
+  rs.stopwatch.running = false;
+  rs.stopwatch.elapsed_ms = 27400U;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(27400U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 4U);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_running\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_paused\":\"1\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"27\"") != std::string::npos);
+
+  // Reconnect force_if_active while stopwatch is paused -> emits immediately!
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(28000U, /*force_if_active=*/true, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 5U);
+
+  // Paused elapsed_sec change (27s -> 42s) -> emits immediately!
+  rs.stopwatch.elapsed_ms = 42000U;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(28500U, false, &sw_box));
+  LATTER_CHECK(sw_box.published.size() == 6U);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"42\"") != std::string::npos);
+
+  // 7. Remote latter_device_command handlers: reset_stopwatch, cancel_timer, dismiss_ringing
+  // 7a. reset_stopwatch stops & zeroes stopwatch, marks UI dirty, and emits 0s state
+  dirty_band() = DirtyBandTracker{};
+  dirty_band().begin_frame(PageId::TIME, 3, 0U, false);
+  mark_dirty_band(10, 30);
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  sw_box.published.clear();
+  const auto rst_sw_eff = latter_actions::handle_device_cmd_reset_stopwatch(29000U, &sw_box);
+  LATTER_CHECK(rst_sw_eff.apply_power && !rst_sw_eff.stop_sound);
+  LATTER_CHECK(!rs.stopwatch.running && rs.stopwatch.elapsed_ms == 0U && rs.stopwatch.lap_count == 0U);
+  dirty_band().begin_frame(PageId::TIME, 3, 0U, false);
+  LATTER_CHECK(dirty_band().is_full());
+  LATTER_CHECK(!sw_box.published.empty());
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_running\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_paused\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"0\"") != std::string::npos);
+
+  // 7b. cancel_timer stops & resets countdown slots to duration_sec, clears timer ringing, marks dirty & emits
+  timer_slots()[0].duration_sec = 300;
+  timer_slots()[0].remaining_sec = 95;
+  timer_slots()[0].running = true;
+  timer_slots()[0].target_ms = 125000U;
+  timer_slots()[1].duration_sec = 600;
+  timer_slots()[1].remaining_sec = 210;
+  timer_slots()[1].paused = true;
+  rs.timers.ringing = true;
+  rs.timers.va_timer_name = "Tea";
+  rs.nav.home_subpage = 2;
+  sync_multi_timer_state();
+  mark_dirty_band(20, 40);
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  sw_box.published.clear();
+
+  const auto can_tmr_eff = latter_actions::handle_device_cmd_cancel_timer(30000U, &sw_box);
+  LATTER_CHECK(can_tmr_eff.stop_sound && can_tmr_eff.sync_brightness && can_tmr_eff.apply_power);
+  LATTER_CHECK(!rs.timers.running && !rs.timers.paused && !rs.timers.ringing);
+  LATTER_CHECK(timer_slots()[0].remaining_sec == 300 && !timer_slots()[0].running);
+  LATTER_CHECK(timer_slots()[1].remaining_sec == 600 && !timer_slots()[1].paused);
+  LATTER_CHECK(rs.timers.va_timer_name.empty() && rs.nav.home_subpage == 0);
+  dirty_band().begin_frame(PageId::TIME, 1, 0U, false);
+  LATTER_CHECK(dirty_band().is_full());
+  LATTER_CHECK(!sw_box.published.empty());
+  LATTER_CHECK(sw_box.published.back().find("\"timer_running\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"timer_paused\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"remaining_sec\":\"0\"") != std::string::npos);
+  LATTER_CHECK(sw_box.published.back().find("\"ringing\":\"0\"") != std::string::npos);
+
+  // 7c. dismiss_ringing silences Once alarm (disabling slot + syncing alarms_summary) & emits ringing=0
+  auto &prefs = persisted_prefs();
+  prefs.alarms[1].hour = 6;
+  prefs.alarms[1].minute = 45;
+  prefs.alarms[1].enabled = true;
+  prefs.alarms[1].recurrence = 3;  // Once
+  rs.alarms.ringing = true;
+  rs.alarms.ringing_idx = 2;
+  rs.alarms.snooze_until = 99999U;
+  rs.timers.ringing = true;
+  mark_dirty_band(10, 40);
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  sw_box.published.clear();
+
+  const auto dis_eff = latter_actions::handle_device_cmd_dismiss_ringing(35000U, &sw_box);
+  LATTER_CHECK(dis_eff.stop_sound && dis_eff.sync_brightness && dis_eff.apply_power);
+  LATTER_CHECK(!rs.alarms.ringing && !rs.timers.ringing && rs.alarms.snooze_until == 0U);
+  LATTER_CHECK(!prefs.alarms[1].enabled);
+  dirty_band().begin_frame(PageId::TIME, 2, 0U, false);
+  LATTER_CHECK(dirty_band().is_full());
+
+  uint32_t pump_ms = 35100U;
+  while (latter_rpc::has_pending_frames()) {
+    latter_rpc::step_outbox_loop(pump_ms);
+    pump_ms += 25U;
+  }
+  std::string all_frames;
+  for (const auto &fr : sw_box.published) all_frames += fr;
+  LATTER_CHECK(all_frames.find("set_device_prefs") != std::string::npos);
+  LATTER_CHECK(all_frames.find("timer_alarm_state") != std::string::npos);
+  LATTER_CHECK(all_frames.find("\"ringing\":\"0\"") != std::string::npos);
+
+  // 8. Source-level guards for system_core.yaml, page_tools.cpp, page_games.cpp & D-057
+  const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");
+  const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
+  const std::string games_cpp = read_repo_file("../../components/latter_ui/page_games.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(sys_yaml.find("sv_cmd == \"dismiss_ringing\"") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("sv_cmd == \"cancel_timer\"") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("sv_cmd == \"reset_stopwatch\"") != std::string::npos);
+  LATTER_CHECK(tools_cpp.find("collect_tools_launcher_items(") != std::string::npos);
+  LATTER_CHECK(games_cpp.find("collect_enabled_games(") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-057:") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -4142,6 +4432,7 @@ int main() {
   test_touch_hal_kinematic_gestures_and_d049_d050();
   test_custom_icon_tiers_and_d051();
   test_universal_shortcuts_and_pinned_app();
+  test_tools_games_launcher_prefs_and_stopwatch_commands();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

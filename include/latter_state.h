@@ -171,6 +171,17 @@ namespace HomeHubTab {
   static constexpr int VACUUM     = 5;
 }  // namespace HomeHubTab
 
+namespace ToolsSubpage {
+  static constexpr int LAUNCHER   = 0;
+  static constexpr int STOPWATCH  = 3;
+  static constexpr int DICE       = 4;
+  static constexpr int FLASHLIGHT = 5;
+  static constexpr int CALCULATOR = 6;
+  static constexpr int LEVEL      = 7;
+  static constexpr int COIN_FLIP  = 8;
+  static constexpr int CALENDAR   = 9;
+}  // namespace ToolsSubpage
+
 inline constexpr int kMaxHomeHubTabs = 6;
 
 inline constexpr uint16_t kAlarmCapCodeDisarm  = 0x01U;
@@ -384,7 +395,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 10U;
+static constexpr uint16_t kPersistedPrefsVersion = 11U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -437,7 +448,9 @@ enum class PrefKey : uint8_t {
   WORLD_CLOCKS = 46,
   ALARMS_SUMMARY = 47,
   LOCAL_CLOCK_LABEL = 48,
-  COUNT = 49,
+  TOOLS_ITEMS = 49,
+  GAMES_ITEMS = 50,
+  COUNT = 51,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -536,6 +549,8 @@ struct PersistedDevicePrefs {
       {8, 30, false, 2},
       {9, 0, false, 2},
   };
+  char tools_items[80]{};
+  char games_items[64]{};
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
@@ -597,6 +612,10 @@ struct PersistedDevicePrefs {
 
 static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
               "PersistedDevicePrefs must remain a POD blob for ESPPreferenceObject.");
+static_assert(std::char_traits<char>::length(kDefaultToolsItems) < sizeof(PersistedDevicePrefs::tools_items),
+              "PersistedDevicePrefs::tools_items must fit kDefaultToolsItems.");
+static_assert(std::char_traits<char>::length(kDefaultGamesItems) < sizeof(PersistedDevicePrefs::games_items),
+              "PersistedDevicePrefs::games_items must fit kDefaultGamesItems.");
 
 struct DevicePrefsState {
   uint32_t epoch = 0;
@@ -606,6 +625,8 @@ struct DevicePrefsState {
   bool loaded = false;
   bool nvs_save_pending = false;
   uint32_t nvs_dirty_since_ms = 0;
+  std::string tools_items = kDefaultToolsItems;
+  std::string games_items = kDefaultGamesItems;
 };
 
 inline DevicePrefsState &device_prefs_state() {
@@ -616,6 +637,10 @@ inline DevicePrefsState &device_prefs_state() {
 inline PersistedDevicePrefs &persisted_prefs() {
   static PersistedDevicePrefs prefs{};
   return prefs;
+}
+
+inline PersistedDevicePrefs &device_prefs() {
+  return persisted_prefs();
 }
 
 inline constexpr const char *const kWakeWordModeOpts[3] = {
@@ -717,6 +742,242 @@ inline const char *pref_ww_sens_cstr(uint8_t idx) { return opt_at_clamped(kWwSen
 inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBleBeaconModeOpts, p.ble_beacon_mode); }
 inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
 
+template <size_t N>
+inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
+  static_assert(N > 0, "Destination buffer must be non-empty");
+  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
+  if (n > 0) std::memcpy(dst, src.data(), n);
+  dst[n] = '\0';
+}
+
+inline std::string_view trim_ascii_ws(std::string_view sv) noexcept {
+  while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' || sv.front() == '\n')) {
+    sv.remove_prefix(1);
+  }
+  while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) {
+    sv.remove_suffix(1);
+  }
+  return sv;
+}
+
+inline constexpr const char *const kCanonicalToolsItemTokens[6] = {
+    "stopwatch", "level", "flashlight", "calculator", "dice", "coin_flip"};
+inline constexpr const char *const kCanonicalGamesItemTokens[6] = {
+    "marbles", "archery", "bricks", "chomp", "2048", "memory"};
+
+inline constexpr int tools_subpage_for_token(std::string_view tok) noexcept {
+  if (tok == "stopwatch") return ToolsSubpage::STOPWATCH;
+  if (tok == "level") return ToolsSubpage::LEVEL;
+  if (tok == "flashlight") return ToolsSubpage::FLASHLIGHT;
+  if (tok == "calculator") return ToolsSubpage::CALCULATOR;
+  if (tok == "dice") return ToolsSubpage::DICE;
+  if (tok == "coin_flip") return ToolsSubpage::COIN_FLIP;
+  return 0;
+}
+
+inline constexpr const char *tools_launcher_label_for_subpage(int subpage_id) noexcept {
+  switch (subpage_id) {
+    case ToolsSubpage::STOPWATCH: return "Stopwatch";
+    case ToolsSubpage::LEVEL: return "Level";
+    case ToolsSubpage::FLASHLIGHT: return "Flashlight";
+    case ToolsSubpage::CALCULATOR: return "Calculator";
+    case ToolsSubpage::CALENDAR: return "Calendar";
+    case ToolsSubpage::DICE: return "Dice Roll";
+    case ToolsSubpage::COIN_FLIP: return "Coin Flip";
+    default: return "";
+  }
+}
+
+// 1-based game IDs matching NavRuntimeState::active_game (1=Marbles .. 6=Memory Match).
+inline constexpr int game_id_for_token(std::string_view tok) noexcept {
+  if (tok == "marbles") return 1;
+  if (tok == "archery") return 2;
+  if (tok == "bricks") return 3;
+  if (tok == "chomp") return 4;
+  if (tok == "2048") return 5;
+  if (tok == "memory") return 6;
+  return 0;
+}
+
+inline std::string normalize_tools_items_csv(std::string_view sv) {
+  std::string_view seen[6]{};
+  int count = 0;
+  size_t start = 0;
+  while (start <= sv.size() && count < 6) {
+    const size_t pos = sv.find(',', start);
+    const std::string_view tok = trim_ascii_ws(
+        (pos == std::string_view::npos) ? sv.substr(start) : sv.substr(start, pos - start));
+    if (tools_subpage_for_token(tok) > 0) {
+      bool dup = false;
+      for (int i = 0; i < count; ++i) {
+        if (seen[i] == tok) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) seen[count++] = tok;
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  if (count <= 0) return std::string(kDefaultToolsItems);
+  std::string out;
+  out.reserve(56);
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) out.push_back(',');
+    out.append(seen[i]);
+  }
+  return out;
+}
+
+inline std::string normalize_games_items_csv(std::string_view sv) {
+  std::string_view seen[6]{};
+  int count = 0;
+  size_t start = 0;
+  while (start <= sv.size() && count < 6) {
+    const size_t pos = sv.find(',', start);
+    const std::string_view tok = trim_ascii_ws(
+        (pos == std::string_view::npos) ? sv.substr(start) : sv.substr(start, pos - start));
+    if (game_id_for_token(tok) > 0) {
+      bool dup = false;
+      for (int i = 0; i < count; ++i) {
+        if (seen[i] == tok) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) seen[count++] = tok;
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  if (count <= 0) return std::string(kDefaultGamesItems);
+  std::string out;
+  out.reserve(48);
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) out.push_back(',');
+    out.append(seen[i]);
+  }
+  return out;
+}
+
+inline std::string_view effective_tools_items_sv(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  return (p.tools_items[0] != '\0') ? std::string_view(p.tools_items) : std::string_view(kDefaultToolsItems);
+}
+
+inline std::string_view effective_games_items_sv(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  return (p.games_items[0] != '\0') ? std::string_view(p.games_items) : std::string_view(kDefaultGamesItems);
+}
+
+struct ToolsLauncherItemSpec {
+  int id = 0;
+  const char *label = "";
+};
+
+inline constexpr int kMaxToolsLauncherItems = 7;  // up to 6 utility tools + independent Calendar
+inline constexpr int kMaxGamesLauncherItems = 6;
+
+inline int collect_tools_launcher_items_for(std::string_view csv,
+                                            bool round_display,
+                                            bool has_imu,
+                                            ToolsLauncherItemSpec *out_items,
+                                            int max_items = kMaxToolsLauncherItems,
+                                            bool include_calendar = true) noexcept {
+  if (out_items == nullptr || max_items <= 0) return 0;
+  int count = 0;
+  size_t start = 0;
+  const int utility_cap = include_calendar ? std::min(max_items - 1, 6) : std::min(max_items, 6);
+  while (!csv.empty() && start <= csv.size() && count < utility_cap) {
+    const size_t pos = csv.find(',', start);
+    const std::string_view tok = trim_ascii_ws(
+        (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start));
+    const int sub = tools_subpage_for_token(tok);
+    if (sub > 0) {
+      const bool cap_ok =
+          (sub != ToolsSubpage::STOPWATCH || round_display) &&
+          (sub != ToolsSubpage::LEVEL || has_imu);
+      if (cap_ok) {
+        bool dup = false;
+        for (int i = 0; i < count; ++i) {
+          if (out_items[i].id == sub) {
+            dup = true;
+            break;
+          }
+        }
+        if (!dup) {
+          out_items[count++] = ToolsLauncherItemSpec{sub, tools_launcher_label_for_subpage(sub)};
+        }
+      }
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  if (include_calendar && count < max_items) {
+    out_items[count++] = ToolsLauncherItemSpec{ToolsSubpage::CALENDAR, "Calendar"};
+  }
+  return count;
+}
+
+inline int collect_tools_launcher_items(ToolsLauncherItemSpec *out_items,
+                                        const PersistedDevicePrefs &p = persisted_prefs(),
+                                        int max_items = kMaxToolsLauncherItems,
+                                        bool include_calendar = true) noexcept {
+  return collect_tools_launcher_items_for(
+      effective_tools_items_sv(p), LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0,
+      out_items, max_items, include_calendar);
+}
+
+inline int active_tools_launcher_item_count(const PersistedDevicePrefs &p = persisted_prefs(),
+                                            bool include_calendar = true) noexcept {
+  ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
+  return collect_tools_launcher_items(items, p, kMaxToolsLauncherItems, include_calendar);
+}
+
+inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = persisted_prefs(),
+                                            bool include_calendar = true) noexcept {
+  const int cnt = active_tools_launcher_item_count(p, include_calendar);
+  return (cnt <= 6) ? 1 : ((cnt + 5) / 6);
+}
+
+inline int collect_enabled_games_for(std::string_view csv,
+                                     int *out_game_ids,
+                                     int max_games = kMaxGamesLauncherItems) noexcept {
+  if (out_game_ids == nullptr || max_games <= 0 || csv.empty()) return 0;
+  int count = 0;
+  size_t start = 0;
+  const int cap = std::min(max_games, kMaxGamesLauncherItems);
+  while (start <= csv.size() && count < cap) {
+    const size_t pos = csv.find(',', start);
+    const std::string_view tok = trim_ascii_ws(
+        (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start));
+    const int gid = game_id_for_token(tok);
+    if (gid > 0) {
+      bool dup = false;
+      for (int i = 0; i < count; ++i) {
+        if (out_game_ids[i] == gid) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) out_game_ids[count++] = gid;
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+  return count;
+}
+
+inline int collect_enabled_games(int *out_game_ids,
+                                 const PersistedDevicePrefs &p = persisted_prefs(),
+                                 int max_games = kMaxGamesLauncherItems) noexcept {
+  return collect_enabled_games_for(effective_games_items_sv(p), out_game_ids, max_games);
+}
+
+inline int active_games_launcher_count(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  int ids[kMaxGamesLauncherItems]{};
+  return collect_enabled_games(ids, p, kMaxGamesLauncherItems);
+}
+
 inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
   if (p.tap_to_wake >= 4) p.tap_to_wake = 2;
@@ -741,6 +1002,14 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
   p.local_clock_label[sizeof(p.local_clock_label) - 1] = '\0';
   p.world_clocks_spec[sizeof(p.world_clocks_spec) - 1] = '\0';
+  p.tools_items[sizeof(p.tools_items) - 1] = '\0';
+  p.games_items[sizeof(p.games_items) - 1] = '\0';
+  copy_bounded_cstr(p.tools_items, normalize_tools_items_csv(p.tools_items));
+  copy_bounded_cstr(p.games_items, normalize_games_items_csv(p.games_items));
+  if (&p == &persisted_prefs()) {
+    device_prefs_state().tools_items = p.tools_items;
+    device_prefs_state().games_items = p.games_items;
+  }
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
   if (p.album_sort_order >= 3) p.album_sort_order = 0;
@@ -2361,14 +2630,6 @@ inline uint32_t parse_hex_rgb_u24(std::string_view sv, uint32_t fallback) {
   return rgb;
 }
 
-template <size_t N>
-inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
-  static_assert(N > 0, "Destination buffer must be non-empty");
-  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
-  if (n > 0) std::memcpy(dst, src.data(), n);
-  dst[n] = '\0';
-}
-
 // ==============================================================================
 // Time App: World Clock Catalog, TZ Metadata Parsers & Alarm Summary Codec
 // ==============================================================================
@@ -2463,16 +2724,6 @@ inline int catalog_std_offset_min_for_iana(std::string_view iana, bool *found = 
   }
   if (found != nullptr) *found = false;
   return 0;
-}
-
-inline std::string_view trim_ascii_ws(std::string_view sv) noexcept {
-  while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\r' || sv.front() == '\n')) {
-    sv.remove_prefix(1);
-  }
-  while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\r' || sv.back() == '\n')) {
-    sv.remove_suffix(1);
-  }
-  return sv;
 }
 
 inline bool is_valid_iana_zone_token(std::string_view sv) noexcept {
@@ -2778,6 +3029,8 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::WORLD_CLOCKS: return "world_clocks";
     case PrefKey::ALARMS_SUMMARY: return "alarms_summary";
     case PrefKey::LOCAL_CLOCK_LABEL: return "local_clock_label";
+    case PrefKey::TOOLS_ITEMS: return "tools_items";
+    case PrefKey::GAMES_ITEMS: return "games_items";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -2834,6 +3087,8 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::WORLD_CLOCKS: return std::string(p.world_clocks_spec);
     case PrefKey::ALARMS_SUMMARY: return format_alarms_summary(p);
     case PrefKey::LOCAL_CLOCK_LABEL: return std::string(p.local_clock_label);
+    case PrefKey::TOOLS_ITEMS: return std::string(effective_tools_items_sv(p));
+    case PrefKey::GAMES_ITEMS: return std::string(effective_games_items_sv(p));
     case PrefKey::COUNT: break;
   }
   return "";
@@ -2841,7 +3096,13 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
 
 inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                                 bool /*unused_cascade*/, uint64_t &changed_mask, uint32_t &effects_mask) {
-  if (sv.empty() && key != PrefKey::WORLD_CLOCKS && key != PrefKey::LOCAL_CLOCK_LABEL) return false;
+  if (sv.empty() &&
+      key != PrefKey::WORLD_CLOCKS &&
+      key != PrefKey::LOCAL_CLOCK_LABEL &&
+      key != PrefKey::TOOLS_ITEMS &&
+      key != PrefKey::GAMES_ITEMS) {
+    return false;
+  }
   auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff) -> bool {
     int idx = find_opt_index(opts, sv);
     if (idx < 0) return false;
@@ -3015,6 +3276,28 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       effects_mask |= kPrefEffectRedraw;
       return true;
     }
+    case PrefKey::TOOLS_ITEMS: {
+      const std::string norm = normalize_tools_items_csv(sv);
+      if (effective_tools_items_sv(p) == norm && p.tools_items[0] != '\0') return false;
+      copy_bounded_cstr(p.tools_items, norm);
+      if (&p == &persisted_prefs()) {
+        device_prefs_state().tools_items = norm;
+      }
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
+      return true;
+    }
+    case PrefKey::GAMES_ITEMS: {
+      const std::string norm = normalize_games_items_csv(sv);
+      if (effective_games_items_sv(p) == norm && p.games_items[0] != '\0') return false;
+      copy_bounded_cstr(p.games_items, norm);
+      if (&p == &persisted_prefs()) {
+        device_prefs_state().games_items = norm;
+      }
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
+      return true;
+    }
     case PrefKey::COUNT:
       break;
   }
@@ -3039,8 +3322,9 @@ inline std::string encode_prefs_mask(uint64_t mask, const PersistedDevicePrefs &
 }
 
 // On first-time adoption (prefs_seq == 0), advertise compiled board defaults (excluding
-// ble_beacon_enabled, world_clocks, and alarms_summary unless explicitly edited locally)
-// so Latter seeds board-appropriate defaults without clobbering Studio-configured lists.
+// ble_beacon_enabled, world_clocks, alarms_summary, local_clock_label, tools_items, and
+// games_items unless explicitly edited locally) so Latter seeds board-appropriate defaults
+// without clobbering Studio-configured lists.
 inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.prefs_seq == 0) {
     constexpr uint64_t kAllMask = (1ULL << static_cast<uint8_t>(PrefKey::COUNT)) - 1ULL;
@@ -3048,7 +3332,9 @@ inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persi
         pref_key_bit(PrefKey::BLE_BEACON_ENABLED) |
         pref_key_bit(PrefKey::WORLD_CLOCKS) |
         pref_key_bit(PrefKey::ALARMS_SUMMARY) |
-        pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL);
+        pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL) |
+        pref_key_bit(PrefKey::TOOLS_ITEMS) |
+        pref_key_bit(PrefKey::GAMES_ITEMS);
     const uint64_t seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
@@ -3125,6 +3411,10 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::WORLD_CLOCKS, PrefKey::WORLD_CLOCKS);
   apply_f(DevicePrefsField::ALARMS_SUMMARY, PrefKey::ALARMS_SUMMARY);
   apply_f(DevicePrefsField::LOCAL_CLOCK_LABEL, PrefKey::LOCAL_CLOCK_LABEL);
+  apply_f(DevicePrefsField::TOOLS_ITEMS, PrefKey::TOOLS_ITEMS);
+  apply_f(DevicePrefsField::GAMES_ITEMS, PrefKey::GAMES_ITEMS);
+  st.tools_items = std::string(effective_tools_items_sv(p));
+  st.games_items = std::string(effective_games_items_sv(p));
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {

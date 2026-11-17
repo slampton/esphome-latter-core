@@ -18,6 +18,10 @@
 #include "latter_rpc.h"
 #include "latter_state.h"
 
+namespace latter_ui {
+void mark_dirty_full();
+}  // namespace latter_ui
+
 namespace latter_actions {
 
 // 1. device_hello
@@ -387,18 +391,35 @@ inline bool record_local_pref_edit(latter_ui::PrefKey key, std::string_view val,
   return true;
 }
 
-// 17. timer_alarm_state (event-driven timer & alarm transition sync to Tier 2 HA entities)
+// 17. timer_alarm_state (event-driven timer, alarm & stopwatch transition sync to Tier 2 HA entities)
 template <typename OutboxT = std::nullptr_t>
 inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
                                    int remaining_sec, bool ringing,
+                                   bool stopwatch_running = false,
+                                   bool stopwatch_paused = false,
+                                   int stopwatch_elapsed_sec = 0,
                                    OutboxT outbox = nullptr) {
   const std::string rem_str = std::to_string(std::max(0, remaining_sec));
+  const std::string sw_el_str = std::to_string(std::max(0, stopwatch_elapsed_sec));
   latter_rpc::emit(outbox, "timer_alarm_state", {
     {"timer_running", timer_running ? "1" : "0"},
     {"timer_paused", timer_paused ? "1" : "0"},
     {"remaining_sec", rem_str},
     {"ringing", ringing ? "1" : "0"},
+    {"stopwatch_running", stopwatch_running ? "1" : "0"},
+    {"stopwatch_paused", stopwatch_paused ? "1" : "0"},
+    {"stopwatch_elapsed_sec", sw_el_str},
   });
+}
+
+template <typename OutboxT>
+  requires (!std::is_same_v<std::decay_t<OutboxT>, bool> &&
+            !std::is_same_v<std::decay_t<OutboxT>, std::nullptr_t>)
+inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
+                                   int remaining_sec, bool ringing,
+                                   OutboxT outbox) {
+  emit_timer_alarm_state(timer_running, timer_paused, remaining_sec, ringing,
+                         false, false, 0, outbox);
 }
 
 struct TimerAlarmSyncTracker {
@@ -407,6 +428,9 @@ struct TimerAlarmSyncTracker {
   bool paused = false;
   bool ringing = false;
   int last_emitted_rem = 0;
+  bool sw_running = false;
+  bool sw_paused = false;
+  int last_emitted_sw_sec = 0;
   uint32_t last_emitted_ms = 0;
 };
 
@@ -417,30 +441,54 @@ inline TimerAlarmSyncTracker &timer_alarm_sync_tracker() {
 
 template <typename OutboxT = std::nullptr_t>
 inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_active = false,
-                                             OutboxT outbox = nullptr) {
+                                             OutboxT outbox = nullptr, bool force_emit = false) {
   const auto &rs = latter_ui::runtime_state();
   const bool cur_run = rs.timers.running;
   const bool cur_pau = !cur_run && rs.timers.paused;
   const int cur_rem = (cur_run || cur_pau) ? std::max(0, rs.timers.remaining_sec) : 0;
   const bool cur_ring = (rs.alarms.ringing || rs.timers.ringing);
+  const bool cur_sw_run = rs.stopwatch.running;
+  const bool cur_sw_pau = !cur_sw_run && (rs.stopwatch.elapsed_ms > 0U);
+  const uint32_t raw_sw_ms =
+      cur_sw_run
+          ? ((now_ms >= rs.stopwatch.start_time_ms) ? (now_ms - rs.stopwatch.start_time_ms)
+                                                    : rs.stopwatch.elapsed_ms)
+          : rs.stopwatch.elapsed_ms;
+  const int cur_sw_sec = (cur_sw_run || cur_sw_pau) ? std::max(0, static_cast<int>(raw_sw_ms / 1000U)) : 0;
 
   auto &tr = timer_alarm_sync_tracker();
+  const bool any_active = (cur_run || cur_pau || cur_ring || cur_sw_run || cur_sw_pau);
   bool should_emit = false;
-  if (force_if_active && (cur_run || cur_pau || cur_ring)) {
+  if (force_emit) {
+    should_emit = true;
+  } else if (force_if_active && any_active) {
     should_emit = true;
   } else if (!tr.inited) {
     tr.inited = true;
-    should_emit = (cur_run || cur_pau || cur_ring);
-  } else if (cur_run != tr.running || cur_pau != tr.paused || cur_ring != tr.ringing) {
+    should_emit = any_active;
+  } else if (cur_run != tr.running || cur_pau != tr.paused || cur_ring != tr.ringing ||
+             cur_sw_run != tr.sw_running || cur_sw_pau != tr.sw_paused) {
     should_emit = true;
-  } else if (cur_run) {
+  } else {
     const int elapsed_s = static_cast<int>((now_ms - tr.last_emitted_ms) / 1000U);
-    const int expected_rem = std::max(0, tr.last_emitted_rem - elapsed_s);
-    if (std::abs(cur_rem - expected_rem) > 3) {
+    if (cur_run) {
+      const int expected_rem = std::max(0, tr.last_emitted_rem - elapsed_s);
+      if (std::abs(cur_rem - expected_rem) > 3) {
+        should_emit = true;
+      }
+    } else if (cur_pau && cur_rem != tr.last_emitted_rem) {
       should_emit = true;
     }
-  } else if (cur_pau && cur_rem != tr.last_emitted_rem) {
-    should_emit = true;
+    if (!should_emit) {
+      if (cur_sw_run) {
+        const int expected_sw = tr.last_emitted_sw_sec + elapsed_s;
+        if (std::abs(cur_sw_sec - expected_sw) > 3) {
+          should_emit = true;
+        }
+      } else if (cur_sw_sec != tr.last_emitted_sw_sec) {
+        should_emit = true;
+      }
+    }
   }
 
   if (!should_emit) return false;
@@ -449,9 +497,13 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   tr.paused = cur_pau;
   tr.ringing = cur_ring;
   tr.last_emitted_rem = cur_rem;
+  tr.sw_running = cur_sw_run;
+  tr.sw_paused = cur_sw_pau;
+  tr.last_emitted_sw_sec = cur_sw_sec;
   tr.last_emitted_ms = now_ms;
   if (latter_ui::link_state().ha_connected) {
-    emit_timer_alarm_state(cur_run, cur_pau, cur_rem, cur_ring, outbox);
+    emit_timer_alarm_state(cur_run, cur_pau, cur_rem, cur_ring,
+                           cur_sw_run, cur_sw_pau, cur_sw_sec, outbox);
     return true;
   }
   return false;
@@ -475,6 +527,77 @@ template <typename OutboxT = std::nullptr_t>
 inline void sync_local_alarms_edit(uint32_t now_ms = 0, OutboxT outbox = nullptr) {
   (void)now_ms;
   sync_local_pref_key_edit(latter_ui::PrefKey::ALARMS_SUMMARY, outbox);
+}
+
+struct DeviceCommandEffects {
+  bool stop_sound = false;
+  bool sync_brightness = false;
+  bool apply_power = false;
+};
+
+template <typename OutboxT = std::nullptr_t>
+inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
+                                                              OutboxT outbox = nullptr) {
+  auto &rs = latter_ui::runtime_state();
+  auto &prefs = latter_ui::persisted_prefs();
+  const bool was_any = (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active);
+  if (rs.alarms.ringing) {
+    if (rs.alarms.ringing_idx >= 1 && rs.alarms.ringing_idx <= 3) {
+      auto &ap = prefs.alarms[rs.alarms.ringing_idx - 1];
+      if (ap.recurrence == 3) {
+        ap.enabled = false;
+        sync_local_alarms_edit(now_ms, outbox);
+      }
+    }
+    rs.alarms.snooze_until = 0;
+  }
+  if (rs.timers.ringing) {
+    rs.timers.va_timer_name.clear();
+    latter_ui::sync_multi_timer_state();
+  }
+  (void)latter_ui::timer_alarm_controller().dismiss_ringing();
+  latter_ui::mark_dirty_full();
+  (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
+  return DeviceCommandEffects{was_any, was_any, true};
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline DeviceCommandEffects handle_device_cmd_cancel_timer(uint32_t now_ms,
+                                                           OutboxT outbox = nullptr) {
+  auto &rs = latter_ui::runtime_state();
+  auto *slots = latter_ui::timer_slots();
+  for (int i = 0; i < 3; ++i) {
+    slots[i].running = false;
+    slots[i].paused = false;
+    slots[i].remaining_sec = slots[i].duration_sec;
+    slots[i].target_ms = 0;
+  }
+  rs.timers.va_timer_name.clear();
+  const bool was_ringing = rs.timers.ringing;
+  rs.timers.ringing = false;
+  if (was_ringing && !rs.alarms.ringing && !rs.alarms.find_my_active) {
+    latter_ui::timer_alarm_controller().reset();
+  }
+  latter_ui::sync_multi_timer_state();
+  if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
+    rs.nav.home_subpage = 0;
+  }
+  latter_ui::mark_dirty_full();
+  (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
+  return DeviceCommandEffects{was_ringing, was_ringing, true};
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline DeviceCommandEffects handle_device_cmd_reset_stopwatch(uint32_t now_ms,
+                                                              OutboxT outbox = nullptr) {
+  auto &rs = latter_ui::runtime_state();
+  rs.stopwatch.reset();
+  if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
+    rs.nav.home_subpage = 0;
+  }
+  latter_ui::mark_dirty_full();
+  (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
+  return DeviceCommandEffects{false, false, true};
 }
 
 }  // namespace latter_actions
