@@ -352,38 +352,8 @@ inline VaDisplayRestore &va_display_restore() {
 }
 
 // ------------------------------------------------------------------------------
-// 4. Power Profiles & Capability Clamping
-// (PowerProfile, PowerProfileSpec and kPowerProfiles are generated in latter_protocol.h)
+// 4. Armed Alarm Wake Horizon
 // ------------------------------------------------------------------------------
-inline PowerProfile parse_power_profile(const std::string &opt) {
-  if (opt == "Pocket Carry") return PowerProfile::POCKET_CARRY;
-  if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
-  if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
-  if (opt == "Always-On Wall / Desk") return PowerProfile::ALWAYS_ON_STATIONARY;
-  return PowerProfile::CUSTOM;
-}
-
-inline const char *power_profile_short_label(const std::string &opt) {
-  switch (parse_power_profile(opt)) {
-    case PowerProfile::POCKET_CARRY:         return "Pocket";
-    case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
-    case PowerProfile::WEARABLE_WATCH:       return "Watch";
-    case PowerProfile::ALWAYS_ON_STATIONARY: return "Wall/Desk";
-    case PowerProfile::CUSTOM:               return "Custom";
-  }
-  return opt.c_str();
-}
-
-inline const PowerProfileSpec *get_power_profile_spec(PowerProfile p) {
-  for (const auto &spec : kPowerProfiles) {
-    if (spec.profile == p) return &spec;
-  }
-  return nullptr;
-}
-
-inline const PowerProfileSpec *get_power_profile_spec(const std::string &opt) {
-  return get_power_profile_spec(parse_power_profile(opt));
-}
 
 template <typename TimeT>
 inline int32_t seconds_until_next_armed_alarm(const TimeT &now, uint32_t snooze_until,

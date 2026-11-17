@@ -17,33 +17,6 @@ static constexpr const char *kDefaultActivitySources = "calendar,music_queue,sto
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
 static constexpr const char *kDefaultHomeCategories = "alarm,cameras,intercom,thermostat,entry,vacuum";  // defaults.home_categories
 
-enum class PowerProfile : uint8_t {
-  POCKET_CARRY = 0,
-  HANDHELD_ROAMING = 1,
-  WEARABLE_WATCH = 2,
-  ALWAYS_ON_STATIONARY = 3,
-  CUSTOM = 4,
-};
-
-struct PowerProfileSpec {
-  PowerProfile profile;
-  const char *name;
-  const char *va_wake_word_mode;
-  const char *tap_wake_mode;
-  const char *pickup_wake_mode;
-  const char *display_off_timeout;
-  const char *screensaver_docked_timeout;
-  const char *hibernate_timeout_mode;
-  bool docked_screensaver_enabled;
-};
-
-inline constexpr PowerProfileSpec kPowerProfiles[] = {
-    {PowerProfile::POCKET_CARRY, "Pocket Carry", "Docked Only", "Docked Only", "Docked Only", "30s", "1 min", "15 min", true},
-    {PowerProfile::HANDHELD_ROAMING, "Handheld Roaming", "Docked Only", "Single Tap", "Always On", "30s", "1 min", "30 min", true},
-    {PowerProfile::WEARABLE_WATCH, "Wearable Watch", "Docked Only", "Double Tap", "Always On", "15s", "1 min", "15 min", true},
-    {PowerProfile::ALWAYS_ON_STATIONARY, "Always-On Wall / Desk", "Always On", "Single Tap", "Disabled", "Never", "5 min", "Disabled", true},
-};
-
 enum class ShortcutRouteCap : uint8_t {
   NONE = 0,
   ROUND = 1,
@@ -318,59 +291,58 @@ enum class DevicePrefsField : size_t {
   HEADER_EPOCH = 1,
   HEADER_REV = 2,
   PREFS_SEQ = 3,  // prefs_seq (u32)
-  POWER_PROFILE = 4,  // power_profile (string)
-  WAKE_WORD_MODE = 5,  // wake_word_mode (string)
-  TAP_TO_WAKE = 6,  // tap_to_wake (string)
-  PICKUP_TO_WAKE = 7,  // pickup_to_wake (string)
-  BATTERY_SCREEN_TIMEOUT = 8,  // battery_screen_timeout (string)
-  DOCKED_IDLE_TIMEOUT = 9,  // docked_idle_timeout (string)
-  BATTERY_HIBERNATE_TIMEOUT = 10,  // battery_hibernate_timeout (string)
-  DOCKED_SCREENSAVER = 11,  // docked_screensaver (bool)
-  SCREENSAVER_STYLE = 12,  // screensaver_style (string)
-  HOLD_CROWN_POWER_OFF = 13,  // hold_crown_power_off (bool)
-  AUTO_BRIGHTNESS_MODE = 14,  // auto_brightness_mode (string)
-  MANUAL_BRIGHTNESS = 15,  // manual_brightness (string)
-  DAY_BRIGHTNESS = 16,  // day_brightness (string)
-  NIGHT_BRIGHTNESS = 17,  // night_brightness (string)
-  DAY_START_HOUR = 18,  // day_start_hour (u16)
-  NIGHT_START_HOUR = 19,  // night_start_hour (u16)
-  COLOR_PROFILE = 20,  // color_profile (string)
-  VA_VISUAL_PROFILE = 21,  // va_visual_profile (string)
-  HOME_SCREEN_ENABLED = 22,  // home_screen_enabled (bool)
-  START_SCREEN = 23,  // start_screen (string)
-  RETURN_TO_HOME_TIMEOUT = 24,  // return_to_home_timeout (string)
-  CLOCK_FACE = 25,  // clock_face (string)
-  TIME_FORMAT = 26,  // time_format (string)
-  WEATHER_BACKGROUND = 27,  // weather_background (bool)
-  HOME_SUN = 28,  // home_sun (bool)
-  HOME_MOON = 29,  // home_moon (bool)
-  WAKE_GREETING = 30,  // wake_greeting (bool)
-  ALBUM_ART_STYLE = 31,  // album_art_style (string)
-  MUSIC_OVERLAY_STYLE = 32,  // music_overlay_style (string)
-  SHOW_SPEAKER_SHORTCUT = 33,  // show_speaker_shortcut (bool)
-  SHOW_LIBRARY_SHORTCUT = 34,  // show_library_shortcut (bool)
-  ALBUM_SORT_ORDER = 35,  // album_sort_order (string)
-  ARTIST_ALBUM_SORT_ORDER = 36,  // artist_album_sort_order (string)
-  PODCAST_SORT_ORDER = 37,  // podcast_sort_order (string)
-  WW_SENS_OKAY_NABU = 38,  // ww_sens_okay_nabu (string)
-  WW_SENS_HEY_LUNA = 39,  // ww_sens_hey_luna (string)
-  WW_SENS_HEY_JARVIS = 40,  // ww_sens_hey_jarvis (string)
-  WW_SENS_HEY_MYCROFT = 41,  // ww_sens_hey_mycroft (string)
-  WW_SENS_ALEXA = 42,  // ww_sens_alexa (string)
-  WAKE_SCREEN_ON_ASSIST = 43,  // wake_screen_on_assist (bool)
-  ALERT_VOLUME = 44,  // alert_volume (u16)
-  VOLUME_STEP_SIZE = 45,  // volume_step_size (u16)
-  GAME_SOUND_EFFECTS = 46,  // game_sound_effects (bool)
-  BLE_BEACON_ENABLED = 47,  // ble_beacon_enabled (bool)
-  BLE_BEACON_MODE = 48,  // ble_beacon_mode (string)
-  WEATHER_SIM_CONDITION = 49,  // weather_sim_condition (string)
-  THEME_COLOR_HEX = 50,  // theme_color_hex (string)
-  HOME_CLOCK_TAP_ACTION = 51,  // home_clock_tap_action (string)
-  SHOW_UTC_CLOCK = 52,  // show_utc_clock (bool)
-  WORLD_CLOCKS = 53,  // world_clocks (string)
-  ALARMS_SUMMARY = 54,  // alarms_summary (string)
-  LOCAL_CLOCK_LABEL = 55,  // local_clock_label (string)
-  COUNT = 56
+  WAKE_WORD_MODE = 4,  // wake_word_mode (string)
+  TAP_TO_WAKE = 5,  // tap_to_wake (string)
+  PICKUP_TO_WAKE = 6,  // pickup_to_wake (string)
+  BATTERY_SCREEN_TIMEOUT = 7,  // battery_screen_timeout (string)
+  DOCKED_IDLE_TIMEOUT = 8,  // docked_idle_timeout (string)
+  BATTERY_HIBERNATE_TIMEOUT = 9,  // battery_hibernate_timeout (string)
+  DOCKED_SCREENSAVER = 10,  // docked_screensaver (bool)
+  SCREENSAVER_STYLE = 11,  // screensaver_style (string)
+  HOLD_CROWN_POWER_OFF = 12,  // hold_crown_power_off (bool)
+  AUTO_BRIGHTNESS_MODE = 13,  // auto_brightness_mode (string)
+  MANUAL_BRIGHTNESS = 14,  // manual_brightness (string)
+  DAY_BRIGHTNESS = 15,  // day_brightness (string)
+  NIGHT_BRIGHTNESS = 16,  // night_brightness (string)
+  DAY_START_HOUR = 17,  // day_start_hour (u16)
+  NIGHT_START_HOUR = 18,  // night_start_hour (u16)
+  COLOR_PROFILE = 19,  // color_profile (string)
+  VA_VISUAL_PROFILE = 20,  // va_visual_profile (string)
+  HOME_SCREEN_ENABLED = 21,  // home_screen_enabled (bool)
+  START_SCREEN = 22,  // start_screen (string)
+  RETURN_TO_HOME_TIMEOUT = 23,  // return_to_home_timeout (string)
+  CLOCK_FACE = 24,  // clock_face (string)
+  TIME_FORMAT = 25,  // time_format (string)
+  WEATHER_BACKGROUND = 26,  // weather_background (bool)
+  HOME_SUN = 27,  // home_sun (bool)
+  HOME_MOON = 28,  // home_moon (bool)
+  WAKE_GREETING = 29,  // wake_greeting (bool)
+  ALBUM_ART_STYLE = 30,  // album_art_style (string)
+  MUSIC_OVERLAY_STYLE = 31,  // music_overlay_style (string)
+  SHOW_SPEAKER_SHORTCUT = 32,  // show_speaker_shortcut (bool)
+  SHOW_LIBRARY_SHORTCUT = 33,  // show_library_shortcut (bool)
+  ALBUM_SORT_ORDER = 34,  // album_sort_order (string)
+  ARTIST_ALBUM_SORT_ORDER = 35,  // artist_album_sort_order (string)
+  PODCAST_SORT_ORDER = 36,  // podcast_sort_order (string)
+  WW_SENS_OKAY_NABU = 37,  // ww_sens_okay_nabu (string)
+  WW_SENS_HEY_LUNA = 38,  // ww_sens_hey_luna (string)
+  WW_SENS_HEY_JARVIS = 39,  // ww_sens_hey_jarvis (string)
+  WW_SENS_HEY_MYCROFT = 40,  // ww_sens_hey_mycroft (string)
+  WW_SENS_ALEXA = 41,  // ww_sens_alexa (string)
+  WAKE_SCREEN_ON_ASSIST = 42,  // wake_screen_on_assist (bool)
+  ALERT_VOLUME = 43,  // alert_volume (u16)
+  VOLUME_STEP_SIZE = 44,  // volume_step_size (u16)
+  GAME_SOUND_EFFECTS = 45,  // game_sound_effects (bool)
+  BLE_BEACON_ENABLED = 46,  // ble_beacon_enabled (bool)
+  BLE_BEACON_MODE = 47,  // ble_beacon_mode (string)
+  WEATHER_SIM_CONDITION = 48,  // weather_sim_condition (string)
+  THEME_COLOR_HEX = 49,  // theme_color_hex (string)
+  HOME_CLOCK_TAP_ACTION = 50,  // home_clock_tap_action (string)
+  SHOW_UTC_CLOCK = 51,  // show_utc_clock (bool)
+  WORLD_CLOCKS = 52,  // world_clocks (string)
+  ALARMS_SUMMARY = 53,  // alarms_summary (string)
+  LOCAL_CLOCK_LABEL = 54,  // local_clock_label (string)
+  COUNT = 55
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

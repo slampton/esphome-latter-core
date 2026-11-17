@@ -3075,10 +3075,6 @@ def main(argv: list[str] | None = None) -> int:
         "Starfield",
         "Digital Rain",
         "Fireworks",
-        "Pocket Carry",
-        "Handheld Roaming",
-        "Wearable Watch",
-        "Always-On Wall / Desk",
     ):
         if f'"{req_opt}"' not in combined_opts:
             failures.append(f"[PRODUCT OPTIONS] include/latter_state.h + hal_power_pm.h missing option {req_opt!r}")

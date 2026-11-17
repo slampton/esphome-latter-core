@@ -174,7 +174,6 @@ display:
       ctx.music_artist_album_sort_opt = latter_ui::pref_artist_album_sort_order_cstr(prefs);
       ctx.music_podcast_sort_opt = latter_ui::pref_podcast_sort_order_cstr(prefs);
       ctx.theme_palette_opt = latter_ui::pref_color_profile_cstr(prefs);
-      ctx.power_profile_opt = latter_ui::pref_power_profile_cstr(prefs);
       ctx.tap_wake_opt = latter_ui::pref_tap_to_wake_cstr(prefs);
       ctx.pickup_wake_opt = latter_ui::pref_pickup_to_wake_cstr(prefs);
       ctx.display_off_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);

@@ -821,9 +821,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 9U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 10U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 49U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 55U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 46U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -903,9 +903,8 @@ void test_device_prefs_v2_and_event_timer_sync() {
   p = latter_ui::PersistedDevicePrefs{};
   latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
   latter_ui::seed_default_prefs_if_needed(
-      "Pocket Carry", "Modern Analog", "Home", "Aurora",
+      "Modern Analog", "Home", "Aurora",
       "Full Screen", "Alphabetical", "Newest on Top", "Oldest on Top");
-  LATTER_CHECK(std::string_view(latter_ui::pref_power_profile_cstr()) == "Pocket Carry");
   LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Docked Only");
   LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == "Modern Analog");
   LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Aurora");
@@ -913,7 +912,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
 
   // Fresh boot (prefs_seq == 0): device_hello dirty_prefs advertises board-seeded defaults (excluding ble_beacon_enabled)
   const std::string seed_dirty = latter_ui::build_hello_dirty_prefs(p);
-  LATTER_CHECK(seed_dirty.find("power_profile=Pocket Carry") != std::string::npos);
+  LATTER_CHECK(seed_dirty.find("wake_word_mode=Docked Only") != std::string::npos);
   LATTER_CHECK(seed_dirty.find("screensaver_style=Aurora") != std::string::npos);
   LATTER_CHECK(seed_dirty.find("ble_beacon_enabled=") == std::string::npos);
 
@@ -921,7 +920,6 @@ void test_device_prefs_v2_and_event_timer_sync() {
   latter_ui::reset_all_v3_rev_guards();
   std::vector<std::string> dp_tok(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT), "");
   dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::PREFS_SEQ)] = "7";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::POWER_PROFILE)] = "Pocket Carry";
   dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::WAKE_WORD_MODE)] = "Disabled";
   dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::ALERT_VOLUME)] = "65";
   dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::COLOR_PROFILE)] = "Custom";
@@ -941,7 +939,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK((eff & latter_ui::kPrefEffectWakeWordSync) != 0U);
   LATTER_CHECK((eff & latter_ui::kPrefEffectRedraw) != 0U);
 
-  // Online local touchscreen edit: flips Power Profile to "Custom" when editing a sub-key and emits set_device_prefs
+  // Online local touchscreen edit emits set_device_prefs directly for the edited key
   MockRpcOutbox outbox{};
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   latter_ui::link_state().ha_connected = true;
@@ -949,11 +947,9 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_actions::record_local_pref_edit(
       latter_ui::PrefKey::WAKE_WORD_MODE, "Always On", 1000U, local_eff, &outbox));
   LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Always On");
-  LATTER_CHECK(std::string_view(latter_ui::pref_power_profile_cstr()) == "Custom");
   LATTER_CHECK(!outbox.published.empty());
   LATTER_CHECK(outbox.published.back().find("set_device_prefs") != std::string::npos);
   LATTER_CHECK(outbox.published.back().find("wake_word_mode=Always On") != std::string::npos);
-  LATTER_CHECK(outbox.published.back().find("power_profile=Custom") != std::string::npos);
 
   // Offline local touchscreen edit: queues in dirty_mask without RPC, then surfaces in build_hello_dirty_prefs
   p.dirty_mask = 0ULL;
@@ -1059,7 +1055,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111604L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111605L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -1179,51 +1175,30 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_ui::area_ctx_state().area_name.size() == 47U);
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
 
-  // 2. Pocket Carry, Handheld Roaming & Wearable Watch sync ble_beacon_mode = 1 ("Handheld + Screen Off"); Always-On Wall / Desk -> 0
+  // 2. seed_hardware_sleep_defaults & direct BLE_BEACON_MODE preference sync
   auto &prefs = latter_ui::persisted_prefs();
   prefs = latter_ui::PersistedDevicePrefs{};
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);
+  latter_ui::seed_hardware_sleep_defaults(prefs);
+  LATTER_CHECK(prefs.ble_beacon_mode == 1U);
+  LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
 
   uint64_t chg = 0ULL;
   uint32_t eff = 0U;
-  for (const char *roaming_prof : {"Pocket Carry", "Handheld Roaming", "Wearable Watch"}) {
-    prefs.ble_beacon_mode = 0U;
-    chg = 0ULL;
-    eff = 0U;
-    LATTER_CHECK(latter_ui::set_pref_by_key_str(
-        prefs, latter_ui::PrefKey::POWER_PROFILE, roaming_prof, true, chg, eff));
-    LATTER_CHECK(prefs.ble_beacon_mode == 1U);
-    LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
-    LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)) != 0ULL);
-    LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
-  }
-
-  // Switching to Custom preserves current ble_beacon_mode
-  chg = 0ULL;
-  eff = 0U;
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      prefs, latter_ui::PrefKey::POWER_PROFILE, "Custom", true, chg, eff));
-  LATTER_CHECK(prefs.ble_beacon_mode == 1U);
-
-  // Switching to Always-On Wall / Desk resets ble_beacon_mode = 0 ("Handheld Only")
-  prefs.ble_beacon_mode = 1U;
-  chg = 0ULL;
-  eff = 0U;
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      prefs, latter_ui::PrefKey::POWER_PROFILE, "Always-On Wall / Desk", true, chg, eff));
+      prefs, latter_ui::PrefKey::BLE_BEACON_MODE, "Handheld Only", true, chg, eff));
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);
   LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld Only");
   LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)) != 0ULL);
   LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
 
-  // Local touchscreen edit to Handheld Roaming also publishes ble_beacon_mode=Handheld + Screen Off in set_device_prefs
   MockRpcOutbox roam_outbox{};
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   latter_ui::link_state().ha_connected = true;
   prefs.dirty_mask = 0ULL;
   eff = 0U;
   LATTER_CHECK(latter_actions::record_local_pref_edit(
-      latter_ui::PrefKey::POWER_PROFILE, "Handheld Roaming", 3000U, eff, &roam_outbox));
+      latter_ui::PrefKey::BLE_BEACON_MODE, "Handheld + Screen Off", 3000U, eff, &roam_outbox));
   uint32_t pump_t = 3100U;
   while (latter_rpc::has_pending_frames()) {
     latter_rpc::step_outbox_loop(pump_t);
@@ -2473,7 +2448,6 @@ void test_frame_cadence_and_typed_prefs() {
   constexpr PersistedDevicePrefs kDefPrefs{};
   static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
                 "PersistedDevicePrefs must stay POD");
-  static_assert(kDefPrefs.power_profile_enum() == PowerProfilePref::PocketCarry);
   static_assert(kDefPrefs.wake_word_mode_enum() == WakeWordMode::DockedOnly);
   static_assert(kDefPrefs.tap_to_wake_enum() == TapWakeMode::DockedOnly);
   static_assert(kDefPrefs.screensaver_style_enum() == ScreensaverStyle::AmbientClock);
@@ -3358,7 +3332,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111604L, "LATTER_SDK_REV must match 2026111604L");
+  static_assert(LATTER_SDK_REV == 2026111605L, "LATTER_SDK_REV must match 2026111605L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
@@ -3933,21 +3907,15 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     LATTER_CHECK(!accept_screen_off_tap("Disabled", false, 5200U));
     LATTER_CHECK(!accept_screen_off_tap("Disabled", true, 5300U));
 
-    // PowerProfile preset mapping: Wearable Watch -> Double Tap; Handheld Roaming & Wall/Desk -> Single Tap
+    // Direct tap_to_wake preference round-trip across all 4 options
     PersistedDevicePrefs pp{};
     uint64_t chg = 0ULL;
     uint32_t eff = 0U;
-    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Wearable Watch", true, chg, eff));
-    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Double Tap");
-    chg = 0ULL;
-    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Handheld Roaming", true, chg, eff));
-    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Single Tap");
-    chg = 0ULL;
-    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Always-On Wall / Desk", true, chg, eff));
-    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Single Tap");
-    chg = 0ULL;
-    LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::POWER_PROFILE, "Pocket Carry", true, chg, eff));
-    LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == "Docked Only");
+    for (const char *tap_opt : {"Double Tap", "Single Tap", "Docked Only", "Disabled"}) {
+      chg = 0ULL;
+      LATTER_CHECK(set_pref_by_key_str(pp, PrefKey::TAP_TO_WAKE, tap_opt, true, chg, eff));
+      LATTER_CHECK(std::string_view(pref_tap_to_wake_cstr(pp)) == tap_opt);
+    }
   }
 
   // 6. D-050 Source Guards: zero inline horizontal sliders on Area Overview; generalized Entity Inspector

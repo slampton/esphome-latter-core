@@ -13,7 +13,6 @@ substitutions:
   friendly_name: "Pocket Assistant"
   version: "3.0.0"
   default_clock_face: "Modern Analog"
-  default_power_profile: "Pocket Carry"
   api_reboot_timeout: "0s"
 
 dashboard_import:

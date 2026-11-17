@@ -9,31 +9,12 @@ from pathlib import Path
 import sys
 from typing import Any
 
-PROFILE_ENUM_MAP: dict[str, str] = {
-    "Pocket Carry": "POCKET_CARRY",
-    "Handheld Roaming": "HANDHELD_ROAMING",
-    "Wearable Watch": "WEARABLE_WATCH",
-    "Always-On Wall / Desk": "ALWAYS_ON_STATIONARY",
-}
-
-POWER_PROFILE_SUBKEYS: tuple[str, ...] = (
-    "wake_word_mode",
-    "tap_to_wake",
-    "pickup_to_wake",
-    "battery_screen_timeout",
-    "docked_idle_timeout",
-    "battery_hibernate_timeout",
-    "docked_screensaver",
-)
-
-
 def build_cpp_header(schema: dict[str, Any]) -> str:
     """Render include/latter_protocol.h from protocol/latter_v3.json."""
     ver = int(schema["contract_version"])
     header_fields = schema["header"]
     domains = schema["domains"]
     defaults = schema.get("defaults") or {}
-    power_profiles = schema.get("power_profiles") or {}
 
     lines: list[str] = [
         "#pragma once",
@@ -57,40 +38,6 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
         lines.append(f'static constexpr const char *kDefault{camel} = "{value}";  // defaults.{key}')
     if defaults:
         lines.append("")
-
-    # Canonical Power Profiles
-    lines.append("enum class PowerProfile : uint8_t {")
-    for idx, (pname, ident) in enumerate(PROFILE_ENUM_MAP.items()):
-        lines.append(f"  {ident} = {idx},")
-    lines.append(f"  CUSTOM = {len(PROFILE_ENUM_MAP)},")
-    lines.append("};")
-    lines.append("")
-
-    lines.append("struct PowerProfileSpec {")
-    lines.append("  PowerProfile profile;")
-    lines.append("  const char *name;")
-    lines.append("  const char *va_wake_word_mode;")
-    lines.append("  const char *tap_wake_mode;")
-    lines.append("  const char *pickup_wake_mode;")
-    lines.append("  const char *display_off_timeout;")
-    lines.append("  const char *screensaver_docked_timeout;")
-    lines.append("  const char *hibernate_timeout_mode;")
-    lines.append("  bool docked_screensaver_enabled;")
-    lines.append("};")
-    lines.append("")
-
-    lines.append("inline constexpr PowerProfileSpec kPowerProfiles[] = {")
-    for pname, ident in PROFILE_ENUM_MAP.items():
-        spec = power_profiles.get(pname, {})
-        docked_ss = "true" if spec.get("docked_screensaver", True) else "false"
-        lines.append(
-            f'    {{PowerProfile::{ident}, "{pname}", "{spec.get("wake_word_mode", "Docked Only")}", '
-            f'"{spec.get("tap_to_wake", "Docked Only")}", "{spec.get("pickup_to_wake", "Docked Only")}", '
-            f'"{spec.get("battery_screen_timeout", "30s")}", "{spec.get("docked_idle_timeout", "1 min")}", '
-            f'"{spec.get("battery_hibernate_timeout", "15 min")}", {docked_ss}}},'
-        )
-    lines.append("};")
-    lines.append("")
 
     shortcut_routes = (schema.get("catalogs") or {}).get("shortcut_routes") or []
     if shortcut_routes:
@@ -269,7 +216,6 @@ def build_device_contract_md(schema: dict[str, Any]) -> str:
 
 def build_typescript_schema(schema: dict[str, Any]) -> str:
     """Render ha-latter/frontend_src/src/protocol-schema.ts from protocol/latter_v3.json."""
-    power_profiles = schema.get("power_profiles", {})
     catalogs = schema.get("catalogs", {})
     defaults = schema.get("defaults", {})
 
@@ -277,41 +223,6 @@ def build_typescript_schema(schema: dict[str, Any]) -> str:
         "// AUTO-GENERATED FROM protocol/latter_v3.json BY tools/gen_protocol.py — DO NOT EDIT MANUALLY.",
         "",
         f"export const PROTOCOL_CONTRACT_VERSION = {schema['contract_version']};",
-        "",
-        "export const POWER_PROFILE_SUBKEYS = [",
-    ]
-    for sk in POWER_PROFILE_SUBKEYS:
-        lines.append(f'  "{sk}",')
-    lines.extend([
-        "] as const;",
-        "",
-        "export type PowerProfileSubkey = (typeof POWER_PROFILE_SUBKEYS)[number];",
-        "",
-        "export interface PowerProfileSettings {",
-        "  wake_word_mode: string;",
-        "  tap_to_wake: string;",
-        "  pickup_to_wake: string;",
-        "  battery_screen_timeout: string;",
-        "  docked_idle_timeout: string;",
-        "  battery_hibernate_timeout: string;",
-        "  docked_screensaver: boolean;",
-        "}",
-        "",
-        "export const POWER_PROFILE_PREFS: Record<string, PowerProfileSettings> = {",
-    ])
-
-    for prof_name, prof_vals in power_profiles.items():
-        lines.append(f'  "{prof_name}": {{')
-        for sk in POWER_PROFILE_SUBKEYS:
-            val = prof_vals.get(sk)
-            if isinstance(val, bool):
-                val_str = "true" if val else "false"
-            else:
-                val_str = f'"{val}"'
-            lines.append(f"    {sk}: {val_str},")
-        lines.append("  },")
-    lines.extend([
-        "};",
         "",
         "export interface CatalogItem {",
         "  token: string;",
@@ -321,7 +232,7 @@ def build_typescript_schema(schema: dict[str, Any]) -> str:
         "  capability?: string;",
         "}",
         "",
-    ])
+    ]
 
     for cat_name, cat_items in catalogs.items():
         const_name = f"{cat_name.upper()}_CATALOG"

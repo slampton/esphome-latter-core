@@ -68,14 +68,6 @@ enum class GarageState : uint8_t {
   OPEN    = 2,
 };
 
-enum class PowerProfilePref : uint8_t {
-  PocketCarry      = 0,
-  HandheldRoaming  = 1,
-  WearableWatch    = 2,
-  AlwaysOnWallDesk = 3,
-  Custom           = 4,
-};
-
 enum class WakeWordMode : uint8_t {
   DockedOnly = 0,
   AlwaysOn   = 1,
@@ -392,61 +384,60 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 9U;
+static constexpr uint16_t kPersistedPrefsVersion = 10U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
-  POWER_PROFILE = 0,
-  WAKE_WORD_MODE = 1,
-  TAP_TO_WAKE = 2,
-  PICKUP_TO_WAKE = 3,
-  BATTERY_SCREEN_TIMEOUT = 4,
-  DOCKED_IDLE_TIMEOUT = 5,
-  BATTERY_HIBERNATE_TIMEOUT = 6,
-  DOCKED_SCREENSAVER = 7,
-  SCREENSAVER_STYLE = 8,
-  HOLD_CROWN_POWER_OFF = 9,
-  AUTO_BRIGHTNESS_MODE = 10,
-  MANUAL_BRIGHTNESS = 11,
-  DAY_BRIGHTNESS = 12,
-  NIGHT_BRIGHTNESS = 13,
-  DAY_START_HOUR = 14,
-  NIGHT_START_HOUR = 15,
-  COLOR_PROFILE = 16,
-  VA_VISUAL_PROFILE = 17,
-  START_SCREEN = 18,
-  CLOCK_FACE = 19,
-  TIME_FORMAT = 20,
-  WEATHER_BACKGROUND = 21,
-  HOME_SUN = 22,
-  HOME_MOON = 23,
-  WAKE_GREETING = 24,
-  ALBUM_ART_STYLE = 25,
-  MUSIC_OVERLAY_STYLE = 26,
-  SHOW_SPEAKER_SHORTCUT = 27,
-  SHOW_LIBRARY_SHORTCUT = 28,
-  ALBUM_SORT_ORDER = 29,
-  ARTIST_ALBUM_SORT_ORDER = 30,
-  PODCAST_SORT_ORDER = 31,
-  WW_SENS_OKAY_NABU = 32,
-  WW_SENS_HEY_LUNA = 33,
-  WW_SENS_HEY_JARVIS = 34,
-  WW_SENS_HEY_MYCROFT = 35,
-  WW_SENS_ALEXA = 36,
-  WAKE_SCREEN_ON_ASSIST = 37,
-  ALERT_VOLUME = 38,
-  VOLUME_STEP_SIZE = 39,
-  GAME_SOUND_EFFECTS = 40,
-  BLE_BEACON_ENABLED = 41,
-  BLE_BEACON_MODE = 42,
-  HOME_SCREEN_ENABLED = 43,
-  RETURN_TO_HOME_TIMEOUT = 44,
-  HOME_CLOCK_TAP_ACTION = 45,
-  SHOW_UTC_CLOCK = 46,
-  WORLD_CLOCKS = 47,
-  ALARMS_SUMMARY = 48,
-  LOCAL_CLOCK_LABEL = 49,
-  COUNT = 50,
+  WAKE_WORD_MODE = 0,
+  TAP_TO_WAKE = 1,
+  PICKUP_TO_WAKE = 2,
+  BATTERY_SCREEN_TIMEOUT = 3,
+  DOCKED_IDLE_TIMEOUT = 4,
+  BATTERY_HIBERNATE_TIMEOUT = 5,
+  DOCKED_SCREENSAVER = 6,
+  SCREENSAVER_STYLE = 7,
+  HOLD_CROWN_POWER_OFF = 8,
+  AUTO_BRIGHTNESS_MODE = 9,
+  MANUAL_BRIGHTNESS = 10,
+  DAY_BRIGHTNESS = 11,
+  NIGHT_BRIGHTNESS = 12,
+  DAY_START_HOUR = 13,
+  NIGHT_START_HOUR = 14,
+  COLOR_PROFILE = 15,
+  VA_VISUAL_PROFILE = 16,
+  START_SCREEN = 17,
+  CLOCK_FACE = 18,
+  TIME_FORMAT = 19,
+  WEATHER_BACKGROUND = 20,
+  HOME_SUN = 21,
+  HOME_MOON = 22,
+  WAKE_GREETING = 23,
+  ALBUM_ART_STYLE = 24,
+  MUSIC_OVERLAY_STYLE = 25,
+  SHOW_SPEAKER_SHORTCUT = 26,
+  SHOW_LIBRARY_SHORTCUT = 27,
+  ALBUM_SORT_ORDER = 28,
+  ARTIST_ALBUM_SORT_ORDER = 29,
+  PODCAST_SORT_ORDER = 30,
+  WW_SENS_OKAY_NABU = 31,
+  WW_SENS_HEY_LUNA = 32,
+  WW_SENS_HEY_JARVIS = 33,
+  WW_SENS_HEY_MYCROFT = 34,
+  WW_SENS_ALEXA = 35,
+  WAKE_SCREEN_ON_ASSIST = 36,
+  ALERT_VOLUME = 37,
+  VOLUME_STEP_SIZE = 38,
+  GAME_SOUND_EFFECTS = 39,
+  BLE_BEACON_ENABLED = 40,
+  BLE_BEACON_MODE = 41,
+  HOME_SCREEN_ENABLED = 42,
+  RETURN_TO_HOME_TIMEOUT = 43,
+  HOME_CLOCK_TAP_ACTION = 44,
+  SHOW_UTC_CLOCK = 45,
+  WORLD_CLOCKS = 46,
+  ALARMS_SUMMARY = 47,
+  LOCAL_CLOCK_LABEL = 48,
+  COUNT = 49,
 };
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
@@ -479,7 +470,6 @@ struct PersistedDevicePrefs {
   bool defaults_seeded = false;
 
   // Tier 2 + Tier 3 Device Preferences (compact enum indices / integers / bools)
-  uint8_t power_profile = 0;               // 0..4 ("Pocket Carry" .. "Custom")
   uint8_t wake_word_mode = 0;              // 0..2 ("Docked Only", "Always On", "Disabled")
   uint8_t tap_to_wake = 2;                 // 0..3 ("Single Tap", "Double Tap", "Docked Only", "Disabled")
   uint8_t pickup_to_wake = 1;              // 0..2 ("Always On", "Docked Only", "Disabled")
@@ -547,10 +537,7 @@ struct PersistedDevicePrefs {
       {9, 0, false, 2},
   };
 
-  // Zero-size constexpr typed preference accessors (preserves exact NVS v4 POD layout)
-  constexpr PowerProfilePref power_profile_enum() const noexcept {
-    return static_cast<PowerProfilePref>((power_profile < 5U) ? power_profile : 0U);
-  }
+  // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
     return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
   }
@@ -631,9 +618,6 @@ inline PersistedDevicePrefs &persisted_prefs() {
   return prefs;
 }
 
-inline constexpr const char *const kPowerProfileOpts[5] = {
-    "Pocket Carry", "Handheld Roaming", "Wearable Watch",
-    "Always-On Wall / Desk", "Custom"};
 inline constexpr const char *const kWakeWordModeOpts[3] = {
     "Docked Only", "Always On", "Disabled"};
 inline constexpr const char *const kTapWakeOpts[4] = {
@@ -703,7 +687,6 @@ inline const char *opt_at_clamped(const char *const (&opts)[N], uint8_t idx, uin
   return opts[(idx < N) ? idx : fallback];
 }
 
-inline const char *pref_power_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPowerProfileOpts, p.power_profile); }
 inline const char *pref_wake_word_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakeWordModeOpts, p.wake_word_mode); }
 inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTapWakeOpts, p.tap_to_wake, 2); }
 inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.pickup_to_wake, 1); }
@@ -735,7 +718,6 @@ inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = per
 inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
 
 inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
-  if (p.power_profile >= 5) p.power_profile = 0;
   if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
   if (p.tap_to_wake >= 4) p.tap_to_wake = 2;
   if (p.pickup_to_wake >= 3) p.pickup_to_wake = 1;
@@ -786,44 +768,46 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   p.is_24h_format = (p.time_format == 1);
 }
 
-inline bool apply_power_profile_to_prefs(PersistedDevicePrefs &p, std::string_view prof_name,
-                                         uint64_t *out_changed = nullptr, uint32_t *out_effects = nullptr) {
-  int idx = find_opt_index(kPowerProfileOpts, prof_name);
-  if (idx < 0) return false;
-  auto set_u8 = [&](uint8_t &slot, uint8_t val, PrefKey key, uint32_t eff) {
-    if (slot != val) {
-      slot = val;
-      if (out_changed != nullptr) *out_changed |= pref_key_bit(key);
-      if (out_effects != nullptr) *out_effects |= (eff | kPrefEffectRedraw);
-    }
-  };
-  set_u8(p.power_profile, static_cast<uint8_t>(idx), PrefKey::POWER_PROFILE, kPrefEffectSleepTimer);
-  if (idx == 4) return true;  // Custom leaves individual sub-keys untouched
-
-  struct SpecRow { uint8_t ww; uint8_t tap; uint8_t pick; uint8_t batt_scr; uint8_t dock_idle; uint8_t hib; bool saver; };
-  static constexpr SpecRow kRows[4] = {
-      {0, 2, 1, 2, 3, 2, true},  // Pocket Carry: Docked Only, Docked Only, Docked Only, 30s, 1 min, 15 min, true
-      {0, 0, 0, 2, 3, 3, true},  // Handheld Roaming: Docked Only, Single Tap, Always On, 30s, 1 min, 30 min, true
-      {0, 1, 0, 1, 3, 2, true},  // Wearable Watch: Docked Only, Double Tap, Always On, 15s, 1 min, 15 min, true
-      {1, 0, 2, 5, 5, 4, true},  // Always-On Wall / Desk: Always On, Single Tap, Disabled, Never, 5 min, Disabled, true
-  };
-  const SpecRow &r = kRows[idx];
-  const uint8_t eff_pick = (LATTER_HAS_IMU && !LATTER_IS_STATIONARY) ? r.pick : 2;
-  const uint8_t eff_hib = (LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY) ? r.hib : 4;
-  const uint8_t eff_ble_mode = (idx <= 2) ? 1U : 0U;  // Pocket Carry, Handheld Roaming & Wearable Watch -> "Handheld + Screen Off", Always-On -> "Handheld Only"
-  set_u8(p.wake_word_mode, r.ww, PrefKey::WAKE_WORD_MODE, kPrefEffectWakeWordSync);
-  set_u8(p.tap_to_wake, r.tap, PrefKey::TAP_TO_WAKE, kPrefEffectPowerPolicy);
-  set_u8(p.pickup_to_wake, eff_pick, PrefKey::PICKUP_TO_WAKE, kPrefEffectPowerPolicy);
-  set_u8(p.battery_screen_timeout, r.batt_scr, PrefKey::BATTERY_SCREEN_TIMEOUT, kPrefEffectSleepTimer);
-  set_u8(p.docked_idle_timeout, r.dock_idle, PrefKey::DOCKED_IDLE_TIMEOUT, kPrefEffectSleepTimer);
-  set_u8(p.battery_hibernate_timeout, eff_hib, PrefKey::BATTERY_HIBERNATE_TIMEOUT, kPrefEffectPowerPolicy);
-  set_u8(p.ble_beacon_mode, eff_ble_mode, PrefKey::BLE_BEACON_MODE, kPrefEffectPowerPolicy);
-  if (p.docked_screensaver != r.saver) {
-    p.docked_screensaver = r.saver;
-    if (out_changed != nullptr) *out_changed |= pref_key_bit(PrefKey::DOCKED_SCREENSAVER);
-    if (out_effects != nullptr) *out_effects |= (kPrefEffectSleepTimer | kPrefEffectRedraw);
-  }
-  return true;
+inline void seed_hardware_sleep_defaults(PersistedDevicePrefs &p) {
+#if LATTER_IS_STATIONARY
+  p.wake_word_mode = 1;
+  p.tap_to_wake = 0;
+  p.pickup_to_wake = 2;
+  p.battery_screen_timeout = 5;
+  p.docked_idle_timeout = 5;
+  p.battery_hibernate_timeout = 4;
+  p.ble_beacon_mode = 0;
+  p.docked_screensaver = true;
+#elif LATTER_IS_WEARABLE
+  p.wake_word_mode = 0;
+  p.tap_to_wake = 1;
+  p.pickup_to_wake = 0;
+  p.battery_screen_timeout = 1;
+  p.docked_idle_timeout = 3;
+  p.battery_hibernate_timeout = 2;
+  p.ble_beacon_mode = 1;
+  p.docked_screensaver = true;
+  p.day_brightness = 2;
+  p.night_brightness = 0;
+#elif LATTER_ROUND_DISPLAY && LATTER_HAS_BATTERY
+  p.wake_word_mode = 0;
+  p.tap_to_wake = 2;
+  p.pickup_to_wake = 1;
+  p.battery_screen_timeout = 2;
+  p.docked_idle_timeout = 3;
+  p.battery_hibernate_timeout = 2;
+  p.ble_beacon_mode = 1;
+  p.docked_screensaver = true;
+#else
+  p.wake_word_mode = 0;
+  p.tap_to_wake = 0;
+  p.pickup_to_wake = 0;
+  p.battery_screen_timeout = 2;
+  p.docked_idle_timeout = 3;
+  p.battery_hibernate_timeout = 3;
+  p.ble_beacon_mode = 1;
+  p.docked_screensaver = true;
+#endif
 }
 
 #if LATTER_HAS_ESP_PREFS
@@ -904,7 +888,6 @@ inline bool tick_persisted_prefs_flush(uint32_t now_ms, uint32_t debounce_ms = 1
 }
 
 inline void seed_default_prefs_if_needed(
-    std::string_view def_power_profile,
     std::string_view def_clock_face,
     std::string_view def_start_app,
     std::string_view def_screensaver_style,
@@ -923,7 +906,7 @@ inline void seed_default_prefs_if_needed(
     if ((v = find_opt_index(kAlbumSortOpts, def_album_sort)) >= 0) p.album_sort_order = static_cast<uint8_t>(v);
     if ((v = find_opt_index(kArtistAlbumSortOpts, def_artist_album_sort)) >= 0) p.artist_album_sort_order = static_cast<uint8_t>(v);
     if ((v = find_opt_index(kPodcastSortOpts, def_podcast_sort)) >= 0) p.podcast_sort_order = static_cast<uint8_t>(v);
-    apply_power_profile_to_prefs(p, def_power_profile, nullptr, nullptr);
+    seed_hardware_sleep_defaults(p);
     clamp_prefs_to_capabilities(p);
     save_persisted_prefs();
   } else {
@@ -2746,7 +2729,6 @@ inline bool parse_alarms_summary(std::string_view sv, PersistedAlarmPref (&out)[
 
 inline const char *pref_key_name(PrefKey key) {
   switch (key) {
-    case PrefKey::POWER_PROFILE: return "power_profile";
     case PrefKey::WAKE_WORD_MODE: return "wake_word_mode";
     case PrefKey::TAP_TO_WAKE: return "tap_to_wake";
     case PrefKey::PICKUP_TO_WAKE: return "pickup_to_wake";
@@ -2803,7 +2785,6 @@ inline const char *pref_key_name(PrefKey key) {
 
 inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs()) {
   switch (key) {
-    case PrefKey::POWER_PROFILE: return pref_power_profile_cstr(p);
     case PrefKey::WAKE_WORD_MODE: return pref_wake_word_mode_cstr(p);
     case PrefKey::TAP_TO_WAKE: return pref_tap_to_wake_cstr(p);
     case PrefKey::PICKUP_TO_WAKE: return pref_pickup_to_wake_cstr(p);
@@ -2859,9 +2840,9 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
 }
 
 inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
-                                bool cascade_profile, uint64_t &changed_mask, uint32_t &effects_mask) {
+                                bool /*unused_cascade*/, uint64_t &changed_mask, uint32_t &effects_mask) {
   if (sv.empty() && key != PrefKey::WORLD_CLOCKS && key != PrefKey::LOCAL_CLOCK_LABEL) return false;
-  auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff, bool is_prof_subkey = false) -> bool {
+  auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff) -> bool {
     int idx = find_opt_index(opts, sv);
     if (idx < 0) return false;
     uint8_t u = static_cast<uint8_t>(idx);
@@ -2875,14 +2856,9 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     effects_mask |= (eff | kPrefEffectRedraw);
     if (key == PrefKey::CLOCK_FACE) p.clock_face_digital = (p.clock_face != 1);
     if (key == PrefKey::TIME_FORMAT) p.is_24h_format = (p.time_format == 1);
-    if (cascade_profile && is_prof_subkey &&
-        p.power_profile != static_cast<uint8_t>(PowerProfilePref::Custom)) {
-      p.power_profile = static_cast<uint8_t>(PowerProfilePref::Custom);
-      changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
-    }
     return true;
   };
-  auto apply_bool = [&](bool &slot, uint32_t eff, bool is_prof_subkey = false) -> bool {
+  auto apply_bool = [&](bool &slot, uint32_t eff) -> bool {
     bool b = v3_parse_bool(sv);
     if (slot == b) return false;
     bool was_true = slot;
@@ -2891,11 +2867,6 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     effects_mask |= (eff | kPrefEffectRedraw);
     if (key == PrefKey::DOCKED_SCREENSAVER && was_true && !b) {
       effects_mask |= kPrefEffectDockedSaverOff;
-    }
-    if (cascade_profile && is_prof_subkey &&
-        p.power_profile != static_cast<uint8_t>(PowerProfilePref::Custom)) {
-      p.power_profile = static_cast<uint8_t>(PowerProfilePref::Custom);
-      changed_mask |= pref_key_bit(PrefKey::POWER_PROFILE);
     }
     return true;
   };
@@ -2911,27 +2882,20 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
   };
 
   switch (key) {
-    case PrefKey::POWER_PROFILE:
-      if (cascade_profile) {
-        uint64_t before = changed_mask;
-        apply_power_profile_to_prefs(p, sv, &changed_mask, &effects_mask);
-        return changed_mask != before;
-      }
-      return apply_enum(p.power_profile, kPowerProfileOpts, kPrefEffectSleepTimer);
     case PrefKey::WAKE_WORD_MODE:
-      return apply_enum(p.wake_word_mode, kWakeWordModeOpts, kPrefEffectWakeWordSync, true);
+      return apply_enum(p.wake_word_mode, kWakeWordModeOpts, kPrefEffectWakeWordSync);
     case PrefKey::TAP_TO_WAKE:
-      return apply_enum(p.tap_to_wake, kTapWakeOpts, kPrefEffectPowerPolicy, true);
+      return apply_enum(p.tap_to_wake, kTapWakeOpts, kPrefEffectPowerPolicy);
     case PrefKey::PICKUP_TO_WAKE:
-      return apply_enum(p.pickup_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy, true);
+      return apply_enum(p.pickup_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy);
     case PrefKey::BATTERY_SCREEN_TIMEOUT:
-      return apply_enum(p.battery_screen_timeout, kBattScreenTimeoutOpts, kPrefEffectSleepTimer, true);
+      return apply_enum(p.battery_screen_timeout, kBattScreenTimeoutOpts, kPrefEffectSleepTimer);
     case PrefKey::DOCKED_IDLE_TIMEOUT:
-      return apply_enum(p.docked_idle_timeout, kDockedIdleTimeoutOpts, kPrefEffectSleepTimer, true);
+      return apply_enum(p.docked_idle_timeout, kDockedIdleTimeoutOpts, kPrefEffectSleepTimer);
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT:
-      return apply_enum(p.battery_hibernate_timeout, kBattHibernateTimeoutOpts, kPrefEffectPowerPolicy, true);
+      return apply_enum(p.battery_hibernate_timeout, kBattHibernateTimeoutOpts, kPrefEffectPowerPolicy);
     case PrefKey::DOCKED_SCREENSAVER:
-      return apply_bool(p.docked_screensaver, kPrefEffectSleepTimer, true);
+      return apply_bool(p.docked_screensaver, kPrefEffectSleepTimer);
     case PrefKey::SCREENSAVER_STYLE:
       return apply_enum(p.screensaver_style, kScreensaverStyleOpts, 0);
     case PrefKey::HOLD_CROWN_POWER_OFF:
@@ -3112,7 +3076,6 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
     set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], false, changed_mask, out_effects);
   };
 
-  apply_f(DevicePrefsField::POWER_PROFILE, PrefKey::POWER_PROFILE);
   apply_f(DevicePrefsField::WAKE_WORD_MODE, PrefKey::WAKE_WORD_MODE);
   apply_f(DevicePrefsField::TAP_TO_WAKE, PrefKey::TAP_TO_WAKE);
   apply_f(DevicePrefsField::PICKUP_TO_WAKE, PrefKey::PICKUP_TO_WAKE);

@@ -14,33 +14,6 @@ namespace latter_ui {
 
 namespace {
 
-enum class PowerProfile : uint8_t {
-  POCKET_CARRY = 0,
-  HANDHELD_ROAMING = 1,
-  WEARABLE_WATCH = 2,
-  ALWAYS_ON_STATIONARY = 3,
-  CUSTOM = 4,
-};
-
-PowerProfile parse_power_profile_local(UiStrView opt) {
-  if (opt == "Pocket Carry") return PowerProfile::POCKET_CARRY;
-  if (opt == "Handheld Roaming") return PowerProfile::HANDHELD_ROAMING;
-  if (opt == "Wearable Watch") return PowerProfile::WEARABLE_WATCH;
-  if (opt == "Always-On Wall / Desk") return PowerProfile::ALWAYS_ON_STATIONARY;
-  return PowerProfile::CUSTOM;
-}
-
-const char *power_profile_short_label_local(UiStrView opt) {
-  switch (parse_power_profile_local(opt)) {
-    case PowerProfile::POCKET_CARRY:         return "Pocket";
-    case PowerProfile::HANDHELD_ROAMING:     return "Roaming";
-    case PowerProfile::WEARABLE_WATCH:       return "Watch";
-    case PowerProfile::ALWAYS_ON_STATIONARY: return "Wall/Desk";
-    case PowerProfile::CUSTOM:               return "Custom";
-  }
-  return opt.c_str();
-}
-
 int card_hit_width(int w, int h) {
   if (SCREEN_W > 520 && w <= 340) return scale_x(w);
   if (SCREEN_W < 380 && h <= 48 && w >= 240 && w <= 330) return SCREEN_W - 88;
@@ -198,41 +171,39 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 1) {
     const int current_offset = compute_scroll_offset(sleep_menu_page, 315);
-    char sleep_labels[9][36];
-    const char *short_p = power_profile_short_label_local(ctx.power_profile_opt);
-    std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Profile: %s", short_p);
+    char sleep_labels[8][36];
 #if LATTER_HAS_IMU
-    std::snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
+    std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
 #else
-    std::snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Pickup Wake: N/A");
+    std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: N/A");
 #endif
-    std::snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Tap Wake: %s", ctx.tap_wake_opt.c_str());
+    std::snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Tap Wake: %s", ctx.tap_wake_opt.c_str());
 #if LATTER_HAS_BATTERY
-    std::snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: %s", ctx.display_off_timeout_opt.c_str());
+    std::snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Battery Timeout: %s", ctx.display_off_timeout_opt.c_str());
 #else
-    std::snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Battery Timeout: N/A");
+    std::snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Battery Timeout: N/A");
 #endif
-    std::snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Docked Saver: %s", ctx.docked_screensaver_enabled ? "On" : "Off");
+    std::snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Docked Saver: %s", ctx.docked_screensaver_enabled ? "On" : "Off");
     const char *short_s = (ctx.screensaver_style_opt == "Digital Rain") ? "Rain" : ctx.screensaver_style_opt.c_str();
-    std::snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Saver Style: %s", short_s);
-    std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Docked Timeout: %s", ctx.screensaver_docked_timeout_opt.c_str());
+    std::snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Saver Style: %s", short_s);
+    std::snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Docked Timeout: %s", ctx.screensaver_docked_timeout_opt.c_str());
 #if LATTER_HAS_BATTERY
-    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: %s", ctx.hibernate_timeout_opt.c_str());
-    std::snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: %s",
+    std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: %s", ctx.hibernate_timeout_opt.c_str());
+    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: %s",
                   ctx.instant_crown_hibernate ? "Instant" : "5s Delay");
 #else
-    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hibernate: N/A");
-    std::snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Hold Crown: N/A");
+    std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: N/A");
+    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: N/A");
 #endif
 
     const int page_base = (sleep_menu_page == 2) ? 5 : 0;
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 8; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
-        if (i == 4) {
+        if (i == 3) {
           draw_toggle_card_y(y, "Docked Saver", ctx.docked_screensaver_enabled, row_slot, row_slot);
-        } else if (i == 8) {
+        } else if (i == 7) {
 #if LATTER_HAS_BATTERY
           draw_toggle_card_y(y, ctx.instant_crown_hibernate ? "Hold Crown: Instant" : "Hold Crown: 5s Delay",
                              ctx.instant_crown_hibernate, row_slot, row_slot);
@@ -240,13 +211,12 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
           draw_cycle_card_y(y, sleep_labels[i], false);
 #endif
         } else {
-          const bool en = (i == 0) ? true
-                        : (i == 1) ? ((LATTER_HAS_IMU != 0) && (ctx.pickup_wake_opt != "Disabled"))
-                        : (i == 2) ? (ctx.tap_wake_opt != "Disabled")
-                        : (i == 3) ? ((LATTER_HAS_BATTERY != 0) && (ctx.display_off_timeout_opt != "Never"))
-                        : (i == 5) ? ctx.docked_screensaver_enabled
-                        : (i == 6) ? (ctx.screensaver_docked_timeout_opt != "Never")
-                        : (i == 7) ? ((LATTER_HAS_BATTERY != 0) && (ctx.hibernate_timeout_opt != "Disabled"))
+          const bool en = (i == 0) ? ((LATTER_HAS_IMU != 0) && (ctx.pickup_wake_opt != "Disabled"))
+                        : (i == 1) ? (ctx.tap_wake_opt != "Disabled")
+                        : (i == 2) ? ((LATTER_HAS_BATTERY != 0) && (ctx.display_off_timeout_opt != "Never"))
+                        : (i == 4) ? ctx.docked_screensaver_enabled
+                        : (i == 5) ? (ctx.screensaver_docked_timeout_opt != "Never")
+                        : (i == 6) ? ((LATTER_HAS_BATTERY != 0) && (ctx.hibernate_timeout_opt != "Disabled"))
                                    : true;
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)

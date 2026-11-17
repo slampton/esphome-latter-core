@@ -851,7 +851,6 @@ struct UiFrameContext {
   UiStrView music_artist_album_sort_opt{"Release Year"};
   UiStrView music_podcast_sort_opt{"Latest Episode"};
   UiStrView theme_palette_opt{"Steel & Silver"};
-  UiStrView power_profile_opt{"Balanced"};
   UiStrView tap_wake_opt{"Always On"};
   UiStrView pickup_wake_opt{"Medium"};
   UiStrView display_off_timeout_opt{"30 Seconds"};

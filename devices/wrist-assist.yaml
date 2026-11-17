@@ -13,7 +13,6 @@ substitutions:
   friendly_name: "Wrist Assist"
   version: "3.0.0"
   default_clock_face: "Minimal Digital"
-  default_power_profile: "Wearable Watch"
   api_reboot_timeout: "0s"
 
 dashboard_import:

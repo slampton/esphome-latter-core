@@ -36,7 +36,6 @@ substitutions:
   default_album_sort: "Alphabetical"
   default_artist_album_sort: "Oldest on Top"
   default_podcast_sort: "Newest on Top"
-  default_power_profile: "Handheld Roaming"
   sendspin_buffer_size: "1048576"
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "true"

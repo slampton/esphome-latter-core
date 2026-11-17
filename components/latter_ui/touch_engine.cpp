@@ -3786,46 +3786,41 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         const int slot_idx = hit->param;
         const int idx = (rs.nav.sleep_menu_page == 1) ? slot_idx : (slot_idx + 5);
         if (idx == 0) {
-          rt_.set_select_opt(UiSelectId::POWER_PROFILE,
-                             cycle_option(rt_.select_opt(UiSelectId::POWER_PROFILE),
-                                          {"Pocket Carry", "Handheld Roaming", "Wearable Watch",
-                                           "Always-On Wall / Desk"}));
-        } else if (idx == 1) {
 #if LATTER_HAS_IMU
           rt_.set_select_opt(UiSelectId::PICKUP_WAKE_MODE,
                              cycle_option(rt_.select_opt(UiSelectId::PICKUP_WAKE_MODE),
                                           {"Always On", "Docked Only", "Disabled"}));
 #endif
-        } else if (idx == 2) {
+        } else if (idx == 1) {
           rt_.set_select_opt(UiSelectId::TAP_WAKE_MODE,
                              cycle_option(rt_.select_opt(UiSelectId::TAP_WAKE_MODE),
                                           {"Single Tap", "Double Tap", "Docked Only", "Disabled"}));
-        } else if (idx == 3) {
+        } else if (idx == 2) {
 #if LATTER_HAS_BATTERY
           rt_.set_select_opt(UiSelectId::DISPLAY_OFF_TIMEOUT,
                              cycle_option(rt_.select_opt(UiSelectId::DISPLAY_OFF_TIMEOUT),
                                           {"10s", "15s", "30s", "1 min", "2 min", "Never"}));
 #endif
-        } else if (idx == 4) {
+        } else if (idx == 3) {
           rt_.sw_toggle(UiSwitchId::DOCKED_SCREENSAVER);
-        } else if (idx == 5) {
+        } else if (idx == 4) {
           if (rt_.sw_state(UiSwitchId::DOCKED_SCREENSAVER)) {
             rt_.set_select_opt(UiSelectId::SCREENSAVER_STYLE,
                                cycle_option(rt_.select_opt(UiSelectId::SCREENSAVER_STYLE),
                                             {"Ambient Clock", "Aurora", "Starfield",
                                              "Digital Rain", "Fireworks"}));
           }
-        } else if (idx == 6) {
+        } else if (idx == 5) {
           rt_.set_select_opt(UiSelectId::SCREENSAVER_DOCKED_TIMEOUT,
                              cycle_option(rt_.select_opt(UiSelectId::SCREENSAVER_DOCKED_TIMEOUT),
                                           {"10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"}));
-        } else if (idx == 7) {
+        } else if (idx == 6) {
 #if LATTER_HAS_BATTERY
           rt_.set_select_opt(UiSelectId::HIBERNATE_TIMEOUT_MODE,
                              cycle_option(rt_.select_opt(UiSelectId::HIBERNATE_TIMEOUT_MODE),
                                           {"5 min", "10 min", "15 min", "30 min", "Disabled"}));
 #endif
-        } else if (idx == 8) {
+        } else if (idx == 7) {
 #if LATTER_HAS_BATTERY
           rt_.sw_toggle(UiSwitchId::INSTANT_CROWN_HIBERNATE);
 #endif
@@ -4763,7 +4758,6 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::WW_SENS_HEY_MYCROFT: return pref_ww_sens_cstr(p.ww_sens_hey_mycroft);
     case S::WW_SENS_ALEXA: return pref_ww_sens_cstr(p.ww_sens_alexa);
     case S::THEME_PALETTE: return pref_color_profile_cstr(p);
-    case S::POWER_PROFILE: return pref_power_profile_cstr(p);
     case S::PICKUP_WAKE_MODE: return pref_pickup_to_wake_cstr(p);
     case S::DISPLAY_OFF_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
     case S::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
@@ -4822,7 +4816,6 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::WW_SENS_HEY_MYCROFT: pk = K::WW_SENS_HEY_MYCROFT; break;
     case S::WW_SENS_ALEXA: pk = K::WW_SENS_ALEXA; break;
     case S::THEME_PALETTE: pk = K::COLOR_PROFILE; break;
-    case S::POWER_PROFILE: pk = K::POWER_PROFILE; break;
     case S::PICKUP_WAKE_MODE: pk = K::PICKUP_TO_WAKE; break;
     case S::DISPLAY_OFF_TIMEOUT: pk = K::BATTERY_SCREEN_TIMEOUT; break;
     case S::SCREENSAVER_STYLE: pk = K::SCREENSAVER_STYLE; break;

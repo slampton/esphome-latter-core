@@ -126,7 +126,7 @@ In screen-off quiet on battery, `apply_power_policy` releases `latter_awake` via
 
 ## 5. Substitutions and sdkconfig
 
-- **Substitutions:** font sizes (`font_time_size` .. `font_games_size`), image resize bounds (`art_resize`, `sendspin_art_resize`), audio rates (`audio_out_rate: "48000"`, `audio_out_channels: "1"`, `audio_out_bits: "16"`, `audio_in_rate: "16000"`), buffer sizes (`sendspin_buffer_size`, `announcement_buffer_size`), `mww_internal_ram`, and product defaults (`default_clock_face`, `default_power_profile`, etc.). Display dimensions and roundness come strictly from `-DLATTER_SCREEN_W`, `-DLATTER_SCREEN_H`, and `-DLATTER_ROUND_DISPLAY` (no `screen_w`, `screen_h`, or `art_shape` substitutions).
+- **Substitutions:** font sizes (`font_time_size` .. `font_games_size`), image resize bounds (`art_resize`, `sendspin_art_resize`), audio rates (`audio_out_rate: "48000"`, `audio_out_channels: "1"`, `audio_out_bits: "16"`, `audio_in_rate: "16000"`), buffer sizes (`sendspin_buffer_size`, `announcement_buffer_size`), `mww_internal_ram`, and product defaults (`default_clock_face`, `default_start_app`, etc.). Display dimensions, roundness, and initial sleep/wake hardware policies come strictly from `LATTER_*` build flags (no `screen_w`, `screen_h`, `art_shape`, or `default_power_profile` substitutions).
 - **sdkconfig (via `modules/hal/chip_esp32*.yaml`):** `CONFIG_COMPILER_OPTIMIZATION_PERF: "y"` (`-O2`) and `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"` on every board.
 
 ## 6. ESP32-P4

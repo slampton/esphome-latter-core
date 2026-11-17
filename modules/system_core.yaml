@@ -22,7 +22,7 @@ esphome:
             }
             latter_ui::load_persisted_prefs();
             latter_ui::seed_default_prefs_if_needed(
-                "${default_power_profile}", "${default_clock_face}", "${default_start_app}",
+                "${default_clock_face}", "${default_start_app}",
                 "${default_screensaver_style}", "${default_art_mode}", "${default_album_sort}",
                 "${default_artist_album_sort}", "${default_podcast_sort}");
             // Light-sleep awake lock (created held), wake pins and sleep pad config; no-op without light sleep.
@@ -186,7 +186,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111604L;
+            constexpr long LATTER_YAML_REV = 2026111605L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "

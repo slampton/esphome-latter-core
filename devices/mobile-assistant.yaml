@@ -13,7 +13,6 @@ substitutions:
   friendly_name: "Mobile Assistant"
   version: "3.0.0"
   default_clock_face: "Minimal Digital"
-  default_power_profile: "Handheld Roaming"
   api_reboot_timeout: "0s"
 
 dashboard_import:
