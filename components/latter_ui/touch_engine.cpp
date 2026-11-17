@@ -62,10 +62,6 @@ inline void do_execute_alarm_action() {
   ar.target_code.clear();
 }
 
-inline void do_request_dock_apps() {
-  latter_actions::emit_set_dock_apps(latter_dock_order_csv());
-}
-
 inline void do_save_custom_color_to_latter() {
   save_persisted_prefs();
   latter_actions::emit_save_custom_color_rgb(persisted_prefs().custom_theme_rgb);
@@ -233,13 +229,12 @@ inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeSta
 }
 
 inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
-  tools_direct_home() = false;
+  rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+  shortcut_confirm_state().clear();
   home_dock_page() = 0;
 
   if (chosen_app == PageId::HOME_HUB) {
     enter_home_hub_tab(-1, false, rs, rt, now_ms);
-  } else if (chosen_app == PageId::CAMERAS) {
-    enter_home_hub_tab(HomeHubTab::CAMERAS, false, rs, rt, now_ms);
   } else {
     if (is_camera_view_active(rs)) {
       leave_home_hub_cameras_if_active(rs, rt, now_ms);
@@ -248,7 +243,10 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
     rs.nav.home_subpage = 0;
   }
 
-  if (chosen_app == PageId::MUSIC) {
+  if (chosen_app == PageId::PINNED) {
+    rs.nav.pinned_menu_page = 0;
+    rs.nav.menu_scroll_active = false;
+  } else if (chosen_app == PageId::MUSIC) {
     rs.music.overlay_mode = 0;
     rs.music.hud_active = true;
     rs.music.hud_timer = now_ms;
@@ -304,6 +302,410 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
   rs.nav.remote_subpage = 0;
   rs.nav.active_game = 0;
   mark_dirty_full();
+  rt.schedule_disp();
+}
+
+inline void apply_optimistic_shortcut_feedback(const std::string &entity_id,
+                                               const std::string &action,
+                                               const std::string &label,
+                                               DeviceRuntimeState &rs,
+                                               uint32_t now_ms) {
+  rs.nav.pinned_feedback = label.empty() ? entity_id : label;
+  rs.nav.pinned_feedback_ms = (now_ms == 0U) ? 1U : now_ms;
+  auto flip_list = [&](std::vector<ShortcutItem> &vec) {
+    for (auto &it : vec) {
+      if (it.kind != ShortcutKind::ENTITY || it.target != entity_id) continue;
+      if (it.state == 0 || it.state == 1) {
+        if (action == "toggle" || action == "media_play_pause") {
+          it.state = (it.state == 1) ? 0 : 1;
+        } else if (action == "turn_on" || action == "open_cover" || action == "open_valve" ||
+                   action == "unlock" || action == "open" || action == "start") {
+          it.state = 1;
+        } else if (action == "turn_off" || action == "close_cover" || action == "close_valve" ||
+                   action == "lock" || action == "stop" || action == "return_to_base") {
+          it.state = 0;
+        }
+      }
+    }
+  };
+  flip_list(shortcuts_state().dock_items);
+  flip_list(shortcuts_state().pinned_items);
+}
+
+inline bool return_from_shortcut_origin(DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
+  const ShortcutOrigin orig = rs.nav.shortcut_origin;
+  if (orig == ShortcutOrigin::NONE) return false;
+  rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+  if (orig == ShortcutOrigin::PINNED_APP) {
+    const int ret_pg = rs.nav.shortcut_origin_pinned_page;
+    rs.nav.tools_subpage = 0;
+    rs.nav.remote_subpage = 0;
+    rs.nav.active_game = 0;
+    rs.nav.game_btn_pressed = false;
+    rs.nav.system_menu_mode = 0;
+    rs.nav.home_subpage = 0;
+    rs.music.overlay_mode = 0;
+    rs.music.direct_nav = false;
+    rs.nav.menu_scroll_active = false;
+    rs.nav.gui_page = PageId::PINNED;
+    rs.nav.pinned_menu_page = std::clamp(ret_pg, 0, std::max(0, pinned_total_pages() - 1));
+    mark_dirty_full();
+    rt.schedule_disp();
+    return true;
+  }
+  touch_engine().navigate_home(now_ms);
+  return true;
+}
+
+inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
+                                  DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+                                  uint32_t now_ms) {
+  if (!is_route_supported_on_board(route_id)) return;
+  const int saved_pinned_pg = rs.nav.pinned_menu_page;
+  shortcut_confirm_state().clear();
+
+  switch (route_id) {
+    case RouteId::APP_PINNED:
+      launch_dock_app(PageId::PINNED, rs, rt, now_ms);
+      return;
+    case RouteId::APP_MUSIC:
+      launch_dock_app(PageId::MUSIC, rs, rt, now_ms);
+      return;
+    case RouteId::APP_HOME_HUB:
+      launch_dock_app(PageId::HOME_HUB, rs, rt, now_ms);
+      return;
+    case RouteId::APP_AREA:
+      launch_dock_app(PageId::AREA, rs, rt, now_ms);
+      return;
+    case RouteId::APP_REMOTE:
+      if (has_any_configured_remote()) {
+        launch_dock_app(PageId::REMOTE, rs, rt, now_ms);
+      }
+      return;
+    case RouteId::APP_WEATHER:
+    case RouteId::WEATHER_CURRENT:
+      launch_dock_app(PageId::WEATHER, rs, rt, now_ms);
+      return;
+    case RouteId::WEATHER_FORECAST:
+      launch_dock_app(PageId::WEATHER, rs, rt, now_ms);
+      rs.nav.sky_weather_subpage = 1;
+      return;
+    case RouteId::WEATHER_SUN:
+      launch_dock_app(PageId::WEATHER, rs, rt, now_ms);
+      rs.nav.sky_weather_subpage = 2;
+      return;
+    case RouteId::WEATHER_MOON:
+      launch_dock_app(PageId::WEATHER, rs, rt, now_ms);
+      rs.nav.sky_weather_subpage = 3;
+      return;
+    case RouteId::APP_TIME:
+    case RouteId::TIME_CLOCK:
+      launch_dock_app(PageId::TIME, rs, rt, now_ms);
+      return;
+    case RouteId::TIME_TIMERS:
+      launch_dock_app(PageId::TIME, rs, rt, now_ms);
+      rs.nav.time_subpage = TimeSubpage::TIMERS;
+      return;
+    case RouteId::TIME_ALARMS:
+      launch_dock_app(PageId::TIME, rs, rt, now_ms);
+      rs.nav.time_subpage = TimeSubpage::ALARMS;
+      return;
+    case RouteId::TIME_STOPWATCH:
+      launch_dock_app(PageId::TIME, rs, rt, now_ms);
+      rs.nav.time_subpage = TimeSubpage::STOPWATCH;
+      return;
+    case RouteId::APP_TOOLS:
+      launch_dock_app(PageId::TOOLS, rs, rt, now_ms);
+      return;
+    case RouteId::APP_GAMES:
+      launch_dock_app(PageId::GAMES, rs, rt, now_ms);
+      return;
+    case RouteId::APP_CLOCK:
+      if (is_camera_view_active(rs)) leave_home_hub_cameras_if_active(rs, rt, now_ms);
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+      rs.nav.gui_page = PageId::CLOCK;
+      rs.nav.home_subpage = 0;
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    case RouteId::SETTINGS_ROOT:
+      launch_dock_app(PageId::SYSTEM, rs, rt, now_ms);
+      return;
+
+    case RouteId::HOME_HUB_ALARM:
+    case RouteId::HOME_HUB_CAMERAS:
+    case RouteId::HOME_HUB_INTERCOM:
+    case RouteId::HOME_HUB_THERMOSTAT:
+    case RouteId::HOME_HUB_ENTRY:
+    case RouteId::HOME_HUB_VACUUM: {
+      int tab = HomeHubTab::ALARM;
+      if (route_id == RouteId::HOME_HUB_CAMERAS) tab = HomeHubTab::CAMERAS;
+      else if (route_id == RouteId::HOME_HUB_INTERCOM) tab = HomeHubTab::INTERCOM;
+      else if (route_id == RouteId::HOME_HUB_THERMOSTAT) tab = HomeHubTab::THERMOSTAT;
+      else if (route_id == RouteId::HOME_HUB_ENTRY) tab = HomeHubTab::ENTRY;
+      else if (route_id == RouteId::HOME_HUB_VACUUM) tab = HomeHubTab::VACUUM;
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+      enter_home_hub_tab(tab, false, rs, rt, now_ms);
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::AREA_PICKER: {
+      if (is_camera_view_active(rs)) leave_home_hub_cameras_if_active(rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      rs.nav.gui_page = PageId::AREA;
+      rs.nav.home_subpage = 0;
+      rs.nav.area_subpage = AreaSubpage::PICKER;
+      rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
+      do_fetch_area_list_browse();
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::AREA_SCENE:
+    case RouteId::AREA_LIGHT:
+    case RouteId::AREA_COVER:
+    case RouteId::AREA_FAN:
+    case RouteId::AREA_SWITCH:
+    case RouteId::AREA_CLIMATE:
+    case RouteId::AREA_MEDIA:
+    case RouteId::AREA_ALL: {
+      if (is_camera_view_active(rs)) leave_home_hub_cameras_if_active(rs, rt, now_ms);
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+      rs.nav.gui_page = PageId::AREA;
+      rs.nav.home_subpage = 0;
+      const char *dom = "all";
+      if (route_id == RouteId::AREA_SCENE) dom = "scene";
+      else if (route_id == RouteId::AREA_LIGHT) dom = "light";
+      else if (route_id == RouteId::AREA_COVER) dom = "cover";
+      else if (route_id == RouteId::AREA_FAN) dom = "fan";
+      else if (route_id == RouteId::AREA_SWITCH) dom = "switch";
+      else if (route_id == RouteId::AREA_CLIMATE) dom = "climate";
+      else if (route_id == RouteId::AREA_MEDIA) dom = "media";
+      std::string cats[8];
+      const int cnt = collect_area_categories(cats);
+      int act_idx = -1;
+      for (int i = 0; i < cnt; ++i) {
+        if (cats[i] == dom) { act_idx = i; break; }
+      }
+      rs.area.domain_filter = (act_idx >= 0) ? cats[act_idx] : std::string(dom);
+      sync_mode_bar_window(area_cat_dock_page(), std::max(0, act_idx), cnt);
+      if (rs.area.active_area_id.empty()) {
+        rs.nav.area_subpage = AreaSubpage::PICKER;
+        rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
+        do_fetch_area_list_browse();
+      } else {
+        rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+        rs.area.browse_mode = "entities";
+        rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+        do_fetch_area_browse();
+      }
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::MUSIC_SPEAKERS:
+    case RouteId::MUSIC_LIBRARY:
+    case RouteId::MUSIC_FAVORITES:
+    case RouteId::MUSIC_PLAYLISTS:
+    case RouteId::MUSIC_QUEUE: {
+      launch_dock_app(PageId::MUSIC, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      rs.music.direct_nav = true;
+      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      if (route_id == RouteId::MUSIC_SPEAKERS) {
+        rs.music.selected_category_mode = "speakers";
+        rs.music.selected_category_title = "SPEAKERS";
+        reset_music_loading_slots(rs, "Loading...");
+        rs.music.overlay_mode = 1;
+        media_fetch_browse(now_ms);
+      } else if (route_id == RouteId::MUSIC_LIBRARY) {
+        rs.music.category_page = 1;
+        rs.music.overlay_mode = 2;
+      } else {
+        rs.music.drilldown_parent_mode.clear();
+        if (route_id == RouteId::MUSIC_FAVORITES) {
+          rs.music.selected_category_mode = "favorites";
+          rs.music.selected_category_title = "FAVORITES";
+        } else if (route_id == RouteId::MUSIC_PLAYLISTS) {
+          rs.music.selected_category_mode = "playlist";
+          rs.music.selected_category_title = "PLAYLISTS";
+        } else {
+          rs.music.selected_category_mode = "active_queue";
+          rs.music.selected_category_title = "QUEUE";
+        }
+        reset_music_loading_slots(rs, "Loading...");
+        rs.music.overlay_mode = 3;
+        media_fetch_browse(now_ms);
+      }
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::REMOTE_DEVICES:
+      if (has_any_configured_remote()) {
+        launch_dock_app(PageId::REMOTE, rs, rt, now_ms);
+        rs.nav.shortcut_origin = origin;
+        rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+        rs.nav.remote_subpage = 1;
+        remote_control_page() = 0;
+        mark_dirty_full();
+        rt.schedule_disp();
+      }
+      return;
+
+    case RouteId::TOOLS_STOPWATCH:
+    case RouteId::TOOLS_LEVEL:
+    case RouteId::TOOLS_FLASHLIGHT:
+    case RouteId::TOOLS_CALCULATOR:
+    case RouteId::TOOLS_CALENDAR:
+    case RouteId::TOOLS_DICE:
+    case RouteId::TOOLS_COIN_FLIP: {
+      launch_dock_app(PageId::TOOLS, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      int sub = ToolsSubpage::LAUNCHER;
+      if (route_id == RouteId::TOOLS_STOPWATCH) sub = ToolsSubpage::STOPWATCH;
+      else if (route_id == RouteId::TOOLS_LEVEL) sub = ToolsSubpage::LEVEL;
+      else if (route_id == RouteId::TOOLS_FLASHLIGHT) sub = ToolsSubpage::FLASHLIGHT;
+      else if (route_id == RouteId::TOOLS_CALCULATOR) sub = ToolsSubpage::CALCULATOR;
+      else if (route_id == RouteId::TOOLS_CALENDAR) sub = ToolsSubpage::CALENDAR;
+      else if (route_id == RouteId::TOOLS_DICE) sub = ToolsSubpage::DICE;
+      else if (route_id == RouteId::TOOLS_COIN_FLIP) sub = ToolsSubpage::COIN_FLIP;
+      rs.nav.tools_subpage = sub;
+      if (sub == ToolsSubpage::FLASHLIGHT) {
+        rt.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
+      } else if (sub == ToolsSubpage::CALCULATOR) {
+        reset_calculator_state();
+      } else if (sub == ToolsSubpage::CALENDAR) {
+        cal_detail_mode() = 0;
+        cal_quick_add_open() = false;
+        rs.slot_page_for(latter_rpc::SlotChannel::CALENDAR) = 1;
+        do_fetch_calendar_browse();
+      }
+      rt.apply_power_policy();
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::GAMES_MARBLES:
+    case RouteId::GAMES_ARCHERY:
+    case RouteId::GAMES_BRICKS:
+    case RouteId::GAMES_CHOMP:
+    case RouteId::GAMES_2048:
+    case RouteId::GAMES_MEMORY: {
+      const int g_id = 1 + (static_cast<int>(route_id) - static_cast<int>(RouteId::GAMES_MARBLES));
+      launch_dock_app(PageId::GAMES, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      rs.nav.game_carousel_idx = g_id - 1;
+      rs.nav.active_game = g_id;
+      audio_arbitrator().cancel_media_idle_debounce();
+      if (rt.local_mp_playing) {
+        rt.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);
+        audio_arbitrator().cancel_media_idle_debounce();
+      }
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::SETTINGS_HOME:
+      if (is_camera_view_active(rs)) leave_home_hub_cameras_if_active(rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      rs.nav.gui_page = PageId::HOME;
+      rs.nav.home_subpage = 1;
+      rs.nav.home_settings_page = 1;
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+
+    case RouteId::SETTINGS_DISPLAY:
+    case RouteId::SETTINGS_SLEEP:
+    case RouteId::SETTINGS_SOUND:
+    case RouteId::SETTINGS_VOICE:
+    case RouteId::SETTINGS_MUSIC:
+    case RouteId::SETTINGS_ACTIONS:
+    case RouteId::SETTINGS_UPDATE:
+    case RouteId::SETTINGS_INFO: {
+      launch_dock_app(PageId::SYSTEM, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      if (route_id == RouteId::SETTINGS_DISPLAY) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
+      else if (route_id == RouteId::SETTINGS_SLEEP) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
+      else if (route_id == RouteId::SETTINGS_SOUND) { rs.nav.system_menu_mode = 7; }
+      else if (route_id == RouteId::SETTINGS_VOICE) { rs.nav.system_menu_mode = 11; }
+      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
+      else if (route_id == RouteId::SETTINGS_ACTIONS) { rs.nav.system_menu_mode = 3; }
+      else if (route_id == RouteId::SETTINGS_UPDATE) { rs.nav.system_menu_mode = 5; rs.nav.update_check_state = 0; }
+      else if (route_id == RouteId::SETTINGS_INFO) { rs.nav.system_menu_mode = 8; }
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
+
+    case RouteId::NONE:
+    default:
+      return;
+  }
+}
+
+inline void activate_shortcut_item(const ShortcutItem &item, ShortcutOrigin origin,
+                                   DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+                                   uint32_t now_ms) {
+  if (item.kind == ShortcutKind::ROUTE) {
+    launch_shortcut_route(item.route_id, origin, rs, rt, now_ms);
+    return;
+  }
+
+  if (item.target.empty() || item.action.empty()) return;
+  if (item.state == 2) {
+    rs.nav.pinned_feedback = "Unavailable: " + item.label;
+    rs.nav.pinned_feedback_ms = (now_ms == 0U) ? 1U : now_ms;
+    rt.schedule_disp();
+    return;
+  }
+
+  const std::string &pol = area_ctx_state().security_pin_policy;
+  if (ui::is_perimeter_action_blocked(pol, item.target, item.action, 100)) {
+    rs.nav.pinned_feedback = "Blocked by Security Policy";
+    rs.nav.pinned_feedback_ms = (now_ms == 0U) ? 1U : now_ms;
+    rt.schedule_disp();
+    return;
+  }
+  if (ui::requires_perimeter_pin_prompt(pol, item.target, item.action, 100, effective_alarm_caps())) {
+    rs.nav.pending_shortcut_entity_id = item.target;
+    rs.nav.pending_shortcut_action = item.action;
+    rs.nav.pending_shortcut_label = item.label;
+    ui::pin_pad_open(ui::PinPadTargetKind::SHORTCUT_ACTION, "SECURITY PIN");
+    mark_dirty_full();
+    rt.schedule_disp();
+    return;
+  }
+
+  if (item.confirm) {
+    auto &sc = shortcut_confirm_state();
+    sc.open = true;
+    sc.opened_ms = (now_ms == 0U) ? 1U : now_ms;
+    sc.entity_id = item.target;
+    sc.action = item.action;
+    build_shortcut_confirm_copy(item, sc.title, sc.line1, sc.line2, sc.verb_btn, sc.is_danger);
+    mark_dirty_full();
+    rt.schedule_disp();
+    return;
+  }
+
+  latter_actions::emit_shortcut_action(item.target, item.action);
+  apply_optimistic_shortcut_feedback(item.target, item.action, item.label, rs, now_ms);
   rt.schedule_disp();
 }
 
@@ -386,7 +788,7 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
   rs.nav.home_subpage = 0;
   home_dock_page() = 0;
   if (kind == 1) {
-    tools_direct_home() = false;
+    rs.nav.shortcut_origin = ShortcutOrigin::NONE;
     rs.nav.gui_page = PageId::TIME;
     rs.nav.time_subpage = TimeSubpage::TIMERS;
     rs.alarms.edit_idx = 0;
@@ -394,20 +796,20 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
   } else if (kind == 2) {
 #if LATTER_ROUND_DISPLAY
     if (rs.stopwatch.started_in_analog) {
-      tools_direct_home() = true;
+      rs.nav.shortcut_origin = ShortcutOrigin::HOME_DOCK;
       rs.nav.gui_page = PageId::TOOLS;
       rs.nav.tools_subpage = ToolsSubpage::STOPWATCH;
     } else
 #endif
     {
-      tools_direct_home() = false;
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
       rs.nav.gui_page = PageId::TIME;
       rs.nav.time_subpage = TimeSubpage::STOPWATCH;
       timer_view_slot() = 0;
       rs.alarms.edit_idx = 0;
     }
   } else if (kind == 3) {
-    tools_direct_home() = false;
+    rs.nav.shortcut_origin = ShortcutOrigin::NONE;
     rs.nav.gui_page = PageId::MUSIC;
     rs.music.overlay_mode = 0;
     rs.music.hud_active = true;
@@ -418,14 +820,14 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
       rt.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
     }
   } else if (kind == 4) {
-    tools_direct_home() = false;
+    rs.nav.shortcut_origin = ShortcutOrigin::NONE;
     rs.nav.gui_page = PageId::TIME;
     rs.nav.time_subpage = TimeSubpage::ALARMS;
     timer_view_slot() = 0;
     rs.alarms.edit_idx = (s_idx >= 1 && s_idx <= 3) ? s_idx : 0;
     rs.nav.alarm_edit_field = 1;
   } else if (kind == 5) {
-    tools_direct_home() = true;
+    rs.nav.shortcut_origin = ShortcutOrigin::HOME_DOCK;
     rs.nav.gui_page = PageId::TOOLS;
     rs.nav.tools_subpage = ToolsSubpage::CALENDAR;
     cal_detail_mode() = 0;
@@ -439,7 +841,7 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
                          ac.doorbell_talk_state != "off" &&
                          ac.doorbell_talk_state != "unavailable" &&
                          ac.doorbell_talk_state != "unknown";
-    tools_direct_home() = false;
+    rs.nav.shortcut_origin = ShortcutOrigin::NONE;
     if (db_live || cam_call_active() || cam_listen_active()) {
       enter_home_hub_tab(HomeHubTab::CAMERAS, true, rs, rt, now_ms);
     } else {
@@ -498,7 +900,8 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   }
   const bool was_cam_page = is_camera_view_active(rs);
   ui::pin_pad_scrub();
-  tools_direct_home() = false;
+  shortcut_confirm_state().clear();
+  rs.nav.shortcut_origin = ShortcutOrigin::NONE;
   timer_view_slot() = 0;
   rs.alarms.edit_idx = 0;
   cal_detail_mode() = 0;
@@ -517,11 +920,13 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   rs.nav.remote_subpage = 0;
   rs.nav.tools_subpage = 0;
   rs.nav.tools_menu_page = 0;
+  rs.nav.pinned_menu_page = 0;
   rs.nav.sky_weather_subpage = 0;
   rs.nav.time_subpage = TimeSubpage::CLOCK;
   rs.nav.world_clock_page = 0;
   rs.nav.home_settings_page = 1;
-  const bool keep_cam = (anchor == PageId::CAMERAS) ||
+  const bool start_cam = is_cameras_start_screen(prefs);
+  const bool keep_cam = start_cam ||
                         (anchor == PageId::HOME_HUB && home_hub_tab() == HomeHubTab::CAMERAS);
   if (was_cam_page && !keep_cam) {
     rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
@@ -549,6 +954,12 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
     rt_.schedule_disp();
     return;
   }
+  if (start_cam) {
+    enter_home_hub_tab(HomeHubTab::CAMERAS, false, rs, rt_, now_ms);
+    mark_dirty_full();
+    rt_.schedule_disp();
+    return;
+  }
   launch_dock_app(anchor, rs, rt_, now_ms);
 }
 
@@ -566,7 +977,8 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   }
   const bool was_cam_page = is_camera_view_active(rs);
   ui::pin_pad_scrub();
-  tools_direct_home() = false;
+  shortcut_confirm_state().clear();
+  rs.nav.shortcut_origin = ShortcutOrigin::NONE;
   timer_view_slot() = 0;
   rs.alarms.edit_idx = 0;
   cal_detail_mode() = 0;
@@ -587,6 +999,7 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   rs.nav.remote_subpage = 0;
   rs.nav.tools_subpage = 0;
   rs.nav.tools_menu_page = 0;
+  rs.nav.pinned_menu_page = 0;
   rs.nav.sky_weather_subpage = 0;
   rs.nav.home_settings_page = 1;
   if (was_cam_page) {
@@ -659,6 +1072,17 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
         cam_intercom_status() = "DOOR / GATE UNLOCKED";
         rs.intercom.cam_status_ms = now_ms;
         intercom_session().emit_current_cmd();
+      } else if (target == ui::PinPadTargetKind::SHORTCUT_ACTION) {
+        if (!rs.nav.pending_shortcut_entity_id.empty() && !rs.nav.pending_shortcut_action.empty()) {
+          latter_actions::emit_shortcut_action(
+              rs.nav.pending_shortcut_entity_id, rs.nav.pending_shortcut_action, pin_str);
+          apply_optimistic_shortcut_feedback(
+              rs.nav.pending_shortcut_entity_id, rs.nav.pending_shortcut_action,
+              rs.nav.pending_shortcut_label, rs, now_ms);
+        }
+        rs.nav.pending_shortcut_entity_id.clear();
+        rs.nav.pending_shortcut_action.clear();
+        rs.nav.pending_shortcut_label.clear();
       }
       std::fill(pin_str.begin(), pin_str.end(), '\0');
       mark_dirty_full();
@@ -900,7 +1324,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (!rs.alert.camera_url.empty() && n_hit != nullptr &&
         n_hit->widget_id == WidgetId::NOTIF_OPEN_CAM_BTN) {
       rs.alert.active = false;
-      tools_direct_home() = false;
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
       enter_home_hub_tab(HomeHubTab::CAMERAS, true, rs, rt_, now_touch);
       intercom_session().start_call(now_touch);
       mark_dirty_full();
@@ -908,6 +1332,12 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       return;
     }
     rt_.cmd(UiHostCmd::DISMISS_NOTIFICATION);
+    return;
+  }
+
+  // Priority 5: Shortcut Entity Confirmation Modal (resolves on finger lift in on_touch_up)
+  if (shortcut_confirm_state().open) {
+    gest.begin(touch.x, touch.y, now_touch, rs.nav.gui_page, compute_touch_context(rs));
     return;
   }
 
@@ -933,13 +1363,16 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;
   }
 
-  // Active arcade canvas games (Marbles=1, Archery=2, Bricks=3, Chomp=4, Memory=6)
+  // Active arcade canvas games (Marbles=1, Archery=2, Bricks=3, Chomp=4, 2048=5, Memory=6)
   if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game > 0) {
     if (wid == WidgetId::BACK_BUTTON) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.active_game = 0;
         rs.nav.game_btn_pressed = false;
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -978,6 +1411,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
           rs.nav.home_subpage = 0;
           rs.nav.home_settings_page = 1;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+            return;
+          }
           rs.nav.gui_page = PageId::SYSTEM;
           rs.nav.system_menu_mode = 0;
           mark_dirty_full();
@@ -985,13 +1421,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         }
         return;
       }
-      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-          touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL)) {
-        rs.nav.home_settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
-        rt_.schedule_disp();
-        return;
-      }
-      return;  // Vertical page swipe & list row taps resolve in on_touch_up
+      return;  // List row taps resolve in on_touch_up
     }
 
     int act_count = 0;
@@ -1229,8 +1659,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (rs.music.overlay_mode == 1 || rs.music.overlay_mode == 2) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         if (rs.music.direct_nav) {
-          rs.music.overlay_mode = 0;
           rs.music.direct_nav = false;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+            return;
+          }
+          rs.music.overlay_mode = 0;
         } else {
           rs.music.overlay_mode = 5;
         }
@@ -1261,6 +1694,15 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
             rs.music.drilldown_parent_mode == "music_hub") {
           rs.music.drilldown_parent_mode.clear();
           rs.music.overlay_mode = 5;
+        } else if (rs.music.direct_nav && rs.music.drilldown_parent_mode.empty() &&
+                   (rs.music.selected_category_mode == "favorites" ||
+                    rs.music.selected_category_mode == "playlist" ||
+                    rs.music.selected_category_mode == "active_queue")) {
+          rs.music.direct_nav = false;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+            return;
+          }
+          rs.music.overlay_mode = 0;
         } else if (rs.music.selected_category_mode == "current_album_tracks" ||
                    rs.music.selected_category_mode == "active_queue" ||
                    (rs.music.selected_category_mode == "artist_albums" &&
@@ -1456,6 +1898,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.system_menu_mode = 0;
         rs.nav.menu_scroll_active = false;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1466,6 +1909,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
           rs.nav.system_menu_mode = 0;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
           mark_dirty_full();
           rt_.schedule_disp();
         }
@@ -1511,6 +1955,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.update_check_state = 0;
         rs.nav.system_menu_mode = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1539,6 +1984,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (rs.nav.system_menu_mode == 7) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.system_menu_mode = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1575,6 +2021,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (rs.nav.system_menu_mode == 8) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.system_menu_mode = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1596,6 +2043,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           }
         } else {
           rs.nav.system_menu_mode = 0;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         }
         mark_dirty_full();
         rt_.schedule_disp();
@@ -1634,6 +2082,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     if (rs.nav.system_menu_mode == 11) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.system_menu_mode = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) return;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1759,6 +2208,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         if (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") {
           rs.area.browse_mode = "entities";
         }
+        if (in_area_picker && return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1871,6 +2323,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.remote.action_feedback.clear();
         rs.nav.remote_subpage = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1933,11 +2388,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 #if LATTER_ROUND_DISPLAY
     if (sub == ToolsSubpage::STOPWATCH) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-        if (tools_direct_home()) {
-          navigate_home(now_touch);
+        rs.nav.tools_subpage = 0;
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
           return;
         }
-        rs.nav.tools_subpage = 0;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1980,6 +2434,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         rt_.apply_power_policy();
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -1996,6 +2453,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -2006,6 +2466,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         reset_calculator_state();
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -2023,6 +2486,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         rt_.apply_power_policy();
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -2033,6 +2499,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         rt_.apply_power_policy();
+        if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+          return;
+        }
         mark_dirty_full();
         rt_.schedule_disp();
         return;
@@ -2055,11 +2524,11 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           cal_detail_mode() = 0;
         } else if (cal_quick_add_open()) {
           cal_quick_add_open() = false;
-        } else if (tools_direct_home()) {
-          navigate_home(now_touch);
-          return;
         } else {
           rs.nav.tools_subpage = 0;
+          if (return_from_shortcut_origin(rs, rt_, now_touch)) {
+            return;
+          }
         }
         mark_dirty_full();
         rt_.schedule_disp();
@@ -2288,10 +2757,6 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   }
 
   // Page 9: Home Hub (including Camera Quick-Reply & Expanded Full-Bleed < Back)
-  if (rs.nav.gui_page == PageId::CAMERAS) {
-    rs.nav.gui_page = PageId::HOME_HUB;
-    home_hub_tab() = HomeHubTab::CAMERAS;
-  }
   if (rs.nav.gui_page == PageId::HOME_HUB) {
     if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
       if (cam_quick_reply_open()) {
@@ -2309,12 +2774,20 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
     return;
   }
+
+  // Page 11: Pinned App (2x3 grid cards & vertical page swipes resolve in on_touch_move / on_touch_up)
+  if (rs.nav.gui_page == PageId::PINNED) {
+    return;
+  }
 }
 
 bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms) {
   auto &gest = touch_gesture();
   if (!gest.active || gest.swipe_committed || gest.axis_lock == GestureAxisLock::Slider) {
     return gest.swipe_committed;
+  }
+  if (shortcut_confirm_state().open) {
+    return false;
   }
   if (!is_release && (now_ms - gest.last_swipe_ms < TOUCH_POST_SWIPE_LOCKOUT)) {
     return false;
@@ -2345,13 +2818,13 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return true;
   }
 
-  // 2. Page 1: Home (Full-Canvas App Dock Horizontal Swipe & Settings / Active Items Vertical Paging)
+  // 2. Page 1: Home (Full-Canvas App Dock Horizontal Swipe & Active Items Vertical Paging)
   if (rs.nav.gui_page == PageId::HOME) {
     if (rs.nav.home_subpage == 0) {
       if (h_dir != 0) {
         commit_swipe();
-        int dock_apps[kMaxDockApps]{};
-        const int dock_cnt = collect_home_dock_apps(dock_apps);
+        ShortcutItem dock_items[kMaxEffectiveDockItems]{};
+        const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
         const int dock_pages = std::max(1, (dock_cnt + 3) / 4);
         bool changed = false;
         home_dock_page() = step_pager_index(
@@ -2365,15 +2838,6 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         return true;
       }
       return false;
-    }
-    if (rs.nav.home_subpage == 1 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
-      commit_swipe();
-      bool changed = false;
-      rs.nav.home_settings_page = step_pager_index(
-          rs.nav.home_settings_page, 1, 2, v_dir, /*wrap=*/false,
-          GestureAxisLock::Vertical, PageId::HOME, now_ms, changed);
-      rt_.schedule_disp();
-      return true;
     }
     if (rs.nav.home_subpage == 2 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       commit_swipe();
@@ -2626,11 +3090,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   }
 
   // 10. Page 9: Home Hub (Unified Canvas + Mode Bar Tab Step & Expanded Camera Carousel)
-  if (rs.nav.gui_page == PageId::HOME_HUB || rs.nav.gui_page == PageId::CAMERAS) {
-    if (rs.nav.gui_page == PageId::CAMERAS) {
-      rs.nav.gui_page = PageId::HOME_HUB;
-      home_hub_tab() = HomeHubTab::CAMERAS;
-    }
+  if (rs.nav.gui_page == PageId::HOME_HUB) {
     if (cam_quick_reply_open()) return false;
     if (home_hub_tab() == HomeHubTab::CAMERAS && cam_expanded_fullscreen()) {
       if (h_dir != 0) {
@@ -2695,6 +3155,30 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
           rs.nav.world_clock_page, 0, tot_pg - 1, v_dir, /*wrap=*/false,
           GestureAxisLock::Vertical, PageId::TIME, now_ms, changed);
       rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
+  // 12. Page 11: Pinned App (Unlimited 6-Button-Per-Page Vertical Paging)
+  if (rs.nav.gui_page == PageId::PINNED) {
+    if (!rs.nav.menu_scroll_active && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      commit_swipe();
+      const int total_pages = pinned_total_pages();
+      const int cur_pg = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
+      rs.nav.pinned_menu_page = cur_pg;
+      bool changed = false;
+      const int target_pg = step_pager_index(
+          cur_pg, 0, total_pages - 1, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::PINNED, now_ms, changed);
+      if (changed) {
+        rs.nav.menu_scroll_active = true;
+        rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+        rs.nav.menu_scroll_target_page = target_pg;
+        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+      } else {
+        rt_.schedule_disp();
+      }
       return true;
     }
     return false;
@@ -2827,6 +3311,13 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 }
 
 void TouchGestureEngine::tick(uint32_t now_ms) {
+  auto &sc = shortcut_confirm_state();
+  if (sc.open && sc.opened_ms > 0U &&
+      static_cast<uint32_t>(now_ms - sc.opened_ms) >= ShortcutConfirmState::kAutoDismissMs) {
+    sc.clear();
+    mark_dirty_full();
+    rt_.schedule_disp();
+  }
   (void)try_commit_long_press_(now_ms);
 }
 
@@ -2961,7 +3452,27 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
     const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
 
-    if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
+    if (tap_valid && shortcut_confirm_state().open) {
+      auto &sc = shortcut_confirm_state();
+      if ((wid == WidgetId::CONFIRM_CANCEL || wid == WidgetId::BACK_BUTTON || wid == WidgetId::NONE) &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        sc.clear();
+        mark_dirty_full();
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::CONFIRM_ACCEPT &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        const std::string ent_id = sc.entity_id;
+        const std::string act = sc.action;
+        const std::string lbl = sc.line1;
+        sc.clear();
+        if (!ent_id.empty() && !act.empty()) {
+          latter_actions::emit_shortcut_action(ent_id, act);
+          apply_optimistic_shortcut_feedback(ent_id, act, lbl, rs, now_rel);
+        }
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+    } else if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
       int act_count = 0;
       const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
       HomeActivityItem fallback_items[kMaxHomeActivity];
@@ -2985,7 +3496,11 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 
       if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          launch_dock_app(hit->param, rs, rt_, now_rel);
+          ShortcutItem dock_items[kMaxEffectiveDockItems]{};
+          const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
+          if (hit->param >= 0 && hit->param < dock_cnt) {
+            activate_shortcut_item(dock_items[hit->param], ShortcutOrigin::HOME_DOCK, rs, rt_, now_rel);
+          }
         }
       } else if (wid == WidgetId::HOME_QUICK_BTN) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -3047,9 +3562,20 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           rt_.set_select_opt(UiSelectId::HOME_CLOCK_TAP_ACTION,
                              (prefs.home_clock_tap_action == 0U) ? "Clock Face" : "Time App");
           rt_.schedule_disp();
-        } else if (item_idx >= 1 && item_idx <= 6) {
-          latter_dock_order_csv() = toggled_dock_csv(kHomeSettingsDockTokens[item_idx - 1]);
-          do_request_dock_apps();
+        } else if (item_idx == 1) {
+          rt_.sw_toggle(UiSwitchId::HOME_WEATHER_BG);
+          rt_.schedule_disp();
+        } else if (item_idx == 2) {
+          rt_.sw_toggle(UiSwitchId::HOME_WAKE_GREETING);
+          rt_.schedule_disp();
+        } else if (item_idx == 3 || item_idx == 4) {
+          const PrefKey pk = (item_idx == 3) ? PrefKey::HOME_SUN : PrefKey::HOME_MOON;
+          const bool next_v = (item_idx == 3) ? !prefs.home_sun : !prefs.home_moon;
+          uint32_t eff = 0U;
+          if (latter_actions::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
+            device_prefs_state().last_effects = eff;
+            rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
+          }
           rt_.schedule_disp();
         }
       }
@@ -3329,13 +3855,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             if (prefs.home_screen_enabled) {
               rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
                                  cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
-                                              {"Home", "Time App", "Clock Face", "Media", "Home Hub",
+                                              {"Home", "Pinned", "Time App", "Clock Face", "Media", "Home Hub",
                                                "Area Controls", "Remote", "Weather", "Cameras",
                                                "Games", "Tools"}));
             } else {
               rt_.set_select_opt(UiSelectId::DEFAULT_START_APP,
                                  cycle_option(rt_.select_opt(UiSelectId::DEFAULT_START_APP),
-                                              {"Time App", "Clock Face", "Media", "Home Hub",
+                                              {"Pinned", "Time App", "Clock Face", "Media", "Home Hub",
                                                "Area Controls", "Remote", "Weather", "Cameras",
                                                "Games", "Tools"}));
             }
@@ -3663,13 +4189,35 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       }
 
-    // 12. Page 9 Home Hub Controls (Alarm, Cameras, Intercom, Thermostat, Entry, Vacuum)
-    } else if (tap_valid &&
-               (rs.nav.gui_page == PageId::HOME_HUB || rs.nav.gui_page == PageId::CAMERAS)) {
-      if (rs.nav.gui_page == PageId::CAMERAS) {
-        rs.nav.gui_page = PageId::HOME_HUB;
-        home_hub_tab() = HomeHubTab::CAMERAS;
+    // 11B. Page 11 Pinned App Release Taps & Chevrons
+    } else if (tap_valid && rs.nav.gui_page == PageId::PINNED && !rs.nav.menu_scroll_active) {
+      const int total_pages = pinned_total_pages();
+      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        if (total_pages > 1) {
+          const int cur_pg = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
+          rs.nav.pinned_menu_page = cur_pg;
+          const int step_dir = (wid == WidgetId::CHEVRON_DOWN) ? 1 : -1;
+          const int target_pg = std::clamp(cur_pg + step_dir, 0, total_pages - 1);
+          if (target_pg != cur_pg) {
+            rs.nav.menu_scroll_active = true;
+            rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+            rs.nav.menu_scroll_target_page = target_pg;
+            rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+          }
+        }
+      } else if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        const auto &sc = shortcuts_state();
+        const int idx = hit->param;
+        if (idx >= 0 && static_cast<size_t>(idx) < sc.pinned_items.size()) {
+          const ShortcutItem item_copy = sc.pinned_items[static_cast<size_t>(idx)];
+          activate_shortcut_item(item_copy, ShortcutOrigin::PINNED_APP, rs, rt_, now_rel);
+        }
       }
+
+    // 12. Page 9 Home Hub Controls (Alarm, Cameras, Intercom, Thermostat, Entry, Vacuum)
+    } else if (tap_valid && rs.nav.gui_page == PageId::HOME_HUB) {
       {
         int hh_tabs[kMaxHomeHubTabs]{};
         const int hh_tab_cnt = collect_home_hub_tabs(hh_tabs);
@@ -4087,6 +4635,13 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   if (act == "back") {
     if (ui::pin_pad_state().open) {
       ui::pin_pad_scrub();
+      ui_focus_index() = 0;
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return;
+    }
+    if (shortcut_confirm_state().open) {
+      shortcut_confirm_state().clear();
       ui_focus_index() = 0;
       mark_dirty_full();
       rt_.schedule_disp();

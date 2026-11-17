@@ -368,74 +368,8 @@ inline int &home_weather_text_h() {
 // ==============================================================================
 
 // ==============================================================================
-// 3. Home Dock Order, Navigation Predicates ([HOME PREDICATE]) & Mode-Bar Motion
+// 3.Launcher Counts, Navigation Predicates ([HOME PREDICATE]) & Mode-Bar Motion
 // ==============================================================================
-inline const std::string &effective_dock_csv() {
-  static const std::string kDefault(kDefaultDockApps);
-  const std::string &csv = latter_dock_order_csv();
-  return csv.empty() ? kDefault : csv;
-}
-
-template <typename F>
-inline void for_each_dock_token(const std::string &csv, F fn) {
-  size_t pos = 0;
-  while (pos <= csv.size()) {
-    const size_t comma = csv.find(',', pos);
-    std::string tok = csv.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
-    const size_t a = tok.find_first_not_of(' ');
-    const size_t b = tok.find_last_not_of(' ');
-    tok = (a == std::string::npos) ? std::string() : tok.substr(a, b - a + 1);
-    for (char &c : tok) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (!tok.empty()) fn(tok);
-    if (comma == std::string::npos) break;
-    pos = comma + 1;
-  }
-}
-
-inline bool dock_app_listed(const char *token) {
-  bool found = false;
-  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) {
-    if (t == token) found = true;
-  });
-  return found;
-}
-
-inline std::string toggled_dock_csv(const char *token) {
-  std::string out;
-  bool had = false;
-  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) {
-    if (t == token) {
-      had = true;
-    } else if (dock_app_id_for_token(t) >= 0) {
-      if (!out.empty()) out += ',';
-      out += t;
-    }
-  });
-  if (!had) {
-    if (!out.empty()) out += ',';
-    out += token;
-  }
-  return out;
-}
-
-static constexpr const char *kHomeSettingsDockTokens[6] = {"time", "music", "area", "remote", "games", "tools"};
-
-inline int collect_home_dock_apps(int *out_apps) {
-  int n = 0;
-  bool added[16] = {false};
-  auto try_add = [&](int app_id) {
-    if (n >= kMaxDockApps || app_id < 0 || app_id > 14 || added[app_id]) return;
-    if (app_id == 7 && !has_any_configured_remote()) return;
-    added[app_id] = true;
-    out_apps[n++] = app_id;
-  };
-  for_each_dock_token(effective_dock_csv(), [&](const std::string &t) {
-    try_add(dock_app_id_for_token(t));
-  });
-  try_add(4);  // Settings is always last.
-  return n;
-}
-
 inline constexpr int tools_launcher_item_count() noexcept {
   return tools_launcher_item_count_for(LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0);
 }
@@ -450,6 +384,7 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
                               const PersistedDevicePrefs &p = persisted_prefs()) {
   const int anchor = resolve_anchor_dock_app(p);
   if (anchor == PageId::HOME) return gui_page == PageId::HOME;
+  if (anchor == PageId::PINNED) return gui_page == PageId::PINNED;
   if (anchor == PageId::CLOCK) return gui_page == PageId::CLOCK;
   if (anchor == PageId::TIME) {
     return gui_page == PageId::TIME &&
@@ -471,12 +406,6 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   }
   if (anchor == PageId::REMOTE) return gui_page == PageId::REMOTE && remote_subpage == 0;
   if (anchor == PageId::WEATHER) return gui_page == PageId::WEATHER;
-  if (anchor == PageId::CAMERAS) {
-    return (gui_page == PageId::CAMERAS ||
-            (gui_page == PageId::HOME_HUB && home_hub_tab() == HomeHubTab::CAMERAS)) &&
-           !cam_expanded_fullscreen() &&
-           !cam_quick_reply_open();
-  }
   if (anchor == PageId::GAMES) return gui_page == PageId::GAMES && active_game == 0;
   if (anchor == PageId::TOOLS) {
     return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::LAUNCHER;
@@ -498,13 +427,13 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
+  if (runtime_state().nav.shortcut_confirm.open) return false;
   if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
     return false;
   }
   if (gui_page == PageId::HOME_HUB && (cam_expanded_fullscreen() || cam_quick_reply_open())) {
     return false;
   }
-  if (gui_page == PageId::CAMERAS && cam_quick_reply_open()) return false;
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
   if (gui_page == PageId::MUSIC && music_overlay_mode > 0) return false;
@@ -517,10 +446,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   }
   if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
   if (gui_page == PageId::TOOLS && tools_subpage > 0) {
-    const bool direct_root = tools_direct_home() &&
-        ((tools_subpage == ToolsSubpage::STOPWATCH) ||
-         (tools_subpage == ToolsSubpage::CALENDAR && cal_detail_mode() == 0 && !cal_quick_add_open()));
-    if (!direct_root) return false;
+    return false;
   }
   if (!persisted_prefs().home_screen_enabled &&
       is_on_anchor_root(gui_page, system_menu_mode, active_game, music_overlay_mode,

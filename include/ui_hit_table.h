@@ -195,6 +195,7 @@ namespace WidgetId {
   static constexpr uint16_t CAM_SNAPSHOT_CARD   = 827;
   static constexpr uint16_t CAM_UNLOCK_BTN      = 828;
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
+  static constexpr uint16_t PINNED_CARD_BASE    = 840;  // 840..845 (param = global pinned item idx)
 }  // namespace WidgetId
 
 struct HitRegion {

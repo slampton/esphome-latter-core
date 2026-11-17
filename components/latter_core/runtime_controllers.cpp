@@ -29,7 +29,6 @@ void V3DomainReducer::reset() {
 }
 
 V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
-                                        const std::string &prev_dock,
                                         const V3ReduceContext &ctx) {
   V3DomainEffects eff{};
   auto &r = runtime_state();
@@ -107,11 +106,6 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       }
     }
 
-    if (!st.dock_apps.empty() && st.dock_apps != prev_dock) {
-      latter_dock_order_csv() = st.dock_apps;
-      home_dock_page() = 0;
-    }
-
     {
       int hh_tabs[kMaxHomeHubTabs]{};
       const int hh_cnt = collect_home_hub_tabs(hh_tabs, st);
@@ -187,7 +181,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.mark_dirty_full = true;
       }
       if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
-          gp == PageId::CAMERAS) {
+          gp == PageId::PINNED) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
         }
@@ -341,6 +335,26 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     }
   } else if (sv_dom == "device_prefs") {
     eff.apply_device_prefs_effects = true;
+  } else if (sv_dom == "shortcuts") {
+    ShortcutItem dock_buf[kMaxEffectiveDockItems]{};
+    const int dock_cnt = collect_effective_dock_items(dock_buf, kMaxEffectiveDockItems);
+    const int max_dock_pages = std::max(1, (dock_cnt + 3) / 4);
+    if (home_dock_page() < 0 || home_dock_page() >= max_dock_pages) {
+      home_dock_page() = std::max(0, max_dock_pages - 1);
+    }
+    const int tot_pinned_pages = pinned_total_pages();
+    if (r.nav.pinned_menu_page < 0 || r.nav.pinned_menu_page >= tot_pinned_pages) {
+      r.nav.pinned_menu_page = std::max(0, tot_pinned_pages - 1);
+    }
+    if (r.nav.gui_page == PageId::HOME || r.nav.gui_page == PageId::PINNED) {
+      eff.mark_dirty_full = true;
+      if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
+        if (r.nav.gui_page == PageId::HOME && r.nav.home_subpage == 0) {
+          eff.ensure_anim_poller = true;
+        }
+        eff.schedule_disp_update = true;
+      }
+    }
   }
 
   return eff;
@@ -652,6 +666,7 @@ void reset_runtime_state(bool preserve_hooks) {
   remote_state() = RemoteState{};
   weather_state() = WeatherState{};
   calendar_state() = CalendarState{};
+  shortcuts_state() = ShortcutsState{};
   device_prefs_state() = DevicePrefsState{};
   persisted_prefs() = PersistedDevicePrefs{};
   clamp_prefs_to_capabilities(persisted_prefs());

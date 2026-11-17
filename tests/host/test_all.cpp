@@ -821,27 +821,27 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 7U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 8U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 50U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 56U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 47U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 46U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
-  // Time + Weather dock tokens + 11-slot dock array capacity (9 user tokens + Settings)
-  LATTER_CHECK(latter_ui::kMaxDockApps == 11);
-  LATTER_CHECK(latter_ui::dock_app_id_for_token("time") == 10);
-  LATTER_CHECK(latter_ui::dock_app_id_for_token("weather") == 5);
-  LATTER_CHECK(latter_ui::dock_app_id_for_token("camera") == 12);
-  LATTER_CHECK(latter_ui::dock_app_id_for_token("cameras") == 12);
-  LATTER_CHECK(latter_ui::dock_app_id_for_token("home_hub") == 9);
+  // Universal shortcut routes + PageId::PINNED == 11 (PageId::CAMERAS retired into Home Hub)
   LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
   LATTER_CHECK(latter_ui::PageId::TIME == 10);
-  LATTER_CHECK(latter_ui::PageId::CAMERAS == 12);
+  LATTER_CHECK(latter_ui::PageId::PINNED == 11);
+  LATTER_CHECK(latter_ui::find_shortcut_route("app:pinned") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("weather:moon") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("home_hub:cameras") != nullptr);
 
-  // Start screen cameras direct resolution
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(12) == 12);
+  // Start screen Pinned & Cameras resolution
   latter_ui::PersistedDevicePrefs cam_prefs{};
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Pinned"));
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::PINNED);
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Cameras"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 12);
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::HOME_HUB);
+  LATTER_CHECK(latter_ui::is_cameras_start_screen(cam_prefs));
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Tools"));
   LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 8);
 
@@ -1059,36 +1059,51 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111602L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111603L);
+  LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
-  // 1. HibernateSnapshot round-trip & cold hydration without clobbering Protocol v3 revision guards
+  // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
   latter_ui::reset_hibernate_snapshot_for_test();
   latter_ui::reset_all_v3_rev_guards();
   latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
   latter_ui::weather_state() = latter_ui::WeatherState{};
+  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
   latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
   latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
 
   // Cold boot with no saved snapshot returns false and leaves defaults untouched
   LATTER_CHECK(!latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps.empty());
+  LATTER_CHECK(!latter_ui::shortcuts_state().dock_configured);
   LATTER_CHECK(latter_ui::weather_state().condition.empty());
 
-  // Populate live state prior to hibernate and persist snapshot (including POSIX TZ)
+  // Populate live state prior to hibernate and persist snapshot (including custom dock & pinned Page 1 + POSIX TZ)
   latter_ui::area_ctx_state().epoch = 42U;
   latter_ui::area_ctx_state().rev = 9U;
-  latter_ui::area_ctx_state().dock_apps = "clock,music,weather,area";
   latter_ui::area_ctx_state().area_name = "Primary Suite";
   latter_ui::weather_state().epoch = 42U;
   latter_ui::weather_state().rev = 5U;
   latter_ui::weather_state().condition = "partlycloudy";
   latter_ui::weather_state().temperature = 68.5f;
   latter_ui::weather_state().sun_state = "below_horizon";
+
+  auto &sc_save = latter_ui::shortcuts_state();
+  sc_save.epoch = 42U;
+  sc_save.rev = 3U;
+  sc_save.dock_configured = true;
+  sc_save.live_received = true;
+  sc_save.dock_items.push_back(latter_ui::ShortcutItem{
+      latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::APP_PINNED, "app:pinned", "", "Pinned", "", false, -1});
+  sc_save.dock_items.push_back(latter_ui::ShortcutItem{
+      latter_ui::ShortcutKind::ENTITY, latter_ui::RouteId::NONE, "script.call_help", "turn_on",
+      "Call Thu", "mdi:bell-ring", true, -1});
+  sc_save.pinned_items.push_back(latter_ui::ShortcutItem{
+      latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::WEATHER_MOON, "weather:moon", "", "Moon Phase", "", false, -1});
   LATTER_CHECK(latter_ui::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
 
   // Simulate cold boot after hibernate wake before Home Assistant connects
   latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
   latter_ui::weather_state() = latter_ui::WeatherState{};
+  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
   latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
   latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
   latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
@@ -1096,7 +1111,13 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
 
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
   LATTER_CHECK(latter_ui::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
-  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,music,weather,area");
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_configured);
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_items.size() == 2U);
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_items[1].target == "script.call_help");
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_items[1].icon == "mdi:bell-ring");
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_items[1].confirm);
+  LATTER_CHECK(latter_ui::shortcuts_state().pinned_items.size() == 1U);
+  LATTER_CHECK(latter_ui::shortcuts_state().pinned_items[0].route_id == latter_ui::RouteId::WEATHER_MOON);
   LATTER_CHECK(!latter_ui::device_prefs_state().nvs_save_pending);
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Primary Suite");
   LATTER_CHECK(latter_ui::runtime_state().area.active_area_name == "Primary Suite");
@@ -1107,15 +1128,17 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   // Critical: v3 epoch/rev guards MUST remain 0 so the very first live HA push overwrites everything!
   LATTER_CHECK(latter_ui::area_ctx_state().epoch == 0U && latter_ui::area_ctx_state().rev == 0U);
   LATTER_CHECK(latter_ui::weather_state().epoch == 0U && latter_ui::weather_state().rev == 0U);
+  LATTER_CHECK(latter_ui::shortcuts_state().epoch == 0U && latter_ui::shortcuts_state().rev == 0U);
 
   // Calling load_hibernate_snapshot_if_cold() when live state is already populated must NOT clobber live state
-  latter_ui::area_ctx_state().dock_apps = "clock,tools";
+  latter_ui::shortcuts_state().live_received = true;
+  latter_ui::shortcuts_state().dock_items.clear();
   latter_ui::area_ctx_state().area_name = "Office";
   latter_ui::weather_state().condition = "sunny";
   latter_ui::weather_state().temperature = 74.0f;
   latter_ui::weather_state().sun_state = "above_horizon";
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,tools");
+  LATTER_CHECK(latter_ui::shortcuts_state().dock_items.empty());
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Office");
   LATTER_CHECK(latter_ui::weather_state().condition == "sunny");
   LATTER_CHECK(std::fabs(latter_ui::weather_state().temperature - 74.0f) < 0.01f);
@@ -1124,17 +1147,16 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   // Re-hydrate cold state, then verify first live v3 push (epoch=1, rev=1) cleanly overwrites hydrated snapshot
   latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
   latter_ui::weather_state() = latter_ui::WeatherState{};
+  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
 
   std::vector<std::string> ac_tok(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::DOCK_APPS)] = "clock,calendar";
   ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::COVERS_OPEN)] = "3";
   LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
   LATTER_CHECK(latter_ui::area_ctx_state().epoch == 1U && latter_ui::area_ctx_state().rev == 1U);
   LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Kitchen");
-  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps == "clock,calendar");
   LATTER_CHECK(latter_ui::area_ctx_state().covers_open == 3);
 
   std::vector<std::string> wx_tok(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
@@ -1148,14 +1170,12 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
 
   // Bounded char-array truncation & sun above_horizon round-trip
-  latter_ui::area_ctx_state().dock_apps = std::string(140, 'x');
   latter_ui::area_ctx_state().area_name = std::string(80, 'y');
   latter_ui::weather_state().sun_state = "above_horizon";
   LATTER_CHECK(latter_ui::save_hibernate_snapshot("EST5EDT,M3.2.0,M11.1.0/2"));
   latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
   latter_ui::weather_state() = latter_ui::WeatherState{};
   LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::area_ctx_state().dock_apps.size() == 95U);
   LATTER_CHECK(latter_ui::area_ctx_state().area_name.size() == 47U);
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
 
@@ -2599,7 +2619,6 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ac.site_id = "oakland";
   ac.ble_closest_proxy = "proxy_kitchen";
   ac.available_domains = "light,climate";
-  ac.dock_apps = "music,area,weather,tools";
   ac.wallpaper_url = "/api/latter/wp.jpg";
   ac.alert_id = 0;  // Seed initial alert_id
   rt.nav.gui_page = 6;
@@ -2608,7 +2627,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   V3ReduceContext rctx{};
   rctx.now_ms = 5000U;
   rctx.friendly_name = "Kitchen Display";
-  auto eff = v3_domain_reducer().reduce("area_context", "", rctx);
+  auto eff = v3_domain_reducer().reduce("area_context", rctx);
   LATTER_CHECK(eff.area_changed);
   LATTER_CHECK(eff.mark_dirty_full);
   LATTER_CHECK(eff.fetch_area_browse);
@@ -2619,7 +2638,6 @@ void test_v3_domain_reducer_and_timer_alarm() {
   LATTER_CHECK(rt.nav.area_subpage == 0);
   LATTER_CHECK(rt.area.domain_filter == "light");
   LATTER_CHECK(latter_site_id() == "oakland");
-  LATTER_CHECK(latter_dock_order_csv() == "music,area,weather,tools");
 
   // Critical alert push on subsequent rev triggers banner + critical chime SFX 9
   ac.alert_id = 1;
@@ -2629,7 +2647,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ac.alert_chime = true;
   ac.wallpaper_url.clear();
   rt.music.loaded_wallpaper_url = "/api/latter/wp.jpg";
-  eff = v3_domain_reducer().reduce("area_context", ac.dock_apps, rctx);
+  eff = v3_domain_reducer().reduce("area_context", rctx);
   LATTER_CHECK(eff.alert_triggered);
   LATTER_CHECK(eff.alert_sfx_id == 9);
   LATTER_CHECK(rt.alert.is_critical());
@@ -2647,7 +2665,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ms.has_volume = true;
   ms.volume = 0.65f;
   ms.art_url = "/api/latter/art1.jpg";
-  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  eff = v3_domain_reducer().reduce("active_media", rctx);
   LATTER_CHECK(rt.music.active_speaker_name == "Living Room Sonos");
   LATTER_CHECK(remote_vol_pct() == 65);
   LATTER_CHECK(eff.fetch_remote_art);
@@ -2660,24 +2678,24 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ms.volume = 0.40f;
   ms.position = 0.5f;
   rctx.now_ms = 5500U;
-  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  eff = v3_domain_reducer().reduce("active_media", rctx);
   LATTER_CHECK(remote_vol_pct() == 80);  // Local 3s tap lockout preserved 80%
 
   ms.position = 1.0f;  // Matches 0.5s elapsed interpolation (no jump)
   rctx.now_ms = 6000U;
-  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  eff = v3_domain_reducer().reduce("active_media", rctx);
   LATTER_CHECK(!eff.throttled_disp_update);
 
   // Position jump > 2.5s triggers throttled_disp_update
   ms.position = 45.0f;
-  eff = v3_domain_reducer().reduce("active_media", "", rctx);
+  eff = v3_domain_reducer().reduce("active_media", rctx);
   LATTER_CHECK(eff.throttled_disp_update);
 
   // weather_forecast sun transition triggers brightness sync once
   weather_state().sun_state = "below_horizon";
-  eff = v3_domain_reducer().reduce("weather_forecast", "", rctx);
+  eff = v3_domain_reducer().reduce("weather_forecast", rctx);
   LATTER_CHECK(eff.sync_display_brightness && eff.weather_sim_dirty);
-  eff = v3_domain_reducer().reduce("weather_forecast", "", rctx);
+  eff = v3_domain_reducer().reduce("weather_forecast", rctx);
   LATTER_CHECK(!eff.sync_display_brightness);
 
   // 3. TimerAlarmController: multi-timer expiry (preserving duration_sec), VA timers, alarms & 5-min auto-silence
@@ -3307,8 +3325,8 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
       PageId::HOME_HUB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       HomeHubTab::CAMERAS, 0, 0, 0, 1, 0, 1);
   LATTER_CHECK(sub_cam_expanded != sub_cam_framed);
-  rs_cam.nav.gui_page = PageId::CAMERAS;
-  LATTER_CHECK(is_camera_view_active(rs_cam));
+  rs_cam.nav.gui_page = PageId::PINNED;
+  LATTER_CHECK(!is_camera_view_active(rs_cam));
 
   const std::string hh_src = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
   const std::string area_src = read_repo_file("../../components/latter_ui/page_area_hub.cpp");
@@ -3337,11 +3355,11 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111602L, "LATTER_SDK_REV must match 2026111602L");
-  static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 44U);
-  static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 45U);
-  static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 46U);
-  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 47U);
+  static_assert(LATTER_SDK_REV == 2026111603L, "LATTER_SDK_REV must match 2026111603L");
+  static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
+  static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
+  static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 46U);
 
   reset_runtime_state();
 
@@ -4031,6 +4049,103 @@ void test_custom_icon_tiers_and_d051() {
   }
 }
 
+void test_universal_shortcuts_and_pinned_app() {
+  using namespace latter_ui;
+  reset_runtime_state();
+
+  // 1. Default dock hides app:pinned until >= 1 pinned item exists, hides app:remote without remotes, and appends Settings
+  ShortcutItem dock_eff[kMaxEffectiveDockItems]{};
+  int cnt = collect_effective_dock_items(dock_eff, kMaxEffectiveDockItems);
+  LATTER_CHECK(cnt == 6);  // music, home_hub, area, games, tools + Settings
+  LATTER_CHECK(dock_eff[0].route_id == RouteId::APP_MUSIC);
+  LATTER_CHECK(dock_eff[cnt - 1].route_id == RouteId::SETTINGS_ROOT);
+
+  // 2. Multi-chunk Protocol v3 shortcuts assembly (60 pinned items across 3 chunks = 10 pages!)
+  auto build_sc_chunk = [](uint32_t ep, uint32_t rv, int c_idx, int c_cnt,
+                           const std::string &dock_blob, int p_tot, const std::string &pin_blob) {
+    std::vector<std::string> tok(static_cast<size_t>(ShortcutsField::COUNT), "");
+    tok[static_cast<size_t>(ShortcutsField::CHUNK_INDEX)] = std::to_string(c_idx);
+    tok[static_cast<size_t>(ShortcutsField::CHUNK_COUNT)] = std::to_string(c_cnt);
+    tok[static_cast<size_t>(ShortcutsField::DOCK_ITEMS)] = dock_blob;
+    tok[static_cast<size_t>(ShortcutsField::PINNED_TOTAL)] = std::to_string(p_tot);
+    tok[static_cast<size_t>(ShortcutsField::PINNED_ITEMS)] = pin_blob;
+    return build_v3_packet(ep, rv, tok);
+  };
+
+  auto make_pin_slice = [](int start_i, int count_i) {
+    std::string out;
+    for (int i = 0; i < count_i; ++i) {
+      if (i > 0) out.push_back(kProtocolRecordSep);
+      const int idx = start_i + i;
+      if (idx == 0) {
+        out.append("route|weather:moon||Moon Phase||0|-1");
+      } else if (idx == 1) {
+        out.append("entity|light.nursery|toggle|Nursery Light|mdi:ceiling-light|0|1");
+      } else {
+        out.append("entity|script.helper_" + std::to_string(idx) + "|turn_on|Helper " +
+                   std::to_string(idx) + "|mdi:bell-ring|1|-1");
+      }
+    }
+    return out;
+  };
+
+  const std::string dock_blob =
+      std::string("route|app:pinned||Pinned||0|-1") + kProtocolRecordSep +
+      "entity|script.call_thu|turn_on|Call Thu|mdi:bell-ring|1|-1" + kProtocolRecordSep +
+      "route|weather:moon||Moon Phase||0|-1";
+
+  // Intermediate chunks stage without prematurely committing
+  LATTER_CHECK(!parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 0, 3, dock_blob, 60, make_pin_slice(0, 24))));
+  LATTER_CHECK(shortcuts_state().pinned_items.empty());
+  LATTER_CHECK(!parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 1, 3, "", 60, make_pin_slice(24, 24))));
+  LATTER_CHECK(shortcuts_state().pinned_items.empty());
+  // Final chunk commits all 60 pinned items + dock items atomically!
+  LATTER_CHECK(parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 2, 3, "", 60, make_pin_slice(48, 12))));
+  LATTER_CHECK(shortcuts_state().epoch == 7U && shortcuts_state().rev == 1U);
+  LATTER_CHECK(shortcuts_state().pinned_items.size() == 60U);
+  LATTER_CHECK(pinned_total_pages() == 10);
+  // Duplicate replay is rejected by rev guard
+  LATTER_CHECK(!parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 0, 1, dock_blob, 0, "")));
+
+  // Now app:pinned is visible on the Home Dock!
+  cnt = collect_effective_dock_items(dock_eff, kMaxEffectiveDockItems);
+  LATTER_CHECK(cnt == 4);  // Pinned, Call Thu, Moon Phase, Settings
+  LATTER_CHECK(dock_eff[0].route_id == RouteId::APP_PINNED);
+  LATTER_CHECK(dock_eff[1].kind == ShortcutKind::ENTITY && dock_eff[1].confirm);
+  LATTER_CHECK(dock_eff[2].route_id == RouteId::WEATHER_MOON);
+  LATTER_CHECK(dock_eff[3].route_id == RouteId::SETTINGS_ROOT);
+
+  // V3DomainReducer clamps out-of-range pinned_menu_page and marks Pinned dirty
+  auto &rt = runtime_state();
+  rt.nav.gui_page = PageId::PINNED;
+  rt.nav.pinned_menu_page = 25;
+  V3ReduceContext rctx{};
+  rctx.now_ms = 9000U;
+  const auto eff = v3_domain_reducer().reduce("shortcuts", rctx);
+  LATTER_CHECK(rt.nav.pinned_menu_page == 9);
+  LATTER_CHECK(eff.mark_dirty_full && eff.schedule_disp_update);
+
+  // 3. State-aware confirmation copy & danger classification
+  std::string title, l1, l2, verb;
+  bool danger = false;
+  build_shortcut_confirm_copy(shortcuts_state().pinned_items[1], title, l1, l2, verb, danger);
+  LATTER_CHECK(verb == "Turn Off" && !danger);
+  ShortcutItem lock_it{ShortcutKind::ENTITY, RouteId::NONE, "lock.front_door", "unlock", "Front Door", "mdi:lock-open", true, 0};
+  build_shortcut_confirm_copy(lock_it, title, l1, l2, verb, danger);
+  LATTER_CHECK(verb == "Unlock" && danger);
+
+  // 4. Outbound shortcut_action RPC outbox serialization
+  struct FakeOutbox {
+    std::vector<std::string> frames;
+    void publish_state(const std::string &s) { frames.push_back(s); }
+  } outbox;
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_actions::emit_shortcut_action("script.call_thu", "turn_on", "1234", &outbox);
+  LATTER_CHECK(!outbox.frames.empty());
+  LATTER_CHECK(outbox.frames.back().find("\"s\":\"shortcut_action\"") != std::string::npos);
+  LATTER_CHECK(outbox.frames.back().find("\"entity_id\":\"script.call_thu\"") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -4055,6 +4170,7 @@ int main() {
   test_home_hub_d048_button_only_glass_and_conditional_controls();
   test_touch_hal_kinematic_gestures_and_d049_d050();
   test_custom_icon_tiers_and_d051();
+  test_universal_shortcuts_and_pinned_app();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

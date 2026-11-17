@@ -41,6 +41,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx);
 
 // ------------------------------------------------------------------------------
 // 2. Global System Takeover Overlays (called by render_system_takeovers)

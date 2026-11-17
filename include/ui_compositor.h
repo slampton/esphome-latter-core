@@ -147,7 +147,8 @@ constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
     return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
-      ((gui_page == 8 || gui_page == 9) && !tools_full_bleed) || gui_page == 10) {
+      ((gui_page == 8 || gui_page == 9) && !tools_full_bleed) ||
+      gui_page == 10 || gui_page == 11) {
     return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   return BackdropMode::SolidBlack;
@@ -205,7 +206,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int hub_tab,
                                  int time_sub = 0, int wc_pg = 0,
                                  int alarm_edit = 0, int home_set_pg = 1,
-                                 int hub_mode_pg = 0, int hub_drill = 0) {
+                                 int hub_mode_pg = 0, int hub_drill = 0,
+                                 int pinned_pg = 0) {
   switch (gui_page) {
     case 1:
       return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8) | ((home_set_pg & 0x0F) << 16);
@@ -230,6 +232,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
     case 10:
       return (time_sub & 0x0F) | ((wc_pg & 0x0F) << 4) |
              ((timer_slot & 0x0F) << 8) | ((alarm_edit & 0x0F) << 12);
+    case 11:
+      return pinned_pg & 0xFFFF;
     default:
       return 0;
   }
@@ -237,7 +241,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
 
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
-                                    bool pin_pad_open, bool notif_active);
+                                    bool pin_pad_open, bool notif_active,
+                                    bool shortcut_confirm_open = false);
 
 // ==============================================================================
 // Pure C++20 FrameCadenceController (20 ms Active, 250 ms Wake, 20 ms Screensaver)
@@ -981,7 +986,8 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
       st.display_power_state,
       st.alarm_ringing || st.timer_ringing || st.find_my_active,
       st.va_active || !st.va_status_text.empty(),
-      ui::pin_pad_state().open, st.notif_active);
+      ui::pin_pad_state().open, st.notif_active,
+      shortcut_confirm_state().open);
 }
 
 inline int compute_active_subpage_id() {
@@ -1000,7 +1006,7 @@ inline int compute_active_subpage_id() {
       cal_detail_mode(), timer_view_slot(), home_hub_tab(),
       rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page,
-      home_hub_mode_bar_page(), hub_drill);
+      home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page);
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {

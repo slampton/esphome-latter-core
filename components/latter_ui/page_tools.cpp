@@ -376,11 +376,9 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   frame_hits().add_circle(btn_rst_x, btn_y, btn_r,
                           WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
 
-  if (!tools_direct_home()) {
-    render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
-                      scale_min(15), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
-    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
-  }
+  render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
+                    scale_min(15), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
+  render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
 }
 #endif
 
@@ -1319,8 +1317,7 @@ void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext
                               ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
   }
 
-  render_back_button(it, ctx.cx, ctx.font_small, ly.back_y,
-                     tools_direct_home() ? "Home" : "< Back");
+  render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back");
 }
 
 }  // namespace

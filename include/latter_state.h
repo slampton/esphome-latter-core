@@ -18,6 +18,7 @@
 #include <string_view>
 #include <system_error>
 #include <type_traits>
+#include <vector>
 
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
@@ -49,7 +50,7 @@ namespace PageId {
   static constexpr int TOOLS      = 8;
   static constexpr int HOME_HUB   = 9;
   static constexpr int TIME       = 10;
-  static constexpr int CAMERAS    = 12;
+  static constexpr int PINNED     = 11;
 }  // namespace PageId
 
 // Em-dash placeholder rendered when Home Assistant / Protocol v3 state is not yet populated.
@@ -228,7 +229,6 @@ struct AreaContextState {
   std::string area_name = "";
   std::string site_id = "";
   std::string ble_closest_proxy = "";
-  std::string dock_apps = "";
   std::string wallpaper_url = "";
   std::string available_domains = "";
   float area_temp = NAN;
@@ -331,11 +331,69 @@ struct BrowseSlotItem {
   int level = -1;
 };
 
+// Protocol v3 shortcuts state (App Dock + Pinned App universal shortcut engine).
+enum class ShortcutKind : uint8_t {
+  ROUTE = 0,
+  ENTITY = 1,
+};
+
+enum class ShortcutOrigin : uint8_t {
+  NONE = 0,
+  HOME_DOCK = 1,
+  PINNED_APP = 2,
+};
+
+struct ShortcutItem {
+  ShortcutKind kind = ShortcutKind::ROUTE;
+  RouteId route_id = RouteId::NONE;
+  std::string target = "";
+  std::string action = "";
+  std::string label = "";
+  std::string icon = "";   // empty = native bespoke glyph (for ROUTE), or "mdi:<slug>"
+  bool confirm = false;
+  int8_t state = -1;       // -1 = stateless/route, 0 = off/closed/locked, 1 = on/open/unlocked, 2 = unavailable
+};
+
+struct ShortcutsState {
+  static constexpr size_t kMaxDockItems = 16;
+  static constexpr size_t kMaxPinnedItems = 256;
+  uint32_t epoch = 0;
+  uint32_t rev = 0;
+  bool dock_configured = false;
+  bool live_received = false;
+  uint16_t cold_pinned_total = 0;
+  std::vector<ShortcutItem> dock_items{};
+  std::vector<ShortcutItem> pinned_items{};
+  // Multi-chunk assembly buffer (commits atomically when chunk_index + 1 == chunk_count)
+  uint32_t staging_epoch = 0;
+  uint32_t staging_rev = 0;
+  uint16_t staging_chunk_count = 0;
+  uint16_t staging_next_chunk = 0;
+  uint16_t staging_pinned_total = 0;
+  std::vector<ShortcutItem> staging_dock_items{};
+  std::vector<ShortcutItem> staging_pinned_items{};
+};
+
+struct ShortcutConfirmState {
+  static constexpr uint32_t kAutoDismissMs = 10000U;
+  bool open = false;
+  uint32_t opened_ms = 0;
+  bool is_danger = false;
+  std::string title = "";
+  std::string line1 = "";
+  std::string line2 = "";
+  std::string verb_btn = "";
+  std::string entity_id = "";
+  std::string action = "";
+
+  void clear() { *this = ShortcutConfirmState{}; }
+};
+
 // ==============================================================================
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 7U;
+static constexpr uint16_t kPersistedPrefsVersion = 8U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -440,7 +498,7 @@ struct PersistedDevicePrefs {
   uint8_t night_start_hour = 20;           // 0..23
   uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
   uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
-  uint8_t start_screen = 0;                // 0..10 ("Home", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
+  uint8_t start_screen = 0;                // 0..11 ("Home", "Pinned", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
   uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
   uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
@@ -599,9 +657,10 @@ inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
     "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
-inline constexpr const char *const kStartScreenOpts[11] = {
-    "Home", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls",
+inline constexpr const char *const kStartScreenOpts[12] = {
+    "Home", "Pinned", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls",
     "Remote", "Weather", "Cameras", "Games", "Tools"};
+inline constexpr uint8_t kStartScreenTimeAppIdx = 2U;
 inline constexpr const char *const kHomeClockTapOpts[2] = {
     "Time App", "Clock Face"};
 inline constexpr const char *const kReturnToHomeTimeoutOpts[7] = {
@@ -693,8 +752,8 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.night_start_hour > 23) p.night_start_hour = 20;
   if (p.color_profile >= 5) p.color_profile = 0;
   if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
-  if (p.start_screen >= 11) p.start_screen = 0;
-  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = 1;  // Single-app mode cannot start on Home -> Time App
+  if (p.start_screen >= 12) p.start_screen = 0;
+  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = kStartScreenTimeAppIdx;  // Single-app mode cannot start on Home -> Time App
   if (p.return_to_home_timeout >= 7) p.return_to_home_timeout = 3;
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
@@ -1021,7 +1080,15 @@ struct NavRuntimeState {
   int remote_subpage = 0;
   int tools_subpage = 0;
   int tools_menu_page = 0;
-  bool tools_direct_home = false;
+  int pinned_menu_page = 0;
+  ShortcutOrigin shortcut_origin = ShortcutOrigin::NONE;
+  int shortcut_origin_pinned_page = 0;
+  std::string pinned_feedback = "";
+  uint32_t pinned_feedback_ms = 0;
+  ShortcutConfirmState shortcut_confirm{};
+  std::string pending_shortcut_entity_id = "";
+  std::string pending_shortcut_action = "";
+  std::string pending_shortcut_label = "";
   int display_menu_page = 1;
   int system_dashboard_page = 1;
   int system_menu_mode = 0;
@@ -1049,7 +1116,6 @@ struct NavRuntimeState {
   float marble_touch_x = -1.0f;
   float marble_touch_y = -1.0f;
   bool game_btn_pressed = false;
-  std::string dock_order_csv = "";
 };
 
 struct MusicRuntimeState {
@@ -1223,7 +1289,7 @@ struct DeviceRuntimeState {
   // Display/session lifecycle hooks bound by modules/system_core.yaml on top of modules/base.yaml
   void (*on_ha_client_connected)(const std::string &client_info, const std::string &client_address) = nullptr;
   void (*on_ha_client_disconnected)(const std::string &client_info) = nullptr;
-  void (*on_v3_domain_pushed)(std::string_view domain, const std::string &prev_dock) = nullptr;
+  void (*on_v3_domain_pushed)(std::string_view domain) = nullptr;
   void (*on_device_command)(std::string_view command) = nullptr;
 
   DeviceRuntimeState() {
@@ -1412,6 +1478,15 @@ inline WeatherState &weather_state() {
 inline CalendarState &calendar_state() {
   static CalendarState st;
   return st;
+}
+
+inline ShortcutsState &shortcuts_state() {
+  static ShortcutsState st;
+  return st;
+}
+
+inline ShortcutConfirmState &shortcut_confirm_state() {
+  return runtime_state().nav.shortcut_confirm;
 }
 
 inline bool is_roaming_area_indicator_active() {
@@ -1622,6 +1697,14 @@ inline void reset_all_v3_rev_guards() {
   calendar_state().rev = 0;
   device_prefs_state().epoch = 0;
   device_prefs_state().rev = 0;
+  shortcuts_state().epoch = 0;
+  shortcuts_state().rev = 0;
+  shortcuts_state().staging_epoch = 0;
+  shortcuts_state().staging_rev = 0;
+  shortcuts_state().staging_chunk_count = 0;
+  shortcuts_state().staging_next_chunk = 0;
+  shortcuts_state().staging_dock_items.clear();
+  shortcuts_state().staging_pinned_items.clear();
   v3_mismatch_warn_count() = 0;
 }
 
@@ -1665,7 +1748,6 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.area_name         = std::string(f[static_cast<size_t>(AreaCtxField::AREA_NAME)]);
   st.site_id           = std::string(f[static_cast<size_t>(AreaCtxField::SITE_ID)]);
   st.ble_closest_proxy = std::string(f[static_cast<size_t>(AreaCtxField::BLE_CLOSEST_PROXY)]);
-  st.dock_apps         = std::string(f[static_cast<size_t>(AreaCtxField::DOCK_APPS)]);
   st.wallpaper_url     = std::string(f[static_cast<size_t>(AreaCtxField::WALLPAPER_URL)]);
   st.available_domains = std::string(f[static_cast<size_t>(AreaCtxField::AVAILABLE_DOMAINS)]);
   st.area_temp         = v3_parse_float(f[static_cast<size_t>(AreaCtxField::AREA_TEMP)], NAN);
@@ -1999,6 +2081,286 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
   st.summary = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
   st.count   = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
   return true;
+}
+
+// ==============================================================================
+// Universal Shortcut Engine: Route Catalog Lookup, Protocol v3 Chunk Parser & Confirm Copy
+// ==============================================================================
+inline constexpr const ShortcutRouteSpec *find_shortcut_route(std::string_view token) noexcept {
+  if (token == "app:settings") return nullptr;
+  for (const auto &spec : kShortcutRoutes) {
+    if (token == spec.token) return &spec;
+  }
+  return nullptr;
+}
+
+inline constexpr const ShortcutRouteSpec *shortcut_route_spec(RouteId id) noexcept {
+  for (const auto &spec : kShortcutRoutes) {
+    if (spec.id == id) return &spec;
+  }
+  return nullptr;
+}
+
+inline constexpr bool is_route_supported_on_board(RouteId id) noexcept {
+  if (id == RouteId::NONE) return false;
+  if (id == RouteId::SETTINGS_ROOT) return true;
+  const auto *spec = shortcut_route_spec(id);
+  if (spec == nullptr) return false;
+  if (spec->cap == ShortcutRouteCap::ROUND && !LATTER_ROUND_DISPLAY) return false;
+  if (spec->cap == ShortcutRouteCap::IMU && !LATTER_HAS_IMU) return false;
+  return true;
+}
+
+inline bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
+  if (rec.empty()) return false;
+  std::string_view cols[7]{};
+  const size_t n = v3_split_fields(rec, cols, 7, '|');
+  if (n < 4) return false;
+  out_item = ShortcutItem{};
+  const std::string_view kind_sv = cols[0];
+  const std::string_view target_sv = cols[1];
+  const std::string_view action_sv = cols[2];
+  const std::string_view label_sv = cols[3];
+  const std::string_view icon_sv = (n >= 5) ? cols[4] : std::string_view{};
+  const std::string_view confirm_sv = (n >= 6) ? cols[5] : std::string_view{};
+  const std::string_view state_sv = (n >= 7) ? cols[6] : std::string_view{};
+
+  if (kind_sv == "route") {
+    out_item.kind = ShortcutKind::ROUTE;
+    if (target_sv == "app:settings") {
+      out_item.route_id = RouteId::SETTINGS_ROOT;
+      out_item.target = "app:settings";
+      out_item.label = label_sv.empty() ? "Settings" : std::string(label_sv);
+    } else {
+      const auto *spec = find_shortcut_route(target_sv);
+      if (spec == nullptr) return false;
+      out_item.route_id = spec->id;
+      out_item.target = spec->token;
+      out_item.label = label_sv.empty() ? std::string(spec->label) : std::string(label_sv);
+    }
+    out_item.icon = std::string(icon_sv);
+    out_item.confirm = false;
+    out_item.state = -1;
+    return true;
+  }
+
+  if (kind_sv == "entity") {
+    if (target_sv.empty() || target_sv.find('.') == std::string_view::npos || action_sv.empty()) {
+      return false;
+    }
+    out_item.kind = ShortcutKind::ENTITY;
+    out_item.route_id = RouteId::NONE;
+    out_item.target = std::string(target_sv);
+    out_item.action = std::string(action_sv);
+    out_item.label = label_sv.empty() ? std::string(target_sv) : std::string(label_sv);
+    out_item.icon = std::string(icon_sv);
+    out_item.confirm = v3_parse_bool(confirm_sv);
+    const int parsed_state = v3_parse_int(state_sv, -1);
+    out_item.state = static_cast<int8_t>(std::clamp(parsed_state, -1, 2));
+    return true;
+  }
+
+  return false;
+}
+
+inline void append_shortcut_records_blob(std::string_view blob,
+                                         std::vector<ShortcutItem> &dst,
+                                         size_t max_total,
+                                         bool is_pinned_list) {
+  if (blob.empty()) return;
+  size_t start = 0;
+  while (start <= blob.size() && dst.size() < max_total) {
+    size_t pos = blob.find(kProtocolRecordSep, start);
+    std::string_view rec = (pos == std::string_view::npos) ? blob.substr(start) : blob.substr(start, pos - start);
+    ShortcutItem item{};
+    if (parse_shortcut_record(rec, item)) {
+      if (!(is_pinned_list && item.kind == ShortcutKind::ROUTE &&
+            (item.route_id == RouteId::APP_PINNED ||
+             (shortcut_route_spec(item.route_id) != nullptr && shortcut_route_spec(item.route_id)->dock_only)))) {
+        dst.push_back(std::move(item));
+      }
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1;
+  }
+}
+
+// Parse Protocol v3 shortcuts payload ("v3\x1f<epoch>\x1f<rev>\x1f<chunk_index>\x1f<chunk_count>\x1f<dock_items>\x1f<pinned_total>\x1f<pinned_items>")
+// Returns true ONLY when the final chunk of a newer snapshot commits atomically.
+inline bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st = shortcuts_state()) {
+  constexpr size_t kCount = static_cast<size_t>(ShortcutsField::COUNT);
+  std::string_view f[kCount]{};
+  const size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
+  if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(ShortcutsField::HEADER_VERSION)] != "v3") {
+    return false;
+  }
+  const uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(ShortcutsField::HEADER_EPOCH)], 0);
+  const uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(ShortcutsField::HEADER_REV)], 0);
+  if (epoch == 0 || rev == 0) return false;
+  if (epoch == st.epoch && rev <= st.rev) return false;
+  v3_check_field_count("shortcuts", payload, kCount);
+
+  const int raw_chunk_idx = v3_parse_int(f[static_cast<size_t>(ShortcutsField::CHUNK_INDEX)], -1);
+  const int raw_chunk_cnt = v3_parse_int(f[static_cast<size_t>(ShortcutsField::CHUNK_COUNT)], 0);
+  if (raw_chunk_idx < 0 || raw_chunk_cnt <= 0 || raw_chunk_idx >= raw_chunk_cnt || raw_chunk_cnt > 32) {
+    return false;
+  }
+  const uint16_t chunk_idx = static_cast<uint16_t>(raw_chunk_idx);
+  const uint16_t chunk_cnt = static_cast<uint16_t>(raw_chunk_cnt);
+  const int raw_pinned_total = std::max(0, v3_parse_int(f[static_cast<size_t>(ShortcutsField::PINNED_TOTAL)], 0));
+  const uint16_t pinned_total = static_cast<uint16_t>(
+      std::min<size_t>(static_cast<size_t>(raw_pinned_total), ShortcutsState::kMaxPinnedItems));
+
+  if (chunk_idx == 0U) {
+    st.staging_epoch = epoch;
+    st.staging_rev = rev;
+    st.staging_chunk_count = chunk_cnt;
+    st.staging_next_chunk = 1U;
+    st.staging_pinned_total = pinned_total;
+    st.staging_dock_items.clear();
+    st.staging_pinned_items.clear();
+    if (pinned_total > 0U) {
+      st.staging_pinned_items.reserve(pinned_total);
+    }
+    append_shortcut_records_blob(f[static_cast<size_t>(ShortcutsField::DOCK_ITEMS)],
+                                 st.staging_dock_items, ShortcutsState::kMaxDockItems, false);
+    append_shortcut_records_blob(f[static_cast<size_t>(ShortcutsField::PINNED_ITEMS)],
+                                 st.staging_pinned_items, ShortcutsState::kMaxPinnedItems, true);
+  } else {
+    if (st.staging_epoch != epoch ||
+        st.staging_rev != rev ||
+        st.staging_chunk_count != chunk_cnt ||
+        chunk_idx != st.staging_next_chunk) {
+      st.staging_epoch = 0;
+      st.staging_rev = 0;
+      st.staging_chunk_count = 0;
+      st.staging_next_chunk = 0;
+      st.staging_dock_items.clear();
+      st.staging_pinned_items.clear();
+      return false;
+    }
+    st.staging_next_chunk = static_cast<uint16_t>(chunk_idx + 1U);
+    append_shortcut_records_blob(f[static_cast<size_t>(ShortcutsField::PINNED_ITEMS)],
+                                 st.staging_pinned_items, ShortcutsState::kMaxPinnedItems, true);
+  }
+
+  if (st.staging_next_chunk < chunk_cnt) {
+    return false;
+  }
+
+  st.epoch = epoch;
+  st.rev = rev;
+  st.dock_configured = true;
+  st.live_received = true;
+  st.cold_pinned_total = static_cast<uint16_t>(st.staging_pinned_items.size());
+  st.dock_items = std::move(st.staging_dock_items);
+  st.pinned_items = std::move(st.staging_pinned_items);
+  st.staging_epoch = 0;
+  st.staging_rev = 0;
+  st.staging_chunk_count = 0;
+  st.staging_next_chunk = 0;
+  st.staging_pinned_total = 0;
+  st.staging_dock_items.clear();
+  st.staging_pinned_items.clear();
+  return true;
+}
+
+inline void build_shortcut_confirm_copy(const ShortcutItem &item,
+                                        std::string &out_title,
+                                        std::string &out_line1,
+                                        std::string &out_line2,
+                                        std::string &out_verb_btn,
+                                        bool &out_is_danger) {
+  out_title = "CONFIRM ACTION";
+  out_line1 = item.label.empty() ? item.target : item.label;
+  out_is_danger = false;
+
+  const size_t dot = item.target.find('.');
+  const std::string_view dom =
+      (dot != std::string::npos) ? std::string_view(item.target).substr(0, dot) : std::string_view{};
+  const std::string_view act(item.action);
+
+  if (act == "toggle") {
+    if (dom == "cover" || dom == "valve") {
+      out_verb_btn = (item.state == 1) ? "Close" : ((item.state == 0) ? "Open" : "Toggle");
+    } else if (dom == "lock") {
+      out_verb_btn = (item.state == 1) ? "Lock" : ((item.state == 0) ? "Unlock" : "Toggle");
+      out_is_danger = (item.state != 1);
+    } else {
+      out_verb_btn = (item.state == 1) ? "Turn Off" : ((item.state == 0) ? "Turn On" : "Toggle");
+    }
+  } else if (act == "turn_on") {
+    if (dom == "scene") out_verb_btn = "Activate";
+    else if (dom == "script") out_verb_btn = "Run";
+    else out_verb_btn = "Turn On";
+    if (dom == "siren") out_is_danger = true;
+  } else if (act == "turn_off") {
+    out_verb_btn = (dom == "script") ? "Stop" : "Turn Off";
+  } else if (act == "open_cover" || act == "open_valve" || act == "open") {
+    out_verb_btn = "Open";
+    if (dom == "lock") out_is_danger = true;
+  } else if (act == "close_cover" || act == "close_valve") {
+    out_verb_btn = "Close";
+  } else if (act == "stop_cover" || act == "stop_valve" || act == "stop") {
+    out_verb_btn = "Stop";
+  } else if (act == "trigger") {
+    out_verb_btn = "Trigger";
+  } else if (act == "press") {
+    out_verb_btn = "Press";
+  } else if (act == "lock") {
+    out_verb_btn = "Lock";
+  } else if (act == "unlock") {
+    out_verb_btn = "Unlock";
+    out_is_danger = true;
+  } else if (act == "disarm" || act == "alarm_disarm") {
+    out_verb_btn = "Disarm";
+    out_is_danger = true;
+  } else if (act == "arm_home" || act == "alarm_arm_home") {
+    out_verb_btn = "Arm Home";
+  } else if (act == "arm_away" || act == "alarm_arm_away") {
+    out_verb_btn = "Arm Away";
+  } else if (act == "arm_night" || act == "alarm_arm_night") {
+    out_verb_btn = "Arm Night";
+  } else if (act == "arm_vacation" || act == "alarm_arm_vacation") {
+    out_verb_btn = "Arm Vacation";
+  } else if (act == "start" || act == "start_mowing") {
+    out_verb_btn = "Start";
+  } else if (act == "pause") {
+    out_verb_btn = "Pause";
+  } else if (act == "return_to_base" || act == "dock") {
+    out_verb_btn = "Dock";
+  } else if (act == "clean_spot") {
+    out_verb_btn = "Spot Clean";
+  } else if (act == "locate") {
+    out_verb_btn = "Locate";
+  } else if (act == "media_play_pause") {
+    out_verb_btn = (item.state == 1) ? "Pause" : "Play";
+  } else if (act == "media_next_track") {
+    out_verb_btn = "Next Track";
+  } else if (act == "select_next") {
+    out_verb_btn = "Next Option";
+  } else if (act == "select_previous") {
+    out_verb_btn = "Prev Option";
+  } else {
+    out_verb_btn = "Confirm";
+  }
+
+  out_line2 = out_verb_btn + " now?";
+}
+
+inline uint32_t compute_shortcuts_ui_sig(const ShortcutsState &st = shortcuts_state()) noexcept {
+  uint32_t h = 2166136261U;
+  h = (h ^ st.epoch) * 16777619U;
+  h = (h ^ st.rev) * 16777619U;
+  h = (h ^ static_cast<uint32_t>(st.dock_items.size())) * 16777619U;
+  h = (h ^ static_cast<uint32_t>(st.pinned_items.size())) * 16777619U;
+  for (const auto &it : st.dock_items) {
+    h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.state + 2))) * 16777619U;
+  }
+  for (const auto &it : st.pinned_items) {
+    h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.state + 2))) * 16777619U;
+  }
+  return h;
 }
 
 inline uint32_t parse_hex_rgb_u24(std::string_view sv, uint32_t fallback) {
@@ -2508,7 +2870,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     if (key == PrefKey::PICKUP_TO_WAKE && (!LATTER_HAS_IMU || LATTER_IS_STATIONARY)) u = 2;
     if (key == PrefKey::BATTERY_HIBERNATE_TIMEOUT && (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY)) u = 4;
     if (key == PrefKey::CLOCK_FACE && !LATTER_ROUND_DISPLAY && u == 1) u = 0;
-    if (key == PrefKey::START_SCREEN && !p.home_screen_enabled && u == 0) u = 1;
+    if (key == PrefKey::START_SCREEN && !p.home_screen_enabled && u == 0) u = kStartScreenTimeAppIdx;
     if (slot == u) return false;
     slot = u;
     changed_mask |= pref_key_bit(key);
@@ -2643,7 +3005,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::HOME_SCREEN_ENABLED: {
       const bool chg = apply_bool(p.home_screen_enabled, kPrefEffectNavPolicy);
       if (!p.home_screen_enabled && p.start_screen == 0) {
-        p.start_screen = 1;  // Coerce Home -> Time App when Home Screen is disabled
+        p.start_screen = kStartScreenTimeAppIdx;  // Coerce Home -> Time App when Home Screen is disabled
         changed_mask |= pref_key_bit(PrefKey::START_SCREEN);
         effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
       }
@@ -3042,41 +3404,30 @@ inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local
   return next_pct;
 }
 
-static constexpr int kMaxDockApps = 11;
-
-inline int dock_app_id_for_token(std::string_view tok) {
-  if (tok == "time") return 10;
-  if (tok == "music") return 2;
-  if (tok == "home_hub") return 9;
-  if (tok == "area") return 6;
-  if (tok == "remote") return 7;
-  if (tok == "weather") return 5;
-  if (tok == "camera" || tok == "cameras") return 12;
-  if (tok == "games") return 3;
-  if (tok == "tools") return 8;
-  return -1;
-}
-
 inline int collect_home_hub_tabs(int *out_tabs, const AreaContextState &ac = area_ctx_state(),
                                  int max_tabs = kMaxHomeHubTabs) {
   if (out_tabs == nullptr || max_tabs <= 0 || ac.epoch == 0U) return 0;
   return parse_home_categories_csv(ac.home_categories, out_tabs, max_tabs);
 }
 
+inline bool is_cameras_start_screen(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  return std::string_view(pref_start_screen_cstr(p)) == "Cameras";
+}
+
 inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_prefs()) {
   const std::string_view opt(pref_start_screen_cstr(p));
-  if (opt == "Home") return p.home_screen_enabled ? 1 : 10;
-  if (opt == "Time App") return 10;
-  if (opt == "Clock Face") return 0;
-  if (opt == "Media") return 2;
-  if (opt == "Home Hub") return 9;
-  if (opt == "Area Controls") return 6;
-  if (opt == "Remote") return 7;
-  if (opt == "Weather") return 5;
-  if (opt == "Cameras") return 12;
-  if (opt == "Games") return 3;
-  if (opt == "Tools") return 8;
-  return p.home_screen_enabled ? 1 : 10;
+  if (opt == "Home") return p.home_screen_enabled ? PageId::HOME : PageId::TIME;
+  if (opt == "Pinned") return PageId::PINNED;
+  if (opt == "Time App") return PageId::TIME;
+  if (opt == "Clock Face") return PageId::CLOCK;
+  if (opt == "Media") return PageId::MUSIC;
+  if (opt == "Home Hub" || opt == "Cameras") return PageId::HOME_HUB;
+  if (opt == "Area Controls") return PageId::AREA;
+  if (opt == "Remote") return PageId::REMOTE;
+  if (opt == "Weather") return PageId::WEATHER;
+  if (opt == "Games") return PageId::GAMES;
+  if (opt == "Tools") return PageId::TOOLS;
+  return p.home_screen_enabled ? PageId::HOME : PageId::TIME;
 }
 
 inline int resolve_start_screen_page(const PersistedDevicePrefs &p = persisted_prefs()) {
@@ -3180,7 +3531,7 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
     return false;
   }
   if (rt.voice.active || rt.voice.tts_received || !rt.voice.status_text.empty() ||
-      cam_session_active) {
+      cam_session_active || rt.nav.shortcut_confirm.open) {
     return false;
   }
   if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
@@ -3204,15 +3555,31 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
 // Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
 // ==============================================================================
 static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
-static constexpr uint16_t kHibernateSnapshotVersion = 2U;
+static constexpr uint16_t kHibernateSnapshotVersion = 3U;
 static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
+static constexpr size_t kHibernateDockSlots         = 10U;
+static constexpr size_t kHibernatePinnedPage1Slots  = 6U;
+
+struct DockSnapshotSlot {
+  uint8_t kind = 0;         // 0 = empty, 1 = ROUTE, 2 = ENTITY
+  uint8_t confirm = 0;      // 0 = direct, 1 = confirm
+  uint8_t route_id = 0;     // RouteId when kind == 1
+  int8_t state = -1;        // -1 = stateless/route, 0 = off, 1 = on, 2 = unavailable
+  char icon_slug[24]{};     // MDI slug without "mdi:" prefix (or empty for default route glyph)
+  char label[22]{};         // Display label
+  char target[38]{};        // Entity ID when kind == 2 (route token resolved via route_id)
+  char action[20]{};        // Explicit HA service action when kind == 2
+};
 
 struct HibernateSnapshot {
   uint32_t magic = kHibernateSnapshotMagic;
   uint16_t version = kHibernateSnapshotVersion;
   bool sun_below_horizon = false;
-  char dock_apps[96]{};
-  char reserved_theme_color[8]{};
+  bool dock_configured = false;
+  uint16_t dock_count = 0;
+  uint16_t pinned_total = 0;
+  DockSnapshotSlot dock_slots[kHibernateDockSlots]{};
+  DockSnapshotSlot pinned_page1[kHibernatePinnedPage1Slots]{};
   char area_name[48]{};
   char area_icon[32]{};
   char weather_condition[24]{};
@@ -3222,6 +3589,74 @@ struct HibernateSnapshot {
 
 static_assert(std::is_trivially_copyable_v<HibernateSnapshot>,
               "HibernateSnapshot must remain a POD blob for ESPPreferenceObject.");
+
+inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlot &dst) {
+  dst = DockSnapshotSlot{};
+  dst.kind = (src.kind == ShortcutKind::ENTITY) ? 2U : 1U;
+  dst.confirm = src.confirm ? 1U : 0U;
+  dst.route_id = static_cast<uint8_t>(src.route_id);
+  dst.state = src.state;
+  std::string_view slug(src.icon);
+  if (slug.rfind("mdi:", 0) == 0) slug.remove_prefix(4);
+  copy_bounded_cstr(dst.icon_slug, slug);
+  copy_bounded_cstr(dst.label, src.label);
+  if (src.kind == ShortcutKind::ENTITY) {
+    copy_bounded_cstr(dst.target, src.target);
+    copy_bounded_cstr(dst.action, src.action);
+  }
+}
+
+inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutItem &dst) {
+  if (src.kind != 1U && src.kind != 2U) return false;
+  dst = ShortcutItem{};
+  const char *icon_end = static_cast<const char *>(std::memchr(src.icon_slug, '\0', sizeof(src.icon_slug)));
+  const size_t icon_len = (icon_end != nullptr) ? static_cast<size_t>(icon_end - src.icon_slug) : (sizeof(src.icon_slug) - 1U);
+  const std::string_view slug_sv(src.icon_slug, icon_len);
+
+  const char *lbl_end = static_cast<const char *>(std::memchr(src.label, '\0', sizeof(src.label)));
+  const size_t lbl_len = (lbl_end != nullptr) ? static_cast<size_t>(lbl_end - src.label) : (sizeof(src.label) - 1U);
+  const std::string_view lbl_sv(src.label, lbl_len);
+
+  if (src.kind == 1U) {
+    const auto rid = static_cast<RouteId>(src.route_id);
+    if (rid == RouteId::SETTINGS_ROOT) {
+      dst.kind = ShortcutKind::ROUTE;
+      dst.route_id = RouteId::SETTINGS_ROOT;
+      dst.target = "app:settings";
+      dst.label = lbl_sv.empty() ? "Settings" : std::string(lbl_sv);
+    } else {
+      const auto *spec = shortcut_route_spec(rid);
+      if (spec == nullptr) return false;
+      dst.kind = ShortcutKind::ROUTE;
+      dst.route_id = rid;
+      dst.target = spec->token;
+      dst.label = lbl_sv.empty() ? std::string(spec->label) : std::string(lbl_sv);
+    }
+    dst.icon = slug_sv.empty() ? "" : ("mdi:" + std::string(slug_sv));
+    dst.confirm = false;
+    dst.state = -1;
+    return true;
+  }
+
+  const char *tgt_end = static_cast<const char *>(std::memchr(src.target, '\0', sizeof(src.target)));
+  const size_t tgt_len = (tgt_end != nullptr) ? static_cast<size_t>(tgt_end - src.target) : (sizeof(src.target) - 1U);
+  const std::string_view tgt_sv(src.target, tgt_len);
+
+  const char *act_end = static_cast<const char *>(std::memchr(src.action, '\0', sizeof(src.action)));
+  const size_t act_len = (act_end != nullptr) ? static_cast<size_t>(act_end - src.action) : (sizeof(src.action) - 1U);
+  const std::string_view act_sv(src.action, act_len);
+
+  if (tgt_sv.empty() || act_sv.empty()) return false;
+  dst.kind = ShortcutKind::ENTITY;
+  dst.route_id = RouteId::NONE;
+  dst.target = std::string(tgt_sv);
+  dst.action = std::string(act_sv);
+  dst.label = lbl_sv.empty() ? std::string(tgt_sv) : std::string(lbl_sv);
+  dst.icon = slug_sv.empty() ? "" : ("mdi:" + std::string(slug_sv));
+  dst.confirm = (src.confirm != 0U);
+  dst.state = static_cast<int8_t>(std::clamp<int>(src.state, -1, 2));
+  return true;
+}
 
 #if LATTER_HAS_ESP_PREFS
 inline esphome::ESPPreferenceObject &hibernate_snapshot_handle() {
@@ -3263,7 +3698,22 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   snap.version = kHibernateSnapshotVersion;
   const auto &ac = area_ctx_state();
   const auto &ws = weather_state();
-  copy_bounded_cstr(snap.dock_apps, ac.dock_apps);
+  const auto &sc = shortcuts_state();
+
+  snap.dock_configured = sc.dock_configured;
+  const size_t dcnt = std::min<size_t>(sc.dock_items.size(), kHibernateDockSlots);
+  snap.dock_count = static_cast<uint16_t>(dcnt);
+  for (size_t i = 0; i < dcnt; ++i) {
+    pack_snapshot_shortcut_slot(sc.dock_items[i], snap.dock_slots[i]);
+  }
+  snap.pinned_total = sc.live_received
+                          ? static_cast<uint16_t>(std::min<size_t>(sc.pinned_items.size(), ShortcutsState::kMaxPinnedItems))
+                          : sc.cold_pinned_total;
+  const size_t pcnt = std::min<size_t>(sc.pinned_items.size(), kHibernatePinnedPage1Slots);
+  for (size_t i = 0; i < pcnt; ++i) {
+    pack_snapshot_shortcut_slot(sc.pinned_items[i], snap.pinned_page1[i]);
+  }
+
   copy_bounded_cstr(snap.area_name, ac.area_name);
   copy_bounded_cstr(snap.area_icon, ac.area_icon);
   copy_bounded_cstr(snap.weather_condition, ws.condition);
@@ -3306,8 +3756,6 @@ inline bool load_hibernate_snapshot_if_cold() {
   if (snap.magic != kHibernateSnapshotMagic || snap.version != kHibernateSnapshotVersion) {
     return false;
   }
-  snap.dock_apps[sizeof(snap.dock_apps) - 1] = '\0';
-  snap.reserved_theme_color[sizeof(snap.reserved_theme_color) - 1] = '\0';
   snap.area_name[sizeof(snap.area_name) - 1] = '\0';
   snap.area_icon[sizeof(snap.area_icon) - 1] = '\0';
   snap.weather_condition[sizeof(snap.weather_condition) - 1] = '\0';
@@ -3321,10 +3769,31 @@ inline bool load_hibernate_snapshot_if_cold() {
 #endif
   }
 
-  auto &ac = area_ctx_state();
-  if (ac.dock_apps.empty() && snap.dock_apps[0] != '\0') {
-    ac.dock_apps = snap.dock_apps;
+  auto &sc = shortcuts_state();
+  if (!sc.live_received && sc.epoch == 0U) {
+    sc.cold_pinned_total = snap.pinned_total;
+    if (snap.dock_configured && sc.dock_items.empty()) {
+      sc.dock_configured = true;
+      const size_t dcnt = std::min<size_t>(snap.dock_count, kHibernateDockSlots);
+      for (size_t i = 0; i < dcnt; ++i) {
+        ShortcutItem item{};
+        if (unpack_snapshot_shortcut_slot(snap.dock_slots[i], item)) {
+          sc.dock_items.push_back(std::move(item));
+        }
+      }
+    }
+    if (sc.pinned_items.empty() && snap.pinned_total > 0U) {
+      const size_t pcnt = std::min<size_t>(snap.pinned_total, kHibernatePinnedPage1Slots);
+      for (size_t i = 0; i < pcnt; ++i) {
+        ShortcutItem item{};
+        if (unpack_snapshot_shortcut_slot(snap.pinned_page1[i], item)) {
+          sc.pinned_items.push_back(std::move(item));
+        }
+      }
+    }
   }
+
+  auto &ac = area_ctx_state();
   if (ac.area_name.empty() && snap.area_name[0] != '\0') {
     ac.area_name = snap.area_name;
     if (runtime_state().area.active_area_name.empty() ||
@@ -3414,7 +3883,7 @@ inline void ensure_ui_anim_poller(PollerT *tick) {
 // Consolidated UI / Domain State Accessors & Pure Helpers
 // ==============================================================================
 inline uint32_t &menu_scroll_start_ms() { return runtime_state().nav.menu_scroll_start_ms; }
-inline bool &tools_direct_home() { return runtime_state().nav.tools_direct_home; }
+inline int &pinned_menu_page() { return runtime_state().nav.pinned_menu_page; }
 inline int &timer_view_slot() { return runtime_state().timers.view_slot; }
 inline int &cal_detail_mode() { return runtime_state().cal.detail_mode; }
 inline bool &cal_quick_add_open() { return runtime_state().cal.quick_add_open; }
@@ -3547,7 +4016,77 @@ inline std::string resolve_preferred_area_category() {
 inline std::string &latter_site_id() { return runtime_state().area.site_id; }
 inline std::string &latter_ble_proxy() { return runtime_state().area.ble_proxy; }
 inline std::string &latter_area_label() { return runtime_state().area.area_label; }
-inline std::string &latter_dock_order_csv() { return runtime_state().nav.dock_order_csv; }
+
+inline constexpr int kMaxEffectiveDockItems = 16;
+
+inline int collect_effective_dock_items(ShortcutItem *out_items,
+                                        int max_items = kMaxEffectiveDockItems,
+                                        const ShortcutsState &st = shortcuts_state()) {
+  if (out_items == nullptr || max_items <= 0) return 0;
+  const bool has_pinned = !st.pinned_items.empty() || (!st.live_received && st.cold_pinned_total > 0U);
+  const bool has_remote = has_any_configured_remote();
+  int count = 0;
+
+  auto push_item = [&](const ShortcutItem &src) {
+    if (count >= max_items - 1) return;  // Reserve final slot for Settings
+    if (src.kind == ShortcutKind::ROUTE) {
+      if (src.route_id == RouteId::SETTINGS_ROOT) return;
+      if (!is_route_supported_on_board(src.route_id)) return;
+      if (src.route_id == RouteId::APP_PINNED && !has_pinned) return;
+      if ((src.route_id == RouteId::APP_REMOTE || src.route_id == RouteId::REMOTE_DEVICES) && !has_remote) {
+        return;
+      }
+      for (int i = 0; i < count; ++i) {
+        if (out_items[i].kind == ShortcutKind::ROUTE && out_items[i].route_id == src.route_id) {
+          return;
+        }
+      }
+    } else {
+      if (src.target.empty() || src.action.empty()) return;
+    }
+    out_items[count++] = src;
+  };
+
+  if (st.dock_configured) {
+    for (const auto &it : st.dock_items) {
+      push_item(it);
+    }
+  } else {
+    std::string_view csv(kDefaultDockRoutes);
+    size_t start = 0;
+    while (start <= csv.size()) {
+      size_t pos = csv.find(',', start);
+      std::string_view tok =
+          (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start);
+      tok = trim_ascii_ws(tok);
+      if (const auto *spec = find_shortcut_route(tok)) {
+        ShortcutItem item{};
+        item.kind = ShortcutKind::ROUTE;
+        item.route_id = spec->id;
+        item.target = spec->token;
+        item.label = spec->label;
+        push_item(item);
+      }
+      if (pos == std::string_view::npos) break;
+      start = pos + 1;
+    }
+  }
+
+  if (count < max_items) {
+    ShortcutItem settings_item{};
+    settings_item.kind = ShortcutKind::ROUTE;
+    settings_item.route_id = RouteId::SETTINGS_ROOT;
+    settings_item.target = "app:settings";
+    settings_item.label = "Settings";
+    out_items[count++] = std::move(settings_item);
+  }
+  return count;
+}
+
+inline int pinned_total_pages(const ShortcutsState &st = shortcuts_state()) noexcept {
+  const size_t n = st.pinned_items.size();
+  return (n == 0U) ? 1 : static_cast<int>((n + 5U) / 6U);
+}
 
 inline int get_mode_bar_start_index(int total_count, int win_start) {
   if (total_count <= 4 || win_start <= 0) return 0;
@@ -3614,8 +4153,7 @@ struct V3DomainEffects {
 class V3DomainReducer {
  public:
   void reset();
-  V3DomainEffects reduce(std::string_view domain, const std::string &prev_dock,
-                         const V3ReduceContext &ctx);
+  V3DomainEffects reduce(std::string_view domain, const V3ReduceContext &ctx);
 
  private:
   std::string prev_area_icon_{};
@@ -3715,8 +4253,7 @@ inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last
 inline bool &cam_download_in_progress() { return runtime_state().intercom.cam_download_in_progress; }
 
 inline bool is_camera_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
-  return rs.nav.gui_page == PageId::CAMERAS ||
-         (rs.nav.gui_page == PageId::HOME_HUB && home_hub_state().tab == HomeHubTab::CAMERAS);
+  return rs.nav.gui_page == PageId::HOME_HUB && home_hub_state().tab == HomeHubTab::CAMERAS;
 }
 
 inline int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
@@ -3857,11 +4394,14 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
         drill = rs.alarms.edit_idx;
       }
       break;
-    case 12:
-      drill = rs.intercom.cam_quick_reply_open ? 1 : 0;
+    case 11:
+      sub = rs.nav.pinned_menu_page;
       break;
     default:
       break;
+  }
+  if (rs.nav.shortcut_confirm.open) {
+    drill = (drill & 0x7F) | 0x80;
   }
   return (gp * 10000) + ((sub & 0x3F) * 256) + (drill & 0xFF);
 }

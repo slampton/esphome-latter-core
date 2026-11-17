@@ -1582,6 +1582,210 @@ void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
   });
 }
 
+void draw_icon_thumbtack(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const SdfSymTri body_cone = SdfSymTri::make(0.0f, -1.20f * rf, 0.16f * rf, 0.80f * rf);
+  const SdfCapsule pin_stem = SdfCapsule::make(0.0f, 0.22f * rf, 0.0f, 0.86f * rf,
+                                               std::max(0.85f, 0.095f * rf));
+  const float seam_hy = std::max(0.75f, 0.065f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_cap = sd_rbox_px(x, y, 0.0f, -0.68f * rf, 0.52f * rf,
+                                   std::max(1.05f, 0.13f * rf), 0.12f * rf);
+    const float d_neck = sd_rbox_px(x, y, 0.0f, -0.34f * rf, 0.28f * rf, 0.22f * rf, 0.04f * rf);
+    const float d_flare = std::max(body_cone.eval(x, y), -0.44f * rf - y);
+    const float d_flange = sd_rbox_px(x, y, 0.0f, 0.14f * rf, 0.66f * rf,
+                                      std::max(1.05f, 0.12f * rf), 0.12f * rf);
+    const float d_head = std::max(
+        std::min({d_cap, d_neck, d_flare, d_flange}),
+        -sd_rbox_px(x, y, 0.0f, -0.50f * rf, 0.42f * rf, seam_hy, 0.0f));
+    return std::min(d_head, pin_stem.eval(x, y));
+  });
+}
+
+void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
+                     esphome::Color col, esphome::Color cut_c, bool shadow) {
+  (void)cut_c;
+  const int mdi_px = std::max(16, 2 * r);
+  switch (route) {
+    case RouteId::APP_PINNED:
+      draw_icon_thumbtack(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::APP_MUSIC:
+    case RouteId::MUSIC_LIBRARY:
+      draw_icon_eighth_notes(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::MUSIC_SPEAKERS:
+      draw_icon_speaker(it, cx, cy, r, col, true, shadow);
+      return;
+    case RouteId::MUSIC_FAVORITES:
+      render_mdi_icon(it, "mdi:heart", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
+    case RouteId::MUSIC_PLAYLISTS:
+      render_mdi_icon(it, "mdi:playlist-music", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
+    case RouteId::MUSIC_QUEUE:
+      render_mdi_icon(it, "mdi:playlist-play", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
+    case RouteId::APP_HOME_HUB:
+      render_mdi_icon(it, "mdi:home", cx, cy, mdi_px, col, shadow, "mdi:home");
+      return;
+    case RouteId::HOME_HUB_ALARM:
+      draw_icon_shield_home(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::HOME_HUB_CAMERAS:
+      draw_icon_camera(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::HOME_HUB_INTERCOM:
+      draw_icon_intercom_handset(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::HOME_HUB_THERMOSTAT:
+    case RouteId::AREA_CLIMATE:
+      draw_icon_thermometer(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::HOME_HUB_ENTRY:
+      draw_icon_lock(it, cx, cy, r, col, true, shadow);
+      return;
+    case RouteId::HOME_HUB_VACUUM:
+      draw_icon_robot_vacuum(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::APP_AREA:
+      render_mdi_icon(it, "mdi:sofa", cx, cy, mdi_px, col, shadow, "mdi:home-outline");
+      return;
+    case RouteId::AREA_PICKER:
+      render_mdi_icon(it, "mdi:floor-plan", cx, cy, mdi_px, col, shadow, "mdi:map-marker-outline");
+      return;
+    case RouteId::AREA_SCENE:
+      draw_icon_sparkle(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::AREA_LIGHT:
+      draw_icon_lightbulb(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::AREA_COVER:
+      draw_icon_blinds_slats(it, cx, cy, r, col, false, shadow);
+      return;
+    case RouteId::AREA_FAN:
+      draw_icon_ceiling_fan(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::AREA_SWITCH:
+      draw_icon_switch_pill(it, cx, cy, r, col, true, shadow);
+      return;
+    case RouteId::AREA_MEDIA:
+      render_mdi_icon(it, "mdi:television-speaker", cx, cy, mdi_px, col, shadow, "mdi:speaker");
+      return;
+    case RouteId::AREA_ALL:
+      draw_icon_bento_grid(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::APP_REMOTE:
+    case RouteId::REMOTE_DEVICES:
+      render_mdi_icon(it, "mdi:remote-tv", cx, cy, mdi_px, col, shadow, "mdi:remote");
+      return;
+    case RouteId::APP_WEATHER:
+    case RouteId::WEATHER_CURRENT:
+      render_mdi_icon(it, "mdi:weather-partly-cloudy", cx, cy, mdi_px, col, shadow, "mdi:cloud");
+      return;
+    case RouteId::WEATHER_FORECAST:
+      render_mdi_icon(it, "mdi:calendar-week", cx, cy, mdi_px, col, shadow, "mdi:cloud");
+      return;
+    case RouteId::WEATHER_SUN:
+      render_mdi_icon(it, "mdi:white-balance-sunny", cx, cy, mdi_px, col, shadow, "mdi:weather-sunny");
+      return;
+    case RouteId::WEATHER_MOON:
+      render_mdi_icon(it, "mdi:moon-waning-crescent", cx, cy, mdi_px, col, shadow, "mdi:weather-night");
+      return;
+    case RouteId::APP_TIME:
+    case RouteId::APP_CLOCK:
+    case RouteId::TIME_CLOCK:
+      draw_icon_clock_solid(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::TIME_TIMERS:
+      draw_icon_hourglass(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::TIME_ALARMS:
+      draw_icon_alarm_clock(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::TIME_STOPWATCH:
+    case RouteId::TOOLS_STOPWATCH:
+      draw_icon_stopwatch(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::APP_TOOLS:
+      draw_icon_bento_grid(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::TOOLS_LEVEL:
+      render_mdi_icon(it, "mdi:spirit-level", cx, cy, mdi_px, col, shadow, "mdi:compass-outline");
+      return;
+    case RouteId::TOOLS_FLASHLIGHT:
+      render_mdi_icon(it, "mdi:flashlight", cx, cy, mdi_px, col, shadow, "mdi:lightbulb");
+      return;
+    case RouteId::TOOLS_CALCULATOR:
+      render_mdi_icon(it, "mdi:calculator-variant", cx, cy, mdi_px, col, shadow, "mdi:calculator");
+      return;
+    case RouteId::TOOLS_CALENDAR:
+      draw_icon_calendar(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::TOOLS_DICE:
+      render_mdi_icon(it, "mdi:dice-5", cx, cy, mdi_px, col, shadow, "mdi:dice-multiple");
+      return;
+    case RouteId::TOOLS_COIN_FLIP:
+      render_mdi_icon(it, "mdi:alpha-c-circle", cx, cy, mdi_px, col, shadow, "mdi:circle-double");
+      return;
+    case RouteId::APP_GAMES:
+      render_mdi_icon(it, "mdi:gamepad-variant", cx, cy, mdi_px, col, shadow, "mdi:controller");
+      return;
+    case RouteId::GAMES_MARBLES:
+      render_mdi_icon(it, "mdi:billiards", cx, cy, mdi_px, col, shadow, "mdi:circle-multiple");
+      return;
+    case RouteId::GAMES_ARCHERY:
+      render_mdi_icon(it, "mdi:bullseye-arrow", cx, cy, mdi_px, col, shadow, "mdi:target");
+      return;
+    case RouteId::GAMES_BRICKS:
+      render_mdi_icon(it, "mdi:wall", cx, cy, mdi_px, col, shadow, "mdi:view-grid");
+      return;
+    case RouteId::GAMES_CHOMP:
+      render_mdi_icon(it, "mdi:pac-man", cx, cy, mdi_px, col, shadow, "mdi:ghost");
+      return;
+    case RouteId::GAMES_2048:
+      render_mdi_icon(it, "mdi:numeric-2-box-multiple", cx, cy, mdi_px, col, shadow, "mdi:grid");
+      return;
+    case RouteId::GAMES_MEMORY:
+      render_mdi_icon(it, "mdi:cards", cx, cy, mdi_px, col, shadow, "mdi:apps");
+      return;
+    case RouteId::SETTINGS_DISPLAY:
+      render_mdi_icon(it, "mdi:brightness-6", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_SLEEP:
+      render_mdi_icon(it, "mdi:power-sleep", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_SOUND:
+      render_mdi_icon(it, "mdi:volume-high", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_VOICE:
+      render_mdi_icon(it, "mdi:microphone", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_MUSIC:
+      render_mdi_icon(it, "mdi:music-box-outline", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_HOME:
+      render_mdi_icon(it, "mdi:home-outline", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_ACTIONS:
+      render_mdi_icon(it, "mdi:gesture-tap-button", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_UPDATE:
+      render_mdi_icon(it, "mdi:cellphone-arrow-down", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_INFO:
+      render_mdi_icon(it, "mdi:information-outline", cx, cy, mdi_px, col, shadow, "mdi:cog");
+      return;
+    case RouteId::SETTINGS_ROOT:
+    case RouteId::NONE:
+    default:
+      render_mdi_icon(it, "mdi:cog", cx, cy, mdi_px, col, shadow, "mdi:apps");
+      return;
+  }
+}
+
 // ==============================================================================
 // 4. Interactive Hit-Registered Widgets & Modals
 // ==============================================================================

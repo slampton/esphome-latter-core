@@ -102,7 +102,6 @@ api:
         - lambda: |-
             const std::string_view sv_dom(domain.c_str(), domain.size());
             const std::string_view sv_pay(payload.c_str(), payload.size());
-            const std::string prev_dock = latter_ui::area_ctx_state().dock_apps;
             bool parsed = false;
             if (sv_dom == "area_context") {
               parsed = latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::home_hub_state());
@@ -118,10 +117,12 @@ api:
               uint32_t eff_mask = 0;
               parsed = latter_ui::parse_v3_device_prefs_payload(sv_pay, eff_mask, millis());
               latter_ui::device_prefs_state().last_effects = eff_mask;
+            } else if (sv_dom == "shortcuts") {
+              parsed = latter_ui::parse_v3_shortcuts_payload(sv_pay, latter_ui::shortcuts_state());
             }
             auto &rs = latter_ui::runtime_state();
             if (parsed && rs.on_v3_domain_pushed != nullptr) {
-              rs.on_v3_domain_pushed(sv_dom, prev_dock);
+              rs.on_v3_domain_pushed(sv_dom);
             }
 
     - action: latter_device_command

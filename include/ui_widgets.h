@@ -193,6 +193,10 @@ void draw_icon_intercom_handset(esphome::display::Display &it, int cx, int cy, i
                                 esphome::Color col, bool shadow = false);
 void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
                     esphome::Color col, bool shadow = false);
+void draw_icon_thumbtack(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow = false);
+void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
+                     esphome::Color col, esphome::Color cut_c, bool shadow = false);
 
 // ------------------------------------------------------------------------------
 // 4. Interactive Hit-Registered Widgets & Modals
@@ -248,6 +252,7 @@ enum class PinPadTargetKind : uint8_t {
   AREA_ACTION = 1,
   ALARM_ACTION = 2,
   DOORBELL_UNLOCK = 3,
+  SHORTCUT_ACTION = 4,
 };
 
 struct PinPadModalState {

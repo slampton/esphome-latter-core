@@ -93,6 +93,43 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
     lines.append("};")
     lines.append("")
 
+    shortcut_routes = (schema.get("catalogs") or {}).get("shortcut_routes") or []
+    if shortcut_routes:
+        lines.append("enum class ShortcutRouteCap : uint8_t {")
+        lines.append("  NONE = 0,")
+        lines.append("  ROUND = 1,")
+        lines.append("  IMU = 2,")
+        lines.append("};")
+        lines.append("")
+        lines.append("enum class RouteId : uint8_t {")
+        lines.append("  NONE = 0,")
+        route_idents: list[str] = []
+        for idx, r in enumerate(shortcut_routes, start=1):
+            ident = str(r["token"]).upper().replace(":", "_").replace("-", "_")
+            route_idents.append(ident)
+            lines.append(f"  {ident} = {idx},")
+        lines.append("  SETTINGS_ROOT = 250,")
+        lines.append("};")
+        lines.append("")
+        lines.append("struct ShortcutRouteSpec {")
+        lines.append("  RouteId id;")
+        lines.append("  const char *token;")
+        lines.append("  const char *label;")
+        lines.append("  bool dock_only;")
+        lines.append("  ShortcutRouteCap cap;")
+        lines.append("};")
+        lines.append("")
+        lines.append("inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {")
+        for ident, r in zip(route_idents, shortcut_routes):
+            dock_only = "true" if r.get("dock_only") else "false"
+            cap_raw = str(r.get("capability") or "").lower()
+            cap_enum = "ROUND" if cap_raw == "round" else ("IMU" if cap_raw == "imu" else "NONE")
+            lines.append(
+                f'    {{RouteId::{ident}, "{r["token"]}", "{r["label"]}", {dock_only}, ShortcutRouteCap::{cap_enum}}},'
+            )
+        lines.append("};")
+        lines.append("")
+
     lines.append("enum class ProtocolHeaderField : size_t {")
     for hf in header_fields:
         lines.append(f"  {hf['cpp_enum']} = {hf['index']},  // {hf['name']} ({hf['type']})")
@@ -280,6 +317,9 @@ def build_typescript_schema(schema: dict[str, Any]) -> str:
         "export interface CatalogItem {",
         "  token: string;",
         "  label: string;",
+        "  group?: string;",
+        "  dockOnly?: boolean;",
+        "  capability?: string;",
         "}",
         "",
     ])
@@ -288,7 +328,15 @@ def build_typescript_schema(schema: dict[str, Any]) -> str:
         const_name = f"{cat_name.upper()}_CATALOG"
         lines.append(f"export const {const_name}: ReadonlyArray<CatalogItem> = [")
         for item in cat_items:
-            lines.append(f'  {{token: "{item["token"]}", label: "{item["label"]}"}},')
+            extras: list[str] = []
+            if item.get("group"):
+                extras.append(f'group: "{item["group"]}"')
+            if item.get("dock_only"):
+                extras.append("dockOnly: true")
+            if item.get("capability"):
+                extras.append(f'capability: "{item["capability"]}"')
+            extra_str = (", " + ", ".join(extras)) if extras else ""
+            lines.append(f'  {{token: "{item["token"]}", label: "{item["label"]}"{extra_str}}},')
         lines.append("];")
         lines.append("")
 

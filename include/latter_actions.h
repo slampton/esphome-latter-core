@@ -344,11 +344,16 @@ inline void emit_save_custom_color_rgb(uint32_t rgb24, OutboxT outbox = nullptr)
   emit_save_custom_color(buf, outbox);
 }
 
-// 15. set_dock_apps
+// 15. shortcut_action (App Dock & Pinned App entity actions)
 template <typename OutboxT = std::nullptr_t>
-inline void emit_set_dock_apps(std::string_view dock_apps_csv, OutboxT outbox = nullptr) {
-  latter_rpc::emit(outbox, "set_dock_apps", {
-    {"dock_apps", dock_apps_csv},
+inline void emit_shortcut_action(std::string_view entity_id,
+                                 std::string_view action,
+                                 std::string_view code = "",
+                                 OutboxT outbox = nullptr) {
+  latter_rpc::emit(outbox, "shortcut_action", {
+    {"entity_id", entity_id},
+    {"action", action},
+    {"code", code},
   });
 }
 

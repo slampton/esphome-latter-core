@@ -172,7 +172,8 @@ void mark_dirty_full() {
 
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
-                                    bool pin_pad_open, bool notif_active) {
+                                    bool pin_pad_open, bool notif_active,
+                                    bool shortcut_confirm_open) {
   uint32_t sig = 0U;
   if (ota_in_progress) sig |= (1U << 0);
   if (is_hibernating) sig |= (1U << 1);
@@ -182,6 +183,7 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
   if (va_active) sig |= (1U << 7);
   if (pin_pad_open) sig |= (1U << 8);
   if (notif_active) sig |= (1U << 9);
+  if (shortcut_confirm_open) sig |= (1U << 10);
   return sig;
 }
 
@@ -722,6 +724,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   if (rs.music.hud_active) sig |= (1U << 18);
   if (ctx.ble_active) sig |= (1U << 19);
   if (!cal_feedback_text().empty() && (ctx.now_ms - cal_feedback_ms() < 2200U)) sig |= (1U << 26);
+  if (!rs.nav.pinned_feedback.empty() && (ctx.now_ms - rs.nav.pinned_feedback_ms < 1800U)) sig |= (1U << 27);
 
   if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == SystemMenuMode::SYSTEM_INFO) {
     const int rssi_i = std::isnan(ctx.wifi_rssi) ? 0 : static_cast<int>(std::round(ctx.wifi_rssi));
@@ -781,6 +784,9 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       act_mask |= (1U << 5);
     }
     sig ^= (act_mask * 0x27D4EB2FU);
+    sig ^= (compute_shortcuts_ui_sig() | 1U);
+  } else if (rs.nav.gui_page == PageId::PINNED) {
+    sig ^= (compute_shortcuts_ui_sig() | 1U);
   } else if (rs.nav.gui_page == PageId::TIME) {
     uint32_t th = 2166136261U;
     for (int i = 0; i < 3; ++i) {
@@ -990,7 +996,22 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
     return true;
   }
 
-  // 8. DOCKED SCREENSAVER (Mode 1)
+  // 8. SHORTCUT ENTITY ACTION CONFIRMATION MODAL
+  if (shortcut_confirm_state().open) {
+    const auto &sc = shortcut_confirm_state();
+    frame_base(it, st.col_bg);
+    const esphome::Color brd_c = sc.is_danger ? st.col_red : st.theme_primary;
+    const esphome::Color bg_c  = sc.is_danger ? ui::chrome_danger_bg() : kChromeGlassTint;
+    ui::confirm_modal(it, st.cx, sc.title.c_str(), sc.line1.c_str(), sc.line2.c_str(),
+                      "Cancel", sc.verb_btn.c_str(), brd_c, bg_c,
+                      ctx.font_date, ctx.font_small,
+                      st.theme_primary, st.col_white, st.col_slate,
+                      WidgetId::CONFIRM_CANCEL, WidgetId::CONFIRM_ACCEPT);
+    render_active_focus_overlay(it, st.now_ms, st.theme_primary, st.col_white);
+    return true;
+  }
+
+  // 9. DOCKED SCREENSAVER (Mode 1)
   if (st.display_power_state == 1) {
     frame_base(it, st.col_bg);
     render_docked_screensaver(it, ctx, st);
