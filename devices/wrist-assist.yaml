@@ -1,7 +1,7 @@
 # ==============================================================================
 # Wrist Assist (v3.0 Modular Architecture)
 # Target: Waveshare ESP32-S3-Touch-AMOLED-2.06 (410x502 Rectangular Watch)
-# Framework: ESPHome 2026.11.0b5+ (ESP-IDF 5.5+)
+# Framework: ESPHome 2026.11.0b6+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
 
@@ -30,7 +30,7 @@ external_components:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b5
+  min_version: 2026.11.0b6
   project:
     name: "slampton.wrist-assist-206"
     version: "${version}"
