@@ -18,6 +18,7 @@ static constexpr uint8_t kHitHorizSlider = 0x02;
 static constexpr uint8_t kHitFocusSlot   = 0x04;
 static constexpr uint8_t kHitFocusCircle = 0x08;
 static constexpr uint8_t kHitLongPress   = 0x10;
+static constexpr uint8_t kHitVertSlider  = 0x20;
 
 namespace WidgetId {
   static constexpr uint16_t NONE               = 0;
@@ -55,21 +56,16 @@ namespace WidgetId {
   static constexpr uint16_t GAMES_NEXT_BTN     = 114;
   static constexpr uint16_t GAMES_HERO_CARD    = 115;
 
-  // Music Now Playing & overlays
+  // Music App (Page 2) — core transport, scrubber & sliders
   static constexpr uint16_t MUSIC_QUEUE_CLEAR  = 120;
   static constexpr uint16_t MUSIC_PREV_BTN     = 121;
   static constexpr uint16_t MUSIC_PLAY_PAUSE   = 122;
   static constexpr uint16_t MUSIC_NEXT_BTN     = 123;
   static constexpr uint16_t MUSIC_SCRUB_BAR    = 124;
-  static constexpr uint16_t MUSIC_BROWSE_BTN   = 125;
-  static constexpr uint16_t MUSIC_SPEAKER_BTN  = 126;
   static constexpr uint16_t MUSIC_SHUFFLE_BTN  = 127;
   static constexpr uint16_t MUSIC_REPEAT_BTN   = 128;
   static constexpr uint16_t MUSIC_ART_TAP      = 129;
   static constexpr uint16_t MUSIC_VOL_SLIDER   = 135;
-  static constexpr uint16_t MUSIC_FAV_BTN      = 136;
-  static constexpr uint16_t MUSIC_QUEUE_BTN    = 137;
-  static constexpr uint16_t MUSIC_SPK_GROUP    = 150;  // + row (0..4), param = spk_idx
 
   // Shared HSV wheel & 4-column stepper
   static constexpr uint16_t COLOR_WHEEL_RING   = 130;
@@ -117,6 +113,7 @@ namespace WidgetId {
   static constexpr uint16_t HOME_ACTIVITY_NEXT = 504;
   static constexpr uint16_t HOME_QUICK_BTN     = 505;
   static constexpr uint16_t HOME_AREA_ICON     = 506;
+  static constexpr uint16_t HOME_DATE_HERO     = 507;
   static constexpr uint16_t HOME_BRI_SLIDER    = 510;
   static constexpr uint16_t HOME_VOL_SLIDER    = 511;
   static constexpr uint16_t HOME_QUICK_TILE    = 520;  // 520..525
@@ -174,9 +171,13 @@ namespace WidgetId {
   static constexpr uint16_t DICE_COUNT_BTN      = 771;
   static constexpr uint16_t COIN_FLIP_BTN       = 775;
   static constexpr uint16_t LEVEL_ZERO_BTN      = 781;
-  static constexpr uint16_t CAL_EVENT_BASE      = 790;  // 790..794 (param = event idx)
-  static constexpr uint16_t CAL_QUICK_ADD_BTN   = 795;
-  static constexpr uint16_t CAL_PRESET_BASE     = 796;  // 796..800 (param = preset idx 0..4)
+  static constexpr uint16_t CAL_EVENT_BASE      = 790;  // 790..794 (param = global event idx)
+  static constexpr uint16_t CAL_NAV_PREV        = 795;
+  static constexpr uint16_t CAL_NAV_NEXT        = 796;
+  static constexpr uint16_t CAL_TODAY_BTN       = 797;
+  static constexpr uint16_t CAL_ADD_BTN         = 798;
+  static constexpr uint16_t CAL_VIEW_MAP_BTN    = 799;
+  static constexpr uint16_t CAL_DELETE_BTN      = 800;
   static constexpr uint16_t CAL_ZOOM_IN_BTN     = 802;
   static constexpr uint16_t CAL_ZOOM_OUT_BTN    = 803;
   static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = target idx)
@@ -196,6 +197,67 @@ namespace WidgetId {
   static constexpr uint16_t CAM_UNLOCK_BTN      = 828;
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
   static constexpr uint16_t PINNED_CARD_BASE    = 840;  // 840..845 (param = global pinned item idx)
+
+  // Dedicated Calendar App (Page 12)
+  static constexpr uint16_t CAL_WEEK_DAY_BASE   = 850;  // 850..856 (param = day offset 0..6)
+  static constexpr uint16_t CAL_MONTH_WEEK_BASE = 860;  // 860..865 (param = week row 0..5)
+  static constexpr uint16_t CAL_MONTH_CELL_BASE = 870;  // 870..911 (param = cell 0..41)
+  static constexpr uint16_t CAL_ADD_TITLE_BTN   = 920;
+  static constexpr uint16_t CAL_ADD_TITLE_MIC   = 921;
+  static constexpr uint16_t CAL_ADD_LOC_BTN     = 922;
+  static constexpr uint16_t CAL_ADD_LOC_MIC     = 923;
+  static constexpr uint16_t CAL_ADD_CAL_BTN     = 924;
+  static constexpr uint16_t CAL_ADD_REPEAT_BTN  = 925;
+  static constexpr uint16_t CAL_ADD_NEXT_BTN    = 926;
+  static constexpr uint16_t CAL_ADD_DATE_PREV   = 927;
+  static constexpr uint16_t CAL_ADD_DATE_NEXT   = 928;
+  static constexpr uint16_t CAL_ADD_ALLDAY_BTN  = 929;
+  static constexpr uint16_t CAL_ADD_START_BTN   = 930;
+  static constexpr uint16_t CAL_ADD_END_BTN     = 931;
+  static constexpr uint16_t CAL_ADD_SAVE_BTN    = 932;
+  static constexpr uint16_t CAL_PICKER_SLOT_BASE = 935; // 935..939 (param = option idx)
+
+  // Music App clean-sheet mode bar, takeovers, MA action sheet, synced lyrics & speakers (Page 2)
+  static constexpr uint16_t MUSIC_MODE_SLOT_BASE      = MODE_BAR_SLOT_BASE;  // 44..47 (param = global slot 0..7)
+  static constexpr uint16_t MUSIC_MODE_SLOT_0         = MODE_BAR_SLOT_BASE + 0;
+  static constexpr uint16_t MUSIC_MODE_SLOT_1         = MODE_BAR_SLOT_BASE + 1;
+  static constexpr uint16_t MUSIC_MODE_SLOT_2         = MODE_BAR_SLOT_BASE + 2;
+  static constexpr uint16_t MUSIC_MODE_SLOT_3         = MODE_BAR_SLOT_BASE + 3;
+
+  static constexpr uint16_t MUSIC_SCRUB_OPEN_BTN      = 950;
+  static constexpr uint16_t MUSIC_TAKEOVER_BACKDROP   = 951;
+  static constexpr uint16_t MUSIC_VOL_DOWN_STEP       = 952;
+  static constexpr uint16_t MUSIC_VOL_UP_STEP         = 953;
+  static constexpr uint16_t MUSIC_VOL_MUTE_BTN        = 954;
+  static constexpr uint16_t MUSIC_SCRUB_STEP_BACK     = 955;
+  static constexpr uint16_t MUSIC_SCRUB_STEP_FWD      = 956;
+  static constexpr uint16_t MUSIC_FAVORITE_BTN        = 957;
+  static constexpr uint16_t MUSIC_HEADER_ENQUEUE_BTN  = 958;
+  static constexpr uint16_t MUSIC_ROW_MORE_BASE       = 960;  // 960..964 (trailing ••• button, param = slot 0..4)
+
+  static constexpr uint16_t MUSIC_ACTION_PLAY_NOW      = 965;
+  static constexpr uint16_t MUSIC_ACTION_PLAY_NEXT     = 966;
+  static constexpr uint16_t MUSIC_ACTION_ADD_QUEUE     = 967;
+  static constexpr uint16_t MUSIC_ACTION_REPLACE_QUEUE = 968;
+  static constexpr uint16_t MUSIC_ACTION_START_RADIO   = 969;
+  static constexpr uint16_t MUSIC_ACTION_MOVE_UP       = 970;
+  static constexpr uint16_t MUSIC_ACTION_MOVE_DOWN     = 971;
+  static constexpr uint16_t MUSIC_ACTION_REMOVE_QUEUE  = 972;
+
+  static constexpr uint16_t MUSIC_SPK_CONTROL_BTN      = 975;
+  static constexpr uint16_t MUSIC_SPK_TRANSFER_BTN     = 976;
+  static constexpr uint16_t MUSIC_SPK_GROUP_BTN        = 977;
+
+  static constexpr uint16_t MUSIC_LYRIC_SYNC_BTN       = 979;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_BASE      = 980;  // 980..987 (param = lyric line index)
+  static constexpr uint16_t MUSIC_LYRIC_LINE_0         = 980;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_1         = 981;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_2         = 982;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_3         = 983;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_4         = 984;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_5         = 985;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_6         = 986;
+  static constexpr uint16_t MUSIC_LYRIC_LINE_7         = 987;
 }  // namespace WidgetId
 
 struct HitRegion {
@@ -232,11 +294,18 @@ struct HitRegion {
     if (tx >= x1) return 1.0f;
     return static_cast<float>(tx - x0) / static_cast<float>(span);
   }
+  float norm_y(int ty) const {
+    const int span = static_cast<int>(y1) - static_cast<int>(y0);
+    if (span <= 0) return 0.0f;
+    if (ty <= y0) return 0.0f;
+    if (ty >= y1) return 1.0f;
+    return static_cast<float>(ty - y0) / static_cast<float>(span);
+  }
 };
 static_assert(sizeof(HitRegion) == 14, "HitRegion must stay compact at 14 bytes");
 
 struct FrameHitTable {
-  static constexpr uint8_t kMaxRegions = 48;
+  static constexpr uint8_t kMaxRegions = 56;
   HitRegion regions[kMaxRegions]{};
   uint8_t count{0};
 
@@ -374,8 +443,19 @@ inline constexpr int chord_half_span_constexpr(int r, int dy, bool round_nearest
   return x;
 }
 
+inline constexpr int default_corner_r_for(int screen_w, bool is_round, bool is_wearable) noexcept {
+#if defined(LATTER_CORNER_R) && defined(LATTER_SCREEN_W) && defined(LATTER_ROUND_DISPLAY) && defined(LATTER_IS_WEARABLE)
+  if (screen_w == LATTER_SCREEN_W && is_round == (LATTER_ROUND_DISPLAY != 0) &&
+      is_wearable == (LATTER_IS_WEARABLE != 0)) {
+    return LATTER_CORNER_R;
+  }
+#endif
+  return is_round ? (screen_w / 2) : (is_wearable ? 98 : 20);
+}
+
 inline constexpr int safe_span_for(int y, int screen_w, int screen_h, bool is_round,
-                                   bool is_wearable = false, int inset = 12) {
+                                   bool is_wearable = false, int inset = 12,
+                                   int corner_r = -1) {
   if (y < 0 || y >= screen_h || screen_w <= 0) return 0;
   if (is_round) {
     const int r = screen_w / 2;
@@ -385,7 +465,7 @@ inline constexpr int safe_span_for(int y, int screen_w, int screen_h, bool is_ro
     return (hw > 0) ? (2 * hw) : 0;
   }
   int half_w = (screen_w / 2) - inset;
-  const int cr = is_wearable ? 98 : 20;
+  const int cr = (corner_r >= 0) ? corner_r : default_corner_r_for(screen_w, is_round, is_wearable);
   if (cr > 8) {
     int dy = 0;
     if (y < cr) dy = cr - y;
@@ -679,7 +759,7 @@ struct TouchRouter {
 };
 
 inline constexpr int tools_launcher_item_count_for(bool round_display, bool has_imu) noexcept {
-  return 5 + (round_display ? 1 : 0) + (has_imu ? 1 : 0);
+  return 4 + (round_display ? 1 : 0) + (has_imu ? 1 : 0);
 }
 
 inline constexpr int tools_launcher_page_count(int item_count) noexcept {
@@ -716,7 +796,7 @@ struct HomeHubPillGeom {
 
 inline constexpr int band_safe_span_for(
     int cy_band, int h_band, int screen_w, int screen_h, bool is_round,
-    bool is_wearable = false, int inset = 14) noexcept {
+    bool is_wearable = false, int inset = 14, int corner_r = -1) noexcept {
   const int half_h = (h_band / 2 > 1) ? (h_band / 2) : 1;
   int y_top = cy_band - half_h;
   if (y_top < 0) y_top = 0;
@@ -724,8 +804,8 @@ inline constexpr int band_safe_span_for(
   int y_bot = cy_band + half_h;
   if (y_bot < 0) y_bot = 0;
   if (y_bot >= screen_h) y_bot = screen_h - 1;
-  const int s_top = safe_span_for(y_top, screen_w, screen_h, is_round, is_wearable, inset);
-  const int s_bot = safe_span_for(y_bot, screen_w, screen_h, is_round, is_wearable, inset);
+  const int s_top = safe_span_for(y_top, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
+  const int s_bot = safe_span_for(y_bot, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
   return (s_top < s_bot) ? s_top : s_bot;
 }
 

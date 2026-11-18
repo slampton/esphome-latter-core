@@ -94,11 +94,10 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
   const int iy = cy_card - scale_y(13);
   const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
   auto S = [](int v466) constexpr -> int { return scale_s(v466); };
-  const int ir = S(14);
 
 #if LATTER_ROUND_DISPLAY
   if (app_id == ToolsSubpage::STOPWATCH) {
-    ui::draw_icon_stopwatch(it, ix, iy, ir, col_white, true);
+    ui::draw_icon_stopwatch(it, ix, iy, S(14), col_white, true);
   } else
 #endif
   if (app_id == ToolsSubpage::DICE) {
@@ -164,9 +163,6 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
     fast_circle_aa(it, ix, iy, static_cast<float>(S(10)), surf_bg, static_cast<float>(std::max(2, S(2))));
     fast_filled_triangle(it, ix - S(6), iy, ix + S(6), iy, ix, iy - S(6), surf_bg);
     fill_rect_row_major(it, ix - S(4), iy, 2 * S(4) + 1, S(6), surf_bg);
-
-  } else if (app_id == ToolsSubpage::CALENDAR) {
-    ui::draw_icon_calendar(it, ix, iy, ir, col_white, true);
   }
 
   fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, ctx.font_small, kChromeShadow,
@@ -1090,235 +1086,6 @@ void render_coin_flip_subpage(esphome::display::Display &it, const UiFrameContex
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
 }
 
-void render_calendar_subpage(esphome::display::Display &it, const UiFrameContext &ctx,
-                             const DeviceRuntimeState &rs) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const auto &ly = layout();
-  const int detail_mode = cal_detail_mode();
-
-  if (detail_mode == 2) {
-    const std::string &base_map_u = cal_detail_map_url();
-    const bool has_map_img = !base_map_u.empty() &&
-                             ctx.camera_snapshot_art.valid() &&
-                             ctx.camera_snapshot_art.width > 16 &&
-                             ctx.camera_snapshot_art.height > 16 &&
-                             !rs.alert.loaded_camera_url.empty() &&
-                             rs.alert.loaded_camera_url.find(base_map_u) != std::string::npos;
-
-    if (has_map_img) {
-      render_album_art_canvas(it, ctx.camera_snapshot_art, ctx.cx, false, false, false, false);
-
-      const int map_hdr_w = std::min(scale_x(278), SCREEN_W - 24);
-      char z_prefix[16];
-      std::snprintf(z_prefix, sizeof(z_prefix), "z%d • ", cal_map_zoom());
-      const std::string loc_hdr = fit_text_to_width_font(
-          std::string(z_prefix) + cal_detail_location(), map_hdr_w - 16, ctx.font_small);
-      render_card_box(it, ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                      kChromeGlassTint, ctx.theme_primary, scale_s(10));
-      fast_print(it, ctx.cx + 1, scale_y(41) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, loc_hdr.c_str());
-      fast_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
-
-      const int z_by = ly.map_zoom_y;
-      const int z_lx = ly.map_zoom_left_x();
-      const int z_rx = ly.map_zoom_right_x();
-      const int z_r  = scale_s(21);
-      render_glass_circle(it, z_lx, z_by, z_r, kChromeGlassTint,
-                          (cal_map_zoom() > 10) ? ctx.theme_primary : kChromeCardBorder);
-      fill_rect_row_major(it, z_lx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)),
-                          (cal_map_zoom() > 10) ? ctx.col_white : ctx.col_slate);
-      frame_hits().add_circle(z_lx, z_by, z_r, WidgetId::CAL_ZOOM_OUT_BTN,
-                              kHitTap | kHitFocusCircle, 0, scale_s(16));
-
-      const Color fg_in = (cal_map_zoom() < 18) ? ctx.col_white : ctx.col_slate;
-      render_glass_circle(it, z_rx, z_by, z_r, kChromeGlassTint,
-                          (cal_map_zoom() < 18) ? ctx.theme_primary : kChromeCardBorder);
-      fill_rect_row_major(it, z_rx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)), fg_in);
-      fill_rect_row_major(it, z_rx - 1, z_by - scale_s(8), std::max(2, scale_s(3)), scale_s(17), fg_in);
-      frame_hits().add_circle(z_rx, z_by, z_r, WidgetId::CAL_ZOOM_IN_BTN,
-                              kHitTap | kHitFocusCircle, 0, scale_s(16));
-
-      render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
-                        scale_s(16), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
-    } else {
-      render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.theme_primary);
-      render_empty_state(it, ctx.cx, scale_y(222), "Loading OpenStreetMap...", ctx.font_small, ctx.theme_secondary);
-    }
-
-    render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back", ctx.col_white);
-    return;
-  }
-
-  if (detail_mode == 1) {
-    render_page_header(it, ctx.cx, "EVENT DETAILS", ctx.font_small, ctx.theme_primary);
-
-    // Event details are non-interactive text -> draw directly on background (only "View Map" gets frosted glass)
-    const int txt_max_w = (SCREEN_W < 380) ? (SCREEN_W - 36) : scale_x(316);
-    const std::string fit_tm = fit_text_to_width_font(
-        cal_detail_time().empty() ? "Upcoming" : cal_detail_time(), txt_max_w, ctx.font_small);
-    if (backdrop_active()) {
-      fast_print(it, ctx.cx + 1, scale_y(96) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, fit_tm.c_str());
-    }
-    fast_print(it, ctx.cx, scale_y(96), ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, fit_tm.c_str());
-
-    std::string title_lines[3];
-    const int t_cnt = wrap_text_lines(cal_detail_title(), txt_max_w, ctx.font_small, title_lines, 3);
-    const int title_cy = scale_y(164);
-    const int t_start_y = (t_cnt <= 1) ? title_cy
-                          : ((t_cnt == 2) ? (title_cy - scale_y(14)) : (title_cy - scale_y(28)));
-    for (int i = 0; i < t_cnt; i++) {
-      const int ly_txt = t_start_y + i * scale_y(28);
-      if (backdrop_active()) {
-        fast_print(it, ctx.cx + 1, ly_txt + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, title_lines[i].c_str());
-      }
-      fast_print(it, ctx.cx, ly_txt, ctx.font_small, ctx.col_white, TextAlign::CENTER, title_lines[i].c_str());
-    }
-
-    fast_line(it, ctx.cx - scale_x(110), scale_y(218), ctx.cx + scale_x(110), scale_y(218), kChromeCardBorder);
-
-    const bool has_loc = !cal_detail_location().empty();
-    if (has_loc) {
-      std::string loc_lines[2];
-      const int l_cnt = wrap_text_lines(cal_detail_location(), txt_max_w, ctx.font_small, loc_lines, 2);
-      const int loc_cy = scale_y(264);
-      const int l_start_y = (l_cnt <= 1) ? loc_cy : (loc_cy - scale_y(13));
-      for (int i = 0; i < l_cnt; i++) {
-        const int ly_loc = l_start_y + i * scale_y(26);
-        if (backdrop_active()) {
-          fast_print(it, ctx.cx + 1, ly_loc + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, loc_lines[i].c_str());
-        }
-        fast_print(it, ctx.cx, ly_loc, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, loc_lines[i].c_str());
-      }
-
-      const int map_btn_y = scale_y(348);
-      const int map_btn_w = (SCREEN_W > 520) ? scale_x(236) : 236;
-      const int map_btn_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-      render_modern_card(it, ctx.cx, map_btn_y, 236, 44, 12,
-                         kChromeGlassTint, ctx.theme_primary,
-                         "View Map", ctx.col_white, ctx.font_small);
-      const int pin_x = ctx.cx - scale_x(82);
-      fast_filled_circle(it, pin_x, map_btn_y - scale_s(4), scale_s(5), Color(235, 52, 62));
-      fast_filled_triangle(it, pin_x - scale_s(4), map_btn_y - scale_s(2),
-                           pin_x + scale_s(4), map_btn_y - scale_s(2),
-                           pin_x, map_btn_y + scale_s(6), Color(235, 52, 62));
-      fast_filled_circle(it, pin_x, map_btn_y - scale_s(4), std::max(1, scale_s(2)), ctx.col_white);
-      frame_hits().add_centered_rect(ctx.cx, map_btn_y, map_btn_w, map_btn_h,
-                                     WidgetId::CAL_EVENT_BASE, kHitTap | kHitFocusSlot, 0, scale_y(8));
-    } else {
-      if (backdrop_active()) {
-        fast_print(it, ctx.cx + 1, scale_y(278) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, "No location specified");
-      }
-      fast_print(it, ctx.cx, scale_y(278), ctx.font_small, ctx.col_slate,
-                 TextAlign::CENTER, "No location specified");
-    }
-
-    render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back");
-    return;
-  }
-
-  if (cal_quick_add_open()) {
-    render_page_header(it, ctx.cx, "ADD REMINDER", ctx.font_small, ctx.theme_primary);
-
-    static constexpr const char *kQuickLabels[5] = {
-        "In 15m: Quick Reminder",
-        "In 30m: Check-In / Task",
-        "In 1h: Follow-Up Call",
-        "In 3h: Errand / Pickup",
-        "Tomorrow: Morning Reminder",
-    };
-    const int card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : ly.list_card_w;
-    const int card_x = ctx.cx - card_w / 2;
-    const int card_h = std::min(scale_y(44), ly.slot5_stride - 6);
-
-    for (int i = 0; i < 5; i++) {
-      const int ym = ly.slot5_y(i);
-      render_card_box(it, card_x, ym - card_h / 2, card_w, card_h,
-                      kChromeGlassTint, kChromeCardBrdOn, scale_s(12));
-      fill_rect_row_major(it, card_x + scale_x(12), ym - 1, scale_s(9), std::max(2, scale_s(3)), ctx.theme_primary);
-      fill_rect_row_major(it, card_x + scale_x(12) + scale_s(3), ym - scale_s(4), std::max(2, scale_s(3)), scale_s(9), ctx.theme_primary);
-      const std::string fit_q = fit_text_to_width_font(
-          kQuickLabels[i], card_w - scale_x(42), ctx.font_small);
-      fast_print(it, card_x + scale_x(30), ym, ctx.font_small, ctx.col_white,
-                 TextAlign::CENTER_LEFT, fit_q.c_str());
-      frame_hits().add_rect(card_x, ym - card_h / 2, card_w, card_h,
-                            WidgetId::CAL_PRESET_BASE + static_cast<uint16_t>(i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-    }
-
-    render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Cancel");
-    return;
-  }
-
-  const auto *slots = rs.slots_for(latter_rpc::SlotChannel::CALENDAR);
-  const int cur_pg  = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::CALENDAR)];
-  const int tot_pg  = rs.slot_total_pages[static_cast<size_t>(latter_rpc::SlotChannel::CALENDAR)];
-
-  const bool show_fb = (!cal_feedback_text().empty() && ctx.now_ms > 0 &&
-                        (ctx.now_ms - cal_feedback_ms() < 2200U));
-  if (show_fb) {
-    const std::string fit_fb = fit_text_to_width_font(cal_feedback_text(), scale_x(260), ctx.font_small);
-    render_page_header(it, ctx.cx, fit_fb, ctx.font_small, ctx.theme_secondary);
-  } else if (tot_pg > 1) {
-    char c_hdr[36];
-    std::snprintf(c_hdr, sizeof(c_hdr), "CALENDAR %d/%d (+)", cur_pg, tot_pg);
-    render_page_header(it, ctx.cx, c_hdr, ctx.font_small, ctx.theme_primary);
-  } else {
-    render_page_header(it, ctx.cx, "CALENDAR  (+)", ctx.font_small, ctx.theme_primary);
-  }
-  frame_hits().add_rect(ctx.cx - scale_x(120), 0, 2 * scale_x(120), scale_y(68),
-                        WidgetId::CAL_QUICK_ADD_BTN, kHitTap | kHitFocusSlot);
-
-  std::string names[5];
-  bool acts[5] = {false, false, false, false, false};
-  for (int i = 0; i < 5; i++) {
-    names[i] = slots[i].name;
-    acts[i]  = slots[i].active;
-  }
-  if (names[0].empty()) {
-    CalendarRecord recs[5];
-    const size_t n = parse_calendar_records(calendar_state().summary, recs, 5);
-    for (size_t i = 0; i < n; i++) {
-      names[i] = std::string(recs[i].time) + ": " + std::string(recs[i].title);
-      acts[i]  = (i == 0);
-    }
-  }
-
-  if (names[0].empty()) {
-    render_empty_state(it, ctx.cx, scale_y(222), "No upcoming events (Tap +)", ctx.font_small, ctx.col_slate);
-  } else {
-    const int card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : ly.list_card_w;
-    const int card_x = ctx.cx - card_w / 2;
-    const int card_h = std::min(scale_y(44), ly.slot5_stride - 6);
-    const int bounce_y = edge_bounce().offset_px(
-        PageId::TOOLS, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
-    for (int i = 0; i < 5; i++) {
-      if (names[i].empty()) continue;
-      const int ym = ly.slot5_y(i) + bounce_y;
-      const Color brd_c = acts[i] ? ctx.theme_primary : kChromeCardBorder;
-      const Color txt_c = acts[i] ? ctx.col_white : ctx.col_slate;
-      render_card_box(it, card_x, ym - card_h / 2, card_w, card_h,
-                      kChromeGlassTint, brd_c, scale_s(12));
-      if (acts[i]) {
-        fill_rect_row_major(it, card_x + scale_x(8), ym - scale_y(12),
-                            std::max(2, scale_x(3)), scale_y(24), ctx.theme_primary);
-      }
-      const std::string fit_ev = fit_text_to_width_font(names[i], card_w - scale_x(30), ctx.font_small);
-      fast_print(it, card_x + scale_x(18), ym, ctx.font_small, txt_c, TextAlign::CENTER_LEFT, fit_ev.c_str());
-      frame_hits().add_rect(card_x, ym - card_h / 2, card_w, card_h,
-                            WidgetId::CAL_EVENT_BASE + static_cast<uint16_t>(i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-    }
-  }
-
-  if (tot_pg > 1) {
-    render_vertical_page_pips(it, cur_pg > 1, cur_pg < tot_pg,
-                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
-  }
-
-  render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back");
-}
-
 }  // namespace
 
 void reset_calculator_state() {
@@ -1497,86 +1264,6 @@ void trigger_coin_flip(uint32_t now_ms, uint32_t rand_val) {
   cs.anim_start_ms = now_ms;
 }
 
-std::string &cal_detail_time() {
-  static std::string s;
-  return s;
-}
-
-std::string &cal_detail_title() {
-  static std::string s;
-  return s;
-}
-
-std::string &cal_detail_location() {
-  static std::string s;
-  return s;
-}
-
-std::string &cal_detail_map_url() {
-  static std::string s;
-  return s;
-}
-
-int &cal_map_zoom() {
-  static int z = 15;
-  return z;
-}
-
-int &cal_map_pan_x() {
-  static int px = 0;
-  return px;
-}
-
-int &cal_map_pan_y() {
-  static int py = 0;
-  return py;
-}
-
-std::string &cal_feedback_text() {
-  static std::string s;
-  return s;
-}
-
-uint32_t &cal_feedback_ms() {
-  static uint32_t ms = 0;
-  return ms;
-}
-
-void parse_calendar_slot_meta(const std::string &slot_name, const std::string &slot_id,
-                              std::string &out_time, std::string &out_title,
-                              std::string &out_loc, std::string &out_map_url) {
-  out_time.clear();
-  out_title.clear();
-  out_loc.clear();
-  out_map_url.clear();
-
-  const size_t p1 = slot_id.find('|');
-  if (p1 != std::string::npos) {
-    const size_t p2 = slot_id.find('|', p1 + 1);
-    if (p2 != std::string::npos) {
-      const size_t p3 = slot_id.find('|', p2 + 1);
-      out_time  = slot_id.substr(0, p1);
-      out_title = slot_id.substr(p1 + 1, p2 - p1 - 1);
-      if (p3 != std::string::npos) {
-        out_loc     = slot_id.substr(p2 + 1, p3 - p2 - 1);
-        out_map_url = slot_id.substr(p3 + 1);
-      } else {
-        out_loc = slot_id.substr(p2 + 1);
-      }
-      return;
-    }
-  }
-
-  const size_t col = slot_name.find(": ");
-  if (col != std::string::npos) {
-    out_time  = slot_name.substr(0, col);
-    out_title = slot_name.substr(col + 2);
-  } else {
-    out_time  = "EVENT";
-    out_title = slot_name;
-  }
-}
-
 void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
                                   const SystemTakeoverState &st) {
   using esphome::Color;
@@ -1702,9 +1389,6 @@ void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx)
       break;
     case ToolsSubpage::COIN_FLIP:
       render_coin_flip_subpage(it, ctx);
-      break;
-    case ToolsSubpage::CALENDAR:
-      render_calendar_subpage(it, ctx, rs);
       break;
     case ToolsSubpage::LAUNCHER:
     default:

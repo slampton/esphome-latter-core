@@ -117,7 +117,7 @@ bool DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, 
       if (is_home_clock_sub) {
         py0 = 0;
         py1 = std::max(py1, home_clock_band_y1);
-      } else {
+      } else if (page != 2) {
         py0 = 0;
         py1 = SCREEN_H - 1;
       }
@@ -142,8 +142,7 @@ bool DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, 
       frame_hits().clear();
       return true;
     }
-    if ((page == 1 && (subpage & 0xFF) == 2) || page == 4 ||
-        (page == 8 && ((subpage & 0xFF) == 9)) ||
+    if ((page == 1 && (subpage & 0xFF) == 2) || page == 4 || page == 12 ||
         (page == 10 && (subpage & 0x0F) == 2)) {
       active_y0 = 0;
       active_y1 = SCREEN_H - 1;
@@ -170,6 +169,10 @@ void mark_dirty_full() {
   dirty_band().mark_full();
 }
 
+void mark_music_progress_dirty_band(int y0, int y1) {
+  dirty_band().mark_band(y0, y1);
+}
+
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active,
@@ -177,7 +180,7 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
   uint32_t sig = 0U;
   if (ota_in_progress) sig |= (1U << 0);
   if (is_hibernating) sig |= (1U << 1);
-  if (panel_is_on) sig |= (1U << 2);
+  if (!panel_is_on) sig |= (1U << 2);
   sig |= (static_cast<uint32_t>(display_power_state & 0x07) << 3);
   if (alert_ringing) sig |= (1U << 6);
   if (va_active) sig |= (1U << 7);
@@ -482,6 +485,43 @@ CadenceScreensaverActions FrameCadenceController::evaluate_screensaver_20ms(
 
 #if __has_include("esphome/core/defines.h")
 
+namespace {
+
+bool is_music_playing_for_compositor(const MediaState &ms, bool local_media_playing, uint32_t now_ms) {
+  return is_music_playing_effective(!ms.is_local, local_media_playing, ms.state, now_ms) ||
+         (ms.is_local && local_media_playing) ||
+         (!ms.is_local && (ms.playing || ms.playback_state == MediaPlaybackState::Playing));
+}
+
+bool is_music_lyrics_sync_imminent(uint32_t now_ms, bool local_media_playing) {
+  const auto &rs = runtime_state();
+  if (rs.nav.gui_page != PageId::MUSIC || rs.music.view != MusicView::LYRICS) return false;
+  const auto &lyr = rs.music.lyrics;
+  if (!lyr.synced || lyr.lines.empty() || now_ms < lyr.manual_override_until_ms) return false;
+  const auto &ms = media_state();
+  if (!is_music_playing_for_compositor(ms, local_media_playing, now_ms)) return false;
+  const uint32_t pos_ms = ms.interpolated_position_ms(now_ms);
+  return lyr.find_active_line(pos_ms + 280U) != lyr.active_line_idx;
+}
+
+}  // namespace
+
+bool is_music_lyrics_anim_active(uint32_t now_ms, bool local_media_playing) {
+  const auto &rs = runtime_state();
+  if (rs.nav.gui_page != PageId::MUSIC || rs.music.view != MusicView::LYRICS) return false;
+  const auto &lyr = rs.music.lyrics;
+  if (lyr.scroll_px != lyr.target_scroll_px) return true;
+  if (lyr.scroll_anim_start_ms > 0U && (now_ms - lyr.scroll_anim_start_ms) < 260U) return true;
+  if (lyr.synced && !lyr.lines.empty() && now_ms >= lyr.manual_override_until_ms) {
+    const auto &ms = media_state();
+    if (is_music_playing_for_compositor(ms, local_media_playing, now_ms)) {
+      const uint32_t pos_ms = ms.interpolated_position_ms(now_ms);
+      if (lyr.find_active_line(pos_ms) != lyr.active_line_idx) return true;
+    }
+  }
+  return false;
+}
+
 Cadence20msActions FrameCadenceController::step_20ms(
     uint32_t now_ms, bool panel_on, bool wallpaper_loaded,
     bool mww_running, bool va_running, bool tts_audio_active,
@@ -512,7 +552,8 @@ Cadence20msActions FrameCadenceController::step_20ms(
       (rs.nav.gui_page == PageId::CLOCK) &&
       clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_20ms, prefs.clock_face);
   in.interactive_slide =
-      rs.nav.menu_scroll_active || any_vert_bounce_active(rs.nav.gui_page, now_ms);
+      rs.nav.menu_scroll_active || any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
+      is_music_lyrics_anim_active(now_ms, speaker_audio_busy);
   in.dock_anim_active = any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms);
   in.dock_y0 = dock_dirty_band_y0();
   in.dock_y1 = SCREEN_H - 1;
@@ -580,6 +621,9 @@ Cadence20msActions FrameCadenceController::step_20ms(
   }
 
   const auto out = evaluate_20ms(in);
+  if (is_music_lyrics_sync_imminent(now_ms, speaker_audio_busy)) {
+    idle_anim_ticks_ = 0U;
+  }
   if (out.clear_pending_game_sfx) {
     pending_game_sfx() = 0;
   }
@@ -663,6 +707,8 @@ Cadence250msActions FrameCadenceController::step_250ms(
     in.nav_scroll_or_sim_dirty =
         any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms) ||
         any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
+        is_music_lyrics_anim_active(now_ms, false) ||
+        is_music_lyrics_sync_imminent(now_ms, false) ||
         rs.nav.menu_scroll_active || weather_sim_dirty();
   }
 
@@ -723,7 +769,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   if (!rs.intercom.broadcast_feedback.empty() && (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 3600U)) sig |= (1U << 17);
   if (rs.music.hud_active) sig |= (1U << 18);
   if (ctx.ble_active) sig |= (1U << 19);
-  if (!cal_feedback_text().empty() && (ctx.now_ms - cal_feedback_ms() < 2200U)) sig |= (1U << 26);
+  if (!rs.cal.feedback_text.empty() && (ctx.now_ms - rs.cal.feedback_ms < 2200U)) sig |= (1U << 26);
   if (!rs.nav.pinned_feedback.empty() && (ctx.now_ms - rs.nav.pinned_feedback_ms < 1800U)) sig |= (1U << 27);
 
   if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == SystemMenuMode::SYSTEM_INFO) {
@@ -843,12 +889,128 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     }
     gm_sig = (gm_sig ^ static_cast<uint32_t>(rs.nav.game_carousel_idx)) * 16777619U;
     sig ^= (gm_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::CALENDAR) {
+    uint32_t cl_sig = 2166136261U;
+    cl_sig = (cl_sig ^ calendar_state().rev) * 16777619U;
+    cl_sig = (cl_sig ^ calendar_window_store().rev) * 16777619U;
+    cl_sig = (cl_sig ^ (calendar_window_store().loading ? 1U : 0U)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.selected_ymd)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.selected_event_idx + 2)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.dictation_field)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_ymd)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_start_min + 2)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_end_min + 2)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_all_day ? 1 : 0)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_time_field)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_cal_idx)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_rrule_idx)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_zoom)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_pan_x + 4096)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_pan_y + 4096)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.width)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(prefs.calendar_lookahead_days)) * 16777619U;
+    cl_sig = (cl_sig ^ static_cast<uint32_t>(prefs.calendar_week_start)) * 16777619U;
+    const bool fb_vis = !rs.cal.feedback_text.empty() &&
+                        (ctx.now_ms >= rs.cal.feedback_ms) &&
+                        ((ctx.now_ms - rs.cal.feedback_ms) < 4000U);
+    cl_sig = (cl_sig ^ (fb_vis ? 1U : 0U)) * 16777619U;
+    for (unsigned char c : rs.cal.draft_title) cl_sig = (cl_sig ^ c) * 16777619U;
+    for (unsigned char c : rs.cal.draft_location) cl_sig = (cl_sig ^ c) * 16777619U;
+    sig ^= (cl_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::MUSIC) {
+    const auto &ms = media_state();
+    const bool is_playing_eff = is_music_playing_for_compositor(ms, ctx.local_media_playing, ctx.now_ms);
+    uint32_t mu_sig = 2166136261U;
+    auto hash_sv = [&](std::string_view sv) {
+      for (unsigned char c : sv) mu_sig = (mu_sig ^ c) * 16777619U;
+      mu_sig = (mu_sig ^ 0xFFU) * 16777619U;
+    };
+    const uint32_t mu_flags =
+        (is_playing_eff ? 1U : 0U) |
+        (ms.is_local ? 2U : 0U) |
+        (ms.shuffle ? 4U : 0U) |
+        (ms.muted ? 8U : 0U) |
+        (ms.favorite ? 16U : 0U) |
+        (static_cast<uint32_t>(ms.repeat_mode & 0x03U) << 5) |
+        (static_cast<uint32_t>(prefs.album_art_style & 0x07U) << 7) |
+        (static_cast<uint32_t>(prefs.music_overlay_style & 0x07U) << 10) |
+        (static_cast<uint32_t>(prefs.album_sort_order & 0x03U) << 13) |
+        (static_cast<uint32_t>(prefs.artist_album_sort_order & 0x03U) << 15) |
+        (static_cast<uint32_t>(prefs.podcast_sort_order & 0x03U) << 17);
+    mu_sig = (mu_sig ^ mu_flags) * 16777619U;
+    mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct)) * 16777619U;
+    mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.queue_count)) * 16777619U;
+    mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.media_caps)) * 16777619U;
+    hash_sv(ms.title);
+    hash_sv(ms.artist);
+    hash_sv(ms.album);
+    hash_sv(ctx.track_title.sv());
+    hash_sv(ctx.track_artist.sv());
+    hash_sv(ctx.track_album.sv());
+    hash_sv(ms.active_speaker);
+    hash_sv(ms.speaker_name);
+    hash_sv(rs.music.active_speaker_name);
+    hash_sv(ms.art_url);
+    hash_sv(rs.music.loaded_art_url);
+    hash_sv(ctx.music_overlay_style_opt.sv());
+    hash_sv(ctx.music_fullscreen_art_opt.sv());
+    auto hash_art = [&](ArtImageView art) {
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(art.width)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(art.height)) * 16777619U;
+      if (art.valid()) {
+        const size_t n = static_cast<size_t>(art.width) * static_cast<size_t>(art.height);
+        mu_sig = (mu_sig ^ art.data[0]) * 16777619U;
+        mu_sig = (mu_sig ^ art.data[n / 2]) * 16777619U;
+        mu_sig = (mu_sig ^ art.data[n - 1]) * 16777619U;
+      }
+    };
+    hash_art(ctx.album_art);
+    hash_art(ctx.remote_album_art);
+    if (!rs.music.action_feedback.empty() && (ctx.now_ms - rs.music.feedback_timer < 3200U)) {
+      hash_sv(rs.music.action_feedback);
+    }
+    if (rs.music.view == MusicView::LYRICS) {
+      const auto &lyr = rs.music.lyrics;
+      mu_sig = (mu_sig ^ lyr.rev) * 16777619U;
+      mu_sig = (mu_sig ^ (lyr.loading ? 1U : 0U)) * 16777619U;
+      mu_sig = (mu_sig ^ (lyr.synced ? 2U : 0U)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(lyr.active_line_idx + 2)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(lyr.scroll_px)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(lyr.target_scroll_px)) * 16777619U;
+      mu_sig = (mu_sig ^ ((ctx.now_ms < lyr.manual_override_until_ms) ? 1U : 0U)) * 16777619U;
+    } else if (rs.music.view != MusicView::NOW_PLAYING || rs.music.takeover != MusicTakeover::NONE) {
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.category_page)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.drilldown_artist_page)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.drilldown_album_page)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.info_scroll_px)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.info_scroll_page)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.settings_page)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.action_sheet_slot + 2)) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.slot_page_for(latter_rpc::SlotChannel::MUSIC))) * 16777619U;
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC))) * 16777619U;
+      const BrowseSlotItem *slots = rs.music_slots();
+      for (size_t si = 0; si < DeviceRuntimeState::kSlotsPerPage; ++si) {
+        hash_sv(slots[si].name);
+        hash_sv(slots[si].id);
+        hash_sv(slots[si].queue_item_id);
+        mu_sig = (mu_sig ^ ((slots[si].active ? 1U : 0U) | (slots[si].is_current ? 2U : 0U))) * 16777619U;
+      }
+    }
+    sig ^= (mu_sig | 1U);
   }
   return sig;
 }
 
 bool compute_live_sec_active(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
+  static uint32_t s_last_music_np_pos_sec = 0xFFFFFFFFU;
+  static int s_last_music_np_dur_sec = -1;
+  if (rs.nav.gui_page != PageId::MUSIC ||
+      rs.music.view != MusicView::NOW_PLAYING ||
+      rs.music.takeover != MusicTakeover::NONE) {
+    s_last_music_np_pos_sec = 0xFFFFFFFFU;
+    s_last_music_np_dur_sec = -1;
+  }
   if (rs.nav.gui_page == PageId::CLOCK) return true;
   if (rs.nav.gui_page == PageId::TIME) {
     if (rs.nav.time_subpage == TimeSubpage::CLOCK) return true;
@@ -869,8 +1031,61 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
     return false;
   }
   if (rs.nav.gui_page == PageId::MUSIC) {
-    return ctx.local_media_playing || (media_state().playback_state == MediaPlaybackState::Playing) ||
-           (media_state().state == "playing");
+    const auto &ms = media_state();
+    const auto &prefs = persisted_prefs();
+    const bool is_playing_eff = is_music_playing_for_compositor(ms, ctx.local_media_playing, ctx.now_ms);
+    if (rs.music.view == MusicView::LYRICS) {
+      return is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
+    }
+    if (rs.music.view == MusicView::NOW_PLAYING) {
+      if (rs.music.takeover == MusicTakeover::SCRUB) {
+        if (is_playing_eff) return true;
+        return rs.music.takeover_interacted_ms > 0U &&
+               (ctx.now_ms - rs.music.takeover_interacted_ms) >= 4800U;
+      }
+      if (rs.music.takeover == MusicTakeover::VOLUME) {
+        return rs.music.takeover_interacted_ms > 0U &&
+               (ctx.now_ms - rs.music.takeover_interacted_ms) >= 3800U;
+      }
+      if (rs.music.takeover != MusicTakeover::NONE) {
+        return false;
+      }
+      const UiStrView ov_opt = ctx.music_overlay_style_opt.empty()
+                                   ? UiStrView(pref_music_overlay_style_cstr(prefs))
+                                   : ctx.music_overlay_style_opt;
+      const bool always_vis = (ov_opt == "Always Visible");
+      const bool show_controls = always_vis || rs.music.hud_active;
+      const bool show_metadata = always_vis || (ov_opt == "Art + Metadata") || rs.music.hud_active;
+      if (!show_metadata && !show_controls) {
+        // Art Only auto-hidden: 0 FPS static frame (zero 1 Hz DMA flushes while playing!)
+        s_last_music_np_pos_sec = 0xFFFFFFFFU;
+        s_last_music_np_dur_sec = -1;
+        return false;
+      }
+      const uint32_t cur_pos_sec = ms.interpolated_position_ms(ctx.now_ms) / 1000U;
+      const int cur_dur_sec = (ms.duration > 0.0f && !std::isnan(ms.duration))
+                                  ? static_cast<int>(ms.duration + 0.5f)
+                                  : 0;
+      const int cur_sub = compute_active_subpage_id();
+      if (dirty_band().last_page != PageId::MUSIC || dirty_band().last_subpage != cur_sub ||
+          s_last_music_np_pos_sec == 0xFFFFFFFFU) {
+        s_last_music_np_pos_sec = cur_pos_sec;
+        s_last_music_np_dur_sec = cur_dur_sec;
+        return false;
+      }
+      if (cur_pos_sec != s_last_music_np_pos_sec || cur_dur_sec != s_last_music_np_dur_sec) {
+        s_last_music_np_pos_sec = cur_pos_sec;
+        s_last_music_np_dur_sec = cur_dur_sec;
+        const bool dock_or_scroll =
+            rs.nav.menu_scroll_active ||
+            any_dock_anim_active(PageId::MUSIC, 0, ctx.now_ms) ||
+            any_vert_bounce_active(PageId::MUSIC, ctx.now_ms);
+        if (dock_or_scroll) return true;
+        mark_music_progress_dirty_band(music_metadata_band_y0(), music_metadata_band_y1());
+      }
+      return false;
+    }
+    return false;
   }
   if (rs.nav.gui_page == PageId::SYSTEM &&
       rs.nav.system_menu_mode == SystemMenuMode::UPDATE &&

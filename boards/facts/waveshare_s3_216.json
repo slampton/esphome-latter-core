@@ -7,7 +7,7 @@
   "sources": [
     {"kind": "schematic", "url": "https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.16", "note": "schematic/ESP32-S3-Touch-AMOLED-2.16-Schematic.pdf"},
     {"kind": "wiki", "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.16"},
-    {"kind": "datasheet", "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.16", "note": "LCD outline drawing: 38.99 x 38.99 mm active area for 480 x 480 = 312.7 ppi (LATTER_PANEL_PPI 313)"}
+    {"kind": "datasheet", "url": "https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.16", "note": "LCD outline drawing & 2D CAD (dimensions/ESP32-S3-Touch-AMOLED-2.16-2D-20260209.dxf): 38.99 x 38.99 mm VA for 480 x 480 = 312.7 ppi (LATTER_PANEL_PPI 313); G2 VA corner spline cuts 21.85 px at 45 deg (LATTER_CORNER_R 76)"}
   ],
   "silicon": {"soc": "ESP32-S3", "module": "ESP32-S3R8", "revisions_seen": ["v0.2"], "flash_mb": 16, "psram_mb": 8, "max_cpu_mhz": {"all": 240}},
   "power": {
@@ -20,7 +20,7 @@
       {"rail": "ALDO1", "loads": "codec analog A3V3", "confidence": "M"}
     ]
   },
-  "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "active_area_mm": [38.99, 38.99], "te": "unrouted", "low_power": "DCS sleep", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
+  "display": {"bus": "qspi", "controller": "CO5300", "width": 480, "height": 480, "shape": "square", "corner_radius": 76, "active_area_mm": [38.99, 38.99], "te": "unrouted", "low_power": "DCS sleep", "qspi_clock": "80 MHz (data_rate), beyond the vendor's 40 MHz; validated in Latter firmware (plan D9)"},
   "touch": {"protocol": "cst9217", "address": "0x5a", "delivery": "irq", "active_poll_ms": 16, "int_gpio": 11, "rst_gpio": 40},
   "backlight": {"type": "amoled_none"},
   "i2c_devices": [
@@ -32,7 +32,7 @@
     {"address": "0x51", "part": "PCF85063", "note": "RTC, UTC backup clock"}
   ],
   "latter_flags": {
-    "LATTER_SCREEN_W": 480, "LATTER_SCREEN_H": 480, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 313,
+    "LATTER_SCREEN_W": 480, "LATTER_SCREEN_H": 480, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 313, "LATTER_CORNER_R": 76,
     "LATTER_HAS_DISPLAY": 1, "LATTER_HAS_TOUCH": 1, "LATTER_HAS_AUDIO": 1, "LATTER_HAS_IMU": 1, "LATTER_HAS_BATTERY": 1, "LATTER_HAS_RTC": 1,
     "LATTER_IS_STATIONARY": 0, "LATTER_IS_WEARABLE": 0, "LATTER_PANEL_IPS": 0, "LATTER_PANEL_DCS_SLEEP": 1,
     "LATTER_CHIP_P4": 0, "LATTER_PSRAM_MB": 8,

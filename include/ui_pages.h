@@ -6,7 +6,7 @@
 // components/latter_ui/:
 //   page_clock_home.cpp, page_music.cpp, page_weather.cpp, page_area_hub.cpp,
 //   page_home_hub.cpp, page_remote.cpp, page_system.cpp, page_ambient_va.cpp,
-//   page_tools.cpp, page_time.cpp, page_games.cpp.
+//   page_tools.cpp, page_time.cpp, page_games.cpp, page_calendar.cpp.
 // ==============================================================================
 
 #include <cstdint>
@@ -42,6 +42,7 @@ void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx)
 void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_calendar_page(esphome::display::Display &it, const UiFrameContext &ctx);
 
 // ------------------------------------------------------------------------------
 // 2. Global System Takeover Overlays (called by render_system_takeovers)
@@ -145,19 +146,6 @@ struct CoinFlipState {
 
 CoinFlipState &coin_state();
 void trigger_coin_flip(uint32_t now_ms, uint32_t rand_val);
-
-std::string &cal_detail_time();
-std::string &cal_detail_title();
-std::string &cal_detail_location();
-std::string &cal_detail_map_url();
-int &cal_map_zoom();
-int &cal_map_pan_x();
-int &cal_map_pan_y();
-std::string &cal_feedback_text();
-uint32_t &cal_feedback_ms();
-void parse_calendar_slot_meta(const std::string &slot_name, const std::string &slot_id,
-                              std::string &out_time, std::string &out_title,
-                              std::string &out_loc, std::string &out_map_url);
 
 // (Intercom & camera carousel state + summary parsers live in include/latter_state.h)
 

@@ -200,34 +200,8 @@ void render_bezel_alert_border(esphome::display::Display &it, int cx, int cy, es
   const int pad = LATTER_IS_WEARABLE ? 5 : 3;
   const int thick = 5;
   const int cr_out = std::max(8, LATTER_CORNER_R - pad);
-  const int cr_in  = std::max(4, cr_out - thick);
-  const int x_lc   = pad + cr_out;
-  const int x_rc   = SCREEN_W - 1 - pad - cr_out;
-  const int y_tc   = pad + cr_out;
-  const int y_bc   = SCREEN_H - 1 - pad - cr_out;
-
-  for (int y = pad; y <= SCREEN_H - 1 - pad; y++) {
-    if (y >= y_tc && y <= y_bc) {
-      fast_hline(it, pad, y, thick, ring_c);
-      fast_hline(it, SCREEN_W - pad - thick, y, thick, ring_c);
-    } else {
-      const int dy = (y < y_tc) ? (y_tc - y) : (y - y_bc);
-      if (dy > cr_out) continue;
-      const int dx_out = chord_half_span_int(cr_out, dy, true);
-      if (dy >= cr_in) {
-        const int x0 = x_lc - dx_out;
-        const int x1 = x_rc + dx_out;
-        if (x1 >= x0) {
-          fast_hline(it, x0, y, x1 - x0 + 1, ring_c);
-        }
-      } else {
-        const int dx_in = chord_half_span_int(cr_in, dy, false);
-        const int seg = std::max(thick, dx_out - dx_in + 1);
-        fast_hline(it, x_lc - dx_out, y, seg, ring_c);
-        fast_hline(it, x_rc + dx_out - seg + 1, y, seg, ring_c);
-      }
-    }
-  }
+  stroke_round_rect_aa(it, pad, pad, SCREEN_W - 2 * pad, SCREEN_H - 2 * pad,
+                       static_cast<float>(cr_out), ring_c, ring_c, thick);
 #endif
 }
 
@@ -1368,6 +1342,86 @@ void draw_icon_calendar(esphome::display::Display &it, int cx, int cy, int r,
   });
 }
 
+void draw_icon_cal_agenda(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float bar_hy = std::max(1.05f, 0.135f * rf);
+  const float dot_r = std::max(1.15f, 0.145f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d = 4.0f;
+    for (int row = -1; row <= 1; ++row) {
+      const float ry = static_cast<float>(row) * 0.54f * rf;
+      const float bar_hx = (row == 1) ? (0.44f * rf) : (0.56f * rf);
+      const float bar_cx = (row == 1) ? (0.10f * rf) : (0.22f * rf);
+      d = std::min({d,
+                    sd_circle_px(x, y, -0.68f * rf, ry, dot_r),
+                    sd_rbox_px(x, y, bar_cx, ry, bar_hx, bar_hy, bar_hy)});
+    }
+    return d;
+  });
+}
+
+void draw_icon_cal_day(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float tab_w = std::max(1.0f, 0.11f * rf);
+  const SdfCapsule ring_l = SdfCapsule::make(-0.44f * rf, -0.92f * rf, -0.44f * rf, -0.58f * rf, tab_w);
+  const SdfCapsule ring_r = SdfCapsule::make(0.44f * rf, -0.92f * rf, 0.44f * rf, -0.58f * rf, tab_w);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_page = sd_rbox_px(x, y, 0.0f, 0.12f * rf, 0.86f * rf, 0.78f * rf, 0.18f * rf);
+    const float d_solid = std::min({d_page, ring_l.eval(x, y), ring_r.eval(x, y)});
+    if (d_solid >= 1.5f) return d_solid;
+
+    const float seam_h = std::max(0.80f, 0.075f * rf);
+    const float d_seam = sd_rbox_px(x, y, 0.0f, -0.26f * rf, 0.90f * rf, seam_h, 0.0f);
+    const float d_focus = sd_rbox_px(x, y, 0.0f, 0.14f * rf, 0.50f * rf, 0.14f * rf, 0.08f * rf);
+    const float d_sub = sd_rbox_px(x, y, -0.12f * rf, 0.48f * rf, 0.38f * rf, 0.10f * rf, 0.06f * rf);
+    return std::max(d_solid, -std::min({d_seam, d_focus, d_sub}));
+  });
+}
+
+void draw_icon_cal_week(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float tab_w = std::max(1.0f, 0.11f * rf);
+  const SdfCapsule ring_l = SdfCapsule::make(-0.44f * rf, -0.92f * rf, -0.44f * rf, -0.58f * rf, tab_w);
+  const SdfCapsule ring_r = SdfCapsule::make(0.44f * rf, -0.92f * rf, 0.44f * rf, -0.58f * rf, tab_w);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_page = sd_rbox_px(x, y, 0.0f, 0.12f * rf, 0.86f * rf, 0.78f * rf, 0.18f * rf);
+    const float d_solid = std::min({d_page, ring_l.eval(x, y), ring_r.eval(x, y)});
+    if (d_solid >= 1.5f) return d_solid;
+
+    const float seam_h = std::max(0.80f, 0.075f * rf);
+    float d_cut = sd_rbox_px(x, y, 0.0f, -0.26f * rf, 0.90f * rf, seam_h, 0.0f);
+    const float col_hx = std::max(0.90f, 0.12f * rf);
+    for (int cc = -1; cc <= 1; ++cc) {
+      const float px = static_cast<float>(cc) * 0.42f * rf;
+      d_cut = std::min(d_cut, sd_rbox_px(x, y, px, 0.28f * rf, col_hx, 0.36f * rf, 0.06f * rf));
+    }
+    return std::max(d_solid, -d_cut);
+  });
+}
+
+void draw_icon_mic(esphome::display::Display &it, int cx, int cy, int r,
+                   esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float stroke = std::max(0.95f, 0.105f * rf);
+  const SdfCapsule stem = SdfCapsule::make(0.0f, 0.44f * rf, 0.0f, 0.82f * rf, stroke);
+  const SdfCapsule base = SdfCapsule::make(-0.34f * rf, 0.82f * rf, 0.34f * rf, 0.82f * rf, stroke);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_cap = sd_rbox_px(x, y, 0.0f, -0.22f * rf, 0.30f * rf, 0.56f * rf, 0.30f * rf);
+    float d_arc = 4.0f;
+    if (y >= -0.18f * rf) {
+      d_arc = sd_ring_px(x, y, 0.0f, -0.12f * rf, 0.56f * rf, stroke);
+    }
+    return std::min({d_cap, d_arc, stem.eval(x, y), base.eval(x, y)});
+  });
+}
+
 void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy, int r,
                          esphome::Color col, bool shadow) {
   const float rf = static_cast<float>(std::max(6, r));
@@ -1628,6 +1682,15 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
     case RouteId::MUSIC_QUEUE:
       render_mdi_icon(it, "mdi:playlist-play", cx, cy, mdi_px, col, shadow, "mdi:music");
       return;
+    case RouteId::MUSIC_ALBUM_TRACKS:
+      render_mdi_icon(it, "mdi:album", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
+    case RouteId::MUSIC_LYRICS:
+      render_mdi_icon(it, "mdi:script-text", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
+    case RouteId::MUSIC_INFO:
+      render_mdi_icon(it, "mdi:information-outline", cx, cy, mdi_px, col, shadow, "mdi:music");
+      return;
     case RouteId::APP_HOME_HUB:
       render_mdi_icon(it, "mdi:home", cx, cy, mdi_px, col, shadow, "mdi:home");
       return;
@@ -1721,8 +1784,18 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
     case RouteId::TOOLS_CALCULATOR:
       render_mdi_icon(it, "mdi:calculator-variant", cx, cy, mdi_px, col, shadow, "mdi:calculator");
       return;
-    case RouteId::TOOLS_CALENDAR:
+    case RouteId::APP_CALENDAR:
+    case RouteId::CALENDAR_MONTH:
       draw_icon_calendar(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CALENDAR_OVERVIEW:
+      draw_icon_cal_agenda(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CALENDAR_DAY:
+      draw_icon_cal_day(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CALENDAR_WEEK:
+      draw_icon_cal_week(it, cx, cy, r, col, shadow);
       return;
     case RouteId::TOOLS_DICE:
       render_mdi_icon(it, "mdi:dice-5", cx, cy, mdi_px, col, shadow, "mdi:dice-multiple");

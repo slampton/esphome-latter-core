@@ -222,53 +222,14 @@ struct UiLayout {
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 
-  // 6. Single-Source Music Now Playing, Drilldown & Track Inspector Scrubber Geometry
+  // 6. Single-Source Music Now Playing & Scrubber Geometry
   int music_art_cy = scale_y(233);
-  constexpr int music_left_flank_x() const { return is_round ? 71 : ((w < 380) ? 42 : scale_x(48)); }
-  constexpr int music_right_flank_x() const { return w - music_left_flank_x(); }
-  constexpr int music_prev_x() const { return cx - (is_round ? 109 : ((w < 380) ? 96 : scale_x(104))); }
-  constexpr int music_next_x() const { return cx + (is_round ? 109 : ((w < 380) ? 96 : scale_x(104))); }
-  constexpr bool hit_music_header(int tx, int ty) const {
-    return (ty <= scale_y(85) && (tx >= cx - scale_x(130) && tx <= cx + scale_x(130)));
-  }
-  constexpr bool hit_music_play_pause(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx >= cx - r && tx <= cx + r && ty >= music_art_cy - r && ty <= music_art_cy + r);
-  }
-  constexpr bool hit_music_prev(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx < cx - r && ty >= music_art_cy - r && ty < music_art_cy + r);
-  }
-  constexpr bool hit_music_next(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx > cx + r && ty >= music_art_cy - r && ty < music_art_cy + r);
-  }
-  constexpr bool hit_music_spk_shortcut(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx <= cx - r && ty >= scale_y(70) && ty < music_art_cy - r);
-  }
-  constexpr bool hit_music_lib_shortcut(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx <= cx - r && ty >= music_art_cy + r && ty < scale_y(405));
-  }
-  constexpr bool hit_music_vol_up(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx >= cx + r && ty >= scale_y(70) && ty < music_art_cy - r);
-  }
-  constexpr bool hit_music_vol_down(int tx, int ty) const {
-    const int r = scale_s(48);
-    return (tx >= cx + r && ty >= music_art_cy + r && ty < scale_y(405));
-  }
-  constexpr bool hit_music_metadata(int tx, int ty) const {
-    return (tx >= cx - scale_x(110) && tx <= cx + scale_x(110) && ty >= scale_y(338) && ty < scale_y(408));
-  }
-  constexpr int music_drill_play_cx() const { return (w < 380) ? 28 : scale_x(82); }
-  constexpr int music_drill_split_x() const { return music_drill_play_cx() + scale_x(26); }
-  constexpr bool hit_music_drill_play(int tx) const { return tx <= (music_drill_split_x() + scale_x(8)); }
+  constexpr int music_prev_x() const { return cx - (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
+  constexpr int music_next_x() const { return cx + (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
   int music_scrub_y = scale_y(242);
-  constexpr int music_seek_left_x() const { return is_round ? 50 : scale_x(34); }
+  constexpr int music_seek_left_x() const { return is_round ? scale_w(50) : scale_x(34); }
   constexpr int music_seek_right_x() const { return w - music_seek_left_x(); }
-  constexpr int music_scrub_x0() const { return is_round ? 95 : scale_x(72); }
+  constexpr int music_scrub_x0() const { return is_round ? scale_w(95) : scale_x(72); }
   constexpr int music_scrub_x1() const { return w - music_scrub_x0(); }
   constexpr int music_scrub_w() const { return music_scrub_x1() - music_scrub_x0(); }
   constexpr float music_scrub_frac(int tx) const {
@@ -391,7 +352,12 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
            timer_view_slot() == 0 &&
            runtime_state().alarms.edit_idx == 0;
   }
-  if (anchor == PageId::MUSIC) return gui_page == PageId::MUSIC && music_overlay_mode == 0;
+  if (anchor == PageId::MUSIC) {
+    return gui_page == PageId::MUSIC &&
+           runtime_state().music.view == MusicView::NOW_PLAYING &&
+           runtime_state().music.takeover == MusicTakeover::NONE &&
+           music_overlay_mode == 0;
+  }
   if (anchor == PageId::HOME_HUB) {
     return gui_page == PageId::HOME_HUB &&
            !cam_expanded_fullscreen() &&
@@ -410,12 +376,23 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   if (anchor == PageId::TOOLS) {
     return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::LAUNCHER;
   }
+  if (anchor == PageId::CALENDAR) {
+    return gui_page == PageId::CALENDAR &&
+           runtime_state().cal.drilldown == CalDrilldown::NONE &&
+           !runtime_state().cal.delete_confirm_open;
+  }
   if (anchor == PageId::SYSTEM) return gui_page == PageId::SYSTEM && system_menu_mode == 0;
   return false;
 }
 
 inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
                               const PersistedDevicePrefs &p = persisted_prefs()) {
+  if (resolve_anchor_dock_app(p) == PageId::MUSIC) {
+    return rt.nav.gui_page == PageId::MUSIC &&
+           rt.music.view == MusicView::NOW_PLAYING &&
+           rt.music.takeover == MusicTakeover::NONE &&
+           rt.music.overlay_mode == 0;
+  }
   return is_on_anchor_root(rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game,
                            rt.music.overlay_mode, rt.nav.area_subpage,
                            rt.area.browse_mode == "areas", rt.nav.remote_subpage,
@@ -436,7 +413,12 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   }
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
-  if (gui_page == PageId::MUSIC && music_overlay_mode > 0) return false;
+  if (gui_page == PageId::MUSIC &&
+      (runtime_state().music.view != MusicView::NOW_PLAYING ||
+       runtime_state().music.takeover != MusicTakeover::NONE ||
+       music_overlay_mode > 0)) {
+    return false;
+  }
   if (gui_page == PageId::AREA && (area_subpage > 0 || area_picker)) {
     const bool root_picker = !persisted_prefs().home_screen_enabled &&
                              resolve_anchor_dock_app() == PageId::AREA &&
@@ -446,6 +428,11 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   }
   if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
   if (gui_page == PageId::TOOLS && tools_subpage > 0) {
+    return false;
+  }
+  if (gui_page == PageId::CALENDAR &&
+      (runtime_state().cal.drilldown != CalDrilldown::NONE ||
+       runtime_state().cal.delete_confirm_open)) {
     return false;
   }
   if (!persisted_prefs().home_screen_enabled &&
@@ -458,14 +445,22 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
 }
 
 inline bool can_go_home(const DeviceRuntimeState &rt = runtime_state()) {
+  const int eff_music_sub =
+      (rt.music.view != MusicView::NOW_PLAYING || rt.music.takeover != MusicTakeover::NONE)
+          ? 1
+          : rt.music.overlay_mode;
   return can_go_home(
-      rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game, rt.music.overlay_mode,
+      rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game, eff_music_sub,
       rt.nav.area_subpage, rt.area.browse_mode == "areas", rt.nav.remote_subpage, rt.nav.tools_subpage,
       rt.alarms.edit_idx, rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active);
 }
 
 inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_active) {
-  return gui_page == PageId::MUSIC && !overlay_always_visible && !hud_active;
+  const auto &m = runtime_state().music;
+  return gui_page == PageId::MUSIC &&
+         m.view == MusicView::NOW_PLAYING &&
+         m.takeover == MusicTakeover::NONE &&
+         !overlay_always_visible && !hud_active;
 }
 
 inline int get_home_dock_start_index(int total_count, int page) {
@@ -626,7 +621,7 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0, uint32
       home_dock_anim().win_animating = false;
       home_dock_anim().act_animating = false;
     }
-    if (gui_page != 5 && gui_page != 6 && gui_page != 9 && gui_page != 10) {
+    if (gui_page != 2 && gui_page != 5 && gui_page != 6 && gui_page != 9 && gui_page != 10 && gui_page != 12) {
       mode_bar_anim().win_animating = false;
       mode_bar_anim().act_animating = false;
     }

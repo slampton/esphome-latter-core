@@ -116,6 +116,7 @@ Optional hardware flags:
 | `LATTER_BATTERY_MAH` | Required when `LATTER_HAS_BATTERY=1`; `include/hal_battery.h` derives the charge current (`power.charge_ma`), internal resistance, state-of-charge curve, and empty cutoff |
 | `LATTER_PMU_TS_DISABLE`, `LATTER_PMU_DCDC_KEEP_MASK`, `LATTER_PMU_LDO_KEEP_MASK` | AXP2101 thermistor and rail keep-mask traits confirmed from the schematic |
 | `LATTER_PANEL_DCS_SLEEP` | `mipi_spi` panels supporting `DISPOFF`/`SLPIN` in screen-off |
+| `LATTER_CORNER_R` | Non-default active-area corner radius in pixels (overrides `W/2` round / `98` wearable / `20` rectangular; for example `76` on `waveshare_s3_216`) |
 | `LATTER_DSI_IRAM_SAFE` | MIPI-DSI panels on ESP32-P4 (`800 ms` / `10%` OTA progress redraw throttle in `include/esphome_bridge.h`, paired with `CONFIG_GDMA_ISR_IRAM_SAFE` + `CONFIG_DW_GDMA_ISR_IRAM_SAFE`) |
 
 ### Light sleep (ESP32-S3 battery boards)

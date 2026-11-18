@@ -49,6 +49,7 @@
 #include "../../include/ui_touch_recognizer.h"
 #include "../../include/ui_compositor.h"
 #include "../../components/latter_ui/ui_compositor.cpp"
+#include "../../include/ui_touch_engine.h"
 #include "../../include/ui_mdi.h"
 #include "../../components/latter_ui/ui_mdi.cpp"
 
@@ -377,6 +378,23 @@ void test_ui_layout_hit_table_and_dirty_band() {
           LATTER_CHECK(latter_ui::chord_half_span_constexpr(r, 0, false) == r);
         }
       }
+    }
+
+    // Mobile Assistant (480x480, LATTER_CORNER_R = 76) rounded-square bezel clearance invariant:
+    // Waveshare 2D CAD G2 corner spline cuts 21.85 px at 45 deg; outer alert border (pad = 3, cr_out = 73)
+    // sits at 76 - 73 * cos(45 deg) = 24.38 px from (0, 0), clearing the bezel lip across all 4 corners.
+    if (p.w == 480 && p.h == 480 && !p.round && !p.wearable) {
+      constexpr int kMobileCornerR = 76;
+      constexpr int kMobilePad = 3;
+      constexpr int kMobileCrOut = kMobileCornerR - kMobilePad;
+      const double diag_outer_px = static_cast<double>(kMobileCornerR) -
+                                   static_cast<double>(kMobileCrOut) * 0.7071067811865475;
+      LATTER_CHECK(diag_outer_px >= 24.0 && diag_outer_px <= 25.0);
+      const int hdr_span_cr76 = latter_ui::safe_span_for(ly.hdr_y, 480, 480, false, false, 16, kMobileCornerR);
+      const int hdr_span_cr20 = latter_ui::safe_span_for(ly.hdr_y, 480, 480, false, false, 16, 20);
+      const int mid_span_cr76 = latter_ui::safe_span_for(240, 480, 480, false, false, 16, kMobileCornerR);
+      LATTER_CHECK(hdr_span_cr76 < hdr_span_cr20 && hdr_span_cr76 == 412);
+      LATTER_CHECK(mid_span_cr76 == 448);
     }
 
     // FrameHitTable hit testing, deduplication, slider norm_x, and focus traversal on each geometry
@@ -821,24 +839,30 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 11U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 51U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 57U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 12U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 52U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 58U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 46U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
-  // Universal shortcut routes + PageId::PINNED == 11 (PageId::CAMERAS retired into Home Hub)
+  // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12
   LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
   LATTER_CHECK(latter_ui::PageId::TIME == 10);
   LATTER_CHECK(latter_ui::PageId::PINNED == 11);
+  LATTER_CHECK(latter_ui::PageId::CALENDAR == 12);
   LATTER_CHECK(latter_ui::find_shortcut_route("app:pinned") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("app:calendar") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("calendar:month") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("tools:calendar") == nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("weather:moon") != nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("home_hub:cameras") != nullptr);
 
-  // Start screen Pinned & Cameras resolution
+  // Start screen Pinned, Calendar & Cameras resolution
   latter_ui::PersistedDevicePrefs cam_prefs{};
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Pinned"));
   LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::PINNED);
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Calendar"));
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::CALENDAR);
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Cameras"));
   LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::HOME_HUB);
   LATTER_CHECK(latter_ui::is_cameras_start_screen(cam_prefs));
@@ -1055,7 +1079,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111606L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111701L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -2876,17 +2900,17 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
   rs_ctx.intercom.cam_expanded_fullscreen = false;
 
-  rs_ctx.nav.gui_page = 8;  // PageId::TOOLS -> Calendar
-  rs_ctx.nav.tools_subpage = 9;
-  rs_ctx.cal.detail_mode = 0;
-  rs_ctx.cal.quick_add_open = false;
+  rs_ctx.nav.gui_page = PageId::CALENDAR;
+  rs_ctx.cal.subpage = CalendarSubpage::OVERVIEW;
+  rs_ctx.cal.drilldown = CalDrilldown::NONE;
+  rs_ctx.cal.delete_confirm_open = false;
   const int ctx_cal_root = compute_touch_context(rs_ctx);
-  rs_ctx.cal.detail_mode = 1;
+  rs_ctx.cal.drilldown = CalDrilldown::DETAIL;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cal_root);
-  rs_ctx.cal.detail_mode = 0;
-  rs_ctx.cal.quick_add_open = true;
+  rs_ctx.cal.drilldown = CalDrilldown::NONE;
+  rs_ctx.cal.drilldown = CalDrilldown::ADD_STEP1;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cal_root);
-  rs_ctx.cal.quick_add_open = false;
+  rs_ctx.cal.drilldown = CalDrilldown::NONE;
 
   LATTER_CHECK(!alarm_editor_blink_dim(1000U, 1000U));
   LATTER_CHECK(!alarm_editor_blink_dim(1499U, 1000U));
@@ -3250,10 +3274,10 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(rpc_box.published.back().find("\"code\":\"2468\"") != std::string::npos);
 
   // 3. Tools N-page launcher pagination & round vertical pips bezel-safe X scaling
-  static_assert(tools_launcher_item_count_for(false, false) == 5);
-  static_assert(tools_launcher_item_count_for(false, true) == 6);
-  static_assert(tools_launcher_item_count_for(true, false) == 6);
-  static_assert(tools_launcher_item_count_for(true, true) == 7);
+  static_assert(tools_launcher_item_count_for(false, false) == 4);
+  static_assert(tools_launcher_item_count_for(false, true) == 5);
+  static_assert(tools_launcher_item_count_for(true, false) == 5);
+  static_assert(tools_launcher_item_count_for(true, true) == 6);
 
   static_assert(tools_launcher_page_count(0) == 1);
   static_assert(tools_launcher_page_count(1) == 1);
@@ -3332,7 +3356,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111606L, "LATTER_SDK_REV must match 2026111606L");
+  static_assert(LATTER_SDK_REV == 2026111701L, "LATTER_SDK_REV must match 2026111701L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
@@ -4121,14 +4145,20 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v11 schema invariants
-  static_assert(kPersistedPrefsVersion == 11U, "PersistedDevicePrefs must be bumped to v11");
-  static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 55U);
-  static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 56U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 57U);
-  static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 49U);
-  static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 50U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 51U);
+  // 1. Protocol v3 & PersistedDevicePrefs v12 schema invariants
+  static_assert(kPersistedPrefsVersion == 12U, "PersistedDevicePrefs must be bumped to v12");
+  static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
+  static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
+  static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS) == 56U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_WEEK_START) == 57U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 58U);
+  static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
+  static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
+  static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
+  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_LOOKAHEAD_DAYS) == 50U);
+  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_WEEK_START) == 51U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 52U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -4214,31 +4244,26 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(device_prefs_state().tools_items == kDefaultToolsItems);
   LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
 
-  // 5. Capability filtering & ordering for Tools (with independent Calendar) and Games
+  // 5. Capability filtering & ordering for Tools (pure 6-utility launcher) and Games
   {
     ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
-    // Round + IMU with custom order: level, stopwatch, coin_flip + independent Calendar = 4 items
+    // Round + IMU with custom order: level, stopwatch, coin_flip = 3 items
     int n = collect_tools_launcher_items_for("level,stopwatch,coin_flip", true, true, items);
-    LATTER_CHECK(n == 4);
+    LATTER_CHECK(n == 3);
     LATTER_CHECK(items[0].id == ToolsSubpage::LEVEL && std::string_view(items[0].label) == "Level");
     LATTER_CHECK(items[1].id == ToolsSubpage::STOPWATCH && std::string_view(items[1].label) == "Stopwatch");
     LATTER_CHECK(items[2].id == ToolsSubpage::COIN_FLIP && std::string_view(items[2].label) == "Coin Flip");
-    LATTER_CHECK(items[3].id == ToolsSubpage::CALENDAR && std::string_view(items[3].label) == "Calendar");
 
-    // Rectangular non-IMU board with only stopwatch,level configured -> Calendar stays intact (1 item),
-    // and utility-only query returns 0 items with safe 1-page clamp!
-    n = collect_tools_launcher_items_for("stopwatch,level", false, false, items, kMaxToolsLauncherItems, true);
-    LATTER_CHECK(n == 1 && items[0].id == ToolsSubpage::CALENDAR);
-    const int n_no_cal = collect_tools_launcher_items_for(
-        "stopwatch,level", false, false, items, kMaxToolsLauncherItems, false);
-    LATTER_CHECK(n_no_cal == 0 && tools_launcher_page_count(n_no_cal) == 1);
+    // Rectangular non-IMU board with only stopwatch,level configured -> 0 items with safe 1-page clamp!
+    n = collect_tools_launcher_items_for("stopwatch,level", false, false, items, kMaxToolsLauncherItems);
+    LATTER_CHECK(n == 0 && tools_launcher_page_count(n) == 1);
 
-    // Default 6 utility tools + Calendar on Round + IMU -> 7 items across 2 pages
+    // Default 6 utility tools on Round + IMU -> 6 items on 1 page
     n = collect_tools_launcher_items_for(kDefaultToolsItems, true, true, items);
-    LATTER_CHECK(n == 7 && tools_launcher_page_count(n) == 2);
-    // Default on Rectangular non-IMU -> 4 utility tools + Calendar = 5 items on 1 page
+    LATTER_CHECK(n == 6 && tools_launcher_page_count(n) == 1);
+    // Default on Rectangular non-IMU -> 4 utility tools on 1 page
     n = collect_tools_launcher_items_for(kDefaultToolsItems, false, false, items);
-    LATTER_CHECK(n == 5 && tools_launcher_page_count(n) == 1);
+    LATTER_CHECK(n == 4 && tools_launcher_page_count(n) == 1);
 
     int g_ids[kMaxGamesLauncherItems]{};
     const int gc = collect_enabled_games_for("memory,bricks,chomp", g_ids);
@@ -4407,6 +4432,509 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(ui_doc.find("### D-057:") != std::string::npos);
 }
 
+void test_calendar_app_d058() {
+  using namespace latter_ui;
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+
+  // 1. Hit-table capacity & schema invariants
+  static_assert(FrameHitTable::kMaxRegions == 56U);
+  static_assert(static_cast<size_t>(CalendarField::COUNT) == 7U);
+  LATTER_CHECK(snap_calendar_lookahead_days(7) == 7U);
+  LATTER_CHECK(snap_calendar_lookahead_days(12) == 14U);
+  LATTER_CHECK(snap_calendar_lookahead_days(30) == 30U);
+  LATTER_CHECK(snap_calendar_lookahead_days(90) == 60U);
+
+  // 2. Civil calendar arithmetic (leap year, month clamping, Sun/Mon week & 7x6 grid starts)
+  static_assert(is_leap_year(2028) && !is_leap_year(2027) && !is_leap_year(2100));
+  static_assert(days_in_month(2028, 2) == 29 && days_in_month(2027, 2) == 28);
+  LATTER_CHECK(parse_ymd_iso("2026-11-17") == 20261117);
+  LATTER_CHECK(parse_ymd_iso("20261117") == 20261117);
+  char iso_buf[12]{};
+  format_ymd_iso(20261117, iso_buf);
+  LATTER_CHECK(std::string_view(iso_buf) == "2026-11-17");
+  // 2026-11-17 is a Tuesday (weekday_sun0 == 2)
+  LATTER_CHECK(weekday_sun0_from_ymd(20261117) == 2);
+  LATTER_CHECK(start_of_week_ymd(20261117, /*monday_first=*/false) == 20261115);  // Sun Nov 15
+  LATTER_CHECK(start_of_week_ymd(20261117, /*monday_first=*/true) == 20261116);   // Mon Nov 16
+  // Month clamping: Jan 31 -> Feb 29 (leap) vs Feb 28 (non-leap)
+  LATTER_CHECK(add_months_ymd(20280131, 1) == 20280229);
+  LATTER_CHECK(add_months_ymd(20270131, 1) == 20270228);
+  // Nov 1, 2026 is Sunday -> Sun-first grid starts Nov 1; Mon-first grid starts Mon Oct 26
+  LATTER_CHECK(start_of_week_ymd(20261101, false) == 20261101);
+  LATTER_CHECK(start_of_week_ymd(20261101, true) == 20261026);
+
+  // 3. Protocol v3 calendar_agenda sources + locations_catalog parsing
+  std::vector<std::string> cal_tok(static_cast<size_t>(CalendarField::COUNT), "");
+  cal_tok[static_cast<size_t>(CalendarField::SUMMARY)] = "TODAY 14:00|Design Review|Oakland HQ|0";
+  cal_tok[static_cast<size_t>(CalendarField::EVENT_COUNT)] = "1";
+  cal_tok[static_cast<size_t>(CalendarField::CALENDARS_META)] =
+      std::string("calendar.family|Family|0|1|1") + kProtocolRecordSep +
+      "calendar.holidays|US Holidays|3|0|0";
+  cal_tok[static_cast<size_t>(CalendarField::LOCATIONS_CATALOG)] =
+      std::string("Home") + kProtocolRecordSep + "Oakland HQ" + kProtocolRecordSep + "Gym";
+  LATTER_CHECK(parse_v3_calendar_payload(build_v3_packet(12, 1, cal_tok)));
+
+  CalendarSourceMeta sources[kMaxCalendarSources]{};
+  const int src_cnt = parse_calendar_sources_meta(calendar_state().calendars_meta, sources);
+  LATTER_CHECK(src_cnt == 2);
+  LATTER_CHECK(std::string_view(sources[0].entity_id) == "calendar.family");
+  LATTER_CHECK(sources[0].can_create && sources[0].can_delete && sources[0].color_idx == 0U);
+  LATTER_CHECK(!sources[1].can_create && !sources[1].can_delete && sources[1].color_idx == 3U);
+
+  std::string_view locs[kMaxCalendarLocations]{};
+  const int loc_cnt = parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
+  LATTER_CHECK(loc_cnt == 3 && locs[1] == "Oakland HQ");
+
+  // 4. Multi-chunk latter_set_calendar_view atomic commit & query helpers
+  auto make_ev_rec = [](const char *s_ymd, const char *e_ymd, int s_min, int e_min,
+                        int all_day, int cal_i, const char *uid, const char *rec_id,
+                        const char *title, const char *loc, const char *desc) {
+    std::string r;
+    r += s_ymd; r.push_back(kProtocolFieldSep);
+    r += e_ymd; r.push_back(kProtocolFieldSep);
+    r += std::to_string(s_min); r.push_back(kProtocolFieldSep);
+    r += std::to_string(e_min); r.push_back(kProtocolFieldSep);
+    r += std::to_string(all_day); r.push_back(kProtocolFieldSep);
+    r += std::to_string(cal_i); r.push_back(kProtocolFieldSep);
+    r += uid; r.push_back(kProtocolFieldSep);
+    r += rec_id; r.push_back(kProtocolFieldSep);
+    r += title; r.push_back(kProtocolFieldSep);
+    r += loc; r.push_back(kProtocolFieldSep);
+    r += desc;
+    return r;
+  };
+
+  const std::string chunk0 =
+      make_ev_rec("2026-11-17", "2026-11-17", -1, -1, 1, 1, "u1", "", "Release Cut", "", "Lockstep") +
+      kProtocolRecordSep +
+      make_ev_rec("2026-11-17", "2026-11-17", 540, 600, 0, 0, "u2", "", "Morning Sync | Eng", "Lab", "");
+  const std::string chunk1 =
+      make_ev_rec("2026-11-17", "2026-11-17", 840, 900, 0, 0, "u3", "r3", "Design Review", "Oakland HQ", "Bring prototype") +
+      kProtocolRecordSep +
+      make_ev_rec("2026-11-25", "2026-11-25", 1080, 1200, 0, 0, "u4", "", "Dinner", "Bistro", "");
+
+  auto &store = calendar_window_store();
+  store = CalendarWindowStore{};
+  // Chunk 0 of 2 stages without committing
+  LATTER_CHECK(!apply_calendar_view_action(7, 0, 2, "2026-10-15", "2027-01-20", "", chunk0));
+  LATTER_CHECK(store.count == 0);
+  // Chunk 1 with wrong req_id is rejected and aborts staging
+  LATTER_CHECK(!apply_calendar_view_action(99, 1, 2, "2026-10-15", "2027-01-20", "", chunk1));
+  LATTER_CHECK(store.count == 0);
+  // Valid 2-chunk sequence commits atomically
+  LATTER_CHECK(!apply_calendar_view_action(8, 0, 2, "2026-10-15", "2027-01-20", "", chunk0));
+  LATTER_CHECK(apply_calendar_view_action(8, 1, 2, "2026-10-15", "2027-01-20", "", chunk1));
+  LATTER_CHECK(store.count == 4);
+  LATTER_CHECK(store.window_start_ymd == 20261015 && store.window_end_ymd == 20270120);
+  // Literal '|' in title is preserved!
+  LATTER_CHECK(std::string_view(store.events[1].title) == "Morning Sync | Eng");
+
+  // Day events for 2026-11-17: all-day first, then chronological timed
+  int day_idxs[8]{};
+  const int day_cnt = collect_calendar_day_events(20261117, day_idxs, 8, store);
+  LATTER_CHECK(day_cnt == 3 && day_idxs[0] == 0 && day_idxs[1] == 1 && day_idxs[2] == 2);
+
+  // Overview at 11:00 (660 min) on 2026-11-17 with 7-day lookahead:
+  // Morning Sync (540..600) is past -> excluded! Dinner on Nov 25 (> Nov 24) -> excluded!
+  // Leaves Release Cut (all-day today) + Design Review (14:00 today) = 2 upcoming events
+  int ov_idxs[8]{};
+  const int ov_cnt = collect_calendar_overview_events(20261117, 660, 7, ov_idxs, 8, store);
+  LATTER_CHECK(ov_cnt == 2 && ov_idxs[0] == 0 && ov_idxs[1] == 2);
+
+  // Month dots on 2026-11-17: distinct cal_idx 1 and 0 = 2 dots
+  uint8_t dots[3]{};
+  const int dot_cnt = collect_calendar_day_dots(20261117, dots, store);
+  LATTER_CHECK(dot_cnt == 2 && dots[0] == 1U && dots[1] == 0U);
+
+  // Map URL push (chunk_count == 0) updates detail_map_url without wiping store.events
+  LATTER_CHECK(apply_calendar_view_action(9, 0, 0, "", "", "http://192.168.1.10:8123/api/latter/map/desk?sig=ok", ""));
+  LATTER_CHECK(runtime_state().cal.detail_map_url.find("/api/latter/map/desk") != std::string::npos);
+  LATTER_CHECK(store.count == 4);
+
+  // 5. Inline STT dictation & idle return-to-home protection while composing
+  auto &rt = runtime_state();
+  rt.nav.gui_page = PageId::CALENDAR;
+  rt.cal.drilldown = CalDrilldown::ADD_STEP1;
+  start_calendar_dictation(1U, 5000U, rt);
+  LATTER_CHECK(cal_dictation_active(rt));
+  LATTER_CHECK(!should_return_to_home_on_idle(rt, persisted_prefs(), false, false));
+  LATTER_CHECK(finish_calendar_dictation("  dentist appointment. ", 5800U, rt));
+  LATTER_CHECK(!cal_dictation_active(rt));
+  LATTER_CHECK(rt.cal.draft_title == "Dentist appointment");
+
+  // 6. Outbound Calendar RPC serialization
+  MockRpcOutbox cal_box{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  (void)latter_actions::emit_calendar_fetch_window("2026-10-01", "2027-01-15", 30, &cal_box);
+  LATTER_CHECK(!cal_box.published.empty());
+  LATTER_CHECK(cal_box.published.back().find("\"mode\":\"window\"") != std::string::npos);
+
+  cal_box.published.clear();
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_actions::emit_calendar_create_event(
+      "calendar.family", "Team Sync", false,
+      "2026-11-18 09:00:00", "2026-11-18 10:00:00",
+      "Oakland HQ", "FREQ=WEEKLY", &cal_box);
+  uint32_t pump_ms = 1000U;
+  while (latter_rpc::has_pending_frames()) {
+    latter_rpc::step_outbox_loop(pump_ms += 100U);
+  }
+  std::string joined_create_rpc;
+  for (const auto &frame : cal_box.published) joined_create_rpc += frame;
+  LATTER_CHECK(joined_create_rpc.find("\"s\":\"calendar_create_event\"") != std::string::npos);
+  LATTER_CHECK(joined_create_rpc.find("\"rrule\":\"FREQ=WEEKLY\"") != std::string::npos);
+
+  cal_box.published.clear();
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_actions::emit_calendar_delete_event("calendar.family", "u3", "r3", &cal_box);
+  LATTER_CHECK(!cal_box.published.empty());
+  LATTER_CHECK(cal_box.published.back().find("\"s\":\"calendar_delete_event\"") != std::string::npos);
+  LATTER_CHECK(cal_box.published.back().find("\"uid\":\"u3\"") != std::string::npos);
+
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(ui_doc.find("### D-058:") != std::string::npos);
+}
+
+void test_music_app_v3_d059() {
+  using namespace latter_ui;
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+
+  struct FlagshipPanel {
+    int w;
+    int h;
+    bool round;
+    bool wearable;
+    int ppi;
+  };
+  static constexpr FlagshipPanel kPanels[5] = {
+      {466, 466, true, false, 266},   // Round
+      {480, 480, false, false, 313},  // Square
+      {410, 502, false, true, 315},   // Watch
+      {320, 480, false, false, 165},  // Portrait
+      {720, 720, false, false, 254},  // Desk
+  };
+
+  auto check_zero_aabb_overlaps = [](const FrameHitTable &ht, int w, int h) {
+    for (uint8_t i = 0; i < ht.count; ++i) {
+      const auto &a = ht.regions[i];
+      LATTER_CHECK(a.x0 >= 0 && a.y0 >= 0 && a.x1 < w && a.y1 < h && a.x0 <= a.x1 && a.y0 <= a.y1);
+      for (uint8_t j = static_cast<uint8_t>(i + 1U); j < ht.count; ++j) {
+        const auto &b = ht.regions[j];
+        const bool x_overlap = (a.x0 <= b.x1) && (b.x0 <= a.x1);
+        const bool y_overlap = (a.y0 <= b.y1) && (b.y0 <= a.y1);
+        LATTER_CHECK(!(x_overlap && y_overlap));
+      }
+    }
+  };
+
+  // 1. Multi-geometry Now Playing + Modal Isolation (VOLUME / SCRUB / ACTION_SHEET) across all 5 panels
+  static constexpr uint16_t kLibSheetWids[5] = {
+      WidgetId::MUSIC_ACTION_PLAY_NOW,
+      WidgetId::MUSIC_ACTION_PLAY_NEXT,
+      WidgetId::MUSIC_ACTION_ADD_QUEUE,
+      WidgetId::MUSIC_ACTION_REPLACE_QUEUE,
+      WidgetId::MUSIC_ACTION_START_RADIO,
+  };
+  static constexpr uint16_t kQueueSheetWids[5] = {
+      WidgetId::MUSIC_ACTION_PLAY_NOW,
+      WidgetId::MUSIC_ACTION_PLAY_NEXT,
+      WidgetId::MUSIC_ACTION_MOVE_UP,
+      WidgetId::MUSIC_ACTION_MOVE_DOWN,
+      WidgetId::MUSIC_ACTION_REMOVE_QUEUE,
+  };
+
+  auto pad_w = [](const HitRegion *r) {
+    return r->width() + 2 * static_cast<int>(r->hit_pad);
+  };
+  auto pad_h = [](const HitRegion *r) {
+    return r->height() + 2 * static_cast<int>(r->hit_pad);
+  };
+
+  for (const auto &p : kPanels) {
+    const int min_hit = mm_to_px_for(7.0f, p.ppi);
+    const auto np = compute_music_now_playing_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+    LATTER_CHECK(np.prog_h == ((p.w >= 640) ? 6 : 4));
+    LATTER_CHECK(np.scrub_open_y0 + np.scrub_open_h <= music_metadata_band_y1_for(p.h));
+    LATTER_CHECK(np.time_y < music_metadata_band_y1_for(p.h));
+
+    // Page 1 (slots 0..3) and Page 2 (slots 4..7) of the 8-slot stadium mode bar
+    for (int win_start : {0, 4}) {
+      FrameHitTable ht{};
+      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::NONE, win_start, true);
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+
+      const HitRegion *scrub_open = ht.find_by_id(WidgetId::MUSIC_SCRUB_OPEN_BTN);
+      const HitRegion *prev_b = ht.find_by_id(WidgetId::MUSIC_PREV_BTN);
+      const HitRegion *play_b = ht.find_by_id(WidgetId::MUSIC_PLAY_PAUSE);
+      const HitRegion *next_b = ht.find_by_id(WidgetId::MUSIC_NEXT_BTN);
+      LATTER_CHECK(scrub_open != nullptr && prev_b != nullptr && play_b != nullptr && next_b != nullptr);
+      LATTER_CHECK(pad_w(scrub_open) >= min_hit && pad_h(scrub_open) >= min_hit);
+      LATTER_CHECK(pad_w(prev_b) >= min_hit && pad_h(prev_b) >= min_hit);
+      LATTER_CHECK(pad_w(play_b) >= min_hit && pad_h(play_b) >= min_hit);
+      LATTER_CHECK(pad_w(next_b) >= min_hit && pad_h(next_b) >= min_hit);
+
+      for (int i = 0; i < 4; ++i) {
+        const HitRegion *slot_r = ht.find_by_id(static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i));
+        LATTER_CHECK(slot_r != nullptr && slot_r->param == win_start + i);
+        LATTER_CHECK(pad_w(slot_r) >= min_hit && pad_h(slot_r) >= min_hit);
+      }
+      if (win_start == 0) {
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_RIGHT) != nullptr);
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_LEFT) == nullptr);
+      } else {
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_LEFT) != nullptr);
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_RIGHT) == nullptr);
+      }
+    }
+
+    // Art Only idle (!show_metadata && !show_controls): single full-screen MUSIC_ART_TAP wake region
+    {
+      FrameHitTable ht{};
+      register_music_now_playing_hits(ht, np, false, false, MusicTakeover::NONE, 0, true);
+      LATTER_CHECK(ht.count == 1 && ht.find_by_id(WidgetId::MUSIC_ART_TAP) != nullptr);
+    }
+
+    // VOLUME takeover: >= 64 px (96 px Desk) vertical slider + >= 7 mm targets + strict modal isolation
+    {
+      FrameHitTable ht{};
+      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::VOLUME, 0, true);
+      LATTER_CHECK(ht.count == 0);
+      const auto vg = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+      LATTER_CHECK(vg.slider_w >= ((p.w >= 640) ? 96 : 64));
+      register_music_volume_hits(ht, vg);
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+
+      LATTER_CHECK(ht.find_by_id(WidgetId::MUSIC_PLAY_PAUSE) == nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_SLOT_BASE) == nullptr);
+      const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
+      LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
+
+      const HitRegion *vsl = ht.find_by_id(WidgetId::MUSIC_VOL_SLIDER);
+      const HitRegion *vup = ht.find_by_id(WidgetId::MUSIC_VOL_UP_STEP);
+      const HitRegion *vdn = ht.find_by_id(WidgetId::MUSIC_VOL_DOWN_STEP);
+      const HitRegion *vmu = ht.find_by_id(WidgetId::MUSIC_VOL_MUTE_BTN);
+      LATTER_CHECK(vsl != nullptr && (vsl->flags & kHitVertSlider) != 0U);
+      LATTER_CHECK(vsl->width() >= min_hit && vsl->height() >= min_hit);
+      LATTER_CHECK(vup != nullptr && vup->width() >= min_hit && vup->height() >= min_hit);
+      LATTER_CHECK(vdn != nullptr && vdn->width() >= min_hit && vdn->height() >= min_hit);
+      LATTER_CHECK(vmu != nullptr && vmu->width() >= min_hit && vmu->height() >= min_hit);
+      LATTER_CHECK(std::fabs((1.0f - vsl->norm_y(vsl->y0)) - 1.0f) < 0.001f);
+      LATTER_CHECK(std::fabs((1.0f - vsl->norm_y(vsl->y1)) - 0.0f) < 0.001f);
+    }
+
+    // SCRUB takeover: horizontal seek slider + -15s/+30s + Shuffle/Repeat/Favorite + modal isolation
+    {
+      FrameHitTable ht{};
+      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::SCRUB, 0, true);
+      LATTER_CHECK(ht.count == 0);
+      const auto sg = compute_music_scrub_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+      register_music_scrub_hits(ht, sg);
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+
+      LATTER_CHECK(ht.find_by_id(WidgetId::MUSIC_PLAY_PAUSE) == nullptr);
+      const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
+      LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
+
+      for (uint16_t wid : {WidgetId::MUSIC_SCRUB_BAR, WidgetId::MUSIC_SCRUB_STEP_BACK,
+                           WidgetId::MUSIC_SCRUB_STEP_FWD, WidgetId::MUSIC_SHUFFLE_BTN,
+                           WidgetId::MUSIC_REPEAT_BTN, WidgetId::MUSIC_FAVORITE_BTN}) {
+        const HitRegion *r = ht.find_by_id(wid);
+        LATTER_CHECK(r != nullptr && r->width() >= min_hit && r->height() >= min_hit);
+      }
+      LATTER_CHECK((ht.find_by_id(WidgetId::MUSIC_SCRUB_BAR)->flags & kHitHorizSlider) != 0U);
+    }
+
+    // ACTION_SHEET takeover (Library 5-choice MA sheet & Queue 5-choice sheet)
+    for (const uint16_t *wids : {kLibSheetWids, kQueueSheetWids}) {
+      FrameHitTable ht{};
+      const auto ag = compute_music_action_sheet_geom(p.w, p.h, p.round, p.wearable, p.ppi, 5);
+      register_music_action_sheet_hits(ht, ag, wids);
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+      const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
+      LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
+      for (int i = 0; i < 5; ++i) {
+        const HitRegion *r = ht.find_by_id(wids[i]);
+        LATTER_CHECK(r != nullptr && r->width() >= min_hit && r->height() >= min_hit);
+      }
+    }
+  }
+
+  // 2. 480 ms kHitLongPress row hold -> ACTION_SHEET arm/fire without double-tap on release
+  {
+    TouchGestureState gs{};
+    gs.begin(180, 172, 1000U, PageId::MUSIC, 4);
+    gs.arm_long_press(WidgetId::LIST_SLOT_BASE + 1, 1);
+    LATTER_CHECK(!gs.should_fire_long_press(1479U));
+    LATTER_CHECK(gs.should_fire_long_press(1480U));
+    gs.mark_long_press_fired();
+    LATTER_CHECK(gs.long_press_fired && gs.tap_cancelled && !gs.long_press_armed);
+  }
+
+  // 3. Synced LRC multi-chunk parsing, interpolated_position_ms, 240 ms auto-scroll & 6 s manual override
+  {
+    auto &rs = runtime_state();
+    auto &ms = media_state();
+    auto &lyr = rs.music.lyrics;
+    rs.nav.gui_page = PageId::MUSIC;
+    rs.music.view = MusicView::LYRICS;
+
+    ms.title = "Midnight City";
+    ms.artist = "M83";
+    ms.playing = true;
+    ms.state = "playing";
+    ms.is_local = false;
+    ms.duration = 240.0f;
+    ms.position = 10.0f;
+    ms.position_updated_ms = 5000U;
+    LATTER_CHECK(ms.interpolated_position_ms(6500U) == 11500U);
+
+    const std::string tkey = build_music_track_key(ms.title, ms.artist);
+    LATTER_CHECK(tkey == "Midnight City|M83");
+    const std::string c0 = std::string("0") + kProtocolFieldSep + "Waiting in a car" +
+                           kProtocolRecordSep + "10000" + kProtocolFieldSep + "Waiting for a ride in the dark";
+    const std::string c1 = std::string("20000") + kProtocolFieldSep + "The night city grows" +
+                           kProtocolRecordSep + "30000" + kProtocolFieldSep + "Look and see her eyes";
+    LATTER_CHECK(!apply_music_lyrics_action(4, 0, 2, tkey, true, c0, lyr));
+    LATTER_CHECK(apply_music_lyrics_action(4, 1, 2, tkey, true, c1, lyr));
+    LATTER_CHECK(lyr.synced && lyr.lines.size() == 4U);
+    LATTER_CHECK(lyr.find_active_line(9999U) == 0);
+    LATTER_CHECK(lyr.find_active_line(11500U) == 1);
+    LATTER_CHECK(lyr.find_active_line(25000U) == 2);
+    // Stale lower req_id is rejected
+    lyr.latest_req_id = 4;
+    LATTER_CHECK(!apply_music_lyrics_action(3, 0, 1, tkey, false, "0\x1fStale", lyr));
+
+    auto lyrics_anim_running = [&](uint32_t now_ms) {
+      return (lyr.scroll_px != lyr.target_scroll_px) ||
+             (lyr.scroll_anim_start_ms > 0U && (now_ms - lyr.scroll_anim_start_ms) < 260U);
+    };
+
+    const int doc_cys[4] = {40, 180, 320, 460};
+    const int anchor_vp = 110;
+    // Initial entry snaps directly to line 1 (180 - 110 = 70 px)
+    step_music_lyrics_auto_scroll(lyr, 11500U, 6500U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.active_line_idx == 1 && lyr.scroll_px == 70 && lyr.scroll_anim_start_ms == 0U);
+    LATTER_CHECK(!lyrics_anim_running(6500U));
+
+    // Line advances to 2 at pos_ms = 20100 -> 240 ms ease_out_cubic toward 320 - 110 = 210 px
+    step_music_lyrics_auto_scroll(lyr, 20100U, 15600U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.active_line_idx == 2 && lyr.target_scroll_px == 210 && lyr.scroll_anim_start_ms == 15600U);
+    LATTER_CHECK(lyrics_anim_running(15680U));
+    step_music_lyrics_auto_scroll(lyr, 20220U, 15720U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.scroll_px > 70 && lyr.scroll_px < 210);
+    step_music_lyrics_auto_scroll(lyr, 20360U, 15850U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.scroll_px == 210 && lyr.scroll_anim_start_ms == 0U);
+    LATTER_CHECK(!lyrics_anim_running(15850U));
+
+    // Manual drag sets 6 s override; Sync clears it immediately
+    lyr.scroll_px = 30;
+    lyr.manual_override_until_ms = 22000U;
+    step_music_lyrics_auto_scroll(lyr, 31000U, 18000U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.active_line_idx == 3 && lyr.scroll_px == 30);
+    lyr.manual_override_until_ms = 0U;
+    lyr.target_scroll_px = -1;
+    step_music_lyrics_auto_scroll(lyr, 31000U, 18100U, anchor_vp, doc_cys, 4, 500);
+    LATTER_CHECK(lyr.target_scroll_px == 350 && lyr.scroll_anim_start_ms == 18100U);
+  }
+
+  // 4. Outbound Music Assistant enqueue / queue / lyrics / seek RPC serialization & 0 FPS Art Only idle
+  {
+    MockRpcOutbox mbox{};
+    latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+    (void)latter_actions::emit_music_lyrics_fetch("Midnight City|M83", "media_player.office", 1000U, &mbox);
+    latter_actions::emit_media_play_item("media_player.office", "library://track/42", "track", "next", false, &mbox);
+    latter_actions::emit_media_play_item("media_player.office", "library://track/42", "track", "play", true, &mbox);
+    latter_actions::emit_media_queue_play("q_item_7", "media_player.office", &mbox);
+    latter_actions::emit_media_queue_move("q_item_7", "next", "media_player.office", &mbox);
+    latter_actions::emit_media_queue_delete("q_item_7", "media_player.office", &mbox);
+    latter_actions::emit_media_seek(20, &mbox);
+
+    uint32_t pump_ms = 1100U;
+    while (latter_rpc::has_pending_frames()) {
+      latter_rpc::step_outbox_loop(pump_ms += 40U);
+    }
+    std::string all_rpc;
+    for (const auto &f : mbox.published) all_rpc += f;
+    LATTER_CHECK(all_rpc.find("\"mode\":\"lyrics_fetch\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"enqueue\":\"next\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"radio_mode\":\"true\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"command\":\"queue_play\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"command\":\"queue_move\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"command\":\"queue_delete\"") != std::string::npos);
+    LATTER_CHECK(all_rpc.find("\"seek_position\":\"20\"") != std::string::npos);
+
+    LATTER_CHECK(find_shortcut_route("music:album_tracks") != nullptr);
+    LATTER_CHECK(find_shortcut_route("music:lyrics") != nullptr);
+    LATTER_CHECK(find_shortcut_route("music:info") != nullptr);
+
+    auto &rt = runtime_state();
+    auto &prefs = persisted_prefs();
+    prefs.home_screen_enabled = true;
+    prefs.return_to_home_timeout = 1;  // non-zero timeout
+    rt.nav.gui_page = PageId::MUSIC;
+    rt.music.takeover = MusicTakeover::NONE;
+    rt.music.view = MusicView::NOW_PLAYING;
+    LATTER_CHECK(!should_return_to_home_on_idle(rt, prefs, true, false));
+    rt.music.view = MusicView::LYRICS;
+    LATTER_CHECK(!should_return_to_home_on_idle(rt, prefs, true, false));
+    rt.music.view = MusicView::LIBRARY;
+    LATTER_CHECK(should_return_to_home_on_idle(rt, prefs, true, false));
+
+    // Art Only idle cadence: FrameCadenceController stops anim poller and schedules 0 redraws on PageId::MUSIC
+    FrameCadenceController fc;
+    fc.reset();
+    Cadence20msInputs in20{};
+    in20.gui_page = PageId::MUSIC;
+    in20.now_ms = 20000U;
+    in20.speaker_audio_busy = true;
+    auto a20_1 = fc.evaluate_20ms(in20);
+    in20.now_ms = 20020U;
+    auto a20_2 = fc.evaluate_20ms(in20);
+    LATTER_CHECK(!a20_1.schedule_anim_full && !a20_2.schedule_anim_full && a20_2.stop_anim_poller);
+
+    Cadence250msInputs in250{};
+    in250.gui_page = PageId::MUSIC;
+    in250.now_ms = 20250U;
+    auto a250 = fc.evaluate_250ms(in250);
+    LATTER_CHECK(!a250.ensure_anim_poller && !a250.schedule_disp_now && !a250.schedule_band_now);
+  }
+
+  // 5. Zero-legacy & D-048 / D-059 source-level invariants
+  {
+    const std::string mu_src = read_repo_file("../../components/latter_ui/page_music.cpp");
+    const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+    const std::string comp_src = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+    const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+
+    LATTER_CHECK(mu_src.find("render_progress_arc_r224") == std::string::npos);
+    LATTER_CHECK(mu_src.find("overlay_mode") == std::string::npos);
+    LATTER_CHECK(mu_src.find("show_speaker_shortcut") == std::string::npos);
+    LATTER_CHECK(mu_src.find("show_library_shortcut") == std::string::npos);
+    LATTER_CHECK(mu_src.find("GlassVariant::ReadableDark") == std::string::npos);
+    LATTER_CHECK(mu_src.find("chrome_modal_bg") == std::string::npos);
+    LATTER_CHECK(mu_src.find("render_lyrics_art_backdrop(") != std::string::npos);
+    LATTER_CHECK(te_src.find("overlay_mode == 5") == std::string::npos);
+    LATTER_CHECK(te_src.find("overlay_mode == 6") == std::string::npos);
+    LATTER_CHECK(te_src.find("overlay_mode = 5") == std::string::npos);
+    LATTER_CHECK(te_src.find("overlay_mode = 6") == std::string::npos);
+    LATTER_CHECK(te_src.find("show_speaker_shortcut") == std::string::npos);
+    LATTER_CHECK(te_src.find("show_library_shortcut") == std::string::npos);
+    LATTER_CHECK(comp_src.find("if (!show_metadata && !show_controls)") != std::string::npos);
+    LATTER_CHECK(comp_src.find("mark_music_progress_dirty_band(") != std::string::npos);
+
+    // D-048: zero passive glass containers behind Lyrics or Track Info text
+    const size_t lyr_fn = mu_src.find("void render_lyrics_view(");
+    const size_t info_fn = mu_src.find("void render_info_view(");
+    const size_t set_fn = mu_src.find("void render_music_settings_view(");
+    LATTER_CHECK(lyr_fn != std::string::npos && info_fn > lyr_fn && set_fn > info_fn);
+    LATTER_CHECK(mu_src.substr(lyr_fn, info_fn - lyr_fn).find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(mu_src.substr(info_fn, set_fn - info_fn).find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(ui_doc.find("### D-059:") != std::string::npos);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -4433,6 +4961,8 @@ int main() {
   test_custom_icon_tiers_and_d051();
   test_universal_shortcuts_and_pinned_app();
   test_tools_games_launcher_prefs_and_stopwatch_commands();
+  test_calendar_app_d058();
+  test_music_app_v3_d059();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

@@ -105,19 +105,33 @@ inline constexpr uint16_t bswap16_u16(uint16_t v) noexcept {
 
 template <int Mode>
 inline constexpr uint16_t encode_hw_rgb565_mode(uint16_t p) noexcept {
-  if constexpr (Mode == 1) return p;
-  if constexpr (Mode == 2) return bswap16_u16(p);
-  const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
-  if constexpr (Mode == 4) return bswap16_u16(bgr);
-  return bgr;
+  if constexpr (Mode == 1) {
+    return p;
+  } else if constexpr (Mode == 2) {
+    return bswap16_u16(p);
+  } else {
+    const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
+    if constexpr (Mode == 4) {
+      return bswap16_u16(bgr);
+    } else {
+      return bgr;
+    }
+  }
 }
 
 template <int Mode>
 inline constexpr uint16_t decode_hw_rgb565_mode(uint16_t hw) noexcept {
-  if constexpr (Mode == 1) return hw;
-  if constexpr (Mode == 2) return bswap16_u16(hw);
-  const uint16_t bgr = (Mode == 4) ? bswap16_u16(hw) : hw;
-  return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
+  if constexpr (Mode == 1) {
+    return hw;
+  } else if constexpr (Mode == 2) {
+    return bswap16_u16(hw);
+  } else {
+    const uint16_t bgr = [&]() constexpr noexcept {
+      if constexpr (Mode == 4) return bswap16_u16(hw);
+      else return hw;
+    }();
+    return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
+  }
 }
 
 inline uint16_t encode_hw_rgb565_raw(uint16_t p) {
@@ -1080,16 +1094,23 @@ struct ArtCanvasCache {
   int16_t row_len[SCREEN_H];
 };
 
+inline constexpr int kArtDimMenu = 2;
+inline constexpr int kArtDimLyrics = 3;
+
 struct ArtRect {
   int x0, y0, w, h;
 };
 
+int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int dim_level = 0);
+void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, int &out_y1);
 ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim);
 void art_canvas_drop(const void *data);
 esphome::Color sample_image_ambient_tint_view(ArtImageView img, esphome::Color base_bg = kChromeGlassTint);
 bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level = 0);
+bool render_lyrics_art_backdrop_view(esphome::display::Display &it, ArtImageView target_art, int cx,
+                                     esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow);
 bool render_page_wallpaper_base_view(esphome::display::Display &it, ArtImageView wallpaper_img,
                                      bool has_wallpaper, int cx, esphome::Color col_bg, int dim_level = 0);
 
@@ -1122,6 +1143,18 @@ inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
                                     bool is_standard, bool is_letterbox, bool apply_scrim,
                                     bool show_metadata, int dim_level = 0) {
   return render_album_art_canvas_view(it, make_art_view(target_art), cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+}
+
+inline bool render_lyrics_art_backdrop(esphome::display::Display &it, ArtImageView target_art, int cx,
+                                       esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow) {
+  return render_lyrics_art_backdrop_view(it, target_art, cx, theme_primary, col_bg);
+}
+
+template <typename DisplayT, typename ImageT>
+  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
+inline bool render_lyrics_art_backdrop(DisplayT &it, ImageT *target_art, int cx,
+                                       esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow) {
+  return render_lyrics_art_backdrop_view(it, make_art_view(target_art), cx, theme_primary, col_bg);
 }
 
 inline bool render_page_wallpaper_base(esphome::display::Display &it, ArtImageView wallpaper_img,

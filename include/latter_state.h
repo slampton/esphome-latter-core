@@ -29,6 +29,12 @@
 #else
 #define LATTER_HAS_ESP_PREFS 0
 #endif
+#if defined(USE_ESP32) && !defined(LATTER_HOST_TEST) && __has_include(<esp_heap_caps.h>)
+#include <esp_heap_caps.h>
+#define LATTER_HAS_SPIRAM_ALLOC 1
+#else
+#define LATTER_HAS_SPIRAM_ALLOC 0
+#endif
 
 #include "hal_manifest.h"
 #include "audio_router.h"
@@ -51,7 +57,83 @@ namespace PageId {
   static constexpr int HOME_HUB   = 9;
   static constexpr int TIME       = 10;
   static constexpr int PINNED     = 11;
+  static constexpr int CALENDAR   = 12;
 }  // namespace PageId
+
+namespace CalendarSubpage {
+  static constexpr int OVERVIEW = 0;
+  static constexpr int DAY      = 1;
+  static constexpr int WEEK     = 2;
+  static constexpr int MONTH    = 3;
+}  // namespace CalendarSubpage
+
+namespace CalDrilldown {
+  static constexpr int NONE          = 0;
+  static constexpr int DETAIL        = 1;
+  static constexpr int MAP           = 2;
+  static constexpr int ADD_STEP1     = 3;
+  static constexpr int ADD_STEP2     = 4;
+  static constexpr int PICK_TITLE    = 5;
+  static constexpr int PICK_LOCATION = 6;
+  static constexpr int PICK_CALENDAR = 7;
+  static constexpr int PICK_REPEAT   = 8;
+}  // namespace CalDrilldown
+
+enum class MusicView : uint8_t {
+  NOW_PLAYING  = 0,
+  LIBRARY      = 1,
+  SPEAKERS     = 2,
+  QUEUE        = 3,
+  ALBUM_TRACKS = 4,
+  LYRICS       = 5,
+  INFO         = 6,
+  SETTINGS     = 7,
+};
+
+enum class MusicTakeover : uint8_t {
+  NONE         = 0,
+  VOLUME       = 1,
+  SCRUB        = 2,
+  ACTION_SHEET = 3,
+};
+
+enum class MusicRepeatMode : uint8_t {
+  OFF = 0,
+  ALL = 1,
+  ONE = 2,
+};
+
+inline constexpr uint8_t parse_music_repeat_mode(std::string_view sv) noexcept {
+  if (sv == "one" || sv == "ONE" || sv == "repeat_one" || sv == "2") {
+    return static_cast<uint8_t>(MusicRepeatMode::ONE);
+  }
+  if (sv == "all" || sv == "ALL" || sv == "repeat_all" || sv == "1") {
+    return static_cast<uint8_t>(MusicRepeatMode::ALL);
+  }
+  return static_cast<uint8_t>(MusicRepeatMode::OFF);
+}
+
+inline constexpr const char *music_repeat_mode_cstr(uint8_t mode) noexcept {
+  if (mode == static_cast<uint8_t>(MusicRepeatMode::ONE)) return "one";
+  if (mode == static_cast<uint8_t>(MusicRepeatMode::ALL)) return "all";
+  return "off";
+}
+
+inline constexpr const char *music_repeat_mode_label(uint8_t mode) noexcept {
+  if (mode == static_cast<uint8_t>(MusicRepeatMode::ONE)) return "One";
+  if (mode == static_cast<uint8_t>(MusicRepeatMode::ALL)) return "All";
+  return "Off";
+}
+
+inline std::string build_music_track_key(std::string_view title, std::string_view artist) {
+  if (title.empty()) return "";
+  std::string out;
+  out.reserve(title.size() + 1U + artist.size());
+  out.append(title);
+  out.push_back('|');
+  out.append(artist);
+  return out;
+}
 
 // Em-dash placeholder rendered when Home Assistant / Protocol v3 state is not yet populated.
 inline constexpr const char *kUnknownGlyph = "—";
@@ -179,7 +261,6 @@ namespace ToolsSubpage {
   static constexpr int CALCULATOR = 6;
   static constexpr int LEVEL      = 7;
   static constexpr int COIN_FLIP  = 8;
-  static constexpr int CALENDAR   = 9;
 }  // namespace ToolsSubpage
 
 inline constexpr int kMaxHomeHubTabs = 6;
@@ -211,6 +292,21 @@ inline constexpr uint16_t kVacuumCapCleanSpot  = 0x10U;
 inline constexpr uint16_t kVacuumCapLocate     = 0x20U;
 inline constexpr uint16_t kVacuumCapDefault    =
     kVacuumCapStart | kVacuumCapPause | kVacuumCapReturnHome;
+
+inline constexpr uint16_t kMediaCapPause          = 0x0001U;
+inline constexpr uint16_t kMediaCapSeek           = 0x0002U;
+inline constexpr uint16_t kMediaCapVolumeSet      = 0x0004U;
+inline constexpr uint16_t kMediaCapVolumeMute     = 0x0008U;
+inline constexpr uint16_t kMediaCapPreviousTrack  = 0x0010U;
+inline constexpr uint16_t kMediaCapNextTrack      = 0x0020U;
+inline constexpr uint16_t kMediaCapShuffleSet     = 0x0040U;
+inline constexpr uint16_t kMediaCapRepeatSet      = 0x0080U;
+inline constexpr uint16_t kMediaCapGrouping       = 0x0100U;
+inline constexpr uint16_t kMediaCapMusicAssistant = 0x0200U;
+inline constexpr uint16_t kMediaCapFavorite       = 0x0400U;
+inline constexpr uint16_t kMediaCapDefault        =
+    kMediaCapPause | kMediaCapSeek | kMediaCapVolumeSet | kMediaCapVolumeMute |
+    kMediaCapPreviousTrack | kMediaCapNextTrack;
 
 struct HomeHubState {
   int tab = 0;
@@ -273,12 +369,14 @@ struct MediaState {
   uint32_t rev = 0;
   std::string state = "";
   MediaPlaybackState playback_state = MediaPlaybackState::Idle;
+  bool playing = false;
   std::string title = "";
   std::string artist = "";
   std::string album = "";
   float duration = 0.0f;
   float position = 0.0f;
   uint32_t position_updated_at = 0;
+  uint32_t position_updated_ms = 0;
   float volume = 0.5f;
   bool has_volume = false;
   std::string media_type = "";
@@ -288,6 +386,28 @@ struct MediaState {
   std::string last_speaker = "";
   std::string local_speaker = "";
   bool is_local = false;
+  bool shuffle = false;
+  uint8_t repeat_mode = 0;  // 0 = off, 1 = all, 2 = one
+  std::string repeat = "off";
+  bool muted = false;
+  bool favorite = false;
+  int queue_count = 0;
+  uint16_t media_caps = 0;
+
+  uint32_t interpolated_position_ms(uint32_t now_ms) const noexcept {
+    const float base_s = (position > 0.0f && !std::isnan(position)) ? position : 0.0f;
+    double pos_ms = static_cast<double>(base_s) * 1000.0;
+    const bool is_playing =
+        playing || playback_state == MediaPlaybackState::Playing || state == "playing";
+    if (is_playing && position_updated_ms > 0U && now_ms > position_updated_ms) {
+      pos_ms += static_cast<double>(now_ms - position_updated_ms);
+    }
+    if (duration > 0.0f && !std::isnan(duration)) {
+      const double max_ms = static_cast<double>(duration) * 1000.0;
+      if (pos_ms > max_ms) pos_ms = max_ms;
+    }
+    return (pos_ms > 0.0) ? static_cast<uint32_t>(pos_ms + 0.5) : 0U;
+  }
 };
 
 struct RemoteState {
@@ -317,12 +437,14 @@ struct WeatherState {
   std::string moon_phase = "";
 };
 
-// Protocol v3 calendar_agenda state (unread next_event wire field is not heap-stored).
+// Protocol v3 calendar_agenda state.
 struct CalendarState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
   std::string summary = "";
   int count = 0;
+  std::string calendars_meta = "";
+  std::string locations_catalog = "";
 };
 
 struct BrowseSlotItem {
@@ -331,7 +453,11 @@ struct BrowseSlotItem {
   std::string type = "";
   bool active = false;
   int level = -1;
+  std::string queue_item_id = "";
+  bool is_current = false;
 };
+
+using MusicBrowseSlot = BrowseSlotItem;
 
 // Protocol v3 shortcuts state (App Dock + Pinned App universal shortcut engine).
 enum class ShortcutKind : uint8_t {
@@ -395,7 +521,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 11U;
+static constexpr uint16_t kPersistedPrefsVersion = 12U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -425,33 +551,36 @@ enum class PrefKey : uint8_t {
   WAKE_GREETING = 23,
   ALBUM_ART_STYLE = 24,
   MUSIC_OVERLAY_STYLE = 25,
-  SHOW_SPEAKER_SHORTCUT = 26,
-  SHOW_LIBRARY_SHORTCUT = 27,
-  ALBUM_SORT_ORDER = 28,
-  ARTIST_ALBUM_SORT_ORDER = 29,
-  PODCAST_SORT_ORDER = 30,
-  WW_SENS_OKAY_NABU = 31,
-  WW_SENS_HEY_LUNA = 32,
-  WW_SENS_HEY_JARVIS = 33,
-  WW_SENS_HEY_MYCROFT = 34,
-  WW_SENS_ALEXA = 35,
-  WAKE_SCREEN_ON_ASSIST = 36,
-  ALERT_VOLUME = 37,
-  VOLUME_STEP_SIZE = 38,
-  GAME_SOUND_EFFECTS = 39,
-  BLE_BEACON_ENABLED = 40,
-  BLE_BEACON_MODE = 41,
-  HOME_SCREEN_ENABLED = 42,
-  RETURN_TO_HOME_TIMEOUT = 43,
-  HOME_CLOCK_TAP_ACTION = 44,
-  SHOW_UTC_CLOCK = 45,
-  WORLD_CLOCKS = 46,
-  ALARMS_SUMMARY = 47,
-  LOCAL_CLOCK_LABEL = 48,
-  TOOLS_ITEMS = 49,
-  GAMES_ITEMS = 50,
-  COUNT = 51,
+  ALBUM_SORT_ORDER = 26,
+  ARTIST_ALBUM_SORT_ORDER = 27,
+  PODCAST_SORT_ORDER = 28,
+  WW_SENS_OKAY_NABU = 29,
+  WW_SENS_HEY_LUNA = 30,
+  WW_SENS_HEY_JARVIS = 31,
+  WW_SENS_HEY_MYCROFT = 32,
+  WW_SENS_ALEXA = 33,
+  WAKE_SCREEN_ON_ASSIST = 34,
+  ALERT_VOLUME = 35,
+  VOLUME_STEP_SIZE = 36,
+  GAME_SOUND_EFFECTS = 37,
+  BLE_BEACON_ENABLED = 38,
+  BLE_BEACON_MODE = 39,
+  HOME_SCREEN_ENABLED = 40,
+  RETURN_TO_HOME_TIMEOUT = 41,
+  HOME_CLOCK_TAP_ACTION = 42,
+  SHOW_UTC_CLOCK = 43,
+  WORLD_CLOCKS = 44,
+  ALARMS_SUMMARY = 45,
+  LOCAL_CLOCK_LABEL = 46,
+  TOOLS_ITEMS = 47,
+  GAMES_ITEMS = 48,
+  HOME_DATE_TAP_ACTION = 49,
+  CALENDAR_LOOKAHEAD_DAYS = 50,
+  CALENDAR_WEEK_START = 51,
+  COUNT = 52,
 };
+static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 64U,
+              "PrefKey::COUNT must remain < 64 to fit in uint64_t dirty_mask.");
 
 inline constexpr uint64_t pref_key_bit(PrefKey k) {
   return 1ULL << static_cast<uint8_t>(k);
@@ -500,10 +629,13 @@ struct PersistedDevicePrefs {
   uint8_t night_start_hour = 20;           // 0..23
   uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
   uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
-  uint8_t start_screen = 0;                // 0..11 ("Home", "Pinned", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
+  uint8_t start_screen = 0;                // 0..12 ("Home", "Pinned", "Time App", "Calendar", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
   uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
   uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
+  uint8_t home_date_tap_action = 0;        // 0..1 ("Day View", "Overview")
+  uint8_t calendar_lookahead_days = 30;    // 7, 14, 30, or 60 days
+  uint8_t calendar_week_start = 0;         // 0..1 ("Sunday", "Monday")
   bool show_utc_clock = false;             // Pin dedicated UTC World Clock row on Time App -> Clock tab
   char local_clock_label[33]{};            // Optional user-defined label shown above local time (<= 32 bytes)
   char world_clocks_spec[260]{};           // Up to 4 semicolon-delimited '<label>|<iana>' World Clock entries
@@ -513,8 +645,6 @@ struct PersistedDevicePrefs {
   bool wake_greeting = true;
   uint8_t album_art_style = 0;             // 0..3 ("Full Screen", "Letterbox", "Standard", "None")
   uint8_t music_overlay_style = 1;         // 0..2 ("Art Only", "Art + Metadata", "Always Visible")
-  bool show_speaker_shortcut = true;
-  bool show_library_shortcut = true;
   uint8_t album_sort_order = 0;            // 0..2 ("Alphabetical", "Newest on Top", "Oldest on Top")
   uint8_t artist_album_sort_order = 0;     // 0..2 ("Oldest on Top", "Newest on Top", "Alphabetical")
   uint8_t podcast_sort_order = 0;          // 0..1 ("Newest on Top", "Oldest on Top")
@@ -665,12 +795,23 @@ inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
     "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
-inline constexpr const char *const kStartScreenOpts[12] = {
-    "Home", "Pinned", "Time App", "Clock Face", "Media", "Home Hub", "Area Controls",
+inline constexpr const char *const kStartScreenOpts[13] = {
+    "Home", "Pinned", "Time App", "Calendar", "Clock Face", "Media", "Home Hub", "Area Controls",
     "Remote", "Weather", "Cameras", "Games", "Tools"};
 inline constexpr uint8_t kStartScreenTimeAppIdx = 2U;
 inline constexpr const char *const kHomeClockTapOpts[2] = {
     "Time App", "Clock Face"};
+inline constexpr const char *const kHomeDateTapOpts[2] = {
+    "Day View", "Overview"};
+inline constexpr const char *const kCalendarWeekStartOpts[2] = {
+    "Sunday", "Monday"};
+
+inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
+  if (v <= 10) return 7U;
+  if (v <= 21) return 14U;
+  if (v <= 45) return 30U;
+  return 60U;
+}
 inline constexpr const char *const kReturnToHomeTimeoutOpts[7] = {
     "15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never"};
 inline constexpr const char *const kClockFaceOpts[3] = {
@@ -733,6 +874,8 @@ inline constexpr uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
 inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeClockTapOpts, p.home_clock_tap_action); }
+inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeDateTapOpts, p.home_date_tap_action); }
+inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCalendarWeekStartOpts, p.calendar_week_start); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
 inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
@@ -781,7 +924,6 @@ inline constexpr const char *tools_launcher_label_for_subpage(int subpage_id) no
     case ToolsSubpage::LEVEL: return "Level";
     case ToolsSubpage::FLASHLIGHT: return "Flashlight";
     case ToolsSubpage::CALCULATOR: return "Calculator";
-    case ToolsSubpage::CALENDAR: return "Calendar";
     case ToolsSubpage::DICE: return "Dice Roll";
     case ToolsSubpage::COIN_FLIP: return "Coin Flip";
     default: return "";
@@ -874,19 +1016,18 @@ struct ToolsLauncherItemSpec {
   const char *label = "";
 };
 
-inline constexpr int kMaxToolsLauncherItems = 7;  // up to 6 utility tools + independent Calendar
+inline constexpr int kMaxToolsLauncherItems = 6;
 inline constexpr int kMaxGamesLauncherItems = 6;
 
 inline int collect_tools_launcher_items_for(std::string_view csv,
                                             bool round_display,
                                             bool has_imu,
                                             ToolsLauncherItemSpec *out_items,
-                                            int max_items = kMaxToolsLauncherItems,
-                                            bool include_calendar = true) noexcept {
+                                            int max_items = kMaxToolsLauncherItems) noexcept {
   if (out_items == nullptr || max_items <= 0) return 0;
   int count = 0;
   size_t start = 0;
-  const int utility_cap = include_calendar ? std::min(max_items - 1, 6) : std::min(max_items, 6);
+  const int utility_cap = std::min(max_items, kMaxToolsLauncherItems);
   while (!csv.empty() && start <= csv.size() && count < utility_cap) {
     const size_t pos = csv.find(',', start);
     const std::string_view tok = trim_ascii_ws(
@@ -912,30 +1053,24 @@ inline int collect_tools_launcher_items_for(std::string_view csv,
     if (pos == std::string_view::npos) break;
     start = pos + 1;
   }
-  if (include_calendar && count < max_items) {
-    out_items[count++] = ToolsLauncherItemSpec{ToolsSubpage::CALENDAR, "Calendar"};
-  }
   return count;
 }
 
 inline int collect_tools_launcher_items(ToolsLauncherItemSpec *out_items,
                                         const PersistedDevicePrefs &p = persisted_prefs(),
-                                        int max_items = kMaxToolsLauncherItems,
-                                        bool include_calendar = true) noexcept {
+                                        int max_items = kMaxToolsLauncherItems) noexcept {
   return collect_tools_launcher_items_for(
       effective_tools_items_sv(p), LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0,
-      out_items, max_items, include_calendar);
+      out_items, max_items);
 }
 
-inline int active_tools_launcher_item_count(const PersistedDevicePrefs &p = persisted_prefs(),
-                                            bool include_calendar = true) noexcept {
+inline int active_tools_launcher_item_count(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
   ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
-  return collect_tools_launcher_items(items, p, kMaxToolsLauncherItems, include_calendar);
+  return collect_tools_launcher_items(items, p, kMaxToolsLauncherItems);
 }
 
-inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = persisted_prefs(),
-                                            bool include_calendar = true) noexcept {
-  const int cnt = active_tools_launcher_item_count(p, include_calendar);
+inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
+  const int cnt = active_tools_launcher_item_count(p);
   return (cnt <= 6) ? 1 : ((cnt + 5) / 6);
 }
 
@@ -994,12 +1129,15 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.night_start_hour > 23) p.night_start_hour = 20;
   if (p.color_profile >= 5) p.color_profile = 0;
   if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
-  if (p.start_screen >= 12) p.start_screen = 0;
+  if (p.start_screen >= 13) p.start_screen = 0;
   if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = kStartScreenTimeAppIdx;  // Single-app mode cannot start on Home -> Time App
   if (p.return_to_home_timeout >= 7) p.return_to_home_timeout = 3;
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
   if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
+  if (p.home_date_tap_action >= 2) p.home_date_tap_action = 0;
+  p.calendar_lookahead_days = snap_calendar_lookahead_days(p.calendar_lookahead_days);
+  if (p.calendar_week_start >= 2) p.calendar_week_start = 0;
   p.local_clock_label[sizeof(p.local_clock_label) - 1] = '\0';
   p.world_clocks_spec[sizeof(p.world_clocks_spec) - 1] = '\0';
   p.tools_items[sizeof(p.tools_items) - 1] = '\0';
@@ -1368,7 +1506,87 @@ struct NavRuntimeState {
   bool game_btn_pressed = false;
 };
 
+inline constexpr size_t kMaxMusicLyricLines = 128;
+
+struct MusicLyricLine {
+  int32_t t_ms = -1;  // >= 0 for LRC [mm:ss.xx] synced line; -1 for plain unsynced line
+  std::string text = "";
+};
+
+struct MusicLyricsState {
+  uint32_t rev = 0;
+  int latest_req_id = 0;
+  std::string track_key = "";
+  bool synced = false;
+  bool loading = false;
+  std::vector<MusicLyricLine> lines{};
+  int active_line_idx = -1;
+  int scroll_px = 0;
+  int target_scroll_px = 0;
+  int from_scroll_px = 0;
+  uint32_t scroll_anim_start_ms = 0;
+  uint32_t manual_override_until_ms = 0;
+
+  // Multi-chunk assembly buffer for latter_set_music_lyrics
+  int staging_req_id = -1;
+  int staging_expected_chunks = 0;
+  int staging_next_chunk = 0;
+  std::string staging_track_key = "";
+  bool staging_synced = false;
+  std::vector<MusicLyricLine> staging_lines{};
+
+  void clear() {
+    track_key.clear();
+    synced = false;
+    loading = false;
+    lines.clear();
+    active_line_idx = -1;
+    scroll_px = 0;
+    target_scroll_px = 0;
+    from_scroll_px = 0;
+    scroll_anim_start_ms = 0;
+    manual_override_until_ms = 0;
+    staging_req_id = -1;
+    staging_expected_chunks = 0;
+    staging_next_chunk = 0;
+    staging_track_key.clear();
+    staging_synced = false;
+    staging_lines.clear();
+  }
+
+  int find_active_line(uint32_t pos_ms) const noexcept {
+    if (!synced || lines.empty()) return -1;
+    int best = -1;
+    for (size_t i = 0; i < lines.size(); ++i) {
+      if (lines[i].t_ms < 0) continue;
+      if (static_cast<uint32_t>(lines[i].t_ms) <= pos_ms) {
+        best = static_cast<int>(i);
+      } else {
+        break;
+      }
+    }
+    return best;
+  }
+};
+
 struct MusicRuntimeState {
+  MusicView view = MusicView::NOW_PLAYING;
+  MusicTakeover takeover = MusicTakeover::NONE;
+  uint32_t takeover_interacted_ms = 0;
+  uint8_t carousel_page = 0;     // 0 = Page 1 (slots 0..3), 1 = Page 2 (slots 4..7)
+  int mode_bar_win_start = 0;    // 0 or 4 window start for render_in_app_mode_bar_track
+  int8_t action_sheet_slot = -1; // 0..4 when opened from a slot row; -1 for header container
+  bool action_sheet_is_queue = false;
+  bool action_sheet_is_container = false;
+  std::string action_sheet_id = "";
+  std::string action_sheet_name = "";
+  std::string action_sheet_type = "";
+  std::string action_sheet_queue_item_id = "";
+  int info_scroll_px = 0;
+  int info_scroll_page = 1;
+  int settings_page = 1;
+  MusicLyricsState lyrics{};
+
   int overlay_mode = 0;
   bool direct_nav = false;
   bool hud_active = false;
@@ -1452,11 +1670,38 @@ struct RemoteRuntimeState {
 };
 
 struct CalendarUiState {
-  std::string quick_summary = "Reminder";
-  int quick_in_minutes = 30;
-  int quick_duration_minutes = 30;
-  int detail_mode = 0;
-  bool quick_add_open = false;
+  int subpage = CalendarSubpage::OVERVIEW;
+  int drilldown = CalDrilldown::NONE;
+  int return_subpage = CalendarSubpage::OVERVIEW;
+  int picker_return_drilldown = CalDrilldown::ADD_STEP1;
+  int32_t selected_ymd = 0;  // YYYYMMDD (0 = seed from current local date)
+  int overview_page = 0;
+  int day_page = 0;
+  int week_page = 0;
+  int picker_page = 0;
+  int selected_event_idx = -1;
+  bool delete_confirm_open = false;
+  uint8_t dictation_field = 0;  // 0 = none, 1 = Title, 2 = Location
+  uint32_t dictation_started_ms = 0;
+  uint32_t next_req_id = 1;
+  std::string detail_map_url = "";
+  std::string detail_map_location = "";
+  int map_zoom = 15;
+  int map_pan_x = 0;
+  int map_pan_y = 0;
+  std::string feedback_text = "";
+  uint32_t feedback_ms = 0;
+
+  // + Add Event composer draft state
+  std::string draft_title = "Reminder";
+  std::string draft_location = "";
+  uint8_t draft_cal_idx = 0;
+  uint8_t draft_rrule_idx = 0;   // 0=Once, 1=Daily, 2=Weekdays, 3=Weekly, 4=Biweekly, 5=Monthly, 6=Yearly
+  int32_t draft_ymd = 0;         // YYYYMMDD
+  int16_t draft_start_min = 540; // 09:00
+  int16_t draft_end_min = 600;   // 10:00
+  bool draft_all_day = false;
+  uint8_t draft_time_field = 0;  // 0 = Start focused, 1 = End focused
 };
 
 struct IntercomRuntimeState {
@@ -2236,7 +2481,9 @@ inline uint8_t activity_source_mask(const AreaContextState &st = area_ctx_state(
 }
 
 // Parse Protocol v3 active_media payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
-inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = media_state()) {
+inline bool parse_v3_media_payload(std::string_view payload,
+                                   MediaState &st = media_state(),
+                                   uint32_t now_ms = 0) {
   constexpr size_t kCount = static_cast<size_t>(MediaField::COUNT);
   std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
@@ -2248,12 +2495,16 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
 
   st.state          = std::string(f[static_cast<size_t>(MediaField::STATE)]);
   st.playback_state = parse_media_playback_state(st.state);
+  st.playing        = (st.playback_state == MediaPlaybackState::Playing);
   st.title          = std::string(f[static_cast<size_t>(MediaField::TITLE)]);
   st.artist         = std::string(f[static_cast<size_t>(MediaField::ARTIST)]);
   st.album          = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
   st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
   st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
   st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
+  if (now_ms != 0U) {
+    st.position_updated_ms = now_ms;
+  }
   float raw_vol     = v3_parse_float(f[static_cast<size_t>(MediaField::VOLUME)], NAN);
   if (!std::isnan(raw_vol)) {
     st.volume     = std::max(0.0f, std::min(1.0f, raw_vol * 0.01f));
@@ -2268,6 +2519,17 @@ inline bool parse_v3_media_payload(std::string_view payload, MediaState &st = me
   st.last_speaker   = std::string(f[static_cast<size_t>(MediaField::LAST_SPEAKER)]);
   st.local_speaker  = std::string(f[static_cast<size_t>(MediaField::LOCAL_SPEAKER)]);
   st.is_local       = v3_parse_bool(f[static_cast<size_t>(MediaField::IS_LOCAL)]);
+  st.shuffle        = v3_parse_bool(f[static_cast<size_t>(MediaField::SHUFFLE)]);
+  const std::string_view rep_sv = f[static_cast<size_t>(MediaField::REPEAT)];
+  st.repeat_mode    = parse_music_repeat_mode(rep_sv);
+  st.repeat         = music_repeat_mode_cstr(st.repeat_mode);
+  st.muted          = v3_parse_bool(f[static_cast<size_t>(MediaField::MUTED)]);
+  st.favorite       = v3_parse_bool(f[static_cast<size_t>(MediaField::FAVORITE)]);
+  st.queue_count    = std::max(0, v3_parse_int(f[static_cast<size_t>(MediaField::QUEUE_COUNT)], 0));
+  const uint32_t raw_mcaps = v3_parse_u32(f[static_cast<size_t>(MediaField::MEDIA_CAPS)], 0U);
+  st.media_caps     = (raw_mcaps != 0U)
+                          ? static_cast<uint16_t>(raw_mcaps & 0xFFFFU)
+                          : (st.active_speaker.empty() ? 0U : kMediaCapDefault);
   return true;
 }
 
@@ -2317,7 +2579,8 @@ inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st 
   return true;
 }
 
-// Parse Protocol v3 calendar payload ("v3\x1f<epoch>\x1f<rev>\x1f<summary>\x1f<count>\x1f<next_event>")
+// Parse Protocol v3 calendar payload
+// ("v3\x1f<epoch>\x1f<rev>\x1f<summary>\x1f<count>\x1f<calendars_meta>\x1f<locations_catalog>")
 inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st = calendar_state()) {
   constexpr size_t kCount = static_cast<size_t>(CalendarField::COUNT);
   std::string_view f[kCount]{};
@@ -2328,8 +2591,10 @@ inline bool parse_v3_calendar_payload(std::string_view payload, CalendarState &s
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("calendar_agenda", payload, kCount);
 
-  st.summary = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
-  st.count   = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
+  st.summary           = std::string(f[static_cast<size_t>(CalendarField::SUMMARY)]);
+  st.count             = v3_parse_int(f[static_cast<size_t>(CalendarField::EVENT_COUNT)], 0);
+  st.calendars_meta    = std::string(f[static_cast<size_t>(CalendarField::CALENDARS_META)]);
+  st.locations_catalog = std::string(f[static_cast<size_t>(CalendarField::LOCATIONS_CATALOG)]);
   return true;
 }
 
@@ -3006,8 +3271,6 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::WAKE_GREETING: return "wake_greeting";
     case PrefKey::ALBUM_ART_STYLE: return "album_art_style";
     case PrefKey::MUSIC_OVERLAY_STYLE: return "music_overlay_style";
-    case PrefKey::SHOW_SPEAKER_SHORTCUT: return "show_speaker_shortcut";
-    case PrefKey::SHOW_LIBRARY_SHORTCUT: return "show_library_shortcut";
     case PrefKey::ALBUM_SORT_ORDER: return "album_sort_order";
     case PrefKey::ARTIST_ALBUM_SORT_ORDER: return "artist_album_sort_order";
     case PrefKey::PODCAST_SORT_ORDER: return "podcast_sort_order";
@@ -3031,6 +3294,9 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::LOCAL_CLOCK_LABEL: return "local_clock_label";
     case PrefKey::TOOLS_ITEMS: return "tools_items";
     case PrefKey::GAMES_ITEMS: return "games_items";
+    case PrefKey::HOME_DATE_TAP_ACTION: return "home_date_tap_action";
+    case PrefKey::CALENDAR_LOOKAHEAD_DAYS: return "calendar_lookahead_days";
+    case PrefKey::CALENDAR_WEEK_START: return "calendar_week_start";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3064,8 +3330,6 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::WAKE_GREETING: return p.wake_greeting ? "1" : "0";
     case PrefKey::ALBUM_ART_STYLE: return pref_album_art_style_cstr(p);
     case PrefKey::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
-    case PrefKey::SHOW_SPEAKER_SHORTCUT: return p.show_speaker_shortcut ? "1" : "0";
-    case PrefKey::SHOW_LIBRARY_SHORTCUT: return p.show_library_shortcut ? "1" : "0";
     case PrefKey::ALBUM_SORT_ORDER: return pref_album_sort_order_cstr(p);
     case PrefKey::ARTIST_ALBUM_SORT_ORDER: return pref_artist_album_sort_order_cstr(p);
     case PrefKey::PODCAST_SORT_ORDER: return pref_podcast_sort_order_cstr(p);
@@ -3089,6 +3353,9 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::LOCAL_CLOCK_LABEL: return std::string(p.local_clock_label);
     case PrefKey::TOOLS_ITEMS: return std::string(effective_tools_items_sv(p));
     case PrefKey::GAMES_ITEMS: return std::string(effective_games_items_sv(p));
+    case PrefKey::HOME_DATE_TAP_ACTION: return pref_home_date_tap_cstr(p);
+    case PrefKey::CALENDAR_LOOKAHEAD_DAYS: return std::to_string(snap_calendar_lookahead_days(p.calendar_lookahead_days));
+    case PrefKey::CALENDAR_WEEK_START: return pref_calendar_week_start_cstr(p);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3195,10 +3462,6 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_enum(p.album_art_style, kAlbumArtStyleOpts, 0);
     case PrefKey::MUSIC_OVERLAY_STYLE:
       return apply_enum(p.music_overlay_style, kMusicOverlayStyleOpts, 0);
-    case PrefKey::SHOW_SPEAKER_SHORTCUT:
-      return apply_bool(p.show_speaker_shortcut, 0);
-    case PrefKey::SHOW_LIBRARY_SHORTCUT:
-      return apply_bool(p.show_library_shortcut, 0);
     case PrefKey::ALBUM_SORT_ORDER:
       return apply_enum(p.album_sort_order, kAlbumSortOpts, 0);
     case PrefKey::ARTIST_ALBUM_SORT_ORDER:
@@ -3298,6 +3561,20 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
       return true;
     }
+    case PrefKey::HOME_DATE_TAP_ACTION:
+      return apply_enum(p.home_date_tap_action, kHomeDateTapOpts, 0);
+    case PrefKey::CALENDAR_LOOKAHEAD_DAYS: {
+      const int parsed = v3_parse_int(sv, -9999);
+      if (parsed == -9999) return false;
+      const uint8_t snapped = snap_calendar_lookahead_days(parsed);
+      if (p.calendar_lookahead_days == snapped) return false;
+      p.calendar_lookahead_days = snapped;
+      changed_mask |= pref_key_bit(key);
+      effects_mask |= kPrefEffectRedraw;
+      return true;
+    }
+    case PrefKey::CALENDAR_WEEK_START:
+      return apply_enum(p.calendar_week_start, kCalendarWeekStartOpts, 0);
     case PrefKey::COUNT:
       break;
   }
@@ -3390,8 +3667,6 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::WAKE_GREETING, PrefKey::WAKE_GREETING);
   apply_f(DevicePrefsField::ALBUM_ART_STYLE, PrefKey::ALBUM_ART_STYLE);
   apply_f(DevicePrefsField::MUSIC_OVERLAY_STYLE, PrefKey::MUSIC_OVERLAY_STYLE);
-  apply_f(DevicePrefsField::SHOW_SPEAKER_SHORTCUT, PrefKey::SHOW_SPEAKER_SHORTCUT);
-  apply_f(DevicePrefsField::SHOW_LIBRARY_SHORTCUT, PrefKey::SHOW_LIBRARY_SHORTCUT);
   apply_f(DevicePrefsField::ALBUM_SORT_ORDER, PrefKey::ALBUM_SORT_ORDER);
   apply_f(DevicePrefsField::ARTIST_ALBUM_SORT_ORDER, PrefKey::ARTIST_ALBUM_SORT_ORDER);
   apply_f(DevicePrefsField::PODCAST_SORT_ORDER, PrefKey::PODCAST_SORT_ORDER);
@@ -3413,6 +3688,9 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::LOCAL_CLOCK_LABEL, PrefKey::LOCAL_CLOCK_LABEL);
   apply_f(DevicePrefsField::TOOLS_ITEMS, PrefKey::TOOLS_ITEMS);
   apply_f(DevicePrefsField::GAMES_ITEMS, PrefKey::GAMES_ITEMS);
+  apply_f(DevicePrefsField::HOME_DATE_TAP_ACTION, PrefKey::HOME_DATE_TAP_ACTION);
+  apply_f(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS, PrefKey::CALENDAR_LOOKAHEAD_DAYS);
+  apply_f(DevicePrefsField::CALENDAR_WEEK_START, PrefKey::CALENDAR_WEEK_START);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
 
@@ -3474,7 +3752,502 @@ inline size_t parse_calendar_records(std::string_view summary, CalendarRecord *o
   return count;
 }
 
-// Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel\x1e...")
+// ==============================================================================
+// Calendar App: Civil Date Math, PSRAM Window Store, Metadata & STT Dictation
+// ==============================================================================
+inline constexpr bool is_leap_year(int y) noexcept {
+  return (y % 4 == 0) && ((y % 100 != 0) || (y % 400 == 0));
+}
+
+inline constexpr int days_in_month(int y, int m) noexcept {
+  switch (m) {
+    case 1: case 3: case 5: case 7: case 8: case 10: case 12: return 31;
+    case 4: case 6: case 9: case 11: return 30;
+    case 2: return is_leap_year(y) ? 29 : 28;
+    default: return 30;
+  }
+}
+
+inline constexpr int32_t make_ymd(int y, int m, int d) noexcept {
+  return static_cast<int32_t>(y) * 10000 + static_cast<int32_t>(m) * 100 + static_cast<int32_t>(d);
+}
+
+inline constexpr bool split_ymd(int32_t ymd, int &y, int &m, int &d) noexcept {
+  if (ymd < 19700101 || ymd > 21991231) return false;
+  y = static_cast<int>(ymd / 10000);
+  m = static_cast<int>((ymd / 100) % 100);
+  d = static_cast<int>(ymd % 100);
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > days_in_month(y, m)) return false;
+  return true;
+}
+
+// Howard Hinnant civil-from-days / days-from-civil (1970-01-01 == 0, TZ-free).
+inline constexpr int32_t days_from_civil(int y, int m, int d) noexcept {
+  y -= (m <= 2) ? 1 : 0;
+  const int32_t era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(y - era * 400);
+  const unsigned doy = (153U * static_cast<unsigned>(m + (m > 2 ? -3 : 9)) + 2U) / 5U +
+                       static_cast<unsigned>(d) - 1U;
+  const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+  return era * 146097 + static_cast<int32_t>(doe) - 719468;
+}
+
+inline constexpr void civil_from_days(int32_t z, int &y, int &m, int &d) noexcept {
+  z += 719468;
+  const int32_t era = (z >= 0 ? z : z - 146096) / 146097;
+  const unsigned doe = static_cast<unsigned>(z - era * 146097);
+  const unsigned yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
+  y = static_cast<int>(yoe) + era * 400;
+  const unsigned doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
+  const unsigned mp = (5U * doy + 2U) / 153U;
+  d = static_cast<int>(doy - (153U * mp + 2U) / 5U + 1U);
+  m = static_cast<int>(mp < 10U ? mp + 3U : mp - 9U);
+  y += (m <= 2) ? 1 : 0;
+}
+
+// Returns 0=Sunday .. 6=Saturday.
+inline constexpr int weekday_sun0_from_ymd(int32_t ymd) noexcept {
+  int y = 0, m = 0, d = 0;
+  if (!split_ymd(ymd, y, m, d)) return 0;
+  const int32_t z = days_from_civil(y, m, d);
+  return static_cast<int>(z >= -4 ? (z + 4) % 7 : (z + 5) % 7 + 6);
+}
+
+inline constexpr int32_t add_days_ymd(int32_t ymd, int delta_days) noexcept {
+  int y = 0, m = 0, d = 0;
+  if (!split_ymd(ymd, y, m, d)) return ymd;
+  const int32_t z = days_from_civil(y, m, d) + static_cast<int32_t>(delta_days);
+  int ny = 0, nm = 0, nd = 0;
+  civil_from_days(z, ny, nm, nd);
+  return make_ymd(ny, nm, nd);
+}
+
+inline constexpr int32_t add_months_ymd(int32_t ymd, int delta_months) noexcept {
+  int y = 0, m = 0, d = 0;
+  if (!split_ymd(ymd, y, m, d)) return ymd;
+  const int total_m = (y * 12 + (m - 1)) + delta_months;
+  int ny = total_m / 12;
+  int nm = (total_m % 12) + 1;
+  if (nm <= 0) {
+    nm += 12;
+    ny -= 1;
+  }
+  ny = std::clamp(ny, 1970, 2199);
+  const int nd = std::min(d, days_in_month(ny, nm));
+  return make_ymd(ny, nm, nd);
+}
+
+inline constexpr int32_t start_of_week_ymd(int32_t ymd, bool monday_first) noexcept {
+  const int wd = weekday_sun0_from_ymd(ymd);
+  const int back = monday_first ? ((wd + 6) % 7) : wd;
+  return add_days_ymd(ymd, -back);
+}
+
+inline constexpr int days_between_ymd(int32_t start_ymd, int32_t end_ymd) noexcept {
+  int sy = 0, sm = 0, sd = 0;
+  int ey = 0, em = 0, ed = 0;
+  if (!split_ymd(start_ymd, sy, sm, sd) || !split_ymd(end_ymd, ey, em, ed)) return 0;
+  return static_cast<int>(days_from_civil(ey, em, ed) - days_from_civil(sy, sm, sd));
+}
+
+inline void format_ymd_iso(int32_t ymd, char (&out)[12]) noexcept {
+  int y = 2026, m = 1, d = 1;
+  (void)split_ymd(ymd, y, m, d);
+  std::snprintf(out, sizeof(out), "%04d-%02d-%02d", y, m, d);
+}
+
+inline int32_t parse_ymd_iso(std::string_view sv) noexcept {
+  sv = trim_ascii_ws(sv);
+  if (sv.size() == 8) {
+    const int parsed = v3_parse_int(sv, 0);
+    int y = 0, m = 0, d = 0;
+    return split_ymd(parsed, y, m, d) ? parsed : 0;
+  }
+  if (sv.size() >= 10 && sv[4] == '-' && sv[7] == '-') {
+    const int y = v3_parse_int(sv.substr(0, 4), 0);
+    const int m = v3_parse_int(sv.substr(5, 2), 0);
+    const int d = v3_parse_int(sv.substr(8, 2), 0);
+    const int32_t ymd = make_ymd(y, m, d);
+    int cy = 0, cm = 0, cd = 0;
+    return split_ymd(ymd, cy, cm, cd) ? ymd : 0;
+  }
+  return 0;
+}
+
+inline constexpr int kMaxCalendarSources = 8;
+inline constexpr int kMaxCalendarLocations = 12;
+inline constexpr int kMaxCalendarWindowEvents = 64;
+
+inline constexpr const char *const kCalTitlePresets[10] = {
+    "Reminder", "Meeting", "Appointment", "Errand", "Dinner",
+    "Workout", "Call", "Travel", "Family", "Service"};
+
+inline constexpr const char *const kCalRepeatLabels[7] = {
+    "Once", "Daily", "Weekdays", "Weekly", "Biweekly", "Monthly", "Yearly"};
+
+inline constexpr const char *const kCalRepeatRrules[7] = {
+    "",
+    "FREQ=DAILY",
+    "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+    "FREQ=WEEKLY",
+    "FREQ=WEEKLY;INTERVAL=2",
+    "FREQ=MONTHLY",
+    "FREQ=YEARLY"};
+
+struct CalendarSourceMeta {
+  char entity_id[64]{};
+  char label[32]{};
+  uint8_t color_idx = 0;
+  bool can_create = false;
+  bool can_delete = false;
+};
+
+inline int parse_calendar_sources_meta(std::string_view raw,
+                                       CalendarSourceMeta *out,
+                                       int max_out = kMaxCalendarSources) noexcept {
+  if (raw.empty() || out == nullptr || max_out <= 0) return 0;
+  const int cap = std::min(max_out, kMaxCalendarSources);
+  std::string_view recs[kMaxCalendarSources]{};
+  const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
+  int count = 0;
+  for (size_t i = 0; i < n; ++i) {
+    std::string_view cols[5]{};
+    const size_t cn = v3_split_fields(recs[i], cols, 5, '|');
+    if (cn < 2 || cols[0].empty()) continue;
+    CalendarSourceMeta item{};
+    copy_bounded_cstr(item.entity_id, cols[0]);
+    copy_bounded_cstr(item.label, cols[1].empty() ? cols[0] : cols[1]);
+    item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], count) : count, 0, 5));
+    item.can_create = (cn >= 4) && v3_parse_bool(cols[3]);
+    item.can_delete = (cn >= 5) && v3_parse_bool(cols[4]);
+    out[count++] = item;
+  }
+  return count;
+}
+
+inline int collect_writable_calendar_sources(std::string_view raw,
+                                             CalendarSourceMeta *out,
+                                             int *out_source_indices,
+                                             int max_out = kMaxCalendarSources) noexcept {
+  CalendarSourceMeta all[kMaxCalendarSources]{};
+  const int n = parse_calendar_sources_meta(raw, all, kMaxCalendarSources);
+  int wcnt = 0;
+  for (int i = 0; i < n && wcnt < max_out; ++i) {
+    if (!all[i].can_create) continue;
+    if (out != nullptr) out[wcnt] = all[i];
+    if (out_source_indices != nullptr) out_source_indices[wcnt] = i;
+    ++wcnt;
+  }
+  return wcnt;
+}
+
+inline int parse_calendar_locations_catalog(std::string_view raw,
+                                            std::string_view *out,
+                                            int max_out = kMaxCalendarLocations) noexcept {
+  if (raw.empty() || out == nullptr || max_out <= 0) return 0;
+  const int cap = std::min(max_out, kMaxCalendarLocations);
+  std::string_view recs[kMaxCalendarLocations]{};
+  const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
+  int count = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const std::string_view sv = trim_ascii_ws(recs[i]);
+    if (!sv.empty()) out[count++] = sv;
+  }
+  return count;
+}
+
+struct CalendarWindowEvent {
+  int32_t start_ymd = 0;    // YYYYMMDD local start date
+  int32_t end_ymd = 0;      // YYYYMMDD inclusive local end date
+  int16_t start_min = -1;   // 0..1439 local minutes from midnight (-1 when all_day)
+  int16_t end_min = -1;     // 0..1440 local minutes from midnight (-1 when all_day)
+  uint8_t all_day = 0;
+  uint8_t cal_idx = 0;
+  char uid[72]{};
+  char recurrence_id[40]{};
+  char title[60]{};
+  char location[68]{};
+  char description[144]{};
+};
+
+static_assert(std::is_trivially_copyable_v<CalendarWindowEvent>,
+              "CalendarWindowEvent must remain POD for PSRAM storage.");
+
+struct CalendarWindowStore {
+  uint32_t rev = 0;
+  int32_t window_start_ymd = 0;
+  int32_t window_end_ymd = 0;
+  int count = 0;
+  bool loading = false;
+  CalendarWindowEvent events[kMaxCalendarWindowEvents]{};
+
+  int staging_req_id = -1;
+  int staging_expected_chunks = 0;
+  int staging_next_chunk = 0;
+  int32_t staging_start_ymd = 0;
+  int32_t staging_end_ymd = 0;
+  int staging_count = 0;
+  CalendarWindowEvent staging_events[kMaxCalendarWindowEvents]{};
+};
+
+static_assert(std::is_trivially_copyable_v<CalendarWindowStore>,
+              "CalendarWindowStore must remain POD for PSRAM calloc.");
+
+inline CalendarWindowStore &calendar_window_store() noexcept {
+#if LATTER_HAS_SPIRAM_ALLOC
+  static CalendarWindowStore *ptr = []() -> CalendarWindowStore * {
+    auto *p = static_cast<CalendarWindowStore *>(
+        heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (p == nullptr) {
+      p = static_cast<CalendarWindowStore *>(std::calloc(1, sizeof(CalendarWindowStore)));
+    }
+    return p;
+  }();
+  static CalendarWindowStore fallback{};
+  return (ptr != nullptr) ? *ptr : fallback;
+#else
+  static CalendarWindowStore store{};
+  return store;
+#endif
+}
+
+inline void reset_calendar_window_store() noexcept {
+  calendar_window_store() = CalendarWindowStore{};
+}
+
+inline bool parse_calendar_window_event_record(std::string_view rec, CalendarWindowEvent &out) noexcept {
+  if (rec.empty()) return false;
+  std::string_view f[11]{};
+  const size_t n = v3_split_fields(rec, f, 11, kProtocolFieldSep);
+  if (n < 9) return false;
+  const int32_t s_ymd = parse_ymd_iso(f[0]);
+  if (s_ymd == 0) return false;
+  int32_t e_ymd = parse_ymd_iso(f[1]);
+  if (e_ymd < s_ymd) e_ymd = s_ymd;
+
+  out = CalendarWindowEvent{};
+  out.start_ymd = s_ymd;
+  out.end_ymd = e_ymd;
+  out.start_min = static_cast<int16_t>(std::clamp(v3_parse_int(f[2], -1), -1, 1439));
+  out.end_min = static_cast<int16_t>(std::clamp(v3_parse_int(f[3], -1), -1, 1440));
+  out.all_day = v3_parse_bool(f[4]) ? 1U : 0U;
+  out.cal_idx = static_cast<uint8_t>(std::clamp(v3_parse_int(f[5], 0), 0, 7));
+  copy_bounded_cstr(out.uid, f[6]);
+  copy_bounded_cstr(out.recurrence_id, f[7]);
+  copy_bounded_cstr(out.title, f[8].empty() ? std::string_view("Event") : f[8]);
+  if (n >= 10) copy_bounded_cstr(out.location, f[9]);
+  if (n >= 11) copy_bounded_cstr(out.description, f[10]);
+  return true;
+}
+
+inline bool apply_calendar_view_action(int req_id,
+                                       int chunk_index,
+                                       int chunk_count,
+                                       std::string_view window_start,
+                                       std::string_view window_end,
+                                       std::string_view map_url,
+                                       std::string_view events,
+                                       CalendarWindowStore &store = calendar_window_store(),
+                                       DeviceRuntimeState &rs = runtime_state()) {
+  if (!map_url.empty() && chunk_count <= 0) {
+    rs.cal.detail_map_url = std::string(map_url);
+    store.rev++;
+    return true;
+  }
+  if (chunk_index < 0 || chunk_count <= 0 || chunk_index >= chunk_count || chunk_count > 16) {
+    return false;
+  }
+  if (chunk_index == 0) {
+    store.staging_req_id = req_id;
+    store.staging_expected_chunks = chunk_count;
+    store.staging_next_chunk = 0;
+    store.staging_start_ymd = parse_ymd_iso(window_start);
+    store.staging_end_ymd = parse_ymd_iso(window_end);
+    store.staging_count = 0;
+  } else if (req_id != store.staging_req_id ||
+             chunk_index != store.staging_next_chunk ||
+             chunk_count != store.staging_expected_chunks) {
+    store.staging_expected_chunks = 0;
+    store.staging_next_chunk = 0;
+    store.staging_count = 0;
+    return false;
+  }
+
+  if (!events.empty()) {
+    size_t pos = 0;
+    while (pos <= events.size() && store.staging_count < kMaxCalendarWindowEvents) {
+      const size_t sep = events.find(kProtocolRecordSep, pos);
+      const std::string_view rec =
+          (sep == std::string_view::npos) ? events.substr(pos) : events.substr(pos, sep - pos);
+      CalendarWindowEvent parsed{};
+      if (parse_calendar_window_event_record(rec, parsed)) {
+        store.staging_events[store.staging_count++] = parsed;
+      }
+      if (sep == std::string_view::npos) break;
+      pos = sep + 1;
+    }
+  }
+
+  store.staging_next_chunk++;
+  if (store.staging_next_chunk < store.staging_expected_chunks) {
+    return false;
+  }
+
+  store.count = store.staging_count;
+  for (int i = 0; i < store.count; ++i) {
+    store.events[i] = store.staging_events[i];
+  }
+  if (store.staging_start_ymd > 0) store.window_start_ymd = store.staging_start_ymd;
+  if (store.staging_end_ymd > 0) store.window_end_ymd = store.staging_end_ymd;
+  store.loading = false;
+  store.staging_expected_chunks = 0;
+  store.staging_next_chunk = 0;
+  if (!map_url.empty()) {
+    rs.cal.detail_map_url = std::string(map_url);
+  }
+  if (rs.cal.selected_event_idx >= store.count) {
+    rs.cal.selected_event_idx = -1;
+    if (rs.cal.drilldown == CalDrilldown::DETAIL || rs.cal.drilldown == CalDrilldown::MAP) {
+      rs.cal.drilldown = CalDrilldown::NONE;
+      rs.cal.delete_confirm_open = false;
+    }
+  }
+  store.rev++;
+  return true;
+}
+
+inline constexpr bool calendar_event_overlaps_ymd(const CalendarWindowEvent &ev, int32_t ymd) noexcept {
+  return ymd >= ev.start_ymd && ymd <= ev.end_ymd;
+}
+
+inline constexpr bool calendar_event_is_upcoming(const CalendarWindowEvent &ev,
+                                                 int32_t today_ymd,
+                                                 int now_min_of_day,
+                                                 int32_t horizon_ymd) noexcept {
+  if (ev.start_ymd > horizon_ymd || ev.end_ymd < today_ymd) return false;
+  if (ev.end_ymd > today_ymd || ev.all_day != 0U) return true;
+  if (ev.end_min >= 0) return ev.end_min > now_min_of_day;
+  if (ev.start_min >= 0) return (ev.start_min + 60) > now_min_of_day;
+  return true;
+}
+
+inline int collect_calendar_day_events(int32_t ymd,
+                                       int *out_indices,
+                                       int max_out,
+                                       const CalendarWindowStore &store = calendar_window_store()) noexcept {
+  if (out_indices == nullptr || max_out <= 0) return 0;
+  int n = 0;
+  // All-day events first, then chronological timed events.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (int i = 0; i < store.count && n < max_out; ++i) {
+      const auto &ev = store.events[i];
+      if (!calendar_event_overlaps_ymd(ev, ymd)) continue;
+      const bool is_all_day = (ev.all_day != 0U);
+      if ((pass == 0 && !is_all_day) || (pass == 1 && is_all_day)) continue;
+      out_indices[n++] = i;
+    }
+  }
+  return n;
+}
+
+inline int collect_calendar_overview_events(int32_t today_ymd,
+                                            int now_min_of_day,
+                                            int lookahead_days,
+                                            int *out_indices,
+                                            int max_out,
+                                            const CalendarWindowStore &store = calendar_window_store()) noexcept {
+  if (out_indices == nullptr || max_out <= 0) return 0;
+  const int clamped_days = std::max(1, lookahead_days);
+  const int32_t horizon_ymd = add_days_ymd(today_ymd, clamped_days);
+  int n = 0;
+  for (int i = 0; i < store.count && n < max_out; ++i) {
+    if (calendar_event_is_upcoming(store.events[i], today_ymd, now_min_of_day, horizon_ymd)) {
+      out_indices[n++] = i;
+    }
+  }
+  return n;
+}
+
+// Collect up to 3 distinct source calendar indices (`cal_idx`) active on `ymd` for Month/Week dots.
+inline int collect_calendar_day_dots(int32_t ymd,
+                                     uint8_t (&out_cal_indices)[3],
+                                     const CalendarWindowStore &store = calendar_window_store()) noexcept {
+  int cnt = 0;
+  for (int i = 0; i < store.count && cnt < 3; ++i) {
+    const auto &ev = store.events[i];
+    if (!calendar_event_overlaps_ymd(ev, ymd)) continue;
+    bool seen = false;
+    for (int j = 0; j < cnt; ++j) {
+      if (out_cal_indices[j] == ev.cal_idx) {
+        seen = true;
+        break;
+      }
+    }
+    if (!seen) {
+      out_cal_indices[cnt++] = ev.cal_idx;
+    }
+  }
+  return cnt;
+}
+
+inline bool is_calendar_map_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  return rs.nav.gui_page == PageId::CALENDAR && rs.cal.drilldown == CalDrilldown::MAP;
+}
+
+inline bool cal_dictation_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  return rs.cal.dictation_field != 0U;
+}
+
+inline void start_calendar_dictation(uint8_t field,
+                                     uint32_t now_ms,
+                                     DeviceRuntimeState &rs = runtime_state()) {
+  rs.cal.dictation_field = field;
+  rs.cal.dictation_started_ms = now_ms;
+  rs.cal.feedback_text = "Listening — speak now...";
+  rs.cal.feedback_ms = now_ms;
+}
+
+inline bool finish_calendar_dictation(std::string_view stt_text,
+                                      uint32_t now_ms,
+                                      DeviceRuntimeState &rs = runtime_state()) {
+  const uint8_t field = rs.cal.dictation_field;
+  rs.cal.dictation_field = 0U;
+  rs.cal.dictation_started_ms = 0U;
+  std::string_view sv = trim_ascii_ws(stt_text);
+  while (sv.size() > 1U && (sv.back() == '.' || sv.back() == '!' || sv.back() == '?')) {
+    sv.remove_suffix(1);
+    sv = trim_ascii_ws(sv);
+  }
+  if (sv.empty() || field == 0U) {
+    rs.cal.feedback_text = "Didn't catch that";
+    rs.cal.feedback_ms = now_ms;
+    return false;
+  }
+  std::string cleaned(sv.substr(0, (field == 1U) ? 56U : 64U));
+  if (!cleaned.empty() && std::islower(static_cast<unsigned char>(cleaned[0]))) {
+    cleaned[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cleaned[0])));
+  }
+  if (field == 1U) {
+    rs.cal.draft_title = std::move(cleaned);
+  } else if (field == 2U) {
+    rs.cal.draft_location = std::move(cleaned);
+  }
+  rs.cal.feedback_text = "Captured";
+  rs.cal.feedback_ms = now_ms;
+  return true;
+}
+
+inline void cancel_calendar_dictation(const char *msg,
+                                      uint32_t now_ms,
+                                      DeviceRuntimeState &rs = runtime_state()) {
+  rs.cal.dictation_field = 0U;
+  rs.cal.dictation_started_ms = 0U;
+  rs.cal.feedback_text = (msg != nullptr) ? msg : "";
+  rs.cal.feedback_ms = now_ms;
+}
+
+// Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current]\x1e...")
 inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
   for (size_t i = 0; i < max_slots; i++) {
     out_slots[i] = BrowseSlotItem{};
@@ -3486,18 +4259,186 @@ inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem
   size_t valid_cnt = 0;
   for (size_t i = 0; i < rec_cnt && valid_cnt < max_slots; i++) {
     if (recs[i].empty()) continue;
-    std::string_view cols[6];
-    size_t col_cnt = v3_split_fields(recs[i], cols, 6, '\x1f');
+    std::string_view cols[8];
+    size_t col_cnt = v3_split_fields(recs[i], cols, 8, '\x1f');
     if (col_cnt >= 2) {
-      out_slots[valid_cnt].name   = std::string(cols[0]);
-      out_slots[valid_cnt].id     = std::string(cols[1]);
-      out_slots[valid_cnt].type   = (col_cnt >= 3) ? std::string(cols[2]) : "";
-      out_slots[valid_cnt].active = (col_cnt >= 4) ? v3_parse_bool(cols[3]) : false;
-      out_slots[valid_cnt].level  = (col_cnt >= 5) ? v3_parse_int(cols[4], -1) : -1;
+      out_slots[valid_cnt].name          = std::string(cols[0]);
+      out_slots[valid_cnt].id            = std::string(cols[1]);
+      out_slots[valid_cnt].type          = (col_cnt >= 3) ? std::string(cols[2]) : "";
+      out_slots[valid_cnt].active        = (col_cnt >= 4) ? v3_parse_bool(cols[3]) : false;
+      out_slots[valid_cnt].level         = (col_cnt >= 5) ? v3_parse_int(cols[4], -1) : -1;
+      out_slots[valid_cnt].queue_item_id = (col_cnt >= 6) ? std::string(cols[5]) : "";
+      out_slots[valid_cnt].is_current    = (col_cnt >= 7) ? v3_parse_bool(cols[6]) : false;
       valid_cnt++;
     }
   }
   return valid_cnt;
+}
+
+inline void append_music_lyrics_records_blob(std::string_view blob,
+                                             std::vector<MusicLyricLine> &dst,
+                                             size_t max_total = kMaxMusicLyricLines) {
+  const std::string_view trimmed = trim_ascii_ws(blob);
+  if (trimmed.empty() || dst.size() >= max_total) return;
+
+  // Canonical Protocol v3 record format: 0x1E-joined "<t_ms>\x1f<text>" lines.
+  if (trimmed.front() != '[') {
+    size_t pos = 0;
+    while (pos <= blob.size() && dst.size() < max_total) {
+      const size_t sep = blob.find(kProtocolRecordSep, pos);
+      const std::string_view rec =
+          (sep == std::string_view::npos) ? blob.substr(pos) : blob.substr(pos, sep - pos);
+      if (!rec.empty()) {
+        const size_t fsep = rec.find(kProtocolFieldSep);
+        MusicLyricLine line{};
+        if (fsep != std::string_view::npos) {
+          line.t_ms = static_cast<int32_t>(v3_parse_int(rec.substr(0, fsep), -1));
+          line.text = std::string(rec.substr(fsep + 1U));
+        } else {
+          line.t_ms = -1;
+          line.text = std::string(rec);
+        }
+        dst.push_back(std::move(line));
+      }
+      if (sep == std::string_view::npos) break;
+      pos = sep + 1U;
+    }
+    return;
+  }
+
+  // Fallback compact JSON array parser: [{"t_ms":1200,"text":"..."}, ...]
+  auto extract_json_str = [](std::string_view obj, std::string_view key, std::string &out) -> bool {
+    const size_t kpos = obj.find(key);
+    if (kpos == std::string_view::npos) return false;
+    const size_t colon = obj.find(':', kpos + key.size());
+    if (colon == std::string_view::npos) return false;
+    const size_t q0 = obj.find('"', colon + 1U);
+    if (q0 == std::string_view::npos) return false;
+    out.clear();
+    bool esc = false;
+    for (size_t i = q0 + 1U; i < obj.size(); ++i) {
+      const char ch = obj[i];
+      if (esc) {
+        if (ch == 'n') out.push_back('\n');
+        else if (ch == 'r') out.push_back(' ');
+        else if (ch == 't') out.push_back(' ');
+        else out.push_back(ch);
+        esc = false;
+        continue;
+      }
+      if (ch == '\\') {
+        esc = true;
+        continue;
+      }
+      if (ch == '"') return true;
+      out.push_back(ch);
+    }
+    return false;
+  };
+
+  size_t cur = 0;
+  while (cur < trimmed.size() && dst.size() < max_total) {
+    const size_t lbrace = trimmed.find('{', cur);
+    if (lbrace == std::string_view::npos) break;
+    bool in_str = false;
+    bool esc = false;
+    size_t rbrace = std::string_view::npos;
+    for (size_t i = lbrace + 1U; i < trimmed.size(); ++i) {
+      const char ch = trimmed[i];
+      if (in_str) {
+        if (esc) esc = false;
+        else if (ch == '\\') esc = true;
+        else if (ch == '"') in_str = false;
+        continue;
+      }
+      if (ch == '"') in_str = true;
+      else if (ch == '}') {
+        rbrace = i;
+        break;
+      }
+    }
+    if (rbrace == std::string_view::npos) break;
+    const std::string_view obj = trimmed.substr(lbrace, rbrace - lbrace + 1U);
+    MusicLyricLine line{};
+    const size_t tpos = obj.find("\"t_ms\"");
+    if (tpos != std::string_view::npos) {
+      const size_t colon = obj.find(':', tpos + 6U);
+      if (colon != std::string_view::npos) {
+        size_t ns = colon + 1U;
+        while (ns < obj.size() && (obj[ns] == ' ' || obj[ns] == '\t')) ++ns;
+        size_t ne = ns;
+        if (ne < obj.size() && (obj[ne] == '-' || obj[ne] == '+')) ++ne;
+        while (ne < obj.size() && obj[ne] >= '0' && obj[ne] <= '9') ++ne;
+        line.t_ms = static_cast<int32_t>(v3_parse_int(obj.substr(ns, ne - ns), -1));
+      }
+    }
+    if (extract_json_str(obj, "\"text\"", line.text)) {
+      dst.push_back(std::move(line));
+    }
+    cur = rbrace + 1U;
+  }
+}
+
+inline bool apply_music_lyrics_action(int req_id,
+                                      int chunk_index,
+                                      int chunk_count,
+                                      std::string_view track_key,
+                                      bool synced,
+                                      std::string_view lines_blob,
+                                      MusicLyricsState &st = runtime_state().music.lyrics) {
+  if (req_id > 0 && st.latest_req_id > 0 && req_id < st.latest_req_id) {
+    return false;
+  }
+  const int eff_chunk_count = (chunk_count <= 0) ? 1 : chunk_count;
+  const int eff_chunk_index = (chunk_count <= 0) ? 0 : chunk_index;
+  if (eff_chunk_index < 0 || eff_chunk_index >= eff_chunk_count || eff_chunk_count > 16) {
+    return false;
+  }
+
+  if (eff_chunk_index == 0) {
+    st.staging_req_id = req_id;
+    st.staging_expected_chunks = eff_chunk_count;
+    st.staging_next_chunk = 0;
+    st.staging_track_key = std::string(track_key);
+    st.staging_synced = synced;
+    st.staging_lines.clear();
+    st.staging_lines.reserve(std::min<size_t>(kMaxMusicLyricLines, 64U));
+  } else if (req_id != st.staging_req_id ||
+             eff_chunk_index != st.staging_next_chunk ||
+             eff_chunk_count != st.staging_expected_chunks) {
+    st.staging_expected_chunks = 0;
+    st.staging_next_chunk = 0;
+    st.staging_lines.clear();
+    return false;
+  }
+
+  append_music_lyrics_records_blob(lines_blob, st.staging_lines, kMaxMusicLyricLines);
+  st.staging_next_chunk = eff_chunk_index + 1;
+  if (st.staging_next_chunk < st.staging_expected_chunks) {
+    return false;
+  }
+
+  st.track_key = std::move(st.staging_track_key);
+  st.synced = st.staging_synced;
+  st.lines = std::move(st.staging_lines);
+  if (st.synced && st.lines.size() > 1U) {
+    std::stable_sort(st.lines.begin(), st.lines.end(),
+                     [](const MusicLyricLine &a, const MusicLyricLine &b) {
+                       return a.t_ms < b.t_ms;
+                     });
+  }
+  st.loading = false;
+  st.active_line_idx = -1;
+  st.scroll_px = 0;
+  st.target_scroll_px = 0;
+  st.from_scroll_px = 0;
+  st.scroll_anim_start_ms = 0;
+  st.manual_override_until_ms = 0;
+  st.staging_expected_chunks = 0;
+  st.staging_next_chunk = 0;
+  st.staging_lines.clear();
+  st.rev++;
+  return true;
 }
 
 template <typename StrT, typename = decltype(std::declval<const StrT &>().c_str())>
@@ -3672,6 +4613,7 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
   if (opt == "Home") return p.home_screen_enabled ? PageId::HOME : PageId::TIME;
   if (opt == "Pinned") return PageId::PINNED;
   if (opt == "Time App") return PageId::TIME;
+  if (opt == "Calendar") return PageId::CALENDAR;
   if (opt == "Clock Face") return PageId::CLOCK;
   if (opt == "Media") return PageId::MUSIC;
   if (opt == "Home Hub" || opt == "Cameras") return PageId::HOME_HUB;
@@ -3788,7 +4730,10 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
     return false;
   }
   if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
-  if (rt.nav.gui_page == 2 && rt.music.overlay_mode == 0 && media_playing) {
+  if (rt.nav.gui_page == PageId::MUSIC &&
+      (rt.music.view == MusicView::NOW_PLAYING || rt.music.view == MusicView::LYRICS) &&
+      rt.music.takeover == MusicTakeover::NONE &&
+      rt.music.overlay_mode == 0 && media_playing) {
     return false;
   }
   if (rt.nav.gui_page == 10) {
@@ -3798,6 +4743,12 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
   if (rt.nav.gui_page == 8) {
     if (rt.nav.tools_subpage == 3 && rt.stopwatch.running) return false;
     if (rt.nav.tools_subpage == 5 || rt.nav.tools_subpage == 7) {
+      return false;
+    }
+  }
+  if (rt.nav.gui_page == PageId::CALENDAR) {
+    if (rt.cal.drilldown >= CalDrilldown::ADD_STEP1 || rt.cal.dictation_field != 0U ||
+        rt.cal.delete_confirm_open) {
       return false;
     }
   }
@@ -4138,8 +5089,6 @@ inline void ensure_ui_anim_poller(PollerT *tick) {
 inline uint32_t &menu_scroll_start_ms() { return runtime_state().nav.menu_scroll_start_ms; }
 inline int &pinned_menu_page() { return runtime_state().nav.pinned_menu_page; }
 inline int &timer_view_slot() { return runtime_state().timers.view_slot; }
-inline int &cal_detail_mode() { return runtime_state().cal.detail_mode; }
-inline bool &cal_quick_add_open() { return runtime_state().cal.quick_add_open; }
 inline bool &cam_quick_reply_open() { return runtime_state().intercom.cam_quick_reply_open; }
 inline int &home_dock_page() { return runtime_state().nav.home_dock_page; }
 inline uint32_t &last_music_page_req_ms() { return runtime_state().last_music_page_req_ms; }
@@ -4397,6 +5346,7 @@ struct V3DomainEffects {
   bool stop_remote_art_fetch{false};
   bool release_remote_art{false};
   bool fetch_remote_art{false};
+  bool fetch_music_lyrics{false};
   bool navigate_home_from_remote{false};
   bool navigate_start_screen_remote{false};
   bool sync_display_brightness{false};
@@ -4419,6 +5369,12 @@ class V3DomainReducer {
   std::string prev_art_{};
   bool prev_is_local_{false};
   int prev_vol_pct_{-1};
+  bool prev_shuffle_{false};
+  uint8_t prev_repeat_mode_{0};
+  bool prev_muted_{false};
+  bool prev_favorite_{false};
+  int prev_queue_count_{0};
+  uint16_t prev_media_caps_{0};
   std::string prev_sun_{};
 };
 
@@ -4604,11 +5560,13 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.nav.home_subpage;
       break;
     case 2:
-      sub = rs.music.overlay_mode;
-      if (sub == 3) {
+      sub = (static_cast<int>(rs.music.view) << 2) | (static_cast<int>(rs.music.takeover) & 0x03);
+      if (rs.music.view == MusicView::LIBRARY || rs.music.view == MusicView::ALBUM_TRACKS) {
         for (char ch : rs.music.selected_category_mode) {
           drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0xFF;
         }
+      } else {
+        drill = static_cast<int>(rs.music.carousel_page) & 0xFF;
       }
       break;
     case 3:
@@ -4629,9 +5587,6 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 8:
       sub = rs.nav.tools_subpage;
-      if (sub == 9) {
-        drill = (rs.cal.detail_mode > 0) ? rs.cal.detail_mode : (rs.cal.quick_add_open ? 3 : 0);
-      }
       break;
     case 9:
       sub = home_hub_tab();
@@ -4649,6 +5604,10 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 11:
       sub = rs.nav.pinned_menu_page;
+      break;
+    case 12:
+      sub = rs.cal.subpage;
+      drill = (rs.cal.drilldown & 0x1F) | (rs.cal.delete_confirm_open ? 0x40 : 0);
       break;
     default:
       break;

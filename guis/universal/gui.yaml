@@ -199,8 +199,6 @@ display:
       ctx.home_wake_greeting = prefs.wake_greeting;
       ctx.home_sun_arc = prefs.home_sun;
       ctx.home_moon_phase = prefs.home_moon;
-      ctx.music_show_speaker_shortcut = prefs.show_speaker_shortcut;
-      ctx.music_show_library_shortcut = prefs.show_library_shortcut;
       ctx.game_sound_enabled = prefs.game_sound_effects;
       ctx.va_wake_screen = prefs.wake_screen_on_assist;
       ctx.docked_screensaver_enabled = prefs.docked_screensaver;
@@ -211,9 +209,9 @@ display:
                                   ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                   ctx.home_wallpaper_art.width > 0);
       const bool tools_full_bleed =
-          ((rs.nav.gui_page == latter_ui::PageId::TOOLS) &&
-           ((rs.nav.tools_subpage == latter_ui::ToolsSubpage::FLASHLIGHT) ||
-            (rs.nav.tools_subpage == latter_ui::ToolsSubpage::CALENDAR && latter_ui::cal_detail_mode() == 2 && ctx.camera_snapshot_art.width > 16))) ||
+          (rs.nav.gui_page == latter_ui::PageId::TOOLS &&
+           rs.nav.tools_subpage == latter_ui::ToolsSubpage::FLASHLIGHT) ||
+          (latter_ui::is_calendar_map_view_active(rs) && ctx.camera_snapshot_art.width > 16) ||
           ((rs.nav.gui_page == latter_ui::PageId::HOME_HUB &&
             latter_ui::home_hub_tab() == latter_ui::HomeHubTab::CAMERAS &&
             latter_ui::cam_expanded_fullscreen()) &&
@@ -244,11 +242,14 @@ display:
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
       const bool vert_bounce_now =
           latter_ui::any_vert_bounce_active(rs.nav.gui_page, ctx.now_ms);
+      const bool lyrics_anim_now =
+          latter_ui::is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
       const bool anim_or_scroll =
           (takeover_sig != 0U) ||
           weather_sky_stepping_hint ||
           clock_sweep_hint ||
           time_sw_hint ||
+          lyrics_anim_now ||
           latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
           vert_bounce_now ||
           rs.nav.menu_scroll_active ||
@@ -326,7 +327,7 @@ display:
       int act_y0 = 0, act_y1 = 0;
       const bool has_act_band = latter_ui::home_activity_band(act_y0, act_y1);
       const bool act_sliding_now = latter_ui::home_activity_slide_active(ctx.now_ms);
-      if (rs.nav.menu_scroll_active || vert_bounce_now || coin_toss_active || greet_fading_now) {
+      if (rs.nav.menu_scroll_active || vert_bounce_now || coin_toss_active || greet_fading_now || lyrics_anim_now) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
       } else if (dock_anim_now) {
         latter_ui::schedule_anim_band_disp_update(

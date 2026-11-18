@@ -1176,27 +1176,54 @@ void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome:
 // ------------------------------------------------------------------------------
 // 4. Album-Art / Wallpaper Composition & PSRAM ArtCanvasCache
 // ------------------------------------------------------------------------------
-namespace {
-
-int compute_art_row_scale_q8(int y, bool apply_scrim, bool show_metadata, int dim_level) {
-  if (dim_level >= 2) return 64;
+int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int dim_level) {
   auto ramp = [](int yy, int y_a, int v_a, int y_b, int v_b) -> int {
-    if (yy <= y_a) return v_a;
+    if (y_b <= y_a || yy <= y_a) return v_a;
     if (yy >= y_b) return v_b;
     return v_a + ((v_b - v_a) * (yy - y_a)) / (y_b - y_a);
   };
-  if (apply_scrim) {
-    const int ramp_h = scale_y(12);
-    int v = ramp(y, scale_y(76) - ramp_h, 96, scale_y(76) + ramp_h, 128);
-    if (show_metadata) v = std::min(v, ramp(y, scale_y(324) - ramp_h, 128, scale_y(324) + ramp_h, 96));
-    return v;
+  if (dim_level == kArtDimLyrics) {
+    const int top_y0 = scale_y(52);
+    const int top_y1 = scale_y(104);
+    const int bot_y0 = SCREEN_H - scale_y(104);
+    const int bot_y1 = SCREEN_H - scale_y(52);
+    if (y < top_y1) return ramp(y, top_y0, 108, top_y1, 132);
+    if (y > bot_y0) return ramp(y, bot_y0, 132, bot_y1, 108);
+    return 132;
+  }
+  if (dim_level >= kArtDimMenu) return 64;
+  if (show_controls) {
+    if (!show_metadata) {
+      const int ramp_h = scale_y(12);
+      return ramp(y, scale_y(76) - ramp_h, 96, scale_y(76) + ramp_h, 128);
+    }
+    const int top_y0 = scale_y(118);
+    const int top_y1 = scale_y(156);
+    const int bot_y0 = SCREEN_H - scale_y(148);
+    const int bot_y1 = SCREEN_H - scale_y(110);
+    if (y < top_y1) return ramp(y, top_y0, 96, top_y1, 140);
+    if (y > bot_y0) return ramp(y, bot_y0, 140, bot_y1, 100);
+    return 140;
   }
   if (show_metadata) {
-    if (y < scale_y(410)) return ramp(y, scale_y(298), 256, scale_y(358), 96);
-    return ramp(y, scale_y(410), 96, scale_y(422), 256);
+    return ramp(y, scale_y(102), 100, scale_y(142), 256);
   }
   return 256;
 }
+
+void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, int &out_y1) {
+  if (show_metadata || show_controls) {
+    out_y0 = scale_y(132);
+    const int bot_pad = LATTER_ROUND_DISPLAY ? scale_y(66) : scale_y(54);
+    out_y1 = std::max(out_y0 + scale_y(120), SCREEN_H - bot_pad);
+  } else {
+    const int half_h = (SCREEN_H * 31) / 100;
+    out_y0 = std::max(0, SCREEN_CY - half_h);
+    out_y1 = std::min(SCREEN_H, SCREEN_CY + half_h);
+  }
+}
+
+namespace {
 
 void dim_rgb565_row_dither(uint16_t *row_buf, int span_w, int mul_q8, int x0, int y) {
   if (mul_q8 >= 256 || span_w <= 0) return;
@@ -1234,7 +1261,7 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
     const int step_x = (src_w << 12) / r.w;
     const int step_y = (src_h << 12) / r.h;
-    const int mul_q8 = (dim_level >= 2) ? 64 : (apply_scrim ? 128 : 256);
+    const int mul_q8 = (dim_level == kArtDimLyrics) ? 132 : ((dim_level >= kArtDimMenu) ? 64 : (apply_scrim ? 132 : 256));
     int curr_y = 0;
     for (int y = 0; y < r.h; y++) {
       const int sy = std::min(src_h - 1, curr_y >> 12);
@@ -1263,17 +1290,23 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
     return;
   }
 
-  const int start_y = is_letterbox ? scale_y(62) : 0;
-  const int end_y = is_letterbox ? (show_metadata ? scale_y(342) : scale_y(385)) : SCREEN_H;
+  int start_y = 0;
+  int end_y = SCREEN_H;
+  if (is_letterbox) {
+    art_letterbox_bounds(show_metadata, apply_scrim, start_y, end_y);
+  }
 
   if (src_w == SCREEN_W && src_h == SCREEN_H) {
+    const int view_h = std::max(1, end_y - start_y);
+    const int src_y_off = std::max(0, (src_h - view_h) / 2);
     for (int y = start_y; y < end_y; y++) {
+      const int sy = std::min(src_h - 1, src_y_off + (y - start_y));
       const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
       int start_x = 0, end_x = 0;
       art_row_span(y, cx, start_x, end_x);
       const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
-      const uint16_t *src_row = src_data + y * SCREEN_W;
+      const uint16_t *src_row = src_data + static_cast<size_t>(sy) * SCREEN_W;
       if (mul_q8 >= 256) {
         blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, false);
       } else {
@@ -1313,7 +1346,7 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
       const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
       if (sy != prev_sy) {
-        const uint16_t *src_row = src_data + sy * src_w;
+        const uint16_t *src_row = src_data + static_cast<size_t>(sy) * src_w;
         for (int x = start_x; x <= end_x; x++) {
           scaled_row[x] = src_row[sx_lut[x]];
         }
@@ -1353,6 +1386,7 @@ ArtCanvasCache *art_canvas_entries() {
 uint32_t art_sample_hash(const uint16_t *data, int w, int h) {
   uint32_t hash = 2166136261U ^ (static_cast<uint32_t>(w) * 31U) ^ (static_cast<uint32_t>(h) << 16);
   const uint32_t n = static_cast<uint32_t>(w) * static_cast<uint32_t>(h);
+  if (n <= 1U) return (n == 1U) ? ((hash ^ data[0]) * 16777619U) : hash;
   for (uint32_t i = 0; i < 64; i++) {
     const uint32_t idx = static_cast<uint32_t>((static_cast<uint64_t>(i) * (n - 1)) / 63U);
     hash = (hash ^ data[idx]) * 16777619U;
@@ -1383,8 +1417,9 @@ void art_canvas_spans(ArtCanvasCache &e, int cx, int src_w, int src_h, bool is_s
     }
     return;
   }
-  const int start_y = scale_y(62);
-  const int end_y = show_metadata ? scale_y(342) : scale_y(385);
+  int start_y = 0;
+  int end_y = SCREEN_H;
+  art_letterbox_bounds(show_metadata, apply_scrim, start_y, end_y);
   for (int y = std::max(0, start_y); y < std::min(SCREEN_H, end_y); y++) {
     int start_x = 0, end_x = 0;
     art_row_span(y, cx, start_x, end_x);
@@ -1397,12 +1432,17 @@ void art_canvas_spans(ArtCanvasCache &e, int cx, int src_w, int src_h, bool is_s
 
 ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim) {
   const int box = STD_ART_SIZE;
-  const int art_cy = (show_metadata || apply_scrim) ? scale_y(198) : SCREEN_CY;
+  int art_cy = SCREEN_CY;
+  if (show_metadata || apply_scrim) {
+    const int meta_bottom = scale_y(128);
+    const int bot_pad = LATTER_ROUND_DISPLAY ? scale_y(62) : scale_y(38);
+    art_cy = (meta_bottom + (SCREEN_H - bot_pad)) / 2;
+  }
   int w = box;
   int h = box;
-  if (src_w > src_h) {
+  if (src_w > src_h && src_w > 0) {
     h = std::max(1, (box * src_h) / src_w);
-  } else if (src_h > src_w) {
+  } else if (src_h > src_w && src_h > 0) {
     w = std::max(1, (box * src_w) / src_h);
   }
   return {cx - w / 2, art_cy - h / 2, w, h};
@@ -1548,6 +1588,35 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   }
   backdrop_active() = true;
   return true;
+}
+
+bool render_lyrics_art_backdrop_view(esphome::display::Display &it, ArtImageView target_art, int cx,
+                                     esphome::Color theme_primary, esphome::Color col_bg) {
+  if (target_art.valid() &&
+      render_album_art_canvas_view(it, target_art, cx, /*is_standard=*/false, /*is_letterbox=*/false,
+                                   /*apply_scrim=*/true, /*show_metadata=*/false, kArtDimLyrics)) {
+    return true;
+  }
+  frame_base_claim();
+  backdrop_active() = true;
+  const int ys = std::max(0, clip_y0());
+  const int ye = std::min(SCREEN_H - 1, clip_y1());
+  const int peak_y = std::max(1, (SCREEN_H * 38) / 100);
+  const int tail_den = std::max(1, SCREEN_H - 1 - peak_y);
+  for (int py = ys; py <= ye; py++) {
+    const int w_q8 = (py <= peak_y)
+                         ? (18 + (28 * py) / peak_y)
+                         : (46 - (28 * (py - peak_y)) / tail_den);
+    const int iw_q8 = 256 - w_q8;
+    const uint32_t r88 = static_cast<uint32_t>(static_cast<int>(col_bg.r) * iw_q8 +
+                                               static_cast<int>(theme_primary.r) * w_q8);
+    const uint32_t g88 = static_cast<uint32_t>(static_cast<int>(col_bg.g) * iw_q8 +
+                                               static_cast<int>(theme_primary.g) * w_q8);
+    const uint32_t b88 = static_cast<uint32_t>(static_cast<int>(col_bg.b) * iw_q8 +
+                                               static_cast<int>(theme_primary.b) * w_q8);
+    fast_hline_dither(it, 0, py, SCREEN_W, r88, g88, b88);
+  }
+  return false;
 }
 
 bool render_page_wallpaper_base_view(esphome::display::Display &it, ArtImageView wallpaper_img,

@@ -34,60 +34,67 @@ enum class RouteId : uint8_t {
   APP_REMOTE = 5,
   APP_WEATHER = 6,
   APP_TIME = 7,
-  APP_TOOLS = 8,
-  APP_GAMES = 9,
-  APP_CLOCK = 10,
-  HOME_HUB_ALARM = 11,
-  HOME_HUB_CAMERAS = 12,
-  HOME_HUB_INTERCOM = 13,
-  HOME_HUB_THERMOSTAT = 14,
-  HOME_HUB_ENTRY = 15,
-  HOME_HUB_VACUUM = 16,
-  AREA_PICKER = 17,
-  AREA_SCENE = 18,
-  AREA_LIGHT = 19,
-  AREA_COVER = 20,
-  AREA_FAN = 21,
-  AREA_SWITCH = 22,
-  AREA_CLIMATE = 23,
-  AREA_MEDIA = 24,
-  AREA_ALL = 25,
-  WEATHER_CURRENT = 26,
-  WEATHER_FORECAST = 27,
-  WEATHER_SUN = 28,
-  WEATHER_MOON = 29,
-  TIME_CLOCK = 30,
-  TIME_TIMERS = 31,
-  TIME_ALARMS = 32,
-  TIME_STOPWATCH = 33,
-  MUSIC_SPEAKERS = 34,
-  MUSIC_LIBRARY = 35,
-  MUSIC_FAVORITES = 36,
-  MUSIC_PLAYLISTS = 37,
-  MUSIC_QUEUE = 38,
-  REMOTE_DEVICES = 39,
-  TOOLS_STOPWATCH = 40,
-  TOOLS_LEVEL = 41,
-  TOOLS_FLASHLIGHT = 42,
-  TOOLS_CALCULATOR = 43,
-  TOOLS_CALENDAR = 44,
-  TOOLS_DICE = 45,
-  TOOLS_COIN_FLIP = 46,
-  GAMES_MARBLES = 47,
-  GAMES_ARCHERY = 48,
-  GAMES_BRICKS = 49,
-  GAMES_CHOMP = 50,
-  GAMES_2048 = 51,
-  GAMES_MEMORY = 52,
-  SETTINGS_DISPLAY = 53,
-  SETTINGS_SLEEP = 54,
-  SETTINGS_SOUND = 55,
-  SETTINGS_VOICE = 56,
-  SETTINGS_MUSIC = 57,
-  SETTINGS_HOME = 58,
-  SETTINGS_ACTIONS = 59,
-  SETTINGS_UPDATE = 60,
-  SETTINGS_INFO = 61,
+  APP_CALENDAR = 8,
+  APP_TOOLS = 9,
+  APP_GAMES = 10,
+  APP_CLOCK = 11,
+  HOME_HUB_ALARM = 12,
+  HOME_HUB_CAMERAS = 13,
+  HOME_HUB_INTERCOM = 14,
+  HOME_HUB_THERMOSTAT = 15,
+  HOME_HUB_ENTRY = 16,
+  HOME_HUB_VACUUM = 17,
+  AREA_PICKER = 18,
+  AREA_SCENE = 19,
+  AREA_LIGHT = 20,
+  AREA_COVER = 21,
+  AREA_FAN = 22,
+  AREA_SWITCH = 23,
+  AREA_CLIMATE = 24,
+  AREA_MEDIA = 25,
+  AREA_ALL = 26,
+  WEATHER_CURRENT = 27,
+  WEATHER_FORECAST = 28,
+  WEATHER_SUN = 29,
+  WEATHER_MOON = 30,
+  TIME_CLOCK = 31,
+  TIME_TIMERS = 32,
+  TIME_ALARMS = 33,
+  TIME_STOPWATCH = 34,
+  CALENDAR_OVERVIEW = 35,
+  CALENDAR_DAY = 36,
+  CALENDAR_WEEK = 37,
+  CALENDAR_MONTH = 38,
+  MUSIC_SPEAKERS = 39,
+  MUSIC_LIBRARY = 40,
+  MUSIC_FAVORITES = 41,
+  MUSIC_PLAYLISTS = 42,
+  MUSIC_QUEUE = 43,
+  MUSIC_ALBUM_TRACKS = 44,
+  MUSIC_LYRICS = 45,
+  MUSIC_INFO = 46,
+  REMOTE_DEVICES = 47,
+  TOOLS_STOPWATCH = 48,
+  TOOLS_LEVEL = 49,
+  TOOLS_FLASHLIGHT = 50,
+  TOOLS_CALCULATOR = 51,
+  TOOLS_DICE = 52,
+  TOOLS_COIN_FLIP = 53,
+  GAMES_MARBLES = 54,
+  GAMES_ARCHERY = 55,
+  GAMES_BRICKS = 56,
+  GAMES_CHOMP = 57,
+  GAMES_2048 = 58,
+  GAMES_MEMORY = 59,
+  SETTINGS_DISPLAY = 60,
+  SETTINGS_SLEEP = 61,
+  SETTINGS_SOUND = 62,
+  SETTINGS_VOICE = 63,
+  SETTINGS_MUSIC = 64,
+  SETTINGS_HOME = 65,
+  SETTINGS_ACTIONS = 66,
+  SETTINGS_UPDATE = 67,
+  SETTINGS_INFO = 68,
   SETTINGS_ROOT = 250,
 };
 
@@ -107,6 +114,7 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::APP_REMOTE, "app:remote", "Remote", false, ShortcutRouteCap::NONE},
     {RouteId::APP_WEATHER, "app:weather", "Sky & Weather", false, ShortcutRouteCap::NONE},
     {RouteId::APP_TIME, "app:time", "Time", false, ShortcutRouteCap::NONE},
+    {RouteId::APP_CALENDAR, "app:calendar", "Calendar", false, ShortcutRouteCap::NONE},
     {RouteId::APP_TOOLS, "app:tools", "Tools", false, ShortcutRouteCap::NONE},
     {RouteId::APP_GAMES, "app:games", "Games", false, ShortcutRouteCap::NONE},
     {RouteId::APP_CLOCK, "app:clock", "Clock Face", false, ShortcutRouteCap::NONE},
@@ -133,17 +141,23 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::TIME_TIMERS, "time:timers", "Timers", false, ShortcutRouteCap::NONE},
     {RouteId::TIME_ALARMS, "time:alarms", "Alarms", false, ShortcutRouteCap::NONE},
     {RouteId::TIME_STOPWATCH, "time:stopwatch", "Stopwatch", false, ShortcutRouteCap::NONE},
+    {RouteId::CALENDAR_OVERVIEW, "calendar:overview", "Upcoming Events", false, ShortcutRouteCap::NONE},
+    {RouteId::CALENDAR_DAY, "calendar:day", "Day View", false, ShortcutRouteCap::NONE},
+    {RouteId::CALENDAR_WEEK, "calendar:week", "Week View", false, ShortcutRouteCap::NONE},
+    {RouteId::CALENDAR_MONTH, "calendar:month", "Month View", false, ShortcutRouteCap::NONE},
     {RouteId::MUSIC_SPEAKERS, "music:speakers", "Speakers", false, ShortcutRouteCap::NONE},
     {RouteId::MUSIC_LIBRARY, "music:library", "Music Library", false, ShortcutRouteCap::NONE},
     {RouteId::MUSIC_FAVORITES, "music:favorites", "Favorites", false, ShortcutRouteCap::NONE},
     {RouteId::MUSIC_PLAYLISTS, "music:playlists", "Playlists", false, ShortcutRouteCap::NONE},
     {RouteId::MUSIC_QUEUE, "music:queue", "Playback Queue", false, ShortcutRouteCap::NONE},
+    {RouteId::MUSIC_ALBUM_TRACKS, "music:album_tracks", "Album Tracks", false, ShortcutRouteCap::NONE},
+    {RouteId::MUSIC_LYRICS, "music:lyrics", "Music Lyrics", false, ShortcutRouteCap::NONE},
+    {RouteId::MUSIC_INFO, "music:info", "Track Info", false, ShortcutRouteCap::NONE},
     {RouteId::REMOTE_DEVICES, "remote:devices", "Remote Devices", false, ShortcutRouteCap::NONE},
     {RouteId::TOOLS_STOPWATCH, "tools:stopwatch", "Analog Chronograph", false, ShortcutRouteCap::ROUND},
     {RouteId::TOOLS_LEVEL, "tools:level", "Bubble Level", false, ShortcutRouteCap::IMU},
     {RouteId::TOOLS_FLASHLIGHT, "tools:flashlight", "Flashlight", false, ShortcutRouteCap::NONE},
     {RouteId::TOOLS_CALCULATOR, "tools:calculator", "Calculator", false, ShortcutRouteCap::NONE},
-    {RouteId::TOOLS_CALENDAR, "tools:calendar", "Calendar", false, ShortcutRouteCap::NONE},
     {RouteId::TOOLS_DICE, "tools:dice", "Dice Roll", false, ShortcutRouteCap::NONE},
     {RouteId::TOOLS_COIN_FLIP, "tools:coin_flip", "Coin Flip", false, ShortcutRouteCap::NONE},
     {RouteId::GAMES_MARBLES, "games:marbles", "Marbles", false, ShortcutRouteCap::NONE},
@@ -241,7 +255,13 @@ enum class MediaField : size_t {
   LAST_SPEAKER = 15,  // last_speaker (entity_id)
   LOCAL_SPEAKER = 16,  // local_speaker (entity_id)
   IS_LOCAL = 17,  // is_local (bool)
-  COUNT = 18
+  SHUFFLE = 18,  // shuffle (bool)
+  REPEAT = 19,  // repeat (string)
+  MUTED = 20,  // muted (bool)
+  FAVORITE = 21,  // favorite (bool)
+  QUEUE_COUNT = 22,  // queue_count (u16)
+  MEDIA_CAPS = 23,  // media_caps (u16)
+  COUNT = 24
 };
 
 // Domain: remote_config (sensor.<device>_remote_config)
@@ -284,7 +304,9 @@ enum class CalendarField : size_t {
   HEADER_REV = 2,
   SUMMARY = 3,  // summary (records)
   EVENT_COUNT = 4,  // count (u16)
-  COUNT = 5
+  CALENDARS_META = 5,  // calendars_meta (records)
+  LOCATIONS_CATALOG = 6,  // locations_catalog (records)
+  COUNT = 7
 };
 
 // Domain: device_prefs (sensor.<device>_device_prefs)
@@ -321,32 +343,33 @@ enum class DevicePrefsField : size_t {
   WAKE_GREETING = 29,  // wake_greeting (bool)
   ALBUM_ART_STYLE = 30,  // album_art_style (string)
   MUSIC_OVERLAY_STYLE = 31,  // music_overlay_style (string)
-  SHOW_SPEAKER_SHORTCUT = 32,  // show_speaker_shortcut (bool)
-  SHOW_LIBRARY_SHORTCUT = 33,  // show_library_shortcut (bool)
-  ALBUM_SORT_ORDER = 34,  // album_sort_order (string)
-  ARTIST_ALBUM_SORT_ORDER = 35,  // artist_album_sort_order (string)
-  PODCAST_SORT_ORDER = 36,  // podcast_sort_order (string)
-  WW_SENS_OKAY_NABU = 37,  // ww_sens_okay_nabu (string)
-  WW_SENS_HEY_LUNA = 38,  // ww_sens_hey_luna (string)
-  WW_SENS_HEY_JARVIS = 39,  // ww_sens_hey_jarvis (string)
-  WW_SENS_HEY_MYCROFT = 40,  // ww_sens_hey_mycroft (string)
-  WW_SENS_ALEXA = 41,  // ww_sens_alexa (string)
-  WAKE_SCREEN_ON_ASSIST = 42,  // wake_screen_on_assist (bool)
-  ALERT_VOLUME = 43,  // alert_volume (u16)
-  VOLUME_STEP_SIZE = 44,  // volume_step_size (u16)
-  GAME_SOUND_EFFECTS = 45,  // game_sound_effects (bool)
-  BLE_BEACON_ENABLED = 46,  // ble_beacon_enabled (bool)
-  BLE_BEACON_MODE = 47,  // ble_beacon_mode (string)
-  WEATHER_SIM_CONDITION = 48,  // weather_sim_condition (string)
-  THEME_COLOR_HEX = 49,  // theme_color_hex (string)
-  HOME_CLOCK_TAP_ACTION = 50,  // home_clock_tap_action (string)
-  SHOW_UTC_CLOCK = 51,  // show_utc_clock (bool)
-  WORLD_CLOCKS = 52,  // world_clocks (string)
-  ALARMS_SUMMARY = 53,  // alarms_summary (string)
-  LOCAL_CLOCK_LABEL = 54,  // local_clock_label (string)
-  TOOLS_ITEMS = 55,  // tools_items (csv)
-  GAMES_ITEMS = 56,  // games_items (csv)
-  COUNT = 57
+  ALBUM_SORT_ORDER = 32,  // album_sort_order (string)
+  ARTIST_ALBUM_SORT_ORDER = 33,  // artist_album_sort_order (string)
+  PODCAST_SORT_ORDER = 34,  // podcast_sort_order (string)
+  WW_SENS_OKAY_NABU = 35,  // ww_sens_okay_nabu (string)
+  WW_SENS_HEY_LUNA = 36,  // ww_sens_hey_luna (string)
+  WW_SENS_HEY_JARVIS = 37,  // ww_sens_hey_jarvis (string)
+  WW_SENS_HEY_MYCROFT = 38,  // ww_sens_hey_mycroft (string)
+  WW_SENS_ALEXA = 39,  // ww_sens_alexa (string)
+  WAKE_SCREEN_ON_ASSIST = 40,  // wake_screen_on_assist (bool)
+  ALERT_VOLUME = 41,  // alert_volume (u16)
+  VOLUME_STEP_SIZE = 42,  // volume_step_size (u16)
+  GAME_SOUND_EFFECTS = 43,  // game_sound_effects (bool)
+  BLE_BEACON_ENABLED = 44,  // ble_beacon_enabled (bool)
+  BLE_BEACON_MODE = 45,  // ble_beacon_mode (string)
+  WEATHER_SIM_CONDITION = 46,  // weather_sim_condition (string)
+  THEME_COLOR_HEX = 47,  // theme_color_hex (string)
+  HOME_CLOCK_TAP_ACTION = 48,  // home_clock_tap_action (string)
+  SHOW_UTC_CLOCK = 49,  // show_utc_clock (bool)
+  WORLD_CLOCKS = 50,  // world_clocks (string)
+  ALARMS_SUMMARY = 51,  // alarms_summary (string)
+  LOCAL_CLOCK_LABEL = 52,  // local_clock_label (string)
+  TOOLS_ITEMS = 53,  // tools_items (csv)
+  GAMES_ITEMS = 54,  // games_items (csv)
+  HOME_DATE_TAP_ACTION = 55,  // home_date_tap_action (string)
+  CALENDAR_LOOKAHEAD_DAYS = 56,  // calendar_lookahead_days (u16)
+  CALENDAR_WEEK_START = 57,  // calendar_week_start (string)
+  COUNT = 58
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

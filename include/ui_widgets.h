@@ -173,6 +173,14 @@ void draw_icon_eighth_notes(esphome::display::Display &it, int cx, int cy, int r
                             esphome::Color col, bool shadow = false);
 void draw_icon_calendar(esphome::display::Display &it, int cx, int cy, int r,
                         esphome::Color col, bool shadow = false);
+void draw_icon_cal_agenda(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow = false);
+void draw_icon_cal_day(esphome::display::Display &it, int cx, int cy, int r,
+                       esphome::Color col, bool shadow = false);
+void draw_icon_cal_week(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow = false);
+void draw_icon_mic(esphome::display::Display &it, int cx, int cy, int r,
+                   esphome::Color col, bool shadow = false);
 void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy, int r,
                          esphome::Color col, bool shadow = false);
 void draw_icon_ceiling_fan(esphome::display::Display &it, int cx, int cy, int r,

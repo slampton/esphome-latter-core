@@ -886,34 +886,53 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                                bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.theme_primary);
 
-    char tap_buf[48];
-    std::snprintf(tap_buf, sizeof(tap_buf), "Time Tap: %s",
-                  (prefs.home_clock_tap_action == 0U) ? "Time App" : "Clock Face");
-    const int y0 = layout().slot5_y(0);
-    render_modern_card(it, cx, y0, layout().list_card_w, 44, 12,
-                       kChromeGlassTint, kChromeCardBrdOn, tap_buf, ctx.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(cx, y0, layout().list_card_w, layout().slot5_h,
-                                   WidgetId::LIST_SLOT_BASE, kHitTap | kHitFocusSlot, 0);
+    const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, 2);
+    rs.nav.home_settings_page = hs_pg;
+    if (hs_pg == 1) {
+      char tap_buf[48];
+      std::snprintf(tap_buf, sizeof(tap_buf), "Time Tap: %s",
+                    (prefs.home_clock_tap_action == 0U) ? "Time App" : "Clock Face");
+      const int y0 = layout().slot5_y(0);
+      render_modern_card(it, cx, y0, layout().list_card_w, 44, 12,
+                         kChromeGlassTint, kChromeCardBrdOn, tap_buf, ctx.col_white, ctx.font_small);
+      frame_hits().add_centered_rect(cx, y0, layout().list_card_w, layout().slot5_h,
+                                     WidgetId::LIST_SLOT_BASE, kHitTap | kHitFocusSlot, 0);
 
-    struct HomeBoolRow {
-      const char *label;
-      bool value;
-    };
-    const HomeBoolRow bool_rows[4] = {
-        {"Weather Sky", prefs.weather_background},
-        {"Wake Greeting", prefs.wake_greeting},
-        {"Sun Indicator", prefs.home_sun},
-        {"Moon Indicator", prefs.home_moon},
-    };
-    for (int i = 0; i < 4; ++i) {
-      const int row_idx = i + 1;
-      ui::toggle_card_row(it, cx, layout().slot5_y(row_idx), layout().list_card_w, 44,
-                          bool_rows[i].label, bool_rows[i].value, ctx.font_small,
+      char dtap_buf[48];
+      std::snprintf(dtap_buf, sizeof(dtap_buf), "Date Tap: %s", pref_home_date_tap_cstr(prefs));
+      const int y1 = layout().slot5_y(1);
+      render_modern_card(it, cx, y1, layout().list_card_w, 44, 12,
+                         kChromeGlassTint, kChromeCardBrdOn, dtap_buf, ctx.col_white, ctx.font_small);
+      frame_hits().add_centered_rect(cx, y1, layout().list_card_w, layout().slot5_h,
+                                     WidgetId::LIST_SLOT_BASE + 1, kHitTap | kHitFocusSlot, 1);
+
+      struct HomeBoolRow {
+        const char *label;
+        bool value;
+        int16_t param;
+      };
+      const HomeBoolRow bool_rows[3] = {
+          {"Weather Sky", prefs.weather_background, 2},
+          {"Wake Greeting", prefs.wake_greeting, 3},
+          {"Sun Indicator", prefs.home_sun, 4},
+      };
+      for (int i = 0; i < 3; ++i) {
+        const int row_idx = i + 2;
+        ui::toggle_card_row(it, cx, layout().slot5_y(row_idx), layout().list_card_w, 44,
+                            bool_rows[i].label, bool_rows[i].value, ctx.font_small,
+                            ctx.theme_primary, ctx.col_white, ctx.col_slate,
+                            WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row_idx),
+                            bool_rows[i].param);
+      }
+    } else {
+      ui::toggle_card_row(it, cx, layout().slot5_y(0), layout().list_card_w, 44,
+                          "Moon Indicator", prefs.home_moon, ctx.font_small,
                           ctx.theme_primary, ctx.col_white, ctx.col_slate,
-                          WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row_idx),
-                          static_cast<int16_t>(row_idx));
+                          WidgetId::LIST_SLOT_BASE, 5);
     }
 
+    render_vertical_page_pips(it, hs_pg == 2, hs_pg == 1,
+                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
     return;
   }
@@ -1166,13 +1185,17 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   const int z_weath_y = layout().home_weather_y;
 
   ProfLap home_lap;
-  // ZONE 1: Centered Date Header
+  // ZONE 1: Centered Date Header (Tap -> Calendar App)
   if (ctx.now.is_valid()) {
     char date_bar[32];
     esphome::ESPTime now_copy = ctx.now;
     now_copy.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
     fast_print(it, cx + 1, z_date_y + 1, ctx.font_date, ctx.col_black, TextAlign::CENTER, date_bar);
     fast_print(it, cx, z_date_y, ctx.font_date, fg_home_white, TextAlign::CENTER, date_bar);
+    const int date_hit_w = std::min(scale_x(230), safe_span(z_date_y, 16));
+    const int date_hit_h = std::min(scale_y(34), std::max(24, (z_clock_y - scale_y(38) - z_date_y) * 2));
+    frame_hits().add_centered_rect(cx, z_date_y, date_hit_w, date_hit_h,
+                                   WidgetId::HOME_DATE_HERO, kHitTap | kHitFocusSlot);
   }
 
   // ZONE 2: Hero Digital Clock (Tap -> Clock)
@@ -1881,6 +1904,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         if (!is_shadow) {
           ui::draw_icon_clock_solid(it, bx, by, icon_r, c, want_shadow);
         }
+      } else if (route_id == RouteId::APP_CALENDAR || route_id == RouteId::CALENDAR_MONTH) {
+        if (!is_shadow) {
+          ui::draw_icon_calendar(it, bx, by, icon_r, c, want_shadow);
+        }
       } else if (!is_shadow) {
         ui::draw_route_icon(it, route_id, bx, by, icon_r, c, cut_c, want_shadow);
       }
@@ -2054,6 +2081,9 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
       break;
     case PageId::PINNED:
       render_pinned_page(it, ctx);
+      break;
+    case PageId::CALENDAR:
+      render_calendar_page(it, ctx);
       break;
     default:
       render_home_page(it, ctx);

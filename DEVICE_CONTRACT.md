@@ -90,7 +90,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `44` | `climate_caps` | `AreaCtxField::CLIMATE_CAPS` | `u16` | Thermostat capability & HVAC mode bitmask (1=off, 2=heat, 4=cool, 8=heat_cool_or_auto, 16=fan_only, 32=dry, 64=target_temp, 128=celsius) |
 | `45` | `vacuum_caps` | `AreaCtxField::VACUUM_CAPS` | `u16` | Robot vacuum capability bitmask from VacuumEntityFeature (1=start, 2=pause, 4=stop, 8=return_home, 16=clean_spot, 32=locate) |
 
-### `sensor.<device>_active_media` (`MediaField`, `18` total fields)
+### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
 
 Active media player state, metadata, timestamped playback progress, artwork URL, and speaker routing.
 
@@ -111,6 +111,12 @@ Active media player state, metadata, timestamped playback progress, artwork URL,
 | `15` | `last_speaker` | `MediaField::LAST_SPEAKER` | `entity_id` | Previously active media_player entity ID |
 | `16` | `local_speaker` | `MediaField::LOCAL_SPEAKER` | `entity_id` | Device's own local media_player entity ID |
 | `17` | `is_local` | `MediaField::IS_LOCAL` | `bool` | 1 if active_speaker is this device's own speaker, else 0 |
+| `18` | `shuffle` | `MediaField::SHUFFLE` | `bool` | 1 if shuffle is enabled on the active speaker/queue, else 0 |
+| `19` | `repeat` | `MediaField::REPEAT` | `string` | Active speaker/queue repeat mode (off|all|one); empty when unknown |
+| `20` | `muted` | `MediaField::MUTED` | `bool` | 1 if the active speaker or volume target is muted, else 0 |
+| `21` | `favorite` | `MediaField::FAVORITE` | `bool` | 1 if the current track is marked favorite in Music Assistant, else 0 |
+| `22` | `queue_count` | `MediaField::QUEUE_COUNT` | `u16` | Total items in the active Music Assistant playback queue (0 when empty or non-MA) |
+| `23` | `media_caps` | `MediaField::MEDIA_CAPS` | `u16` | Active speaker capability bitmask (1=pause, 2=seek, 4=volume_set, 8=volume_mute, 16=previous_track, 32=next_track, 64=shuffle_set, 128=repeat_set, 256=grouping, 512=music_assistant, 1024=favorite) |
 
 ### `sensor.<device>_remote_config` (`RemoteField`, `6` total fields)
 
@@ -143,7 +149,7 @@ Current outdoor weather telemetry and 5-day daily forecast.
 | `15` | `sun_next_setting` | `WeatherField::SUN_NEXT_SETTING` | `string` | Next sunset ISO-8601 UTC timestamp |
 | `16` | `moon_phase` | `WeatherField::MOON_PHASE` | `string` | Lunar phase slug (new_moon|waxing_crescent|first_quarter|waxing_gibbous|full_moon|waning_gibbous|last_quarter|waning_crescent) |
 
-### `sensor.<device>_calendar_agenda` (`CalendarField`, `5` total fields)
+### `sensor.<device>_calendar_agenda` (`CalendarField`, `7` total fields)
 
 Upcoming calendar agenda events and next-event headline.
 
@@ -151,8 +157,10 @@ Upcoming calendar agenda events and next-event headline.
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `summary` | `CalendarField::SUMMARY` | `records` | 0x1E-joined time|title|location|all_day agenda records (up to 5; time is a local label such as TODAY 14:30, TOM ALL DAY or NOV 20 08:05; all_day 1 or 0) |
 | `4` | `count` | `CalendarField::EVENT_COUNT` | `u16` | Number of upcoming agenda events |
+| `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
+| `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `57` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `58` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -177,7 +185,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `19` | `color_profile` | `DevicePrefsField::COLOR_PROFILE` | `string` | Theme accent preset (Steel Blue|Pink|Blue|Green|Custom) |
 | `20` | `va_visual_profile` | `DevicePrefsField::VA_VISUAL_PROFILE` | `string` | Voice assistant visual overlay style (Nebula|Solaris|Rings|Light Bar|Dot Wave) |
 | `21` | `home_screen_enabled` | `DevicePrefsField::HOME_SCREEN_ENABLED` | `bool` | 1 = enable the Home Screen and App Dock, 0 = single-app mode locked to start_screen |
-| `22` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Pinned|Time App|Clock Face|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
+| `22` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Pinned|Time App|Calendar|Clock Face|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
 | `23` | `return_to_home_timeout` | `DevicePrefsField::RETURN_TO_HOME_TIMEOUT` | `string` | Idle timeout before resetting navigation back to the Home Screen (15s|30s|1 min|2 min|5 min|10 min|Never) |
 | `24` | `clock_face` | `DevicePrefsField::CLOCK_FACE` | `string` | Clock face style (Minimal Digital|Modern Analog|Hybrid Digital) |
 | `25` | `time_format` | `DevicePrefsField::TIME_FORMAT` | `string` | Clock time format (12-Hour (AM/PM)|24-Hour) |
@@ -187,31 +195,32 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `29` | `wake_greeting` | `DevicePrefsField::WAKE_GREETING` | `bool` | 1 = show time-of-day wake greeting toast, else 0 |
 | `30` | `album_art_style` | `DevicePrefsField::ALBUM_ART_STYLE` | `string` | Now Playing album art layout (Full Screen|Letterbox|Standard|None) |
 | `31` | `music_overlay_style` | `DevicePrefsField::MUSIC_OVERLAY_STYLE` | `string` | Now Playing controls overlay visibility (Art Only|Art + Metadata|Always Visible) |
-| `32` | `show_speaker_shortcut` | `DevicePrefsField::SHOW_SPEAKER_SHORTCUT` | `bool` | 1 = show speaker selector shortcut on Now Playing, else 0 |
-| `33` | `show_library_shortcut` | `DevicePrefsField::SHOW_LIBRARY_SHORTCUT` | `bool` | 1 = show library browse shortcut on Now Playing, else 0 |
-| `34` | `album_sort_order` | `DevicePrefsField::ALBUM_SORT_ORDER` | `string` | Album browser sort order (Alphabetical|Newest on Top|Oldest on Top) |
-| `35` | `artist_album_sort_order` | `DevicePrefsField::ARTIST_ALBUM_SORT_ORDER` | `string` | Artist discography sort order (Oldest on Top|Newest on Top|Alphabetical) |
-| `36` | `podcast_sort_order` | `DevicePrefsField::PODCAST_SORT_ORDER` | `string` | Podcast episode sort order (Newest on Top|Oldest on Top) |
-| `37` | `ww_sens_okay_nabu` | `DevicePrefsField::WW_SENS_OKAY_NABU` | `string` | Okay Nabu wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `38` | `ww_sens_hey_luna` | `DevicePrefsField::WW_SENS_HEY_LUNA` | `string` | Hey Luna wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `39` | `ww_sens_hey_jarvis` | `DevicePrefsField::WW_SENS_HEY_JARVIS` | `string` | Hey Jarvis wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `40` | `ww_sens_hey_mycroft` | `DevicePrefsField::WW_SENS_HEY_MYCROFT` | `string` | Hey Mycroft wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `41` | `ww_sens_alexa` | `DevicePrefsField::WW_SENS_ALEXA` | `string` | Alexa wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `42` | `wake_screen_on_assist` | `DevicePrefsField::WAKE_SCREEN_ON_ASSIST` | `bool` | 1 = wake display automatically when voice assistant triggers, else 0 |
-| `43` | `alert_volume` | `DevicePrefsField::ALERT_VOLUME` | `u16` | Timer, alarm, and notification chime volume percentage (20..100) |
-| `44` | `volume_step_size` | `DevicePrefsField::VOLUME_STEP_SIZE` | `u16` | Rotary/button volume increment step percentage (1..10) |
-| `45` | `game_sound_effects` | `DevicePrefsField::GAME_SOUND_EFFECTS` | `bool` | 1 = play arcade game sound effects, else 0 |
-| `46` | `ble_beacon_enabled` | `DevicePrefsField::BLE_BEACON_ENABLED` | `bool` | 1 = enable BLE iBeacon presence advertising (derived from native_ble_tracking), else 0 |
-| `47` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
-| `48` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
-| `49` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
-| `50` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
-| `51` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
-| `52` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
-| `53` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
-| `54` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
-| `55` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip; Calendar remains independent) |
-| `56` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
+| `32` | `album_sort_order` | `DevicePrefsField::ALBUM_SORT_ORDER` | `string` | Album browser sort order (Alphabetical|Newest on Top|Oldest on Top) |
+| `33` | `artist_album_sort_order` | `DevicePrefsField::ARTIST_ALBUM_SORT_ORDER` | `string` | Artist discography sort order (Oldest on Top|Newest on Top|Alphabetical) |
+| `34` | `podcast_sort_order` | `DevicePrefsField::PODCAST_SORT_ORDER` | `string` | Podcast episode sort order (Newest on Top|Oldest on Top) |
+| `35` | `ww_sens_okay_nabu` | `DevicePrefsField::WW_SENS_OKAY_NABU` | `string` | Okay Nabu wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `36` | `ww_sens_hey_luna` | `DevicePrefsField::WW_SENS_HEY_LUNA` | `string` | Hey Luna wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `37` | `ww_sens_hey_jarvis` | `DevicePrefsField::WW_SENS_HEY_JARVIS` | `string` | Hey Jarvis wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `38` | `ww_sens_hey_mycroft` | `DevicePrefsField::WW_SENS_HEY_MYCROFT` | `string` | Hey Mycroft wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `39` | `ww_sens_alexa` | `DevicePrefsField::WW_SENS_ALEXA` | `string` | Alexa wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `40` | `wake_screen_on_assist` | `DevicePrefsField::WAKE_SCREEN_ON_ASSIST` | `bool` | 1 = wake display automatically when voice assistant triggers, else 0 |
+| `41` | `alert_volume` | `DevicePrefsField::ALERT_VOLUME` | `u16` | Timer, alarm, and notification chime volume percentage (20..100) |
+| `42` | `volume_step_size` | `DevicePrefsField::VOLUME_STEP_SIZE` | `u16` | Rotary/button volume increment step percentage (1..10) |
+| `43` | `game_sound_effects` | `DevicePrefsField::GAME_SOUND_EFFECTS` | `bool` | 1 = play arcade game sound effects, else 0 |
+| `44` | `ble_beacon_enabled` | `DevicePrefsField::BLE_BEACON_ENABLED` | `bool` | 1 = enable BLE iBeacon presence advertising (derived from native_ble_tracking), else 0 |
+| `45` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
+| `46` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
+| `47` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
+| `48` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
+| `49` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
+| `50` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
+| `51` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
+| `52` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
+| `53` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip) |
+| `54` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
+| `55` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview) |
+| `56` | `calendar_lookahead_days` | `DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS` | `u16` | Calendar Overview upcoming lookahead horizon in days (7|14|30|60) |
+| `57` | `calendar_week_start` | `DevicePrefsField::CALENDAR_WEEK_START` | `string` | First day of week in Calendar Week and Month views (Sunday|Monday) |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -234,7 +243,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter_set_beacon_uuid` | `uuid: string` | Provision the System's random 128-bit BLE iBeacon UUID into NVS and restart advertising if active |
 | `latter_factory_reset` | *(none)* | Reset to defaults: erases every saved setting (the whole NVS partition, including the Wi-Fi driver's cached network data and RF calibration) and reboots. Compiled-in Wi-Fi credentials and the API key are kept, so the device rejoins Home Assistant unchanged |
 | `latter_device_command` | `command: string` | Execute a typed Device lifecycle, diagnostic, or UI command (restart|find_my|activate_screensaver|trigger_va|log_memory_report|dismiss_ringing|cancel_timer|reset_stopwatch) |
-| `latter_set_slots` | `is_area_slots: bool`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/search browse slots or Area/Site entity control slots to the device |
+| `latter_set_slots` | `is_area_slots: bool`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/queue/search browse slots or Area/Site entity control slots to the device (0x1E-joined name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current] records) |
+| `latter_set_music_lyrics` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `track_key: string`, `synced: bool`, `lines: string` | Push full-track LRC timestamp-synced or plain lyrics (up to 128 lines across multi-chunk frames; lines is 0x1E-joined '<t_ms>\x1f<text>' records where t_ms >= 0 for synced LRC lines and -1 for plain unsynced lines) |
+| `latter_set_calendar_view` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `window_start: string`, `window_end: string`, `map_url: string`, `events: string` | Push chunked windowed calendar events (up to 64 events across multi-chunk frames) or a signed on-demand Event Details map URL to the device |
 | `latter_show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot; alert_id > 0 deduplicates repeats |
 | `latter_ui_input` | `action: string`, `delta: int` | Remote navigation input: action up|down|left|right|select|back|home (canonical navigation actions); delta overrides the step for directional actions (0 = derive from action) |
 
@@ -243,16 +254,17 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | Method | Canonical Outbox Fields | Description |
 | :--- | :--- | :--- |
 | `device_hello` | `contract`, `boot_id`, `manifest`, `prefs_seq`, `dirty_prefs` | Device-initiated handshake sent when Home Assistant connects to the ESPHome API, carrying optional NVS preference sync state |
-| `music_browse` | `req_id`, `mode`, `page`, `page_size`, `search`, `speaker`, `last_speaker`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse speakers, favorites, playlists, artists, albums, tracks, radio, or search |
+| `music_browse` | `req_id`, `mode`, `page`, `page_size`, `search`, `speaker`, `last_speaker`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse speakers, library, favorites, playlists, artists, albums, tracks, podcasts, active queue, artist/album bios, or fetch full-track lyrics (lyrics_fetch) |
 | `set_active_speaker` | `entity_id`, `transfer_queue` | Select the active media_player target for a Latter device |
-| `media_command` | `command`, `seek_position`, `entity_id`, `media_id`, `media_type`, `enqueue`, `group_members` | Execute transport, seek, queue, speaker grouping, or play_media command on the active speaker |
+| `media_command` | `command`, `seek_position`, `entity_id`, `media_id`, `media_type`, `enqueue`, `radio_mode`, `queue_item_id`, `pos_shift`, `group_members` | Execute transport, seek, play_media (enqueue play|next|add|replace + radio_mode), queue manipulation (queue_play, queue_move, queue_delete), player toggles (mute_toggle, shuffle_toggle, repeat_cycle, favorite_toggle, lyrics_fetch), or speaker grouping on the active speaker |
 | `media_volume` | `entity_id`, `action`, `volume_level` | Adjust or set volume on the active speaker or volume override target |
 | `area_browse` | `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Areas, Area domains, or paginated controllable entities |
 | `area_action` | `entity_id`, `action`, `level`, `area_id`, `code` | Execute an explicit domain action on an Area or specific entity |
 | `set_active_area` | `area_id` | Set the active Area context for a Latter device (an on-device Area pick). Whether media follows is the Device's Latter setting |
 | `remote_action` | `slot`, `action`, `command`, `hold_secs` | Send a TV/AV remote command or select active remote slot |
-| `calendar_fetch` | `req_id`, `days`, `page`, `page_size` | Refresh upcoming calendar agenda events for a Latter device |
-| `calendar_create_event` | `summary`, `in_minutes`, `duration_minutes` | Create a new event on the primary configured calendar |
+| `calendar_fetch` | `req_id`, `mode`, `start_date`, `end_date`, `days`, `location` | Fetch windowed calendar events for a date range or mint a signed Event Details map URL |
+| `calendar_create_event` | `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `all_day`, `start_date`, `end_date`, `location`, `rrule` | Create a timed, all-day, or recurring event on a writable Home Assistant calendar |
+| `calendar_delete_event` | `calendar_entity`, `uid`, `recurrence_id` | Delete an event or recurring instance from a writable Home Assistant calendar |
 | `intercom_broadcast` | `message` | Broadcast a voice announcement to chosen speakers, the speakers in occupied Areas, or every speaker |
 | `doorbell_intercom` | `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction`, `code` | Doorbell talkback and requests (talk_message, quick_reply, listen_start, listen_stop, call_target, unlock_door, set_noise_reduction) |
 | `save_custom_color` | `hex_color` | Save a custom RGB accent color from the on-device color wheel |
@@ -272,10 +284,11 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter.remote_action` | `slot`, `action`, `command`, `hold_secs`, `target_device` | Select one of the up to 10 configured TV remote slots or send a remote command. |
 | `latter.area_browse` | `target_device`, `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Home Assistant areas, curated area entities, or home-wide alarm entities and push paginated slots to the ESPHome device. |
 | `latter.area_action` | `target_device`, `entity_id`, `area_id`, `action`, `level`, `code` | Execute a normalized area control, light color/Kelvin, thermostat, lock, vacuum, or home security alarm action. |
-| `latter.calendar_fetch` | `target_device`, `req_id`, `days`, `page`, `page_size` | Refresh upcoming system calendar events and push a 5-slot agenda page to the ESPHome device. |
-| `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `in_minutes`, `duration_minutes`, `description` | Create a new event or quick reminder on the primary system calendar and refresh the agenda sensor. |
+| `latter.calendar_fetch` | `target_device`, `req_id`, `mode`, `start_date`, `end_date`, `days`, `location` | Fetch windowed system calendar events or mint a signed location map URL and push calendar view frames to the ESPHome device. |
+| `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `all_day`, `start_date`, `end_date`, `location`, `rrule`, `description` | Create a timed, all-day, or recurring event on a writable system calendar and refresh the calendar store. |
+| `latter.calendar_delete_event` | `target_device`, `calendar_entity`, `uid`, `recurrence_id`, `recurrence_range` | Delete an event or recurring instance from a writable system calendar and refresh the calendar store. |
 | `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a TTS announcement or recorded audio clip to chosen speakers, the speakers in occupied Areas ('occupied_areas'), the speakers in a person's current Area ('person.<slug>'), or all online Music Assistant speakers. |
-| `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue`, `group_members` | Run a playback command (play, pause, toggle, next, previous, stop, seek, play_media, clear_queue) on the active speaker. If the device restarted or slept and its Sendspin buffer is empty, play re-streams the Music Assistant queue. |
+| `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue`, `radio_mode`, `queue_item_id`, `pos_shift`, `group_members` | Run a playback, queue, or toggle command (play, pause, toggle, next, previous, stop, seek, play_media, clear_queue, queue_play, queue_move, queue_delete, mute_toggle, shuffle_toggle, repeat_cycle, favorite_toggle, lyrics_fetch, join, unjoin) on the active speaker. If the device restarted or slept and its Sendspin buffer is empty, play re-streams the Music Assistant queue. |
 | `latter.notify` | `target_device`, `title`, `message`, `priority`, `duration`, `chime`, `announce`, `camera_entity` | Show an on-screen notification, with an optional chime and an optional camera snapshot, on a specific device, the devices in occupied Areas ('occupied_areas'), the devices assigned to a person ('person.<slug>'), or all displays ('all'). |
 | `latter.save_custom_color` | `target_device`, `hex_color`, `name` | Save a custom hex color from the on-device or Studio Color Wheel into the System-Wide Color Library and apply it to the target device. |
 | `latter.shortcut_action` | `target_device`, `entity_id`, `action`, `code` | Execute a configured App Dock or Pinned Home Assistant entity action on behalf of a bound Latter Device, enforcing allowlist membership and Perimeter Security Policy. |

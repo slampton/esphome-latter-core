@@ -147,7 +147,7 @@ constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
     return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
-      ((gui_page == 8 || gui_page == 9) && !tools_full_bleed) ||
+      ((gui_page == 8 || gui_page == 9 || gui_page == 12) && !tools_full_bleed) ||
       gui_page == 10 || gui_page == 11) {
     return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
@@ -194,6 +194,22 @@ DirtyBandTracker &dirty_band();
 void mark_dirty_band(int y0, int y1);
 void mark_dirty_full();
 
+inline constexpr int music_metadata_band_y0_for(int /*screen_h*/) noexcept { return 0; }
+inline constexpr int music_metadata_band_y1_for(int screen_h) noexcept {
+  return scale_y_for(136, screen_h);
+}
+inline constexpr int music_progress_band_y0_for(int screen_h) noexcept {
+  return scale_y_for(74, screen_h);
+}
+inline constexpr int music_progress_band_y1_for(int screen_h) noexcept {
+  return scale_y_for(136, screen_h);
+}
+inline constexpr int music_metadata_band_y0() noexcept { return 0; }
+inline constexpr int music_metadata_band_y1() noexcept { return music_metadata_band_y1_for(SCREEN_H); }
+inline constexpr int music_progress_band_y0() noexcept { return music_progress_band_y0_for(SCREEN_H); }
+inline constexpr int music_progress_band_y1() noexcept { return music_progress_band_y1_for(SCREEN_H); }
+void mark_music_progress_dirty_band(int y0 = 0, int y1 = music_metadata_band_y1_for(SCREEN_H));
+
 // Folds all secondary subpage dimensions (home_subpage + home_dock_page,
 // tools_subpage + tools_menu_page + cal_detail_mode + timer_view_slot,
 // system_menu_mode + system_dashboard_page + sleep_menu_page + display_menu_page,
@@ -207,7 +223,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int time_sub = 0, int wc_pg = 0,
                                  int alarm_edit = 0, int home_set_pg = 1,
                                  int hub_mode_pg = 0, int hub_drill = 0,
-                                 int pinned_pg = 0) {
+                                 int pinned_pg = 0, int cal_sub_id = 0) {
   switch (gui_page) {
     case 1:
       return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8) | ((home_set_pg & 0x0F) << 16);
@@ -234,6 +250,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
              ((timer_slot & 0x0F) << 8) | ((alarm_edit & 0x0F) << 12);
     case 11:
       return pinned_pg & 0xFFFF;
+    case 12:
+      return cal_sub_id;
     default:
       return 0;
   }
@@ -879,8 +897,6 @@ struct UiFrameContext {
   bool home_wake_greeting{true};
   bool home_sun_arc{true};
   bool home_moon_phase{true};
-  bool music_show_speaker_shortcut{true};
-  bool music_show_library_shortcut{true};
   bool game_sound_enabled{true};
   bool va_wake_screen{true};
   bool docked_screensaver_enabled{true};
@@ -995,17 +1011,36 @@ inline int compute_active_subpage_id() {
       (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
       (rs.intercom.cam_quick_reply_open ? 2 : 0) |
       (rs.intercom.live_call_mode ? 4 : 0);
+  int cal_vert_pg = rs.cal.overview_page;
+  if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE) {
+    cal_vert_pg = rs.cal.picker_page;
+  } else if (rs.cal.subpage == CalendarSubpage::DAY) {
+    cal_vert_pg = rs.cal.day_page;
+  } else if (rs.cal.subpage == CalendarSubpage::WEEK) {
+    cal_vert_pg = rs.cal.week_page;
+  }
+  const int cal_sub_id =
+      (rs.cal.subpage & 0x0F) |
+      ((rs.cal.drilldown & 0x0F) << 4) |
+      ((cal_vert_pg & 0xFF) << 8) |
+      (rs.cal.delete_confirm_open ? (1 << 16) : 0);
+  const int music_sub_id =
+      (static_cast<int>(rs.music.view) & 0x0F) |
+      ((static_cast<int>(rs.music.takeover) & 0x07) << 4) |
+      ((rs.music.mode_bar_win_start & 0x07) << 7) |
+      ((rs.music.overlay_mode & 0x0F) << 10);
   return compute_subpage_id(
       rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
-      rs.music.overlay_mode, rs.nav.active_game,
+      music_sub_id, rs.nav.active_game,
       rs.nav.system_menu_mode, rs.nav.system_dashboard_page,
       rs.nav.sleep_menu_page, rs.nav.display_menu_page,
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
-      cal_detail_mode(), timer_view_slot(), home_hub_tab(),
+      0, timer_view_slot(), home_hub_tab(),
       rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page,
-      home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page);
+      home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page,
+      cal_sub_id);
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {
@@ -1014,6 +1049,7 @@ inline int compute_hhmm_key(const esphome::ESPTime &now) {
       : -1;
 }
 
+bool is_music_lyrics_anim_active(uint32_t now_ms, bool local_media_playing = false);
 uint32_t compute_idle_state_signature(const UiFrameContext &ctx);
 bool compute_live_sec_active(const UiFrameContext &ctx);
 

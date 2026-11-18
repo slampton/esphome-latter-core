@@ -580,8 +580,16 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
         m_ppi = re.search(r"-DLATTER_PANEL_PPI=(\d+)", btxt)
         m_w = re.search(r"-DLATTER_SCREEN_W=(\d+)", btxt)
         m_h = re.search(r"-DLATTER_SCREEN_H=(\d+)", btxt)
+        m_rnd = re.search(r"-DLATTER_ROUND_DISPLAY=(\d+)", btxt)
+        m_wear = re.search(r"-DLATTER_IS_WEARABLE=(\d+)", btxt)
+        m_cr = re.search(r"-DLATTER_CORNER_R=(\d+)", btxt)
         if not (m_ppi and m_w and m_h):
             continue
+        w_px = int(m_w.group(1))
+        h_px = int(m_h.group(1))
+        is_rnd = bool(m_rnd and int(m_rnd.group(1)) != 0)
+        is_wear = bool(m_wear and int(m_wear.group(1)) != 0)
+        eff_cr = int(m_cr.group(1)) if m_cr else (w_px // 2 if is_rnd else (98 if is_wear else 20))
         ppi = int(m_ppi.group(1))
         f_small = int(bsubs.get("font_small_size", "21"))
         f_micro = int(bsubs.get("font_micro_size", "14"))
@@ -592,9 +600,10 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
         if micro_mm < 1.29:
             failures.append(f"[FONT MM] {bf.name}: font_micro_size={f_micro}px at {ppi} PPI is {micro_mm:.2f} mm (< 1.3 mm)")
         board_metrics[bf.stem] = {
-            "w": int(m_w.group(1)),
-            "h": int(m_h.group(1)),
+            "w": w_px,
+            "h": h_px,
             "ppi": ppi,
+            "cr": eff_cr,
             "small": f_small,
             "micro": f_micro,
         }
@@ -605,27 +614,32 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
         m_boards = re.search(r"(?m)^\|\s*Board file\s*\|(.+)$", doc_txt)
         m_res = re.search(r"(?m)^\|\s*Resolution\s*\|(.+)$", doc_txt)
         m_ppis = re.search(r"(?m)^\|\s*`LATTER_PANEL_PPI`\s*\|(.+)$", doc_txt)
+        m_crs = re.search(r"(?m)^\|\s*`LATTER_CORNER_R`\s*\|(.+)$", doc_txt)
         m_fonts = re.search(r"(?m)^\|\s*`font_small`\s*/\s*`font_micro`\s*\|(.+)$", doc_txt)
-        if not (m_boards and m_res and m_ppis and m_fonts):
+        if not (m_boards and m_res and m_ppis and m_crs and m_fonts):
             failures.append("[DEVICE UI DOC] docs/device-ui-design.md missing Section 6 Per-board adaptation table rows")
         else:
             b_cols = [c.strip().strip("`") for c in m_boards.group(1).strip().rstrip("|").split("|")]
             r_cols = [c.strip() for c in m_res.group(1).strip().rstrip("|").split("|")]
             p_cols = [c.strip() for c in m_ppis.group(1).strip().rstrip("|").split("|")]
+            cr_cols = [c.strip() for c in m_crs.group(1).strip().rstrip("|").split("|")]
             f_cols = [c.strip() for c in m_fonts.group(1).strip().rstrip("|").split("|")]
             for idx, bname in enumerate(b_cols):
                 bm = board_metrics.get(bname)
-                if not bm or idx >= len(r_cols) or idx >= len(p_cols) or idx >= len(f_cols):
+                if not bm or idx >= len(r_cols) or idx >= len(p_cols) or idx >= len(cr_cols) or idx >= len(f_cols):
                     failures.append(f"[DEVICE UI DOC] Table column mismatch for board '{bname}'")
                     continue
                 want_res = f"{bm['w']} × {bm['h']}"
                 want_ppi = str(bm["ppi"])
+                want_cr = str(bm["cr"])
+                m_doc_cr = re.match(r"^(\d+)\b", cr_cols[idx])
+                doc_cr = m_doc_cr.group(1) if m_doc_cr else cr_cols[idx]
                 want_fonts = f"{bm['small']} / {bm['micro']}"
-                if r_cols[idx] != want_res or p_cols[idx] != want_ppi or f_cols[idx] != want_fonts:
+                if r_cols[idx] != want_res or p_cols[idx] != want_ppi or doc_cr != want_cr or f_cols[idx] != want_fonts:
                     failures.append(
                         f"[DEVICE UI DOC] docs/device-ui-design.md out of sync with {bname}: "
-                        f"doc=({r_cols[idx]}, ppi={p_cols[idx]}, fonts={f_cols[idx]}) vs "
-                        f"board=({want_res}, ppi={want_ppi}, fonts={want_fonts})"
+                        f"doc=({r_cols[idx]}, ppi={p_cols[idx]}, cr={doc_cr}, fonts={f_cols[idx]}) vs "
+                        f"board=({want_res}, ppi={want_ppi}, cr={want_cr}, fonts={want_fonts})"
                     )
 
 

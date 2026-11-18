@@ -81,6 +81,40 @@ inline int emit_music_browse(std::string_view mode,
   return req_id;
 }
 
+template <typename OutboxT = std::nullptr_t>
+inline int emit_music_lyrics_fetch(std::string_view track_key = "",
+                                   std::string_view speaker = "",
+                                   uint32_t now_ms = 0,
+                                   OutboxT outbox = nullptr) {
+  auto &rt = latter_ui::runtime_state();
+  const auto &ms = latter_ui::media_state();
+  if (now_ms != 0U) rt.last_music_page_req_ms = now_ms;
+  auto &lyr = rt.music.lyrics;
+  lyr.latest_req_id = (lyr.latest_req_id >= 1000000) ? 1 : (lyr.latest_req_id + 1);
+  lyr.loading = true;
+  const int req_id = lyr.latest_req_id;
+  const std::string req_str = std::to_string(req_id);
+  const std::string fallback_key = latter_ui::build_music_track_key(ms.title, ms.artist);
+  const std::string_view eff_key = !track_key.empty() ? track_key : std::string_view(fallback_key);
+  const std::string_view eff_spk =
+      !speaker.empty() ? speaker : std::string_view(rt.music.active_speaker_entity);
+  const std::string_view eff_last_spk(ms.last_speaker);
+
+  latter_rpc::emit(outbox, "music_browse", {
+    {"req_id", req_str},
+    {"mode", "lyrics_fetch"},
+    {"page", "1"},
+    {"page_size", "128"},
+    {"search", eff_key},
+    {"speaker", eff_spk},
+    {"last_speaker", eff_last_spk},
+    {"album_sort", "name"},
+    {"artist_album_sort", "year"},
+    {"podcast_sort", "newest"},
+  });
+  return req_id;
+}
+
 // 3. set_active_speaker
 template <typename OutboxT = std::nullptr_t>
 inline void emit_set_active_speaker(std::string_view entity_id,
@@ -92,7 +126,7 @@ inline void emit_set_active_speaker(std::string_view entity_id,
   });
 }
 
-// 4. media_command (simple transport command: play, pause, next, previous, clear_queue)
+// 4. media_command (transport, seek, MA enqueue/radio, queue actions, toggles & grouping)
 template <typename OutboxT = std::nullptr_t>
 inline void emit_media_command(std::string_view command, OutboxT outbox = nullptr) {
   latter_rpc::emit(outbox, "media_command", {
@@ -113,14 +147,131 @@ template <typename OutboxT = std::nullptr_t>
 inline void emit_media_play_item(std::string_view entity_id,
                                  std::string_view media_id,
                                  std::string_view media_type,
-                                 std::string_view enqueue = "replace",
+                                 std::string_view enqueue = "play",
+                                 bool radio_mode = false,
                                  OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  const std::string_view eff_enq = enqueue.empty() ? std::string_view("play") : enqueue;
   latter_rpc::emit(outbox, "media_command", {
     {"command", "play_media"},
-    {"entity_id", entity_id},
+    {"entity_id", eff_spk},
     {"media_id", media_id},
     {"media_type", media_type},
-    {"enqueue", enqueue},
+    {"enqueue", eff_enq},
+    {"radio_mode", radio_mode ? "true" : "false"},
+  });
+}
+
+template <typename OutboxT>
+  requires (!std::is_same_v<std::decay_t<OutboxT>, bool> &&
+            !std::is_same_v<std::decay_t<OutboxT>, std::nullptr_t>)
+inline void emit_media_play_item(std::string_view entity_id,
+                                 std::string_view media_id,
+                                 std::string_view media_type,
+                                 std::string_view enqueue,
+                                 OutboxT outbox) {
+  emit_media_play_item(entity_id, media_id, media_type, enqueue, false, outbox);
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_queue_play(std::string_view queue_item_id,
+                                  std::string_view entity_id = "",
+                                  OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "queue_play"},
+    {"entity_id", eff_spk},
+    {"queue_item_id", queue_item_id},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_queue_move(std::string_view queue_item_id,
+                                  std::string_view pos_shift,
+                                  std::string_view entity_id = "",
+                                  OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "queue_move"},
+    {"entity_id", eff_spk},
+    {"queue_item_id", queue_item_id},
+    {"pos_shift", pos_shift},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_queue_move(std::string_view queue_item_id,
+                                  int pos_shift,
+                                  std::string_view entity_id = "",
+                                  OutboxT outbox = nullptr) {
+  const std::string shift_str = std::to_string(pos_shift);
+  emit_media_queue_move(queue_item_id, shift_str, entity_id, outbox);
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_queue_delete(std::string_view queue_item_id,
+                                    std::string_view entity_id = "",
+                                    OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "queue_delete"},
+    {"entity_id", eff_spk},
+    {"queue_item_id", queue_item_id},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_mute_toggle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "mute_toggle"},
+    {"entity_id", eff_spk},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_shuffle_toggle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "shuffle_toggle"},
+    {"entity_id", eff_spk},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_repeat_cycle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "repeat_cycle"},
+    {"entity_id", eff_spk},
+  });
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline void emit_media_favorite_toggle(std::string_view media_id = "",
+                                       std::string_view entity_id = "",
+                                       OutboxT outbox = nullptr) {
+  const std::string_view eff_spk =
+      !entity_id.empty() ? entity_id
+                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+  latter_rpc::emit(outbox, "media_command", {
+    {"command", "favorite_toggle"},
+    {"entity_id", eff_spk},
+    {"media_id", media_id},
   });
 }
 
@@ -270,38 +421,81 @@ inline void emit_remote_action(int slot_1based,
   });
 }
 
-// 10. calendar_fetch
+// 10. calendar_fetch (windowed events or geocoded map proxy URL)
 template <typename OutboxT = std::nullptr_t>
-inline int emit_calendar_fetch(int page = 1,
-                               int days = 30,
-                               int page_size = LATTER_SLOT_COUNT,
-                               OutboxT outbox = nullptr) {
+inline int emit_calendar_fetch_window(std::string_view start_date,
+                                      std::string_view end_date,
+                                      int days = 30,
+                                      OutboxT outbox = nullptr) {
   const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::CALENDAR);
   const std::string req_str = std::to_string(req_id);
   const std::string days_str = std::to_string(std::max(1, days));
-  const std::string page_str = std::to_string(std::max(1, page));
-  const std::string size_str = std::to_string(std::max(1, page_size));
   latter_rpc::emit(outbox, "calendar_fetch", {
     {"req_id", req_str},
+    {"mode", "window"},
+    {"start_date", start_date},
+    {"end_date", end_date},
     {"days", days_str},
-    {"page", page_str},
-    {"page_size", size_str},
+  });
+  return req_id;
+}
+
+template <typename OutboxT = std::nullptr_t>
+inline int emit_calendar_fetch_map(std::string_view location,
+                                   OutboxT outbox = nullptr) {
+  const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::CALENDAR);
+  const std::string req_str = std::to_string(req_id);
+  latter_rpc::emit(outbox, "calendar_fetch", {
+    {"req_id", req_str},
+    {"mode", "map"},
+    {"location", location},
   });
   return req_id;
 }
 
 // 11. calendar_create_event
 template <typename OutboxT = std::nullptr_t>
-inline void emit_calendar_create_event(std::string_view summary,
-                                       int in_minutes = 15,
-                                       int duration_minutes = 30,
+inline void emit_calendar_create_event(std::string_view calendar_entity,
+                                       std::string_view summary,
+                                       bool all_day,
+                                       std::string_view start_val,
+                                       std::string_view end_val,
+                                       std::string_view location = "",
+                                       std::string_view rrule = "",
                                        OutboxT outbox = nullptr) {
-  const std::string in_min_str = std::to_string(std::max(0, in_minutes));
-  const std::string dur_min_str = std::to_string(std::max(1, duration_minutes));
-  latter_rpc::emit(outbox, "calendar_create_event", {
-    {"summary", summary},
-    {"in_minutes", in_min_str},
-    {"duration_minutes", dur_min_str},
+  if (all_day) {
+    latter_rpc::emit(outbox, "calendar_create_event", {
+      {"calendar_entity", calendar_entity},
+      {"summary", summary},
+      {"all_day", "1"},
+      {"start_date", start_val},
+      {"end_date", end_val},
+      {"location", location},
+      {"rrule", rrule},
+    });
+  } else {
+    latter_rpc::emit(outbox, "calendar_create_event", {
+      {"calendar_entity", calendar_entity},
+      {"summary", summary},
+      {"all_day", "0"},
+      {"start_date_time", start_val},
+      {"end_date_time", end_val},
+      {"location", location},
+      {"rrule", rrule},
+    });
+  }
+}
+
+// 11b. calendar_delete_event
+template <typename OutboxT = std::nullptr_t>
+inline void emit_calendar_delete_event(std::string_view calendar_entity,
+                                       std::string_view uid,
+                                       std::string_view recurrence_id = "",
+                                       OutboxT outbox = nullptr) {
+  latter_rpc::emit(outbox, "calendar_delete_event", {
+    {"calendar_entity", calendar_entity},
+    {"uid", uid},
+    {"recurrence_id", recurrence_id},
   });
 }
 

@@ -246,7 +246,7 @@ media_player:
       then:
         - if:
             condition:
-              lambda: 'return latter_ui::cam_intercom_ptt_active();'
+              lambda: 'return latter_ui::cam_intercom_ptt_active() || latter_ui::cal_dictation_active();'
             then:
               - media_player.stop:
                   id: latter_media_player
@@ -531,6 +531,13 @@ voice_assistant:
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
+          if (latter_ui::cal_dictation_active()) {
+            rs.voice.status_text = "";
+            rs.cal.feedback_text = "Listening — speak now...";
+            rs.cal.feedback_ms = millis();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
           latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::VaListening);
           id(va_restore_display).stop();
           const bool wake_scr = latter_ui::persisted_prefs().wake_screen_on_assist;
@@ -559,6 +566,9 @@ voice_assistant:
           rs.voice.vad_active = true;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "CAPTURING VOICE...";
+          } else if (latter_ui::cal_dictation_active()) {
+            rs.cal.feedback_text = "Capturing voice...";
+            rs.cal.feedback_ms = millis();
           } else {
             rs.voice.status_text = "Listening...";
           }
@@ -573,6 +583,9 @@ voice_assistant:
           rs.voice.vad_active = false;
           if (latter_ui::cam_intercom_ptt_active()) {
             latter_ui::cam_intercom_status() = "PROCESSING AUDIO...";
+          } else if (latter_ui::cal_dictation_active()) {
+            rs.cal.feedback_text = "Transcribing...";
+            rs.cal.feedback_ms = millis();
           } else {
             latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::VaThinking);
             rs.voice.status_text = "Thinking...";
@@ -584,7 +597,10 @@ voice_assistant:
       - lambda: 'latter_ui::display_lifecycle().disarm_idle();'
       - if:
           condition:
-            lambda: 'return !latter_ui::cam_intercom_ptt_active() && !latter_ui::cam_call_active();'
+            lambda: |-
+              return !latter_ui::cam_intercom_ptt_active() &&
+                     !latter_ui::cam_call_active() &&
+                     !latter_ui::cal_dictation_active();
           then:
             - script.execute: enable_speaker_path
       - lambda: |-
@@ -592,6 +608,16 @@ voice_assistant:
           const uint32_t now_stt_ms = millis();
           latter_ui::log_audio_profile("VA_STT_END", x.c_str());
           rs.voice.vad_active = false;
+          if (latter_ui::cal_dictation_active()) {
+            id(latter_mic).set_mute_state(false);
+            rs.voice.intercom_turn = false;
+            esphome::voice_assistant::abort_voice_assistant(id(va));
+            latter_ui::finish_calendar_dictation(x, now_stt_ms);
+            id(apply_power_policy).execute();
+            id(sync_wake_word_state).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
           if (latter_ui::cam_intercom_ptt_active() || latter_ui::cam_call_active()) {
             id(latter_mic).set_mute_state(false);
             esphome::voice_assistant::abort_voice_assistant(id(va));
@@ -732,16 +758,22 @@ voice_assistant:
       - lambda: 'latter_ui::audio_arbitrator().cancel_echo_gate();'
       - if:
           condition:
-            lambda: 'return latter_ui::cam_intercom_ptt_active();'
+            lambda: 'return latter_ui::cam_intercom_ptt_active() || latter_ui::cal_dictation_active();'
           then:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
+                const bool was_cal_dict = latter_ui::cal_dictation_active();
                 id(latter_mic).set_mute_state(false);
                 rs.voice.intercom_turn = false;
                 esphome::voice_assistant::abort_voice_assistant(id(va));
                 rs.voice.vad_active = false;
-                ESP_LOGW("va", "Intercom turn error: %s - %s", code.c_str(), message.c_str());
-                latter_ui::intercom_session().resume_listen(millis());
+                if (was_cal_dict) {
+                  latter_ui::cancel_calendar_dictation("Voice capture failed", millis());
+                  id(sync_wake_word_state).execute();
+                } else {
+                  ESP_LOGW("va", "Intercom turn error: %s - %s", code.c_str(), message.c_str());
+                  latter_ui::intercom_session().resume_listen(millis());
+                }
                 id(apply_power_policy).execute();
                 latter_ui::schedule_disp_update(&id(disp1));
           else:
@@ -829,6 +861,15 @@ voice_assistant:
           if (!id(va).is_running()) {
             latter_ui::runtime_state().voice.intercom_turn = false;
           }
+      - if:
+          condition:
+            lambda: 'return latter_ui::cal_dictation_active() && !id(va).is_running();'
+          then:
+            - lambda: |-
+                latter_ui::cancel_calendar_dictation("Didn't catch that", millis());
+                id(apply_power_policy).execute();
+                id(sync_wake_word_state).execute();
+                latter_ui::schedule_disp_update(&id(disp1));
       - if:
           condition:
             lambda: 'return latter_ui::cam_intercom_ptt_active() && !id(va).is_running();'
@@ -1079,7 +1120,8 @@ script:
               const bool alert_or_tool_busy = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
                                               (rs.nav.active_game > 0) ||
                                               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                              latter_ui::cam_intercom_ptt_active();
+                                              latter_ui::cam_intercom_ptt_active() ||
+                                              latter_ui::cal_dictation_active();
               const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                                     !id(wifi_ctrl).is_connected() || (millis() < 12000U);
               return latter_ui::wake_word_should_run(
@@ -1673,6 +1715,36 @@ script:
       - script.stop: va_tts_drain_and_finish
       - script.execute: stop_doorbell_audio
       - lambda: |-
+          id(hal_set_audio_codecs_standby).execute(false);
+          id(latter_mic).set_mute_state(false);
+      - script.execute: mute_speaker_path
+      - script.wait: mute_speaker_path
+      - voice_assistant.start:
+
+  - id: start_calendar_dictation
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(va).get_api_connection() == nullptr || id(va).is_running()) {
+                latter_ui::cancel_calendar_dictation("Assist pipeline offline", millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+                return true;
+              }
+              return false;
+          then:
+            - script.stop: start_calendar_dictation
+      - if:
+          condition:
+            micro_wake_word.is_running:
+          then:
+            - micro_wake_word.stop:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          rs.voice.intercom_turn = true;
+          latter_ui::request_radio_boost(millis(), 12000U);
+          id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
       - script.execute: mute_speaker_path

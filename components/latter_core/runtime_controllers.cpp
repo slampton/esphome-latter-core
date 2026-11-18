@@ -181,7 +181,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.mark_dirty_full = true;
       }
       if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
-          gp == PageId::PINNED) {
+          gp == PageId::PINNED || gp == PageId::CALENDAR) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
         }
@@ -189,16 +189,18 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       }
     }
   } else if (sv_dom == "active_media") {
-    const auto &ms = media_state();
+    auto &ms = media_state();
     float prev_interp_pos = r.music.pos_base;
     if (r.music.pos_sync_time > 0 && prev_state_ == "playing") {
       prev_interp_pos += static_cast<float>(ctx.now_ms - r.music.pos_sync_time) / 1000.0f;
     }
 
+    ms.playing = (ms.playback_state == MediaPlaybackState::Playing || ms.state == "playing");
     r.music.active_playback_media_type = ms.media_type;
     if (ms.position >= 0.0f) {
       r.music.pos_base = ms.position;
       r.music.pos_sync_time = ctx.now_ms;
+      ms.position_updated_ms = ctx.now_ms;
     }
     if (!ms.active_speaker.empty()) {
       if (!r.music.active_speaker_entity.empty() &&
@@ -242,11 +244,17 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       }
     }
 
+    const bool track_changed = (ms.title != prev_title_) || (ms.artist != prev_artist_);
     if (ms.title != prev_title_) {
       r.music.action_feedback.clear();
       if (!ms.title.empty()) {
         music_queue_cleared() = false;
       }
+    }
+    if (track_changed && r.nav.display_power_state == 0 &&
+        r.nav.gui_page == PageId::MUSIC && r.music.view == MusicView::LYRICS &&
+        !ms.title.empty()) {
+      eff.fetch_music_lyrics = true;
     }
 
     if (ms.art_url.empty()) {
@@ -256,7 +264,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.release_remote_art = true;
       }
     } else if (r.nav.display_power_state == 0 && r.nav.gui_page == 2 &&
-               std::string_view(pref_album_art_style_cstr(prefs)) != "None" &&
+               (r.music.view == MusicView::LYRICS ||
+                std::string_view(pref_album_art_style_cstr(prefs)) != "None") &&
                (!ms.is_local || ctx.local_album_art_w == 0) &&
                ms.art_url != r.music.loaded_art_url) {
       if (ms.art_url != prev_art_ || !ctx.remote_art_fetch_running) {
@@ -275,6 +284,12 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         (ms.art_url != prev_art_) ||
         (ms.is_local != prev_is_local_) ||
         (remote_vol_pct() != prev_vol_pct_) ||
+        (ms.shuffle != prev_shuffle_) ||
+        (ms.repeat_mode != prev_repeat_mode_) ||
+        (ms.muted != prev_muted_) ||
+        (ms.favorite != prev_favorite_) ||
+        (ms.queue_count != prev_queue_count_) ||
+        (ms.media_caps != prev_media_caps_) ||
         pos_jumped;
 
     prev_title_ = ms.title;
@@ -286,6 +301,12 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     prev_art_ = ms.art_url;
     prev_is_local_ = ms.is_local;
     prev_vol_pct_ = remote_vol_pct();
+    prev_shuffle_ = ms.shuffle;
+    prev_repeat_mode_ = ms.repeat_mode;
+    prev_muted_ = ms.muted;
+    prev_favorite_ = ms.favorite;
+    prev_queue_count_ = ms.queue_count;
+    prev_media_caps_ = ms.media_caps;
 
     if (media_ui_changed && r.nav.display_power_state == 0 &&
         (r.nav.gui_page == 1 || r.nav.gui_page == 2)) {
@@ -327,7 +348,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     }
   } else if (sv_dom == "calendar_agenda") {
     if (r.nav.display_power_state == 0 &&
-        (r.nav.gui_page == 1 || (r.nav.gui_page == 8 && r.nav.tools_subpage == 9))) {
+        (r.nav.gui_page == 1 || r.nav.gui_page == PageId::CALENDAR)) {
       if (r.nav.gui_page == 1 && r.nav.home_subpage == 0) {
         eff.ensure_anim_poller = true;
       }
@@ -676,6 +697,7 @@ void reset_runtime_state(bool preserve_hooks) {
   remote_state() = RemoteState{};
   weather_state() = WeatherState{};
   calendar_state() = CalendarState{};
+  reset_calendar_window_store();
   shortcuts_state() = ShortcutsState{};
   device_prefs_state() = DevicePrefsState{};
   persisted_prefs() = PersistedDevicePrefs{};
