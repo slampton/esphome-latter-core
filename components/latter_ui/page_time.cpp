@@ -77,7 +77,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   const auto &ac = area_ctx_state();
   const int cx = ctx.cx;
 
-  render_page_header(it, cx, "TIME", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, "TIME", ctx.font_small, ctx.col_white);
 
   WorldClockEntry entries[kMaxWorldClocks + 1]{};
   const int total_wc = collect_active_world_clocks(prefs, ac, entries);
@@ -207,15 +207,17 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   const int vis_rows = std::min(2, total_wc - base_idx);
   const int bounce_y = edge_bounce().offset_px(
       PageId::TIME, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
+  const int wc_safe_w = (total_wc == 1)
+      ? safe_span(scale_y(258), 20)
+      : std::min(safe_span(scale_y(246), 20), safe_span(scale_y(298), 20));
+  const int row_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 28) : layout().area_card3_w, wc_safe_w);
+  const int x0 = cx - (row_w / 2);
+  const int x1 = x0 + row_w;
 
   for (int row = 0; row < vis_rows; ++row) {
     const int idx = base_idx + row;
     const auto &wc = entries[idx];
     const int cy_row = ((total_wc == 1) ? scale_y(258) : scale_y(row == 0 ? 246 : 298)) + bounce_y;
-    const int row_w = std::min((SCREEN_W < 380) ? (SCREEN_W - 28) : layout().area_card3_w,
-                               safe_span(cy_row, 20));
-    const int x0 = cx - (row_w / 2);
-    const int x1 = x0 + row_w;
 
     char rem_time_buf[20] = "--:--";
     const char *day_lbl = "Today";
@@ -282,7 +284,7 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   const int v_slot = timer_view_slot();
 
   if (v_slot == 0) {
-    render_page_header(it, cx, "TIMERS", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, "TIMERS", ctx.font_small, ctx.col_white);
 
     int arc_slot = -1;
     int arc_rem = 999999;
@@ -346,7 +348,7 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   // Single-Timer Detail View (time rests on horizontal center line, generous stepper spacing)
   const int s_idx = std::clamp(v_slot - 1, 0, 2);
   const auto &s = ts[s_idx];
-  render_page_header(it, cx, format_timer_header_upper(s_idx), ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, format_timer_header_upper(s_idx), ctx.font_small, ctx.col_white);
 
   if ((s.running || s.paused) && s.duration_sec > 0) {
     float prog = 0.0f;
@@ -425,7 +427,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   const bool is_snoozed = (rs.alarms.snooze_until > now_epoch);
 
   if (edit_idx == 0) {
-    render_page_header(it, cx, "ALARMS", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, "ALARMS", ctx.font_small, ctx.col_white);
 
     int y_shift = 0;
     if (is_snoozed) {
@@ -478,7 +480,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   const auto &ap = prefs.alarms[a_idx];
   char hdr_buf[24];
   std::snprintf(hdr_buf, sizeof(hdr_buf), "EDIT ALARM %d", a_idx + 1);
-  render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.col_white);
 
   const bool hh_focused = (rs.nav.alarm_edit_field == 0);
   char hh_buf[8];
@@ -589,7 +591,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   const int cx = ctx.cx;
   const bool has_bd_shadow = backdrop_active();
 
-  render_page_header(it, cx, "STOPWATCH", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, "STOPWATCH", ctx.font_small, ctx.col_white);
 
   const uint32_t cur_sw_ms = rs.stopwatch.running
       ? (ctx.now_ms - rs.stopwatch.start_time_ms)

@@ -1193,20 +1193,10 @@ int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int 
   }
   if (dim_level >= kArtDimMenu) return 64;
   if (show_controls) {
-    if (!show_metadata) {
-      const int ramp_h = scale_y(12);
-      return ramp(y, scale_y(76) - ramp_h, 96, scale_y(76) + ramp_h, 128);
-    }
-    const int top_y0 = scale_y(118);
-    const int top_y1 = scale_y(156);
-    const int bot_y0 = SCREEN_H - scale_y(148);
-    const int bot_y1 = SCREEN_H - scale_y(110);
-    if (y < top_y1) return ramp(y, top_y0, 96, top_y1, 140);
-    if (y > bot_y0) return ramp(y, bot_y0, 140, bot_y1, 100);
     return 140;
   }
   if (show_metadata) {
-    return ramp(y, scale_y(102), 100, scale_y(142), 256);
+    return ramp(y, scale_y(104), 140, scale_y(148), 256);
   }
   return 256;
 }
@@ -1282,7 +1272,7 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
     const int step_x = (src_w << 12) / r.w;
     const int step_y = (src_h << 12) / r.h;
-    const int mul_q8 = (dim_level == kArtDimLyrics) ? 132 : ((dim_level >= kArtDimMenu) ? 64 : (apply_scrim ? 132 : 256));
+    const int mul_q8 = (dim_level == kArtDimLyrics) ? 132 : ((dim_level >= kArtDimMenu) ? 64 : (apply_scrim ? 140 : 256));
     int curr_y = 0;
     for (int y = 0; y < r.h; y++) {
       const int sy = std::min(src_h - 1, curr_y >> 12);

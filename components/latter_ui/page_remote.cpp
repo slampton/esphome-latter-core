@@ -64,13 +64,13 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 
     if (is_fb) {
       std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
-      render_page_header(it, cx, fit_fb.c_str(), font_small, theme_primary);
+      render_page_header(it, cx, fit_fb.c_str(), font_small, col_white);
     } else if (total_pages > 1) {
       char hdr_buf[32];
       std::snprintf(hdr_buf, sizeof(hdr_buf), "CONTROL  %d/%d", cur_page + 1, total_pages);
-      render_page_header(it, cx, hdr_buf, font_small, theme_primary);
+      render_page_header(it, cx, hdr_buf, font_small, col_white);
     } else {
-      render_page_header(it, cx, "CONTROL", font_small, theme_primary);
+      render_page_header(it, cx, "CONTROL", font_small, col_white);
     }
 
     const Color card_bg = kChromeGlassTint;
@@ -144,10 +144,10 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   // ---------------------------------------------------------------------------
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(remote_action_feedback, scale_x(280), font_small);
-    render_page_header(it, cx, fit_fb.c_str(), font_small, theme_primary);
+    render_page_header(it, cx, fit_fb.c_str(), font_small, col_white);
   } else {
     std::string disp_title = fit_text_to_width_font(rem_name, scale_x(280), font_small);
-    render_page_header(it, cx, disp_title.c_str(), font_small, theme_primary);
+    render_page_header(it, cx, disp_title.c_str(), font_small, col_white);
   }
   frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(260), scale_y(36),
                                  WidgetId::REMOTE_SLOT_PILL, kHitTap | kHitFocusSlot);

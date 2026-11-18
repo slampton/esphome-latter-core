@@ -2879,7 +2879,7 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     }
 
     // 1. Standard Top Header ("CURRENT" at y = 48 + divider at y = 62, matching FORECAST)
-    render_page_header(it, cx, "CURRENT", font_small, theme_primary);
+    render_page_header(it, cx, "CURRENT", font_small, col_white);
 
     // 2. Hero Temperature at y = 120 (top at y = 92) & Condition at y = 182 (unchanged)
     char temp_num[16];
@@ -3050,7 +3050,7 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     // ----------------------------------------------------------------------
     // SUBPAGE 1: FORECAST (5-DAY FORECAST: PROPORTIONAL & SCALED ACROSS ALL SCREENS)
     // ----------------------------------------------------------------------
-    render_page_header(it, cx, "FORECAST", font_small, theme_primary);
+    render_page_header(it, cx, "FORECAST", font_small, col_white);
 
     struct DayForecast {
       std::string day;
@@ -3139,7 +3139,7 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     // ----------------------------------------------------------------------
     // SUBPAGE 2: SUN (TRUE 1:1 HALF-CIRCLE SOLAR ARC + BALANCED SUNRISE/SUNSET)
     // ----------------------------------------------------------------------
-    render_page_header(it, cx, "SUN", font_small, theme_primary);
+    render_page_header(it, cx, "SUN", font_small, col_white);
 
     const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : scale_y(44));
     const int arc_rx = LATTER_ROUND_DISPLAY ? 122 : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
@@ -3223,7 +3223,7 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
         compute_synodic_moon_phase(now.is_valid(), now.is_valid() ? static_cast<int64_t>(now.timestamp) : 0LL,
                                    moon_phase_raw, cycle, &illum_pct, &mp_label);
 
-    render_page_header(it, cx, "MOON", font_small, theme_primary);
+    render_page_header(it, cx, "MOON", font_small, col_white);
     if (!moon_known) {
       render_empty_state(it, cx, SCREEN_CY, "Waiting for the time or moon phase...", font_small, col_slate);
       render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);

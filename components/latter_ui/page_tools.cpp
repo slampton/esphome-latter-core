@@ -181,7 +181,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
 
   if (total_items <= 0) {
     runtime_state().nav.tools_menu_page = 0;
-    render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.col_white);
     if (backdrop_active()) {
       fast_print(it, ctx.cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
                  TextAlign::CENTER, "No tools enabled");
@@ -246,7 +246,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
   }
 
-  render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.col_white);
   const int active_pip_pg = (rs.nav.menu_scroll_active && total_pages > 1)
                                 ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
                                 : cur_pg;
@@ -409,7 +409,7 @@ void render_dice_subpage(esphome::display::Display &it, const UiFrameContext &ct
     }
   }
 
-  render_page_header(it, ctx.cx, "DICE ROLL", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, ctx.cx, "DICE ROLL", ctx.font_small, ctx.col_white);
 
   const int dice_base_y = scale_y(196);
   const int die_off = scale_min(75);
@@ -682,7 +682,7 @@ void render_level_subpage(esphome::display::Display &it, const UiFrameContext &c
   using esphome::Color;
   using esphome::display::TextAlign;
 
-  render_page_header(it, ctx.cx, "LEVEL", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, ctx.cx, "LEVEL", ctx.font_small, ctx.col_white);
 
   const float roll_deg = rs.hw_imu_roll;
   const float pitch_deg = rs.hw_imu_pitch;
@@ -840,7 +840,7 @@ void render_coin_flip_subpage(esphome::display::Display &it, const UiFrameContex
     }
   }
 
-  render_page_header(it, ctx.cx, "COIN FLIP", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, ctx.cx, "COIN FLIP", ctx.font_small, ctx.col_white);
 
   const int cx = ctx.cx;
   const int coin_base_y = scale_y(220);

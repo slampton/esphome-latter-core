@@ -40,7 +40,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `46` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `39` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -58,37 +58,30 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `12` | `covers_open` | `AreaCtxField::COVERS_OPEN` | `u16` | Count of open covers in Area |
 | `13` | `alarm_entity` | `AreaCtxField::ALARM_ENTITY` | `entity_id` | Primary alarm control panel entity ID |
 | `14` | `alarm_state` | `AreaCtxField::ALARM_STATE` | `string` | Primary alarm state |
-| `15` | `thermostat_entity` | `AreaCtxField::THERMOSTAT_ENTITY` | `entity_id` | Primary climate entity ID |
-| `16` | `thermostat_state` | `AreaCtxField::THERMOSTAT_STATE` | `string` | Primary climate state/HVAC mode |
-| `17` | `thermostat_temp` | `AreaCtxField::THERMOSTAT_TEMP` | `f32` | Target thermostat setpoint temperature |
-| `18` | `thermostat_current_temp` | `AreaCtxField::THERMOSTAT_CURRENT_TEMP` | `f32` | Current measured thermostat temperature |
-| `19` | `lock_entity` | `AreaCtxField::LOCK_ENTITY` | `entity_id` | Primary lock entity ID |
-| `20` | `lock_state` | `AreaCtxField::LOCK_STATE` | `string` | Primary lock state |
-| `21` | `garage_entity` | `AreaCtxField::GARAGE_ENTITY` | `entity_id` | Primary garage cover entity ID |
-| `22` | `garage_state` | `AreaCtxField::GARAGE_STATE` | `string` | Primary garage cover state |
-| `23` | `vacuum_entity` | `AreaCtxField::VACUUM_ENTITY` | `entity_id` | Primary vacuum entity ID |
-| `24` | `vacuum_state` | `AreaCtxField::VACUUM_STATE` | `string` | Primary vacuum state |
-| `25` | `camera_snapshot_url` | `AreaCtxField::CAMERA_SNAPSHOT_URL` | `url` | Signed HTTP URL for primary camera snapshot |
-| `26` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|snapshot_url camera records (up to 10, in configured order; area_id empty when the camera has no Area) |
-| `27` | `doorbell_talk_state` | `AreaCtxField::DOORBELL_TALK_STATE` | `string` | Doorbell talkback state |
-| `28` | `intercom_targets_summary` | `AreaCtxField::INTERCOM_TARGETS_SUMMARY` | `records` | 0x1E-joined target_id|label|kind call_target records (up to 10; kind all = every other Latter Device, listed first; kind device = one Latter Device, labelled by its title); empty when there is no other Device |
-| `29` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
-| `30` | `alert_title` | `AreaCtxField::ALERT_TITLE` | `string` | Alert banner title |
-| `31` | `alert_message` | `AreaCtxField::ALERT_MESSAGE` | `string` | Alert banner message body |
-| `32` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (normal|warning|critical) |
-| `33` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
-| `34` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `bool` | 1 = play the alert chime (embedded WAV: sfx 9 for warning/critical, otherwise sfx 6), else 0 |
-| `35` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
-| `36` | `activity_card` | `AreaCtxField::ACTIVITY_CARD` | `bool` | 1 = show the Home Activity Card, 0 = hide it (also sent when every source is off); empty until set: the device uses defaults.activity_card |
-| `37` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
-| `38` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
-| `39` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, cameras, intercom, thermostat, entry, vacuum); empty when no categories have entities |
-| `40` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
-| `41` | `local_tz_info` | `AreaCtxField::LOCAL_TZ_INFO` | `string` | Pipe-delimited local time zone status ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>') |
-| `42` | `world_clocks_summary` | `AreaCtxField::WORLD_CLOCKS_SUMMARY` | `string` | Semicolon-delimited configured World Clocks ('<iana>|<label>|<abbr>|<utc_offset_min>|<is_dst>;...') |
-| `43` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night, 32=supports_arm_vacation) |
-| `44` | `climate_caps` | `AreaCtxField::CLIMATE_CAPS` | `u16` | Thermostat capability & HVAC mode bitmask (1=off, 2=heat, 4=cool, 8=heat_cool_or_auto, 16=fan_only, 32=dry, 64=target_temp, 128=celsius) |
-| `45` | `vacuum_caps` | `AreaCtxField::VACUUM_CAPS` | `u16` | Robot vacuum capability bitmask from VacuumEntityFeature (1=start, 2=pause, 4=stop, 8=return_home, 16=clean_spot, 32=locate) |
+| `15` | `thermostats_summary` | `AreaCtxField::THERMOSTATS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|state|target_temp|current_temp|caps thermostat zone records (up to 8, in configured order; caps is the u16 climate capability bitmask: 1=off, 2=heat, 4=cool, 8=heat_cool_or_auto, 16=fan_only, 32=dry, 64=target_temp, 128=celsius) |
+| `16` | `locks_summary` | `AreaCtxField::LOCKS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|state door lock records (up to 8, in configured order) |
+| `17` | `garages_summary` | `AreaCtxField::GARAGES_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|state garage door cover records (up to 6, in configured order) |
+| `18` | `vacuums_summary` | `AreaCtxField::VACUUMS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|state|caps robot vacuum records (up to 6, in configured order; caps is the u16 VacuumEntityFeature bitmask: 1=start, 2=pause, 4=stop, 8=return_home, 16=clean_spot, 32=locate) |
+| `19` | `area_climates_summary` | `AreaCtxField::AREA_CLIMATES_SUMMARY` | `records` | 0x1E-joined entity_id|name|state|target_temp|current_temp|caps climate records for the active Area (up to 6) |
+| `20` | `camera_snapshot_url` | `AreaCtxField::CAMERA_SNAPSHOT_URL` | `url` | Signed HTTP URL for primary camera snapshot |
+| `21` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|snapshot_url camera records (up to 10, in configured order; area_id empty when the camera has no Area) |
+| `22` | `doorbell_talk_state` | `AreaCtxField::DOORBELL_TALK_STATE` | `string` | Doorbell talkback state |
+| `23` | `intercom_targets_summary` | `AreaCtxField::INTERCOM_TARGETS_SUMMARY` | `records` | 0x1E-joined target_id|label|kind call_target records (up to 10; kind all = every other Latter Device, listed first; kind device = one Latter Device, labelled by its title); empty when there is no other Device |
+| `24` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
+| `25` | `alert_title` | `AreaCtxField::ALERT_TITLE` | `string` | Alert banner title |
+| `26` | `alert_message` | `AreaCtxField::ALERT_MESSAGE` | `string` | Alert banner message body |
+| `27` | `alert_priority` | `AreaCtxField::ALERT_PRIORITY` | `string` | Alert priority level (normal|warning|critical) |
+| `28` | `alert_duration` | `AreaCtxField::ALERT_DURATION` | `u16` | Alert display duration in seconds |
+| `29` | `alert_chime` | `AreaCtxField::ALERT_CHIME` | `bool` | 1 = play the alert chime (embedded WAV: sfx 9 for warning/critical, otherwise sfx 6), else 0 |
+| `30` | `alert_camera_url` | `AreaCtxField::ALERT_CAMERA_URL` | `url` | Signed HTTP URL for alert camera snapshot |
+| `31` | `activity_card` | `AreaCtxField::ACTIVITY_CARD` | `bool` | 1 = show the Home Activity Card, 0 = hide it (also sent when every source is off); empty until set: the device uses defaults.activity_card |
+| `32` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
+| `33` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
+| `34` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, cameras, intercom, thermostat, entry, vacuum); empty when no categories have entities |
+| `35` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
+| `36` | `local_tz_info` | `AreaCtxField::LOCAL_TZ_INFO` | `string` | Pipe-delimited local time zone status ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>') |
+| `37` | `world_clocks_summary` | `AreaCtxField::WORLD_CLOCKS_SUMMARY` | `string` | Semicolon-delimited configured World Clocks ('<iana>|<label>|<abbr>|<utc_offset_min>|<is_dst>;...') |
+| `38` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night, 32=supports_arm_vacation) |
 
 ### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
 

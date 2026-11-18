@@ -250,9 +250,9 @@ CalSubheaderGeom render_calendar_subheader(esphome::display::Display &it,
                        ((ctx.now_ms - rs.cal.feedback_ms) < 2400U);
   if (show_fb) {
     const std::string fit_fb = fit_text_to_width_font(rs.cal.feedback_text, safe_span(ly.hdr_y, 24), ctx.font_small);
-    render_page_header(it, cx, fit_fb, ctx.font_small, ctx.theme_secondary);
+    render_page_header(it, cx, fit_fb, ctx.font_small, ctx.col_white);
   } else {
-    render_page_header(it, cx, page_title, ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, page_title, ctx.font_small, ctx.col_white);
   }
 
   const int sub_y = ly.sub_hdr_y + (LATTER_ROUND_DISPLAY ? scale_y(8) : scale_y(10));
@@ -260,7 +260,7 @@ CalSubheaderGeom render_calendar_subheader(esphome::display::Display &it,
   const int btn_d = 2 * btn_r + 1;
   const int safe_w = band_safe_span_for(
       sub_y, btn_d, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-  const int bar_w = std::min(safe_w, (SCREEN_W > 520) ? scale_x(392) : 348);
+  const int bar_w = std::min(safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 348);
   const int bar_x0 = cx - bar_w / 2;
   const int bar_x1 = bar_x0 + bar_w;
 
@@ -373,6 +373,15 @@ void render_event_list_cards(esphome::display::Display &it,
 
   auto *sub_font = (ctx.font_micro != nullptr && card_h < scale_y(54)) ? ctx.font_micro : ctx.font_small;
   const int pip_reserve = (total_pages > 1) ? scale_x(30) : 0;
+  const int first_cy = start_y0 + card_h / 2;
+  const int last_cy = start_y0 + (per_page - 1) * stride + card_h / 2;
+  const int stack_safe_w = std::min(
+      band_safe_span_for(first_cy, card_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14 + pip_reserve),
+      band_safe_span_for(last_cy, card_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14 + pip_reserve));
+  const int card_w = std::min(stack_safe_w, (SCREEN_W > 520) ? layout().area_card3_w : 344);
+  const int card_x = ctx.cx - (card_w / 2) - (pip_reserve / 3);
 
   for (int r = 0; r < vis_cnt; ++r) {
     const int ev_idx = ev_indices[io_page * per_page + r];
@@ -380,10 +389,6 @@ void render_event_list_cards(esphome::display::Display &it,
     const auto &ev = events[ev_idx];
 
     const int cy_row = start_y0 + r * stride + card_h / 2 + bounce_y;
-    const int safe_w = band_safe_span_for(
-        cy_row, card_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14 + pip_reserve);
-    const int card_w = std::min(safe_w, (SCREEN_W > 520) ? scale_x(384) : 344);
-    const int card_x = ctx.cx - (card_w / 2) - (pip_reserve / 3);
     const int card_y = cy_row - card_h / 2;
 
     const bool live_now = is_event_live_now(ev, today_ymd, now_min);
@@ -828,7 +833,7 @@ void render_detail_drilldown(esphome::display::Display &it,
   const auto &ly = layout();
   const int cx = ctx.cx;
   if (rs.cal.selected_event_idx < 0 || rs.cal.selected_event_idx >= store.count) {
-    render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.col_white);
     render_empty_state(it, cx, ctx.cy, "Event no longer available", ctx.font_small, ctx.col_slate);
     render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
     return;
@@ -845,12 +850,12 @@ void render_detail_drilldown(esphome::display::Display &it,
     ui::confirm_modal(it, cx, "DELETE EVENT?", ev.title, dt_line,
                       "Cancel", "Delete", ctx.col_red, ui::chrome_danger_bg(),
                       ctx.font_small, ctx.font_small,
-                      ctx.theme_primary, ctx.col_white, ctx.col_slate,
+                      ctx.col_white, ctx.col_white, ctx.col_slate,
                       WidgetId::CONFIRM_CANCEL, WidgetId::CONFIRM_ACCEPT);
     return;
   }
 
-  render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.col_white);
 
   const Color accent = event_accent_color(ctx, ev.cal_idx, sources, source_cnt);
   const int meta_y = scale_y(84);
@@ -1000,7 +1005,7 @@ void render_map_drilldown(esphome::display::Display &it,
     render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
                       scale_s(16), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
   } else {
-    render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.col_white);
     render_empty_state(it, ctx.cx, scale_y(222), "Loading OpenStreetMap...", ctx.font_small, ctx.theme_secondary);
   }
 
@@ -1025,24 +1030,34 @@ void render_add_step1(esphome::display::Display &it,
   if (dictating) {
     render_page_header(it, cx,
                        (rs.cal.dictation_field == 1U) ? "SPEAK EVENT TITLE..." : "SPEAK LOCATION...",
-                       ctx.font_small, ctx.col_red);
+                       ctx.font_small, ctx.col_white);
   } else if (show_fb) {
-    render_page_header(it, cx, rs.cal.feedback_text, ctx.font_small, ctx.theme_secondary);
+    render_page_header(it, cx, rs.cal.feedback_text, ctx.font_small, ctx.col_white);
   } else {
-    render_page_header(it, cx, "NEW EVENT", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, "NEW EVENT", ctx.font_small, ctx.col_white);
   }
 
   const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
   const int mic_r = row_h / 2;
   const int mic_gap = std::max(6, scale_x(8));
+  const int field_safe_w = std::min(
+      band_safe_span_for(ly.slot5_y(0), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14),
+      band_safe_span_for(ly.slot5_y(1), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14));
+  const int field_tot_w = std::min(field_safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 332);
+  const int row23_safe_w = std::min(
+      band_safe_span_for(ly.slot5_y(2), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14),
+      band_safe_span_for(ly.slot5_y(3), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14));
+  const int row23_card_w = std::min(row23_safe_w, ly.list_card_w);
 
   auto draw_field_with_mic = [&](int slot_idx, const char *prefix, const std::string &val,
                                  const char *placeholder, uint16_t field_wid, uint16_t mic_wid,
                                  uint8_t dict_id) {
     const int ym = ly.slot5_y(slot_idx);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int tot_w = std::min(safe_w, (SCREEN_W > 520) ? scale_x(364) : 332);
+    const int tot_w = field_tot_w;
     const int x0 = cx - tot_w / 2;
 #if LATTER_HAS_MIC
     const int card_w = tot_w - (2 * mic_r + mic_gap);
@@ -1081,9 +1096,7 @@ void render_add_step1(esphome::display::Display &it,
   // Row 2: Target Calendar
   {
     const int ym = ly.slot5_y(2);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int card_w = std::min(safe_w, ly.list_card_w);
+    const int card_w = row23_card_w;
     const int x0 = cx - card_w / 2;
     const int w_idx = (writable_cnt > 0) ? std::clamp<int>(rs.cal.draft_cal_idx, 0, writable_cnt - 1) : 0;
     const char *cal_name = (writable_cnt > 0) ? writable_sources[w_idx].label : "Default Calendar";
@@ -1108,9 +1121,7 @@ void render_add_step1(esphome::display::Display &it,
   // Row 3: Repeat
   {
     const int ym = ly.slot5_y(3);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int card_w = std::min(safe_w, ly.list_card_w);
+    const int card_w = row23_card_w;
     const int x0 = cx - card_w / 2;
     const int r_idx = std::clamp<int>(rs.cal.draft_rrule_idx, 0, 6);
     char rep_buf[48];
@@ -1147,7 +1158,7 @@ void render_add_step2(esphome::display::Display &it,
 
   const auto &ly = layout();
   const int cx = ctx.cx;
-  render_page_header(it, cx, "DATE & TIME", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, "DATE & TIME", ctx.font_small, ctx.col_white);
 
   const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
   const int btn_r = row_h / 2;
@@ -1157,7 +1168,7 @@ void render_add_step2(esphome::display::Display &it,
     const int ym = ly.slot5_y(0);
     const int safe_w = band_safe_span_for(
         ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int row_w = std::min(safe_w, (SCREEN_W > 520) ? scale_x(340) : 316);
+    const int row_w = std::min(safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 316);
     const int lx = cx - row_w / 2 + btn_r;
     const int rx = cx + row_w / 2 - btn_r;
 
@@ -1193,7 +1204,7 @@ void render_add_step2(esphome::display::Display &it,
     const int ym = ly.slot5_y(2);
     const int safe_w = band_safe_span_for(
         ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int tot_w = std::min(safe_w, (SCREEN_W > 520) ? scale_x(348) : 320);
+    const int tot_w = std::min(safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 320);
     const int gap = scale_x(8);
     const int box_w = (tot_w - gap) / 2;
     const int s_x0 = cx - gap / 2 - box_w;
@@ -1295,7 +1306,7 @@ void render_picker_drilldown(esphome::display::Display &it,
     }
   }
 
-  render_page_header(it, cx, hdr, ctx.font_small, ctx.theme_primary);
+  render_page_header(it, cx, hdr, ctx.font_small, ctx.col_white);
 
   if (opt_cnt <= 0) {
     render_empty_state(it, cx, ctx.cy, "No options available", ctx.font_small, ctx.col_slate);
@@ -1310,15 +1321,18 @@ void render_picker_drilldown(esphome::display::Display &it,
   const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
   const int bounce_y = edge_bounce().offset_px(
       PageId::CALENDAR, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
+  const int stack_margin = (total_pages > 1) ? 36 : 16;
+  const int stack_safe_w = std::min(
+      band_safe_span_for(ly.slot5_y(0), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, stack_margin),
+      band_safe_span_for(ly.slot5_y(4), row_h, SCREEN_W, SCREEN_H,
+                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, stack_margin));
+  const int card_w = std::min(stack_safe_w, ly.list_card_w);
+  const int x0 = cx - card_w / 2;
 
   for (int r = 0; r < vis_cnt; ++r) {
     const int idx = base_i + r;
     const int ym = ly.slot5_y(r) + bounce_y;
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0,
-        (total_pages > 1) ? 36 : 16);
-    const int card_w = std::min(safe_w, ly.list_card_w);
-    const int x0 = cx - card_w / 2;
     const bool sel = (idx == active_idx);
     render_card_box(it, x0, ym - row_h / 2, card_w, row_h,
                     kChromeGlassTint, sel ? ctx.theme_primary : kChromeCardBrdOn, scale_s(12));

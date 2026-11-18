@@ -326,12 +326,12 @@ void render_back_button(esphome::display::Display &it, int cx, esphome::display:
 
 void render_page_header(esphome::display::Display &it, int cx, const char *title,
                         esphome::display::BaseFont *font, esphome::Color color, bool shadow) {
+  (void)color;
+  (void)shadow;
   if (title == nullptr || title[0] == '\0' || font == nullptr) return;
   const int y = layout().hdr_y;
-  if (shadow || backdrop_active()) {
-    fast_print(it, cx + 1, y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, title);
-  }
-  fast_print(it, cx, y, font, color, esphome::display::TextAlign::CENTER, title);
+  fast_print(it, cx + 1, y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, title);
+  fast_print(it, cx, y, font, esphome::Color::WHITE, esphome::display::TextAlign::CENTER, title);
 }
 
 void render_page_header(esphome::display::Display &it, int cx, const std::string &title,
@@ -1658,6 +1658,35 @@ void draw_icon_thumbtack(esphome::display::Display &it, int cx, int cy, int r,
   });
 }
 
+void draw_icon_play_pause(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const SdfSymTri play_tri = SdfSymTri::make(0.0f, 0.04f * rf, 0.84f * rf, 0.62f * rf);
+  const float bar_hx = std::max(1.05f, 0.125f * rf);
+  const float bar_hy = 0.60f * rf;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_play = play_tri.eval(y, -x);
+    const float d_bar1 = sd_rbox_px(x, y, 0.26f * rf, 0.0f, bar_hx, bar_hy, bar_hx);
+    const float d_bar2 = sd_rbox_px(x, y, 0.68f * rf, 0.0f, bar_hx, bar_hy, bar_hx);
+    return std::min({d_play, d_bar1, d_bar2});
+  });
+}
+
+void draw_icon_hamburger(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float hx = 0.78f * rf;
+  const float hy = std::max(1.05f, 0.135f * rf);
+  const float sp = 0.52f * rf;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return std::min({sd_rbox_px(x, y, 0.0f, -sp, hx, hy, hy),
+                     sd_rbox_px(x, y, 0.0f, 0.0f, hx, hy, hy),
+                     sd_rbox_px(x, y, 0.0f, sp, hx, hy, hy)});
+  });
+}
+
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow) {
   (void)cut_c;
@@ -2053,7 +2082,8 @@ void confirm_modal(esphome::display::Display &it, int cx, const char *title,
                    esphome::display::BaseFont *font_hdr, esphome::display::BaseFont *font_body,
                    esphome::Color theme_primary, esphome::Color col_white, esphome::Color col_slate,
                    uint16_t cancel_wid, uint16_t confirm_wid) {
-  render_page_header(it, cx, title, font_hdr, theme_primary);
+  (void)theme_primary;
+  render_page_header(it, cx, title, font_hdr, col_white, true);
   if (line1 != nullptr && line1[0] != '\0') {
     fast_print(it, cx, scale_y(132), font_body, col_white, esphome::display::TextAlign::CENTER, line1);
   }
@@ -2175,7 +2205,7 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
   (void)font_hdr;
   auto &st = pin_pad_state();
   const char *hdr = (st.prompt[0] != '\0') ? st.prompt : "ENTER SECURITY PIN";
-  render_page_header(it, cx, hdr, font_small, theme_primary);
+  render_page_header(it, cx, hdr, font_small, col_white, true);
 
   const int disp_y = scale_y(84);
   const int disp_w = std::min(SCREEN_W - 44, scale_x(236));

@@ -1,11 +1,12 @@
 // ==============================================================================
 // Clean-Sheet Music App v3 Renderer (components/latter_ui/page_music.cpp)
-// PageId::MUSIC (2) — Unified 8-Tab Peer Mode-Bar Architecture (D-059):
-//   - Peer Tabs 0..7 (MusicDrilldown::NONE):
+// PageId::MUSIC (2) — Unified 9-Tab Peer Mode-Bar Architecture (D-059 / D-060):
+//   - Peer Tabs 0..8 (MusicDrilldown::NONE):
 //       0: NOW_PLAYING  · 1: LIBRARY (2x3 Bento) · 2: SPEAKERS · 3: VOLUME
-//       4: QUEUE        · 5: LYRICS (Ambient)    · 6: ALBUM    · 7: INFO (+ Gear)
+//       4: QUEUE        · 5: LYRICS (Ambient)    · 6: ALBUM    · 7: INFO
+//       8: SETTINGS (Music Settings — Peer Tab 8, 10 s idle spring-back)
 //   - Deep Drilldowns (MusicDrilldown != NONE, Mode Bar hidden, < Back shown):
-//       LIB_LIST (5 full-width rows) · SPEAKER_ACTIONS · SETTINGS
+//       LIB_LIST (5 stack-uniform rows) · SPEAKER_ACTIONS
 //   - Floating Takeovers (MusicTakeover::SCRUB / ACTION_SHEET):
 //       Zero outer passive glass containers & strict hit isolation (D-043 / D-048).
 // ==============================================================================
@@ -280,9 +281,10 @@ void render_music_vertical_pips(esphome::display::Display &it, bool show_up, boo
 }
 
 // ------------------------------------------------------------------------------
-// Unified 2-Page (8-Slot, 4 + 4) Peer Stadium Mode Bar Conveyor (D-059)
-//   Page 1 (0..3): 0 Now Playing · 1 Library · 2 Speakers · 3 Volume
-//   Page 2 (4..7): 4 Queue       · 5 Lyrics  · 6 Album    · 7 Info
+// Unified 9-Slot Peer Stadium Mode Bar Conveyor (0..8, 4-Slot Sliding Window — D-059 / D-060)
+//   0 Now Playing (Play/Pause) · 1 Library (Hamburger) · 2 Speakers · 3 Volume
+//   4 Queue                    · 5 Lyrics              · 6 Album    · 7 Info
+//   8 Settings (Music Settings)
 // ------------------------------------------------------------------------------
 void render_music_stadium_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx,
                                    bool is_speech_media) {
@@ -292,8 +294,7 @@ void render_music_stadium_mode_bar(esphome::display::Display &it, const UiFrameC
   const int cx = ctx.cx;
 
   static constexpr int kMusicModeSlotCount = kMusicPeerTabCount;
-  const int target_start = (m.carousel_page != 0U) ? 4 : 0;
-  m.mode_bar_win_start = get_mode_bar_start_index(kMusicModeSlotCount, target_start);
+  m.sync_carousel_for_view();
   const int start_idx = m.mode_bar_win_start;
   const int vis_count = std::min(4, kMusicModeSlotCount - start_idx);
 
@@ -337,11 +338,11 @@ void render_music_stadium_mode_bar(esphome::display::Display &it, const UiFrameC
     const bool sh = (alpha > 0.65f);
 
     switch (g_idx) {
-      case 0:  // Now Playing
-        draw_music_mdi(it, "mdi:play-circle-outline", bx, by, mdi_sz, fg_c, sh, "mdi:play");
+      case 0:  // Now Playing — Combo Play/Pause SDF vector icon
+        ui::draw_icon_play_pause(it, bx, by, ir, fg_c, sh);
         break;
-      case 1:  // Library
-        ui::draw_icon_eighth_notes(it, bx, by, ir, fg_c, sh);
+      case 1:  // Library — Standard Hamburger SDF vector icon
+        ui::draw_icon_hamburger(it, bx, by, ir, fg_c, sh);
         break;
       case 2:  // Speakers
         draw_music_mdi(it, "mdi:speaker-multiple", bx, by, mdi_sz, fg_c, sh);
@@ -359,8 +360,11 @@ void render_music_stadium_mode_bar(esphome::display::Display &it, const UiFrameC
         draw_music_mdi(it, is_speech_media ? "mdi:podcast" : "mdi:album", bx, by, mdi_sz, fg_c, sh);
         break;
       case 7:  // Info
-      default:
         draw_music_mdi(it, "mdi:information-outline", bx, by, mdi_sz, fg_c, sh);
+        break;
+      case 8:  // Settings
+      default:
+        draw_music_mdi(it, "mdi:cog-outline", bx, by, mdi_sz, fg_c, sh, "mdi:tune-variant");
         break;
     }
   }
@@ -379,15 +383,15 @@ void render_scrub_takeover(esphome::display::Display &it, const UiFrameContext &
   register_music_scrub_hits(frame_hits(), g);
 
   const std::string title_lbl = trk.title.empty() ? std::string("Track Scrubber") : trk.title;
-  const std::string fit_t = fit_text_to_width_font(title_lbl, g.hdr_max_w, ctx.font_micro);
-  draw_shadow_print(it, g.cx, g.hdr_title_y, ctx.font_micro, ctx.col_slate,
+  const std::string fit_t = fit_text_to_width_font(title_lbl, g.hdr_max_w, ctx.font_small);
+  draw_shadow_print(it, g.cx, g.hdr_title_y, ctx.font_small, ctx.col_white,
                     TextAlign::CENTER, fit_t.c_str(), true);
 
   char el_buf[16], du_buf[16], time_lbl[40];
   format_mmss((live_pos_sec >= 0.0f) ? static_cast<int>(live_pos_sec) : 0, el_buf, sizeof(el_buf));
   format_mmss((dur_sec > 0.5f) ? static_cast<int>(dur_sec + 0.5f) : -1, du_buf, sizeof(du_buf));
   std::snprintf(time_lbl, sizeof(time_lbl), "%s  /  %s", el_buf, du_buf);
-  draw_shadow_print(it, g.cx, g.hdr_time_y, ctx.font_btn_bold, ctx.col_white,
+  draw_shadow_print(it, g.cx, g.hdr_time_y, ctx.font_small, ctx.col_white,
                     TextAlign::CENTER, time_lbl, true);
 
   // Wide horizontal seek rail with glowing AA thumb over scrimmed Album Art
@@ -418,7 +422,7 @@ void render_scrub_takeover(esphome::display::Display &it, const UiFrameContext &
                           ui::chrome_card_bg_off(), ui::chrome_card_brd_off(), ctx.col_white,
                           ctx.font_small, "+30s", "mdi:fast-forward-30");
 
-  // Individual Shuffle / Repeat / Like frosted-glass pills
+  // Individual Shuffle / Repeat / Like frosted-glass pills in crisp font_small
   const bool shuf_on = ms.shuffle;
   const bool rep_on = (ms.repeat_mode != static_cast<uint8_t>(MusicRepeatMode::OFF));
   const bool fav_on = ms.favorite;
@@ -426,23 +430,23 @@ void render_scrub_takeover(esphome::display::Display &it, const UiFrameContext &
   const std::string_view rep_icon =
       (ms.repeat_mode == static_cast<uint8_t>(MusicRepeatMode::ONE)) ? "mdi:repeat-once" : "mdi:repeat";
 
-  const bool compact_pills = (g.mode_btn_w < 96);
+  const bool compact_pills = (g.mode_btn_w < 132);
   draw_glass_pill_in_lane(it, g.shuf_x0, g.mode_y0, g.mode_btn_w, g.mode_h, g.mode_vis_h,
                           shuf_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                           shuf_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
                           shuf_on ? ctx.theme_primary : ctx.col_white,
-                          ctx.font_micro, compact_pills ? (shuf_on ? "On" : "Shuf") : "Shuffle",
+                          ctx.font_small, compact_pills ? (shuf_on ? "On" : "Shuf") : "Shuffle",
                           "mdi:shuffle-variant");
   draw_glass_pill_in_lane(it, g.rep_x0, g.mode_y0, g.mode_btn_w, g.mode_h, g.mode_vis_h,
                           rep_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                           rep_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
                           rep_on ? ctx.theme_primary : ctx.col_white,
-                          ctx.font_micro, rep_lbl, rep_icon);
+                          ctx.font_small, rep_lbl, rep_icon);
   draw_glass_pill_in_lane(it, g.fav_x0, g.mode_y0, g.mode_btn_w, g.mode_h, g.mode_vis_h,
                           fav_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                           fav_on ? ctx.col_red : ui::chrome_card_brd_off(),
                           fav_on ? ctx.col_red : ctx.col_white,
-                          ctx.font_micro, compact_pills ? "" : (fav_on ? "Saved" : "Like"),
+                          ctx.font_small, (g.mode_btn_w < 112) ? "Like" : (fav_on ? "Saved" : "Like"),
                           fav_on ? "mdi:heart" : "mdi:heart-outline");
 }
 
@@ -493,9 +497,8 @@ void render_action_sheet_takeover(esphome::display::Display &it, const UiFrameCo
                                   : m.action_sheet_name;
   const std::string fit_hdr = fit_text_to_width_font(hdr_raw, g.hdr_max_w, ctx.font_small);
   draw_shadow_print(it, g.cx, g.hdr_title_y, ctx.font_small,
-                    ctx.theme_primary, TextAlign::CENTER, fit_hdr.c_str(), true);
+                    ctx.col_white, TextAlign::CENTER, fit_hdr.c_str(), true);
 
-  esphome::display::BaseFont *pill_font = (SCREEN_W >= 440) ? ctx.font_small : ctx.font_micro;
   for (int i = 0; i < g.item_count; ++i) {
     const bool is_danger = (wids[i] == WidgetId::MUSIC_ACTION_REMOVE_QUEUE);
     const bool is_primary = (i == 0);
@@ -505,7 +508,7 @@ void render_action_sheet_takeover(esphome::display::Display &it, const UiFrameCo
                                          : (is_primary ? ctx.theme_primary : ui::chrome_card_brd_off());
     const esphome::Color fg = is_danger ? ctx.col_red : ctx.col_white;
     draw_glass_pill_in_lane(it, g.item_x0[i], g.item_y0[i], g.item_w[i], g.item_h[i], g.item_vis_h,
-                            bg, brd, fg, pill_font, labels[i], icons[i]);
+                            bg, brd, fg, ctx.font_small, labels[i], icons[i]);
   }
 
   render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Cancel");
@@ -518,7 +521,7 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
   using esphome::Color;
   using esphome::display::TextAlign;
 
-  const auto &rs = runtime_state();
+  auto &rs = runtime_state();
   const auto &ms = media_state();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
 
@@ -527,7 +530,7 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
   const bool show_controls = always_vis || rs.music.hud_active;
   const bool show_metadata = always_vis || (ctx.music_overlay_style_opt == "Art + Metadata") || rs.music.hud_active;
 
-  // Normal HUD-scrimmed Album Art (dim_level = 0 even when SCRUB is open — D-043 / D-048 / D-059)
+  // Normal HUD-scrimmed Album Art (dim_level = 0 even when SCRUB is open — D-043 / D-048 / D-059 / D-060)
   render_music_art_or_wallpaper_base(it, ctx, show_controls || scrub_open,
                                      show_metadata || scrub_open, /*dim_level=*/0);
 
@@ -549,18 +552,15 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
   const MusicNowPlayingGeom g = compute_music_now_playing_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
 
-  // 1. Top Third: Metadata + Slim Capsule Progress Bar + MM:SS Timestamps
+  // 1. Top Third: Metadata + Slim Capsule Progress Bar + MM:SS Timestamps (all crisp font_small — D-060)
   if (show_metadata) {
     const int title_span = safe_span(g.title_y, 20);
-    esphome::display::BaseFont *title_font =
-        (SCREEN_W >= 640) ? ctx.font_date
-                          : ((title_span < 220) ? ctx.font_small : ctx.font_btn_bold);
     const std::string raw_title = !trk.title.empty()
                                       ? trk.title
                                       : (trk.speaker_entity.empty() ? std::string("Select Speaker")
                                                                     : std::string("Ready to Play"));
-    const std::string fit_title = fit_text_to_width_font(raw_title, title_span, title_font);
-    draw_shadow_print(it, ctx.cx, g.title_y, title_font, ctx.col_white,
+    const std::string fit_title = fit_text_to_width_font(raw_title, title_span, ctx.font_small);
+    draw_shadow_print(it, ctx.cx, g.title_y, ctx.font_small, ctx.col_white,
                       TextAlign::CENTER, fit_title.c_str());
 
     std::string sub_line;
@@ -574,10 +574,9 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
       sub_line = kUnknownGlyph;
     }
     const int sub_span = safe_span(g.sub_y, 20);
-    esphome::display::BaseFont *sub_font = (SCREEN_W >= 640) ? ctx.font_small : ctx.font_micro;
-    const std::string fit_sub = fit_text_to_width_font(sub_line, sub_span, sub_font);
+    const std::string fit_sub = fit_text_to_width_font(sub_line, sub_span, ctx.font_small);
     const Color sub_col = (!trk.title.empty() && trk.is_playing) ? ctx.theme_secondary : ctx.col_slate;
-    draw_shadow_print(it, ctx.cx, g.sub_y, sub_font, sub_col,
+    draw_shadow_print(it, ctx.cx, g.sub_y, ctx.font_small, sub_col,
                       TextAlign::CENTER, fit_sub.c_str());
 
     // Slim horizontal capsule progress bar + MM:SS elapsed / duration across ALL geometries
@@ -595,13 +594,13 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
     format_mmss((!trk.title.empty() || live_pos_sec > 0.5f) ? static_cast<int>(live_pos_sec) : 0,
                 el_buf, sizeof(el_buf));
     format_mmss((dur_sec > 0.5f) ? static_cast<int>(dur_sec + 0.5f) : -1, du_buf, sizeof(du_buf));
-    draw_shadow_print(it, g.prog_x0, g.time_y, ctx.font_micro, ctx.col_slate,
+    draw_shadow_print(it, g.prog_x0, g.time_y, ctx.font_small, ctx.col_slate,
                       TextAlign::CENTER_LEFT, el_buf);
-    draw_shadow_print(it, g.prog_x0 + g.prog_w, g.time_y, ctx.font_micro, ctx.col_slate,
+    draw_shadow_print(it, g.prog_x0 + g.prog_w, g.time_y, ctx.font_small, ctx.col_slate,
                       TextAlign::CENTER_RIGHT, du_buf);
   }
 
-  // 2. Center: Frosted-Glass Transport Controls + Bottom Speaker Caption & 8-Slot Mode Bar
+  // 2. Center: Frosted-Glass Transport Controls + Bottom Speaker Caption & 9-Slot Mode Bar
   if (show_controls) {
     render_glass_circle(it, g.prev_cx, g.transport_cy, g.side_r,
                         ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
@@ -623,30 +622,31 @@ void render_now_playing_view(esphome::display::Display &it, const UiFrameContext
     draw_music_mdi(it, trk.is_speech ? "mdi:fast-forward-30" : "mdi:skip-next",
                    g.next_cx, g.transport_cy, side_ic_sz, ctx.col_white, true);
 
-    // Subtle Active Speaker micro line (doubles as 2.5 s feedback toast; zero passive glass box)
+    // Readable Active Speaker caption line above Mode Bar (doubles as 2.5 s feedback toast; zero passive glass box)
     const bool show_toast = !rs.music.action_feedback.empty() &&
                             (ctx.now_ms >= rs.music.feedback_timer) &&
                             ((ctx.now_ms - rs.music.feedback_timer) < 2500U);
     const int cap_span = safe_span(g.spk_caption_y, 24);
     if (show_toast) {
-      const std::string fit_fb = fit_text_to_width_font(rs.music.action_feedback, cap_span, ctx.font_micro);
-      draw_shadow_print(it, ctx.cx, g.spk_caption_y, ctx.font_micro, ctx.col_gold,
+      const std::string fit_fb = fit_text_to_width_font(rs.music.action_feedback, cap_span, ctx.font_small);
+      draw_shadow_print(it, ctx.cx, g.spk_caption_y, ctx.font_small, ctx.col_gold,
                         TextAlign::CENTER, fit_fb.c_str());
     } else {
       const Color spk_col = ms.is_local ? ctx.col_slate : ctx.theme_secondary;
-      const int spk_ic = scale_s(13);
+      const int spk_ic = std::clamp(scale_s(17), 14, 26);
       const std::string fit_spk = fit_text_to_width_font(trk.speaker_name, std::max(40, cap_span - spk_ic - 8),
-                                                         ctx.font_micro);
+                                                         ctx.font_small);
       int tw = 0, xo = 0, b = 0, th = 0;
-      if (ctx.font_micro != nullptr) ctx.font_micro->measure(fit_spk.c_str(), &tw, &xo, &b, &th);
-      const int tot_w = spk_ic + 5 + tw;
+      if (ctx.font_small != nullptr) ctx.font_small->measure(fit_spk.c_str(), &tw, &xo, &b, &th);
+      const int tot_w = spk_ic + 6 + tw;
       const int sx0 = ctx.cx - tot_w / 2;
       draw_music_mdi(it, ms.is_local ? "mdi:speaker" : "mdi:speaker-wireless",
                      sx0 + spk_ic / 2, g.spk_caption_y, spk_ic, spk_col, true);
-      draw_shadow_print(it, sx0 + spk_ic + 5, g.spk_caption_y, ctx.font_micro, spk_col,
+      draw_shadow_print(it, sx0 + spk_ic + 6, g.spk_caption_y, ctx.font_small, spk_col,
                         TextAlign::CENTER_LEFT, fit_spk.c_str());
     }
 
+    rs.music.sync_carousel_for_view();
     register_music_now_playing_hits(frame_hits(), g, show_metadata, show_controls,
                                     rs.music.takeover, rs.music.mode_bar_win_start, false);
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
@@ -676,8 +676,8 @@ void render_volume_peer_tab(esphome::display::Display &it, const UiFrameContext 
   register_music_volume_hits(frame_hits(), g);
 
   const int vol_pct = std::clamp(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct, 0, 100);
-  const std::string spk_fit = fit_text_to_width_font(trk.speaker_name, g.hdr_max_w, ctx.font_micro);
-  draw_shadow_print(it, g.cx, g.hdr_title_y, ctx.font_micro, ctx.col_slate,
+  const std::string spk_fit = fit_text_to_width_font(trk.speaker_name, g.hdr_max_w, ctx.font_small);
+  draw_shadow_print(it, g.cx, g.hdr_title_y, ctx.font_small, ctx.col_white,
                     TextAlign::CENTER, spk_fit.c_str(), true);
 
   char pct_buf[24];
@@ -686,7 +686,7 @@ void render_volume_peer_tab(esphome::display::Display &it, const UiFrameContext 
   } else {
     std::snprintf(pct_buf, sizeof(pct_buf), "Volume %d%%", vol_pct);
   }
-  draw_shadow_print(it, g.cx, g.hdr_pct_y, ctx.font_btn_bold,
+  draw_shadow_print(it, g.cx, g.hdr_pct_y, ctx.font_small,
                     ms.muted ? ctx.col_gold : ctx.col_white, TextAlign::CENTER, pct_buf, true);
 
   // Tall vertical frosted-glass volume slider rail (only interactive controls are glass!)
@@ -711,7 +711,7 @@ void render_volume_peer_tab(esphome::display::Display &it, const UiFrameContext 
                  g.slider_x0 + g.slider_w / 2, g.slider_y0 + g.slider_h - scale_y(20),
                  scale_s(18), ctx.col_white, true);
 
-  // Individual frosted-glass +X%, -X%, and Mute pills
+  // Individual frosted-glass +X%, -X%, and Mute pills in consistent font_small
   const int step_v = std::clamp(ctx.vol_step_pct, 1, 25);
   char up_lbl[16], dn_lbl[16];
   std::snprintf(up_lbl, sizeof(up_lbl), "+%d%%", step_v);
@@ -719,10 +719,10 @@ void render_volume_peer_tab(esphome::display::Display &it, const UiFrameContext 
 
   draw_glass_pill_in_lane(it, g.btn_x0, g.up_y0, g.btn_w, g.btn_h, g.btn_vis_h,
                           ui::chrome_card_bg_off(), ui::chrome_card_brd_off(), ctx.col_white,
-                          ctx.font_btn_bold, up_lbl, "mdi:volume-plus");
+                          ctx.font_small, up_lbl, "mdi:volume-plus");
   draw_glass_pill_in_lane(it, g.btn_x0, g.down_y0, g.btn_w, g.btn_h, g.btn_vis_h,
                           ui::chrome_card_bg_off(), ui::chrome_card_brd_off(), ctx.col_white,
-                          ctx.font_btn_bold, dn_lbl, "mdi:volume-minus");
+                          ctx.font_small, dn_lbl, "mdi:volume-minus");
   draw_glass_pill_in_lane(it, g.btn_x0, g.mute_y0, g.btn_w, g.btn_h, g.btn_vis_h,
                           ms.muted ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                           ms.muted ? ctx.col_gold : ui::chrome_card_brd_off(),
@@ -781,30 +781,30 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
   if (show_hud) {
     std::string hdr_txt = trk.title.empty() ? std::string("Lyrics") : trk.title;
     if (!trk.artist.empty()) hdr_txt += " • " + trk.artist;
-    const std::string fit_hdr = fit_text_to_width_font(hdr_txt, safe_span(ly.hdr_y, 24), ctx.font_micro);
-    draw_shadow_print(it, ctx.cx, ly.hdr_y, ctx.font_micro, ctx.col_slate,
+    const std::string fit_hdr = fit_text_to_width_font(hdr_txt, safe_span(ly.hdr_y, 24), ctx.font_small);
+    draw_shadow_print(it, ctx.cx, ly.hdr_y, ctx.font_small, ctx.col_white,
                       TextAlign::CENTER, fit_hdr.c_str(), true);
 
     const bool manual_override = lyr.synced && !lyr.lines.empty() && (ctx.now_ms < lyr.manual_override_until_ms);
     int sync_hit_bottom = 0;
     if (manual_override) {
-      const int sync_vis_h = std::clamp(scale_y(30), 26, 38);
+      const int sync_vis_h = std::clamp(scale_y(32), 28, 42);
       const int sync_hit_h = std::max(sync_vis_h, std::min(min_hit, scale_y(54)));
-      const int sync_cy = ly.hdr_y + scale_y(28);
+      const int sync_cy = ly.hdr_y + scale_y(30);
       const int span_w = safe_span(sync_cy, 16);
-      const int sync_vis_w = std::clamp(scale_x(76), 62, 108);
+      const int sync_vis_w = std::clamp(scale_x(86), 72, 124);
       const int sync_hit_w = std::max(sync_vis_w, std::min(min_hit, span_w / 2));
       const int right_edge = ctx.cx + span_w / 2;
       const int sync_x0 = right_edge - sync_vis_w;
       render_pill_button(it, sync_x0, sync_x0 + sync_vis_w, sync_cy, sync_vis_h / 2,
                          ctx.theme_primary, ui::chrome_card_bg_on(), "Sync",
-                         ctx.theme_primary, ctx.font_micro, GlassVariant::Clear);
+                         ctx.theme_primary, ctx.font_small, GlassVariant::Clear);
       frame_hits().add_rect(right_edge - sync_hit_w, sync_cy - sync_hit_h / 2,
                             sync_hit_w, sync_hit_h, WidgetId::MUSIC_LYRIC_SYNC_BTN,
                             kHitTap | kHitFocusSlot);
       sync_hit_bottom = sync_cy + sync_hit_h / 2 + 2;
     }
-    vp_top = std::max(ly.hdr_y + scale_y(22), sync_hit_bottom);
+    vp_top = std::max(ly.hdr_y + scale_y(24), sync_hit_bottom);
     vp_bot = std::max(vp_top + 60, ly.mode_bar_zone_top() - scale_y(6));
   }
 
@@ -942,20 +942,18 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
 }
 
 // ------------------------------------------------------------------------------
-// Deep Drilldown: Music Settings (MusicDrilldown::SETTINGS from INFO Gear Icon)
+// Peer Tab 8: Music Settings (MusicView::SETTINGS — 10 s Idle Spring-Back, Zero < Back)
 // ------------------------------------------------------------------------------
 void render_music_settings_view(esphome::display::Display &it, const UiFrameContext &ctx) {
   using esphome::display::TextAlign;
 
   auto &rs = runtime_state();
-  const auto &ac = area_ctx_state();
   const auto &ly = layout();
-  const bool has_wall = (!ac.wallpaper_url.empty() &&
-                         ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                         ctx.home_wallpaper_art.valid());
-  render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, kArtDimMenu);
+  const ResolvedTrackStrings trk = resolve_track_strings(ctx);
 
-  render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small, ctx.theme_primary, true);
+  render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
+                                     /*has_metadata_scrim=*/true, kArtDimMenu);
+  render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small, ctx.col_white, true);
   const int pg = std::clamp(rs.music.settings_page, 1, 2);
 
   struct SettingItem {
@@ -975,44 +973,38 @@ void render_music_settings_view(esphome::display::Display &it, const UiFrameCont
     count = 2;
   }
 
-  const int pip_reserve = scale_x(28);
+  const int content_top = ly.hdr_y + scale_y(24);
+  const int mode_bar_bot_limit = ly.mode_bar_zone_top() - scale_y(8);
   for (int i = 0; i < count; ++i) {
-    const int ym = ly.tool_card3_y(i);
-    const int safe_w = band_safe_span_for(
-        ym, ly.tool_card3_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16 + pip_reserve);
-    const int cw = std::clamp(std::min(scale_x(420), safe_w), 140, SCREEN_W - 20);
-    const int x0 = ctx.cx - cw / 2 - (pip_reserve / 3);
-    const int y0 = ym - ly.tool_card3_h / 2;
-    render_card_box(it, x0, y0, cw, ly.tool_card3_h,
+    const MusicListRowGeom g = compute_music_list_row_geom(
+        i, /*visible_rows=*/3, content_top, mode_bar_bot_limit,
+        /*has_leading_play=*/false, /*has_pips=*/true,
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    render_card_box(it, g.card_x0, g.card_y0, g.card_w, g.card_h,
                     ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                    scale_s(16), GlassVariant::Clear, ctx.col_white);
-    draw_shadow_print(it, x0 + scale_x(16), ym - scale_y(9), ctx.font_micro, ctx.col_slate,
-                      TextAlign::CENTER_LEFT, items[i].title);
-    const std::string val_fit = fit_text_to_width_font(std::string(items[i].value), cw - scale_x(32), ctx.font_small);
-    draw_shadow_print(it, x0 + scale_x(16), ym + scale_y(10), ctx.font_small, ctx.theme_primary,
+                    scale_s(15), GlassVariant::Clear, ctx.col_white);
+    const int txt_max_w = std::max(40, g.card_w - scale_x(30));
+    const std::string title_fit = fit_text_to_width_font(std::string(items[i].title), txt_max_w, ctx.font_small);
+    const std::string val_fit = fit_text_to_width_font(std::string(items[i].value), txt_max_w, ctx.font_small);
+    const int off_y = std::max(9, scale_y(11));
+    draw_shadow_print(it, g.card_x0 + scale_x(15), g.cy_row - off_y, ctx.font_small, ctx.col_slate,
+                      TextAlign::CENTER_LEFT, title_fit.c_str());
+    draw_shadow_print(it, g.card_x0 + scale_x(15), g.cy_row + off_y, ctx.font_small, ctx.theme_primary,
                       TextAlign::CENTER_LEFT, val_fit.c_str());
-    frame_hits().add_rect(x0, y0, cw, ly.tool_card3_h,
-                          static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+    register_music_list_row_hits(frame_hits(), g, i, /*enable_long_press=*/false);
   }
 
-  render_vertical_page_pips(it, pg > 1, pg < 2, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray);
-  render_back_button(it, ctx.cx, ctx.font_small, ly.back_y);
+  render_music_vertical_pips(it, pg > 1, pg < 2, /*above_mode_bar=*/true, ctx);
+  render_music_stadium_mode_bar(it, ctx, trk.is_speech);
 }
 
 // ------------------------------------------------------------------------------
-// Peer Tab 7: Track & Artist Info (MusicView::INFO — Zero Passive Glass Box D-048)
-//   Includes frosted-glass Gear button (MUSIC_INFO_SETTINGS_BTN) -> SETTINGS!
+// Peer Tab 7: Track & Artist Info (MusicView::INFO — Zero Passive Glass Box D-048 / D-060)
 // ------------------------------------------------------------------------------
 void render_info_view(esphome::display::Display &it, const UiFrameContext &ctx) {
   using esphome::display::TextAlign;
 
   auto &rs = runtime_state();
-  if (rs.music.drilldown == MusicDrilldown::SETTINGS) {
-    render_music_settings_view(it, ctx);
-    return;
-  }
-
   const auto &ms = media_state();
   const auto &ac = area_ctx_state();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
@@ -1027,20 +1019,14 @@ void render_info_view(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 
   const bool show_hud = rs.music.hud_active;
-  const MusicInfoSettingsGeom g = compute_music_info_settings_geom(
+  const MusicInfoGeom g = compute_music_info_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
 
   int vp_top = LATTER_ROUND_DISPLAY ? scale_y(30) : scale_y(22);
   int vp_bot = g.vp_bot_ambient;
 
   if (show_hud) {
-    render_page_header(it, ctx.cx, "TRACK INFO", ctx.font_small, ctx.theme_primary, true);
-    render_glass_circle(it, g.btn_cx, g.btn_cy, g.btn_r,
-                        ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                        GlassVariant::Clear, ctx.col_white);
-    draw_music_mdi(it, "mdi:cog-outline", g.btn_cx, g.btn_cy,
-                   std::max(16, g.btn_r + 2), ctx.col_white, true, "mdi:tune-variant");
-    register_music_info_settings_hit(frame_hits(), g);
+    render_page_header(it, ctx.cx, "TRACK INFO", ctx.font_small, ctx.col_white, true);
     vp_top = g.vp_top;
     vp_bot = g.vp_bot_hud;
   }
@@ -1088,7 +1074,7 @@ void render_info_view(esphome::display::Display &it, const UiFrameContext &ctx) 
 }
 
 // ------------------------------------------------------------------------------
-// Wide Bezel-Safe List Row Helper (Full Safe Span, Zero "•••", Leading 1-Tap Play)
+// Stack-Uniform Bezel-Safe List Row Helper (480 px Desk Cap, font_small — D-060)
 // ------------------------------------------------------------------------------
 void render_slot_list_row(esphome::display::Display &it, const UiFrameContext &ctx,
                           int row_idx, int visible_rows, int content_top, int content_bot,
@@ -1121,10 +1107,10 @@ void render_slot_list_row(esphome::display::Display &it, const UiFrameContext &c
   const bool has_badge = (badge_txt != nullptr && badge_txt[0] != '\0');
   if (has_badge) {
     int bw = 0, xo = 0, b = 0, bh = 0;
-    if (ctx.font_micro != nullptr) ctx.font_micro->measure(badge_txt, &bw, &xo, &b, &bh);
+    if (ctx.font_small != nullptr) ctx.font_small->measure(badge_txt, &bw, &xo, &b, &bh);
     badge_reserve_w = std::max(bw, scale_x(28)) + scale_x(16);
     const int bx = g.card_x0 + g.card_w - scale_x(12);
-    draw_shadow_print(it, bx, g.cy_row, ctx.font_micro,
+    draw_shadow_print(it, bx, g.cy_row, ctx.font_small,
                       is_highlighted ? ctx.theme_primary : ctx.col_slate,
                       TextAlign::CENTER_RIGHT, badge_txt);
   }
@@ -1138,31 +1124,23 @@ void render_slot_list_row(esphome::display::Display &it, const UiFrameContext &c
     ctx.font_small->measure(clean_primary.c_str(), &sw, &xo, &b, &sh);
   }
 
-  if (sw <= text_max_w || ctx.font_micro == nullptr) {
+  if (sw <= text_max_w || g.card_h < scale_y(56)) {
     const std::string fit_p = fit_text_to_width_font(clean_primary, text_max_w, ctx.font_small);
     draw_shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
                       TextAlign::CENTER_LEFT, fit_p.c_str());
   } else {
-    int mw = 0;
-    ctx.font_micro->measure(clean_primary.c_str(), &mw, &xo, &b, &sh);
-    if (mw <= text_max_w || g.card_h < 46) {
-      const std::string fit_m = fit_text_to_width_font(clean_primary, text_max_w, ctx.font_micro);
-      draw_shadow_print(it, text_x0, g.cy_row, ctx.font_micro, fg,
-                        TextAlign::CENTER_LEFT, fit_m.c_str());
+    std::string two_lines[2];
+    const int lc = wrap_music_text_lines(clean_primary, text_max_w, ctx.font_small, two_lines, 2);
+    if (lc <= 1) {
+      draw_shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
+                        TextAlign::CENTER_LEFT, two_lines[0].c_str());
     } else {
-      std::string two_lines[2];
-      const int lc = wrap_music_text_lines(clean_primary, text_max_w, ctx.font_micro, two_lines, 2);
-      if (lc <= 1) {
-        draw_shadow_print(it, text_x0, g.cy_row, ctx.font_micro, fg,
-                          TextAlign::CENTER_LEFT, two_lines[0].c_str());
-      } else {
-        const int off_y = std::max(7, scale_y(8));
-        draw_shadow_print(it, text_x0, g.cy_row - off_y, ctx.font_micro, fg,
-                          TextAlign::CENTER_LEFT, two_lines[0].c_str());
-        draw_shadow_print(it, text_x0, g.cy_row + off_y, ctx.font_micro,
-                          mix_color_q8(fg, ctx.col_slate, 56),
-                          TextAlign::CENTER_LEFT, two_lines[1].c_str());
-      }
+      const int off_y = std::max(9, scale_y(10));
+      draw_shadow_print(it, text_x0, g.cy_row - off_y, ctx.font_small, fg,
+                        TextAlign::CENTER_LEFT, two_lines[0].c_str());
+      draw_shadow_print(it, text_x0, g.cy_row + off_y, ctx.font_small,
+                        mix_color_q8(fg, ctx.col_slate, 56),
+                        TextAlign::CENTER_LEFT, two_lines[1].c_str());
     }
   }
 
@@ -1194,7 +1172,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
   if (m.view == MusicView::SPEAKERS) {
     if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS && !m.target_speaker_id.empty()) {
       render_page_header(it, ctx.cx, m.target_speaker_name.empty() ? "SPEAKER" : m.target_speaker_name,
-                         ctx.font_small, ctx.theme_primary, true);
+                         ctx.font_small, ctx.col_white, true);
       const char *labels[3] = {
           "Control Speaker",
           "Transfer Queue Here",
@@ -1206,12 +1184,18 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
           WidgetId::MUSIC_SPK_TRANSFER_BTN,
           WidgetId::MUSIC_SPK_GROUP_BTN,
       };
+      const int safe_top = band_safe_span_for(
+          ly.tool_card3_y(0), ly.tool_card3_h, SCREEN_W, SCREEN_H,
+          LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
+      const int safe_bot = band_safe_span_for(
+          ly.tool_card3_y(2), ly.tool_card3_h, SCREEN_W, SCREEN_H,
+          LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
+      const int stack_safe_w = std::min(safe_top, safe_bot);
+      const int max_w = (SCREEN_W > 520) ? 480 : 384;
+      const int cw = std::clamp(std::min(max_w, stack_safe_w), std::max(140, min_hit), SCREEN_W - 24);
+      const int x0 = ctx.cx - cw / 2;
       for (int i = 0; i < 3; ++i) {
         const int ym = ly.tool_card3_y(i);
-        const int safe_w = band_safe_span_for(
-            ym, ly.tool_card3_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
-        const int cw = std::clamp(std::min(scale_x(420), safe_w), std::max(140, min_hit), SCREEN_W - 20);
-        const int x0 = ctx.cx - cw / 2;
         const int y0 = ym - ly.tool_card3_h / 2;
         draw_glass_pill_in_lane(it, x0, y0, cw, ly.tool_card3_h, ly.tool_card3_h,
                                 (i == 0) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -1223,7 +1207,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
       return;
     }
 
-    render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small, ctx.theme_primary, true);
+    render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small, ctx.col_white, true);
     const int content_top = ly.hdr_y + scale_y(24);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
@@ -1250,38 +1234,44 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
     return;
   }
 
-  // 2. Queue Peer Tab (MusicView::QUEUE — 4 Wide Rows Above Mode Bar)
+  // 2. Queue Peer Tab (MusicView::QUEUE — 4 Stack-Uniform Rows Above Mode Bar)
   if (m.view == MusicView::QUEUE) {
-    render_page_header(it, ctx.cx, "PLAYBACK QUEUE", ctx.font_small, ctx.theme_primary, true);
+    render_page_header(it, ctx.cx, "PLAYBACK QUEUE", ctx.font_small, ctx.col_white, true);
 
-    const int strip_h = std::clamp(scale_y(30), 26, 38);
+    const int strip_h = std::clamp(scale_y(32), 28, 44);
     const int sy0 = ly.hdr_y + scale_y(16);
     const int strip_cy = sy0 + strip_h / 2;
     const int strip_span = band_safe_span_for(
         strip_cy, strip_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
-    const int strip_w = std::clamp(std::min(scale_x(420), strip_span), 180, SCREEN_W - 20);
+    const int max_strip_w = (SCREEN_W > 520) ? 480 : 384;
+    const int strip_w = std::clamp(std::min(max_strip_w, strip_span), 180, SCREEN_W - 24);
     const int gap = scale_x(6);
     const int pw = (strip_w - 2 * gap) / 3;
     const int sx0 = ctx.cx - strip_w / 2;
 
     const bool shuf_on = ms.shuffle;
     const bool rep_on = (ms.repeat_mode != static_cast<uint8_t>(MusicRepeatMode::OFF));
+    const bool compact_q = (pw < 118);
     char rep_txt[20];
-    std::snprintf(rep_txt, sizeof(rep_txt), "Rep: %s", music_repeat_mode_label(ms.repeat_mode));
+    if (compact_q) {
+      std::snprintf(rep_txt, sizeof(rep_txt), "%s", music_repeat_mode_label(ms.repeat_mode));
+    } else {
+      std::snprintf(rep_txt, sizeof(rep_txt), "Rep: %s", music_repeat_mode_label(ms.repeat_mode));
+    }
 
     draw_glass_pill_in_lane(it, sx0, sy0, pw, strip_h, strip_h,
                             shuf_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                             shuf_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
                             shuf_on ? ctx.theme_primary : ctx.col_white,
-                            ctx.font_micro, shuf_on ? "Shuf On" : "Shuffle");
+                            ctx.font_small, compact_q ? (shuf_on ? "On" : "Shuf") : (shuf_on ? "Shuf On" : "Shuffle"));
     draw_glass_pill_in_lane(it, sx0 + pw + gap, sy0, pw, strip_h, strip_h,
                             rep_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                             rep_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
                             rep_on ? ctx.theme_primary : ctx.col_white,
-                            ctx.font_micro, rep_txt);
+                            ctx.font_small, rep_txt);
     draw_glass_pill_in_lane(it, sx0 + 2 * (pw + gap), sy0, pw, strip_h, strip_h,
                             ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                            ctx.col_slate, ctx.font_micro, "Clear");
+                            ctx.col_slate, ctx.font_small, "Clear");
 
     frame_hits().add_rect(sx0, sy0, pw, strip_h, WidgetId::MUSIC_SHUFFLE_BTN, kHitTap | kHitFocusSlot);
     frame_hits().add_rect(sx0 + pw + gap, sy0, pw, strip_h, WidgetId::MUSIC_REPEAT_BTN, kHitTap | kHitFocusSlot);
@@ -1312,9 +1302,9 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
   }
 
   // 3. Library Root Peer Tab (MusicView::LIBRARY && m.drilldown == MusicDrilldown::NONE)
-  //    2x3 Frosted-Glass Bento Category Grid above Stadium Mode Bar!
+  //    2x3 Frosted-Glass Bento Category Grid (480 px Desk Cap, Stacked Icon + font_small — D-060)
   if (m.view == MusicView::LIBRARY && m.drilldown == MusicDrilldown::NONE) {
-    render_page_header(it, ctx.cx, "LIBRARY", ctx.font_small, ctx.theme_primary, true);
+    render_page_header(it, ctx.cx, "LIBRARY", ctx.font_small, ctx.col_white, true);
 
     static constexpr const char *kCatLabels[7] = {
         "Favorites", "Playlists", "Artists", "Albums", "Podcasts", "Radio", "Audiobooks"};
@@ -1336,16 +1326,15 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
                       ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
                       scale_s(15), GlassVariant::Clear, ctx.col_white);
 
-      const int tcy = tg.tile_y0 + tg.tile_h / 2;
-      const int ic_sz = std::clamp(scale_s(19), 15, tg.tile_h - 14);
-      const int ic_cx = tg.tile_x0 + scale_x(20);
-      draw_music_mdi(it, kCatIcons[cat_idx], ic_cx, tcy, ic_sz, ctx.theme_primary, true);
+      const int tcx = tg.tile_x0 + tg.tile_w / 2;
+      const int ic_sz = std::clamp(scale_s(22), 18, std::max(18, (tg.tile_h * 42) / 100));
+      const int ic_cy = tg.tile_y0 + (tg.tile_h * 34) / 100;
+      const int txt_cy = tg.tile_y0 + (tg.tile_h * 73) / 100;
+      draw_music_mdi(it, kCatIcons[cat_idx], tcx, ic_cy, ic_sz, ctx.theme_primary, true);
 
-      esphome::display::BaseFont *tf = (tg.tile_w >= 150) ? ctx.font_small : ctx.font_micro;
-      const int txt_x0 = tg.tile_x0 + scale_x(36);
-      const int txt_max_w = std::max(32, tg.tile_w - scale_x(44));
-      const std::string fit_lbl = fit_text_to_width_font(std::string(kCatLabels[cat_idx]), txt_max_w, tf);
-      draw_shadow_print(it, txt_x0, tcy, tf, ctx.col_white, TextAlign::CENTER_LEFT, fit_lbl.c_str());
+      const int txt_max_w = std::max(40, tg.tile_w - scale_x(16));
+      const std::string fit_lbl = fit_text_to_width_font(std::string(kCatLabels[cat_idx]), txt_max_w, ctx.font_small);
+      draw_shadow_print(it, tcx, txt_cy, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_lbl.c_str());
 
       frame_hits().add_rect(tg.tile_x0, tg.tile_y0, tg.tile_w, tg.tile_h,
                             static_cast<uint16_t>(WidgetId::GRID_CARD_BASE + local_i),
@@ -1357,8 +1346,8 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
     return;
   }
 
-  // 4. Library Full-Screen Drilldown (MusicDrilldown::LIB_LIST -> 5 Wide Rows + < Back)
-  //    OR Album/Episodes Peer Tab (MusicView::ALBUM_TRACKS -> 4 Wide Rows + Mode Bar)
+  // 4. Library Full-Screen Drilldown (MusicDrilldown::LIB_LIST -> 5 Stack-Uniform Rows + < Back)
+  //    OR Album/Episodes Peer Tab (MusicView::ALBUM_TRACKS -> 4 Stack-Uniform Rows + Mode Bar)
   const bool is_peer_album_tab = (m.view == MusicView::ALBUM_TRACKS && m.drilldown == MusicDrilldown::NONE);
   const int vis_rows = is_peer_album_tab ? kMusicPeerListPageSize : kMusicFullListPageSize;
   const int content_bot = is_peer_album_tab ? mode_bar_bot_limit : full_list_bot_limit;
@@ -1369,7 +1358,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
   } else if (hdr_title.empty()) {
     hdr_title = "LIBRARY";
   }
-  render_page_header(it, ctx.cx, hdr_title, ctx.font_small, ctx.theme_primary, true);
+  render_page_header(it, ctx.cx, hdr_title, ctx.font_small, ctx.col_white, true);
 
   const bool has_header_container =
       (m.view == MusicView::ALBUM_TRACKS && (!trk.album.empty() || !m.drilldown_album_id.empty())) ||
@@ -1378,13 +1367,13 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
 
   int content_top = ly.hdr_y + scale_y(24);
   if (has_header_container) {
-    const int strip_h = std::clamp(scale_y(28), 24, 36);
-    const int sy0 = ly.hdr_y + scale_y(15);
-    const int pw = std::clamp(scale_x(132), 98, 184);
+    const int strip_h = std::clamp(scale_y(32), 28, 44);
+    const int sy0 = ly.hdr_y + scale_y(16);
+    const int pw = std::clamp(scale_x(156), 124, 220);
     const int sx0 = ctx.cx - pw / 2;
     draw_glass_pill_in_lane(it, sx0, sy0, pw, strip_h, strip_h,
                             ui::chrome_card_bg_off(), ctx.theme_primary, ctx.theme_primary,
-                            ctx.font_micro, "Enqueue…", "mdi:playlist-plus");
+                            ctx.font_small, "Enqueue…", "mdi:playlist-plus");
     frame_hits().add_rect(sx0, sy0, pw, strip_h, WidgetId::MUSIC_HEADER_ENQUEUE_BTN, kHitTap | kHitFocusSlot);
     content_top = sy0 + strip_h + scale_y(6);
   }
@@ -1444,6 +1433,9 @@ void render_music_page(esphome::display::Display &it, const UiFrameContext &ctx)
       return;
     case MusicView::INFO:
       render_info_view(it, ctx);
+      return;
+    case MusicView::SETTINGS:
+      render_music_settings_view(it, ctx);
       return;
     case MusicView::LIBRARY:
     case MusicView::SPEAKERS:

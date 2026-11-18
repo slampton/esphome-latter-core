@@ -932,9 +932,10 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     uint32_t hh_sig = 2166136261U;
     hh_sig = (hh_sig ^ ac.rev) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ac.alarm_caps)) * 16777619U;
-    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.thermostat_target_f + 10)) * 16777619U;
-    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.lock_state)) * 16777619U;
-    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.garage_state)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.thermostat_idx + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.entry_page + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.vacuum_idx + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ hh.local_mutation_seq) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.intercom.cam_carousel_idx)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.width)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.height)) * 16777619U;
@@ -946,6 +947,12 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         (!rs.intercom.cam_intercom_status.empty() ? 16U : 0U);
     hh_sig = (hh_sig ^ flags) * 16777619U;
     sig ^= (hh_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::AREA) {
+    uint32_t ar_sig = 2166136261U;
+    ar_sig = (ar_sig ^ area_ctx_state().rev) * 16777619U;
+    ar_sig = (ar_sig ^ home_hub_state().local_mutation_seq) * 16777619U;
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(rs.area.light_insp_bri_pct + 10)) * 16777619U;
+    sig ^= (ar_sig | 1U);
   } else if (rs.nav.gui_page == PageId::TOOLS) {
     uint32_t tl_sig = 2166136261U;
     for (unsigned char c : effective_tools_items_sv(prefs)) {

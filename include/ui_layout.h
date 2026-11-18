@@ -586,7 +586,7 @@ struct DockSlideAnimator {
   }
 
   float step_window(int new_start, uint32_t now_ms) {
-    if (target_start < 0 || std::abs(new_start - target_start) > 4) {
+    if (target_start < 0 || std::abs(new_start - target_start) > 9) {
       target_start = new_start;
       from_start = static_cast<float>(new_start);
       cur_start = from_start;
@@ -622,7 +622,7 @@ struct DockSlideAnimator {
       act_animating = false;
       return cur_active;
     }
-    if (target_active < 0 || std::abs(new_active - target_active) > 8) {
+    if (target_active < 0 || std::abs(new_active - target_active) > 9) {
       target_active = new_active;
       from_active = static_cast<float>(new_active);
       cur_active = from_active;

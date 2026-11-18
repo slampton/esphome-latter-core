@@ -138,15 +138,21 @@ namespace WidgetId {
   static constexpr uint16_t CLIMATE_MINUS_BTN  = 640;
   static constexpr uint16_t CLIMATE_PLUS_BTN   = 641;
   static constexpr uint16_t CLIMATE_MODE_BASE  = 642;  // 642..647 (0=heat, 1=cool, 2=heat_cool, 3=off, 4=fan_only, 5=dry)
+  static constexpr uint16_t THERMOSTAT_PREV_BTN = 648;
+  static constexpr uint16_t THERMOSTAT_NEXT_BTN = 649;
   static constexpr uint16_t COVER_OPEN_BTN     = 650;
   static constexpr uint16_t COVER_STOP_BTN     = 651;
   static constexpr uint16_t COVER_CLOSE_BTN    = 652;
   static constexpr uint16_t COVER_POS_SLIDER   = 653;
+  static constexpr uint16_t ENTRY_CARD_BASE    = 656;  // 656..657 (visible slot 0..1, param = global entry idx)
+  static constexpr uint16_t ENTRY_ACTION_BASE  = 658;  // 658..659 (visible slot 0..1, param = global entry idx)
   static constexpr uint16_t LOCK_ACTION_BTN    = 660;
   static constexpr uint16_t ENTRY_LOCK_CARD    = 661;
   static constexpr uint16_t ENTRY_GARAGE_CARD  = 662;
   static constexpr uint16_t ALARM_MODE_BASE    = 665;  // 665..669 (0=disarm, 1=arm_home, 2=arm_away, 3=arm_night, 4=arm_vacation)
   static constexpr uint16_t VACUUM_ACTION_BASE = 670;  // 670..675 (0=start, 1=pause, 2=return_to_base, 3=stop, 4=clean_spot, 5=locate)
+  static constexpr uint16_t VACUUM_PREV_BTN    = 676;
+  static constexpr uint16_t VACUUM_NEXT_BTN    = 677;
   static constexpr uint16_t HUB_DOMAIN_CARD    = 680;  // 680..685 (param = domain_idx)
   static constexpr uint16_t HUB_ROW_ACTION     = 690;  // 690..694 (param = item_idx)
 
@@ -219,7 +225,7 @@ namespace WidgetId {
   static constexpr uint16_t CAL_PICKER_SLOT_BASE = 935; // 935..939 (param = option idx)
 
   // Music App clean-sheet mode bar, takeovers, MA action sheet, synced lyrics & speakers (Page 2)
-  static constexpr uint16_t MUSIC_MODE_SLOT_BASE      = MODE_BAR_SLOT_BASE;  // 44..47 (param = global slot 0..7)
+  static constexpr uint16_t MUSIC_MODE_SLOT_BASE      = MODE_BAR_SLOT_BASE;  // 44..47 (param = global slot 0..8)
   static constexpr uint16_t MUSIC_MODE_SLOT_0         = MODE_BAR_SLOT_BASE + 0;
   static constexpr uint16_t MUSIC_MODE_SLOT_1         = MODE_BAR_SLOT_BASE + 1;
   static constexpr uint16_t MUSIC_MODE_SLOT_2         = MODE_BAR_SLOT_BASE + 2;
@@ -234,7 +240,6 @@ namespace WidgetId {
   static constexpr uint16_t MUSIC_SCRUB_STEP_FWD      = 956;
   static constexpr uint16_t MUSIC_FAVORITE_BTN        = 957;
   static constexpr uint16_t MUSIC_HEADER_ENQUEUE_BTN  = 958;
-  static constexpr uint16_t MUSIC_INFO_SETTINGS_BTN   = 959;
   static constexpr uint16_t MUSIC_ROW_PLAY_BASE       = 960;  // 960..964 (leading 1-tap Play Now orb, param = slot 0..4)
   static constexpr uint16_t MUSIC_ROW_PLAY_0          = 960;
   static constexpr uint16_t MUSIC_ROW_PLAY_1          = 961;
@@ -997,8 +1002,8 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
   g.min_hit = mm_to_px_for(7.0f, ppi);
   g.mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s);
 
-  g.hdr_title_y = std::max(16, ly.hdr_y - scale_y_for(4, h));
-  g.hdr_pct_y = g.hdr_title_y + scale_y_for(22, h);
+  g.hdr_title_y = std::max(18, ly.hdr_y - scale_y_for(4, h));
+  g.hdr_pct_y = g.hdr_title_y + scale_y_for(23, h);
   g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18));
 
   const int top_limit = ly.hdr_y + scale_y_for(36, h);
@@ -1019,7 +1024,8 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
 
   const int body_cy = g.slider_y0 + g.slider_h / 2;
   const int safe_w = band_safe_span_for(body_cy, g.slider_h, w, h, round, wearable, 14);
-  const int span_w = std::clamp(std::min(scale_x_for(356, w), safe_w), 220, w - 20);
+  const int max_vol_w = (w > 520) ? 460 : 356;
+  const int span_w = std::clamp(std::min(max_vol_w, safe_w), 220, w - 20);
   const int span_x0 = g.cx - span_w / 2;
   const int col_gap = std::max(10, scale_x_for(14, w));
   g.slider_w = (w >= 640) ? std::max(96, g.min_hit) : std::max(64, g.min_hit);
@@ -1080,7 +1086,7 @@ inline constexpr MusicScrubGeom compute_music_scrub_geom(
   g.cx = ly.cx;
   g.min_hit = mm_to_px_for(7.0f, ppi);
 
-  g.hdr_title_y = ly.hdr_y + scale_y_for(4, h);
+  g.hdr_title_y = ly.hdr_y;
   g.hdr_time_y = g.hdr_title_y + scale_y_for(24, h);
   g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18));
 
@@ -1095,8 +1101,9 @@ inline constexpr MusicScrubGeom compute_music_scrub_geom(
 
   const int min_span_w = 3 * g.min_hit + 2 * gap_x;
   const int safe_w = band_safe_span_for(body_y0 + body_h / 2, body_h, w, h, round, wearable, 14);
+  const int max_scrub_w = (w > 520) ? 480 : 368;
   const int span_w = std::clamp(
-      std::max(min_span_w, std::min(scale_x_for(368, w), safe_w)),
+      std::max(min_span_w, std::min(max_scrub_w, safe_w)),
       min_span_w, std::max(min_span_w, w - 16));
   const int span_x0 = g.cx - span_w / 2;
 
@@ -1189,16 +1196,23 @@ inline constexpr MusicActionSheetGeom compute_music_action_sheet_geom(
   const int start_y = top_limit + std::max(0, (avail_h - total_h) / 2);
   g.bounds_y0 = start_y;
 
+  const int first_cy = start_y + row_h / 2;
+  const int last_cy = start_y + (g.item_count - 1) * (row_h + gap_y) + row_h / 2;
+  const int safe_top = band_safe_span_for(first_cy, g.item_vis_h, w, h, round, wearable, 14);
+  const int safe_bot = band_safe_span_for(last_cy, g.item_vis_h, w, h, round, wearable, 14);
+  const int stack_safe_w = std::min(safe_top, safe_bot);
+  const int max_sheet_w = (w > 520) ? 480 : 384;
+  const int uniform_w = std::clamp(
+      std::min(max_sheet_w, stack_safe_w),
+      std::max(140, g.min_hit), std::max(140, w - 24));
+  const int uniform_x0 = g.cx - uniform_w / 2;
+
   for (int i = 0; i < g.item_count; ++i) {
     g.item_y0[i] = start_y + i * (row_h + gap_y);
     g.item_h[i] = row_h;
     g.item_hit_pad[i] = (g.min_hit > row_h) ? ((g.min_hit - row_h + 1) / 2) : 0;
-    const int row_cy = g.item_y0[i] + row_h / 2;
-    const int safe_w = band_safe_span_for(row_cy, g.item_vis_h, w, h, round, wearable, 16);
-    g.item_w[i] = std::clamp(
-        std::min(scale_x_for(410, w), safe_w),
-        std::max(140, g.min_hit), std::max(140, w - 24));
-    g.item_x0[i] = g.cx - g.item_w[i] / 2;
+    g.item_w[i] = uniform_w;
+    g.item_x0[i] = uniform_x0;
   }
   return g;
 }

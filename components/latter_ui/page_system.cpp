@@ -164,7 +164,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_page_header(it, cx, "SYSTEM", font_small, theme_primary);
+    render_page_header(it, cx, "SYSTEM", font_small, col_white);
 
     const int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
@@ -230,7 +230,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_page_header(it, cx, "SLEEP & WAKE", font_small, theme_primary);
+    render_page_header(it, cx, "SLEEP & WAKE", font_small, col_white);
     draw_back();
     const int active_page = menu_scroll_active ? menu_scroll_target_page : sleep_menu_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
@@ -304,13 +304,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
       fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
     }
-    render_page_header(it, cx, "DISPLAY", font_small, theme_primary);
+    render_page_header(it, cx, "DISPLAY", font_small, col_white);
     draw_back();
     const int active_page = menu_scroll_active ? menu_scroll_target_page : display_menu_page;
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 3) {
-    render_page_header(it, cx, "ACTIONS", font_small, theme_primary);
+    render_page_header(it, cx, "ACTIONS", font_small, col_white);
     draw_action_card_y(layout().slot5_y(0), "Activate Screensaver", card_brd_on, col_white, card_bg_on,
                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), 0);
 #if LATTER_HAS_BATTERY
@@ -330,10 +330,10 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   } else if (system_menu_mode == 4) {
     ui::confirm_modal(it, cx, "RESTART DEVICE?", "Reboot firmware now", "",
                       "Cancel", "Restart", col_red, kChromeGlassTint,
-                      font_small, font_small, theme_primary, col_white, col_slate);
+                      font_small, font_small, col_white, col_white, col_slate);
 
   } else if (system_menu_mode == 5) {
-    render_page_header(it, cx, "UPDATE", font_small, theme_primary);
+    render_page_header(it, cx, "UPDATE", font_small, col_white);
     std::snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
     fast_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
@@ -389,10 +389,10 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   } else if (system_menu_mode == 6) {
     ui::confirm_modal(it, cx, "INSTALL UPDATE?", "Download & flash firmware", "Keep device powered on",
                       "Cancel", "Install", theme_primary, card_bg_on,
-                      font_small, font_small, theme_primary, col_white, theme_secondary);
+                      font_small, font_small, col_white, col_white, theme_secondary);
 
   } else if (system_menu_mode == 7) {
-    render_page_header(it, cx, "SOUND", font_small, theme_primary);
+    render_page_header(it, cx, "SOUND", font_small, col_white);
     std::snprintf(buf, sizeof(buf), "Speaker Vol: %d%%", ctx.spk_vol_pct);
     draw_cycle_card_y(layout().slot5_y(0), buf, true,
                       WidgetId::SYS_VOL_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot, 0);
@@ -406,7 +406,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_back();
 
   } else if (system_menu_mode == 8) {
-    render_page_header(it, cx, "SYSTEM INFO", font_small, theme_primary);
+    render_page_header(it, cx, "SYSTEM INFO", font_small, col_white);
     render_modern_card(it, cx, scale_y(196), 312, 260, 16, card_bg_on, card_brd_on, nullptr, col_white, font_small);
     const int info_x = layout().sys_info_x();
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
@@ -479,7 +479,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_back();
 
   } else if (system_menu_mode == 9) {
-    render_page_header(it, cx, "MUSIC", font_small, theme_primary);
+    render_page_header(it, cx, "MUSIC", font_small, col_white);
     std::snprintf(buf, sizeof(buf), "Art: %s", ctx.music_fullscreen_art_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(0), buf, true,
                       static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
@@ -498,7 +498,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_back();
 
   } else if (system_menu_mode == 11) {
-    render_page_header(it, cx, "VOICE", font_small, theme_primary);
+    render_page_header(it, cx, "VOICE", font_small, col_white);
     const bool ww_en = (ctx.va_wake_word_mode_opt != "Disabled");
     std::snprintf(buf, sizeof(buf), "Wake Mode: %s", ctx.va_wake_word_mode_opt.c_str());
     draw_cycle_card_y(layout().slot5_y(0), buf, true,
@@ -518,7 +518,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_back();
 
   } else if (system_menu_mode == 12) {
-    render_page_header(it, cx, "SENSITIVITY", font_small, theme_primary);
+    render_page_header(it, cx, "SENSITIVITY", font_small, col_white);
     auto short_sens = [](UiStrView s) -> const char * {
       if (s == "Slightly sensitive") return "Low";
       if (s == "Very sensitive") return "High";

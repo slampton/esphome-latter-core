@@ -2285,8 +2285,9 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
   const int game_count = collect_enabled_games(enabled_ids, prefs);
   if (game_count <= 0) {
     game_carousel_idx = 0;
-    fast_print(it, cx, compact_w ? 64 : scale_y(84), ctx.font_games_title,
-               ctx.theme_primary, TextAlign::CENTER, "GAMES");
+    const int hdr_y = compact_w ? 64 : scale_y(84);
+    fast_print(it, cx + 1, hdr_y + 1, ctx.font_games_title, kChromeShadow, TextAlign::CENTER, "GAMES");
+    fast_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
     if (backdrop_active()) {
       fast_print(it, cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
                  TextAlign::CENTER, "No games enabled");
@@ -2504,7 +2505,9 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     }
   }
 
-  fast_print(it, cx, compact_w ? 64 : scale_y(84), ctx.font_games_title, ctx.theme_primary, TextAlign::CENTER, "GAMES");
+  const int hdr_y = compact_w ? 64 : scale_y(84);
+  fast_print(it, cx + 1, hdr_y + 1, ctx.font_games_title, kChromeShadow, TextAlign::CENTER, "GAMES");
+  fast_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
 
   const int active_pip = (menu_scroll_active && game_count > 1)
                              ? std::clamp(menu_scroll_target_page, 0, game_count - 1)

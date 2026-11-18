@@ -452,10 +452,14 @@ inline void leave_home_hub_cameras_if_active(DeviceRuntimeState &rs, const UiTou
 
 inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeState &rs,
                                const UiTouchRuntime &rt, uint32_t now_ms) {
+  const bool was_hub = (rs.nav.gui_page == PageId::HOME_HUB);
   const bool was_cam = is_camera_view_active(rs);
   rs.nav.gui_page = PageId::HOME_HUB;
   rs.nav.home_subpage = 0;
   rs.nav.tools_subpage = 0;
+  if (!was_hub) {
+    sync_home_hub_for_active_area(area_ctx_state().area_id, home_hub_state());
+  }
 
   int hh_tabs[kMaxHomeHubTabs]{};
   const int hh_cnt = collect_home_hub_tabs(hh_tabs);
@@ -655,14 +659,6 @@ inline bool handle_music_back_step(DeviceRuntimeState &rs, const UiTouchRuntime 
   if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS) {
     m.drilldown = MusicDrilldown::NONE;
     m.target_speaker_id.clear();
-    m.hud_active = true;
-    m.hud_timer = now_ms;
-    mark_dirty_full();
-    rt.schedule_disp();
-    return true;
-  }
-  if (m.drilldown == MusicDrilldown::SETTINGS) {
-    m.drilldown = MusicDrilldown::NONE;
     m.hud_active = true;
     m.hud_timer = now_ms;
     mark_dirty_full();
@@ -1358,7 +1354,6 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
       fetch_music_browse_for_current_view(rs, now_ms);
       break;
     case MusicView::INFO:
-    default:
       m.info_scroll_px = 0;
       m.drilldown_album_id = t_title + "|" + t_artist + "|" + t_album;
       m.selected_category_mode = "bio";
@@ -1367,6 +1362,12 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
       rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
       reset_music_loading_slots(rs, "Loading...");
       fetch_music_browse_for_current_view(rs, now_ms);
+      break;
+    case MusicView::SETTINGS:
+    default:
+      m.settings_page = 1;
+      m.selected_category_mode = "settings";
+      m.selected_category_title = "MUSIC SETTINGS";
       break;
   }
 }
@@ -1630,13 +1631,18 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
 bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool from_intercom) {
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
-  if (ac.lock_entity.empty() && ac.garage_entity.empty()) {
+  const std::string target_area = from_intercom
+      ? ac.area_id
+      : resolve_active_carousel_camera_area_id(ac.cameras_summary);
+  const EntryControlItem *target =
+      resolve_doorbell_quick_unlock_target(target_area, home_hub_state());
+  if (target == nullptr) {
     return false;
   }
-  if (ac.lock_entity.empty() && !ac.garage_entity.empty()) {
-    rs.area.target_entity_id = "home_hub.garage";
+  if (!target->is_lock) {
+    rs.area.target_entity_id = target->entity_id;
     rs.area.action_feedback = "Opening Garage...";
-    return gate_or_dispatch_area_action("cover", "open_cover", 100, "GARAGE DOOR PIN", now_ms);
+    return gate_or_dispatch_area_action(target->entity_id, "open_cover", 100, "GARAGE DOOR PIN", now_ms);
   }
   const std::string &pol = ac.security_pin_policy;
   if (ui::is_perimeter_action_blocked(pol, "lock", "unlock", 100)) {
@@ -2388,6 +2394,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
     if (rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
       const std::string &idom = light_insp_domain();
+      if (idom == "climate") {
+        return;  // Climate stepper & HVAC mode pills resolve cleanly in on_touch_up
+      }
       if (idom == "cover" || idom == "fan") {
         if (wid >= WidgetId::ENTITY_PRESET_BASE && wid < WidgetId::ENTITY_PRESET_BASE + 4 &&
             touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
@@ -3032,37 +3041,15 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 3. Page 2: Clean-Sheet Music App v3 (8-Slot Peer Tab Canvas Swipe, Mode-Bar Conveyor & List Paging)
+  // 3. Page 2: Clean-Sheet Music App v3 (9-Slot Peer Tab Canvas & Mode-Bar Swipe + List Paging — D-059 / D-060)
   if (rs.nav.gui_page == PageId::MUSIC) {
     if (rs.music.takeover != MusicTakeover::NONE) {
       return false;
     }
 
     if (rs.music.drilldown == MusicDrilldown::NONE) {
-      const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
-      const bool always_vis = (ov_style == "Always Visible");
-      const bool mode_bar_shown =
-          (rs.music.view == MusicView::NOW_PLAYING)
-              ? (always_vis || rs.music.hud_active)
-              : (!is_music_ambient_tab(rs.music.view) || rs.music.hud_active);
-
       if (h_dir != 0) {
         commit_swipe();
-        if (mode_bar_shown && gest.start_y >= ly.mode_bar_zone_top()) {
-          bool changed = false;
-          const int next_pg = step_pager_index(
-              static_cast<int>(rs.music.carousel_page), 0, 1, h_dir, /*wrap=*/false,
-              GestureAxisLock::Horizontal, PageId::MUSIC, now_ms, changed);
-          rs.music.carousel_page = static_cast<uint8_t>(next_pg);
-          rs.music.mode_bar_win_start = (rs.music.carousel_page != 0U) ? 4 : 0;
-          rs.music.hud_timer = now_ms;
-          if (changed) {
-            rt_.schedule_disp();
-          } else {
-            rt_.schedule_band_disp(dock_dirty_band_y0(), SCREEN_H - 1);
-          }
-          return true;
-        }
         rs.music.direct_nav = false;
         activate_music_peer_tab(step_music_peer_tab(rs.music.view, h_dir), now_ms);
         mark_dirty_full();
@@ -3077,6 +3064,17 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
           bool changed = false;
           rs.music.category_page = step_pager_index(
               std::clamp(rs.music.category_page, 1, 2), 1, 2, v_dir, /*wrap=*/false,
+              GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
+          rs.music.hud_timer = now_ms;
+          rt_.schedule_disp();
+          return true;
+        }
+        if (rs.music.view == MusicView::SETTINGS) {
+          commit_swipe();
+          music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+          bool changed = false;
+          rs.music.settings_page = step_pager_index(
+              std::clamp(rs.music.settings_page, 1, 2), 1, 2, v_dir, /*wrap=*/false,
               GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
           rs.music.hud_timer = now_ms;
           rt_.schedule_disp();
@@ -3104,16 +3102,6 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         }
       }
       return false;
-    }
-
-    if (rs.music.drilldown == MusicDrilldown::SETTINGS && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
-      commit_swipe();
-      bool changed = false;
-      rs.music.settings_page = step_pager_index(
-          std::clamp(rs.music.settings_page, 1, 2), 1, 2, v_dir, /*wrap=*/false,
-          GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
-      rt_.schedule_disp();
-      return true;
     }
 
     if (rs.music.drilldown == MusicDrilldown::LIB_LIST && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
@@ -3327,6 +3315,17 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         return true;
       }
       return false;
+    }
+    if (home_hub_tab() == HomeHubTab::ENTRY &&
+        v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+      commit_swipe();
+      const int tot_pg = std::max(1, (home_hub_state().entry_count + 1) / 2);
+      bool changed = false;
+      home_hub_entry_page() = step_pager_index(
+          home_hub_entry_page(), 0, tot_pg - 1, v_dir, /*wrap=*/false,
+          GestureAxisLock::Vertical, PageId::HOME_HUB, now_ms, changed);
+      rt_.schedule_disp();
+      return true;
     }
     if (h_dir != 0) {
       commit_swipe();
@@ -3604,11 +3603,12 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     return;
   }
 
-  // Smooth Free Vertical Touch Scroll on Music Lyrics & Track Info
+  // Smooth Free Vertical Touch Scroll on Music Lyrics & Track Info (above Mode Bar when HUD shown)
   if (rs.nav.gui_page == PageId::MUSIC &&
       rs.music.drilldown == MusicDrilldown::NONE &&
       rs.music.takeover == MusicTakeover::NONE &&
       (rs.music.view == MusicView::LYRICS || rs.music.view == MusicView::INFO) &&
+      (!rs.music.hud_active || gest.start_y < ly.mode_bar_zone_top()) &&
       (gest.axis_lock == GestureAxisLock::Slider ||
        (std::abs(dy) >= ly.drag_start() && std::abs(dy) > std::abs(dx)))) {
     gest.axis_lock = GestureAxisLock::Slider;
@@ -4180,16 +4180,18 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       } else if (m.drilldown == MusicDrilldown::NONE &&
                  (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT)) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-          m.carousel_page = (wid == WidgetId::MODE_BAR_RIGHT) ? 1U : 0U;
-          m.mode_bar_win_start = (m.carousel_page != 0U) ? 4 : 0;
-          m.hud_timer = now_rel;
+          m.direct_nav = false;
+          const int step_dir = (wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1;
+          activate_music_peer_tab(step_music_peer_tab(m.view, step_dir), now_rel);
+          mark_dirty_full();
           rt_.schedule_disp();
         }
       } else if (m.drilldown == MusicDrilldown::NONE &&
                  wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           m.direct_nav = false;
-          const auto target_view = static_cast<MusicView>(std::clamp(static_cast<int>(hit->param), 0, 7));
+          const auto target_view = static_cast<MusicView>(
+              std::clamp(static_cast<int>(hit->param), 0, kMusicPeerTabCount - 1));
           activate_music_peer_tab(target_view, now_rel);
           mark_dirty_full();
           rt_.schedule_disp();
@@ -4307,38 +4309,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           rt_.schedule_disp();
         }
       } else if (m.view == MusicView::INFO) {
-        if (m.drilldown == MusicDrilldown::SETTINGS) {
-          if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-            m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
-            rt_.schedule_disp();
-          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 3 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 3 + static_cast<int>(hit->param);
-            if (idx == 0) {
-              rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
-                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
-                                              {"Full Screen", "Letterbox", "Standard", "None"}));
-            } else if (idx == 1) {
-              rt_.set_select_opt(UiSelectId::MUSIC_OVERLAY_STYLE,
-                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),
-                                              {"Art Only", "Art + Metadata", "Always Visible"}));
-            } else if (idx == 2) {
-              rt_.set_select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER,
-                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER),
-                                              {"Alphabetical", "Newest on Top", "Oldest on Top"}));
-            } else if (idx == 3) {
-              rt_.set_select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER,
-                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER),
-                                              {"Oldest on Top", "Newest on Top", "Alphabetical"}));
-            } else if (idx == 4) {
-              rt_.set_select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER,
-                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER),
-                                              {"Newest on Top", "Oldest on Top"}));
-            }
-            rt_.schedule_disp();
-          }
-        } else if (!m.hud_active) {
+        if (!m.hud_active) {
           if (wid == WidgetId::MUSIC_ART_TAP || wid == WidgetId::NONE) {
             m.hud_active = true;
             m.hud_timer = now_rel;
@@ -4346,18 +4317,45 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             mark_dirty_full();
             rt_.schedule_disp();
           }
-        } else if (wid == WidgetId::MUSIC_INFO_SETTINGS_BTN &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          m.drilldown = MusicDrilldown::SETTINGS;
-          m.settings_page = 1;
-          mark_dirty_full();
-          rt_.schedule_disp();
         } else if (wid == WidgetId::NONE && m.hud_active &&
                    (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
                    (now_rel - hud_just_woken_ms_ >= TOUCH_GUARD_DISMISS) &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_DISMISS, tkey)) {
           m.hud_active = false;
           mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else if (m.view == MusicView::SETTINGS) {
+        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+          m.hud_timer = now_rel;
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 3 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 3 + static_cast<int>(hit->param);
+          if (idx == 0) {
+            rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
+                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
+                                            {"Full Screen", "Letterbox", "Standard", "None"}));
+          } else if (idx == 1) {
+            rt_.set_select_opt(UiSelectId::MUSIC_OVERLAY_STYLE,
+                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),
+                                            {"Art Only", "Art + Metadata", "Always Visible"}));
+          } else if (idx == 2) {
+            rt_.set_select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER,
+                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER),
+                                            {"Alphabetical", "Newest on Top", "Oldest on Top"}));
+          } else if (idx == 3) {
+            rt_.set_select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER,
+                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER),
+                                            {"Oldest on Top", "Newest on Top", "Alphabetical"}));
+          } else if (idx == 4) {
+            rt_.set_select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER,
+                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER),
+                                            {"Newest on Top", "Oldest on Top"}));
+          }
+          m.hud_timer = now_rel;
           rt_.schedule_disp();
         }
       } else if (m.view == MusicView::SPEAKERS) {
@@ -4851,11 +4849,80 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rs.nav.area_subpage = AreaSubpage::OVERVIEW;
             rs.area.browse_mode = "entities";
             rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
+            sync_home_hub_for_active_area(asl.id, home_hub_state());
             do_select_active_area_latter();
             do_fetch_area_browse();
             mark_dirty_full();
             rt_.schedule_disp();
           }
+        }
+      } else if (rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
+                 light_insp_domain() == "climate") {
+        auto &hub = home_hub_state();
+        ThermostatZoneItem *ci = find_climate_item_by_id(light_insp_entity_id(), hub);
+        const uint16_t c_caps = (ci != nullptr && ci->caps != 0U) ? ci->caps : kClimateCapDefault;
+        const bool is_c = (c_caps & kClimateCapCelsius) != 0U;
+        const int sl_i = light_insp_slot();
+        if ((wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          const int cur_t = (ci != nullptr && ci->target_temp > 0)
+                                ? ci->target_temp
+                                : ((light_insp_bri_pct() > 0) ? light_insp_bri_pct() : (is_c ? 21 : 70));
+          const int next_t = step_thermostat_setpoint(
+              cur_t, (wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1, c_caps);
+          if (ci != nullptr) {
+            ci->target_temp = next_t;
+            for (int ti = 0; ti < hub.thermostat_count; ++ti) {
+              if (hub.thermostats[ti].entity_id == ci->entity_id) {
+                hub.thermostats[ti].target_temp = next_t;
+              }
+            }
+          }
+          light_insp_bri_pct() = next_t;
+          if (sl_i >= 0 && sl_i < 3) {
+            rs.area_entity_slots()[sl_i].level = next_t;
+          }
+          ++hub.local_mutation_seq;
+          rs.area.target_entity_id = light_insp_entity_id();
+          rs.area.target_action = "set_temperature";
+          rs.area.target_level = next_t;
+          char fb[36];
+          std::snprintf(fb, sizeof(fb), "Setpoint -> %d\xC2\xB0%c", next_t, is_c ? 'C' : 'F');
+          rs.area.action_feedback = fb;
+          rs.area.feedback_timer = now_rel;
+          do_execute_area_action();
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          static constexpr const char *kClimModes[6] = {
+              "heat", "cool", "heat_cool", "off", "fan_only", "dry"};
+          static constexpr const char *kClimLabels[6] = {
+              "Heat", "Cool", "Auto", "Off", "Fan", "Dry"};
+          const int m_i = static_cast<int>(wid - WidgetId::CLIMATE_MODE_BASE);
+          const bool next_on = (m_i != 3);
+          if (ci != nullptr) {
+            ci->mode = kClimModes[m_i];
+            for (int ti = 0; ti < hub.thermostat_count; ++ti) {
+              if (hub.thermostats[ti].entity_id == ci->entity_id) {
+                hub.thermostats[ti].mode = kClimModes[m_i];
+              }
+            }
+          }
+          light_insp_active() = next_on;
+          if (sl_i >= 0 && sl_i < 3) {
+            rs.area_entity_slots()[sl_i].active = next_on;
+          }
+          ++hub.local_mutation_seq;
+          rs.area.target_entity_id = light_insp_entity_id();
+          rs.area.target_action = std::string("hvac_") + kClimModes[m_i];
+          rs.area.target_level = (ci != nullptr && ci->target_temp > 0)
+                                     ? ci->target_temp
+                                     : light_insp_bri_pct();
+          rs.area.action_feedback = std::string("HVAC: ") + kClimLabels[m_i];
+          rs.area.feedback_timer = now_rel;
+          mark_dirty_full();
+          do_execute_area_action();
+          rt_.schedule_disp();
         }
       } else if (rs.nav.area_subpage == AreaSubpage::OVERVIEW) {
         std::string cats[8];
@@ -4915,15 +4982,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             const bool is_card_body =
                 (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3);
             if (is_card_body &&
-                (sl.type == "light" || sl.type == "cover" || sl.type == "fan")) {
-              // D-050: Right body opens generalized Entity Inspector (Brightness / Position / Speed)
+                (sl.type == "light" || sl.type == "cover" || sl.type == "fan" ||
+                 sl.type == "climate")) {
+              // D-050 / D-060: Right body opens generalized Entity Inspector (Brightness / Position / Speed / Climate)
               light_insp_entity_id() = sl.id;
               light_insp_name() = strip_trailing_paren_state(sl.name);
               light_insp_domain() = sl.type;
               light_insp_slot() = idx;
               light_insp_active() = sl.active;
-              light_insp_mode() = 1;  // Level / White Temp mode
-              if (sl.level >= 0) {
+              light_insp_mode() = 1;  // Level / White Temp / Climate mode
+              if (sl.type == "climate") {
+                const ThermostatZoneItem *ci = find_climate_item_by_id_const(sl.id);
+                light_insp_bri_pct() = (ci != nullptr && ci->target_temp > 0)
+                                           ? ci->target_temp
+                                           : ((sl.level > 0) ? sl.level : 70);
+              } else if (sl.level >= 0) {
                 light_insp_bri_pct() = sl.level;
               } else {
                 light_insp_bri_pct() = sl.active ? 100 : ((sl.type == "light") ? 50 : 0);
@@ -5250,19 +5323,37 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (home_hub_tab() == HomeHubTab::THERMOSTAT &&
-                   !area_ctx_state().thermostat_entity.empty()) {
-          if ((wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) &&
+                   home_hub_state().thermostat_count > 0) {
+          auto &hub = home_hub_state();
+          int &z_idx = hub.thermostat_idx;
+          z_idx = std::clamp(z_idx, 0, hub.thermostat_count - 1);
+          if ((wid == WidgetId::THERMOSTAT_PREV_BTN || wid == WidgetId::THERMOSTAT_NEXT_BTN) &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-            const uint16_t c_caps = effective_climate_caps();
+            if (hub.thermostat_count > 1) {
+              z_idx = step_wrap(z_idx, (wid == WidgetId::THERMOSTAT_NEXT_BTN) ? 1 : -1,
+                                hub.thermostat_count);
+              ++hub.local_mutation_seq;
+              mark_dirty_full();
+              rt_.schedule_disp();
+            }
+          } else if ((wid == WidgetId::CLIMATE_MINUS_BTN || wid == WidgetId::CLIMATE_PLUS_BTN) &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            auto &z = hub.thermostats[z_idx];
+            const uint16_t c_caps = (z.caps != 0U) ? z.caps : kClimateCapDefault;
             const bool is_c = (c_caps & kClimateCapCelsius) != 0U;
-            int &tf = home_hub_thermostat_target_f();
-            tf = step_thermostat_setpoint(
-                tf, (wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1, c_caps);
-            rs.area.target_entity_id = "home_hub.thermostat";
+            z.target_temp = step_thermostat_setpoint(
+                z.target_temp, (wid == WidgetId::CLIMATE_PLUS_BTN) ? 1 : -1, c_caps);
+            for (int ai = 0; ai < hub.area_climate_count; ++ai) {
+              if (hub.area_climates[ai].entity_id == z.entity_id) {
+                hub.area_climates[ai].target_temp = z.target_temp;
+              }
+            }
+            ++hub.local_mutation_seq;
+            rs.area.target_entity_id = z.entity_id;
             rs.area.target_action = "set_temperature";
-            rs.area.target_level = tf;
+            rs.area.target_level = z.target_temp;
             char fb[36];
-            std::snprintf(fb, sizeof(fb), "Setpoint -> %d\xC2\xB0%c", tf, is_c ? 'C' : 'F');
+            std::snprintf(fb, sizeof(fb), "Setpoint -> %d\xC2\xB0%c", z.target_temp, is_c ? 'C' : 'F');
             rs.area.action_feedback = fb;
             rs.area.feedback_timer = now_rel;
             do_execute_area_action();
@@ -5274,76 +5365,119 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             static constexpr const char *kClimLabels[6] = {
                 "Heat", "Cool", "Auto", "Off", "Fan", "Dry"};
             const int m_i = static_cast<int>(wid - WidgetId::CLIMATE_MODE_BASE);
-            home_hub_thermostat_mode() = kClimModes[m_i];
-            rs.area.target_entity_id = "home_hub.thermostat";
+            auto &z = hub.thermostats[z_idx];
+            z.mode = kClimModes[m_i];
+            for (int ai = 0; ai < hub.area_climate_count; ++ai) {
+              if (hub.area_climates[ai].entity_id == z.entity_id) {
+                hub.area_climates[ai].mode = kClimModes[m_i];
+              }
+            }
+            ++hub.local_mutation_seq;
+            rs.area.target_entity_id = z.entity_id;
             rs.area.target_action = std::string("hvac_") + kClimModes[m_i];
-            rs.area.target_level = home_hub_thermostat_target_f();
+            rs.area.target_level = z.target_temp;
             rs.area.action_feedback = std::string("HVAC: ") + kClimLabels[m_i];
             rs.area.feedback_timer = now_rel;
             mark_dirty_full();
             do_execute_area_action();
             rt_.schedule_disp();
           }
-        } else if (home_hub_tab() == HomeHubTab::ENTRY) {
-          if (!area_ctx_state().garage_entity.empty() &&
-              (wid == WidgetId::COVER_OPEN_BTN || wid == WidgetId::ENTRY_GARAGE_CARD) &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            const GarageState prev_g = home_hub_garage_state();
-            const bool want_open = (prev_g != GarageState::OPEN);
-            home_hub_garage_state() = want_open ? GarageState::OPEN : GarageState::CLOSED;
-            rs.area.target_entity_id = "home_hub.garage";
-            rs.area.action_feedback = want_open ? "Opening Garage..." : "Closing Garage...";
-            if (!gate_or_dispatch_area_action("cover", want_open ? "open_cover" : "close_cover",
-                                              want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
-              home_hub_garage_state() = prev_g;
-            }
-          } else if (!area_ctx_state().lock_entity.empty() &&
-                     (wid == WidgetId::LOCK_ACTION_BTN || wid == WidgetId::ENTRY_LOCK_CARD) &&
+        } else if (home_hub_tab() == HomeHubTab::ENTRY &&
+                   home_hub_state().entry_count > 0) {
+          auto &hub = home_hub_state();
+          if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            const int max_pg = std::max(0, (hub.entry_count - 1) / 2);
+            hub.entry_page = std::clamp(
+                hub.entry_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, max_pg);
+            ++hub.local_mutation_seq;
+            rt_.schedule_disp();
+          } else if (((wid >= WidgetId::ENTRY_CARD_BASE && wid < WidgetId::ENTRY_CARD_BASE + 2) ||
+                      (wid >= WidgetId::ENTRY_ACTION_BASE && wid < WidgetId::ENTRY_ACTION_BASE + 2)) &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            const LockState prev_l = home_hub_lock_state();
-            const bool want_lock = (prev_l == LockState::UNLOCKED);
-            home_hub_lock_state() = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
-            rs.area.target_entity_id = "home_hub.lock";
-            rs.area.action_feedback = want_lock ? "Entry Locked" : "Entry Unlocked";
-            if (!gate_or_dispatch_area_action("lock", want_lock ? "lock" : "unlock",
-                                              want_lock ? 100 : 0, "UNLOCK DOOR PIN", now_rel)) {
-              home_hub_lock_state() = prev_l;
+            const int e_idx = (hit != nullptr) ? static_cast<int>(hit->param) : -1;
+            if (e_idx >= 0 && e_idx < hub.entry_count) {
+              auto &item = hub.entries[e_idx];
+              if (item.is_lock) {
+                const LockState prev_l = item.lock_state;
+                const bool want_lock = (prev_l == LockState::UNLOCKED);
+                item.lock_state = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
+                ++hub.local_mutation_seq;
+                rs.area.target_entity_id = item.entity_id;
+                rs.area.action_feedback =
+                    (!item.name.empty() ? item.name : std::string("Door Lock")) +
+                    (want_lock ? ": Locked" : ": Unlocked");
+                if (!gate_or_dispatch_area_action(item.entity_id, want_lock ? "lock" : "unlock",
+                                                  want_lock ? 100 : 0, "UNLOCK DOOR PIN", now_rel)) {
+                  item.lock_state = prev_l;
+                  ++hub.local_mutation_seq;
+                }
+              } else {
+                const GarageState prev_g = item.garage_state;
+                const bool want_open = (prev_g != GarageState::OPEN);
+                item.garage_state = want_open ? GarageState::OPEN : GarageState::CLOSED;
+                ++hub.local_mutation_seq;
+                rs.area.target_entity_id = item.entity_id;
+                const std::string g_lbl = !item.name.empty() ? item.name : std::string("Garage Door");
+                rs.area.action_feedback =
+                    (want_open ? "Opening " : "Closing ") + g_lbl + "...";
+                if (!gate_or_dispatch_area_action(item.entity_id, want_open ? "open_cover" : "close_cover",
+                                                  want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
+                  item.garage_state = prev_g;
+                  ++hub.local_mutation_seq;
+                }
+              }
             }
           }
         } else if (home_hub_tab() == HomeHubTab::VACUUM &&
-                   !area_ctx_state().vacuum_entity.empty() &&
-                   wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const int v_act = static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE);
-          rs.area.target_entity_id = "home_hub.vacuum";
-          if (v_act == 0) {
-            home_hub_vacuum_state() = "Cleaning";
-            rs.area.target_action = "start";
-            rs.area.action_feedback = "Vacuum Started";
-          } else if (v_act == 1) {
-            home_hub_vacuum_state() = "Paused";
-            rs.area.target_action = "pause";
-            rs.area.action_feedback = "Vacuum Paused";
-          } else if (v_act == 2) {
-            home_hub_vacuum_state() = "Returning";
-            rs.area.target_action = "return_to_base";
-            rs.area.action_feedback = "Returning to Dock";
-          } else if (v_act == 3) {
-            home_hub_vacuum_state() = "Idle";
-            rs.area.target_action = "stop";
-            rs.area.action_feedback = "Vacuum Stopped";
-          } else if (v_act == 4) {
-            home_hub_vacuum_state() = "Cleaning";
-            rs.area.target_action = "clean_spot";
-            rs.area.action_feedback = "Spot Cleaning";
-          } else {
-            rs.area.target_action = "locate";
-            rs.area.action_feedback = "Locating Vacuum...";
+                   home_hub_state().vacuum_count > 0) {
+          auto &hub = home_hub_state();
+          int &v_idx = hub.vacuum_idx;
+          v_idx = std::clamp(v_idx, 0, hub.vacuum_count - 1);
+          if ((wid == WidgetId::VACUUM_PREV_BTN || wid == WidgetId::VACUUM_NEXT_BTN) &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            if (hub.vacuum_count > 1) {
+              v_idx = step_wrap(v_idx, (wid == WidgetId::VACUUM_NEXT_BTN) ? 1 : -1,
+                                hub.vacuum_count);
+              ++hub.local_mutation_seq;
+              mark_dirty_full();
+              rt_.schedule_disp();
+            }
+          } else if (wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+            auto &v = hub.vacuums[v_idx];
+            const int v_act = static_cast<int>(wid - WidgetId::VACUUM_ACTION_BASE);
+            rs.area.target_entity_id = v.entity_id;
+            if (v_act == 0) {
+              v.state = "Cleaning";
+              rs.area.target_action = "start";
+              rs.area.action_feedback = "Vacuum Started";
+            } else if (v_act == 1) {
+              v.state = "Paused";
+              rs.area.target_action = "pause";
+              rs.area.action_feedback = "Vacuum Paused";
+            } else if (v_act == 2) {
+              v.state = "Returning";
+              rs.area.target_action = "return_to_base";
+              rs.area.action_feedback = "Returning to Dock";
+            } else if (v_act == 3) {
+              v.state = "Idle";
+              rs.area.target_action = "stop";
+              rs.area.action_feedback = "Vacuum Stopped";
+            } else if (v_act == 4) {
+              v.state = "Cleaning";
+              rs.area.target_action = "clean_spot";
+              rs.area.action_feedback = "Spot Cleaning";
+            } else {
+              rs.area.target_action = "locate";
+              rs.area.action_feedback = "Locating Vacuum...";
+            }
+            ++hub.local_mutation_seq;
+            rs.area.feedback_timer = now_rel;
+            mark_dirty_full();
+            do_execute_area_action();
+            rt_.schedule_disp();
           }
-          rs.area.feedback_timer = now_rel;
-          mark_dirty_full();
-          do_execute_area_action();
-          rt_.schedule_disp();
         }
       }
 

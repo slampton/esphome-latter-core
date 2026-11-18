@@ -63,7 +63,7 @@ void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   const int total_items = static_cast<int>(sc.pinned_items.size());
   if (total_items <= 0) {
-    render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.col_white);
     render_empty_state(it, ctx.cx, ctx.cy, "Add pinned items in Latter Studio",
                        ctx.font_small, ctx.col_slate);
     return;
@@ -119,7 +119,7 @@ void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx
     fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
   }
 
-  render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.theme_primary);
+  render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.col_white);
 
   const int active_pip_pg = (rs.nav.menu_scroll_active && total_pages > 1)
                                 ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
@@ -127,11 +127,11 @@ void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx
   if (!rs.nav.pinned_feedback.empty() &&
       rs.nav.pinned_feedback_ms > 0U &&
       static_cast<uint32_t>(ctx.now_ms - rs.nav.pinned_feedback_ms) < 1800U) {
-    render_sub_header(it, ctx.cx, rs.nav.pinned_feedback, ctx.font_micro, ctx.theme_secondary);
+    render_sub_header(it, ctx.cx, rs.nav.pinned_feedback, ctx.font_small, ctx.theme_secondary);
   } else if (total_pages > 1) {
     char pg_buf[24];
     std::snprintf(pg_buf, sizeof(pg_buf), "Page %d of %d", active_pip_pg + 1, total_pages);
-    render_sub_header(it, ctx.cx, pg_buf, ctx.font_micro, ctx.col_slate);
+    render_sub_header(it, ctx.cx, pg_buf, ctx.font_small, ctx.col_slate);
   }
 
   render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < total_pages,

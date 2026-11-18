@@ -121,9 +121,16 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
                                      bool show_celestial = true);
 
 // ------------------------------------------------------------------------------
-// 5. Shared Area, Tools, Comms & Games State (page_area_hub/tools/comms/games.cpp)
+// 5. Shared Area, Home Hub, Tools, Comms & Games State
 // ------------------------------------------------------------------------------
 std::string strip_trailing_paren_state(const std::string &s);
+
+void render_climate_controls_deck(esphome::display::Display &it,
+                                  const UiFrameContext &ctx,
+                                  const DeviceRuntimeState &rs,
+                                  const ThermostatZoneItem &clim,
+                                  int content_top,
+                                  int content_bot);
 
 void reset_calculator_state();
 void handle_calculator_keypad_tap(int tx, int ty);

@@ -84,9 +84,11 @@ void render_back_button(esphome::display::Display &it, int cx, esphome::display:
                         esphome::Color text_col = kChromeBackLabel);
 
 void render_page_header(esphome::display::Display &it, int cx, const char *title,
-                        esphome::display::BaseFont *font, esphome::Color color, bool shadow = false);
+                        esphome::display::BaseFont *font,
+                        esphome::Color color = esphome::Color::WHITE, bool shadow = true);
 void render_page_header(esphome::display::Display &it, int cx, const std::string &title,
-                        esphome::display::BaseFont *font, esphome::Color color, bool shadow = false);
+                        esphome::display::BaseFont *font,
+                        esphome::Color color = esphome::Color::WHITE, bool shadow = true);
 
 void render_sub_header(esphome::display::Display &it, int cx, const char *text,
                        esphome::display::BaseFont *font, esphome::Color color);
@@ -202,6 +204,10 @@ void draw_icon_intercom_handset(esphome::display::Display &it, int cx, int cy, i
 void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
                     esphome::Color col, bool shadow = false);
 void draw_icon_thumbtack(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow = false);
+void draw_icon_play_pause(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow = false);
+void draw_icon_hamburger(esphome::display::Display &it, int cx, int cy, int r,
                          esphome::Color col, bool shadow = false);
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow = false);

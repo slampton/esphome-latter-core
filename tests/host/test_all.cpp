@@ -842,7 +842,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 12U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 52U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 58U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 46U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 39U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
   // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12
@@ -881,8 +881,9 @@ void test_device_prefs_v2_and_event_timer_sync() {
   // Home Hub state & tab
   latter_ui::home_hub_tab() = 2;
   LATTER_CHECK(latter_ui::home_hub_tab() == 2);
-  latter_ui::home_hub_state().thermostat_mode = "heat";
-  LATTER_CHECK(latter_ui::home_hub_state().thermostat_mode == "heat");
+  latter_ui::home_hub_state().thermostat_count = 1;
+  latter_ui::home_hub_state().thermostats[0].mode = "heat";
+  LATTER_CHECK(latter_ui::home_hub_state().thermostats[0].mode == "heat");
 
   // Sentinel purge verification
   LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
@@ -1079,7 +1080,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111702L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111801L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3356,31 +3357,58 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111702L, "LATTER_SDK_REV must match 2026111702L");
-  static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
-  static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
-  static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
-  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 46U);
+  static_assert(LATTER_SDK_REV == 2026111801L, "LATTER_SDK_REV must match 2026111801L");
+  static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
+  static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
+  static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
+  static_assert(static_cast<size_t>(AreaCtxField::VACUUMS_SUMMARY) == 18U);
+  static_assert(static_cast<size_t>(AreaCtxField::AREA_CLIMATES_SUMMARY) == 19U);
+  static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 39U);
 
   reset_runtime_state();
 
-  // 1. Protocol v3 AreaCtxField::ALARM_CAPS (+0x20 arm_vacation), CLIMATE_CAPS (45), VACUUM_CAPS (46)
+  // 1. Protocol v3 AreaCtxField::ALARM_CAPS (+0x20 arm_vacation) & multi-entity Home Hub summaries (D-061)
   auto build_hub_caps_payload = [](uint32_t rev, std::string_view alarm_caps,
                                    std::string_view climate_caps, std::string_view vacuum_caps,
                                    std::string_view t_temp, std::string_view t_mode,
-                                   std::string_view vac_st, bool with_entities = true) {
+                                   std::string_view vac_st, bool with_entities = true,
+                                   std::string_view area_id = "downstairs") {
     std::string p = "v3\x1f" "1\x1f" + std::to_string(rev);
     for (size_t i = 3; i < static_cast<size_t>(AreaCtxField::COUNT); ++i) {
       p.push_back(kProtocolFieldSep);
-      if (with_entities && i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) p.append("alarm_control_panel.home");
-      else if (with_entities && i == static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)) p.append("climate.home");
-      else if (with_entities && i == static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)) p.append("vacuum.home");
-      else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)) p.append(t_temp);
-      else if (i == static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)) p.append(t_mode);
-      else if (i == static_cast<size_t>(AreaCtxField::VACUUM_STATE)) p.append(vac_st);
-      else if (i == static_cast<size_t>(AreaCtxField::ALARM_CAPS)) p.append(alarm_caps);
-      else if (i == static_cast<size_t>(AreaCtxField::CLIMATE_CAPS)) p.append(climate_caps);
-      else if (i == static_cast<size_t>(AreaCtxField::VACUUM_CAPS)) p.append(vacuum_caps);
+      if (i == static_cast<size_t>(AreaCtxField::AREA_ID)) p.append(area_id);
+      else if (with_entities && i == static_cast<size_t>(AreaCtxField::ALARM_ENTITY)) {
+        p.append("alarm_control_panel.home");
+      } else if (with_entities && i == static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY)) {
+        p.append("climate.downstairs|Downstairs|downstairs|");
+        p.append(t_mode);
+        p.push_back('|');
+        p.append(t_temp);
+        p.append("|68.5|");
+        p.append(climate_caps);
+        p.push_back(kProtocolRecordSep);
+        p.append("climate.upstairs|Upstairs|upstairs|cool|74|75.0|127");
+      } else if (with_entities && i == static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY)) {
+        p.append("lock.front_door|Front Door|foyer|locked");
+        p.push_back(kProtocolRecordSep);
+        p.append("lock.back_door|Back Door|patio|unlocked");
+      } else if (with_entities && i == static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY)) {
+        p.append("cover.main_garage|Main Garage|garage|closed");
+        p.push_back(kProtocolRecordSep);
+        p.append("cover.workshop_garage|Workshop Bay|garage|open");
+      } else if (with_entities && i == static_cast<size_t>(AreaCtxField::VACUUMS_SUMMARY)) {
+        p.append("vacuum.main_floor|Main Floor|downstairs|");
+        p.append(vac_st);
+        p.push_back('|');
+        p.append(vacuum_caps);
+        p.push_back(kProtocolRecordSep);
+        p.append("vacuum.upstairs|Upstairs Vac|upstairs|docked|11");
+      } else if (with_entities && i == static_cast<size_t>(AreaCtxField::AREA_CLIMATES_SUMMARY)) {
+        p.append("climate.office_mini|Office Mini|cool|70|71.2|127");
+      } else if (i == static_cast<size_t>(AreaCtxField::ALARM_CAPS)) {
+        p.append(alarm_caps);
+      }
     }
     return p;
   };
@@ -3388,49 +3416,77 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   // Fresh pre-sync AreaContextState{} -> 0 tabs and 0U effective caps across all domains
   {
     const AreaContextState fresh_ac{};
+    const HomeHubState fresh_hub{};
     int fresh_tabs[kMaxHomeHubTabs]{};
     LATTER_CHECK(fresh_ac.epoch == 0U && fresh_ac.home_categories.empty());
     LATTER_CHECK(collect_home_hub_tabs(fresh_tabs, fresh_ac) == 0);
     LATTER_CHECK(effective_alarm_caps(fresh_ac) == 0U);
-    LATTER_CHECK(effective_climate_caps(fresh_ac) == 0U);
-    LATTER_CHECK(effective_vacuum_caps(fresh_ac) == 0U);
+    LATTER_CHECK(effective_climate_caps(fresh_hub) == 0U);
+    LATTER_CHECK(effective_vacuum_caps(fresh_hub) == 0U);
   }
 
   AreaContextState ac{};
   HomeHubState hub{};
   // Configured entities with unset/0 caps fall back cleanly to spec defaults (0x0C, 0x4F, 0x0B)
   LATTER_CHECK(parse_v3_area_ctx_payload(
-      build_hub_caps_payload(1U, "0", "0", "0", "72", "heat", "idle", true), ac, hub));
+      build_hub_caps_payload(1U, "0", "0", "0", "72", "heat", "idle", true, "downstairs"), ac, hub));
   LATTER_CHECK(effective_alarm_caps(ac) == kAlarmCapDefault);
-  LATTER_CHECK(effective_climate_caps(ac) == kClimateCapDefault);
-  LATTER_CHECK(effective_vacuum_caps(ac) == kVacuumCapDefault);
-  LATTER_CHECK(hub.thermostat_target_f == 72 && hub.thermostat_mode == "heat");
-  LATTER_CHECK(hub.vacuum_state == "Idle");
+  LATTER_CHECK(hub.thermostat_count == 2 && hub.thermostat_idx == 0);
+  LATTER_CHECK(hub.entry_count == 4);
+  LATTER_CHECK(hub.vacuum_count == 2 && hub.vacuum_idx == 0);
+  LATTER_CHECK(hub.area_climate_count == 1);
+  LATTER_CHECK(effective_climate_caps(hub) == kClimateCapDefault);
+  LATTER_CHECK(effective_vacuum_caps(hub) == kVacuumCapDefault);
+  LATTER_CHECK(hub.thermostats[0].target_temp == 72 && hub.thermostats[0].mode == "heat");
+  LATTER_CHECK(hub.vacuums[0].state == "Idle");
   LATTER_CHECK(normalize_vacuum_state_str("error") == "Error");
   LATTER_CHECK(normalize_vacuum_state_str("docked") == "Docked");
 
-  // Full caps + Celsius setpoint parsing (21.5 C -> 22 C; 0xFF climate_caps, 0x3F alarm_caps & vacuum_caps)
-  LATTER_CHECK(parse_v3_area_ctx_payload(
-      build_hub_caps_payload(2U, "63", "255", "63", "21.5", "heat_cool", "returning", true), ac, hub));
-  LATTER_CHECK(effective_alarm_caps(ac) == 0x3FU);
-  LATTER_CHECK(effective_climate_caps(ac) == 0xFFU);
-  LATTER_CHECK(effective_vacuum_caps(ac) == 0x3FU);
-  LATTER_CHECK(hub.thermostat_target_f == 22 && hub.thermostat_mode == "heat_cool");
-  LATTER_CHECK(hub.vacuum_state == "Returning");
+  // Multi-item Entry & Garage records + Area-aware doorbell quick-unlock target resolution (D-061)
+  LATTER_CHECK(hub.entries[0].is_lock && hub.entries[0].entity_id == "lock.front_door" &&
+               hub.entries[0].name == "Front Door" && hub.entries[0].lock_state == LockState::LOCKED);
+  LATTER_CHECK(hub.entries[1].is_lock && hub.entries[1].entity_id == "lock.back_door" &&
+               hub.entries[1].lock_state == LockState::UNLOCKED);
+  LATTER_CHECK(!hub.entries[2].is_lock && hub.entries[2].entity_id == "cover.main_garage" &&
+               hub.entries[2].garage_state == GarageState::CLOSED);
+  LATTER_CHECK(!hub.entries[3].is_lock && hub.entries[3].entity_id == "cover.workshop_garage" &&
+               hub.entries[3].garage_state == GarageState::OPEN);
+  const auto *patio_unlock = resolve_doorbell_quick_unlock_target("patio", hub);
+  LATTER_CHECK(patio_unlock != nullptr && patio_unlock->entity_id == "lock.back_door");
+  const auto *def_unlock = resolve_doorbell_quick_unlock_target("driveway", hub);
+  LATTER_CHECK(def_unlock != nullptr && def_unlock->entity_id == "lock.front_door");
+  LATTER_CHECK(find_climate_item_by_id_const("climate.office_mini", hub) != nullptr);
+  LATTER_CHECK(find_climate_item_by_id_const("climate.upstairs", hub) != nullptr);
 
-  // Unassigned entities -> effective_*_caps MUST return 0U even if wire caps/states were non-zero
+  // Roaming / Area switch to "upstairs" auto-selects upstairs thermostat & upstairs vacuum!
+  LATTER_CHECK(parse_v3_area_ctx_payload(
+      build_hub_caps_payload(2U, "63", "255", "63", "21.5", "heat_cool", "returning", true, "upstairs"), ac, hub));
+  LATTER_CHECK(hub.thermostat_idx == 1 && hub.thermostats[1].entity_id == "climate.upstairs");
+  LATTER_CHECK(hub.vacuum_idx == 1 && hub.vacuums[1].entity_id == "vacuum.upstairs");
+  hub.thermostat_idx = 0;
+  hub.vacuum_idx = 0;
+  LATTER_CHECK(effective_alarm_caps(ac) == 0x3FU);
+  LATTER_CHECK(effective_climate_caps(hub) == 0xFFU);
+  LATTER_CHECK(effective_vacuum_caps(hub) == 0x3FU);
+  LATTER_CHECK(hub.thermostats[0].target_temp == 22 && hub.thermostats[0].mode == "heat_cool");
+  LATTER_CHECK(hub.vacuums[0].state == "Returning");
+
+  // Unassigned entities -> effective_*_caps MUST return 0U even if alarm_caps was non-zero
   AreaContextState empty_ent_ac{};
   HomeHubState empty_ent_hub{};
   LATTER_CHECK(parse_v3_area_ctx_payload(
       build_hub_caps_payload(3U, "63", "255", "63", "72", "heat", "cleaning", false),
       empty_ent_ac, empty_ent_hub));
   LATTER_CHECK(empty_ent_ac.epoch == 1U);
-  LATTER_CHECK(empty_ent_ac.alarm_entity.empty() && empty_ent_ac.thermostat_entity.empty() &&
-               empty_ent_ac.lock_entity.empty() && empty_ent_ac.garage_entity.empty() &&
-               empty_ent_ac.vacuum_entity.empty());
+  LATTER_CHECK(empty_ent_ac.alarm_entity.empty() &&
+               empty_ent_hub.thermostat_count == 0 &&
+               empty_ent_hub.entry_count == 0 &&
+               empty_ent_hub.vacuum_count == 0 &&
+               empty_ent_hub.area_climate_count == 0);
   LATTER_CHECK(empty_ent_ac.alarm_caps == 0U && effective_alarm_caps(empty_ent_ac) == 0U);
-  LATTER_CHECK(empty_ent_ac.climate_caps == 0U && effective_climate_caps(empty_ent_ac) == 0U);
-  LATTER_CHECK(empty_ent_ac.vacuum_caps == 0U && effective_vacuum_caps(empty_ent_ac) == 0U);
+  LATTER_CHECK(effective_climate_caps(empty_ent_hub) == 0U);
+  LATTER_CHECK(effective_vacuum_caps(empty_ent_hub) == 0U);
+  LATTER_CHECK(resolve_doorbell_quick_unlock_target("foyer", empty_ent_hub) == nullptr);
 
   // 2. Conditional Security Alarm buttons + FrameHitTable across all 5 flagship panels
   struct HubBoard {
@@ -3707,14 +3763,14 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
     LATTER_CHECK(ht.count == 0);
 
     // Unassigned vacuum -> 0U caps -> 0 actions -> 0 hit rects (Docked or Cleaning)
-    LATTER_CHECK(register_vac_hits(ht, b, "Docked", effective_vacuum_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(register_vac_hits(ht, b, "Docked", effective_vacuum_caps(empty_ent_hub)) == 0);
     LATTER_CHECK(ht.count == 0);
-    LATTER_CHECK(register_vac_hits(ht, b, "Cleaning", effective_vacuum_caps(empty_ent_ac)) == 0);
+    LATTER_CHECK(register_vac_hits(ht, b, "Cleaning", effective_vacuum_caps(empty_ent_hub)) == 0);
     LATTER_CHECK(ht.count == 0);
 
     // Unassigned thermostat -> 0U caps -> no -/+ buttons and 0 mode pills -> 0 hit rects
     ht.clear();
-    const uint16_t no_clim = effective_climate_caps(empty_ent_ac);
+    const uint16_t no_clim = effective_climate_caps(empty_ent_hub);
     LATTER_CHECK(no_clim == 0U);
     LATTER_CHECK(!thermostat_shows_setpoint_buttons("heat", no_clim));
     ThermostatModeSpec no_modes[6]{};
@@ -3728,11 +3784,9 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
     register_home_hub_pill_deck_hits(ht, WidgetId::CLIMATE_MODE_BASE, no_codes, no_geoms, no_gcnt);
     LATTER_CHECK(no_gcnt == 0 && ht.count == 0);
 
-    // Unassigned lock + garage -> !show_lock && !show_garage -> 0 hit rects
+    // Unassigned lock + garage -> entry_count == 0 -> 0 hit rects
     ht.clear();
-    const bool show_lock = !empty_ent_ac.lock_entity.empty();
-    const bool show_garage = !empty_ent_ac.garage_entity.empty();
-    LATTER_CHECK(!show_lock && !show_garage && ht.count == 0);
+    LATTER_CHECK(empty_ent_hub.entry_count == 0 && ht.count == 0);
   }
 
   // 6. Source-level D-048 & zero-dummy guards: zero passive-text glass containers, static helper subtext, or unassigned fallbacks
@@ -3772,6 +3826,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(ui_doc.find("### D-048:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-049:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-050:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-061:") != std::string::npos);
 }
 
 // ==============================================================================
@@ -4703,8 +4758,8 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(np.scrub_open_y0 + np.scrub_open_h <= music_metadata_band_y1_for(p.h));
     LATTER_CHECK(np.time_y < music_metadata_band_y1_for(p.h));
 
-    // Page 1 (slots 0..3) and Page 2 (slots 4..7) of the 8-slot stadium mode bar
-    for (int win_start : {0, 4}) {
+    // All 6 sliding windows (win_start in 0..5) of the 9-slot stadium mode bar (0..8, SETTINGS = 8)
+    for (int win_start = 0; win_start <= 5; ++win_start) {
       FrameHitTable ht{};
       register_music_now_playing_hits(ht, np, true, true, MusicTakeover::NONE, win_start, true);
       check_zero_aabb_overlaps(ht, p.w, p.h);
@@ -4727,9 +4782,14 @@ void test_music_app_v3_d059() {
       if (win_start == 0) {
         LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_RIGHT) != nullptr);
         LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_LEFT) == nullptr);
-      } else {
+      } else if (win_start == 5) {
         LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_LEFT) != nullptr);
         LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_RIGHT) == nullptr);
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_SLOT_BASE + 3)->param ==
+                     static_cast<int16_t>(MusicView::SETTINGS));
+      } else {
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_LEFT) != nullptr);
+        LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_RIGHT) != nullptr);
       }
     }
 
@@ -4741,7 +4801,7 @@ void test_music_app_v3_d059() {
     }
 
     // Peer Tab 3 (MusicView::VOLUME): >= 64 px (96 px Desk) vertical slider + >= 7 mm targets
-    // coexisting cleanly ABOVE the 8-slot Stadium Mode Bar with zero AABB overlaps!
+    // coexisting cleanly ABOVE the 9-slot Stadium Mode Bar with zero AABB overlaps!
     {
       FrameHitTable ht{};
       const auto vg = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
@@ -4777,6 +4837,7 @@ void test_music_app_v3_d059() {
       register_music_now_playing_hits(ht, np, true, true, MusicTakeover::SCRUB, 0, true);
       LATTER_CHECK(ht.count == 0);
       const auto sg = compute_music_scrub_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+      if (p.w == 720 && p.h == 720) LATTER_CHECK(sg.slider_w <= 490);
       register_music_scrub_hits(ht, sg);
       check_zero_aabb_overlaps(ht, p.w, p.h);
 
@@ -4793,10 +4854,14 @@ void test_music_app_v3_d059() {
       LATTER_CHECK((ht.find_by_id(WidgetId::MUSIC_SCRUB_BAR)->flags & kHitHorizSlider) != 0U);
     }
 
-    // ACTION_SHEET floating takeover (5 full-width pills + < Cancel BACK_BUTTON, zero underlying rows)
+    // ACTION_SHEET floating takeover (5 stack-uniform pills + <= 490 px Desk cap + < Cancel, zero underlying rows)
     for (const uint16_t *wids : {kLibSheetWids, kQueueSheetWids}) {
       FrameHitTable ht{};
       const auto ag = compute_music_action_sheet_geom(p.w, p.h, p.round, p.wearable, p.ppi, 5);
+      if (p.w == 720 && p.h == 720) LATTER_CHECK(ag.item_w[0] <= 490);
+      for (int i = 1; i < 5; ++i) {
+        LATTER_CHECK(ag.item_w[i] == ag.item_w[0] && ag.item_x0[i] == ag.item_x0[0]);
+      }
       register_music_action_sheet_hits(ht, ag, wids);
       ht.add_rect(p.w / 2 - 80, ag.back_hit_y0, 160, p.h - ag.back_hit_y0, WidgetId::BACK_BUTTON, kHitTap);
       check_zero_aabb_overlaps(ht, p.w, p.h);
@@ -4809,17 +4874,30 @@ void test_music_app_v3_d059() {
       LATTER_CHECK(ht.find_by_id(WidgetId::LIST_SLOT_BASE) == nullptr);
     }
 
-    // Wide Bezel-Safe List Rows + Leading 1-Tap Play Zone (MUSIC_ROW_PLAY_BASE) on Playable Containers
+    // Stack-Uniform List Rows (D-060): identical card_w across all rows on Round 466x466 Pocket
+    // + bounded <= 490 px centered column on 720x720 Desk + Leading 1-Tap Play Zone!
     {
       FrameHitTable ht{};
       const int c_top = ly.hdr_y + scale_y_for(24, p.h);
       const int c_bot = (p.round ? scale_min_for(404, p.h) : (p.h - scale_y_for(64, p.h))) - scale_y_for(6, p.h);
+      int first_w = -1;
+      int first_x0 = -1;
       for (int r = 0; r < kMusicFullListPageSize; ++r) {
         const auto rg = compute_music_list_row_geom(
             r, kMusicFullListPageSize, c_top, c_bot, /*has_leading_play=*/true, /*has_pips=*/false,
             p.w, p.h, p.round, p.wearable, p.ppi);
-        if (p.w == 480 && p.h == 480) LATTER_CHECK(rg.card_w > 340);
-        if (p.w == 720 && p.h == 720) LATTER_CHECK(rg.card_w > 560);
+        if (r == 0) {
+          first_w = rg.card_w;
+          first_x0 = rg.card_x0;
+        } else {
+          LATTER_CHECK(rg.card_w == first_w && rg.card_x0 == first_x0);
+        }
+        if (p.w == 466 && p.h == 466 && p.round) LATTER_CHECK(rg.card_w >= 320);
+        if (p.w == 480 && p.h == 480) LATTER_CHECK(rg.card_w >= 360 && rg.card_w <= 400);
+        if (p.w == 720 && p.h == 720) {
+          LATTER_CHECK(rg.card_w == 480 && rg.card_w <= 490);
+          LATTER_CHECK(rg.card_x0 == (p.w - rg.card_w) / 2);
+        }
         register_music_list_row_hits(ht, rg, r, /*enable_long_press=*/true);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);
@@ -4830,38 +4908,111 @@ void test_music_app_v3_d059() {
         LATTER_CHECK(play_z->width() >= min_hit && (play_z->flags & kHitLongPress) != 0U);
         LATTER_CHECK((body_z->flags & kHitLongPress) != 0U);
       }
+
+      // Peer 4-row stack (SPEAKERS / QUEUE / ALBUM_TRACKS) & Peer 3-row SETTINGS stack above Mode Bar:
+      // row 0 == row 1 == row 2 == row 3 on 466x466 Round Pocket & <= 490 px on 720x720 Desk!
+      const int min_s = std::min(p.w, p.h);
+      const int mb_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) - scale_y_for(8, p.h);
+      for (bool pips : {false, true}) {
+        const auto r0 = compute_music_list_row_geom(
+            0, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
+        const auto r1 = compute_music_list_row_geom(
+            1, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
+        const auto r2 = compute_music_list_row_geom(
+            2, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
+        const auto r3 = compute_music_list_row_geom(
+            3, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
+        LATTER_CHECK(r0.card_w == r1.card_w && r1.card_w == r2.card_w && r2.card_w == r3.card_w);
+        LATTER_CHECK(r0.card_x0 == r1.card_x0 && r1.card_x0 == r2.card_x0 && r2.card_x0 == r3.card_x0);
+        if (p.w == 466 && p.h == 466 && p.round) LATTER_CHECK(r0.card_w >= (pips ? 300 : 330));
+        if (p.w == 720 && p.h == 720) LATTER_CHECK(r0.card_w <= 490);
+      }
+
+      // Peer Tab 8 (MusicView::SETTINGS): 3 stack-uniform cards + chevrons + Mode Bar zero AABB overlaps
+      FrameHitTable sht{};
+      int set_w0 = -1;
+      for (int i = 0; i < 3; ++i) {
+        const auto sg3 = compute_music_list_row_geom(
+            i, 3, c_top, mb_top, false, true, p.w, p.h, p.round, p.wearable, p.ppi);
+        if (i == 0) set_w0 = sg3.card_w;
+        LATTER_CHECK(sg3.card_w == set_w0);
+        if (p.w == 720 && p.h == 720) LATTER_CHECK(sg3.card_w <= 490);
+        register_music_list_row_hits(sht, sg3, i, false);
+      }
+      int pm_x = 0, pc_x = 0, ph_x0 = 0, ph_w = 0, pm_h = 0;
+      compute_vertical_page_pips_x(p.w, p.round, p.ppi, pm_x, pc_x, ph_x0, ph_w, pm_h);
+      const int mode_hit_top = std::min(ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s),
+                                        ly.app_dock_y - ly.dock_r - scale_y_for(12, p.h));
+      const int pip_top = scale_y_for(68, p.h);
+      const int pip_mid = (pip_top + std::max(pip_top + 2 * pm_h, mode_hit_top - 2)) / 2;
+      sht.add_rect(ph_x0, pip_mid, ph_w, std::max(8, mode_hit_top - pip_mid), WidgetId::CHEVRON_DOWN, kHitTap);
+      for (int i = 0; i < 4; ++i) {
+        sht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
+                       static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
+                       kHitTap | kHitFocusSlot | kHitFocusCircle,
+                       static_cast<int16_t>(5 + i), np.mode_bar_pad);
+      }
+      check_zero_aabb_overlaps(sht, p.w, p.h);
     }
 
-    // Library 2x3 Bento Grid (6 tiles above Mode Bar) + INFO Gear Icon (MUSIC_INFO_SETTINGS_BTN >= 7 mm)
+    // Library 2x3 Bento Grid (6 tiles above Mode Bar, <= 500 px Desk cap, ergonomic gaps) + gearless INFO viewport
     {
       FrameHitTable ht{};
       const int min_s = std::min(p.w, p.h);
       const int mb_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) - scale_y_for(8, p.h);
       const int c_top = ly.hdr_y + scale_y_for(24, p.h);
+      MusicBentoTileGeom tiles[6]{};
       for (int i = 0; i < 6; ++i) {
-        const auto tg = compute_music_bento_tile_geom(
+        tiles[i] = compute_music_bento_tile_geom(
             i, 6, c_top, mb_top, p.w, p.h, p.round, p.wearable, p.ppi);
-        LATTER_CHECK(tg.tile_y0 + tg.tile_h <= mb_top + 2);
-        ht.add_rect(tg.tile_x0, tg.tile_y0, tg.tile_w, tg.tile_h,
+        LATTER_CHECK(tiles[i].tile_y0 + tiles[i].tile_h <= mb_top + 2);
+        ht.add_rect(tiles[i].tile_x0, tiles[i].tile_y0, tiles[i].tile_w, tiles[i].tile_h,
                     static_cast<uint16_t>(WidgetId::GRID_CARD_BASE + i), kHitTap);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);
+      const int bento_grid_w = (tiles[1].tile_x0 + tiles[1].tile_w) - tiles[0].tile_x0;
+      const int bento_gap_x = tiles[1].tile_x0 - (tiles[0].tile_x0 + tiles[0].tile_w);
+      const int bento_gap_y = tiles[2].tile_y0 - (tiles[0].tile_y0 + tiles[0].tile_h);
+      LATTER_CHECK(tiles[0].tile_w == tiles[2].tile_w && tiles[2].tile_w == tiles[4].tile_w);
+      if (p.w == 466 && p.h == 466) LATTER_CHECK(bento_gap_x >= 10 && bento_gap_y >= 10);
+      if (p.w == 720 && p.h == 720) {
+        LATTER_CHECK(bento_grid_w <= 500);
+        LATTER_CHECK(bento_gap_x >= 16 && bento_gap_y >= 16);
+      }
 
-      FrameHitTable iht{};
-      const auto ig = compute_music_info_settings_geom(p.w, p.h, p.round, p.wearable, p.ppi);
-      register_music_info_settings_hit(iht, ig);
-      const HitRegion *gear = iht.find_by_id(WidgetId::MUSIC_INFO_SETTINGS_BTN);
-      LATTER_CHECK(gear != nullptr && pad_w(gear) >= min_hit && pad_h(gear) >= min_hit);
+      const auto ig = compute_music_info_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       LATTER_CHECK(ig.vp_bot_ambient > ig.vp_bot_hud);
     }
   }
 
-  // 2. 8 Peer Tabs (0..7), Horizontal Wrap, Page-Size Parity (4 vs 5), can_go_home & Smart Auto-Fade/Spring-Back
+  // 2. 9 Peer Tabs (0..8, SETTINGS = 8), Sliding 4-Slot Window (0..5), Page-Size Parity & Auto-Fade/Spring-Back
   {
+    static_assert(kMusicPeerTabCount == 9);
+    static_assert(static_cast<int>(MusicView::SETTINGS) == 8);
+
     LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, +1) == MusicView::LIBRARY);
-    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, -1) == MusicView::INFO);
+    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, -1) == MusicView::SETTINGS);
     LATTER_CHECK(step_music_peer_tab(MusicView::VOLUME, +1) == MusicView::QUEUE);
-    LATTER_CHECK(step_music_peer_tab(MusicView::INFO, +1) == MusicView::NOW_PLAYING);
+    LATTER_CHECK(step_music_peer_tab(MusicView::INFO, +1) == MusicView::SETTINGS);
+    LATTER_CHECK(step_music_peer_tab(MusicView::SETTINGS, +1) == MusicView::NOW_PLAYING);
+
+    // Stepping forward 0 -> 1 -> ... -> 8 -> 0 glides the 4-slot window smoothly through 0..5!
+    MusicRuntimeState slide_m{};
+    for (int step = 0; step < kMusicPeerTabCount; ++step) {
+      slide_m.view = static_cast<MusicView>(step);
+      slide_m.sync_carousel_for_view();
+      const int expected_win = (step < 4) ? 0 : (step - 3);
+      LATTER_CHECK(slide_m.mode_bar_win_start == expected_win);
+      LATTER_CHECK(slide_m.carousel_page == static_cast<uint8_t>(expected_win));
+      LATTER_CHECK(step >= slide_m.mode_bar_win_start && step <= slide_m.mode_bar_win_start + 3);
+    }
+    // Wrapping 8 -> 0 snaps window cleanly back to 0; wrapping 0 -> 8 glides window to 5 (5..8)
+    slide_m.view = step_music_peer_tab(MusicView::SETTINGS, +1);
+    slide_m.sync_carousel_for_view();
+    LATTER_CHECK(slide_m.view == MusicView::NOW_PLAYING && slide_m.mode_bar_win_start == 0);
+    slide_m.view = step_music_peer_tab(MusicView::NOW_PLAYING, -1);
+    slide_m.sync_carousel_for_view();
+    LATTER_CHECK(slide_m.view == MusicView::SETTINGS && slide_m.mode_bar_win_start == 5);
 
     static_assert(music_browse_page_size_for(MusicView::SPEAKERS, MusicDrilldown::NONE, "speakers") == 4);
     static_assert(music_browse_page_size_for(MusicView::QUEUE, MusicDrilldown::NONE, "active_queue") == 4);
@@ -4881,19 +5032,17 @@ void test_music_app_v3_d059() {
       st.music.view = static_cast<MusicView>(t);
       st.music.drilldown = MusicDrilldown::NONE;
       st.music.takeover = MusicTakeover::NONE;
+      st.music.settings_page = 1;
       st.music.sync_carousel_for_view();
-      LATTER_CHECK(st.music.carousel_page == ((t >= 4) ? 1U : 0U));
-      LATTER_CHECK(st.music.mode_bar_win_start == ((t >= 4) ? 4 : 0));
       if (st.music.view == MusicView::ALBUM_TRACKS) {
         st.music.selected_category_mode = "current_album_tracks";
-        peer_ctxs.push_back(compute_touch_context(st));
-      } else {
-        for (uint8_t cp : {uint8_t{0}, uint8_t{1}}) {
-          st.music.carousel_page = cp;
-          peer_ctxs.push_back(compute_touch_context(st));
-        }
       }
+      peer_ctxs.push_back(compute_touch_context(st));
     }
+    st.music.view = MusicView::SETTINGS;
+    st.music.settings_page = 2;
+    st.music.sync_carousel_for_view();
+    peer_ctxs.push_back(compute_touch_context(st));
     for (size_t i = 0; i < peer_ctxs.size(); ++i) {
       for (size_t j = i + 1; j < peer_ctxs.size(); ++j) {
         LATTER_CHECK(peer_ctxs[i] != peer_ctxs[j]);
@@ -4912,7 +5061,7 @@ void test_music_app_v3_d059() {
     st.music.apply_route(RouteId::MUSIC_INFO);
     LATTER_CHECK(st.music.view == MusicView::INFO &&
                  st.music.drilldown == MusicDrilldown::NONE &&
-                 st.music.carousel_page == 1U);
+                 st.music.mode_bar_win_start == 4);
 
     // Smart Auto-Fade & Spring-Back:
     // - VOLUME springs back to NOW_PLAYING at 5000 ms
@@ -4925,8 +5074,9 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(vol_fade.changed && vol_fade.sprung_back_to_now_playing);
     LATTER_CHECK(m.view == MusicView::NOW_PLAYING && !m.hud_active);
 
-    // - Transient browse tabs (LIBRARY, SPEAKERS, QUEUE, ALBUM_TRACKS) spring back at 10000 ms
-    for (MusicView tv : {MusicView::LIBRARY, MusicView::SPEAKERS, MusicView::QUEUE, MusicView::ALBUM_TRACKS}) {
+    // - Transient peer tabs (LIBRARY, SPEAKERS, QUEUE, ALBUM_TRACKS, SETTINGS) spring back at 10000 ms!
+    for (MusicView tv : {MusicView::LIBRARY, MusicView::SPEAKERS, MusicView::QUEUE,
+                         MusicView::ALBUM_TRACKS, MusicView::SETTINGS}) {
       m = MusicRuntimeState{};
       m.view = tv;
       m.sync_carousel_for_view();
@@ -4935,7 +5085,7 @@ void test_music_app_v3_d059() {
       LATTER_CHECK(!step_music_hud_auto_fade(m, 11999U, "Always Visible").changed);
       const auto tr_fade = step_music_hud_auto_fade(m, 12000U, "Always Visible");
       LATTER_CHECK(tr_fade.changed && tr_fade.sprung_back_to_now_playing);
-      LATTER_CHECK(m.view == MusicView::NOW_PLAYING && m.carousel_page == 0U);
+      LATTER_CHECK(m.view == MusicView::NOW_PLAYING && m.carousel_page == 0U && m.mode_bar_win_start == 0);
     }
 
     // - Ambient LYRICS and INFO fade hud_active -> false at 6000 ms while STAYING on LYRICS / INFO!
@@ -5069,6 +5219,8 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(!should_return_to_home_on_idle(rt, prefs, true, false));
     rt.music.view = MusicView::LIBRARY;
     LATTER_CHECK(should_return_to_home_on_idle(rt, prefs, true, false));
+    rt.music.view = MusicView::SETTINGS;
+    LATTER_CHECK(should_return_to_home_on_idle(rt, prefs, true, false));
 
     // Art Only idle cadence: FrameCadenceController stops anim poller and schedules 0 redraws on PageId::MUSIC
     FrameCadenceController fc;
@@ -5089,11 +5241,15 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(!a250.ensure_anim_poller && !a250.schedule_disp_now && !a250.schedule_band_now);
   }
 
-  // 5. Zero-legacy & D-043 / D-048 / D-059 source-level invariants
+  // 5. Zero-legacy & D-043 / D-048 / D-059 / D-060 source-level invariants
   {
     const std::string mu_src = read_repo_file("../../components/latter_ui/page_music.cpp");
     const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
     const std::string comp_src = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+    const std::string gfx_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
+    const std::string wid_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+    const std::string lay_src = read_repo_file("../../include/ui_layout.h");
+    const std::string sys_yaml = read_repo_file("../../modules/system_core.yaml");
     const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
 
     LATTER_CHECK(mu_src.find("render_progress_arc_r224") == std::string::npos);
@@ -5104,21 +5260,58 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(mu_src.find("chrome_modal_bg") == std::string::npos);
     LATTER_CHECK(mu_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
     LATTER_CHECK(mu_src.find("ly.list_card_w") == std::string::npos);
+    LATTER_CHECK(mu_src.find("font_micro") == std::string::npos);
+    LATTER_CHECK(mu_src.find("MUSIC_INFO_SETTINGS_BTN") == std::string::npos);
+    LATTER_CHECK(mu_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
+    LATTER_CHECK(mu_src.find("ui::draw_icon_play_pause(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("ui::draw_icon_hamburger(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("\"mdi:cog-outline\"") != std::string::npos);
     LATTER_CHECK(mu_src.find("render_lyrics_art_backdrop(") != std::string::npos);
-    LATTER_CHECK(mu_src.find("MUSIC_INFO_SETTINGS_BTN") == std::string::npos ||
-                 mu_src.find("register_music_info_settings_hit(") != std::string::npos);
-    LATTER_CHECK(mu_src.find("register_music_info_settings_hit(") != std::string::npos);
     LATTER_CHECK(mu_src.find("register_music_list_row_hits(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("case MusicView::SETTINGS:") != std::string::npos);
+
     LATTER_CHECK(te_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
+    LATTER_CHECK(te_src.find("MUSIC_INFO_SETTINGS_BTN") == std::string::npos);
+    LATTER_CHECK(te_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
     LATTER_CHECK(te_src.find("activate_music_peer_tab(") != std::string::npos);
     LATTER_CHECK(te_src.find("MUSIC_ROW_PLAY_BASE") != std::string::npos);
-    LATTER_CHECK(te_src.find("MUSIC_INFO_SETTINGS_BTN") != std::string::npos);
+    LATTER_CHECK(te_src.find("case MusicView::SETTINGS:") != std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode == 5") == std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode == 6") == std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode = 5") == std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode = 6") == std::string::npos);
     LATTER_CHECK(te_src.find("show_speaker_shortcut") == std::string::npos);
     LATTER_CHECK(te_src.find("show_library_shortcut") == std::string::npos);
+
+    // Unified Mode-Bar & Canvas horizontal swipe: zero separate mode_bar_zone_top() window-only branch!
+    const size_t mu_swipe_s = te_src.find("if (rs.nav.gui_page == PageId::MUSIC)");
+    const size_t mu_swipe_e = te_src.find("if (rs.music.drilldown == MusicDrilldown::LIB_LIST", mu_swipe_s);
+    LATTER_CHECK(mu_swipe_s != std::string::npos && mu_swipe_e != std::string::npos);
+    const std::string mu_swipe_blk = te_src.substr(mu_swipe_s, mu_swipe_e - mu_swipe_s);
+    LATTER_CHECK(mu_swipe_blk.find("gest.start_y >= ly.mode_bar_zone_top()") == std::string::npos);
+    LATTER_CHECK(mu_swipe_blk.find("activate_music_peer_tab(step_music_peer_tab(rs.music.view, h_dir), now_ms)") !=
+                 std::string::npos);
+
+    // DockSlideAnimator 9-tab span guard, system_core.yaml SETTINGS check, white headers & uniform 140 HUD scrim
+    LATTER_CHECK(lay_src.find("std::abs(new_start - target_start) > 9") != std::string::npos);
+    LATTER_CHECK(lay_src.find("std::abs(new_active - target_active) > 9") != std::string::npos);
+    LATTER_CHECK(sys_yaml.find("rs.music.view == latter_ui::MusicView::SETTINGS") != std::string::npos);
+    LATTER_CHECK(sys_yaml.find("MusicDrilldown::SETTINGS") == std::string::npos);
+    LATTER_CHECK(wid_src.find("draw_icon_play_pause(") != std::string::npos);
+    LATTER_CHECK(wid_src.find("draw_icon_hamburger(") != std::string::npos);
+    const size_t ph_s = wid_src.find("void render_page_header(esphome::display::Display &it, int cx, const char *title");
+    const size_t ph_e = wid_src.find("void render_sub_header(", ph_s);
+    LATTER_CHECK(ph_s != std::string::npos && ph_e != std::string::npos);
+    LATTER_CHECK(wid_src.substr(ph_s, ph_e - ph_s).find("esphome::Color::WHITE") != std::string::npos);
+
+    const size_t art_s = gfx_src.find("compute_art_row_scale_q8(");
+    const size_t art_e = gfx_src.find("void art_letterbox_bounds(", art_s);
+    LATTER_CHECK(art_s != std::string::npos && art_e != std::string::npos);
+    const std::string art_fn = gfx_src.substr(art_s, art_e - art_s);
+    LATTER_CHECK(art_fn.find("return 140;") != std::string::npos);
+    LATTER_CHECK(art_fn.find("ramp(y, scale_y(104), 140, scale_y(148), 256)") != std::string::npos);
+    LATTER_CHECK(art_fn.find("212") == std::string::npos);
+
     LATTER_CHECK(comp_src.find("if (!show_metadata && !show_controls)") != std::string::npos);
     LATTER_CHECK(comp_src.find("mark_music_progress_dirty_band(") != std::string::npos);
 
@@ -5134,17 +5327,22 @@ void test_music_app_v3_d059() {
     const std::string np_fn = slice_fn("void render_now_playing_view(", "void render_volume_peer_tab(");
     const std::string vol_fn = slice_fn("void render_volume_peer_tab(", "void render_lyrics_view(");
     const std::string lyr_fn = slice_fn("void render_lyrics_view(", "void render_music_settings_view(");
+    const std::string set_fn = slice_fn("void render_music_settings_view(", "void render_info_view(");
     const std::string info_fn = slice_fn("void render_info_view(", "void render_slot_list_row(");
     const std::string page_fn = mu_src.substr(mu_src.find("void render_music_page("));
 
     // Zero outer passive glass containers in SCRUB, ACTION_SHEET, LYRICS, and INFO;
-    // exactly 1 slider rail render_card_box in VOLUME, and dim_level = 0 on Now Playing & Volume!
+    // SETTINGS is Peer Tab 8 with Mode Bar & zero < Back; dim_level = 0 on Now Playing & Volume!
     LATTER_CHECK(scrub_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(sheet_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(lyr_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(info_fn.find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(set_fn.find("render_music_stadium_mode_bar(") != std::string::npos);
+    LATTER_CHECK(set_fn.find("render_back_button(") == std::string::npos);
     LATTER_CHECK(np_fn.find("/*dim_level=*/0") != std::string::npos);
+    LATTER_CHECK(np_fn.find("font_btn_bold") == std::string::npos && np_fn.find("font_date") == std::string::npos);
     LATTER_CHECK(vol_fn.find("/*dim_level=*/0") != std::string::npos);
+    LATTER_CHECK(vol_fn.find("font_btn_bold") == std::string::npos);
     const size_t first_vol_card = vol_fn.find("render_card_box(");
     LATTER_CHECK(first_vol_card != std::string::npos &&
                  vol_fn.find("render_card_box(", first_vol_card + 1U) == std::string::npos);
@@ -5156,6 +5354,7 @@ void test_music_app_v3_d059() {
                  sheet_guard < browse_call);
 
     LATTER_CHECK(ui_doc.find("### D-059:") != std::string::npos);
+    LATTER_CHECK(ui_doc.find("### D-060:") != std::string::npos);
   }
 }
 

@@ -88,13 +88,13 @@ enum class MusicView : uint8_t {
   LYRICS       = 5,
   ALBUM_TRACKS = 6,
   INFO         = 7,
+  SETTINGS     = 8,
 };
 
 enum class MusicDrilldown : uint8_t {
   NONE            = 0,
   LIB_LIST        = 1,
   SPEAKER_ACTIONS = 2,
-  SETTINGS        = 3,
 };
 
 enum class MusicTakeover : uint8_t {
@@ -103,7 +103,7 @@ enum class MusicTakeover : uint8_t {
   ACTION_SHEET = 2,
 };
 
-inline constexpr int kMusicPeerTabCount = 8;
+inline constexpr int kMusicPeerTabCount = 9;
 
 inline constexpr bool is_music_ambient_tab(MusicView v) noexcept {
   return v == MusicView::NOW_PLAYING || v == MusicView::LYRICS || v == MusicView::INFO;
@@ -360,15 +360,55 @@ inline constexpr uint16_t kMediaCapDefault        =
     kMediaCapPause | kMediaCapSeek | kMediaCapVolumeSet | kMediaCapVolumeMute |
     kMediaCapPreviousTrack | kMediaCapNextTrack;
 
+inline constexpr int kMaxThermostatZones  = 8;
+inline constexpr int kMaxEntryLockItems   = 8;
+inline constexpr int kMaxEntryGarageItems = 6;
+inline constexpr int kMaxEntryItems       = kMaxEntryLockItems + kMaxEntryGarageItems;
+inline constexpr int kMaxVacuumUnits      = 6;
+inline constexpr int kMaxAreaClimates     = 6;
+
+struct ThermostatZoneItem {
+  std::string entity_id = "";
+  std::string name = "";
+  std::string area_id = "";
+  std::string mode = "";
+  int target_temp = -1;
+  float current_temp = NAN;
+  uint16_t caps = 0;
+};
+
+struct EntryControlItem {
+  std::string entity_id = "";
+  std::string name = "";
+  std::string area_id = "";
+  bool is_lock = true;
+  LockState lock_state = LockState::UNKNOWN;
+  GarageState garage_state = GarageState::UNKNOWN;
+};
+
+struct VacuumUnitItem {
+  std::string entity_id = "";
+  std::string name = "";
+  std::string area_id = "";
+  std::string state = "";
+  uint16_t caps = 0;
+};
+
 struct HomeHubState {
   int tab = 0;
   int mode_bar_page = 0;
-  int thermostat_target_f = -1;
-  float thermostat_current_f = NAN;
-  std::string thermostat_mode = "";
-  GarageState garage_state = GarageState::UNKNOWN;
-  LockState lock_state = LockState::UNKNOWN;
-  std::string vacuum_state = "";
+  int thermostat_idx = 0;
+  int thermostat_count = 0;
+  ThermostatZoneItem thermostats[kMaxThermostatZones]{};
+  int entry_page = 0;
+  int entry_count = 0;
+  EntryControlItem entries[kMaxEntryItems]{};
+  int vacuum_idx = 0;
+  int vacuum_count = 0;
+  VacuumUnitItem vacuums[kMaxVacuumUnits]{};
+  int area_climate_count = 0;
+  ThermostatZoneItem area_climates[kMaxAreaClimates]{};
+  uint32_t local_mutation_seq = 0;
 };
 
 // Protocol v3 area_context state.
@@ -388,12 +428,11 @@ struct AreaContextState {
   std::string alarm_entity = "";
   std::string alarm_state = "";
   uint16_t alarm_caps = 0;
-  std::string thermostat_entity = "";
-  uint16_t climate_caps = 0;
-  std::string lock_entity = "";
-  std::string garage_entity = "";
-  std::string vacuum_entity = "";
-  uint16_t vacuum_caps = 0;
+  std::string thermostats_summary = "";
+  std::string locks_summary = "";
+  std::string garages_summary = "";
+  std::string vacuums_summary = "";
+  std::string area_climates_summary = "";
   std::string camera_snapshot_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
@@ -1626,8 +1665,8 @@ struct MusicRuntimeState {
   MusicDrilldown drilldown{MusicDrilldown::NONE};
   MusicTakeover takeover{MusicTakeover::NONE};
   uint32_t takeover_interacted_ms = 0;
-  uint8_t carousel_page = 0;     // 0 = Page 1 (slots 0..3), 1 = Page 2 (slots 4..7)
-  int mode_bar_win_start = 0;    // 0 or 4 window start for render_in_app_mode_bar_track
+  uint8_t carousel_page = 0;     // 0..5 sliding 4-slot window start across 9 peer tabs (0..8)
+  int mode_bar_win_start = 0;    // 0..5 window start for render_in_app_mode_bar_track
   int8_t action_sheet_slot = -1; // 0..4 when opened from a slot row; -1 for header container
   bool action_sheet_is_queue = false;
   bool action_sheet_is_container = false;
@@ -1679,9 +1718,17 @@ struct MusicRuntimeState {
   std::string loaded_wallpaper_url = "";
 
   void sync_carousel_for_view() noexcept {
-    const int idx = static_cast<int>(view);
-    carousel_page = (idx >= 4) ? 1U : 0U;
-    mode_bar_win_start = (idx >= 4) ? 4 : 0;
+    const int idx = std::clamp(static_cast<int>(view), 0, kMusicPeerTabCount - 1);
+    if (mode_bar_win_start < 0 || mode_bar_win_start > kMusicPeerTabCount - 4) {
+      mode_bar_win_start = 0;
+    }
+    if (idx < mode_bar_win_start) {
+      mode_bar_win_start = idx;
+    } else if (idx >= mode_bar_win_start + 4) {
+      mode_bar_win_start = idx - 3;
+    }
+    mode_bar_win_start = std::clamp(mode_bar_win_start, 0, kMusicPeerTabCount - 4);
+    carousel_page = static_cast<uint8_t>(mode_bar_win_start);
   }
 
   void reset_overlays() noexcept {
@@ -2329,6 +2376,181 @@ inline std::string normalize_vacuum_state_str(std::string_view sv) {
   return std::string(sv);
 }
 
+inline std::string fallback_entity_label_sv(std::string_view ent_id) {
+  const size_t dot = ent_id.find('.');
+  std::string s(dot == std::string_view::npos ? ent_id : ent_id.substr(dot + 1U));
+  bool cap = true;
+  for (char &ch : s) {
+    if (ch == '_' || ch == '-') {
+      ch = ' ';
+      cap = true;
+    } else if (cap) {
+      ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+      cap = false;
+    }
+  }
+  return s;
+}
+
+inline int parse_thermostats_summary_records(std::string_view raw,
+                                             ThermostatZoneItem *out_items,
+                                             int max_items,
+                                             bool has_area_col = true) {
+  if (out_items == nullptr || max_items <= 0) return 0;
+  for (int i = 0; i < max_items; ++i) out_items[i] = ThermostatZoneItem{};
+  if (raw.empty()) return 0;
+  std::string_view recs[kMaxThermostatZones];
+  const int cap = std::min(max_items, kMaxThermostatZones);
+  const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
+  int cnt = 0;
+  const size_t expected_cols = has_area_col ? 7U : 6U;
+  for (size_t r = 0; r < n && cnt < cap; ++r) {
+    std::string_view cols[8]{};
+    const size_t got = v3_split_fields(recs[r], cols, 8U, '|');
+    if (got < expected_cols || cols[0].empty()) continue;
+    auto &dst = out_items[cnt++];
+    dst.entity_id = std::string(cols[0]);
+    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
+    const size_t off = has_area_col ? 1U : 0U;
+    dst.area_id = has_area_col ? std::string(cols[2]) : std::string{};
+    dst.mode = std::string(cols[2U + off]);
+    const uint32_t raw_caps = v3_parse_u32(cols[5U + off], 0U);
+    dst.caps = (raw_caps != 0U) ? static_cast<uint16_t>(raw_caps & 0xFFFFU) : kClimateCapDefault;
+    const bool is_celsius = (dst.caps & kClimateCapCelsius) != 0U;
+    const float min_valid_t = is_celsius ? 4.0f : 35.0f;
+    const float max_valid_t = is_celsius ? 45.0f : 110.0f;
+    const float th_temp = v3_parse_float(cols[3U + off], NAN);
+    dst.target_temp = (!std::isnan(th_temp) && th_temp >= min_valid_t && th_temp <= max_valid_t)
+                          ? static_cast<int>(std::round(th_temp))
+                          : -1;
+    dst.current_temp = v3_parse_float(cols[4U + off], NAN);
+  }
+  return cnt;
+}
+
+inline int parse_entry_controls_records(std::string_view locks_raw,
+                                        std::string_view garages_raw,
+                                        EntryControlItem out_items[kMaxEntryItems]) {
+  for (int i = 0; i < kMaxEntryItems; ++i) out_items[i] = EntryControlItem{};
+  int cnt = 0;
+  if (!locks_raw.empty()) {
+    std::string_view recs[kMaxEntryLockItems];
+    const size_t n = v3_split_fields(locks_raw, recs, kMaxEntryLockItems, kProtocolRecordSep);
+    for (size_t r = 0; r < n && cnt < kMaxEntryItems; ++r) {
+      std::string_view cols[5]{};
+      if (v3_split_fields(recs[r], cols, 5U, '|') < 4U || cols[0].empty()) continue;
+      auto &dst = out_items[cnt++];
+      dst.entity_id = std::string(cols[0]);
+      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
+      dst.area_id = std::string(cols[2]);
+      dst.is_lock = true;
+      dst.lock_state = parse_lock_state_str(cols[3]);
+    }
+  }
+  if (!garages_raw.empty()) {
+    std::string_view recs[kMaxEntryGarageItems];
+    const size_t n = v3_split_fields(garages_raw, recs, kMaxEntryGarageItems, kProtocolRecordSep);
+    for (size_t r = 0; r < n && cnt < kMaxEntryItems; ++r) {
+      std::string_view cols[5]{};
+      if (v3_split_fields(recs[r], cols, 5U, '|') < 4U || cols[0].empty()) continue;
+      auto &dst = out_items[cnt++];
+      dst.entity_id = std::string(cols[0]);
+      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
+      dst.area_id = std::string(cols[2]);
+      dst.is_lock = false;
+      dst.garage_state = parse_garage_state_str(cols[3]);
+    }
+  }
+  return cnt;
+}
+
+inline int parse_vacuums_summary_records(std::string_view raw,
+                                         VacuumUnitItem out_items[kMaxVacuumUnits]) {
+  for (int i = 0; i < kMaxVacuumUnits; ++i) out_items[i] = VacuumUnitItem{};
+  if (raw.empty()) return 0;
+  std::string_view recs[kMaxVacuumUnits];
+  const size_t n = v3_split_fields(raw, recs, kMaxVacuumUnits, kProtocolRecordSep);
+  int cnt = 0;
+  for (size_t r = 0; r < n && cnt < kMaxVacuumUnits; ++r) {
+    std::string_view cols[6]{};
+    if (v3_split_fields(recs[r], cols, 6U, '|') < 5U || cols[0].empty()) continue;
+    auto &dst = out_items[cnt++];
+    dst.entity_id = std::string(cols[0]);
+    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
+    dst.area_id = std::string(cols[2]);
+    dst.state = normalize_vacuum_state_str(cols[3]);
+    const uint32_t raw_caps = v3_parse_u32(cols[4], 0U);
+    dst.caps = (raw_caps != 0U) ? static_cast<uint16_t>(raw_caps & 0xFFFFU) : kVacuumCapDefault;
+  }
+  return cnt;
+}
+
+inline void sync_home_hub_for_active_area(std::string_view active_area_id,
+                                          HomeHubState &hub = home_hub_state()) noexcept {
+  if (active_area_id.empty()) return;
+  for (int i = 0; i < hub.thermostat_count; ++i) {
+    if (hub.thermostats[i].area_id == active_area_id) {
+      hub.thermostat_idx = i;
+      break;
+    }
+  }
+  for (int i = 0; i < hub.vacuum_count; ++i) {
+    if (hub.vacuums[i].area_id == active_area_id) {
+      hub.vacuum_idx = i;
+      break;
+    }
+  }
+}
+
+inline const EntryControlItem *resolve_doorbell_quick_unlock_target(
+    std::string_view camera_area_id = "",
+    const HomeHubState &hub = home_hub_state()) noexcept {
+  if (hub.entry_count <= 0) return nullptr;
+  if (!camera_area_id.empty()) {
+    for (int i = 0; i < hub.entry_count; ++i) {
+      if (hub.entries[i].is_lock && hub.entries[i].area_id == camera_area_id) {
+        return &hub.entries[i];
+      }
+    }
+  }
+  for (int i = 0; i < hub.entry_count; ++i) {
+    if (hub.entries[i].is_lock) return &hub.entries[i];
+  }
+  if (!camera_area_id.empty()) {
+    for (int i = 0; i < hub.entry_count; ++i) {
+      if (!hub.entries[i].is_lock && hub.entries[i].area_id == camera_area_id) {
+        return &hub.entries[i];
+      }
+    }
+  }
+  return &hub.entries[0];
+}
+
+inline ThermostatZoneItem *find_climate_item_by_id(std::string_view entity_id,
+                                                   HomeHubState &hub = home_hub_state()) noexcept {
+  if (entity_id.empty()) return nullptr;
+  for (int i = 0; i < hub.area_climate_count; ++i) {
+    if (hub.area_climates[i].entity_id == entity_id) return &hub.area_climates[i];
+  }
+  for (int i = 0; i < hub.thermostat_count; ++i) {
+    if (hub.thermostats[i].entity_id == entity_id) return &hub.thermostats[i];
+  }
+  return nullptr;
+}
+
+inline const ThermostatZoneItem *find_climate_item_by_id_const(
+    std::string_view entity_id,
+    const HomeHubState &hub = home_hub_state()) noexcept {
+  if (entity_id.empty()) return nullptr;
+  for (int i = 0; i < hub.area_climate_count; ++i) {
+    if (hub.area_climates[i].entity_id == entity_id) return &hub.area_climates[i];
+  }
+  for (int i = 0; i < hub.thermostat_count; ++i) {
+    if (hub.thermostats[i].entity_id == entity_id) return &hub.thermostats[i];
+  }
+  return nullptr;
+}
+
 // Parse Protocol v3 area_context payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
 inline bool parse_v3_area_ctx_payload(std::string_view payload,
                                       AreaContextState &st = area_ctx_state(),
@@ -2337,10 +2559,21 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   std::string_view f[kCount]{};
   size_t n = v3_split_fields(payload, f, kCount, kProtocolFieldSep);
   if (n < kProtocolMinRequiredFields || f[static_cast<size_t>(AreaCtxField::HEADER_VERSION)] != "v3") return false;
+  const uint32_t prev_epoch = st.epoch;
   uint32_t epoch = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_EPOCH)], 0);
   uint32_t rev   = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::HEADER_REV)], 0);
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("area_context", payload, kCount);
+
+  const std::string prev_area_id = st.area_id;
+  const std::string prev_therm_ent =
+      (hub.thermostat_idx >= 0 && hub.thermostat_idx < hub.thermostat_count)
+          ? hub.thermostats[hub.thermostat_idx].entity_id
+          : std::string{};
+  const std::string prev_vac_ent =
+      (hub.vacuum_idx >= 0 && hub.vacuum_idx < hub.vacuum_count)
+          ? hub.vacuums[hub.vacuum_idx].entity_id
+          : std::string{};
 
   st.area_id           = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ID)]);
   st.area_name         = std::string(f[static_cast<size_t>(AreaCtxField::AREA_NAME)]);
@@ -2354,30 +2587,60 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.covers_open       = v3_parse_int(f[static_cast<size_t>(AreaCtxField::COVERS_OPEN)], 0);
   st.alarm_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_ENTITY)]);
   st.alarm_state       = std::string(f[static_cast<size_t>(AreaCtxField::ALARM_STATE)]);
-  st.thermostat_entity = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_ENTITY)]);
-  st.lock_entity       = std::string(f[static_cast<size_t>(AreaCtxField::LOCK_ENTITY)]);
-  st.garage_entity     = std::string(f[static_cast<size_t>(AreaCtxField::GARAGE_ENTITY)]);
-  st.vacuum_entity     = std::string(f[static_cast<size_t>(AreaCtxField::VACUUM_ENTITY)]);
 
-  const uint32_t raw_climate_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::CLIMATE_CAPS)], 0U);
-  st.climate_caps = st.thermostat_entity.empty()
-                        ? 0U
-                        : ((raw_climate_caps != 0U)
-                               ? static_cast<uint16_t>(raw_climate_caps & 0xFFFFU)
-                               : kClimateCapDefault);
-  const bool is_celsius = (st.climate_caps & kClimateCapCelsius) != 0U;
-  const float min_valid_t = is_celsius ? 4.0f : 35.0f;
-  const float max_valid_t = is_celsius ? 45.0f : 110.0f;
+  st.thermostats_summary   = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY)]);
+  st.locks_summary         = std::string(f[static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY)]);
+  st.garages_summary       = std::string(f[static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY)]);
+  st.vacuums_summary       = std::string(f[static_cast<size_t>(AreaCtxField::VACUUMS_SUMMARY)]);
+  st.area_climates_summary = std::string(f[static_cast<size_t>(AreaCtxField::AREA_CLIMATES_SUMMARY)]);
 
-  hub.thermostat_mode = std::string(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_STATE)]);
-  float th_temp = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_TEMP)], NAN);
-  hub.thermostat_target_f = (!std::isnan(th_temp) && th_temp >= min_valid_t && th_temp <= max_valid_t)
-                               ? static_cast<int>(std::round(th_temp))
-                               : -1;  // no setpoint: unknown
-  hub.thermostat_current_f = v3_parse_float(f[static_cast<size_t>(AreaCtxField::THERMOSTAT_CURRENT_TEMP)], NAN);
-  hub.lock_state           = parse_lock_state_str(f[static_cast<size_t>(AreaCtxField::LOCK_STATE)]);
-  hub.garage_state         = parse_garage_state_str(f[static_cast<size_t>(AreaCtxField::GARAGE_STATE)]);
-  hub.vacuum_state         = normalize_vacuum_state_str(f[static_cast<size_t>(AreaCtxField::VACUUM_STATE)]);
+  hub.thermostat_count = parse_thermostats_summary_records(
+      st.thermostats_summary, hub.thermostats, kMaxThermostatZones, /*has_area_col=*/true);
+  hub.entry_count = parse_entry_controls_records(st.locks_summary, st.garages_summary, hub.entries);
+  hub.vacuum_count = parse_vacuums_summary_records(st.vacuums_summary, hub.vacuums);
+  hub.area_climate_count = parse_thermostats_summary_records(
+      st.area_climates_summary, hub.area_climates, kMaxAreaClimates, /*has_area_col=*/false);
+
+  if (hub.thermostat_count <= 0) {
+    hub.thermostat_idx = 0;
+  } else {
+    int preserved = -1;
+    if (!prev_therm_ent.empty()) {
+      for (int i = 0; i < hub.thermostat_count; ++i) {
+        if (hub.thermostats[i].entity_id == prev_therm_ent) {
+          preserved = i;
+          break;
+        }
+      }
+    }
+    hub.thermostat_idx = (preserved >= 0)
+                             ? preserved
+                             : std::clamp(hub.thermostat_idx, 0, hub.thermostat_count - 1);
+  }
+
+  const int max_entry_pg = std::max(0, (hub.entry_count - 1) / 2);
+  hub.entry_page = std::clamp(hub.entry_page, 0, max_entry_pg);
+
+  if (hub.vacuum_count <= 0) {
+    hub.vacuum_idx = 0;
+  } else {
+    int preserved = -1;
+    if (!prev_vac_ent.empty()) {
+      for (int i = 0; i < hub.vacuum_count; ++i) {
+        if (hub.vacuums[i].entity_id == prev_vac_ent) {
+          preserved = i;
+          break;
+        }
+      }
+    }
+    hub.vacuum_idx = (preserved >= 0)
+                         ? preserved
+                         : std::clamp(hub.vacuum_idx, 0, hub.vacuum_count - 1);
+  }
+
+  if (!st.area_id.empty() && (prev_epoch == 0U || st.area_id != prev_area_id)) {
+    sync_home_hub_for_active_area(st.area_id, hub);
+  }
 
   st.camera_snapshot_url      = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_SNAPSHOT_URL)]);
   st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
@@ -2404,12 +2667,6 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
                       : ((raw_alarm_caps != 0U)
                              ? static_cast<uint16_t>(raw_alarm_caps & 0xFFFFU)
                              : kAlarmCapDefault);
-  const uint32_t raw_vacuum_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::VACUUM_CAPS)], 0U);
-  st.vacuum_caps = st.vacuum_entity.empty()
-                       ? 0U
-                       : ((raw_vacuum_caps != 0U)
-                              ? static_cast<uint16_t>(raw_vacuum_caps & 0xFFFFU)
-                              : kVacuumCapDefault);
   return true;
 }
 
@@ -2418,14 +2675,18 @@ inline uint16_t effective_alarm_caps(const AreaContextState &ac = area_ctx_state
   return (ac.alarm_caps != 0U) ? ac.alarm_caps : kAlarmCapDefault;
 }
 
-inline uint16_t effective_climate_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
-  if (ac.thermostat_entity.empty()) return 0U;
-  return (ac.climate_caps != 0U) ? ac.climate_caps : kClimateCapDefault;
+inline uint16_t effective_climate_caps(const HomeHubState &hub = home_hub_state()) noexcept {
+  if (hub.thermostat_count <= 0) return 0U;
+  const int idx = std::clamp(hub.thermostat_idx, 0, hub.thermostat_count - 1);
+  const uint16_t caps = hub.thermostats[idx].caps;
+  return (caps != 0U) ? caps : kClimateCapDefault;
 }
 
-inline uint16_t effective_vacuum_caps(const AreaContextState &ac = area_ctx_state()) noexcept {
-  if (ac.vacuum_entity.empty()) return 0U;
-  return (ac.vacuum_caps != 0U) ? ac.vacuum_caps : kVacuumCapDefault;
+inline uint16_t effective_vacuum_caps(const HomeHubState &hub = home_hub_state()) noexcept {
+  if (hub.vacuum_count <= 0) return 0U;
+  const int idx = std::clamp(hub.vacuum_idx, 0, hub.vacuum_count - 1);
+  const uint16_t caps = hub.vacuums[idx].caps;
+  return (caps != 0U) ? caps : kVacuumCapDefault;
 }
 
 inline constexpr bool eq_ascii_ci_sv(std::string_view a, std::string_view b) noexcept {
@@ -5407,11 +5668,9 @@ inline std::string &area_color_hex_param() { return runtime_state().area.color_h
 
 inline int &home_hub_tab() { return home_hub_state().tab; }
 inline int &home_hub_mode_bar_page() { return home_hub_state().mode_bar_page; }
-inline int &home_hub_thermostat_target_f() { return home_hub_state().thermostat_target_f; }
-inline std::string &home_hub_thermostat_mode() { return home_hub_state().thermostat_mode; }
-inline GarageState &home_hub_garage_state() { return home_hub_state().garage_state; }
-inline LockState &home_hub_lock_state() { return home_hub_state().lock_state; }
-inline std::string &home_hub_vacuum_state() { return home_hub_state().vacuum_state; }
+inline int &home_hub_thermostat_idx() { return home_hub_state().thermostat_idx; }
+inline int &home_hub_entry_page() { return home_hub_state().entry_page; }
+inline int &home_hub_vacuum_idx() { return home_hub_state().vacuum_idx; }
 
 inline int collect_area_categories(std::string *out_cats) {
   const std::string_view src =
@@ -5717,7 +5976,8 @@ inline int parse_intercom_targets_list(const std::string &raw, std::string out_i
 inline int parse_cameras_summary_list(const std::string &raw,
                                       std::string out_ids[MAX_CAMERA_SLOTS],
                                       std::string out_names[MAX_CAMERA_SLOTS],
-                                      std::string out_urls[MAX_CAMERA_SLOTS] = nullptr) {
+                                      std::string out_urls[MAX_CAMERA_SLOTS] = nullptr,
+                                      std::string out_areas[MAX_CAMERA_SLOTS] = nullptr) {
   std::string_view recs[MAX_CAMERA_SLOTS];
   const size_t n = v3_split_fields(raw, recs, MAX_CAMERA_SLOTS, kProtocolRecordSep);
   int idx = 0;
@@ -5726,10 +5986,23 @@ inline int parse_cameras_summary_list(const std::string &raw,
     if (v3_split_fields(recs[r], f, 4, '|') != 4 || f[0].empty()) continue;
     out_ids[idx] = std::string(f[0]);
     out_names[idx] = std::string(f[1]);
+    if (out_areas != nullptr) out_areas[idx] = std::string(f[2]);
     if (out_urls != nullptr) out_urls[idx] = std::string(f[3]);
     idx++;
   }
   return idx;
+}
+
+inline std::string resolve_active_carousel_camera_area_id(const std::string &cameras_summary) {
+  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], areas[MAX_CAMERA_SLOTS];
+  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names, nullptr, areas);
+  if (cnt > 0) {
+    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
+      cam_carousel_idx() = 0;
+    }
+    return areas[cam_carousel_idx()];
+  }
+  return "";
 }
 
 inline std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
@@ -5793,7 +6066,7 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.nav.home_subpage;
       break;
     case 2:
-      sub = ((static_cast<int>(rs.music.view) & 0x07) << 4) |
+      sub = ((static_cast<int>(rs.music.view) & 0x0F) << 4) |
             ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
             (static_cast<int>(rs.music.takeover) & 0x03);
       if ((rs.music.view == MusicView::LIBRARY && rs.music.drilldown == MusicDrilldown::LIB_LIST) ||
@@ -5801,8 +6074,10 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
         for (char ch : rs.music.selected_category_mode) {
           drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
         }
+      } else if (rs.music.view == MusicView::SETTINGS) {
+        drill = ((rs.music.mode_bar_win_start & 0x07) << 3) | (rs.music.settings_page & 0x07);
       } else {
-        drill = static_cast<int>(rs.music.carousel_page) & 0x7F;
+        drill = rs.music.mode_bar_win_start & 0x7F;
       }
       break;
     case 3:
@@ -5828,7 +6103,8 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = home_hub_tab();
       drill = (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
               (rs.intercom.cam_quick_reply_open ? 2 : 0) |
-              (rs.intercom.live_call_mode ? 4 : 0);
+              (rs.intercom.live_call_mode ? 4 : 0) |
+              ((home_hub_state().entry_page & 0x0F) << 3);
       break;
     case 10:
       sub = rs.nav.time_subpage;

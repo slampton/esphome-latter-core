@@ -213,7 +213,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111702L;
+            constexpr long LATTER_YAML_REV = 2026111801L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -1121,7 +1121,7 @@ script:
             rs.nav.display_menu_page = rs.nav.menu_scroll_target_page;
           } else if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 0) {
             rs.nav.system_dashboard_page = rs.nav.menu_scroll_target_page;
-          } else if (rs.nav.gui_page == 2 && rs.music.drilldown == latter_ui::MusicDrilldown::SETTINGS) {
+          } else if (rs.nav.gui_page == 2 && rs.music.view == latter_ui::MusicView::SETTINGS) {
             rs.music.settings_page = rs.nav.menu_scroll_target_page;
           } else if (rs.nav.gui_page == 3 && rs.nav.active_game == 0) {
             const int g_cnt = latter_ui::active_games_launcher_count(latter_ui::device_prefs());

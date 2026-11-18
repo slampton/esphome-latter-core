@@ -884,7 +884,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     home_act_state().fade_out_start_ms = 0U;
     render_page_wallpaper_base(it, ctx.home_wallpaper_art,
                                bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
-    render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.theme_primary);
+    render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.col_white);
 
     const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, 2);
     rs.nav.home_settings_page = hs_pg;
@@ -1128,7 +1128,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, t_sub, sizeof(t_sub));
       std::snprintf(hdr_buf, sizeof(hdr_buf), "ACTIVE  •  %s", t_sub);
     }
-    render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.theme_primary, true);
+    render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.col_white, true);
 
     const Color ov_bg = kChromeGlassTint;
     const Color ov_brd = kChromeCardBorder;

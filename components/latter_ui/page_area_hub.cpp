@@ -143,12 +143,36 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   // ===========================================================================
   if (area_subpage == 2) {
     const std::string &insp_dom = light_insp_domain();
+    if (insp_dom == "climate") {
+      std::string hdr_name = light_insp_name();
+      if (hdr_name.empty()) hdr_name = "THERMOSTAT";
+      for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      std::string fit_ln = fit_text_to_width_font(hdr_name, scale_x(260), font_small);
+      render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
+
+      ThermostatZoneItem fallback_clim{};
+      const ThermostatZoneItem *clim_ptr = find_climate_item_by_id_const(light_insp_entity_id());
+      if (clim_ptr == nullptr) {
+        fallback_clim.entity_id = light_insp_entity_id();
+        fallback_clim.name = light_insp_name();
+        fallback_clim.mode = light_insp_active() ? "heat" : "off";
+        fallback_clim.target_temp = (light_insp_bri_pct() > 0) ? light_insp_bri_pct() : 70;
+        fallback_clim.caps = kClimateCapDefault;
+        clim_ptr = &fallback_clim;
+      }
+
+      const int deck_top = layout().hdr_y + ((SCREEN_H < 400) ? 20 : scale_y(28));
+      const int deck_bot = layout().back_y - ((SCREEN_H < 400) ? 18 : scale_y(24));
+      render_climate_controls_deck(it, ctx, rs, *clim_ptr, deck_top, deck_bot);
+      render_back_button(it, cx, font_small, layout().back_y, "< Back");
+      return;
+    }
     if (insp_dom == "cover" || insp_dom == "fan") {
       const bool is_cov = (insp_dom == "cover");
       std::string hdr_name = light_insp_name();
       for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
       std::string fit_ln = fit_text_to_width_font(hdr_name, scale_x(260), font_small);
-      render_page_header(it, cx, fit_ln.c_str(), font_small, theme_primary);
+      render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
 
       const int cur_pct = std::clamp(light_insp_bri_pct(), 0, 100);
       const bool is_on_st = light_insp_active() && (cur_pct > 0);
@@ -273,7 +297,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   // SUBPAGE 1 / AREAS MODE: 5-SLOT AREA SWITCHER
   // ===========================================================================
   if (area_subpage == 1 || area_browse_mode == "areas" || area_browse_mode == "area_areas") {
-    render_page_header(it, cx, "SELECT AREA", font_small, theme_primary);
+    render_page_header(it, cx, "SELECT AREA", font_small, col_white);
 
     const auto *list_slots = rs.slots_for(latter_rpc::SlotChannel::AREA_LIST);
     const int list_page = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::AREA_LIST)];
@@ -322,7 +346,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
-  render_page_header(it, cx, fit_hdr.c_str(), font_small, theme_primary);
+  render_page_header(it, cx, fit_hdr.c_str(), font_small, col_white);
   frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(250), scale_y(36),
                                  WidgetId::AREA_PICKER_PILL, kHitTap | kHitFocusSlot);
 
@@ -468,7 +492,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     fast_line(it, r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
 
     std::string clean_name = strip_trailing_paren_state(raw_name);
-    const int max_t_w = (dtype == "light") ? (r_slider_w - scale_x(58)) : (r_slider_w - scale_x(20));
+    const int max_t_w = (dtype == "light")
+        ? (r_slider_w - scale_x(58))
+        : ((has_slider || dtype == "climate") ? (r_slider_w - scale_x(28)) : (r_slider_w - scale_x(20)));
     std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
     fast_print(it, r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
@@ -487,8 +513,26 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       if (!is_act || level == 0) std::snprintf(sub_buf, sizeof(sub_buf), "Off");
       else std::snprintf(sub_buf, sizeof(sub_buf), "Running  •  %d%%", level);
     } else if (dtype == "climate") {
-      if (level > 0) std::snprintf(sub_buf, sizeof(sub_buf), "%s  •  %d°", is_act ? "Active" : "Idle", level);
-      else std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "Active" : "Off");
+      if (const ThermostatZoneItem *ci = find_climate_item_by_id_const(id_str)) {
+        const bool c_off = eq_ascii_ci_sv(ci->mode, "off");
+        const char *m_s = eq_ascii_ci_sv(ci->mode, "heat") ? "Heating"
+                        : (eq_ascii_ci_sv(ci->mode, "cool") ? "Cooling"
+                        : ((eq_ascii_ci_sv(ci->mode, "auto") || eq_ascii_ci_sv(ci->mode, "heat_cool")) ? "Auto"
+                        : (eq_ascii_ci_sv(ci->mode, "fan_only") ? "Fan"
+                        : (eq_ascii_ci_sv(ci->mode, "dry") ? "Dry"
+                        : (c_off ? "Off" : (is_act ? "Active" : "Idle"))))));
+        if (!c_off && ci->target_temp > 0) {
+          std::snprintf(sub_buf, sizeof(sub_buf), "%s  •  %d°", m_s, ci->target_temp);
+        } else if (!std::isnan(ci->current_temp) && ci->current_temp > -40.0f && ci->current_temp < 150.0f) {
+          std::snprintf(sub_buf, sizeof(sub_buf), "%s  •  %.0f°", m_s, ci->current_temp);
+        } else {
+          std::snprintf(sub_buf, sizeof(sub_buf), "%s", m_s);
+        }
+      } else if (level > 0) {
+        std::snprintf(sub_buf, sizeof(sub_buf), "%s  •  %d°", is_act ? "Active" : "Idle", level);
+      } else {
+        std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "Active" : "Off");
+      }
     } else if (dtype == "scene" || dtype == "script") {
       std::snprintf(sub_buf, sizeof(sub_buf), "Tap to Activate");
     } else if (dtype == "media_player") {
@@ -516,7 +560,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
                               static_cast<int16_t>(idx), scale_s(14));
-    } else if (has_slider) {
+    } else if (has_slider || dtype == "climate") {
       // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
       const int cx_ch = r_right - scale_x(18);
       const int ch_dx = std::max(3, scale_x(4));
