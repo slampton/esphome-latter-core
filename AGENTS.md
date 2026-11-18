@@ -1,6 +1,6 @@
 # esphome-latter-core Agent Engineering Guide
 
-Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter companion displays and headless nodes (ESPHome `2026.11.0b6+`, ESP-IDF 5.5+, C++20).
+Universal ESPHome SDK, Hardware Catalog, and compiled C++20 UI/OS for Latter companion displays and headless nodes (ESPHome `2026.11.0b7+`, ESP-IDF 5.5+, C++20).
 
 ## 1. Repository Architecture
 

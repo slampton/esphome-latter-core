@@ -109,15 +109,30 @@ inline constexpr TouchDecodedSample decode_cst9217_frame(const uint8_t buf[7]) n
   return TouchDecodedSample{TouchSampleKind::Contact, x, y, false};
 }
 
-// Hynitron CST816S / CST816D 6-byte report starting at REG 0x01 (extensible single-touch IC):
+// Hynitron CST816S / CST816D / CST820 / CST826 6-byte report starting at REG 0x01:
+//   buf[0] = GESTURE_ID (0x01)
+//   buf[1] = FINGER_NUM (0x02, low nibble 0..2; some CST8xx report all-0xFF when idle)
+//   buf[2] = XPOS_H (0x03, bits [7:6] = 00 Down, 01 Lift, 10 Contact, 11 Reserved; bits [3:0] = X[11:8])
+//   buf[3] = XPOS_L (0x04, X[7:0])
+//   buf[4] = YPOS_H (0x05, bits [3:0] = Y[11:8])
+//   buf[5] = YPOS_L (0x06, Y[7:0])
 inline constexpr TouchDecodedSample decode_cst816s_frame(const uint8_t buf[6]) noexcept {
+  const int16_t x = static_cast<int16_t>(((static_cast<uint16_t>(buf[2] & 0x0FU)) << 8U) | buf[3]);
+  const int16_t y = static_cast<int16_t>(((static_cast<uint16_t>(buf[4] & 0x0FU)) << 8U) | buf[5]);
+  if (buf[1] == 0xFFU && x == 0x0FFF && y == 0x0FFF) {
+    return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
+  }
   const uint8_t count = static_cast<uint8_t>(buf[1] & 0x0FU);
+  if (count > 2U) {
+    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, false};
+  }
   const uint8_t event_flag = static_cast<uint8_t>((buf[2] >> 6U) & 0x03U);
   if (count == 0U || event_flag == 0x01U) {
     return TouchDecodedSample{TouchSampleKind::Released, 0, 0, false};
   }
-  const int16_t x = static_cast<int16_t>(((static_cast<uint16_t>(buf[2] & 0x0FU)) << 8U) | buf[3]);
-  const int16_t y = static_cast<int16_t>(((static_cast<uint16_t>(buf[4] & 0x0FU)) << 8U) | buf[5]);
+  if (event_flag == 0x03U || x == 0x0FFF || y == 0x0FFF) {
+    return TouchDecodedSample{TouchSampleKind::Invalid, 0, 0, false};
+  }
   return TouchDecodedSample{TouchSampleKind::Contact, x, y, false};
 }
 

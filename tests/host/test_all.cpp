@@ -3824,6 +3824,28 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     const auto s_816 = decode_cst816s_frame(c816_down);
     LATTER_CHECK(s_816.kind == TouchSampleKind::Contact && s_816.raw_x == 250 && s_816.raw_y == 260);
 
+    const uint8_t c816_two_pt[6] = {0x00U, 0x02U, 0x00U, 0x64U, 0x00U, 0xC8U};  // 2-point CST826 Down at (100, 200)
+    const auto s_816_two = decode_cst816s_frame(c816_two_pt);
+    LATTER_CHECK(s_816_two.kind == TouchSampleKind::Contact && s_816_two.raw_x == 100 && s_816_two.raw_y == 200);
+
+    const uint8_t c816_idle_ff[6] = {0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU};  // Idle all-0xFF -> Released (never phantom tap)
+    LATTER_CHECK(decode_cst816s_frame(c816_idle_ff).kind == TouchSampleKind::Released);
+
+    const uint8_t c816_cnt3[6] = {0x00U, 0x03U, 0x80U, 0x64U, 0x00U, 0xC8U};     // Count 3 (> 2) -> Invalid
+    LATTER_CHECK(decode_cst816s_frame(c816_cnt3).kind == TouchSampleKind::Invalid);
+
+    const uint8_t c816_cnt5[6] = {0x00U, 0x05U, 0x80U, 0x64U, 0x00U, 0xC8U};     // Count 5 (must not & 0x03 to 1) -> Invalid
+    LATTER_CHECK(decode_cst816s_frame(c816_cnt5).kind == TouchSampleKind::Invalid);
+
+    const uint8_t c816_sent_x[6] = {0x00U, 0x01U, 0x8FU, 0xFFU, 0x00U, 0x64U};   // X == 0x0FFF sentinel -> Invalid
+    LATTER_CHECK(decode_cst816s_frame(c816_sent_x).kind == TouchSampleKind::Invalid);
+
+    const uint8_t c816_sent_y[6] = {0x00U, 0x01U, 0x80U, 0x64U, 0x0FU, 0xFFU};   // Y == 0x0FFF sentinel -> Invalid
+    LATTER_CHECK(decode_cst816s_frame(c816_sent_y).kind == TouchSampleKind::Invalid);
+
+    const uint8_t c816_rsvd_ev[6] = {0x00U, 0x01U, 0xC0U, 0x64U, 0x00U, 0xC8U};  // Event flag 0x03 (Reserved) -> Invalid
+    LATTER_CHECK(decode_cst816s_frame(c816_rsvd_ev).kind == TouchSampleKind::Invalid);
+
     static_assert(default_active_poll_ms(TouchHalProtocol::GT911) == 8U);
     static_assert(default_active_poll_ms(TouchHalProtocol::FT6336) == 10U);
     static_assert(default_active_poll_ms(TouchHalProtocol::FT3168) == 10U);
