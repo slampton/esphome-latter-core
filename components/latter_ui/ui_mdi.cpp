@@ -7,10 +7,18 @@
 // MDI_ICON_COUNT: 7447
 // ==============================================================================
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+
 #if __has_include("ui_mdi.h")
 #include "ui_mdi.h"
 #else
 #include "../../include/ui_mdi.h"
+#endif
+
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+#include <esp_heap_caps.h>
 #endif
 
 namespace latter_ui {
@@ -30272,9 +30280,28 @@ struct DecodedMdiEntry {
   uint8_t stream[kMaxCachedBytes]{};
 };
 
-DecodedMdiEntry g_mdi_cache[kCacheSlots]{};
-uint32_t g_mdi_stamp = 0;
-uint8_t g_bucket_scratch[kMdiMaxBucketUncompBytes]{};
+struct MdiRuntimeScratch {
+  DecodedMdiEntry cache[kCacheSlots]{};
+  uint32_t stamp = 0;
+  uint8_t bucket[kMdiMaxBucketUncompBytes]{};
+};
+
+MdiRuntimeScratch *mdi_scratch() noexcept {
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+  static MdiRuntimeScratch *s_ptr = nullptr;
+  if (s_ptr == nullptr) {
+    void *p = heap_caps_calloc(1, sizeof(MdiRuntimeScratch), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p == nullptr) {
+      p = heap_caps_calloc(1, sizeof(MdiRuntimeScratch), MALLOC_CAP_8BIT);
+    }
+    s_ptr = static_cast<MdiRuntimeScratch *>(p);
+  }
+  return s_ptr;
+#else
+  static MdiRuntimeScratch s_host{};
+  return &s_host;
+#endif
+}
 
 int find_mdi_icon_id(uint32_t hash) noexcept {
   if (hash == 0U) return -1;
@@ -30368,9 +30395,11 @@ void flatten_cubic_q(DecodedMdiEntry &dst, float x0, float y0, float x1, float y
 }
 
 const DecodedMdiEntry *get_or_decode_mdi(uint32_t hash) noexcept {
-  for (auto &slot : g_mdi_cache) {
+  MdiRuntimeScratch *sc = mdi_scratch();
+  if (sc == nullptr) return nullptr;
+  for (auto &slot : sc->cache) {
     if (slot.hash == hash && slot.len > 0) {
-      slot.stamp = ++g_mdi_stamp;
+      slot.stamp = ++sc->stamp;
       return &slot;
     }
   }
@@ -30380,7 +30409,7 @@ const DecodedMdiEntry *get_or_decode_mdi(uint32_t hash) noexcept {
   const std::size_t u_id = static_cast<std::size_t>(icon_id);
   const std::size_t bucket_idx = u_id / kMdiBucketIcons;
   std::size_t bucket_len = 0;
-  if (!lzss_decode_bucket(bucket_idx, g_bucket_scratch, sizeof(g_bucket_scratch), bucket_len)) {
+  if (!lzss_decode_bucket(bucket_idx, sc->bucket, sizeof(sc->bucket), bucket_len)) {
     return nullptr;
   }
 
@@ -30392,14 +30421,14 @@ const DecodedMdiEntry *get_or_decode_mdi(uint32_t hash) noexcept {
 
   std::size_t victim = 0;
   for (std::size_t i = 1; i < kCacheSlots; ++i) {
-    if (g_mdi_cache[i].stamp < g_mdi_cache[victim].stamp) victim = i;
+    if (sc->cache[i].stamp < sc->cache[victim].stamp) victim = i;
   }
-  DecodedMdiEntry &dst = g_mdi_cache[victim];
+  DecodedMdiEntry &dst = sc->cache[victim];
   dst.hash = hash;
-  dst.stamp = ++g_mdi_stamp;
+  dst.stamp = ++sc->stamp;
   dst.len = 0;
 
-  const uint8_t *bc = g_bucket_scratch + off;
+  const uint8_t *bc = sc->bucket + off;
   std::size_t i = 0;
   uint8_t cx = 5, cy = 5, sx = 5, sy = 5;
   bool in_contour = false;

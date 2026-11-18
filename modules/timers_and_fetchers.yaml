@@ -149,8 +149,12 @@ interval:
             const uint32_t kCamRefreshMs = 900U;
             #endif
             const uint32_t elapsed_cam_ms = now_cam_ms - latter_ui::last_cam_live_fetch_ms();
-            if ((!latter_ui::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
-                (elapsed_cam_ms >= 4500U)) {
+            const uint32_t backoff_until = latter_ui::cam_error_backoff_until_ms();
+            const bool in_backoff = (backoff_until != 0U) &&
+                                    (static_cast<int32_t>(now_cam_ms - backoff_until) < 0);
+            if (!in_backoff &&
+                ((!latter_ui::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
+                 (elapsed_cam_ms >= 4500U))) {
               latter_ui::last_cam_live_fetch_ms() = now_cam_ms;
               id(fetch_on_demand_camera).execute();
             }
@@ -253,13 +257,21 @@ script:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
               const auto &ms = latter_ui::media_state();
-              return (rs.nav.gui_page == 2) &&
-                     (std::string_view(latter_ui::pref_album_art_style_cstr()) != "None") &&
-                     (rs.nav.display_power_state == 0) &&
-                     !rs.voice.active && rs.voice.status_text.empty() &&
-                     (!ms.is_local || id(album_art).get_width() == 0) &&
-                     !ms.art_url.empty() &&
-                     (ms.art_url != rs.music.loaded_art_url);
+              if ((rs.nav.gui_page != 2) ||
+                  (std::string_view(latter_ui::pref_album_art_style_cstr()) == "None") ||
+                  (rs.nav.display_power_state != 0) ||
+                  rs.voice.active || !rs.voice.status_text.empty() ||
+                  (ms.is_local && id(album_art).get_width() > 0) ||
+                  ms.art_url.empty() ||
+                  (ms.art_url == rs.music.loaded_art_url)) {
+                return false;
+              }
+              #if !LATTER_CHIP_P4
+              if (id(remote_album_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              return latter_ui::can_start_online_art_fetch(id(remote_album_art).get_width() > 0);
           then:
             - lambda: 'latter_ui::runtime_state().music.loaded_art_url = latter_ui::media_state().art_url;'
             - online_image.set_url:
@@ -275,11 +287,19 @@ script:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
               const auto &ac = latter_ui::area_ctx_state();
-              return (rs.nav.display_power_state == 0) &&
-                     !rs.voice.active && rs.voice.status_text.empty() &&
-                     (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
-                     !ac.wallpaper_url.empty() &&
-                     (ac.wallpaper_url != rs.music.loaded_wallpaper_url);
+              if ((rs.nav.display_power_state != 0) ||
+                  rs.voice.active || !rs.voice.status_text.empty() ||
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  ac.wallpaper_url.empty() ||
+                  (ac.wallpaper_url == rs.music.loaded_wallpaper_url)) {
+                return false;
+              }
+              #if !LATTER_CHIP_P4
+              if (id(home_wallpaper_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              return latter_ui::can_start_online_art_fetch(id(home_wallpaper_art).get_width() > 0);
           then:
             - online_image.set_url:
                 id: home_wallpaper_art
@@ -293,7 +313,13 @@ script:
           condition:
             lambda: |-
               const auto &ab = latter_ui::runtime_state().alert;
-              return ab.active && !ab.camera_url.empty();
+              if (!ab.active || ab.camera_url.empty()) return false;
+              #if !LATTER_CHIP_P4
+              if (id(camera_snapshot_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              return latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
           then:
             - online_image.set_url:
                 id: camera_snapshot_art
@@ -312,7 +338,20 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              return !rs.alert.camera_url.empty() && latter_ui::is_camera_view_active(rs);
+              if (rs.alert.camera_url.empty() || !latter_ui::is_camera_view_active(rs)) {
+                return false;
+              }
+              #if !LATTER_CHIP_P4
+              if (id(camera_snapshot_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              if (!latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0)) {
+                latter_ui::cam_download_in_progress() = false;
+                latter_ui::cam_error_backoff_until_ms() = millis() + 3000U;
+                return false;
+              }
+              return true;
           then:
             - lambda: 'latter_ui::cam_download_in_progress() = true;'
             - online_image.set_url:
@@ -346,7 +385,15 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              return latter_ui::is_calendar_map_view_active(rs) && !rs.cal.detail_map_url.empty();
+              if (!latter_ui::is_calendar_map_view_active(rs) || rs.cal.detail_map_url.empty()) {
+                return false;
+              }
+              #if !LATTER_CHIP_P4
+              if (id(camera_snapshot_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              return latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
           then:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();

@@ -21,7 +21,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111701L
+#define LATTER_SDK_REV 2026111702L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -85,6 +85,9 @@
 #endif
 #ifndef LATTER_PSRAM_MB
 #define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)
+#endif
+#ifndef LATTER_ART_CACHE_ENTRIES
+#define LATTER_ART_CACHE_ENTRIES (LATTER_CHIP_P4 ? 3 : 1)
 #endif
 #ifndef LATTER_PANEL_IPS
 #if defined(LATTER_BACKLIGHT_PIN)

@@ -1253,9 +1253,30 @@ void art_row_span(int y, int cx, int &start_x, int &end_x) {
 #endif
 }
 
+struct ArtScaleScratch {
+  uint16_t row_buf[SCREEN_W];
+  uint16_t sx_lut[SCREEN_W];
+  uint16_t scaled_row[SCREEN_W];
+};
+
+ArtScaleScratch &art_scale_scratch() {
+  static ArtScaleScratch *s_ptr = []() -> ArtScaleScratch * {
+#ifdef USE_ESP32
+    void *p = heap_caps_calloc(1, sizeof(ArtScaleScratch), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p == nullptr) {
+      p = heap_caps_calloc(1, sizeof(ArtScaleScratch), MALLOC_CAP_8BIT);
+    }
+    if (p != nullptr) return static_cast<ArtScaleScratch *>(p);
+#endif
+    return new ArtScaleScratch{};
+  }();
+  return *s_ptr;
+}
+
 void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int src_w, int src_h, int cx,
                     bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata, int dim_level) {
-  static uint16_t row_buf[SCREEN_W];
+  auto &scratch = art_scale_scratch();
+  uint16_t *const row_buf = scratch.row_buf;
 
   if (is_standard) {
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
@@ -1325,8 +1346,8 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
     const int src_x0_fp = std::max(0, ((src_w << 12) - vis_src_w_fp) / 2);
     const int src_y0_fp = std::max(0, ((src_h << 12) - vis_src_h_fp) / 2);
 
-    static uint16_t sx_lut[SCREEN_W];
-    static uint16_t scaled_row[SCREEN_W];
+    uint16_t *const sx_lut = scratch.sx_lut;
+    uint16_t *const scaled_row = scratch.scaled_row;
     {
       int curr_x = src_x0_fp;
       for (int x = 0; x < SCREEN_W; x++) {
@@ -1371,12 +1392,10 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
   }
 }
 
-constexpr int kArtCacheEntries = 3;
-
 ArtCanvasCache *art_canvas_entries() {
 #ifdef USE_ESP32
   static ArtCanvasCache *entries = static_cast<ArtCanvasCache *>(
-      heap_caps_calloc(kArtCacheEntries, sizeof(ArtCanvasCache), MALLOC_CAP_SPIRAM));
+      heap_caps_calloc(kArtCacheEntries, sizeof(ArtCanvasCache), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   return entries;
 #else
   return nullptr;
@@ -1465,6 +1484,22 @@ void art_canvas_drop(const void *data) {
 #endif
 }
 
+void art_canvas_drop_all() noexcept {
+#ifdef USE_ESP32
+  ArtCanvasCache *entries = art_canvas_entries();
+  if (entries == nullptr) return;
+  for (int i = 0; i < kArtCacheEntries; i++) {
+    ArtCanvasCache &e = entries[i];
+    if (e.px != nullptr) {
+      heap_caps_free(e.px);
+      e.px = nullptr;
+    }
+    e.data = nullptr;
+    e.last_use = 0;
+  }
+#endif
+}
+
 esphome::Color sample_image_ambient_tint_view(ArtImageView img, esphome::Color base_bg) {
   if (img.data == nullptr || img.width < 16 || img.height < 16) return base_bg;
   uint32_t sum_r = 0, sum_g = 0, sum_b = 0;
@@ -1539,8 +1574,11 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
     bool freshly_zeroed = false;
 #ifdef USE_ESP32
     if (victim->px == nullptr) {
+#if !LATTER_CHIP_P4
+      sky_base_cache_drop();
+#endif
       victim->px = static_cast<uint16_t *>(
-          heap_caps_calloc(static_cast<size_t>(SCREEN_W) * SCREEN_H, sizeof(uint16_t), MALLOC_CAP_SPIRAM));
+          heap_caps_calloc(static_cast<size_t>(SCREEN_W) * SCREEN_H, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
       freshly_zeroed = (victim->px != nullptr);
     }
 #endif

@@ -1079,7 +1079,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111701L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111702L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3356,7 +3356,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111701L, "LATTER_SDK_REV must match 2026111701L");
+  static_assert(LATTER_SDK_REV == 2026111702L, "LATTER_SDK_REV must match 2026111702L");
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 43U);
   static_assert(static_cast<size_t>(AreaCtxField::CLIMATE_CAPS) == 44U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUM_CAPS) == 45U);
@@ -4957,6 +4957,41 @@ void test_music_app_v3_d059() {
   }
 }
 
+void test_sram_psram_budget_and_http_stall_guards() {
+  using namespace latter_ui;
+
+  // 1. S3 (8 MB PSRAM) defaults to a single ArtCanvasCache slot; P4 (32 MB PSRAM) allows 3.
+  static_assert(LATTER_CHIP_P4 == 0, "Host default mimics S3 capability baseline");
+  static_assert(LATTER_ART_CACHE_ENTRIES == 1, "8 MB PSRAM S3 builds must cap ArtCanvasCache to 1 slot");
+
+  // 2. Online art fetch guard & camera error backoff state
+  LATTER_CHECK(can_start_online_art_fetch(false));
+  LATTER_CHECK(can_start_online_art_fetch(true));
+  cam_error_backoff_until_ms() = 4200U;
+  LATTER_CHECK(runtime_state().intercom.cam_error_backoff_until_ms == 4200U);
+  cam_error_backoff_until_ms() = 0U;
+
+  // 3. Source-level regressions: zero static .bss bloat for 52 KB CalendarWindowStore / 14 KB MDI scratch /
+  //    ArtScaleScratch, mutual sky_base_cache <-> ArtCanvasCache handoff on non-P4, and <=5s HTTP timeout.
+  const std::string st_src = read_repo_file("../../include/latter_state.h");
+  const std::string gfx_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
+  const std::string wth_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string mdi_src = read_repo_file("../../components/latter_ui/ui_mdi.cpp");
+  const std::string dp_yaml = read_repo_file("../../modules/display_pipeline.yaml");
+
+  LATTER_CHECK(st_src.find("static CalendarWindowStore fallback") == std::string::npos);
+  LATTER_CHECK(mdi_src.find("DecodedMdiEntry g_mdi_cache[") == std::string::npos);
+  LATTER_CHECK(mdi_src.find("uint8_t g_bucket_scratch[") == std::string::npos);
+  LATTER_CHECK(mdi_src.find("MdiRuntimeScratch *mdi_scratch()") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("static uint16_t row_buf[") == std::string::npos);
+  LATTER_CHECK(gfx_src.find("static uint16_t sx_lut[") == std::string::npos);
+  LATTER_CHECK(gfx_src.find("static uint16_t scaled_row[") == std::string::npos);
+  LATTER_CHECK(gfx_src.find("sky_base_cache_drop()") != std::string::npos);
+  LATTER_CHECK(wth_src.find("art_canvas_drop_all()") != std::string::npos);
+  LATTER_CHECK(dp_yaml.find("timeout: 15s") == std::string::npos);
+  LATTER_CHECK(dp_yaml.find("timeout: 4s") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -4985,6 +5020,7 @@ int main() {
   test_tools_games_launcher_prefs_and_stopwatch_commands();
   test_calendar_app_d058();
   test_music_app_v3_d059();
+  test_sram_psram_budget_and_http_stall_guards();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

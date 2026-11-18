@@ -1096,6 +1096,7 @@ struct ArtCanvasCache {
 
 inline constexpr int kArtDimMenu = 2;
 inline constexpr int kArtDimLyrics = 3;
+inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 
 struct ArtRect {
   int x0, y0, w, h;
@@ -1105,6 +1106,8 @@ int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int 
 void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, int &out_y1);
 ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim);
 void art_canvas_drop(const void *data);
+void art_canvas_drop_all() noexcept;
+void sky_base_cache_drop() noexcept;
 esphome::Color sample_image_ambient_tint_view(ArtImageView img, esphome::Color base_bg = kChromeGlassTint);
 bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,

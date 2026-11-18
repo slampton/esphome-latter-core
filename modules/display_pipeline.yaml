@@ -10,7 +10,7 @@ substitutions:
 http_request:
   id: http_client
   verify_ssl: true
-  timeout: 15s
+  timeout: 4s
 
 image:
   - platform: sendspin
@@ -23,7 +23,12 @@ image:
       id: album_art
     on_image_display:
       - lambda: |-
-          if (latter_ui::runtime_state().nav.gui_page == 2) {
+          auto &rs = latter_ui::runtime_state();
+          if (latter_ui::media_state().is_local && id(remote_album_art).get_width() > 0) {
+            latter_ui::release_art(id(remote_album_art));
+            rs.music.loaded_art_url = "";
+          }
+          if (rs.nav.gui_page == 2) {
             id(throttled_disp_update).execute();
           }
 
@@ -80,6 +85,7 @@ image:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           latter_ui::cam_download_in_progress() = false;
+          latter_ui::cam_error_backoff_until_ms() = 0;
           latter_ui::last_cam_live_fetch_ms() = millis();
           rs.alert.loaded_camera_url = rs.alert.camera_url;
           if (rs.nav.display_power_state == 0 &&
@@ -90,8 +96,10 @@ image:
       - script.execute: sync_wake_word_state
     on_error:
       - lambda: |-
+          const uint32_t now_err_ms = millis();
           latter_ui::cam_download_in_progress() = false;
-          latter_ui::last_cam_live_fetch_ms() = millis();
+          latter_ui::last_cam_live_fetch_ms() = now_err_ms;
+          latter_ui::cam_error_backoff_until_ms() = now_err_ms + 3000U;
           latter_ui::runtime_state().alert.loaded_camera_url = "";
       - script.execute: sync_wake_word_state
 

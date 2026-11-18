@@ -213,7 +213,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111701L;
+            constexpr long LATTER_YAML_REV = 2026111702L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -413,7 +413,17 @@ ota:
     on_begin:
       then:
         - light.turn_on: display_brightness
-        - lambda: 'latter_ui::handle_ota_begin(&id(disp1));'
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            latter_ui::release_art(id(remote_album_art));
+            latter_ui::release_art(id(home_wallpaper_art));
+            latter_ui::release_art(id(camera_snapshot_art));
+            latter_ui::art_canvas_drop_all();
+            latter_ui::sky_base_cache_drop();
+            rs.music.loaded_art_url = "";
+            rs.music.loaded_wallpaper_url = "";
+            rs.alert.loaded_camera_url = "";
+            latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
         - component.update: disp1
     on_progress:
@@ -438,7 +448,17 @@ ota:
     on_begin:
       then:
         - light.turn_on: display_brightness
-        - lambda: 'latter_ui::handle_ota_begin(&id(disp1));'
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            latter_ui::release_art(id(remote_album_art));
+            latter_ui::release_art(id(home_wallpaper_art));
+            latter_ui::release_art(id(camera_snapshot_art));
+            latter_ui::art_canvas_drop_all();
+            latter_ui::sky_base_cache_drop();
+            rs.music.loaded_art_url = "";
+            rs.music.loaded_wallpaper_url = "";
+            rs.alert.loaded_camera_url = "";
+            latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
         - component.update: disp1
     on_progress:

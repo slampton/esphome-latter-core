@@ -2233,6 +2233,20 @@ void init_particle_engine(WeatherParticleEngine &eng, uint32_t cond_hash, RainTi
 
 }  // namespace
 
+void sky_base_cache_drop() noexcept {
+  auto &cache = sky_base_cache();
+  if (cache.px != nullptr) {
+#ifdef USE_ESP32
+    heap_caps_free(cache.px);
+#else
+    std::free(cache.px);
+#endif
+    cache.px = nullptr;
+  }
+  cache.alloc_attempted = false;
+  cache.valid = false;
+}
+
 float weather_precip_alpha_scale() {
   return sky_fade_state().precip_alpha_scale;
 }
@@ -2296,6 +2310,9 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     cache.alloc_attempted = true;
     const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
 #ifdef USE_ESP32
+#if !LATTER_CHIP_P4
+    art_canvas_drop_all();
+#endif
     cache.px = static_cast<uint16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 #else
     cache.px = static_cast<uint16_t *>(std::malloc(bytes));

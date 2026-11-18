@@ -560,6 +560,7 @@ inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeSta
   } else if (now_cam) {
     cam_quick_reply_open() = false;
     cam_expanded_fullscreen() = expand_cam;
+    cam_error_backoff_until_ms() = 0;
     last_cam_live_fetch_ms() = now_ms;
     rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
   }
@@ -3271,6 +3272,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
           cam_carousel_idx() = step_wrap(cam_carousel_idx(), h_dir, c_total);
           rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
           rs.alert.loaded_camera_url.clear();
+          cam_error_backoff_until_ms() = 0;
           last_cam_live_fetch_ms() = now_ms;
           rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
           rt_.schedule_disp();
@@ -4993,6 +4995,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           } else if (wid == WidgetId::CAM_SNAPSHOT_CARD &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             cam_expanded_fullscreen() = !cam_expanded_fullscreen();
+            cam_error_backoff_until_ms() = 0;
             last_cam_live_fetch_ms() = now_rel;
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             mark_dirty_full();
@@ -5004,6 +5007,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rs.intercom.cam_status_ms = now_rel;
             rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
             rs.alert.loaded_camera_url.clear();
+            cam_error_backoff_until_ms() = 0;
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             mark_dirty_full();
             rt_.schedule_disp();
@@ -5013,6 +5017,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                 cam_carousel_idx(), (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
             rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
             rs.alert.loaded_camera_url.clear();
+            cam_error_backoff_until_ms() = 0;
             last_cam_live_fetch_ms() = now_rel;
             rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
             rt_.schedule_disp();

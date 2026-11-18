@@ -1724,6 +1724,7 @@ struct IntercomRuntimeState {
   bool cam_landscape_mode = false;
   bool cam_expanded_fullscreen = false;
   uint32_t last_cam_live_fetch_ms = 0;
+  uint32_t cam_error_backoff_until_ms = 0;
   bool cam_download_in_progress = false;
 };
 
@@ -3996,16 +3997,19 @@ static_assert(std::is_trivially_copyable_v<CalendarWindowStore>,
 
 inline CalendarWindowStore &calendar_window_store() noexcept {
 #if LATTER_HAS_SPIRAM_ALLOC
-  static CalendarWindowStore *ptr = []() -> CalendarWindowStore * {
-    auto *p = static_cast<CalendarWindowStore *>(
+  static CalendarWindowStore *ptr = nullptr;
+  if (ptr == nullptr) {
+    ptr = static_cast<CalendarWindowStore *>(
         heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (p == nullptr) {
-      p = static_cast<CalendarWindowStore *>(std::calloc(1, sizeof(CalendarWindowStore)));
+    if (ptr == nullptr) {
+      ptr = static_cast<CalendarWindowStore *>(
+          heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_8BIT));
     }
-    return p;
-  }();
-  static CalendarWindowStore fallback{};
-  return (ptr != nullptr) ? *ptr : fallback;
+    if (ptr == nullptr) {
+      ptr = new CalendarWindowStore{};
+    }
+  }
+  return *ptr;
 #else
   static CalendarWindowStore store{};
   return store;
@@ -5459,7 +5463,29 @@ inline int &cam_noise_idx() { return runtime_state().intercom.cam_noise_idx; }
 inline bool &cam_landscape_mode() { return runtime_state().intercom.cam_landscape_mode; }
 inline bool &cam_expanded_fullscreen() { return runtime_state().intercom.cam_expanded_fullscreen; }
 inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last_cam_live_fetch_ms; }
+inline uint32_t &cam_error_backoff_until_ms() { return runtime_state().intercom.cam_error_backoff_until_ms; }
 inline bool &cam_download_in_progress() { return runtime_state().intercom.cam_download_in_progress; }
+
+inline bool can_start_online_art_fetch(bool has_existing_buffer = false) noexcept {
+#if defined(ESP_PLATFORM)
+  const size_t int_blk = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (int_blk > 0U && int_blk < 8192U) {
+    return false;
+  }
+  const size_t need_psram = has_existing_buffer
+                                ? 65536U
+                                : (static_cast<size_t>(LATTER_SCREEN_W) *
+                                       static_cast<size_t>(LATTER_SCREEN_H) * sizeof(uint16_t) +
+                                   49152U);
+  const size_t psram_blk = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (psram_blk < need_psram) {
+    return false;
+  }
+#else
+  (void)has_existing_buffer;
+#endif
+  return true;
+}
 
 inline bool is_camera_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
   return rs.nav.gui_page == PageId::HOME_HUB && home_hub_state().tab == HomeHubTab::CAMERAS;
