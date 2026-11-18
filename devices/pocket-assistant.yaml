@@ -1,7 +1,7 @@
 # ==============================================================================
 # Pocket Assistant (v3.0 Modular Architecture)
 # Target: Waveshare ESP32-S3-Touch-AMOLED-1.75C (466x466 Circular AMOLED)
-# Framework: ESPHome 2026.11.0b7+ (ESP-IDF 5.5+)
+# Framework: ESPHome 2026.11.0+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
 
@@ -30,7 +30,7 @@ external_components:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0b7
+  min_version: 2026.11.0
   project:
     name: "slampton.pocket-assistant-175c"
     version: "${version}"
