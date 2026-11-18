@@ -83,19 +83,71 @@ enum class MusicView : uint8_t {
   NOW_PLAYING  = 0,
   LIBRARY      = 1,
   SPEAKERS     = 2,
-  QUEUE        = 3,
-  ALBUM_TRACKS = 4,
+  VOLUME       = 3,
+  QUEUE        = 4,
   LYRICS       = 5,
-  INFO         = 6,
-  SETTINGS     = 7,
+  ALBUM_TRACKS = 6,
+  INFO         = 7,
+};
+
+enum class MusicDrilldown : uint8_t {
+  NONE            = 0,
+  LIB_LIST        = 1,
+  SPEAKER_ACTIONS = 2,
+  SETTINGS        = 3,
 };
 
 enum class MusicTakeover : uint8_t {
   NONE         = 0,
-  VOLUME       = 1,
-  SCRUB        = 2,
-  ACTION_SHEET = 3,
+  SCRUB        = 1,
+  ACTION_SHEET = 2,
 };
+
+inline constexpr int kMusicPeerTabCount = 8;
+
+inline constexpr bool is_music_ambient_tab(MusicView v) noexcept {
+  return v == MusicView::NOW_PLAYING || v == MusicView::LYRICS || v == MusicView::INFO;
+}
+
+inline constexpr uint32_t music_peer_tab_timeout_ms(MusicView v) noexcept {
+  if (is_music_ambient_tab(v)) return 6000U;
+  return (v == MusicView::VOLUME) ? 5000U : 10000U;
+}
+
+inline constexpr bool resolve_music_route_target(
+    RouteId route_id, MusicView &out_view, MusicDrilldown &out_drilldown) noexcept {
+  out_drilldown = MusicDrilldown::NONE;
+  switch (route_id) {
+    case RouteId::APP_MUSIC:
+      out_view = MusicView::NOW_PLAYING;
+      return true;
+    case RouteId::MUSIC_LIBRARY:
+      out_view = MusicView::LIBRARY;
+      return true;
+    case RouteId::MUSIC_SPEAKERS:
+      out_view = MusicView::SPEAKERS;
+      return true;
+    case RouteId::MUSIC_QUEUE:
+      out_view = MusicView::QUEUE;
+      return true;
+    case RouteId::MUSIC_LYRICS:
+      out_view = MusicView::LYRICS;
+      return true;
+    case RouteId::MUSIC_ALBUM_TRACKS:
+      out_view = MusicView::ALBUM_TRACKS;
+      return true;
+    case RouteId::MUSIC_INFO:
+      out_view = MusicView::INFO;
+      return true;
+    case RouteId::MUSIC_FAVORITES:
+    case RouteId::MUSIC_PLAYLISTS:
+      out_view = MusicView::LIBRARY;
+      out_drilldown = MusicDrilldown::LIB_LIST;
+      return true;
+    default:
+      return false;
+  }
+}
 
 enum class MusicRepeatMode : uint8_t {
   OFF = 0,
@@ -1570,8 +1622,9 @@ struct MusicLyricsState {
 };
 
 struct MusicRuntimeState {
-  MusicView view = MusicView::NOW_PLAYING;
-  MusicTakeover takeover = MusicTakeover::NONE;
+  MusicView view{MusicView::NOW_PLAYING};
+  MusicDrilldown drilldown{MusicDrilldown::NONE};
+  MusicTakeover takeover{MusicTakeover::NONE};
   uint32_t takeover_interacted_ms = 0;
   uint8_t carousel_page = 0;     // 0 = Page 1 (slots 0..3), 1 = Page 2 (slots 4..7)
   int mode_bar_win_start = 0;    // 0 or 4 window start for render_in_app_mode_bar_track
@@ -1624,6 +1677,55 @@ struct MusicRuntimeState {
   std::string last_sendspin_album = "";
   std::string loaded_art_url = "";
   std::string loaded_wallpaper_url = "";
+
+  void sync_carousel_for_view() noexcept {
+    const int idx = static_cast<int>(view);
+    carousel_page = (idx >= 4) ? 1U : 0U;
+    mode_bar_win_start = (idx >= 4) ? 4 : 0;
+  }
+
+  void reset_overlays() noexcept {
+    drilldown = MusicDrilldown::NONE;
+    takeover = MusicTakeover::NONE;
+    takeover_interacted_ms = 0U;
+    overlay_mode = 0;
+    target_speaker_id.clear();
+    target_speaker_name.clear();
+    action_sheet_slot = -1;
+    action_sheet_is_queue = false;
+    action_sheet_is_container = false;
+    action_sheet_id.clear();
+    action_sheet_name.clear();
+    action_sheet_type.clear();
+    action_sheet_queue_item_id.clear();
+  }
+
+  bool apply_route(RouteId route_id) {
+    MusicView next_view = MusicView::NOW_PLAYING;
+    MusicDrilldown next_drill = MusicDrilldown::NONE;
+    if (!resolve_music_route_target(route_id, next_view, next_drill)) {
+      return false;
+    }
+    reset_overlays();
+    view = next_view;
+    drilldown = next_drill;
+    sync_carousel_for_view();
+    if (route_id == RouteId::MUSIC_LIBRARY) {
+      selected_category_mode = "categories";
+      selected_category_title = "LIBRARY";
+      category_page = 1;
+      drilldown_parent_mode.clear();
+    } else if (route_id == RouteId::MUSIC_FAVORITES) {
+      selected_category_mode = "favorites";
+      selected_category_title = "FAVORITES";
+      drilldown_parent_mode.clear();
+    } else if (route_id == RouteId::MUSIC_PLAYLISTS) {
+      selected_category_mode = "playlist";
+      selected_category_title = "PLAYLISTS";
+      drilldown_parent_mode.clear();
+    }
+    return true;
+  }
 };
 
 struct AreaRuntimeState {
@@ -4735,7 +4837,8 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
   }
   if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
   if (rt.nav.gui_page == PageId::MUSIC &&
-      (rt.music.view == MusicView::NOW_PLAYING || rt.music.view == MusicView::LYRICS) &&
+      is_music_ambient_tab(rt.music.view) &&
+      rt.music.drilldown == MusicDrilldown::NONE &&
       rt.music.takeover == MusicTakeover::NONE &&
       rt.music.overlay_mode == 0 && media_playing) {
     return false;
@@ -5586,13 +5689,16 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.nav.home_subpage;
       break;
     case 2:
-      sub = (static_cast<int>(rs.music.view) << 2) | (static_cast<int>(rs.music.takeover) & 0x03);
-      if (rs.music.view == MusicView::LIBRARY || rs.music.view == MusicView::ALBUM_TRACKS) {
+      sub = ((static_cast<int>(rs.music.view) & 0x07) << 4) |
+            ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
+            (static_cast<int>(rs.music.takeover) & 0x03);
+      if ((rs.music.view == MusicView::LIBRARY && rs.music.drilldown == MusicDrilldown::LIB_LIST) ||
+          rs.music.view == MusicView::ALBUM_TRACKS) {
         for (char ch : rs.music.selected_category_mode) {
-          drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0xFF;
+          drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
         }
       } else {
-        drill = static_cast<int>(rs.music.carousel_page) & 0xFF;
+        drill = static_cast<int>(rs.music.carousel_page) & 0x7F;
       }
       break;
     case 3:
@@ -5641,7 +5747,7 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
   if (rs.nav.shortcut_confirm.open) {
     drill = (drill & 0x7F) | 0x80;
   }
-  return (gp * 10000) + ((sub & 0x3F) * 256) + (drill & 0xFF);
+  return ((gp & 0xFF) << 16) | ((sub & 0xFF) << 8) | (drill & 0xFF);
 }
 
 }  // namespace latter_ui

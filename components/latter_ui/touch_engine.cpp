@@ -288,101 +288,37 @@ inline void resolve_music_track_strings(const DeviceRuntimeState &rs, const UiTo
   out_speech = (mt == "podcast" || mt == "podcast_episode" || mt == "audiobook");
 }
 
-inline void reset_music_to_now_playing(DeviceRuntimeState &rs, uint32_t now_ms, bool show_hud = true) {
-  rs.music.view = MusicView::NOW_PLAYING;
-  rs.music.takeover = MusicTakeover::NONE;
-  rs.music.overlay_mode = 0;
-  rs.music.target_speaker_id.clear();
-  rs.music.hud_active = show_hud;
-  rs.music.hud_timer = now_ms;
+inline int fetch_music_browse_for_current_view(const DeviceRuntimeState &rs, uint32_t now_ms) {
+  const std::string &mode_s = rs.music.selected_category_mode;
+  const int page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
+  std::string_view search_sv{};
+  if (mode_s == "artist_albums") {
+    search_sv = rs.music.drilldown_artist_name;
+  } else if (mode_s == "current_album_tracks" || mode_s == "album_tracks" ||
+             mode_s == "podcast_episodes" || mode_s == "lyrics" || mode_s == "bio") {
+    search_sv = rs.music.drilldown_album_id;
+  }
+  const std::string_view alb_opt(pref_album_sort_order_cstr());
+  const char *alb_sort =
+      (alb_opt == "Newest on Top") ? "year_desc" : ((alb_opt == "Oldest on Top") ? "year" : "name");
+  const std::string_view art_opt(pref_artist_album_sort_order_cstr());
+  const char *art_sort =
+      (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
+  const std::string_view pod_opt(pref_podcast_sort_order_cstr());
+  const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
+  const int psize = music_browse_page_size_for(rs.music.view, rs.music.drilldown, mode_s);
+  return latter_actions::emit_music_browse(
+      mode_s, page, search_sv, rs.music.active_speaker_entity,
+      media_state().last_speaker, alb_sort, art_sort, pod_sort, psize, now_ms);
 }
 
-inline void open_music_mode_slot(int slot_0_to_7, DeviceRuntimeState &rs,
-                                 const UiTouchRuntime &rt, uint32_t now_ms) {
-  rs.music.overlay_mode = 0;
-  rs.music.takeover = MusicTakeover::NONE;
-  rs.nav.menu_scroll_active = false;
-  std::string t_title, t_artist, t_album;
-  bool is_speech = false;
-  resolve_music_track_strings(rs, rt, t_title, t_artist, t_album, is_speech);
-
-  switch (slot_0_to_7) {
-    case 0:  // Library
-      rs.music.view = MusicView::LIBRARY;
-      rs.music.selected_category_mode = "categories";
-      rs.music.selected_category_title = "MUSIC LIBRARY";
-      rs.music.category_page = 1;
-      rs.music.drilldown_parent_mode.clear();
-      break;
-    case 1:  // Speakers
-      rs.music.view = MusicView::SPEAKERS;
-      rs.music.target_speaker_id.clear();
-      rs.music.selected_category_mode = "speakers";
-      rs.music.selected_category_title = "SPEAKERS";
-      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      reset_music_loading_slots(rs, "Loading...");
-      media_fetch_browse(now_ms);
-      break;
-    case 2:  // Queue
-      rs.music.view = MusicView::QUEUE;
-      rs.music.selected_category_mode = "active_queue";
-      rs.music.selected_category_title = "PLAYBACK QUEUE";
-      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      reset_music_loading_slots(rs, "Loading queue...");
-      media_fetch_browse(now_ms);
-      break;
-    case 3:  // Volume Takeover
-      rs.music.view = MusicView::NOW_PLAYING;
-      rs.music.takeover = MusicTakeover::VOLUME;
-      rs.music.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
-      break;
-    case 4:  // Album Tracks / Podcast Episodes
-      rs.music.view = MusicView::ALBUM_TRACKS;
-      rs.music.selected_category_mode = is_speech ? "podcast_episodes" : "current_album_tracks";
-      rs.music.drilldown_album_id = !t_album.empty() ? t_album : t_artist;
-      rs.music.selected_category_title =
-          t_album.empty() ? std::string(is_speech ? "EPISODES" : "ALBUM TRACKS") : t_album;
-      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      reset_music_loading_slots(rs, is_speech ? "Loading episodes..." : "Loading album tracks...");
-      media_fetch_browse(now_ms);
-      break;
-    case 5: {  // Full-Art Time-Synced Scrolling Lyrics
-      rs.music.view = MusicView::LYRICS;
-      auto &lyr = rs.music.lyrics;
-      lyr.manual_override_until_ms = 0U;
-      const std::string key = build_music_track_key(t_title, t_artist);
-      if (!key.empty() && lyr.track_key != key) {
-        lyr.track_key = key;
-        lyr.loading = true;
-        lyr.lines.clear();
-        lyr.active_line_idx = -1;
-        lyr.scroll_px = 0;
-        lyr.target_scroll_px = 0;
-        lyr.scroll_anim_start_ms = 0U;
-        latter_actions::emit_music_lyrics_fetch(key, resolve_music_speaker_entity(rs), now_ms);
-      }
-      break;
-    }
-    case 6:  // Track & Artist Info
-      rs.music.view = MusicView::INFO;
-      rs.music.info_scroll_px = 0;
-      rs.music.drilldown_album_id = t_title + "|" + t_artist + "|" + t_album;
-      rs.music.selected_category_mode = "bio";
-      rs.music.selected_category_title = "TRACK INFO";
-      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-      reset_music_loading_slots(rs, "Loading...");
-      media_fetch_browse(now_ms);
-      break;
-    case 7:  // Music Settings
-    default:
-      rs.music.view = MusicView::SETTINGS;
-      rs.music.settings_page = 1;
-      break;
-  }
+inline void reset_music_to_now_playing(DeviceRuntimeState &rs, uint32_t now_ms, bool show_hud = true) {
+  rs.music.reset_overlays();
+  rs.music.view = MusicView::NOW_PLAYING;
+  rs.music.sync_carousel_for_view();
+  mode_bar_anim().snap(0, 0);
+  rs.music.hud_active = show_hud;
+  rs.music.hud_timer = now_ms;
 }
 
 inline std::string resolve_browse_item_media_type(const DeviceRuntimeState &rs,
@@ -413,9 +349,8 @@ inline bool open_music_row_action_sheet(int slot_idx, DeviceRuntimeState &rs, ui
   rs.music.action_sheet_name = sl.name;
   rs.music.action_sheet_type = resolve_browse_item_media_type(rs, sl);
   rs.music.action_sheet_is_container =
-      (rs.music.action_sheet_type == "artist" ||
-       rs.music.action_sheet_type == "album" ||
-       rs.music.action_sheet_type == "podcast");
+      is_music_playable_container_type(rs.music.action_sheet_type) ||
+      (rs.music.action_sheet_type == "podcast");
   rs.music.action_sheet_queue_item_id = sl.queue_item_id;
   rs.music.takeover = MusicTakeover::ACTION_SHEET;
   rs.music.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
@@ -437,7 +372,7 @@ inline bool open_music_header_action_sheet(DeviceRuntimeState &rs, const UiTouch
   } else if (rs.music.selected_category_mode == "album_tracks") {
     cid = rs.music.drilldown_album_id;
     cname = rs.music.selected_category_title;
-    ctype = "album";
+    ctype = (rs.music.drilldown_parent_mode == "playlist") ? "playlist" : "album";
   } else if (rs.music.selected_category_mode == "artist_albums") {
     cid = rs.music.drilldown_artist_name;
     cname = rs.music.drilldown_artist_name;
@@ -599,6 +534,7 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
                                    calendar_window_store().window_start_ymd == 0);
   } else if (chosen_app == PageId::MUSIC) {
     reset_music_to_now_playing(rs, now_ms, true);
+    mode_bar_anim().snap(0, 0);
     const auto &ms = media_state();
     if (rt.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE) != "None" &&
         (!ms.is_local || rt.album_art_w == 0) && ms.art_url != rs.music.loaded_art_url) {
@@ -716,23 +652,39 @@ inline bool handle_music_back_step(DeviceRuntimeState &rs, const UiTouchRuntime 
     rt.schedule_disp();
     return true;
   }
-  if (m.view == MusicView::SPEAKERS && !m.target_speaker_id.empty()) {
+  if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS) {
+    m.drilldown = MusicDrilldown::NONE;
     m.target_speaker_id.clear();
+    m.hud_active = true;
+    m.hud_timer = now_ms;
     mark_dirty_full();
     rt.schedule_disp();
     return true;
   }
-  if (m.view == MusicView::LIBRARY) {
+  if (m.drilldown == MusicDrilldown::SETTINGS) {
+    m.drilldown = MusicDrilldown::NONE;
+    m.hud_active = true;
+    m.hud_timer = now_ms;
+    mark_dirty_full();
+    rt.schedule_disp();
+    return true;
+  }
+  if (m.drilldown == MusicDrilldown::LIB_LIST) {
     int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     if (m.selected_category_mode == "album_tracks" || m.selected_category_mode == "podcast_episodes") {
       m.selected_category_mode = m.drilldown_parent_mode.empty() ? "album" : m.drilldown_parent_mode;
-      m.selected_category_title =
-          (m.selected_category_mode == "podcast")
-              ? "PODCASTS"
-              : ((m.selected_category_mode == "artist_albums") ? m.drilldown_artist_name : "ALBUMS");
+      if (m.selected_category_mode == "podcast") {
+        m.selected_category_title = "PODCASTS";
+      } else if (m.selected_category_mode == "playlist") {
+        m.selected_category_title = "PLAYLISTS";
+      } else if (m.selected_category_mode == "artist_albums") {
+        m.selected_category_title = m.drilldown_artist_name;
+      } else {
+        m.selected_category_title = "ALBUMS";
+      }
       b_page = std::max(1, m.drilldown_album_page);
       reset_music_loading_slots(rs, "Loading...");
-      media_fetch_browse(now_ms);
+      fetch_music_browse_for_current_view(rs, now_ms);
       mark_dirty_full();
       rt.schedule_disp();
       return true;
@@ -742,38 +694,34 @@ inline bool handle_music_back_step(DeviceRuntimeState &rs, const UiTouchRuntime 
       m.selected_category_title = "ARTISTS";
       b_page = std::max(1, m.drilldown_artist_page);
       reset_music_loading_slots(rs, "Loading...");
-      media_fetch_browse(now_ms);
+      fetch_music_browse_for_current_view(rs, now_ms);
       mark_dirty_full();
       rt.schedule_disp();
       return true;
     }
-    if (!m.selected_category_mode.empty() && m.selected_category_mode != "categories") {
-      if (m.direct_nav) {
-        m.direct_nav = false;
-        reset_music_to_now_playing(rs, now_ms, true);
-        if (return_from_shortcut_origin(rs, rt, now_ms)) return true;
-        mark_dirty_full();
-        rt.schedule_disp();
-        return true;
-      }
-      m.selected_category_mode = "categories";
-      m.selected_category_title = "MUSIC LIBRARY";
-      m.category_page = 1;
-      m.drilldown_artist_page = 1;
-      m.drilldown_album_page = 1;
-      mark_dirty_full();
-      rt.schedule_disp();
-      return true;
-    }
-  }
-  if (m.view != MusicView::NOW_PLAYING) {
     if (m.direct_nav) {
       m.direct_nav = false;
       reset_music_to_now_playing(rs, now_ms, true);
       if (return_from_shortcut_origin(rs, rt, now_ms)) return true;
-    } else {
-      reset_music_to_now_playing(rs, now_ms, true);
+      mark_dirty_full();
+      rt.schedule_disp();
+      return true;
     }
+    m.drilldown = MusicDrilldown::NONE;
+    m.selected_category_mode = "categories";
+    m.selected_category_title = "LIBRARY";
+    m.drilldown_artist_page = 1;
+    m.drilldown_album_page = 1;
+    m.hud_active = true;
+    m.hud_timer = now_ms;
+    mark_dirty_full();
+    rt.schedule_disp();
+    return true;
+  }
+  if (m.direct_nav) {
+    m.direct_nav = false;
+    reset_music_to_now_playing(rs, now_ms, true);
+    if (return_from_shortcut_origin(rs, rt, now_ms)) return true;
     mark_dirty_full();
     rt.schedule_disp();
     return true;
@@ -971,30 +919,28 @@ inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
       rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
       rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
       if (route_id == RouteId::MUSIC_SPEAKERS) {
-        open_music_mode_slot(1, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::SPEAKERS, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else if (route_id == RouteId::MUSIC_LIBRARY) {
-        open_music_mode_slot(0, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::LIBRARY, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else if (route_id == RouteId::MUSIC_QUEUE) {
-        open_music_mode_slot(2, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::QUEUE, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else if (route_id == RouteId::MUSIC_ALBUM_TRACKS) {
-        open_music_mode_slot(4, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::ALBUM_TRACKS, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else if (route_id == RouteId::MUSIC_LYRICS) {
-        open_music_mode_slot(5, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::LYRICS, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else if (route_id == RouteId::MUSIC_INFO) {
-        open_music_mode_slot(6, rs, rt, now_ms);
+        activate_music_peer_tab(MusicView::INFO, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else {
-        rs.music.view = MusicView::LIBRARY;
-        rs.music.takeover = MusicTakeover::NONE;
-        rs.music.drilldown_parent_mode.clear();
-        if (route_id == RouteId::MUSIC_FAVORITES) {
-          rs.music.selected_category_mode = "favorites";
-          rs.music.selected_category_title = "FAVORITES";
-        } else {
-          rs.music.selected_category_mode = "playlist";
-          rs.music.selected_category_title = "PLAYLISTS";
-        }
+        rs.music.apply_route(route_id);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
         reset_music_loading_slots(rs, "Loading...");
-        media_fetch_browse(now_ms);
+        fetch_music_browse_for_current_view(rs, now_ms);
       }
       mark_dirty_full();
       rt.schedule_disp();
@@ -1336,6 +1282,93 @@ inline void update_light_inspector_hex(float hue_deg, float sat) {
 TouchGestureEngine &touch_engine() {
   static TouchGestureEngine s_engine;
   return s_engine;
+}
+
+void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
+  auto &rs = runtime_state();
+  const auto &rt = touch_engine().runtime();
+  auto &m = rs.music;
+
+  m.overlay_mode = 0;
+  m.drilldown = MusicDrilldown::NONE;
+  m.takeover = MusicTakeover::NONE;
+  m.target_speaker_id.clear();
+  m.hud_active = true;
+  m.hud_timer = now_ms;
+  rs.nav.menu_scroll_active = false;
+  m.view = target;
+  m.sync_carousel_for_view();
+
+  std::string t_title, t_artist, t_album;
+  bool is_speech = false;
+  resolve_music_track_strings(rs, rt, t_title, t_artist, t_album, is_speech);
+
+  switch (target) {
+    case MusicView::NOW_PLAYING:
+      break;
+    case MusicView::LIBRARY:
+      m.selected_category_mode = "categories";
+      m.selected_category_title = "LIBRARY";
+      m.category_page = 1;
+      m.drilldown_parent_mode.clear();
+      break;
+    case MusicView::SPEAKERS:
+      m.selected_category_mode = "speakers";
+      m.selected_category_title = "SPEAKERS";
+      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      reset_music_loading_slots(rs, "Loading...");
+      fetch_music_browse_for_current_view(rs, now_ms);
+      break;
+    case MusicView::VOLUME:
+      m.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
+      break;
+    case MusicView::QUEUE:
+      m.selected_category_mode = "active_queue";
+      m.selected_category_title = "PLAYBACK QUEUE";
+      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      reset_music_loading_slots(rs, "Loading queue...");
+      fetch_music_browse_for_current_view(rs, now_ms);
+      break;
+    case MusicView::LYRICS: {
+      auto &lyr = m.lyrics;
+      lyr.manual_override_until_ms = 0U;
+      const std::string key = build_music_track_key(t_title, t_artist);
+      if (!key.empty() && lyr.track_key != key) {
+        lyr.track_key = key;
+        lyr.loading = true;
+        lyr.lines.clear();
+        lyr.active_line_idx = -1;
+        lyr.scroll_px = 0;
+        lyr.target_scroll_px = 0;
+        lyr.scroll_anim_start_ms = 0U;
+        latter_actions::emit_music_lyrics_fetch(key, resolve_music_speaker_entity(rs), now_ms);
+      }
+      break;
+    }
+    case MusicView::ALBUM_TRACKS:
+      m.selected_category_mode = is_speech ? "podcast_episodes" : "current_album_tracks";
+      m.drilldown_album_id = !t_album.empty() ? t_album : t_artist;
+      m.selected_category_title =
+          t_album.empty() ? std::string(is_speech ? "EPISODES" : "ALBUM TRACKS") : t_album;
+      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      reset_music_loading_slots(rs, is_speech ? "Loading episodes..." : "Loading album tracks...");
+      fetch_music_browse_for_current_view(rs, now_ms);
+      break;
+    case MusicView::INFO:
+    default:
+      m.info_scroll_px = 0;
+      m.drilldown_album_id = t_title + "|" + t_artist + "|" + t_album;
+      m.selected_category_mode = "bio";
+      m.selected_category_title = "TRACK INFO";
+      rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+      reset_music_loading_slots(rs, "Loading...");
+      fetch_music_browse_for_current_view(rs, now_ms);
+      break;
+  }
 }
 
 void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
@@ -1819,11 +1852,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   // Universal bottom-edge swipe-up home guard: defer bottom-zone touches to on_touch_move / on_touch_up
   // without swallowing direct taps on an explicit < Back button near the bottom bezel.
-  const bool music_subview_blocks_home =
-      (rs.nav.gui_page == PageId::MUSIC) &&
-      (rs.music.view != MusicView::NOW_PLAYING || rs.music.takeover != MusicTakeover::NONE);
-  if (!music_subview_blocks_home && can_go_home(rs) &&
-      wid != WidgetId::BACK_BUTTON && touch.y >= ly.home_zone_y()) {
+  if (can_go_home(rs) && wid != WidgetId::BACK_BUTTON && touch.y >= ly.home_zone_y()) {
     return;
   }
 
@@ -1952,49 +1981,38 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;
   }
 
-  // Page 2: Clean-Sheet Music App v3 (Now Playing, Takeovers, Lyrics, Library, Queue, Speakers, Info, Settings)
+  // Page 2: Clean-Sheet Music App v3 (8 Peer Mode-Bar Tabs, Deep Drilldowns & Floating Takeovers)
   if (rs.nav.gui_page == PageId::MUSIC) {
     if (rs.music.takeover != MusicTakeover::NONE) {
       rs.music.takeover_interacted_ms = (now_touch == 0U) ? 1U : now_touch;
-      if (rs.music.takeover == MusicTakeover::VOLUME) {
-        const HitRegion *v_hit = frame_hits().hit_test(touch.x, touch.y, kHitVertSlider);
-        if (v_hit != nullptr && v_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER) {
-          music_vol_dragging_ = true;
+      if (wid == WidgetId::BACK_BUTTON) {
+        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          (void)handle_music_back_step(rs, rt_, now_touch);
         }
-      } else if (rs.music.takeover == MusicTakeover::SCRUB) {
+        return;
+      }
+      if (rs.music.takeover == MusicTakeover::SCRUB) {
         const HitRegion *s_hit = frame_hits().hit_test(touch.x, touch.y, kHitHorizSlider);
         if (s_hit != nullptr && s_hit->widget_id == WidgetId::MUSIC_SCRUB_BAR) {
           music_scrub_dragging_ = true;
         }
       }
-      return;  // Modal controls & outside-backdrop dismiss resolve on_touch_move / on_touch_up
+      return;  // Floating takeover controls & outside-backdrop dismiss resolve on_touch_move / on_touch_up
     }
 
-    if (rs.music.view == MusicView::NOW_PLAYING) {
-      const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
-      const bool always_vis = (ov_style == "Always Visible");
-      const bool controls_shown = always_vis || rs.music.hud_active;
-      const bool metadata_shown = always_vis || (ov_style == "Art + Metadata") || rs.music.hud_active;
+    if (rs.music.view == MusicView::VOLUME && rs.music.drilldown == MusicDrilldown::NONE) {
+      const HitRegion *v_hit = frame_hits().hit_test(touch.x, touch.y, kHitVertSlider);
+      if (v_hit != nullptr && v_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER) {
+        music_vol_dragging_ = true;
+        rs.music.hud_timer = now_touch;
+      }
+      return;
+    }
 
-      if (!controls_shown && !metadata_shown) {
-        gest.active = false;
-        rs.music.hud_active = true;
-        rs.music.hud_timer = now_touch;
-        rs.nav.hud_wake_finger_released = true;
-        hud_just_woken_ms_ = now_touch;
-        rt_.schedule_disp();
-        return;
-      }
-      if (!controls_shown && metadata_shown && wid != WidgetId::MUSIC_SCRUB_OPEN_BTN) {
-        gest.active = false;
-        rs.music.hud_active = true;
-        rs.music.hud_timer = now_touch;
-        rs.nav.hud_wake_finger_released = true;
-        hud_just_woken_ms_ = now_touch;
-        rt_.schedule_disp();
-        return;
-      }
-      return;  // Transport, scrubber open & 8-slot mode-bar taps/swipes resolve in on_touch_move / on_touch_up
+    if (rs.music.view == MusicView::NOW_PLAYING && rs.music.drilldown == MusicDrilldown::NONE) {
+      // Keep gest.active = true even when HUD is auto-hidden so horizontal canvas swipes
+      // step peer tabs (0 -> 1 / 0 -> 7) immediately; wake taps resolve cleanly in on_touch_up.
+      return;
     }
 
     if (wid == WidgetId::BACK_BUTTON) {
@@ -2963,10 +2981,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   };
 
   // 1. Universal Bottom-Edge Steep Upward Swipe -> Home ([HOME PREDICATE])
-  const bool music_blocks_home =
-      (rs.nav.gui_page == PageId::MUSIC) &&
-      (rs.music.view != MusicView::NOW_PLAYING || rs.music.takeover != MusicTakeover::NONE);
-  if (!music_blocks_home && can_go_home(rs) && gest.start_y >= ly.home_zone_y() && v_dir > 0) {
+  if (can_go_home(rs) && gest.start_y >= ly.home_zone_y() && v_dir > 0) {
     commit_swipe();
     navigate_home(now_ms);
     return true;
@@ -3017,33 +3032,81 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 3. Page 2: Clean-Sheet Music App v3 (2-Page Stadium Carousel Swipe & Vertical List Paging)
+  // 3. Page 2: Clean-Sheet Music App v3 (8-Slot Peer Tab Canvas Swipe, Mode-Bar Conveyor & List Paging)
   if (rs.nav.gui_page == PageId::MUSIC) {
     if (rs.music.takeover != MusicTakeover::NONE) {
       return false;
     }
-    if (rs.music.view == MusicView::NOW_PLAYING) {
+
+    if (rs.music.drilldown == MusicDrilldown::NONE) {
       const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
-      const bool controls_shown = (ov_style == "Always Visible") || rs.music.hud_active;
-      if (controls_shown && h_dir != 0) {
+      const bool always_vis = (ov_style == "Always Visible");
+      const bool mode_bar_shown =
+          (rs.music.view == MusicView::NOW_PLAYING)
+              ? (always_vis || rs.music.hud_active)
+              : (!is_music_ambient_tab(rs.music.view) || rs.music.hud_active);
+
+      if (h_dir != 0) {
         commit_swipe();
-        bool changed = false;
-        const int next_pg = step_pager_index(
-            static_cast<int>(rs.music.carousel_page), 0, 1, h_dir, /*wrap=*/false,
-            GestureAxisLock::Horizontal, PageId::MUSIC, now_ms, changed);
-        rs.music.carousel_page = static_cast<uint8_t>(next_pg);
-        rs.music.mode_bar_win_start = (rs.music.carousel_page != 0U) ? 4 : 0;
-        rs.music.hud_timer = now_ms;
-        if (changed) {
-          rt_.schedule_disp();
-        } else {
-          rt_.schedule_band_disp(dock_dirty_band_y0(), SCREEN_H - 1);
+        if (mode_bar_shown && gest.start_y >= ly.mode_bar_zone_top()) {
+          bool changed = false;
+          const int next_pg = step_pager_index(
+              static_cast<int>(rs.music.carousel_page), 0, 1, h_dir, /*wrap=*/false,
+              GestureAxisLock::Horizontal, PageId::MUSIC, now_ms, changed);
+          rs.music.carousel_page = static_cast<uint8_t>(next_pg);
+          rs.music.mode_bar_win_start = (rs.music.carousel_page != 0U) ? 4 : 0;
+          rs.music.hud_timer = now_ms;
+          if (changed) {
+            rt_.schedule_disp();
+          } else {
+            rt_.schedule_band_disp(dock_dirty_band_y0(), SCREEN_H - 1);
+          }
+          return true;
         }
+        rs.music.direct_nav = false;
+        activate_music_peer_tab(step_music_peer_tab(rs.music.view, h_dir), now_ms);
+        mark_dirty_full();
+        rt_.schedule_disp();
         return true;
+      }
+
+      if (v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+        if (rs.music.view == MusicView::LIBRARY) {
+          commit_swipe();
+          music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+          bool changed = false;
+          rs.music.category_page = step_pager_index(
+              std::clamp(rs.music.category_page, 1, 2), 1, 2, v_dir, /*wrap=*/false,
+              GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
+          rs.music.hud_timer = now_ms;
+          rt_.schedule_disp();
+          return true;
+        }
+        if (rs.music.view == MusicView::SPEAKERS ||
+            rs.music.view == MusicView::QUEUE ||
+            rs.music.view == MusicView::ALBUM_TRACKS) {
+          commit_swipe();
+          music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+          int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
+          const int b_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC));
+          bool changed = false;
+          const int next_pg = step_pager_index(
+              b_page, 1, b_tot, v_dir, /*wrap=*/false,
+              GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
+          rs.music.hud_timer = now_ms;
+          if (changed) {
+            b_page = next_pg;
+            last_music_page_req_ms() = now_ms;
+            fetch_music_browse_for_current_view(rs, now_ms);
+          }
+          rt_.schedule_disp();
+          return true;
+        }
       }
       return false;
     }
-    if (rs.music.view == MusicView::SETTINGS && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+
+    if (rs.music.drilldown == MusicDrilldown::SETTINGS && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       commit_swipe();
       bool changed = false;
       rs.music.settings_page = step_pager_index(
@@ -3052,29 +3115,13 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       rt_.schedule_disp();
       return true;
     }
-    if (rs.music.view == MusicView::LIBRARY &&
-        (rs.music.selected_category_mode.empty() || rs.music.selected_category_mode == "categories") &&
-        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
-      commit_swipe();
-      music_scroll_tap_lockout_until_ms() = now_ms + 160U;
-      bool changed = false;
-      rs.music.category_page = step_pager_index(
-          std::clamp(rs.music.category_page, 1, 2), 1, 2, v_dir, /*wrap=*/false,
-          GestureAxisLock::Vertical, PageId::MUSIC, now_ms, changed);
-      rt_.schedule_disp();
-      return true;
-    }
-    if ((rs.music.view == MusicView::LIBRARY ||
-         (rs.music.view == MusicView::SPEAKERS && rs.music.target_speaker_id.empty()) ||
-         rs.music.view == MusicView::QUEUE ||
-         rs.music.view == MusicView::ALBUM_TRACKS) &&
-        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+
+    if (rs.music.drilldown == MusicDrilldown::LIB_LIST && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       commit_swipe();
       music_scroll_tap_lockout_until_ms() = now_ms + 160U;
       int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
       const int b_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC));
-      const bool wrap_list = (rs.music.view == MusicView::LIBRARY) &&
-                             (rs.music.selected_category_mode == "artist" ||
+      const bool wrap_list = (rs.music.selected_category_mode == "artist" ||
                               rs.music.selected_category_mode == "album");
       bool changed = false;
       const int next_pg = step_pager_index(
@@ -3083,7 +3130,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       if (changed) {
         b_page = next_pg;
         last_music_page_req_ms() = now_ms;
-        media_fetch_browse(now_ms);
+        fetch_music_browse_for_current_view(rs, now_ms);
       }
       rt_.schedule_disp();
       return true;
@@ -3522,15 +3569,19 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   const int dx = tx - gest.start_x;
   const int dy = ty - gest.start_y;
 
-  // Dedicated Vertical Slider (Music Volume Takeover)
+  // Dedicated Vertical Slider (Music Volume Peer Tab)
   const HitRegion *vsl_hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitVertSlider);
   if (vsl_hit != nullptr && vsl_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
-      rs.nav.gui_page == PageId::MUSIC && rs.music.takeover == MusicTakeover::VOLUME &&
+      rs.nav.gui_page == PageId::MUSIC &&
+      rs.music.view == MusicView::VOLUME &&
+      rs.music.drilldown == MusicDrilldown::NONE &&
+      rs.music.takeover == MusicTakeover::NONE &&
       (gest.axis_lock == GestureAxisLock::Slider ||
        (std::abs(dy) >= ly.drag_start() && std::abs(dy) >= std::abs(dx)))) {
     gest.axis_lock = GestureAxisLock::Slider;
     gest.tap_cancelled = true;
     music_vol_dragging_ = true;
+    rs.music.hud_timer = now_u;
     rs.music.takeover_interacted_ms = (now_u == 0U) ? 1U : now_u;
     auto &ms = media_state();
     const int min_v = ms.is_local ? 10 : 0;
@@ -3554,15 +3605,20 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   }
 
   // Smooth Free Vertical Touch Scroll on Music Lyrics & Track Info
-  if (rs.nav.gui_page == PageId::MUSIC && rs.music.takeover == MusicTakeover::NONE &&
+  if (rs.nav.gui_page == PageId::MUSIC &&
+      rs.music.drilldown == MusicDrilldown::NONE &&
+      rs.music.takeover == MusicTakeover::NONE &&
       (rs.music.view == MusicView::LYRICS || rs.music.view == MusicView::INFO) &&
       (gest.axis_lock == GestureAxisLock::Slider ||
-       (std::abs(dy) >= ly.drag_start() && std::abs(dy) >= std::abs(dx)))) {
+       (std::abs(dy) >= ly.drag_start() && std::abs(dy) > std::abs(dx)))) {
     gest.axis_lock = GestureAxisLock::Slider;
     gest.tap_cancelled = true;
     const int step_px = music_scroll_last_y_ - ty;
     music_scroll_last_y_ = ty;
     music_scroll_dragging_ = true;
+    if (rs.music.hud_active) {
+      rs.music.hud_timer = now_u;
+    }
     if (step_px != 0) {
       if (rs.music.view == MusicView::LYRICS) {
         auto &lyr = rs.music.lyrics;
@@ -3664,8 +3720,7 @@ void TouchGestureEngine::tick(uint32_t now_ms) {
     const uint32_t idle_ms = (now_ms >= rs.music.takeover_interacted_ms)
                                  ? (now_ms - rs.music.takeover_interacted_ms)
                                  : 0U;
-    if ((rs.music.takeover == MusicTakeover::VOLUME && idle_ms >= 4000U) ||
-        (rs.music.takeover == MusicTakeover::SCRUB && idle_ms >= 5000U)) {
+    if (rs.music.takeover == MusicTakeover::SCRUB && idle_ms >= 5000U) {
       rs.music.takeover = MusicTakeover::NONE;
       rs.music.hud_active = true;
       rs.music.hud_timer = now_ms;
@@ -3698,8 +3753,10 @@ bool TouchGestureEngine::try_commit_long_press_(uint32_t now_ms) {
   cancel_core_timeout(kTimeoutTouchLongPressId);
 
   if (rs.nav.gui_page == PageId::MUSIC &&
-      gest.long_press_wid >= WidgetId::LIST_SLOT_BASE &&
-      gest.long_press_wid < WidgetId::LIST_SLOT_BASE + 5) {
+      ((gest.long_press_wid >= WidgetId::LIST_SLOT_BASE &&
+        gest.long_press_wid < WidgetId::LIST_SLOT_BASE + 5) ||
+       (gest.long_press_wid >= WidgetId::MUSIC_ROW_PLAY_BASE &&
+        gest.long_press_wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5))) {
     if (open_music_row_action_sheet(gest.long_press_param, rs, now_ms)) {
       mark_dirty_full();
       rt_.schedule_disp();
@@ -3749,7 +3806,11 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     // 1. Commit Dedicated Vertical/Horizontal Sliders & Color Wheel Releases First
     if (!gest.swipe_committed && start_vslider != nullptr &&
         start_vslider->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
-        rs.nav.gui_page == PageId::MUSIC && rs.music.takeover == MusicTakeover::VOLUME) {
+        rs.nav.gui_page == PageId::MUSIC &&
+        rs.music.view == MusicView::VOLUME &&
+        rs.music.drilldown == MusicDrilldown::NONE &&
+        rs.music.takeover == MusicTakeover::NONE) {
+      rs.music.hud_timer = now_rel;
       rs.music.takeover_interacted_ms = (now_rel == 0U) ? 1U : now_rel;
       auto &ms = media_state();
       const int min_v = ms.is_local ? 10 : 0;
@@ -4004,11 +4065,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.schedule_disp();
       }
 
-    // 5. Page 2 Clean-Sheet Music App v3 (Now Playing, Takeovers, Lyrics, Library, Queue, Speakers, Settings)
+    // 5. Page 2 Clean-Sheet Music App v3 (8 Peer Mode-Bar Tabs, Deep Drilldowns & Floating Takeovers)
     } else if (tap_valid && rs.nav.gui_page == PageId::MUSIC) {
       auto &m = rs.music;
       auto &ms = media_state();
       const std::string spk = resolve_music_speaker_entity(rs);
+      const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
+      const bool always_vis = (ov_style == "Always Visible");
 
       if (m.takeover != MusicTakeover::NONE) {
         m.takeover_interacted_ms = (now_rel == 0U) ? 1U : now_rel;
@@ -4019,22 +4082,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           m.hud_timer = now_rel;
           mark_dirty_full();
           rt_.schedule_disp();
-        } else if (m.takeover == MusicTakeover::VOLUME) {
-          if ((wid == WidgetId::MUSIC_VOL_UP_STEP || wid == WidgetId::MUSIC_VOL_DOWN_STEP) &&
-              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-            const int dir = (wid == WidgetId::MUSIC_VOL_UP_STEP) ? 1 : -1;
-            if (ms.muted && dir > 0) ms.muted = false;
-            step_music_volume_feedback(
-                dir, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
-                ms.is_local, rt_.local_mp_volume, now_rel, m);
-            rt_.cmd(UiHostCmd::MUSIC_STEP_VOLUME, dir);
-            rt_.schedule_disp();
-          } else if (wid == WidgetId::MUSIC_VOL_MUTE_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            ms.muted = !ms.muted;
-            latter_actions::emit_media_mute_toggle(spk);
-            rt_.schedule_disp();
-          }
         } else if (m.takeover == MusicTakeover::SCRUB) {
           if ((wid == WidgetId::MUSIC_SCRUB_STEP_BACK || wid == WidgetId::MUSIC_SCRUB_STEP_FWD) &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
@@ -4105,7 +4152,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               }
               m.feedback_timer = now_rel;
               m.takeover = MusicTakeover::NONE;
-              media_fetch_browse(now_rel);
+              m.hud_timer = now_rel;
+              fetch_music_browse_for_current_view(rs, now_rel);
               mark_dirty_full();
               rt_.schedule_disp();
             }
@@ -4129,11 +4177,33 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         }
+      } else if (m.drilldown == MusicDrilldown::NONE &&
+                 (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT)) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          m.carousel_page = (wid == WidgetId::MODE_BAR_RIGHT) ? 1U : 0U;
+          m.mode_bar_win_start = (m.carousel_page != 0U) ? 4 : 0;
+          m.hud_timer = now_rel;
+          rt_.schedule_disp();
+        }
+      } else if (m.drilldown == MusicDrilldown::NONE &&
+                 wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          m.direct_nav = false;
+          const auto target_view = static_cast<MusicView>(std::clamp(static_cast<int>(hit->param), 0, 7));
+          activate_music_peer_tab(target_view, now_rel);
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
       } else if (m.view == MusicView::NOW_PLAYING) {
-        const std::string_view ov_style = rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE);
-        const bool always_vis = (ov_style == "Always Visible");
-        if (wid == WidgetId::MUSIC_SCRUB_OPEN_BTN &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        const bool controls_shown = always_vis || m.hud_active;
+        if (!controls_shown && wid != WidgetId::MUSIC_SCRUB_OPEN_BTN) {
+          m.hud_active = true;
+          m.hud_timer = now_rel;
+          hud_just_woken_ms_ = now_rel;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::MUSIC_SCRUB_OPEN_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           m.pos_base = static_cast<float>(ms.interpolated_position_ms(now_rel)) * 0.001f;
           m.pos_sync_time = now_rel;
           m.takeover = MusicTakeover::SCRUB;
@@ -4166,18 +4236,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           }
           m.hud_timer = now_rel;
           rt_.schedule_disp();
-        } else if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-          m.carousel_page = (wid == WidgetId::MODE_BAR_RIGHT) ? 1U : 0U;
-          m.mode_bar_win_start = (m.carousel_page != 0U) ? 4 : 0;
-          m.hud_timer = now_rel;
-          rt_.schedule_disp();
-        } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          m.direct_nav = false;
-          open_music_mode_slot(std::clamp(static_cast<int>(hit->param), 0, 7), rs, rt_, now_rel);
-          mark_dirty_full();
-          rt_.schedule_disp();
         } else if ((wid == WidgetId::NONE || wid == WidgetId::MUSIC_ART_TAP) &&
                    !always_vis && m.hud_active &&
                    (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
@@ -4187,11 +4245,38 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         }
+      } else if (m.view == MusicView::VOLUME) {
+        if ((wid == WidgetId::MUSIC_VOL_UP_STEP || wid == WidgetId::MUSIC_VOL_DOWN_STEP) &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          const int dir = (wid == WidgetId::MUSIC_VOL_UP_STEP) ? 1 : -1;
+          if (ms.muted && dir > 0) ms.muted = false;
+          step_music_volume_feedback(
+              dir, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
+              ms.is_local, rt_.local_mp_volume, now_rel, m);
+          m.hud_timer = now_rel;
+          rt_.cmd(UiHostCmd::MUSIC_STEP_VOLUME, dir);
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::MUSIC_VOL_MUTE_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          ms.muted = !ms.muted;
+          m.hud_timer = now_rel;
+          latter_actions::emit_media_mute_toggle(spk);
+          rt_.schedule_disp();
+        }
       } else if (m.view == MusicView::LYRICS) {
-        if (wid == WidgetId::MUSIC_LYRIC_SYNC_BTN &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        if (!m.hud_active) {
+          if (wid == WidgetId::MUSIC_ART_TAP || wid == WidgetId::NONE) {
+            m.hud_active = true;
+            m.hud_timer = now_rel;
+            hud_just_woken_ms_ = now_rel;
+            mark_dirty_full();
+            rt_.schedule_disp();
+          }
+        } else if (wid == WidgetId::MUSIC_LYRIC_SYNC_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           m.lyrics.manual_override_until_ms = 0U;
           m.lyrics.target_scroll_px = -1;
+          m.hud_timer = now_rel;
           rt_.schedule_disp();
         } else if (wid >= WidgetId::MUSIC_LYRIC_LINE_BASE &&
                    wid < WidgetId::MUSIC_LYRIC_LINE_BASE + 8 &&
@@ -4207,45 +4292,76 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               m.pos_sync_time = now_rel;
               m.lyrics.manual_override_until_ms = 0U;
               m.lyrics.target_scroll_px = -1;
+              m.hud_timer = now_rel;
               audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_rel);
               latter_actions::emit_media_seek(static_cast<int>(t_ms / 1000));
               rt_.schedule_disp();
             }
           }
-        }
-      } else if (m.view == MusicView::SETTINGS) {
-        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-          m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        } else if (wid == WidgetId::NONE && m.hud_active &&
+                   (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
+                   (now_rel - hud_just_woken_ms_ >= TOUCH_GUARD_DISMISS) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_DISMISS, tkey)) {
+          m.hud_active = false;
+          mark_dirty_full();
           rt_.schedule_disp();
-        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 3 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 3 + static_cast<int>(hit->param);
-          if (idx == 0) {
-            rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
-                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
-                                            {"Full Screen", "Letterbox", "Standard", "None"}));
-          } else if (idx == 1) {
-            rt_.set_select_opt(UiSelectId::MUSIC_OVERLAY_STYLE,
-                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),
-                                            {"Art Only", "Art + Metadata", "Always Visible"}));
-          } else if (idx == 2) {
-            rt_.set_select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER,
-                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER),
-                                            {"Alphabetical", "Newest on Top", "Oldest on Top"}));
-          } else if (idx == 3) {
-            rt_.set_select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER,
-                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER),
-                                            {"Oldest on Top", "Newest on Top", "Alphabetical"}));
-          } else if (idx == 4) {
-            rt_.set_select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER,
-                               cycle_option(rt_.select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER),
-                                            {"Newest on Top", "Oldest on Top"}));
+        }
+      } else if (m.view == MusicView::INFO) {
+        if (m.drilldown == MusicDrilldown::SETTINGS) {
+          if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+            rt_.schedule_disp();
+          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 3 &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+            const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 3 + static_cast<int>(hit->param);
+            if (idx == 0) {
+              rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
+                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
+                                              {"Full Screen", "Letterbox", "Standard", "None"}));
+            } else if (idx == 1) {
+              rt_.set_select_opt(UiSelectId::MUSIC_OVERLAY_STYLE,
+                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),
+                                              {"Art Only", "Art + Metadata", "Always Visible"}));
+            } else if (idx == 2) {
+              rt_.set_select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER,
+                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER),
+                                              {"Alphabetical", "Newest on Top", "Oldest on Top"}));
+            } else if (idx == 3) {
+              rt_.set_select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER,
+                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER),
+                                              {"Oldest on Top", "Newest on Top", "Alphabetical"}));
+            } else if (idx == 4) {
+              rt_.set_select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER,
+                                 cycle_option(rt_.select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER),
+                                              {"Newest on Top", "Oldest on Top"}));
+            }
+            rt_.schedule_disp();
           }
+        } else if (!m.hud_active) {
+          if (wid == WidgetId::MUSIC_ART_TAP || wid == WidgetId::NONE) {
+            m.hud_active = true;
+            m.hud_timer = now_rel;
+            hud_just_woken_ms_ = now_rel;
+            mark_dirty_full();
+            rt_.schedule_disp();
+          }
+        } else if (wid == WidgetId::MUSIC_INFO_SETTINGS_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          m.drilldown = MusicDrilldown::SETTINGS;
+          m.settings_page = 1;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::NONE && m.hud_active &&
+                   (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
+                   (now_rel - hud_just_woken_ms_ >= TOUCH_GUARD_DISMISS) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_DISMISS, tkey)) {
+          m.hud_active = false;
+          mark_dirty_full();
           rt_.schedule_disp();
         }
       } else if (m.view == MusicView::SPEAKERS) {
-        if (!m.target_speaker_id.empty()) {
+        if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS && !m.target_speaker_id.empty()) {
           if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (wid == WidgetId::MUSIC_SPK_CONTROL_BTN) {
               rt_.cmd(UiHostCmd::SPEAKER_CONTROL_TARGET);
@@ -4274,19 +4390,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
             const int next_pg = std::clamp(b_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, b_tot);
+            m.hud_timer = now_rel;
             if (next_pg != b_page) {
               b_page = next_pg;
-              media_fetch_browse(now_rel);
+              fetch_music_browse_for_current_view(rs, now_rel);
               rt_.schedule_disp();
             }
-          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+          } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMusicPeerListPageSize &&
                      now_rel >= music_scroll_tap_lockout_until_ms() &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+            const int si = std::clamp(static_cast<int>(hit->param), 0, kMusicPeerListPageSize - 1);
             const auto &sl = rs.music_slots()[si];
             if (!sl.name.empty() && !sl.id.empty() && sl.type != "text") {
               m.target_speaker_id = sl.id;
               m.target_speaker_name = sl.name;
+              m.drilldown = MusicDrilldown::SPEAKER_ACTIONS;
               mark_dirty_full();
               rt_.schedule_disp();
             }
@@ -4298,12 +4416,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         if (wid == WidgetId::MUSIC_SHUFFLE_BTN &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           ms.shuffle = !ms.shuffle;
+          m.hud_timer = now_rel;
           latter_actions::emit_media_shuffle_toggle(spk);
           rt_.schedule_disp();
         } else if (wid == WidgetId::MUSIC_REPEAT_BTN &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           ms.repeat_mode = static_cast<uint8_t>((ms.repeat_mode + 1U) % 3U);
           ms.repeat = (ms.repeat_mode != 0U);
+          m.hud_timer = now_rel;
           latter_actions::emit_media_repeat_cycle(spk);
           rt_.schedule_disp();
         } else if (wid == WidgetId::MUSIC_QUEUE_CLEAR &&
@@ -4312,25 +4432,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           reset_music_loading_slots(rs, "Queue Cleared");
           rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
           music_queue_cleared() = true;
+          m.hud_timer = now_rel;
           rt_.schedule_disp();
         } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           const int next_pg = std::clamp(b_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, b_tot);
+          m.hud_timer = now_rel;
           if (next_pg != b_page) {
             b_page = next_pg;
-            media_fetch_browse(now_rel);
+            fetch_music_browse_for_current_view(rs, now_rel);
             rt_.schedule_disp();
           }
-        } else if (wid >= WidgetId::MUSIC_ROW_MORE_BASE && wid < WidgetId::MUSIC_ROW_MORE_BASE + 5 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          if (open_music_row_action_sheet(hit->param, rs, now_rel)) {
-            mark_dirty_full();
-            rt_.schedule_disp();
-          }
-        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMusicPeerListPageSize &&
                    now_rel >= music_scroll_tap_lockout_until_ms() &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+          const int si = std::clamp(static_cast<int>(hit->param), 0, kMusicPeerListPageSize - 1);
           const auto &sl = rs.music_slots()[si];
           if (!sl.queue_item_id.empty()) {
             audio_session().set_play_intent(MusicPlayIntent::ExternalOrUserExplicit, now_rel);
@@ -4351,25 +4467,48 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       } else if (m.view == MusicView::LIBRARY || m.view == MusicView::ALBUM_TRACKS) {
         int &b_page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
         const int b_tot = std::max(1, rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC));
-        const bool on_cat_root = (m.view == MusicView::LIBRARY) &&
-                                 (m.selected_category_mode.empty() ||
-                                  m.selected_category_mode == "categories");
+        const bool on_cat_root = (m.view == MusicView::LIBRARY) && (m.drilldown == MusicDrilldown::NONE);
+
         if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          m.hud_timer = now_rel;
           if (on_cat_root) {
             m.category_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
             rt_.schedule_disp();
           } else if (b_tot > 1) {
             const int step_d = (wid == WidgetId::CHEVRON_UP) ? -1 : 1;
-            const bool wrap_l = (m.selected_category_mode == "artist" ||
+            const bool wrap_l = (m.drilldown == MusicDrilldown::LIB_LIST) &&
+                                (m.selected_category_mode == "artist" ||
                                  m.selected_category_mode == "album");
             const int next_pg = wrap_l ? step_wrap_1based(b_page, step_d, b_tot)
                                        : std::clamp(b_page + step_d, 1, b_tot);
             if (next_pg != b_page) {
               b_page = next_pg;
-              media_fetch_browse(now_rel);
+              fetch_music_browse_for_current_view(rs, now_rel);
               rt_.schedule_disp();
             }
+          }
+        } else if (on_cat_root &&
+                   wid >= WidgetId::GRID_CARD_BASE && wid < WidgetId::GRID_CARD_BASE + 6 &&
+                   now_rel >= music_scroll_tap_lockout_until_ms() &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int idx = static_cast<int>(hit->param);
+          m.drilldown_parent_mode.clear();
+          if (idx == 0) { m.selected_category_mode = "favorites"; m.selected_category_title = "FAVORITES"; }
+          else if (idx == 1) { m.selected_category_mode = "playlist"; m.selected_category_title = "PLAYLISTS"; }
+          else if (idx == 2) { m.selected_category_mode = "artist"; m.selected_category_title = "ARTISTS"; m.drilldown_artist_page = 1; }
+          else if (idx == 3) { m.selected_category_mode = "album"; m.selected_category_title = "ALBUMS"; m.drilldown_album_page = 1; }
+          else if (idx == 4) { m.selected_category_mode = "podcast"; m.selected_category_title = "PODCASTS"; }
+          else if (idx == 5) { m.selected_category_mode = "radio"; m.selected_category_title = "RADIO"; }
+          else if (idx == 6) { m.selected_category_mode = "audiobook"; m.selected_category_title = "AUDIOBOOKS"; }
+          if (idx >= 0 && idx <= 6) {
+            m.drilldown = MusicDrilldown::LIB_LIST;
+            reset_music_loading_slots(rs, "Loading...");
+            b_page = 1;
+            rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+            fetch_music_browse_for_current_view(rs, now_rel);
+            mark_dirty_full();
+            rt_.schedule_disp();
           }
         } else if (wid == WidgetId::MUSIC_HEADER_ENQUEUE_BTN &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -4377,79 +4516,69 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             mark_dirty_full();
             rt_.schedule_disp();
           }
-        } else if (wid >= WidgetId::MUSIC_ROW_MORE_BASE && wid < WidgetId::MUSIC_ROW_MORE_BASE + 5 &&
+        } else if (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5 &&
+                   now_rel >= music_scroll_tap_lockout_until_ms() &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          if (open_music_row_action_sheet(hit->param, rs, now_rel)) {
+          const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+          const auto &sl = rs.music_slots()[si];
+          if (!sl.id.empty() && sl.type != "text") {
+            const std::string mtype = resolve_browse_item_media_type(rs, sl);
+            dispatch_music_play_item(sl.id, mtype, sl.name, "play", false, rs, now_rel);
+            reset_music_to_now_playing(rs, now_rel, true);
             mark_dirty_full();
             rt_.schedule_disp();
           }
         } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
                    now_rel >= music_scroll_tap_lockout_until_ms() &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          if (on_cat_root) {
-            const int idx = (std::clamp(m.category_page, 1, 2) - 1) * LATTER_SLOT_COUNT +
-                            static_cast<int>(hit->param);
-            m.drilldown_parent_mode.clear();
-            if (idx == 0) { m.selected_category_mode = "favorites"; m.selected_category_title = "FAVORITES"; }
-            else if (idx == 1) { m.selected_category_mode = "playlist"; m.selected_category_title = "PLAYLISTS"; }
-            else if (idx == 2) { m.selected_category_mode = "artist"; m.selected_category_title = "ARTISTS"; m.drilldown_artist_page = 1; }
-            else if (idx == 3) { m.selected_category_mode = "album"; m.selected_category_title = "ALBUMS"; m.drilldown_album_page = 1; }
-            else if (idx == 4) { m.selected_category_mode = "podcast"; m.selected_category_title = "PODCASTS"; }
-            else if (idx == 5) { m.selected_category_mode = "radio"; m.selected_category_title = "RADIO"; }
-            else if (idx == 6) { m.selected_category_mode = "audiobook"; m.selected_category_title = "AUDIOBOOKS"; }
-            if (idx >= 0 && idx <= 6) {
-              reset_music_loading_slots(rs, "Loading...");
+          const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+          const auto &sl = rs.music_slots()[si];
+          if (!sl.id.empty() && sl.type != "text") {
+            const std::string mtype = resolve_browse_item_media_type(rs, sl);
+            if (m.selected_category_mode == "podcast" || mtype == "podcast") {
+              m.drilldown = MusicDrilldown::LIB_LIST;
+              m.drilldown_album_id = sl.id;
+              m.drilldown_album_page = b_page;
+              m.drilldown_parent_mode = m.selected_category_mode;
+              m.selected_category_mode = "podcast_episodes";
+              m.selected_category_title = sl.name;
+              reset_music_loading_slots(rs, "Loading episodes...");
               b_page = 1;
-              rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-              media_fetch_browse(now_rel);
+              fetch_music_browse_for_current_view(rs, now_rel);
               mark_dirty_full();
               rt_.schedule_disp();
-            }
-          } else {
-            const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
-            const auto &sl = rs.music_slots()[si];
-            if (!sl.id.empty() && sl.type != "text") {
-              if (m.selected_category_mode == "podcast") {
-                m.drilldown_album_id = sl.id;
-                m.drilldown_album_page = b_page;
-                m.drilldown_parent_mode = "podcast";
-                m.selected_category_mode = "podcast_episodes";
-                m.selected_category_title = sl.name;
-                reset_music_loading_slots(rs, "Loading episodes...");
-                b_page = 1;
-                media_fetch_browse(now_rel);
-                mark_dirty_full();
-                rt_.schedule_disp();
-              } else if (m.selected_category_mode == "artist") {
-                m.drilldown_artist_name = sl.name;
-                m.drilldown_artist_page = b_page;
-                m.selected_category_mode = "artist_albums";
-                m.selected_category_title = sl.name;
-                reset_music_loading_slots(rs, "Loading albums...");
-                b_page = 1;
-                media_fetch_browse(now_rel);
-                mark_dirty_full();
-                rt_.schedule_disp();
-              } else if (m.selected_category_mode == "album" ||
-                         m.selected_category_mode == "artist_albums") {
-                m.drilldown_album_id = sl.id;
-                m.drilldown_album_page = b_page;
-                m.drilldown_parent_mode = m.selected_category_mode;
-                m.selected_category_mode = "album_tracks";
-                m.selected_category_title = sl.name;
-                reset_music_loading_slots(rs, "Loading tracks...");
-                b_page = 1;
-                media_fetch_browse(now_rel);
-                mark_dirty_full();
-                rt_.schedule_disp();
-              } else {
-                // Playable leaf: play immediately with enqueue="play"
-                const std::string mtype = resolve_browse_item_media_type(rs, sl);
-                dispatch_music_play_item(sl.id, mtype, sl.name, "play", false, rs, now_rel);
-                reset_music_to_now_playing(rs, now_rel, true);
-                mark_dirty_full();
-                rt_.schedule_disp();
-              }
+            } else if (m.selected_category_mode == "artist" || mtype == "artist") {
+              m.drilldown = MusicDrilldown::LIB_LIST;
+              m.drilldown_artist_name = sl.name;
+              m.drilldown_artist_page = b_page;
+              m.selected_category_mode = "artist_albums";
+              m.selected_category_title = sl.name;
+              reset_music_loading_slots(rs, "Loading albums...");
+              b_page = 1;
+              fetch_music_browse_for_current_view(rs, now_rel);
+              mark_dirty_full();
+              rt_.schedule_disp();
+            } else if (m.selected_category_mode == "album" ||
+                       m.selected_category_mode == "artist_albums" ||
+                       m.selected_category_mode == "playlist" ||
+                       mtype == "album" ||
+                       mtype == "playlist") {
+              m.drilldown = MusicDrilldown::LIB_LIST;
+              m.drilldown_album_id = sl.id;
+              m.drilldown_album_page = b_page;
+              m.drilldown_parent_mode = m.selected_category_mode;
+              m.selected_category_mode = "album_tracks";
+              m.selected_category_title = sl.name;
+              reset_music_loading_slots(rs, "Loading tracks...");
+              b_page = 1;
+              fetch_music_browse_for_current_view(rs, now_rel);
+              mark_dirty_full();
+              rt_.schedule_disp();
+            } else {
+              dispatch_music_play_item(sl.id, mtype, sl.name, "play", false, rs, now_rel);
+              reset_music_to_now_playing(rs, now_rel, true);
+              mark_dirty_full();
+              rt_.schedule_disp();
             }
           }
         }

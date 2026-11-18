@@ -187,14 +187,6 @@ interval:
             }
           }
 
-          // Music Overlay HUD Auto-Dismissal (8.0s timeout in Full Screen / Letterbox)
-          if (rs.nav.gui_page == 2 && rs.music.overlay_mode == 0 && rs.music.hud_active) {
-            if (millis() - rs.music.hud_timer >= 8000U) {
-              rs.music.hud_active = false;
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
-          }
-
           // Event-driven timer/alarm RPC emission (<= 250 ms latency on touchscreen edits & expirations)
           latter_actions::check_and_emit_timer_alarm_state(millis());
 

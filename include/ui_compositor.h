@@ -32,6 +32,7 @@
 #include "ui_layout.h"
 #include "ui_widgets.h"
 #else
+#include "latter_state.h"
 #include "ui_hit_table.h"
 #ifndef LATTER_SCREEN_H
 #define LATTER_SCREEN_H 466
@@ -571,6 +572,22 @@ class FrameCadenceController {
 
 FrameCadenceController &frame_cadence();
 
+struct MusicHudAutoFadeResult {
+  bool changed{false};
+  bool sprung_back_to_now_playing{false};
+};
+
+// Evaluates Music App v3 Smart HUD Auto-Fade & Transient Control-Tab Spring-Back (D-059):
+//   - Ambient tabs (NOW_PLAYING, LYRICS, INFO): fade hud_active -> false at 6000 ms while staying
+//     on the ambient tab (except NOW_PLAYING when overlay style is "Always Visible").
+//   - Transient tabs (VOLUME: 5000 ms; LIBRARY/SPEAKERS/QUEUE/ALBUM_TRACKS: 10000 ms): spring back
+//     to NOW_PLAYING, carousel_page = 0, mode_bar_win_start = 0, hud_active = Always Visible.
+MusicHudAutoFadeResult step_music_hud_auto_fade(
+    MusicRuntimeState &m,
+    uint32_t now_ms,
+    std::string_view music_overlay_style_opt,
+    bool touch_active = false) noexcept;
+
 // Reserved disp1 Component numeric timeout IDs:
 //   0x4C410001U..0x4C41000FU : UI compositor schedulers (below)
 //   0x4C410010U..0x4C41001FU : HAL panel power & MIPI-DCS SLPOUT/DISPON state machine (include/hal_panel_power.h)
@@ -1026,9 +1043,10 @@ inline int compute_active_subpage_id() {
       (rs.cal.delete_confirm_open ? (1 << 16) : 0);
   const int music_sub_id =
       (static_cast<int>(rs.music.view) & 0x0F) |
-      ((static_cast<int>(rs.music.takeover) & 0x07) << 4) |
-      ((rs.music.mode_bar_win_start & 0x07) << 7) |
-      ((rs.music.overlay_mode & 0x0F) << 10);
+      ((static_cast<int>(rs.music.drilldown) & 0x07) << 4) |
+      ((static_cast<int>(rs.music.takeover) & 0x07) << 7) |
+      ((rs.music.mode_bar_win_start & 0x07) << 10) |
+      ((rs.music.overlay_mode & 0x0F) << 13);
   return compute_subpage_id(
       rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
       music_sub_id, rs.nav.active_game,

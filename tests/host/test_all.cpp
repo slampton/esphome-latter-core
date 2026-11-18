@@ -4651,7 +4651,8 @@ void test_music_app_v3_d059() {
     }
   };
 
-  // 1. Multi-geometry Now Playing + Modal Isolation (VOLUME / SCRUB / ACTION_SHEET) across all 5 panels
+  // 1. Multi-geometry Now Playing, Peer VOLUME + Mode Bar, Floating SCRUB / ACTION_SHEET,
+  //    Wide Bezel-Safe List Rows (MUSIC_ROW_PLAY_BASE), Bento Grid & INFO Gear across all 5 panels
   static constexpr uint16_t kLibSheetWids[5] = {
       WidgetId::MUSIC_ACTION_PLAY_NOW,
       WidgetId::MUSIC_ACTION_PLAY_NEXT,
@@ -4676,6 +4677,7 @@ void test_music_app_v3_d059() {
 
   for (const auto &p : kPanels) {
     const int min_hit = mm_to_px_for(7.0f, p.ppi);
+    const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi);
     const auto np = compute_music_now_playing_geom(p.w, p.h, p.round, p.wearable, p.ppi);
     LATTER_CHECK(np.prog_h == ((p.w >= 640) ? 6 : 4));
     LATTER_CHECK(np.scrub_open_y0 + np.scrub_open_h <= music_metadata_band_y1_for(p.h));
@@ -4718,21 +4720,24 @@ void test_music_app_v3_d059() {
       LATTER_CHECK(ht.count == 1 && ht.find_by_id(WidgetId::MUSIC_ART_TAP) != nullptr);
     }
 
-    // VOLUME takeover: >= 64 px (96 px Desk) vertical slider + >= 7 mm targets + strict modal isolation
+    // Peer Tab 3 (MusicView::VOLUME): >= 64 px (96 px Desk) vertical slider + >= 7 mm targets
+    // coexisting cleanly ABOVE the 8-slot Stadium Mode Bar with zero AABB overlaps!
     {
       FrameHitTable ht{};
-      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::VOLUME, 0, true);
-      LATTER_CHECK(ht.count == 0);
       const auto vg = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       LATTER_CHECK(vg.slider_w >= ((p.w >= 640) ? 96 : 64));
+      LATTER_CHECK(vg.slider_y0 + vg.slider_h < vg.mode_bar_top);
       register_music_volume_hits(ht, vg);
+      for (int i = 0; i < 4; ++i) {
+        ht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
+                      static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
+                      kHitTap | kHitFocusSlot | kHitFocusCircle,
+                      static_cast<int16_t>(i), np.mode_bar_pad);
+      }
       check_zero_aabb_overlaps(ht, p.w, p.h);
 
-      LATTER_CHECK(ht.find_by_id(WidgetId::MUSIC_PLAY_PAUSE) == nullptr);
-      LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_SLOT_BASE) == nullptr);
-      const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
-      LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
-
+      LATTER_CHECK(ht.find_by_id(WidgetId::MUSIC_TAKEOVER_BACKDROP) == nullptr);
+      LATTER_CHECK(ht.find_by_id(WidgetId::MODE_BAR_SLOT_BASE + 3) != nullptr);
       const HitRegion *vsl = ht.find_by_id(WidgetId::MUSIC_VOL_SLIDER);
       const HitRegion *vup = ht.find_by_id(WidgetId::MUSIC_VOL_UP_STEP);
       const HitRegion *vdn = ht.find_by_id(WidgetId::MUSIC_VOL_DOWN_STEP);
@@ -4746,7 +4751,7 @@ void test_music_app_v3_d059() {
       LATTER_CHECK(std::fabs((1.0f - vsl->norm_y(vsl->y1)) - 0.0f) < 0.001f);
     }
 
-    // SCRUB takeover: horizontal seek slider + -15s/+30s + Shuffle/Repeat/Favorite + modal isolation
+    // SCRUB floating takeover: horizontal seek slider + -15s/+30s + Shuffle/Repeat/Like + backdrop dismiss
     {
       FrameHitTable ht{};
       register_music_now_playing_hits(ht, np, true, true, MusicTakeover::SCRUB, 0, true);
@@ -4768,26 +4773,167 @@ void test_music_app_v3_d059() {
       LATTER_CHECK((ht.find_by_id(WidgetId::MUSIC_SCRUB_BAR)->flags & kHitHorizSlider) != 0U);
     }
 
-    // ACTION_SHEET takeover (Library 5-choice MA sheet & Queue 5-choice sheet)
+    // ACTION_SHEET floating takeover (5 full-width pills + < Cancel BACK_BUTTON, zero underlying rows)
     for (const uint16_t *wids : {kLibSheetWids, kQueueSheetWids}) {
       FrameHitTable ht{};
       const auto ag = compute_music_action_sheet_geom(p.w, p.h, p.round, p.wearable, p.ppi, 5);
       register_music_action_sheet_hits(ht, ag, wids);
+      ht.add_rect(p.w / 2 - 80, ag.back_hit_y0, 160, p.h - ag.back_hit_y0, WidgetId::BACK_BUTTON, kHitTap);
       check_zero_aabb_overlaps(ht, p.w, p.h);
       const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
       LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
       for (int i = 0; i < 5; ++i) {
         const HitRegion *r = ht.find_by_id(wids[i]);
-        LATTER_CHECK(r != nullptr && r->width() >= min_hit && r->height() >= min_hit);
+        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
       }
+      LATTER_CHECK(ht.find_by_id(WidgetId::LIST_SLOT_BASE) == nullptr);
+    }
+
+    // Wide Bezel-Safe List Rows + Leading 1-Tap Play Zone (MUSIC_ROW_PLAY_BASE) on Playable Containers
+    {
+      FrameHitTable ht{};
+      const int c_top = ly.hdr_y + scale_y_for(24, p.h);
+      const int c_bot = (p.round ? scale_min_for(404, p.h) : (p.h - scale_y_for(64, p.h))) - scale_y_for(6, p.h);
+      for (int r = 0; r < kMusicFullListPageSize; ++r) {
+        const auto rg = compute_music_list_row_geom(
+            r, kMusicFullListPageSize, c_top, c_bot, /*has_leading_play=*/true, /*has_pips=*/false,
+            p.w, p.h, p.round, p.wearable, p.ppi);
+        if (p.w == 480 && p.h == 480) LATTER_CHECK(rg.card_w > 340);
+        if (p.w == 720 && p.h == 720) LATTER_CHECK(rg.card_w > 560);
+        register_music_list_row_hits(ht, rg, r, /*enable_long_press=*/true);
+      }
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+      for (int r = 0; r < kMusicFullListPageSize; ++r) {
+        const HitRegion *play_z = ht.find_by_id(static_cast<uint16_t>(WidgetId::MUSIC_ROW_PLAY_BASE + r));
+        const HitRegion *body_z = ht.find_by_id(static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + r));
+        LATTER_CHECK(play_z != nullptr && body_z != nullptr);
+        LATTER_CHECK(play_z->width() >= min_hit && (play_z->flags & kHitLongPress) != 0U);
+        LATTER_CHECK((body_z->flags & kHitLongPress) != 0U);
+      }
+    }
+
+    // Library 2x3 Bento Grid (6 tiles above Mode Bar) + INFO Gear Icon (MUSIC_INFO_SETTINGS_BTN >= 7 mm)
+    {
+      FrameHitTable ht{};
+      const int min_s = std::min(p.w, p.h);
+      const int mb_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) - scale_y_for(8, p.h);
+      const int c_top = ly.hdr_y + scale_y_for(24, p.h);
+      for (int i = 0; i < 6; ++i) {
+        const auto tg = compute_music_bento_tile_geom(
+            i, 6, c_top, mb_top, p.w, p.h, p.round, p.wearable, p.ppi);
+        LATTER_CHECK(tg.tile_y0 + tg.tile_h <= mb_top + 2);
+        ht.add_rect(tg.tile_x0, tg.tile_y0, tg.tile_w, tg.tile_h,
+                    static_cast<uint16_t>(WidgetId::GRID_CARD_BASE + i), kHitTap);
+      }
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+
+      FrameHitTable iht{};
+      const auto ig = compute_music_info_settings_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+      register_music_info_settings_hit(iht, ig);
+      const HitRegion *gear = iht.find_by_id(WidgetId::MUSIC_INFO_SETTINGS_BTN);
+      LATTER_CHECK(gear != nullptr && pad_w(gear) >= min_hit && pad_h(gear) >= min_hit);
+      LATTER_CHECK(ig.vp_bot_ambient > ig.vp_bot_hud);
     }
   }
 
-  // 2. 480 ms kHitLongPress row hold -> ACTION_SHEET arm/fire without double-tap on release
+  // 2. 8 Peer Tabs (0..7), Horizontal Wrap, Page-Size Parity (4 vs 5), can_go_home & Smart Auto-Fade/Spring-Back
   {
+    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, +1) == MusicView::LIBRARY);
+    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, -1) == MusicView::INFO);
+    LATTER_CHECK(step_music_peer_tab(MusicView::VOLUME, +1) == MusicView::QUEUE);
+    LATTER_CHECK(step_music_peer_tab(MusicView::INFO, +1) == MusicView::NOW_PLAYING);
+
+    static_assert(music_browse_page_size_for(MusicView::SPEAKERS, MusicDrilldown::NONE, "speakers") == 4);
+    static_assert(music_browse_page_size_for(MusicView::QUEUE, MusicDrilldown::NONE, "active_queue") == 4);
+    static_assert(music_browse_page_size_for(MusicView::ALBUM_TRACKS, MusicDrilldown::NONE, "current_album_tracks") == 4);
+    static_assert(music_browse_page_size_for(MusicView::LIBRARY, MusicDrilldown::LIB_LIST, "album") == 5);
+    static_assert(music_browse_page_size_for(MusicView::INFO, MusicDrilldown::NONE, "bio") == 5);
+    static_assert(is_music_playable_container_type("album"));
+    static_assert(is_music_playable_container_type("artist"));
+    static_assert(is_music_playable_container_type("playlist"));
+    static_assert(!is_music_playable_container_type("podcast"));
+    static_assert(!is_music_playable_container_type("track"));
+
+    DeviceRuntimeState st{};
+    st.nav.gui_page = PageId::MUSIC;
+    std::vector<int> peer_ctxs;
+    for (int t = 0; t < kMusicPeerTabCount; ++t) {
+      st.music.view = static_cast<MusicView>(t);
+      st.music.drilldown = MusicDrilldown::NONE;
+      st.music.takeover = MusicTakeover::NONE;
+      st.music.sync_carousel_for_view();
+      LATTER_CHECK(st.music.carousel_page == ((t >= 4) ? 1U : 0U));
+      LATTER_CHECK(st.music.mode_bar_win_start == ((t >= 4) ? 4 : 0));
+      if (st.music.view == MusicView::ALBUM_TRACKS) {
+        st.music.selected_category_mode = "current_album_tracks";
+        peer_ctxs.push_back(compute_touch_context(st));
+      } else {
+        for (uint8_t cp : {uint8_t{0}, uint8_t{1}}) {
+          st.music.carousel_page = cp;
+          peer_ctxs.push_back(compute_touch_context(st));
+        }
+      }
+    }
+    for (size_t i = 0; i < peer_ctxs.size(); ++i) {
+      for (size_t j = i + 1; j < peer_ctxs.size(); ++j) {
+        LATTER_CHECK(peer_ctxs[i] != peer_ctxs[j]);
+      }
+    }
+    st.music.view = MusicView::LIBRARY;
+    st.music.drilldown = MusicDrilldown::NONE;
+    const int lib_root_ctx = compute_touch_context(st);
+    st.music.drilldown = MusicDrilldown::LIB_LIST;
+    st.music.selected_category_mode = "album";
+    LATTER_CHECK(compute_touch_context(st) != lib_root_ctx);
+    st.music.apply_route(RouteId::MUSIC_FAVORITES);
+    LATTER_CHECK(st.music.view == MusicView::LIBRARY &&
+                 st.music.drilldown == MusicDrilldown::LIB_LIST &&
+                 st.music.selected_category_mode == "favorites");
+    st.music.apply_route(RouteId::MUSIC_INFO);
+    LATTER_CHECK(st.music.view == MusicView::INFO &&
+                 st.music.drilldown == MusicDrilldown::NONE &&
+                 st.music.carousel_page == 1U);
+
+    // Smart Auto-Fade & Spring-Back:
+    // - VOLUME springs back to NOW_PLAYING at 5000 ms
+    MusicRuntimeState m{};
+    m.view = MusicView::VOLUME;
+    m.hud_active = true;
+    m.hud_timer = 1000U;
+    LATTER_CHECK(!step_music_hud_auto_fade(m, 5999U, "Art Only").changed);
+    const auto vol_fade = step_music_hud_auto_fade(m, 6000U, "Art Only");
+    LATTER_CHECK(vol_fade.changed && vol_fade.sprung_back_to_now_playing);
+    LATTER_CHECK(m.view == MusicView::NOW_PLAYING && !m.hud_active);
+
+    // - Transient browse tabs (LIBRARY, SPEAKERS, QUEUE, ALBUM_TRACKS) spring back at 10000 ms
+    for (MusicView tv : {MusicView::LIBRARY, MusicView::SPEAKERS, MusicView::QUEUE, MusicView::ALBUM_TRACKS}) {
+      m = MusicRuntimeState{};
+      m.view = tv;
+      m.sync_carousel_for_view();
+      m.hud_active = true;
+      m.hud_timer = 2000U;
+      LATTER_CHECK(!step_music_hud_auto_fade(m, 11999U, "Always Visible").changed);
+      const auto tr_fade = step_music_hud_auto_fade(m, 12000U, "Always Visible");
+      LATTER_CHECK(tr_fade.changed && tr_fade.sprung_back_to_now_playing);
+      LATTER_CHECK(m.view == MusicView::NOW_PLAYING && m.carousel_page == 0U);
+    }
+
+    // - Ambient LYRICS and INFO fade hud_active -> false at 6000 ms while STAYING on LYRICS / INFO!
+    for (MusicView av : {MusicView::LYRICS, MusicView::INFO}) {
+      m = MusicRuntimeState{};
+      m.view = av;
+      m.hud_active = true;
+      m.hud_timer = 3000U;
+      LATTER_CHECK(!step_music_hud_auto_fade(m, 8999U, "Art + Metadata").changed);
+      const auto amb_fade = step_music_hud_auto_fade(m, 9000U, "Art + Metadata");
+      LATTER_CHECK(amb_fade.changed && !amb_fade.sprung_back_to_now_playing);
+      LATTER_CHECK(m.view == av && !m.hud_active);
+    }
+
+    // 480 ms kHitLongPress row hold -> ACTION_SHEET arm/fire without double-tap on release
     TouchGestureState gs{};
     gs.begin(180, 172, 1000U, PageId::MUSIC, 4);
-    gs.arm_long_press(WidgetId::LIST_SLOT_BASE + 1, 1);
+    gs.arm_long_press(WidgetId::MUSIC_ROW_PLAY_BASE + 1, 1);
     LATTER_CHECK(!gs.should_fire_long_press(1479U));
     LATTER_CHECK(gs.should_fire_long_press(1480U));
     gs.mark_long_press_fired();
@@ -4923,7 +5069,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(!a250.ensure_anim_poller && !a250.schedule_disp_now && !a250.schedule_band_now);
   }
 
-  // 5. Zero-legacy & D-048 / D-059 source-level invariants
+  // 5. Zero-legacy & D-043 / D-048 / D-059 source-level invariants
   {
     const std::string mu_src = read_repo_file("../../components/latter_ui/page_music.cpp");
     const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
@@ -4936,7 +5082,17 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(mu_src.find("show_library_shortcut") == std::string::npos);
     LATTER_CHECK(mu_src.find("GlassVariant::ReadableDark") == std::string::npos);
     LATTER_CHECK(mu_src.find("chrome_modal_bg") == std::string::npos);
+    LATTER_CHECK(mu_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
+    LATTER_CHECK(mu_src.find("ly.list_card_w") == std::string::npos);
     LATTER_CHECK(mu_src.find("render_lyrics_art_backdrop(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("MUSIC_INFO_SETTINGS_BTN") == std::string::npos ||
+                 mu_src.find("register_music_info_settings_hit(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("register_music_info_settings_hit(") != std::string::npos);
+    LATTER_CHECK(mu_src.find("register_music_list_row_hits(") != std::string::npos);
+    LATTER_CHECK(te_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
+    LATTER_CHECK(te_src.find("activate_music_peer_tab(") != std::string::npos);
+    LATTER_CHECK(te_src.find("MUSIC_ROW_PLAY_BASE") != std::string::npos);
+    LATTER_CHECK(te_src.find("MUSIC_INFO_SETTINGS_BTN") != std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode == 5") == std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode == 6") == std::string::npos);
     LATTER_CHECK(te_src.find("overlay_mode = 5") == std::string::npos);
@@ -4946,13 +5102,39 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(comp_src.find("if (!show_metadata && !show_controls)") != std::string::npos);
     LATTER_CHECK(comp_src.find("mark_music_progress_dirty_band(") != std::string::npos);
 
-    // D-048: zero passive glass containers behind Lyrics or Track Info text
-    const size_t lyr_fn = mu_src.find("void render_lyrics_view(");
-    const size_t info_fn = mu_src.find("void render_info_view(");
-    const size_t set_fn = mu_src.find("void render_music_settings_view(");
-    LATTER_CHECK(lyr_fn != std::string::npos && info_fn > lyr_fn && set_fn > info_fn);
-    LATTER_CHECK(mu_src.substr(lyr_fn, info_fn - lyr_fn).find("render_card_box(") == std::string::npos);
-    LATTER_CHECK(mu_src.substr(info_fn, set_fn - info_fn).find("render_card_box(") == std::string::npos);
+    auto slice_fn = [&](std::string_view sig, std::string_view next_sig) -> std::string {
+      const size_t s = mu_src.find(sig);
+      const size_t e = mu_src.find(next_sig);
+      LATTER_CHECK(s != std::string::npos && e != std::string::npos && e > s);
+      return mu_src.substr(s, e - s);
+    };
+
+    const std::string scrub_fn = slice_fn("void render_scrub_takeover(", "void render_action_sheet_takeover(");
+    const std::string sheet_fn = slice_fn("void render_action_sheet_takeover(", "void render_now_playing_view(");
+    const std::string np_fn = slice_fn("void render_now_playing_view(", "void render_volume_peer_tab(");
+    const std::string vol_fn = slice_fn("void render_volume_peer_tab(", "void render_lyrics_view(");
+    const std::string lyr_fn = slice_fn("void render_lyrics_view(", "void render_music_settings_view(");
+    const std::string info_fn = slice_fn("void render_info_view(", "void render_slot_list_row(");
+    const std::string page_fn = mu_src.substr(mu_src.find("void render_music_page("));
+
+    // Zero outer passive glass containers in SCRUB, ACTION_SHEET, LYRICS, and INFO;
+    // exactly 1 slider rail render_card_box in VOLUME, and dim_level = 0 on Now Playing & Volume!
+    LATTER_CHECK(scrub_fn.find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(sheet_fn.find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(lyr_fn.find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(info_fn.find("render_card_box(") == std::string::npos);
+    LATTER_CHECK(np_fn.find("/*dim_level=*/0") != std::string::npos);
+    LATTER_CHECK(vol_fn.find("/*dim_level=*/0") != std::string::npos);
+    const size_t first_vol_card = vol_fn.find("render_card_box(");
+    LATTER_CHECK(first_vol_card != std::string::npos &&
+                 vol_fn.find("render_card_box(", first_vol_card + 1U) == std::string::npos);
+
+    // Strict ACTION_SHEET early return before any browse list renders (zero buttons-on-buttons!)
+    const size_t sheet_guard = page_fn.find("m.takeover == MusicTakeover::ACTION_SHEET");
+    const size_t browse_call = page_fn.find("render_music_browse_views(");
+    LATTER_CHECK(sheet_guard != std::string::npos && browse_call != std::string::npos &&
+                 sheet_guard < browse_call);
+
     LATTER_CHECK(ui_doc.find("### D-059:") != std::string::npos);
   }
 }

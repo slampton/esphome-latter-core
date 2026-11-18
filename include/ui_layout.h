@@ -354,7 +354,7 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   }
   if (anchor == PageId::MUSIC) {
     return gui_page == PageId::MUSIC &&
-           runtime_state().music.view == MusicView::NOW_PLAYING &&
+           runtime_state().music.drilldown == MusicDrilldown::NONE &&
            runtime_state().music.takeover == MusicTakeover::NONE &&
            music_overlay_mode == 0;
   }
@@ -389,7 +389,7 @@ inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
                               const PersistedDevicePrefs &p = persisted_prefs()) {
   if (resolve_anchor_dock_app(p) == PageId::MUSIC) {
     return rt.nav.gui_page == PageId::MUSIC &&
-           rt.music.view == MusicView::NOW_PLAYING &&
+           rt.music.drilldown == MusicDrilldown::NONE &&
            rt.music.takeover == MusicTakeover::NONE &&
            rt.music.overlay_mode == 0;
   }
@@ -414,7 +414,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
   if (gui_page == PageId::GAMES && active_game > 0) return false;
   if (gui_page == PageId::MUSIC &&
-      (runtime_state().music.view != MusicView::NOW_PLAYING ||
+      (runtime_state().music.drilldown != MusicDrilldown::NONE ||
        runtime_state().music.takeover != MusicTakeover::NONE ||
        music_overlay_mode > 0)) {
     return false;
@@ -445,22 +445,56 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
 }
 
 inline bool can_go_home(const DeviceRuntimeState &rt = runtime_state()) {
-  const int eff_music_sub =
-      (rt.music.view != MusicView::NOW_PLAYING || rt.music.takeover != MusicTakeover::NONE)
-          ? 1
-          : rt.music.overlay_mode;
-  return can_go_home(
-      rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game, eff_music_sub,
-      rt.nav.area_subpage, rt.area.browse_mode == "areas", rt.nav.remote_subpage, rt.nav.tools_subpage,
-      rt.alarms.edit_idx, rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active);
+  if (rt.nav.gui_page == PageId::HOME || rt.nav.gui_page == PageId::CLOCK ||
+      rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active) {
+    return false;
+  }
+  if (rt.nav.shortcut_confirm.open) return false;
+  if (rt.nav.gui_page == PageId::TIME && (rt.timers.view_slot > 0 || rt.alarms.edit_idx > 0)) {
+    return false;
+  }
+  if (rt.nav.gui_page == PageId::HOME_HUB &&
+      (rt.intercom.cam_expanded_fullscreen || rt.intercom.cam_quick_reply_open)) {
+    return false;
+  }
+  if (rt.nav.gui_page == PageId::SYSTEM && rt.nav.system_menu_mode > 0) return false;
+  if (rt.nav.gui_page == PageId::GAMES && rt.nav.active_game > 0) return false;
+  if (rt.nav.gui_page == PageId::MUSIC &&
+      (rt.music.drilldown != MusicDrilldown::NONE ||
+       rt.music.takeover != MusicTakeover::NONE ||
+       rt.music.overlay_mode > 0)) {
+    return false;
+  }
+  const bool area_picker = (rt.area.browse_mode == "areas");
+  if (rt.nav.gui_page == PageId::AREA && (rt.nav.area_subpage > 0 || area_picker)) {
+    const bool root_picker = !persisted_prefs().home_screen_enabled &&
+                             resolve_anchor_dock_app() == PageId::AREA &&
+                             rt.area.active_area_id.empty() &&
+                             rt.nav.area_subpage == AreaSubpage::PICKER;
+    if (!root_picker) return false;
+  }
+  if (rt.nav.gui_page == PageId::REMOTE && rt.nav.remote_subpage > 0) return false;
+  if (rt.nav.gui_page == PageId::TOOLS && rt.nav.tools_subpage > 0) return false;
+  if (rt.nav.gui_page == PageId::CALENDAR &&
+      (rt.cal.drilldown != CalDrilldown::NONE || rt.cal.delete_confirm_open)) {
+    return false;
+  }
+  if (!persisted_prefs().home_screen_enabled && is_on_anchor_root(rt, persisted_prefs())) {
+    return false;
+  }
+  return true;
 }
 
 inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_active) {
   const auto &m = runtime_state().music;
-  return gui_page == PageId::MUSIC &&
-         m.view == MusicView::NOW_PLAYING &&
-         m.takeover == MusicTakeover::NONE &&
-         !overlay_always_visible && !hud_active;
+  if (gui_page != PageId::MUSIC ||
+      m.drilldown != MusicDrilldown::NONE ||
+      m.takeover != MusicTakeover::NONE ||
+      hud_active) {
+    return false;
+  }
+  if (m.view == MusicView::NOW_PLAYING) return !overlay_always_visible;
+  return m.view == MusicView::LYRICS || m.view == MusicView::INFO;
 }
 
 inline int get_home_dock_start_index(int total_count, int page) {
@@ -539,6 +573,18 @@ struct DockSlideAnimator {
     act_animating = false;
   }
 
+  void snap(int win_start = 0, int active_idx = -1) noexcept {
+    target_start = win_start;
+    from_start = static_cast<float>(win_start);
+    cur_start = from_start;
+    win_animating = false;
+    const int eff_active = (active_idx >= 0) ? active_idx : win_start;
+    target_active = eff_active;
+    from_active = static_cast<float>(eff_active);
+    cur_active = from_active;
+    act_animating = false;
+  }
+
   float step_window(int new_start, uint32_t now_ms) {
     if (target_start < 0 || std::abs(new_start - target_start) > 4) {
       target_start = new_start;
@@ -569,7 +615,14 @@ struct DockSlideAnimator {
   }
 
   float step_active(int new_active, uint32_t now_ms) {
-    if (target_active < 0 || std::abs(new_active - target_active) > 6) {
+    if (new_active < 0) {
+      target_active = -1;
+      from_active = -1.0f;
+      cur_active = -1.0f;
+      act_animating = false;
+      return cur_active;
+    }
+    if (target_active < 0 || std::abs(new_active - target_active) > 8) {
       target_active = new_active;
       from_active = static_cast<float>(new_active);
       cur_active = from_active;

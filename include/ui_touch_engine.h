@@ -132,26 +132,6 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
   return g;
 }
 
-inline void register_music_modal_backdrop_hits(
-    FrameHitTable &ht, int w, int h, int card_x0, int card_y0, int card_w, int card_h) {
-  const int x0 = std::clamp(card_x0, 0, w);
-  const int y0 = std::clamp(card_y0, 0, h);
-  const int x1 = std::clamp(card_x0 + card_w, x0, w);
-  const int y1 = std::clamp(card_y0 + card_h, y0, h);
-  if (y0 > 0) {
-    ht.add_rect(0, 0, w, y0, WidgetId::MUSIC_TAKEOVER_BACKDROP, kHitTap, 0);
-  }
-  if (y1 < h) {
-    ht.add_rect(0, y1, w, h - y1, WidgetId::MUSIC_TAKEOVER_BACKDROP, kHitTap, 1);
-  }
-  if (x0 > 0 && y1 > y0) {
-    ht.add_rect(0, y0, x0, y1 - y0, WidgetId::MUSIC_TAKEOVER_BACKDROP, kHitTap, 2);
-  }
-  if (x1 < w && y1 > y0) {
-    ht.add_rect(x1, y0, w - x1, y1 - y0, WidgetId::MUSIC_TAKEOVER_BACKDROP, kHitTap, 3);
-  }
-}
-
 inline void register_music_now_playing_hits(
     FrameHitTable &ht, const MusicNowPlayingGeom &g,
     bool show_metadata, bool show_controls,
@@ -199,257 +179,169 @@ inline void register_music_now_playing_hits(
   }
 }
 
-struct MusicVolumeGeom {
-  int w{466};
-  int h{466};
+inline constexpr int kMusicPeerListPageSize = 4;
+inline constexpr int kMusicFullListPageSize = 5;
+
+inline constexpr int music_browse_page_size_for(
+    MusicView /*view*/, MusicDrilldown drilldown, std::string_view mode = {}) noexcept {
+  if (mode == "bio" || mode == "track_info") return kMusicFullListPageSize;
+  if (drilldown == MusicDrilldown::LIB_LIST) return kMusicFullListPageSize;
+  return kMusicPeerListPageSize;
+}
+
+inline constexpr MusicView step_music_peer_tab(MusicView cur, int h_dir) noexcept {
+  int idx = (static_cast<int>(cur) + h_dir) % kMusicPeerTabCount;
+  if (idx < 0) idx += kMusicPeerTabCount;
+  return static_cast<MusicView>(idx);
+}
+
+inline constexpr bool is_music_playable_container_type(std::string_view media_type) noexcept {
+  return media_type == "album" || media_type == "artist" || media_type == "playlist";
+}
+
+struct MusicListRowGeom {
+  int card_x0{0};
+  int card_y0{0};
+  int card_w{340};
+  int card_h{48};
+  int cy_row{200};
+  int play_vis_w{0};
+  int play_hit_w{0};
   int min_hit{73};
-  int card_x0{84};
-  int card_y0{66};
-  int card_w{298};
-  int card_h{334};
-  int hdr_title_y{84};
-  int hdr_pct_y{106};
-  int slider_x0{296};
-  int slider_y0{120};
-  int slider_w{74};
-  int slider_h{266};
-  int btn_x0{98};
-  int btn_w{186};
-  int btn_h{74};
-  int btn_vis_h{50};
-  int up_y0{120};
-  int down_y0{206};
-  int mute_y0{292};
 };
 
-inline constexpr MusicVolumeGeom compute_music_volume_geom(
+inline constexpr MusicListRowGeom compute_music_list_row_geom(
+    int row_idx, int visible_rows, int content_top, int content_bot,
+    bool has_leading_play, bool has_pips,
     int w, int h, bool round, bool wearable, int ppi) noexcept {
-  MusicVolumeGeom g{};
-  g.w = w;
-  g.h = h;
+  MusicListRowGeom g{};
   g.min_hit = mm_to_px_for(7.0f, ppi);
-  const int hdr_h = std::max(scale_y_for(50, h), 44);
-  const int gap_y = std::max(6, scale_y_for(8, h));
-  const int pad_y = std::max(8, scale_y_for(12, h));
-  const int min_body_h = 3 * g.min_hit + 2 * gap_y;
-  const int target_card_h = std::max(scale_y_for(334, h), hdr_h + min_body_h + 2 * pad_y);
-  g.card_h = std::min(h - 24, target_card_h);
-  g.card_y0 = (h - g.card_h) / 2;
+  const int rows = std::max(1, visible_rows);
+  const int gap = std::max(5, scale_y_for(6, h));
+  const int avail_h = std::max(rows * 36, content_bot - content_top);
+  const int raw_h = (avail_h - (rows - 1) * gap) / rows;
+  const int max_card_h = scale_y_for(58, h);
+  g.card_h = std::clamp(raw_h, 40, max_card_h);
 
-  const int safe_w = band_safe_span_for(h / 2, g.card_h, w, h, round, wearable, 12);
-  g.card_w = std::clamp(std::min(scale_x_for(360, w), safe_w), 240, w - 16);
-  g.card_x0 = (w - g.card_w) / 2;
+  const int block_h = rows * g.card_h + (rows - 1) * gap;
+  const int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
+  g.cy_row = start_y0 + row_idx * (g.card_h + gap) + g.card_h / 2;
+  g.card_y0 = g.cy_row - g.card_h / 2;
 
-  g.hdr_title_y = g.card_y0 + scale_y_for(18, h);
-  g.hdr_pct_y = g.hdr_title_y + scale_y_for(22, h);
+  const int pip_reserve = has_pips ? scale_x_for(28, w) : 0;
+  const int safe_w = band_safe_span_for(g.cy_row, g.card_h, w, h, round, wearable, 14 + pip_reserve);
+  const int max_w = scale_x_for(436, w);
+  g.card_w = std::clamp(std::min(max_w, safe_w), std::max(140, g.min_hit), std::max(140, w - 16));
+  g.card_x0 = (w / 2) - (g.card_w / 2) - (pip_reserve / 3);
 
-  const int pad_x = std::max(10, scale_x_for(14, w));
-  const int col_gap = std::max(10, scale_x_for(14, w));
-  g.slider_w = (w >= 640) ? std::max(96, g.min_hit) : std::max(64, g.min_hit);
-  g.slider_x0 = g.card_x0 + g.card_w - pad_x - g.slider_w;
-  g.btn_x0 = g.card_x0 + pad_x;
-  g.btn_w = std::max(g.min_hit, g.slider_x0 - col_gap - g.btn_x0);
-
-  const int body_y0 = g.card_y0 + hdr_h;
-  const int body_h = std::max(min_body_h, (g.card_y0 + g.card_h - pad_y) - body_y0);
-  g.slider_y0 = body_y0;
-  g.slider_h = body_h;
-
-  g.btn_h = std::max(g.min_hit, (body_h - 2 * gap_y) / 3);
-  g.btn_vis_h = std::clamp(scale_y_for(48, h), 38, g.btn_h);
-  g.up_y0 = body_y0;
-  g.down_y0 = g.up_y0 + g.btn_h + gap_y;
-  g.mute_y0 = g.down_y0 + g.btn_h + gap_y;
-  return g;
-}
-
-inline void register_music_volume_hits(FrameHitTable &ht, const MusicVolumeGeom &g) {
-  register_music_modal_backdrop_hits(ht, g.w, g.h, g.card_x0, g.card_y0, g.card_w, g.card_h);
-  ht.add_rect(g.slider_x0, g.slider_y0, g.slider_w, g.slider_h,
-              WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitVertSlider | kHitFocusSlot);
-  ht.add_rect(g.btn_x0, g.up_y0, g.btn_w, g.btn_h,
-              WidgetId::MUSIC_VOL_UP_STEP, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.btn_x0, g.down_y0, g.btn_w, g.btn_h,
-              WidgetId::MUSIC_VOL_DOWN_STEP, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.btn_x0, g.mute_y0, g.btn_w, g.btn_h,
-              WidgetId::MUSIC_VOL_MUTE_BTN, kHitTap | kHitFocusSlot);
-}
-
-struct MusicScrubGeom {
-  int w{466};
-  int h{466};
-  int min_hit{73};
-  int card_x0{80};
-  int card_y0{66};
-  int card_w{306};
-  int card_h{334};
-  int hdr_title_y{84};
-  int hdr_time_y{108};
-  int slider_x0{94};
-  int slider_y0{120};
-  int slider_w{278};
-  int slider_h{74};
-  int step_y0{202};
-  int step_h{74};
-  int step_vis_h{44};
-  int step_back_x0{94};
-  int step_fwd_x0{238};
-  int step_btn_w{134};
-  int mode_y0{284};
-  int mode_h{74};
-  int mode_vis_h{44};
-  int shuf_x0{94};
-  int rep_x0{189};
-  int fav_x0{284};
-  int mode_btn_w{88};
-};
-
-inline constexpr MusicScrubGeom compute_music_scrub_geom(
-    int w, int h, bool round, bool wearable, int ppi) noexcept {
-  MusicScrubGeom g{};
-  g.w = w;
-  g.h = h;
-  g.min_hit = mm_to_px_for(7.0f, ppi);
-  const int hdr_h = std::max(scale_y_for(50, h), 44);
-  const int gap_y = std::max(6, scale_y_for(8, h));
-  const int pad_y = std::max(8, scale_y_for(10, h));
-  const int min_body_h = 3 * g.min_hit + 2 * gap_y;
-  const int target_card_h = std::max(scale_y_for(334, h), hdr_h + min_body_h + 2 * pad_y);
-  g.card_h = std::min(h - 24, target_card_h);
-  g.card_y0 = (h - g.card_h) / 2;
-
-  const int pad_x = std::max(8, scale_x_for(12, w));
-  const int gap_x = std::max(6, scale_x_for(8, w));
-  const int min_inner_w = 3 * g.min_hit + 2 * gap_x;
-  const int safe_w = band_safe_span_for(h / 2, g.card_h, w, h, round, wearable, 10);
-  g.card_w = std::clamp(std::max(min_inner_w + 2 * pad_x, std::min(scale_x_for(376, w), safe_w)),
-                        min_inner_w + 2 * pad_x, w - 12);
-  g.card_x0 = (w - g.card_w) / 2;
-
-  g.hdr_title_y = g.card_y0 + scale_y_for(18, h);
-  g.hdr_time_y = g.hdr_title_y + scale_y_for(22, h);
-
-  const int inner_x0 = g.card_x0 + pad_x;
-  const int inner_w = g.card_w - 2 * pad_x;
-  const int body_y0 = g.card_y0 + hdr_h;
-  const int body_h = std::max(min_body_h, (g.card_y0 + g.card_h - pad_y) - body_y0);
-  const int row_h = std::max(g.min_hit, (body_h - 2 * gap_y) / 3);
-
-  g.slider_x0 = inner_x0;
-  g.slider_y0 = body_y0;
-  g.slider_w = inner_w;
-  g.slider_h = row_h;
-
-  g.step_y0 = g.slider_y0 + row_h + gap_y;
-  g.step_h = row_h;
-  g.step_vis_h = std::clamp(scale_y_for(44, h), 36, row_h);
-  g.step_btn_w = std::max(g.min_hit, (inner_w - gap_x) / 2);
-  g.step_back_x0 = inner_x0;
-  g.step_fwd_x0 = inner_x0 + inner_w - g.step_btn_w;
-
-  g.mode_y0 = g.step_y0 + row_h + gap_y;
-  g.mode_h = row_h;
-  g.mode_vis_h = std::clamp(scale_y_for(44, h), 36, row_h);
-  g.mode_btn_w = std::max(g.min_hit, (inner_w - 2 * gap_x) / 3);
-  g.shuf_x0 = inner_x0;
-  g.rep_x0 = inner_x0 + (inner_w - g.mode_btn_w) / 2;
-  g.fav_x0 = inner_x0 + inner_w - g.mode_btn_w;
-  return g;
-}
-
-inline void register_music_scrub_hits(FrameHitTable &ht, const MusicScrubGeom &g) {
-  register_music_modal_backdrop_hits(ht, g.w, g.h, g.card_x0, g.card_y0, g.card_w, g.card_h);
-  ht.add_rect(g.slider_x0, g.slider_y0, g.slider_w, g.slider_h,
-              WidgetId::MUSIC_SCRUB_BAR, kHitTap | kHitHorizSlider | kHitFocusSlot);
-  ht.add_rect(g.step_back_x0, g.step_y0, g.step_btn_w, g.step_h,
-              WidgetId::MUSIC_SCRUB_STEP_BACK, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.step_fwd_x0, g.step_y0, g.step_btn_w, g.step_h,
-              WidgetId::MUSIC_SCRUB_STEP_FWD, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.shuf_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
-              WidgetId::MUSIC_SHUFFLE_BTN, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.rep_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
-              WidgetId::MUSIC_REPEAT_BTN, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.fav_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
-              WidgetId::MUSIC_FAVORITE_BTN, kHitTap | kHitFocusSlot);
-}
-
-struct MusicActionSheetGeom {
-  int w{466};
-  int h{466};
-  int min_hit{73};
-  int card_x0{80};
-  int card_y0{66};
-  int card_w{306};
-  int card_h{334};
-  int hdr_title_y{88};
-  int item_x0[5]{};
-  int item_y0[5]{};
-  int item_w[5]{};
-  int item_h[5]{};
-  int item_vis_h{46};
-  int item_count{5};
-};
-
-inline constexpr MusicActionSheetGeom compute_music_action_sheet_geom(
-    int w, int h, bool round, bool wearable, int ppi, int count = 5) noexcept {
-  MusicActionSheetGeom g{};
-  g.w = w;
-  g.h = h;
-  g.min_hit = mm_to_px_for(7.0f, ppi);
-  g.item_count = std::clamp(count, 1, 5);
-  const int rows = (g.item_count + 1) / 2;
-  const int hdr_h = std::max(scale_y_for(44, h), 38);
-  const int gap_y = std::max(6, scale_y_for(8, h));
-  const int pad_y = std::max(8, scale_y_for(10, h));
-  const int min_body_h = rows * g.min_hit + std::max(0, rows - 1) * gap_y;
-  const int target_card_h = std::max(scale_y_for(326, h), hdr_h + min_body_h + 2 * pad_y);
-  g.card_h = std::min(h - 24, target_card_h);
-  g.card_y0 = (h - g.card_h) / 2;
-
-  const int pad_x = std::max(8, scale_x_for(12, w));
-  const int gap_x = std::max(6, scale_x_for(8, w));
-  const int min_inner_w = 2 * g.min_hit + gap_x;
-  const int safe_w = band_safe_span_for(h / 2, g.card_h, w, h, round, wearable, 12);
-  g.card_w = std::clamp(std::max(min_inner_w + 2 * pad_x, std::min(scale_x_for(372, w), safe_w)),
-                        min_inner_w + 2 * pad_x, w - 12);
-  g.card_x0 = (w - g.card_w) / 2;
-  g.hdr_title_y = g.card_y0 + scale_y_for(20, h);
-
-  const int inner_x0 = g.card_x0 + pad_x;
-  const int inner_w = g.card_w - 2 * pad_x;
-  const int body_y0 = g.card_y0 + hdr_h;
-  const int body_h = std::max(min_body_h, (g.card_y0 + g.card_h - pad_y) - body_y0);
-  const int row_h = std::max(g.min_hit, (body_h - std::max(0, rows - 1) * gap_y) / std::max(1, rows));
-  g.item_vis_h = std::clamp(scale_y_for(46, h), 38, row_h);
-  const int col_w = std::max(g.min_hit, (inner_w - gap_x) / 2);
-
-  for (int i = 0; i < g.item_count; ++i) {
-    const int r = i / 2;
-    const int c = i % 2;
-    const bool solo_last = (i == g.item_count - 1) && ((g.item_count % 2) == 1);
-    g.item_y0[i] = body_y0 + r * (row_h + gap_y);
-    g.item_h[i] = row_h;
-    if (solo_last) {
-      g.item_x0[i] = inner_x0;
-      g.item_w[i] = inner_w;
-    } else if (c == 0) {
-      g.item_x0[i] = inner_x0;
-      g.item_w[i] = col_w;
-    } else {
-      g.item_x0[i] = inner_x0 + inner_w - col_w;
-      g.item_w[i] = col_w;
-    }
+  if (has_leading_play) {
+    g.play_vis_w = std::clamp(scale_x_for(44, w), 36, g.card_w / 3);
+    g.play_hit_w = std::clamp(std::max(g.play_vis_w, g.min_hit), g.play_vis_w, g.card_w / 2);
   }
   return g;
 }
 
-inline void register_music_action_sheet_hits(
-    FrameHitTable &ht, const MusicActionSheetGeom &g, const uint16_t *wids) {
-  register_music_modal_backdrop_hits(ht, g.w, g.h, g.card_x0, g.card_y0, g.card_w, g.card_h);
-  for (int i = 0; i < g.item_count; ++i) {
-    ht.add_rect(g.item_x0[i], g.item_y0[i], g.item_w[i], g.item_h[i],
-                wids[i], kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+inline void register_music_list_row_hits(
+    FrameHitTable &ht, const MusicListRowGeom &g, int row_idx, bool enable_long_press) {
+  const uint8_t flags = static_cast<uint8_t>(
+      kHitTap | kHitFocusSlot | (enable_long_press ? kHitLongPress : 0U));
+  if (g.play_hit_w > 0 && g.card_w > g.play_hit_w + 24) {
+    ht.add_rect(g.card_x0, g.card_y0, g.play_hit_w, g.card_h,
+                static_cast<uint16_t>(WidgetId::MUSIC_ROW_PLAY_BASE + row_idx),
+                flags, static_cast<int16_t>(row_idx));
+    ht.add_rect(g.card_x0 + g.play_hit_w, g.card_y0, g.card_w - g.play_hit_w, g.card_h,
+                static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row_idx),
+                flags, static_cast<int16_t>(row_idx));
+  } else {
+    ht.add_rect(g.card_x0, g.card_y0, g.card_w, g.card_h,
+                static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row_idx),
+                flags, static_cast<int16_t>(row_idx));
   }
+}
+
+struct MusicBentoTileGeom {
+  int tile_x0{0};
+  int tile_y0{0};
+  int tile_w{160};
+  int tile_h{56};
+};
+
+inline constexpr MusicBentoTileGeom compute_music_bento_tile_geom(
+    int local_idx, int page_item_count, int content_top, int content_bot,
+    int w, int h, bool round, bool wearable, int ppi) noexcept {
+  MusicBentoTileGeom g{};
+  (void)ppi;
+  const int gap_y = std::max(5, scale_y_for(7, h));
+  const int gap_x = std::max(6, scale_x_for(8, w));
+  const int avail_h = std::max(126, content_bot - content_top);
+  g.tile_h = std::clamp((avail_h - 2 * gap_y) / 3, 40, scale_y_for(68, h));
+  const int grid_h = 3 * g.tile_h + 2 * gap_y;
+  const int grid_y0 = content_top + std::max(0, (avail_h - grid_h) / 2);
+
+  const int pip_reserve = scale_x_for(28, w);
+  const int r = local_idx / 2;
+  const int c = local_idx % 2;
+  g.tile_y0 = grid_y0 + r * (g.tile_h + gap_y);
+  const int row_cy = g.tile_y0 + g.tile_h / 2;
+
+  const int safe_r0 = band_safe_span_for(grid_y0 + g.tile_h / 2, g.tile_h, w, h, round, wearable, 14 + pip_reserve);
+  const int safe_r2 = band_safe_span_for(grid_y0 + 2 * (g.tile_h + gap_y) + g.tile_h / 2, g.tile_h,
+                                         w, h, round, wearable, 14 + pip_reserve);
+  const int safe_cur = band_safe_span_for(row_cy, g.tile_h, w, h, round, wearable, 14 + pip_reserve);
+  const int grid_w = std::clamp(
+      std::min({safe_r0, safe_r2, safe_cur, scale_x_for(416, w)}),
+      148, std::max(148, w - 20));
+  const int grid_x0 = (w / 2) - (grid_w / 2) - (pip_reserve / 3);
+  const int col_w = std::max(68, (grid_w - gap_x) / 2);
+
+  const bool solo_last = (local_idx == page_item_count - 1) && ((page_item_count % 2) == 1);
+  if (solo_last) {
+    g.tile_x0 = grid_x0;
+    g.tile_w = grid_w;
+  } else if (c == 0) {
+    g.tile_x0 = grid_x0;
+    g.tile_w = col_w;
+  } else {
+    g.tile_x0 = grid_x0 + grid_w - col_w;
+    g.tile_w = col_w;
+  }
+  return g;
+}
+
+struct MusicInfoSettingsGeom {
+  int btn_cx{340};
+  int btn_cy{66};
+  int btn_r{18};
+  int hit_pad{8};
+  int vp_top{92};
+  int vp_bot_hud{320};
+  int vp_bot_ambient{442};
+};
+
+inline constexpr MusicInfoSettingsGeom compute_music_info_settings_geom(
+    int w, int h, bool round, bool wearable, int ppi) noexcept {
+  MusicInfoSettingsGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
+  const int min_s = (w < h) ? w : h;
+  const int min_hit = mm_to_px_for(7.0f, ppi);
+  g.btn_r = (w < 360) ? 16 : scale_s_for(18, min_s);
+  const int btn_d = 2 * g.btn_r + 1;
+  g.btn_cy = ly.hdr_y + (round ? scale_y_for(22, h) : scale_y_for(6, h));
+  const int safe_w = band_safe_span_for(g.btn_cy, btn_d, w, h, round, wearable, 14);
+  const int max_span = std::min(safe_w, scale_x_for(412, w));
+  g.btn_cx = ly.cx + (max_span / 2) - g.btn_r;
+  const int min_r = (min_hit + 1) / 2;
+  g.hit_pad = (min_r > g.btn_r) ? (min_r - g.btn_r) : 0;
+  g.vp_top = std::max(ly.hdr_y + scale_y_for(28, h), g.btn_cy + g.btn_r + scale_y_for(8, h));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s);
+  g.vp_bot_hud = std::max(g.vp_top + 60, mode_bar_top - scale_y_for(8, h));
+  g.vp_bot_ambient = std::max(g.vp_top + 80, h - (round ? scale_y_for(28, h) : scale_y_for(20, h)));
+  return g;
+}
+
+inline void register_music_info_settings_hit(FrameHitTable &ht, const MusicInfoSettingsGeom &g) {
+  ht.add_circle(g.btn_cx, g.btn_cy, g.btn_r, WidgetId::MUSIC_INFO_SETTINGS_BTN,
+                kHitTap | kHitFocusSlot | kHitFocusCircle, 0, g.hit_pad);
 }
 
 // Advances synced LRC scroll_px toward the active lyric line anchored at ~38% of screen height
@@ -702,6 +594,7 @@ class TouchGestureEngine {
 };
 
 TouchGestureEngine &touch_engine();
+void activate_music_peer_tab(MusicView target, uint32_t now_ms);
 
 #endif  // __has_include("esphome/core/defines.h")
 

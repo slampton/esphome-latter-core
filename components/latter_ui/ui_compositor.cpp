@@ -483,19 +483,66 @@ CadenceScreensaverActions FrameCadenceController::evaluate_screensaver_20ms(
   return out;
 }
 
+MusicHudAutoFadeResult step_music_hud_auto_fade(
+    MusicRuntimeState &m,
+    uint32_t now_ms,
+    std::string_view music_overlay_style_opt,
+    bool touch_active) noexcept {
+  if (touch_active ||
+      m.drilldown != MusicDrilldown::NONE ||
+      m.takeover != MusicTakeover::NONE ||
+      !m.hud_active) {
+    return {};
+  }
+  const uint32_t hud_last_ms = m.hud_timer;
+  const uint32_t elapsed_ms = (now_ms >= hud_last_ms) ? (now_ms - hud_last_ms) : 0U;
+  const bool always_vis = (music_overlay_style_opt == "Always Visible");
+
+  if (m.view == MusicView::NOW_PLAYING) {
+    if (!always_vis && elapsed_ms >= 6000U) {
+      m.hud_active = false;
+      return {true, false};
+    }
+    return {};
+  }
+
+  if (m.view == MusicView::LYRICS || m.view == MusicView::INFO) {
+    if (elapsed_ms >= 6000U) {
+      m.hud_active = false;
+      return {true, false};
+    }
+    return {};
+  }
+
+  const uint32_t timeout_ms = (m.view == MusicView::VOLUME) ? 5000U : 10000U;
+  if (elapsed_ms >= timeout_ms) {
+    m.view = MusicView::NOW_PLAYING;
+    m.carousel_page = 0U;
+    m.mode_bar_win_start = 0;
+    m.hud_active = always_vis;
+    return {true, true};
+  }
+  return {};
+}
+
 #if __has_include("esphome/core/defines.h")
 
 namespace {
 
 bool is_music_playing_for_compositor(const MediaState &ms, bool local_media_playing, uint32_t now_ms) {
   return is_music_playing_effective(!ms.is_local, local_media_playing, ms.state, now_ms) ||
-         (ms.is_local && local_media_playing) ||
+         (ms.is_local && (local_media_playing || ms.playing ||
+                          ms.playback_state == MediaPlaybackState::Playing || ms.state == "playing")) ||
          (!ms.is_local && (ms.playing || ms.playback_state == MediaPlaybackState::Playing));
 }
 
 bool is_music_lyrics_sync_imminent(uint32_t now_ms, bool local_media_playing) {
   const auto &rs = runtime_state();
-  if (rs.nav.gui_page != PageId::MUSIC || rs.music.view != MusicView::LYRICS) return false;
+  if (rs.nav.gui_page != PageId::MUSIC ||
+      rs.music.view != MusicView::LYRICS ||
+      rs.music.drilldown != MusicDrilldown::NONE) {
+    return false;
+  }
   const auto &lyr = rs.music.lyrics;
   if (!lyr.synced || lyr.lines.empty() || now_ms < lyr.manual_override_until_ms) return false;
   const auto &ms = media_state();
@@ -508,7 +555,11 @@ bool is_music_lyrics_sync_imminent(uint32_t now_ms, bool local_media_playing) {
 
 bool is_music_lyrics_anim_active(uint32_t now_ms, bool local_media_playing) {
   const auto &rs = runtime_state();
-  if (rs.nav.gui_page != PageId::MUSIC || rs.music.view != MusicView::LYRICS) return false;
+  if (rs.nav.gui_page != PageId::MUSIC ||
+      rs.music.view != MusicView::LYRICS ||
+      rs.music.drilldown != MusicDrilldown::NONE) {
+    return false;
+  }
   const auto &lyr = rs.music.lyrics;
   if (lyr.scroll_px != lyr.target_scroll_px) return true;
   if (lyr.scroll_anim_start_ms > 0U && (now_ms - lyr.scroll_anim_start_ms) < 260U) return true;
@@ -667,6 +718,23 @@ Cadence250msActions FrameCadenceController::step_250ms(
       rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
       weather_sim_active, custom_wall);
   const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
+  bool music_hud_changed = false;
+  if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !va_visible &&
+      rs.nav.gui_page == PageId::MUSIC) {
+    if (rs.music.hud_active &&
+        touch_gesture().start_page == PageId::MUSIC &&
+        touch_gesture().last_touch_ms <= now_ms &&
+        touch_gesture().last_touch_ms > rs.music.hud_timer) {
+      rs.music.hud_timer = touch_gesture().last_touch_ms;
+    }
+    const std::string_view ov_opt(pref_music_overlay_style_cstr(prefs));
+    const auto fade_res = step_music_hud_auto_fade(
+        rs.music, now_ms, ov_opt, touch_gesture().active);
+    if (fade_res.sprung_back_to_now_playing) {
+      mode_bar_anim().snap(0);
+    }
+    music_hud_changed = fade_res.changed;
+  }
   in.sky_canvas_active = !va_visible && (bd_mode == BackdropMode::LiveWeatherSky);
   in.motion_mag = rs.hw_motion_mag;
   in.anim_poller_running = ui_anim_poller_running();
@@ -720,7 +788,10 @@ Cadence250msActions FrameCadenceController::step_250ms(
       !ac.wallpaper_url.empty() && ac.wallpaper_url != rs.music.loaded_wallpaper_url;
   in.latest_fw_version = latest_fw_version;
 
-  const auto out = evaluate_250ms(in);
+  auto out = evaluate_250ms(in);
+  if (music_hud_changed) {
+    out.schedule_disp_now = true;
+  }
   if (out.bump_user_touch_ms) {
     last_user_touch_ms() = now_ms;
   }
@@ -969,7 +1040,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (!rs.music.action_feedback.empty() && (ctx.now_ms - rs.music.feedback_timer < 3200U)) {
       hash_sv(rs.music.action_feedback);
     }
-    if (rs.music.view == MusicView::LYRICS) {
+    if (rs.music.view == MusicView::LYRICS && rs.music.drilldown == MusicDrilldown::NONE) {
       const auto &lyr = rs.music.lyrics;
       mu_sig = (mu_sig ^ lyr.rev) * 16777619U;
       mu_sig = (mu_sig ^ (lyr.loading ? 1U : 0U)) * 16777619U;
@@ -978,7 +1049,10 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       mu_sig = (mu_sig ^ static_cast<uint32_t>(lyr.scroll_px)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(lyr.target_scroll_px)) * 16777619U;
       mu_sig = (mu_sig ^ ((ctx.now_ms < lyr.manual_override_until_ms) ? 1U : 0U)) * 16777619U;
-    } else if (rs.music.view != MusicView::NOW_PLAYING || rs.music.takeover != MusicTakeover::NONE) {
+    } else if (rs.music.view != MusicView::NOW_PLAYING ||
+               rs.music.drilldown != MusicDrilldown::NONE ||
+               rs.music.takeover != MusicTakeover::NONE) {
+      mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.drilldown)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.category_page)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.drilldown_artist_page)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.drilldown_album_page)) * 16777619U;
@@ -986,6 +1060,8 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.info_scroll_page)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.settings_page)) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.music.action_sheet_slot + 2)) * 16777619U;
+      hash_sv(rs.music.target_speaker_id);
+      hash_sv(rs.music.target_speaker_name);
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.slot_page_for(latter_rpc::SlotChannel::MUSIC))) * 16777619U;
       mu_sig = (mu_sig ^ static_cast<uint32_t>(rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC))) * 16777619U;
       const BrowseSlotItem *slots = rs.music_slots();
@@ -1007,6 +1083,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   static int s_last_music_np_dur_sec = -1;
   if (rs.nav.gui_page != PageId::MUSIC ||
       rs.music.view != MusicView::NOW_PLAYING ||
+      rs.music.drilldown != MusicDrilldown::NONE ||
       rs.music.takeover != MusicTakeover::NONE) {
     s_last_music_np_pos_sec = 0xFFFFFFFFU;
     s_last_music_np_dur_sec = -1;
@@ -1034,18 +1111,14 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
     const auto &ms = media_state();
     const auto &prefs = persisted_prefs();
     const bool is_playing_eff = is_music_playing_for_compositor(ms, ctx.local_media_playing, ctx.now_ms);
-    if (rs.music.view == MusicView::LYRICS) {
+    if (rs.music.view == MusicView::LYRICS && rs.music.drilldown == MusicDrilldown::NONE) {
       return is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
     }
-    if (rs.music.view == MusicView::NOW_PLAYING) {
+    if (rs.music.view == MusicView::NOW_PLAYING && rs.music.drilldown == MusicDrilldown::NONE) {
       if (rs.music.takeover == MusicTakeover::SCRUB) {
         if (is_playing_eff) return true;
         return rs.music.takeover_interacted_ms > 0U &&
                (ctx.now_ms - rs.music.takeover_interacted_ms) >= 4800U;
-      }
-      if (rs.music.takeover == MusicTakeover::VOLUME) {
-        return rs.music.takeover_interacted_ms > 0U &&
-               (ctx.now_ms - rs.music.takeover_interacted_ms) >= 3800U;
       }
       if (rs.music.takeover != MusicTakeover::NONE) {
         return false;
