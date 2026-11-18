@@ -10,13 +10,6 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
-#ifdef USE_ESP32
-#include <esp_attr.h>
-#endif
-#ifndef IRAM_ATTR
-#define IRAM_ATTR
-#endif
-
 #include <utility>
 
 #include "hal_panel_power.h"
@@ -32,7 +25,7 @@ constexpr uint32_t kResetReleaseTimeoutId = 0x4C540001U;
 constexpr uint32_t kPostResetSettleTimeoutId = 0x4C540002U;
 }  // namespace
 
-void IRAM_ATTR LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
+void LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
   store->irq_pending = true;
   store->edge_count = store->edge_count + 1U;
 #if defined(USE_ESP32)

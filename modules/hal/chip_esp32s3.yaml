@@ -12,6 +12,7 @@ esp32:
   framework:
     type: esp-idf
     sdkconfig_options:
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
       CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
       CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
       CONFIG_FREERTOS_USE_TRACE_FACILITY: "y"  # task list for the System: Log Memory Report button

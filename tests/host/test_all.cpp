@@ -4537,7 +4537,27 @@ void test_calendar_app_d058() {
       make_ev_rec("2026-11-25", "2026-11-25", 1080, 1200, 0, 0, "u4", "", "Dinner", "Bistro", "");
 
   auto &store = calendar_window_store();
-  store = CalendarWindowStore{};
+  reset_calendar_window_store();
+  LATTER_CHECK(store.window_start_ymd == 0 && store.count == 0 && store.staging_req_id == -1);
+  LATTER_CHECK(store.events[0].start_min == -1 && store.events[0].end_min == -1);
+
+  // Cold-boot summary preview fallback while window_start_ymd == 0 (zero stack CalendarWindowStore,
+  // zero mutation of store.window_start_ymd / store.count).
+  {
+    const std::string boot_summary =
+        std::string("All Day|Board Review|Oakland Lab|1") + kProtocolRecordSep +
+        "14:00||HQ|0";
+    CalendarWindowEvent *prev = calendar_summary_preview_scratch();
+    const int prev_n = populate_calendar_summary_preview(boot_summary, 20261117, prev);
+    LATTER_CHECK(prev_n == 2);
+    LATTER_CHECK(prev[0].start_ymd == 20261117 && prev[0].end_ymd == 20261117);
+    LATTER_CHECK(prev[0].all_day == 1U && prev[0].start_min == -1);
+    LATTER_CHECK(std::string_view(prev[0].title) == "Board Review");
+    LATTER_CHECK(std::string_view(prev[0].location) == "Oakland Lab");
+    LATTER_CHECK(prev[1].all_day == 0U && std::string_view(prev[1].title) == "Event");
+    LATTER_CHECK(std::string_view(prev[1].location) == "HQ");
+    LATTER_CHECK(store.window_start_ymd == 0 && store.count == 0);
+  }
   // Chunk 0 of 2 stages without committing
   LATTER_CHECK(!apply_calendar_view_action(7, 0, 2, "2026-10-15", "2027-01-20", "", chunk0));
   LATTER_CHECK(store.count == 0);
@@ -5145,6 +5165,13 @@ void test_sram_psram_budget_and_http_stall_guards() {
   // 1. S3 (8 MB PSRAM) defaults to a single ArtCanvasCache slot; P4 (32 MB PSRAM) allows 3.
   static_assert(LATTER_CHIP_P4 == 0, "Host default mimics S3 capability baseline");
   static_assert(LATTER_ART_CACHE_ENTRIES == 1, "8 MB PSRAM S3 builds must cap ArtCanvasCache to 1 slot");
+  static_assert(!std::is_default_constructible_v<CalendarWindowStore>,
+                "CalendarWindowStore (~51 KB) must never be default-constructible on the stack");
+  static_assert(!std::is_copy_constructible_v<CalendarWindowStore> &&
+                    !std::is_copy_assignable_v<CalendarWindowStore> &&
+                    !std::is_move_constructible_v<CalendarWindowStore> &&
+                    !std::is_move_assignable_v<CalendarWindowStore>,
+                "CalendarWindowStore (~51 KB) must never be copied or moved by value");
 
   // 2. Online art fetch guard & camera error backoff state
   LATTER_CHECK(can_start_online_art_fetch(false));
@@ -5153,15 +5180,24 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(runtime_state().intercom.cam_error_backoff_until_ms == 4200U);
   cam_error_backoff_until_ms() = 0U;
 
-  // 3. Source-level regressions: zero static .bss bloat for 52 KB CalendarWindowStore / 14 KB MDI scratch /
-  //    ArtScaleScratch, mutual sky_base_cache <-> ArtCanvasCache handoff on non-P4, and <=5s HTTP timeout.
+  // 3. Source-level regressions: zero static .bss or stack bloat for 52 KB CalendarWindowStore / 14 KB MDI scratch /
+  //    ArtScaleScratch, 16 KB S3 main-task stack parity, touch GPIO ISR hygiene, mutual sky_base_cache <->
+  //    ArtCanvasCache handoff on non-P4, and <=5s HTTP timeout.
   const std::string st_src = read_repo_file("../../include/latter_state.h");
+  const std::string cal_src = read_repo_file("../../components/latter_ui/page_calendar.cpp");
+  const std::string th_src = read_repo_file("../../components/latter_core/touch_hal.cpp");
+  const std::string s3_yaml = read_repo_file("../../modules/hal/chip_esp32s3.yaml");
   const std::string gfx_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
   const std::string wth_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
   const std::string mdi_src = read_repo_file("../../components/latter_ui/ui_mdi.cpp");
   const std::string dp_yaml = read_repo_file("../../modules/display_pipeline.yaml");
 
   LATTER_CHECK(st_src.find("static CalendarWindowStore fallback") == std::string::npos);
+  LATTER_CHECK(st_src.find("CalendarWindowStore{}") == std::string::npos);
+  LATTER_CHECK(cal_src.find("temp_store") == std::string::npos);
+  LATTER_CHECK(cal_src.find("populate_calendar_summary_preview(") != std::string::npos);
+  LATTER_CHECK(s3_yaml.find("CONFIG_ESP_MAIN_TASK_STACK_SIZE: \"16384\"") != std::string::npos);
+  LATTER_CHECK(th_src.find("IRAM_ATTR") == std::string::npos);
   LATTER_CHECK(mdi_src.find("DecodedMdiEntry g_mdi_cache[") == std::string::npos);
   LATTER_CHECK(mdi_src.find("uint8_t g_bucket_scratch[") == std::string::npos);
   LATTER_CHECK(mdi_src.find("MdiRuntimeScratch *mdi_scratch()") != std::string::npos);

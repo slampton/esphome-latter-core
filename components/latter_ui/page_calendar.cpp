@@ -334,7 +334,9 @@ void render_event_list_cards(esphome::display::Display &it,
                              int now_min,
                              bool is_24h,
                              bool show_date_badge,
-                             const CalendarWindowStore &store,
+                             const CalendarWindowEvent *events,
+                             int event_cap,
+                             bool syncing_empty,
                              const CalendarSourceMeta *sources,
                              int source_cnt,
                              const char *empty_msg) {
@@ -343,9 +345,9 @@ void render_event_list_cards(esphome::display::Display &it,
 
   const int avail_h = std::max(80, geom.content_bot - geom.content_top);
   const int cy_mid = (geom.content_top + geom.content_bot) / 2;
-  if (total_events <= 0) {
+  if (total_events <= 0 || events == nullptr || event_cap <= 0) {
     io_page = 0;
-    if (store.loading && store.window_start_ymd == 0) {
+    if (syncing_empty) {
       render_empty_state(it, ctx.cx, cy_mid, "Syncing calendar...", ctx.font_small, ctx.theme_secondary);
     } else {
       render_empty_state(it, ctx.cx, cy_mid, empty_msg, ctx.font_small, ctx.col_slate);
@@ -374,8 +376,8 @@ void render_event_list_cards(esphome::display::Display &it,
 
   for (int r = 0; r < vis_cnt; ++r) {
     const int ev_idx = ev_indices[io_page * per_page + r];
-    if (ev_idx < 0 || ev_idx >= store.count) continue;
-    const auto &ev = store.events[ev_idx];
+    if (ev_idx < 0 || ev_idx >= event_cap) continue;
+    const auto &ev = events[ev_idx];
 
     const int cy_row = start_y0 + r * stride + card_h / 2 + bounce_y;
     const int safe_w = band_safe_span_for(
@@ -464,36 +466,32 @@ void render_overview_tab(esphome::display::Display &it,
   std::snprintf(period_buf, sizeof(period_buf), "Next %d Days", lookahead);
   const auto geom = render_calendar_subheader(it, ctx, "UPCOMING", period_buf, false);
 
-  int idxs[kMaxCalendarWindowEvents]{};
-  const int cnt = collect_calendar_overview_events(
-      today_ymd, now_min, lookahead, idxs, kMaxCalendarWindowEvents, store);
+  const bool syncing_empty = store.loading && store.window_start_ymd == 0;
 
   // Cold-boot preview fallback from calendar_state().summary while full window RPC is in flight
-  if (cnt == 0 && store.window_start_ymd == 0 && !calendar_state().summary.empty()) {
-    CalendarRecord recs[5]{};
-    const size_t n = parse_calendar_records(calendar_state().summary, recs, 5);
-    if (n > 0) {
-      CalendarWindowStore temp_store{};
-      temp_store.count = static_cast<int>(n);
-      for (size_t i = 0; i < n; ++i) {
-        auto & dst = temp_store.events[i];
-        dst.start_ymd = today_ymd;
-        dst.end_ymd = today_ymd;
-        dst.all_day = recs[i].all_day ? 1U : 0U;
-        copy_bounded_cstr(dst.title, recs[i].title);
-        copy_bounded_cstr(dst.location, recs[i].location);
-        idxs[i] = static_cast<int>(i);
-      }
-      render_event_list_cards(it, ctx, geom, idxs, temp_store.count, rs.cal.overview_page,
+  // (< 256 B stack via PSRAM/heap preview scratch; never mutates store.window_start_ymd == 0).
+  if (store.count == 0 && store.window_start_ymd == 0 && !calendar_state().summary.empty()) {
+    CalendarWindowEvent *preview_evs = calendar_summary_preview_scratch();
+    const int preview_cnt = populate_calendar_summary_preview(
+        calendar_state().summary, today_ymd, preview_evs, kMaxCalendarSummaryPreviewEvents);
+    if (preview_cnt > 0) {
+      static constexpr int kPreviewIdxs[kMaxCalendarSummaryPreviewEvents] = {0, 1, 2, 3, 4};
+      render_event_list_cards(it, ctx, geom, kPreviewIdxs, preview_cnt, rs.cal.overview_page,
                               today_ymd, now_min, prefs.is_24h_format, true,
-                              temp_store, sources, source_cnt, "No upcoming events — tap +");
+                              preview_evs, preview_cnt, false,
+                              sources, source_cnt, "No upcoming events — tap +");
       return;
     }
   }
 
+  int idxs[kMaxCalendarWindowEvents]{};
+  const int cnt = collect_calendar_overview_events(
+      today_ymd, now_min, lookahead, idxs, kMaxCalendarWindowEvents, store);
+
   render_event_list_cards(it, ctx, geom, idxs, cnt, rs.cal.overview_page,
                           today_ymd, now_min, prefs.is_24h_format, true,
-                          store, sources, source_cnt, "No upcoming events — tap +");
+                          store.events, store.count, syncing_empty,
+                          sources, source_cnt, "No upcoming events — tap +");
 }
 
 void render_day_tab(esphome::display::Display &it,
@@ -514,7 +512,8 @@ void render_day_tab(esphome::display::Display &it,
   const int cnt = collect_calendar_day_events(rs.cal.selected_ymd, idxs, kMaxCalendarWindowEvents, store);
   render_event_list_cards(it, ctx, geom, idxs, cnt, rs.cal.day_page,
                           today_ymd, now_min, prefs.is_24h_format, false,
-                          store, sources, source_cnt, "No events on this day — tap +");
+                          store.events, store.count, store.loading && store.window_start_ymd == 0,
+                          sources, source_cnt, "No events on this day — tap +");
 }
 
 void render_week_tab(esphome::display::Display &it,
@@ -701,7 +700,8 @@ void render_week_tab(esphome::display::Display &it,
   list_geom.content_top = strip_cy + strip_h / 2 + std::max(6, scale_y(8));
   render_event_list_cards(it, ctx, list_geom, week_idxs, week_cnt, rs.cal.week_page,
                           today_ymd, now_min, prefs.is_24h_format, true,
-                          store, sources, source_cnt, "No events this week — tap +");
+                          store.events, store.count, store.loading && store.window_start_ymd == 0,
+                          sources, source_cnt, "No events this week — tap +");
 }
 
 void render_month_tab(esphome::display::Display &it,

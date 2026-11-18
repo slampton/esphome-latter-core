@@ -3981,6 +3981,7 @@ inline int32_t parse_ymd_iso(std::string_view sv) noexcept {
 inline constexpr int kMaxCalendarSources = 8;
 inline constexpr int kMaxCalendarLocations = 12;
 inline constexpr int kMaxCalendarWindowEvents = 64;
+inline constexpr int kMaxCalendarSummaryPreviewEvents = 5;
 
 inline constexpr const char *const kCalTitlePresets[10] = {
     "Reminder", "Meeting", "Appointment", "Errand", "Dinner",
@@ -4092,34 +4093,125 @@ struct CalendarWindowStore {
   int32_t staging_end_ymd = 0;
   int staging_count = 0;
   CalendarWindowEvent staging_events[kMaxCalendarWindowEvents]{};
+
+  CalendarWindowStore(const CalendarWindowStore &) = delete;
+  CalendarWindowStore &operator=(const CalendarWindowStore &) = delete;
+  CalendarWindowStore(CalendarWindowStore &&) = delete;
+  CalendarWindowStore &operator=(CalendarWindowStore &&) = delete;
+
+  void reset_in_place() noexcept {
+    rev = 0;
+    window_start_ymd = 0;
+    window_end_ymd = 0;
+    count = 0;
+    loading = false;
+    std::memset(events, 0, sizeof(events));
+    for (auto &ev : events) {
+      ev.start_min = -1;
+      ev.end_min = -1;
+    }
+    staging_req_id = -1;
+    staging_expected_chunks = 0;
+    staging_next_chunk = 0;
+    staging_start_ymd = 0;
+    staging_end_ymd = 0;
+    staging_count = 0;
+    std::memset(staging_events, 0, sizeof(staging_events));
+    for (auto &ev : staging_events) {
+      ev.start_min = -1;
+      ev.end_min = -1;
+    }
+  }
+
+ private:
+  CalendarWindowStore() noexcept { reset_in_place(); }
+  friend CalendarWindowStore &calendar_window_store() noexcept;
 };
 
-static_assert(std::is_trivially_copyable_v<CalendarWindowStore>,
-              "CalendarWindowStore must remain POD for PSRAM calloc.");
+static_assert(std::is_standard_layout_v<CalendarWindowStore>,
+              "CalendarWindowStore must remain standard-layout for PSRAM calloc.");
+static_assert(!std::is_default_constructible_v<CalendarWindowStore> &&
+                  !std::is_copy_constructible_v<CalendarWindowStore> &&
+                  !std::is_copy_assignable_v<CalendarWindowStore> &&
+                  !std::is_move_constructible_v<CalendarWindowStore> &&
+                  !std::is_move_assignable_v<CalendarWindowStore>,
+              "CalendarWindowStore (~51 KB) must never be constructed on the stack or copied by value.");
 
 inline CalendarWindowStore &calendar_window_store() noexcept {
 #if LATTER_HAS_SPIRAM_ALLOC
   static CalendarWindowStore *ptr = nullptr;
   if (ptr == nullptr) {
-    ptr = static_cast<CalendarWindowStore *>(
-        heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (ptr == nullptr) {
-      ptr = static_cast<CalendarWindowStore *>(
-          heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_8BIT));
+    void *raw = heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (raw == nullptr) {
+      raw = heap_caps_calloc(1, sizeof(CalendarWindowStore), MALLOC_CAP_8BIT);
     }
-    if (ptr == nullptr) {
-      ptr = new CalendarWindowStore{};
+    if (raw != nullptr) {
+      ptr = reinterpret_cast<CalendarWindowStore *>(raw);
+      ptr->reset_in_place();
+    } else {
+      ptr = new CalendarWindowStore();
     }
   }
   return *ptr;
 #else
-  static CalendarWindowStore store{};
+  static CalendarWindowStore store;
   return store;
 #endif
 }
 
 inline void reset_calendar_window_store() noexcept {
-  calendar_window_store() = CalendarWindowStore{};
+  calendar_window_store().reset_in_place();
+}
+
+inline CalendarWindowEvent *calendar_summary_preview_scratch() noexcept {
+#if LATTER_HAS_SPIRAM_ALLOC
+  static CalendarWindowEvent *ptr = nullptr;
+  if (ptr == nullptr) {
+    ptr = static_cast<CalendarWindowEvent *>(
+        heap_caps_calloc(kMaxCalendarSummaryPreviewEvents, sizeof(CalendarWindowEvent),
+                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (ptr == nullptr) {
+      ptr = static_cast<CalendarWindowEvent *>(
+          heap_caps_calloc(kMaxCalendarSummaryPreviewEvents, sizeof(CalendarWindowEvent), MALLOC_CAP_8BIT));
+    }
+    if (ptr == nullptr) {
+      ptr = new CalendarWindowEvent[kMaxCalendarSummaryPreviewEvents]{};
+    }
+  }
+  return ptr;
+#else
+  static CalendarWindowEvent buf[kMaxCalendarSummaryPreviewEvents]{};
+  return buf;
+#endif
+}
+
+// Populates up to `kMaxCalendarSummaryPreviewEvents` preview cards from `calendar_state().summary`
+// into PSRAM/heap scratch (`< 256 B` stack, zero mutation of `calendar_window_store()`).
+inline int populate_calendar_summary_preview(
+    std::string_view summary,
+    int32_t today_ymd,
+    CalendarWindowEvent *out_events = calendar_summary_preview_scratch(),
+    int max_out = kMaxCalendarSummaryPreviewEvents) noexcept {
+  if (summary.empty() || out_events == nullptr || max_out <= 0) return 0;
+  const int cap = std::min(max_out, kMaxCalendarSummaryPreviewEvents);
+  std::string_view recs[kMaxCalendarSummaryPreviewEvents]{};
+  const size_t n = v3_split_fields(summary, recs, static_cast<size_t>(cap), kProtocolRecordSep);
+  int count = 0;
+  for (size_t i = 0; i < n && count < cap; ++i) {
+    std::string_view f[4]{};
+    if (v3_split_fields(recs[i], f, 4, '|') != 4) continue;
+    auto &dst = out_events[count];
+    std::memset(&dst, 0, sizeof(dst));
+    dst.start_ymd = today_ymd;
+    dst.end_ymd = today_ymd;
+    dst.start_min = -1;
+    dst.end_min = -1;
+    dst.all_day = (f[3] == "1") ? 1U : 0U;
+    copy_bounded_cstr(dst.title, f[1].empty() ? std::string_view("Event") : f[1]);
+    copy_bounded_cstr(dst.location, f[2]);
+    ++count;
+  }
+  return count;
 }
 
 inline bool parse_calendar_window_event_record(std::string_view rec, CalendarWindowEvent &out) noexcept {
@@ -4132,7 +4224,7 @@ inline bool parse_calendar_window_event_record(std::string_view rec, CalendarWin
   int32_t e_ymd = parse_ymd_iso(f[1]);
   if (e_ymd < s_ymd) e_ymd = s_ymd;
 
-  out = CalendarWindowEvent{};
+  std::memset(&out, 0, sizeof(out));
   out.start_ymd = s_ymd;
   out.end_ymd = e_ymd;
   out.start_min = static_cast<int16_t>(std::clamp(v3_parse_int(f[2], -1), -1, 1439));
@@ -4186,9 +4278,8 @@ inline bool apply_calendar_view_action(int req_id,
       const size_t sep = events.find(kProtocolRecordSep, pos);
       const std::string_view rec =
           (sep == std::string_view::npos) ? events.substr(pos) : events.substr(pos, sep - pos);
-      CalendarWindowEvent parsed{};
-      if (parse_calendar_window_event_record(rec, parsed)) {
-        store.staging_events[store.staging_count++] = parsed;
+      if (parse_calendar_window_event_record(rec, store.staging_events[store.staging_count])) {
+        store.staging_count++;
       }
       if (sep == std::string_view::npos) break;
       pos = sep + 1;
