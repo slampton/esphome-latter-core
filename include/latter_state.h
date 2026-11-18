@@ -4073,10 +4073,25 @@ struct CalendarWindowEvent {
   char title[60]{};
   char location[68]{};
   char description[144]{};
+
+  void reset_in_place() noexcept {
+    start_ymd = 0;
+    end_ymd = 0;
+    start_min = -1;
+    end_min = -1;
+    all_day = 0;
+    cal_idx = 0;
+    std::memset(uid, 0, sizeof(uid));
+    std::memset(recurrence_id, 0, sizeof(recurrence_id));
+    std::memset(title, 0, sizeof(title));
+    std::memset(location, 0, sizeof(location));
+    std::memset(description, 0, sizeof(description));
+  }
 };
 
-static_assert(std::is_trivially_copyable_v<CalendarWindowEvent>,
-              "CalendarWindowEvent must remain POD for PSRAM storage.");
+static_assert(std::is_trivially_copyable_v<CalendarWindowEvent> &&
+                  std::is_standard_layout_v<CalendarWindowEvent>,
+              "CalendarWindowEvent must remain standard-layout and trivially copyable for PSRAM storage.");
 
 struct CalendarWindowStore {
   uint32_t rev = 0;
@@ -4105,10 +4120,8 @@ struct CalendarWindowStore {
     window_end_ymd = 0;
     count = 0;
     loading = false;
-    std::memset(events, 0, sizeof(events));
     for (auto &ev : events) {
-      ev.start_min = -1;
-      ev.end_min = -1;
+      ev.reset_in_place();
     }
     staging_req_id = -1;
     staging_expected_chunks = 0;
@@ -4116,10 +4129,8 @@ struct CalendarWindowStore {
     staging_start_ymd = 0;
     staging_end_ymd = 0;
     staging_count = 0;
-    std::memset(staging_events, 0, sizeof(staging_events));
     for (auto &ev : staging_events) {
-      ev.start_min = -1;
-      ev.end_min = -1;
+      ev.reset_in_place();
     }
   }
 
@@ -4174,7 +4185,11 @@ inline CalendarWindowEvent *calendar_summary_preview_scratch() noexcept {
       ptr = static_cast<CalendarWindowEvent *>(
           heap_caps_calloc(kMaxCalendarSummaryPreviewEvents, sizeof(CalendarWindowEvent), MALLOC_CAP_8BIT));
     }
-    if (ptr == nullptr) {
+    if (ptr != nullptr) {
+      for (int i = 0; i < kMaxCalendarSummaryPreviewEvents; ++i) {
+        ptr[i].reset_in_place();
+      }
+    } else {
       ptr = new CalendarWindowEvent[kMaxCalendarSummaryPreviewEvents]{};
     }
   }
@@ -4201,11 +4216,9 @@ inline int populate_calendar_summary_preview(
     std::string_view f[4]{};
     if (v3_split_fields(recs[i], f, 4, '|') != 4) continue;
     auto &dst = out_events[count];
-    std::memset(&dst, 0, sizeof(dst));
+    dst.reset_in_place();
     dst.start_ymd = today_ymd;
     dst.end_ymd = today_ymd;
-    dst.start_min = -1;
-    dst.end_min = -1;
     dst.all_day = (f[3] == "1") ? 1U : 0U;
     copy_bounded_cstr(dst.title, f[1].empty() ? std::string_view("Event") : f[1]);
     copy_bounded_cstr(dst.location, f[2]);
@@ -4224,7 +4237,7 @@ inline bool parse_calendar_window_event_record(std::string_view rec, CalendarWin
   int32_t e_ymd = parse_ymd_iso(f[1]);
   if (e_ymd < s_ymd) e_ymd = s_ymd;
 
-  std::memset(&out, 0, sizeof(out));
+  out.reset_in_place();
   out.start_ymd = s_ymd;
   out.end_ymd = e_ymd;
   out.start_min = static_cast<int16_t>(std::clamp(v3_parse_int(f[2], -1), -1, 1439));

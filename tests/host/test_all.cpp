@@ -5194,6 +5194,31 @@ void test_sram_psram_budget_and_http_stall_guards() {
 
   LATTER_CHECK(st_src.find("static CalendarWindowStore fallback") == std::string::npos);
   LATTER_CHECK(st_src.find("CalendarWindowStore{}") == std::string::npos);
+  LATTER_CHECK(st_src.find("memset(events") == std::string::npos);
+  LATTER_CHECK(st_src.find("memset(staging_events") == std::string::npos);
+  LATTER_CHECK(st_src.find("memset(&dst") == std::string::npos);
+  LATTER_CHECK(st_src.find("memset(&out") == std::string::npos);
+  {
+    CalendarWindowEvent dirty_ev{};
+    dirty_ev.start_ymd = 20261118;
+    dirty_ev.end_ymd = 20261119;
+    dirty_ev.start_min = 540;
+    dirty_ev.end_min = 600;
+    dirty_ev.all_day = 1U;
+    dirty_ev.cal_idx = 3U;
+    copy_bounded_cstr(dirty_ev.uid, "u99");
+    copy_bounded_cstr(dirty_ev.recurrence_id, "r99");
+    copy_bounded_cstr(dirty_ev.title, "Dirty");
+    copy_bounded_cstr(dirty_ev.location, "Lab");
+    copy_bounded_cstr(dirty_ev.description, "Notes");
+    dirty_ev.reset_in_place();
+    LATTER_CHECK(dirty_ev.start_ymd == 0 && dirty_ev.end_ymd == 0);
+    LATTER_CHECK(dirty_ev.start_min == -1 && dirty_ev.end_min == -1);
+    LATTER_CHECK(dirty_ev.all_day == 0U && dirty_ev.cal_idx == 0U);
+    LATTER_CHECK(dirty_ev.uid[0] == '\0' && dirty_ev.recurrence_id[0] == '\0' &&
+                 dirty_ev.title[0] == '\0' && dirty_ev.location[0] == '\0' &&
+                 dirty_ev.description[0] == '\0');
+  }
   LATTER_CHECK(cal_src.find("temp_store") == std::string::npos);
   LATTER_CHECK(cal_src.find("populate_calendar_summary_preview(") != std::string::npos);
   LATTER_CHECK(s3_yaml.find("CONFIG_ESP_MAIN_TASK_STACK_SIZE: \"16384\"") != std::string::npos);
