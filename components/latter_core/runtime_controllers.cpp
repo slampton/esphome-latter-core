@@ -148,12 +148,20 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     if (trigger_alert_banner(st.alert_title, st.alert_message, st.alert_priority, st.alert_duration,
                              st.alert_camera_url, st.alert_id, ctx.now_ms, true, r.alert)) {
-      eff.alert_triggered = true;
-      if (st.alert_chime && !r.voice.active && !r.voice.tts_received) {
-        eff.alert_sfx_id =
-            (r.alert.priority == "critical" || r.alert.priority == "warning") ? 9 : 6;
+      const bool suppressed =
+          should_suppress_alert_in_bedtime(prefs.bedtime_active, r.alert.priority_level);
+      if (suppressed) {
+        if (r.nav.display_power_state != 0) {
+          r.alert.active = false;
+        }
+      } else {
+        eff.alert_triggered = true;
+        if (st.alert_chime && !r.voice.active && !r.voice.tts_received) {
+          eff.alert_sfx_id =
+              (r.alert.priority == "critical" || r.alert.priority == "warning") ? 9 : 6;
+        }
       }
-      if (!r.alert.camera_url.empty()) {
+      if (r.alert.active && !r.alert.camera_url.empty()) {
         eff.fetch_alert_camera = true;
       } else {
         r.alert.loaded_camera_url.clear();

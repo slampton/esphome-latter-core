@@ -892,6 +892,7 @@ struct UiFrameContext {
   UiStrView screensaver_style_opt{"Ambient Clock"};
   UiStrView screensaver_docked_timeout_opt{"5 Minutes"};
   UiStrView hibernate_timeout_opt{"30 Minutes"};
+  UiStrView bedtime_display_opt{"Screen Off"};
   UiStrView default_start_app_opt{"Home"};
   UiStrView auto_brightness_opt{"Time Schedule"};
   UiStrView display_brightness_opt{"High (80%)"};
@@ -918,6 +919,7 @@ struct UiFrameContext {
   bool va_wake_screen{true};
   bool docked_screensaver_enabled{true};
   bool instant_crown_hibernate{false};
+  bool bedtime_active{false};
 };
 
 struct SystemTakeoverState {
@@ -996,7 +998,8 @@ struct SystemTakeoverState {
     st.notif_priority = rs.alert.priority;
     st.notif_camera_url = rs.alert.camera_url;
     st.current_loaded_camera_url = rs.alert.loaded_camera_url;
-    st.screensaver_style_opt = ctx.screensaver_style_opt;
+    st.screensaver_style_opt =
+        prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt;
     st.theme_primary = ctx.theme_primary;
     st.theme_secondary = ctx.theme_secondary;
     st.col_bg = ctx.col_bg;

@@ -209,8 +209,25 @@ interval:
           // 9. Self-heal any settled pending DCS transition.
           latter_ui::hal_panel_dcs_poll(&id(disp1));
 
-          // 10. Auto-exit forgotten Games (>3m untouched), Battery Flashlight/Level/Camera (>5m untouched),
-          // and Return-to-Home idle navigation reset.
+          // 10. Bedtime schedule edge evaluation, auto-exit forgotten Games (>3m untouched),
+          // Battery Flashlight/Level/Camera (>5m untouched), and Return-to-Home idle navigation reset.
+          auto now_bt = id(ha_time).now();
+          if (now_bt.is_valid()) {
+            const int bt_edge = latter_ui::bedtime_schedule_tracker().evaluate_hour(
+                latter_ui::persisted_prefs().bedtime_schedule,
+                latter_ui::persisted_prefs().bedtime_start_hour,
+                latter_ui::persisted_prefs().bedtime_end_hour,
+                now_bt.hour);
+            if (bt_edge >= 0 && (bt_edge == 1) != latter_ui::persisted_prefs().bedtime_active) {
+              uint32_t bt_eff = 0U;
+              if (latter_actions::record_local_pref_edit(
+                      latter_ui::PrefKey::BEDTIME_ACTIVE, (bt_edge == 1) ? "1" : "0",
+                      now_1s_ms, bt_eff)) {
+                latter_ui::device_prefs_state().last_effects |= bt_eff;
+                id(apply_device_prefs_effects).execute();
+              }
+            }
+          }
           const auto &prefs = latter_ui::persisted_prefs();
           uint32_t last_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                 latter_ui::touch_gesture().last_touch_ms,
@@ -295,7 +312,8 @@ interval:
           dl_in.docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
           dl_in.battery_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
           dl_in.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
-          dl_in.wake_greeting_enabled = prefs.wake_greeting;
+          dl_in.wake_greeting_enabled = prefs.wake_greeting && !prefs.bedtime_active;
+          dl_in.bedtime_active = prefs.bedtime_active;
           dl_in.panel_brightness_on = id(display_brightness).current_values.is_on();
           dl_in.is_hibernating = rs.nav.is_hibernating;
           dl_in.ota_in_progress = rs.nav.ota_in_progress;
@@ -530,7 +548,10 @@ script:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_ss_ms = millis();
-          const std::string_view s_style = latter_ui::pref_screensaver_style_cstr();
+          const auto &prefs = latter_ui::persisted_prefs();
+          const std::string_view s_style = prefs.bedtime_active
+                                               ? std::string_view(latter_ui::pref_bedtime_display_cstr(prefs))
+                                               : std::string_view(latter_ui::pref_screensaver_style_cstr(prefs));
           if (s_style == "Screen Off") {
             id(turn_screen_off).execute();
             return;
@@ -540,7 +561,9 @@ script:
           id(disp1).start_poller();
           latter_ui::record_ambient_frame_ms(now_ss_ms);
           id(apply_power_policy).execute();
-          id(display_brightness).turn_on().set_brightness(latter_ui::kScreensaverBrightness).perform();
+          const float ss_bri = prefs.bedtime_active ? latter_ui::kBedtimeBrightness
+                                                    : latter_ui::kScreensaverBrightness;
+          id(display_brightness).turn_on().set_brightness(ss_bri).perform();
           latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
@@ -581,6 +604,22 @@ script:
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_sb_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
+          if (prefs.bedtime_active) {
+            const bool bt_clock = (LATTER_IS_STATIONARY != 0 || rs.hw_usb_connected) &&
+                                  (std::string_view(latter_ui::pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
+            if (bt_clock) {
+              latter_ui::display_lifecycle().on_enter_screensaver(
+                  now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
+              id(disp1).start_poller();
+              latter_ui::record_ambient_frame_ms(now_sb_ms);
+              id(apply_power_policy).execute();
+              id(display_brightness).turn_on().set_brightness(latter_ui::kBedtimeBrightness).perform();
+              latter_ui::schedule_disp_update(&id(disp1));
+            } else {
+              id(turn_screen_off).execute();
+            }
+            return;
+          }
           const std::string_view s_style = latter_ui::pref_screensaver_style_cstr(prefs);
           bool screensaver_allowed = rs.hw_usb_connected &&
                                      prefs.docked_screensaver &&
@@ -629,7 +668,8 @@ script:
           }
           latter_ui::display_lifecycle().on_wake_active(
               wake_now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time,
-              rs.nav.standby_entered_ms, latter_ui::persisted_prefs().wake_greeting,
+              rs.nav.standby_entered_ms,
+              latter_ui::persisted_prefs().wake_greeting && !latter_ui::persisted_prefs().bedtime_active,
               rs.nav.wake_greeting_pending);
           latter_ui::raise_to_wake().reset();
           id(disp1).start_poller();

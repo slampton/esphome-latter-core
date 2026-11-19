@@ -362,7 +362,12 @@ enum class DevicePrefsField : size_t {
   HOME_DATE_TAP_ACTION = 55,  // home_date_tap_action (string)
   CALENDAR_LOOKAHEAD_DAYS = 56,  // calendar_lookahead_days (u16)
   CALENDAR_WEEK_START = 57,  // calendar_week_start (string)
-  COUNT = 58
+  BEDTIME_ACTIVE = 58,  // bedtime_active (bool)
+  BEDTIME_DISPLAY = 59,  // bedtime_display (string)
+  BEDTIME_SCHEDULE = 60,  // bedtime_schedule (bool)
+  BEDTIME_START_HOUR = 61,  // bedtime_start_hour (u16)
+  BEDTIME_END_HOUR = 62,  // bedtime_end_hour (u16)
+  COUNT = 63
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

@@ -839,9 +839,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 12U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 52U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 58U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 13U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 57U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 63U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 39U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -1080,7 +1080,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111801L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111901L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3397,7 +3397,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111801L, "LATTER_SDK_REV must match 2026111801L");
+  static_assert(LATTER_SDK_REV == 2026111901L, "LATTER_SDK_REV must match 2026111901L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -4262,20 +4262,30 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v12 schema invariants
-  static_assert(kPersistedPrefsVersion == 12U, "PersistedDevicePrefs must be bumped to v12");
+  // 1. Protocol v3 & PersistedDevicePrefs v13 schema invariants
+  static_assert(kPersistedPrefsVersion == 13U, "PersistedDevicePrefs must be bumped to v13");
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
   static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
   static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS) == 56U);
   static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_WEEK_START) == 57U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 58U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_ACTIVE) == 58U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_DISPLAY) == 59U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_SCHEDULE) == 60U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR) == 61U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR) == 62U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 63U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
   static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_LOOKAHEAD_DAYS) == 50U);
   static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_WEEK_START) == 51U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 52U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_ACTIVE) == 52U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_DISPLAY) == 53U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_SCHEDULE) == 54U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_START_HOUR) == 55U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_END_HOUR) == 56U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 57U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -5474,6 +5484,92 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(dp_yaml.find("timeout: 4s") != std::string::npos);
 }
 
+void test_bedtime_mode_d063() {
+  using namespace latter_ui;
+  reset_runtime_state();
+
+  // 1. Overnight & same-day window math + edge-triggered BedtimeScheduleTracker manual override
+  static_assert(is_hour_in_bedtime_window(22, 22U, 7U));
+  static_assert(is_hour_in_bedtime_window(2, 22U, 7U));
+  static_assert(!is_hour_in_bedtime_window(7, 22U, 7U));
+  static_assert(!is_hour_in_bedtime_window(21, 22U, 7U));
+  static_assert(is_hour_in_bedtime_window(1, 1U, 6U));
+  static_assert(!is_hour_in_bedtime_window(0, 1U, 6U));
+  static_assert(!is_hour_in_bedtime_window(6, 1U, 6U));
+  static_assert(!is_hour_in_bedtime_window(22, 22U, 22U));
+
+  BedtimeScheduleTracker tr{};
+  LATTER_CHECK(tr.evaluate_hour(false, 22U, 7U, 23) == -1);
+  // Enabling schedule at 23:00 immediately enters bedtime (returns 1)
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 23) == 1);
+  // Staying within the same window returns -1 so manual HA/on-device override holds until morning!
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 23) == -1);
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 0) == -1);
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 6) == -1);
+  // Crossing 07:00 end boundary emits 0 once
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 7) == 0);
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 12) == -1);
+  // Crossing 22:00 start boundary emits 1 once
+  LATTER_CHECK(tr.evaluate_hour(true, 22U, 7U, 22) == 1);
+
+  // 2. Stationary panel without daytime screensaver still times out after 15 s in Bedtime Mode
+  LATTER_CHECK(resolve_idle_screen_timeout_ms(
+                   /*is_stationary=*/true, /*usb=*/true, /*docked_ss=*/false,
+                   "Never", "30s", /*bedtime_active=*/false) == 0U);
+  LATTER_CHECK(resolve_idle_screen_timeout_ms(
+                   /*is_stationary=*/true, /*usb=*/true, /*docked_ss=*/false,
+                   "Never", "30s", /*bedtime_active=*/true) == kBedtimeIdleTimeoutMs);
+
+  // Wake greeting is suppressed during Bedtime Mode
+  DisplayLifecycleController dlc{};
+  int nav_ps = 0;
+  uint32_t sleep_ts = 1000U;
+  uint32_t sb_ts = 1000U;
+  bool greet = false;
+  DisplaySupervisorInputs d_in{};
+  d_in.wake_greeting_enabled = true;
+  d_in.bedtime_active = true;
+  d_in.panel_brightness_on = true;
+  (void)dlc.evaluate_1s(2000000U, d_in, nav_ps, sleep_ts, sb_ts, greet);
+  LATTER_CHECK(!greet);
+
+  // 3. Alert suppression: Normal/warning suppressed in Bedtime; Critical breaks through!
+  static_assert(should_suppress_alert_in_bedtime(true, AlertPriority::Normal));
+  static_assert(should_suppress_alert_in_bedtime(true, parse_alert_priority("warning")));
+  static_assert(!should_suppress_alert_in_bedtime(true, AlertPriority::Critical));
+  static_assert(!should_suppress_alert_in_bedtime(false, AlertPriority::Normal));
+
+  // 4. Protocol v3 device_prefs round-trip & cold-boot hello exclusion of bedtime_active
+  {
+    PersistedDevicePrefs cold{};
+    const std::string seed = build_hello_dirty_prefs(cold);
+    LATTER_CHECK(seed.find("bedtime_active=") == std::string::npos);
+  }
+  reset_all_v3_rev_guards();
+  std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+  dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "55";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_ACTIVE)] = "1";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_DISPLAY)] = "Ambient Clock";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_SCHEDULE)] = "1";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR)] = "21";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR)] = "6";
+  uint32_t eff = 0U;
+  LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(95, 1, dp_tok), eff, 3000U));
+  LATTER_CHECK((eff & kPrefEffectBedtime) != 0U && (eff & kPrefEffectBrightness) != 0U);
+  const auto &p = persisted_prefs();
+  LATTER_CHECK(p.bedtime_active && p.bedtime_schedule);
+  LATTER_CHECK(std::string_view(pref_bedtime_display_cstr(p)) == "Ambient Clock");
+  LATTER_CHECK(p.bedtime_start_hour == 21U && p.bedtime_end_hour == 6U);
+  p_check: {
+    PersistedDevicePrefs fp = p;
+    fp.screensaver_style = 4U;  // Fireworks in daytime
+    LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Ambient Clock");
+    fp.bedtime_active = false;
+    LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Fireworks");
+  }
+  (void)0;
+}
+
 }  // namespace
 
 int main() {
@@ -5503,6 +5599,7 @@ int main() {
   test_calendar_app_d058();
   test_music_app_v3_d059();
   test_sram_psram_budget_and_http_stall_guards();
+  test_bedtime_mode_d063();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

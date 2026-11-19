@@ -180,6 +180,7 @@ display:
       ctx.screensaver_style_opt = latter_ui::pref_screensaver_style_cstr(prefs);
       ctx.screensaver_docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
       ctx.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
+      ctx.bedtime_display_opt = latter_ui::pref_bedtime_display_cstr(prefs);
       ctx.default_start_app_opt = latter_ui::pref_start_screen_cstr(prefs);
       ctx.auto_brightness_opt = latter_ui::pref_auto_brightness_mode_cstr(prefs);
       ctx.display_brightness_opt = latter_ui::pref_manual_brightness_cstr(prefs);
@@ -203,6 +204,7 @@ display:
       ctx.va_wake_screen = prefs.wake_screen_on_assist;
       ctx.docked_screensaver_enabled = prefs.docked_screensaver;
       ctx.instant_crown_hibernate = prefs.hold_crown_power_off;
+      ctx.bedtime_active = prefs.bedtime_active;
 
       const auto &ac_wall = latter_ui::area_ctx_state();
       const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&

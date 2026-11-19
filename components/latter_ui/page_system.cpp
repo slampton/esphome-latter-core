@@ -171,7 +171,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 1) {
     const int current_offset = compute_scroll_offset(sleep_menu_page, 315);
-    char sleep_labels[8][36];
+    char sleep_labels[10][36];
 #if LATTER_HAS_IMU
     std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
 #else
@@ -195,9 +195,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: N/A");
     std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: N/A");
 #endif
+    std::snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Bedtime Mode: %s",
+                  ctx.bedtime_active ? "On" : "Off");
+    const char *short_bt = (ctx.bedtime_display_opt == "Ambient Clock") ? "Clock" : "Off";
+    std::snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Bedtime Screen: %s", short_bt);
 
     const int page_base = (sleep_menu_page == 2) ? 5 : 0;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 10; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
@@ -210,13 +214,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 #else
           draw_cycle_card_y(y, sleep_labels[i], false);
 #endif
+        } else if (i == 8) {
+          draw_toggle_card_y(y, "Bedtime Mode", ctx.bedtime_active, row_slot, row_slot);
         } else {
-          const bool en = (i == 0) ? ((LATTER_HAS_IMU != 0) && (ctx.pickup_wake_opt != "Disabled"))
-                        : (i == 1) ? (ctx.tap_wake_opt != "Disabled")
-                        : (i == 2) ? ((LATTER_HAS_BATTERY != 0) && (ctx.display_off_timeout_opt != "Never"))
+          const bool en = (i == 0) ? (LATTER_HAS_IMU != 0)
+                        : (i == 2) ? (LATTER_HAS_BATTERY != 0)
                         : (i == 4) ? ctx.docked_screensaver_enabled
-                        : (i == 5) ? (ctx.screensaver_docked_timeout_opt != "Never")
-                        : (i == 6) ? ((LATTER_HAS_BATTERY != 0) && (ctx.hibernate_timeout_opt != "Disabled"))
+                        : (i == 6) ? (LATTER_HAS_BATTERY != 0)
                                    : true;
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)

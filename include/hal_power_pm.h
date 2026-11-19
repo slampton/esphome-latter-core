@@ -218,20 +218,29 @@ enum class DisplayPowerState : uint8_t {
   Ota = 4,
 };
 
+static constexpr uint32_t kBedtimeIdleTimeoutMs = 15000U;
+
 constexpr uint32_t resolve_idle_screen_timeout_ms(bool is_stationary, bool usb_connected,
                                                   bool docked_screensaver,
                                                   std::string_view docked_opt,
-                                                  std::string_view battery_opt) noexcept {
-  if (is_stationary && !docked_screensaver) return 0U;
-  const std::string_view opt = (is_stationary || usb_connected) ? docked_opt : battery_opt;
-  if (opt == "10s") return 10000U;
-  if (opt == "15s") return 15000U;
-  if (opt == "30s") return 30000U;
-  if (opt == "1 min") return 60000U;
-  if (opt == "2 min") return 120000U;
-  if (opt == "5 min") return 300000U;
-  if (opt == "Never") return 0U;
-  return (is_stationary || usb_connected) ? 60000U : 30000U;
+                                                  std::string_view battery_opt,
+                                                  bool bedtime_active = false) noexcept {
+  uint32_t normal_ms = 0U;
+  if (!(is_stationary && !docked_screensaver)) {
+    const std::string_view opt = (is_stationary || usb_connected) ? docked_opt : battery_opt;
+    if (opt == "10s") normal_ms = 10000U;
+    else if (opt == "15s") normal_ms = 15000U;
+    else if (opt == "30s") normal_ms = 30000U;
+    else if (opt == "1 min") normal_ms = 60000U;
+    else if (opt == "2 min") normal_ms = 120000U;
+    else if (opt == "5 min") normal_ms = 300000U;
+    else if (opt == "Never") normal_ms = 0U;
+    else normal_ms = (is_stationary || usb_connected) ? 60000U : 30000U;
+  }
+  if (bedtime_active) {
+    return (normal_ms > 0U && normal_ms < kBedtimeIdleTimeoutMs) ? normal_ms : kBedtimeIdleTimeoutMs;
+  }
+  return normal_ms;
 }
 
 constexpr uint32_t resolve_battery_hibernate_timeout_ms(std::string_view opt) noexcept {
@@ -248,6 +257,7 @@ struct DisplaySupervisorInputs {
   bool has_battery{false};
   bool usb_connected{true};
   bool docked_screensaver{true};
+  bool bedtime_active{false};
   std::string_view docked_timeout_opt{"1 min"};
   std::string_view battery_timeout_opt{"30s"};
   std::string_view hibernate_timeout_opt{"15 min"};

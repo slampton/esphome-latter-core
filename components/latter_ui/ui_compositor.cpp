@@ -809,7 +809,7 @@ CadenceScreensaverActions FrameCadenceController::step_screensaver_20ms(
   in.display_power_state = rs.nav.display_power_state;
   in.is_hibernating = rs.nav.is_hibernating;
   in.va_visible = rs.voice.active || !rs.voice.status_text.empty();
-  in.screensaver_style = pref_screensaver_style_cstr();
+  in.screensaver_style = effective_screensaver_style_cstr();
   in.speaker_audio_busy = speaker_audio_busy;
   in.alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
   in.mww_running = mww_running;

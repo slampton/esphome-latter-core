@@ -4709,6 +4709,12 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 #if LATTER_HAS_BATTERY
           rt_.sw_toggle(UiSwitchId::INSTANT_CROWN_HIBERNATE);
 #endif
+        } else if (idx == 8) {
+          rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
+        } else if (idx == 9) {
+          rt_.set_select_opt(UiSelectId::BEDTIME_DISPLAY,
+                             cycle_option(rt_.select_opt(UiSelectId::BEDTIME_DISPLAY),
+                                          {"Screen Off", "Ambient Clock"}));
         }
         rt_.schedule_disp();
       } else if (rs.nav.system_menu_mode == 2 &&
@@ -6020,6 +6026,7 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::DISPLAY_BRIGHTNESS_PRESET: return pref_manual_brightness_cstr(p);
     case S::DAY_BRIGHTNESS_PRESET: return pref_day_brightness_cstr(p);
     case S::NIGHT_BRIGHTNESS_PRESET: return pref_night_brightness_cstr(p);
+    case S::BEDTIME_DISPLAY: return pref_bedtime_display_cstr(p);
   }
   return {};
 }
@@ -6079,6 +6086,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::DISPLAY_BRIGHTNESS_PRESET: pk = K::MANUAL_BRIGHTNESS; break;
     case S::DAY_BRIGHTNESS_PRESET: pk = K::DAY_BRIGHTNESS; break;
     case S::NIGHT_BRIGHTNESS_PRESET: pk = K::NIGHT_BRIGHTNESS; break;
+    case S::BEDTIME_DISPLAY: pk = K::BEDTIME_DISPLAY; break;
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;
@@ -6099,6 +6107,7 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
     case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
     case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
+    case W::BEDTIME_MODE: return p.bedtime_active;
   }
   return false;
 }
@@ -6117,6 +6126,7 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
     case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
     case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
+    case W::BEDTIME_MODE: pk = K::BEDTIME_ACTIVE; next_val = !p.bedtime_active; break;
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;

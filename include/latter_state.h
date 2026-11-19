@@ -612,7 +612,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 12U;
+static constexpr uint16_t kPersistedPrefsVersion = 13U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -668,7 +668,12 @@ enum class PrefKey : uint8_t {
   HOME_DATE_TAP_ACTION = 49,
   CALENDAR_LOOKAHEAD_DAYS = 50,
   CALENDAR_WEEK_START = 51,
-  COUNT = 52,
+  BEDTIME_ACTIVE = 52,
+  BEDTIME_DISPLAY = 53,
+  BEDTIME_SCHEDULE = 54,
+  BEDTIME_START_HOUR = 55,
+  BEDTIME_END_HOUR = 56,
+  COUNT = 57,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 64U,
               "PrefKey::COUNT must remain < 64 to fit in uint64_t dirty_mask.");
@@ -687,6 +692,7 @@ static constexpr uint32_t kPrefEffectThemePreset    = 1U << 5;
 static constexpr uint32_t kPrefEffectPowerPolicy    = 1U << 6;
 static constexpr uint32_t kPrefEffectRedraw         = 1U << 7;
 static constexpr uint32_t kPrefEffectNavPolicy      = 1U << 8;
+static constexpr uint32_t kPrefEffectBedtime        = 1U << 9;
 
 struct PersistedAlarmPref {
   uint8_t hour = 7;
@@ -772,6 +778,11 @@ struct PersistedDevicePrefs {
   };
   char tools_items[80]{};
   char games_items[64]{};
+  bool bedtime_active = false;
+  uint8_t bedtime_display = 0;             // 0..1 ("Screen Off", "Ambient Clock")
+  bool bedtime_schedule = false;
+  uint8_t bedtime_start_hour = 22;         // 0..23
+  uint8_t bedtime_end_hour = 7;            // 0..23
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
@@ -896,6 +907,8 @@ inline constexpr const char *const kHomeDateTapOpts[2] = {
     "Day View", "Overview"};
 inline constexpr const char *const kCalendarWeekStartOpts[2] = {
     "Sunday", "Monday"};
+inline constexpr const char *const kBedtimeDisplayOpts[2] = {
+    "Screen Off", "Ambient Clock"};
 
 inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
   if (v <= 10) return 7U;
@@ -951,6 +964,60 @@ inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &
 inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kDockedIdleTimeoutOpts, p.docked_idle_timeout, 3); }
 inline const char *pref_battery_hibernate_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattHibernateTimeoutOpts, p.battery_hibernate_timeout, 2); }
 inline const char *pref_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverStyleOpts, p.screensaver_style); }
+inline const char *pref_bedtime_display_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBedtimeDisplayOpts, p.bedtime_display); }
+inline const char *effective_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) {
+  return p.bedtime_active ? "Ambient Clock" : pref_screensaver_style_cstr(p);
+}
+
+inline constexpr bool is_hour_in_bedtime_window(uint8_t hour, uint8_t start_h, uint8_t end_h) noexcept {
+  if (hour > 23U || start_h > 23U || end_h > 23U || start_h == end_h) return false;
+  if (start_h < end_h) return hour >= start_h && hour < end_h;
+  return hour >= start_h || hour < end_h;
+}
+
+inline constexpr bool should_suppress_alert_in_bedtime(bool bedtime_active,
+                                                       AlertPriority prio) noexcept {
+  return bedtime_active && (prio != AlertPriority::Critical);
+}
+
+struct BedtimeScheduleTracker {
+  bool initialized = false;
+  bool prev_in_window = false;
+  uint8_t prev_start_h = 255U;
+  uint8_t prev_end_h = 255U;
+
+  void reset() noexcept { *this = BedtimeScheduleTracker{}; }
+
+  // Returns -1 when no schedule edge occurred, 1 when Bedtime should turn ON, 0 when Bedtime should turn OFF.
+  constexpr int evaluate_hour(bool schedule_enabled, uint8_t start_h, uint8_t end_h,
+                              int current_hour) noexcept {
+    if (!schedule_enabled) {
+      initialized = false;
+      return -1;
+    }
+    if (current_hour < 0 || current_hour > 23 || start_h > 23U || end_h > 23U || start_h == end_h) {
+      return -1;
+    }
+    const bool in_win = is_hour_in_bedtime_window(static_cast<uint8_t>(current_hour), start_h, end_h);
+    if (!initialized || start_h != prev_start_h || end_h != prev_end_h) {
+      initialized = true;
+      prev_in_window = in_win;
+      prev_start_h = start_h;
+      prev_end_h = end_h;
+      return in_win ? 1 : 0;
+    }
+    if (in_win != prev_in_window) {
+      prev_in_window = in_win;
+      return in_win ? 1 : 0;
+    }
+    return -1;
+  }
+};
+
+inline BedtimeScheduleTracker &bedtime_schedule_tracker() noexcept {
+  static BedtimeScheduleTracker tr{};
+  return tr;
+}
 inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAutoBrightnessModeOpts, p.auto_brightness_mode, 1); }
 inline const char *pref_manual_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.manual_brightness, 3); }
 inline const char *pref_day_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.day_brightness, 3); }
@@ -1229,6 +1296,9 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.home_date_tap_action >= 2) p.home_date_tap_action = 0;
   p.calendar_lookahead_days = snap_calendar_lookahead_days(p.calendar_lookahead_days);
   if (p.calendar_week_start >= 2) p.calendar_week_start = 0;
+  if (p.bedtime_display >= 2) p.bedtime_display = 0;
+  if (p.bedtime_start_hour > 23) p.bedtime_start_hour = 22;
+  if (p.bedtime_end_hour > 23) p.bedtime_end_hour = 7;
   p.local_clock_label[sizeof(p.local_clock_label) - 1] = '\0';
   p.world_clocks_spec[sizeof(p.world_clocks_spec) - 1] = '\0';
   p.tools_items[sizeof(p.tools_items) - 1] = '\0';
@@ -3668,6 +3738,11 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::HOME_DATE_TAP_ACTION: return "home_date_tap_action";
     case PrefKey::CALENDAR_LOOKAHEAD_DAYS: return "calendar_lookahead_days";
     case PrefKey::CALENDAR_WEEK_START: return "calendar_week_start";
+    case PrefKey::BEDTIME_ACTIVE: return "bedtime_active";
+    case PrefKey::BEDTIME_DISPLAY: return "bedtime_display";
+    case PrefKey::BEDTIME_SCHEDULE: return "bedtime_schedule";
+    case PrefKey::BEDTIME_START_HOUR: return "bedtime_start_hour";
+    case PrefKey::BEDTIME_END_HOUR: return "bedtime_end_hour";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3727,6 +3802,11 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::HOME_DATE_TAP_ACTION: return pref_home_date_tap_cstr(p);
     case PrefKey::CALENDAR_LOOKAHEAD_DAYS: return std::to_string(snap_calendar_lookahead_days(p.calendar_lookahead_days));
     case PrefKey::CALENDAR_WEEK_START: return pref_calendar_week_start_cstr(p);
+    case PrefKey::BEDTIME_ACTIVE: return p.bedtime_active ? "1" : "0";
+    case PrefKey::BEDTIME_DISPLAY: return pref_bedtime_display_cstr(p);
+    case PrefKey::BEDTIME_SCHEDULE: return p.bedtime_schedule ? "1" : "0";
+    case PrefKey::BEDTIME_START_HOUR: return std::to_string(p.bedtime_start_hour);
+    case PrefKey::BEDTIME_END_HOUR: return std::to_string(p.bedtime_end_hour);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3946,6 +4026,18 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     }
     case PrefKey::CALENDAR_WEEK_START:
       return apply_enum(p.calendar_week_start, kCalendarWeekStartOpts, 0);
+    case PrefKey::BEDTIME_ACTIVE:
+      return apply_bool(p.bedtime_active,
+                        kPrefEffectBedtime | kPrefEffectBrightness | kPrefEffectSleepTimer);
+    case PrefKey::BEDTIME_DISPLAY:
+      return apply_enum(p.bedtime_display, kBedtimeDisplayOpts,
+                        kPrefEffectBedtime | kPrefEffectBrightness | kPrefEffectSleepTimer);
+    case PrefKey::BEDTIME_SCHEDULE:
+      return apply_bool(p.bedtime_schedule, kPrefEffectBedtime);
+    case PrefKey::BEDTIME_START_HOUR:
+      return apply_num(p.bedtime_start_hour, 0, 23, kPrefEffectBedtime);
+    case PrefKey::BEDTIME_END_HOUR:
+      return apply_num(p.bedtime_end_hour, 0, 23, kPrefEffectBedtime);
     case PrefKey::COUNT:
       break;
   }
@@ -3982,7 +4074,8 @@ inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persi
         pref_key_bit(PrefKey::ALARMS_SUMMARY) |
         pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL) |
         pref_key_bit(PrefKey::TOOLS_ITEMS) |
-        pref_key_bit(PrefKey::GAMES_ITEMS);
+        pref_key_bit(PrefKey::GAMES_ITEMS) |
+        pref_key_bit(PrefKey::BEDTIME_ACTIVE);
     const uint64_t seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
@@ -4062,6 +4155,11 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::HOME_DATE_TAP_ACTION, PrefKey::HOME_DATE_TAP_ACTION);
   apply_f(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS, PrefKey::CALENDAR_LOOKAHEAD_DAYS);
   apply_f(DevicePrefsField::CALENDAR_WEEK_START, PrefKey::CALENDAR_WEEK_START);
+  apply_f(DevicePrefsField::BEDTIME_ACTIVE, PrefKey::BEDTIME_ACTIVE);
+  apply_f(DevicePrefsField::BEDTIME_DISPLAY, PrefKey::BEDTIME_DISPLAY);
+  apply_f(DevicePrefsField::BEDTIME_SCHEDULE, PrefKey::BEDTIME_SCHEDULE);
+  apply_f(DevicePrefsField::BEDTIME_START_HOUR, PrefKey::BEDTIME_START_HOUR);
+  apply_f(DevicePrefsField::BEDTIME_END_HOUR, PrefKey::BEDTIME_END_HOUR);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
 

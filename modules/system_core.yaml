@@ -213,7 +213,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111801L;
+            constexpr long LATTER_YAML_REV = 2026111901L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -391,10 +391,16 @@ api:
                     alert_id, millis(), false, rs.alert)) {
               return;
             }
+            const bool bt_suppress = latter_ui::should_suppress_alert_in_bedtime(
+                latter_ui::persisted_prefs().bedtime_active, rs.alert.priority_level);
+            if (bt_suppress && rs.nav.display_power_state != 0) {
+              rs.alert.active = false;
+              return;
+            }
             id(preempt_va_for_alert).execute();
             latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
             id(wake_to_active_state).execute();
-            if (chime && !rs.voice.active && !rs.voice.tts_received) {
+            if (chime && !bt_suppress && !rs.voice.active && !rs.voice.tts_received) {
               int sfx = (rs.alert.priority == "critical" || rs.alert.priority == "warning") ? 9 : 6;
               id(play_game_sfx).execute(sfx);
             }
@@ -896,6 +902,50 @@ script:
               #endif
             }
           }
+          if (eff & latter_ui::kPrefEffectBedtime) {
+            const uint32_t now_bt_ms = millis();
+            if (p.bedtime_active) {
+              if (rs.nav.display_power_state == 1) {
+                if (std::string_view(latter_ui::pref_bedtime_display_cstr(p)) == "Screen Off") {
+                  id(turn_screen_off).execute();
+                } else {
+                  id(sync_display_brightness).execute();
+                  latter_ui::mark_dirty_full();
+                  latter_ui::schedule_disp_update(&id(disp1));
+                }
+              } else if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
+                id(sync_display_brightness).execute();
+                const uint32_t last_t = latter_ui::touch_gesture().last_touch_ms;
+                const bool untouched_15s = (last_t == 0U) || (now_bt_ms - last_t >= latter_ui::kBedtimeIdleTimeoutMs);
+                const bool busy_now = rs.voice.active || id(va).is_running() || rs.voice.tts_received ||
+                                      rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                                      rs.alert.active || rs.stopwatch.running || (rs.nav.active_game != 0) ||
+                                      latter_ui::is_camera_view_active(rs) ||
+                                      (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7));
+                if (untouched_15s && !busy_now) {
+                  id(enter_standby_state).execute();
+                } else {
+                  latter_ui::display_lifecycle().note_activity(now_bt_ms);
+                }
+              }
+            } else {
+              #if LATTER_IS_STATIONARY
+              if (rs.nav.display_power_state != 0 && !rs.nav.ota_in_progress) {
+                id(wake_to_active_state).execute();
+              } else {
+                id(sync_display_brightness).execute();
+              }
+              #else
+              if (rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
+                if (rs.nav.display_power_state == 1 && !p.docked_screensaver) {
+                  id(turn_screen_off).execute();
+                } else {
+                  id(sync_display_brightness).execute();
+                }
+              }
+              #endif
+            }
+          }
           if (eff & latter_ui::kPrefEffectSleepTimer) {
             if (rs.nav.display_power_state == 0) {
               latter_ui::display_lifecycle().note_activity(millis());
@@ -1070,13 +1120,18 @@ script:
             b_target = parse_bri(latter_ui::pref_manual_brightness_cstr(prefs));
           }
 
+          if (prefs.bedtime_active) {
+            b_target = latter_ui::kBedtimeWakeBrightness;
+          }
           if ((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 5) || rs.alarms.find_my_active) {
             b_target = 1.00f;
           }
 
           if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
+            const float ss_bri = prefs.bedtime_active ? latter_ui::kBedtimeBrightness
+                                                      : latter_ui::kScreensaverBrightness;
             const float target_bri =
-                (rs.nav.display_power_state == 0) ? b_target : latter_ui::kScreensaverBrightness;
+                (rs.nav.display_power_state == 0) ? b_target : ss_bri;
             const auto &cv = id(display_brightness).current_values;
             if (!cv.is_on() || std::fabs(cv.get_brightness() - target_bri) >= 0.005f) {
               id(display_brightness).turn_on().set_brightness(target_bri).perform();

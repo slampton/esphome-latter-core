@@ -1125,7 +1125,7 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
   } else if (standby_entered_ms != 0U) {
     const uint32_t start_ms = (sleep_start_time != 0U) ? sleep_start_time : standby_entered_ms;
     standby_entered_ms = 0U;
-    if (in.wake_greeting_enabled && start_ms != 0U &&
+    if (in.wake_greeting_enabled && !in.bedtime_active && start_ms != 0U &&
         static_cast<uint32_t>(now_ms - start_ms) >= kStandbyGreetingMinMs) {
       wake_greeting_pending = true;
     }
@@ -1140,7 +1140,7 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
   // 3. Deterministic active-screen idle timeout (replaces screen_sleep_timer & 2s retry loop)
   const uint32_t idle_timeout_ms = resolve_idle_screen_timeout_ms(
       in.is_stationary, in.usb_connected, in.docked_screensaver,
-      in.docked_timeout_opt, in.battery_timeout_opt);
+      in.docked_timeout_opt, in.battery_timeout_opt, in.bedtime_active);
 
   if (in.ota_in_progress) {
     state = DisplayPowerState::Ota;

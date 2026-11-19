@@ -522,6 +522,7 @@ enum class UiSelectId : uint8_t {
   DISPLAY_BRIGHTNESS_PRESET,
   DAY_BRIGHTNESS_PRESET,
   NIGHT_BRIGHTNESS_PRESET,
+  BEDTIME_DISPLAY,
 };
 
 enum class UiSwitchId : uint8_t {
@@ -532,6 +533,7 @@ enum class UiSwitchId : uint8_t {
   VA_WAKE_SCREEN,
   DOCKED_SCREENSAVER,
   INSTANT_CROWN_HIBERNATE,
+  BEDTIME_MODE,
 };
 
 enum class UiNumberId : uint8_t {
