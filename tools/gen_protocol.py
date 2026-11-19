@@ -211,28 +211,86 @@ def build_device_contract_md(schema: dict[str, Any]) -> str:
         f_str = ", ".join(f"`{f}`" for f in svc_info["fields"])
         lines.append(f"| `latter.{svc_name}` | {f_str} | {svc_info['description']} |")
     lines.append("")
+
+    studio_contract = schema.get("studio_contract") or {}
+    if studio_contract:
+        lines.append("## 6. Latter Studio Control-Plane Contract")
+        lines.append("")
+        lines.append(f"- **Studio Wire Revision (`studio_rev`)**: `{studio_contract['studio_rev']}`")
+        actions_str = ", ".join(f"`{a}`" for a in studio_contract.get("allowed_device_actions", []))
+        lines.append(f"- **Allowed Device Actions**: {actions_str}")
+        sys_cmds_str = ", ".join(f"`{c}`" for c in studio_contract.get("system_commands", []))
+        lines.append(f"- **System WebSocket Commands (`latter/system/command`)**: {sys_cmds_str}")
+        dev_cmds_str = ", ".join(f"`{c}`" for c in studio_contract.get("device_commands", []))
+        lines.append(f"- **Device WebSocket Commands (`latter/device/command`)**: {dev_cmds_str}")
+        lines.append(
+            f"- **Canonical World Clock Zones**: `{len(schema.get('world_clock_zones', []))}` standard `UTC-12:00`..`UTC+14:00` zones"
+        )
+        lines.append(
+            f"- **Declarative `device_prefs` Specs**: `{len(schema.get('device_pref_specs', []))}` typed preference descriptors"
+        )
+        lines.append("")
     return "\n".join(lines)
+
+
+def _ts_json(val: Any) -> str:
+    return json.dumps(val, ensure_ascii=False)
 
 
 def build_typescript_schema(schema: dict[str, Any]) -> str:
     """Render ha-latter/frontend_src/src/protocol-schema.ts from protocol/latter_v3.json."""
     catalogs = schema.get("catalogs", {})
     defaults = schema.get("defaults", {})
+    studio_contract = schema.get("studio_contract") or {}
+    world_clock_zones = schema.get("world_clock_zones") or []
+    device_pref_specs = schema.get("device_pref_specs") or []
 
     lines: list[str] = [
         "// AUTO-GENERATED FROM protocol/latter_v3.json BY tools/gen_protocol.py — DO NOT EDIT MANUALLY.",
         "",
         f"export const PROTOCOL_CONTRACT_VERSION = {schema['contract_version']};",
-        "",
-        "export interface CatalogItem {",
-        "  token: string;",
-        "  label: string;",
-        "  group?: string;",
-        "  dockOnly?: boolean;",
-        "  capability?: string;",
-        "}",
-        "",
     ]
+
+    if "studio_rev" in studio_contract:
+        lines.append(f"export const STUDIO_REV = {int(studio_contract['studio_rev'])};")
+    lines.append("")
+
+    allowed_actions = studio_contract.get("allowed_device_actions") or []
+    if allowed_actions:
+        lines.append("export const ALLOWED_DEVICE_ACTIONS: ReadonlyArray<string> = [")
+        for act in allowed_actions:
+            lines.append(f"  {_ts_json(str(act))},")
+        lines.append("];")
+        lines.append("")
+
+    sys_cmds = studio_contract.get("system_commands") or []
+    if sys_cmds:
+        lines.append("export const SYSTEM_WS_COMMANDS: ReadonlySet<string> = new Set([")
+        for cmd in sys_cmds:
+            lines.append(f"  {_ts_json(str(cmd))},")
+        lines.append("]);")
+        lines.append("")
+
+    dev_cmds = studio_contract.get("device_commands") or []
+    if dev_cmds:
+        lines.append("export const DEVICE_WS_COMMANDS: ReadonlySet<string> = new Set([")
+        for cmd in dev_cmds:
+            lines.append(f"  {_ts_json(str(cmd))},")
+        lines.append("]);")
+        lines.append("")
+
+    lines.extend(
+        [
+            "export interface CatalogItem {",
+            "  token: string;",
+            "  label: string;",
+            "  group?: string;",
+            "  dockOnly?: boolean;",
+            "  capability?: string;",
+            "}",
+            "",
+        ]
+    )
 
     for cat_name, cat_items in catalogs.items():
         const_name = f"{cat_name.upper()}_CATALOG"
@@ -240,23 +298,89 @@ def build_typescript_schema(schema: dict[str, Any]) -> str:
         for item in cat_items:
             extras: list[str] = []
             if item.get("group"):
-                extras.append(f'group: "{item["group"]}"')
+                extras.append(f"group: {_ts_json(item['group'])}")
             if item.get("dock_only"):
                 extras.append("dockOnly: true")
             if item.get("capability"):
-                extras.append(f'capability: "{item["capability"]}"')
+                extras.append(f"capability: {_ts_json(item['capability'])}")
             extra_str = (", " + ", ".join(extras)) if extras else ""
-            lines.append(f'  {{token: "{item["token"]}", label: "{item["label"]}"{extra_str}}},')
+            lines.append(f"  {{token: {_ts_json(item['token'])}, label: {_ts_json(item['label'])}{extra_str}}},")
         lines.append("];")
+        lines.append("")
+
+    if world_clock_zones:
+        lines.extend(
+            [
+                "export interface WorldClockZoneItem {",
+                "  iana: string;",
+                "  city: string;",
+                "  label: string;",
+                "  std_off: number;",
+                "  dst_off: number;",
+                "  std_abbr: string;",
+                "  dst_abbr: string;",
+                "  rule: string;",
+                "}",
+                "",
+                "export const WORLD_CLOCK_ZONES_CATALOG: ReadonlyArray<WorldClockZoneItem> = [",
+            ]
+        )
+        for z in world_clock_zones:
+            lines.append(
+                f"  {{iana: {_ts_json(z['iana'])}, city: {_ts_json(z['city'])}, label: {_ts_json(z['label'])}, "
+                f"std_off: {int(z['std_off'])}, dst_off: {int(z['dst_off'])}, "
+                f"std_abbr: {_ts_json(z['std_abbr'])}, dst_abbr: {_ts_json(z['dst_abbr'])}, rule: {_ts_json(z['rule'])} }},"
+            )
+        lines.append("];")
+        lines.append("")
+
+    if device_pref_specs:
+        lines.extend(
+            [
+                "export interface DevicePrefSpecItem {",
+                "  key: string;",
+                "  label: string;",
+                '  domain: "select" | "switch" | "number" | "text";',
+                "  default: boolean | number | string;",
+                "  section: string;",
+                "  esphome_section: string;",
+                '  group_tier: "behavior" | "display" | "interface" | null;',
+                "  options: ReadonlyArray<string>;",
+                "  min: number | null;",
+                "  max: number | null;",
+                "  step: number | null;",
+                "  unit: string;",
+                "  capability: string;",
+                "}",
+                "",
+                "export const DEVICE_PREF_SPECS_CATALOG: ReadonlyArray<DevicePrefSpecItem> = [",
+            ]
+        )
+        for p in device_pref_specs:
+            opts_ts = "[" + ", ".join(_ts_json(o) for o in (p.get("options") or [])) + "]"
+            lines.append(
+                f"  {{key: {_ts_json(p['key'])}, label: {_ts_json(p['label'])}, domain: {_ts_json(p['domain'])}, "
+                f"default: {_ts_json(p['default'])}, section: {_ts_json(p['section'])}, "
+                f"esphome_section: {_ts_json(p['esphome_section'])}, group_tier: {_ts_json(p.get('group_tier'))}, "
+                f"options: {opts_ts}, min: {_ts_json(p.get('min'))}, max: {_ts_json(p.get('max'))}, "
+                f"step: {_ts_json(p.get('step'))}, unit: {_ts_json(p.get('unit', ''))}, "
+                f"capability: {_ts_json(p['capability'])} }},"
+            )
+        lines.append("];")
+        lines.append("")
+        lines.append(
+            "export const DEVICE_PREF_SPECS_MAP: Readonly<Record<string, DevicePrefSpecItem>> = "
+            "Object.fromEntries(DEVICE_PREF_SPECS_CATALOG.map((s) => [s.key, s]));"
+        )
         lines.append("")
 
     for key, val in defaults.items():
         const_name = f"DEFAULT_{key.upper()}"
-        lines.append(f'export const {const_name} = "{val}";')
+        lines.append(f"export const {const_name} = {_ts_json(val)};")
         tokens = [t.strip() for t in val.split(",") if t.strip()]
         lines.append(f"export const DEFAULT_{key.upper()}_TOKENS: ReadonlyArray<string> = [")
         for tok in tokens:
-            lines.append(f'  "{tok}",')
+            lines.append(f"  {_ts_json(tok)},")
         lines.append("];")
         lines.append("")
 

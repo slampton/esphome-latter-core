@@ -289,3 +289,12 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter.reset_device` | `target_device`, `device_settings`, `latter_options` | Reset a Latter device. Device settings erases everything saved on the device (its settings and the Wi-Fi driver's cached data) and restarts it; Wi-Fi credentials and the API key are compiled into the firmware, so it rejoins Home Assistant unchanged. Latter options puts this device's Latter options back to the defaults it got when it was added, keeping its ESPHome binding and its Music Assistant player link. |
 | `latter.set_device_prefs` | `target_device`, `base_seq`, `changes` | Apply on-device preference updates from a bound Latter Device (or admin automation) into the Device's sleep-safe subentry configuration. |
 | `latter.timer_alarm_state` | `target_device`, `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Event-driven timer, stopwatch, and alarm state update reported by a bound Latter Device. |
+
+## 6. Latter Studio Control-Plane Contract
+
+- **Studio Wire Revision (`studio_rev`)**: `34`
+- **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
+- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_wallpaper`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
+- **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `select_wallpaper`, `toggle_wallpaper_favorite`, `save_device_config`
+- **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
+- **Declarative `device_prefs` Specs**: `50` typed preference descriptors
