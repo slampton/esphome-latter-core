@@ -2359,9 +2359,21 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     const int y0 = std::max(0, clip_y0());
     const int y1 = std::min(SCREEN_H - 1, clip_y1());
     if (y0 <= y1) {
+#if LATTER_ROUND_DISPLAY
+      for (int y = y0; y <= y1; ++y) {
+        const int hw = circle_half_span(y, 0) + 2;
+        const int x0 = std::max(0, SCREEN_CX - hw);
+        const int x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+        if (x0 <= x1) {
+          const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
+          std::memcpy(fb + off, cache.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+        }
+      }
+#else
       const size_t off = static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W);
       const size_t row_cnt = static_cast<size_t>(y1 - y0 + 1);
       std::memcpy(fb + off, cache.px + off, row_cnt * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+#endif
     }
   } else {
     frame_base_claim();

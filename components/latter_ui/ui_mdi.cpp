@@ -30286,6 +30286,29 @@ struct MdiRuntimeScratch {
   uint8_t bucket[kMdiMaxBucketUncompBytes]{};
 };
 
+struct MdiSpan {
+  uint8_t y;
+  uint8_t x0;
+  uint8_t x1;
+  uint8_t alpha;
+};
+
+constexpr std::size_t kRasterCacheSlots = 24;
+constexpr std::size_t kMaxCachedSpans = 512;
+
+struct RasterizedMdiEntry {
+  uint32_t hash = 0;
+  uint32_t stamp = 0;
+  uint16_t size_px = 0;
+  uint16_t span_count = 0;
+  MdiSpan spans[kMaxCachedSpans]{};
+};
+
+struct MdiRasterCache {
+  RasterizedMdiEntry slots[kRasterCacheSlots]{};
+  uint32_t stamp = 0;
+};
+
 MdiRuntimeScratch *mdi_scratch() noexcept {
 #if defined(USE_ESP32) || defined(ESP_PLATFORM)
   static MdiRuntimeScratch *s_ptr = nullptr;
@@ -30299,6 +30322,24 @@ MdiRuntimeScratch *mdi_scratch() noexcept {
   return s_ptr;
 #else
   static MdiRuntimeScratch s_host{};
+  return &s_host;
+#endif
+}
+
+// PSRAM-only span cache: avoids re-running 4x scanline rasterization for shadow+fg
+// and across frames without consuming internal RAM if PSRAM is unavailable.
+MdiRasterCache *mdi_raster_cache() noexcept {
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+  static MdiRasterCache *s_ptr = nullptr;
+  static bool s_tried = false;
+  if (!s_tried) {
+    s_tried = true;
+    void *p = heap_caps_calloc(1, sizeof(MdiRasterCache), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_ptr = static_cast<MdiRasterCache *>(p);
+  }
+  return s_ptr;
+#else
+  static MdiRasterCache s_host{};
   return &s_host;
 #endif
 }
@@ -30498,11 +30539,43 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
   if (emit_fn == nullptr || size_px < 4) return false;
   if (size_px > 128) size_px = 128;
 
-  const DecodedMdiEntry *entry = get_or_decode_mdi(mdi_icon_hash(name));
-  if (entry == nullptr) return false;
+  const uint32_t hash = mdi_icon_hash(name);
+  if (hash == 0U) return false;
 
   const int x0_box = cx - (size_px / 2);
   const int y0_box = cy - (size_px / 2);
+
+  MdiRasterCache *rc = mdi_raster_cache();
+  if (rc != nullptr) {
+    for (auto &slot : rc->slots) {
+      if (slot.hash == hash && slot.size_px == static_cast<uint16_t>(size_px)) {
+        slot.stamp = ++rc->stamp;
+        for (uint16_t i = 0; i < slot.span_count; ++i) {
+          const MdiSpan &s = slot.spans[i];
+          emit_fn(user, x0_box + static_cast<int>(s.x0), x0_box + static_cast<int>(s.x1),
+                  y0_box + static_cast<int>(s.y), s.alpha);
+        }
+        return true;
+      }
+    }
+  }
+
+  const DecodedMdiEntry *entry = get_or_decode_mdi(hash);
+  if (entry == nullptr) return false;
+
+  RasterizedMdiEntry *dst = nullptr;
+  bool cache_overflow = false;
+  if (rc != nullptr) {
+    std::size_t victim = 0;
+    for (std::size_t i = 1; i < kRasterCacheSlots; ++i) {
+      if (rc->slots[i].stamp < rc->slots[victim].stamp) victim = i;
+    }
+    dst = &rc->slots[victim];
+    dst->hash = 0;
+    dst->size_px = 0;
+    dst->span_count = 0;
+  }
+
   // svg_coord = q * 0.1 - 0.5; pixel_coord = svg_coord * (size_px / 24.0)
   // => pixel_coord = (q - 5.0f) * (size_px / 240.0f)
   const float q_to_px = static_cast<float>(size_px) / 240.0f;
@@ -30608,8 +30681,25 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
         while (run_end < size_px && cov[run_end] == c_val) ++run_end;
       }
       emit_fn(user, x0_box + px, x0_box + run_end, y0_box + py, alpha);
+      if (dst != nullptr && !cache_overflow) {
+        if (dst->span_count < kMaxCachedSpans) {
+          dst->spans[dst->span_count++] = MdiSpan{
+              static_cast<uint8_t>(py),
+              static_cast<uint8_t>(px),
+              static_cast<uint8_t>(run_end),
+              alpha,
+          };
+        } else {
+          cache_overflow = true;
+        }
+      }
       px = run_end;
     }
+  }
+  if (dst != nullptr && !cache_overflow) {
+    dst->hash = hash;
+    dst->size_px = static_cast<uint16_t>(size_px);
+    dst->stamp = ++rc->stamp;
   }
   return true;
 }
