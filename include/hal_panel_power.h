@@ -24,10 +24,22 @@
 #include "hal_manifest.h"
 #include "latter_prof.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <type_traits>
 #include <utility>
+
+#ifndef LATTER_BRI_GAMMA_X100
+#define LATTER_BRI_GAMMA_X100 220
+#endif
+#ifndef LATTER_BRI_DCS_MIN
+#define LATTER_BRI_DCS_MIN 10
+#endif
+#ifndef LATTER_BRI_DCS_MAX
+#define LATTER_BRI_DCS_MAX 255
+#endif
 
 #ifdef USE_ESP32
 #include <driver/gpio.h>
@@ -249,25 +261,48 @@ inline void hal_panel_dcs_set_brightness(DispT *disp, uint8_t bri_byte) {
   hal_panel_dcs_service(disp);
 }
 
-template <typename DispT>
-  requires(!std::is_pointer_v<DispT>)
-inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
-#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
-  gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
-  gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), (bri_byte > 0) ? 1 : 0);
-#endif
+// Maps perceptual brightness fraction pct in [0.0f, 1.0f] onto hardware range [hw_min, hw_max]
+// using a CIE/Weber-Fechner power curve (gamma = LATTER_BRI_GAMMA_X100 / 100.0f).
+// pct <= 0.0001f returns 0 (screen off); any positive pct maps into [max(1u, hw_min), hw_max].
+inline uint32_t hal_map_perceptual_u32(float pct, uint32_t hw_min, uint32_t hw_max,
+                                       float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+  if (pct <= 0.0001f || hw_max == 0U) return 0U;
+  if (hw_min > hw_max) hw_min = hw_max;
+  const float clamped = std::clamp(pct, 0.01f, 1.0f);
+  const float t = (clamped - 0.01f) / 0.99f;
+  const float g = (gamma > 0.05f) ? gamma : 1.0f;
+  const float curve = std::pow(t, g);
+  const float raw = static_cast<float>(hw_min) + static_cast<float>(hw_max - hw_min) * curve;
+  const uint32_t floor_val = (hw_min > 1U) ? hw_min : 1U;
+  const uint32_t rounded = static_cast<uint32_t>(std::lround(raw));
+  return std::clamp(rounded, floor_val, hw_max);
+}
+
+inline constexpr uint32_t hal_backlight_max_duty(uint32_t pwm_bits) {
+  return (1UL << pwm_bits) - 1UL;
+}
+
+inline uint32_t hal_map_pwm_on_duty(float pct, uint32_t pwm_bits, uint32_t duty_min_pct, uint32_t duty_max_pct,
+                                    float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+  if (pct <= 0.0001f) return 0U;
+  const uint32_t max_duty = hal_backlight_max_duty(pwm_bits);
+  const uint32_t on_min = (max_duty * duty_min_pct) / 100UL;
+  const uint32_t on_max = (max_duty * duty_max_pct) / 100UL;
+  return hal_map_perceptual_u32(pct, on_min, on_max, gamma);
+}
+
+inline uint8_t hal_map_dcs_brightness(float pct,
+                                      uint8_t dcs_min = static_cast<uint8_t>(LATTER_BRI_DCS_MIN),
+                                      uint8_t dcs_max = static_cast<uint8_t>(LATTER_BRI_DCS_MAX),
+                                      float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+  return static_cast<uint8_t>(hal_map_perceptual_u32(pct, dcs_min, dcs_max, gamma));
+}
+
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
+inline void hal_ledc_apply_on_duty(uint32_t on_duty, bool is_on) {
   constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
   static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
-  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PCT >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PCT < LATTER_BACKLIGHT_DUTY_MAX_PCT &&
-                    LATTER_BACKLIGHT_DUTY_MAX_PCT <= 100,
-                "LATTER_BACKLIGHT_DUTY_MIN_PCT/_MAX_PCT must satisfy 0 <= MIN < MAX <= 100");
-  constexpr uint32_t kMaxDuty = (1UL << kPwmBits) - 1UL;
-  constexpr uint32_t kOnMin = (kMaxDuty * static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PCT)) / 100UL;
-  constexpr uint32_t kOnMax = (kMaxDuty * static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PCT)) / 100UL;
-  const uint32_t on_duty = (bri_byte == 0)
-      ? 0UL
-      : kOnMin + (((kOnMax - kOnMin) * static_cast<uint32_t>(bri_byte)) + 127UL) / 255UL;
+  constexpr uint32_t kMaxDuty = hal_backlight_max_duty(kPwmBits);
 #if defined(LATTER_BACKLIGHT_INVERTED) && LATTER_BACKLIGHT_INVERTED
   const uint32_t hw_duty = kMaxDuty - on_duty;
   const int gpio_on_lvl = 0;
@@ -312,18 +347,54 @@ inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
     }
   } else {
     gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), (bri_byte > 0) ? gpio_on_lvl : gpio_off_lvl);
+    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), is_on ? gpio_on_lvl : gpio_off_lvl);
   }
+}
+#endif
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void hal_set_display_brightness_f(DispT *disp, float pct) {
+  [[maybe_unused]] const bool is_on = (pct > 0.0001f);
+#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
+  gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
+  gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), is_on ? 1 : 0);
+#endif
+#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
+  constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
+  static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
+  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PCT >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PCT < LATTER_BACKLIGHT_DUTY_MAX_PCT &&
+                    LATTER_BACKLIGHT_DUTY_MAX_PCT <= 100,
+                "LATTER_BACKLIGHT_DUTY_MIN_PCT/_MAX_PCT must satisfy 0 <= MIN < MAX <= 100");
+  const uint32_t on_duty = hal_map_pwm_on_duty(
+      pct, kPwmBits, static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PCT),
+      static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PCT));
+  hal_ledc_apply_on_duty(on_duty, is_on);
 #if defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
-  if (disp != nullptr) hal_panel_dcs_set_brightness(disp, bri_byte);
+  const uint8_t dcs_wake = is_on
+      ? static_cast<uint8_t>(std::max<uint32_t>(1U, static_cast<uint32_t>(std::lround(std::clamp(pct, 0.0f, 1.0f) * 255.0f))))
+      : static_cast<uint8_t>(0U);
+  if (disp != nullptr) hal_panel_dcs_set_brightness(disp, dcs_wake);
 #else
   (void)disp;
 #endif
 #else
   static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
                 "Display driver lacks set_brightness() and no LATTER_BACKLIGHT_PIN is defined");
+  const uint8_t bri_byte = hal_map_dcs_brightness(pct);
   if (disp != nullptr) hal_panel_dcs_set_brightness(disp, bri_byte);
 #endif
+}
+
+template <typename DispT>
+inline void hal_set_display_brightness_f(DispT *const *disp_pp, float pct) {
+  if (disp_pp != nullptr) hal_set_display_brightness_f(*disp_pp, pct);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void hal_set_display_brightness(DispT *disp, uint8_t bri_byte) {
+  hal_set_display_brightness_f(disp, (bri_byte == 0U) ? 0.0f : (static_cast<float>(bri_byte) / 255.0f));
 }
 
 template <typename DispT>

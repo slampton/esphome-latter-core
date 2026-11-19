@@ -895,9 +895,6 @@ struct UiFrameContext {
   UiStrView bedtime_display_opt{"Screen Off"};
   UiStrView default_start_app_opt{"Home"};
   UiStrView auto_brightness_opt{"Time Schedule"};
-  UiStrView display_brightness_opt{"High (80%)"};
-  UiStrView day_brightness_opt{"High (80%)"};
-  UiStrView night_brightness_opt{"Low (25%)"};
   UiStrView va_wake_word_mode_opt{"Always On"};
   UiStrView va_visual_profile_opt{"Nebula"};
   UiStrView ww_sens_okay_nabu_opt{"Medium"};
@@ -907,6 +904,9 @@ struct UiFrameContext {
   UiStrView ww_sens_alexa_opt{"Off"};
 
   // Numbers
+  int manual_brightness_pct{80};
+  int day_brightness_pct{90};
+  int night_brightness_pct{35};
   int day_start_hr{7};
   int night_start_hr{21};
 

@@ -34,7 +34,10 @@
     "LATTER_CHIP_P4": 1, "LATTER_PSRAM_MB": 32,
     "LATTER_PWR_KEY_PIN": 49, "LATTER_PWR_KEY_ACTIVE_HIGH": 1, "LATTER_BATTERY_MAH": 500,
     "LATTER_PMU_TS_DISABLE": 1, "LATTER_PMU_DCDC_KEEP_MASK": "0x01", "LATTER_PMU_LDO_KEEP_MASK": "0x001",
-    "LATTER_C6_RESET_PIN": 54, "LATTER_BACKLIGHT_PIN": 28, "LATTER_TOUCH_INT_PIN": 50, "LATTER_TOUCH_RST_PIN": 29
+    "LATTER_C6_RESET_PIN": 54, "LATTER_BACKLIGHT_PIN": 28,
+    "LATTER_BACKLIGHT_PWM_HZ": 5000, "LATTER_BACKLIGHT_PWM_BITS": 12,
+    "LATTER_BACKLIGHT_DUTY_MIN_PCT": 1, "LATTER_BACKLIGHT_DUTY_MAX_PCT": 100,
+    "LATTER_TOUCH_INT_PIN": 50, "LATTER_TOUCH_RST_PIN": 29
   },
   "pins": [
     {"gpio": 6, "role": "c6_io2_host_wake", "confidence": "M", "note": "LP-capable; unused"},
@@ -56,7 +59,7 @@
     {"gpio": 23, "role": "display_cs", "confidence": "H"},
     {"gpio": 26, "role": "display_dc", "confidence": "H"},
     {"gpio": 27, "role": "display_reset", "confidence": "H"},
-    {"gpio": 28, "role": "backlight_pwm", "polarity": "active_high", "confidence": "H", "note": "FET, 2 kHz / 8-bit"},
+    {"gpio": 28, "role": "backlight_pwm", "polarity": "active_high", "confidence": "H", "note": "FET, 5 kHz / 12-bit"},
     {"gpio": 29, "role": "touch_reset", "confidence": "H", "note": "pulsed at boot by the HAL"},
     {"gpio": 35, "role": "boot_button", "polarity": "active_low", "strapping": true, "confidence": "H"},
     {"gpio": 45, "role": "sd_power_gate", "polarity": "high_off", "confidence": "M", "note": "AO3401 gate, 10k pull-down: HIGH = SD off; left undriven"},

@@ -839,9 +839,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 13U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 57U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 63U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 14U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 58U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 64U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 39U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -1080,7 +1080,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111901L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111903L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -1230,8 +1230,8 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
     LATTER_CHECK(std::string_view(latter_ui::pref_pickup_to_wake_cstr(p_wear)) == "Always On");
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_wear)) == "15s");
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_wear)) == "15 min");
-    LATTER_CHECK(std::string_view(latter_ui::pref_day_brightness_cstr(p_wear)) == "80%");
-    LATTER_CHECK(std::string_view(latter_ui::pref_night_brightness_cstr(p_wear)) == "60%");
+    LATTER_CHECK(p_wear.day_brightness_pct() == 80U);
+    LATTER_CHECK(p_wear.night_brightness_pct() == 25U);
 
     latter_ui::PersistedDevicePrefs p_hand{};
     latter_ui::seed_hardware_sleep_defaults_for_traits(p_hand, false, false, false, true);
@@ -2525,9 +2525,10 @@ void test_frame_cadence_and_typed_prefs() {
   static_assert(kDefPrefs.screen_timeout_ms(false) == 30000U);
   static_assert(kDefPrefs.screen_timeout_ms(true) == 60000U);
   static_assert(kDefPrefs.hibernate_delay_s() == 900U);
-  static_assert(kDefPrefs.manual_brightness_pct() == 90U);
+  static_assert(kDefPrefs.manual_brightness_pct() == 80U);
   static_assert(kDefPrefs.day_brightness_pct() == 90U);
-  static_assert(kDefPrefs.night_brightness_pct() == 70U);
+  static_assert(kDefPrefs.night_brightness_pct() == 35U);
+  static_assert(kDefPrefs.bedtime_brightness_pct() == 15U);
   static_assert(kDefPrefs.return_to_home_ms() == 120000U);
 
   static_assert(parse_media_playback_state("playing") == MediaPlaybackState::Playing);
@@ -3397,7 +3398,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111901L, "LATTER_SDK_REV must match 2026111901L");
+  static_assert(LATTER_SDK_REV == 2026111903L, "LATTER_SDK_REV must match 2026111903L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -4262,8 +4263,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v13 schema invariants
-  static_assert(kPersistedPrefsVersion == 13U, "PersistedDevicePrefs must be bumped to v13");
+  // 1. Protocol v3 & PersistedDevicePrefs v14 schema invariants
+  static_assert(kPersistedPrefsVersion == 14U, "PersistedDevicePrefs must be bumped to v14");
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
   static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
@@ -4274,7 +4275,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_SCHEDULE) == 60U);
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR) == 61U);
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR) == 62U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 63U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_BRIGHTNESS) == 63U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 64U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
@@ -4285,7 +4287,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_SCHEDULE) == 54U);
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_START_HOUR) == 55U);
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_END_HOUR) == 56U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 57U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_BRIGHTNESS) == 57U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 58U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -5567,7 +5570,107 @@ void test_bedtime_mode_d063() {
     fp.bedtime_active = false;
     LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Fireworks");
   }
+  // 5. Universal 12-hour vs 24-hour formatting on Home Activity Card calendar labels & Display schedule (D-064)
+  LATTER_CHECK(format_agenda_time_label("TODAY 14:30", false) == "TODAY 2:30 PM");
+  LATTER_CHECK(format_agenda_time_label("TODAY 14:30", true) == "TODAY 14:30");
+  LATTER_CHECK(format_agenda_time_label("TODAY 00:05", false) == "TODAY 12:05 AM");
+  LATTER_CHECK(format_agenda_time_label("TOM 12:00", false) == "TOM 12:00 PM");
+  LATTER_CHECK(format_agenda_time_label("NOV 08 09:15", false) == "NOV 08 9:15 AM");
+  LATTER_CHECK(format_agenda_time_label("TODAY ALL DAY", false) == "TODAY ALL DAY");
+  LATTER_CHECK(format_agenda_time_label("NOV 08", false) == "NOV 08");
+
+  char sched_buf[36]{};
+  format_schedule_range_label(7, 20, false, sched_buf, sizeof(sched_buf));
+  LATTER_CHECK(std::string_view(sched_buf) == "Schedule: 7AM-8PM");
+  format_schedule_range_label(7, 20, true, sched_buf, sizeof(sched_buf));
+  LATTER_CHECK(std::string_view(sched_buf) == "Schedule: 07:00-20:00");
+  format_schedule_range_label(0, 12, false, sched_buf, sizeof(sched_buf));
+  LATTER_CHECK(std::string_view(sched_buf) == "Schedule: 12AM-12PM");
   (void)0;
+}
+
+void test_full_spectrum_brightness_d065() {
+  using namespace latter_ui;
+
+  // 1. Universal CIE/Weber-Fechner perceptual curve (hal_map_perceptual_u32 / PWM / DCS)
+  LATTER_CHECK(hal_map_perceptual_u32(0.0f, 10U, 255U, 2.20f) == 0U);
+  LATTER_CHECK(hal_map_perceptual_u32(0.00005f, 10U, 255U, 2.20f) == 0U);
+
+  // AMOLED DCS range (10..255)
+  LATTER_CHECK(hal_map_dcs_brightness(0.0f) == 0U);
+  LATTER_CHECK(hal_map_dcs_brightness(0.01f) == 10U);
+  LATTER_CHECK(hal_map_dcs_brightness(1.00f) == 255U);
+  const uint8_t dcs_50 = hal_map_dcs_brightness(0.50f);
+  LATTER_CHECK(dcs_50 > 10U && dcs_50 < 128U);
+  uint8_t prev_dcs = 0U;
+  for (int pct = 1; pct <= 100; ++pct) {
+    const uint8_t cur = hal_map_dcs_brightness(static_cast<float>(pct) * 0.01f);
+    LATTER_CHECK(cur >= 10U && cur >= prev_dcs);
+    prev_dcs = cur;
+  }
+
+  // 12-bit PWM FET IPS (1..100% of 4095)
+  LATTER_CHECK(hal_backlight_max_duty(12U) == 4095U);
+  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 1U, 100U) == 0U);
+  const uint32_t pwm_fet_1 = hal_map_pwm_on_duty(0.01f, 12U, 1U, 100U);
+  const uint32_t pwm_fet_50 = hal_map_pwm_on_duty(0.50f, 12U, 1U, 100U);
+  const uint32_t pwm_fet_100 = hal_map_pwm_on_duty(1.00f, 12U, 1U, 100U);
+  LATTER_CHECK(pwm_fet_1 == 40U);
+  LATTER_CHECK(pwm_fet_50 > pwm_fet_1 && pwm_fet_50 < 2048U);
+  LATTER_CHECK(pwm_fet_100 == 4095U);
+
+  // 12-bit inverted Analog RC IPS (75..100% of 4095 -> 3071..4095)
+  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 75U, 100U) == 0U);
+  const uint32_t pwm_rc_1 = hal_map_pwm_on_duty(0.01f, 12U, 75U, 100U);
+  const uint32_t pwm_rc_50 = hal_map_pwm_on_duty(0.50f, 12U, 75U, 100U);
+  const uint32_t pwm_rc_100 = hal_map_pwm_on_duty(1.00f, 12U, 75U, 100U);
+  LATTER_CHECK(pwm_rc_1 == 3071U);
+  LATTER_CHECK(pwm_rc_50 > pwm_rc_1 && pwm_rc_50 < 3583U);
+  LATTER_CHECK(pwm_rc_100 == 4095U);
+
+  // 2. Proportional screensaver & Bedtime Ambient Clock dimming (never brighter than active!)
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(1.00f) - 0.45f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.80f) - 0.36f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.10f) - 0.05f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.03f) - 0.03f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.01f) - 0.01f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_bedtime_ambient_brightness(0.15f) - 0.0525f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_bedtime_ambient_brightness(0.05f) - 0.02f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_bedtime_ambient_brightness(0.01f) - 0.01f) < 1e-4f);
+
+  // 3. 1..100% brightness prefs & bedtime_brightness Protocol v3 + local edit round-trip
+  PersistedDevicePrefs p{};
+  uint64_t chg = 0ULL;
+  uint32_t eff = 0U;
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MANUAL_BRIGHTNESS, "42", false, chg, eff));
+  LATTER_CHECK(p.manual_brightness == 42U && get_pref_value_str(PrefKey::MANUAL_BRIGHTNESS, p) == "42");
+  LATTER_CHECK((eff & kPrefEffectBrightness) != 0U);
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::DAY_BRIGHTNESS, "150", false, chg, eff));
+  LATTER_CHECK(p.day_brightness == 100U);
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::NIGHT_BRIGHTNESS, "0", false, chg, eff));
+  LATTER_CHECK(p.night_brightness == 1U);
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::BEDTIME_BRIGHTNESS, "12", false, chg, eff));
+  LATTER_CHECK(p.bedtime_brightness == 12U && get_pref_value_str(PrefKey::BEDTIME_BRIGHTNESS, p) == "12");
+  const std::string encoded = encode_prefs_mask(
+      pref_key_bit(PrefKey::MANUAL_BRIGHTNESS) | pref_key_bit(PrefKey::BEDTIME_BRIGHTNESS), p);
+  LATTER_CHECK(encoded.find("manual_brightness=42") != std::string::npos);
+  LATTER_CHECK(encoded.find("bedtime_brightness=12") != std::string::npos);
+
+  device_prefs_state() = DevicePrefsState{};
+  persisted_prefs() = PersistedDevicePrefs{};
+  std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+  dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "61";
+  dp_tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "27";
+  dp_tok[static_cast<size_t>(DevicePrefsField::DAY_BRIGHTNESS)] = "85";
+  dp_tok[static_cast<size_t>(DevicePrefsField::NIGHT_BRIGHTNESS)] = "18";
+  dp_tok[static_cast<size_t>(DevicePrefsField::BEDTIME_BRIGHTNESS)] = "9";
+  uint32_t p_eff = 0U;
+  LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(96, 1, dp_tok), p_eff, 4000U));
+  LATTER_CHECK((p_eff & kPrefEffectBrightness) != 0U);
+  LATTER_CHECK(persisted_prefs().manual_brightness_pct() == 27U);
+  LATTER_CHECK(persisted_prefs().day_brightness_pct() == 85U);
+  LATTER_CHECK(persisted_prefs().night_brightness_pct() == 18U);
+  LATTER_CHECK(persisted_prefs().bedtime_brightness_pct() == 9U);
 }
 
 }  // namespace
@@ -5600,6 +5703,7 @@ int main() {
   test_music_app_v3_d059();
   test_sram_psram_budget_and_http_stall_guards();
   test_bedtime_mode_d063();
+  test_full_spectrum_brightness_d065();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

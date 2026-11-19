@@ -33,6 +33,29 @@ namespace latter_ui {
 
 namespace {
 
+inline bool resolve_sys_bri_slider_id(int16_t param, std::string_view auto_bri_mode,
+                                      UiNumberId &out_id) noexcept {
+  const bool ab_off = (auto_bri_mode == "Disabled" || auto_bri_mode.empty());
+  if (param == 5 && ab_off) {
+    out_id = UiNumberId::MANUAL_BRIGHTNESS;
+    return true;
+  }
+  if (param == 7 && !ab_off) {
+    out_id = UiNumberId::DAY_BRIGHTNESS;
+    return true;
+  }
+  if (param == 8 && !ab_off) {
+    out_id = UiNumberId::NIGHT_BRIGHTNESS;
+    return true;
+  }
+  return false;
+}
+
+inline int step_brightness_tap_10pct(int cur_pct) noexcept {
+  if (cur_pct < 10 || cur_pct >= 100) return 10;
+  return std::min(100, ((cur_pct / 10) + 1) * 10);
+}
+
 inline void do_fetch_area_browse() {
   const auto &rs = runtime_state();
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
@@ -3679,6 +3702,20 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       }
       return;
     }
+    if (sl_hit->widget_id == WidgetId::SYS_BRI_SLIDER &&
+        rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 2) {
+      UiNumberId nid = UiNumberId::MANUAL_BRIGHTNESS;
+      if (resolve_sys_bri_slider_id(sl_hit->param, rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE), nid)) {
+        const int next_pct = std::clamp(1 + static_cast<int>(std::lround(sl_hit->norm_x(tx) * 99.0f)), 1, 100);
+        const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
+        if (next_pct != cur_pct && (now_u - last_disp_update_ms() >= 42U)) {
+          rt_.set_num_val(nid, static_cast<float>(next_pct));
+          rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+          rt_.schedule_disp();
+        }
+      }
+      return;
+    }
   }
 
   // Light Inspector HSV Wheel continuous drag (Area Subpage 2, light domain)
@@ -3873,6 +3910,20 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rs.area.feedback_timer = now_rel;
         do_execute_area_action();
         rt_.schedule_disp();
+      } else if (start_slider->widget_id == WidgetId::SYS_BRI_SLIDER &&
+                 rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 2) {
+        if (gest.axis_lock == GestureAxisLock::Slider) {
+          UiNumberId nid = UiNumberId::MANUAL_BRIGHTNESS;
+          if (resolve_sys_bri_slider_id(start_slider->param, rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE), nid)) {
+            const int next_pct = std::clamp(1 + static_cast<int>(std::lround(start_slider->norm_x(tp.x) * 99.0f)), 1, 100);
+            rt_.set_num_val(nid, static_cast<float>(next_pct));
+            rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+            rt_.schedule_disp();
+          }
+          gest.tap_cancelled = true;
+        } else {
+          (void)try_commit_kinematic_swipe_(true, now_rel);
+        }
       }
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::AREA &&
                rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
@@ -4724,12 +4775,11 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         } else if (wid == WidgetId::SYS_BRI_SLIDER) {
-          const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
-          if (ab == "Disabled") {
-            const char *next_b = cycle_option(
-                rt_.select_opt(UiSelectId::DISPLAY_BRIGHTNESS_PRESET),
-                {"60%", "70%", "80%", "90%", "100%"});
-            rt_.set_select_opt(UiSelectId::DISPLAY_BRIGHTNESS_PRESET, next_b, true);
+          UiNumberId nid = UiNumberId::MANUAL_BRIGHTNESS;
+          if (resolve_sys_bri_slider_id(hit->param, rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE), nid)) {
+            const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
+            const int next_pct = step_brightness_tap_10pct(cur_pct);
+            rt_.set_num_val(nid, static_cast<float>(next_pct));
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
             rt_.schedule_disp();
           }
@@ -4788,18 +4838,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             else if (dh == 8 && nh == 22) { nxt_dh = 7; nxt_nh = 21; }
             rt_.set_num_val(UiNumberId::DAY_START_HOUR, static_cast<float>(nxt_dh));
             rt_.set_num_val(UiNumberId::NIGHT_START_HOUR, static_cast<float>(nxt_nh));
-            rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
-          } else if (item_idx == 7 && ab != "Disabled") {
-            const std::string next_db = cycle_option(
-                rt_.select_opt(UiSelectId::DAY_BRIGHTNESS_PRESET),
-                {"60%", "70%", "80%", "90%", "100%"});
-            rt_.set_select_opt(UiSelectId::DAY_BRIGHTNESS_PRESET, next_db, true);
-            rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
-          } else if (item_idx == 8 && ab != "Disabled") {
-            const std::string next_nb = cycle_option(
-                rt_.select_opt(UiSelectId::NIGHT_BRIGHTNESS_PRESET),
-                {"60%", "70%", "80%", "90%", "100%"});
-            rt_.set_select_opt(UiSelectId::NIGHT_BRIGHTNESS_PRESET, next_nb, true);
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
           }
           rt_.schedule_disp();
@@ -6023,9 +6061,6 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::HOME_CLOCK_TAP_ACTION: return pref_home_clock_tap_cstr(p);
     case S::HOME_DATE_TAP_ACTION: return pref_home_date_tap_cstr(p);
     case S::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
-    case S::DISPLAY_BRIGHTNESS_PRESET: return pref_manual_brightness_cstr(p);
-    case S::DAY_BRIGHTNESS_PRESET: return pref_day_brightness_cstr(p);
-    case S::NIGHT_BRIGHTNESS_PRESET: return pref_night_brightness_cstr(p);
     case S::BEDTIME_DISPLAY: return pref_bedtime_display_cstr(p);
   }
   return {};
@@ -6083,9 +6118,6 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::HOME_CLOCK_TAP_ACTION: pk = K::HOME_CLOCK_TAP_ACTION; break;
     case S::HOME_DATE_TAP_ACTION: pk = K::HOME_DATE_TAP_ACTION; break;
     case S::AUTO_BRIGHTNESS_MODE: pk = K::AUTO_BRIGHTNESS_MODE; break;
-    case S::DISPLAY_BRIGHTNESS_PRESET: pk = K::MANUAL_BRIGHTNESS; break;
-    case S::DAY_BRIGHTNESS_PRESET: pk = K::DAY_BRIGHTNESS; break;
-    case S::NIGHT_BRIGHTNESS_PRESET: pk = K::NIGHT_BRIGHTNESS; break;
     case S::BEDTIME_DISPLAY: pk = K::BEDTIME_DISPLAY; break;
   }
   if (pk == K::COUNT) return;
@@ -6147,6 +6179,9 @@ float UiTouchRuntime::num_val(UiNumberId nid) const noexcept {
       }
       return static_cast<float>(p.speaker_volume_pct);
     case N::ALERT_VOLUME: return static_cast<float>(p.alert_volume);
+    case N::MANUAL_BRIGHTNESS: return static_cast<float>(p.manual_brightness_pct());
+    case N::DAY_BRIGHTNESS: return static_cast<float>(p.day_brightness_pct());
+    case N::NIGHT_BRIGHTNESS: return static_cast<float>(p.night_brightness_pct());
     case N::DAY_START_HOUR: return static_cast<float>(p.day_start_hour);
     case N::NIGHT_START_HOUR: return static_cast<float>(p.night_start_hour);
   }
@@ -6174,6 +6209,9 @@ void UiTouchRuntime::set_num_val(UiNumberId nid, float val) const {
     case N::VOLUME_STEP_SIZE: pk = K::VOLUME_STEP_SIZE; cl_val = std::clamp(cl_val, 1, 10); break;
     case N::SPEAKER_VOLUME: break;
     case N::ALERT_VOLUME: pk = K::ALERT_VOLUME; cl_val = std::clamp(cl_val, 20, 100); break;
+    case N::MANUAL_BRIGHTNESS: pk = K::MANUAL_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
+    case N::DAY_BRIGHTNESS: pk = K::DAY_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
+    case N::NIGHT_BRIGHTNESS: pk = K::NIGHT_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
     case N::DAY_START_HOUR: pk = K::DAY_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
     case N::NIGHT_START_HOUR: pk = K::NIGHT_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
   }

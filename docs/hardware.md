@@ -77,7 +77,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 23 | display_cs |  | H |
 | 26 | display_dc |  | H |
 | 27 | display_reset |  | H |
-| 28 | backlight_pwm | active_high; FET, 2 kHz / 8-bit | H |
+| 28 | backlight_pwm | active_high; FET, 5 kHz / 12-bit | H |
 | 29 | touch_reset | pulsed at boot by the HAL | H |
 | 35 | boot_button | active_low | H |
 | 45 | sd_power_gate | high_off; AO3401 gate, 10k pull-down: HIGH = SD off; left undriven | M |
@@ -105,7 +105,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 18 | c6_sdio_clk |  | H |
 | 19 | c6_sdio_cmd |  | H |
 | 23 | touch_reset | not driven (GT911 INT unrouted, so no reset sequence) | M |
-| 26 | backlight_analog_dim | inverted; 10k/100nF RC into the AP3032 FB; 5 kHz / 10-bit, usable 75-100 % on-duty | H |
+| 26 | backlight_analog_dim | inverted; 10k/100nF RC into the AP3032 FB; 5 kHz / 12-bit, usable 75-100 % on-duty | H |
 | 27 | display_reset |  | M |
 | 28 | reserved | IP101 Ethernet RMII (bottom board) | M |
 | 29 | reserved | IP101 Ethernet RMII (bottom board) | M |

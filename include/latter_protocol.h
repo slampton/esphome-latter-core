@@ -318,9 +318,9 @@ enum class DevicePrefsField : size_t {
   SCREENSAVER_STYLE = 11,  // screensaver_style (string)
   HOLD_CROWN_POWER_OFF = 12,  // hold_crown_power_off (bool)
   AUTO_BRIGHTNESS_MODE = 13,  // auto_brightness_mode (string)
-  MANUAL_BRIGHTNESS = 14,  // manual_brightness (string)
-  DAY_BRIGHTNESS = 15,  // day_brightness (string)
-  NIGHT_BRIGHTNESS = 16,  // night_brightness (string)
+  MANUAL_BRIGHTNESS = 14,  // manual_brightness (u16)
+  DAY_BRIGHTNESS = 15,  // day_brightness (u16)
+  NIGHT_BRIGHTNESS = 16,  // night_brightness (u16)
   DAY_START_HOUR = 17,  // day_start_hour (u16)
   NIGHT_START_HOUR = 18,  // night_start_hour (u16)
   COLOR_PROFILE = 19,  // color_profile (string)
@@ -367,7 +367,8 @@ enum class DevicePrefsField : size_t {
   BEDTIME_SCHEDULE = 60,  // bedtime_schedule (bool)
   BEDTIME_START_HOUR = 61,  // bedtime_start_hour (u16)
   BEDTIME_END_HOUR = 62,  // bedtime_end_hour (u16)
-  COUNT = 63
+  BEDTIME_BRIGHTNESS = 63,  // bedtime_brightness (u16)
+  COUNT = 64
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

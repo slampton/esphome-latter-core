@@ -213,7 +213,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111901L;
+            constexpr long LATTER_YAML_REV = 2026111903L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -1083,24 +1083,14 @@ script:
             rs.nav.standby_entered_ms = (now_st_ms != 0) ? now_st_ms : 1U;
           }
           const auto &prefs = latter_ui::persisted_prefs();
-          auto parse_bri = [](std::string_view opt) -> float {
-            if (opt == "60%") return 0.60f;
-            if (opt == "70%") return 0.70f;
-            if (opt == "80%") return 0.80f;
-            if (opt == "90%") return 0.90f;
-            if (opt == "100%") return 1.00f;
-            return 0.90f;
-          };
-
-          float b_target = 0.90f;
+          float b_target = static_cast<float>(prefs.manual_brightness_pct()) * 0.01f;
           const std::string_view mode = latter_ui::pref_auto_brightness_mode_cstr(prefs);
 
           if (mode == "Sun Synchronized") {
             const std::string &sun = latter_ui::weather_state().sun_state;
             const bool is_night = (sun == "below_horizon");
-            const std::string_view opt = is_night ? latter_ui::pref_night_brightness_cstr(prefs)
-                                                  : latter_ui::pref_day_brightness_cstr(prefs);
-            b_target = parse_bri(opt);
+            b_target = static_cast<float>(is_night ? prefs.night_brightness_pct()
+                                                   : prefs.day_brightness_pct()) * 0.01f;
           } else if (mode == "Time Schedule") {
             auto now = id(ha_time).now();
             const int day_h = static_cast<int>(prefs.day_start_hour);
@@ -1113,23 +1103,21 @@ script:
                 is_day = (now.hour >= day_h || now.hour < night_h);
               }
             }
-            const std::string_view opt = is_day ? latter_ui::pref_day_brightness_cstr(prefs)
-                                                : latter_ui::pref_night_brightness_cstr(prefs);
-            b_target = parse_bri(opt);
-          } else {
-            b_target = parse_bri(latter_ui::pref_manual_brightness_cstr(prefs));
+            b_target = static_cast<float>(is_day ? prefs.day_brightness_pct()
+                                                 : prefs.night_brightness_pct()) * 0.01f;
           }
 
           if (prefs.bedtime_active) {
-            b_target = latter_ui::kBedtimeWakeBrightness;
+            b_target = static_cast<float>(prefs.bedtime_brightness_pct()) * 0.01f;
           }
           if ((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 5) || rs.alarms.find_my_active) {
             b_target = 1.00f;
           }
 
           if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
-            const float ss_bri = prefs.bedtime_active ? latter_ui::kBedtimeBrightness
-                                                      : latter_ui::kScreensaverBrightness;
+            const float ss_bri = prefs.bedtime_active
+                                     ? latter_ui::resolve_bedtime_ambient_brightness(b_target)
+                                     : latter_ui::resolve_screensaver_brightness(b_target);
             const float target_bri =
                 (rs.nav.display_power_state == 0) ? b_target : ss_bri;
             const auto &cv = id(display_brightness).current_values;

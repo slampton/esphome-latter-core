@@ -149,7 +149,7 @@ output:
   - platform: ledc
     id: backlight_pwm
     pin: GPIO28
-    frequency: 2000Hz
+    frequency: 5000Hz
 
 light:
   - platform: monochromatic

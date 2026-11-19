@@ -117,9 +117,6 @@ inline constexpr int scale_w(int v466) { return scale_w_for(v466, SCREEN_W); }
 static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? scale_min(426) : (SCREEN_H - scale_y(28));
 static constexpr int kHomeBarY = LATTER_ROUND_DISPLAY ? scale_min(434) : (SCREEN_H - scale_y(11));
-static constexpr float kScreensaverBrightness = 0.40f;
-static constexpr float kBedtimeBrightness = 0.02f;
-static constexpr float kBedtimeWakeBrightness = 0.18f;
 
 // Shared chrome color tokens (docs/device-ui-design.md).
 inline const esphome::Color kChromeShadow(0, 0, 0);

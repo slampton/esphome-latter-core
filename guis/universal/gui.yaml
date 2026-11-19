@@ -183,9 +183,9 @@ display:
       ctx.bedtime_display_opt = latter_ui::pref_bedtime_display_cstr(prefs);
       ctx.default_start_app_opt = latter_ui::pref_start_screen_cstr(prefs);
       ctx.auto_brightness_opt = latter_ui::pref_auto_brightness_mode_cstr(prefs);
-      ctx.display_brightness_opt = latter_ui::pref_manual_brightness_cstr(prefs);
-      ctx.day_brightness_opt = latter_ui::pref_day_brightness_cstr(prefs);
-      ctx.night_brightness_opt = latter_ui::pref_night_brightness_cstr(prefs);
+      ctx.manual_brightness_pct = static_cast<int>(prefs.manual_brightness_pct());
+      ctx.day_brightness_pct = static_cast<int>(prefs.day_brightness_pct());
+      ctx.night_brightness_pct = static_cast<int>(prefs.night_brightness_pct());
       ctx.va_wake_word_mode_opt = latter_ui::pref_wake_word_mode_cstr(prefs);
       ctx.va_visual_profile_opt = latter_ui::pref_va_visual_profile_cstr(prefs);
       ctx.ww_sens_okay_nabu_opt = latter_ui::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu);

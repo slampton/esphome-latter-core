@@ -639,7 +639,8 @@ int collect_home_activities(
     if (cal_recs[c].time.rfind("TODAY", 0) == 0) {
       out_items[count++] = {
           5, static_cast<int>(c), false, false, true,
-          std::string(cal_recs[c].time) + " • " + std::string(cal_recs[c].title)};
+          format_agenda_time_label(cal_recs[c].time, is_24h_format) + " • " +
+              std::string(cal_recs[c].title)};
       ++added_today;
     }
   }
@@ -654,7 +655,8 @@ int collect_home_activities(
   if (added_today == 0 && n_cal > 0 && count < kMaxHomeActivity) {
     out_items[count++] = {
         5, 0, false, false, false,
-        std::string(cal_recs[0].time) + " • " + std::string(cal_recs[0].title)};
+        format_agenda_time_label(cal_recs[0].time, is_24h_format) + " • " +
+            std::string(cal_recs[0].title)};
   }
 
   // Device's Latter Activity Card setting (D-029); live Intercom/Doorbell (kind == 6) always surfaces.

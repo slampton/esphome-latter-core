@@ -93,6 +93,34 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     }
   };
 
+  auto draw_slider_card_y = [&](int y_mid, const char *label, int pct, bool enabled,
+                                uint16_t wid = WidgetId::NONE,
+                                int16_t param = 0) {
+    const esphome::Color bg_c = enabled ? card_bg_on : card_bg_off;
+    const esphome::Color brd_c = enabled ? card_brd_on : card_brd_off;
+    const esphome::Color txt_c = enabled ? col_white : col_slate;
+    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, nullptr, txt_c, font_small);
+    if (enabled) {
+      const int inner_x0 = cx - (hit_w / 2) + 2;
+      const int inner_y0 = y_mid - (hit_h / 2) + 2;
+      const int inner_w = hit_w - 4;
+      const int inner_h = hit_h - 4;
+      const int card_r = (SCREEN_W > 520) ? scale_s(12) : 12;
+      const float inner_r = static_cast<float>(std::max(2, card_r - 2));
+      const int cl_pct = std::clamp(pct, 1, 100);
+      const int min_fill_w = std::min(inner_w, static_cast<int>(inner_r * 2.0f));
+      const int fill_w = std::clamp(
+          static_cast<int>(std::lround((static_cast<float>(cl_pct) * 0.01f) * static_cast<float>(inner_w))),
+          min_fill_w, inner_w);
+      fill_round_rect_glass(it, inner_x0, inner_y0, fill_w, inner_h, inner_r, theme_primary, 76, 52);
+      add_row_hit(y_mid, wid, kHitTap | kHitHorizSlider | kHitFocusSlot, param);
+    }
+    if (label != nullptr && label[0] != '\0' && font_small != nullptr) {
+      fast_print(it, cx + 1, y_mid + 1, font_small, kChromeShadow, esphome::display::TextAlign::CENTER, label);
+      fast_print(it, cx, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER, label);
+    }
+  };
+
   auto draw_toggle_card_y = [&](int y_mid, const char *label, bool is_on, int row_slot = -1, int item_param = -1) {
     const uint16_t wid = (!menu_scroll_active && row_slot >= 0 && row_slot < 5)
                              ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
@@ -258,12 +286,14 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     const char *ab_s = (ctx.auto_brightness_opt == "Sun Synchronized") ? "Sun"
                        : ((ctx.auto_brightness_opt == "Time Schedule") ? "Sched" : "Off");
     std::snprintf(disp_labels[4], sizeof(disp_labels[4]), "Auto Bright: %s", ab_s);
-    std::snprintf(disp_labels[5], sizeof(disp_labels[5]), "Brightness: %s",
-                  ctx.display_brightness_opt.empty() ? "90%" : ctx.display_brightness_opt.c_str());
-    const int nh12 = (ctx.night_start_hr > 12) ? (ctx.night_start_hr - 12) : ctx.night_start_hr;
-    std::snprintf(disp_labels[6], sizeof(disp_labels[6]), "Schedule: %dAM-%dPM", ctx.day_start_hr, nh12);
-    std::snprintf(disp_labels[7], sizeof(disp_labels[7]), "Day Bri: %s", ctx.day_brightness_opt.c_str());
-    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "Night Bri: %s", ctx.night_brightness_opt.c_str());
+    std::snprintf(disp_labels[5], sizeof(disp_labels[5]), "Brightness: %d%%",
+                  std::clamp(ctx.manual_brightness_pct, 1, 100));
+    format_schedule_range_label(ctx.day_start_hr, ctx.night_start_hr, prefs.is_24h_format,
+                                disp_labels[6], sizeof(disp_labels[6]));
+    std::snprintf(disp_labels[7], sizeof(disp_labels[7]), "Day Bri: %d%%",
+                  std::clamp(ctx.day_brightness_pct, 1, 100));
+    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "Night Bri: %d%%",
+                  std::clamp(ctx.night_brightness_pct, 1, 100));
 
     const bool ab_off = (ctx.auto_brightness_opt == "Disabled" || ctx.auto_brightness_opt.empty());
     const bool ab_sched = (ctx.auto_brightness_opt == "Time Schedule");
@@ -278,17 +308,18 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
           draw_cycle_card_y(y, disp_labels[i], true, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
+        } else if (i == 5 || i == 7 || i == 8) {
+          const bool active = (i == 5) ? ab_off : !ab_off;
+          const int pct = (i == 5) ? ctx.manual_brightness_pct
+                                   : ((i == 7) ? ctx.day_brightness_pct : ctx.night_brightness_pct);
+          const uint16_t wid = (active && row_slot >= 0) ? WidgetId::SYS_BRI_SLIDER : WidgetId::NONE;
+          draw_slider_card_y(y, disp_labels[i], pct, active, wid, static_cast<int16_t>(i));
         } else {
-          const bool active = !((i == 5 && !ab_off) || (i == 6 && !ab_sched) || ((i == 7 || i == 8) && ab_off));
-          uint16_t wid = WidgetId::NONE;
-          uint8_t flags = kHitTap | kHitFocusSlot;
-          if (i == 5 && ab_off && row_slot >= 0) {
-            wid = WidgetId::SYS_BRI_SLIDER;
-            flags = kHitTap | kHitHorizSlider | kHitFocusSlot;
-          } else if (row_slot >= 0) {
-            wid = static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot);
-          }
-          draw_cycle_card_y(y, disp_labels[i], active, wid, flags, static_cast<int16_t>(row_slot));
+          const bool active = !(i == 6 && !ab_sched);
+          const uint16_t wid = (row_slot >= 0)
+                                   ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
+                                   : WidgetId::NONE;
+          draw_cycle_card_y(y, disp_labels[i], active, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
           if (i == 3) {
             const int swatch_x = layout().sys_color_swatch_x();
             const int sw_r = scale_s(9);

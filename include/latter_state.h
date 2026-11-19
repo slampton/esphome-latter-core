@@ -612,7 +612,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 13U;
+static constexpr uint16_t kPersistedPrefsVersion = 14U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -673,7 +673,8 @@ enum class PrefKey : uint8_t {
   BEDTIME_SCHEDULE = 54,
   BEDTIME_START_HOUR = 55,
   BEDTIME_END_HOUR = 56,
-  COUNT = 57,
+  BEDTIME_BRIGHTNESS = 57,
+  COUNT = 58,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 64U,
               "PrefKey::COUNT must remain < 64 to fit in uint64_t dirty_mask.");
@@ -719,9 +720,9 @@ struct PersistedDevicePrefs {
   uint8_t screensaver_style = 0;           // 0..4 ("Ambient Clock" .. "Fireworks")
   bool hold_crown_power_off = false;
   uint8_t auto_brightness_mode = 1;        // 0..2 ("Disabled", "Sun Synchronized", "Time Schedule")
-  uint8_t manual_brightness = 3;           // 0..4 ("60%" .. "100%")
-  uint8_t day_brightness = 3;              // 0..4 ("60%" .. "100%")
-  uint8_t night_brightness = 1;            // 0..4 ("60%" .. "100%")
+  uint8_t manual_brightness = 80;          // 1..100 (%)
+  uint8_t day_brightness = 90;             // 1..100 (%)
+  uint8_t night_brightness = 35;           // 1..100 (%)
   uint8_t day_start_hour = 7;              // 0..23
   uint8_t night_start_hour = 20;           // 0..23
   uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
@@ -780,6 +781,7 @@ struct PersistedDevicePrefs {
   char games_items[64]{};
   bool bedtime_active = false;
   uint8_t bedtime_display = 0;             // 0..1 ("Screen Off", "Ambient Clock")
+  uint8_t bedtime_brightness = 15;         // 1..100 (%)
   bool bedtime_schedule = false;
   uint8_t bedtime_start_hour = 22;         // 0..23
   uint8_t bedtime_end_hour = 7;            // 0..23
@@ -825,16 +827,16 @@ struct PersistedDevicePrefs {
     return kSec[(battery_hibernate_timeout < 5U) ? battery_hibernate_timeout : 2U];
   }
   constexpr uint8_t manual_brightness_pct() const noexcept {
-    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
-    return kPct[(manual_brightness < 5U) ? manual_brightness : 3U];
+    return (manual_brightness >= 1U && manual_brightness <= 100U) ? manual_brightness : 80U;
   }
   constexpr uint8_t day_brightness_pct() const noexcept {
-    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
-    return kPct[(day_brightness < 5U) ? day_brightness : 3U];
+    return (day_brightness >= 1U && day_brightness <= 100U) ? day_brightness : 90U;
   }
   constexpr uint8_t night_brightness_pct() const noexcept {
-    constexpr uint8_t kPct[5] = {60U, 70U, 80U, 90U, 100U};
-    return kPct[(night_brightness < 5U) ? night_brightness : 1U];
+    return (night_brightness >= 1U && night_brightness <= 100U) ? night_brightness : 35U;
+  }
+  constexpr uint8_t bedtime_brightness_pct() const noexcept {
+    return (bedtime_brightness >= 1U && bedtime_brightness <= 100U) ? bedtime_brightness : 15U;
   }
   constexpr uint32_t return_to_home_ms() const noexcept {
     constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
@@ -891,8 +893,6 @@ inline constexpr const char *const kScreensaverStyleOpts[5] = {
     "Ambient Clock", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
 inline constexpr const char *const kAutoBrightnessModeOpts[3] = {
     "Disabled", "Sun Synchronized", "Time Schedule"};
-inline constexpr const char *const kBrightnessPresetOpts[5] = {
-    "60%", "70%", "80%", "90%", "100%"};
 inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
@@ -1018,10 +1018,17 @@ inline BedtimeScheduleTracker &bedtime_schedule_tracker() noexcept {
   static BedtimeScheduleTracker tr{};
   return tr;
 }
+inline constexpr float resolve_screensaver_brightness(float active_bri) noexcept {
+  const float b = std::clamp(active_bri, 0.0f, 1.0f);
+  return std::min(b, std::max(0.05f, b * 0.45f));
+}
+
+inline constexpr float resolve_bedtime_ambient_brightness(float bedtime_bri) noexcept {
+  const float b = std::clamp(bedtime_bri, 0.0f, 1.0f);
+  return std::min(b, std::max(0.02f, b * 0.35f));
+}
+
 inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAutoBrightnessModeOpts, p.auto_brightness_mode, 1); }
-inline const char *pref_manual_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.manual_brightness, 3); }
-inline const char *pref_day_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.day_brightness, 3); }
-inline const char *pref_night_brightness_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBrightnessPresetOpts, p.night_brightness, 1); }
 inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kColorProfileOpts, p.color_profile); }
 inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
 inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
@@ -1280,9 +1287,10 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.battery_hibernate_timeout >= 5) p.battery_hibernate_timeout = 2;
   if (p.screensaver_style >= 5) p.screensaver_style = 0;
   if (p.auto_brightness_mode >= 3) p.auto_brightness_mode = 1;
-  if (p.manual_brightness >= 5) p.manual_brightness = 3;
-  if (p.day_brightness >= 5) p.day_brightness = 3;
-  if (p.night_brightness >= 5) p.night_brightness = 1;
+  p.manual_brightness = static_cast<uint8_t>(std::clamp<int>(p.manual_brightness, 1, 100));
+  p.day_brightness = static_cast<uint8_t>(std::clamp<int>(p.day_brightness, 1, 100));
+  p.night_brightness = static_cast<uint8_t>(std::clamp<int>(p.night_brightness, 1, 100));
+  p.bedtime_brightness = static_cast<uint8_t>(std::clamp<int>(p.bedtime_brightness, 1, 100));
   if (p.day_start_hour > 23) p.day_start_hour = 7;
   if (p.night_start_hour > 23) p.night_start_hour = 20;
   if (p.color_profile >= 5) p.color_profile = 0;
@@ -1357,8 +1365,8 @@ inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, boo
     p.battery_hibernate_timeout = 2;
     p.ble_beacon_mode = 1;
     p.docked_screensaver = true;
-    p.day_brightness = 2;
-    p.night_brightness = 0;
+    p.day_brightness = 80;
+    p.night_brightness = 25;
   } else if (is_round_display && has_battery) {
     p.wake_word_mode = 0;
     p.tap_to_wake = 2;
@@ -2075,6 +2083,41 @@ inline std::string format_timer_header_upper(int slot_idx) {
   char buf[20];
   std::snprintf(buf, sizeof(buf), "TIMER %d", slot_idx + 1);
   return std::string(buf);
+}
+
+inline std::string format_agenda_time_label(std::string_view raw_lbl, bool is_24h) {
+  if (is_24h || raw_lbl.size() < 6) return std::string(raw_lbl);
+  const size_t t_pos = raw_lbl.size() - 5;
+  if (raw_lbl[t_pos - 1] != ' ' || raw_lbl[t_pos + 2] != ':') return std::string(raw_lbl);
+  auto is_dig = [](char c) { return c >= '0' && c <= '9'; };
+  if (!is_dig(raw_lbl[t_pos]) || !is_dig(raw_lbl[t_pos + 1]) ||
+      !is_dig(raw_lbl[t_pos + 3]) || !is_dig(raw_lbl[t_pos + 4])) {
+    return std::string(raw_lbl);
+  }
+  const int hh = (raw_lbl[t_pos] - '0') * 10 + (raw_lbl[t_pos + 1] - '0');
+  const int mm = (raw_lbl[t_pos + 3] - '0') * 10 + (raw_lbl[t_pos + 4] - '0');
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return std::string(raw_lbl);
+  const int h12 = (hh % 12 == 0) ? 12 : (hh % 12);
+  const char *ampm = (hh >= 12) ? "PM" : "AM";
+  char buf[24];
+  std::snprintf(buf, sizeof(buf), " %d:%02d %s", h12, mm, ampm);
+  std::string out(raw_lbl.substr(0, t_pos - 1));
+  out += buf;
+  return out;
+}
+
+inline void format_schedule_range_label(int start_hr, int end_hr, bool is_24h, char *out, size_t cap) {
+  if (!out || cap == 0) return;
+  const int sh = ((start_hr % 24) + 24) % 24;
+  const int eh = ((end_hr % 24) + 24) % 24;
+  if (is_24h) {
+    std::snprintf(out, cap, "Schedule: %02d:00-%02d:00", sh, eh);
+  } else {
+    const int sh12 = (sh % 12 == 0) ? 12 : (sh % 12);
+    const int eh12 = (eh % 12 == 0) ? 12 : (eh % 12);
+    std::snprintf(out, cap, "Schedule: %d%s-%d%s", sh12, (sh >= 12) ? "PM" : "AM",
+                  eh12, (eh >= 12) ? "PM" : "AM");
+  }
 }
 
 inline void sync_multi_timer_globals(bool &out_any_running, bool &out_any_paused,
@@ -3743,6 +3786,7 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::BEDTIME_SCHEDULE: return "bedtime_schedule";
     case PrefKey::BEDTIME_START_HOUR: return "bedtime_start_hour";
     case PrefKey::BEDTIME_END_HOUR: return "bedtime_end_hour";
+    case PrefKey::BEDTIME_BRIGHTNESS: return "bedtime_brightness";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3760,9 +3804,9 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
     case PrefKey::HOLD_CROWN_POWER_OFF: return p.hold_crown_power_off ? "1" : "0";
     case PrefKey::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
-    case PrefKey::MANUAL_BRIGHTNESS: return pref_manual_brightness_cstr(p);
-    case PrefKey::DAY_BRIGHTNESS: return pref_day_brightness_cstr(p);
-    case PrefKey::NIGHT_BRIGHTNESS: return pref_night_brightness_cstr(p);
+    case PrefKey::MANUAL_BRIGHTNESS: return std::to_string(p.manual_brightness_pct());
+    case PrefKey::DAY_BRIGHTNESS: return std::to_string(p.day_brightness_pct());
+    case PrefKey::NIGHT_BRIGHTNESS: return std::to_string(p.night_brightness_pct());
     case PrefKey::DAY_START_HOUR: return std::to_string(p.day_start_hour);
     case PrefKey::NIGHT_START_HOUR: return std::to_string(p.night_start_hour);
     case PrefKey::COLOR_PROFILE: return pref_color_profile_cstr(p);
@@ -3807,6 +3851,7 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::BEDTIME_SCHEDULE: return p.bedtime_schedule ? "1" : "0";
     case PrefKey::BEDTIME_START_HOUR: return std::to_string(p.bedtime_start_hour);
     case PrefKey::BEDTIME_END_HOUR: return std::to_string(p.bedtime_end_hour);
+    case PrefKey::BEDTIME_BRIGHTNESS: return std::to_string(p.bedtime_brightness_pct());
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3882,11 +3927,11 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     case PrefKey::AUTO_BRIGHTNESS_MODE:
       return apply_enum(p.auto_brightness_mode, kAutoBrightnessModeOpts, kPrefEffectBrightness);
     case PrefKey::MANUAL_BRIGHTNESS:
-      return apply_enum(p.manual_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+      return apply_num(p.manual_brightness, 1, 100, kPrefEffectBrightness);
     case PrefKey::DAY_BRIGHTNESS:
-      return apply_enum(p.day_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+      return apply_num(p.day_brightness, 1, 100, kPrefEffectBrightness);
     case PrefKey::NIGHT_BRIGHTNESS:
-      return apply_enum(p.night_brightness, kBrightnessPresetOpts, kPrefEffectBrightness);
+      return apply_num(p.night_brightness, 1, 100, kPrefEffectBrightness);
     case PrefKey::DAY_START_HOUR:
       return apply_num(p.day_start_hour, 0, 23, kPrefEffectBrightness);
     case PrefKey::NIGHT_START_HOUR:
@@ -4038,6 +4083,8 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_num(p.bedtime_start_hour, 0, 23, kPrefEffectBedtime);
     case PrefKey::BEDTIME_END_HOUR:
       return apply_num(p.bedtime_end_hour, 0, 23, kPrefEffectBedtime);
+    case PrefKey::BEDTIME_BRIGHTNESS:
+      return apply_num(p.bedtime_brightness, 1, 100, kPrefEffectBrightness);
     case PrefKey::COUNT:
       break;
   }
@@ -4160,6 +4207,7 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::BEDTIME_SCHEDULE, PrefKey::BEDTIME_SCHEDULE);
   apply_f(DevicePrefsField::BEDTIME_START_HOUR, PrefKey::BEDTIME_START_HOUR);
   apply_f(DevicePrefsField::BEDTIME_END_HOUR, PrefKey::BEDTIME_END_HOUR);
+  apply_f(DevicePrefsField::BEDTIME_BRIGHTNESS, PrefKey::BEDTIME_BRIGHTNESS);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
 

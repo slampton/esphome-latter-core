@@ -153,7 +153,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `63` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `64` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -170,9 +170,9 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `11` | `screensaver_style` | `DevicePrefsField::SCREENSAVER_STYLE` | `string` | Ambient screensaver style (Ambient Clock|Aurora|Starfield|Digital Rain|Fireworks) |
 | `12` | `hold_crown_power_off` | `DevicePrefsField::HOLD_CROWN_POWER_OFF` | `bool` | 1 = long-holding rotary crown enters deep sleep / power off, else 0 |
 | `13` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule) |
-| `14` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `string` | Manual brightness target when auto brightness is Disabled (60%|70%|80%|90%|100%) |
-| `15` | `day_brightness` | `DevicePrefsField::DAY_BRIGHTNESS` | `string` | Daytime brightness target (60%|70%|80%|90%|100%) |
-| `16` | `night_brightness` | `DevicePrefsField::NIGHT_BRIGHTNESS` | `string` | Nighttime brightness target (60%|70%|80%|90%|100%) |
+| `14` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `u16` | Manual brightness target when auto brightness is Disabled (1..100%) |
+| `15` | `day_brightness` | `DevicePrefsField::DAY_BRIGHTNESS` | `u16` | Daytime brightness target (1..100%) |
+| `16` | `night_brightness` | `DevicePrefsField::NIGHT_BRIGHTNESS` | `u16` | Nighttime brightness target (1..100%) |
 | `17` | `day_start_hour` | `DevicePrefsField::DAY_START_HOUR` | `u16` | Time schedule daytime start hour (0..23) |
 | `18` | `night_start_hour` | `DevicePrefsField::NIGHT_START_HOUR` | `u16` | Time schedule nighttime start hour (0..23) |
 | `19` | `color_profile` | `DevicePrefsField::COLOR_PROFILE` | `string` | Theme accent preset (Steel Blue|Pink|Blue|Green|Custom) |
@@ -219,6 +219,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `60` | `bedtime_schedule` | `DevicePrefsField::BEDTIME_SCHEDULE` | `bool` | 1 = automatically toggle Bedtime Mode on at bedtime_start_hour and off at bedtime_end_hour (manual/HA switch overrides hold until next boundary), else 0 |
 | `61` | `bedtime_start_hour` | `DevicePrefsField::BEDTIME_START_HOUR` | `u16` | Bedtime Mode schedule start hour in local 24h time (0..23) |
 | `62` | `bedtime_end_hour` | `DevicePrefsField::BEDTIME_END_HOUR` | `u16` | Bedtime Mode schedule end hour in local 24h time (0..23) |
+| `63` | `bedtime_brightness` | `DevicePrefsField::BEDTIME_BRIGHTNESS` | `u16` | Bedtime Mode active wake brightness percentage (1..100%) |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -297,9 +298,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `35`
+- **Studio Wire Revision (`studio_rev`)**: `37`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_wallpaper`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `select_wallpaper`, `toggle_wallpaper_favorite`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `55` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `56` typed preference descriptors

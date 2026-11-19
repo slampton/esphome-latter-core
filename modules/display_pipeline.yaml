@@ -109,19 +109,7 @@ output:
     type: float
     write_action:
       - lambda: |-
-          if (state <= 0.01f) {
-            latter_ui::hal_set_display_brightness(&id(disp1), 0);
-          } else {
-            float clamped = std::max(0.0f, std::min(1.0f, state));
-            #if LATTER_PANEL_IPS
-            float hw = 255.0f * clamped;
-            #else
-            // Perceptual Gamma Mapping: Calibrated for AMOLED emission threshold (~90 hardware floor)
-            float hw = 90.0f + 165.0f * powf(clamped, 1.6f);
-            #endif
-            uint8_t bri_byte = (uint8_t)std::max(0.0f, std::min(255.0f, roundf(hw)));
-            latter_ui::hal_set_display_brightness(&id(disp1), bri_byte);
-          }
+          latter_ui::hal_set_display_brightness_f(&id(disp1), state);
 
 light:
   - platform: monochromatic
@@ -129,6 +117,7 @@ light:
     name: "Display: Screen Backlight"
     entity_category: diagnostic
     output: backlight_brightness
+    gamma_correct: 1.0
     default_transition_length: 0s
     initial_state:
       brightness: 90%
