@@ -571,15 +571,19 @@ script:
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_off_ms = millis();
           rs.nav.active_game = 0;
+          // Cut panel/backlight synchronously before audio/IMU I2C and pm_apply() so LightState::loop()
+          // is never delayed by the quiet-loop interval (250/1000 ms), and skip a wasted full-frame blit
+          // (render_system_takeovers skips buffer writes when display_power_state == 2).
+          latter_ui::display_lifecycle().on_enter_standby_off(
+              now_off_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
+          latter_ui::mark_dirty_full();
+          id(disp1).stop_poller();
+          latter_ui::hal_set_display_brightness_f(&id(disp1), 0.0f);
+          id(display_brightness).turn_off().perform();
+
           if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
             latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
           }
-          rs.nav.display_power_state = 2; // Flush single all-black frame before cutting panel brightness
-          id(disp1).update();
-          latter_ui::display_lifecycle().on_enter_standby_off(
-              now_off_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
-          id(disp1).stop_poller();
-          id(display_brightness).turn_off().perform();
 
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
