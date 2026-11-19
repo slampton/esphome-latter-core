@@ -138,7 +138,7 @@ In screen-off quiet on battery, `apply_power_policy` releases `latter_awake` via
 - **MIPI-DSI panels (`waveshare_p4_86_panel.yaml`):**
   - Enable `CONFIG_GDMA_ISR_IRAM_SAFE: "y"` and `CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"` (ESPHome `2026.11.0+` `mipi_dsi` automatically enables `CONFIG_LCD_DSI_ISR_CACHE_SAFE` and marks its DPI refresh callback `IRAM_ATTR`).
   - Add `-DLATTER_DSI_IRAM_SAFE=1` so OTA progress redraws throttle to `>= 10%` / `>= 800 ms` while DW-GDMA DPI scanout continues cleanly across flash erases.
-- **Chip revision & power:** P4 boards declare `p4_silicon` (`rev1` = `true` / `360MHz`, `rev3` = `false` / `400MHz`; release CI publishes both variants) and keep `CPLL` + `200 MHz` PSRAM fixed—never declare `power_management:` (`min_frequency: 40MHz` XTAL DFS retunes MSPI speed modes across `esp_hosted` SDIO DMA and causes `int-wdt`/panic resets). Battery P4 boards stretch the screen-off main loop to `1,000 ms` (`250 ms` with touch wake) in `power_pm.cpp`.
+- **Chip revision & power:** P4 boards declare `p4_silicon` (`rev1` = `true` / `360MHz`, `rev3` = `false` / `400MHz`; release CI publishes dual variants only for SKUs that shipped across both silicon steppings, such as `waveshare_p4_86_panel`) and keep `CPLL` + `200 MHz` PSRAM fixed—never declare `power_management:` (`min_frequency: 40MHz` XTAL DFS retunes MSPI speed modes across `esp_hosted` SDIO DMA and causes `int-wdt`/panic resets). Battery P4 boards stretch the screen-off main loop to `1,000 ms` (`250 ms` with touch wake) in `power_pm.cpp`.
 
 ## 7. Device config, board facts, and validation
 

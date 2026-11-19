@@ -2,7 +2,7 @@
 # Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 ("Remote Assistant")
 # SKU:     33360
 # SoC:     ESP32-P4NRW32 (32MB PSRAM, 16MB Flash) + ESP32-C6 Wi-Fi 6 / BLE 5 over SDIO
-# Silicon: rev3.x by default (rev1.x units exist). Binaries are NOT cross-compatible; select with p4_silicon.
+# Silicon: rev3.x production silicon (400 MHz).
 # Display: 3.5" 320x480 IPS LCD (ST7796 over SPI, CLK: GPIO21, MOSI: GPIO20, CS: GPIO23, DC: GPIO26, RST: GPIO27, BL: GPIO28)
 # Touch:   FT6336 @ 0x38 (I2C SDA: GPIO7, SCL: GPIO8)
 # Audio:   ES8311 @ 0x18 (MCLK: GPIO13, BCLK: GPIO12, WS: GPIO10, DOUT: GPIO9, DIN: GPIO11, PA: GPIO53), full duplex @ 48 kHz
@@ -14,9 +14,7 @@
 # ==============================================================================
 
 substitutions:
-  # P4 silicon profile (one source of truth; CI publishes both variants):
-  #   rev3 -> p4_engineering_sample: "false", p4_cpu_frequency: "400MHz"  (v3.x silicon)
-  #   rev1 -> p4_engineering_sample: "true",  p4_cpu_frequency: "360MHz"  (v1.x silicon)
+  # SKU 33360 ships with ESP32-P4 v3.x production silicon (400 MHz, engineering_sample: false).
   p4_silicon: "rev3"
   p4_engineering_sample: "false"
   p4_cpu_frequency: "400MHz"

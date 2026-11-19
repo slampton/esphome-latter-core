@@ -1,8 +1,7 @@
 # ==============================================================================
 # Remote Assistant (v3.0 Modular Architecture)
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (320x480 IPS LCD + Camera, SKU 33360)
-#         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_35.yaml
-#         (default rev3 = v3.x production silicon; CI also publishes a rev1 build).
+#         Ships with ESP32-P4 rev3.x (400 MHz) production silicon (configured in boards/waveshare_p4_35.yaml).
 # Framework: ESPHome 2026.11.0+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
@@ -42,7 +41,7 @@ update:
     id: latter_firmware_update
     name: "Project Firmware"
     icon: "mdi:cellphone-arrow-down"
-    source: "https://slampton.github.io/esphome-latter-core/manifests/remote-assistant-${p4_silicon}.json"
+    source: "https://slampton.github.io/esphome-latter-core/manifests/remote-assistant.json"
     update_interval: never
 
 wifi:

@@ -22,7 +22,8 @@ jobs:
       matrix:
         # slug = published artifact/manifest name, file = devices/<file>.yaml (also the ESPHome
         # build dir name), subs = ESPHome -s substitution overrides (P4 silicon profiles).
-        # P4 rev1.x and rev3.x binaries are not cross-compatible, so each P4 board ships both.
+        # Remote Assistant (SKU 33360) ships exclusively with rev3.x production silicon; Desk Assistant
+        # (SKU 31570 / 4B) ships in both rev1.x and rev3.x batches (binaries are not cross-compatible).
         device:
           - slug: pocket-assistant
             file: pocket-assistant
@@ -39,16 +40,11 @@ jobs:
             name: "Latter — Wrist Assist (2.06)"
             chip: "ESP32-S3"
             subs: ""
-          - slug: remote-assistant-rev3
+          - slug: remote-assistant
             file: remote-assistant
-            name: "Latter — Remote Assistant (P4 3.5, chip rev 3.x)"
+            name: "Latter — Remote Assistant (P4 3.5)"
             chip: "ESP32-P4"
-            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
-          - slug: remote-assistant-rev1
-            file: remote-assistant
-            name: "Latter — Remote Assistant (P4 3.5, chip rev 1.x)"
-            chip: "ESP32-P4"
-            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+            subs: ""
           - slug: desk-assistant-rev1
             file: desk-assistant
             name: "Latter — Desk Assistant (P4 86-Panel, chip rev 1.x)"

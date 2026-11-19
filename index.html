@@ -1,378 +1,470 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
 <title>Web Firmware Installer | Latter</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cstyle%3Epath%7Bfill:%2303a9f4%7D@media(prefers-color-scheme:dark)%7Bpath%7Bfill:%23ffffff%7D%7D%3C/style%3E%3Cpath d='M1.047 19.011L7.016 9.448A0.969 0.969 0 0 1 8.663 10.476L5.908 14.89L12.724 14.89A2.28 2.28 0 0 1 14.659 18.377L13.621 20.039A0.969 0.969 0 0 1 11.974 19.011L13.012 17.349A0.339 0.339 0 0 0 12.724 16.831L4.697 16.831L2.694 20.039A0.969 0.969 0 0 1 1.047 19.011ZM22.953 4.989L16.984 14.552A0.969 0.969 0 0 1 15.337 13.524L18.092 9.11L11.276 9.11A2.28 2.28 0 0 1 9.341 5.623L10.379 3.961A0.969 0.969 0 0 1 12.026 4.989L10.988 6.651A0.339 0.339 0 0 0 11.276 7.169L19.303 7.169L21.306 3.961A0.969 0.969 0 0 1 22.953 4.989Z'/%3E%3C/svg%3E">
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
-  :root, [data-theme="dark"] {
-    --bg: #111111;
-    --sidebar: #1c1c1c;
-    --card: #1c1c1c;
-    --card-hover: rgba(3, 169, 244, 0.08);
-    --border: rgba(225, 225, 225, 0.12);
-    --input-bg: #141414;
-    --text: #e1e1e1;
-    --text-strong: #e1e1e1;
-    --muted: #9b9b9b;
-    --accent: #03a9f4;
-    --accent-subtle: rgba(3, 169, 244, 0.15);
-    --success: #4caf50;
+  @layer reset, base;
+
+  @layer reset {
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
   }
-  [data-theme="light"] {
-    --bg: #fafafa;
-    --sidebar: #f0f0f0;
-    --card: #ffffff;
-    --card-hover: rgba(3, 169, 244, 0.08);
-    --border: rgba(0, 0, 0, 0.12);
-    --input-bg: #f5f5f5;
-    --text: #212121;
-    --text-strong: #212121;
-    --muted: #727272;
-    --accent: #03a9f4;
-    --accent-subtle: rgba(3, 169, 244, 0.12);
-    --success: #4caf50;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    font-size: 14px;
-    line-height: 1.45;
-  }
-  .visually-hidden:where(:not(:focus-within, :active)) {
-    position: absolute !important;
-    clip-path: inset(50%) !important;
-    overflow: hidden !important;
-    width: 1px !important;
-    height: 1px !important;
-    margin: -1px !important;
-    padding: 0 !important;
-    border: 0 !important;
-    white-space: nowrap !important;
-  }
-  :where(a:any-link, button, select):focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  header.topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 24px;
-    background: var(--sidebar);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  .brand-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .brand-logo {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-strong);
-  }
-  .brand-logo svg {
-    width: 28px;
-    height: 28px;
-    fill: currentColor;
-  }
-  .nav-badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .theme-icon-group {
-    display: grid;
-    grid-template-columns: repeat(3, 32px);
-    gap: 4px;
-    background: var(--input-bg);
-    padding: 3px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-  }
-  .theme-icon-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-block-size: 28px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .theme-icon-btn.active {
-    background: var(--text-strong);
-    color: var(--bg);
-  }
-  .theme-icon-btn svg {
-    width: 15px;
-    height: 15px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  main.container {
-    max-width: 1040px;
-    width: 100%;
-    margin: 0 auto;
-    padding: 28px 20px 64px;
-  }
-  .hero {
-    margin-bottom: 22px;
-  }
-  .hero h1 {
-    margin: 0 0 6px;
-    font-size: 24px;
-    font-weight: 500;
-    color: var(--text-strong);
-  }
-  .hero p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 14px;
-  }
-  .device-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-    gap: 12px;
-    margin-bottom: 10px;
-  }
-  .dev-card {
-    position: relative;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    transition: border-color 0.15s ease, background 0.15s ease;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .dev-card:has(.card-select-btn:hover) {
-    background: var(--card-hover);
-  }
-  .dev-card.selected {
-    border-color: var(--accent);
-    background: var(--accent-subtle);
-  }
-  .dev-card:has(.card-select-btn:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .dev-card header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .dev-card h2 {
-    margin: 0;
-    font-size: 15.5px;
-    font-weight: 500;
-  }
-  .card-select-btn {
-    appearance: none;
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: var(--text-strong);
-    text-align: left;
-    cursor: pointer;
-    min-block-size: 24px;
-  }
-  .card-select-btn:focus-visible {
-    outline: none;
-  }
-  .card-select-btn::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-  }
-  .dev-card a {
-    position: relative;
-    z-index: 1;
-  }
-  .chip-tag {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    color: var(--accent);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .dev-sub {
-    margin: 0;
-    font-size: 12.5px;
-    color: var(--text-strong);
-    font-weight: 500;
-  }
-  .dev-card footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: auto;
-    padding-top: 6px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .hw-buy-link {
-    display: inline-flex;
-    align-items: center;
-    min-block-size: 24px;
-    padding: 2px 6px;
-    margin-right: -6px;
-    border-radius: 6px;
-    color: var(--accent);
-    text-decoration: none;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .hw-buy-link:hover {
-    text-decoration: underline;
-    background: var(--accent-subtle);
-  }
-  .aff-note {
-    margin: 0 0 22px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .installer-panel {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 18px;
-    margin-bottom: 18px;
-  }
-  .installer-meta h2 {
-    margin: 0 0 4px;
-    font-size: 18px;
-    font-weight: 500;
-  }
-  .installer-meta p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 13px;
-  }
-  .installer-meta a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-  .installer-meta a:hover {
-    text-decoration: underline;
-  }
-  .rev-picker {
-    margin-top: 12px;
-    display: grid;
-    gap: 6px;
-    font-size: 13px;
-  }
-  .rev-picker select {
-    max-width: 260px;
-    min-block-size: 32px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    font-size: 13px;
-  }
-  .rev-picker .rev-hint {
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .btn-install {
-    background: var(--accent);
-    color: #ffffff;
-    border: none;
-    min-block-size: 40px;
-    padding: 11px 22px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    box-shadow: 0 2px 10px rgba(3, 169, 244, 0.3);
-  }
-  .btn-install:hover {
-    filter: brightness(1.08);
-  }
-  .steps-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px 22px;
-  }
-  .steps-card h2 {
-    margin: 0 0 10px;
-    font-size: 15px;
-    font-weight: 500;
-  }
-  .steps-card ol {
-    margin: 0;
-    padding-left: 20px;
-    color: var(--muted);
-    font-size: 13.5px;
-  }
-  .steps-card li {
-    margin-bottom: 6px;
-  }
-  .steps-card a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-  .steps-card a:hover {
-    text-decoration: underline;
+
+  @layer base {
+    :root, [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #111111;
+      --sidebar: #1c1c1c;
+      --card: #1c1c1c;
+      --card-hover: rgba(3, 169, 244, 0.08);
+      --border: rgba(225, 225, 225, 0.12);
+      --input-bg: #141414;
+      --text: #e1e1e1;
+      --text-strong: #e1e1e1;
+      --muted: #9b9b9b;
+      --accent: #03a9f4;
+      --accent-subtle: rgba(3, 169, 244, 0.15);
+    }
+
+    [data-theme="light"] {
+      color-scheme: light;
+      --bg: #fafafa;
+      --sidebar: #f0f0f0;
+      --card: #ffffff;
+      --card-hover: rgba(3, 169, 244, 0.08);
+      --border: rgba(0, 0, 0, 0.12);
+      --input-bg: #f5f5f5;
+      --text: #212121;
+      --text-strong: #212121;
+      --muted: #6e6e6e;
+      --accent: #0277bd;
+      --accent-subtle: rgba(2, 119, 189, 0.1);
+    }
+
+    body {
+      margin: 0;
+      font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    :where(a:any-link, button, select, summary):focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    header.topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--sidebar);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-strong);
+    }
+
+    .brand-logo svg {
+      width: 28px;
+      height: 28px;
+      fill: currentColor;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-strong);
+    }
+
+    .nav-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .theme-icon-group {
+      display: grid;
+      grid-template-columns: repeat(3, 32px);
+      gap: 4px;
+      background: var(--input-bg);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .theme-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-block-size: 28px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .theme-icon-btn.active {
+      background: var(--text-strong);
+      color: var(--bg);
+    }
+
+    .theme-icon-btn svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    main.container {
+      max-width: 1040px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+      flex: 1;
+    }
+
+    .hero {
+      margin-bottom: 20px;
+    }
+
+    .hero h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 500;
+      color: var(--text-strong);
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .device-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .dev-card {
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      transition: border-color 0.15s ease, background 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .dev-card:has(.card-select-btn:hover) {
+      background: var(--card-hover);
+    }
+
+    .dev-card.selected {
+      border-color: var(--accent);
+      background: var(--accent-subtle);
+    }
+
+    .dev-card:has(.card-select-btn:focus-visible) {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .dev-card header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .dev-card h2 {
+      margin: 0;
+      font-size: 15.5px;
+      font-weight: 500;
+    }
+
+    .card-select-btn {
+      appearance: none;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: var(--text-strong);
+      text-align: left;
+      cursor: pointer;
+      min-block-size: 24px;
+    }
+
+    .card-select-btn:focus-visible {
+      outline: none;
+    }
+
+    .card-select-btn::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+    }
+
+    .chip-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .dev-sub {
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text-strong);
+      font-weight: 500;
+    }
+
+    .dev-hw {
+      margin: auto 0 0;
+      padding-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .installer-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .installer-meta {
+      flex: 1 1 360px;
+      min-width: 0;
+    }
+
+    .installer-meta h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-strong);
+    }
+
+    .installer-meta p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .installer-meta a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .installer-meta a:hover {
+      text-decoration: underline;
+    }
+
+    .rev-disclosure:not([hidden]) {
+      margin-top: 10px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+
+    .rev-disclosure summary {
+      cursor: pointer;
+      display: inline-block;
+      min-block-size: 24px;
+      padding: 2px 0;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .rev-disclosure summary:hover,
+    .rev-disclosure[open] summary {
+      color: var(--text-strong);
+    }
+
+    .rev-body {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      display: grid;
+      gap: 6px;
+      max-width: 460px;
+    }
+
+    .rev-body label {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-strong);
+    }
+
+    .rev-body select {
+      max-width: 300px;
+      min-block-size: 32px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .rev-body .rev-hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .btn-install {
+      background: #03a9f4;
+      color: #ffffff;
+      border: none;
+      min-block-size: 40px;
+      padding: 11px 22px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(3, 169, 244, 0.3);
+    }
+
+    .btn-install:hover {
+      filter: brightness(1.08);
+    }
+
+    .steps-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 22px;
+    }
+
+    .steps-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-strong);
+    }
+
+    .steps-card ol {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 13.5px;
+    }
+
+    .steps-card li {
+      margin-bottom: 6px;
+    }
+
+    .steps-card a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .steps-card a:hover {
+      text-decoration: underline;
+    }
+
+    footer.site-footer {
+      max-width: 1040px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 16px 20px 28px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px 16px;
+    }
+
+    footer.site-footer p {
+      margin: 0;
+    }
+
+    footer.site-footer a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    footer.site-footer a:hover {
+      color: var(--text-strong);
+    }
   }
 </style>
 </head>
-<body data-theme="dark">
+<body>
 <header class="topbar">
   <div class="brand-row">
     <div class="brand-logo">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M1.047 19.011L7.016 9.448A0.969 0.969 0 0 1 8.663 10.476L5.908 14.89L12.724 14.89A2.28 2.28 0 0 1 14.659 18.377L13.621 20.039A0.969 0.969 0 0 1 11.974 19.011L13.012 17.349A0.339 0.339 0 0 0 12.724 16.831L4.697 16.831L2.694 20.039A0.969 0.969 0 0 1 1.047 19.011ZM22.953 4.989L16.984 14.552A0.969 0.969 0 0 1 15.337 13.524L18.092 9.11L11.276 9.11A2.28 2.28 0 0 1 9.341 5.623L10.379 3.961A0.969 0.969 0 0 1 12.026 4.989L10.988 6.651A0.339 0.339 0 0 0 11.276 7.169L19.303 7.169L21.306 3.961A0.969 0.969 0 0 1 22.953 4.989Z"/></svg>
     </div>
-    <strong style="font-size:18px;font-weight:500;">Latter Web Installer</strong>
+    <strong class="brand-title">Latter Web Installer</strong>
     <span class="nav-badge">v3.0.0</span>
   </div>
   <div class="theme-icon-group" role="group" aria-label="Color Theme">
-    <button type="button" class="theme-icon-btn" data-theme-btn="light" aria-label="Light Theme" aria-pressed="false" onclick="setTheme('light')">
+    <button type="button" class="theme-icon-btn" data-theme-btn="light" aria-label="Light Theme" aria-pressed="false">
       <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
     </button>
-    <button type="button" class="theme-icon-btn" data-theme-btn="dark" aria-label="Dark Theme" aria-pressed="true" onclick="setTheme('dark')">
+    <button type="button" class="theme-icon-btn" data-theme-btn="dark" aria-label="Dark Theme" aria-pressed="true">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>
-    <button type="button" class="theme-icon-btn" data-theme-btn="auto" aria-label="Auto Theme" aria-pressed="false" onclick="setTheme('auto')">
+    <button type="button" class="theme-icon-btn" data-theme-btn="auto" aria-label="Auto Theme" aria-pressed="false">
       <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
     </button>
   </div>
@@ -385,17 +477,19 @@
   </div>
 
   <div class="device-grid" id="device-grid"></div>
-  <p class="aff-note">Hardware purchase links are Waveshare affiliate links—buying through them supports Latter at no extra cost to you.</p>
 
   <div class="installer-panel">
     <div class="installer-meta">
-      <h2 id="sel-title">Pocket Assistant (1.75" Round AMOLED)</h2>
+      <h2 id="sel-title">Pocket Assistant — 1.75" Round AMOLED Handheld (466×466)</h2>
       <p id="sel-desc"></p>
-      <div class="rev-picker" id="rev-picker" hidden>
-        <label for="rev-select">ESP32-P4 chip revision</label>
-        <select id="rev-select" aria-describedby="rev-hint" onchange="selectVariant(this.value)"></select>
-        <p class="rev-hint" id="rev-hint">Check the boot log line <code>chip revision: v1.x</code> or <code>v3.x</code>. A build for one revision will not boot on the other.</p>
-      </div>
+      <details class="rev-disclosure" id="rev-disclosure" hidden>
+        <summary>Won't boot after flashing? Switch ESP32-P4 silicon batch</summary>
+        <div class="rev-body">
+          <label for="rev-select">ESP32-P4 chip revision</label>
+          <p class="rev-hint" id="rev-hint">Early 86-Panel units use revision <code>v1.x</code> (pre-selected); newer Waveshare batches ship with <code>v3.x</code>. If your board logs a chip revision mismatch at boot, select the other batch and flash again.</p>
+          <select id="rev-select" aria-describedby="rev-hint"></select>
+        </div>
+      </details>
     </div>
     <esp-web-install-button id="install-btn" manifest="manifests/pocket-assistant.json">
       <button slot="activate" type="button" class="btn-install" id="install-btn-label">Connect &amp; Install Pocket Assistant</button>
@@ -412,6 +506,11 @@
     </ol>
   </div>
 </main>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/slampton/ha-latter" target="_blank" rel="noopener">Latter Integration</a> &middot; <a href="https://github.com/slampton/esphome-latter-core" target="_blank" rel="noopener">Latter Core Firmware</a> &middot; <a href="https://github.com/slampton/esphome-latter-core/blob/main/docs/hardware.md" target="_blank" rel="noopener">Hardware Guide</a></p>
+  <p>Waveshare purchase links are affiliate links that support Latter at no extra cost to you.</p>
+</footer>
 
 <script>
 const DEVICES = [
@@ -449,10 +548,7 @@ const DEVICES = [
     subtitle: "3.5\" Widescreen Handheld (320×480)",
     hardware: "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (SKU 33360)",
     buyUrl: "https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-3.5.htm?&aff_id=140049",
-    variants: [
-      { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/remote-assistant-rev3.json" },
-      { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/remote-assistant-rev1.json" }
-    ]
+    manifest: "manifests/remote-assistant.json"
   },
   {
     slug: "desk-assistant",
@@ -462,8 +558,8 @@ const DEVICES = [
     hardware: "Waveshare ESP32-P4-86-Panel-ETH-2RO (SKU 31570)",
     buyUrl: "https://www.waveshare.com/esp32-p4-wifi6-touch-lcd-4b.htm?&aff_id=140049",
     variants: [
-      { id: "rev1", label: "Chip revision 1.x", manifest: "manifests/desk-assistant-rev1.json" },
-      { id: "rev3", label: "Chip revision 3.x", manifest: "manifests/desk-assistant-rev3.json" }
+      { id: "rev1", label: "Chip revision 1.x — Default (360 MHz)", manifest: "manifests/desk-assistant-rev1.json" },
+      { id: "rev3", label: "Chip revision 3.x — Newer batches (400 MHz)", manifest: "manifests/desk-assistant-rev3.json" }
     ]
   }
 ];
@@ -471,17 +567,19 @@ const DEVICES = [
 let SELECTED_SLUG = "pocket-assistant";
 let THEME_PREF = localStorage.getItem("latter_installer_theme") || "auto";
 const sysDark = window.matchMedia("(prefers-color-scheme: dark)");
-sysDark.addEventListener("change", () => { if (THEME_PREF === "auto") setTheme("auto"); });
+sysDark.addEventListener("change", () => {
+  if (THEME_PREF === "auto") setTheme("auto");
+});
 
 function setTheme(pref) {
   THEME_PREF = pref || "auto";
   localStorage.setItem("latter_installer_theme", THEME_PREF);
   const eff = THEME_PREF === "auto" ? (sysDark.matches ? "dark" : "light") : THEME_PREF;
-  document.body.setAttribute("data-theme", eff);
-  document.querySelectorAll("[data-theme-btn]").forEach(b => {
-    const active = b.getAttribute("data-theme-btn") === THEME_PREF;
-    b.classList.toggle("active", active);
-    b.setAttribute("aria-pressed", active ? "true" : "false");
+  document.documentElement.setAttribute("data-theme", eff);
+  document.querySelectorAll("[data-theme-btn]").forEach(btn => {
+    const active = btn.getAttribute("data-theme-btn") === THEME_PREF;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
 }
 
@@ -489,26 +587,29 @@ function selectDevice(slug) {
   const dev = DEVICES.find(d => d.slug === slug) || DEVICES[0];
   SELECTED_SLUG = dev.slug;
   document.getElementById("sel-title").textContent = `${dev.title} — ${dev.subtitle}`;
+
   const descEl = document.getElementById("sel-desc");
-  descEl.textContent = `Target: ${dev.hardware} · `;
+  descEl.textContent = `${dev.hardware} · `;
   const buyAnchor = document.createElement("a");
   buyAnchor.href = dev.buyUrl;
   buyAnchor.target = "_blank";
   buyAnchor.rel = "noopener";
-  buyAnchor.textContent = `Buy ${dev.title} hardware ↗`;
+  buyAnchor.textContent = "Buy from Waveshare \u2197";
   descEl.appendChild(buyAnchor);
 
-  const picker = document.getElementById("rev-picker");
+  const disclosure = document.getElementById("rev-disclosure");
   const sel = document.getElementById("rev-select");
   if (dev.variants) {
     sel.innerHTML = dev.variants.map(v => `<option value="${v.id}">${v.label}</option>`).join("");
-    picker.hidden = false;
+    disclosure.hidden = false;
     selectVariant(dev.variants[0].id);
   } else {
     sel.innerHTML = "";
-    picker.hidden = true;
+    disclosure.open = false;
+    disclosure.hidden = true;
     document.getElementById("install-btn").setAttribute("manifest", dev.manifest);
   }
+
   document.getElementById("install-btn-label").textContent = `Connect & Install ${dev.title}`;
   renderCards();
 }
@@ -526,22 +627,32 @@ function renderCards() {
   grid.innerHTML = DEVICES.map(d => {
     const isSel = d.slug === SELECTED_SLUG;
     return `
-    <article class="dev-card ${isSel ? 'selected' : ''}">
+    <article class="dev-card ${isSel ? "selected" : ""}">
       <header>
         <h2>
-          <button type="button" class="card-select-btn" aria-pressed="${isSel}" onclick="selectDevice('${d.slug}')">${d.title}</button>
+          <button type="button" class="card-select-btn" data-device-slug="${d.slug}" aria-pressed="${isSel}">${d.title}</button>
         </h2>
         <span class="chip-tag">${d.chip}</span>
       </header>
       <p class="dev-sub">${d.subtitle}</p>
-      <footer>
-        <span>${d.hardware}</span>
-        <a class="hw-buy-link" href="${d.buyUrl}" target="_blank" rel="noopener">Buy hardware<span class="visually-hidden"> for ${d.title}</span> &nearr;</a>
-      </footer>
-    </article>
-  `;
+      <p class="dev-hw">${d.hardware}</p>
+    </article>`;
   }).join("");
 }
+
+document.querySelector(".theme-icon-group").addEventListener("click", evt => {
+  const btn = evt.target.closest("[data-theme-btn]");
+  if (btn) setTheme(btn.getAttribute("data-theme-btn"));
+});
+
+document.getElementById("device-grid").addEventListener("click", evt => {
+  const btn = evt.target.closest("[data-device-slug]");
+  if (btn) selectDevice(btn.getAttribute("data-device-slug"));
+});
+
+document.getElementById("rev-select").addEventListener("change", evt => {
+  selectVariant(evt.target.value);
+});
 
 setTheme(THEME_PREF);
 selectDevice(SELECTED_SLUG);
