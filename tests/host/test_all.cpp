@@ -4318,6 +4318,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
   LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
   LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
+  LATTER_CHECK(persisted_prefs().home_date_tap_action == 1U);
+  LATTER_CHECK(std::string_view(pref_home_date_tap_cstr()) == "Overview");
 
   // 2. CSV normalization: custom ordering, whitespace trim, dedup, calendar exclusion & empty fallback
   LATTER_CHECK(normalize_tools_items_csv(" coin_flip , flashlight , calendar , dice , coin_flip , bogus ") ==

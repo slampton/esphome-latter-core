@@ -731,7 +731,7 @@ struct PersistedDevicePrefs {
   uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
   uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
   uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
-  uint8_t home_date_tap_action = 0;        // 0..1 ("Day View", "Overview")
+  uint8_t home_date_tap_action = 1;        // 0..1 ("Day View", "Overview")
   uint8_t calendar_lookahead_days = 30;    // 7, 14, 30, or 60 days
   uint8_t calendar_week_start = 0;         // 0..1 ("Sunday", "Monday")
   bool show_utc_clock = false;             // Pin dedicated UTC World Clock row on Time App -> Clock tab
@@ -1039,7 +1039,7 @@ inline constexpr uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &
 inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
 inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeClockTapOpts, p.home_clock_tap_action); }
-inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeDateTapOpts, p.home_date_tap_action); }
+inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeDateTapOpts, p.home_date_tap_action, 1); }
 inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCalendarWeekStartOpts, p.calendar_week_start); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
@@ -1301,7 +1301,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.clock_face >= 3) p.clock_face = 0;
   if (p.time_format >= 2) p.time_format = 0;
   if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
-  if (p.home_date_tap_action >= 2) p.home_date_tap_action = 0;
+  if (p.home_date_tap_action >= 2) p.home_date_tap_action = 1;
   p.calendar_lookahead_days = snap_calendar_lookahead_days(p.calendar_lookahead_days);
   if (p.calendar_week_start >= 2) p.calendar_week_start = 0;
   if (p.bedtime_display >= 2) p.bedtime_display = 0;
