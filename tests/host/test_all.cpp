@@ -1200,7 +1200,47 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_ui::area_ctx_state().area_name.size() == 47U);
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
 
-  // 2. seed_hardware_sleep_defaults & direct BLE_BEACON_MODE preference sync
+  // 2. seed_hardware_sleep_defaults & 4-archetype trait parity + direct BLE_BEACON_MODE preference sync
+  {
+    latter_ui::PersistedDevicePrefs p_wall{};
+    latter_ui::seed_hardware_sleep_defaults_for_traits(p_wall, true, false, false, false);
+    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_wall)) == "Always On");
+    LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_wall)) == "Single Tap");
+    LATTER_CHECK(std::string_view(latter_ui::pref_pickup_to_wake_cstr(p_wall)) == "Disabled");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_wall)) == "Never");
+    LATTER_CHECK(std::string_view(latter_ui::pref_docked_idle_timeout_cstr(p_wall)) == "Never");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_wall)) == "Disabled");
+    LATTER_CHECK(p_wall.docked_screensaver == false);
+    LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(p_wall)) == "Handheld Only");
+
+    latter_ui::PersistedDevicePrefs p_pocket{};
+    latter_ui::seed_hardware_sleep_defaults_for_traits(p_pocket, false, false, true, true);
+    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_pocket)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_pocket)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_pickup_to_wake_cstr(p_pocket)) == "Disabled");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_pocket)) == "30s");
+    LATTER_CHECK(std::string_view(latter_ui::pref_docked_idle_timeout_cstr(p_pocket)) == "1 min");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_pocket)) == "15 min");
+    LATTER_CHECK(p_pocket.docked_screensaver == true);
+
+    latter_ui::PersistedDevicePrefs p_wear{};
+    latter_ui::seed_hardware_sleep_defaults_for_traits(p_wear, false, true, false, true);
+    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_wear)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_wear)) == "Double Tap");
+    LATTER_CHECK(std::string_view(latter_ui::pref_pickup_to_wake_cstr(p_wear)) == "Always On");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_wear)) == "15s");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_wear)) == "15 min");
+    LATTER_CHECK(std::string_view(latter_ui::pref_day_brightness_cstr(p_wear)) == "80%");
+    LATTER_CHECK(std::string_view(latter_ui::pref_night_brightness_cstr(p_wear)) == "60%");
+
+    latter_ui::PersistedDevicePrefs p_hand{};
+    latter_ui::seed_hardware_sleep_defaults_for_traits(p_hand, false, false, false, true);
+    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_hand)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_hand)) == "Single Tap");
+    LATTER_CHECK(std::string_view(latter_ui::pref_pickup_to_wake_cstr(p_hand)) == "Always On");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_hand)) == "30s");
+    LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_hand)) == "30 min");
+  }
   auto &prefs = latter_ui::persisted_prefs();
   prefs = latter_ui::PersistedDevicePrefs{};
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);

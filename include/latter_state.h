@@ -1266,46 +1266,53 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   p.is_24h_format = (p.time_format == 1);
 }
 
+inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, bool is_stationary,
+                                                    bool is_wearable, bool is_round_display,
+                                                    bool has_battery) noexcept {
+  if (is_stationary) {
+    p.wake_word_mode = 1;
+    p.tap_to_wake = 0;
+    p.pickup_to_wake = 2;
+    p.battery_screen_timeout = 5;
+    p.docked_idle_timeout = 6;
+    p.battery_hibernate_timeout = 4;
+    p.ble_beacon_mode = 0;
+    p.docked_screensaver = false;
+  } else if (is_wearable) {
+    p.wake_word_mode = 0;
+    p.tap_to_wake = 1;
+    p.pickup_to_wake = 0;
+    p.battery_screen_timeout = 1;
+    p.docked_idle_timeout = 3;
+    p.battery_hibernate_timeout = 2;
+    p.ble_beacon_mode = 1;
+    p.docked_screensaver = true;
+    p.day_brightness = 2;
+    p.night_brightness = 0;
+  } else if (is_round_display && has_battery) {
+    p.wake_word_mode = 0;
+    p.tap_to_wake = 2;
+    p.pickup_to_wake = 2;
+    p.battery_screen_timeout = 2;
+    p.docked_idle_timeout = 3;
+    p.battery_hibernate_timeout = 2;
+    p.ble_beacon_mode = 1;
+    p.docked_screensaver = true;
+  } else {
+    p.wake_word_mode = 0;
+    p.tap_to_wake = 0;
+    p.pickup_to_wake = 0;
+    p.battery_screen_timeout = 2;
+    p.docked_idle_timeout = 3;
+    p.battery_hibernate_timeout = 3;
+    p.ble_beacon_mode = 1;
+    p.docked_screensaver = true;
+  }
+}
+
 inline void seed_hardware_sleep_defaults(PersistedDevicePrefs &p) {
-#if LATTER_IS_STATIONARY
-  p.wake_word_mode = 1;
-  p.tap_to_wake = 0;
-  p.pickup_to_wake = 2;
-  p.battery_screen_timeout = 5;
-  p.docked_idle_timeout = 5;
-  p.battery_hibernate_timeout = 4;
-  p.ble_beacon_mode = 0;
-  p.docked_screensaver = true;
-#elif LATTER_IS_WEARABLE
-  p.wake_word_mode = 0;
-  p.tap_to_wake = 1;
-  p.pickup_to_wake = 0;
-  p.battery_screen_timeout = 1;
-  p.docked_idle_timeout = 3;
-  p.battery_hibernate_timeout = 2;
-  p.ble_beacon_mode = 1;
-  p.docked_screensaver = true;
-  p.day_brightness = 2;
-  p.night_brightness = 0;
-#elif LATTER_ROUND_DISPLAY && LATTER_HAS_BATTERY
-  p.wake_word_mode = 0;
-  p.tap_to_wake = 2;
-  p.pickup_to_wake = 1;
-  p.battery_screen_timeout = 2;
-  p.docked_idle_timeout = 3;
-  p.battery_hibernate_timeout = 2;
-  p.ble_beacon_mode = 1;
-  p.docked_screensaver = true;
-#else
-  p.wake_word_mode = 0;
-  p.tap_to_wake = 0;
-  p.pickup_to_wake = 0;
-  p.battery_screen_timeout = 2;
-  p.docked_idle_timeout = 3;
-  p.battery_hibernate_timeout = 3;
-  p.ble_beacon_mode = 1;
-  p.docked_screensaver = true;
-#endif
+  seed_hardware_sleep_defaults_for_traits(p, LATTER_IS_STATIONARY != 0, LATTER_IS_WEARABLE != 0,
+                                          LATTER_ROUND_DISPLAY != 0, LATTER_HAS_BATTERY != 0);
 }
 
 #if LATTER_HAS_ESP_PREFS
