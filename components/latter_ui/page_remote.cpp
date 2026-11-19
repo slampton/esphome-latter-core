@@ -15,7 +15,6 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
   const int cx = ctx.cx;
-  const int cy = ctx.cy;
 
   if (!frame_base_state().painted) {
     const bool has_wall = (!ac.wallpaper_url.empty() &&
@@ -152,7 +151,8 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(260), scale_y(36),
                                  WidgetId::REMOTE_SLOT_PILL, kHitTap | kHitFocusSlot);
 
-  const int dpad_cy  = LATTER_ROUND_DISPLAY ? cy : (cy + scale_y(8));
+  const RemoteDpadGeom dp = compute_remote_dpad_geom(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int dpad_cy  = dp.cy;
   const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 34 : ((SCREEN_W > 520) ? 104 : ((SCREEN_W >= 480) ? 44 : 48)));
   const int right_fx = SCREEN_W - left_fx;
   const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 196 : ((SCREEN_W >= 480) ? 148 : 116)));
@@ -200,9 +200,9 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   frame_hits().add_circle(right_fx, btm_fy, f_r, WidgetId::REMOTE_VOL_DOWN, kHitTap | kHitFocusCircle, 0, scale_s(20));
 
   // Adaptive Frosted-Glass Concentric D-Pad (inner_hole_r avoids double-blending under center OK orb)
-  const int dpad_r_out = (SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 236 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ? 180 : 144));
-  const int dpad_r_in  = (SCREEN_W < 380) ?  46 : ((SCREEN_W > 520) ?  86 : ((!LATTER_ROUND_DISPLAY && SCREEN_W >= 480) ?  60 :  50));
-  const int ok_r       = dpad_r_in - scale_s(8);
+  const int dpad_r_out = dp.r_out;
+  const int dpad_r_in  = dp.r_in;
+  const int ok_r       = dp.ok_r;
   render_glass_circle(it, cx, dpad_cy, dpad_r_out, kChromeGlassTint, kChromeCardBorder, dpad_r_in);
   fast_circle_aa(it, cx, dpad_cy, static_cast<float>(dpad_r_in), kChromeCardBorder, 1.5f);
 
@@ -213,7 +213,7 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fast_line(it, cx + d_in, dpad_cy - d_in, cx + d_out, dpad_cy - d_out, kChromeCardBorder);
   fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, kChromeCardBorder);
 
-  const int arr_mid = (dpad_r_in + dpad_r_out) / 2;
+  const int arr_mid = dp.arr_mid;
   const int arr_h   = scale_s(8);
   const int arr_w   = scale_s(10);
   auto draw_dpad_arrows = [&](int ox, int oy, Color c) {
@@ -233,10 +233,10 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   draw_dpad_arrows(1, 1, kChromeShadow);
   draw_dpad_arrows(0, 0, col_white);
 
-  frame_hits().add_centered_rect(cx, dpad_cy - arr_mid, scale_x(56), scale_y(44), WidgetId::REMOTE_DPAD_UP, kHitTap | kHitFocusSlot);
-  frame_hits().add_centered_rect(cx, dpad_cy + arr_mid, scale_x(56), scale_y(44), WidgetId::REMOTE_DPAD_DOWN, kHitTap | kHitFocusSlot);
-  frame_hits().add_centered_rect(cx - arr_mid, dpad_cy, scale_x(44), scale_y(56), WidgetId::REMOTE_DPAD_LEFT, kHitTap | kHitFocusSlot);
-  frame_hits().add_centered_rect(cx + arr_mid, dpad_cy, scale_x(44), scale_y(56), WidgetId::REMOTE_DPAD_RIGHT, kHitTap | kHitFocusSlot);
+  frame_hits().add_centered_rect(cx, dpad_cy - arr_mid, dp.hit_tangent, dp.hit_radial, WidgetId::REMOTE_DPAD_UP, kHitTap | kHitFocusSlot);
+  frame_hits().add_centered_rect(cx, dpad_cy + arr_mid, dp.hit_tangent, dp.hit_radial, WidgetId::REMOTE_DPAD_DOWN, kHitTap | kHitFocusSlot);
+  frame_hits().add_centered_rect(cx - arr_mid, dpad_cy, dp.hit_radial, dp.hit_tangent, WidgetId::REMOTE_DPAD_LEFT, kHitTap | kHitFocusSlot);
+  frame_hits().add_centered_rect(cx + arr_mid, dpad_cy, dp.hit_radial, dp.hit_tangent, WidgetId::REMOTE_DPAD_RIGHT, kHitTap | kHitFocusSlot);
 
   render_glass_circle(it, cx, dpad_cy, ok_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_DPAD_OK, theme_primary));
   fast_print(it, cx + 1, dpad_cy + 1, font_date, kChromeShadow, TextAlign::CENTER, "OK");

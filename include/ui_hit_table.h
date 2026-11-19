@@ -1228,4 +1228,50 @@ inline void register_music_action_sheet_hits(
   }
 }
 
+struct RemoteDpadGeom {
+  int cx{233};
+  int cy{233};
+  int r_in{50};
+  int r_out{144};
+  int ok_r{42};
+  int arr_mid{97};
+  int hit_radial{84};
+  int hit_tangent{70};
+  int outer_pad{10};
+};
+
+inline constexpr RemoteDpadGeom compute_remote_dpad_geom(int w, int h, bool round) noexcept {
+  RemoteDpadGeom g{};
+  const int min_s = (w < h) ? w : h;
+  g.cx = w / 2;
+  g.cy = round ? (h / 2) : (h / 2 + scale_y_for(8, h));
+  g.r_out = (w < 380) ? 128 : ((w > 520) ? 236 : ((!round && w >= 480) ? 180 : 144));
+  g.r_in  = (w < 380) ?  46 : ((w > 520) ?  86 : ((!round && w >= 480) ?  60 :  50));
+  g.ok_r  = g.r_in - scale_s_for(8, min_s);
+  g.arr_mid = (g.r_in + g.r_out) / 2;
+  const int ring_t = g.r_out - g.r_in;
+  g.hit_radial = (ring_t > 20) ? (ring_t - 10) : ring_t;
+  // Inscribed chord at r_in is 2 * r_in * cos(45°) ≈ 1.414 * r_in (zero overlap across 45° diagonals or OK).
+  g.hit_tangent = (g.r_in * 14) / 10;
+  g.outer_pad = scale_s_for(10, min_s);
+  return g;
+}
+
+// Polar quadrant resolver for the frosted-glass Remote D-Pad ring: maps 100% of the visual
+// ring [r_in, r_out + outer_pad] across exact 45° diagonals matching the rendered dividers.
+inline constexpr uint16_t resolve_remote_dpad_widget(int tx, int ty, const RemoteDpadGeom &g) noexcept {
+  const int dx = tx - g.cx;
+  const int dy = ty - g.cy;
+  const int d2 = dx * dx + dy * dy;
+  const int r_min = g.r_in;
+  const int r_max = g.r_out + g.outer_pad;
+  if (d2 < r_min * r_min || d2 > r_max * r_max) return WidgetId::NONE;
+  const int adx = (dx < 0) ? -dx : dx;
+  const int ady = (dy < 0) ? -dy : dy;
+  if (adx >= ady) {
+    return (dx < 0) ? WidgetId::REMOTE_DPAD_LEFT : WidgetId::REMOTE_DPAD_RIGHT;
+  }
+  return (dy < 0) ? WidgetId::REMOTE_DPAD_UP : WidgetId::REMOTE_DPAD_DOWN;
+}
+
 }  // namespace latter_ui

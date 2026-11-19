@@ -4159,6 +4159,26 @@ void test_custom_icon_tiers_and_d051() {
     LATTER_CHECK(rem_src.find("WidgetId::REMOTE_DPAD_OK, kHitTap | kHitLongPress") != std::string::npos);
     LATTER_CHECK(rem_src.find("WidgetId::REMOTE_NAV_HOME, kHitTap | kHitLongPress") != std::string::npos);
     LATTER_CHECK(rem_src.find("WidgetId::REMOTE_NAV_BACK, kHitTap | kHitLongPress") != std::string::npos);
+
+    // 4. Full-ring polar Remote D-Pad geometry & rapid header-band flush (no 83% dead ring / full-frame stall)
+    const RemoteDpadGeom pk = compute_remote_dpad_geom(466, 466, true);
+    LATTER_CHECK(pk.cx == 233 && pk.cy == 233 && pk.r_in == 50 && pk.r_out == 144);
+    LATTER_CHECK(pk.hit_radial >= 80 && pk.hit_tangent >= 68);
+    // Center OK hole (< r_in) and beyond outer halo (> r_out + outer_pad) return NONE
+    LATTER_CHECK(resolve_remote_dpad_widget(233, 233, pk) == WidgetId::NONE);
+    LATTER_CHECK(resolve_remote_dpad_widget(233, 233 - 49, pk) == WidgetId::NONE);
+    LATTER_CHECK(resolve_remote_dpad_widget(233, 233 - 160, pk) == WidgetId::NONE);
+    // Inner rim (r=52), outer rim (r=142), outer halo (r=152), and off-center wedge corners all resolve cleanly
+    LATTER_CHECK(resolve_remote_dpad_widget(233, 233 - 52, pk) == WidgetId::REMOTE_DPAD_UP);
+    LATTER_CHECK(resolve_remote_dpad_widget(233, 233 - 142, pk) == WidgetId::REMOTE_DPAD_UP);
+    LATTER_CHECK(resolve_remote_dpad_widget(233 + 60, 233 - 80, pk) == WidgetId::REMOTE_DPAD_UP);
+    LATTER_CHECK(resolve_remote_dpad_widget(233 - 55, 233 + 115, pk) == WidgetId::REMOTE_DPAD_DOWN);
+    LATTER_CHECK(resolve_remote_dpad_widget(233 - 140, 233 + 35, pk) == WidgetId::REMOTE_DPAD_LEFT);
+    LATTER_CHECK(resolve_remote_dpad_widget(233 + 150, 233 - 20, pk) == WidgetId::REMOTE_DPAD_RIGHT);
+
+    const std::string te_src = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+    LATTER_CHECK(te_src.find("resolve_remote_dpad_widget(") != std::string::npos);
+    LATTER_CHECK(te_src.find("rt_.schedule_band_disp(0, std::min(SCREEN_H - 1, layout().hdr_y + scale_y(24)))") != std::string::npos);
   }
 }
 

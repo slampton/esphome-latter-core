@@ -2542,15 +2542,26 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       schedule_core_timeout(kTimeoutTouchLongPressId, kinematics::kLongPressHoldMs, []() {
         touch_engine().tick(esphome::millis());
       });
-      rt_.schedule_disp();
+      rt_.schedule_band_disp(std::max(0, static_cast<int>(hit->y0) - 6),
+                             std::min(SCREEN_H - 1, static_cast<int>(hit->y1) + 6));
       return;  // Short tap (< 480 ms) resolves on_touch_up; hold (>= 480 ms) fires in tick()
     }
 
-    const int remote_key = remote_key_for_widget(wid);
-    if (remote_key >= 0 && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
+    uint16_t eff_wid = wid;
+    uint32_t eff_tkey = tkey;
+    if (eff_wid == WidgetId::NONE) {
+      const RemoteDpadGeom dp = compute_remote_dpad_geom(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+      eff_wid = resolve_remote_dpad_widget(touch.x, touch.y, dp);
+      if (eff_wid != WidgetId::NONE) {
+        eff_tkey = make_tap_target_key(rs.nav.gui_page, eff_wid, 0);
+      }
+    }
+
+    const int remote_key = remote_key_for_widget(eff_wid);
+    if (remote_key >= 0 && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, eff_tkey)) {
       gest.active = false;
       do_remote_send_key(remote_key, act_slot, false, now_touch);
-      rt_.schedule_disp();
+      rt_.schedule_band_disp(0, std::min(SCREEN_H - 1, layout().hdr_y + scale_y(24)));
     }
     return;
   }
@@ -5074,11 +5085,11 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     } else if (tap_valid && rs.nav.gui_page == PageId::REMOTE) {
       if (rs.nav.remote_subpage == 0) {
         const int remote_key = remote_key_for_widget(wid);
-        if (remote_key >= 0 && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        if (remote_key >= 0 && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           const int act_slot = resolve_active_remote_slot(rs.remote.active_slot);
           rs.remote.active_slot = act_slot;
           do_remote_send_key(remote_key, act_slot, /*long_press=*/false, now_rel);
-          rt_.schedule_disp();
+          rt_.schedule_band_disp(0, std::min(SCREEN_H - 1, layout().hdr_y + scale_y(24)));
         }
       } else if (rs.nav.remote_subpage == 1) {
         if (wid == WidgetId::REMOTE_PRIMARY_PWR &&
@@ -5860,11 +5871,21 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         gest.start_context, end_ctx, static_cast<unsigned long>(rel_exec_us));
   }
   cancel_core_timeout(kTimeoutTouchLongPressId);
-  const bool had_lp_visual = (gest.long_press_wid != 0U);
+  const uint16_t lp_wid = gest.long_press_wid;
   gest.active = false;
   gest.long_press_armed = false;
-  if (had_lp_visual) {
-    rt_.schedule_disp();
+  if (lp_wid != 0U) {
+    if (rs.nav.gui_page == PageId::REMOTE && rs.nav.remote_subpage == 0) {
+      const HitRegion *lp_reg = frame_hits().find_by_id(lp_wid);
+      if (lp_reg != nullptr) {
+        rt_.schedule_band_disp(std::max(0, static_cast<int>(lp_reg->y0) - 6),
+                               std::min(SCREEN_H - 1, static_cast<int>(lp_reg->y1) + 6));
+      } else {
+        rt_.schedule_disp();
+      }
+    } else {
+      rt_.schedule_disp();
+    }
   }
 }
 
