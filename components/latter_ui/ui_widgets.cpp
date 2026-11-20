@@ -854,7 +854,7 @@ void draw_icon_lightbulb(esphome::display::Display &it, int cx, int cy, int r,
 
 void draw_icon_ceiling_fan(esphome::display::Display &it, int cx, int cy, int r,
                            esphome::Color col, bool shadow) {
-  draw_mdi_r(it, "mdi:ceiling-fan", cx, cy, r, col, shadow, "mdi:ceiling-fan");
+  draw_mdi_r(it, "mdi:fan", cx, cy, r, col, shadow, "mdi:fan");
 }
 
 void draw_icon_curtains(esphome::display::Display &it, int cx, int cy, int r,
@@ -1064,7 +1064,7 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
       render_mdi_icon(it, "mdi:blinds-horizontal", cx, cy, mdi_px, col, shadow, "mdi:sofa");
       return;
     case RouteId::AREA_FAN:
-      render_mdi_icon(it, "mdi:ceiling-fan", cx, cy, mdi_px, col, shadow, "mdi:sofa");
+      render_mdi_icon(it, "mdi:fan", cx, cy, mdi_px, col, shadow, "mdi:sofa");
       return;
     case RouteId::AREA_SWITCH:
       render_mdi_icon(it, "mdi:toggle-switch", cx, cy, mdi_px, col, shadow, "mdi:sofa");
@@ -1110,7 +1110,7 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
       render_mdi_icon(it, "mdi:timer-outline", cx, cy, mdi_px, col, shadow, "mdi:clock-outline");
       return;
     case RouteId::APP_TOOLS:
-      render_mdi_icon(it, "mdi:apps", cx, cy, mdi_px, col, shadow, "mdi:apps");
+      render_mdi_icon(it, "mdi:view-grid-outline", cx, cy, mdi_px, col, shadow, "mdi:apps");
       return;
     case RouteId::TOOLS_LEVEL:
       render_mdi_icon(it, "mdi:spirit-level", cx, cy, mdi_px, col, shadow, "mdi:compass-outline");
@@ -1143,7 +1143,7 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
       render_mdi_icon(it, "mdi:alpha-c-circle", cx, cy, mdi_px, col, shadow, "mdi:circle-double");
       return;
     case RouteId::APP_GAMES:
-      render_mdi_icon(it, "mdi:gamepad-variant", cx, cy, mdi_px, col, shadow, "mdi:controller");
+      render_mdi_icon(it, "mdi:controller", cx, cy, mdi_px, col, shadow, "mdi:gamepad-variant");
       return;
     case RouteId::GAMES_MARBLES:
       render_mdi_icon(it, "mdi:billiards", cx, cy, mdi_px, col, shadow, "mdi:circle-multiple");
