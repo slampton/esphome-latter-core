@@ -108,7 +108,7 @@ Optional hardware flags:
 | Flag | When |
 | :--- | :--- |
 | `LATTER_BACKLIGHT_PIN`, `LATTER_BACKLIGHT_EN_PIN`, `LATTER_BACKLIGHT_INVERTED` | LCD panels with a PWM or analog-dimmed backlight |
-| `LATTER_BACKLIGHT_PWM_HZ`, `LATTER_BACKLIGHT_PWM_BITS`, `LATTER_BACKLIGHT_DUTY_MIN_PCT`, `LATTER_BACKLIGHT_DUTY_MAX_PCT` | Backlight PWM frequency, resolution, and usable duty window (use `>= 5000 Hz` for RC-filtered analog-dimming boost converters) |
+| `LATTER_BACKLIGHT_PWM_HZ`, `LATTER_BACKLIGHT_PWM_BITS`, `LATTER_BACKLIGHT_DUTY_MIN_PM`, `LATTER_BACKLIGHT_DUTY_MAX_PM` | Backlight PWM frequency, resolution, and usable duty window in permille (`0..1000` = `0.0%..100.0%`; use `>= 5000 Hz` for RC-filtered analog-dimming boost converters) |
 | `LATTER_DISPLAY_DC_PIN` | Required on 1-lane SPI IPS panels (`LATTER_PANEL_IPS=1` + `LATTER_PANEL_DCS_SLEEP=1`) |
 | `LATTER_PWR_KEY_PIN`, `LATTER_PWR_KEY_ACTIVE_HIGH`, `LATTER_PWR_KEY_DEEP_SLEEP_WAKE` | Power key GPIO, polarity, and whether it is RTC/LP wake-capable in deep sleep |
 | `LATTER_ACTION_BTN_PIN`, `LATTER_TOUCH_INT_PIN`, `LATTER_IMU_INT1_PIN` | Light-sleep wake pins (`LATTER_IMU_INT1_PIN` must match `imu_int1_pin`; mark each pin `light_sleep_wake` in `boards/facts/<id>.json`) |

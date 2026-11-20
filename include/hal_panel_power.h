@@ -31,8 +31,19 @@
 #include <type_traits>
 #include <utility>
 
-#ifndef LATTER_BRI_GAMMA_X100
-#define LATTER_BRI_GAMMA_X100 220
+#ifndef LATTER_BRI_PWM_GAMMA_X100
+#ifdef LATTER_BRI_GAMMA_X100
+#define LATTER_BRI_PWM_GAMMA_X100 LATTER_BRI_GAMMA_X100
+#else
+#define LATTER_BRI_PWM_GAMMA_X100 220
+#endif
+#endif
+#ifndef LATTER_BRI_DCS_GAMMA_X100
+#ifdef LATTER_BRI_GAMMA_X100
+#define LATTER_BRI_DCS_GAMMA_X100 LATTER_BRI_GAMMA_X100
+#else
+#define LATTER_BRI_DCS_GAMMA_X100 150
+#endif
 #endif
 #ifndef LATTER_BRI_DCS_MIN
 #define LATTER_BRI_DCS_MIN 10
@@ -262,10 +273,10 @@ inline void hal_panel_dcs_set_brightness(DispT *disp, uint8_t bri_byte) {
 }
 
 // Maps perceptual brightness fraction pct in [0.0f, 1.0f] onto hardware range [hw_min, hw_max]
-// using a CIE/Weber-Fechner power curve (gamma = LATTER_BRI_GAMMA_X100 / 100.0f).
+// using a CIE/Weber-Fechner power curve (gamma = 2.20 for linear PWM IPS; 1.50 for DCS AMOLED).
 // pct <= 0.0001f returns 0 (screen off); any positive pct maps into [max(1u, hw_min), hw_max].
 inline uint32_t hal_map_perceptual_u32(float pct, uint32_t hw_min, uint32_t hw_max,
-                                       float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+                                       float gamma = static_cast<float>(LATTER_BRI_PWM_GAMMA_X100) / 100.0f) {
   if (pct <= 0.0001f || hw_max == 0U) return 0U;
   if (hw_min > hw_max) hw_min = hw_max;
   const float clamped = std::clamp(pct, 0.01f, 1.0f);
@@ -282,19 +293,21 @@ inline constexpr uint32_t hal_backlight_max_duty(uint32_t pwm_bits) {
   return (1UL << pwm_bits) - 1UL;
 }
 
-inline uint32_t hal_map_pwm_on_duty(float pct, uint32_t pwm_bits, uint32_t duty_min_pct, uint32_t duty_max_pct,
-                                    float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+// duty_min_pm / duty_max_pm are in permille (0..1000 = 0.0%..100.0%) so 12-bit PWM FET boards
+// can express sub-percent night floors (e.g. 3 permille = 0.3% = 12/4095) cleanly.
+inline uint32_t hal_map_pwm_on_duty(float pct, uint32_t pwm_bits, uint32_t duty_min_pm, uint32_t duty_max_pm,
+                                    float gamma = static_cast<float>(LATTER_BRI_PWM_GAMMA_X100) / 100.0f) {
   if (pct <= 0.0001f) return 0U;
   const uint32_t max_duty = hal_backlight_max_duty(pwm_bits);
-  const uint32_t on_min = (max_duty * duty_min_pct) / 100UL;
-  const uint32_t on_max = (max_duty * duty_max_pct) / 100UL;
+  const uint32_t on_min = (max_duty * duty_min_pm) / 1000UL;
+  const uint32_t on_max = (max_duty * duty_max_pm) / 1000UL;
   return hal_map_perceptual_u32(pct, on_min, on_max, gamma);
 }
 
 inline uint8_t hal_map_dcs_brightness(float pct,
                                       uint8_t dcs_min = static_cast<uint8_t>(LATTER_BRI_DCS_MIN),
                                       uint8_t dcs_max = static_cast<uint8_t>(LATTER_BRI_DCS_MAX),
-                                      float gamma = static_cast<float>(LATTER_BRI_GAMMA_X100) / 100.0f) {
+                                      float gamma = static_cast<float>(LATTER_BRI_DCS_GAMMA_X100) / 100.0f) {
   return static_cast<uint8_t>(hal_map_perceptual_u32(pct, dcs_min, dcs_max, gamma));
 }
 
@@ -314,6 +327,7 @@ inline void hal_ledc_apply_on_duty(uint32_t on_duty, bool is_on) {
 #endif
   static bool ledc_timer_inited = false;
   static bool ledc_channel_inited = false;
+  static bool ledc_warned = false;
   static int64_t last_hw_duty = -1;
   if (!ledc_timer_inited) {
     ledc_timer_config_t ledc_timer = {};
@@ -322,8 +336,16 @@ inline void hal_ledc_apply_on_duty(uint32_t on_duty, bool is_on) {
     ledc_timer.timer_num = LEDC_TIMER_0;
     ledc_timer.freq_hz = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_HZ);
     ledc_timer.clk_cfg = LEDC_AUTO_CLK;
-    if (ledc_timer_config(&ledc_timer) == ESP_OK) {
+    const esp_err_t err = ledc_timer_config(&ledc_timer);
+    if (err == ESP_OK) {
       ledc_timer_inited = true;
+    } else if (!ledc_warned) {
+      ledc_warned = true;
+#ifdef ESP_LOGW
+      ESP_LOGW("power", "Backlight LEDC timer init failed (err=%d, hz=%lu, bits=%lu)",
+               static_cast<int>(err), static_cast<unsigned long>(LATTER_BACKLIGHT_PWM_HZ),
+               static_cast<unsigned long>(kPwmBits));
+#endif
     }
   }
   if (ledc_timer_inited) {
@@ -336,14 +358,27 @@ inline void hal_ledc_apply_on_duty(uint32_t on_duty, bool is_on) {
       ledc_channel.timer_sel = LEDC_TIMER_0;
       ledc_channel.duty = hw_duty;
       ledc_channel.hpoint = 0;
-      if (ledc_channel_config(&ledc_channel) == ESP_OK) {
+      const esp_err_t err = ledc_channel_config(&ledc_channel);
+      if (err == ESP_OK) {
         ledc_channel_inited = true;
         last_hw_duty = hw_duty;
+        LATTER_PROF_LOGI("[PROF:PANEL] bri_pwm init on=%lu/%lu hw=%lu",
+                         static_cast<unsigned long>(on_duty), static_cast<unsigned long>(kMaxDuty),
+                         static_cast<unsigned long>(hw_duty));
+      } else if (!ledc_warned) {
+        ledc_warned = true;
+#ifdef ESP_LOGW
+        ESP_LOGW("power", "Backlight LEDC channel init failed (err=%d, pin=%d)",
+                 static_cast<int>(err), static_cast<int>(LATTER_BACKLIGHT_PIN));
+#endif
       }
     } else if (last_hw_duty != static_cast<int64_t>(hw_duty)) {
       ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, hw_duty);
       ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
       last_hw_duty = hw_duty;
+      LATTER_PROF_LOGI("[PROF:PANEL] bri_pwm on=%lu/%lu hw=%lu",
+                       static_cast<unsigned long>(on_duty), static_cast<unsigned long>(kMaxDuty),
+                       static_cast<unsigned long>(hw_duty));
     }
   } else {
     gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_PIN), GPIO_MODE_OUTPUT);
@@ -357,18 +392,23 @@ template <typename DispT>
 inline void hal_set_display_brightness_f(DispT *disp, float pct) {
   [[maybe_unused]] const bool is_on = (pct > 0.0001f);
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
-  gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
-  gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), is_on ? 1 : 0);
+  static int s_last_en = -1;
+  const int want_en = is_on ? 1 : 0;
+  if (s_last_en != want_en) {
+    gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
+    gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), want_en);
+    s_last_en = want_en;
+  }
 #endif
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
   constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
   static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
-  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PCT >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PCT < LATTER_BACKLIGHT_DUTY_MAX_PCT &&
-                    LATTER_BACKLIGHT_DUTY_MAX_PCT <= 100,
-                "LATTER_BACKLIGHT_DUTY_MIN_PCT/_MAX_PCT must satisfy 0 <= MIN < MAX <= 100");
+  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PM >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PM < LATTER_BACKLIGHT_DUTY_MAX_PM &&
+                    LATTER_BACKLIGHT_DUTY_MAX_PM <= 1000,
+                "LATTER_BACKLIGHT_DUTY_MIN_PM/_MAX_PM must satisfy 0 <= MIN < MAX <= 1000");
   const uint32_t on_duty = hal_map_pwm_on_duty(
-      pct, kPwmBits, static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PCT),
-      static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PCT));
+      pct, kPwmBits, static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PM),
+      static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PM));
   hal_ledc_apply_on_duty(on_duty, is_on);
 #if defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
   const uint8_t dcs_wake = is_on

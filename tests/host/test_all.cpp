@@ -5661,12 +5661,14 @@ void test_full_spectrum_brightness_d065() {
   LATTER_CHECK(hal_map_perceptual_u32(0.0f, 10U, 255U, 2.20f) == 0U);
   LATTER_CHECK(hal_map_perceptual_u32(0.00005f, 10U, 255U, 2.20f) == 0U);
 
-  // AMOLED DCS range (10..255)
+  // AMOLED DCS range (10..255, default gamma 1.50 to avoid double-gamma on CO5300 DBV LUT)
   LATTER_CHECK(hal_map_dcs_brightness(0.0f) == 0U);
   LATTER_CHECK(hal_map_dcs_brightness(0.01f) == 10U);
   LATTER_CHECK(hal_map_dcs_brightness(1.00f) == 255U);
+  const uint8_t dcs_35 = hal_map_dcs_brightness(0.35f);
   const uint8_t dcs_50 = hal_map_dcs_brightness(0.50f);
-  LATTER_CHECK(dcs_50 > 10U && dcs_50 < 128U);
+  LATTER_CHECK(dcs_35 >= 55U && dcs_35 <= 65U);
+  LATTER_CHECK(dcs_50 > dcs_35 && dcs_50 < 128U);
   uint8_t prev_dcs = 0U;
   for (int pct = 1; pct <= 100; ++pct) {
     const uint8_t cur = hal_map_dcs_brightness(static_cast<float>(pct) * 0.01f);
@@ -5674,23 +5676,27 @@ void test_full_spectrum_brightness_d065() {
     prev_dcs = cur;
   }
 
-  // 12-bit PWM FET IPS (1..100% of 4095)
+  // 12-bit PWM FET IPS (3..1000 permille = 0.3..100.0% of 4095, gamma 2.20)
   LATTER_CHECK(hal_backlight_max_duty(12U) == 4095U);
-  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 1U, 100U) == 0U);
-  const uint32_t pwm_fet_1 = hal_map_pwm_on_duty(0.01f, 12U, 1U, 100U);
-  const uint32_t pwm_fet_50 = hal_map_pwm_on_duty(0.50f, 12U, 1U, 100U);
-  const uint32_t pwm_fet_100 = hal_map_pwm_on_duty(1.00f, 12U, 1U, 100U);
-  LATTER_CHECK(pwm_fet_1 == 40U);
-  LATTER_CHECK(pwm_fet_50 > pwm_fet_1 && pwm_fet_50 < 2048U);
+  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 3U, 1000U) == 0U);
+  const uint32_t pwm_fet_1 = hal_map_pwm_on_duty(0.01f, 12U, 3U, 1000U);
+  const uint32_t pwm_fet_35 = hal_map_pwm_on_duty(0.35f, 12U, 3U, 1000U);
+  const uint32_t pwm_fet_50 = hal_map_pwm_on_duty(0.50f, 12U, 3U, 1000U);
+  const uint32_t pwm_fet_100 = hal_map_pwm_on_duty(1.00f, 12U, 3U, 1000U);
+  LATTER_CHECK(pwm_fet_1 == 12U);
+  LATTER_CHECK(pwm_fet_35 > 350U && pwm_fet_35 < 450U);
+  LATTER_CHECK(pwm_fet_50 > pwm_fet_35 && pwm_fet_50 < 2048U);
   LATTER_CHECK(pwm_fet_100 == 4095U);
 
-  // 12-bit inverted Analog RC IPS (75..100% of 4095 -> 3071..4095)
-  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 75U, 100U) == 0U);
-  const uint32_t pwm_rc_1 = hal_map_pwm_on_duty(0.01f, 12U, 75U, 100U);
-  const uint32_t pwm_rc_50 = hal_map_pwm_on_duty(0.50f, 12U, 75U, 100U);
-  const uint32_t pwm_rc_100 = hal_map_pwm_on_duty(1.00f, 12U, 75U, 100U);
-  LATTER_CHECK(pwm_rc_1 == 3071U);
-  LATTER_CHECK(pwm_rc_50 > pwm_rc_1 && pwm_rc_50 < 3583U);
+  // 12-bit inverted Analog RC IPS (480..1000 permille = 48.0..100.0% of 4095 -> 1965..4095, gamma 2.20)
+  LATTER_CHECK(hal_map_pwm_on_duty(0.0f, 12U, 480U, 1000U) == 0U);
+  const uint32_t pwm_rc_1 = hal_map_pwm_on_duty(0.01f, 12U, 480U, 1000U);
+  const uint32_t pwm_rc_35 = hal_map_pwm_on_duty(0.35f, 12U, 480U, 1000U);
+  const uint32_t pwm_rc_50 = hal_map_pwm_on_duty(0.50f, 12U, 480U, 1000U);
+  const uint32_t pwm_rc_100 = hal_map_pwm_on_duty(1.00f, 12U, 480U, 1000U);
+  LATTER_CHECK(pwm_rc_1 == 1965U);
+  LATTER_CHECK(pwm_rc_35 > 2100U && pwm_rc_35 < 2250U);
+  LATTER_CHECK(pwm_rc_50 > pwm_rc_35 && pwm_rc_50 < 3030U);
   LATTER_CHECK(pwm_rc_100 == 4095U);
 
   // 2. Proportional screensaver & Bedtime Ambient Clock dimming (never brighter than active!)

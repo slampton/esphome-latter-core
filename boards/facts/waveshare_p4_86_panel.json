@@ -34,7 +34,7 @@
     "LATTER_CHIP_P4": 1, "LATTER_PSRAM_MB": 32, "LATTER_C6_RESET_PIN": 54,
     "LATTER_BACKLIGHT_PIN": 26, "LATTER_BACKLIGHT_EN_PIN": 33, "LATTER_BACKLIGHT_INVERTED": 1,
     "LATTER_BACKLIGHT_PWM_HZ": 5000, "LATTER_BACKLIGHT_PWM_BITS": 12,
-    "LATTER_BACKLIGHT_DUTY_MIN_PCT": 75, "LATTER_BACKLIGHT_DUTY_MAX_PCT": 100, "LATTER_DSI_IRAM_SAFE": 1
+    "LATTER_BACKLIGHT_DUTY_MIN_PM": 480, "LATTER_BACKLIGHT_DUTY_MAX_PM": 1000, "LATTER_DSI_IRAM_SAFE": 1
   },
   "pins": [
     {"gpio": 6, "role": "c6_io2_host_wake", "confidence": "M", "note": "LP-capable; unused"},
@@ -52,7 +52,7 @@
     {"gpio": 18, "role": "c6_sdio_clk", "confidence": "H"},
     {"gpio": 19, "role": "c6_sdio_cmd", "confidence": "H"},
     {"gpio": 23, "role": "touch_reset", "confidence": "M", "note": "not driven (GT911 INT unrouted, so no reset sequence)"},
-    {"gpio": 26, "role": "backlight_analog_dim", "polarity": "inverted", "confidence": "H", "note": "10k/100nF RC into the AP3032 FB; 5 kHz / 12-bit, usable 75-100 % on-duty"},
+    {"gpio": 26, "role": "backlight_analog_dim", "polarity": "inverted", "confidence": "H", "note": "10k/100nF RC into the AP3032 FB; 5 kHz / 12-bit, usable 48-100 % on-duty"},
     {"gpio": 27, "role": "display_reset", "confidence": "M"},
     {"gpio": 28, "role": "reserved", "confidence": "M", "note": "IP101 Ethernet RMII (bottom board)"},
     {"gpio": 29, "role": "reserved", "confidence": "M", "note": "IP101 Ethernet RMII (bottom board)"},
