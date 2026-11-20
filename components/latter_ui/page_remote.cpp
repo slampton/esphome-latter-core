@@ -229,24 +229,11 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   fast_line(it, cx - d_in, dpad_cy - d_in, cx - d_out, dpad_cy - d_out, kChromeCardBorder);
 
   const int arr_mid = dp.arr_mid;
-  const int arr_h   = scale_s(8);
-  const int arr_w   = scale_s(10);
-  auto draw_dpad_arrows = [&](int ox, int oy, Color c) {
-    fast_filled_triangle(it, cx + ox, dpad_cy - arr_mid - arr_h + oy,
-                         cx - arr_w + ox, dpad_cy - arr_mid + arr_h + oy,
-                         cx + arr_w + ox, dpad_cy - arr_mid + arr_h + oy, c);
-    fast_filled_triangle(it, cx + ox, dpad_cy + arr_mid + arr_h + oy,
-                         cx - arr_w + ox, dpad_cy + arr_mid - arr_h + oy,
-                         cx + arr_w + ox, dpad_cy + arr_mid - arr_h + oy, c);
-    fast_filled_triangle(it, cx - arr_mid - arr_h + ox, dpad_cy + oy,
-                         cx - arr_mid + arr_h + ox, dpad_cy - arr_w + oy,
-                         cx - arr_mid + arr_h + ox, dpad_cy + arr_w + oy, c);
-    fast_filled_triangle(it, cx + arr_mid + arr_h + ox, dpad_cy + oy,
-                         cx + arr_mid - arr_h + ox, dpad_cy - arr_w + oy,
-                         cx + arr_mid - arr_h + ox, dpad_cy + arr_w + oy, c);
-  };
-  draw_dpad_arrows(1, 1, kChromeShadow);
-  draw_dpad_arrows(0, 0, col_white);
+  const int arr_px  = std::max(18, scale_s(26));
+  render_mdi_icon(it, "mdi:chevron-up", cx, dpad_cy - arr_mid, arr_px, col_white, true);
+  render_mdi_icon(it, "mdi:chevron-down", cx, dpad_cy + arr_mid, arr_px, col_white, true);
+  render_mdi_icon(it, "mdi:chevron-left", cx - arr_mid, dpad_cy, arr_px, col_white, true);
+  render_mdi_icon(it, "mdi:chevron-right", cx + arr_mid, dpad_cy, arr_px, col_white, true);
 
   frame_hits().add_centered_rect(cx, dpad_cy - arr_mid, dp.hit_tangent, dp.hit_radial, WidgetId::REMOTE_DPAD_UP, kHitTap | kHitFocusSlot);
   frame_hits().add_centered_rect(cx, dpad_cy + arr_mid, dp.hit_tangent, dp.hit_radial, WidgetId::REMOTE_DPAD_DOWN, kHitTap | kHitFocusSlot);

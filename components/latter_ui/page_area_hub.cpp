@@ -35,7 +35,7 @@ void draw_area_mode_icon(esphome::display::Display &it, int g_idx,
   } else if (cat == "light") {
     ui::draw_icon_lightbulb(it, bx, by, ir, fg_c, sh);
   } else if (cat == "cover") {
-    ui::draw_icon_curtains(it, bx, by, ir, fg_c, sh);
+    ui::draw_icon_blinds_slats(it, bx, by, ir, fg_c, true, sh);
   } else if (cat == "fan") {
     ui::draw_icon_ceiling_fan(it, bx, by, ir, fg_c, sh);
   } else if (cat == "switch") {
@@ -43,7 +43,7 @@ void draw_area_mode_icon(esphome::display::Display &it, int g_idx,
   } else if (cat == "climate") {
     ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
   } else if (cat == "media") {
-    ui::draw_icon_eighth_notes(it, bx, by, ir, fg_c, sh);
+    render_mdi_icon(it, "mdi:television-speaker", bx, by, std::max(16, 2 * ir), fg_c, sh, "mdi:speaker");
   } else {
     ui::draw_icon_bento_grid(it, bx, by, ir, fg_c, sh);
   }
@@ -387,7 +387,8 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     } else if (dtype == "cover") {
       const Color cov_c = is_on ? theme_primary : fg_c;
       if (is_curtain_entity(name, id_str)) {
-        ui::draw_icon_curtains(it, gx, gy, card_ir, cov_c, true);
+        render_mdi_icon(it, is_on ? "mdi:curtains" : "mdi:curtains-closed",
+                        gx, gy, std::max(16, 2 * card_ir), cov_c, true, "mdi:blinds-horizontal");
       } else {
         ui::draw_icon_blinds_slats(it, gx, gy, card_ir, cov_c, is_on, true);
       }

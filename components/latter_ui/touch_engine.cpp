@@ -4274,15 +4274,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (wid == WidgetId::HOME_AREA_ICON) {
-        if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const auto &ac = area_ctx_state();
-          if (!ac.area_id.empty()) {
-            rs.area.active_area_id = ac.area_id;
-            rs.area.active_area_name = ac.area_name.empty() ? latter_area_label() : ac.area_name;
-          }
-          launch_dock_app(PageId::AREA, rs, rt_, now_rel);
-        }
       } else if (wid == WidgetId::HOME_DATE_HERO) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           launch_dock_app(PageId::CALENDAR, rs, rt_, now_rel);

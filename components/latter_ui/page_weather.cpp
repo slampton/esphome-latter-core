@@ -1243,7 +1243,7 @@ void draw_weather_mode_icon(esphome::display::Display &it, int i,
                             int bx, int by, int ir,
                             esphome::Color fg_c, bool shadow, void *) {
   if (i == 0) {
-    ui::draw_icon_thermometer(it, bx, by, ir, fg_c, shadow);
+    render_mdi_icon(it, "mdi:weather-partly-cloudy", bx, by, std::max(16, 2 * ir), fg_c, shadow, "mdi:cloud");
   } else if (i == 1) {
     ui::draw_icon_forecast_chart(it, bx, by, ir, fg_c, shadow);
   } else if (i == 2) {

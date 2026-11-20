@@ -158,7 +158,7 @@ void draw_calendar_mode_icon(esphome::display::Display &it, int global_idx,
   } else if (global_idx == CalendarSubpage::WEEK) {
     ui::draw_icon_cal_week(it, bx, by, ir, fg_c, shadow);
   } else {
-    ui::draw_icon_calendar(it, bx, by, ir, fg_c, shadow);
+    render_mdi_icon(it, "mdi:calendar-month", bx, by, std::max(16, 2 * ir), fg_c, shadow, "mdi:calendar");
   }
 }
 

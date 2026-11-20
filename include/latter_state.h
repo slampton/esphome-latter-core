@@ -2422,12 +2422,14 @@ inline ShortcutConfirmState &shortcut_confirm_state() {
   return runtime_state().nav.shortcut_confirm;
 }
 
-inline bool is_roaming_area_indicator_active() {
-  return !LATTER_IS_STATIONARY && persisted_prefs().ble_beacon_enabled &&
-         (!area_ctx_state().area_id.empty() ||
-          (!area_ctx_state().area_name.empty() &&
-           area_ctx_state().area_name != "Unassigned" &&
-           area_ctx_state().area_name != kUnknownGlyph));
+inline const char *resolve_area_dock_icon(const AreaContextState &ac) noexcept {
+  const bool assigned =
+      !ac.area_id.empty() ||
+      (!ac.area_name.empty() && ac.area_name != "Unassigned" && ac.area_name != kUnknownGlyph);
+  if (assigned && !ac.area_icon.empty()) {
+    return ac.area_icon.c_str();
+  }
+  return "mdi:sofa";
 }
 
 inline constexpr uint32_t kStandbyGreetingIdleMs = 1800000U;

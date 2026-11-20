@@ -46,10 +46,10 @@ void draw_home_hub_mode_icon(esphome::display::Display &it, int g_idx,
       ui::draw_icon_shield_home(it, bx, by, ir, fg_c, sh);
       break;
     case HomeHubTab::INTERCOM:
-      ui::draw_icon_speaker(it, bx, by, ir, fg_c, true, sh);
+      ui::draw_icon_intercom_handset(it, bx, by, ir, fg_c, sh);
       break;
     case HomeHubTab::THERMOSTAT:
-      ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
+      render_mdi_icon(it, "mdi:thermostat", bx, by, std::max(16, 2 * ir), fg_c, sh, "mdi:thermometer");
       break;
     case HomeHubTab::ENTRY:
       ui::draw_icon_lock(it, bx, by, ir, fg_c, true, sh);

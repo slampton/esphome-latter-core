@@ -1086,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112001L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112002L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -1778,10 +1778,14 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(latter_ui::area_ctx_state().area_icon == "mdi:countertop");
 
   auto &prefs = latter_ui::persisted_prefs();
-  prefs.ble_beacon_enabled = true;
-  LATTER_CHECK(latter_ui::is_roaming_area_indicator_active());  // Host test defaults to portable (!LATTER_IS_STATIONARY)
-  prefs.ble_beacon_enabled = false;
-  LATTER_CHECK(!latter_ui::is_roaming_area_indicator_active());
+  // D-071: Active Area icon drives the Home Dock's Area Control slot dynamically (fallback "mdi:sofa")
+  LATTER_CHECK(std::string_view(latter_ui::resolve_area_dock_icon(latter_ui::area_ctx_state())) == "mdi:countertop");
+  latter_ui::area_ctx_state().area_icon.clear();
+  LATTER_CHECK(std::string_view(latter_ui::resolve_area_dock_icon(latter_ui::area_ctx_state())) == "mdi:sofa");
+  latter_ui::area_ctx_state().area_id.clear();
+  latter_ui::area_ctx_state().area_name = "Unassigned";
+  latter_ui::area_ctx_state().area_icon = "mdi:desk";
+  LATTER_CHECK(std::string_view(latter_ui::resolve_area_dock_icon(latter_ui::area_ctx_state())) == "mdi:sofa");
 
   auto &rs = latter_ui::runtime_state();
   prefs.wake_greeting = true;
@@ -1838,7 +1842,7 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(home_cpp.find("std::max(prev_clip_y0, card_y0 + 1)") != std::string::npos);
   LATTER_CHECK(home_cpp.find("std::min(prev_clip_y1, card_y0 + card_h - 2)") != std::string::npos);
   LATTER_CHECK(home_cpp.find("Color(28, 54, 84)") == std::string::npos);
-  LATTER_CHECK(touch_cpp.find("WidgetId::HOME_AREA_ICON") != std::string::npos);
+  LATTER_CHECK(touch_cpp.find("WidgetId::HOME_AREA_ICON") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("WidgetId::HOME_ACT_EXPAND") != std::string::npos);
   LATTER_CHECK(touch_cpp.find("WidgetId::HOME_ACTIVITY_CARD") == std::string::npos);
   LATTER_CHECK(gui_yaml.find("resolve_backdrop_mode(") != std::string::npos);
@@ -3416,7 +3420,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112001L, "LATTER_SDK_REV must match 2026112001L");
+  static_assert(LATTER_SDK_REV == 2026112002L, "LATTER_SDK_REV must match 2026112002L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -6307,6 +6311,32 @@ void test_gui_standardization_d070() {
   LATTER_CHECK(cam_cpp.find("ui::header_pager_bar(") != std::string::npos);
   LATTER_CHECK(hub_cpp.find("ui::header_pager_bar(") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-070:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-071:") != std::string::npos);
+
+  // 6. D-071 Universal MDI icon catalog parity with Latter Studio & dynamic active Area dock icon
+  for (std::string_view slug : {
+           "mdi:pin", "mdi:music", "mdi:music-box-outline", "mdi:speaker-multiple",
+           "mdi:home", "mdi:shield-home", "mdi:phone-in-talk", "mdi:thermostat",
+           "mdi:lock", "mdi:lock-open-variant", "mdi:garage", "mdi:garage-open",
+           "mdi:robot-vacuum", "mdi:cctv", "mdi:view-grid", "mdi:video", "mdi:view-carousel",
+           "mdi:cog", "mdi:cog-outline", "mdi:sofa", "mdi:floor-plan", "mdi:shimmer",
+           "mdi:lightbulb", "mdi:blinds-horizontal", "mdi:blinds-horizontal-closed",
+           "mdi:curtains", "mdi:curtains-closed", "mdi:thermometer", "mdi:ceiling-fan",
+           "mdi:toggle-switch", "mdi:toggle-switch-off-outline", "mdi:television-speaker",
+           "mdi:remote-tv", "mdi:remote", "mdi:weather-partly-cloudy", "mdi:calendar-week",
+           "mdi:white-balance-sunny", "mdi:moon-waning-crescent", "mdi:weather-windy",
+           "mdi:clock-outline", "mdi:timer-sand", "mdi:alarm", "mdi:timer-outline",
+           "mdi:calendar", "mdi:calendar-text", "mdi:calendar-today", "mdi:calendar-month",
+           "mdi:apps", "mdi:gamepad-variant", "mdi:play-pause", "mdi:menu", "mdi:power",
+           "mdi:microphone", "mdi:bell-ring", "mdi:water", "mdi:chevron-left",
+           "mdi:chevron-right", "mdi:chevron-up", "mdi:chevron-down", "mdi:plus", "mdi:minus",
+           "mdi:arrow-up", "mdi:arrow-down", "mdi:play", "mdi:pause", "mdi:stop", "mdi:close",
+           "mdi:volume-high", "mdi:volume-medium", "mdi:volume-off"}) {
+    LATTER_CHECK(has_mdi_icon(slug));
+  }
+  const std::string widgets_cpp = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+  LATTER_CHECK(widgets_cpp.find("rasterize_sdf_icon(") == std::string::npos);
+  LATTER_CHECK(widgets_cpp.find("resolve_area_dock_icon(") != std::string::npos);
 }
 
 }  // namespace

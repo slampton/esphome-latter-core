@@ -891,7 +891,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
       sig ^= 0x5A17C3E9U ^ (ctx.now_ms << 3);
     }
-    if (is_roaming_area_indicator_active()) {
+    {
       const auto &ac = area_ctx_state();
       uint32_t ah = 2166136261U;
       for (unsigned char c : ac.area_id) ah = (ah ^ c) * 16777619U;

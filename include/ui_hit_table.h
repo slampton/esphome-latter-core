@@ -120,7 +120,6 @@ namespace WidgetId {
   static constexpr uint16_t HOME_ACTIVITY_PREV = 503;
   static constexpr uint16_t HOME_ACTIVITY_NEXT = 504;
   static constexpr uint16_t HOME_QUICK_BTN     = 505;
-  static constexpr uint16_t HOME_AREA_ICON     = 506;
   static constexpr uint16_t HOME_DATE_HERO     = 507;
   static constexpr uint16_t HOME_BRI_SLIDER    = 510;
   static constexpr uint16_t HOME_VOL_SLIDER    = 511;

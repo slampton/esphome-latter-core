@@ -215,31 +215,18 @@ void draw_home_activity_row_contents(
     }
   }
 
-  const int sym_s = is_list_row ? scale_s(5) : scale_s(6);
+  const int act_ic_px = std::max(14, (btn_r * 13) / 10);
+  const char *act_slug = "mdi:play";
   if (cur_act.kind == 5) {
-    const int ch_dx = std::max(2, scale_x(3));
-    for (int w = -1; w <= 0; w++) {
-      fast_line(it, act_bx - ch_dx + w, gy - sym_s, act_bx + ch_dx + w, gy, fg_w);
-      fast_line(it, act_bx + ch_dx + w, gy, act_bx - ch_dx + w, gy + sym_s, fg_w);
-    }
+    act_slug = "mdi:chevron-right";
   } else if (cur_act.kind == 4) {
-    for (int w = -1; w <= 0; w++) {
-      fast_line(it, act_bx - sym_s + w, gy - sym_s, act_bx + sym_s + w, gy + sym_s, fg_w);
-      fast_line(it, act_bx - sym_s + w, gy + sym_s, act_bx + sym_s + w, gy - sym_s, fg_w);
-    }
+    act_slug = "mdi:close";
   } else if (cur_act.kind == 6) {
-    const int sq = std::max(3, sym_s - 1);
-    fill_rect_row_major(it, act_bx - sq, gy - sq, sq * 2 + 1, sq * 2 + 1, fg_w);
+    act_slug = "mdi:stop";
   } else if (cur_act.is_active) {
-    const int pw = std::max(2, scale_s(3));
-    const int px = std::max(3, scale_x(5));
-    fill_rect_row_major(it, act_bx - px, gy - sym_s, pw, sym_s * 2 + 1, fg_w);
-    fill_rect_row_major(it, act_bx + px - pw + 1, gy - sym_s, pw, sym_s * 2 + 1, fg_w);
-  } else {
-    fast_filled_triangle(it, act_bx - scale_x(4), gy - sym_s,
-                         act_bx - scale_x(4), gy + sym_s,
-                         act_bx + sym_s + 1, gy, fg_w);
+    act_slug = "mdi:pause";
   }
+  render_mdi_icon(it, act_slug, act_bx, gy, act_ic_px, fg_w, icon_sh);
 }
 
 void render_home_activity_card_row(
@@ -1751,31 +1738,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                               ctx.theme_primary, false);
   }
 
-  // ZONE 6: Battery Readout & 1:1 MDI Roaming Area Vector Icon
-  const bool show_roaming_area = is_roaming_area_indicator_active();
-#if LATTER_ROUND_DISPLAY
-  const int batt_cx = show_roaming_area ? (ly.battery_cx - scale_x(16)) : ly.battery_cx;
-#if LATTER_HAS_BATTERY
-  {
-    esphome::display::BaseFont *font_batt =
-        (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
-    render_battery_indicator(it, batt_cx, ly.battery_y,
-                             rs.hw_batt_level, rs.hw_batt_charging, font_batt,
-                             ctx.theme_secondary, ctx.col_gold, ctx.col_green);
-  }
-#endif
-  if (show_roaming_area) {
-    const int area_cx = batt_cx + scale_x(46);
-    const int area_cy = ly.battery_y - scale_y(1);
-    const int area_px = scale_s(26);
-    render_mdi_icon(it, ac.area_icon, area_cx, area_cy, area_px,
-                    ctx.theme_secondary, true, "mdi:map-marker-outline");
-    frame_hits().add_circle(area_cx, area_cy, area_px / 2 + scale_s(4),
-                            WidgetId::HOME_AREA_ICON,
-                            kHitTap | kHitFocusSlot | kHitFocusCircle,
-                            0, scale_s(10));
-  }
-#else
+  // ZONE 6: Battery Readout (active Area icon now lives dynamically on the Home Dock's Area Control slot, D-071)
 #if LATTER_HAS_BATTERY
   {
     esphome::display::BaseFont *font_batt =
@@ -1783,18 +1746,6 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     render_battery_indicator(it, ly.battery_cx, ly.battery_y,
                              rs.hw_batt_level, rs.hw_batt_charging, font_batt,
                              ctx.theme_secondary, ctx.col_gold, ctx.col_green);
-  }
-#endif
-  if (show_roaming_area) {
-    const int area_cx = ly.battery_cx;
-    const int area_cy = ly.battery_y + std::max(26, scale_y(28));
-    const int area_px = std::max(24, scale_s(28));
-    render_mdi_icon(it, ac.area_icon, area_cx, area_cy, area_px,
-                    ctx.theme_secondary, true, "mdi:map-marker-outline");
-    frame_hits().add_circle(area_cx, area_cy, area_px / 2 + scale_s(4),
-                            WidgetId::HOME_AREA_ICON,
-                            kHitTap | kHitFocusSlot | kHitFocusCircle,
-                            0, scale_s(10));
   }
 #endif
   home_lap.mark(ProfSect::HOME_DOCK);
