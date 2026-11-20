@@ -1292,7 +1292,7 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
         fill_rect_row_major(it, ota_bx, st.cy + scale_y(104), ota_fill, scale_y(10), st.theme_primary);
       }
     }
-    fast_print(it, st.cx, st.cy - scale_y(60), ctx.font_date, st.theme_primary, TextAlign::CENTER, "FIRMWARE UPDATE");
+    fast_print(it, st.cx, st.cy - scale_y(60), ctx.font_date, st.col_white, TextAlign::CENTER, "FIRMWARE UPDATE");
     char prog_buf[32];
     std::snprintf(prog_buf, sizeof(prog_buf), "%d%%", pct);
     fast_print(it, st.cx, st.cy + scale_y(8), ctx.font_time, st.col_white, TextAlign::CENTER, prog_buf);
@@ -1308,13 +1308,13 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
   if (st.is_hibernating) {
     frame_base(it, st.col_bg);
     if (st.hibernate_countdown_val > 0) {
-      fast_print(it, st.cx, st.cy - scale_y(65), ctx.font_date, st.theme_primary, TextAlign::CENTER, "HIBERNATING");
+      fast_print(it, st.cx, st.cy - scale_y(65), ctx.font_date, st.col_white, TextAlign::CENTER, "HIBERNATING");
       char c_buf[16];
       std::snprintf(c_buf, sizeof(c_buf), "%d", st.hibernate_countdown_val);
       fast_print(it, st.cx, st.cy + scale_y(5), ctx.font_chrono_time, st.theme_secondary, TextAlign::CENTER, c_buf);
       fast_print(it, st.cx, st.cy + scale_y(65), ctx.font_small, st.col_slate, TextAlign::CENTER, "Tap screen to stay awake");
     } else {
-      fast_print(it, st.cx, st.cy - scale_y(10), ctx.font_date, st.theme_primary, TextAlign::CENTER, "HIBERNATING");
+      fast_print(it, st.cx, st.cy - scale_y(10), ctx.font_date, st.col_white, TextAlign::CENTER, "HIBERNATING");
       fast_print(it, st.cx, st.cy + scale_y(30), ctx.font_small, st.col_slate, TextAlign::CENTER, "Shutting down...");
     }
     return true;

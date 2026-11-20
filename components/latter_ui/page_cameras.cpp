@@ -63,65 +63,45 @@ void draw_live_dot(esphome::display::Display &it, const UiFrameContext &ctx,
   fast_filled_circle(it, dx, dy, r, dot_col);
 }
 
-void render_cameras_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_tab) {
-  const auto &ly = layout();
-  const int bar_cy = ly.app_dock_y;
-  const int dock_r = ly.dock_r;
-  const int icon_r = ui::dock_icon_r(dock_r);
-  const int dock_step = (SCREEN_W < 380)
-                            ? ((SCREEN_W - 64) / 3)
-                            : ((SCREEN_W > 520) ? ((SCREEN_W * 74) / 466)
-                                                : (LATTER_ROUND_DISPLAY ? scale_x(60) : scale_x(72)));
-  const int xs[4] = {
-      ctx.cx - (3 * dock_step) / 2,
-      ctx.cx - dock_step / 2,
-      ctx.cx + dock_step / 2,
-      ctx.cx + (3 * dock_step) / 2,
-  };
-  const int min_r = (ly.min_hit_px() + 1) / 2;
-  const int hit_pad = std::max(scale_s(8), min_r - dock_r);
-  const int pill_pad_x = dock_r + scale_x(10);
-  const int pill_x0 = xs[0] - pill_pad_x;
-  const int pill_w = (xs[3] + pill_pad_x) - pill_x0;
-  const int pill_h = 2 * dock_r + scale_y(12);
-  const int pill_y0 = bar_cy - pill_h / 2;
-  render_card_box(it, pill_x0, pill_y0, pill_w, pill_h,
-                  kChromeGlassTint, kChromeGlassSheen, pill_h / 2, GlassVariant::Clear);
-
-  const float anim_slot = mode_bar_anim().step_active(std::clamp(active_tab, 0, 3), ctx.now_ms);
-  const float hl_cx_f = static_cast<float>(xs[0]) + anim_slot * static_cast<float>(dock_step);
-  const int hl_r = dock_r - scale_s(2);
-  render_card_box(it, static_cast<int>(std::lround(hl_cx_f)) - hl_r, bar_cy - hl_r,
-                  2 * hl_r + 1, 2 * hl_r + 1,
-                  mix_color_q8(kChromeGlassTint, ctx.theme_primary, 92),
-                  ctx.theme_primary, hl_r, GlassVariant::Clear);
-
-  for (int i = 0; i < 4; ++i) {
-    const bool is_act = (i == active_tab);
-    const esphome::Color fg = is_act ? ctx.col_white : ctx.col_slate;
-    if (i == CamerasTab::GRID) {
-      ui::draw_icon_grid_2x2(it, xs[i], bar_cy, icon_r, fg, true);
-    } else if (i == CamerasTab::SINGLE) {
-      ui::draw_icon_camera(it, xs[i], bar_cy, icon_r, fg, true);
-    } else if (i == CamerasTab::CAROUSEL) {
-      ui::draw_icon_carousel(it, xs[i], bar_cy, icon_r, fg, true);
-    } else {
-      ui::draw_icon_gear(it, xs[i], bar_cy, icon_r, fg, true);
-    }
-    frame_hits().add_circle(xs[i], bar_cy, dock_r,
-                            static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
-                            kHitTap | kHitFocusSlot | kHitFocusCircle,
-                            static_cast<int16_t>(i), hit_pad);
+void draw_cameras_mode_icon(esphome::display::Display &it, int global_idx,
+                            int bx, int by, int icon_r,
+                            esphome::Color fg_col, bool shadow, void *) {
+  if (global_idx == CamerasTab::GRID) {
+    ui::draw_icon_grid_2x2(it, bx, by, icon_r, fg_col, shadow);
+  } else if (global_idx == CamerasTab::SINGLE) {
+    ui::draw_icon_camera(it, bx, by, icon_r, fg_col, shadow);
+  } else if (global_idx == CamerasTab::CAROUSEL) {
+    ui::draw_icon_carousel(it, bx, by, icon_r, fg_col, shadow);
+  } else {
+    ui::draw_icon_gear(it, bx, by, icon_r, fg_col, shadow);
   }
+}
+
+void draw_cam_chev_left(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_chevron(it, cx, cy, r, false, col, shadow);
+}
+
+void draw_cam_chev_right(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_chevron(it, cx, cy, r, true, col, shadow);
+}
+
+void render_cameras_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_tab) {
+  ui::mode_bar(it, ctx.cx, 4, std::clamp(active_tab, 0, 3), 0,
+               ctx.theme_primary, ctx.col_white, draw_cameras_mode_icon);
 }
 
 void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFrameContext &ctx,
                                      const CameraRecord *cam) {
-  using esphome::display::TextAlign;
   const auto &ly = layout();
   const auto &rs = runtime_state();
 
-  render_page_header(it, ctx.cx, "QUICK REPLY", ctx.font_date, ctx.col_white);
+  render_page_header(it, ctx.cx, "QUICK REPLY", ctx.font_small, ctx.col_white);
+  if (!rs.intercom.cam_intercom_status.empty() &&
+      (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
+    render_sub_header(it, ctx.cx, rs.intercom.cam_intercom_status, ctx.font_small, ctx.theme_secondary);
+  }
 
   const bool can_unlock = (cam != nullptr) && cam->has_unlock();
   static constexpr const char *kReplies[3] = {
@@ -130,53 +110,34 @@ void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFram
       "One moment, please!",
   };
   const int row_cnt = can_unlock ? 4 : 3;
-  const int top_y = ly.hdr_y + scale_y(36);
-  const int bot_y = ly.back_y - scale_y(30);
+  const int top_y = ly.sub_hdr_y + scale_y(18);
+  const int bot_y = ly.back_y - scale_y(24);
   const int gap = scale_y(10);
-  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(44), scale_y(66));
+  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(44), scale_y(58));
   const int total_h = row_cnt * row_h + (row_cnt - 1) * gap;
   const int start_y = top_y + std::max(0, (bot_y - top_y - total_h) / 2);
+  const int stack_w = ui::compute_uniform_stack_w(
+      start_y + row_h / 2, start_y + (row_cnt - 1) * (row_h + gap) + row_h / 2,
+      row_h, scale_x(320), 16);
 
   for (int i = 0; i < 3; ++i) {
-    const int ry = start_y + i * (row_h + gap);
-    const int cy = ry + row_h / 2;
-    const int rw = std::min(scale_w(330), ly.band_safe_span(cy, row_h, 18));
-    ui::pill_button_box(it, ctx.cx - rw / 2, rw, cy, row_h / 2,
-                        kChromeGlassSheen, kChromeGlassTint, kReplies[i], ctx.col_white,
-                        ctx.font_small, static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
-                        kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+    const int cy = start_y + i * (row_h + gap) + row_h / 2;
+    ui::list_row(it, ctx.cx, cy, stack_w, row_h, kReplies[i], nullptr,
+                 ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
+                 ctx.col_white, ctx.col_slate, ctx.font_small,
+                 static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
+                 kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
   }
   if (can_unlock) {
-    const int ry = start_y + 3 * (row_h + gap);
-    const int cy = ry + row_h / 2;
-    const int rw = std::min(scale_w(330), ly.band_safe_span(cy, row_h, 18));
+    const int cy = start_y + 3 * (row_h + gap) + row_h / 2;
     const char *lbl = cam->unlock_is_lock() ? "Unlock Door" : "Open Garage";
-    ui::pill_button_box(it, ctx.cx - rw / 2, rw, cy, row_h / 2,
-                        ctx.col_gold, mix_color_q8(kChromeGlassTint, ctx.col_gold, 64),
-                        lbl, ctx.col_white, ctx.font_small, WidgetId::CAM_UNLOCK_BTN,
-                        kHitTap | kHitFocusSlot);
+    ui::list_row(it, ctx.cx, cy, stack_w, row_h, lbl, nullptr,
+                 ui::chrome_card_bg_on(), ctx.col_gold,
+                 ctx.col_white, ctx.col_slate, ctx.font_small,
+                 WidgetId::CAM_UNLOCK_BTN, kHitTap | kHitFocusSlot, 0);
   }
 
-  if (!rs.intercom.cam_intercom_status.empty() &&
-      (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
-    fast_print(it, ctx.cx, ly.back_y - scale_y(28), ctx.font_micro, ctx.col_gold,
-               TextAlign::CENTER, rs.intercom.cam_intercom_status.c_str());
-  }
   render_back_button(it, ctx.cx, ctx.font_small, ly.back_y);
-}
-
-void render_camera_video_placeholder(esphome::display::Display &it, const UiFrameContext &ctx,
-                                     const CameraRect &vp, const char *title, const char *subtitle) {
-  using esphome::display::TextAlign;
-  fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, ctx.col_black);
-  const int cy = vp.cy();
-  ui::draw_icon_camera(it, vp.cx(), cy - scale_y(24), scale_s(24), ctx.col_slate, false);
-  if (title != nullptr && title[0] != '\0') {
-    fast_print(it, vp.cx(), cy + scale_y(16), ctx.font_small, ctx.col_white, TextAlign::CENTER, title);
-  }
-  if (subtitle != nullptr && subtitle[0] != '\0') {
-    fast_print(it, vp.cx(), cy + scale_y(40), ctx.font_micro, ctx.col_slate, TextAlign::CENTER, subtitle);
-  }
 }
 
 void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -197,24 +158,14 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
   const int page_start = rs.cameras.grid_page * 4;
   const int vis_cnt = std::min(4, std::max(0, cam_count - page_start));
 
-  // Header + optional pagination arrows when > 4 cameras
-  render_page_header(it, ctx.cx, "CAMERAS", ctx.font_date, ctx.col_white);
+  // Header + optional pagination arrows when > 4 cameras (zero glass behind title text)
   if (total_pages > 1) {
-    char pg_buf[16];
-    std::snprintf(pg_buf, sizeof(pg_buf), "%d/%d", rs.cameras.grid_page + 1, total_pages);
-    const int btn_w = std::max(34, scale_x(38));
-    const int btn_r = scale_y(16);
-    const int half_safe = std::max(btn_w + 40, ly.safe_span(g.title_y, 16) / 2);
-    const int offset = std::min(scale_w(130), half_safe - btn_w / 2);
-    const int lx = ctx.cx - std::max(scale_x(76), offset);
-    const int rx = ctx.cx + std::max(scale_x(76), offset);
-    ui::pill_button_box(it, lx - btn_w / 2, btn_w, g.title_y, btn_r,
-                        kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
-                        WidgetId::CAM_GRID_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button_box(it, rx - btn_w / 2, btn_w, g.title_y, btn_r,
-                        kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
-                        WidgetId::CAM_GRID_NEXT_BTN, kHitTap | kHitFocusSlot);
-    fast_print(it, ctx.cx, g.frame.y0 - scale_y(8), ctx.font_micro, ctx.col_slate, TextAlign::CENTER, pg_buf);
+    char hdr_buf[24];
+    std::snprintf(hdr_buf, sizeof(hdr_buf), "CAMERAS %d/%d", rs.cameras.grid_page + 1, total_pages);
+    ui::header_pager_bar(it, ctx.cx, ly.hdr_y, hdr_buf, ctx.font_small, ctx.col_white, true,
+                         WidgetId::CAM_GRID_PREV_BTN, WidgetId::CAM_GRID_NEXT_BTN);
+  } else {
+    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small, ctx.col_white);
   }
 
   // Blit live 2x2 server-composited MJPEG grid frame (or clean placeholder while connecting)
@@ -226,11 +177,11 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
     video_client().release_frame();
   }
   if (!drew_live) {
-    fill_rect_row_major(it, g.frame.x0, g.frame.y0, g.frame.w, g.frame.h, esphome::Color(14, 18, 24));
+    fill_rect_row_major(it, g.frame.x0, g.frame.y0, g.frame.w, g.frame.h, kChromeGridBg);
     const int mid_x = g.frame.x0 + g.frame.w / 2;
     const int mid_y = g.frame.y0 + g.frame.h / 2;
-    fast_vline(it, mid_x, g.frame.y0, g.frame.h, esphome::Color(28, 34, 46));
-    fast_hline(it, g.frame.x0, mid_y, g.frame.w, esphome::Color(28, 34, 46));
+    fast_vline(it, mid_x, g.frame.y0, g.frame.h, kChromeGridLine);
+    fast_hline(it, g.frame.x0, mid_y, g.frame.w, kChromeGridLine);
     const char *st_lbl = (video_client().state() == VideoStreamState::ERROR) ? "Stream unavailable" : "Connecting...";
     for (int q = 0; q < vis_cnt; ++q) {
       const auto &tr = g.tiles[q];
@@ -240,17 +191,16 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
   }
 
   // Subtle divider lines + crisp quadrant name overlays + 4 exact FrameHitTable targets
-  const esphome::Color grid_brd(44, 52, 68);
-  fast_hline(it, g.frame.x0, g.frame.y0, g.frame.w, grid_brd);
-  fast_hline(it, g.frame.x0, g.frame.y1(), g.frame.w, grid_brd);
-  fast_vline(it, g.frame.x0, g.frame.y0, g.frame.h, grid_brd);
-  fast_vline(it, g.frame.x1(), g.frame.y0, g.frame.h, grid_brd);
+  fast_hline(it, g.frame.x0, g.frame.y0, g.frame.w, kChromeGridDivider);
+  fast_hline(it, g.frame.x0, g.frame.y1(), g.frame.w, kChromeGridDivider);
+  fast_vline(it, g.frame.x0, g.frame.y0, g.frame.h, kChromeGridDivider);
+  fast_vline(it, g.frame.x1(), g.frame.y0, g.frame.h, kChromeGridDivider);
   for (int q = 0; q < vis_cnt; ++q) {
     const int cam_idx = page_start + q;
     const auto &tr = g.tiles[q];
     const int lbl_h = std::max(18, scale_y(20));
     const int lbl_y0 = tr.y1() - lbl_h + 1;
-    fill_rect_row_major(it, tr.x0 + 1, lbl_y0, std::max(1, tr.w - 2), lbl_h - 1, esphome::Color(10, 14, 20));
+    fill_rect_row_major(it, tr.x0 + 1, lbl_y0, std::max(1, tr.w - 2), lbl_h - 1, kChromeCaptionBg);
     const std::string fit_name = fit_text_to_width_font(cams[cam_idx].name, std::max(32, tr.w - 10), ctx.font_micro);
     fast_print(it, tr.cx(), lbl_y0 + lbl_h / 2, ctx.font_micro, ctx.col_white, TextAlign::CENTER, fit_name.c_str());
 
@@ -265,7 +215,6 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
 
 void render_cameras_single_tab(esphome::display::Display &it, const UiFrameContext &ctx,
                                const CameraRecord *cams, int cam_count) {
-  using esphome::display::TextAlign;
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const auto &ly = layout();
@@ -313,7 +262,7 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
     const char *sub = (video_client().state() == VideoStreamState::ERROR)
                           ? "Reconnecting..."
                           : "Connecting to live feed...";
-    render_camera_video_placeholder(it, ctx, vp, cam_title, sub);
+    render_camera_video_placeholder(it, ctx, vp, cam_title, sub, ctx.col_slate);
   }
 
   // Register full-video tap BEFORE HUD buttons so tapping empty video wakes/toggles HUD
@@ -333,105 +282,71 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
     return;
   }
 
-  // Top Title Pill + Prev/Next arrows when > 1 camera (strict outer-box geometry; zero overlap)
-  const int top_y = ly.hdr_y + scale_y(LATTER_ROUND_DISPLAY ? 4 : 6);
+  // D-048 / D-070: Bare shadowed camera title (zero glass behind title text) + [‹]/[›] when > 1 camera.
   const std::string title_raw = (cam != nullptr) ? cam->name : std::string("Camera");
-  const int title_r = scale_y(17);
-  const int safe_top_w = ly.band_safe_span(top_y, 2 * title_r, 14);
-  const int top_gap = (SCREEN_W < 300) ? 6 : scale_x(8);
-  const int arrow_w = (cam_count > 1) ? std::max(36, scale_x(40)) : 0;
-  const int pill_max_w = std::max(80, safe_top_w - (cam_count > 1 ? (2 * arrow_w + 2 * top_gap) : 0));
-  const int title_w = std::min(pill_max_w, scale_w(220));
-  const std::string fit_title = fit_text_to_width_font(title_raw, std::max(40, title_w - scale_x(22)), ctx.font_small);
-  const int title_x0 = ctx.cx - title_w / 2;
-  render_card_box(it, title_x0, top_y - title_r, title_w, 2 * title_r,
-                  kChromeGlassTint, kChromeGlassSheen, title_r, GlassVariant::Clear);
-  fast_print(it, ctx.cx, top_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_title.c_str());
-
-  if (cam_count > 1) {
-    const int lx0 = title_x0 - top_gap - arrow_w;
-    const int rx0 = title_x0 + title_w + top_gap;
-    ui::pill_button_box(it, lx0, arrow_w, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
-                        "<", ctx.col_white, ctx.font_small, WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button_box(it, rx0, arrow_w, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
-                        ">", ctx.col_white, ctx.font_small, WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
-  }
+  ui::header_pager_bar(it, ctx.cx, ly.hdr_y, title_raw, ctx.font_small, ctx.col_white,
+                       cam_count > 1, WidgetId::CAM_PREV_BTN, WidgetId::CAM_NEXT_BTN);
 
   // Portrait-only 90° rotate pill (Framing Fit/Fill lives exclusively in Settings so Single & Carousel match)
   if (SCREEN_H > SCREEN_W) {
-    const int sub_y = top_y + title_r + scale_y(20);
-    const int sub_r = scale_y(14);
-    const int rot_w = std::max(56, scale_x(64));
-    ui::pill_button_box(it, ctx.cx - rot_w / 2, rot_w, sub_y, sub_r,
-                        rs.cameras.landscape_mode ? ctx.theme_primary : kChromeGlassSheen,
-                        rs.cameras.landscape_mode ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72) : kChromeGlassTint,
-                        "90\xC2\xB0", ctx.col_white, ctx.font_micro,
-                        WidgetId::CAM_ORIENT_BTN, kHitTap | kHitFocusSlot);
+    const int sub_y = ly.sub_hdr_y + scale_y(10);
+    const int rot_h = std::max(34, scale_y(36));
+    const int rot_w = std::max(68, scale_x(76));
+    ui::action_pill_centered(it, ctx.cx, rot_w, sub_y, rot_h,
+                             rs.cameras.landscape_mode ? ctx.theme_primary : ui::chrome_card_brd_on(),
+                             rs.cameras.landscape_mode ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                             "90\xC2\xB0", ctx.col_white, ctx.font_small,
+                             WidgetId::CAM_ORIENT_BTN, kHitTap | kHitFocusSlot);
   }
 
-  // Per-camera configured action pills row above the 4-slot mode bar (strict outer-box spacing)
+  // Per-camera configured action pills row above the 4-slot mode bar (D-070 canonical action_pill_row)
   const bool can_listen = (cam != nullptr) && cam->has_audio();
   const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) && (cam != nullptr) && cam->has_talkback();
   const bool can_reply = (cam != nullptr) && cam->show_reply();
   const bool can_unlock = (cam != nullptr) && cam->has_unlock();
 
-  struct ActionBtn {
-    const char *label;
-    uint16_t wid;
-    esphome::Color brd;
-    esphome::Color bg;
-  };
-  ActionBtn btns[4]{};
+  ui::ActionPillSpec btns[4]{};
   int btn_cnt = 0;
   if (can_listen) {
     const bool act = cam_listen_active() || cam_call_active();
     btns[btn_cnt++] = {
         act ? "Mute" : "Listen", WidgetId::CAM_LISTEN_BTN,
-        act ? ctx.col_green : kChromeGlassSheen,
-        act ? mix_color_q8(kChromeGlassTint, ctx.col_green, 72) : kChromeGlassTint};
+        act ? ctx.col_green : ui::chrome_card_brd_on(),
+        act ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+        ctx.col_white, 0, nullptr};
   }
   if (can_talk) {
     const bool act = cam_intercom_ptt_active();
     btns[btn_cnt++] = {
         act ? "Stop" : "Talk", WidgetId::CAM_PTT_BTN,
         act ? ctx.col_red : ctx.theme_primary,
-        act ? mix_color_q8(kChromeGlassTint, ctx.col_red, 80) : mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
+        act ? ui::chrome_danger_bg() : ui::chrome_card_bg_on(),
+        ctx.col_white, 0, nullptr};
   }
   if (can_reply && btn_cnt < 4) {
-    btns[btn_cnt++] = {"Reply", WidgetId::CAM_REPLY_MENU_BTN, kChromeGlassSheen, kChromeGlassTint};
+    btns[btn_cnt++] = {"Reply", WidgetId::CAM_REPLY_MENU_BTN,
+                       ui::chrome_card_brd_on(), ui::chrome_card_bg_off(),
+                       ctx.col_white, 0, nullptr};
   }
   if (can_unlock && btn_cnt < 4) {
     btns[btn_cnt++] = {
         cam->unlock_is_lock() ? "Unlock" : "Open", WidgetId::CAM_UNLOCK_BTN,
-        ctx.col_gold, mix_color_q8(kChromeGlassTint, ctx.col_gold, 60)};
+        ctx.col_gold, ui::chrome_card_bg_on(), ctx.col_white, 0, nullptr};
   }
 
-  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_y(6);
-  const int act_r = scale_y(17);
-  const int act_y = mode_bar_top - scale_y(14) - act_r;
+  const int act_h = std::max(38, scale_y(40));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
+  const int act_y = mode_bar_top - scale_y(14) - act_h / 2;
   if (btn_cnt > 0) {
-    const int avail_w = std::min(scale_w(380), ly.band_safe_span(act_y, 2 * act_r, 12));
-    int act_gap = (SCREEN_W < 300) ? 4 : scale_x(8);
-    int bw = (avail_w - (btn_cnt - 1) * act_gap) / btn_cnt;
-    if (bw < 48 && btn_cnt > 1) {
-      act_gap = 4;
-      bw = std::max(40, (avail_w - (btn_cnt - 1) * act_gap) / btn_cnt);
-    }
-    bw = std::min(scale_x(92), bw);
-    const int tot_w = btn_cnt * bw + (btn_cnt - 1) * act_gap;
-    int x = ctx.cx - tot_w / 2;
-    for (int i = 0; i < btn_cnt; ++i) {
-      ui::pill_button_box(it, x, bw, act_y, act_r, btns[i].brd, btns[i].bg,
-                          btns[i].label, ctx.col_white, ctx.font_micro, btns[i].wid,
-                          kHitTap | kHitFocusSlot);
-      x += bw + act_gap;
-    }
+    ui::action_pill_row(it, act_y, act_h, std::min(kMaxContentColW, scale_x(376)),
+                        scale_x(104), scale_x(8), btns, btn_cnt, ctx.font_small, 12);
   }
 
   if (!rs.intercom.cam_intercom_status.empty() &&
       (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
-    fast_print(it, ctx.cx, act_y - act_r - scale_y(14), ctx.font_micro, ctx.col_gold,
-               TextAlign::CENTER, rs.intercom.cam_intercom_status.c_str());
+    ui::shadow_print(it, ctx.cx, act_y - act_h / 2 - scale_y(14), ctx.font_small,
+                     ctx.theme_secondary, esphome::display::TextAlign::CENTER,
+                     rs.intercom.cam_intercom_status.c_str());
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::SINGLE);
@@ -439,7 +354,6 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
 
 void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameContext &ctx,
                                  const CameraRecord *cams, int cam_count) {
-  using esphome::display::TextAlign;
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const auto &ly = layout();
@@ -481,24 +395,24 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
   if (!drew_frame) {
     render_camera_video_placeholder(it, ctx, vp,
                                     (cam != nullptr) ? cam->name.c_str() : "Carousel",
-                                    "Connecting to live feed...");
+                                    "Connecting to live feed...", ctx.col_slate);
   }
 
   frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::CAM_VIDEO_TAP, kHitTap);
   draw_live_dot(it, ctx, is_live, rs.cameras.carousel_paused);
 
-  // Subtle camera name pill + thin dwell progress bar (always visible in Carousel)
-  const int cap_y = ly.hdr_y + scale_y(LATTER_ROUND_DISPLAY ? 4 : 6);
+  // Bare shadowed camera name + thin dwell progress bar (always visible in Carousel)
+  const int cap_y = ly.hdr_y;
   std::string cap_txt = (cam != nullptr) ? cam->name : std::string("Cameras");
   if (car_cnt > 1) {
     char idx_buf[20];
     std::snprintf(idx_buf, sizeof(idx_buf), " (%d/%d)", rs.cameras.carousel_idx + 1, car_cnt);
     cap_txt += idx_buf;
   }
-  const int cap_w = std::min(scale_w(240), ly.safe_span(cap_y, 24));
+  const int cap_w = std::min(kMaxContentColW, ly.safe_span(cap_y, 24));
   const std::string fit_cap = fit_text_to_width_font(cap_txt, cap_w - 18, ctx.font_small);
-  fast_print(it, ctx.cx + 1, cap_y + 1, ctx.font_small, ctx.col_black, TextAlign::CENTER, fit_cap.c_str());
-  fast_print(it, ctx.cx, cap_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_cap.c_str());
+  ui::shadow_print(it, ctx.cx, cap_y, ctx.font_small, ctx.col_white,
+                   esphome::display::TextAlign::CENTER, fit_cap.c_str());
 
   if (car_cnt > 1) {
     const uint32_t dwell_ms = prefs.camera_carousel_interval_ms();
@@ -513,7 +427,7 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
     const int bar_w = std::min(scale_w(180), ly.safe_span(cap_y + scale_y(16), 28));
     const int bar_x = ctx.cx - bar_w / 2;
     const int bar_y = cap_y + scale_y(16);
-    fill_rect_row_major(it, bar_x, bar_y, bar_w, 3, esphome::Color(48, 56, 72));
+    fill_rect_row_major(it, bar_x, bar_y, bar_w, 3, kChromeDwellTrack);
     const int fill_w = static_cast<int>(std::lround(static_cast<float>(bar_w) * frac));
     if (fill_w > 0) {
       fill_rect_row_major(it, bar_x, bar_y, fill_w, 3, ctx.theme_primary);
@@ -524,79 +438,93 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
     return;
   }
 
-  // HUD controls: < | Pause/Resume | > above 4-slot mode bar (strict outer-box geometry)
-  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_y(6);
-  const int ctrl_r = scale_y(17);
-  const int ctrl_y = mode_bar_top - scale_y(14) - ctrl_r;
-  const int pause_w = std::max(84, scale_x(104));
-  ui::pill_button_box(it, ctx.cx - pause_w / 2, pause_w, ctrl_y, ctrl_r,
-                      rs.cameras.carousel_paused ? ctx.col_gold : kChromeGlassSheen,
-                      rs.cameras.carousel_paused ? mix_color_q8(kChromeGlassTint, ctx.col_gold, 70) : kChromeGlassTint,
-                      rs.cameras.carousel_paused ? "Resume" : "Pause", ctx.col_white, ctx.font_micro,
-                      WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
+  // HUD controls: [‹] | Pause/Resume | [›] above 4-slot mode bar
+  const int ctrl_h = std::max(38, scale_y(40));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
+  const int ctrl_y = mode_bar_top - scale_y(14) - ctrl_h / 2;
+  const int pause_w = std::max(96, scale_x(118));
+  ui::action_pill_centered(it, ctx.cx, pause_w, ctrl_y, ctrl_h,
+                           rs.cameras.carousel_paused ? ctx.col_gold : ui::chrome_card_brd_on(),
+                           rs.cameras.carousel_paused ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                           rs.cameras.carousel_paused ? "Resume" : "Pause",
+                           ctx.col_white, ctx.font_small,
+                           WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
   if (car_cnt > 1) {
-    const int aw = std::max(36, scale_x(42));
-    const int gap = scale_x(10);
-    ui::pill_button_box(it, ctx.cx - pause_w / 2 - gap - aw, aw, ctrl_y, ctrl_r,
-                        kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
-                        WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button_box(it, ctx.cx + pause_w / 2 + gap, aw, ctrl_y, ctrl_r,
-                        kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
-                        WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
+    const int btn_r = ctrl_h / 2;
+    const int gap = scale_x(12);
+    ui::icon_circle_button(it, ctx.cx - pause_w / 2 - gap - btn_r, ctrl_y, btn_r,
+                           ui::chrome_card_bg_off(), ui::chrome_card_brd_on(), ctx.col_white,
+                           draw_cam_chev_left, nullptr, WidgetId::CAM_PREV_BTN);
+    ui::icon_circle_button(it, ctx.cx + pause_w / 2 + gap + btn_r, ctrl_y, btn_r,
+                           ui::chrome_card_bg_off(), ui::chrome_card_brd_on(), ctx.col_white,
+                           draw_cam_chev_right, nullptr, WidgetId::CAM_NEXT_BTN);
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::CAROUSEL);
 }
 
 void render_cameras_settings_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::display::TextAlign;
   const auto &ly = layout();
   const auto &prefs = persisted_prefs();
 
-  render_page_header(it, ctx.cx, "CAMERA SETTINGS", ctx.font_date, ctx.col_white);
+  render_page_header(it, ctx.cx, "CAMERA SETTINGS", ctx.font_small, ctx.col_white);
 
-  struct SettingRow {
-    const char *label;
-    const char *value;
-    int idx;
-  };
-  SettingRow rows[5]{};
+  char labels[5][44]{};
+  int ids[5]{};
   int row_cnt = 0;
-  rows[row_cnt++] = {"Default View", pref_camera_default_view_cstr(prefs), 0};
-  rows[row_cnt++] = {"Carousel Timer", pref_camera_carousel_interval_cstr(prefs), 1};
-  rows[row_cnt++] = {"Framing", pref_camera_framing_cstr(prefs), 2};
-  rows[row_cnt++] = {"Stream Mode", pref_camera_stream_mode_cstr(prefs), 3};
+  std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Default View: %s", pref_camera_default_view_cstr(prefs));
+  ids[row_cnt++] = 0;
+  std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Carousel: %s", pref_camera_carousel_interval_cstr(prefs));
+  ids[row_cnt++] = 1;
+  std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Framing: %s", pref_camera_framing_cstr(prefs));
+  ids[row_cnt++] = 2;
+  std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Stream: %s", pref_camera_stream_mode_cstr(prefs));
+  ids[row_cnt++] = 3;
 #if LATTER_CHIP_P4
-  rows[row_cnt++] = {"Doorbell Popup", pref_camera_doorbell_popup_cstr(prefs), 4};
+  std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Doorbell: %s", pref_camera_doorbell_popup_cstr(prefs));
+  ids[row_cnt++] = 4;
 #endif
 
-  const int top_y = ly.hdr_y + scale_y(30);
-  const int bot_y = ly.app_dock_y - ly.dock_r - scale_y(16);
+  const int top_y = ly.hdr_y + scale_y(28);
+  const int bot_y = ly.mode_bar_zone_top() - scale_y(8);
   const int gap = scale_y(8);
-  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(38), scale_y(56));
+  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(38), scale_y(48));
   const int total_h = row_cnt * row_h + (row_cnt - 1) * gap;
   const int start_y = top_y + std::max(0, (bot_y - top_y - total_h) / 2);
+  const int stack_w = ui::compute_uniform_stack_w(
+      start_y + row_h / 2, start_y + (row_cnt - 1) * (row_h + gap) + row_h / 2,
+      row_h, ly.list_card_w, 16);
 
   for (int i = 0; i < row_cnt; ++i) {
-    const int ry = start_y + i * (row_h + gap);
-    const int cy = ry + row_h / 2;
-    const int rw = std::min(scale_w(350), ly.band_safe_span(cy, row_h, 16));
-    const int rx0 = ctx.cx - rw / 2;
-    render_card_box(it, rx0, ry, rw, row_h, kChromeGlassTint, kChromeGlassSheen,
-                    std::max(10, (row_h * 9) / 20), GlassVariant::Clear);
-    const int pad_x = scale_x(16);
-    fast_print(it, rx0 + pad_x, cy, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, rows[i].label);
-    fast_print(it, rx0 + rw - pad_x, cy, ctx.font_small, ctx.theme_secondary,
-               TextAlign::CENTER_RIGHT, rows[i].value);
-    frame_hits().add_rect(rx0, ry, rw, row_h,
-                          static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + rows[i].idx),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(rows[i].idx));
+    const int cy = start_y + i * (row_h + gap) + row_h / 2;
+    ui::setting_cycle_row(it, ctx.cx, cy, stack_w, row_h, labels[i], true,
+                          ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                          static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + ids[i]),
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(ids[i]));
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::SETTINGS);
 }
 
 }  // namespace
+
+void render_camera_video_placeholder(esphome::display::Display &it, const UiFrameContext &ctx,
+                                     const CameraRect &vp, const char *title, const char *subtitle,
+                                     esphome::Color icon_col) {
+  fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, kChromeGridBg);
+  const int cy = vp.cy();
+  ui::draw_icon_camera(it, vp.cx(), cy - scale_y(22), scale_s(22), icon_col, true);
+  if (title != nullptr && title[0] != '\0') {
+    const std::string fit = fit_text_to_width_font(std::string(title), std::max(60, vp.w - scale_x(24)), ctx.font_small);
+    ui::shadow_print(it, vp.cx(), cy + scale_y(16), ctx.font_small, ctx.col_white,
+                     esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+  if (subtitle != nullptr && subtitle[0] != '\0') {
+    const std::string fit = fit_text_to_width_font(std::string(subtitle), std::max(60, vp.w - scale_x(24)), ctx.font_small);
+    ui::shadow_print(it, vp.cx(), cy + scale_y(42), ctx.font_small, ctx.col_slate,
+                     esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+}
 
 // ==============================================================================
 // Shared RGB565 Fitted Scanline Blitter & Live Doorbell PTT Overlay Banner
@@ -705,29 +633,27 @@ bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src
 
 void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameContext &ctx,
                                 int center_y) {
-  using esphome::display::TextAlign;
   const auto &rs = runtime_state();
   const auto &ly = layout();
   const int bh = std::max(scale_y(44), ly.min_hit_px());
-  const int bw = std::min(scale_w(340), ly.band_safe_span(center_y, bh, 16));
+  const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, scale_x(340), 16);
   const int bx0 = ctx.cx - bw / 2;
   const int by0 = center_y - bh / 2;
   const esphome::Color brd = rs.voice.vad_active ? ctx.col_green : ctx.col_gold;
-  const esphome::Color tint = mix_color_q8(kChromeGlassTint, brd, 64);
 
-  render_card_box(it, bx0, by0, bw, bh, tint, brd, bh / 2, GlassVariant::Clear);
+  render_card_box(it, bx0, by0, bw, bh, ui::chrome_card_bg_on(), brd, bh / 2, GlassVariant::Clear);
 
   // Live VAD pulse indicator on left
   const int dot_x = bx0 + scale_x(20);
   const bool pulse_hi = ((ctx.now_ms / 240U) % 2U) == 0U;
   const int dot_r = std::max(4, scale_s(rs.voice.vad_active && pulse_hi ? 7 : 5));
-  fast_filled_circle(it, dot_x, center_y, dot_r, brd);
+  fast_filled_circle_aa(it, dot_x, center_y, dot_r, brd);
 
-  const char *msg = (SCREEN_W < 380) ? "Listening... Tap to send"
-                                     : "Listening to reply... (Tap to send)";
-  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_x(44)), ctx.font_micro);
-  fast_print(it, bx0 + scale_x(34), center_y, ctx.font_micro, ctx.col_white,
-             TextAlign::CENTER_LEFT, fit_msg.c_str());
+  const char *msg = (SCREEN_W < 380) ? "Listening... Tap"
+                                     : "Listening... (Tap to send)";
+  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_x(46)), ctx.font_small);
+  ui::shadow_print(it, bx0 + scale_x(34), center_y, ctx.font_small, ctx.col_white,
+                   esphome::display::TextAlign::CENTER_LEFT, fit_msg.c_str());
 
   frame_hits().add_rect(bx0, by0, bw, bh, WidgetId::CAM_PTT_BANNER_STOP, kHitTap | kHitFocusSlot);
 }
@@ -746,10 +672,10 @@ void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ct
 
   // Empty state (0 cameras configured) on non-Settings tabs
   if (cam_count == 0 && !has_fallback_src && rs.cameras.tab != CamerasTab::SETTINGS) {
-    const CameraRect full_vp{0, 0, SCREEN_W, SCREEN_H};
-    render_camera_video_placeholder(it, ctx, full_vp, "No Cameras Configured",
-                                    "Add cameras in Latter Studio");
-    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_date, ctx.col_white);
+    fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, ctx.col_black);
+    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small, ctx.col_white);
+    render_empty_state(it, ctx.cx, ctx.cy, "No cameras configured. Add cameras in Latter Studio.",
+                       ctx.font_small, ctx.col_slate);
     render_cameras_mode_bar(it, ctx, rs.cameras.tab);
     return;
   }

@@ -127,12 +127,15 @@ esphome:
                 id(fetch_wallpaper_debounced).execute();
               }
               if (eff.stop_screensaver_photo_fetch) {
+                id(fetch_screensaver_photo_now).stop();
                 id(fetch_screensaver_photo_debounced).stop();
+                latter_ui::runtime_state().music.screensaver_photo_failed = false;
               }
               if (eff.release_screensaver_photo_art) {
                 latter_ui::release_art(id(screensaver_photo_art));
               }
               if (eff.fetch_screensaver_photo) {
+                latter_ui::runtime_state().music.screensaver_photo_failed = false;
                 id(fetch_screensaver_photo_debounced).execute();
               }
               if (eff.weather_sim_dirty) {
@@ -224,7 +227,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111906L;
+            constexpr long LATTER_YAML_REV = 2026112001L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -445,6 +448,8 @@ ota:
             latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
+            id(fetch_screensaver_photo_now).stop();
+            id(fetch_screensaver_photo_debounced).stop();
             latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
@@ -452,6 +457,7 @@ ota:
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.music.loaded_screensaver_photo_url = "";
+            rs.music.screensaver_photo_failed = false;
             rs.alert.loaded_camera_url = "";
             latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
@@ -483,6 +489,8 @@ ota:
             latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
+            id(fetch_screensaver_photo_now).stop();
+            id(fetch_screensaver_photo_debounced).stop();
             latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
@@ -490,6 +498,7 @@ ota:
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.music.loaded_screensaver_photo_url = "";
+            rs.music.screensaver_photo_failed = false;
             rs.alert.loaded_camera_url = "";
             latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
@@ -936,7 +945,8 @@ script:
                 id(sync_display_brightness).execute();
                 if (std::string_view(latter_ui::effective_screensaver_style_cstr(p)) == "Photo Frame" &&
                     !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-                  id(fetch_screensaver_photo_debounced).execute();
+                  latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                  id(fetch_screensaver_photo_now).execute();
                 }
                 latter_ui::mark_dirty_full();
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -988,7 +998,8 @@ script:
                   if (rs.nav.display_power_state == 1 &&
                       std::string_view(latter_ui::effective_screensaver_style_cstr(p)) == "Photo Frame" &&
                       !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-                    id(fetch_screensaver_photo_debounced).execute();
+                    latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                    id(fetch_screensaver_photo_now).execute();
                   }
                 }
               }
@@ -1172,9 +1183,16 @@ script:
           }
 
           if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
+            const auto &ac_bri = latter_ui::area_ctx_state();
+            const bool photo_frame_art_active =
+                (id(screensaver_photo_art).get_width() > 0 && !ac_bri.screensaver_photo_url.empty()) ||
+                latter_ui::can_reuse_wallpaper_for_photo_frame(
+                    ac_bri.screensaver_photo_url, rs.music.loaded_wallpaper_url,
+                    id(home_wallpaper_art).get_width() > 0);
             const bool is_photo_frame =
                 !prefs.bedtime_active &&
-                (std::string_view(latter_ui::pref_screensaver_style_cstr(prefs)) == "Photo Frame");
+                (std::string_view(latter_ui::pref_screensaver_style_cstr(prefs)) == "Photo Frame") &&
+                photo_frame_art_active;
             const float ss_bri = prefs.bedtime_active
                                      ? latter_ui::resolve_bedtime_ambient_brightness(b_target)
                                      : latter_ui::resolve_screensaver_brightness(b_target, is_photo_frame);

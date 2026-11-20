@@ -593,11 +593,11 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.slot5_cy = (h > 520) ? L.cy : 236;
   L.area_card3_stride = (h > 520) ? ((h * 76) / 466) : 76;
   L.area_card3_h = (h > 520) ? ((h * 64) / 466) : 64;
-  L.area_card3_w = (w < 380) ? (w - 68) : ((w > 520) ? ((w * 316) / 466) : 316);
+  L.area_card3_w = (w < 380) ? (w - 68) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
   L.area_card3_cy = (h > 520) ? ((h * 208) / 466) : 208;
   L.tool_card3_stride = (h > 520) ? ((h * 100) / 466) : 100;
   L.tool_card3_h = (h > 520) ? ((h * 74) / 466) : 74;
-  L.tool_card3_w = (w < 380) ? (w - 36) : ((w > 520) ? ((w * 316) / 466) : 316);
+  L.tool_card3_w = (w < 380) ? (w - 36) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
   L.tool_card3_cy = (h > 520) ? ((h * 222) / 466) : 222;
   L.tools_col_off = (w < 380) ? 61 : ((w > 520) ? ((w * 74) / 466) : 68);
   L.tools_row_stride = (h > 520) ? ((h * 105) / 466) : 105;
@@ -812,6 +812,46 @@ inline constexpr void compute_vertical_page_pips_x(
   out_min_hit_h = min_hit;
 }
 
+// ==============================================================================
+// Pure-C++20 Canonical Component Radii, Column Caps, Mode Bar & Pill Row Geometry (D-070)
+// ==============================================================================
+static constexpr int kMaxContentColW = 480;
+
+inline constexpr int radius_card_for(int min_dim) noexcept {
+  return scale_s_for(12, min_dim);
+}
+
+inline constexpr int radius_key_for(int min_dim) noexcept {
+  return scale_s_for(10, min_dim);
+}
+
+inline constexpr void compute_mode_bar_slot_xs(int vis_count, int w, bool is_round,
+                                               int out_xs[4]) noexcept {
+  const int cx = w / 2;
+  if (vis_count <= 0) return;
+  if (vis_count == 1) {
+    out_xs[0] = cx;
+  } else if (vis_count == 2) {
+    out_xs[0] = cx - scale_x_for(44, w);
+    out_xs[1] = cx + scale_x_for(44, w);
+  } else if (vis_count == 3) {
+    out_xs[0] = cx - scale_x_for(84, w);
+    out_xs[1] = cx;
+    out_xs[2] = cx + scale_x_for(84, w);
+  } else if (is_round) {
+    out_xs[0] = scale_w_for(112, w);
+    out_xs[1] = scale_w_for(193, w);
+    out_xs[2] = scale_w_for(274, w);
+    out_xs[3] = scale_w_for(355, w);
+  } else {
+    const int stride = (w < 380) ? 74 : scale_x_for(98, w);
+    out_xs[0] = cx - (stride * 3) / 2;
+    out_xs[1] = cx - (stride / 2);
+    out_xs[2] = cx + (stride / 2);
+    out_xs[3] = cx + (stride * 3) / 2;
+  }
+}
+
 struct HomeHubPillGeom {
   int cx{0};
   int cy{0};
@@ -834,6 +874,51 @@ inline constexpr int band_safe_span_for(
   const int s_top = safe_span_for(y_top, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
   const int s_bot = safe_span_for(y_bot, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
   return (s_top < s_bot) ? s_top : s_bot;
+}
+
+inline constexpr int compute_uniform_stack_w_for(
+    int top_cy, int bot_cy, int row_h, int max_w,
+    int screen_w, int screen_h, bool is_round, bool is_wearable = false,
+    int inset = 14) noexcept {
+  const int s_top = band_safe_span_for(top_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset);
+  const int s_bot = band_safe_span_for(bot_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset);
+  const int safe_w = (s_top < s_bot) ? s_top : s_bot;
+  const int desk_cap = (screen_w > 520 && max_w > kMaxContentColW) ? kMaxContentColW : max_w;
+  const int screen_cap = (screen_w > 2 * inset) ? (screen_w - 2 * inset) : screen_w;
+  int w = safe_w;
+  if (desk_cap < w) w = desk_cap;
+  if (screen_cap < w) w = screen_cap;
+  return (w > 64) ? w : 64;
+}
+
+inline constexpr int compute_action_pill_row(
+    int count, int cy, int pill_h, int max_row_w, int max_btn_w, int gap,
+    int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi,
+    HomeHubPillGeom *out_geoms, int inset = 14) noexcept {
+  if (count <= 0 || out_geoms == nullptr) return 0;
+  const int cx = screen_w / 2;
+  const int min_hit = mm_to_px_for(7.0f, ppi);
+  const int eff_h = (pill_h > 24) ? pill_h : 24;
+  const int hit_h = (eff_h > min_hit) ? eff_h : min_hit;
+  const int safe_w = band_safe_span_for(cy, eff_h, screen_w, screen_h, is_round, is_wearable, inset);
+  const int desk_cap = (screen_w > 520 && max_row_w > kMaxContentColW) ? kMaxContentColW : max_row_w;
+  const int avail_w = (desk_cap < safe_w) ? desk_cap : safe_w;
+  int eff_gap = (gap > 2) ? gap : 4;
+  int bw = (avail_w - (count - 1) * eff_gap) / count;
+  if (bw < 48 && count > 1) {
+    eff_gap = 4;
+    bw = (avail_w - (count - 1) * eff_gap) / count;
+  }
+  if (bw < 40) bw = 40;
+  if (max_btn_w > 0 && bw > max_btn_w) bw = max_btn_w;
+  const int total_w = count * bw + (count - 1) * eff_gap;
+  const int x0 = cx - total_w / 2;
+  const int hit_w = (count == 1 && bw < min_hit) ? ((min_hit < safe_w) ? min_hit : safe_w) : bw;
+  for (int i = 0; i < count; ++i) {
+    const int bcx = x0 + i * (bw + eff_gap) + bw / 2;
+    out_geoms[i] = HomeHubPillGeom{bcx, cy, bw, eff_h, hit_w, hit_h};
+  }
+  return count;
 }
 
 inline constexpr bool home_hub_uses_two_rows(
@@ -878,7 +963,8 @@ inline constexpr int compute_home_hub_pill_deck(
       if (rc <= 0) continue;
       const int row_cy = deck_top + r * row_stride + row_stride / 2;
       const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 14);
-      const int max_rw = scale_x_for(332, screen_w);
+      const int max_rw = (screen_w > 520) ? std::min(kMaxContentColW, scale_x_for(332, screen_w))
+                                          : scale_x_for(332, screen_w);
       const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
       const int raw_pw = (row_w - (rc - 1) * gap) / rc;
       const int pill_w = (raw_pw > 44) ? raw_pw : 44;
@@ -911,7 +997,8 @@ inline constexpr int compute_home_hub_pill_deck(
     return 1;
   }
 
-  const int max_rw = scale_x_for(336, screen_w);
+  const int max_rw = (screen_w > 520) ? std::min(kMaxContentColW, scale_x_for(336, screen_w))
+                                      : scale_x_for(336, screen_w);
   const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
   const int raw_pw = (row_w - (count - 1) * gap) / count;
   const int pill_w = (raw_pw > 44) ? raw_pw : 44;
@@ -1370,14 +1457,7 @@ inline constexpr CameraGridGeom compute_camera_grid_geom(
   g.title_y = ly.hdr_y;
   g.mode_bar_cy = ly.app_dock_y;
   g.mode_bar_r = ly.dock_r;
-  const int dock_step = (w < 380)
-                            ? ((w - 64) / 3)
-                            : ((w > 520) ? ((w * 74) / 466)
-                                         : (round ? scale_x_for(60, w) : scale_x_for(72, w)));
-  g.mode_slot_xs[0] = cx - (3 * dock_step) / 2;
-  g.mode_slot_xs[1] = cx - dock_step / 2;
-  g.mode_slot_xs[2] = cx + dock_step / 2;
-  g.mode_slot_xs[3] = cx + (3 * dock_step) / 2;
+  compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs);
 
   const int top_y = ly.hdr_y + scale_y_for(24, h);
   const int bot_y = ly.app_dock_y - ly.dock_r - scale_y_for(12, h);

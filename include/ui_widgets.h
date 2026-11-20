@@ -79,7 +79,7 @@ void render_dock_page_pips(esphome::display::Display &it, int cx, int y_pos, int
 
 void render_vertical_page_pips(esphome::display::Display &it, bool show_up, bool show_down,
                                esphome::Color col_bg, esphome::Color col_active,
-                               esphome::Color col_inactive);
+                               esphome::Color col_inactive, int bottom_limit_y = SCREEN_H);
 
 // Back affordance (docs/device-ui-design.md): callers pass layout().back_y ([BACK BUTTON Y]).
 void render_back_button(esphome::display::Display &it, int cx, esphome::display::BaseFont *font,
@@ -165,7 +165,8 @@ void draw_icon_shield_home(esphome::display::Display &it, int cx, int cy, int r,
 void draw_icon_camera(esphome::display::Display &it, int cx, int cy, int r,
                       esphome::Color col, bool shadow = false);
 void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
-                       esphome::Color col, bool waves = true, bool shadow = false);
+                       esphome::Color col, bool waves = true, bool shadow = false,
+                       bool muted = false);
 void draw_icon_thermometer(esphome::display::Display &it, int cx, int cy, int r,
                            esphome::Color col, bool shadow = false);
 void draw_icon_lock(esphome::display::Display &it, int cx, int cy, int r,
@@ -218,11 +219,165 @@ void draw_icon_carousel(esphome::display::Display &it, int cx, int cy, int r,
                         esphome::Color col, bool shadow = false);
 void draw_icon_gear(esphome::display::Display &it, int cx, int cy, int r,
                     esphome::Color col, bool shadow = false);
+void draw_icon_chevron(esphome::display::Display &it, int cx, int cy, int r,
+                       bool is_right, esphome::Color col, bool shadow = false);
+void draw_icon_plus(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow = false);
+void draw_icon_minus(esphome::display::Display &it, int cx, int cy, int r,
+                     esphome::Color col, bool shadow = false);
+void draw_icon_home(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow = false);
+void draw_icon_forecast_chart(esphome::display::Display &it, int cx, int cy, int r,
+                              esphome::Color col, bool shadow = false);
+void draw_icon_sun(esphome::display::Display &it, int cx, int cy, int r,
+                   esphome::Color col, bool shadow = false);
+void draw_icon_crescent_moon(esphome::display::Display &it, int cx, int cy, int r,
+                             esphome::Color col, bool shadow = false);
+void draw_icon_wind(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow = false);
+void draw_icon_arrow_v(esphome::display::Display &it, int cx, int cy, int r,
+                       bool is_up, esphome::Color col, bool shadow = false);
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow = false);
 
 // ------------------------------------------------------------------------------
-// 4. Interactive Hit-Registered Widgets & Modals
+// 4. Canonical Text, Stack Width & Functional Component Library (D-070)
+//    Role-driven widgets with single-source radii (kRadiusCardPx / kRadiusKeyPx / h/2),
+//    outer-box geometry, strict button-only glass, and co-located FrameHitTable bounds.
+// ------------------------------------------------------------------------------
+void shadow_print(esphome::display::Display &it, int x, int y,
+                  esphome::display::BaseFont *font, esphome::Color col,
+                  esphome::display::TextAlign align, const char *text,
+                  bool double_shadow = false);
+
+int wrap_text_lines(const std::string &text, int max_w, esphome::display::BaseFont *font,
+                    std::string *out_lines, int max_lines);
+
+inline constexpr int compute_uniform_stack_w(int top_cy, int bot_cy, int row_h,
+                                             int max_w = kMaxContentColW, int inset = 14) {
+  return compute_uniform_stack_w_for(
+      top_cy, bot_cy, row_h, max_w, SCREEN_W, SCREEN_H,
+      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, inset);
+}
+
+// Unified in-app stadium mode bar (pages 2, 5, 6, 9, 10, 12, 13):
+// Draws track, gliding active capsule, conveyor chevrons, viewport scrollbar,
+// hit targets, and per-slot icons in one canonical path.
+using ModeBarDrawIconFn = void (*)(esphome::display::Display &it, int global_idx,
+                                   int bx, int by, int icon_r,
+                                   esphome::Color fg_col, bool shadow, void *user_ctx);
+
+void mode_bar(esphome::display::Display &it, int cx,
+              int total_count, int active_global_idx, int win_start,
+              esphome::Color theme_primary, esphome::Color col_white,
+              ModeBarDrawIconFn draw_icon_fn, void *user_ctx = nullptr);
+
+// Multi-item header pager bar (D-048 / D-070):
+// When show_arrows == false: renders standard bare shadowed header (zero glass).
+// When show_arrows == true: renders [‹] glass circle + bare shadowed title + [›] glass circle.
+void header_pager_bar(esphome::display::Display &it, int cx, int cy,
+                      const std::string &title, esphome::display::BaseFont *font,
+                      esphome::Color col_white, bool show_arrows,
+                      uint16_t prev_wid = WidgetId::NONE,
+                      uint16_t next_wid = WidgetId::NONE,
+                      int16_t prev_param = -1, int16_t next_param = 1);
+
+// Outer-box stadium action pill (r = h / 2): for standalone & horizontal-row CTAs only.
+void action_pill(esphome::display::Display &it, int x0, int w, int y_mid, int h,
+                 esphome::Color border_c, esphome::Color bg_c,
+                 const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
+                 uint16_t widget_id = WidgetId::NONE,
+                 uint8_t flags = kHitTap | kHitFocusSlot, int16_t param = 0,
+                 int hit_h_min = -1, const char *leading_mdi = nullptr);
+
+void action_pill_centered(esphome::display::Display &it, int cx, int w, int y_mid, int h,
+                          esphome::Color border_c, esphome::Color bg_c,
+                          const char *label, esphome::Color text_c,
+                          esphome::display::BaseFont *font,
+                          uint16_t widget_id = WidgetId::NONE,
+                          uint8_t flags = kHitTap | kHitFocusSlot, int16_t param = 0,
+                          int hit_h_min = -1, const char *leading_mdi = nullptr);
+
+struct ActionPillSpec {
+  const char *label{nullptr};
+  uint16_t widget_id{WidgetId::NONE};
+  esphome::Color border_c{kChromeCardBrdOn};
+  esphome::Color bg_c{kChromeCardBgOff};
+  esphome::Color text_c{esphome::Color::WHITE};
+  int16_t param{0};
+  const char *leading_mdi{nullptr};
+};
+
+void action_pill_row(esphome::display::Display &it, int cy, int h,
+                     int max_row_w, int max_btn_w, int gap,
+                     const ActionPillSpec *items, int count,
+                     esphome::display::BaseFont *font, int inset = 14);
+
+// Paired 2-way stadium segmented toggle (Broadcast | Call Display, White Temp | Color Wheel).
+void segmented_toggle(esphome::display::Display &it, int cx, int cy, int total_w, int h,
+                      const char *left_label, const char *right_label, bool right_active,
+                      esphome::display::BaseFont *font,
+                      esphome::Color theme_primary, esphome::Color col_white,
+                      esphome::Color col_slate,
+                      uint16_t left_wid, uint16_t right_wid);
+
+// Squared-off configuration / setting cycle row (kRadiusCardPx, < label >).
+void setting_cycle_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                       const char *label, bool enabled,
+                       esphome::display::BaseFont *font,
+                       esphome::Color col_white, esphome::Color col_slate,
+                       esphome::Color chevron_col,
+                       uint16_t widget_id = WidgetId::NONE,
+                       uint8_t flags = kHitTap | kHitFocusSlot, int16_t param = 0);
+
+// Squared-off horizontal slider card row (kRadiusCardPx, inner tinted fill bar).
+void slider_card_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                     const char *label, int pct, int min_pct, int max_pct, bool enabled,
+                     esphome::Color fill_c, esphome::Color brd_c,
+                     esphome::display::BaseFont *font, esphome::Color text_c,
+                     uint16_t widget_id = WidgetId::NONE, int16_t param = 0);
+
+// Squared-off interactive list / menu / action-sheet row (kRadiusCardPx).
+// If widget_id == WidgetId::NONE, renders bare passive shadowed text (zero glass per D-048).
+void list_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+              const char *label, const char *sub_label,
+              esphome::Color bg_c, esphome::Color brd_c,
+              esphome::Color text_c, esphome::Color sub_c,
+              esphome::display::BaseFont *font,
+              uint16_t widget_id = WidgetId::NONE,
+              uint8_t flags = kHitTap | kHitFocusSlot, int16_t param = 0,
+              const char *leading_mdi = nullptr,
+              const char *right_badge = nullptr,
+              esphome::Color right_badge_c = kChromeBackLabel);
+
+// Squared-off 2x3 launcher / bento tile (kRadiusCardPx).
+using TileDrawIconFn = void (*)(esphome::display::Display &it, int cx, int cy,
+                                int icon_r, esphome::Color col, bool shadow, void *user_ctx);
+
+void grid_tile(esphome::display::Display &it, int cx, int cy, int w, int h,
+               const char *label, bool active, bool disabled,
+               esphome::Color accent_c, esphome::Color text_c,
+               esphome::display::BaseFont *font,
+               TileDrawIconFn draw_icon_fn, void *user_ctx,
+               uint16_t widget_id = WidgetId::NONE, int16_t param = 0);
+
+// Frosted-glass circular icon button with >= 7 mm default hit padding.
+void icon_circle_button(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color bg_c, esphome::Color brd_c,
+                        esphome::Color icon_c,
+                        TileDrawIconFn draw_icon_fn, void *user_ctx,
+                        uint16_t widget_id = WidgetId::NONE,
+                        uint8_t flags = kHitTap | kHitFocusSlot | kHitFocusCircle,
+                        int16_t param = 0, int hit_pad = -1);
+
+// Compact squared-off keypad button (kRadiusKeyPx) for Calculator & PIN Pad.
+void keypad_button(esphome::display::Display &it, int cx, int cy, int w, int h,
+                   const char *label, esphome::Color bg_c, esphome::Color brd_c,
+                   esphome::Color text_c, esphome::display::BaseFont *font,
+                   uint16_t widget_id = WidgetId::NONE, int16_t param = 0);
+
+// ------------------------------------------------------------------------------
+// 5. Interactive Hit-Registered Widgets & Modals (Legacy/Specialized)
 // ------------------------------------------------------------------------------
 void toggle_switch(esphome::display::Display &it, int cx_sw, int cy_sw, bool is_on,
                    esphome::Color active_col);

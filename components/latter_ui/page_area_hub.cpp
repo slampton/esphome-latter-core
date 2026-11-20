@@ -19,6 +19,36 @@ bool is_curtain_entity(const std::string &name, const std::string &id_str) {
           s.find("sheer") != std::string::npos);
 }
 
+struct AreaModeIconCtx {
+  const std::string *cats{nullptr};
+  int count{0};
+};
+
+void draw_area_mode_icon(esphome::display::Display &it, int g_idx,
+                         int bx, int by, int ir,
+                         esphome::Color fg_c, bool sh, void *user_ctx) {
+  const auto *mc = static_cast<const AreaModeIconCtx *>(user_ctx);
+  if (mc == nullptr || mc->cats == nullptr || g_idx < 0 || g_idx >= mc->count) return;
+  const std::string &cat = mc->cats[g_idx];
+  if (cat == "scene") {
+    ui::draw_icon_sparkle(it, bx, by, ir, fg_c, sh);
+  } else if (cat == "light") {
+    ui::draw_icon_lightbulb(it, bx, by, ir, fg_c, sh);
+  } else if (cat == "cover") {
+    ui::draw_icon_curtains(it, bx, by, ir, fg_c, sh);
+  } else if (cat == "fan") {
+    ui::draw_icon_ceiling_fan(it, bx, by, ir, fg_c, sh);
+  } else if (cat == "switch") {
+    ui::draw_icon_switch_pill(it, bx, by, ir, fg_c, true, sh);
+  } else if (cat == "climate") {
+    ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
+  } else if (cat == "media") {
+    ui::draw_icon_eighth_notes(it, bx, by, ir, fg_c, sh);
+  } else {
+    ui::draw_icon_bento_grid(it, bx, by, ir, fg_c, sh);
+  }
+}
+
 }  // namespace
 
 std::string strip_trailing_paren_state(const std::string &s) {
@@ -77,65 +107,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       }
     }
     area_cat_dock_page() = get_mode_bar_start_index(cat_count, area_cat_dock_page());
-    const int start_idx = area_cat_dock_page();
-    const int vis_count = std::min(4, cat_count - start_idx);
-    int win_xs[4] = {0, 0, 0, 0};
-    bool has_l = false, has_r = false;
-    get_mode_bar_window_xs(cat_count, start_idx, cx, win_xs, has_l, has_r);
-
-    const int active_vis_idx = (active_global_idx >= start_idx && active_global_idx < start_idx + vis_count)
-                                   ? (active_global_idx - start_idx)
-                                   : -1;
-    render_in_app_mode_bar_track(it, cx, win_xs, vis_count, active_vis_idx,
-                                 has_l, has_r, cat_count, active_global_idx,
-                                 theme_primary, col_white, start_idx);
-
-    const int ICON_Y   = layout().app_dock_y;
-    const int ir       = ui::dock_icon_r(layout().dock_r);
-    const int left_cx  = win_xs[0];
-    const int right_cx = win_xs[vis_count - 1];
-    const int stride   = get_dock_slot_stride(win_xs, vis_count);
-    const float anim_start = mode_bar_anim().cur_start;
-
-    for (int g_idx = 0; g_idx < cat_count; g_idx++) {
-      const float rel_slot = static_cast<float>(g_idx) - anim_start;
-      if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
-      const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride)));
-      if (bx < left_cx - scale_x(16) || bx > right_cx + scale_x(16)) continue;
-
-      const int by = ICON_Y;
-      const std::string &cat = cats[g_idx];
-      const bool is_act = (cat == active_domain);
-      const Color raw_c = is_act ? theme_primary : col_white;
-      float alpha = 1.0f;
-      if (rel_slot < 0.0f) {
-        alpha = std::max(0.25f, 1.0f + rel_slot * 1.4f);
-      } else if (rel_slot > static_cast<float>(vis_count - 1)) {
-        alpha = std::max(0.25f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.4f);
-      }
-      const Color fg_c(static_cast<uint8_t>(16 + (raw_c.r - 16) * alpha),
-                       static_cast<uint8_t>(20 + (raw_c.g - 20) * alpha),
-                       static_cast<uint8_t>(27 + (raw_c.b - 27) * alpha));
-      const bool sh = (alpha > 0.65f);
-
-      if (cat == "scene") {
-        ui::draw_icon_sparkle(it, bx, by, ir, fg_c, sh);
-      } else if (cat == "light") {
-        ui::draw_icon_lightbulb(it, bx, by, ir, fg_c, sh);
-      } else if (cat == "cover") {
-        ui::draw_icon_curtains(it, bx, by, ir, fg_c, sh);
-      } else if (cat == "fan") {
-        ui::draw_icon_ceiling_fan(it, bx, by, ir, fg_c, sh);
-      } else if (cat == "switch") {
-        ui::draw_icon_switch_pill(it, bx, by, ir, fg_c, true, sh);
-      } else if (cat == "climate") {
-        ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
-      } else if (cat == "media") {
-        ui::draw_icon_eighth_notes(it, bx, by, ir, fg_c, sh);
-      } else {
-        ui::draw_icon_bento_grid(it, bx, by, ir, fg_c, sh);
-      }
-    }
+    AreaModeIconCtx ic{cats, cat_count};
+    ui::mode_bar(it, cx, cat_count, active_global_idx, area_cat_dock_page(),
+                 theme_primary, col_white, draw_area_mode_icon, &ic);
   };
 
   // ===========================================================================
@@ -189,22 +163,15 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
 
       const int sl_card_w = layout().light_slider_card_w();
       const int b_cy = scale_y(172);
-      render_modern_card(it, cx, b_cy, sl_card_w, 68, 16, card_bg_on,
-                         is_on_st ? theme_primary : card_brd_off, nullptr, col_white, font_small);
-      frame_hits().add_centered_rect(cx, b_cy, sl_card_w, scale_y(68),
-                                     WidgetId::LIGHT_BRI_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot);
-      const int b_max_w = layout().light_bri_bar_w();
-      const int b_fill_w = (b_max_w * cur_pct) / 100;
-      const Color dom_fill = is_cov ? Color(34, 68, 96) : Color(24, 76, 64);
-      if (b_fill_w > 6) {
-        fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(30), b_fill_w, scale_y(60),
-                              static_cast<float>(scale_s(12)), dom_fill, 156, 136);
-      }
       char b_buf[48];
       std::snprintf(b_buf, sizeof(b_buf), "%s: %d%%", is_cov ? "Position" : "Speed", cur_pct);
-      fast_print(it, cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
+      ui::slider_card_row(it, cx, b_cy, sl_card_w, scale_y(64),
+                          b_buf, cur_pct, 0, 100, true,
+                          is_cov ? kChromeCoverFill : kChromeFanFill,
+                          is_on_st ? theme_primary : card_brd_off,
+                          font_small, col_white, WidgetId::LIGHT_BRI_SLIDER);
 
-      // 4 Quick-Preset Pills (0/25/50/100% for Cover; Off/33/66/100% for Fan)
+      // 4 Quick-Preset Stadium Action Pills (0/25/50/100% for Cover; Off/33/66/100% for Fan)
       const int preset_vals[4] = {0, is_cov ? 25 : 33, is_cov ? 50 : 66, 100};
       const char *const cov_lbls[4] = {"Close", "25%", "50%", "Open"};
       const char *const fan_lbls[4] = {"Off", "33%", "66%", "100%"};
@@ -221,15 +188,13 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
         const bool sel = (std::abs(cur_pct - preset_vals[p]) <= 4) &&
                          ((preset_vals[p] == 0) ? !is_on_st : is_on_st);
         const char *lbl = is_cov ? cov_lbls[p] : fan_lbls[p];
-        render_modern_card(it, p_geoms[p].cx, p_geoms[p].cy, p_geoms[p].w, p_geoms[p].h, 12,
-                           sel ? card_bg_on : card_bg_off, sel ? theme_primary : card_brd_off,
-                           lbl, sel ? theme_primary : col_white, font_small);
-        const int hw = std::max(p_geoms[p].w, p_geoms[p].hit_w);
-        const int hh = std::max(p_geoms[p].h, p_geoms[p].hit_h);
-        frame_hits().add_centered_rect(
-            p_geoms[p].cx, p_geoms[p].cy, hw, hh,
+        ui::action_pill_centered(
+            it, p_geoms[p].cx, p_geoms[p].w, p_geoms[p].cy, p_geoms[p].h,
+            sel ? theme_primary : card_brd_off, sel ? card_bg_on : card_bg_off,
+            lbl, sel ? theme_primary : col_white, font_small,
             static_cast<uint16_t>(WidgetId::ENTITY_PRESET_BASE + p),
-            kHitTap | kHitFocusSlot, static_cast<int16_t>(preset_vals[p]));
+            kHitTap | kHitFocusSlot, static_cast<int16_t>(preset_vals[p]),
+            std::max(p_geoms[p].h, p_geoms[p].hit_h));
       }
 
       render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -237,30 +202,40 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     }
 
     const bool is_kelvin_mode = (light_insp_mode() == 1);
-    render_modern_card(it, cx, layout().hdr_y, 212, 34, 10, card_bg_on, theme_primary,
-                       is_kelvin_mode ? "Mode: White Temp >" : "Mode: Color Wheel >",
-                       col_white, font_small);
-    frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(212), scale_y(34),
-                                   WidgetId::LIGHT_COLOR_BTN, kHitTap | kHitFocusSlot);
+    std::string light_hdr = light_insp_name();
+    if (light_hdr.empty()) light_hdr = "LIGHT";
+    for (char &c : light_hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    std::string fit_lh = fit_text_to_width_font(light_hdr, safe_span(layout().hdr_y, 20), font_small);
+    render_page_header(it, cx, fit_lh.c_str(), font_small, col_white);
+
+    const int seg_h = (SCREEN_H < 400) ? 28 : scale_y(30);
+    const int seg_cy = layout().sub_hdr_y + scale_y(8);
+    const int seg_w = std::min({kMaxContentColW, scale_x(296),
+                                band_safe_span_for(seg_cy, seg_h, SCREEN_W, SCREEN_H,
+                                                   LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14)});
+    ui::segmented_toggle(it, cx, seg_cy, seg_w, seg_h,
+                         "Color Wheel", "White Temp", is_kelvin_mode,
+                         font_small, theme_primary, col_white, col_slate,
+                         is_kelvin_mode ? WidgetId::LIGHT_COLOR_BTN : WidgetId::NONE,
+                         !is_kelvin_mode ? WidgetId::LIGHT_COLOR_BTN : WidgetId::NONE);
 
     if (!is_kelvin_mode) {
-      const int wheel_cy = scale_y(212);
-      ui::hsv_color_wheel(it, cx, wheel_cy, 140, 62, light_insp_hue_deg(), light_insp_sat(),
+      const int wheel_cy = scale_y(244);
+      ui::hsv_color_wheel(it, cx, wheel_cy, 132, 58, light_insp_hue_deg(), light_insp_sat(),
                           col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
     } else {
-      std::string fit_ln = fit_text_to_width_font(light_insp_name(), scale_x(260), font_small);
-      fast_print(it, cx, scale_y(86), font_small, theme_secondary, TextAlign::CENTER, fit_ln.c_str());
-
       const int sl_card_w = layout().light_slider_card_w();
       const int k_bar_w   = layout().light_kelvin_bar_w();
       const int k_bar_x0  = layout().light_kelvin_bar_x0();
-      const int k_cy      = scale_y(162);
-      render_modern_card(it, cx, k_cy, sl_card_w, 68, 16, card_bg_on, theme_primary, nullptr, col_white, font_small);
-      frame_hits().add_centered_rect(cx, k_cy, sl_card_w, scale_y(68),
+      const int k_cy      = scale_y(176);
+      const int k_h       = scale_y(68);
+      render_card_box(it, cx - sl_card_w / 2, k_cy - k_h / 2, sl_card_w, k_h,
+                      card_bg_on, theme_primary, kRadiusCardPx());
+      frame_hits().add_centered_rect(cx, k_cy, sl_card_w, k_h,
                                      WidgetId::LIGHT_TEMP_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot);
       for (int b = 0; b < 24; b++) {
         const float t = static_cast<float>(b) / 23.0f;
-        const Color band_c = lerp_color(Color(255, 168, 72), Color(185, 222, 255), t);
+        const Color band_c = lerp_color(kChromeWarmKelvin, kChromeCoolKelvin, t);
         const int bx0 = k_bar_x0 + (b * k_bar_w) / 24;
         const int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
         fill_rect_row_major(it, bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
@@ -271,22 +246,16 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       fast_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
       char k_buf[48];
       std::snprintf(k_buf, sizeof(k_buf), "White Temp: %dK", k_clamped);
-      fast_print(it, cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
+      ui::shadow_print(it, cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
 
-      const int b_cy = scale_y(258);
-      render_modern_card(it, cx, b_cy, sl_card_w, 64, 16, card_bg_on, card_brd_off, nullptr, col_white, font_small);
-      frame_hits().add_centered_rect(cx, b_cy, sl_card_w, scale_y(64),
-                                     WidgetId::LIGHT_BRI_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot);
+      const int b_cy = scale_y(268);
       const int b_clamped = std::max(5, std::min(100, light_insp_bri_pct()));
-      const int b_max_w = layout().light_bri_bar_w();
-      const int b_fill_w = (b_max_w * b_clamped) / 100;
-      if (b_fill_w > 6) {
-        fill_round_rect_glass(it, layout().light_bri_bar_x0(), b_cy - scale_y(28), b_fill_w, scale_y(56),
-                              static_cast<float>(scale_s(12)), Color(92, 68, 22), 152, 132);
-      }
       char b_buf[48];
       std::snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
-      fast_print(it, cx, b_cy, font_small, col_white, TextAlign::CENTER, b_buf);
+      ui::slider_card_row(it, cx, b_cy, sl_card_w, scale_y(64),
+                          b_buf, b_clamped, 0, 100, true,
+                          kChromeLightFill, card_brd_off,
+                          font_small, col_white, WidgetId::LIGHT_BRI_SLIDER);
     }
 
     render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -313,8 +282,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       const Color brd_c = is_act ? theme_primary : card_brd_off;
       const Color txt_c = is_act ? theme_primary : col_white;
       const int area_l = layout().list_card_left;
-      render_modern_card(it, cx, y_mid, 276, 44, 12, is_act ? card_bg_on : card_bg_off, brd_c, nullptr, txt_c, font_small);
-      frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
+      const int area_w = layout().list_card_w;
+      const int area_h = layout().slot5_h;
+      render_card_box(it, area_l, y_mid - area_h / 2, area_w, area_h,
+                      is_act ? card_bg_on : card_bg_off, brd_c, kRadiusCardPx());
+      frame_hits().add_centered_rect(cx, y_mid, area_w, area_h,
                                      static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
                                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
       const int dot_x = area_l + scale_x(19);
@@ -323,8 +295,8 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       } else {
         fast_circle_aa(it, dot_x, y_mid, static_cast<float>(scale_s(5)), col_slate, 1.5f);
       }
-      std::string fit_n = fit_text_to_width_font(s.name, layout().list_card_w - scale_x(54), font_small);
-      fast_print(it, area_l + scale_x(37), y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
+      std::string fit_n = fit_text_to_width_font(s.name, area_w - scale_x(54), font_small);
+      ui::shadow_print(it, area_l + scale_x(37), y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     }
 
     if (list_total_pages > 1) {
@@ -355,7 +327,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     render_sub_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);
   } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
     const int tele_y = layout().sub_hdr_y;
-    const Color icon_c(185, 225, 255);
+    const Color icon_c = kChromeTeleIce;
     const bool tele_sh = backdrop_active();
     const int tr = scale_s(8);
     const int icon_slot = 2 * tr;
@@ -379,20 +351,20 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       const int total_w = icon_slot + txt_pad + w_t + pair_gap + icon_slot + txt_pad + w_h;
       const int left_x = cx - (total_w / 2);
       ui::draw_icon_thermometer(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
-      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      ui::shadow_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
       const int drop_x = left_x + icon_slot + txt_pad + w_t + pair_gap;
       ui::draw_icon_droplet(it, drop_x + tr, tele_y, tr, icon_c, tele_sh);
-      fast_print(it, drop_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      ui::shadow_print(it, drop_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     } else if (has_t) {
       const int total_w = icon_slot + txt_pad + w_t;
       const int left_x = cx - (total_w / 2);
       ui::draw_icon_thermometer(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
-      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
+      ui::shadow_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, t_str);
     } else {
       const int total_w = icon_slot + txt_pad + w_h;
       const int left_x = cx - (total_w / 2);
       ui::draw_icon_droplet(it, left_x + tr, tele_y, tr, icon_c, tele_sh);
-      fast_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
+      ui::shadow_print(it, left_x + icon_slot + txt_pad, tele_y, font_small, theme_secondary, TextAlign::CENTER_LEFT, h_str);
     }
   } else {
     const char *sub_lbl = (area_domain_filter == "scene")   ? "Lighting Scenes"
@@ -420,7 +392,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
         ui::draw_icon_blinds_slats(it, gx, gy, card_ir, cov_c, is_on, true);
       }
     } else if (dtype == "fan") {
-      const Color fan_c = is_on ? Color(48, 196, 156) : fg_c;
+      const Color fan_c = is_on ? kChromeFanAccent : fg_c;
       ui::draw_icon_ceiling_fan(it, gx, gy, card_ir, fan_c, true);
     } else if (dtype == "scene" || dtype == "script") {
       ui::draw_icon_sparkle(it, gx, gy, card_ir, col_gold, true);
@@ -455,9 +427,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     any_card = true;
 
     if (dtype == "text" || id_str.empty()) {
-      std::string fit_msg = fit_text_to_width_font(raw_name, scale_x(280), font_small);
-      render_modern_card(it, cx, y_mid, 316, 64, 16, card_bg_off, card_brd_off,
-                         fit_msg.c_str(), col_slate, font_small);
+      // D-048 / D-070: Non-interactive placeholder renders bare shadowed text (zero glass).
+      std::string fit_msg = fit_text_to_width_font(raw_name, std::min(kMaxContentColW, safe_span(y_mid, 24)), font_small);
+      ui::shadow_print(it, cx, y_mid, font_small, col_slate, TextAlign::CENTER, fit_msg.c_str());
       continue;
     }
 
@@ -466,9 +438,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const Color bg_c  = is_act ? card_bg_on    : card_bg_off;
 
     Color fill_c = scale_color(theme_primary, 0.48f);
-    if (dtype == "light") fill_c = Color(92, 68, 22);
-    else if (dtype == "cover") fill_c = Color(34, 68, 96);
-    else if (dtype == "fan") fill_c = Color(24, 76, 64);
+    if (dtype == "light") fill_c = kChromeLightFill;
+    else if (dtype == "cover") fill_c = kChromeCoverFill;
+    else if (dtype == "fan") fill_c = kChromeFanFill;
 
     const int r_card_w   = layout().area_card3_w;
     const int r_card_h   = layout().area_card3_h;
@@ -476,7 +448,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const int r_right    = layout().area_card_right();
     const int r_div_x    = layout().area_card_div_x();
     const int r_slider_w = (r_right - 5) - (r_div_x + 1);
-    render_modern_card(it, cx, y_mid, r_card_w, 64, 16, bg_c, brd_c, nullptr, col_white, font_small);
+    render_card_box(it, r_left, y_mid - r_card_h / 2, r_card_w, r_card_h, bg_c, brd_c, kRadiusCardPx());
 
     if (has_slider && is_act && level > 0 && r_slider_w > 10) {
       const int clamped_lvl = std::max(0, std::min(100, level));
@@ -496,7 +468,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
         ? (r_slider_w - scale_x(58))
         : ((has_slider || dtype == "climate") ? (r_slider_w - scale_x(28)) : (r_slider_w - scale_x(20)));
     std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
-    fast_print(it, r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
+    ui::shadow_print(it, r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     char sub_buf[40];
     if (dtype == "light") {
@@ -541,7 +513,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "On" : "Off");
     }
     const Color sub_c = is_act ? theme_secondary : kChromeMuted;
-    fast_print(it, r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
+    ui::shadow_print(it, r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
     frame_hits().add_rect(r_left, y_mid - r_card_h / 2, r_div_x - r_left, r_card_h,
                           static_cast<uint16_t>(WidgetId::AREA_CARD_TOGGLE + idx),
@@ -554,22 +526,16 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       const int dot_r = scale_s(4);
       right_limit = ox - orb_r - 4;
       render_glass_circle(it, ox, y_mid, orb_r, kChromeGlassTint, is_act ? theme_primary : card_brd_off);
-      fast_filled_circle_aa(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, Color(255, 95, 95));
-      fast_filled_circle_aa(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, Color(90, 225, 135));
-      fast_filled_circle_aa(it, ox,             y_mid + scale_s(5), dot_r, Color(95, 165, 255));
+      fast_filled_circle_aa(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbRed);
+      fast_filled_circle_aa(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbGreen);
+      fast_filled_circle_aa(it, ox,             y_mid + scale_s(5), dot_r, kChromeRgbBlue);
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
                               static_cast<int16_t>(idx), scale_s(14));
     } else if (has_slider || dtype == "climate") {
       // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
-      const int cx_ch = r_right - scale_x(18);
-      const int ch_dx = std::max(3, scale_x(4));
-      const int ch_dy = std::max(4, scale_y(6));
-      const Color ch_col = is_act ? col_white : col_slate;
-      for (int w = -1; w <= 0; ++w) {
-        fast_line(it, cx_ch - ch_dx + w, y_mid - ch_dy, cx_ch + ch_dx / 2 + w, y_mid, ch_col);
-        fast_line(it, cx_ch + ch_dx / 2 + w, y_mid, cx_ch - ch_dx + w, y_mid + ch_dy, ch_col);
-      }
+      ui::draw_icon_chevron(it, r_right - scale_x(18), y_mid, std::max(5, scale_s(7)),
+                            true, is_act ? col_white : col_slate, true);
     }
 
     // D-050: Overview cards register tap-only bodies (zero kHitHorizSlider) so horizontal swipes
@@ -585,7 +551,8 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   }
 
   if (browse_total_pages > 1) {
-    render_vertical_page_pips(it, browse_page > 1, browse_page < browse_total_pages, col_bg, col_white, col_slate);
+    render_vertical_page_pips(it, browse_page > 1, browse_page < browse_total_pages,
+                              col_bg, col_white, col_slate, layout().mode_bar_zone_top());
   }
 
   render_area_bottom_dock(area_domain_filter);

@@ -85,14 +85,24 @@ image:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           rs.music.loaded_screensaver_photo_url = latter_ui::area_ctx_state().screensaver_photo_url;
+          rs.music.screensaver_photo_failed = false;
           if (rs.nav.display_power_state == 1 && !rs.nav.is_hibernating) {
+            id(sync_display_brightness).execute();
             latter_ui::mark_dirty_full();
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: release_hidden_screensaver_photo
       - script.execute: sync_wake_word_state
     on_error:
-      - lambda: 'latter_ui::runtime_state().music.loaded_screensaver_photo_url = "";'
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          rs.music.loaded_screensaver_photo_url = "";
+          rs.music.screensaver_photo_failed = true;
+          if (rs.nav.display_power_state == 1 && !rs.nav.is_hibernating) {
+            id(sync_display_brightness).execute();
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
       - script.execute: sync_wake_word_state
 
   - platform: online_image

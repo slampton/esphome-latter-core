@@ -23,7 +23,7 @@ void render_battery_indicator(
   std::snprintf(batt_str, sizeof(batt_str), "%.0f%%", batt);
   const bool compact = (SCREEN_W < 380);
   const int text_x = cx + (compact ? 6 : 8);
-  fast_print(it, text_x, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
+  ui::shadow_print(it, text_x, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
   if (!compact) {
     fast_print(it, text_x + 1, by, font_batt, theme_primary, esphome::display::TextAlign::CENTER, batt_str);
   }
@@ -251,16 +251,16 @@ void render_home_activity_card_row(
     esphome::Color card_brd,
     esphome::Color btn_bg) {
   const int card_w     = is_list_row ? layout().list_card_w : layout().home_activity_w();
-  const int card_h     = is_list_row ?  44 : 68;
-  const int card_r     = is_list_row ?  12 : 16;
+  const int card_h     = is_list_row ? layout().slot5_h : scale_y(68);
+  const int card_r     = kRadiusCardPx();
   const int card_right = cx + (card_w / 2);
   const int div1_x     = is_list_row ? (card_right - scale_x(44)) : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
   const int div_h      = is_list_row ?  scale_y(14) : scale_y(23);
   const int div2_x     = card_right - scale_x(52);
   const int drop_bx    = card_right - scale_x(26);
 
-  const esphome::Color surf_bg = render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
-                                                    nullptr, col_white, font_small, GlassVariant::Clear, true);
+  const esphome::Color surf_bg = render_card_box(it, cx - card_w / 2, pill_y - card_h / 2, card_w, card_h,
+                                                 card_bg, card_brd, card_r, GlassVariant::Clear, col_white, true);
 
   draw_home_activity_row_contents(
       it, pill_y, cur_act, has_dropdown_ext, is_list_row, font_small,
@@ -319,55 +319,6 @@ const char *resolve_wake_greeting(int hour, int minute, int day_of_year,
   if (pick == 1) return "Up late tonight?";
   if (pick == 2) return "Rest easy tonight";
   return "Sleep well";
-}
-
-template <int XMin, int XMax, int YMin, int YMax, typename DisplayT, typename PredFn>
-inline void draw_cached_dock_mask(DisplayT &it, int bx, int by, int dock_r,
-                                  esphome::Color c, esphome::Color sh_c, PredFn &&pred) {
-  static uint64_t rows[64] = {};
-  static int cached_r = -1;
-  static int s_xmin = 0;
-  static int s_ymin = 0;
-  static int s_w = 0;
-  static int s_h = 0;
-
-  if (cached_r != dock_r) {
-    const float dk = static_cast<float>(std::max(1, dock_r)) / 27.0f;
-    const float inv_dk = 27.0f / static_cast<float>(std::max(1, dock_r));
-    s_xmin = std::max(-30, static_cast<int>(std::floor(static_cast<float>(XMin) * dk)));
-    const int sx_max = std::min(30, static_cast<int>(std::ceil(static_cast<float>(XMax) * dk)));
-    s_ymin = std::max(-30, static_cast<int>(std::floor(static_cast<float>(YMin) * dk)));
-    const int sy_max = std::min(30, static_cast<int>(std::ceil(static_cast<float>(YMax) * dk)));
-    s_w = std::clamp(sx_max - s_xmin + 1, 1, 62);
-    s_h = std::clamp(sy_max - s_ymin + 1, 1, 62);
-    for (int ry = 0; ry < 64; ++ry) rows[ry] = 0ULL;
-    for (int ry = 0; ry <= s_h; ++ry) {
-      uint64_t m = 0ULL;
-      const int src_y = static_cast<int>(std::lround(static_cast<float>(s_ymin + ry) * inv_dk));
-      for (int rx = 0; rx <= s_w; ++rx) {
-        const int src_x = static_cast<int>(std::lround(static_cast<float>(s_xmin + rx) * inv_dk));
-        if (pred(src_x, src_y)) m |= (uint64_t{1} << rx);
-      }
-      rows[ry] = m;
-    }
-    cached_r = dock_r;
-  }
-
-  const uint64_t col_mask = (uint64_t{1} << s_w) - 1U;
-  for (int ry = 0; ry < s_h; ry++) {
-    uint64_t m = rows[ry] & col_mask;
-    const uint64_t next_row = rows[ry + 1];
-    const int py = by + s_ymin + ry;
-    while (m != 0) {
-      const int rx = std::countr_zero(m);
-      m &= (m - 1U);
-      const int px = bx + s_xmin + rx;
-      if (((next_row >> (rx + 1)) & 1ULL) == 0ULL) {
-        fast_pixel(it, px + 1, py + 1, sh_c);
-      }
-      fast_pixel(it, px, py, c);
-    }
-  }
 }
 
 }  // namespace
@@ -898,23 +849,21 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
 
     const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, 2);
     rs.nav.home_settings_page = hs_pg;
+    const int hs_w = layout().list_card_w;
+    const int hs_h = layout().slot5_h;
     if (hs_pg == 1) {
       char tap_buf[48];
       std::snprintf(tap_buf, sizeof(tap_buf), "Time Tap: %s",
                     (prefs.home_clock_tap_action == 0U) ? "Time App" : "Clock Face");
-      const int y0 = layout().slot5_y(0);
-      render_modern_card(it, cx, y0, layout().list_card_w, 44, 12,
-                         kChromeGlassTint, kChromeCardBrdOn, tap_buf, ctx.col_white, ctx.font_small);
-      frame_hits().add_centered_rect(cx, y0, layout().list_card_w, layout().slot5_h,
-                                     WidgetId::LIST_SLOT_BASE, kHitTap | kHitFocusSlot, 0);
+      ui::setting_cycle_row(it, cx, layout().slot5_y(0), hs_w, hs_h, tap_buf, true,
+                            ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                            WidgetId::LIST_SLOT_BASE, kHitTap | kHitFocusSlot, 0);
 
       char dtap_buf[48];
       std::snprintf(dtap_buf, sizeof(dtap_buf), "Date Tap: %s", pref_home_date_tap_cstr(prefs));
-      const int y1 = layout().slot5_y(1);
-      render_modern_card(it, cx, y1, layout().list_card_w, 44, 12,
-                         kChromeGlassTint, kChromeCardBrdOn, dtap_buf, ctx.col_white, ctx.font_small);
-      frame_hits().add_centered_rect(cx, y1, layout().list_card_w, layout().slot5_h,
-                                     WidgetId::LIST_SLOT_BASE + 1, kHitTap | kHitFocusSlot, 1);
+      ui::setting_cycle_row(it, cx, layout().slot5_y(1), hs_w, hs_h, dtap_buf, true,
+                            ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                            WidgetId::LIST_SLOT_BASE + 1, kHitTap | kHitFocusSlot, 1);
 
       struct HomeBoolRow {
         const char *label;
@@ -928,18 +877,18 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       };
       for (int i = 0; i < 3; ++i) {
         const int row_idx = i + 2;
-        ui::toggle_card_row(it, cx, layout().slot5_y(row_idx), layout().list_card_w, 44,
+        ui::toggle_card_row(it, cx, layout().slot5_y(row_idx), hs_w, hs_h,
                             bool_rows[i].label, bool_rows[i].value, ctx.font_small,
                             ctx.theme_primary, ctx.col_white, ctx.col_slate,
                             WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row_idx),
                             bool_rows[i].param);
       }
     } else {
-      ui::toggle_card_row(it, cx, layout().slot5_y(0), layout().list_card_w, 44,
+      ui::toggle_card_row(it, cx, layout().slot5_y(0), hs_w, hs_h,
                           "Moon Indicator", prefs.home_moon, ctx.font_small,
                           ctx.theme_primary, ctx.col_white, ctx.col_slate,
                           WidgetId::LIST_SLOT_BASE, 5);
-      ui::toggle_card_row(it, cx, layout().slot5_y(1), layout().list_card_w, 44,
+      ui::toggle_card_row(it, cx, layout().slot5_y(1), hs_w, hs_h,
                           "Weather App Sky", prefs.weather_app_background, ctx.font_small,
                           ctx.theme_primary, ctx.col_white, ctx.col_slate,
                           WidgetId::LIST_SLOT_BASE + 1, 6);
@@ -1173,15 +1122,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       }
 
       if (total_pages > 1) {
-        const int chev_x = LATTER_ROUND_DISPLAY ? scale_min(415) : (SCREEN_W - scale_x(36));
-        if (home_activity_overlay_page() > 0) {
-          render_scroll_chevron(it, chev_x, scale_y(162), true, ctx.theme_secondary, ctx.col_black, true);
-          frame_hits().add_circle(chev_x, scale_y(162), scale_s(28), WidgetId::HOME_ACTIVITY_PREV, kHitTap);
-        }
-        if (home_activity_overlay_page() + 1 < total_pages) {
-          render_scroll_chevron(it, chev_x, scale_y(278), false, ctx.theme_secondary, ctx.col_black, true);
-          frame_hits().add_circle(chev_x, scale_y(278), scale_s(28), WidgetId::HOME_ACTIVITY_NEXT, kHitTap);
-        }
+        render_vertical_page_pips(it, home_activity_overlay_page() > 0,
+                                  home_activity_overlay_page() + 1 < total_pages,
+                                  ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
       }
     }
 
@@ -1196,7 +1139,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 
   const Color fg_home_white = ctx.col_white;
-  const Color fg_home_cond  = (!live_sky_drawn || is_night) ? ctx.theme_secondary : Color(255, 225, 110);
+  const Color fg_home_cond  = (!live_sky_drawn || is_night) ? ctx.theme_secondary : kChromeDayGold;
 
   const int z_date_y  = layout().home_date_y;
   const int z_clock_y = layout().home_clock_y;
@@ -1208,8 +1151,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     char date_bar[32];
     esphome::ESPTime now_copy = ctx.now;
     now_copy.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
-    fast_print(it, cx + 1, z_date_y + 1, ctx.font_date, ctx.col_black, TextAlign::CENTER, date_bar);
-    fast_print(it, cx, z_date_y, ctx.font_date, fg_home_white, TextAlign::CENTER, date_bar);
+    ui::shadow_print(it, cx, z_date_y, ctx.font_date, fg_home_white, TextAlign::CENTER, date_bar);
     const int date_hit_w = std::min(scale_x(230), safe_span(z_date_y, 16));
     const int date_hit_h = std::min(scale_y(34), std::max(24, (z_clock_y - scale_y(38) - z_date_y) * 2));
     frame_hits().add_centered_rect(cx, z_date_y, date_hit_w, date_hit_h,
@@ -1222,8 +1164,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   if (ctx.now.is_valid()) {
     format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, time_str, sizeof(time_str));
   }
-  fast_print(it, cx + 1, z_clock_y + 1, ctx.font_time, ctx.col_black, TextAlign::CENTER, time_str);
-  fast_print(it, cx, z_clock_y, ctx.font_time, fg_home_white, TextAlign::CENTER, time_str);
+  ui::shadow_print(it, cx, z_clock_y, ctx.font_time, fg_home_white, TextAlign::CENTER, time_str);
   frame_hits().add_centered_rect(cx, z_clock_y, scale_x(260), scale_y(72),
                                  WidgetId::HOME_TIME_READOUT, kHitTap | kHitFocusSlot);
 
@@ -1750,183 +1691,6 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                               dock_pad);
     }
 
-    const float dk = static_cast<float>(std::max(1, dock_r)) / 27.0f;
-    auto sd = [dk](int v) -> int { return static_cast<int>(std::lround(static_cast<float>(v) * dk)); };
-    auto sdr = [dk](int v) -> int { return std::max(1, static_cast<int>(std::lround(static_cast<float>(v) * dk))); };
-
-    auto draw_bespoke_dock_route = [&](RouteId route_id, int bx, int by, Color c, bool is_shadow,
-                                       Color cut_c, bool want_shadow) {
-      const int icon_r = ui::dock_icon_r(dock_r);
-      if (route_id == RouteId::APP_PINNED) {
-        if (!is_shadow) {
-          ui::draw_icon_thumbtack(it, bx, by, icon_r, c, want_shadow);
-        }
-      } else if (route_id == RouteId::APP_AREA) {
-        fast_filled_triangle(it, bx + sd(11), by - sd(15), bx + sd(6), by - sd(7), bx + sd(16), by - sd(7), c);
-        fill_rect_row_major(it, bx + sd(8), by - sd(14), sdr(7), sdr(3), c);
-        fast_vline(it, bx + sd(11), by - sd(7), sdr(19), c);
-        fast_vline(it, bx + sd(12), by - sd(7), sdr(19), c);
-        fast_hline(it, bx + sd(8), by + sd(12), sdr(8), c);
-        fill_rect_row_major(it, bx - sd(12), by - sd(4), sdr(15), sdr(8), c);
-        fast_filled_circle(it, bx - sd(11), by - sd(2), sdr(2), c);
-        fast_filled_circle(it, bx + sd(1),  by - sd(2), sdr(2), c);
-        fast_filled_circle(it, bx - sd(14), by + sd(3), sdr(3), c);
-        fast_filled_circle(it, bx + sd(4),  by + sd(3), sdr(3), c);
-        fill_rect_row_major(it, bx - sd(15), by + sd(3), sdr(21), sdr(7), c);
-        fill_rect_row_major(it, bx - sd(14), by + sd(10), sdr(3), sdr(3), c);
-        fill_rect_row_major(it, bx + sd(2),  by + sd(10), sdr(3), sdr(3), c);
-        if (!is_shadow) {
-          fast_vline(it, bx - sd(5), by - sd(4), sdr(8), cut_c);
-          fast_hline(it, bx - sd(12), by + sd(4), sdr(15), cut_c);
-        }
-      } else if (route_id == RouteId::APP_MUSIC) {
-        fast_filled_circle(it, bx - sd(9), by + sd(9), sdr(5), c);
-        fast_filled_circle(it, bx + sd(8), by + sd(6), sdr(5), c);
-        fill_rect_row_major(it, bx - sd(5), by - sd(12), sdr(3), sdr(21), c);
-        fill_rect_row_major(it, bx + sd(11), by - sd(15), sdr(3), sdr(21), c);
-        fast_line(it, bx - sd(5), by - sd(12), bx + sd(13), by - sd(15), c);
-        fast_line(it, bx - sd(5), by - sd(11), bx + sd(13), by - sd(14), c);
-        fast_line(it, bx - sd(5), by - sd(10), bx + sd(13), by - sd(13), c);
-        fast_line(it, bx - sd(5), by - sd(9),  bx + sd(13), by - sd(12), c);
-      } else if (route_id == RouteId::APP_REMOTE || route_id == RouteId::REMOTE_DEVICES) {
-        if (!is_shadow) {
-          draw_cached_dock_mask<-7, 7, -15, 15>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
-            const int ax = std::abs(dx);
-            const int ay = std::abs(dy);
-            if (ax > 7 || ay > 15) return false;
-            if (ax > 4 && ay > 12 && ((ax - 4) * (ax - 4) + (ay - 12) * (ay - 12) > 10)) {
-              return false;
-            }
-            const int dpy = dy + 6;
-            const int r2 = dx * dx + dpy * dpy;
-            if (r2 >= 6 && r2 <= 29) {
-              if (r2 >= 14 && (std::abs(dx - dpy) <= 1 || std::abs(dx + dpy) <= 1)) {
-                return true;
-              }
-              return false;
-            }
-            if (((dy >= 3 && dy <= 4) || (dy >= 8 && dy <= 9)) && (ax >= 2 && ax <= 4)) {
-              return false;
-            }
-            return true;
-          });
-        }
-      } else if (route_id == RouteId::APP_TOOLS) {
-        if (!is_shadow) {
-          draw_cached_dock_mask<-12, 12, -12, 12>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
-            const int ax = std::abs(dx);
-            const int ay = std::abs(dy);
-            if (ax < 2 || ax > 11 || ay < 2 || ay > 11) return false;
-            const int lx = ax - 2;
-            const int ly_c = ay - 2;
-            if ((lx == 0 || lx == 9) && (ly_c == 0 || ly_c == 9)) return false;
-            if (dx > 0 && dy > 0 && lx >= 3 && lx <= 6 && ly_c >= 3 && ly_c <= 6) {
-              return false;
-            }
-            return true;
-          });
-        }
-      } else if (route_id == RouteId::APP_GAMES) {
-        if (!is_shadow) {
-          draw_cached_dock_mask<-19, 19, -12, 11>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
-            static constexpr int8_t GP_OUT_MAX[24] = {
-               9, 11, 12, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 18, 18, 18, 17, 17, 16, 15
-            };
-            static constexpr int8_t GP_OUT_MIN[24] = {
-               0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  6,  8,  9,  9, 10, 10, 11, 12, 13
-            };
-            if (dy < -12 || dy > 11) return false;
-            const int row = dy + 12;
-            const int ax = std::abs(dx);
-            if (ax < GP_OUT_MIN[row] || ax > GP_OUT_MAX[row]) return false;
-
-            const int dpx = dx + 7;
-            const int dpy = dy + 4;
-            if ((std::abs(dpx) <= 1 && std::abs(dpy) <= 5) ||
-                (std::abs(dpy) <= 1 && std::abs(dpx) <= 5)) {
-              return false;
-            }
-
-            const int abx = dx - 7;
-            const int aby = dy + 4;
-            auto is_dot = [](int x, int y, int cx_d, int cy_d) -> bool {
-              const int rx = x - cx_d, ry = y - cy_d;
-              return (rx * rx + ry * ry) <= 2;
-            };
-            if (is_dot(abx, aby, 0, -4) || is_dot(abx, aby, 0, 4) ||
-                is_dot(abx, aby, -4, 0) || is_dot(abx, aby, 4, 0)) {
-              return false;
-            }
-            return true;
-          });
-        }
-      } else if (route_id == RouteId::SETTINGS_ROOT) {
-        if (!is_shadow) {
-          draw_cached_dock_mask<-16, 16, -16, 16>(it, bx, by, dock_r, c, ctx.col_black, [](int dx, int dy) -> bool {
-            const int r2 = dx * dx + dy * dy;
-            if (r2 <= 24 || r2 > 232) return false;
-            if (r2 <= 128) return true;
-            const float fx = static_cast<float>(dx);
-            const float fy = static_cast<float>(dy);
-            static constexpr float INV_SQRT2 = 0.70710678f;
-            const float p_v  = std::fabs(fx),                    a_v  = std::fabs(fy);
-            const float p_h  = std::fabs(fy),                    a_h  = std::fabs(fx);
-            const float p_d1 = std::fabs((fx - fy) * INV_SQRT2), a_d1 = std::fabs((fx + fy) * INV_SQRT2);
-            const float p_d2 = std::fabs((fx + fy) * INV_SQRT2), a_d2 = std::fabs((fx - fy) * INV_SQRT2);
-            auto in_tooth = [](float perp, float along) -> bool {
-              if (along > 15.0f) return false;
-              const float max_w = 2.65f - (along - 11.0f) * 0.20f;
-              return (perp <= max_w);
-            };
-            return in_tooth(p_v, a_v) || in_tooth(p_h, a_h) ||
-                   in_tooth(p_d1, a_d1) || in_tooth(p_d2, a_d2);
-          });
-        }
-      } else if (route_id == RouteId::APP_CAMERAS) {
-        if (!is_shadow) {
-          ui::draw_icon_camera(it, bx, by, icon_r, c, want_shadow);
-        }
-      } else if (route_id == RouteId::APP_HOME_HUB) {
-        fill_rect_row_major(it, bx + sd(7), by - sd(14), sdr(4), sdr(8), c);
-        fast_filled_triangle(it, bx, by - sd(16), bx - sd(16), by - sd(2), bx + sd(16), by - sd(2), c);
-        fill_rect_row_major(it, bx - sd(16), by - sd(2), sdr(33), sdr(2), c);
-        fill_rect_row_major(it, bx - sd(12), by, sdr(25), sdr(13), c);
-        if (!is_shadow) {
-          fast_hline(it, bx - sd(12), by, sdr(25), cut_c);
-          fill_rect_row_major(it, bx - sd(8), by + sd(3), sdr(6), sdr(10), cut_c);
-          fast_pixel(it, bx - sd(4), by + sd(8), c);
-          fill_rect_row_major(it, bx + sd(2), by + sd(3), sdr(7), sdr(6), cut_c);
-          fast_vline(it, bx + sd(5), by + sd(3), sdr(6), c);
-          fast_hline(it, bx + sd(2), by + sd(5), sdr(7), c);
-        }
-      } else if (route_id == RouteId::APP_WEATHER) {
-        fast_filled_circle(it, bx + sd(6), by - sd(6), sdr(5), c);
-        fast_vline(it, bx + sd(6), by - sd(14), sdr(2), c);
-        fast_hline(it, bx + sd(13), by - sd(6), sdr(2), c);
-        fast_line(it, bx + sd(11), by - sd(11), bx + sd(12), by - sd(12), c);
-        fast_line(it, bx + sd(1), by - sd(11), bx, by - sd(12), c);
-        if (!is_shadow) {
-          fast_filled_circle(it, bx - sd(2), by + sd(1), sdr(9), cut_c);
-          fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(8), cut_c);
-          fill_rect_row_major(it, bx - sd(11), by + sd(2), sdr(19), sdr(9), cut_c);
-        }
-        fast_filled_circle(it, bx - sd(9), by + sd(5), sdr(5), c);
-        fast_filled_circle(it, bx - sd(2), by + sd(1), sdr(7), c);
-        fast_filled_circle(it, bx + sd(6), by + sd(4), sdr(6), c);
-        fill_rect_row_major(it, bx - sd(9), by + sd(4), sdr(16), sdr(7), c);
-      } else if (route_id == RouteId::APP_TIME || route_id == RouteId::APP_CLOCK) {
-        if (!is_shadow) {
-          ui::draw_icon_clock_solid(it, bx, by, icon_r, c, want_shadow);
-        }
-      } else if (route_id == RouteId::APP_CALENDAR || route_id == RouteId::CALENDAR_MONTH) {
-        if (!is_shadow) {
-          ui::draw_icon_calendar(it, bx, by, icon_r, c, want_shadow);
-        }
-      } else if (!is_shadow) {
-        ui::draw_route_icon(it, route_id, bx, by, icon_r, c, cut_c, want_shadow);
-      }
-    };
-
     const float anim_start = home_dock_anim().step_window(start_idx, now_ms);
     const int dock_bounce_x = edge_bounce().offset_px(
         PageId::HOME, GestureAxisLock::Horizontal, now_ms, LATTER_PANEL_PPI);
@@ -1934,6 +1698,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     const int left_cx      = win_xs[0];
     const int right_cx     = win_xs[vis_count - 1];
     const int clip_pad     = stride / 2 + dock_r;
+    const int icon_r       = ui::dock_icon_r(dock_r);
 
     for (int g_idx = 0; g_idx < dock_count; g_idx++) {
       const float rel_slot = static_cast<float>(g_idx) - anim_start;
@@ -1957,16 +1722,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                             static_cast<uint8_t>(base_fg.b * alpha));
 
       const int d = 2 * dock_r + 1;
-      const bool bespoke_route = (item.kind == ShortcutKind::ROUTE && item.icon.empty());
-      const bool needs_cutout =
-          bespoke_route &&
-          (item.route_id == RouteId::APP_WEATHER || item.route_id == RouteId::APP_AREA ||
-           item.route_id == RouteId::APP_HOME_HUB);
-      const GlassBackdrop bd =
-          needs_cutout ? sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d) : GlassBackdrop{};
-      const Color dock_tint = item_active
-          ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72)
-          : kChromeGlassTint;
+      const Color dock_tint = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
       const Color dock_rim = item_active ? ctx.theme_primary : kChromeGlassSheen;
       Color eff_tint;
       int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
@@ -1980,15 +1736,11 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                             dock_rim, sheen_top, sheen_bot, 1);
       fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2,
                             static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
-      const Color slot_cut_c = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 
-      if (bespoke_route) {
-        if (alpha > 0.55f) {
-          draw_bespoke_dock_route(item.route_id, bx + 1, dock_y + 1, ctx.col_black, true, ctx.col_black, false);
-        }
-        draw_bespoke_dock_route(item.route_id, bx, dock_y, slot_fg_c, false, slot_cut_c, alpha > 0.55f);
+      if (item.kind == ShortcutKind::ROUTE && item.icon.empty()) {
+        ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, eff_tint, alpha > 0.55f);
       } else {
-        const int mdi_px = std::max(16, 2 * ui::dock_icon_r(dock_r));
+        const int mdi_px = std::max(16, 2 * icon_r);
         const char *fallback_mdi = (item.kind == ShortcutKind::ROUTE) ? "mdi:apps" : "mdi:gesture-tap-button";
         render_mdi_icon(it, item.icon, bx, dock_y, mdi_px, slot_fg_c, alpha > 0.55f, fallback_mdi);
       }

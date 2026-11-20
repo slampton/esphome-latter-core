@@ -20,23 +20,6 @@ int band_safe_w(int cy_band, int h_band, int inset = 14) {
   return std::min(safe_span(y_top, inset), safe_span(y_bot, inset));
 }
 
-void draw_shadowed_text(esphome::display::Display &it, int x, int y,
-                        esphome::display::BaseFont *font, esphome::Color col,
-                        esphome::display::TextAlign align, const char *text) {
-  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
-  fast_print(it, x + 1, y + 1, font, kChromeShadow, align, text);
-  fast_print(it, x, y, font, col, align, text);
-}
-
-void render_passive_empty_label(esphome::display::Display &it, int cx, int cy,
-                                const char *text, esphome::display::BaseFont *font,
-                                esphome::Color text_c) {
-  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
-  const int max_w = std::max(64, band_safe_w(cy, 28, 16));
-  const std::string fit = fit_text_to_width_font(std::string(text), max_w, font);
-  draw_shadowed_text(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
-}
-
 std::string to_ascii_upper_str(std::string_view sv) {
   std::string out(sv);
   for (char &c : out) {
@@ -48,100 +31,52 @@ std::string to_ascii_upper_str(std::string_view sv) {
   return out;
 }
 
-void draw_frosted_pill(esphome::display::Display &it, int cx_pill, int cy_pill,
-                       int w_pill, int h_pill, int r_pill,
-                       esphome::Color border_c, esphome::Color bg_c,
-                       const char *label, esphome::Color text_c,
-                       esphome::display::BaseFont *font,
-                       uint16_t widget_id = WidgetId::NONE,
-                       int16_t param = 0,
-                       int hit_w = 0, int hit_h = 0) {
-  const int eff_w = std::max(16, w_pill);
-  const int eff_h = std::max(16, h_pill);
-  const int eff_r = std::clamp(r_pill, 4, std::min(eff_w, eff_h) / 2);
-  const int x0 = cx_pill - eff_w / 2;
-  const int y0 = cy_pill - eff_h / 2;
-  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, border_c, eff_r, GlassVariant::Clear, text_c);
-  if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    const std::string fit = fit_text_to_width_font(std::string(label), std::max(24, eff_w - 10), font);
-    draw_shadowed_text(it, cx_pill, cy_pill, font, text_c,
-                       esphome::display::TextAlign::CENTER, fit.c_str());
+struct HomeHubModeIconCtx {
+  const int *tabs{nullptr};
+  int count{0};
+};
+
+void draw_home_hub_mode_icon(esphome::display::Display &it, int g_idx,
+                             int bx, int by, int ir,
+                             esphome::Color fg_c, bool sh, void *user_ctx) {
+  const auto *mc = static_cast<const HomeHubModeIconCtx *>(user_ctx);
+  if (mc == nullptr || mc->tabs == nullptr || g_idx < 0 || g_idx >= mc->count) return;
+  switch (mc->tabs[g_idx]) {
+    case HomeHubTab::ALARM:
+      ui::draw_icon_shield_home(it, bx, by, ir, fg_c, sh);
+      break;
+    case HomeHubTab::INTERCOM:
+      ui::draw_icon_speaker(it, bx, by, ir, fg_c, true, sh);
+      break;
+    case HomeHubTab::THERMOSTAT:
+      ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
+      break;
+    case HomeHubTab::ENTRY:
+      ui::draw_icon_lock(it, bx, by, ir, fg_c, true, sh);
+      break;
+    case HomeHubTab::VACUUM:
+    default:
+      ui::draw_icon_robot_vacuum(it, bx, by, ir, fg_c, sh);
+      break;
   }
-  if (widget_id != WidgetId::NONE) {
-    const int hw = std::max(eff_w, hit_w);
-    const int hh = std::max(eff_h, hit_h);
-    frame_hits().add_centered_rect(cx_pill, cy_pill, hw, hh, widget_id,
-                                   kHitTap | kHitFocusSlot, param);
-  }
+}
+
+void draw_hub_minus_icon(esphome::display::Display &it, int cx, int cy, int r,
+                         esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_minus(it, cx, cy, r, col, shadow);
+}
+
+void draw_hub_plus_icon(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_plus(it, cx, cy, r, col, shadow);
 }
 
 void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx,
                               const int *tabs, int tab_count, int active_slot) {
-  using esphome::Color;
-  const int cx = ctx.cx;
   home_hub_mode_bar_page() = get_mode_bar_start_index(tab_count, home_hub_mode_bar_page());
-  const int start_idx = home_hub_mode_bar_page();
-  const int vis_count = std::min(4, tab_count - start_idx);
-  if (vis_count <= 0) return;
-
-  int win_xs[4] = {0, 0, 0, 0};
-  bool has_l = false;
-  bool has_r = false;
-  get_mode_bar_window_xs(tab_count, start_idx, cx, win_xs, has_l, has_r);
-
-  const int active_vis_idx =
-      (active_slot >= start_idx && active_slot < start_idx + vis_count)
-          ? (active_slot - start_idx)
-          : -1;
-  render_in_app_mode_bar_track(it, cx, win_xs, vis_count, active_vis_idx,
-                               has_l, has_r, tab_count, active_slot,
-                               ctx.theme_primary, ctx.col_white, start_idx);
-
-  const int by = layout().app_dock_y;
-  const int ir = ui::dock_icon_r(layout().dock_r);
-  const int left_cx = win_xs[0];
-  const int right_cx = win_xs[vis_count - 1];
-  const int stride = get_dock_slot_stride(win_xs, vis_count);
-  const float anim_start = mode_bar_anim().cur_start;
-
-  for (int g_idx = 0; g_idx < tab_count; ++g_idx) {
-    const float rel_slot = static_cast<float>(g_idx) - anim_start;
-    if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
-    const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride)));
-    if (bx < left_cx - scale_x(16) || bx > right_cx + scale_x(16)) continue;
-
-    const bool is_act = (g_idx == active_slot);
-    const Color raw_c = is_act ? ctx.theme_primary : ctx.col_white;
-    float alpha = 1.0f;
-    if (rel_slot < 0.0f) {
-      alpha = std::max(0.25f, 1.0f + rel_slot * 1.4f);
-    } else if (rel_slot > static_cast<float>(vis_count - 1)) {
-      alpha = std::max(0.25f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.4f);
-    }
-    const Color fg_c(static_cast<uint8_t>(16 + (raw_c.r - 16) * alpha),
-                     static_cast<uint8_t>(20 + (raw_c.g - 20) * alpha),
-                     static_cast<uint8_t>(27 + (raw_c.b - 27) * alpha));
-    const bool sh = (alpha > 0.65f);
-
-    switch (tabs[g_idx]) {
-      case HomeHubTab::ALARM:
-        ui::draw_icon_shield_home(it, bx, by, ir, fg_c, sh);
-        break;
-      case HomeHubTab::INTERCOM:
-        ui::draw_icon_speaker(it, bx, by, ir, fg_c, true, sh);
-        break;
-      case HomeHubTab::THERMOSTAT:
-        ui::draw_icon_thermometer(it, bx, by, ir, fg_c, sh);
-        break;
-      case HomeHubTab::ENTRY:
-        ui::draw_icon_lock(it, bx, by, ir, fg_c, true, sh);
-        break;
-      case HomeHubTab::VACUUM:
-      default:
-        ui::draw_icon_robot_vacuum(it, bx, by, ir, fg_c, sh);
-        break;
-    }
-  }
+  HomeHubModeIconCtx ic{tabs, tab_count};
+  ui::mode_bar(it, ctx.cx, tab_count, active_slot, home_hub_mode_bar_page(),
+               ctx.theme_primary, ctx.col_white, draw_home_hub_mode_icon, &ic);
 }
 
 void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -153,8 +88,8 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   const int cx = ctx.cx;
   render_page_header(it, cx, "SECURITY ALARM", ctx.font_small, ctx.col_white);
   if (ac.alarm_entity.empty()) {
-    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
-                               "No Security Alarm configured", ctx.font_small, ctx.col_slate);
+    render_empty_state(it, cx, (content_top + content_bot) / 2,
+                       "No Security Alarm configured", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -214,14 +149,14 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
   const std::string fit_badge = fit_text_to_width_font(std::string(badge_txt), st_max_w, st_font);
-  draw_shadowed_text(it, cx, st_y, st_font, badge_col, TextAlign::CENTER, fit_badge.c_str());
+  ui::shadow_print(it, cx, st_y, st_font, badge_col, TextAlign::CENTER, fit_badge.c_str());
 
   if (is_fb) {
     auto *fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
     const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
-    draw_shadowed_text(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    ui::shadow_print(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   }
 
   const int deck_top = hero_y0 + hero_h + std::max(6, scale_y(10));
@@ -248,14 +183,13 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
     const Color acc = color_for_alarm_code(specs[i].code);
     const bool is_disarm_cta = (specs[i].code == 0);
     const bool use_short = (!use_two_rows && geom_cnt >= 3 && geoms[i].w < scale_x(92));
-    draw_frosted_pill(
-        it, geoms[i].cx, geoms[i].cy, geoms[i].w, geoms[i].h,
-        is_disarm_cta ? (geoms[i].h / 2) : std::min(16, geoms[i].h / 2),
-        acc,
-        is_disarm_cta ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+    ui::action_pill_centered(
+        it, geoms[i].cx, geoms[i].w, geoms[i].cy, geoms[i].h,
+        acc, is_disarm_cta ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
         use_short ? specs[i].short_label : specs[i].label,
         ctx.col_white,
-        (geom_cnt == 1 && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small);
+        (geom_cnt == 1 && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small,
+        WidgetId::NONE);
   }
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::ALARM_MODE_BASE, codes, geoms, geom_cnt);
 }
@@ -264,8 +198,6 @@ void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContex
                               const char *prefix_lbl, int active_idx, int item_count,
                               const std::string &item_name, const char *fallback_hdr,
                               int hdr_cy, uint16_t prev_wid, uint16_t next_wid) {
-  using esphome::display::TextAlign;
-
   const int cx = ctx.cx;
   if (item_count <= 1) {
     const std::string hdr_txt = !item_name.empty() ? to_ascii_upper_str(item_name) : std::string(fallback_hdr);
@@ -273,37 +205,14 @@ void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContex
     return;
   }
 
-  const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int pill_h = (SCREEN_H < 400) ? 28 : scale_y(34);
-  const int safe_w = band_safe_w(hdr_cy, pill_h, 12);
-  const int hdr_w = std::max(120, std::min(scale_x(272), safe_w));
-
+  // D-048 / D-070: Zero glass behind multi-item selector title — [‹] glass circle + bare title + [›] glass circle.
   std::string title = std::string(prefix_lbl) + " " + std::to_string(active_idx + 1) + "/" +
                       std::to_string(item_count);
   if (!item_name.empty()) {
-    title += " \xC2\xB7 " + item_name;
+    title += " \xC2\xB7 " + to_ascii_upper_str(item_name);
   }
-
-  render_card_box(it, cx - hdr_w / 2, hdr_cy - pill_h / 2, hdr_w, pill_h,
-                  ui::chrome_card_bg_on(), ctx.theme_primary, pill_h / 2,
-                  GlassVariant::Clear, ctx.col_white);
-
-  const int arrow_pad = scale_x(22);
-  const std::string fit_t =
-      fit_text_to_width_font(title, std::max(48, hdr_w - 2 * arrow_pad), ctx.font_small);
-  draw_shadowed_text(it, cx, hdr_cy, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_t.c_str());
-
-  const int lx = cx - hdr_w / 2 + scale_x(12);
-  const int rx = cx + hdr_w / 2 - scale_x(12);
-  draw_shadowed_text(it, lx, hdr_cy, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "<");
-  draw_shadowed_text(it, rx, hdr_cy, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, ">");
-
-  const int half_hit_w = std::max(min_hit, hdr_w / 2);
-  const int hit_h = std::max(pill_h + 8, std::min(min_hit, scale_y(48)));
-  frame_hits().add_rect(cx - half_hit_w, hdr_cy - hit_h / 2, half_hit_w, hit_h,
-                        prev_wid, kHitTap | kHitFocusSlot, -1);
-  frame_hits().add_rect(cx, hdr_cy - hit_h / 2, half_hit_w, hit_h,
-                        next_wid, kHitTap | kHitFocusSlot, 1);
+  ui::header_pager_bar(it, cx, hdr_cy, title, ctx.font_small, ctx.col_white, true,
+                       prev_wid, next_wid, -1, 1);
 }
 
 void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -332,21 +241,11 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
   // Top Segmented Toggle Pill: Broadcast | Call Display
   const int seg_h = (SCREEN_H < 400) ? 28 : scale_y(34);
   const int seg_cy = content_top + seg_h / 2;
-  const int seg_gap = std::max(4, scale_x(6));
-  const int seg_total_w = std::min(scale_x(296), band_safe_w(seg_cy, seg_h, 14));
-  const int seg_w = std::max(56, (seg_total_w - seg_gap) / 2);
-  const int seg_hit_h = std::max(seg_h, std::min(min_hit, seg_h + 10));
-
-  draw_frosted_pill(it, cx - (seg_w + seg_gap) / 2, seg_cy, seg_w, seg_h, seg_h / 2,
-                    !live_mode ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                    !live_mode ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                    "Broadcast", !live_mode ? ctx.col_white : ctx.col_slate,
-                    ctx.font_small, WidgetId::INTERCOM_SEG_BROADCAST, 0, seg_w, seg_hit_h);
-  draw_frosted_pill(it, cx + (seg_w + seg_gap) / 2, seg_cy, seg_w, seg_h, seg_h / 2,
-                    live_mode ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                    live_mode ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                    "Call Display", live_mode ? ctx.col_white : ctx.col_slate,
-                    ctx.font_small, WidgetId::INTERCOM_SEG_CALL, 1, seg_w, seg_hit_h);
+  const int seg_total_w = std::min({kMaxContentColW, scale_x(296), band_safe_w(seg_cy, seg_h, 14)});
+  ui::segmented_toggle(it, cx, seg_cy, seg_total_w, seg_h,
+                       "Broadcast", "Call Display", live_mode,
+                       ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate,
+                       WidgetId::INTERCOM_SEG_BROADCAST, WidgetId::INTERCOM_SEG_CALL);
 
   const int unlock_h = has_lock_or_garage ? ((SCREEN_H < 400) ? 28 : scale_y(34)) : 0;
   const int unlock_cy = content_bot - unlock_h / 2;
@@ -363,21 +262,21 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
     const int stride = rows_avail / 3;
     const int card_h = std::clamp(stride - 5, 30, scale_y(46));
     const int hit_h = std::max(card_h, std::min(min_hit, stride));
-    const int stack_w = std::min({scale_x(312),
-                                  band_safe_w(rows_top + stride / 2, card_h, 14),
-                                  band_safe_w(rows_top + 2 * stride + stride / 2, card_h, 14)});
+    const int stack_w = ui::compute_uniform_stack_w(
+        rows_top + stride / 2, rows_top + 2 * stride + stride / 2, card_h,
+        std::min(kMaxContentColW, scale_x(312)), 14);
     const int x0 = cx - stack_w / 2;
     for (int i = 0; i < 3; ++i) {
       const int cy_r = rows_top + i * stride + stride / 2;
       render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
                       ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
-                      std::min(12, card_h / 2), GlassVariant::Clear, ctx.col_white);
+                      kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
       const int spk_r = std::clamp(card_h / 3, 9, scale_s(13));
       ui::draw_icon_speaker(it, x0 + scale_x(22), cy_r, spk_r, ctx.theme_primary, true, true);
       const std::string fit_l = fit_text_to_width_font(
           std::string(kBroadcastLabels[i]), std::max(60, stack_w - scale_x(54)), ctx.font_small);
-      draw_shadowed_text(it, x0 + scale_x(42), cy_r, ctx.font_small, ctx.col_white,
-                         TextAlign::CENTER_LEFT, fit_l.c_str());
+      ui::shadow_print(it, x0 + scale_x(42), cy_r, ctx.font_small, ctx.col_white,
+                       TextAlign::CENTER_LEFT, fit_l.c_str());
       frame_hits().add_centered_rect(cx, cy_r, stack_w, hit_h,
                                      static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
                                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
@@ -393,44 +292,44 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
         : cam_intercom_status();
     const std::string fit_st = fit_text_to_width_font(
         st_txt, std::max(80, band_safe_w(st_y, 28, 16)), st_font);
-    draw_shadowed_text(it, cx, st_y, st_font, ctx.col_green, TextAlign::CENTER, fit_st.c_str());
+    ui::shadow_print(it, cx, st_y, st_font, ctx.col_green, TextAlign::CENTER, fit_st.c_str());
 
     const int btn_cy = mid_cy + std::max(18, rows_avail / 4);
     const int end_h = std::clamp(rows_avail / 3 + 4, 34, scale_y(46));
-    const int end_w = std::min(scale_x(164), band_safe_w(btn_cy, end_h, 16));
-    draw_frosted_pill(it, cx, btn_cy, end_w, end_h, end_h / 2,
-                      ctx.col_red, ui::chrome_danger_bg(), "End Call", ctx.col_white,
-                      ctx.font_small, WidgetId::CAM_LISTEN_BTN, 0,
-                      std::max(end_w, min_hit), std::max(end_h, std::min(min_hit, rows_avail / 2)));
+    const int end_w = std::min({kMaxContentColW, scale_x(164), band_safe_w(btn_cy, end_h, 16)});
+    ui::action_pill_centered(it, cx, end_w, btn_cy, end_h,
+                             ctx.col_red, ui::chrome_danger_bg(), "End Call", ctx.col_white,
+                             ctx.font_small, WidgetId::CAM_LISTEN_BTN, kHitTap | kHitFocusSlot, 0,
+                             std::max(end_h, std::min(min_hit, rows_avail / 2)));
   } else {
     std::string t_ids[5], t_lbls[5];
     bool t_all[5] = {false, false, false, false, false};
     const int cnt = std::min(3, parse_intercom_targets_list(ac.intercom_targets_summary, t_ids, t_lbls, t_all));
     if (cnt <= 0) {
-      render_passive_empty_label(it, cx, rows_top + rows_avail / 2,
-                                 "No Peer Displays", ctx.font_small, ctx.col_slate);
+      render_empty_state(it, cx, rows_top + rows_avail / 2,
+                         "No Peer Displays", ctx.font_small, ctx.col_slate);
     } else {
       const int stride = rows_avail / 3;
       const int card_h = std::clamp(stride - 5, 30, scale_y(46));
       const int hit_h = std::max(card_h, std::min(min_hit, stride));
-      const int stack_w = std::min({scale_x(312),
-                                    band_safe_w(rows_top + stride / 2, card_h, 14),
-                                    band_safe_w(rows_top + 2 * stride + stride / 2, card_h, 14)});
+      const int stack_w = ui::compute_uniform_stack_w(
+          rows_top + stride / 2, rows_top + 2 * stride + stride / 2, card_h,
+          std::min(kMaxContentColW, scale_x(312)), 14);
       const int x0 = cx - stack_w / 2;
       for (int i = 0; i < cnt; ++i) {
         const int cy_r = rows_top + i * stride + stride / 2;
         const Color acc = t_all[i] ? ctx.theme_secondary : ctx.col_green;
         render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
                         ui::chrome_card_bg_off(), acc,
-                        std::min(12, card_h / 2), GlassVariant::Clear, ctx.col_white);
+                        kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
         fast_filled_circle_aa(it, x0 + scale_x(18), cy_r, std::max(4, scale_s(5)), acc);
         const std::string fit_l = fit_text_to_width_font(
-            t_lbls[i], std::max(60, stack_w - scale_x(64)), ctx.font_small);
-        draw_shadowed_text(it, x0 + scale_x(34), cy_r, ctx.font_small, ctx.col_white,
-                           TextAlign::CENTER_LEFT, fit_l.c_str());
-        draw_shadowed_text(it, x0 + stack_w - scale_x(14), cy_r, ctx.font_micro,
-                           t_all[i] ? ctx.theme_secondary : ctx.col_white,
-                           TextAlign::CENTER_RIGHT, "Call");
+            t_lbls[i], std::max(60, stack_w - scale_x(76)), ctx.font_small);
+        ui::shadow_print(it, x0 + scale_x(34), cy_r, ctx.font_small, ctx.col_white,
+                         TextAlign::CENTER_LEFT, fit_l.c_str());
+        ui::shadow_print(it, x0 + stack_w - scale_x(14), cy_r, ctx.font_small,
+                         t_all[i] ? ctx.theme_secondary : ctx.col_white,
+                         TextAlign::CENTER_RIGHT, "Call");
         frame_hits().add_centered_rect(cx, cy_r, stack_w, hit_h,
                                        static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
                                        kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
@@ -439,13 +338,13 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
   }
 
   if (unlock_target != nullptr) {
-    const int uw = std::min(scale_x(164), band_safe_w(unlock_cy, unlock_h, 18));
+    const int uw = std::min({kMaxContentColW, scale_x(164), band_safe_w(unlock_cy, unlock_h, 18)});
     const char *u_lbl = unlock_target->is_lock ? "Unlock Entry" : "Open Garage";
-    draw_frosted_pill(it, cx, unlock_cy, uw, unlock_h, unlock_h / 2,
-                      ctx.col_warm_gold, ui::chrome_card_bg_on(),
-                      u_lbl, ctx.col_white, ctx.font_small,
-                      WidgetId::INTERCOM_UNLOCK_BTN, 0,
-                      std::max(uw, min_hit), std::max(unlock_h, std::min(min_hit, unlock_h + 8)));
+    ui::action_pill_centered(it, cx, uw, unlock_cy, unlock_h,
+                             ctx.col_warm_gold, ui::chrome_card_bg_on(),
+                             u_lbl, ctx.col_white, ctx.font_small,
+                             WidgetId::INTERCOM_UNLOCK_BTN, kHitTap | kHitFocusSlot, 0,
+                             std::max(unlock_h, std::min(min_hit, unlock_h + 8)));
   }
 }
 
@@ -457,8 +356,8 @@ void render_thermostat_tab(esphome::display::Display &it, const UiFrameContext &
   const auto &hub = home_hub_state();
   if (hub.thermostat_count <= 0) {
     render_page_header(it, cx, "THERMOSTAT", ctx.font_small, ctx.col_white);
-    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
-                               "No Thermostat configured", ctx.font_small, ctx.col_slate);
+    render_empty_state(it, cx, (content_top + content_bot) / 2,
+                       "No Thermostat configured", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -483,11 +382,12 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
   using esphome::Color;
   using esphome::display::TextAlign;
 
+  // D-048 / D-070: Single flat 2-zone glass card (zero glass-on-glass nesting!).
   const int x0 = cx - card_w / 2;
   const int y0 = cy - card_h / 2;
   (void) render_card_box(it, x0, y0, card_w, card_h,
                          ui::chrome_card_bg_on(), state_col,
-                         std::max(12, scale_s(16)), GlassVariant::Clear, ctx.col_white);
+                         kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
 
   const int ir = std::min(ui::card_icon_r(card_h), scale_s(20));
   const int icon_cx = x0 + ir + std::max(12, scale_x(16));
@@ -500,29 +400,30 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
   }
 
   const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int pill_w = std::clamp(card_w / 3, std::max(64, std::min(min_hit, 76)), scale_x(98));
-  const int pill_h = std::clamp(card_h - 16, 32, scale_y(44));
-  const int pill_cx = x0 + card_w - pill_w / 2 - std::max(8, scale_x(10));
+  const int right_zone_w = std::clamp(card_w / 3, std::max(72, std::min(min_hit, 84)), scale_x(112));
+  const int split_x = x0 + card_w - right_zone_w;
+  const int left_w = std::max(40, split_x - x0);
+  const int right_w = std::max(40, (x0 + card_w) - split_x);
+  const int cta_cx = split_x + right_w / 2;
 
   const int txt_x0 = icon_cx + ir + std::max(10, scale_x(14));
-  const int txt_max_w = std::max(54, (pill_cx - pill_w / 2 - 8) - txt_x0);
+  const int txt_max_w = std::max(54, split_x - txt_x0 - scale_x(8));
   auto *pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
   auto *sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
   const std::string fit_pri = fit_text_to_width_font(std::string(title), txt_max_w, pri_font);
   const std::string fit_sec = fit_text_to_width_font(std::string(state_txt), txt_max_w, sec_font);
-  draw_shadowed_text(it, txt_x0, cy - std::max(8, card_h / 6), pri_font,
-                     ctx.col_white, TextAlign::CENTER_LEFT, fit_pri.c_str());
-  draw_shadowed_text(it, txt_x0, cy + std::max(9, card_h / 5), sec_font,
-                     state_col, TextAlign::CENTER_LEFT, fit_sec.c_str());
+  ui::shadow_print(it, txt_x0, cy - std::max(8, card_h / 6), pri_font,
+                   ctx.col_white, TextAlign::CENTER_LEFT, fit_pri.c_str());
+  ui::shadow_print(it, txt_x0, cy + std::max(9, card_h / 5), sec_font,
+                   state_col, TextAlign::CENTER_LEFT, fit_sec.c_str());
 
-  const int split_x = pill_cx - pill_w / 2 - 4;
-  const int left_w = std::max(40, split_x - x0);
-  const int right_w = std::max(pill_w, (x0 + card_w) - split_x);
+  // Clean vertical hairline divider + bold right-zone CTA text (matches split_action_card_row)
+  fast_vline(it, split_x, y0 + scale_y(10), std::max(8, card_h - scale_y(20)), kChromeCardBorder);
+  const std::string fit_cta = fit_text_to_width_font(std::string(cta_txt), std::max(32, right_w - scale_x(12)), ctx.font_small);
+  ui::shadow_print(it, cta_cx, cy, ctx.font_small, cta_col, TextAlign::CENTER, fit_cta.c_str());
+
   frame_hits().add_rect(x0, cy - hit_h / 2, left_w, hit_h, card_wid, kHitTap | kHitFocusSlot, hit_param);
-  draw_frosted_pill(it, pill_cx, cy, pill_w, pill_h, pill_h / 2,
-                    cta_col, ui::chrome_card_bg_off(),
-                    cta_txt, ctx.col_white, ctx.font_small,
-                    btn_wid, hit_param, right_w, hit_h);
+  frame_hits().add_rect(split_x, cy - hit_h / 2, right_w, hit_h, btn_wid, kHitTap | kHitFocusSlot, hit_param);
 }
 
 void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -543,8 +444,8 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
 
   const auto &hub = home_hub_state();
   if (hub.entry_count <= 0) {
-    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
-                               "No Entry Controls configured", ctx.font_small, ctx.col_slate);
+    render_empty_state(it, cx, (content_top + content_bot) / 2,
+                       "No Entry Controls configured", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -615,7 +516,8 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, page > 0, page + 1 < total_pages,
-                              ctx.col_bg, ctx.col_white, ctx.col_slate);
+                              ctx.col_bg, ctx.col_white, ctx.col_slate,
+                              layout().mode_bar_zone_top());
   }
 }
 
@@ -630,8 +532,8 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   const auto &hub = home_hub_state();
   if (hub.vacuum_count <= 0) {
     render_page_header(it, cx, "ROBOT VACUUM", ctx.font_small, ctx.col_white);
-    render_passive_empty_label(it, cx, (content_top + content_bot) / 2,
-                               "No Robot Vacuum configured", ctx.font_small, ctx.col_slate);
+    render_empty_state(it, cx, (content_top + content_bot) / 2,
+                       "No Robot Vacuum configured", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -679,14 +581,14 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
   const std::string fit_st = fit_text_to_width_font(std::string(st_lbl), st_max_w, st_font);
-  draw_shadowed_text(it, cx, st_y, st_font, st_col, TextAlign::CENTER, fit_st.c_str());
+  ui::shadow_print(it, cx, st_y, st_font, st_col, TextAlign::CENTER, fit_st.c_str());
 
   if (is_fb) {
     auto *fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
     const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
-    draw_shadowed_text(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
+    ui::shadow_print(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   }
 
   HomeHubActionSpec specs[4]{};
@@ -716,14 +618,12 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
     codes[i] = specs[i].code;
     const Color vc = color_for_vac_code(specs[i].code);
     const bool primary_only = (geom_cnt == 1);
-    draw_frosted_pill(
-        it, geoms[i].cx, geoms[i].cy, geoms[i].w, geoms[i].h,
-        primary_only ? (geoms[i].h / 2) : std::min(16, geoms[i].h / 2),
-        vc,
-        primary_only ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-        specs[i].label,
-        ctx.col_white,
-        (primary_only && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small);
+    ui::action_pill_centered(
+        it, geoms[i].cx, geoms[i].w, geoms[i].cy, geoms[i].h,
+        vc, primary_only ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+        specs[i].label, ctx.col_white,
+        (primary_only && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small,
+        WidgetId::NONE);
   }
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::VACUUM_ACTION_BASE, codes, geoms, geom_cnt);
 }
@@ -738,8 +638,8 @@ void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &c
   const int tab_count = collect_home_hub_tabs(tabs, ac);
   if (tab_count <= 0) {
     render_page_header(it, ctx.cx, "HOME HUB", ctx.font_small, ctx.col_white);
-    render_passive_empty_label(it, ctx.cx, layout().area_card3_y(1),
-                               "No Home Controls configured", ctx.font_small, ctx.col_slate);
+    render_empty_state(it, ctx.cx, layout().area_card3_y(1),
+                       "No Home Controls configured", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -825,7 +725,7 @@ void render_climate_controls_deck(esphome::display::Display &it,
       ? std::clamp((avail_h * 46) / 100, 64, scale_y(108))
       : std::clamp((avail_h * 58) / 100, 78, scale_y(136));
   const int hero_cy = content_top + hero_h / 2 + std::max(2, scale_y(4));
-  const int hero_w = std::min(scale_x(328), band_safe_w(hero_cy, hero_h, 14));
+  const int hero_w = std::min({kMaxContentColW, scale_x(328), band_safe_w(hero_cy, hero_h, 14)});
   const int hero_x0 = cx - hero_w / 2;
   const int hero_y0 = hero_cy - hero_h / 2;
 
@@ -838,20 +738,10 @@ void render_climate_controls_deck(esphome::display::Display &it,
   // D-048: Glass reserved strictly for interactive -/+ circles and HVAC mode pills;
   // temperature and current-reading text render directly over wallpaper with kChromeShadow.
   if (show_setpoint_btns) {
-    const int gl_s = std::max(6, btn_r / 3);
-    render_glass_circle(it, minus_cx, hero_cy, btn_r, ui::chrome_card_bg_off(), ui::chrome_card_brd_on());
-    fast_hline(it, minus_cx - gl_s + 1, hero_cy + 1, 2 * gl_s + 1, kChromeShadow);
-    fast_hline(it, minus_cx - gl_s, hero_cy, 2 * gl_s + 1, ctx.col_white);
-    fast_hline(it, minus_cx - gl_s, hero_cy + 1, 2 * gl_s + 1, ctx.col_white);
-
-    render_glass_circle(it, plus_cx, hero_cy, btn_r, ui::chrome_card_bg_off(), ui::chrome_card_brd_on());
-    fast_hline(it, plus_cx - gl_s + 1, hero_cy + 1, 2 * gl_s + 1, kChromeShadow);
-    fast_vline(it, plus_cx + 1, hero_cy - gl_s + 1, 2 * gl_s + 1, kChromeShadow);
-    fast_hline(it, plus_cx - gl_s, hero_cy, 2 * gl_s + 1, ctx.col_white);
-    fast_hline(it, plus_cx - gl_s, hero_cy + 1, 2 * gl_s + 1, ctx.col_white);
-    fast_vline(it, plus_cx, hero_cy - gl_s, 2 * gl_s + 1, ctx.col_white);
-    fast_vline(it, plus_cx + 1, hero_cy - gl_s, 2 * gl_s + 1, ctx.col_white);
-
+    ui::icon_circle_button(it, minus_cx, hero_cy, btn_r, ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
+                           ctx.col_white, draw_hub_minus_icon, nullptr, WidgetId::NONE);
+    ui::icon_circle_button(it, plus_cx, hero_cy, btn_r, ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
+                           ctx.col_white, draw_hub_plus_icon, nullptr, WidgetId::NONE);
     register_thermostat_stepper_hits(frame_hits(), true, minus_cx, plus_cx, hero_cy, btn_r, btn_hit_r);
   }
 
@@ -871,7 +761,7 @@ void render_climate_controls_deck(esphome::display::Display &it,
       : std::max(80, hero_w - 16);
   auto *temp_font = (SCREEN_H < 400 || inner_span < 120) ? ctx.font_date : ctx.font_chrono_time;
   const int temp_y = hero_cy - std::max(8, hero_h / 7);
-  draw_shadowed_text(it, cx, temp_y, temp_font, ctx.col_white, TextAlign::CENTER, tgt_buf);
+  ui::shadow_print(it, cx, temp_y, temp_font, ctx.col_white, TextAlign::CENTER, tgt_buf);
 
   char sub_buf[48];
   const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
@@ -895,8 +785,8 @@ void render_climate_controls_deck(esphome::display::Display &it,
     auto *sub_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const std::string fit_sub = fit_text_to_width_font(std::string(sub_buf), inner_span, sub_font);
     const int sub_y = hero_cy + std::max(14, hero_h / 4);
-    draw_shadowed_text(it, cx, sub_y, sub_font, is_fb ? ctx.theme_secondary : sub_tint,
-                       TextAlign::CENTER, fit_sub.c_str());
+    ui::shadow_print(it, cx, sub_y, sub_font, is_fb ? ctx.theme_secondary : sub_tint,
+                     TextAlign::CENTER, fit_sub.c_str());
   }
 
   const int mode_top = hero_y0 + hero_h + std::max(6, scale_y(10));
@@ -923,14 +813,13 @@ void render_climate_controls_deck(esphome::display::Display &it,
     codes[i] = mode_specs[i].code;
     const Color mc = color_for_clim_code(mode_specs[i].code);
     const bool act = mode_specs[i].active;
-    draw_frosted_pill(
-        it, geoms[i].cx, geoms[i].cy, geoms[i].w, geoms[i].h,
-        std::min(14, geoms[i].h / 2),
+    ui::action_pill_centered(
+        it, geoms[i].cx, geoms[i].w, geoms[i].cy, geoms[i].h,
         act ? mc : ui::chrome_card_brd_off(),
         act ? mc : ui::chrome_card_bg_off(),
         mode_specs[i].label,
         act ? ctx.col_white : ctx.col_slate,
-        ctx.font_small);
+        ctx.font_small, WidgetId::NONE);
   }
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::CLIMATE_MODE_BASE, codes, geoms, geom_cnt);
 }

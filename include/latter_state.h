@@ -1946,6 +1946,7 @@ struct MusicRuntimeState {
   std::string loaded_art_url = "";
   std::string loaded_wallpaper_url = "";
   std::string loaded_screensaver_photo_url = "";
+  bool screensaver_photo_failed = false;
 
   void sync_carousel_for_view() noexcept {
     const int idx = std::clamp(static_cast<int>(view), 0, kMusicPeerTabCount - 1);

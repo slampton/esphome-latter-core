@@ -189,7 +189,9 @@ struct UiLayout {
   // Home activity card (docs/device-ui-design.md D-028 / D-045).
   constexpr bool home_activity_two_line() const { return !is_round; }
   constexpr int home_activity_max_rows() const { return is_round ? 1 : 2; }
-  constexpr int home_activity_w() const { return (w > 520) ? scale_x(380) : std::min(380, w - 32); }
+  constexpr int home_activity_w() const {
+    return (w > 520) ? std::min(kMaxContentColW, scale_x(380)) : std::min(380, w - 32);
+  }
   constexpr int home_activity_pitch() const { return scale_y(56); }
   constexpr int home_activity_h_for_rows(int rows) const {
     if (is_round) return scale_y(68);
@@ -252,7 +254,7 @@ struct UiLayout {
   }
 
   // 7. Single-Source Light Kelvin / Brightness Inspector Slider Geometry
-  constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : scale_x(316); }
+  constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : std::min(kMaxContentColW, scale_x(316)); }
   constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_x(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
   constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_x(16); }
@@ -522,34 +524,13 @@ inline int get_home_dock_start_index(int total_count, int page) {
 
 inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_xs[4],
                                     bool &out_has_left_arrow, bool &out_has_right_arrow) {
+  (void)cx;
   out_has_left_arrow = false;
   out_has_right_arrow = false;
   if (total_count <= 0) return;
   const int start_idx = get_home_dock_start_index(total_count, page);
   const int vis_count = std::min(4, total_count - start_idx);
-  if (vis_count == 1) {
-    out_xs[0] = cx;
-  } else if (vis_count == 2) {
-    out_xs[0] = cx - scale_x(44);
-    out_xs[1] = cx + scale_x(44);
-  } else if (vis_count == 3) {
-    out_xs[0] = cx - scale_x(84);
-    out_xs[1] = cx;
-    out_xs[2] = cx + scale_x(84);
-  } else {
-#if LATTER_ROUND_DISPLAY
-    out_xs[0] = scale_w(112);
-    out_xs[1] = scale_w(193);
-    out_xs[2] = scale_w(274);
-    out_xs[3] = scale_w(355);
-#else
-    const int stride = (SCREEN_W < 380) ? 74 : scale_x(98);
-    out_xs[0] = cx - (stride * 3) / 2;
-    out_xs[1] = cx - (stride / 2);
-    out_xs[2] = cx + (stride / 2);
-    out_xs[3] = cx + (stride * 3) / 2;
-#endif
-  }
+  compute_mode_bar_slot_xs(vis_count, SCREEN_W, LATTER_ROUND_DISPLAY != 0, out_xs);
 }
 
 inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[4],

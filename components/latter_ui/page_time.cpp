@@ -40,32 +40,23 @@ void format_stopwatch_tenths(uint32_t ms, char *out_buf, size_t out_sz) {
   }
 }
 
-void render_time_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_sub) {
-  using esphome::Color;
-  const int cx = ctx.cx;
-  int win_xs[4] = {0, 0, 0, 0};
-  bool has_l = false;
-  bool has_r = false;
-  get_mode_bar_window_xs(4, 0, cx, win_xs, has_l, has_r);
-  render_in_app_mode_bar_track(it, cx, win_xs, 4, active_sub, false, false, 4, active_sub,
-                               ctx.theme_primary, ctx.col_white, 0);
-
-  const int by = layout().app_dock_y;
-  const int ir = ui::dock_icon_r(layout().dock_r);
-  for (int i = 0; i < 4; ++i) {
-    const int bx = win_xs[i];
-    const bool is_act = (i == active_sub);
-    const Color fg_c = is_act ? ctx.theme_primary : ctx.col_white;
-    if (i == TimeSubpage::CLOCK) {
-      ui::draw_icon_clock_solid(it, bx, by, ir, fg_c, true);
-    } else if (i == TimeSubpage::TIMERS) {
-      ui::draw_icon_hourglass(it, bx, by, ir, fg_c, true);
-    } else if (i == TimeSubpage::ALARMS) {
-      ui::draw_icon_alarm_clock(it, bx, by, ir, fg_c, true);
-    } else {
-      ui::draw_icon_stopwatch(it, bx, by, ir, fg_c, true);
-    }
+void draw_time_mode_icon(esphome::display::Display &it, int i,
+                         int bx, int by, int ir,
+                         esphome::Color fg_c, bool shadow, void *) {
+  if (i == TimeSubpage::CLOCK) {
+    ui::draw_icon_clock_solid(it, bx, by, ir, fg_c, shadow);
+  } else if (i == TimeSubpage::TIMERS) {
+    ui::draw_icon_hourglass(it, bx, by, ir, fg_c, shadow);
+  } else if (i == TimeSubpage::ALARMS) {
+    ui::draw_icon_alarm_clock(it, bx, by, ir, fg_c, shadow);
+  } else {
+    ui::draw_icon_stopwatch(it, bx, by, ir, fg_c, shadow);
   }
+}
+
+void render_time_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_sub) {
+  ui::mode_bar(it, ctx.cx, 4, active_sub, 0, ctx.theme_primary, ctx.col_white,
+               draw_time_mode_icon, nullptr);
 }
 
 void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
@@ -271,7 +262,8 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
-                              ctx.col_bg, ctx.col_white, kChromePipInactive);
+                              ctx.col_bg, ctx.col_white, kChromePipInactive,
+                              layout().mode_bar_zone_top());
   }
 }
 
@@ -369,45 +361,40 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   if (disp_sec >= 3600) {
     std::snprintf(t_buf, sizeof(t_buf), "%d:%02d:%02d",
                   disp_sec / 3600, (disp_sec % 3600) / 60, disp_sec % 60);
-    render_time_readout(it, cx, t_buf, ctx.font_date, ctx.col_white, scale_y(172));
+    render_time_readout(it, cx, t_buf, ctx.font_chrono_time, ctx.col_white, scale_y(168));
   } else {
     std::snprintf(t_buf, sizeof(t_buf), "%02d:%02d", disp_sec / 60, disp_sec % 60);
     render_time_readout(it, cx, t_buf, ctx.font_time, ctx.col_white, scale_y(164));
   }
 
   const int p_y = scale_y(236);
-  const int p_r = std::max(14, scale_y(20));
-  const int p_hw = std::max(p_r + 8, std::min(scale_x(92), safe_span(p_y, 24) / 2));
+  const int p_h = std::max(44, scale_y(44));
+  const int p_w = std::min({kMaxContentColW, scale_x(192), safe_span(p_y, 24)});
   if (s.running) {
-    ui::pill_button(it, cx - p_hw + p_r, cx + p_hw - p_r, p_y, p_r,
-                    ctx.col_gold, Color(65, 45, 0), "PAUSE", ctx.col_white, ctx.font_btn_bold,
-                    WidgetId::TIMER_PRIMARY_BTN);
+    ui::action_pill_centered(it, cx, p_w, p_y, p_h,
+                             ctx.col_gold, ui::chrome_card_bg_on(),
+                             "PAUSE", ctx.col_white, ctx.font_btn_bold,
+                             WidgetId::TIMER_PRIMARY_BTN, kHitTap | kHitFocusSlot);
   } else {
-    ui::pill_button(it, cx - p_hw + p_r, cx + p_hw - p_r, p_y, p_r,
-                    ctx.theme_primary, ui::chrome_card_bg_on(),
-                    s.paused ? "RESUME" : "START", ctx.col_white, ctx.font_btn_bold,
-                    WidgetId::TIMER_PRIMARY_BTN);
+    ui::action_pill_centered(it, cx, p_w, p_y, p_h,
+                             ctx.theme_primary, ui::chrome_card_bg_on(),
+                             s.paused ? "RESUME" : "START", ctx.col_white, ctx.font_btn_bold,
+                             WidgetId::TIMER_PRIMARY_BTN, kHitTap | kHitFocusSlot);
   }
 
   if (!s.running && !s.paused) {
     static const char *const kTimerStepLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
-    const int step_h = (SCREEN_H < 400) ? 32 : 38;
+    const int step_h = (SCREEN_H < 400) ? 32 : scale_y(38);
     ui::stepper_row(it, cx, scale_y(298), step_h, kTimerStepLabels, ctx.font_small,
                     ctx.col_white, WidgetId::STEPPER_BASE);
   } else {
     const int ext_y = scale_y(316);
-    const int ext_r = std::max(12, scale_y(18));
-    const int gap = scale_x(12);
-    const int box_w = std::max(2 * ext_r + 8,
-                               std::min(scale_x(118), (safe_span(ext_y, 24) - gap * 2) / 2));
-    ui::pill_button(it, cx - gap - box_w + ext_r, cx - gap - ext_r, ext_y, ext_r,
-                    ctx.theme_secondary, ui::chrome_card_bg_on(),
-                    "+1M", ctx.theme_secondary, ctx.font_small,
-                    WidgetId::TIMER_PLUS_1M_BTN);
-    ui::pill_button(it, cx + gap + ext_r, cx + gap + box_w - ext_r, ext_y, ext_r,
-                    kChromeDangerBrd, ui::chrome_danger_bg(),
-                    "RESET", ctx.col_white, ctx.font_small,
-                    WidgetId::TIMER_RESET_BTN);
+    const int ext_h = std::max(40, scale_y(40));
+    const ui::ActionPillSpec specs[2] = {
+        {"+1M", WidgetId::TIMER_PLUS_1M_BTN, ctx.theme_secondary, ui::chrome_card_bg_on(), ctx.theme_secondary, 0, nullptr},
+        {"RESET", WidgetId::TIMER_RESET_BTN, kChromeDangerBrd, ui::chrome_danger_bg(), ctx.col_white, 0, nullptr},
+    };
+    ui::action_pill_row(it, ext_y, ext_h, kMaxContentColW, scale_x(136), scale_x(16), specs, 2, ctx.font_small, 24);
   }
 
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
@@ -436,11 +423,12 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
       std::snprintf(snz_buf, sizeof(snz_buf), "Snoozed %u:%02u \xE2\x80\xA2 Dismiss",
                     static_cast<unsigned>(rem_s / 60U), static_cast<unsigned>(rem_s % 60U));
       const int snz_y = scale_y(92);
-      const int snz_r = std::max(11, scale_y(15));
-      const int snz_hw = std::max(snz_r + 8, std::min(scale_x(124), safe_span(snz_y, 20) / 2));
-      ui::pill_button(it, cx - snz_hw + snz_r, cx + snz_hw - snz_r, snz_y, snz_r,
-                      ctx.col_gold, Color(48, 34, 6), snz_buf, ctx.col_gold, ctx.font_micro,
-                      WidgetId::ALARM_SNOOZE_CANCEL, kHitTap | kHitFocusSlot);
+      const int snz_h = std::max(30, scale_y(32));
+      const int snz_w = std::min({kMaxContentColW, scale_x(256), safe_span(snz_y, 20)});
+      ui::action_pill_centered(it, cx, snz_w, snz_y, snz_h,
+                               ctx.col_gold, ui::chrome_card_bg_on(),
+                               snz_buf, ctx.col_gold, ctx.font_small,
+                               WidgetId::ALARM_SNOOZE_CANCEL, kHitTap | kHitFocusSlot);
       y_shift = scale_y(14);
     }
 
@@ -565,7 +553,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
 
   static const char *const kHourStepLabels[4] = {"-6h", "-1h", "+1h", "+6h"};
   static const char *const kMinStepLabels[4] = {"-5m", "-1m", "+1m", "+5m"};
-  const int step_h = (SCREEN_H < 400) ? 32 : 38;
+  const int step_h = (SCREEN_H < 400) ? 32 : scale_y(38);
   ui::stepper_row(it, cx, scale_y(226), step_h,
                   hh_focused ? kHourStepLabels : kMinStepLabels,
                   ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
@@ -573,12 +561,11 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   char rec_lbl[32];
   std::snprintf(rec_lbl, sizeof(rec_lbl), "Repeat: %s", alarm_recurrence_label(ap.recurrence));
   const int rec_y = scale_y(320);
-  const int rec_r = std::max(12, scale_y(19));
-  const int rec_hw = std::max(rec_r + 8, std::min(scale_x(112), safe_span(rec_y, 24) / 2));
-  ui::pill_button(it, cx - rec_hw + rec_r, cx + rec_hw - rec_r, rec_y, rec_r,
-                  ui::chrome_card_brd_on(), ui::chrome_card_bg_off(),
-                  rec_lbl, ctx.theme_secondary, ctx.font_small,
-                  WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot);
+  const int rec_h = std::max(40, scale_y(44));
+  const int rec_w = ui::compute_uniform_stack_w(rec_y, rec_y, rec_h, std::min(kMaxContentColW, layout().list_card_w), 20);
+  ui::setting_cycle_row(it, cx, rec_y, rec_w, rec_h, rec_lbl, true,
+                        ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                        WidgetId::ALARM_RECUR_BTN, kHitTap | kHitFocusSlot);
 
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
 }
@@ -649,38 +636,29 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   }
   fast_print(it, cx, sw_y, sw_font, ctx.col_white, TextAlign::CENTER, sw_buf);
 
-  // 3. Side-by-Side Controls: START / PAUSE / RESUME (left) + LAP / RESET (right), well above mode bar
-  const int btn_r = std::max(14, scale_y(20));
-  const int half_gap = std::max(6, scale_w(10));
-  const int box_w = std::max(2 * btn_r + 12,
-                             std::min(scale_x(132), (safe_span(btn_y, 24) - 2 * half_gap) / 2));
-  const int l_x0 = cx - half_gap - box_w + btn_r;
-  const int l_x1 = cx - half_gap - btn_r;
-  const int r_x0 = cx + half_gap + btn_r;
-  const int r_x1 = cx + half_gap + box_w - btn_r;
+  // 3. Primary Stopwatch Action Pills (D-048 / D-070: zero disabled/non-interactive glass pills)
+  const int btn_h = std::max(44, scale_y(44));
+  const int btn_gap = std::max(12, scale_x(16));
   auto *btn_font = (SCREEN_W < 340) ? ctx.font_small : ctx.font_btn_bold;
 
   if (rs.stopwatch.running) {
-    ui::pill_button(it, l_x0, l_x1, btn_y, btn_r,
-                    ctx.col_gold, Color(65, 45, 0),
-                    "PAUSE", ctx.col_white, btn_font, WidgetId::SW_PRIMARY_BTN);
-    ui::pill_button(it, r_x0, r_x1, btn_y, btn_r,
-                    ctx.theme_secondary, ui::chrome_card_bg_on(),
-                    "LAP", ctx.theme_secondary, btn_font, WidgetId::SW_LAP_BTN);
+    const ui::ActionPillSpec specs[2] = {
+        {"PAUSE", WidgetId::SW_PRIMARY_BTN, ctx.col_gold, ui::chrome_card_bg_on(), ctx.col_white, 0, nullptr},
+        {"LAP", WidgetId::SW_LAP_BTN, ctx.theme_secondary, ui::chrome_card_bg_on(), ctx.theme_secondary, 0, nullptr},
+    };
+    ui::action_pill_row(it, btn_y, btn_h, kMaxContentColW, scale_x(148), btn_gap, specs, 2, btn_font, 24);
+  } else if (cur_sw_ms > 0U) {
+    const ui::ActionPillSpec specs[2] = {
+        {"RESUME", WidgetId::SW_PRIMARY_BTN, ctx.col_green, ui::chrome_card_bg_on(), ctx.col_white, 0, nullptr},
+        {"RESET", WidgetId::SW_RESET_BTN, kChromeDangerBrd, ui::chrome_danger_bg(), ctx.col_white, 0, nullptr},
+    };
+    ui::action_pill_row(it, btn_y, btn_h, kMaxContentColW, scale_x(148), btn_gap, specs, 2, btn_font, 24);
   } else {
-    ui::pill_button(it, l_x0, l_x1, btn_y, btn_r,
-                    ctx.col_green, Color(0, 56, 28),
-                    (cur_sw_ms > 0U) ? "RESUME" : "START", ctx.col_white, btn_font,
-                    WidgetId::SW_PRIMARY_BTN);
-    if (cur_sw_ms > 0U) {
-      ui::pill_button(it, r_x0, r_x1, btn_y, btn_r,
-                      kChromeDangerBrd, ui::chrome_danger_bg(),
-                      "RESET", ctx.col_white, btn_font, WidgetId::SW_RESET_BTN);
-    } else {
-      render_pill_button(it, r_x0, r_x1, btn_y, btn_r,
-                         ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
-                         "LAP", ctx.col_slate, btn_font);
-    }
+    const int start_w = std::min({kMaxContentColW, scale_x(192), safe_span(btn_y, 24)});
+    ui::action_pill_centered(it, cx, start_w, btn_y, btn_h,
+                             ctx.col_green, ui::chrome_card_bg_on(),
+                             "START", ctx.col_white, btn_font,
+                             WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
   }
 }
 

@@ -629,6 +629,31 @@ inline constexpr uint32_t kTimeoutWeatherStepId = 0x4C410003U;
 inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
 inline constexpr uint32_t kTimeoutTouchLongPressId = 0x4C410005U;
 
+// Maximum time to hold the active framebuffer while Photo Frame's first photo downloads
+// before falling back to Ambient Clock (eliminates the ~0.5 s Ambient Clock pre-flash).
+inline constexpr uint32_t kPhotoFrameLoadGraceMs = 2500U;
+
+inline bool can_reuse_wallpaper_for_photo_frame(
+    std::string_view screensaver_photo_url,
+    std::string_view loaded_wallpaper_url,
+    bool has_wallpaper_art) noexcept {
+  return has_wallpaper_art && !screensaver_photo_url.empty() &&
+         screensaver_photo_url == loaded_wallpaper_url;
+}
+
+inline bool is_photo_frame_initial_load_pending(
+    uint32_t takeover_sig, std::string_view screensaver_style_opt,
+    std::string_view screensaver_photo_url, bool has_photo_art,
+    bool photo_fetch_failed, uint32_t standby_entered_ms,
+    uint32_t now_ms) noexcept {
+  if (takeover_sig != (1U << 3)) return false;
+  if (screensaver_style_opt != "Photo Frame") return false;
+  if (screensaver_photo_url.empty()) return false;
+  if (has_photo_art || photo_fetch_failed) return false;
+  if (standby_entered_ms == 0U) return false;
+  return static_cast<uint32_t>(now_ms - standby_entered_ms) < kPhotoFrameLoadGraceMs;
+}
+
 #if __has_include("esphome/core/defines.h")
 
 // ------------------------------------------------------------------------------
@@ -956,6 +981,21 @@ struct UiFrameContext {
   bool instant_crown_hibernate{false};
   bool bedtime_active{false};
 };
+
+inline ArtImageView resolve_photo_frame_art(
+    const ArtImageView &screensaver_photo_art,
+    const ArtImageView &home_wallpaper_art,
+    std::string_view screensaver_photo_url,
+    std::string_view loaded_wallpaper_url) noexcept {
+  if (screensaver_photo_art.valid() && !screensaver_photo_url.empty()) {
+    return screensaver_photo_art;
+  }
+  if (can_reuse_wallpaper_for_photo_frame(
+          screensaver_photo_url, loaded_wallpaper_url, home_wallpaper_art.valid())) {
+    return home_wallpaper_art;
+  }
+  return ArtImageView{};
+}
 
 struct SystemTakeoverState {
   int cx{SCREEN_CX};

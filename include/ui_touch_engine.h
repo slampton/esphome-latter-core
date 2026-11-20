@@ -122,14 +122,7 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
   g.prev_cx = g.cx - dx;
   g.next_cx = g.cx + dx;
 
-  const int dock_step = (w < 380)
-                            ? ((w - 64) / 3)
-                            : ((w > 520) ? ((w * 74) / 466)
-                                         : (round ? scale_x_for(60, w) : scale_x_for(72, w)));
-  g.mode_slot_xs[0] = g.cx - (3 * dock_step) / 2;
-  g.mode_slot_xs[1] = g.cx - dock_step / 2;
-  g.mode_slot_xs[2] = g.cx + dock_step / 2;
-  g.mode_slot_xs[3] = g.cx + (3 * dock_step) / 2;
+  compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs);
   return g;
 }
 

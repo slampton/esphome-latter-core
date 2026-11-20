@@ -709,7 +709,8 @@ void test_music_remote_override_and_volume_feedback() {
   const std::string state_h = read_repo_file("../../include/latter_state.h");
   LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
-  LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") != std::string::npos);
+  // D-004 / D-070: gui.yaml owns the single frame base for Remote (page 7); page_remote.cpp must not double-paint wallpaper
+  LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") == std::string::npos);
   LATTER_CHECK(gui_yaml.find("rs.nav.gui_page == 7") != std::string::npos);
   LATTER_CHECK(state_h.find("\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"") != std::string::npos);
 
@@ -1085,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111906L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112001L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3393,7 +3394,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   const std::string tools_src = read_repo_file("../../components/latter_ui/page_tools.cpp");
   const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
   LATTER_CHECK(hh_src.find("render_home_hub_page(") != std::string::npos);
-  LATTER_CHECK(hh_src.find("render_in_app_mode_bar_track(") != std::string::npos);
+  LATTER_CHECK(hh_src.find("ui::mode_bar(") != std::string::npos);
   LATTER_CHECK(area_src.find("render_home_hub_page(") == std::string::npos);
   LATTER_CHECK(tools_src.find("ToolsSubpage::INTERCOM") == std::string::npos);
   LATTER_CHECK(tools_src.find("tools_launcher_page_count(") != std::string::npos);
@@ -3415,7 +3416,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111906L, "LATTER_SDK_REV must match 2026111906L");
+  static_assert(LATTER_SDK_REV == 2026112001L, "LATTER_SDK_REV must match 2026112001L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -3862,10 +3863,11 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(hh_src.find("PIN to Disarm") == std::string::npos);
   LATTER_CHECK(hh_src.find("Tap mode below") == std::string::npos);
   LATTER_CHECK(hh_src.find("Select vacuum command") == std::string::npos);
-  LATTER_CHECK(hh_src.find("render_empty_state(") == std::string::npos);
-  // render_card_box may appear ONLY inside draw_frosted_pill, render_hub_selector_pill,
-  // render_intercom_tab (tappable rows), and render_entry_card — NEVER inside render_alarm_tab,
-  // render_thermostat_tab, or render_vacuum_tab!
+  // D-070: render_empty_state() is strictly bare shadowed text (zero glass), and
+  // render_hub_selector_pill() delegates to ui::header_pager_bar() (zero glass behind title).
+  LATTER_CHECK(hh_src.find("ui::header_pager_bar(") != std::string::npos);
+  // render_card_box may appear ONLY inside render_intercom_tab (tappable rows) and
+  // render_entry_card — NEVER inside render_alarm_tab, render_thermostat_tab, or render_vacuum_tab!
   const size_t alarm_fn = hh_src.find("void render_alarm_tab(");
   const size_t sel_fn = hh_src.find("void render_hub_selector_pill(");
   const size_t therm_fn = hh_src.find("void render_thermostat_tab(");
@@ -4146,7 +4148,8 @@ void test_custom_icon_tiers_and_d051() {
     const std::string glyph_sec = w_src.substr(glyph_sec_start, glyph_sec_end - glyph_sec_start);
     LATTER_CHECK(glyph_sec.find("scale_s(") == std::string::npos);
 
-    LATTER_CHECK(home_src.find("draw_icon_clock_solid") != std::string::npos);
+    LATTER_CHECK(home_src.find("draw_route_icon(") != std::string::npos);
+    LATTER_CHECK(w_src.find("draw_icon_clock_solid(") != std::string::npos);
     LATTER_CHECK(hub_src.find("draw_icon_shield_home") != std::string::npos);
     LATTER_CHECK(time_src.find("draw_icon_clock_solid") != std::string::npos);
     LATTER_CHECK(time_src.find("sample_glass_surface_color") == std::string::npos);
@@ -5374,7 +5377,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(mu_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
     LATTER_CHECK(mu_src.find("ui::draw_icon_play_pause(") != std::string::npos);
     LATTER_CHECK(mu_src.find("ui::draw_icon_hamburger(") != std::string::npos);
-    LATTER_CHECK(mu_src.find("\"mdi:cog-outline\"") != std::string::npos);
+    LATTER_CHECK(mu_src.find("ui::draw_icon_gear(") != std::string::npos);
     LATTER_CHECK(mu_src.find("render_lyrics_art_backdrop(") != std::string::npos);
     LATTER_CHECK(mu_src.find("register_music_list_row_hits(") != std::string::npos);
     LATTER_CHECK(mu_src.find("case MusicView::SETTINGS:") != std::string::npos);
@@ -5440,10 +5443,14 @@ void test_music_app_v3_d059() {
     const std::string info_fn = slice_fn("void render_info_view(", "void render_slot_list_row(");
     const std::string page_fn = mu_src.substr(mu_src.find("void render_music_page("));
 
-    // Zero outer passive glass containers in SCRUB, ACTION_SHEET, LYRICS, and INFO;
+    // Zero outer passive glass containers in SCRUB, ACTION_SHEET (only 1 loop render_card_box for
+    // squared-off kRadiusCardPx() rows per D-070), LYRICS, and INFO;
     // SETTINGS is Peer Tab 8 with Mode Bar & zero < Back; dim_level = 0 on Now Playing & Volume!
     LATTER_CHECK(scrub_fn.find("render_card_box(") == std::string::npos);
-    LATTER_CHECK(sheet_fn.find("render_card_box(") == std::string::npos);
+    const size_t first_sheet_card = sheet_fn.find("render_card_box(");
+    LATTER_CHECK(first_sheet_card != std::string::npos &&
+                 sheet_fn.find("render_card_box(", first_sheet_card + 1U) == std::string::npos &&
+                 sheet_fn.find("kRadiusCardPx()") != std::string::npos);
     LATTER_CHECK(lyr_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(info_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(set_fn.find("render_music_stadium_mode_bar(") != std::string::npos);
@@ -6169,6 +6176,137 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
     const auto e_clr = v3_domain_reducer().reduce("area_context", rctx);
     LATTER_CHECK(e_clr.stop_screensaver_photo_fetch && e_clr.release_screensaver_photo_art && !e_clr.fetch_screensaver_photo);
   }
+
+  // 8. Photo Frame initial-load grace window eliminates Ambient Clock pre-flash & reuses matching wallpaper art
+  {
+    const uint32_t kSsSig = (1U << 3);
+    const std::string url = "http://ha.local/api/latter/wallpaper/p1?mode=screensaver";
+    // Holds framebuffer cleanly while Photo #1 is downloading (< 2500 ms)
+    LATTER_CHECK(is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, false, false, 10000U, 10000U));
+    LATTER_CHECK(is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, false, false, 10000U, 12499U));
+    // Releases immediately once art is valid, on error, or once grace window expires
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, true, false, 10000U, 10150U));
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, false, true, 10000U, 10150U));
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, false, false, 10000U, 12500U));
+    // Never holds when URL empty, non-Photo-Frame style, or higher-priority takeover active
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", "", false, false, 10000U, 10100U));
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Ambient Clock", url, false, false, 10000U, 10100U));
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig | (1U << 4), "Photo Frame", url, false, false, 10000U, 10100U));
+    LATTER_CHECK(!is_photo_frame_initial_load_pending(kSsSig, "Photo Frame", url, false, false, 0U, 10100U));
+    // Wallpaper art reuse check
+    LATTER_CHECK(can_reuse_wallpaper_for_photo_frame(url, url, true));
+    LATTER_CHECK(!can_reuse_wallpaper_for_photo_frame(url, url, false));
+    LATTER_CHECK(!can_reuse_wallpaper_for_photo_frame(url, "http://ha.local/other", true));
+    LATTER_CHECK(!can_reuse_wallpaper_for_photo_frame("", "", true));
+  }
+}
+
+void test_gui_standardization_d070() {
+  using namespace latter_ui;
+
+  struct BoardSpec {
+    int w;
+    int h;
+    bool round;
+    bool wearable;
+    int ppi;
+  };
+  constexpr BoardSpec kBoards[5] = {
+      {320, 480, false, false, 165},  // Remote
+      {410, 502, false, true,  315},  // Wrist
+      {466, 466, true,  false, 266},  // Pocket
+      {480, 480, false, false, 313},  // Mobile
+      {720, 720, false, false, 254},  // Desk
+  };
+
+  for (const auto &b : kBoards) {
+    const int min_dim = (b.w < b.h) ? b.w : b.h;
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+
+    // 1. Canonical mode-bar slot geometry parity across ui::mode_bar, Cameras, and Music
+    int mode_xs[4] = {0, 0, 0, 0};
+    compute_mode_bar_slot_xs(4, b.w, b.round, mode_xs);
+    const auto cam_g = compute_camera_grid_geom(b.w, b.h, b.round, b.wearable, b.ppi);
+    for (int i = 0; i < 4; ++i) {
+      LATTER_CHECK(cam_g.mode_slot_xs[i] == mode_xs[i]);
+      if (i > 0) LATTER_CHECK(mode_xs[i] > mode_xs[i - 1]);
+    }
+    const int expected_center = b.w / 2;
+    const int bar_mid = (mode_xs[0] + mode_xs[3]) / 2;
+    LATTER_CHECK(std::abs(bar_mid - expected_center) <= 2);
+
+    // 2. Canonical corner radii tokens: monotonic & card > key >= 8
+    const int r_card = radius_card_for(min_dim);
+    const int r_key = radius_key_for(min_dim);
+    LATTER_CHECK(r_key >= 8);
+    LATTER_CHECK(r_card > r_key);
+    if (b.w > 520) {
+      LATTER_CHECK(r_card > 12 && r_key > 10);
+    }
+
+    // 3. Desk 480 px kMaxContentColW centered column cap on > 520 px panels
+    const int stack_w = compute_uniform_stack_w_for(
+        ly.slot5_y(0), ly.slot5_y(4), ly.slot5_h, b.w - 20, b.w, b.h, b.round, b.wearable, 14);
+    LATTER_CHECK(stack_w >= 160 && stack_w <= b.w - 20);
+    if (b.w > 520) {
+      LATTER_CHECK(stack_w <= kMaxContentColW);
+      LATTER_CHECK(ly.area_card3_w <= kMaxContentColW);
+      LATTER_CHECK(ly.tool_card3_w <= kMaxContentColW);
+    }
+    if (b.round) {
+      const int top_span = band_safe_span_for(ly.slot5_y(0), ly.slot5_h, b.w, b.h, true, false, 14);
+      const int bot_span = band_safe_span_for(ly.slot5_y(4), ly.slot5_h, b.w, b.h, true, false, 14);
+      LATTER_CHECK(stack_w <= std::min(top_span, bot_span));
+    }
+
+    // 4. compute_action_pill_row for 1..4 buttons: zero overlap, bezel-safe, Desk <= 480 px
+    const int pill_cy = ly.app_dock_y - ly.dock_r - scale_y_for(36, b.h);
+    const int pill_h = scale_y_for(36, b.h);
+    for (int cnt = 1; cnt <= 4; ++cnt) {
+      HomeHubPillGeom geoms[4]{};
+      const int out_n = compute_action_pill_row(
+          cnt, pill_cy, pill_h, b.w - 28, (cnt == 1) ? scale_x_for(180, b.w) : 0,
+          scale_x_for(8, b.w), b.w, b.h, b.round, b.wearable, b.ppi, geoms, 14);
+      LATTER_CHECK(out_n == cnt);
+      for (int i = 0; i < cnt; ++i) {
+        LATTER_CHECK(geoms[i].w >= 40 && geoms[i].h >= 24);
+        const int x0 = geoms[i].cx - geoms[i].w / 2;
+        const int x1 = x0 + geoms[i].w - 1;
+        LATTER_CHECK(x0 >= 0 && x1 < b.w);
+        if (i > 0) {
+          const int prev_x1 = (geoms[i - 1].cx - geoms[i - 1].w / 2) + geoms[i - 1].w - 1;
+          LATTER_CHECK(x0 > prev_x1);  // Strictly non-overlapping
+        }
+      }
+      if (b.w > 520) {
+        const int first_x0 = geoms[0].cx - geoms[0].w / 2;
+        const int last_x1 = (geoms[cnt - 1].cx - geoms[cnt - 1].w / 2) + geoms[cnt - 1].w;
+        LATTER_CHECK((last_x1 - first_x0) <= kMaxContentColW);
+      }
+    }
+  }
+
+  // 5. Source-level D-070 component standardization invariants
+  const char *kModeBarFiles[7] = {
+      "../../components/latter_ui/page_area_hub.cpp",
+      "../../components/latter_ui/page_weather.cpp",
+      "../../components/latter_ui/page_home_hub.cpp",
+      "../../components/latter_ui/page_time.cpp",
+      "../../components/latter_ui/page_calendar.cpp",
+      "../../components/latter_ui/page_music.cpp",
+      "../../components/latter_ui/page_cameras.cpp",
+  };
+  for (const char *path : kModeBarFiles) {
+    const std::string src = read_repo_file(path);
+    LATTER_CHECK(src.find("ui::mode_bar(") != std::string::npos);
+    LATTER_CHECK(src.find("render_in_app_mode_bar_track(") == std::string::npos);
+  }
+  const std::string cam_cpp = read_repo_file("../../components/latter_ui/page_cameras.cpp");
+  const std::string hub_cpp = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+  LATTER_CHECK(cam_cpp.find("ui::header_pager_bar(") != std::string::npos);
+  LATTER_CHECK(hub_cpp.find("ui::header_pager_bar(") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-070:") != std::string::npos);
 }
 
 }  // namespace
@@ -6204,6 +6342,7 @@ int main() {
   test_full_spectrum_brightness_d065();
   test_cameras_app_and_live_video_d066();
   test_photo_frame_screensaver_day_night_sky_d067();
+  test_gui_standardization_d070();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

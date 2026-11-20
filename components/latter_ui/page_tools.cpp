@@ -14,43 +14,6 @@ namespace latter_ui {
 
 namespace {
 
-int wrap_text_lines(const std::string &text, int max_w, esphome::display::BaseFont *font,
-                    std::string out_lines[], int max_lines) {
-  const std::string clean = sanitize_utf8_for_font(text);
-  int line_cnt = 0;
-  size_t pos = 0;
-  while (pos < clean.size() && line_cnt < max_lines) {
-    while (pos < clean.size() && clean[pos] == ' ') pos++;
-    if (pos >= clean.size()) break;
-    if (line_cnt == max_lines - 1) {
-      out_lines[line_cnt++] = fit_text_to_width_font(clean.substr(pos), max_w, font);
-      break;
-    }
-    size_t best_end = pos;
-    size_t scan = pos;
-    while (scan < clean.size()) {
-      const size_t nxt_space = clean.find(' ', scan);
-      const size_t word_end = (nxt_space == std::string::npos) ? clean.size() : nxt_space;
-      const std::string cand = clean.substr(pos, word_end - pos);
-      int w = 0, xo = 0, b = 0, h = 0;
-      font->measure(cand.c_str(), &w, &xo, &b, &h);
-      if (w <= max_w) {
-        best_end = word_end;
-        scan = (nxt_space == std::string::npos) ? clean.size() : (nxt_space + 1);
-      } else {
-        break;
-      }
-    }
-    if (best_end == pos) {
-      out_lines[line_cnt++] = fit_text_to_width_font(clean.substr(pos), max_w, font);
-      break;
-    }
-    out_lines[line_cnt++] = clean.substr(pos, best_end - pos);
-    pos = best_end;
-  }
-  return line_cnt;
-}
-
 struct CalculatorState {
   double prev_val = 0.0;
   int op = 0;  // 0 = none, 1 = +, 2 = -, 3 = *, 4 = /
@@ -79,103 +42,26 @@ void format_calc_num_buf(double v, char *buf, size_t buf_len) {
   std::snprintf(buf, buf_len, "%.8g", v);
 }
 
-void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int cy_card,
-                               int app_id, const char *label, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const int card_w = (SCREEN_W < 380) ? 110 : 122;
-  const Color surf_bg = render_modern_card(
-      it, cx_card, cy_card, card_w, 86, 14,
-      kChromeGlassTint, kChromeCardBorder, nullptr, ctx.col_white, ctx.font_small,
-      GlassVariant::Clear, true);
-
-  const Color col_white = ctx.col_white;
-  const int ix = cx_card;
-  const int iy = cy_card - scale_y(13);
-  const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
-  auto S = [](int v466) constexpr -> int { return scale_s(v466); };
-
+RouteId tool_subpage_to_route(int app_id) {
 #if LATTER_ROUND_DISPLAY
-  if (app_id == ToolsSubpage::STOPWATCH) {
-    ui::draw_icon_stopwatch(it, ix, iy, S(14), col_white, true);
-  } else
+  if (app_id == ToolsSubpage::STOPWATCH) return RouteId::TOOLS_STOPWATCH;
 #endif
-  if (app_id == ToolsSubpage::DICE) {
-    // Dice Roll: Solid filled rounded cube with 5 crisp negative-space pips
-    const int d_r = S(5);
-    const int x0 = ix - S(13);
-    const int y0 = iy - S(13);
-    const int s = 2 * S(13) + 1;
-    fill_round_rect_aa(it, x0 + 1, y0 + 1, s, s, static_cast<float>(d_r), kChromeShadow);
-    fill_round_rect_aa(it, x0, y0, s, s, static_cast<float>(d_r), col_white);
-    fast_filled_circle_aa(it, ix, iy, S(2), surf_bg);
-    fast_filled_circle_aa(it, ix - S(7), iy - S(7), S(2), surf_bg);
-    fast_filled_circle_aa(it, ix + S(7), iy - S(7), S(2), surf_bg);
-    fast_filled_circle_aa(it, ix - S(7), iy + S(7), S(2), surf_bg);
-    fast_filled_circle_aa(it, ix + S(7), iy + S(7), S(2), surf_bg);
+  if (app_id == ToolsSubpage::DICE) return RouteId::TOOLS_DICE;
+  if (app_id == ToolsSubpage::FLASHLIGHT) return RouteId::TOOLS_FLASHLIGHT;
+  if (app_id == ToolsSubpage::CALCULATOR) return RouteId::TOOLS_CALCULATOR;
+  if (app_id == ToolsSubpage::LEVEL) return RouteId::TOOLS_LEVEL;
+  if (app_id == ToolsSubpage::COIN_FLIP) return RouteId::TOOLS_COIN_FLIP;
+  return RouteId::APP_TOOLS;
+}
 
-  } else if (app_id == ToolsSubpage::FLASHLIGHT) {
-    // Flashlight: Solid filled sculpted torch body & reflector head + 3 bold light beams
-    fast_filled_triangle(it, ix - S(9), iy - S(7), ix + S(9), iy - S(7), ix - S(5), iy - S(1), col_white);
-    fast_filled_triangle(it, ix + S(9), iy - S(7), ix - S(5), iy - S(1), ix + S(5), iy - S(1), col_white);
-    fill_rect_row_major(it, ix - S(5), iy + S(1), 2 * S(5) + 1, S(14), col_white);
-    fast_filled_circle_aa(it, ix, iy + S(14), S(5), col_white);
-    fill_rect_row_major(it, ix - S(1), iy + S(5), 2 * S(1) + 1, S(5), surf_bg);
-    for (int t = 0; t < thick; t++) {
-      fast_line(it, ix + t, iy - S(10), ix + t, iy - S(16), col_white);
-      fast_line(it, ix - S(6) + t, iy - S(10), ix - S(9) + t, iy - S(15), col_white);
-      fast_line(it, ix + S(6) - t, iy - S(10), ix + S(9) - t, iy - S(15), col_white);
-    }
-
-  } else if (app_id == ToolsSubpage::CALCULATOR) {
-    // Calculator: Solid rounded body with negative-space LCD readout & 3x2 keypad cutouts
-    const int cw = 2 * S(12) + 1;
-    const int ch = 2 * S(15) + 1;
-    const int cx0 = ix - S(12);
-    const int cy0 = iy - S(15);
-    fill_round_rect_aa(it, cx0 + 1, cy0 + 1, cw, ch, static_cast<float>(S(4)), kChromeShadow);
-    fill_round_rect_aa(it, cx0, cy0, cw, ch, static_cast<float>(S(4)), col_white);
-    fill_rect_row_major(it, ix - S(8), iy - S(11), 2 * S(8) + 1, S(6), surf_bg);
-    for (int r = 0; r < 2; r++) {
-      const int ky = iy - S(1) + r * S(5);
-      fill_rect_row_major(it, ix - S(8), ky, S(4), S(3), surf_bg);
-      fill_rect_row_major(it, ix - S(2), ky, S(4), S(3), surf_bg);
-      fill_rect_row_major(it, ix + S(4), ky, S(4), S(3), surf_bg);
-    }
-    fill_rect_row_major(it, ix - S(8), iy + S(9), S(4), std::max(2, S(3)), surf_bg);
-    fill_rect_row_major(it, ix - S(2), iy + S(9), S(10), std::max(2, S(3)), surf_bg);
-
-  } else if (app_id == ToolsSubpage::LEVEL) {
-    // Bubble Level: Solid outer medallion + cardinal crosshairs + negative-space vial moat & solid center bubble
-    fast_filled_circle_aa(it, ix + 1, iy + 1, S(13), kChromeShadow);
-    fast_filled_circle_aa(it, ix, iy, S(13), col_white);
-    fill_rect_row_major(it, ix - thick / 2, iy - S(16), thick, S(4), col_white);
-    fill_rect_row_major(it, ix - thick / 2, iy + S(13), thick, S(4), col_white);
-    fill_rect_row_major(it, ix - S(16), iy - thick / 2, S(4), thick, col_white);
-    fill_rect_row_major(it, ix + S(13), iy - thick / 2, S(4), thick, col_white);
-    fast_filled_circle_aa(it, ix, iy, S(7), surf_bg);
-    fast_filled_circle_aa(it, ix, iy, S(4), col_white);
-
-  } else if (app_id == ToolsSubpage::COIN_FLIP) {
-    // Coin Flip: Solid medallion with negative-space inner ring & house cutout
-    fast_filled_circle_aa(it, ix + 1, iy + 1, S(14), kChromeShadow);
-    fast_filled_circle_aa(it, ix, iy, S(14), col_white);
-    fast_circle_aa(it, ix, iy, static_cast<float>(S(10)), surf_bg, static_cast<float>(std::max(2, S(2))));
-    fast_filled_triangle(it, ix - S(6), iy, ix + S(6), iy, ix, iy - S(6), surf_bg);
-    fill_rect_row_major(it, ix - S(4), iy, 2 * S(4) + 1, S(6), surf_bg);
-  }
-
-  fast_print(it, cx_card + 1, cy_card + scale_y(22) + 1, ctx.font_small, kChromeShadow,
-             TextAlign::CENTER, label);
-  fast_print(it, cx_card, cy_card + scale_y(22), ctx.font_small, col_white,
-             TextAlign::CENTER, label);
+void draw_tool_tile_icon(esphome::display::Display &it, int ix, int iy, int ir,
+                         esphome::Color col, bool shadow, void *user_ctx) {
+  const int app_id = static_cast<int>(reinterpret_cast<intptr_t>(user_ctx));
+  ui::draw_route_icon(it, tool_subpage_to_route(app_id), ix, iy, ir, col, kChromeGlassTint, shadow);
 }
 
 void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs) {
-  using esphome::display::TextAlign;
-
   ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
   const int total_items = collect_tools_launcher_items(items, device_prefs());
   const int total_pages = tools_launcher_page_count(total_items);
@@ -183,12 +69,7 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
   if (total_items <= 0) {
     runtime_state().nav.tools_menu_page = 0;
     render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.col_white);
-    if (backdrop_active()) {
-      fast_print(it, ctx.cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
-                 TextAlign::CENTER, "No tools enabled");
-    }
-    fast_print(it, ctx.cx, ctx.cy, ctx.font_small, ctx.col_slate,
-               TextAlign::CENTER, "No tools enabled");
+    render_empty_state(it, ctx.cx, ctx.cy, "No tools enabled", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -212,14 +93,13 @@ void render_tools_launcher(esphome::display::Display &it, const UiFrameContext &
         const int app_id = items[item_idx].id;
         if (app_id == 0) continue;
         const int cx_card = col_cx[c];
-        render_tool_launcher_card(it, cx_card, cy_card, app_id, items[item_idx].label, ctx);
-        if (register_hits) {
-          const uint16_t slot = static_cast<uint16_t>(r * 2 + c);
-          frame_hits().add_centered_rect(cx_card, cy_card, eff_w, eff_h,
-                                         WidgetId::TOOLS_CARD_BASE + slot,
-                                         kHitTap | kHitFocusSlot,
-                                         static_cast<int16_t>(app_id));
-        }
+        const uint16_t wid = register_hits
+                                 ? static_cast<uint16_t>(WidgetId::TOOLS_CARD_BASE + (r * 2 + c))
+                                 : WidgetId::NONE;
+        ui::grid_tile(it, cx_card, cy_card, eff_w, eff_h, items[item_idx].label,
+                      false, false, ctx.theme_primary, ctx.col_white, ctx.font_small,
+                      draw_tool_tile_icon, reinterpret_cast<void *>(static_cast<intptr_t>(app_id)),
+                      wid, static_cast<int16_t>(app_id));
       }
     }
   };
@@ -657,17 +537,16 @@ void render_calculator_subpage(esphome::display::Display &it, const UiFrameConte
 
       const bool is_minus_key = (r == 2 && c == 3);
       const bool is_del_key   = (r == 4 && c == 2);
-      render_modern_card(it, kx_mid, ky_mid, raw_key_w, 42, 9, bg_c, border_c,
-                         is_minus_key ? nullptr : kKeyLabels[r][c],
-                         text_c, is_del_key ? ctx.font_small : ctx.font_btn_bold);
+      const uint16_t key_idx = static_cast<uint16_t>(r * 4 + c);
+      ui::keypad_button(it, kx_mid, ky_mid, eff_key_w, eff_key_h,
+                        is_minus_key ? nullptr : kKeyLabels[r][c],
+                        bg_c, border_c, text_c,
+                        is_del_key ? ctx.font_small : ctx.font_btn_bold,
+                        WidgetId::NONE);
       if (is_minus_key) {
-        const int bar_w = std::max(10, scale_s(14));
-        const int bar_h = std::max(2, scale_s(3));
-        fill_rect_row_major(it, kx_mid - bar_w / 2 + 1, ky_mid - bar_h / 2 + 1, bar_w, bar_h, kChromeShadow);
-        fill_rect_row_major(it, kx_mid - bar_w / 2, ky_mid - bar_h / 2, bar_w, bar_h, text_c);
+        ui::draw_icon_minus(it, kx_mid, ky_mid, std::max(7, scale_s(9)), text_c, true);
       }
 
-      const uint16_t key_idx = static_cast<uint16_t>(r * 4 + c);
       frame_hits().add_centered_rect(kx_mid, ky_mid, eff_key_w + 4, eff_key_h + 6,
                                      WidgetId::CALC_KEY_BASE + key_idx,
                                      kHitTap | kHitFocusSlot,
@@ -735,11 +614,8 @@ void render_level_subpage(esphome::display::Display &it, const UiFrameContext &c
   fmt_axis(x_buf, sizeof(x_buf), 'X', smooth_x_deg);
   fmt_axis(y_buf, sizeof(y_buf), 'Y', smooth_y_deg);
   std::snprintf(deg_buf, sizeof(deg_buf), "%s   %s", x_buf, y_buf);
-  if (backdrop_active()) {
-    fast_print(it, ctx.cx + 1, scale_y(82) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, deg_buf);
-  }
-  fast_print(it, ctx.cx, scale_y(82), ctx.font_small,
-             is_level ? ctx.col_green : ctx.col_white, TextAlign::CENTER, deg_buf);
+  render_sub_header(it, ctx.cx, deg_buf, ctx.font_small,
+                    is_level ? ctx.col_green : ctx.col_white);
 
   // 2. Resolution-Adaptive Bulls-Eye Spirit Vial (~15° full-scale span; <= 0.6° centers inside inner ring)
   const int level_cy  = ctx.cy + scale_y(16);
@@ -1101,8 +977,11 @@ void reset_calculator_state() {
 
 void handle_calculator_keypad_tap(int tx, int ty) {
   static constexpr int kBaseRowsY[5] = {131, 187, 243, 299, 355};
-  const int key_w_tol = (SCREEN_W < 380) ? 35 : scale_x(40);
-  const int key_h_tol = scale_y(27);
+  const int raw_key_w = (SCREEN_W < 380) ? 62 : 68;
+  const int eff_key_w = (SCREEN_W > 520) ? scale_x(raw_key_w) : raw_key_w;
+  const int eff_key_h = (SCREEN_W > 520) ? scale_y(42) : 42;
+  const int key_w_tol = (eff_key_w + 4) / 2;
+  const int key_h_tol = (eff_key_h + 6) / 2;
 
   int r = -1;
   int c = -1;
@@ -1274,37 +1153,39 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
   const Color alert_color = st.find_my_active ? st.col_white
                             : (st.alarm_ringing ? ctx.col_red : ctx.theme_secondary);
   const Color ring_c = pulse ? alert_color
-                             : (st.find_my_active ? ctx.theme_secondary : Color(20, 20, 20));
+                             : (st.find_my_active ? ctx.theme_secondary : st.col_dark_gray);
   render_bezel_alert_border(it, st.cx, st.cy, ring_c);
 
+  const int cta_h = std::max(44, scale_y(48));
+
   if (st.find_my_active) {
-    const uint32_t max_span = static_cast<uint32_t>(std::max(60, SCREEN_MIN_R - 76));
-    const int radar_r = 50 + static_cast<int>((st.now_ms / 8U) % max_span);
+    const int base_r = scale_min(50);
+    const uint32_t max_span = static_cast<uint32_t>(std::max(scale_min(60), SCREEN_MIN_R - scale_min(76)));
+    const int radar_r = base_r + static_cast<int>((st.now_ms / 8U) % max_span);
     fast_circle(it, st.cx, st.cy, radar_r, ctx.theme_primary);
     fast_circle(it, st.cx, st.cy, radar_r + 1, pulse ? st.col_white : ctx.theme_secondary);
-    const int radar_r2 = 50 + static_cast<int>(((st.now_ms / 8U) + (max_span / 2U)) % max_span);
+    const int radar_r2 = base_r + static_cast<int>(((st.now_ms / 8U) + (max_span / 2U)) % max_span);
     fast_circle(it, st.cx, st.cy, radar_r2, ctx.theme_secondary);
 
-    fast_print(it, st.cx, scale_y(75), ctx.font_small,
-               pulse ? st.col_white : ctx.theme_secondary, TextAlign::CENTER, "LOCATING DEVICE");
-    fast_print(it, st.cx, scale_y(156), ctx.font_date, st.col_white, TextAlign::CENTER, "LATTER");
-    fast_print(it, st.cx, scale_y(196), ctx.font_date, ctx.theme_primary, TextAlign::CENTER, "COMPANION");
-    fast_print(it, st.cx, scale_y(244), ctx.font_small, ctx.theme_secondary,
-               TextAlign::CENTER, "Acoustic Beacon Active");
+    ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+                     pulse ? st.col_white : ctx.theme_secondary, TextAlign::CENTER, "LOCATING DEVICE");
+    ui::shadow_print(it, st.cx, scale_y(156), ctx.font_date, st.col_white, TextAlign::CENTER, "LATTER");
+    ui::shadow_print(it, st.cx, scale_y(196), ctx.font_date, ctx.theme_primary, TextAlign::CENTER, "COMPANION");
+    ui::shadow_print(it, st.cx, scale_y(244), ctx.font_small, ctx.theme_secondary,
+                     TextAlign::CENTER, "Acoustic Beacon Active");
 
     const int btn_y = scale_y(330);
-    const int btn_w = (SCREEN_W > 520) ? scale_x(240) : 240;
-    const int btn_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-    render_modern_card(it, st.cx, btn_y, 240, 44, 12, kChromeGlassTint, ctx.theme_primary,
-                       "Tap to Dismiss", st.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(st.cx, btn_y, btn_w, btn_h,
-                                   WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
+    const int btn_w = std::min({kMaxContentColW, safe_span(btn_y, 18), scale_x(240)});
+    ui::action_pill_centered(it, st.cx, btn_w, btn_y, cta_h,
+                             ctx.theme_primary, kChromeGlassTint,
+                             "Tap to Dismiss", st.col_white, ctx.font_small,
+                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(16));
     return;
   }
 
   if (st.alarm_ringing) {
-    fast_print(it, st.cx, scale_y(75), ctx.font_small,
-               pulse ? ctx.theme_secondary : st.col_white, TextAlign::CENTER, "ALARM RINGING");
+    ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+                     pulse ? ctx.theme_secondary : st.col_white, TextAlign::CENTER, "ALARM RINGING");
 
     char cur_t_buf[16];
     std::snprintf(cur_t_buf, sizeof(cur_t_buf), "%s", kUnknownGlyph);
@@ -1313,53 +1194,55 @@ void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameCo
       format_time_hhmm(ctx.now.hour, ctx.now.minute, st.is_24h_format,
                        cur_t_buf, sizeof(cur_t_buf), ampm_buf);
     }
-    fast_print(it, st.cx, scale_y(160), ctx.font_time, st.col_white, TextAlign::CENTER, cur_t_buf);
+    ui::shadow_print(it, st.cx, scale_y(160), ctx.font_time, st.col_white, TextAlign::CENTER, cur_t_buf);
     if (!st.is_24h_format && ampm_buf[0] != '\0') {
-      fast_print(it, st.cx + scale_x(120), scale_y(175), ctx.font_small, ctx.theme_secondary,
-                 TextAlign::CENTER_LEFT, ampm_buf);
+      int tw = 0, xo = 0, base = 0, th = 0;
+      if (ctx.font_time != nullptr) ctx.font_time->measure(cur_t_buf, &tw, &xo, &base, &th);
+      const int ap_x = st.cx + (tw / 2) + scale_x(10);
+      ui::shadow_print(it, ap_x, scale_y(175), ctx.font_small, ctx.theme_secondary,
+                       TextAlign::CENTER_LEFT, ampm_buf);
     }
 
     const int r_idx = (st.alarm_ringing_idx == 3)
                           ? st.alarm3_recurrence
                           : ((st.alarm_ringing_idx == 2) ? st.alarm2_recurrence : st.alarm1_recurrence);
     static constexpr const char *kRecNames[4] = {"Daily", "Weekdays", "Weekends", "Once"};
-    fast_print(it, st.cx, scale_y(225), ctx.font_small, ctx.theme_primary,
-               TextAlign::CENTER, kRecNames[r_idx & 3]);
+    ui::shadow_print(it, st.cx, scale_y(225), ctx.font_small, ctx.theme_primary,
+                     TextAlign::CENTER, kRecNames[r_idx & 3]);
 
     const int snz_y = scale_y(295);
-    const int snz_w = (SCREEN_W > 520) ? scale_x(224) : 224;
-    const int snz_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-    render_modern_card(it, st.cx, snz_y, 224, 44, 12, kChromeGlassTint, ctx.theme_secondary,
-                       "Snooze (+5m)", st.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(st.cx, snz_y, snz_w, snz_h,
-                                   WidgetId::ALERT_SNOOZE_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
+    const int snz_w = std::min({kMaxContentColW, safe_span(snz_y, 18), scale_x(232)});
+    ui::action_pill_centered(it, st.cx, snz_w, snz_y, cta_h,
+                             ctx.theme_secondary, kChromeGlassTint,
+                             "Snooze (+5m)", st.col_white, ctx.font_small,
+                             WidgetId::ALERT_SNOOZE_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(12));
 
     const int dis_y = scale_y(364);
-    const int dis_w = (SCREEN_W > 520) ? scale_x(204) : 204;
-    const int dis_h = (SCREEN_W > 520) ? scale_y(42) : 42;
-    render_modern_card(it, st.cx, dis_y, 204, 42, 12, kChromeGlassTint, ctx.col_red,
-                       "Dismiss", st.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(st.cx, dis_y, dis_w, dis_h,
-                                   WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 1, scale_y(8));
+    const int dis_w = std::min({kMaxContentColW, safe_span(dis_y, 18), scale_x(216)});
+    ui::action_pill_centered(it, st.cx, dis_w, dis_y, cta_h,
+                             ctx.col_red, ui::chrome_danger_bg(),
+                             "Dismiss", st.col_white, ctx.font_small,
+                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 1, cta_h + scale_y(12));
     return;
   }
 
-  fast_print(it, st.cx, scale_y(75), ctx.font_small,
-             pulse ? ctx.theme_secondary : st.col_white, TextAlign::CENTER, "TIMER EXPIRED");
-  fast_print(it, st.cx, scale_y(170), ctx.font_time, st.col_white, TextAlign::CENTER, "00:00");
+  ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+                   pulse ? ctx.theme_secondary : st.col_white, TextAlign::CENTER, "TIMER EXPIRED");
+  ui::shadow_print(it, st.cx, scale_y(170), ctx.font_time, st.col_white, TextAlign::CENTER, "00:00");
   const std::string t_lbl = st.va_timer_name.empty()
                                 ? std::string("Time is up!")
-                                : fit_text_to_width_font(st.va_timer_name.str(), scale_x(260), ctx.font_small);
-  fast_print(it, st.cx, scale_y(230), ctx.font_small, ctx.theme_secondary,
-             TextAlign::CENTER, t_lbl.c_str());
+                                : fit_text_to_width_font(st.va_timer_name.str(),
+                                                         std::min(kMaxContentColW, safe_span(scale_y(230), 18)),
+                                                         ctx.font_small);
+  ui::shadow_print(it, st.cx, scale_y(230), ctx.font_small, ctx.theme_secondary,
+                   TextAlign::CENTER, t_lbl.c_str());
 
   const int btn_y = scale_y(330);
-  const int btn_w = (SCREEN_W > 520) ? scale_x(224) : 224;
-  const int btn_h = (SCREEN_W > 520) ? scale_y(44) : 44;
-  render_modern_card(it, st.cx, btn_y, 224, 44, 12, kChromeGlassTint, ctx.theme_primary,
-                     "Dismiss", st.col_white, ctx.font_small);
-  frame_hits().add_centered_rect(st.cx, btn_y, btn_w, btn_h,
-                                 WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, scale_y(8));
+  const int btn_w = std::min({kMaxContentColW, safe_span(btn_y, 18), scale_x(232)});
+  ui::action_pill_centered(it, st.cx, btn_w, btn_y, cta_h,
+                           ctx.theme_primary, kChromeGlassTint,
+                           "Dismiss", st.col_white, ctx.font_small,
+                           WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(16));
 }
 
 void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx) {

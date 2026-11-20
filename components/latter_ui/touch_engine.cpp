@@ -2654,7 +2654,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       if (wid == WidgetId::COLOR_WHEEL_RING) {
         float hue = 0.0f, sat = 1.0f;
-        if (ui::hsv_wheel_pick(touch.x, touch.y, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
+        if (ui::hsv_wheel_pick(touch.x, touch.y, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
           light_insp_hue_deg() = hue;
           light_insp_sat() = sat;
           update_light_inspector_hex(hue, sat);
@@ -3984,7 +3984,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       light_insp_domain() == "light" && light_insp_mode() == 0 &&
       (now_u - last_disp_update_ms() >= 42U)) {
     float hue = 0.0f, sat = 1.0f;
-    if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
+    if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
       gest.axis_lock = GestureAxisLock::Slider;
       gest.tap_cancelled = true;
       light_insp_hue_deg() = hue;
@@ -4190,7 +4190,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
                light_insp_domain() == "light" && light_insp_mode() == 0) {
       float hue = 0.0f, sat = 1.0f;
-      if (ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(212), 140, 62, hue, sat)) {
+      if (ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
         light_insp_hue_deg() = hue;
         light_insp_sat() = sat;
         update_light_inspector_hex(hue, sat);

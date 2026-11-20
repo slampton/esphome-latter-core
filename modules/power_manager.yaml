@@ -577,11 +577,24 @@ script:
           id(disp1).start_poller();
           latter_ui::record_ambient_frame_ms(now_ss_ms);
           id(apply_power_policy).execute();
-          id(sync_display_brightness).execute();
-          if (s_style == "Photo Frame" && !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-            id(fetch_screensaver_photo_debounced).execute();
+          const auto &ac_ss = latter_ui::area_ctx_state();
+          const bool ss_has_art =
+              (id(screensaver_photo_art).get_width() > 0 && !ac_ss.screensaver_photo_url.empty()) ||
+              latter_ui::can_reuse_wallpaper_for_photo_frame(
+                  ac_ss.screensaver_photo_url, rs.music.loaded_wallpaper_url,
+                  id(home_wallpaper_art).get_width() > 0);
+          const bool defer_photo_frame =
+              (s_style == "Photo Frame") && !ac_ss.screensaver_photo_url.empty() && !ss_has_art;
+          rs.music.screensaver_photo_failed = false;
+          if (defer_photo_frame) {
+            id(fetch_screensaver_photo_now).execute();
+          } else {
+            id(sync_display_brightness).execute();
+            if (s_style == "Photo Frame" && !ac_ss.screensaver_photo_url.empty()) {
+              id(fetch_screensaver_photo_now).execute();
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
           }
-          latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
     mode: restart
@@ -604,9 +617,11 @@ script:
             latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
           }
           latter_ui::video_client().stop();
+          id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
+          rs.music.screensaver_photo_failed = false;
 
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
@@ -659,12 +674,25 @@ script:
             id(disp1).start_poller();
             latter_ui::record_ambient_frame_ms(now_sb_ms);
             id(apply_power_policy).execute();
-            id(sync_display_brightness).execute();
-            if (s_style == "Photo Frame" && !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-              id(fetch_screensaver_photo_debounced).execute();
-            }
-            if (s_style == "Ambient Clock" || s_style == "Photo Frame") {
-              latter_ui::schedule_disp_update(&id(disp1));
+            const auto &ac_sb = latter_ui::area_ctx_state();
+            const bool sb_has_art =
+                (id(screensaver_photo_art).get_width() > 0 && !ac_sb.screensaver_photo_url.empty()) ||
+                latter_ui::can_reuse_wallpaper_for_photo_frame(
+                    ac_sb.screensaver_photo_url, rs.music.loaded_wallpaper_url,
+                    id(home_wallpaper_art).get_width() > 0);
+            const bool defer_photo_frame =
+                (s_style == "Photo Frame") && !ac_sb.screensaver_photo_url.empty() && !sb_has_art;
+            rs.music.screensaver_photo_failed = false;
+            if (defer_photo_frame) {
+              id(fetch_screensaver_photo_now).execute();
+            } else {
+              id(sync_display_brightness).execute();
+              if (s_style == "Photo Frame" && !ac_sb.screensaver_photo_url.empty()) {
+                id(fetch_screensaver_photo_now).execute();
+              }
+              if (s_style == "Ambient Clock" || s_style == "Photo Frame") {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
             }
           } else {
             #if !LATTER_IS_STATIONARY
@@ -698,9 +726,11 @@ script:
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
             latter_ui::record_screen_wake();
           }
+          id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
+          rs.music.screensaver_photo_failed = false;
           latter_ui::display_lifecycle().on_wake_active(
               wake_now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time,
               rs.nav.standby_entered_ms,
@@ -753,9 +783,11 @@ script:
           rs.nav.is_hibernating = true;
           rs.nav.active_game = 0;
           latter_ui::video_client().stop();
+          id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
+          rs.music.screensaver_photo_failed = false;
       - micro_wake_word.stop:
       - voice_assistant.stop:
       - media_player.pause: latter_media_player

@@ -113,6 +113,9 @@ inline constexpr float scale_min_f(float v466) {
   return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
 }
 inline constexpr int scale_w(int v466) { return scale_w_for(v466, SCREEN_W); }
+inline constexpr int kRadiusCardPx() { return radius_card_for(SCREEN_MIN_DIM); }
+inline constexpr int kRadiusKeyPx() { return radius_key_for(SCREEN_MIN_DIM); }
+static constexpr int kMaxContentWidth = kMaxContentColW;
 
 static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? scale_min(426) : (SCREEN_H - scale_y(28));
@@ -145,6 +148,25 @@ inline const esphome::Color kChromeWheelOuterRing(42, 50, 62);
 inline const esphome::Color kChromeMuted(115, 128, 145);
 inline const esphome::Color kChromeSubtle(82, 94, 110);
 inline const esphome::Color kChromeCustomSecondary(192, 192, 192);
+inline const esphome::Color kChromeLightFill(92, 68, 22);
+inline const esphome::Color kChromeCoverFill(34, 68, 96);
+inline const esphome::Color kChromeFanFill(24, 76, 64);
+inline const esphome::Color kChromeFanAccent(48, 196, 156);
+inline const esphome::Color kChromeTeleIce(185, 225, 255);
+inline const esphome::Color kChromeWarmKelvin(255, 168, 72);
+inline const esphome::Color kChromeCoolKelvin(185, 222, 255);
+inline const esphome::Color kChromeDegSilver(204, 214, 228);
+inline const esphome::Color kChromeDayGold(255, 225, 110);
+inline const esphome::Color kChromeRgbRed(255, 95, 95);
+inline const esphome::Color kChromeRgbGreen(90, 225, 135);
+inline const esphome::Color kChromeRgbBlue(95, 165, 255);
+inline const esphome::Color kChromeGridDivider(44, 52, 68);
+inline const esphome::Color kChromeGridBg(14, 18, 24);
+inline const esphome::Color kChromeGridLine(28, 34, 46);
+inline const esphome::Color kChromeCaptionBg(10, 14, 20);
+inline const esphome::Color kChromeDwellTrack(48, 56, 72);
+inline const esphome::Color kChromePlayGlyph(245, 248, 252);
+inline const esphome::Color kChromePauseGlyph(12, 16, 22);
 
 // Universal 2-Tier Neutral Smoked Glass Material System (D-037, D-041):
 //   Clear        -> kChromeGlassTint(22, 27, 36), fixed backdrop-invariant 37.5-45.3% frosted template (96..116/256)

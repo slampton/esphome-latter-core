@@ -555,6 +555,146 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
                     f"[BACK BUTTON Y] {page_cpp.relative_to(ROOT).as_posix()} calls render_back_button without back_y"
                 )
 
+    # D-070 Automated UI Drift Guardrails:
+    # [UI MODE BAR], [UI HEADER STANDARD], [UI GLASS DISCIPLINE],
+    # [UI RADIUS TOKENS], [UI NO MICRO BUTTONS], [UI CHROME TOKENS]
+    def _iter_balanced_calls(src: str, fn_pattern: str) -> list[tuple[str, str]]:
+        """Return (matched_fn_name, raw_argument_list) for each call matching fn_pattern."""
+        out: list[tuple[str, str]] = []
+        for m in re.finditer(fn_pattern + r"\s*\(", src):
+            fn_name = m.group(1)
+            start = m.end()
+            depth = 1
+            pos = start
+            n = len(src)
+            while pos < n and depth > 0:
+                ch = src[pos]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                pos += 1
+            if depth == 0:
+                out.append((fn_name, src[start : pos - 1]))
+        return out
+
+    mode_bar_pages = {
+        "page_area_hub.cpp",
+        "page_weather.cpp",
+        "page_home_hub.cpp",
+        "page_time.cpp",
+        "page_calendar.cpp",
+        "page_music.cpp",
+        "page_cameras.cpp",
+    }
+    chrome_token_pages = {
+        "page_cameras.cpp",
+        "page_area_hub.cpp",
+        "page_home_hub.cpp",
+        "page_calendar.cpp",
+        "page_music.cpp",
+        "page_time.cpp",
+        "page_system.cpp",
+        "page_remote.cpp",
+        "page_pinned.cpp",
+    }
+    btn_widget_pat = (
+        r"\b(ui::(?:action_pill(?:_centered|_row)?|setting_cycle_row|slider_card_row|"
+        r"list_row|grid_tile|toggle_card_row|segmented_toggle|keypad_button))"
+    )
+    for page_cpp in sorted((ROOT / "components" / "latter_ui").glob("page_*.cpp")):
+        rel = page_cpp.relative_to(ROOT).as_posix()
+        pclean = _strip_cpp_strings_and_comments(page_cpp.read_text(encoding="utf-8"))
+
+        # 1. [UI MODE BAR]
+        if "render_in_app_mode_bar_track(" in pclean:
+            failures.append(
+                f"[UI MODE BAR] {rel} calls render_in_app_mode_bar_track() directly — use ui::mode_bar() (D-070)"
+            )
+        if page_cpp.name in mode_bar_pages and "ui::mode_bar(" not in pclean:
+            failures.append(f"[UI MODE BAR] {rel} must render its bottom mode bar via ui::mode_bar() (D-070)")
+
+        # 2. [UI HEADER STANDARD]
+        for _fn, arg_str in _iter_balanced_calls(pclean, r"\b(render_page_header)"):
+            if "col_white" not in arg_str and "Color::WHITE" not in arg_str:
+                failures.append(
+                    f"[UI HEADER STANDARD] {rel} calls render_page_header() without col_white/Color::WHITE (D-060/D-070)"
+                )
+            if "font_small" not in arg_str:
+                failures.append(
+                    f"[UI HEADER STANDARD] {rel} calls render_page_header() without font_small (D-060/D-070)"
+                )
+
+        # 3. [UI GLASS DISCIPLINE]
+        if re.search(r"\bmix_color_q8\s*\(\s*kChromeGlassTint\b", pclean):
+            failures.append(
+                f"[UI GLASS DISCIPLINE] {rel} hand-mixes kChromeGlassTint — use ui::chrome_card_bg_on()/off() (D-070)"
+            )
+        if re.search(r"\bui::pill_button\s*\(", pclean):
+            failures.append(
+                f"[UI GLASS DISCIPLINE] {rel} calls legacy ui::pill_button() — use ui::action_pill*() (D-070)"
+            )
+        if re.search(r"\brender_modern_card\s*\(", pclean):
+            failures.append(
+                f"[UI GLASS DISCIPLINE] {rel} calls legacy render_modern_card() — use explicit-bounds functional widgets (D-070)"
+            )
+
+        # 4. [UI RADIUS TOKENS]
+        for _fn, arg_str in _iter_balanced_calls(pclean, r"\b(render_card_box)"):
+            # Split top-level args to inspect the radius argument (index 7)
+            parts: list[str] = []
+            cur: list[str] = []
+            d = 0
+            for ch in arg_str:
+                if ch == "," and d == 0:
+                    parts.append("".join(cur).strip())
+                    cur = []
+                else:
+                    if ch in "([{":
+                        d += 1
+                    elif ch in ")]}":
+                        d -= 1
+                    cur.append(ch)
+            if cur:
+                parts.append("".join(cur).strip())
+            if len(parts) >= 8:
+                rad_arg = parts[7]
+                if re.fullmatch(r"(?:scale_s\s*\(\s*)?(?:10|12|14|15|16)\s*\)?", rad_arg):
+                    failures.append(
+                        f"[UI RADIUS TOKENS] {rel} passes magic radius '{rad_arg}' to render_card_box() — "
+                        "use kRadiusCardPx(), kRadiusKeyPx(), or h / 2 (D-070)"
+                    )
+
+        # 5. [UI NO MICRO BUTTONS]
+        for fn_name, arg_str in _iter_balanced_calls(pclean, btn_widget_pat):
+            if "font_micro" in arg_str:
+                failures.append(
+                    f"[UI NO MICRO BUTTONS] {rel} passes font_micro to interactive button {fn_name}() — "
+                    "use font_small or font_btn_bold (D-070)"
+                )
+
+        # 6. [UI CHROME TOKENS]
+        if page_cpp.name in chrome_token_pages and re.search(r"\bColor\s*\(\s*\d+\s*,", pclean):
+            failures.append(
+                f"[UI CHROME TOKENS] {rel} contains raw Color(r, g, b) chrome literal — "
+                "use named kChrome* or ctx.col_* tokens (D-070)"
+            )
+
+    # Also enforce [UI HEADER STANDARD] on ui_compositor.cpp global takeovers (OTA / Hibernating)
+    if comp_cpp_path.is_file():
+        comp_masked = _strip_cpp_strings_and_comments(comp_cpp_path.read_text(encoding="utf-8"))
+        for _fn, arg_str in _iter_balanced_calls(comp_masked, r"\b(render_page_header)"):
+            if "col_white" not in arg_str and "Color::WHITE" not in arg_str:
+                failures.append(
+                    "[UI HEADER STANDARD] components/latter_ui/ui_compositor.cpp calls render_page_header() "
+                    "without col_white/Color::WHITE (D-060/D-070)"
+                )
+            if "font_small" not in arg_str:
+                failures.append(
+                    "[UI HEADER STANDARD] components/latter_ui/ui_compositor.cpp calls render_page_header() "
+                    "without font_small (D-060/D-070)"
+                )
+
     # [TEXT CONTRAST] WCAG >= 4.5:1 for small-text palette colors on col_bg (#000000)
     palette: dict[str, str] = {}
     for m_col in re.finditer(r'-\s*id:\s*([A-Za-z0-9_]+)\s*\n\s*hex:\s*"([0-9A-Fa-f]{6})"', gui_uncommented):

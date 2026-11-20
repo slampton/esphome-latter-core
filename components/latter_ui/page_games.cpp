@@ -19,6 +19,17 @@ using esphome::display::BaseFont;
 using esphome::display::Display;
 using esphome::display::TextAlign;
 
+void render_game_hud_footer(Display &it, int cx, const char *text, BaseFont *font, Color col) {
+  const int hud_y = layout().back_y - scale_y(34);
+  const std::string fit = fit_text_to_width_font(text != nullptr ? text : "", safe_span(hud_y, 16), font);
+  ui::shadow_print(it, cx, hud_y, font, col, TextAlign::CENTER, fit.c_str());
+}
+
+void draw_games_speaker_icon(Display &it, int cx, int cy, int r, Color col, bool shadow, void *user_ctx) {
+  const bool sound_on = (user_ctx != nullptr);
+  ui::draw_icon_speaker(it, cx, cy, r, col, sound_on, shadow, !sound_on);
+}
+
 struct GameBallPod {
   float x, y, vx, vy, r;
   int col_idx;
@@ -419,15 +430,13 @@ void render_game_marbles(Display &it, const UiFrameContext &ctx,
     }
   }
 
-  const int hud_y = layout().back_y - scale_y(34);
   const int wall_hw = scale_min(151);
   fast_line(it, cx - wall_hw, wall_y, cx + wall_hw, wall_y, ctx.col_slate * 0.45f);
   fast_line(it, cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, ctx.col_dark_gray);
   char hud_buf[56];
   std::snprintf(hud_buf, sizeof(hud_buf), "W%d  •  %d/5  •  %ds  •  %d",
                 wave_num, sunk_count, time_remaining, game_score);
-  fast_print(it, cx, hud_y, ctx.font_small, time_remaining < 10 ? ctx.col_orange : ctx.col_gold,
-             TextAlign::CENTER, hud_buf);
+  render_game_hud_footer(it, cx, hud_buf, ctx.font_small, time_remaining < 10 ? ctx.col_orange : ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   fast_circle(it, cx, cy, scale_min(34), ctx.col_dark_gray);
@@ -897,7 +906,7 @@ void render_game_archery(Display &it, const UiFrameContext &ctx,
   char hud_buf[56];
   std::snprintf(hud_buf, sizeof(hud_buf), "R%d  •  %d Arr  •  %s  •  %d",
                 round_num, arrows_left, wind_buf, arch_score);
-  fast_print(it, cx, layout().back_y - scale_y(34), ctx.font_small, ctx.col_gold, TextAlign::CENTER, hud_buf);
+  render_game_hud_footer(it, cx, hud_buf, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   if (round_over) {
@@ -916,7 +925,7 @@ void render_game_archery(Display &it, const UiFrameContext &ctx,
     std::snprintf(best_str, sizeof(best_str), "Best: %d", static_cast<int>(high_score_archery));
     ui::game_over_sheet(it, cx, cy, title_buf, title_col, score_str, best_str, is_new_high,
                         "PLAY AGAIN", ctx.font_date, ctx.font_small,
-                        ctx.theme_secondary, ctx.col_white, ctx.col_gold, ctx.col_slate, WidgetId::GAME_OVER_CTA);
+                        ctx.theme_primary, ctx.col_white, ctx.col_gold, ctx.col_slate, WidgetId::GAME_OVER_CTA);
   }
 }
 
@@ -1326,7 +1335,7 @@ void render_game_bricks(Display &it, const UiFrameContext &ctx,
     std::snprintf(bo_hud, sizeof(bo_hud), "W%d  •  Balls:%d  •  Brk:%d  •  %d",
                   wave_num, lives_left, bricks_remaining, bo_score);
   }
-  fast_print(it, cx, layout().back_y - scale_y(34), ctx.font_small, ctx.col_gold, TextAlign::CENTER, bo_hud);
+  render_game_hud_footer(it, cx, bo_hud, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   for (int b = 0; b < NUM_BRICKS; b++) {
@@ -1838,7 +1847,7 @@ void render_game_chomp(Display &it, const UiFrameContext &ctx,
   char t_buf[56];
   std::snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
                 level_num, snacks_left, snack_score, static_cast<int>(high_score_chomp));
-  fast_print(it, cx, layout().back_y - scale_y(34), ctx.font_small, ctx.col_gold, TextAlign::CENTER, t_buf);
+  render_game_hud_footer(it, cx, t_buf, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   float t_bob = static_cast<float>(now_ms) * 0.0045f;
@@ -2028,8 +2037,11 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
     }
   }
 
-  render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  kChromeGlassTint, kChromeCardBorder, scale_s(14));
+  // Non-glass flat board container (avoids glass-on-glass double blending under interactive tiles)
+  fill_round_rect_aa(it, board_x, board_y, board_sz, board_sz,
+                     static_cast<float>(kRadiusCardPx()), kChromeTrack);
+  stroke_round_rect_aa(it, board_x, board_y, board_sz, board_sz,
+                       static_cast<float>(kRadiusCardPx()), kChromeCardBorder, kChromeCardBorder, 1);
 
   auto tile_bg_color = [&](int val) -> Color {
     if (val == 0) return kChromeGlassTint;
@@ -2066,7 +2078,7 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
   char hud_buf[64];
   std::snprintf(hud_buf, sizeof(hud_buf), "2048  •  Score: %d  •  Best: %d",
                 score_2048, static_cast<int>(high_score_2048));
-  fast_print(it, cx, layout().back_y - scale_y(34), ctx.font_small, ctx.col_gold, TextAlign::CENTER, hud_buf);
+  render_game_hud_footer(it, cx, hud_buf, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   if (game_over) {
@@ -2241,8 +2253,11 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
     }
   };
 
-  render_card_box(it, board_x, board_y, board_sz, board_sz,
-                  kChromeGlassTint, kChromeCardBorder, scale_s(14));
+  // Non-glass flat board container (avoids glass-on-glass double blending under interactive tiles)
+  fill_round_rect_aa(it, board_x, board_y, board_sz, board_sz,
+                     static_cast<float>(kRadiusCardPx()), kChromeTrack);
+  stroke_round_rect_aa(it, board_x, board_y, board_sz, board_sz,
+                       static_cast<float>(kRadiusCardPx()), kChromeCardBorder, kChromeCardBorder, 1);
 
   for (int idx = 0; idx < 16; idx++) {
     int r = idx / 4;
@@ -2269,7 +2284,7 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
   char hud_buf[64];
   std::snprintf(hud_buf, sizeof(hud_buf), "R%d  •  Pairs: %d/8  •  %dx  •  %d",
                 round_num, pairs_found, streak_mult, mem_score);
-  fast_print(it, cx, layout().back_y - scale_y(34), ctx.font_small, ctx.col_gold, TextAlign::CENTER, hud_buf);
+  render_game_hud_footer(it, cx, hud_buf, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 }
 
@@ -2286,14 +2301,8 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
   if (game_count <= 0) {
     game_carousel_idx = 0;
     const int hdr_y = compact_w ? 64 : scale_y(84);
-    fast_print(it, cx + 1, hdr_y + 1, ctx.font_games_title, kChromeShadow, TextAlign::CENTER, "GAMES");
-    fast_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
-    if (backdrop_active()) {
-      fast_print(it, cx + 1, ctx.cy + 1, ctx.font_small, kChromeShadow,
-                 TextAlign::CENTER, "No games enabled");
-    }
-    fast_print(it, cx, ctx.cy, ctx.font_small, ctx.col_slate,
-               TextAlign::CENTER, "No games enabled");
+    ui::shadow_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
+    render_empty_state(it, cx, ctx.cy, "No games enabled", ctx.font_small, ctx.col_slate);
     return;
   }
 
@@ -2301,57 +2310,60 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     game_carousel_idx = std::clamp(game_carousel_idx, 0, game_count - 1);
   }
 
+  auto gs = [](int v) constexpr -> int { return scale_min(v); };
+
   auto draw_game_icon = [&](int g_idx, int icon_x, int icon_y) {
     if (g_idx == 0) {
-      fast_filled_circle(it, icon_x, icon_y, 52, Color(18, 24, 28));
-      fast_circle(it, icon_x, icon_y, 52, ctx.col_slate);
-      fast_circle(it, icon_x, icon_y, 51, ctx.col_slate);
-      fast_circle(it, icon_x, icon_y, 46, Color(30, 40, 48));
+      fast_filled_circle(it, icon_x, icon_y, gs(52), Color(18, 24, 28));
+      fast_circle(it, icon_x, icon_y, gs(52), ctx.col_slate);
+      fast_circle(it, icon_x, icon_y, gs(51), ctx.col_slate);
+      fast_circle(it, icon_x, icon_y, gs(46), Color(30, 40, 48));
 
-      fast_filled_circle(it, icon_x, icon_y, 15, ctx.col_black);
-      fast_circle(it, icon_x, icon_y, 15, Color(45, 55, 65));
-      fast_circle(it, icon_x, icon_y, 14, Color(45, 55, 65));
+      fast_filled_circle(it, icon_x, icon_y, gs(15), ctx.col_black);
+      fast_circle(it, icon_x, icon_y, gs(15), Color(45, 55, 65));
+      fast_circle(it, icon_x, icon_y, gs(14), Color(45, 55, 65));
 
       for (int a = 0; a < 4; a++) {
         float sa = static_cast<float>(a) * 1.570796f;
-        fast_line(it, icon_x + static_cast<int>(fast_cos(sa) * 18.0f),
-                  icon_y + static_cast<int>(fast_sin(sa) * 18.0f),
-                  icon_x + static_cast<int>(fast_cos(sa + 0.8f) * 40.0f),
-                  icon_y + static_cast<int>(fast_sin(sa + 0.8f) * 40.0f),
+        fast_line(it, icon_x + static_cast<int>(fast_cos(sa) * scale_min_f(18.0f)),
+                  icon_y + static_cast<int>(fast_sin(sa) * scale_min_f(18.0f)),
+                  icon_x + static_cast<int>(fast_cos(sa + 0.8f) * scale_min_f(40.0f)),
+                  icon_y + static_cast<int>(fast_sin(sa + 0.8f) * scale_min_f(40.0f)),
                   Color(35, 45, 55));
       }
-      render_glass_marble(it, icon_x - 24, icon_y - 18, 13, ctx.col_red, Color(255, 138, 128));
-      render_glass_marble(it, icon_x + 22, icon_y - 22, 12, ctx.col_cyan, Color(180, 255, 255));
-      render_glass_marble(it, icon_x - 20, icon_y + 22, 11, ctx.col_green, Color(185, 246, 202));
-      render_glass_marble(it, icon_x + 24, icon_y + 18, 13, ctx.col_gold, Color(255, 245, 157));
-      render_glass_marble(it, icon_x + 2, icon_y - 31, 10, ctx.col_magenta, Color(248, 187, 208));
+      render_glass_marble(it, icon_x - gs(24), icon_y - gs(18), gs(13), ctx.col_red, Color(255, 138, 128));
+      render_glass_marble(it, icon_x + gs(22), icon_y - gs(22), gs(12), ctx.col_cyan, Color(180, 255, 255));
+      render_glass_marble(it, icon_x - gs(20), icon_y + gs(22), gs(11), ctx.col_green, Color(185, 246, 202));
+      render_glass_marble(it, icon_x + gs(24), icon_y + gs(18), gs(13), ctx.col_gold, Color(255, 245, 157));
+      render_glass_marble(it, icon_x + gs(2), icon_y - gs(31), gs(10), ctx.col_magenta, Color(248, 187, 208));
 
     } else if (g_idx == 1) {
-      render_archery_target(it, icon_x, icon_y, 46, ctx.col_white, ctx.col_black,
+      render_archery_target(it, icon_x, icon_y, gs(46), ctx.col_white, ctx.col_black,
                             ctx.col_cyan, ctx.col_red, ctx.col_gold, ctx.col_slate, ctx.col_dark_gray);
-      int tip_x = icon_x + 2;
-      int tip_y = icon_y + 2;
-      int tail_x = icon_x + 56;
-      int tail_y = icon_y - 36;
-      fast_line(it, tip_x, tip_y + 5, tail_x - 8, tail_y + 10, Color(15, 18, 24));
-      fast_line(it, tip_x, tip_y + 6, tail_x - 8, tail_y + 11, Color(15, 18, 24));
-      fast_circle(it, tip_x, tip_y, 5, Color(180, 110, 0));
-      fast_filled_triangle(it, tip_x - 3, tip_y + 2, tip_x + 9, tip_y - 9, tip_x + 12, tip_y - 2, ctx.col_white);
+      int tip_x = icon_x + gs(2);
+      int tip_y = icon_y + gs(2);
+      int tail_x = icon_x + gs(56);
+      int tail_y = icon_y - gs(36);
+      fast_line(it, tip_x, tip_y + gs(5), tail_x - gs(8), tail_y + gs(10), Color(15, 18, 24));
+      fast_line(it, tip_x, tip_y + gs(6), tail_x - gs(8), tail_y + gs(11), Color(15, 18, 24));
+      fast_circle(it, tip_x, tip_y, gs(5), Color(180, 110, 0));
+      fast_filled_triangle(it, tip_x - gs(3), tip_y + gs(2), tip_x + gs(9), tip_y - gs(9),
+                           tip_x + gs(12), tip_y - gs(2), ctx.col_white);
       fast_line(it, tip_x, tip_y, tail_x, tail_y, Color(238, 206, 148));
       fast_line(it, tip_x, tip_y - 1, tail_x, tail_y - 1, Color(250, 228, 178));
       fast_line(it, tip_x, tip_y + 1, tail_x, tail_y + 1, Color(182, 138, 76));
       for (int f = 0; f < 9; f++) {
-        int fx = tail_x - 3 - f;
-        int fy = tail_y + 2 + (f * 2) / 3;
-        fast_line(it, fx, fy - 1, fx + 3, fy - 11, Color(255, 52, 52));
-        fast_line(it, fx, fy + 1, fx + 10, fy + 4, Color(220, 32, 32));
+        int fx = tail_x - gs(3 + f);
+        int fy = tail_y + gs(2 + (f * 2) / 3);
+        fast_line(it, fx, fy - 1, fx + gs(3), fy - gs(11), Color(255, 52, 52));
+        fast_line(it, fx, fy + 1, fx + gs(10), fy + gs(4), Color(220, 32, 32));
       }
-      fast_filled_circle(it, tail_x + 1, tail_y - 1, 2, ctx.col_white);
+      fast_filled_circle(it, tail_x + 1, tail_y - 1, std::max(2, gs(2)), ctx.col_white);
 
     } else if (g_idx == 2) {
-      int b_w = 26, b_h = 11, gap_x = 4, gap_y = 5;
+      int b_w = gs(26), b_h = gs(11), gap_x = gs(4), gap_y = gs(5);
       int start_bx = icon_x - static_cast<int>(2.0f * b_w + 1.5f * gap_x) + b_w / 2;
-      int start_by = icon_y - 36;
+      int start_by = icon_y - gs(36);
       Color row_c[3] = {ctx.col_gold, ctx.col_cyan, ctx.col_orange};
       Color row_hi[3] = {Color(255, 245, 165), Color(185, 255, 255), Color(255, 195, 100)};
       for (int r = 0; r < 3; r++) {
@@ -2359,11 +2371,11 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
           int bx = start_bx + c * (b_w + gap_x);
           int by = start_by + r * (b_h + gap_y);
           if (r == 2 && c == 2) {
-            fill_rect_row_major(it, bx - 10, by - 5, 5, 4, row_c[r]);
-            fill_rect_row_major(it, bx + 4, by - 7, 5, 4, row_hi[r]);
-            fill_rect_row_major(it, bx - 6, by + 3, 4, 4, row_c[r]);
-            fill_rect_row_major(it, bx + 5, by + 2, 5, 4, row_hi[r]);
-            fast_filled_circle(it, bx, by, 2, ctx.col_white);
+            fill_rect_row_major(it, bx - gs(10), by - gs(5), gs(5), gs(4), row_c[r]);
+            fill_rect_row_major(it, bx + gs(4), by - gs(7), gs(5), gs(4), row_hi[r]);
+            fill_rect_row_major(it, bx - gs(6), by + gs(3), gs(4), gs(4), row_c[r]);
+            fill_rect_row_major(it, bx + gs(5), by + gs(2), gs(5), gs(4), row_hi[r]);
+            fast_filled_circle(it, bx, by, std::max(2, gs(2)), ctx.col_white);
             continue;
           }
           int hp = (r == 0 && (c == 1 || c == 2)) ? 2 : 1;
@@ -2372,51 +2384,70 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
           render_brick_tile(it, bx, by, b_w, b_h, bc, hc, hp, hp, ctx.col_white);
         }
       }
-      int pad_x = icon_x - 6, pad_y = icon_y + 42, pad_w = 44, pad_h = 8;
+      int pad_x = icon_x - gs(6), pad_y = icon_y + gs(42), pad_w = gs(44), pad_h = gs(8);
       render_brick_paddle(it, pad_x, pad_y, pad_w, pad_h, ctx.theme_primary, ctx.col_white);
 
-      int bx = icon_x + 10, by = icon_y + 7;
-      fast_filled_circle(it, pad_x + 3, pad_y - 7, 2, Color(50, 40, 14));
-      fast_filled_circle(it, pad_x + 6, pad_y - 14, 2, Color(85, 68, 20));
-      fast_filled_circle(it, pad_x + 9, pad_y - 21, 3, Color(130, 102, 28));
-      fast_filled_circle(it, bx - 3, by + 7, 4, Color(185, 145, 35));
-      fast_filled_circle(it, bx, by, 5, ctx.col_gold);
-      fast_circle(it, bx, by, 5, ctx.col_white);
-      fast_filled_circle(it, bx - 2, by - 2, 1, ctx.col_white);
+      int bx = icon_x + gs(10), by = icon_y + gs(7);
+      fast_filled_circle(it, pad_x + gs(3), pad_y - gs(7), std::max(2, gs(2)), Color(50, 40, 14));
+      fast_filled_circle(it, pad_x + gs(6), pad_y - gs(14), std::max(2, gs(2)), Color(85, 68, 20));
+      fast_filled_circle(it, pad_x + gs(9), pad_y - gs(21), std::max(3, gs(3)), Color(130, 102, 28));
+      fast_filled_circle(it, bx - gs(3), by + gs(7), std::max(3, gs(4)), Color(185, 145, 35));
+      fast_filled_circle(it, bx, by, gs(5), ctx.col_gold);
+      fast_circle(it, bx, by, gs(5), ctx.col_white);
+      fast_filled_circle(it, bx - gs(2), by - gs(2), std::max(1, gs(1)), ctx.col_white);
 
     } else if (g_idx == 3) {
-      render_chomp_snack(it, icon_x + 30, icon_y - 22, 0,
+      render_chomp_snack(it, icon_x + gs(30), icon_y - gs(22), 0,
                          ctx.col_white, ctx.col_red, ctx.col_gold, ctx.col_cyan,
                          ctx.col_green, ctx.col_magenta, ctx.col_bg);
-      render_chomp_snack(it, icon_x + 38, icon_y + 18, 2,
+      render_chomp_snack(it, icon_x + gs(38), icon_y + gs(18), 2,
                          ctx.col_white, ctx.col_red, ctx.col_gold, ctx.col_cyan,
                          ctx.col_green, ctx.col_magenta, ctx.col_bg);
-      render_chomp_snack(it, icon_x - 34, icon_y - 26, 1,
+      render_chomp_snack(it, icon_x - gs(34), icon_y - gs(26), 1,
                          ctx.col_white, ctx.col_red, ctx.col_gold, ctx.col_cyan,
                          ctx.col_green, ctx.col_magenta, ctx.col_bg);
-      render_chomp_character(it, icon_x - 8, icon_y + 6, 32, 0.85f, -0.25f,
+      render_chomp_character(it, icon_x - gs(8), icon_y + gs(6), gs(32), 0.85f, -0.25f,
                              true, false, 0U, ctx.col_white, ctx.col_black, ctx.col_dark_gray);
 
     } else if (g_idx == 4) {
-      render_card_box(it, icon_x - 48, icon_y - 48, 96, 96, kChromeGlassTint, kChromeCardBorder, 12);
-      render_card_box(it, icon_x - 42, icon_y - 42, 40, 40, kChromeTrack, kChromeTrackBorder, 7);
-      fast_print(it, icon_x - 22, icon_y - 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2");
-      render_card_box(it, icon_x + 2, icon_y - 42, 40, 40, scale_color(ctx.col_orange, 0.85f), ctx.col_orange, 7);
-      fast_print(it, icon_x + 22, icon_y - 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "16");
-      render_card_box(it, icon_x - 42, icon_y + 2, 40, 40, ctx.col_red, ctx.col_red, 7);
-      fast_print(it, icon_x - 22, icon_y + 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "64");
-      render_card_box(it, icon_x + 2, icon_y + 2, 40, 40, scale_color(ctx.col_gold, 0.62f), ctx.col_gold, 7);
-      fast_print(it, icon_x + 22, icon_y + 22, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2K");
+      // Decorative 2048 preview (scaled with scale_min, non-glass flat tiles per D-048)
+      const int bsz = gs(96);
+      const int tsz = gs(40);
+      const int half_b = bsz / 2;
+      const int off = gs(42);
+      const int gap2 = gs(2);
+      const int mid_t = gs(22);
+      const float br = static_cast<float>(gs(12));
+      const float tr = static_cast<float>(gs(7));
+      fill_round_rect_aa(it, icon_x - half_b, icon_y - half_b, bsz, bsz, br, kChromeTrack);
+      stroke_round_rect_aa(it, icon_x - half_b, icon_y - half_b, bsz, bsz, br, kChromeCardBorder, kChromeCardBorder, 1);
+
+      fill_round_rect_aa(it, icon_x - off, icon_y - off, tsz, tsz, tr, kChromeTrackBorder);
+      ui::shadow_print(it, icon_x - mid_t, icon_y - mid_t, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2");
+      fill_round_rect_aa(it, icon_x + gap2, icon_y - off, tsz, tsz, tr, scale_color(ctx.col_orange, 0.85f));
+      ui::shadow_print(it, icon_x + mid_t, icon_y - mid_t, ctx.font_small, ctx.col_white, TextAlign::CENTER, "16");
+      fill_round_rect_aa(it, icon_x - off, icon_y + gap2, tsz, tsz, tr, ctx.col_red);
+      ui::shadow_print(it, icon_x - mid_t, icon_y + mid_t, ctx.font_small, ctx.col_white, TextAlign::CENTER, "64");
+      fill_round_rect_aa(it, icon_x + gap2, icon_y + gap2, tsz, tsz, tr, scale_color(ctx.col_gold, 0.62f));
+      ui::shadow_print(it, icon_x + mid_t, icon_y + mid_t, ctx.font_small, ctx.col_white, TextAlign::CENTER, "2K");
 
     } else {
-      render_card_box(it, icon_x - 44, icon_y - 44, 40, 40, kChromeGlassTint, ctx.col_gold, 8);
-      fast_filled_circle(it, icon_x - 24, icon_y - 24, 9, ctx.col_gold);
-      render_card_box(it, icon_x + 4, icon_y - 44, 40, 40, kChromeGlassTint, kChromeCardBorder, 8);
-      fast_filled_circle(it, icon_x + 24, icon_y - 24, 5, ctx.theme_primary);
-      render_card_box(it, icon_x - 44, icon_y + 4, 40, 40, kChromeGlassTint, kChromeCardBorder, 8);
-      fast_filled_circle(it, icon_x - 24, icon_y + 24, 5, ctx.theme_primary);
-      render_card_box(it, icon_x + 4, icon_y + 4, 40, 40, kChromeGlassTint, ctx.col_gold, 8);
-      fast_filled_circle(it, icon_x + 24, icon_y + 24, 9, ctx.col_gold);
+      // Decorative Memory Match preview (scaled with scale_min, non-glass flat cards per D-048)
+      const int csz = gs(40);
+      const int off = gs(44);
+      const int gap4 = gs(4);
+      const int mid_c = gs(24);
+      const float cr = static_cast<float>(gs(8));
+      auto draw_mini_card = [&](int x0, int y0, Color brd, int dot_r, Color dot_c) {
+        fill_round_rect_aa(it, x0, y0, csz, csz, cr, kChromeTrack);
+        stroke_round_rect_aa(it, x0, y0, csz, csz, cr, brd, brd, 1);
+        fast_filled_circle(it, x0 + csz / 2, y0 + csz / 2, dot_r, dot_c);
+      };
+      draw_mini_card(icon_x - off, icon_y - off, ctx.col_gold, gs(9), ctx.col_gold);
+      draw_mini_card(icon_x + gap4, icon_y - off, kChromeCardBorder, gs(5), ctx.theme_primary);
+      draw_mini_card(icon_x - off, icon_y + gap4, kChromeCardBorder, gs(5), ctx.theme_primary);
+      draw_mini_card(icon_x + gap4, icon_y + gap4, ctx.col_gold, gs(9), ctx.col_gold);
+      (void)mid_c;
     }
   };
 
@@ -2441,7 +2472,7 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     }
 
     draw_game_icon(g_idx, icon_x, icon_y);
-    fast_print(it, text_center_x, title_y, ctx.font_btn_bold, ctx.col_white, TextAlign::CENTER, title);
+    ui::shadow_print(it, text_center_x, title_y, ctx.font_btn_bold, ctx.col_white, TextAlign::CENTER, title);
 
     const char *lbl_str = "HIGH SCORE:";
     char val_str[20];
@@ -2461,8 +2492,8 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     const int gap_px = scale_x(8);
     int start_x = text_center_x - (w_lbl + gap_px + w_val) / 2;
 
-    fast_print(it, start_x, score_y, ctx.font_small, ctx.col_gold, TextAlign::CENTER_LEFT, lbl_str);
-    fast_print(it, start_x + w_lbl + gap_px, score_y, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, val_str);
+    ui::shadow_print(it, start_x, score_y, ctx.font_small, ctx.col_gold, TextAlign::CENTER_LEFT, lbl_str);
+    ui::shadow_print(it, start_x + w_lbl + gap_px, score_y, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, val_str);
   };
 
   const int icon_cx = compact_w ? cx : (cx - scale_x(118));
@@ -2505,33 +2536,29 @@ void render_games_launcher(Display &it, const UiFrameContext &ctx,
     }
   }
 
+  // Documented arcade carve-out (D-070): Orbitron "GAMES" display header
   const int hdr_y = compact_w ? 64 : scale_y(84);
-  fast_print(it, cx + 1, hdr_y + 1, ctx.font_games_title, kChromeShadow, TextAlign::CENTER, "GAMES");
-  fast_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
+  ui::shadow_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, TextAlign::CENTER, "GAMES");
 
   const int active_pip = (menu_scroll_active && game_count > 1)
                              ? std::clamp(menu_scroll_target_page, 0, game_count - 1)
                              : game_carousel_idx;
   render_dock_page_pips(it, cx, pips_y, game_count, active_pip, ctx.col_white, kChromePipInactive);
 
-  ui::pill_button(it, cx - scale_x(19), cx + scale_x(91), btn_row_y, scale_s(22),
-                  ctx.theme_primary, kChromeGlassTint, "PLAY", ctx.col_white, ctx.font_btn_bold,
-                  WidgetId::GAMES_PLAY_BTN, kHitTap | kHitFocusSlot, static_cast<int16_t>(cur_game_id));
+  const int play_h = std::max(44, scale_s(44));
+  const int play_w = std::min(scale_x(154), safe_span(btn_row_y, 24) - scale_x(72));
+  ui::action_pill_centered(it, cx + scale_x(36), play_w, btn_row_y, play_h,
+                           ctx.theme_primary, kChromeGlassTint, "PLAY", ctx.col_white, ctx.font_btn_bold,
+                           WidgetId::GAMES_PLAY_BTN, kHitTap | kHitFocusSlot, static_cast<int16_t>(cur_game_id));
 
   const int spk_x = cx - scale_x(91);
-  const int spk_y = btn_row_y;
   const int spk_r = scale_s(22);
-  render_glass_circle(it, spk_x, spk_y, spk_r, kChromeGlassTint,
-                      game_sound_on ? ctx.theme_secondary : kChromeCardBorder);
-  frame_hits().add_circle(spk_x, spk_y, spk_r + 6, WidgetId::GAMES_SOUND_BTN, kHitTap | kHitFocusCircle, 1);
-  Color spk_c = game_sound_on ? ctx.col_white : ctx.col_slate;
-  ui::draw_icon_speaker(it, spk_x, spk_y, std::max(10, (spk_r * 56) / 100), spk_c, game_sound_on, true);
-  if (!game_sound_on) {
-    const int sl = scale_s(10);
-    fast_line(it, spk_x - sl - 1, spk_y - sl, spk_x + sl, spk_y + sl + 1, ctx.col_red);
-    fast_line(it, spk_x - sl, spk_y - sl, spk_x + sl + 1, spk_y + sl + 1, ctx.col_red);
-    fast_line(it, spk_x - sl - 1, spk_y - sl + 1, spk_x + sl, spk_y + sl + 2, ctx.col_red);
-  }
+  ui::icon_circle_button(it, spk_x, btn_row_y, spk_r, kChromeGlassTint,
+                         game_sound_on ? ctx.theme_secondary : kChromeCardBorder,
+                         game_sound_on ? ctx.col_white : ctx.col_slate,
+                         draw_games_speaker_icon,
+                         game_sound_on ? reinterpret_cast<void *>(1) : nullptr,
+                         WidgetId::GAMES_SOUND_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 1, 6);
 }
 
 }  // namespace

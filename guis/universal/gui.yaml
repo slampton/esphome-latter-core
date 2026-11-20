@@ -247,6 +247,18 @@ display:
           rs.stopwatch.running;
       const auto &takeover_st = latter_ui::acquire_takeover_state(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
+      const bool photo_frame_art_ready =
+          latter_ui::resolve_photo_frame_art(
+              ctx.screensaver_photo_art, ctx.home_wallpaper_art,
+              ac_wall.screensaver_photo_url, rs.music.loaded_wallpaper_url).valid();
+      if (latter_ui::is_photo_frame_initial_load_pending(
+              takeover_sig, takeover_st.screensaver_style_opt,
+              ac_wall.screensaver_photo_url, photo_frame_art_ready,
+              rs.music.screensaver_photo_failed,
+              rs.nav.standby_entered_ms, ctx.now_ms)) {
+        prof_frame_scope.abort_idle();
+        return;
+      }
       const bool dock_anim_now =
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
       const bool vert_bounce_now =
@@ -271,8 +283,7 @@ display:
           static_screensaver_only &&
           (takeover_st.screensaver_style_opt == "Photo Frame") &&
           !takeover_st.screensaver_photo_clock &&
-          ctx.screensaver_photo_art.valid() &&
-          !ac_wall.screensaver_photo_url.empty();
+          photo_frame_art_ready;
       const int hhmm_key = photo_frame_no_clock ? -1 : latter_ui::compute_hhmm_key(ctx.now);
       const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
       const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);

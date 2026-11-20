@@ -291,29 +291,37 @@ void render_dock_page_pips(esphome::display::Display &it, int cx, int y_pos, int
 
 void render_vertical_page_pips(esphome::display::Display &it, bool show_up, bool show_down,
                                esphome::Color col_bg, esphome::Color col_active,
-                               esphome::Color col_inactive) {
+                               esphome::Color col_inactive, int bottom_limit_y) {
   (void)col_inactive;
   if (!show_up && !show_down) return;
   int mask_x = 0, chev_x = 0, hit_x0 = 0, hit_w = 0, min_hit_h = 0;
   compute_vertical_page_pips_x(SCREEN_W, LATTER_ROUND_DISPLAY != 0, LATTER_PANEL_PPI,
                                mask_x, chev_x, hit_x0, hit_w, min_hit_h);
-  const int up_y = scale_y(162);
-  const int dn_y = scale_y(278);
+  const bool above_bar = (bottom_limit_y < SCREEN_H - scale_y(40));
+  const int up_y = above_bar ? scale_y(134) : scale_y(162);
+  const int dn_y = above_bar ? scale_y(236) : scale_y(278);
+  const int split_y = above_bar ? ((up_y + dn_y) / 2) : SCREEN_CY;
+  const int max_dn_y1 = std::min(above_bar ? bottom_limit_y : (SCREEN_H - scale_y(70)), bottom_limit_y);
   if (!backdrop_active() && mask_x < SCREEN_W) {
-    fill_rect_row_major(it, mask_x, up_y - scale_y(22), SCREEN_W - mask_x, (dn_y - up_y) + scale_y(44), col_bg);
+    const int mask_y0 = std::max(0, up_y - scale_y(22));
+    const int mask_y1 = std::min(bottom_limit_y, dn_y + scale_y(22));
+    if (mask_y1 > mask_y0) {
+      fill_rect_row_major(it, mask_x, mask_y0, SCREEN_W - mask_x, mask_y1 - mask_y0, col_bg);
+    }
   }
   if (show_up) {
     render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, backdrop_active());
-    const int up_y0 = std::min(scale_y(70), std::max(0, SCREEN_CY - min_hit_h));
-    const int up_h = std::max(min_hit_h, SCREEN_CY - up_y0);
-    frame_hits().add_rect(hit_x0, up_y0, hit_w, std::min(SCREEN_H - up_y0, up_h),
+    const int up_y0 = std::min(scale_y(70), std::max(0, split_y - min_hit_h));
+    const int up_h = std::max(min_hit_h, split_y - up_y0);
+    frame_hits().add_rect(hit_x0, up_y0, hit_w, std::min(bottom_limit_y - up_y0, up_h),
                           WidgetId::CHEVRON_UP, kHitTap);
   }
   if (show_down) {
     render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, backdrop_active());
-    const int dn_h = std::max(min_hit_h, (SCREEN_H - scale_y(70)) - SCREEN_CY);
-    frame_hits().add_rect(hit_x0, SCREEN_CY, hit_w, std::min(SCREEN_H - SCREEN_CY, dn_h),
-                          WidgetId::CHEVRON_DOWN, kHitTap);
+    const int dn_avail = std::max(0, max_dn_y1 - split_y);
+    if (dn_avail > 0) {
+      frame_hits().add_rect(hit_x0, split_y, hit_w, dn_avail, WidgetId::CHEVRON_DOWN, kHitTap);
+    }
   }
 }
 
@@ -369,7 +377,21 @@ void render_sub_header(esphome::display::Display &it, int cx, const std::string 
 
 void render_empty_state(esphome::display::Display &it, int cx, int cy, const char *text,
                         esphome::display::BaseFont *font, esphome::Color text_c) {
-  render_modern_card(it, cx, cy, 296, 54, 14, kChromeBarTrack, kChromeCardBorder, text, text_c, font);
+  // D-043 / D-048 / D-070: Zero frosted glass behind passive empty-state text.
+  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
+  const int max_w = std::min(kMaxContentColW, std::max(80, layout().band_safe_span(cy, scale_y(48), 18)));
+  std::string lines[2];
+  const int n = ui::wrap_text_lines(std::string(text), max_w, font, lines, 2);
+  if (n <= 1) {
+    const std::string fit = fit_text_to_width_font(std::string(text), max_w, font);
+    ui::shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+  } else {
+    int tw = 0, x_off = 0, base = 0, th = 0;
+    font->measure("Ag", &tw, &x_off, &base, &th);
+    const int half_step = std::max(scale_y(13), (th + 6) / 2);
+    ui::shadow_print(it, cx, cy - half_step, font, text_c, esphome::display::TextAlign::CENTER, lines[0].c_str());
+    ui::shadow_print(it, cx, cy + half_step, font, text_c, esphome::display::TextAlign::CENTER, lines[1].c_str());
+  }
 }
 
 void render_time_readout(esphome::display::Display &it, int cx, const char *text,
@@ -1150,9 +1172,9 @@ void draw_icon_camera(esphome::display::Display &it, int cx, int cy, int r,
 }
 
 void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
-                       esphome::Color col, bool waves, bool shadow) {
+                       esphome::Color col, bool waves, bool shadow, bool muted) {
   const float rf = static_cast<float>(std::max(6, r));
-  const float shift_x = waves ? 0.0f : (0.24f * rf);
+  const float shift_x = (waves && !muted) ? 0.0f : (muted ? 0.12f * rf : 0.24f * rf);
   const float arc_cx = -0.06f * rf + shift_x;
   const float r1 = 0.46f * rf;
   const float r2 = 0.80f * rf;
@@ -1162,6 +1184,10 @@ void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
 
   // Flared cone normal from (-0.48, 0.30) to (-0.04, 0.74): dx=0.44, dy=0.44 (45 deg)
   static constexpr float kInvSqrt2 = 0.707107f;
+  const SdfCapsule slash = SdfCapsule::make(-0.78f * rf, -0.78f * rf, 0.78f * rf, 0.78f * rf,
+                                            std::max(1.1f, 0.11f * rf));
+  const SdfCapsule slash_moat = SdfCapsule::make(-0.82f * rf, -0.82f * rf, 0.82f * rf, 0.82f * rf,
+                                                 std::max(2.1f, 0.22f * rf));
 
   rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
     const float ay = std::fabs(y);
@@ -1171,7 +1197,7 @@ void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
     const float d_cone = std::max({d_cone_slope, -0.52f * rf - lx, lx - (-0.04f * rf), ay - 0.76f * rf});
     float d = std::min(d_box, d_cone);
 
-    if (waves) {
+    if (waves && !muted) {
       const float wx = x - arc_cx;
       auto eval_wave = [&](float rw) -> float {
         float dw = 4.0f;
@@ -1181,6 +1207,9 @@ void draw_icon_speaker(esphome::display::Display &it, int cx, int cy, int r,
         return std::min(dw, sd_circle_px(x, ay, arc_cx + rw * kCos40, rw * kSin40, w_ht));
       };
       d = std::min({d, eval_wave(r1), eval_wave(r2)});
+    }
+    if (muted) {
+      d = std::min(std::max(d, -slash_moat.eval(x, y)), slash.eval(x, y));
     }
     return d;
   });
@@ -1757,6 +1786,149 @@ void draw_icon_gear(esphome::display::Display &it, int cx, int cy, int r,
   });
 }
 
+void draw_icon_chevron(esphome::display::Display &it, int cx, int cy, int r,
+                       bool is_right, esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(5, r));
+  const float ht = std::max(1.05f, 0.15f * rf);
+  const float sgn = is_right ? 1.0f : -1.0f;
+  const float x_back = -0.28f * rf * sgn;
+  const float x_tip = 0.34f * rf * sgn;
+  const SdfCapsule top_leg = SdfCapsule::make(x_back, -0.66f * rf, x_tip, 0.0f, ht);
+  const SdfCapsule bot_leg = SdfCapsule::make(x_tip, 0.0f, x_back, 0.66f * rf, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return std::min(top_leg.eval(x, y), bot_leg.eval(x, y));
+  });
+}
+
+void draw_icon_plus(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(5, r));
+  const float ht = std::max(1.1f, 0.15f * rf);
+  const SdfCapsule h_bar = SdfCapsule::make(-0.68f * rf, 0.0f, 0.68f * rf, 0.0f, ht);
+  const SdfCapsule v_bar = SdfCapsule::make(0.0f, -0.68f * rf, 0.0f, 0.68f * rf, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return std::min(h_bar.eval(x, y), v_bar.eval(x, y));
+  });
+}
+
+void draw_icon_minus(esphome::display::Display &it, int cx, int cy, int r,
+                     esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(5, r));
+  const float ht = std::max(1.1f, 0.15f * rf);
+  const SdfCapsule h_bar = SdfCapsule::make(-0.68f * rf, 0.0f, 0.68f * rf, 0.0f, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return h_bar.eval(x, y);
+  });
+}
+
+void draw_icon_home(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const SdfSymTri roof = SdfSymTri::make(0.0f, -0.84f * rf, -0.02f * rf, 0.90f * rf);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_body = sd_rbox_px(x, y, 0.0f, 0.34f * rf, 0.62f * rf, 0.48f * rf, 0.10f * rf);
+    const float d_solid = std::min(roof.eval(x, y), d_body);
+    if (d_solid >= 1.5f) return d_solid;
+    const float d_door = sd_rbox_px(x, y, 0.0f, 0.56f * rf, 0.21f * rf, 0.29f * rf, 0.08f * rf);
+    return std::max(d_solid, -d_door);
+  });
+}
+
+void draw_icon_forecast_chart(esphome::display::Display &it, int cx, int cy, int r,
+                              esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float bw = std::max(1.2f, 0.17f * rf);
+  const float cr = std::max(0.8f, 0.08f * rf);
+  const float base_y = 0.78f * rf;
+  const float h0 = 0.42f * rf;
+  const float h1 = 0.68f * rf;
+  const float h2 = 0.96f * rf;
+  const float ht = std::max(0.95f, 0.10f * rf);
+  const SdfCapsule trend = SdfCapsule::make(-0.66f * rf, -0.10f * rf, 0.62f * rf, -0.72f * rf, ht);
+  const SdfCapsule tip1 = SdfCapsule::make(0.62f * rf, -0.72f * rf, 0.28f * rf, -0.72f * rf, ht);
+  const SdfCapsule tip2 = SdfCapsule::make(0.62f * rf, -0.72f * rf, 0.62f * rf, -0.38f * rf, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float b0 = sd_rbox_px(x, y, -0.58f * rf, base_y - h0 * 0.5f, bw, h0 * 0.5f, cr);
+    const float b1 = sd_rbox_px(x, y, 0.0f, base_y - h1 * 0.5f, bw, h1 * 0.5f, cr);
+    const float b2 = sd_rbox_px(x, y, 0.58f * rf, base_y - h2 * 0.5f, bw, h2 * 0.5f, cr);
+    return std::min({b0, b1, b2, trend.eval(x, y), tip1.eval(x, y), tip2.eval(x, y)});
+  });
+}
+
+void draw_icon_sun(esphome::display::Display &it, int cx, int cy, int r,
+                   esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float core_r = 0.44f * rf;
+  const float r_in = 0.68f * rf;
+  const float r_out = 0.94f * rf;
+  const float ht = std::max(0.95f, 0.10f * rf);
+  static constexpr float kInvSqrt2 = 0.70710678f;
+  const SdfCapsule ray_card = SdfCapsule::make(0.0f, r_in, 0.0f, r_out, ht);
+  const SdfCapsule ray_diag = SdfCapsule::make(r_in * kInvSqrt2, r_in * kInvSqrt2,
+                                               r_out * kInvSqrt2, r_out * kInvSqrt2, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    float d = sd_circle_px(ax, ay, 0.0f, 0.0f, core_r);
+    d = std::min(d, ray_card.eval(ax, ay));
+    d = std::min(d, ray_card.eval(ay, ax));
+    d = std::min(d, ray_diag.eval(ax, ay));
+    return d;
+  });
+}
+
+void draw_icon_crescent_moon(esphome::display::Display &it, int cx, int cy, int r,
+                             esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float mr = 0.86f * rf;
+  const float cut_x = 0.36f * rf;
+  const float cut_y = -0.18f * rf;
+  const float cut_r = 0.74f * rf;
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float d_moon = sd_circle_px(x, y, -0.06f * rf, 0.02f * rf, mr);
+    if (d_moon >= 1.5f) return d_moon;
+    const float d_cut = sd_circle_px(x, y, cut_x, cut_y, cut_r);
+    return std::max(d_moon, -d_cut);
+  });
+}
+
+void draw_icon_wind(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float ht = std::max(0.95f, 0.11f * rf);
+  const SdfCapsule top_bar = SdfCapsule::make(-0.78f * rf, -0.34f * rf, 0.38f * rf, -0.34f * rf, ht);
+  const SdfCapsule mid_bar = SdfCapsule::make(-0.88f * rf, 0.04f * rf, 0.68f * rf, 0.04f * rf, ht);
+  const SdfCapsule bot_bar = SdfCapsule::make(-0.62f * rf, 0.42f * rf, 0.22f * rf, 0.42f * rf, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d = std::min({top_bar.eval(x, y), mid_bar.eval(x, y), bot_bar.eval(x, y)});
+    // Upper right curl
+    if (x >= 0.22f * rf && y <= -0.30f * rf) {
+      d = std::min(d, sd_ring_px(x, y, 0.38f * rf, -0.58f * rf, 0.24f * rf, ht));
+    }
+    // Lower right curl
+    if (x >= 0.06f * rf && y >= 0.38f * rf) {
+      d = std::min(d, sd_ring_px(x, y, 0.22f * rf, 0.64f * rf, 0.22f * rf, ht));
+    }
+    return d;
+  });
+}
+
+void draw_icon_arrow_v(esphome::display::Display &it, int cx, int cy, int r,
+                       bool is_up, esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(5, r));
+  const float ht = std::max(0.95f, 0.13f * rf);
+  const float sgn = is_up ? -1.0f : 1.0f;
+  const float y_tip = 0.72f * rf * sgn;
+  const float y_tail = -0.72f * rf * sgn;
+  const float y_wing = 0.18f * rf * sgn;
+  const SdfCapsule shaft = SdfCapsule::make(0.0f, y_tail, 0.0f, y_tip, ht);
+  const SdfCapsule wl = SdfCapsule::make(-0.52f * rf, y_wing, 0.0f, y_tip, ht);
+  const SdfCapsule wr = SdfCapsule::make(0.52f * rf, y_wing, 0.0f, y_tip, ht);
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    return std::min({shaft.eval(x, y), wl.eval(x, y), wr.eval(x, y)});
+  });
+}
+
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow) {
   (void)cut_c;
@@ -1963,13 +2135,13 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
     case RouteId::SETTINGS_ROOT:
     case RouteId::NONE:
     default:
-      render_mdi_icon(it, "mdi:cog", cx, cy, mdi_px, col, shadow, "mdi:apps");
+      draw_icon_gear(it, cx, cy, r, col, shadow);
       return;
   }
 }
 
 // ==============================================================================
-// 4. Interactive Hit-Registered Widgets & Modals
+// 4. Interactive Hit-Registered Widgets, Functional Components & Modals (D-070)
 // ==============================================================================
 void toggle_switch(esphome::display::Display &it, int cx_sw, int cy_sw, bool is_on,
                    esphome::Color active_col) {
@@ -2002,30 +2174,496 @@ void toggle_switch(esphome::display::Display &it, int cx_sw, int cy_sw, bool is_
   fast_filled_circle_aa(it, thumb_cx, cy_sw, thumb_r, is_on ? kChromeGlassSheen : kChromeHomePill);
 }
 
+void shadow_print(esphome::display::Display &it, int x, int y,
+                  esphome::display::BaseFont *font, esphome::Color col,
+                  esphome::display::TextAlign align, const char *text,
+                  bool double_shadow) {
+  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
+  if (double_shadow) {
+    fast_print(it, x + 2, y + 2, font, kChromeShadow, align, text);
+  }
+  fast_print(it, x + 1, y + 1, font, kChromeShadow, align, text);
+  fast_print(it, x, y, font, col, align, text);
+}
+
+int wrap_text_lines(const std::string &text, int max_w, esphome::display::BaseFont *font,
+                    std::string *out_lines, int max_lines) {
+  if (text.empty() || font == nullptr || out_lines == nullptr || max_lines <= 0 || max_w <= 12) {
+    return 0;
+  }
+  const std::string clean = sanitize_utf8_for_font(text);
+  int count = 0;
+  size_t pos = 0;
+  const size_t n = clean.size();
+  while (pos < n && count < max_lines) {
+    while (pos < n && (clean[pos] == ' ' || clean[pos] == '\t' || clean[pos] == '\r')) ++pos;
+    if (pos >= n) break;
+    if (clean[pos] == '\n') {
+      ++pos;
+      continue;
+    }
+    std::string line;
+    while (pos < n && clean[pos] != '\n') {
+      size_t ws_end = pos;
+      while (ws_end < n && clean[ws_end] == ' ') ++ws_end;
+      size_t word_end = ws_end;
+      while (word_end < n && clean[word_end] != ' ' && clean[word_end] != '\n' && clean[word_end] != '\r') {
+        ++word_end;
+      }
+      if (word_end == ws_end) {
+        pos = ws_end;
+        break;
+      }
+      const std::string word = clean.substr(ws_end, word_end - ws_end);
+      const std::string cand = line.empty() ? word : (line + " " + word);
+      int tw = 0, x_off = 0, base = 0, th = 0;
+      font->measure(cand.c_str(), &tw, &x_off, &base, &th);
+      if (tw <= max_w) {
+        line = cand;
+        pos = word_end;
+      } else if (line.empty()) {
+        line = fit_text_to_width_font(word, max_w, font);
+        pos = word_end;
+        break;
+      } else {
+        break;
+      }
+    }
+    if (count + 1 == max_lines && pos < n) {
+      size_t rem = pos;
+      while (rem < n && (clean[rem] == ' ' || clean[rem] == '\n' || clean[rem] == '\r')) ++rem;
+      if (rem < n) {
+        line = fit_text_to_width_font(line + "...", max_w, font);
+      }
+    }
+    out_lines[count++] = line;
+    if (pos < n && clean[pos] == '\n') ++pos;
+  }
+  return count;
+}
+
+void mode_bar(esphome::display::Display &it, int cx,
+              int total_count, int active_global_idx, int win_start,
+              esphome::Color theme_primary, esphome::Color col_white,
+              ModeBarDrawIconFn draw_icon_fn, void *user_ctx) {
+  if (total_count <= 0) return;
+  const int start_idx = get_mode_bar_start_index(total_count, win_start);
+  const int vis_count = std::min(4, total_count - start_idx);
+  if (vis_count <= 0) return;
+
+  int win_xs[4] = {0, 0, 0, 0};
+  bool has_l = false;
+  bool has_r = false;
+  get_mode_bar_window_xs(total_count, start_idx, cx, win_xs, has_l, has_r);
+
+  const int active_vis_idx =
+      (active_global_idx >= start_idx && active_global_idx < start_idx + vis_count)
+          ? (active_global_idx - start_idx)
+          : -1;
+  render_in_app_mode_bar_track(it, cx, win_xs, vis_count, active_vis_idx,
+                               has_l, has_r, total_count, active_global_idx,
+                               theme_primary, col_white, start_idx);
+
+  if (draw_icon_fn == nullptr) return;
+  const int by = layout().app_dock_y;
+  const int ir = dock_icon_r(layout().dock_r);
+  const int left_cx = win_xs[0];
+  const int right_cx = win_xs[vis_count - 1];
+  const int stride = get_dock_slot_stride(win_xs, vis_count);
+  const float anim_start = mode_bar_anim().cur_start;
+
+  for (int g_idx = 0; g_idx < total_count; ++g_idx) {
+    const float rel_slot = static_cast<float>(g_idx) - anim_start;
+    if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
+    const int bx = left_cx + static_cast<int>(std::lround(rel_slot * static_cast<float>(stride)));
+    if (bx < left_cx - scale_x(16) || bx > right_cx + scale_x(16)) continue;
+
+    const bool is_act = (g_idx == active_global_idx);
+    const esphome::Color raw_c = is_act ? theme_primary : col_white;
+    float alpha = 1.0f;
+    if (rel_slot < 0.0f) {
+      alpha = std::max(0.25f, 1.0f + rel_slot * 1.4f);
+    } else if (rel_slot > static_cast<float>(vis_count - 1)) {
+      alpha = std::max(0.25f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.4f);
+    }
+    const int alpha_q8 = std::clamp(static_cast<int>(std::lround(alpha * 256.0f)), 0, 256);
+    const esphome::Color fg_c = mix_color_q8(kChromeBarTrack, raw_c, alpha_q8);
+    draw_icon_fn(it, g_idx, bx, by, ir, fg_c, (alpha > 0.65f), user_ctx);
+  }
+}
+
+void header_pager_bar(esphome::display::Display &it, int cx, int cy,
+                      const std::string &title, esphome::display::BaseFont *font,
+                      esphome::Color col_white, bool show_arrows,
+                      uint16_t prev_wid, uint16_t next_wid,
+                      int16_t prev_param, int16_t next_param) {
+  if (font == nullptr) return;
+  const auto &ly = layout();
+  if (!show_arrows) {
+    const int max_w = std::min(kMaxContentColW, std::max(80, ly.safe_span(cy, 16)));
+    const std::string fit = fit_text_to_width_font(title, max_w, font);
+    shadow_print(it, cx, cy, font, col_white, esphome::display::TextAlign::CENTER, fit.c_str());
+    return;
+  }
+
+  const int btn_r = (SCREEN_W < 380) ? 16 : scale_s(17);
+  const int safe_w = std::min(kMaxContentColW, ly.band_safe_span(cy, 2 * btn_r, 14));
+  const int span_w = std::min(safe_w, scale_x(300));
+  const int lx = cx - span_w / 2 + btn_r;
+  const int rx = cx + span_w / 2 - btn_r;
+  const int gap = scale_x(10);
+  const int title_max_w = std::max(48, (rx - btn_r) - (lx + btn_r) - 2 * gap);
+
+  const int min_r = (ly.min_hit_px() + 1) / 2;
+  const int hit_pad = std::max(scale_s(6), min_r - btn_r);
+  const int ir = dock_icon_r(btn_r);
+
+  render_glass_circle(it, lx, cy, btn_r, chrome_card_bg_off(), chrome_card_brd_on());
+  draw_icon_chevron(it, lx, cy, ir, false, col_white, true);
+  if (prev_wid != WidgetId::NONE) {
+    frame_hits().add_circle(lx, cy, btn_r, prev_wid,
+                            kHitTap | kHitFocusSlot | kHitFocusCircle, prev_param, hit_pad);
+  }
+
+  render_glass_circle(it, rx, cy, btn_r, chrome_card_bg_off(), chrome_card_brd_on());
+  draw_icon_chevron(it, rx, cy, ir, true, col_white, true);
+  if (next_wid != WidgetId::NONE) {
+    frame_hits().add_circle(rx, cy, btn_r, next_wid,
+                            kHitTap | kHitFocusSlot | kHitFocusCircle, next_param, hit_pad);
+  }
+
+  // D-048 / D-070: Title text sits bare with 1 px kChromeShadow — ZERO glass behind passive text.
+  const std::string fit = fit_text_to_width_font(title, title_max_w, font);
+  shadow_print(it, cx, cy, font, col_white, esphome::display::TextAlign::CENTER, fit.c_str());
+}
+
+void action_pill(esphome::display::Display &it, int x0, int w, int y_mid, int h,
+                 esphome::Color border_c, esphome::Color bg_c,
+                 const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
+                 uint16_t widget_id, uint8_t flags, int16_t param,
+                 int hit_h_min, const char *leading_mdi) {
+  const int eff_w = std::max(24, w);
+  const int eff_h = std::max(24, h);
+  const int r = std::min(eff_h / 2, eff_w / 2);
+  const int y0 = y_mid - eff_h / 2;
+
+  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, border_c, r, GlassVariant::Clear, text_c);
+
+  const int cx = x0 + eff_w / 2;
+  const bool has_lbl = (label != nullptr && label[0] != '\0' && font != nullptr);
+  const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
+  if (has_mdi && has_lbl) {
+    const int icon_px = std::clamp(eff_h - scale_y(14), 14, scale_s(20));
+    const int icon_gap = scale_x(6);
+    const int max_txt_w = std::max(24, eff_w - icon_px - icon_gap - scale_x(18));
+    const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+    int tw = 0, x_off = 0, base = 0, th = 0;
+    font->measure(fit.c_str(), &tw, &x_off, &base, &th);
+    const int total_w = icon_px + icon_gap + tw;
+    const int start_x = cx - total_w / 2;
+    render_mdi_icon(it, leading_mdi, start_x + icon_px / 2, y_mid, icon_px, text_c, true);
+    shadow_print(it, start_x + icon_px + icon_gap, y_mid, font, text_c,
+                 esphome::display::TextAlign::CENTER_LEFT, fit.c_str());
+  } else if (has_mdi) {
+    const int icon_px = std::clamp(eff_h - scale_y(12), 14, scale_s(22));
+    render_mdi_icon(it, leading_mdi, cx, y_mid, icon_px, text_c, true);
+  } else if (has_lbl) {
+    const int max_txt_w = std::max(24, eff_w - scale_x(14));
+    const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+    shadow_print(it, cx, y_mid, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+
+  if (widget_id != WidgetId::NONE) {
+    const int min_h = (hit_h_min >= 0) ? hit_h_min : layout().min_hit_px();
+    const int hit_h = std::max(eff_h, min_h);
+    const int hit_w = std::max(eff_w, std::min(min_h, eff_w + scale_x(12)));
+    frame_hits().add_centered_rect(cx, y_mid, hit_w, hit_h, widget_id, flags, param);
+  }
+}
+
+void action_pill_centered(esphome::display::Display &it, int cx, int w, int y_mid, int h,
+                          esphome::Color border_c, esphome::Color bg_c,
+                          const char *label, esphome::Color text_c,
+                          esphome::display::BaseFont *font,
+                          uint16_t widget_id, uint8_t flags, int16_t param,
+                          int hit_h_min, const char *leading_mdi) {
+  action_pill(it, cx - w / 2, w, y_mid, h, border_c, bg_c, label, text_c, font,
+              widget_id, flags, param, hit_h_min, leading_mdi);
+}
+
+void action_pill_row(esphome::display::Display &it, int cy, int h,
+                     int max_row_w, int max_btn_w, int gap,
+                     const ActionPillSpec *items, int count,
+                     esphome::display::BaseFont *font, int inset) {
+  if (items == nullptr || count <= 0) return;
+  const int n = std::min(count, 6);
+  HomeHubPillGeom geoms[6]{};
+  const int gn = compute_action_pill_row(
+      n, cy, h, max_row_w, max_btn_w, gap,
+      SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0,
+      LATTER_PANEL_PPI, geoms, inset);
+  for (int i = 0; i < gn; ++i) {
+    action_pill(it, geoms[i].cx - geoms[i].w / 2, geoms[i].w, geoms[i].cy, geoms[i].h,
+                items[i].border_c, items[i].bg_c, items[i].label, items[i].text_c, font,
+                items[i].widget_id, kHitTap | kHitFocusSlot, items[i].param,
+                geoms[i].hit_h, items[i].leading_mdi);
+  }
+}
+
+void segmented_toggle(esphome::display::Display &it, int cx, int cy, int total_w, int h,
+                      const char *left_label, const char *right_label, bool right_active,
+                      esphome::display::BaseFont *font,
+                      esphome::Color theme_primary, esphome::Color col_white,
+                      esphome::Color col_slate,
+                      uint16_t left_wid, uint16_t right_wid) {
+  const int gap = std::max(4, scale_x(6));
+  const int eff_total = std::min(kMaxContentColW, total_w);
+  const int seg_w = std::max(56, (eff_total - gap) / 2);
+  const int hit_h = std::max(h, std::min(layout().min_hit_px(), h + scale_y(12)));
+  action_pill_centered(it, cx - (seg_w + gap) / 2, seg_w, cy, h,
+                       !right_active ? theme_primary : chrome_card_brd_off(),
+                       !right_active ? chrome_card_bg_on() : chrome_card_bg_off(),
+                       left_label, !right_active ? col_white : col_slate, font,
+                       left_wid, kHitTap | kHitFocusSlot, 0, hit_h);
+  action_pill_centered(it, cx + (seg_w + gap) / 2, seg_w, cy, h,
+                       right_active ? theme_primary : chrome_card_brd_off(),
+                       right_active ? chrome_card_bg_on() : chrome_card_bg_off(),
+                       right_label, right_active ? col_white : col_slate, font,
+                       right_wid, kHitTap | kHitFocusSlot, 1, hit_h);
+}
+
+void setting_cycle_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                       const char *label, bool enabled,
+                       esphome::display::BaseFont *font,
+                       esphome::Color col_white, esphome::Color col_slate,
+                       esphome::Color chevron_col,
+                       uint16_t widget_id, uint8_t flags, int16_t param) {
+  const int eff_w = std::max(80, w);
+  const int eff_h = std::max(28, h);
+  const int x0 = cx - eff_w / 2;
+  const int y0 = cy - eff_h / 2;
+  const esphome::Color bg_c = enabled ? chrome_card_bg_on() : chrome_card_bg_off();
+  const esphome::Color brd_c = enabled ? chrome_card_brd_on() : chrome_card_brd_off();
+  const esphome::Color txt_c = enabled ? col_white : col_slate;
+
+  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, txt_c);
+
+  const int chv_inset = scale_x(16);
+  const int max_txt_w = std::max(40, eff_w - (enabled ? (2 * chv_inset + scale_x(24)) : scale_x(20)));
+  if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+    shadow_print(it, cx, cy, font, txt_c, esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+
+  if (enabled) {
+    const int chv_r = std::max(5, scale_s(7));
+    draw_icon_chevron(it, x0 + chv_inset, cy, chv_r, false, chevron_col, true);
+    draw_icon_chevron(it, x0 + eff_w - chv_inset, cy, chv_r, true, chevron_col, true);
+    if (widget_id != WidgetId::NONE) {
+      frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, flags, param);
+    }
+  }
+}
+
+void slider_card_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                     const char *label, int pct, int min_pct, int max_pct, bool enabled,
+                     esphome::Color fill_c, esphome::Color brd_c,
+                     esphome::display::BaseFont *font, esphome::Color text_c,
+                     uint16_t widget_id, int16_t param) {
+  const int eff_w = std::max(80, w);
+  const int eff_h = std::max(28, h);
+  const int x0 = cx - eff_w / 2;
+  const int y0 = cy - eff_h / 2;
+  const int card_r = kRadiusCardPx();
+  const esphome::Color bg_c = enabled ? chrome_card_bg_on() : chrome_card_bg_off();
+  const esphome::Color eff_brd = enabled ? brd_c : chrome_card_brd_off();
+
+  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, eff_brd, card_r, GlassVariant::Clear, text_c);
+
+  if (enabled && max_pct > min_pct) {
+    const int inner_x0 = x0 + 2;
+    const int inner_y0 = y0 + 2;
+    const int inner_w = eff_w - 4;
+    const int inner_h = eff_h - 4;
+    const float inner_r = static_cast<float>(std::max(2, card_r - 2));
+    const int cl_pct = std::clamp(pct, min_pct, max_pct);
+    const float frac = static_cast<float>(cl_pct - min_pct) / static_cast<float>(max_pct - min_pct);
+    const int min_fill_w = std::min(inner_w, static_cast<int>(inner_r * 2.0f));
+    const int fill_w = std::clamp(
+        static_cast<int>(std::lround(frac * static_cast<float>(inner_w))),
+        (cl_pct > min_pct) ? min_fill_w : 0, inner_w);
+    if (fill_w > 0) {
+      fill_round_rect_glass(it, inner_x0, inner_y0, fill_w, inner_h, inner_r, fill_c, 96, 68);
+    }
+    if (widget_id != WidgetId::NONE) {
+      frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id,
+                                     kHitTap | kHitHorizSlider | kHitFocusSlot, param);
+    }
+  }
+
+  if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - scale_x(20)), font);
+    shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+}
+
+void list_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+              const char *label, const char *sub_label,
+              esphome::Color bg_c, esphome::Color brd_c,
+              esphome::Color text_c, esphome::Color sub_c,
+              esphome::display::BaseFont *font,
+              uint16_t widget_id, uint8_t flags, int16_t param,
+              const char *leading_mdi, const char *right_badge,
+              esphome::Color right_badge_c) {
+  const int eff_w = std::max(80, w);
+  const int eff_h = std::max(28, h);
+  const int x0 = cx - eff_w / 2;
+  const int y0 = cy - eff_h / 2;
+
+  // D-048: Non-interactive rows (widget_id == NONE) render bare shadowed text with zero glass.
+  if (widget_id == WidgetId::NONE) {
+    if (label != nullptr && label[0] != '\0' && font != nullptr) {
+      const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - scale_x(16)), font);
+      shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+    }
+    return;
+  }
+
+  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, text_c);
+
+  const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
+  const bool has_sub = (sub_label != nullptr && sub_label[0] != '\0');
+  const bool has_badge = (right_badge != nullptr && right_badge[0] != '\0');
+  int pad_l = scale_x(14);
+  int pad_r = scale_x(14);
+
+  if (has_mdi) {
+    const int icon_px = std::clamp(eff_h - scale_y(16), 16, scale_s(22));
+    render_mdi_icon(it, leading_mdi, x0 + pad_l + icon_px / 2, cy, icon_px, text_c, true);
+    pad_l += icon_px + scale_x(10);
+  }
+  if (has_badge && font != nullptr) {
+    int bw = 0, bx_off = 0, bbase = 0, bh = 0;
+    font->measure(right_badge, &bw, &bx_off, &bbase, &bh);
+    shadow_print(it, x0 + eff_w - pad_r, cy, font, right_badge_c,
+                 esphome::display::TextAlign::CENTER_RIGHT, right_badge);
+    pad_r += bw + scale_x(10);
+  }
+
+  if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    const int max_txt_w = std::max(36, eff_w - pad_l - pad_r);
+    if (has_sub) {
+      int tw = 0, x_off = 0, base = 0, th = 0;
+      font->measure("Ag", &tw, &x_off, &base, &th);
+      const int half_step = std::min(eff_h / 4, std::max(scale_y(10), (th + 2) / 2));
+      const std::string fit1 = fit_text_to_width_font(std::string(label), max_txt_w, font);
+      const std::string fit2 = fit_text_to_width_font(std::string(sub_label), max_txt_w, font);
+      shadow_print(it, x0 + pad_l, cy - half_step, font, text_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit1.c_str());
+      shadow_print(it, x0 + pad_l, cy + half_step, font, sub_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit2.c_str());
+    } else if (has_mdi || has_badge) {
+      const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+      shadow_print(it, x0 + pad_l, cy, font, text_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit.c_str());
+    } else {
+      const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+      shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+    }
+  }
+
+  frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, flags, param);
+}
+
+void grid_tile(esphome::display::Display &it, int cx, int cy, int w, int h,
+               const char *label, bool active, bool disabled,
+               esphome::Color accent_c, esphome::Color text_c,
+               esphome::display::BaseFont *font,
+               TileDrawIconFn draw_icon_fn, void *user_ctx,
+               uint16_t widget_id, int16_t param) {
+  const int eff_w = std::max(48, w);
+  const int eff_h = std::max(48, h);
+  const int x0 = cx - eff_w / 2;
+  const int y0 = cy - eff_h / 2;
+  const esphome::Color bg_c = active ? chrome_card_bg_on() : chrome_card_bg_off();
+  const esphome::Color brd_c = active ? accent_c : (disabled ? chrome_card_brd_off() : chrome_card_brd_on());
+
+  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, text_c);
+
+  const int icon_r = std::min(card_icon_r(eff_h), std::max(10, eff_h / 4));
+  const int icon_cy = cy - eff_h / 6;
+  if (draw_icon_fn != nullptr) {
+    draw_icon_fn(it, cx, icon_cy, icon_r, disabled ? text_c : (active ? accent_c : text_c), true, user_ctx);
+  }
+  if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    const int lbl_y = cy + (eff_h * 27) / 100;
+    const std::string fit = fit_text_to_width_font(std::string(label), std::max(32, eff_w - scale_x(12)), font);
+    shadow_print(it, cx, lbl_y, font, text_c, esphome::display::TextAlign::CENTER, fit.c_str());
+  }
+  if (widget_id != WidgetId::NONE && !disabled) {
+    frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param);
+  }
+}
+
+void icon_circle_button(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color bg_c, esphome::Color brd_c,
+                        esphome::Color icon_c,
+                        TileDrawIconFn draw_icon_fn, void *user_ctx,
+                        uint16_t widget_id, uint8_t flags, int16_t param, int hit_pad) {
+  const int eff_r = std::max(10, r);
+  render_glass_circle(it, cx, cy, eff_r, bg_c, brd_c);
+  if (draw_icon_fn != nullptr) {
+    draw_icon_fn(it, cx, cy, dock_icon_r(eff_r), icon_c, true, user_ctx);
+  }
+  if (widget_id != WidgetId::NONE) {
+    const int min_r = (layout().min_hit_px() + 1) / 2;
+    const int pad = (hit_pad >= 0) ? hit_pad : std::max(scale_s(6), min_r - eff_r);
+    frame_hits().add_circle(cx, cy, eff_r, widget_id, flags, param, pad);
+  }
+}
+
+void keypad_button(esphome::display::Display &it, int cx, int cy, int w, int h,
+                   const char *label, esphome::Color bg_c, esphome::Color brd_c,
+                   esphome::Color text_c, esphome::display::BaseFont *font,
+                   uint16_t widget_id, int16_t param) {
+  const int eff_w = std::max(24, w);
+  const int eff_h = std::max(24, h);
+  render_card_box(it, cx - eff_w / 2, cy - eff_h / 2, eff_w, eff_h,
+                  bg_c, brd_c, kRadiusKeyPx(), GlassVariant::Clear, text_c);
+  if (label != nullptr && label[0] != '\0' && font != nullptr) {
+    shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, label);
+  }
+  if (widget_id != WidgetId::NONE) {
+    frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param);
+  }
+}
+
+// ==============================================================================
+// 5. Legacy Toggle Row, Steppers, Color Wheel & Modals
+// ==============================================================================
 void toggle_card_row(esphome::display::Display &it, int cx, int y_mid, int w, int h,
                      const char *label, bool is_on, esphome::display::BaseFont *font,
                      esphome::Color active_col, esphome::Color text_on, esphome::Color text_off,
                      uint16_t widget_id, int16_t param) {
+  // Explicit screen-space bounds (D-070): zero hidden auto-scaling, unified kRadiusCardPx.
+  const int eff_w = std::min(SCREEN_W - 16, std::max(80, w));
+  const int eff_h = std::max(28, h);
   const esphome::Color bg_c = is_on ? chrome_card_bg_on() : chrome_card_bg_off();
   const esphome::Color brd_c = is_on ? active_col : chrome_card_brd_off();
   const esphome::Color fg = is_on ? text_on : text_off;
-  render_modern_card(it, cx, y_mid, w, h, 10, bg_c, brd_c, "", fg, font);
-  int eff_w = w;
-  if (SCREEN_W > 520 && eff_w <= 340) eff_w = scale_x(eff_w);
-  else if (SCREEN_W < 380 && h <= 48 && eff_w >= 240 && eff_w <= 330) eff_w = SCREEN_W - 88;
-  else if (eff_w > SCREEN_W - 20) eff_w = SCREEN_W - 20;
+  render_card_box(it, cx - eff_w / 2, y_mid - eff_h / 2, eff_w, eff_h,
+                  bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, fg);
 
   const int text_x = cx - eff_w / 2 + scale_x(14);
   const int sw_cx = cx + eff_w / 2 - scale_x(28);
   const int max_lbl_px = std::max(60, (sw_cx - scale_x(26)) - text_x);
   const std::string fit_lbl = fit_text_to_width_font(
       label != nullptr ? std::string(label) : std::string(), max_lbl_px, font);
-  fast_print(it, text_x + 1, y_mid + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
-  fast_print(it, text_x, y_mid, font, fg, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
+  shadow_print(it, text_x, y_mid, font, fg, esphome::display::TextAlign::CENTER_LEFT, fit_lbl.c_str());
   toggle_switch(it, sw_cx, y_mid, is_on, active_col);
 
   if (widget_id != WidgetId::NONE) {
-    frame_hits().add_centered_rect(cx, y_mid, eff_w, h, widget_id, kHitTap | kHitFocusSlot, param);
+    frame_hits().add_centered_rect(cx, y_mid, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param);
   }
 }
 
@@ -2060,9 +2698,9 @@ void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  esphome::Color col_text, uint16_t base_widget_id) {
   const int btn_w = (SCREEN_W < 380) ? 50 : scale_x(60);
   const int step = (SCREEN_W < 380) ? 66 : scale_x(80);
-  const int eff_h = (SCREEN_H > 520 && h <= 64) ? scale_y(h) : h;
+  const int eff_h = std::max(28, h);
   const int y_mid = y_top + eff_h / 2;
-  const int rad = std::max(4, scale_s(8));
+  const int rad = kRadiusKeyPx();
   const esphome::Color bg_c = chrome_card_bg_on();
   const esphome::Color brd_c = chrome_card_brd_on();
   for (int i = 0; i < 4; i++) {
@@ -2070,10 +2708,7 @@ void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
     render_card_box(it, bx - btn_w / 2, y_top, btn_w, eff_h, bg_c, brd_c, rad,
                     GlassVariant::Clear, col_text);
     if (labels[i] != nullptr && labels[i][0] != '\0' && font != nullptr) {
-      fast_print(it, bx + 1, y_mid + 1, font, kChromeShadow,
-                 esphome::display::TextAlign::CENTER, labels[i]);
-      fast_print(it, bx, y_mid, font, col_text,
-                 esphome::display::TextAlign::CENTER, labels[i]);
+      shadow_print(it, bx, y_mid, font, col_text, esphome::display::TextAlign::CENTER, labels[i]);
     }
     if (base_widget_id != WidgetId::NONE) {
       frame_hits().add_centered_rect(
@@ -2177,29 +2812,23 @@ void confirm_modal(esphome::display::Display &it, int cx, const char *title,
   (void)theme_primary;
   render_page_header(it, cx, title, font_hdr, col_white, true);
   if (line1 != nullptr && line1[0] != '\0') {
-    fast_print(it, cx, scale_y(132), font_body, col_white, esphome::display::TextAlign::CENTER, line1);
+    const int w1 = std::min(kMaxContentColW, layout().safe_span(scale_y(132), 18));
+    const std::string f1 = fit_text_to_width_font(std::string(line1), w1, font_body);
+    shadow_print(it, cx, scale_y(132), font_body, col_white, esphome::display::TextAlign::CENTER, f1.c_str());
   }
   if (line2 != nullptr && line2[0] != '\0') {
-    fast_print(it, cx, scale_y(168), font_body, col_slate, esphome::display::TextAlign::CENTER, line2);
+    const int w2 = std::min(kMaxContentColW, layout().safe_span(scale_y(168), 18));
+    const std::string f2 = fit_text_to_width_font(std::string(line2), w2, font_body);
+    shadow_print(it, cx, scale_y(168), font_body, col_slate, esphome::display::TextAlign::CENTER, f2.c_str());
   }
-  const int btn_y = scale_y(242);
-  const int btn_w = (SCREEN_W < 380) ? 116 : scale_x(126);
-  const int btn_h = scale_y(54);
-  const int gap_x = (SCREEN_W < 380) ? 64 : scale_x(72);
-
-  render_modern_card(it, cx - gap_x, btn_y, btn_w, btn_h, 12,
-                     chrome_card_bg_on(), chrome_card_brd_on(), cancel_lbl, col_white, font_body,
-                     GlassVariant::Clear);
-  render_modern_card(it, cx + gap_x, btn_y, btn_w, btn_h, 12,
-                     confirm_bg, confirm_border, confirm_lbl, col_white, font_body,
-                     GlassVariant::Clear);
-
-  if (cancel_wid != WidgetId::NONE) {
-    frame_hits().add_centered_rect(cx - gap_x, btn_y, btn_w, btn_h, cancel_wid, kHitTap | kHitFocusSlot, 0);
-  }
-  if (confirm_wid != WidgetId::NONE) {
-    frame_hits().add_centered_rect(cx + gap_x, btn_y, btn_w, btn_h, confirm_wid, kHitTap | kHitFocusSlot, 1);
-  }
+  const int btn_y = scale_y(248);
+  const int btn_h = std::max(44, scale_y(50));
+  const ActionPillSpec specs[2] = {
+      {cancel_lbl, cancel_wid, chrome_card_brd_on(), chrome_card_bg_off(), col_white, 0, nullptr},
+      {confirm_lbl, confirm_wid, confirm_border, confirm_bg, col_white, 1, nullptr},
+  };
+  action_pill_row(it, btn_y, btn_h, std::min(kMaxContentColW, scale_x(300)),
+                  scale_x(138), scale_x(14), specs, 2, font_body, 16);
 }
 
 void game_over_sheet(esphome::display::Display &it, int cx, int cy,
@@ -2209,24 +2838,24 @@ void game_over_sheet(esphome::display::Display &it, int cx, int cy,
                      esphome::display::BaseFont *font_hdr, esphome::display::BaseFont *font_body,
                      esphome::Color theme_primary, esphome::Color col_white,
                      esphome::Color col_gold, esphome::Color col_slate, uint16_t cta_wid) {
-  const int box_w = std::min(SCREEN_W - 28, scale_x(296));
-  const int box_h = scale_y(196);
-  render_card_box(it, cx - box_w / 2, cy - scale_y(96), box_w, box_h,
-                  kChromeGlassTint, title_col, 14, GlassVariant::Clear,
-                  is_new_best ? col_gold : col_slate);
-  fast_print(it, cx, cy - scale_y(60), font_hdr, title_col, esphome::display::TextAlign::CENTER, title);
+  // D-048 / D-070: Zero passive glass box behind text / zero glass-on-glass.
+  const int scrim_w = std::min(kMaxContentColW, std::min(SCREEN_W - 24, scale_x(312)));
+  const int scrim_h = scale_y(206);
+  fill_round_rect_glass(it, cx - scrim_w / 2, cy - scale_y(102), scrim_w, scrim_h,
+                        static_cast<float>(kRadiusCardPx()), kChromeShadow, 176, 176);
+  shadow_print(it, cx, cy - scale_y(60), font_hdr, title_col, esphome::display::TextAlign::CENTER, title, true);
   if (score_line != nullptr && score_line[0] != '\0') {
-    fast_print(it, cx, cy - scale_y(20), font_body, col_white, esphome::display::TextAlign::CENTER, score_line);
+    shadow_print(it, cx, cy - scale_y(18), font_body, col_white, esphome::display::TextAlign::CENTER, score_line);
   }
   if (best_line != nullptr && best_line[0] != '\0') {
-    fast_print(it, cx, cy + scale_y(12), font_body, is_new_best ? col_gold : col_slate,
-               esphome::display::TextAlign::CENTER, best_line);
+    shadow_print(it, cx, cy + scale_y(14), font_body, is_new_best ? col_gold : col_slate,
+                 esphome::display::TextAlign::CENTER, best_line);
   }
-  const int pill_r = scale_s(18);
-  const int pill_hw = std::min(box_w / 2 - pill_r - 12, scale_x(72));
-  pill_button(it, cx - pill_hw, cx + pill_hw, cy + scale_y(58), pill_r,
-              theme_primary, chrome_card_bg_on(), cta_lbl, col_white, font_body,
-              cta_wid, kHitTap | kHitFocusSlot, 0, GlassVariant::Clear);
+  const int pill_h = std::max(40, scale_y(44));
+  const int pill_w = std::min(scrim_w - scale_x(36), scale_x(204));
+  action_pill_centered(it, cx, pill_w, cy + scale_y(62), pill_h,
+                       theme_primary, chrome_card_bg_on(), cta_lbl, col_white, font_body,
+                       cta_wid, kHitTap | kHitFocusSlot, 0);
 }
 
 PinPadModalState &pin_pad_state() {
@@ -2300,24 +2929,22 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
   render_page_header(it, cx, hdr, font_small, col_white, true);
 
   const int disp_y = scale_y(84);
-  const int disp_w = std::min(SCREEN_W - 44, scale_x(236));
-  const int disp_h = scale_y(36);
+  const int disp_w = std::min(kMaxContentColW, std::min(SCREEN_W - 44, scale_x(236)));
   const bool show_err = (st.error_msg[0] != '\0' && (now_ms - st.error_ms) < 2200U);
-  render_modern_card(it, cx, disp_y, disp_w, disp_h, 10,
-                     kChromeGlassTint, show_err ? col_red : chrome_card_brd_on(),
-                     "", st.len == 0 && !show_err ? col_slate : col_white, font_small,
-                     GlassVariant::Clear);
+  // D-048 / D-070: Zero frosted glass behind read-only PIN entry display; subtle bottom rule only.
   if (show_err) {
-    fast_print(it, cx, disp_y, font_small, col_white, esphome::display::TextAlign::CENTER, st.error_msg);
+    shadow_print(it, cx, disp_y, font_small, col_white, esphome::display::TextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
-    fast_print(it, cx, disp_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "4-8 Digits");
+    shadow_print(it, cx, disp_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "4-8 Digits");
   } else {
     const int dot_step = scale_x(18);
     const int start_x = cx - ((static_cast<int>(st.len) - 1) * dot_step) / 2;
     for (uint8_t i = 0; i < st.len; i++) {
+      fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step + 1, disp_y + 1, scale_s(5), kChromeShadow);
       fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step, disp_y, scale_s(5), col_white);
     }
   }
+  fast_hline(it, cx - disp_w / 2, disp_y + scale_y(16), disp_w, show_err ? col_red : chrome_card_brd_on());
 
   const int key_w = (SCREEN_W < 380) ? 68 : scale_x(78);
   const int key_h = scale_y(48);
@@ -2349,11 +2976,8 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
     const esphome::Color brd = is_ok ? (ok_ready ? theme_primary : chrome_key_brd()) : chrome_key_brd();
     const esphome::Color bg  = is_ok && ok_ready ? chrome_card_bg_on() : chrome_key_bg();
     const esphome::Color fg  = (is_ok && !ok_ready) ? col_slate : col_white;
-    render_modern_card(it, kx, ky, key_w, key_h, 10, bg, brd,
-                       kLabels[idx], fg, (is_ok || is_del) ? font_small : font_key,
-                       GlassVariant::Clear);
-    frame_hits().add_centered_rect(kx, ky, key_w, key_h, kWids[idx], kHitTap | kHitFocusSlot,
-                                   static_cast<int16_t>(idx));
+    keypad_button(it, kx, ky, key_w, key_h, kLabels[idx], bg, brd, fg,
+                  (is_ok || is_del) ? font_small : font_key, kWids[idx], static_cast<int16_t>(idx));
   }
 
   render_back_button(it, cx, font_small, layout().back_y, "< Cancel");
@@ -2606,7 +3230,7 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
   using esphome::display::TextAlign;
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
-  const int rad = std::min(h / 2, scale_s(14));
+  const int rad = std::min(h / 2, kRadiusCardPx());
   render_card_box(it, x0, y0, w, h,
                   card_active ? chrome_card_bg_on() : chrome_card_bg_off(),
                   card_active ? accent_col : chrome_card_brd_off(),
@@ -2648,8 +3272,8 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
       const int bw = std::max(2, scale_s(3));
       const int bh = std::max(8, scale_s(11));
       const int gap = std::max(2, scale_s(3));
-      fill_rect_row_major(it, right_cx - gap - bw + 1, cy - bh / 2, bw, bh, esphome::Color(12, 16, 22));
-      fill_rect_row_major(it, right_cx + gap, cy - bh / 2, bw, bh, esphome::Color(12, 16, 22));
+      fill_rect_row_major(it, right_cx - gap - bw + 1, cy - bh / 2, bw, bh, kChromePauseGlyph);
+      fill_rect_row_major(it, right_cx + gap, cy - bh / 2, bw, bh, kChromePauseGlyph);
     } else {
       // Crisp play triangle
       const int th = std::max(5, scale_s(6));
@@ -2658,7 +3282,7 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
                            right_cx - tw / 2 + 2, cy - th,
                            right_cx - tw / 2 + 2, cy + th,
                            right_cx + tw / 2 + 2, cy,
-                           esphome::Color(245, 248, 252));
+                           kChromePlayGlyph);
     }
   }
 

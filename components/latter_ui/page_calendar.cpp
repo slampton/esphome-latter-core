@@ -31,49 +31,6 @@ static constexpr const char *kUpperWeekdaysSun0[7] = {
 static constexpr const char *kSingleWeekdaysSun0[7] = {
     "S", "M", "T", "W", "T", "F", "S"};
 
-int wrap_cal_lines(std::string_view text, int max_w, esphome::display::BaseFont *font,
-                   std::string out_lines[], int max_lines) {
-  const std::string clean = sanitize_utf8_for_font(std::string(text));
-  int line_cnt = 0;
-  size_t pos = 0;
-  while (pos < clean.size() && line_cnt < max_lines) {
-    while (pos < clean.size() && (clean[pos] == ' ' || clean[pos] == '\n' || clean[pos] == '\r')) {
-      pos++;
-    }
-    if (pos >= clean.size()) break;
-    const size_t nl = clean.find('\n', pos);
-    if (line_cnt == max_lines - 1) {
-      const std::string tail = (nl == std::string::npos) ? clean.substr(pos) : clean.substr(pos, nl - pos);
-      out_lines[line_cnt++] = fit_text_to_width_font(tail, max_w, font);
-      break;
-    }
-    const size_t seg_limit = (nl == std::string::npos) ? clean.size() : nl;
-    size_t best_end = pos;
-    size_t scan = pos;
-    while (scan < seg_limit) {
-      const size_t nxt_space = clean.find(' ', scan);
-      const size_t word_end = (nxt_space == std::string::npos || nxt_space > seg_limit) ? seg_limit : nxt_space;
-      const std::string cand = clean.substr(pos, word_end - pos);
-      int w = 0, xo = 0, b = 0, h = 0;
-      font->measure(cand.c_str(), &w, &xo, &b, &h);
-      if (w <= max_w) {
-        best_end = word_end;
-        scan = (word_end >= seg_limit) ? seg_limit : (word_end + 1);
-      } else {
-        break;
-      }
-    }
-    if (best_end == pos) {
-      out_lines[line_cnt++] = fit_text_to_width_font(clean.substr(pos, seg_limit - pos), max_w, font);
-      pos = (nl == std::string::npos) ? clean.size() : (nl + 1);
-    } else {
-      out_lines[line_cnt++] = clean.substr(pos, best_end - pos);
-      pos = best_end;
-    }
-  }
-  return line_cnt;
-}
-
 int32_t resolve_today_ymd(const UiFrameContext &ctx) {
   if (ctx.now.is_valid() && ctx.now.year >= 2020) {
     return make_ymd(ctx.now.year, ctx.now.month, ctx.now.day_of_month);
@@ -191,40 +148,48 @@ bool is_event_live_now(const CalendarWindowEvent &ev, int32_t today_ymd, int now
   return now_min >= ev.start_min && now_min < eff_end;
 }
 
-void draw_shadow_text(esphome::display::Display &it, int x, int y,
-                      esphome::display::BaseFont *font, esphome::Color col,
-                      esphome::display::TextAlign align, const char *txt) {
-  if (backdrop_active()) {
-    fast_print(it, x + 1, y + 1, font, kChromeShadow, align, txt);
+void draw_calendar_mode_icon(esphome::display::Display &it, int global_idx,
+                             int bx, int by, int ir,
+                             esphome::Color fg_c, bool shadow, void *) {
+  if (global_idx == CalendarSubpage::OVERVIEW) {
+    ui::draw_icon_cal_agenda(it, bx, by, ir, fg_c, shadow);
+  } else if (global_idx == CalendarSubpage::DAY) {
+    ui::draw_icon_cal_day(it, bx, by, ir, fg_c, shadow);
+  } else if (global_idx == CalendarSubpage::WEEK) {
+    ui::draw_icon_cal_week(it, bx, by, ir, fg_c, shadow);
+  } else {
+    ui::draw_icon_calendar(it, bx, by, ir, fg_c, shadow);
   }
-  fast_print(it, x, y, font, col, align, txt);
+}
+
+void draw_cal_chevron_left(esphome::display::Display &it, int cx, int cy, int r,
+                           esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_chevron(it, cx, cy, r, false, col, shadow);
+}
+
+void draw_cal_chevron_right(esphome::display::Display &it, int cx, int cy, int r,
+                            esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_chevron(it, cx, cy, r, true, col, shadow);
+}
+
+void draw_cal_plus(esphome::display::Display &it, int cx, int cy, int r,
+                   esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_plus(it, cx, cy, r, col, shadow);
+}
+
+void draw_cal_minus(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_minus(it, cx, cy, r, col, shadow);
+}
+
+void draw_cal_mic(esphome::display::Display &it, int cx, int cy, int r,
+                  esphome::Color col, bool shadow, void *) {
+  ui::draw_icon_mic(it, cx, cy, r, col, shadow);
 }
 
 void render_calendar_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_sub) {
-  using esphome::Color;
-  const int cx = ctx.cx;
-  int win_xs[4] = {0, 0, 0, 0};
-  bool has_l = false;
-  bool has_r = false;
-  get_mode_bar_window_xs(4, 0, cx, win_xs, has_l, has_r);
-  render_in_app_mode_bar_track(it, cx, win_xs, 4, active_sub, false, false, 4, active_sub,
-                               ctx.theme_primary, ctx.col_white, 0);
-
-  const int by = layout().app_dock_y;
-  const int ir = ui::dock_icon_r(layout().dock_r);
-  for (int i = 0; i < 4; ++i) {
-    const int bx = win_xs[i];
-    const Color fg_c = (i == active_sub) ? ctx.theme_primary : ctx.col_white;
-    if (i == CalendarSubpage::OVERVIEW) {
-      ui::draw_icon_cal_agenda(it, bx, by, ir, fg_c, true);
-    } else if (i == CalendarSubpage::DAY) {
-      ui::draw_icon_cal_day(it, bx, by, ir, fg_c, true);
-    } else if (i == CalendarSubpage::WEEK) {
-      ui::draw_icon_cal_week(it, bx, by, ir, fg_c, true);
-    } else {
-      ui::draw_icon_calendar(it, bx, by, ir, fg_c, true);
-    }
-  }
+  ui::mode_bar(it, ctx.cx, 4, active_sub, 0, ctx.theme_primary, ctx.col_white,
+               draw_calendar_mode_icon, nullptr);
 }
 
 struct CalSubheaderGeom {
@@ -269,52 +234,33 @@ CalSubheaderGeom render_calendar_subheader(esphome::display::Display &it,
   const int next_cx = add_cx - (2 * btn_r + std::max(6, scale_x(8)));
   const int hit_pad = std::max(4, (mm_to_px(7.0f) - btn_d) / 2);
 
-  // [ ‹ ] Prev button
-  render_glass_circle(it, prev_cx, sub_y, btn_r, kChromeGlassTint, kChromeCardBrdOn);
-  const int ch_s = std::max(4, scale_s(5));
-  for (int t = -1; t <= 0; ++t) {
-    fast_line(it, prev_cx + ch_s / 2 + t, sub_y - ch_s, prev_cx - ch_s / 2 + t, sub_y, ctx.col_white);
-    fast_line(it, prev_cx - ch_s / 2 + t, sub_y, prev_cx + ch_s / 2 + t, sub_y + ch_s, ctx.col_white);
-  }
-  frame_hits().add_circle(prev_cx, sub_y, btn_r, WidgetId::CAL_NAV_PREV,
-                          kHitTap | kHitFocusCircle, -1, hit_pad);
-
-  // [ › ] Next button
-  render_glass_circle(it, next_cx, sub_y, btn_r, kChromeGlassTint, kChromeCardBrdOn);
-  for (int t = 0; t <= 1; ++t) {
-    fast_line(it, next_cx - ch_s / 2 + t, sub_y - ch_s, next_cx + ch_s / 2 + t, sub_y, ctx.col_white);
-    fast_line(it, next_cx + ch_s / 2 + t, sub_y, next_cx - ch_s / 2 + t, sub_y + ch_s, ctx.col_white);
-  }
-  frame_hits().add_circle(next_cx, sub_y, btn_r, WidgetId::CAL_NAV_NEXT,
-                          kHitTap | kHitFocusCircle, 1, hit_pad);
-
-  // [ + ] Add Event button
-  render_glass_circle(it, add_cx, sub_y, btn_r, kChromeGlassTint, ctx.theme_primary);
-  const int plus_arm = std::max(4, scale_s(6));
-  const int plus_th = std::max(2, scale_s(2));
-  fill_rect_row_major(it, add_cx - plus_arm, sub_y - plus_th / 2, 2 * plus_arm + 1, plus_th, ctx.col_white);
-  fill_rect_row_major(it, add_cx - plus_th / 2, sub_y - plus_arm, plus_th, 2 * plus_arm + 1, ctx.col_white);
-  frame_hits().add_circle(add_cx, sub_y, btn_r, WidgetId::CAL_ADD_BTN,
-                          kHitTap | kHitFocusCircle, 0, hit_pad);
+  // [ ‹ ] Prev, [ › ] Next, [ + ] Add Event buttons (canonical SDF glass circles)
+  ui::icon_circle_button(it, prev_cx, sub_y, btn_r, kChromeGlassTint, kChromeCardBrdOn,
+                         ctx.col_white, draw_cal_chevron_left, nullptr,
+                         WidgetId::CAL_NAV_PREV, kHitTap | kHitFocusSlot | kHitFocusCircle, -1, hit_pad);
+  ui::icon_circle_button(it, next_cx, sub_y, btn_r, kChromeGlassTint, kChromeCardBrdOn,
+                         ctx.col_white, draw_cal_chevron_right, nullptr,
+                         WidgetId::CAL_NAV_NEXT, kHitTap | kHitFocusSlot | kHitFocusCircle, 1, hit_pad);
+  ui::icon_circle_button(it, add_cx, sub_y, btn_r, kChromeGlassTint, ctx.theme_primary,
+                         ctx.col_white, draw_cal_plus, nullptr,
+                         WidgetId::CAL_ADD_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, hit_pad);
 
   // Center Period Readout (interactive Today snap-back pill when navigated away from Today)
   const int mid_x0 = prev_cx + btn_r + std::max(6, scale_x(8));
   const int mid_x1 = next_cx - btn_r - std::max(6, scale_x(8));
   const int mid_cx = (mid_x0 + mid_x1) / 2;
   const int mid_w = std::max(40, mid_x1 - mid_x0);
-  auto *mid_font = (SCREEN_W < 360 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
 
   if (period_is_away_from_today) {
     const int pill_h = std::max(28, btn_d - 2);
-    const std::string fit_p = fit_text_to_width_font(period_label, mid_w - scale_x(14), mid_font);
-    render_card_box(it, mid_x0, sub_y - pill_h / 2, mid_w, pill_h,
-                    kChromeGlassTint, ctx.theme_primary, pill_h / 2);
-    fast_print(it, mid_cx, sub_y, mid_font, ctx.col_white, TextAlign::CENTER, fit_p.c_str());
-    frame_hits().add_rect(mid_x0, sub_y - pill_h / 2, mid_w, pill_h,
-                          WidgetId::CAL_TODAY_BTN, kHitTap | kHitFocusSlot, 0, hit_pad);
+    ui::action_pill_centered(it, mid_cx, mid_w, sub_y, pill_h,
+                             ctx.theme_primary, kChromeGlassTint,
+                             period_label, ctx.col_white, ctx.font_small,
+                             WidgetId::CAL_TODAY_BTN, kHitTap | kHitFocusSlot, 0);
   } else {
+    auto *mid_font = (SCREEN_W < 360 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
     const std::string fit_p = fit_text_to_width_font(period_label, mid_w - 4, mid_font);
-    draw_shadow_text(it, mid_cx, sub_y, mid_font, ctx.col_white, TextAlign::CENTER, fit_p.c_str());
+    ui::shadow_print(it, mid_cx, sub_y, mid_font, ctx.col_white, TextAlign::CENTER, fit_p.c_str());
   }
 
   CalSubheaderGeom g{};
@@ -395,7 +341,7 @@ void render_event_list_cards(esphome::display::Display &it,
     const Color accent = event_accent_color(ctx, ev.cal_idx, sources, source_cnt);
     const Color brd_c = live_now ? ctx.theme_primary : kChromeCardBrdOn;
 
-    render_card_box(it, card_x, card_y, card_w, card_h, kChromeGlassTint, brd_c, scale_s(12));
+    render_card_box(it, card_x, card_y, card_w, card_h, kChromeGlassTint, brd_c, kRadiusCardPx());
 
     // Left calendar color bar
     const int bar_w = std::max(3, scale_x(4));
@@ -425,11 +371,11 @@ void render_event_list_cards(esphome::display::Display &it,
 
     const std::string fit_title = fit_text_to_width_font(
         ev.title, std::max(40, (right_x - text_x) - badge_w), ctx.font_small);
-    fast_print(it, text_x, title_y, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, fit_title.c_str());
+    ui::shadow_print(it, text_x, title_y, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     if (badge_buf[0] != '\0') {
       const Color b_col = (live_now || ev.start_ymd == today_ymd) ? ctx.theme_primary : ctx.theme_secondary;
-      fast_print(it, right_x, title_y, sub_font, b_col, TextAlign::CENTER_RIGHT, badge_buf);
+      ui::shadow_print(it, right_x, title_y, sub_font, b_col, TextAlign::CENTER_RIGHT, badge_buf);
     }
 
     char tm_buf[36];
@@ -444,7 +390,7 @@ void render_event_list_cards(esphome::display::Display &it,
       meta_str += sources[ev.cal_idx].label;
     }
     const std::string fit_meta = fit_text_to_width_font(meta_str, std::max(40, right_x - text_x), sub_font);
-    fast_print(it, text_x, meta_y, sub_font, ctx.col_slate, TextAlign::CENTER_LEFT, fit_meta.c_str());
+    ui::shadow_print(it, text_x, meta_y, sub_font, ctx.col_slate, TextAlign::CENTER_LEFT, fit_meta.c_str());
 
     frame_hits().add_rect(card_x, card_y, card_w, card_h,
                           static_cast<uint16_t>(WidgetId::CAL_EVENT_BASE + r),
@@ -453,7 +399,8 @@ void render_event_list_cards(esphome::display::Display &it,
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, io_page > 0, (io_page + 1) < total_pages,
-                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate,
+                              layout().mode_bar_zone_top());
   }
 }
 
@@ -578,13 +525,13 @@ void render_week_tab(esphome::display::Display &it,
       const int col_cx = col_x + col_w / 2;
       const Color brd_c = is_today ? ctx.theme_primary : (is_sel ? ctx.theme_secondary : kChromeCardBorder);
 
-      render_card_box(it, col_x, geom.content_top, col_w, board_h, kChromeGlassTint, brd_c, scale_s(12));
+      render_card_box(it, col_x, geom.content_top, col_w, board_h, kChromeGlassTint, brd_c, kRadiusCardPx());
 
       const int wd_y = geom.content_top + scale_y(16);
       const int num_y = geom.content_top + scale_y(40);
-      fast_print(it, col_cx, wd_y, chip_font,
-                 is_today ? ctx.theme_primary : ctx.col_slate,
-                 TextAlign::CENTER, kUpperWeekdaysSun0[wd]);
+      ui::shadow_print(it, col_cx, wd_y, chip_font,
+                       is_today ? ctx.theme_primary : ctx.col_slate,
+                       TextAlign::CENTER, kUpperWeekdaysSun0[wd]);
 
       if (is_today) {
         ui::draw_aa_disc(it, static_cast<float>(col_cx), static_cast<float>(num_y),
@@ -592,8 +539,11 @@ void render_week_tab(esphome::display::Display &it,
       }
       char num_buf[8];
       std::snprintf(num_buf, sizeof(num_buf), "%d", dd);
-      fast_print(it, col_cx, num_y, ctx.font_small,
-                 is_today ? ctx.col_black : ctx.col_white, TextAlign::CENTER, num_buf);
+      if (is_today) {
+        fast_print(it, col_cx, num_y, ctx.font_small, ctx.col_black, TextAlign::CENTER, num_buf);
+      } else {
+        ui::shadow_print(it, col_cx, num_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, num_buf);
+      }
 
       fast_hline(it, col_x + 6, geom.content_top + scale_y(58), col_w - 12, kChromeCardBorder);
 
@@ -622,15 +572,15 @@ void render_week_tab(esphome::display::Display &it,
         }
         const std::string fit_t = fit_text_to_width_font(t_short, col_w - 16, chip_font);
         const std::string fit_n = fit_text_to_width_font(ev.title, col_w - 16, chip_font);
-        fast_print(it, col_x + 12, cy_top + chip_h / 3, chip_font, acc, TextAlign::CENTER_LEFT, fit_t.c_str());
-        fast_print(it, col_x + 12, cy_top + (chip_h * 3) / 4 - 2, chip_font, ctx.col_white,
-                   TextAlign::CENTER_LEFT, fit_n.c_str());
+        ui::shadow_print(it, col_x + 12, cy_top + chip_h / 3, chip_font, acc, TextAlign::CENTER_LEFT, fit_t.c_str());
+        ui::shadow_print(it, col_x + 12, cy_top + (chip_h * 3) / 4 - 2, chip_font, ctx.col_white,
+                         TextAlign::CENTER_LEFT, fit_n.c_str());
       }
       if (day_cnt > max_chips) {
         char more_buf[16];
         std::snprintf(more_buf, sizeof(more_buf), "+%d more", day_cnt - max_chips);
-        fast_print(it, col_cx, geom.content_bot - scale_y(12), chip_font, ctx.theme_secondary,
-                   TextAlign::CENTER, more_buf);
+        ui::shadow_print(it, col_cx, geom.content_bot - scale_y(12), chip_font, ctx.theme_secondary,
+                         TextAlign::CENTER, more_buf);
       }
 
       frame_hits().add_rect(col_x, geom.content_top, col_w, board_h,
@@ -663,16 +613,16 @@ void render_week_tab(esphome::display::Display &it,
     const int cx_d = x0_strip + d * (cap_w + gap) + cap_w / 2;
     const Color brd_c = is_today ? ctx.theme_primary : (is_sel ? ctx.theme_secondary : kChromeCardBorder);
     render_card_box(it, cx_d - cap_w / 2, strip_cy - strip_h / 2, cap_w, strip_h,
-                    kChromeGlassTint, brd_c, scale_s(10));
+                    kChromeGlassTint, brd_c, kRadiusKeyPx());
 
-    fast_print(it, cx_d, strip_cy - strip_h / 4 - 1, lbl_font,
-               is_today ? ctx.theme_primary : ctx.col_slate,
-               TextAlign::CENTER, kSingleWeekdaysSun0[wd]);
+    ui::shadow_print(it, cx_d, strip_cy - strip_h / 4 - 1, lbl_font,
+                     is_today ? ctx.theme_primary : ctx.col_slate,
+                     TextAlign::CENTER, kSingleWeekdaysSun0[wd]);
 
     char dd_buf[8];
     std::snprintf(dd_buf, sizeof(dd_buf), "%d", dd);
-    fast_print(it, cx_d, strip_cy + 3, ctx.font_small,
-               is_today ? ctx.theme_primary : ctx.col_white, TextAlign::CENTER, dd_buf);
+    ui::shadow_print(it, cx_d, strip_cy + 3, ctx.font_small,
+                     is_today ? ctx.theme_primary : ctx.col_white, TextAlign::CENTER, dd_buf);
 
     uint8_t dot_cals[3]{};
     const int n_dots = collect_calendar_day_dots(d_ymd, dot_cals, store);
@@ -755,7 +705,7 @@ void render_month_tab(esphome::display::Display &it,
     const int wd = monday_first ? ((c + 1) % 7) : c;
     const int cx_c = grid_x0 + c * col_w + col_w / 2;
     const char *lbl = (SCREEN_W > 520) ? kUpperWeekdaysSun0[wd] : kSingleWeekdaysSun0[wd];
-    draw_shadow_text(it, cx_c, wd_y, hdr_font, ctx.theme_secondary, TextAlign::CENTER, lbl);
+    ui::shadow_print(it, cx_c, wd_y, hdr_font, ctx.theme_secondary, TextAlign::CENTER, lbl);
   }
 
   const int ring_r = std::max(9, std::min(col_w, row_h) / 2 - (SCREEN_W > 520 ? 7 : 3));
@@ -790,7 +740,7 @@ void render_month_tab(esphome::display::Display &it,
       char d_buf[8];
       std::snprintf(d_buf, sizeof(d_buf), "%d", cd_v);
       const Color fg = is_today ? ctx.theme_primary : (in_month ? ctx.col_white : kChromeSubtle);
-      draw_shadow_text(it, cell_cx, num_cy, cell_font, fg, TextAlign::CENTER, d_buf);
+      ui::shadow_print(it, cell_cx, num_cy, cell_font, fg, TextAlign::CENTER, d_buf);
 
       uint8_t dot_cals[3]{};
       const int n_dots = collect_calendar_day_dots(cell_ymd, dot_cals, store);
@@ -865,30 +815,30 @@ void render_detail_drilldown(esphome::display::Display &it,
   format_cal_event_time_range(ev, prefs.is_24h_format, tm_buf, sizeof(tm_buf));
   char when_buf[80];
   std::snprintf(when_buf, sizeof(when_buf), "%s  •  %s", dt_buf, tm_buf);
-  const std::string fit_when = fit_text_to_width_font(when_buf, safe_span(meta_y, 20), ctx.font_small);
-  draw_shadow_text(it, cx, meta_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, fit_when.c_str());
+  const std::string fit_when = fit_text_to_width_font(when_buf, std::min(kMaxContentColW, safe_span(meta_y, 20)), ctx.font_small);
+  ui::shadow_print(it, cx, meta_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, fit_when.c_str());
 
   int cur_y = scale_y(114);
   if (static_cast<int>(ev.cal_idx) < source_cnt && sources[ev.cal_idx].label[0] != '\0') {
     auto *src_font = (ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small;
-    const std::string src_fit = fit_text_to_width_font(sources[ev.cal_idx].label, safe_span(cur_y, 36), src_font);
+    const std::string src_fit = fit_text_to_width_font(sources[ev.cal_idx].label, std::min(kMaxContentColW, safe_span(cur_y, 36)), src_font);
     int sw = 0, xo = 0, bl = 0, th = 0;
     src_font->measure(src_fit.c_str(), &sw, &xo, &bl, &th);
     const int tot_w = sw + 14;
     const int dot_x = cx - tot_w / 2 + 4;
     ui::draw_aa_disc(it, static_cast<float>(dot_x), static_cast<float>(cur_y), 3.6f, accent);
-    draw_shadow_text(it, dot_x + 10, cur_y, src_font, ctx.col_slate, TextAlign::CENTER_LEFT, src_fit.c_str());
+    ui::shadow_print(it, dot_x + 10, cur_y, src_font, ctx.col_slate, TextAlign::CENTER_LEFT, src_fit.c_str());
     cur_y += scale_y(28);
   } else {
     cur_y += scale_y(12);
   }
 
   // Wrapped Title (non-interactive text drawn cleanly over backdrop with 1px shadow)
-  const int title_max_w = std::min(safe_span(cur_y + scale_y(14), 22), scale_x(336));
+  const int title_max_w = std::min({kMaxContentColW, safe_span(cur_y + scale_y(14), 22), scale_x(336)});
   std::string title_lines[2];
-  const int t_cnt = wrap_cal_lines(ev.title, title_max_w, ctx.font_date, title_lines, 2);
+  const int t_cnt = ui::wrap_text_lines(ev.title, title_max_w, ctx.font_date, title_lines, 2);
   for (int i = 0; i < t_cnt; ++i) {
-    draw_shadow_text(it, cx, cur_y, ctx.font_date, ctx.col_white, TextAlign::CENTER, title_lines[i].c_str());
+    ui::shadow_print(it, cx, cur_y, ctx.font_date, ctx.col_white, TextAlign::CENTER, title_lines[i].c_str());
     cur_y += scale_y(30);
   }
 
@@ -898,8 +848,8 @@ void render_detail_drilldown(esphome::display::Display &it,
 
   const bool has_loc = (ev.location[0] != '\0');
   if (has_loc) {
-    const std::string loc_fit = fit_text_to_width_font(ev.location, safe_span(cur_y, 22), ctx.font_small);
-    draw_shadow_text(it, cx, cur_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, loc_fit.c_str());
+    const std::string loc_fit = fit_text_to_width_font(ev.location, std::min(kMaxContentColW, safe_span(cur_y, 22)), ctx.font_small);
+    ui::shadow_print(it, cx, cur_y, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, loc_fit.c_str());
     cur_y += scale_y(26);
   }
 
@@ -909,45 +859,39 @@ void render_detail_drilldown(esphome::display::Display &it,
     auto *desc_font = (ctx.font_micro != nullptr && SCREEN_H <= 520) ? ctx.font_micro : ctx.font_small;
     const int max_desc_lines = (desc_avail >= scale_y(50)) ? 2 : 1;
     std::string desc_lines[2];
-    const int d_cnt = wrap_cal_lines(ev.description, safe_span(cur_y + 10, 26), desc_font, desc_lines, max_desc_lines);
+    const int d_cnt = ui::wrap_text_lines(ev.description, std::min(kMaxContentColW, safe_span(cur_y + 10, 26)), desc_font, desc_lines, max_desc_lines);
     for (int i = 0; i < d_cnt; ++i) {
-      draw_shadow_text(it, cx, cur_y, desc_font, ctx.col_slate, TextAlign::CENTER, desc_lines[i].c_str());
+      ui::shadow_print(it, cx, cur_y, desc_font, ctx.col_slate, TextAlign::CENTER, desc_lines[i].c_str());
       cur_y += scale_y(22);
     }
   } else if (!has_loc && ev.description[0] == '\0') {
-    draw_shadow_text(it, cx, cur_y + scale_y(10), ctx.font_small, ctx.col_slate,
+    ui::shadow_print(it, cx, cur_y + scale_y(10), ctx.font_small, ctx.col_slate,
                      TextAlign::CENTER, "No additional details");
   }
 
-  // Interactive Action Row (View Map & Delete Event)
-  const int btn_h = std::max(40, scale_y(42));
-  const int btn_r = btn_h / 2;
+  // Interactive Action Row (View Map & Delete Event) — exact outer-box stadium pills
+  const int btn_h = std::max(44, scale_y(44));
   const int row_safe = band_safe_span_for(
       btn_y, btn_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 18);
 
   if (has_loc && can_del) {
-    const int gap = scale_x(10);
-    const int each_w = std::min(scale_x(146), (row_safe - gap) / 2);
-    const int map_x1 = cx - gap / 2 - each_w;
-    const int map_x2 = cx - gap / 2;
-    const int del_x1 = cx + gap / 2;
-    const int del_x2 = cx + gap / 2 + each_w;
-    ui::pill_button(it, map_x1, map_x2, btn_y, btn_r, ctx.theme_primary, kChromeGlassTint,
-                    "View Map", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_VIEW_MAP_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, del_x1, del_x2, btn_y, btn_r, ctx.col_red, ui::chrome_danger_bg(),
-                    "Delete", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_DELETE_BTN, kHitTap | kHitFocusSlot);
+    const ui::ActionPillSpec specs[2] = {
+        {"View Map", WidgetId::CAL_VIEW_MAP_BTN, ctx.theme_primary, kChromeGlassTint, ctx.col_white, 0, nullptr},
+        {"Delete", WidgetId::CAL_DELETE_BTN, ctx.col_red, ui::chrome_danger_bg(), ctx.col_white, 0, nullptr},
+    };
+    ui::action_pill_row(it, btn_y, btn_h, kMaxContentColW, scale_x(184), scale_x(10), specs, 2, ctx.font_small, 18);
   } else if (has_loc) {
-    const int hw = std::min(scale_x(108), row_safe / 2);
-    ui::pill_button(it, cx - hw, cx + hw, btn_y, btn_r, ctx.theme_primary, kChromeGlassTint,
-                    "View Map", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_VIEW_MAP_BTN, kHitTap | kHitFocusSlot);
+    const int btn_w = std::min({scale_x(216), row_safe, kMaxContentColW});
+    ui::action_pill_centered(it, cx, btn_w, btn_y, btn_h,
+                             ctx.theme_primary, kChromeGlassTint,
+                             "View Map", ctx.col_white, ctx.font_small,
+                             WidgetId::CAL_VIEW_MAP_BTN, kHitTap | kHitFocusSlot);
   } else if (can_del) {
-    const int hw = std::min(scale_x(108), row_safe / 2);
-    ui::pill_button(it, cx - hw, cx + hw, btn_y, btn_r, ctx.col_red, ui::chrome_danger_bg(),
-                    "Delete Event", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_DELETE_BTN, kHitTap | kHitFocusSlot);
+    const int btn_w = std::min({scale_x(216), row_safe, kMaxContentColW});
+    ui::action_pill_centered(it, cx, btn_w, btn_y, btn_h,
+                             ctx.col_red, ui::chrome_danger_bg(),
+                             "Delete Event", ctx.col_white, ctx.font_small,
+                             WidgetId::CAL_DELETE_BTN, kHitTap | kHitFocusSlot);
   }
 
   render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
@@ -977,9 +921,8 @@ void render_map_drilldown(esphome::display::Display &it,
     const std::string loc_hdr = fit_text_to_width_font(
         std::string(z_prefix) + rs.cal.detail_map_location, map_hdr_w - 16, ctx.font_small);
     render_card_box(it, ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                    kChromeGlassTint, ctx.theme_primary, scale_s(10));
-    fast_print(it, ctx.cx + 1, scale_y(41) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, loc_hdr.c_str());
-    fast_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
+                    kChromeGlassTint, ctx.theme_primary, kRadiusCardPx());
+    ui::shadow_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
     frame_hits().add_rect(ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
                           WidgetId::CAL_TODAY_BTN, kHitTap | kHitFocusSlot);
 
@@ -987,20 +930,18 @@ void render_map_drilldown(esphome::display::Display &it,
     const int z_lx = ly.map_zoom_left_x();
     const int z_rx = ly.map_zoom_right_x();
     const int z_r  = scale_s(21);
-    render_glass_circle(it, z_lx, z_by, z_r, kChromeGlassTint,
-                        (rs.cal.map_zoom > 10) ? ctx.theme_primary : kChromeCardBorder);
-    fill_rect_row_major(it, z_lx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)),
-                        (rs.cal.map_zoom > 10) ? ctx.col_white : ctx.col_slate);
-    frame_hits().add_circle(z_lx, z_by, z_r, WidgetId::CAL_ZOOM_OUT_BTN,
-                            kHitTap | kHitFocusCircle, 0, scale_s(16));
-
-    const Color fg_in = (rs.cal.map_zoom < 18) ? ctx.col_white : ctx.col_slate;
-    render_glass_circle(it, z_rx, z_by, z_r, kChromeGlassTint,
-                        (rs.cal.map_zoom < 18) ? ctx.theme_primary : kChromeCardBorder);
-    fill_rect_row_major(it, z_rx - scale_s(8), z_by - 1, scale_s(17), std::max(2, scale_s(3)), fg_in);
-    fill_rect_row_major(it, z_rx - 1, z_by - scale_s(8), std::max(2, scale_s(3)), scale_s(17), fg_in);
-    frame_hits().add_circle(z_rx, z_by, z_r, WidgetId::CAL_ZOOM_IN_BTN,
-                            kHitTap | kHitFocusCircle, 0, scale_s(16));
+    ui::icon_circle_button(it, z_lx, z_by, z_r, kChromeGlassTint,
+                           (rs.cal.map_zoom > 10) ? ctx.theme_primary : kChromeCardBorder,
+                           (rs.cal.map_zoom > 10) ? ctx.col_white : ctx.col_slate,
+                           draw_cal_minus, nullptr,
+                           WidgetId::CAL_ZOOM_OUT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                           0, scale_s(16));
+    ui::icon_circle_button(it, z_rx, z_by, z_r, kChromeGlassTint,
+                           (rs.cal.map_zoom < 18) ? ctx.theme_primary : kChromeCardBorder,
+                           (rs.cal.map_zoom < 18) ? ctx.col_white : ctx.col_slate,
+                           draw_cal_plus, nullptr,
+                           WidgetId::CAL_ZOOM_IN_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                           0, scale_s(16));
 
     render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
                       scale_s(16), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
@@ -1040,51 +981,40 @@ void render_add_step1(esphome::display::Display &it,
   const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
   const int mic_r = row_h / 2;
   const int mic_gap = std::max(6, scale_x(8));
-  const int field_safe_w = std::min(
-      band_safe_span_for(ly.slot5_y(0), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14),
-      band_safe_span_for(ly.slot5_y(1), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14));
-  const int field_tot_w = std::min(field_safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 332);
-  const int row23_safe_w = std::min(
-      band_safe_span_for(ly.slot5_y(2), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14),
-      band_safe_span_for(ly.slot5_y(3), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14));
-  const int row23_card_w = std::min(row23_safe_w, ly.list_card_w);
+  const int stack_w = ui::compute_uniform_stack_w(
+      ly.slot5_y(0), ly.slot5_y(3), row_h, std::min(ly.list_card_w, kMaxContentColW), 14);
 
   auto draw_field_with_mic = [&](int slot_idx, const char *prefix, const std::string &val,
                                  const char *placeholder, uint16_t field_wid, uint16_t mic_wid,
                                  uint8_t dict_id) {
     const int ym = ly.slot5_y(slot_idx);
-    const int tot_w = field_tot_w;
-    const int x0 = cx - tot_w / 2;
+    const int x0 = cx - stack_w / 2;
 #if LATTER_HAS_MIC
-    const int card_w = tot_w - (2 * mic_r + mic_gap);
+    const int card_w = stack_w - (2 * mic_r + mic_gap);
     const int mic_cx = x0 + card_w + mic_gap + mic_r;
     const bool mic_active = (rs.cal.dictation_field == dict_id);
 #else
-    const int card_w = tot_w;
+    const int card_w = stack_w;
     const bool mic_active = false;
     (void)mic_wid;
     (void)dict_id;
 #endif
     render_card_box(it, x0, ym - row_h / 2, card_w, row_h,
-                    kChromeGlassTint, mic_active ? ctx.col_red : kChromeCardBrdOn, scale_s(12));
+                    kChromeGlassTint, mic_active ? ctx.col_red : kChromeCardBrdOn, kRadiusCardPx());
     std::string full_lbl(prefix);
     full_lbl += val.empty() ? placeholder : val;
     const std::string fit_l = fit_text_to_width_font(full_lbl, card_w - scale_x(24), ctx.font_small);
-    fast_print(it, x0 + scale_x(12), ym, ctx.font_small,
-               val.empty() ? ctx.col_slate : ctx.col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
+    ui::shadow_print(it, x0 + scale_x(12), ym, ctx.font_small,
+                     val.empty() ? ctx.col_slate : ctx.col_white, TextAlign::CENTER_LEFT, fit_l.c_str());
     frame_hits().add_rect(x0, ym - row_h / 2, card_w, row_h, field_wid, kHitTap | kHitFocusSlot);
 
 #if LATTER_HAS_MIC
-    render_glass_circle(it, mic_cx, ym, mic_r,
-                        mic_active ? ui::chrome_danger_bg() : kChromeGlassTint,
-                        mic_active ? ctx.col_red : ctx.theme_primary);
-    ui::draw_icon_mic(it, mic_cx, ym, std::max(7, (mic_r * 11) / 20),
-                      mic_active ? ctx.col_red : ctx.col_white, true);
-    frame_hits().add_circle(mic_cx, ym, mic_r, mic_wid, kHitTap | kHitFocusCircle, 0, 4);
+    ui::icon_circle_button(it, mic_cx, ym, mic_r,
+                           mic_active ? ui::chrome_danger_bg() : kChromeGlassTint,
+                           mic_active ? ctx.col_red : ctx.theme_primary,
+                           mic_active ? ctx.col_red : ctx.col_white,
+                           draw_cal_mic, nullptr,
+                           mic_wid, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 4);
 #endif
   };
 
@@ -1093,56 +1023,61 @@ void render_add_step1(esphome::display::Display &it,
   draw_field_with_mic(1, "Location: ", rs.cal.draft_location, "None",
                       WidgetId::CAL_ADD_LOC_BTN, WidgetId::CAL_ADD_LOC_MIC, 2U);
 
-  // Row 2: Target Calendar
+  // Row 2: Target Calendar (bare shadowed text when non-interactive per D-048)
   {
     const int ym = ly.slot5_y(2);
-    const int card_w = row23_card_w;
+    const int card_w = stack_w;
     const int x0 = cx - card_w / 2;
     const int w_idx = (writable_cnt > 0) ? std::clamp<int>(rs.cal.draft_cal_idx, 0, writable_cnt - 1) : 0;
     const char *cal_name = (writable_cnt > 0) ? writable_sources[w_idx].label : "Default Calendar";
     char cal_buf[64];
     std::snprintf(cal_buf, sizeof(cal_buf), "Calendar: %s", cal_name);
-    const Color brd = (writable_cnt > 1) ? kChromeCardBrdOn : kChromeCardBorder;
-    render_card_box(it, x0, ym - row_h / 2, card_w, row_h, kChromeGlassTint, brd, scale_s(12));
-    if (writable_cnt > 0) {
+    if (writable_cnt > 1) {
+      render_card_box(it, x0, ym - row_h / 2, card_w, row_h,
+                      kChromeGlassTint, kChromeCardBrdOn, kRadiusCardPx());
       ui::draw_aa_disc(it, static_cast<float>(x0 + scale_x(14)), static_cast<float>(ym), 4.0f,
                        cal_source_color(ctx, writable_sources[w_idx].color_idx));
-    }
-    const int tx_x = x0 + (writable_cnt > 0 ? scale_x(24) : scale_x(12));
-    const std::string fit_c = fit_text_to_width_font(cal_buf, card_w - (tx_x - x0) - scale_x(12), ctx.font_small);
-    fast_print(it, tx_x, ym, ctx.font_small,
-               (writable_cnt > 0) ? ctx.col_white : ctx.col_slate, TextAlign::CENTER_LEFT, fit_c.c_str());
-    if (writable_cnt > 1) {
+      const int tx_x = x0 + scale_x(24);
+      const std::string fit_c = fit_text_to_width_font(cal_buf, card_w - (tx_x - x0) - scale_x(12), ctx.font_small);
+      ui::shadow_print(it, tx_x, ym, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, fit_c.c_str());
       frame_hits().add_rect(x0, ym - row_h / 2, card_w, row_h,
                             WidgetId::CAL_ADD_CAL_BTN, kHitTap | kHitFocusSlot);
+    } else {
+      const std::string fit_c = fit_text_to_width_font(cal_buf, card_w - scale_x(24), ctx.font_small);
+      if (writable_cnt > 0) {
+        int sw = 0, xo = 0, bl = 0, th = 0;
+        ctx.font_small->measure(fit_c.c_str(), &sw, &xo, &bl, &th);
+        const int dot_x = cx - (sw + 14) / 2 + 4;
+        ui::draw_aa_disc(it, static_cast<float>(dot_x), static_cast<float>(ym), 4.0f,
+                         cal_source_color(ctx, writable_sources[w_idx].color_idx));
+        ui::shadow_print(it, dot_x + 10, ym, ctx.font_small, ctx.col_slate, TextAlign::CENTER_LEFT, fit_c.c_str());
+      } else {
+        ui::shadow_print(it, cx, ym, ctx.font_small, ctx.col_slate, TextAlign::CENTER, fit_c.c_str());
+      }
     }
   }
 
   // Row 3: Repeat
   {
     const int ym = ly.slot5_y(3);
-    const int card_w = row23_card_w;
-    const int x0 = cx - card_w / 2;
     const int r_idx = std::clamp<int>(rs.cal.draft_rrule_idx, 0, 6);
     char rep_buf[48];
     std::snprintf(rep_buf, sizeof(rep_buf), "Repeat: %s", kCalRepeatLabels[r_idx]);
-    render_card_box(it, x0, ym - row_h / 2, card_w, row_h, kChromeGlassTint, kChromeCardBrdOn, scale_s(12));
-    const std::string fit_r = fit_text_to_width_font(rep_buf, card_w - scale_x(24), ctx.font_small);
-    fast_print(it, x0 + scale_x(12), ym, ctx.font_small, ctx.col_white, TextAlign::CENTER_LEFT, fit_r.c_str());
-    frame_hits().add_rect(x0, ym - row_h / 2, card_w, row_h,
-                          WidgetId::CAL_ADD_REPEAT_BTN, kHitTap | kHitFocusSlot);
+    ui::list_row(it, cx, ym, stack_w, row_h, rep_buf, nullptr,
+                 kChromeGlassTint, kChromeCardBrdOn, ctx.col_white, ctx.col_slate,
+                 ctx.font_small, WidgetId::CAL_ADD_REPEAT_BTN, kHitTap | kHitFocusSlot);
   }
 
-  // Row 4: Next Step CTA
+  // Row 4: Next Step CTA — exact outer-box stadium pill
   {
     const int ym = ly.slot5_y(4);
     const int safe_w = band_safe_span_for(
         ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 18);
-    const int hw = std::min(scale_x(124), safe_w / 2);
-    ui::pill_button(it, cx - hw, cx + hw, ym, row_h / 2,
-                    ctx.theme_primary, kChromeGlassTint,
-                    "Date & Time >", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_ADD_NEXT_BTN, kHitTap | kHitFocusSlot);
+    const int btn_w = std::min({scale_x(248), safe_w, kMaxContentColW});
+    ui::action_pill_centered(it, cx, btn_w, ym, std::max(44, row_h),
+                             ctx.theme_primary, kChromeGlassTint,
+                             "Date & Time >", ctx.col_white, ctx.font_small,
+                             WidgetId::CAL_ADD_NEXT_BTN, kHitTap | kHitFocusSlot);
   }
 
   render_back_button(it, cx, ctx.font_small, ly.back_y, "< Cancel");
@@ -1162,51 +1097,41 @@ void render_add_step2(esphome::display::Display &it,
 
   const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
   const int btn_r = row_h / 2;
+  const int stack_w = ui::compute_uniform_stack_w(
+      ly.slot5_y(0), ly.slot5_y(2), row_h, std::min(ly.list_card_w, kMaxContentColW), 14);
 
   // Row 0: Date Stepper [ ‹ ] <Date> [ › ]
   {
     const int ym = ly.slot5_y(0);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int row_w = std::min(safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 316);
-    const int lx = cx - row_w / 2 + btn_r;
-    const int rx = cx + row_w / 2 - btn_r;
+    const int lx = cx - stack_w / 2 + btn_r;
+    const int rx = cx + stack_w / 2 - btn_r;
 
-    render_glass_circle(it, lx, ym, btn_r, kChromeGlassTint, kChromeCardBrdOn);
-    render_glass_circle(it, rx, ym, btn_r, kChromeGlassTint, kChromeCardBrdOn);
-    const int ch = std::max(4, scale_s(5));
-    fast_line(it, lx + 2, ym - ch, lx - 3, ym, ctx.col_white);
-    fast_line(it, lx - 3, ym, lx + 2, ym + ch, ctx.col_white);
-    fast_line(it, rx - 2, ym - ch, rx + 3, ym, ctx.col_white);
-    fast_line(it, rx + 3, ym, rx - 2, ym + ch, ctx.col_white);
-    frame_hits().add_circle(lx, ym, btn_r, WidgetId::CAL_ADD_DATE_PREV, kHitTap | kHitFocusCircle, -1, 4);
-    frame_hits().add_circle(rx, ym, btn_r, WidgetId::CAL_ADD_DATE_NEXT, kHitTap | kHitFocusCircle, 1, 4);
+    ui::icon_circle_button(it, lx, ym, btn_r, kChromeGlassTint, kChromeCardBrdOn,
+                           ctx.col_white, draw_cal_chevron_left, nullptr,
+                           WidgetId::CAL_ADD_DATE_PREV, kHitTap | kHitFocusSlot | kHitFocusCircle, -1, 4);
+    ui::icon_circle_button(it, rx, ym, btn_r, kChromeGlassTint, kChromeCardBrdOn,
+                           ctx.col_white, draw_cal_chevron_right, nullptr,
+                           WidgetId::CAL_ADD_DATE_NEXT, kHitTap | kHitFocusSlot | kHitFocusCircle, 1, 4);
 
     char dt_buf[36];
     format_cal_short_date(rs.cal.draft_ymd, today_ymd, dt_buf, sizeof(dt_buf));
     const std::string fit_d = fit_text_to_width_font(dt_buf, std::max(40, rx - lx - 2 * btn_r - 12), ctx.font_small);
-    draw_shadow_text(it, cx, ym, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_d.c_str());
+    ui::shadow_print(it, cx, ym, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_d.c_str());
   }
 
-  // Row 1: All-Day Toggle
+  // Row 1: All-Day Toggle (exact screen-space bounds)
   {
     const int ym = ly.slot5_y(1);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int card_w = std::min(safe_w, ly.list_card_w);
-    ui::toggle_card_row(it, cx, ym, card_w, row_h, "All-Day Event", rs.cal.draft_all_day,
+    ui::toggle_card_row(it, cx, ym, stack_w, row_h, "All-Day Event", rs.cal.draft_all_day,
                         ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate,
                         WidgetId::CAL_ADD_ALLDAY_BTN, 0);
   }
 
   if (!rs.cal.draft_all_day) {
-    // Row 2: Start | End Time Focus Pills
+    // Row 2: Start | End Time Focus Cards
     const int ym = ly.slot5_y(2);
-    const int safe_w = band_safe_span_for(
-        ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14);
-    const int tot_w = std::min(safe_w, (SCREEN_W > 520) ? ly.area_card3_w : 320);
     const int gap = scale_x(8);
-    const int box_w = (tot_w - gap) / 2;
+    const int box_w = (stack_w - gap) / 2;
     const int s_x0 = cx - gap / 2 - box_w;
     const int e_x0 = cx + gap / 2;
 
@@ -1218,16 +1143,16 @@ void render_add_step2(esphome::display::Display &it,
 
     const bool focus_start = (rs.cal.draft_time_field == 0U);
     render_card_box(it, s_x0, ym - row_h / 2, box_w, row_h, kChromeGlassTint,
-                    focus_start ? ctx.theme_primary : kChromeCardBorder, scale_s(12));
+                    focus_start ? ctx.theme_primary : kChromeCardBorder, kRadiusCardPx());
     render_card_box(it, e_x0, ym - row_h / 2, box_w, row_h, kChromeGlassTint,
-                    !focus_start ? ctx.theme_primary : kChromeCardBorder, scale_s(12));
+                    !focus_start ? ctx.theme_primary : kChromeCardBorder, kRadiusCardPx());
 
     const std::string fit_s = fit_text_to_width_font(s_lbl, box_w - 12, ctx.font_small);
     const std::string fit_e = fit_text_to_width_font(e_lbl, box_w - 12, ctx.font_small);
-    fast_print(it, s_x0 + box_w / 2, ym, ctx.font_small,
-               focus_start ? ctx.col_white : ctx.col_slate, TextAlign::CENTER, fit_s.c_str());
-    fast_print(it, e_x0 + box_w / 2, ym, ctx.font_small,
-               !focus_start ? ctx.col_white : ctx.col_slate, TextAlign::CENTER, fit_e.c_str());
+    ui::shadow_print(it, s_x0 + box_w / 2, ym, ctx.font_small,
+                     focus_start ? ctx.col_white : ctx.col_slate, TextAlign::CENTER, fit_s.c_str());
+    ui::shadow_print(it, e_x0 + box_w / 2, ym, ctx.font_small,
+                     !focus_start ? ctx.col_white : ctx.col_slate, TextAlign::CENTER, fit_e.c_str());
 
     frame_hits().add_rect(s_x0, ym - row_h / 2, box_w, row_h,
                           WidgetId::CAL_ADD_START_BTN, kHitTap | kHitFocusSlot);
@@ -1241,16 +1166,16 @@ void render_add_step2(esphome::display::Display &it,
                     kTimeSteps, ctx.font_small, ctx.col_white, WidgetId::STEPPER_BASE);
   }
 
-  // Row 4: Create Event CTA
+  // Row 4: Create Event CTA — exact outer-box stadium pill
   {
     const int ym = ly.slot5_y(4);
     const int safe_w = band_safe_span_for(
         ym, row_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 18);
-    const int hw = std::min(scale_x(122), safe_w / 2);
-    ui::pill_button(it, cx - hw, cx + hw, ym, row_h / 2,
-                    ctx.theme_primary, kChromeGlassTint,
-                    "Create Event", ctx.col_white, ctx.font_small,
-                    WidgetId::CAL_ADD_SAVE_BTN, kHitTap | kHitFocusSlot);
+    const int btn_w = std::min({scale_x(244), safe_w, kMaxContentColW});
+    ui::action_pill_centered(it, cx, btn_w, ym, std::max(44, row_h),
+                             ctx.theme_primary, kChromeGlassTint,
+                             "Create Event", ctx.col_white, ctx.font_small,
+                             WidgetId::CAL_ADD_SAVE_BTN, kHitTap | kHitFocusSlot);
   }
 
   render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
@@ -1322,26 +1247,19 @@ void render_picker_drilldown(esphome::display::Display &it,
   const int bounce_y = edge_bounce().offset_px(
       PageId::CALENDAR, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
   const int stack_margin = (total_pages > 1) ? 36 : 16;
-  const int stack_safe_w = std::min(
-      band_safe_span_for(ly.slot5_y(0), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, stack_margin),
-      band_safe_span_for(ly.slot5_y(4), row_h, SCREEN_W, SCREEN_H,
-                         LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, stack_margin));
-  const int card_w = std::min(stack_safe_w, ly.list_card_w);
-  const int x0 = cx - card_w / 2;
+  const int card_w = ui::compute_uniform_stack_w(
+      ly.slot5_y(0), ly.slot5_y(4), row_h, std::min(ly.list_card_w, kMaxContentColW), stack_margin);
 
   for (int r = 0; r < vis_cnt; ++r) {
     const int idx = base_i + r;
     const int ym = ly.slot5_y(r) + bounce_y;
     const bool sel = (idx == active_idx);
-    render_card_box(it, x0, ym - row_h / 2, card_w, row_h,
-                    kChromeGlassTint, sel ? ctx.theme_primary : kChromeCardBrdOn, scale_s(12));
-    const std::string fit_o = fit_text_to_width_font(options[idx], card_w - scale_x(24), ctx.font_small);
-    fast_print(it, x0 + scale_x(12), ym, ctx.font_small,
-               sel ? ctx.theme_primary : ctx.col_white, TextAlign::CENTER_LEFT, fit_o.c_str());
-    frame_hits().add_rect(x0, ym - row_h / 2, card_w, row_h,
-                          static_cast<uint16_t>(WidgetId::CAL_PICKER_SLOT_BASE + r),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
+    ui::list_row(it, cx, ym, card_w, row_h, options[idx].c_str(), nullptr,
+                 kChromeGlassTint, sel ? ctx.theme_primary : kChromeCardBrdOn,
+                 sel ? ctx.theme_primary : ctx.col_white, ctx.col_slate,
+                 ctx.font_small,
+                 static_cast<uint16_t>(WidgetId::CAL_PICKER_SLOT_BASE + r),
+                 kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
   }
 
   if (total_pages > 1) {

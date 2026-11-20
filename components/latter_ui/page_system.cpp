@@ -12,17 +12,6 @@
 
 namespace latter_ui {
 
-namespace {
-
-int card_hit_width(int w, int h) {
-  if (SCREEN_W > 520 && w <= 340) return scale_x(w);
-  if (SCREEN_W < 380 && h <= 48 && w >= 240 && w <= 330) return SCREEN_W - 88;
-  if (w > SCREEN_W - 20) return SCREEN_W - 20;
-  return w;
-}
-
-}  // namespace
-
 void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
@@ -66,8 +55,8 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   const esphome::Color card_brd_on = kChromeCardBrdOn;
   const esphome::Color card_brd_off = kChromeCardBrdOff;
 
-  const int hit_w = card_hit_width(276, 44);
-  const int hit_h = (SCREEN_W > 520) ? scale_y(44) : 44;
+  const int row_w = layout().list_card_w;
+  const int row_h = layout().slot5_h;
 
   auto draw_back = [&]() {
     render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -75,7 +64,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   auto add_row_hit = [&](int y_mid, uint16_t wid, uint8_t flags, int16_t param) {
     if (!menu_scroll_active && wid != WidgetId::NONE) {
-      frame_hits().add_centered_rect(cx, y_mid, hit_w, hit_h, wid, flags, param);
+      frame_hits().add_centered_rect(cx, y_mid, row_w, row_h, wid, flags, param);
     }
   };
 
@@ -83,48 +72,18 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                                uint16_t wid = WidgetId::NONE,
                                uint8_t flags = kHitTap | kHitFocusSlot,
                                int16_t param = 0) {
-    const esphome::Color bg_c = enabled ? card_bg_on : card_bg_off;
-    const esphome::Color brd_c = enabled ? card_brd_on : card_brd_off;
-    const esphome::Color txt_c = enabled ? col_white : col_slate;
-    const esphome::Color chv_c = enabled ? theme_secondary : col_slate;
-    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, label, txt_c, font_small);
-    if (enabled) {
-      const int c_l = layout().list_card_left + 15;
-      const int c_r = cx + (layout().list_card_w / 2) - 15;
-      fast_line(it, c_l, y_mid, c_l + 5, y_mid - 5, chv_c);
-      fast_line(it, c_l, y_mid, c_l + 5, y_mid + 5, chv_c);
-      fast_line(it, c_r, y_mid, c_r - 5, y_mid - 5, chv_c);
-      fast_line(it, c_r, y_mid, c_r - 5, y_mid + 5, chv_c);
-      add_row_hit(y_mid, wid, flags, param);
-    }
+    ui::setting_cycle_row(it, cx, y_mid, row_w, row_h, label, enabled,
+                          font_small, col_white, col_slate, theme_secondary,
+                          menu_scroll_active ? WidgetId::NONE : wid, flags, param);
   };
 
   auto draw_slider_card_y = [&](int y_mid, const char *label, int pct, bool enabled,
                                 uint16_t wid = WidgetId::NONE,
                                 int16_t param = 0) {
-    const esphome::Color bg_c = enabled ? card_bg_on : card_bg_off;
-    const esphome::Color brd_c = enabled ? card_brd_on : card_brd_off;
-    const esphome::Color txt_c = enabled ? col_white : col_slate;
-    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, nullptr, txt_c, font_small);
-    if (enabled) {
-      const int inner_x0 = cx - (hit_w / 2) + 2;
-      const int inner_y0 = y_mid - (hit_h / 2) + 2;
-      const int inner_w = hit_w - 4;
-      const int inner_h = hit_h - 4;
-      const int card_r = (SCREEN_W > 520) ? scale_s(12) : 12;
-      const float inner_r = static_cast<float>(std::max(2, card_r - 2));
-      const int cl_pct = std::clamp(pct, 1, 100);
-      const int min_fill_w = std::min(inner_w, static_cast<int>(inner_r * 2.0f));
-      const int fill_w = std::clamp(
-          static_cast<int>(std::lround((static_cast<float>(cl_pct) * 0.01f) * static_cast<float>(inner_w))),
-          min_fill_w, inner_w);
-      fill_round_rect_glass(it, inner_x0, inner_y0, fill_w, inner_h, inner_r, theme_primary, 76, 52);
-      add_row_hit(y_mid, wid, kHitTap | kHitHorizSlider | kHitFocusSlot, param);
-    }
-    if (label != nullptr && label[0] != '\0' && font_small != nullptr) {
-      fast_print(it, cx + 1, y_mid + 1, font_small, kChromeShadow, esphome::display::TextAlign::CENTER, label);
-      fast_print(it, cx, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER, label);
-    }
+    ui::slider_card_row(it, cx, y_mid, row_w, row_h, label, pct, 1, 100, enabled,
+                        theme_primary, card_brd_on, font_small,
+                        enabled ? col_white : col_slate,
+                        menu_scroll_active ? WidgetId::NONE : wid, param);
   };
 
   auto draw_toggle_card_y = [&](int y_mid, const char *label, bool is_on, int row_slot = -1, int item_param = -1) {
@@ -132,7 +91,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                              ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                              : WidgetId::NONE;
     const int16_t p = static_cast<int16_t>((item_param >= 0) ? item_param : row_slot);
-    ui::toggle_card_row(it, cx, y_mid, 276, 44, label, is_on, font_small,
+    ui::toggle_card_row(it, cx, y_mid, row_w, row_h, label, is_on, font_small,
                         theme_primary, col_white, col_slate, wid, p);
   };
 
@@ -140,8 +99,9 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                                 esphome::Color txt_c, esphome::Color bg_c,
                                 uint16_t wid = WidgetId::NONE,
                                 int16_t param = 0) {
-    const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", hit_w - 20, font_small);
-    render_modern_card(it, cx, y_mid, 276, 44, 12, bg_c, brd_c, fit_lbl.c_str(), txt_c, font_small);
+    const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", row_w - scale_x(20), font_small);
+    render_card_box(it, cx - row_w / 2, y_mid - row_h / 2, row_w, row_h, bg_c, brd_c, kRadiusCardPx());
+    ui::shadow_print(it, cx, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER, fit_lbl.c_str());
     add_row_hit(y_mid, wid, kHitTap | kHitFocusSlot, param);
   };
 
@@ -182,10 +142,11 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                            : (y >= row0_y - 10 && y <= layout().slot5_y(4) + 10);
       if (vis) {
         const bool row_en = (i != 5) || prefs.home_screen_enabled;
-        render_modern_card(it, cx, y, 276, 44, 12,
-                           row_en ? card_bg_on : card_bg_off,
-                           row_en ? card_brd_on : card_brd_off,
-                           kSysLabels[i], row_en ? col_white : col_slate, font_small);
+        render_card_box(it, cx - row_w / 2, y - row_h / 2, row_w, row_h,
+                        row_en ? card_bg_on : card_bg_off,
+                        row_en ? card_brd_on : card_brd_off, kRadiusCardPx());
+        ui::shadow_print(it, cx, y, font_small, row_en ? col_white : col_slate,
+                         esphome::display::TextAlign::CENTER, kSysLabels[i]);
         if (!menu_scroll_active && vis_row < 5) {
           add_row_hit(y, static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + vis_row),
                       kHitTap | kHitFocusSlot, static_cast<int16_t>(vis_row));
@@ -384,7 +345,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   } else if (system_menu_mode == 5) {
     render_page_header(it, cx, "UPDATE", font_small, col_white);
     std::snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
-    fast_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
+    ui::shadow_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
 
     const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
     if (rs.nav.update_check_state == 1) {
@@ -398,39 +359,45 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       }
     }
 
+    const int cta_w = std::min({kMaxContentColW, row_w, scale_x(248)});
+    const int cta_h = std::max(44, scale_y(44));
     if (has_update) {
       if (ctx.fw_latest_ver.empty()) {
         std::snprintf(buf, sizeof(buf), "Update available");
       } else {
         std::snprintf(buf, sizeof(buf), "Available: v%s", ctx.fw_latest_ver.c_str());
       }
-      fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       std::string summ = ctx.fw_release_summary.str();
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
-      summ = fit_text_to_width_font(summ, scale_x(280), font_small);
-      fast_print(it, cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
-      draw_action_card_y(scale_y(215), "Update Now", theme_primary, theme_secondary, card_bg_on,
-                         WidgetId::SYS_PRIMARY_BTN, 0);
+      summ = fit_text_to_width_font(summ, std::min(kMaxContentColW, safe_span(scale_y(160), 20)), font_small);
+      ui::shadow_print(it, cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
+      ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+                               theme_primary, card_bg_on, "Update Now", theme_secondary,
+                               font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
     } else {
       std::snprintf(buf, sizeof(buf), "Latest: v%s", version_str);
-      fast_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
       if (rs.nav.update_check_state == 1) {
-        fast_print(it, cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER,
-                   "Checking Home Assistant...");
-        draw_action_card_y(scale_y(215), "Checking...", theme_primary, theme_secondary, card_bg_on,
-                           WidgetId::SYS_PRIMARY_BTN, 0);
+        ui::shadow_print(it, cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER,
+                         "Checking Home Assistant...");
+        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+                                 theme_primary, card_bg_on, "Checking...", theme_secondary,
+                                 font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else if (rs.nav.update_check_state == 2) {
-        fast_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
-                   "No updates available");
-        draw_action_card_y(scale_y(215), "Up to date", card_brd_on, col_white, card_bg_on,
-                           WidgetId::SYS_PRIMARY_BTN, 0);
+        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
+                         "No updates available");
+        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+                                 card_brd_on, card_bg_on, "Up to date", col_white,
+                                 font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else {
-        fast_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
-                   "Firmware is up to date");
-        draw_action_card_y(scale_y(215), "Check for Updates", theme_primary, col_white, card_bg_on,
-                           WidgetId::SYS_PRIMARY_BTN, 0);
+        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
+                         "Firmware is up to date");
+        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+                                 theme_primary, card_bg_on, "Check for Updates", col_white,
+                                 font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       }
     }
     draw_back();
@@ -455,15 +422,19 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_back();
 
   } else if (system_menu_mode == 8) {
+    // D-048 / D-070: Passive read-only telemetry renders cleanly on canvas with shadow (ZERO passive glass card!).
     render_page_header(it, cx, "SYSTEM INFO", font_small, col_white);
-    render_modern_card(it, cx, scale_y(196), 312, 260, 16, card_bg_on, card_brd_on, nullptr, col_white, font_small);
     const int info_x = layout().sys_info_x();
+    const int info_right = SCREEN_W - info_x;
     auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
       const int ey = scale_y(y);
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
-      fast_print(it, info_x, ey, font_small, col_white, esphome::display::TextAlign::TOP_LEFT, lbl);
-      fast_print(it, info_x + w_lbl + 8, ey, font_small, val_col, esphome::display::TextAlign::TOP_LEFT, val);
+      const int val_x = info_x + w_lbl + 8;
+      const int max_val_w = std::max(60, info_right - val_x);
+      const std::string fit_val = fit_text_to_width_font(val != nullptr ? val : "", max_val_w, font_small);
+      ui::shadow_print(it, info_x, ey, font_small, col_white, esphome::display::TextAlign::TOP_LEFT, lbl);
+      ui::shadow_print(it, val_x, ey, font_small, val_col, esphome::display::TextAlign::TOP_LEFT, fit_val.c_str());
     };
 
     const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
@@ -594,11 +565,11 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     const int wheel_cy = scale_y(180);
     ui::hsv_color_wheel(it, cx, wheel_cy, 156, 56, color_wheel_hue_deg(), color_wheel_sat(),
                         col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
-    const int save_r = scale_s(19);
-    const int save_hw = std::min(SCREEN_W / 2 - save_r - 16, scale_x(92));
-    ui::pill_button(it, cx - save_hw, cx + save_hw, scale_y(376), save_r,
-                    theme_primary, card_bg_on, "Save Custom Color", col_white, font_small,
-                    WidgetId::COLOR_WHEEL_SAVE, kHitTap | kHitFocusSlot);
+    const int save_h = std::max(40, scale_y(42));
+    const int save_w = std::min({kMaxContentColW, safe_span(scale_y(376), 18), scale_x(236)});
+    ui::action_pill_centered(it, cx, save_w, scale_y(376), save_h,
+                             theme_primary, card_bg_on, "Save Custom Color", col_white, font_small,
+                             WidgetId::COLOR_WHEEL_SAVE, kHitTap | kHitFocusSlot);
     draw_back();
   }
 }

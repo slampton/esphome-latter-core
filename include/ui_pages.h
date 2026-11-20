@@ -51,6 +51,9 @@ bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src
                               bool fill, bool clip_round_bezel = false);
 void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameContext &ctx,
                                 int center_y);
+void render_camera_video_placeholder(esphome::display::Display &it, const UiFrameContext &ctx,
+                                     const CameraRect &vp, const char *title, const char *subtitle,
+                                     esphome::Color icon_col);
 
 // ------------------------------------------------------------------------------
 // 2. Global System Takeover Overlays (called by render_system_takeovers)
