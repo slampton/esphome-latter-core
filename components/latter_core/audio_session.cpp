@@ -303,10 +303,13 @@ void IntercomSessionController::reset() noexcept {
 }
 
 void IntercomSessionController::emit_current_cmd() {
-  auto &ic = runtime_state().intercom;
+  auto &rs = runtime_state();
+  auto &ic = rs.intercom;
   const auto &ac = area_ctx_state();
-  const std::string cam_ent = resolve_active_carousel_camera_id(
-      ac.cameras_summary, ac.camera_snapshot_url);
+  const std::string cam_ent =
+      (rs.alert.active && !rs.alert.camera_entity.empty())
+          ? rs.alert.camera_entity
+          : resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
   latter_actions::emit_doorbell_intercom(
       ic.cam_action, cam_ent, cam_carousel_idx(),
       ic.cam_message, ic.cam_noise_reduction, ic.cam_code);

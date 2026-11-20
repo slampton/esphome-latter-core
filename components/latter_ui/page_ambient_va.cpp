@@ -1560,16 +1560,15 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   const bool is_cam_notif = has_cam_url || has_cam_ent;
   const bool live_popup = rs.cameras.doorbell_live_popup_active && is_cam_notif;
 
-  // Lookup matching CameraRecord for capability gating (audio / talkback / area unlock)
+  // Lookup matching CameraRecord for per-camera action gating
   CameraRecord *cams = camera_records_scratch();
   const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
   const int cam_idx = has_cam_ent ? find_camera_index_by_entity(cams, cam_cnt, st.notif_camera_entity.sv()) : -1;
   const CameraRecord *cam_rec = (cam_idx >= 0) ? &cams[cam_idx] : nullptr;
-  const bool can_audio = (cam_rec == nullptr) ? is_cam_notif : (cam_rec->has_audio() || cam_rec->has_talkback());
-  const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) &&
-                        ((cam_rec == nullptr) ? is_cam_notif : cam_rec->has_talkback());
-  const std::string cam_area = (cam_rec != nullptr) ? cam_rec->area_id : ac.area_id;
-  const EntryControlItem *unlock_t = is_cam_notif ? resolve_doorbell_quick_unlock_target(cam_area, home_hub_state()) : nullptr;
+  const bool can_audio = (cam_rec != nullptr) && cam_rec->has_audio();
+  const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) && (cam_rec != nullptr) && cam_rec->has_talkback();
+  const bool can_reply = (cam_rec != nullptr) && cam_rec->show_reply();
+  const bool can_unlock = (cam_rec != nullptr) && cam_rec->has_unlock();
 
   const int wrap_max_w = scale_x(280);
   std::string fit_title = fit_text_to_width_font(
@@ -1632,11 +1631,11 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       return;
     }
 
-    // Interactive action rows directly on P4 Live Popup
-    const int row2_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 54 : 38);
-    const int row1_y = row2_y - scale_y(48);
+    // Interactive action rows directly on P4 Live Popup (strict outer-box geometry; zero overlap)
     const int btn_r = scale_y(17);
-    const int gap = scale_x(8);
+    const int row2_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 54 : 38);
+    const int row1_y = row2_y - (2 * btn_r) - scale_y(12);
+    const int gap = (SCREEN_W < 300) ? 6 : scale_x(8);
 
     struct PopupBtn { const char *lbl; uint16_t wid; Color brd; Color bg; };
     PopupBtn r1[4]{};
@@ -1650,31 +1649,39 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
     if (can_talk) {
       r1[r1_cnt++] = {"Talk", WidgetId::NOTIF_TALK_BTN, ctx.theme_primary,
                       mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
+    }
+    if (can_reply && r1_cnt < 4) {
       r1[r1_cnt++] = {"Reply", WidgetId::NOTIF_REPLY_BTN, kChromeGlassSheen, kChromeGlassTint};
     }
-    if (unlock_t != nullptr && r1_cnt < 4) {
-      r1[r1_cnt++] = {unlock_t->is_lock ? "Unlock" : "Open", WidgetId::NOTIF_UNLOCK_BTN,
+    if (can_unlock && r1_cnt < 4) {
+      r1[r1_cnt++] = {cam_rec->unlock_is_lock() ? "Unlock" : "Open", WidgetId::NOTIF_UNLOCK_BTN,
                       st.col_gold, mix_color_q8(kChromeGlassTint, st.col_gold, 60)};
     }
     if (r1_cnt > 0) {
-      const int avail_w = std::min(scale_w(360), ly.band_safe_span(row1_y, 2 * btn_r, 14));
-      const int bw = std::max(scale_x(64), (avail_w - (r1_cnt - 1) * gap) / r1_cnt);
-      int x = cx - (r1_cnt * bw + (r1_cnt - 1) * gap) / 2;
+      const int avail_w = std::min(scale_w(380), ly.band_safe_span(row1_y, 2 * btn_r, 12));
+      int r1_gap = gap;
+      int bw = (avail_w - (r1_cnt - 1) * r1_gap) / r1_cnt;
+      if (bw < 48 && r1_cnt > 1) {
+        r1_gap = 4;
+        bw = std::max(40, (avail_w - (r1_cnt - 1) * r1_gap) / r1_cnt);
+      }
+      bw = std::min(scale_x(92), bw);
+      int x = cx - (r1_cnt * bw + (r1_cnt - 1) * r1_gap) / 2;
       for (int i = 0; i < r1_cnt; ++i) {
-        ui::pill_button(it, x, x + bw, row1_y, btn_r, r1[i].brd, r1[i].bg,
-                        r1[i].lbl, st.col_white, ctx.font_micro, r1[i].wid, kHitTap | kHitFocusSlot);
-        x += bw + gap;
+        ui::pill_button_box(it, x, bw, row1_y, btn_r, r1[i].brd, r1[i].bg,
+                            r1[i].lbl, st.col_white, ctx.font_micro, r1[i].wid, kHitTap | kHitFocusSlot);
+        x += bw + r1_gap;
       }
     }
 
-    const int r2_w = std::min(scale_w(250), ly.band_safe_span(row2_y, 2 * btn_r, 16));
+    const int r2_w = std::min(scale_w(260), ly.band_safe_span(row2_y, 2 * btn_r, 16));
     const int half_w = std::max(scale_x(72), (r2_w - gap) / 2);
-    ui::pill_button(it, cx - half_w - gap / 2, cx - gap / 2, row2_y, btn_r,
-                    ctx.theme_primary, kChromeGlassTint, "Expand", st.col_white, ctx.font_micro,
-                    WidgetId::NOTIF_EXPAND_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, cx + gap / 2, cx + half_w + gap / 2, row2_y, btn_r,
-                    accent_c, kChromeGlassTint, "Dismiss", st.col_white, ctx.font_micro,
-                    WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, cx - half_w - gap / 2, half_w, row2_y, btn_r,
+                        ctx.theme_primary, kChromeGlassTint, "Expand", st.col_white, ctx.font_micro,
+                        WidgetId::NOTIF_EXPAND_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, cx + gap / 2, half_w, row2_y, btn_r,
+                        accent_c, kChromeGlassTint, "Dismiss", st.col_white, ctx.font_micro,
+                        WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
     return;
   }
 
@@ -1767,13 +1774,13 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
                     mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
     sb[sb_cnt++] = {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c, kChromeGlassTint};
 
-    const int gap = scale_x(8);
+    const int gap = (SCREEN_W < 300) ? 6 : scale_x(8);
     const int row_w = std::min(scale_w(340), ly.band_safe_span(btn_y, 2 * btn_r, 14));
-    const int bw = std::max(scale_x(68), (row_w - (sb_cnt - 1) * gap) / sb_cnt);
+    const int bw = std::min(scale_x(104), std::max(52, (row_w - (sb_cnt - 1) * gap) / sb_cnt));
     int x = cx - (sb_cnt * bw + (sb_cnt - 1) * gap) / 2;
     for (int i = 0; i < sb_cnt; ++i) {
-      ui::pill_button(it, x, x + bw, btn_y, btn_r, sb[i].brd, sb[i].bg,
-                      sb[i].lbl, st.col_white, ctx.font_micro, sb[i].wid, kHitTap | kHitFocusSlot);
+      ui::pill_button_box(it, x, bw, btn_y, btn_r, sb[i].brd, sb[i].bg,
+                          sb[i].lbl, st.col_white, ctx.font_micro, sb[i].wid, kHitTap | kHitFocusSlot);
       x += bw + gap;
     }
     return;

@@ -74,6 +74,8 @@ inline constexpr uint8_t kCamCapAudio    = 0x01U;
 inline constexpr uint8_t kCamCapTalkback = 0x02U;
 inline constexpr uint8_t kCamCapDoorbell = 0x04U;
 inline constexpr uint8_t kCamCapCarousel = 0x08U;
+inline constexpr uint8_t kCamCapReply    = 0x10U;
+inline constexpr uint8_t kCamCapUnlock   = 0x20U;
 
 namespace CalendarSubpage {
   static constexpr int OVERVIEW = 0;
@@ -2112,7 +2114,6 @@ struct CamerasRuntimeState {
   int carousel_idx = 0;
   uint32_t carousel_last_advance_ms = 0;
   bool carousel_paused = false;
-  int8_t framing_override = -1;  // -1 = follow pref, 0 = Uncropped, 1 = Fill
   bool hud_active = true;
   uint32_t hud_timer = 0;
   bool quick_reply_open = false;
@@ -2123,7 +2124,6 @@ struct CamerasRuntimeState {
   uint32_t last_stream_sync_ms = 0;
 
   bool effective_fill(const PersistedDevicePrefs &p = persisted_prefs()) const noexcept {
-    if (framing_override >= 0) return framing_override == 1;
     return p.camera_framing == 1;
   }
 };
@@ -6095,11 +6095,15 @@ struct CameraRecord {
   std::string name = "";
   std::string area_id = "";
   uint8_t caps = 0;
+  std::string unlock_entity = "";
 
   constexpr bool has_audio() const noexcept { return (caps & kCamCapAudio) != 0U; }
   constexpr bool has_talkback() const noexcept { return (caps & kCamCapTalkback) != 0U; }
   constexpr bool is_doorbell() const noexcept { return (caps & kCamCapDoorbell) != 0U; }
   constexpr bool in_carousel() const noexcept { return (caps & kCamCapCarousel) != 0U; }
+  constexpr bool show_reply() const noexcept { return (caps & kCamCapReply) != 0U; }
+  bool has_unlock() const noexcept { return ((caps & kCamCapUnlock) != 0U) && !unlock_entity.empty(); }
+  bool unlock_is_lock() const noexcept { return unlock_entity.rfind("lock.", 0) == 0; }
 };
 
 inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int max_slots = MAX_CAMERA_SLOTS) {
@@ -6109,8 +6113,8 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
   const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
   int idx = 0;
   for (size_t r = 0; r < n && idx < cap; ++r) {
-    std::string_view f[4];
-    const size_t fc = v3_split_fields(recs[r], f, 4, '|');
+    std::string_view f[5];
+    const size_t fc = v3_split_fields(recs[r], f, 5, '|');
     if (fc < 2 || f[0].empty()) continue;
     out[idx].entity_id = std::string(f[0]);
     out[idx].name = f[1].empty() ? std::string(f[0]) : std::string(f[1]);
@@ -6133,6 +6137,7 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
       }
     }
     out[idx].caps = parsed_caps;
+    out[idx].unlock_entity = (fc >= 5) ? std::string(f[4]) : "";
     ++idx;
   }
   return idx;

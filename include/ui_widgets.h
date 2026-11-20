@@ -238,6 +238,13 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
                  uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
                  int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
 
+// Outer-box pill button: exact visual & hit bounds [x0, x0 + w - 1] x [y_mid - r, y_mid + r].
+void pill_button_box(esphome::display::Display &it, int x0, int w, int y_mid, int r,
+                     esphome::Color border_c, esphome::Color bg_c,
+                     const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
+                     uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
+                     int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
+
 // Canonical 4-column stepper row (80 px reference stride; matches UiLayout::hit_4col_stepper).
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  const char *const labels[4], esphome::display::BaseFont *font,

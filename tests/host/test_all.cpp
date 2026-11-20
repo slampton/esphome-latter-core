@@ -1085,7 +1085,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111905L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111906L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3415,7 +3415,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111905L, "LATTER_SDK_REV must match 2026111905L");
+  static_assert(LATTER_SDK_REV == 2026111906L, "LATTER_SDK_REV must match 2026111906L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -5791,21 +5791,27 @@ void test_cameras_app_and_live_video_d066() {
     LATTER_CHECK(vc.state() == VideoStreamState::IDLE && !vc.is_active() && !vc.has_frame());
   }
 
-  // 3. Slimmed CAMERAS_SUMMARY parsing (entity_id|name|area_id|caps) & Carousel index filtering
+  // 3. CAMERAS_SUMMARY 5-field parsing (entity_id|name|area_id|caps|unlock_entity) & Carousel index filtering
   {
     std::string raw;
-    raw += "camera.front_door|Front Door|porch|15";  // audio+talkback+doorbell+carousel
+    raw += "camera.front_door|Front Door|porch|63|lock.front_door";  // listen+talk+doorbell+carousel+reply+unlock
     raw.push_back(kProtocolRecordSep);
-    raw += "camera.backyard|Backyard|yard|9";        // audio+carousel
+    raw += "camera.driveway|Driveway|exterior|40|cover.garage_door"; // carousel+unlock (garage cover)
     raw.push_back(kProtocolRecordSep);
-    raw += "camera.garage|Garage|garage|0";          // no audio/carousel
+    raw += "camera.garage|Garage|garage|0|";                         // no controls/carousel/unlock
     CameraRecord cams[MAX_CAMERA_SLOTS]{};
     const int n = parse_cameras_records(raw, cams, MAX_CAMERA_SLOTS);
     LATTER_CHECK(n == 3);
-    LATTER_CHECK(cams[0].entity_id == "camera.front_door" && cams[0].has_audio() &&
-                 cams[0].has_talkback() && cams[0].is_doorbell() && cams[0].in_carousel());
-    LATTER_CHECK(cams[1].has_audio() && !cams[1].has_talkback() && cams[1].in_carousel());
-    LATTER_CHECK(!cams[2].has_audio() && !cams[2].in_carousel());
+    LATTER_CHECK(cams[0].entity_id == "camera.front_door" && cams[0].name == "Front Door" &&
+                 cams[0].has_audio() && cams[0].has_talkback() && cams[0].is_doorbell() &&
+                 cams[0].in_carousel() && cams[0].show_reply() && cams[0].has_unlock() &&
+                 cams[0].unlock_is_lock() && cams[0].unlock_entity == "lock.front_door");
+    LATTER_CHECK(cams[1].name == "Driveway" && !cams[1].has_audio() && !cams[1].has_talkback() &&
+                 !cams[1].show_reply() && cams[1].in_carousel() && cams[1].has_unlock() &&
+                 !cams[1].unlock_is_lock() && cams[1].unlock_entity == "cover.garage_door");
+    LATTER_CHECK(!cams[2].has_audio() && !cams[2].in_carousel() && !cams[2].show_reply() &&
+                 !cams[2].has_unlock() && cams[2].unlock_entity.empty());
+    LATTER_CHECK(kVideoHttpConnectTimeoutMs == 8000U);
 
     int car_idx[MAX_CAMERA_SLOTS]{};
     const int car_n = collect_carousel_camera_indices(cams, n, car_idx, MAX_CAMERA_SLOTS);

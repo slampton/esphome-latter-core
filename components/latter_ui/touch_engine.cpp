@@ -502,7 +502,6 @@ inline void enter_cameras_app(int target_tab, std::string_view focus_entity, boo
   rs.cameras.hud_active = true;
   rs.cameras.hud_timer = now_ms;
   rs.cameras.carousel_last_advance_ms = now_ms;
-  rs.cameras.framing_override = -1;
 
   if (!focus_entity.empty()) {
     const int idx = find_camera_index_by_entity(cams, cam_cnt, focus_entity);
@@ -1742,11 +1741,31 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
 bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool from_intercom) {
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
-  const std::string target_area = from_intercom
-      ? ac.area_id
-      : resolve_active_carousel_camera_area_id(ac.cameras_summary);
+  if (!from_intercom) {
+    CameraRecord cams[MAX_CAMERA_SLOTS]{};
+    const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+    const std::string active_ent =
+        (rs.alert.active && !rs.alert.camera_entity.empty())
+            ? rs.alert.camera_entity
+            : resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
+    const int cam_idx = find_camera_index_by_entity(cams, cam_cnt, active_ent);
+    const CameraRecord *cam = (cam_idx >= 0) ? &cams[cam_idx] : nullptr;
+    if (cam == nullptr || !cam->has_unlock()) {
+      return false;
+    }
+    rs.area.target_entity_id = cam->unlock_entity;
+    if (!cam->unlock_is_lock()) {
+      rs.area.action_feedback = "Opening Garage...";
+      return gate_or_dispatch_area_action(cam->unlock_entity, "open_cover", 100, "GARAGE DOOR PIN", now_ms);
+    }
+    rs.area.action_feedback = "Unlocking...";
+    cam_intercom_status() = "UNLOCKING...";
+    rs.intercom.cam_status_ms = now_ms;
+    return gate_or_dispatch_area_action(cam->unlock_entity, "unlock", 100, "UNLOCK DOOR PIN", now_ms);
+  }
+
   const EntryControlItem *target =
-      resolve_doorbell_quick_unlock_target(target_area, home_hub_state());
+      resolve_doorbell_quick_unlock_target(ac.area_id, home_hub_state());
   if (target == nullptr) {
     return false;
   }
@@ -1757,13 +1776,8 @@ bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool 
   }
   const std::string &pol = ac.security_pin_policy;
   if (ui::is_perimeter_action_blocked(pol, "lock", "unlock", 100)) {
-    if (from_intercom) {
-      rs.intercom.broadcast_feedback = "Blocked by Security Policy";
-      rs.intercom.broadcast_feedback_ms = now_ms;
-    } else {
-      cam_intercom_status() = "BLOCKED BY POLICY";
-      rs.intercom.cam_status_ms = now_ms;
-    }
+    rs.intercom.broadcast_feedback = "Blocked by Security Policy";
+    rs.intercom.broadcast_feedback_ms = now_ms;
     rt_.schedule_disp();
     return false;
   }
@@ -1775,13 +1789,8 @@ bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool 
   }
   rs.intercom.cam_action = "unlock_door";
   rs.intercom.cam_message.clear();
-  if (from_intercom) {
-    rs.intercom.broadcast_feedback = "Unlocked Door / Gate";
-    rs.intercom.broadcast_feedback_ms = now_ms;
-  } else {
-    cam_intercom_status() = "DOOR / GATE UNLOCKED";
-    rs.intercom.cam_status_ms = now_ms;
-  }
+  rs.intercom.broadcast_feedback = "Unlocked Door / Gate";
+  rs.intercom.broadcast_feedback_ms = now_ms;
   intercom_session().emit_current_cmd();
   rt_.schedule_disp();
   return true;
@@ -6109,7 +6118,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             cycle_opt(UiSelectId::CAMERA_CAROUSEL_INTERVAL, kCameraCarouselIntervalOpts, prefs.camera_carousel_interval);
           } else if (r_idx == 2) {
             cycle_opt(UiSelectId::CAMERA_FRAMING, kCameraFramingOpts, prefs.camera_framing);
-            rs.cameras.framing_override = -1;
           } else if (r_idx == 3) {
             cycle_opt(UiSelectId::CAMERA_STREAM_MODE, kCameraStreamModeOpts, prefs.camera_stream_mode);
           } else if (r_idx == 4 && LATTER_CHIP_P4) {
@@ -6156,14 +6164,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           rs.cameras.selected_idx = step_wrap(
               rs.cameras.selected_idx, (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
-          rs.cameras.hud_timer = now_rel;
-          trigger_cam_refresh();
-          mark_dirty_full();
-          rt_.schedule_disp();
-        } else if (wid == WidgetId::CAM_FRAMING_BTN &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const bool next_fill = !rs.cameras.effective_fill(prefs);
-          rs.cameras.framing_override = next_fill ? 1 : 0;
           rs.cameras.hud_timer = now_rel;
           trigger_cam_refresh();
           mark_dirty_full();

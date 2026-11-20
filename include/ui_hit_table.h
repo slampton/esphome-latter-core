@@ -282,7 +282,6 @@ namespace WidgetId {
   static constexpr uint16_t CAM_GRID_TILE_BASE         = 990;  // 990..993 (param = global camera idx)
   static constexpr uint16_t CAM_GRID_PREV_BTN          = 994;
   static constexpr uint16_t CAM_GRID_NEXT_BTN          = 995;
-  static constexpr uint16_t CAM_FRAMING_BTN            = 996;
   static constexpr uint16_t CAM_CAROUSEL_PAUSE_BTN     = 997;
   static constexpr uint16_t CAM_VIDEO_TAP              = 998;
   static constexpr uint16_t CAM_SETTINGS_ROW_BASE      = 1000; // 1000..1004 (param = setting index)

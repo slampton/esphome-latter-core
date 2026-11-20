@@ -48,7 +48,7 @@ namespace latter_ui {
 
 inline constexpr size_t kMaxJpegBytes = LATTER_CHIP_P4 ? (192U * 1024U) : (96U * 1024U);
 inline constexpr uint16_t kVideoMaxViewportDim = LATTER_CHIP_P4 ? 768U : 512U;
-inline constexpr uint32_t kVideoHttpConnectTimeoutMs = 4000U;
+inline constexpr uint32_t kVideoHttpConnectTimeoutMs = 8000U;
 inline constexpr uint32_t kVideoHttpReadPollMs = 150U;
 inline constexpr uint32_t kVideoStreamStallTimeoutMs = 4000U;
 inline constexpr uint32_t kVideoProfIntervalMs = 5000U;

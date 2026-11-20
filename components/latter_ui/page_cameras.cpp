@@ -120,18 +120,16 @@ void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFram
   using esphome::display::TextAlign;
   const auto &ly = layout();
   const auto &rs = runtime_state();
-  const auto &ac = area_ctx_state();
 
   render_page_header(it, ctx.cx, "QUICK REPLY", ctx.font_date, ctx.col_white);
 
-  const std::string area_id = (cam != nullptr) ? cam->area_id : ac.area_id;
-  const EntryControlItem *unlock_target = resolve_doorbell_quick_unlock_target(area_id, home_hub_state());
+  const bool can_unlock = (cam != nullptr) && cam->has_unlock();
   static constexpr const char *kReplies[3] = {
       "On my way!",
       "Leave it at the door.",
       "One moment, please!",
   };
-  const int row_cnt = (unlock_target != nullptr) ? 4 : 3;
+  const int row_cnt = can_unlock ? 4 : 3;
   const int top_y = ly.hdr_y + scale_y(36);
   const int bot_y = ly.back_y - scale_y(30);
   const int gap = scale_y(10);
@@ -143,20 +141,20 @@ void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFram
     const int ry = start_y + i * (row_h + gap);
     const int cy = ry + row_h / 2;
     const int rw = std::min(scale_w(330), ly.band_safe_span(cy, row_h, 18));
-    ui::pill_button(it, ctx.cx - rw / 2, ctx.cx + rw / 2, cy, row_h / 2,
-                    kChromeGlassSheen, kChromeGlassTint, kReplies[i], ctx.col_white,
-                    ctx.font_small, static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
-                    kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+    ui::pill_button_box(it, ctx.cx - rw / 2, rw, cy, row_h / 2,
+                        kChromeGlassSheen, kChromeGlassTint, kReplies[i], ctx.col_white,
+                        ctx.font_small, static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
+                        kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
   }
-  if (unlock_target != nullptr) {
+  if (can_unlock) {
     const int ry = start_y + 3 * (row_h + gap);
     const int cy = ry + row_h / 2;
     const int rw = std::min(scale_w(330), ly.band_safe_span(cy, row_h, 18));
-    const char *lbl = unlock_target->is_lock ? "Unlock Door" : "Open Garage";
-    ui::pill_button(it, ctx.cx - rw / 2, ctx.cx + rw / 2, cy, row_h / 2,
-                    ctx.col_gold, mix_color_q8(kChromeGlassTint, ctx.col_gold, 64),
-                    lbl, ctx.col_white, ctx.font_small, WidgetId::CAM_UNLOCK_BTN,
-                    kHitTap | kHitFocusSlot);
+    const char *lbl = cam->unlock_is_lock() ? "Unlock Door" : "Open Garage";
+    ui::pill_button_box(it, ctx.cx - rw / 2, rw, cy, row_h / 2,
+                        ctx.col_gold, mix_color_q8(kChromeGlassTint, ctx.col_gold, 64),
+                        lbl, ctx.col_white, ctx.font_small, WidgetId::CAM_UNLOCK_BTN,
+                        kHitTap | kHitFocusSlot);
   }
 
   if (!rs.intercom.cam_intercom_status.empty() &&
@@ -204,16 +202,18 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
   if (total_pages > 1) {
     char pg_buf[16];
     std::snprintf(pg_buf, sizeof(pg_buf), "%d/%d", rs.cameras.grid_page + 1, total_pages);
-    const int btn_r = std::max(scale_s(16), ly.min_hit_px() / 2);
-    const int span = std::min(scale_w(140), ly.safe_span(g.title_y, 20) / 2 - btn_r);
-    const int lx = ctx.cx - std::max(scale_x(84), span);
-    const int rx = ctx.cx + std::max(scale_x(84), span);
-    ui::pill_button(it, lx - scale_x(20), lx + scale_x(20), g.title_y, scale_y(16),
-                    kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
-                    WidgetId::CAM_GRID_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, rx - scale_x(20), rx + scale_x(20), g.title_y, scale_y(16),
-                    kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
-                    WidgetId::CAM_GRID_NEXT_BTN, kHitTap | kHitFocusSlot);
+    const int btn_w = std::max(34, scale_x(38));
+    const int btn_r = scale_y(16);
+    const int half_safe = std::max(btn_w + 40, ly.safe_span(g.title_y, 16) / 2);
+    const int offset = std::min(scale_w(130), half_safe - btn_w / 2);
+    const int lx = ctx.cx - std::max(scale_x(76), offset);
+    const int rx = ctx.cx + std::max(scale_x(76), offset);
+    ui::pill_button_box(it, lx - btn_w / 2, btn_w, g.title_y, btn_r,
+                        kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
+                        WidgetId::CAM_GRID_PREV_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, rx - btn_w / 2, btn_w, g.title_y, btn_r,
+                        kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
+                        WidgetId::CAM_GRID_NEXT_BTN, kHitTap | kHitFocusSlot);
     fast_print(it, ctx.cx, g.frame.y0 - scale_y(8), ctx.font_micro, ctx.col_slate, TextAlign::CENTER, pg_buf);
   }
 
@@ -333,62 +333,47 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
     return;
   }
 
-  // Top Title Pill + Prev/Next arrows when > 1 camera
+  // Top Title Pill + Prev/Next arrows when > 1 camera (strict outer-box geometry; zero overlap)
   const int top_y = ly.hdr_y + scale_y(LATTER_ROUND_DISPLAY ? 4 : 6);
   const std::string title_raw = (cam != nullptr) ? cam->name : std::string("Camera");
-  const int safe_top_w = ly.safe_span(top_y, 18);
-  const int arrow_w = (cam_count > 1) ? scale_x(38) : 0;
-  const int pill_max_w = std::max(80, safe_top_w - (cam_count > 1 ? (2 * arrow_w + scale_x(16)) : 0));
-  const std::string fit_title = fit_text_to_width_font(title_raw, std::min(scale_w(210), pill_max_w - 20), ctx.font_small);
-  const int title_w = std::min(pill_max_w, scale_w(220));
   const int title_r = scale_y(17);
-  render_card_box(it, ctx.cx - title_w / 2, top_y - title_r, title_w, 2 * title_r,
+  const int safe_top_w = ly.band_safe_span(top_y, 2 * title_r, 14);
+  const int top_gap = (SCREEN_W < 300) ? 6 : scale_x(8);
+  const int arrow_w = (cam_count > 1) ? std::max(36, scale_x(40)) : 0;
+  const int pill_max_w = std::max(80, safe_top_w - (cam_count > 1 ? (2 * arrow_w + 2 * top_gap) : 0));
+  const int title_w = std::min(pill_max_w, scale_w(220));
+  const std::string fit_title = fit_text_to_width_font(title_raw, std::max(40, title_w - scale_x(22)), ctx.font_small);
+  const int title_x0 = ctx.cx - title_w / 2;
+  render_card_box(it, title_x0, top_y - title_r, title_w, 2 * title_r,
                   kChromeGlassTint, kChromeGlassSheen, title_r, GlassVariant::Clear);
   fast_print(it, ctx.cx, top_y, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_title.c_str());
 
   if (cam_count > 1) {
-    const int lx2 = ctx.cx - title_w / 2 - scale_x(6);
-    const int lx1 = lx2 - arrow_w;
-    const int rx1 = ctx.cx + title_w / 2 + scale_x(6);
-    const int rx2 = rx1 + arrow_w;
-    ui::pill_button(it, lx1, lx2, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
-                    "<", ctx.col_white, ctx.font_small, WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, rx1, rx2, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
-                    ">", ctx.col_white, ctx.font_small, WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
+    const int lx0 = title_x0 - top_gap - arrow_w;
+    const int rx0 = title_x0 + title_w + top_gap;
+    ui::pill_button_box(it, lx0, arrow_w, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
+                        "<", ctx.col_white, ctx.font_small, WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, rx0, arrow_w, top_y, title_r, kChromeGlassSheen, kChromeGlassTint,
+                        ">", ctx.col_white, ctx.font_small, WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
   }
 
-  // Secondary framing & rotate pills row below top bar
-  const int sub_y = top_y + title_r + scale_y(20);
-  const int sub_r = scale_y(14);
-  const bool show_rot = (SCREEN_W != SCREEN_H);
-  const int fit_w = scale_x(68);
-  if (show_rot) {
-    const int gap = scale_x(10);
-    ui::pill_button(it, ctx.cx - fit_w - gap / 2, ctx.cx - gap / 2, sub_y, sub_r,
-                    want_fill ? ctx.theme_primary : kChromeGlassSheen,
-                    want_fill ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72) : kChromeGlassTint,
-                    want_fill ? "Fill" : "Fit", ctx.col_white, ctx.font_micro,
-                    WidgetId::CAM_FRAMING_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, ctx.cx + gap / 2, ctx.cx + fit_w + gap / 2, sub_y, sub_r,
-                    rs.cameras.landscape_mode ? ctx.theme_primary : kChromeGlassSheen,
-                    rs.cameras.landscape_mode ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72) : kChromeGlassTint,
-                    "90\xC2\xB0", ctx.col_white, ctx.font_micro,
-                    WidgetId::CAM_ORIENT_BTN, kHitTap | kHitFocusSlot);
-  } else {
-    ui::pill_button(it, ctx.cx - fit_w / 2, ctx.cx + fit_w / 2, sub_y, sub_r,
-                    want_fill ? ctx.theme_primary : kChromeGlassSheen,
-                    want_fill ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72) : kChromeGlassTint,
-                    want_fill ? "Fill" : "Fit", ctx.col_white, ctx.font_micro,
-                    WidgetId::CAM_FRAMING_BTN, kHitTap | kHitFocusSlot);
+  // Portrait-only 90° rotate pill (Framing Fit/Fill lives exclusively in Settings so Single & Carousel match)
+  if (SCREEN_H > SCREEN_W) {
+    const int sub_y = top_y + title_r + scale_y(20);
+    const int sub_r = scale_y(14);
+    const int rot_w = std::max(56, scale_x(64));
+    ui::pill_button_box(it, ctx.cx - rot_w / 2, rot_w, sub_y, sub_r,
+                        rs.cameras.landscape_mode ? ctx.theme_primary : kChromeGlassSheen,
+                        rs.cameras.landscape_mode ? mix_color_q8(kChromeGlassTint, ctx.theme_primary, 72) : kChromeGlassTint,
+                        "90\xC2\xB0", ctx.col_white, ctx.font_micro,
+                        WidgetId::CAM_ORIENT_BTN, kHitTap | kHitFocusSlot);
   }
 
-  // Capability-gated bottom action pills row above the 4-slot mode bar
-  const bool can_listen = (cam == nullptr) ? true : (cam->has_audio() || cam->has_talkback());
-  const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) &&
-                        ((cam == nullptr) ? false : cam->has_talkback());
-  const std::string cam_area = (cam != nullptr) ? cam->area_id : ac.area_id;
-  const EntryControlItem *unlock_t = resolve_doorbell_quick_unlock_target(cam_area, home_hub_state());
-  const bool can_unlock = (unlock_t != nullptr);
+  // Per-camera configured action pills row above the 4-slot mode bar (strict outer-box spacing)
+  const bool can_listen = (cam != nullptr) && cam->has_audio();
+  const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) && (cam != nullptr) && cam->has_talkback();
+  const bool can_reply = (cam != nullptr) && cam->show_reply();
+  const bool can_unlock = (cam != nullptr) && cam->has_unlock();
 
   struct ActionBtn {
     const char *label;
@@ -411,33 +396,41 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
         act ? "Stop" : "Talk", WidgetId::CAM_PTT_BTN,
         act ? ctx.col_red : ctx.theme_primary,
         act ? mix_color_q8(kChromeGlassTint, ctx.col_red, 80) : mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
+  }
+  if (can_reply && btn_cnt < 4) {
     btns[btn_cnt++] = {"Reply", WidgetId::CAM_REPLY_MENU_BTN, kChromeGlassSheen, kChromeGlassTint};
   }
   if (can_unlock && btn_cnt < 4) {
     btns[btn_cnt++] = {
-        unlock_t->is_lock ? "Unlock" : "Open", WidgetId::CAM_UNLOCK_BTN,
+        cam->unlock_is_lock() ? "Unlock" : "Open", WidgetId::CAM_UNLOCK_BTN,
         ctx.col_gold, mix_color_q8(kChromeGlassTint, ctx.col_gold, 60)};
   }
 
-  const int act_y = ly.app_dock_y - ly.dock_r - scale_y(28);
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_y(6);
+  const int act_r = scale_y(17);
+  const int act_y = mode_bar_top - scale_y(14) - act_r;
   if (btn_cnt > 0) {
-    const int act_r = scale_y(18);
-    const int act_gap = scale_x(8);
-    const int avail_w = std::min(scale_w(360), ly.band_safe_span(act_y, 2 * act_r, 14));
-    const int bw = std::max(scale_x(62), (avail_w - (btn_cnt - 1) * act_gap) / btn_cnt);
+    const int avail_w = std::min(scale_w(380), ly.band_safe_span(act_y, 2 * act_r, 12));
+    int act_gap = (SCREEN_W < 300) ? 4 : scale_x(8);
+    int bw = (avail_w - (btn_cnt - 1) * act_gap) / btn_cnt;
+    if (bw < 48 && btn_cnt > 1) {
+      act_gap = 4;
+      bw = std::max(40, (avail_w - (btn_cnt - 1) * act_gap) / btn_cnt);
+    }
+    bw = std::min(scale_x(92), bw);
     const int tot_w = btn_cnt * bw + (btn_cnt - 1) * act_gap;
     int x = ctx.cx - tot_w / 2;
     for (int i = 0; i < btn_cnt; ++i) {
-      ui::pill_button(it, x, x + bw, act_y, act_r, btns[i].brd, btns[i].bg,
-                      btns[i].label, ctx.col_white, ctx.font_micro, btns[i].wid,
-                      kHitTap | kHitFocusSlot);
+      ui::pill_button_box(it, x, bw, act_y, act_r, btns[i].brd, btns[i].bg,
+                          btns[i].label, ctx.col_white, ctx.font_micro, btns[i].wid,
+                          kHitTap | kHitFocusSlot);
       x += bw + act_gap;
     }
   }
 
   if (!rs.intercom.cam_intercom_status.empty() &&
       (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
-    fast_print(it, ctx.cx, act_y - scale_y(28), ctx.font_micro, ctx.col_gold,
+    fast_print(it, ctx.cx, act_y - act_r - scale_y(14), ctx.font_micro, ctx.col_gold,
                TextAlign::CENTER, rs.intercom.cam_intercom_status.c_str());
   }
 
@@ -531,24 +524,25 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
     return;
   }
 
-  // HUD controls: < | Pause/Resume | > above 4-slot mode bar
-  const int ctrl_y = ly.app_dock_y - ly.dock_r - scale_y(28);
-  const int ctrl_r = scale_y(18);
-  const int pause_w = scale_x(108);
-  ui::pill_button(it, ctx.cx - pause_w / 2, ctx.cx + pause_w / 2, ctrl_y, ctrl_r,
-                  rs.cameras.carousel_paused ? ctx.col_gold : kChromeGlassSheen,
-                  rs.cameras.carousel_paused ? mix_color_q8(kChromeGlassTint, ctx.col_gold, 70) : kChromeGlassTint,
-                  rs.cameras.carousel_paused ? "Resume" : "Pause", ctx.col_white, ctx.font_micro,
-                  WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
+  // HUD controls: < | Pause/Resume | > above 4-slot mode bar (strict outer-box geometry)
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_y(6);
+  const int ctrl_r = scale_y(17);
+  const int ctrl_y = mode_bar_top - scale_y(14) - ctrl_r;
+  const int pause_w = std::max(84, scale_x(104));
+  ui::pill_button_box(it, ctx.cx - pause_w / 2, pause_w, ctrl_y, ctrl_r,
+                      rs.cameras.carousel_paused ? ctx.col_gold : kChromeGlassSheen,
+                      rs.cameras.carousel_paused ? mix_color_q8(kChromeGlassTint, ctx.col_gold, 70) : kChromeGlassTint,
+                      rs.cameras.carousel_paused ? "Resume" : "Pause", ctx.col_white, ctx.font_micro,
+                      WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
   if (car_cnt > 1) {
-    const int aw = scale_x(44);
+    const int aw = std::max(36, scale_x(42));
     const int gap = scale_x(10);
-    ui::pill_button(it, ctx.cx - pause_w / 2 - gap - aw, ctx.cx - pause_w / 2 - gap, ctrl_y, ctrl_r,
-                    kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
-                    WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
-    ui::pill_button(it, ctx.cx + pause_w / 2 + gap, ctx.cx + pause_w / 2 + gap + aw, ctrl_y, ctrl_r,
-                    kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
-                    WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, ctx.cx - pause_w / 2 - gap - aw, aw, ctrl_y, ctrl_r,
+                        kChromeGlassSheen, kChromeGlassTint, "<", ctx.col_white, ctx.font_small,
+                        WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button_box(it, ctx.cx + pause_w / 2 + gap, aw, ctrl_y, ctrl_r,
+                        kChromeGlassSheen, kChromeGlassTint, ">", ctx.col_white, ctx.font_small,
+                        WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot);
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::CAROUSEL);

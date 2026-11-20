@@ -2043,6 +2043,18 @@ void pill_button(esphome::display::Display &it, int x1, int x2, int y_mid, int r
   }
 }
 
+void pill_button_box(esphome::display::Display &it, int x0, int w, int y_mid, int r,
+                     esphome::Color border_c, esphome::Color bg_c,
+                     const char *label, esphome::Color text_c, esphome::display::BaseFont *font,
+                     uint16_t widget_id, uint8_t flags, int16_t param, GlassVariant variant) {
+  const int safe_w = std::max(2, w);
+  const int eff_r = std::min(std::max(1, r), safe_w / 2);
+  const int x1 = x0 + eff_r;
+  const int x2 = std::max(x1, x0 + safe_w - 1 - eff_r);
+  pill_button(it, x1, x2, y_mid, eff_r, border_c, bg_c, label, text_c, font,
+              widget_id, flags, param, variant);
+}
+
 void stepper_row(esphome::display::Display &it, int cx, int y_top, int h,
                  const char *const labels[4], esphome::display::BaseFont *font,
                  esphome::Color col_text, uint16_t base_widget_id) {
