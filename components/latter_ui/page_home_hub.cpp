@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace latter_ui {
 
@@ -238,10 +239,11 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
       resolve_doorbell_quick_unlock_target(ac.area_id, home_hub_state());
   const bool has_lock_or_garage = (unlock_target != nullptr);
 
-  // Top Segmented Toggle Pill: Broadcast | Call Display
+  // Top Segmented Toggle Pill: Broadcast | Call Display (aligned to ly.list_card_w, D-072)
+  const auto &ly = layout();
   const int seg_h = (SCREEN_H < 400) ? 28 : scale_y(34);
   const int seg_cy = content_top + seg_h / 2;
-  const int seg_total_w = std::min({kMaxContentColW, scale_x(296), band_safe_w(seg_cy, seg_h, 14)});
+  const int seg_total_w = std::min(ly.list_card_w, band_safe_w(seg_cy, seg_h, 14));
   ui::segmented_toggle(it, cx, seg_cy, seg_total_w, seg_h,
                        "Broadcast", "Call Display", live_mode,
                        ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate,
@@ -253,21 +255,26 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
   const int rows_bot = has_lock_or_garage ? (unlock_cy - unlock_h / 2 - std::max(5, scale_y(6))) : content_bot;
   const int rows_avail = std::max(90, rows_bot - rows_top);
 
+  // D-072: Standard slot5_* list dimensions (list_card_w x slot5_h, slot5_stride gap when space permits)
+  const int stack_w = ly.list_card_w;
+  const int card_h = ly.slot5_h;
+  const int std_gap = std::max(4, ly.slot5_stride - card_h);
+  const int eff_gap = std::clamp((rows_avail - 3 * card_h) / 2, 4, std_gap);
+  const int block_h = 3 * card_h + 2 * eff_gap;
+  const int start_y0 = rows_top + std::max(0, (rows_avail - block_h) / 2);
+  const int hit_h = std::max(card_h, std::min(min_hit, card_h + eff_gap));
+  const int x0 = cx - stack_w / 2;
+  const int bounce_y = edge_bounce().offset_px(
+      PageId::HOME_HUB, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
+
   if (!live_mode) {
     static constexpr const char *kBroadcastLabels[3] = {
         "Dinner Is Ready",
         "Come Upstairs",
         "Leaving Soon",
     };
-    const int stride = rows_avail / 3;
-    const int card_h = std::clamp(stride - 5, 30, scale_y(46));
-    const int hit_h = std::max(card_h, std::min(min_hit, stride));
-    const int stack_w = ui::compute_uniform_stack_w(
-        rows_top + stride / 2, rows_top + 2 * stride + stride / 2, card_h,
-        std::min(kMaxContentColW, scale_x(312)), 14);
-    const int x0 = cx - stack_w / 2;
     for (int i = 0; i < 3; ++i) {
-      const int cy_r = rows_top + i * stride + stride / 2;
+      const int cy_r = start_y0 + i * (card_h + eff_gap) + card_h / 2;
       render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
                       ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
                       kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
@@ -302,37 +309,44 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
                              ctx.font_small, WidgetId::CAM_LISTEN_BTN, kHitTap | kHitFocusSlot, 0,
                              std::max(end_h, std::min(min_hit, rows_avail / 2)));
   } else {
-    std::string t_ids[5], t_lbls[5];
-    bool t_all[5] = {false, false, false, false, false};
-    const int cnt = std::min(3, parse_intercom_targets_list(ac.intercom_targets_summary, t_ids, t_lbls, t_all));
-    if (cnt <= 0) {
+    // D-072: Unlimited paginated peer display target list (3 per page on standard slot5_* rows)
+    std::vector<IntercomTarget> targets;
+    const int total_cnt = parse_intercom_targets(ac.intercom_targets_summary, targets);
+    if (total_cnt <= 0) {
+      home_hub_intercom_page() = 0;
       render_empty_state(it, cx, rows_top + rows_avail / 2,
                          "No Peer Displays", ctx.font_small, ctx.col_slate);
     } else {
-      const int stride = rows_avail / 3;
-      const int card_h = std::clamp(stride - 5, 30, scale_y(46));
-      const int hit_h = std::max(card_h, std::min(min_hit, stride));
-      const int stack_w = ui::compute_uniform_stack_w(
-          rows_top + stride / 2, rows_top + 2 * stride + stride / 2, card_h,
-          std::min(kMaxContentColW, scale_x(312)), 14);
-      const int x0 = cx - stack_w / 2;
-      for (int i = 0; i < cnt; ++i) {
-        const int cy_r = rows_top + i * stride + stride / 2;
-        const Color acc = t_all[i] ? ctx.theme_secondary : ctx.col_green;
+      const int total_pages = std::max(1, (total_cnt + 2) / 3);
+      int &cur_pg = home_hub_intercom_page();
+      cur_pg = std::clamp(cur_pg, 0, total_pages - 1);
+      const int base_idx = cur_pg * 3;
+      const int vis_cnt = std::min(3, total_cnt - base_idx);
+
+      for (int i = 0; i < vis_cnt; ++i) {
+        const int g_idx = base_idx + i;
+        const IntercomTarget &tgt = targets[static_cast<size_t>(g_idx)];
+        const int cy_r = start_y0 + i * (card_h + eff_gap) + card_h / 2 + bounce_y;
+        const Color acc = tgt.is_all ? ctx.theme_secondary : ctx.col_green;
         render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
                         ui::chrome_card_bg_off(), acc,
                         kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
         fast_filled_circle_aa(it, x0 + scale_x(18), cy_r, std::max(4, scale_s(5)), acc);
         const std::string fit_l = fit_text_to_width_font(
-            t_lbls[i], std::max(60, stack_w - scale_x(76)), ctx.font_small);
+            tgt.label, std::max(60, stack_w - scale_x(76)), ctx.font_small);
         ui::shadow_print(it, x0 + scale_x(34), cy_r, ctx.font_small, ctx.col_white,
                          TextAlign::CENTER_LEFT, fit_l.c_str());
         ui::shadow_print(it, x0 + stack_w - scale_x(14), cy_r, ctx.font_small,
-                         t_all[i] ? ctx.theme_secondary : ctx.col_white,
+                         tgt.is_all ? ctx.theme_secondary : ctx.col_white,
                          TextAlign::CENTER_RIGHT, "Call");
         frame_hits().add_centered_rect(cx, cy_r, stack_w, hit_h,
                                        static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
-                                       kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+                                       kHitTap | kHitFocusSlot, static_cast<int16_t>(g_idx));
+      }
+      if (total_pages > 1) {
+        render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
+                                  ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                                  ly.mode_bar_zone_top());
       }
     }
   }

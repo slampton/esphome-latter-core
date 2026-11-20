@@ -1086,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112002L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112003L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3420,7 +3420,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112002L, "LATTER_SDK_REV must match 2026112002L");
+  static_assert(LATTER_SDK_REV == 2026112003L, "LATTER_SDK_REV must match 2026112003L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -4970,50 +4970,40 @@ void test_music_app_v3_d059() {
       LATTER_CHECK((ht.find_by_id(WidgetId::MUSIC_SCRUB_BAR)->flags & kHitHorizSlider) != 0U);
     }
 
-    // ACTION_SHEET floating takeover (5 stack-uniform pills + <= 490 px Desk cap + < Cancel, zero underlying rows)
+    // ACTION_SHEET floating takeover (D-072: canonical slot5_* list_card_w x slot5_h stack + < Cancel, zero underlying rows)
     for (const uint16_t *wids : {kLibSheetWids, kQueueSheetWids}) {
       FrameHitTable ht{};
       const auto ag = compute_music_action_sheet_geom(p.w, p.h, p.round, p.wearable, p.ppi, 5);
-      if (p.w == 720 && p.h == 720) LATTER_CHECK(ag.item_w[0] <= 490);
-      for (int i = 1; i < 5; ++i) {
-        LATTER_CHECK(ag.item_w[i] == ag.item_w[0] && ag.item_x0[i] == ag.item_x0[0]);
+      for (int i = 0; i < 5; ++i) {
+        LATTER_CHECK(ag.item_w[i] == ly.list_card_w && ag.item_h[i] == ly.slot5_h);
+        LATTER_CHECK(ag.item_y0[i] == ly.slot5_y(i) - ly.slot5_h / 2);
+        LATTER_CHECK(ag.item_x0[i] == ag.item_x0[0]);
       }
       register_music_action_sheet_hits(ht, ag, wids);
       ht.add_rect(p.w / 2 - 80, ag.back_hit_y0, 160, p.h - ag.back_hit_y0, WidgetId::BACK_BUTTON, kHitTap);
       check_zero_aabb_overlaps(ht, p.w, p.h);
       const HitRegion *bd = ht.hit_test(2, 2, kHitTap);
       LATTER_CHECK(bd != nullptr && bd->widget_id == WidgetId::MUSIC_TAKEOVER_BACKDROP);
+      const int min_row_hit_h = std::min(min_hit, ly.slot5_stride - 2);
       for (int i = 0; i < 5; ++i) {
         const HitRegion *r = ht.find_by_id(wids[i]);
-        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
+        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_row_hit_h);
       }
       LATTER_CHECK(ht.find_by_id(WidgetId::LIST_SLOT_BASE) == nullptr);
     }
 
-    // Stack-Uniform List Rows (D-060): identical card_w across all rows on Round 466x466 Pocket
-    // + bounded <= 490 px centered column on 720x720 Desk + Leading 1-Tap Play Zone!
+    // Universal slot5_* List Rows (D-072): exact ly.list_card_w x ly.slot5_h across all 5 boards + Leading 1-Tap Play Zone
     {
       FrameHitTable ht{};
       const int c_top = ly.hdr_y + scale_y_for(24, p.h);
       const int c_bot = (p.round ? scale_min_for(404, p.h) : (p.h - scale_y_for(64, p.h))) - scale_y_for(6, p.h);
-      int first_w = -1;
-      int first_x0 = -1;
       for (int r = 0; r < kMusicFullListPageSize; ++r) {
         const auto rg = compute_music_list_row_geom(
             r, kMusicFullListPageSize, c_top, c_bot, /*has_leading_play=*/true, /*has_pips=*/false,
             p.w, p.h, p.round, p.wearable, p.ppi);
-        if (r == 0) {
-          first_w = rg.card_w;
-          first_x0 = rg.card_x0;
-        } else {
-          LATTER_CHECK(rg.card_w == first_w && rg.card_x0 == first_x0);
-        }
-        if (p.w == 466 && p.h == 466 && p.round) LATTER_CHECK(rg.card_w >= 320);
-        if (p.w == 480 && p.h == 480) LATTER_CHECK(rg.card_w >= 360 && rg.card_w <= 400);
-        if (p.w == 720 && p.h == 720) {
-          LATTER_CHECK(rg.card_w == 480 && rg.card_w <= 490);
-          LATTER_CHECK(rg.card_x0 == (p.w - rg.card_w) / 2);
-        }
+        LATTER_CHECK(rg.card_w == ly.list_card_w && rg.card_h == ly.slot5_h);
+        LATTER_CHECK(rg.card_x0 == (p.w - ly.list_card_w) / 2);
+        LATTER_CHECK(rg.cy_row == ly.slot5_y(r));
         register_music_list_row_hits(ht, rg, r, /*enable_long_press=*/true);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);
@@ -5025,43 +5015,34 @@ void test_music_app_v3_d059() {
         LATTER_CHECK((body_z->flags & kHitLongPress) != 0U);
       }
 
-      // Peer 4-row stack (SPEAKERS / QUEUE / ALBUM_TRACKS) & Peer 3-row SETTINGS stack above Mode Bar:
-      // row 0 == row 1 == row 2 == row 3 on 466x466 Round Pocket & <= 490 px on 720x720 Desk!
+      // Peer 4-row stack (LIBRARY / SPEAKERS / QUEUE / ALBUM_TRACKS / SETTINGS) above Mode Bar:
+      // exact ly.list_card_w x ly.slot5_h across all 5 boards, zero overlaps with chevrons or Mode Bar!
       const int min_s = std::min(p.w, p.h);
       const int mb_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) - scale_y_for(8, p.h);
       for (bool pips : {false, true}) {
-        const auto r0 = compute_music_list_row_geom(
-            0, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
-        const auto r1 = compute_music_list_row_geom(
-            1, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
-        const auto r2 = compute_music_list_row_geom(
-            2, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
-        const auto r3 = compute_music_list_row_geom(
-            3, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
-        LATTER_CHECK(r0.card_w == r1.card_w && r1.card_w == r2.card_w && r2.card_w == r3.card_w);
-        LATTER_CHECK(r0.card_x0 == r1.card_x0 && r1.card_x0 == r2.card_x0 && r2.card_x0 == r3.card_x0);
-        if (p.w == 466 && p.h == 466 && p.round) LATTER_CHECK(r0.card_w >= (pips ? 300 : 330));
-        if (p.w == 720 && p.h == 720) LATTER_CHECK(r0.card_w <= 490);
+        for (int r = 0; r < kMusicPeerListPageSize; ++r) {
+          const auto rg = compute_music_list_row_geom(
+              r, kMusicPeerListPageSize, c_top, mb_top, false, pips, p.w, p.h, p.round, p.wearable, p.ppi);
+          LATTER_CHECK(rg.card_w == ly.list_card_w && rg.card_h == ly.slot5_h);
+          LATTER_CHECK(rg.card_x0 == (p.w - ly.list_card_w) / 2);
+          LATTER_CHECK(rg.cy_row == ly.slot5_y(r));
+        }
       }
 
-      // Peer Tab 8 (MusicView::SETTINGS): 3 stack-uniform cards + chevrons + Mode Bar zero AABB overlaps
+      // Peer Tab 8 (MusicView::SETTINGS) & Peer Tab 1 (MusicView::LIBRARY): 4 standard slot5_* rows + Mode Bar
+      // (zero AABB overlap between rows and Mode Bar; >= 14 px visual clearance from right-edge chevron column;
+      //  zero AABB overlap between CHEVRON_DOWN and Mode Bar)
       FrameHitTable sht{};
-      int set_w0 = -1;
-      for (int i = 0; i < 3; ++i) {
-        const auto sg3 = compute_music_list_row_geom(
-            i, 3, c_top, mb_top, false, true, p.w, p.h, p.round, p.wearable, p.ppi);
-        if (i == 0) set_w0 = sg3.card_w;
-        LATTER_CHECK(sg3.card_w == set_w0);
-        if (p.w == 720 && p.h == 720) LATTER_CHECK(sg3.card_w <= 490);
-        register_music_list_row_hits(sht, sg3, i, false);
-      }
       int pm_x = 0, pc_x = 0, ph_x0 = 0, ph_w = 0, pm_h = 0;
       compute_vertical_page_pips_x(p.w, p.round, p.ppi, pm_x, pc_x, ph_x0, ph_w, pm_h);
-      const int mode_hit_top = std::min(ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s),
-                                        ly.app_dock_y - ly.dock_r - scale_y_for(12, p.h));
-      const int pip_top = scale_y_for(68, p.h);
-      const int pip_mid = (pip_top + std::max(pip_top + 2 * pm_h, mode_hit_top - 2)) / 2;
-      sht.add_rect(ph_x0, pip_mid, ph_w, std::max(8, mode_hit_top - pip_mid), WidgetId::CHEVRON_DOWN, kHitTap);
+      for (int i = 0; i < 4; ++i) {
+        const auto sg4 = compute_music_list_row_geom(
+            i, 4, c_top, mb_top, false, true, p.w, p.h, p.round, p.wearable, p.ppi);
+        LATTER_CHECK(sg4.card_w == ly.list_card_w && sg4.card_h == ly.slot5_h);
+        LATTER_CHECK(sg4.cy_row == ly.slot5_y(i));
+        LATTER_CHECK(sg4.card_x0 + sg4.card_w <= pm_x);
+        register_music_list_row_hits(sht, sg4, i, false);
+      }
       for (int i = 0; i < 4; ++i) {
         sht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
                        static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
@@ -5069,32 +5050,20 @@ void test_music_app_v3_d059() {
                        static_cast<int16_t>(5 + i), np.mode_bar_pad);
       }
       check_zero_aabb_overlaps(sht, p.w, p.h);
-    }
 
-    // Library 2x3 Bento Grid (6 tiles above Mode Bar, <= 500 px Desk cap, ergonomic gaps) + gearless INFO viewport
-    {
-      FrameHitTable ht{};
-      const int min_s = std::min(p.w, p.h);
-      const int mb_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s) - scale_y_for(8, p.h);
-      const int c_top = ly.hdr_y + scale_y_for(24, p.h);
-      MusicBentoTileGeom tiles[6]{};
-      for (int i = 0; i < 6; ++i) {
-        tiles[i] = compute_music_bento_tile_geom(
-            i, 6, c_top, mb_top, p.w, p.h, p.round, p.wearable, p.ppi);
-        LATTER_CHECK(tiles[i].tile_y0 + tiles[i].tile_h <= mb_top + 2);
-        ht.add_rect(tiles[i].tile_x0, tiles[i].tile_y0, tiles[i].tile_w, tiles[i].tile_h,
-                    static_cast<uint16_t>(WidgetId::GRID_CARD_BASE + i), kHitTap);
+      FrameHitTable cht{};
+      const int mode_hit_top = std::min(ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s),
+                                        ly.app_dock_y - ly.dock_r - scale_y_for(12, p.h));
+      const int pip_top = scale_y_for(68, p.h);
+      const int pip_mid = (pip_top + std::max(pip_top + 2 * pm_h, mode_hit_top - 2)) / 2;
+      cht.add_rect(ph_x0, pip_mid, ph_w, std::max(8, mode_hit_top - pip_mid), WidgetId::CHEVRON_DOWN, kHitTap);
+      for (int i = 0; i < 4; ++i) {
+        cht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
+                       static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
+                       kHitTap | kHitFocusSlot | kHitFocusCircle,
+                       static_cast<int16_t>(5 + i), np.mode_bar_pad);
       }
-      check_zero_aabb_overlaps(ht, p.w, p.h);
-      const int bento_grid_w = (tiles[1].tile_x0 + tiles[1].tile_w) - tiles[0].tile_x0;
-      const int bento_gap_x = tiles[1].tile_x0 - (tiles[0].tile_x0 + tiles[0].tile_w);
-      const int bento_gap_y = tiles[2].tile_y0 - (tiles[0].tile_y0 + tiles[0].tile_h);
-      LATTER_CHECK(tiles[0].tile_w == tiles[2].tile_w && tiles[2].tile_w == tiles[4].tile_w);
-      if (p.w == 466 && p.h == 466) LATTER_CHECK(bento_gap_x >= 10 && bento_gap_y >= 10);
-      if (p.w == 720 && p.h == 720) {
-        LATTER_CHECK(bento_grid_w <= 500);
-        LATTER_CHECK(bento_gap_x >= 16 && bento_gap_y >= 16);
-      }
+      check_zero_aabb_overlaps(cht, p.w, p.h);
 
       const auto ig = compute_music_info_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       LATTER_CHECK(ig.vp_bot_ambient > ig.vp_bot_hud);
@@ -5375,7 +5344,9 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(mu_src.find("GlassVariant::ReadableDark") == std::string::npos);
     LATTER_CHECK(mu_src.find("chrome_modal_bg") == std::string::npos);
     LATTER_CHECK(mu_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
-    LATTER_CHECK(mu_src.find("ly.list_card_w") == std::string::npos);
+    LATTER_CHECK(mu_src.find("MUSIC_HEADER_ENQUEUE_BTN") == std::string::npos);
+    LATTER_CHECK(mu_src.find("ly.list_card_w") != std::string::npos);
+    LATTER_CHECK(mu_src.find("ly.slot5_h") != std::string::npos);
     LATTER_CHECK(mu_src.find("font_micro") == std::string::npos);
     LATTER_CHECK(mu_src.find("MUSIC_INFO_SETTINGS_BTN") == std::string::npos);
     LATTER_CHECK(mu_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
@@ -6312,6 +6283,24 @@ void test_gui_standardization_d070() {
   LATTER_CHECK(hub_cpp.find("ui::header_pager_bar(") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-070:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-071:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-072:") != std::string::npos);
+
+  // 7. D-072 Unlimited paginated Intercom targets (parse_intercom_targets handles >10 devices cleanly)
+  {
+    std::string raw_targets;
+    for (int i = 1; i <= 14; ++i) {
+      if (i > 1) raw_targets.push_back('\x1e');
+      raw_targets += "dev_" + std::to_string(i) + "|Area " + std::to_string(i) + "|device";
+    }
+    raw_targets.push_back('\x1e');
+    raw_targets += "all|All Displays|all";
+    std::vector<IntercomTarget> targets;
+    const int parsed = parse_intercom_targets(raw_targets, targets);
+    LATTER_CHECK(parsed == 15 && targets.size() == 15U);  // 14 devices + "All Displays"
+    LATTER_CHECK(targets[0].id == "dev_1" && targets[0].label == "Area 1" && !targets[0].is_all);
+    LATTER_CHECK(targets[13].id == "dev_14" && targets[13].label == "Area 14" && !targets[13].is_all);
+    LATTER_CHECK(targets[14].id == "all" && targets[14].label == "All Displays" && targets[14].is_all);
+  }
 
   // 6. D-071 Universal MDI icon catalog parity with Latter Studio & dynamic active Area dock icon
   for (std::string_view slug : {

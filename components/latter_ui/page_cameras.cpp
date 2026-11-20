@@ -109,29 +109,17 @@ void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFram
       "Leave it at the door.",
       "One moment, please!",
   };
-  const int row_cnt = can_unlock ? 4 : 3;
-  const int top_y = ly.sub_hdr_y + scale_y(18);
-  const int bot_y = ly.back_y - scale_y(24);
-  const int gap = scale_y(10);
-  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(44), scale_y(58));
-  const int total_h = row_cnt * row_h + (row_cnt - 1) * gap;
-  const int start_y = top_y + std::max(0, (bot_y - top_y - total_h) / 2);
-  const int stack_w = ui::compute_uniform_stack_w(
-      start_y + row_h / 2, start_y + (row_cnt - 1) * (row_h + gap) + row_h / 2,
-      row_h, scale_x(320), 16);
-
+  // D-072: Standard slot5_* list geometry (list_card_w x slot5_h, slot5_stride)
   for (int i = 0; i < 3; ++i) {
-    const int cy = start_y + i * (row_h + gap) + row_h / 2;
-    ui::list_row(it, ctx.cx, cy, stack_w, row_h, kReplies[i], nullptr,
+    ui::list_row(it, ctx.cx, ly.slot5_y(i), ly.list_card_w, ly.slot5_h, kReplies[i], nullptr,
                  ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
                  ctx.col_white, ctx.col_slate, ctx.font_small,
                  static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
                  kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
   }
   if (can_unlock) {
-    const int cy = start_y + 3 * (row_h + gap) + row_h / 2;
     const char *lbl = cam->unlock_is_lock() ? "Unlock Door" : "Open Garage";
-    ui::list_row(it, ctx.cx, cy, stack_w, row_h, lbl, nullptr,
+    ui::list_row(it, ctx.cx, ly.slot5_y(3), ly.list_card_w, ly.slot5_h, lbl, nullptr,
                  ui::chrome_card_bg_on(), ctx.col_gold,
                  ctx.col_white, ctx.col_slate, ctx.font_small,
                  WidgetId::CAM_UNLOCK_BTN, kHitTap | kHitFocusSlot, 0);
@@ -485,22 +473,25 @@ void render_cameras_settings_tab(esphome::display::Display &it, const UiFrameCon
   ids[row_cnt++] = 4;
 #endif
 
-  const int top_y = ly.hdr_y + scale_y(28);
-  const int bot_y = ly.mode_bar_zone_top() - scale_y(8);
-  const int gap = scale_y(8);
-  const int row_h = std::clamp((bot_y - top_y - (row_cnt - 1) * gap) / row_cnt, scale_y(38), scale_y(48));
-  const int total_h = row_cnt * row_h + (row_cnt - 1) * gap;
-  const int start_y = top_y + std::max(0, (bot_y - top_y - total_h) / 2);
-  const int stack_w = ui::compute_uniform_stack_w(
-      start_y + row_h / 2, start_y + (row_cnt - 1) * (row_h + gap) + row_h / 2,
-      row_h, ly.list_card_w, 16);
+  // D-072: Standard 4-row slot5_* list above Mode Bar (1 page of 4 on S3; 4 + 1 across 2 pages on P4)
+  auto &rs = runtime_state();
+  const int total_pages = std::max(1, (row_cnt + 3) / 4);
+  rs.cameras.settings_page = std::clamp(rs.cameras.settings_page, 0, total_pages - 1);
+  const int start_i = rs.cameras.settings_page * 4;
+  const int vis_cnt = std::min(4, row_cnt - start_i);
 
-  for (int i = 0; i < row_cnt; ++i) {
-    const int cy = start_y + i * (row_h + gap) + row_h / 2;
-    ui::setting_cycle_row(it, ctx.cx, cy, stack_w, row_h, labels[i], true,
+  for (int i = 0; i < vis_cnt; ++i) {
+    const int idx = start_i + i;
+    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i), ly.list_card_w, ly.slot5_h, labels[idx], true,
                           ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
-                          static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + ids[i]),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(ids[i]));
+                          static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + ids[idx]),
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(ids[idx]));
+  }
+  if (total_pages > 1) {
+    render_vertical_page_pips(it, rs.cameras.settings_page > 0,
+                              rs.cameras.settings_page + 1 < total_pages,
+                              ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                              ly.mode_bar_zone_top());
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::SETTINGS);

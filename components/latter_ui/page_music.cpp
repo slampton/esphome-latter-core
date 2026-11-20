@@ -799,8 +799,6 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
 // Peer Tab 8: Music Settings (MusicView::SETTINGS — 10 s Idle Spring-Back, Zero < Back)
 // ------------------------------------------------------------------------------
 void render_music_settings_view(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::display::TextAlign;
-
   auto &rs = runtime_state();
   const auto &ly = layout();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
@@ -810,42 +808,33 @@ void render_music_settings_view(esphome::display::Display &it, const UiFrameCont
   render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small, ctx.col_white, true);
   const int pg = std::clamp(rs.music.settings_page, 1, 2);
 
+  // D-072: Standard slot5_* list (4 rows on Page 1 + 1 row on Page 2, identical to System & Home Settings)
   struct SettingItem {
-    const char *title;
+    const char *prefix;
     std::string_view value;
   };
-  SettingItem items[3]{};
+  SettingItem items[4]{};
   int count = 0;
   if (pg == 1) {
-    items[0] = {"Album Art", ctx.music_fullscreen_art_opt.sv()};
-    items[1] = {"Now Playing HUD", ctx.music_overlay_style_opt.sv()};
-    items[2] = {"Album Sort", ctx.music_album_sort_opt.sv()};
-    count = 3;
+    items[0] = {"Art", ctx.music_fullscreen_art_opt.sv()};
+    items[1] = {"HUD", ctx.music_overlay_style_opt.sv()};
+    items[2] = {"Albums", ctx.music_album_sort_opt.sv()};
+    items[3] = {"Artist", ctx.music_artist_album_sort_opt.sv()};
+    count = 4;
   } else {
-    items[0] = {"Artist Albums", ctx.music_artist_album_sort_opt.sv()};
-    items[1] = {"Podcast Sort", ctx.music_podcast_sort_opt.sv()};
-    count = 2;
+    items[0] = {"Podcasts", ctx.music_podcast_sort_opt.sv()};
+    count = 1;
   }
 
-  const int content_top = ly.hdr_y + scale_y(24);
-  const int mode_bar_bot_limit = ly.mode_bar_zone_top() - scale_y(8);
   for (int i = 0; i < count; ++i) {
-    const MusicListRowGeom g = compute_music_list_row_geom(
-        i, /*visible_rows=*/3, content_top, mode_bar_bot_limit,
-        /*has_leading_play=*/false, /*has_pips=*/true,
-        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
-    render_card_box(it, g.card_x0, g.card_y0, g.card_w, g.card_h,
-                    ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                    kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-    const int txt_max_w = std::max(40, g.card_w - scale_x(30));
-    const std::string title_fit = fit_text_to_width_font(std::string(items[i].title), txt_max_w, ctx.font_small);
-    const std::string val_fit = fit_text_to_width_font(std::string(items[i].value), txt_max_w, ctx.font_small);
-    const int off_y = compute_two_line_half_gap(ctx.font_small, g.card_h);
-    ui::shadow_print(it, g.card_x0 + scale_x(15), g.cy_row - off_y, ctx.font_small, ctx.col_slate,
-                     TextAlign::CENTER_LEFT, title_fit.c_str());
-    ui::shadow_print(it, g.card_x0 + scale_x(15), g.cy_row + off_y, ctx.font_small, ctx.theme_primary,
-                     TextAlign::CENTER_LEFT, val_fit.c_str());
-    register_music_list_row_hits(frame_hits(), g, i, /*enable_long_press=*/false);
+    char buf[72];
+    std::snprintf(buf, sizeof(buf), "%s: %.*s", items[i].prefix,
+                  static_cast<int>(items[i].value.size()), items[i].value.data());
+    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i), ly.list_card_w, ly.slot5_h,
+                          buf, true, ctx.font_small, ctx.col_white, ctx.col_slate,
+                          ctx.theme_secondary,
+                          static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
   }
 
   render_vertical_page_pips(it, pg > 1, pg < 2, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
@@ -1052,12 +1041,9 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
           WidgetId::MUSIC_SPK_TRANSFER_BTN,
           WidgetId::MUSIC_SPK_GROUP_BTN,
       };
-      const int cw = ui::compute_uniform_stack_w(
-          ly.tool_card3_y(0), ly.tool_card3_y(2), ly.tool_card3_h,
-          (SCREEN_W > 520) ? kMaxContentColW : 384, 16);
       for (int i = 0; i < 3; ++i) {
-        const int ym = ly.tool_card3_y(i);
-        ui::list_row(it, ctx.cx, ym, cw, ly.tool_card3_h, labels[i], nullptr,
+        const int ym = ly.slot5_y(i);
+        ui::list_row(it, ctx.cx, ym, ly.list_card_w, ly.slot5_h, labels[i], nullptr,
                      (i == 0) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                      (i == 0) ? ctx.theme_primary : ui::chrome_card_brd_off(),
                      ctx.col_white, ctx.col_slate, ctx.font_small,
@@ -1104,8 +1090,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
     const int strip_cy = sy0 + strip_h / 2;
     const int strip_span = band_safe_span_for(
         strip_cy, strip_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
-    const int max_strip_w = (SCREEN_W > 520) ? kMaxContentColW : 384;
-    const int strip_w = std::clamp(std::min(max_strip_w, strip_span), 180, SCREEN_W - 24);
+    const int strip_w = std::clamp(std::min(ly.list_card_w, strip_span), 180, SCREEN_W - 24);
     const int gap = scale_x(6);
     const int pw = (strip_w - 2 * gap) / 3;
     const int sx0 = ctx.cx - strip_w / 2;
@@ -1163,7 +1148,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
   }
 
   // 3. Library Root Peer Tab (MusicView::LIBRARY && m.drilldown == MusicDrilldown::NONE)
-  //    2x3 Frosted-Glass Bento Category Grid (480 px Desk Cap, Stacked Icon + font_small — D-060)
+  //    Standard 4-row slot5_* list (Page 1: Favorites, Playlists, Artists, Albums; Page 2: Podcasts, Radio, Audiobooks — D-072)
   if (m.view == MusicView::LIBRARY && m.drilldown == MusicDrilldown::NONE) {
     render_page_header(it, ctx.cx, "LIBRARY", ctx.font_small, ctx.col_white, true);
 
@@ -1174,32 +1159,18 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
         "mdi:album", "mdi:podcast", "mdi:radio-tower", "mdi:book-open-variant"};
 
     const int cat_pg = std::clamp(m.category_page, 1, 2);
-    const int start_i = (cat_pg == 1) ? 0 : 6;
-    const int page_cnt = (cat_pg == 1) ? 6 : 1;
-    const int content_top = ly.hdr_y + scale_y(24);
+    const int start_i = (cat_pg == 1) ? 0 : 4;
+    const int page_cnt = (cat_pg == 1) ? 4 : 3;
 
     for (int local_i = 0; local_i < page_cnt; ++local_i) {
       const int cat_idx = start_i + local_i;
-      const MusicBentoTileGeom tg = compute_music_bento_tile_geom(
-          local_i, page_cnt, content_top, mode_bar_bot_limit,
-          SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
-      render_card_box(it, tg.tile_x0, tg.tile_y0, tg.tile_w, tg.tile_h,
-                      ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                      kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-
-      const int tcx = tg.tile_x0 + tg.tile_w / 2;
-      const int ic_sz = std::clamp(scale_s(22), 18, std::max(18, (tg.tile_h * 42) / 100));
-      const int ic_cy = tg.tile_y0 + (tg.tile_h * 34) / 100;
-      const int txt_cy = tg.tile_y0 + (tg.tile_h * 73) / 100;
-      render_mdi_icon(it, kCatIcons[cat_idx], tcx, ic_cy, ic_sz, ctx.theme_primary, true);
-
-      const int txt_max_w = std::max(40, tg.tile_w - scale_x(16));
-      const std::string fit_lbl = fit_text_to_width_font(std::string(kCatLabels[cat_idx]), txt_max_w, ctx.font_small);
-      ui::shadow_print(it, tcx, txt_cy, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_lbl.c_str());
-
-      frame_hits().add_rect(tg.tile_x0, tg.tile_y0, tg.tile_w, tg.tile_h,
-                            static_cast<uint16_t>(WidgetId::GRID_CARD_BASE + local_i),
-                            kHitTap | kHitFocusSlot, static_cast<int16_t>(cat_idx));
+      ui::list_row(it, ctx.cx, ly.slot5_y(local_i), ly.list_card_w, ly.slot5_h,
+                   kCatLabels[cat_idx], nullptr,
+                   ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
+                   ctx.col_white, ctx.col_slate, ctx.font_small,
+                   static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + local_i),
+                   kHitTap | kHitFocusSlot, static_cast<int16_t>(cat_idx),
+                   kCatIcons[cat_idx], ">", ctx.col_slate);
     }
 
     render_vertical_page_pips(it, cat_pg > 1, cat_pg < 2, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
@@ -1208,8 +1179,9 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
     return;
   }
 
-  // 4. Library Full-Screen Drilldown (MusicDrilldown::LIB_LIST -> 5 Stack-Uniform Rows + < Back)
-  //    OR Album/Episodes Peer Tab (MusicView::ALBUM_TRACKS -> 4 Stack-Uniform Rows + Mode Bar)
+  // 4. Library Full-Screen Drilldown (MusicDrilldown::LIB_LIST -> 5 Standard slot5_* Rows + < Back)
+  //    OR Album/Episodes Peer Tab (MusicView::ALBUM_TRACKS -> 4 Standard slot5_* Rows + Mode Bar)
+  //    D-072: Enqueue header pill retired (long-press opens ACTION_SHEET cleanly).
   const bool is_peer_album_tab = (m.view == MusicView::ALBUM_TRACKS && m.drilldown == MusicDrilldown::NONE);
   const int vis_rows = is_peer_album_tab ? kMusicPeerListPageSize : kMusicFullListPageSize;
   const int content_bot = is_peer_album_tab ? mode_bar_bot_limit : full_list_bot_limit;
@@ -1222,25 +1194,7 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
   }
   render_page_header(it, ctx.cx, hdr_title, ctx.font_small, ctx.col_white, true);
 
-  const bool has_header_container =
-      (m.view == MusicView::ALBUM_TRACKS && (!trk.album.empty() || !m.drilldown_album_id.empty())) ||
-      (m.selected_category_mode == "album_tracks" && !m.drilldown_album_id.empty()) ||
-      (m.selected_category_mode == "artist_albums" && !m.drilldown_artist_name.empty());
-
-  int content_top = ly.hdr_y + scale_y(24);
-  if (has_header_container) {
-    const int strip_h = std::clamp(scale_y(32), 28, 44);
-    const int sy0 = ly.hdr_y + scale_y(16);
-    const int pw = std::clamp(scale_x(156), 124, 220);
-    const int sx0 = ctx.cx - pw / 2;
-    const int enq_hit_h = std::max(strip_h, std::min(min_hit, scale_y(44)));
-    ui::action_pill(it, sx0, pw, sy0 + strip_h / 2, strip_h,
-                    ctx.theme_primary, ui::chrome_card_bg_off(),
-                    "Enqueue…", ctx.theme_primary, ctx.font_small,
-                    WidgetId::MUSIC_HEADER_ENQUEUE_BTN, kHitTap | kHitFocusSlot, 0, enq_hit_h,
-                    "mdi:playlist-plus");
-    content_top = sy0 + strip_h + scale_y(6);
-  }
+  const int content_top = ly.hdr_y + scale_y(24);
 
   const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
   const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);

@@ -441,6 +441,7 @@ struct HomeHubState {
   ThermostatZoneItem thermostats[kMaxThermostatZones]{};
   int entry_page = 0;
   int entry_count = 0;
+  int intercom_page = 0;
   EntryControlItem entries[kMaxEntryItems]{};
   int vacuum_idx = 0;
   int vacuum_count = 0;
@@ -2112,6 +2113,7 @@ struct CamerasRuntimeState {
   int tab = CamerasTab::GRID;
   int selected_idx = 0;
   int grid_page = 0;
+  int settings_page = 0;
   int carousel_idx = 0;
   uint32_t carousel_last_advance_ms = 0;
   bool carousel_paused = false;
@@ -6072,6 +6074,7 @@ inline int &home_hub_tab() { return home_hub_state().tab; }
 inline int &home_hub_mode_bar_page() { return home_hub_state().mode_bar_page; }
 inline int &home_hub_thermostat_idx() { return home_hub_state().thermostat_idx; }
 inline int &home_hub_entry_page() { return home_hub_state().entry_page; }
+inline int &home_hub_intercom_page() { return home_hub_state().intercom_page; }
 inline int &home_hub_vacuum_idx() { return home_hub_state().vacuum_idx; }
 
 inline int collect_area_categories(std::string *out_cats) {
@@ -6457,20 +6460,30 @@ inline bool is_p4_live_doorbell_popup_enabled(
   return !ab.camera_entity.empty() || !ab.camera_url.empty();
 }
 
-inline int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
-                                       std::string out_labels[5], bool out_all[5] = nullptr) {
-  std::string_view recs[5];
-  const size_t n = v3_split_fields(raw, recs, 5, kProtocolRecordSep);
-  int idx = 0;
-  for (size_t r = 0; r < n; r++) {
-    std::string_view f[3];
-    if (v3_split_fields(recs[r], f, 3, '|') != 3 || f[0].empty()) continue;
-    out_ids[idx] = std::string(f[0]);
-    out_labels[idx] = std::string(f[1]);
-    if (out_all != nullptr) out_all[idx] = (f[2] == "all");
-    idx++;
+struct IntercomTarget {
+  std::string id;
+  std::string label;
+  bool is_all{false};
+};
+
+inline int parse_intercom_targets(const std::string &raw, std::vector<IntercomTarget> &out) {
+  out.clear();
+  size_t start = 0;
+  while (start < raw.size()) {
+    const size_t sep = raw.find(kProtocolRecordSep, start);
+    const std::string_view rec =
+        (sep == std::string::npos) ? std::string_view(raw).substr(start)
+                                   : std::string_view(raw).substr(start, sep - start);
+    if (!rec.empty()) {
+      std::string_view f[3];
+      if (v3_split_fields(rec, f, 3, '|') == 3 && !f[0].empty()) {
+        out.push_back(IntercomTarget{std::string(f[0]), std::string(f[1]), f[2] == "all"});
+      }
+    }
+    if (sep == std::string::npos) break;
+    start = sep + 1;
   }
-  return idx;
+  return static_cast<int>(out.size());
 }
 
 inline int parse_cameras_summary_list(const std::string &raw,
@@ -6782,7 +6795,8 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
     case 9:
       sub = home_hub_tab();
       drill = (rs.intercom.live_call_mode ? 4 : 0) |
-              ((home_hub_state().entry_page & 0x0F) << 3);
+              (((sub == HomeHubTab::INTERCOM ? home_hub_state().intercom_page
+                                             : home_hub_state().entry_page) & 0x0F) << 3);
       break;
     case 10:
       sub = rs.nav.time_subpage;
@@ -6803,7 +6817,8 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.cameras.tab;
       drill = (rs.cameras.hud_active ? 1 : 0) |
               (rs.cameras.quick_reply_open ? 2 : 0) |
-              ((rs.cameras.grid_page & 0x07) << 2);
+              (((sub == CamerasTab::SETTINGS ? rs.cameras.settings_page
+                                             : rs.cameras.grid_page) & 0x07) << 2);
       break;
     default:
       break;

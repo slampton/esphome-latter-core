@@ -978,7 +978,7 @@ void render_add_step1(esphome::display::Display &it,
     render_page_header(it, cx, "NEW EVENT", ctx.font_small, ctx.col_white);
   }
 
-  const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
+  const int row_h = ly.slot5_h;
   const int mic_r = row_h / 2;
   const int mic_gap = std::max(6, scale_x(8));
   const int stack_w = ui::compute_uniform_stack_w(
@@ -1095,7 +1095,7 @@ void render_add_step2(esphome::display::Display &it,
   const int cx = ctx.cx;
   render_page_header(it, cx, "DATE & TIME", ctx.font_small, ctx.col_white);
 
-  const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
+  const int row_h = ly.slot5_h;
   const int btn_r = row_h / 2;
   const int stack_w = ui::compute_uniform_stack_w(
       ly.slot5_y(0), ly.slot5_y(2), row_h, std::min(ly.list_card_w, kMaxContentColW), 14);
@@ -1243,7 +1243,7 @@ void render_picker_drilldown(esphome::display::Display &it,
   rs.cal.picker_page = std::clamp(rs.cal.picker_page, 0, total_pages - 1);
   const int base_i = rs.cal.picker_page * 5;
   const int vis_cnt = std::min(5, opt_cnt - base_i);
-  const int row_h = std::min(scale_y(44), ly.slot5_stride - 6);
+  const int row_h = ly.slot5_h;
   const int bounce_y = edge_bounce().offset_px(
       PageId::CALENDAR, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
   const int stack_margin = (total_pages > 1) ? 36 : 16;

@@ -209,57 +209,33 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
     int row_idx, int visible_rows, int content_top, int content_bot,
     bool has_leading_play, bool has_pips,
     int w, int h, bool round, bool wearable, int ppi) noexcept {
+  (void)has_pips;
   MusicListRowGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
   g.min_hit = mm_to_px_for(7.0f, ppi);
-  const int rows = std::max(1, visible_rows);
-  const int gap = (rows <= 3) ? std::max(6, scale_y_for(8, h)) : std::max(5, scale_y_for(6, h));
-  const int avail_h = std::max(rows * 36, content_bot - content_top);
-  const int raw_h = (avail_h - (rows - 1) * gap) / rows;
-  if (rows <= 3) {
-    const int max_card_h = std::max(g.min_hit, scale_y_for(68, h));
-    const int min_card_h = std::min(g.min_hit, std::max(44, raw_h));
-    g.card_h = std::clamp(raw_h, min_card_h, max_card_h);
-  } else {
-    const int max_card_h = scale_y_for(54, h);
-    g.card_h = std::clamp(raw_h, 40, max_card_h);
-  }
+  const int rows = std::clamp(visible_rows, 1, 5);
+  const int idx = std::clamp(row_idx, 0, rows - 1);
 
-  const int block_h = rows * g.card_h + (rows - 1) * gap;
-  int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
-  if (round && content_bot <= (h / 2 + 110)) {
-    start_y0 = std::min(std::max(content_top, content_bot - block_h), start_y0 + 6);
+  // D-072: Universal slot5_* standard (identical width, height, and vertical rhythm to System Settings).
+  g.card_w = ly.list_card_w;
+  g.card_h = ly.slot5_h;
+  g.card_x0 = ly.cx - (g.card_w / 2);
+
+  const int std_top = ly.slot5_y(0) - g.card_h / 2;
+  const int std_bot = ly.slot5_y(rows - 1) + g.card_h / 2;
+  if (content_top <= std_top + 2 && std_bot <= content_bot + 2) {
+    g.cy_row = ly.slot5_y(idx);
+  } else {
+    // Only when a header action strip (e.g. Queue Shuffle|Rep|Clear on <=520 panels) occupies the top band:
+    // keep exact list_card_w x slot5_h button sizing and distribute cleanly between content_top and content_bot.
+    const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
+    const int std_gap = std::max(4, ly.slot5_stride - g.card_h);
+    const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, std_gap) : 0;
+    const int block_h = rows * g.card_h + (rows - 1) * gap;
+    const int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
+    g.cy_row = start_y0 + idx * (g.card_h + gap) + g.card_h / 2;
   }
-  g.cy_row = start_y0 + row_idx * (g.card_h + gap) + g.card_h / 2;
   g.card_y0 = g.cy_row - g.card_h / 2;
-
-  const int cy_first = start_y0 + g.card_h / 2;
-  const int cy_last = start_y0 + (rows - 1) * (g.card_h + gap) + g.card_h / 2;
-  const int inset = 12;
-  const int safe_top = band_safe_span_for(cy_first, g.card_h, w, h, round, wearable, inset);
-  const int safe_bot = band_safe_span_for(cy_last, g.card_h, w, h, round, wearable, inset);
-  const int stack_safe_w = std::min(safe_top, safe_bot);
-  const int max_w = (w > 520) ? 480 : 384;
-
-  int pip_mask_x = 0, pip_chev_x = 0, pip_hit_x0 = w, pip_hit_w = 0, pip_min_h = 0;
-  if (has_pips) {
-    compute_vertical_page_pips_x(w, round, ppi, pip_mask_x, pip_chev_x, pip_hit_x0, pip_hit_w, pip_min_h);
-  }
-  const int left_bound = (!round && w >= 460)
-                             ? std::max((w - stack_safe_w) / 2, (w - max_w) / 2)
-                             : ((w - stack_safe_w) / 2);
-  const int right_bound = has_pips
-                              ? std::min((w + stack_safe_w) / 2, pip_hit_x0 - 4)
-                              : ((w + stack_safe_w) / 2);
-  const int avail_w = std::max(140, right_bound - left_bound);
-  g.card_w = std::clamp(std::min(max_w, avail_w),
-                        std::min(avail_w, std::max(140, g.min_hit)),
-                        std::max(140, w - 24));
-  const int centered_x0 = (w - g.card_w) / 2;
-  if (centered_x0 >= left_bound && centered_x0 + g.card_w <= right_bound) {
-    g.card_x0 = centered_x0;
-  } else {
-    g.card_x0 = std::clamp(right_bound - g.card_w, left_bound, std::max(left_bound, w - g.card_w - inset));
-  }
 
   if (has_leading_play) {
     g.play_vis_w = std::clamp(scale_x_for(44, w), 36, g.card_w / 3);
@@ -284,71 +260,6 @@ inline void register_music_list_row_hits(
                 static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row_idx),
                 flags, static_cast<int16_t>(row_idx));
   }
-}
-
-struct MusicBentoTileGeom {
-  int tile_x0{0};
-  int tile_y0{0};
-  int tile_w{160};
-  int tile_h{68};
-  int gap_x{12};
-  int gap_y{12};
-};
-
-inline constexpr MusicBentoTileGeom compute_music_bento_tile_geom(
-    int local_idx, int page_item_count, int content_top, int content_bot,
-    int w, int h, bool round, bool wearable, int ppi) noexcept {
-  MusicBentoTileGeom g{};
-  const int min_hit = mm_to_px_for(7.0f, ppi);
-  g.gap_x = (w < 380) ? 8 : ((w > 520) ? 18 : 12);
-  g.gap_y = (w < 380) ? 10 : ((w > 520) ? 18 : 12);
-  const int avail_h = std::max(132, content_bot - content_top);
-  const int max_th = (h > 520) ? 108 : std::max(min_hit, 70);
-  g.tile_h = std::clamp((avail_h - 2 * g.gap_y) / 3, 44, max_th);
-  const int grid_h = 3 * g.tile_h + 2 * g.gap_y;
-  int grid_y0 = content_top + std::max(0, (avail_h - grid_h) / 2);
-  if (round && content_bot <= (h / 2 + 110)) {
-    grid_y0 = std::min(std::max(content_top, content_bot - grid_h), grid_y0 + 6);
-  }
-
-  const int r = local_idx / 2;
-  const int c = local_idx % 2;
-  g.tile_y0 = grid_y0 + r * (g.tile_h + g.gap_y);
-
-  const int inset = 12;
-  const int safe_r0 = band_safe_span_for(grid_y0 + g.tile_h / 2, g.tile_h, w, h, round, wearable, inset);
-  const int safe_r2 = band_safe_span_for(grid_y0 + 2 * (g.tile_h + g.gap_y) + g.tile_h / 2, g.tile_h,
-                                         w, h, round, wearable, inset);
-  const int stack_safe_w = std::min(safe_r0, safe_r2);
-  const int max_grid_w = (w > 520) ? 480 : 384;
-
-  int pip_mask_x = 0, pip_chev_x = 0, pip_hit_x0 = w, pip_hit_w = 0, pip_min_h = 0;
-  compute_vertical_page_pips_x(w, round, ppi, pip_mask_x, pip_chev_x, pip_hit_x0, pip_hit_w, pip_min_h);
-  const int left_bound = (!round && w >= 460)
-                             ? std::max((w - stack_safe_w) / 2, (w - max_grid_w) / 2)
-                             : ((w - stack_safe_w) / 2);
-  const int right_bound = std::min((w + stack_safe_w) / 2, pip_hit_x0 - 4);
-  const int grid_w = std::clamp(
-      std::min(max_grid_w, right_bound - left_bound),
-      148, std::max(148, w - 20));
-  const int centered_x0 = (w - grid_w) / 2;
-  const int grid_x0 = (centered_x0 >= left_bound && centered_x0 + grid_w <= right_bound)
-                          ? centered_x0
-                          : std::max(left_bound, right_bound - grid_w);
-  const int col_w = std::max(68, (grid_w - g.gap_x) / 2);
-
-  const bool solo_last = (local_idx == page_item_count - 1) && ((page_item_count % 2) == 1);
-  if (solo_last) {
-    g.tile_x0 = grid_x0;
-    g.tile_w = grid_w;
-  } else if (c == 0) {
-    g.tile_x0 = grid_x0;
-    g.tile_w = col_w;
-  } else {
-    g.tile_x0 = grid_x0 + grid_w - col_w;
-    g.tile_w = col_w;
-  }
-  return g;
 }
 
 struct MusicInfoGeom {

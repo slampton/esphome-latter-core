@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #ifdef USE_ESP32
 #include <esp_random.h>
@@ -385,41 +386,6 @@ inline bool open_music_row_action_sheet(int slot_idx, DeviceRuntimeState &rs, ui
       is_music_playable_container_type(rs.music.action_sheet_type) ||
       (rs.music.action_sheet_type == "podcast");
   rs.music.action_sheet_queue_item_id = sl.queue_item_id;
-  rs.music.takeover = MusicTakeover::ACTION_SHEET;
-  rs.music.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
-  return true;
-}
-
-inline bool open_music_header_action_sheet(DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
-  std::string t_title, t_artist, t_album;
-  bool is_speech = false;
-  resolve_music_track_strings(rs, rt, t_title, t_artist, t_album, is_speech);
-
-  std::string cid;
-  std::string cname;
-  std::string ctype = "album";
-  if (rs.music.view == MusicView::ALBUM_TRACKS) {
-    cid = !rs.music.drilldown_album_id.empty() ? rs.music.drilldown_album_id : t_album;
-    cname = !t_album.empty() ? t_album : cid;
-    ctype = is_speech ? "podcast" : "album";
-  } else if (rs.music.selected_category_mode == "album_tracks") {
-    cid = rs.music.drilldown_album_id;
-    cname = rs.music.selected_category_title;
-    ctype = (rs.music.drilldown_parent_mode == "playlist") ? "playlist" : "album";
-  } else if (rs.music.selected_category_mode == "artist_albums") {
-    cid = rs.music.drilldown_artist_name;
-    cname = rs.music.drilldown_artist_name;
-    ctype = "artist";
-  }
-  if (cid.empty()) return false;
-
-  rs.music.action_sheet_slot = -1;
-  rs.music.action_sheet_is_queue = false;
-  rs.music.action_sheet_is_container = true;
-  rs.music.action_sheet_id = cid;
-  rs.music.action_sheet_name = cname;
-  rs.music.action_sheet_type = ctype;
-  rs.music.action_sheet_queue_item_id.clear();
   rs.music.takeover = MusicTakeover::ACTION_SHEET;
   rs.music.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
   return true;
@@ -3544,6 +3510,22 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       rt_.schedule_disp();
       return true;
     }
+    if (home_hub_tab() == HomeHubTab::INTERCOM && intercom_live_call_mode() &&
+        !cam_call_active() && v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+      std::vector<IntercomTarget> targets;
+      const int total_cnt = parse_intercom_targets(area_ctx_state().intercom_targets_summary, targets);
+      const int tot_pg = std::max(1, (total_cnt + 2) / 3);
+      if (tot_pg > 1) {
+        commit_swipe();
+        bool changed = false;
+        home_hub_intercom_page() = step_pager_index(
+            home_hub_intercom_page(), 0, tot_pg - 1, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::HOME_HUB, now_ms, changed);
+        rt_.schedule_disp();
+        return true;
+      }
+      return false;
+    }
     if (h_dir != 0) {
       commit_swipe();
       int hh_tabs[kMaxHomeHubTabs]{};
@@ -3583,6 +3565,20 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
           rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
           mark_dirty_full();
         }
+        rt_.schedule_disp();
+        return true;
+      }
+      return false;
+    }
+    if (rs.cameras.tab == CamerasTab::SETTINGS && v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+      const int total_pg = (LATTER_CHIP_P4 != 0) ? 2 : 1;
+      if (total_pg > 1) {
+        commit_swipe();
+        bool changed = false;
+        rs.cameras.settings_page = step_pager_index(
+            rs.cameras.settings_page, 0, total_pg - 1, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::CAMERAS, now_ms, changed);
+        if (changed) mark_dirty_full();
         rt_.schedule_disp();
         return true;
       }
@@ -4638,9 +4634,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
           m.hud_timer = now_rel;
           rt_.schedule_disp();
-        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 3 &&
+        } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 4 &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 3 + static_cast<int>(hit->param);
+          const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 4 + static_cast<int>(hit->param);
           if (idx == 0) {
             rt_.set_select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE,
                                cycle_option(rt_.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE),
@@ -4794,7 +4790,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           }
         } else if (on_cat_root &&
-                   wid >= WidgetId::GRID_CARD_BASE && wid < WidgetId::GRID_CARD_BASE + 6 &&
+                   wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 4 &&
                    now_rel >= music_scroll_tap_lockout_until_ms() &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int idx = static_cast<int>(hit->param);
@@ -4812,12 +4808,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             b_page = 1;
             rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
             fetch_music_browse_for_current_view(rs, now_rel);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          }
-        } else if (wid == WidgetId::MUSIC_HEADER_ENQUEUE_BTN &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          if (open_music_header_action_sheet(rs, rt_, now_rel)) {
             mark_dirty_full();
             rt_.schedule_disp();
           }
@@ -5479,12 +5469,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             if (!intercom_live_call_mode()) {
               intercom_live_call_mode() = true;
+              home_hub_intercom_page() = 0;
               mark_dirty_full();
               rt_.schedule_disp();
             }
           } else if (wid == WidgetId::INTERCOM_MODE_BTN &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             intercom_live_call_mode() = !intercom_live_call_mode();
+            home_hub_intercom_page() = 0;
             mark_dirty_full();
             rt_.schedule_disp();
           } else if (wid == WidgetId::CAM_LISTEN_BTN &&
@@ -5497,10 +5489,19 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           } else if (wid == WidgetId::INTERCOM_UNLOCK_BTN &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
             gate_or_dispatch_doorbell_unlock(now_rel, true);
+          } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+                     intercom_live_call_mode() && !cam_call_active() &&
+                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+            std::vector<IntercomTarget> targets;
+            const int total_cnt = parse_intercom_targets(area_ctx_state().intercom_targets_summary, targets);
+            const int max_pg = std::max(0, (total_cnt - 1) / 3);
+            home_hub_intercom_page() = std::clamp(
+                home_hub_intercom_page() + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, max_pg);
+            rt_.schedule_disp();
           } else if (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5 &&
                      touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            const int slot_idx = static_cast<int>(wid - WidgetId::INTERCOM_ROW_BASE);
             if (!intercom_live_call_mode()) {
+              const int slot_idx = static_cast<int>(wid - WidgetId::INTERCOM_ROW_BASE);
               static constexpr const char *kBroadcastPresets[3] = {
                   "Dinner is ready!",
                   "Come upstairs!",
@@ -5514,13 +5515,15 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                 rt_.schedule_disp();
               }
             } else {
-              std::string t_ids[5], t_lbls[5];
-              const int cnt = parse_intercom_targets_list(
-                  area_ctx_state().intercom_targets_summary, t_ids, t_lbls);
-              if (slot_idx >= 0 && slot_idx < cnt) {
+              std::vector<IntercomTarget> targets;
+              const int cnt = parse_intercom_targets(
+                  area_ctx_state().intercom_targets_summary, targets);
+              const int tgt_idx = static_cast<int>(hit->param);
+              if (tgt_idx >= 0 && tgt_idx < cnt) {
+                const IntercomTarget &tgt = targets[static_cast<size_t>(tgt_idx)];
                 rs.intercom.cam_action = "call_target";
-                rs.intercom.cam_message = t_ids[slot_idx];
-                rs.intercom.broadcast_feedback = "Call: " + t_lbls[slot_idx];
+                rs.intercom.cam_message = tgt.id;
+                rs.intercom.broadcast_feedback = "Call: " + tgt.label;
                 rs.intercom.broadcast_feedback_ms = now_rel;
                 intercom_session().emit_current_cmd();
                 intercom_session().start_call(now_rel);
@@ -6096,7 +6099,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           }
         }
       } else if (rs.cameras.tab == CamerasTab::SETTINGS) {
-        if (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5 &&
+        if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+            LATTER_CHIP_P4 != 0 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          rs.cameras.settings_page = (wid == WidgetId::CHEVRON_UP) ? 0 : 1;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5 &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int r_idx = static_cast<int>(wid - WidgetId::CAM_SETTINGS_ROW_BASE);
           auto cycle_opt = [&]<size_t N>(UiSelectId sid, const char *const (&opts)[N], uint8_t cur_val) {

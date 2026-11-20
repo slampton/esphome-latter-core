@@ -245,7 +245,6 @@ namespace WidgetId {
   static constexpr uint16_t MUSIC_SCRUB_STEP_BACK     = 955;
   static constexpr uint16_t MUSIC_SCRUB_STEP_FWD      = 956;
   static constexpr uint16_t MUSIC_FAVORITE_BTN        = 957;
-  static constexpr uint16_t MUSIC_HEADER_ENQUEUE_BTN  = 958;
   static constexpr uint16_t MUSIC_ROW_PLAY_BASE       = 960;  // 960..964 (leading 1-tap Play Now orb, param = slot 0..4)
   static constexpr uint16_t MUSIC_ROW_PLAY_0          = 960;
   static constexpr uint16_t MUSIC_ROW_PLAY_1          = 961;
@@ -1285,33 +1284,19 @@ inline constexpr MusicActionSheetGeom compute_music_action_sheet_geom(
   g.back_y = ly.back_y;
   g.back_hit_y0 = round ? scale_min_for(404, h) : (h - scale_y_for(64, h));
 
-  const int top_limit = ly.hdr_y + scale_y_for(22, h);
-  const int bot_limit = g.back_hit_y0 - scale_y_for(6, h);
-  const int avail_h = std::max(g.item_count * 40, bot_limit - top_limit);
-  const int gap_y = std::max(4, scale_y_for(6, h));
-  const int raw_row_h = (avail_h - std::max(0, g.item_count - 1) * gap_y) / g.item_count;
-  const int row_h = std::clamp(raw_row_h, 40, std::max(g.min_hit, scale_y_for(68, h)));
-  g.item_vis_h = std::clamp(scale_y_for(46, h), 38, row_h);
-
-  const int total_h = g.item_count * row_h + std::max(0, g.item_count - 1) * gap_y;
-  const int start_y = top_limit + std::max(0, (avail_h - total_h) / 2);
-  g.bounds_y0 = start_y;
-
-  const int first_cy = start_y + row_h / 2;
-  const int last_cy = start_y + (g.item_count - 1) * (row_h + gap_y) + row_h / 2;
-  const int safe_top = band_safe_span_for(first_cy, g.item_vis_h, w, h, round, wearable, 14);
-  const int safe_bot = band_safe_span_for(last_cy, g.item_vis_h, w, h, round, wearable, 14);
-  const int stack_safe_w = std::min(safe_top, safe_bot);
-  const int max_sheet_w = (w > 520) ? 480 : 384;
-  const int uniform_w = std::clamp(
-      std::min(max_sheet_w, stack_safe_w),
-      std::max(140, g.min_hit), std::max(140, w - 24));
+  // D-072: Align Action Sheet 1:1 with the canonical slot5_* list grid (list_card_w x slot5_h, slot5_stride).
+  const int row_h = ly.slot5_h;
+  const int uniform_w = ly.list_card_w;
   const int uniform_x0 = g.cx - uniform_w / 2;
+  g.item_vis_h = row_h;
+  g.bounds_y0 = ly.slot5_y(0) - row_h / 2;
 
+  const int max_gap_pad = std::max(0, (ly.slot5_stride - row_h - 1) / 2);
   for (int i = 0; i < g.item_count; ++i) {
-    g.item_y0[i] = start_y + i * (row_h + gap_y);
+    const int cy = ly.slot5_y(i);
+    g.item_y0[i] = cy - row_h / 2;
     g.item_h[i] = row_h;
-    g.item_hit_pad[i] = (g.min_hit > row_h) ? ((g.min_hit - row_h + 1) / 2) : 0;
+    g.item_hit_pad[i] = (g.min_hit > row_h) ? std::min(max_gap_pad, (g.min_hit - row_h + 1) / 2) : 0;
     g.item_w[i] = uniform_w;
     g.item_x0[i] = uniform_x0;
   }
